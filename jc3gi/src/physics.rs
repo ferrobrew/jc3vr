@@ -1,8 +1,34 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
-/// A [`CastRayInfoBase`](crate::physics::CastRayInfoBase) that resolves the hit material on demand (`CCastRayInfo`).
-pub struct CastRayInfo {}
+/// A [`CastRayInfoBase`](crate::physics::CastRayInfoBase) that records the hit object and resolves the hit material on demand
+/// (`CCastRayInfo`). Engine callers construct the base first and then switch the virtual table to
+/// [`VFTABLE`](crate::physics::CastRayInfo::VFTABLE) and clear [`m_GameObject`](crate::physics::CastRayInfo::m_GameObject).
+pub struct CastRayInfo {
+    pub base: crate::physics::CastRayInfoBase,
+    /// The hit object: the game object that owns the hit physics instance (for a character, the
+    /// `CCharacter`), written by the virtual hit-object setter [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay) calls. Null
+    /// for world geometry and on a miss.
+    pub m_GameObject: *mut ::std::ffi::c_void,
+    _field_40: [u8; 8],
+}
+fn _CastRayInfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x48], CastRayInfo>([0u8; 0x48]);
+    }
+    unreachable!()
+}
 impl CastRayInfo {
+    /// Clears the result for reuse: a unit normal and fraction, a null object, an invalid body,
+    /// then the virtual hit-object setter with null. It calls through the virtual table, which must
+    /// already be set.
+    pub unsafe fn Reset(&mut self) {
+        unsafe { self.base.Reset() }
+    }
+    /// Whether the hit material lets bullets pass
+    /// ([`BULLET_PASS`](crate::physics::MaterialPassFlags::BULLET_PASS)); false for two special material ids.
+    pub unsafe fn DidHitBulletPassMaterial(&self) -> bool {
+        unsafe { self.base.DidHitBulletPassMaterial() }
+    }
     pub const GetHitMaterial_ADDRESS: usize = 0x1402B3BA0;
     /// `CCastRayInfo::GetHitMaterial` (a virtual): the hit shape's game material
     /// (`EGameMaterialId`), looked up through the physics system's world.
@@ -13,6 +39,20 @@ impl CastRayInfo {
             );
             f(self as *const Self as _)
         }
+    }
+}
+impl CastRayInfo {
+    /// The address of the `CCastRayInfo` virtual table.
+    pub const VFTABLE: u64 = 5405692616;
+}
+impl std::convert::AsRef<crate::physics::CastRayInfoBase> for CastRayInfo {
+    fn as_ref(&self) -> &crate::physics::CastRayInfoBase {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::physics::CastRayInfoBase> for CastRayInfo {
+    fn as_mut(&mut self) -> &mut crate::physics::CastRayInfoBase {
+        &mut self.base
     }
 }
 impl std::convert::AsRef<CastRayInfo> for CastRayInfo {
@@ -26,12 +66,36 @@ impl std::convert::AsMut<CastRayInfo> for CastRayInfo {
     }
 }
 #[repr(C, align(8))]
-/// The result of a ray query (`CCastRayInfoBase`): the hit position, normal, and fraction, the hit
-/// body and instance, and the hit material's pass flags. Only the methods are bound.
-pub struct CastRayInfoBase {}
+/// The result of a ray query (`CCastRayInfoBase`): the hit normal and fraction, and the hit object
+/// and body. [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay) fills it from the query's closest hit, and on a miss sets the
+/// fraction to one and clears the object. Engine callers construct it on the stack: the
+/// [`VFTABLE`](crate::physics::CastRayInfoBase::VFTABLE) pointer, a null [`m_HitObjectId`](crate::physics::CastRayInfoBase::m_HitObjectId), then
+/// [`Reset`](crate::physics::CastRayInfoBase::Reset).
+pub struct CastRayInfoBase {
+    pub __vftable: u64,
+    /// The surface normal at the hit.
+    pub m_Normal: crate::types::math::Vector3,
+    /// The hit's position along the queried segment, as a fraction of the segment from the query's
+    /// start distance to its end distance; one on a miss.
+    pub m_HitDistance: f32,
+    /// The object id (`SObjectID`) of the hit object, or null for world geometry.
+    pub m_HitObjectId: u64,
+    _field_20: [u8; 16],
+    /// The Havok body id of the hit body.
+    pub m_BodyId: u32,
+    _field_34: [u8; 4],
+}
+fn _CastRayInfoBase_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x38], CastRayInfoBase>([0u8; 0x38]);
+    }
+    unreachable!()
+}
 impl CastRayInfoBase {
     pub const Reset_ADDRESS: usize = 0x1402558C0;
-    /// Clears the result for reuse.
+    /// Clears the result for reuse: a unit normal and fraction, a null object, an invalid body,
+    /// then the virtual hit-object setter with null. It calls through the virtual table, which must
+    /// already be set.
     pub unsafe fn Reset(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -51,6 +115,10 @@ impl CastRayInfoBase {
             f(self as *const Self as _)
         }
     }
+}
+impl CastRayInfoBase {
+    /// The address of the `CCastRayInfoBase` virtual table.
+    pub const VFTABLE: u64 = 5405687560;
 }
 impl std::convert::AsRef<CastRayInfoBase> for CastRayInfoBase {
     fn as_ref(&self) -> &CastRayInfoBase {

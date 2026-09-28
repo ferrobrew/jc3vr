@@ -32,6 +32,10 @@ pub struct ControllersConfig {
     /// The hand that holds and fires the guns. The other hand fires the grapple. Mirroring swaps the
     /// bindings and the weapon attach bones; the grapple gauntlet stays on the model's left arm.
     pub dominant_hand: Hand,
+    /// Pin the game's "the gamepad is the active input device" setting to the gamepad while the
+    /// controller scheme is in effect, so that the game applies its gamepad rules (aim assist,
+    /// tap-style melee) and shows gamepad prompts. The setting is restored when the scheme ends.
+    pub gamepad_semantics: bool,
     /// Raw input interpretation: the derived press thresholds and hand tracking.
     pub input: InputConfig,
     /// On-foot stick locomotion.
@@ -66,6 +70,7 @@ impl ControllersConfig {
             enabled: true,
             scheme: SchemeSetting::Auto,
             dominant_hand: Hand::Right,
+            gamepad_semantics: true,
             input: InputConfig::new(),
             locomotion: LocomotionConfig::new(),
             mode: ModeConfig::new(),
@@ -335,7 +340,7 @@ impl GripOffset {
     };
 }
 
-/// Per-hand aiming. Acts only under the controller scheme.
+/// Per-hand aiming (see [`crate::controllers::aim`]). Acts only under the controller scheme.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct AimConfig {
     /// Aim the held guns along the dominant hand's sight line (and, dual-wielding, each pistol
@@ -346,6 +351,19 @@ pub struct AimConfig {
     /// How strongly the written aim point is pulled toward the best candidate target along each
     /// hand ray, `0..=1`. Zero disables aim assist.
     pub assist_strength: f32,
+    /// How far the hand rays are cast, metres. A gun ray that hits nothing aims at this distance
+    /// along the ray.
+    pub max_distance_m: f32,
+    /// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed
+    /// out along the ray, because the game fires along the barrel instead of at an aim point near
+    /// the muzzle, and skips the weapon's update entirely for one almost at the muzzle.
+    pub min_target_distance_m: f32,
+    /// Where the grapple ray starts relative to the off-hand's wrist, in the wrist frame (-Z toward
+    /// the fingers, +Y out of the back of the hand), metres. The gauntlet sits on the forearm just
+    /// behind the wrist.
+    pub grapple_origin_m: glam::Vec3,
+    /// Per-weapon corrections to the sight line derived from the fire point.
+    pub sights: SightTable,
 }
 
 impl AimConfig {
@@ -354,6 +372,84 @@ impl AimConfig {
             gun: true,
             grapple: true,
             assist_strength: 0.0,
+            max_distance_m: 500.0,
+            min_target_distance_m: 2.0,
+            grapple_origin_m: glam::Vec3::ZERO,
+            sights: SightTable::EMPTY,
+        }
+    }
+}
+
+/// A correction to one weapon type's sight line, keyed by the weapon's name hash. The derived
+/// sight line runs from the gun's current fire point along the fire point's barrel axis; the
+/// correction moves its origin and turns its direction, both in the fire point's frame.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SightOverride {
+    /// The weapon type's name hash
+    /// ([`WeaponBase::m_WeaponNameHash`](jc3gi::equipment::weapon::WeaponBase::m_WeaponNameHash)).
+    pub weapon_hash: u32,
+    /// The sight's origin relative to the fire point, in the fire point's frame (+Y up, -Z along
+    /// the barrel), metres.
+    pub offset_m: glam::Vec3,
+    /// The sight line's pitch (positive up) and yaw (positive left) relative to the barrel axis,
+    /// degrees.
+    pub angles_deg: glam::Vec2,
+}
+
+impl SightOverride {
+    /// No correction for `weapon_hash`: the derived sight line as it is.
+    pub const fn identity(weapon_hash: u32) -> Self {
+        Self {
+            weapon_hash,
+            offset_m: glam::Vec3::ZERO,
+            angles_deg: glam::Vec2::ZERO,
+        }
+    }
+}
+
+/// The per-weapon sight corrections: a small fixed table, so that the configuration stays `Copy`.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SightTable {
+    pub entries: [Option<SightOverride>; SightTable::CAPACITY],
+}
+
+impl SightTable {
+    /// How many weapons can carry a correction.
+    pub const CAPACITY: usize = 16;
+
+    pub const EMPTY: SightTable = SightTable {
+        entries: [None; SightTable::CAPACITY],
+    };
+
+    /// The correction for `weapon_hash`, if any.
+    pub fn get(&self, weapon_hash: u32) -> Option<&SightOverride> {
+        self.entries
+            .iter()
+            .flatten()
+            .find(|entry| entry.weapon_hash == weapon_hash)
+    }
+
+    /// Add an identity correction for `weapon_hash`, unless it has one. Returns whether the table
+    /// holds one afterwards; `false` means the table is full.
+    pub fn insert(&mut self, weapon_hash: u32) -> bool {
+        if self.get(weapon_hash).is_some() {
+            return true;
+        }
+        match self.entries.iter_mut().find(|entry| entry.is_none()) {
+            Some(slot) => {
+                *slot = Some(SightOverride::identity(weapon_hash));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Remove the correction for `weapon_hash`.
+    pub fn remove(&mut self, weapon_hash: u32) {
+        for entry in &mut self.entries {
+            if entry.is_some_and(|e| e.weapon_hash == weapon_hash) {
+                *entry = None;
+            }
         }
     }
 }
@@ -644,5 +740,31 @@ pub struct FingersConfig {
 impl FingersConfig {
     pub const fn new() -> Self {
         Self { enabled: true }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_sight_table_keys_by_weapon_hash() {
+        let mut table = SightTable::EMPTY;
+        assert!(table.insert(7));
+        assert!(table.insert(7));
+        assert_eq!(table.entries.iter().flatten().count(), 1);
+        assert_eq!(table.get(7), Some(&SightOverride::identity(7)));
+        table.remove(7);
+        assert!(table.get(7).is_none());
+    }
+
+    #[test]
+    fn a_full_sight_table_refuses_a_new_weapon() {
+        let mut table = SightTable::EMPTY;
+        for hash in 0..SightTable::CAPACITY as u32 {
+            assert!(table.insert(hash));
+        }
+        assert!(!table.insert(1000));
+        assert!(table.insert(3));
     }
 }

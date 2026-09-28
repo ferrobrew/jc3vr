@@ -530,6 +530,10 @@ fn yaw_only(rotation: glam::Quat) -> glam::Quat {
 /// matrix, the weapon aim-target queries, melee and grapple tasks — aimed at a fixed world
 /// direction regardless of where the head looked. Overriding the getter's output hands them the
 /// same transform the render camera uses.
+///
+/// Inside the grapple's scoped aim calls, the getter instead returns the grapple ray's camera
+/// matrix ([`crate::controllers::aim::camera_matrix_override`]), so that the game's grapple
+/// targeting casts from the off-hand.
 #[detour(
     address = jc3gi::camera::game_camera_manager::GameCameraManager::GetCameraMatrix_ADDRESS
 )]
@@ -538,6 +542,14 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
         .get()
         .unwrap()
         .call(manager, matrix);
+    if let (Some(view), Some(matrix)) =
+        (crate::controllers::aim::camera_matrix_override(), unsafe {
+            matrix.as_mut()
+        })
+    {
+        *matrix = view;
+        return;
+    }
     if !is_active() {
         return;
     }

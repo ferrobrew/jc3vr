@@ -317,7 +317,7 @@ struct Solved {
 
 /// Whether a correction is a tick or two of hand motion rather than a discontinuity (a teleport, a
 /// recenter, a respawn), which must not be smeared onto the rendered hand.
-fn plausible(d: Pose) -> bool {
+pub(crate) fn plausible(d: Pose) -> bool {
     let (_, angle) = d.orientation.to_axis_angle();
     d.position.is_finite() && d.position.length() < MAX_SHIFT_M && angle.abs() < MAX_TURN_RAD
 }
@@ -412,7 +412,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
 
 /// The hand an attach bone (an `NBone::ESafeBoneIndex`) belongs to, or `None` for a holster or
 /// other non-hand bone.
-fn attach_hand(bone: u32) -> Option<Hand> {
+pub(crate) fn attach_hand(bone: u32) -> Option<Hand> {
     [
         (SafeBoneIndex::ATTACH_HAND_LEFT as u32, Hand::Left),
         (SafeBoneIndex::ATTACH_HAND_LEFT2 as u32, Hand::Left),

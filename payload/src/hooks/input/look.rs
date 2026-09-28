@@ -9,6 +9,8 @@
 //! where the motion controllers detect the mode and inject their bindings
 //! ([`crate::controllers::bindings::input_tick`]): after the poll, so the injected state survives
 //! until the game reads it, and before the swim refusal, so it covers the controllers' input too.
+//! The same tick holds the game's active-input-device setting at the gamepad under the controller
+//! scheme ([`crate::controllers::gamepad_setting`]).
 //! The controllers' right stick turns the body through the same VR turn scheme as the look
 //! effectors.
 
@@ -30,6 +32,7 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
     INPUT_DEVICE_MANAGER_UPDATE.get().unwrap().call(manager, dt);
 
     let controllers = controllers::bindings::input_tick(dt);
+    controllers::gamepad_setting::input_tick();
 
     if !headpose::is_active() {
         return;

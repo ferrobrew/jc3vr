@@ -15,8 +15,10 @@
 //!   which the weapon pin does not reach.
 //! - The player's arm and upper-body aim IK tasks are skipped, because the controllers own the arms.
 //! - The body's aim point (the control-parameters copy, which turns the body toward it) is held
-//!   neutral ahead of the body. The character-level weapon point is left as the game computes it,
-//!   so the weapons keep gaze aiming until the hand rays write the per-weapon targets.
+//!   neutral ahead of the body. The character-level weapon point follows the dominant hand's aim
+//!   point while the gun aim acts ([`crate::controllers::aim`], which also hands each gun its own
+//!   hand's point at the per-weapon update), and is otherwise left as the game computes it (gaze
+//!   aiming).
 //! - The wall-penetration block, computed from where the animation would put the barrel, is
 //!   cleared for the player's held weapon.
 //! - The mental-state cuts block the automatic draw on entering combat and swallow both automatic
@@ -60,6 +62,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
+        aim,
         config::AimStateConfig,
         mode::{self, Mode},
         scheme,
@@ -493,17 +496,22 @@ fn grappling_fire_arm_ik_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mu
 
 /// The character's weapon aim point setter, which the player's post-camera update calls right
 /// after copying the same point into the control parameters. The copy is what turns the body
-/// toward the aim point, so it is replaced by the neutral point; the character-level point, which
-/// fans out to the weapons as their fire target, is left as the game computed it, so the weapons
-/// keep gaze aiming until the hand rays write the per-weapon targets. The original still runs, so
-/// the point counts as set this frame and the weapon update's body-forward fallback never kicks
-/// in. On foot only: mounted guns and vehicles want the real point.
+/// toward the aim point, so it is replaced by the neutral point (on foot only: mounted guns and
+/// vehicles want the real point). The character-level point, which fans out to the weapons as
+/// their fire target, becomes the dominant hand's aim point while the gun aim acts, and is
+/// otherwise left as the game computed it. The original always runs first, so the point counts
+/// as set this frame and the weapon update's body-forward fallback never kicks in.
 #[detour(address = jc3gi::character::character::Character::UpdateWeaponAiming_ADDRESS)]
 fn update_weapon_aiming(character: *mut Character, target: *const Vector3) {
     UPDATE_WEAPON_AIMING.get().unwrap().call(character, target);
     let Some(c) = (unsafe { local(character) }) else {
         return;
     };
+    if let Some(point) = aim::character_aim_point() {
+        c.m_AimTargetPositionWeapons = Vector3 {
+            data: point.to_array(),
+        };
+    }
     let cfg = aim_state_config();
     let on_foot =
         matches!(mode::current().mode, Mode::OnFoot(_)) && !unsafe { c.IsInMountedGunState() };

@@ -87,7 +87,11 @@ pub struct PlayerAimControl {
     /// The cached grapple game object (a `boost::weak_ptr<CGameObject>`: object pointer and weak
     /// control block).
     pub m_LastHitGrappleTargetGO: [*mut ::std::ffi::c_void; 2],
-    _field_220: [u8; 96],
+    /// Per slot, the game object the direct-aim ray hit (a weapon's holder in place of the
+    /// weapon), assigned by [`CheckDirectTargets`](crate::aim::aim::PlayerAimControl::CheckDirectTargets) only when the slot's
+    /// hit resolved to an object and released by [`UpdatePostSim`](crate::aim::aim::PlayerAimControl::UpdatePostSim) before the
+    /// ray is cast.
+    pub m_DirectAimTargetGOs: [crate::types::shared_ptr::WeakPtrGameObject; 6],
     /// The length of the direct-aim ray: the override distance when positive, otherwise the larger
     /// of the weapon and grapple slots' maximum aim distances.
     pub m_RayCastDistance: f32,
@@ -114,8 +118,13 @@ fn _PlayerAimControl_size_check() {
 impl PlayerAimControl {
     pub const GetAdjustedCameraMatrix_ADDRESS: usize = 0x140C3E510;
     /// Returns the matrix used by the aim raycast: in aim-down-sights it reads the alternate-aim
-    /// transform, otherwise the camera transform. `weapon` adds an optional ballistic pitch. The
-    /// result is written through `result` and also returned.
+    /// transform, otherwise the camera transform
+    /// ([`GameCameraManager::GetCameraMatrix`](crate::camera::game_camera_manager::GameCameraManager::GetCameraMatrix)).
+    /// `weapon` adds an optional ballistic pitch. The result is written through `result` and also
+    /// returned. The matrix is row-major with the translation in the fourth row and forward along
+    /// the negated third row. [`UpdateDirectAim`](crate::aim::aim::PlayerAimControl::UpdateDirectAim), the fitness scoring
+    /// ([`GetFitnessScore`](crate::aim::aim::PlayerAimControl::GetFitnessScore)), the range checks, and
+    /// [`IsLastValidGrappleAimPosStillValid`](crate::aim::aim::PlayerAimControl::IsLastValidGrappleAimPosStillValid) read it.
     pub unsafe fn GetAdjustedCameraMatrix(
         result: *mut crate::types::math::Matrix4,
         weapon: *mut crate::equipment::weapon::WeaponBase,
@@ -131,7 +140,13 @@ impl PlayerAimControl {
         }
     }
     pub const UpdateDirectAim_ADDRESS: usize = 0x140CE5350;
-    /// Raycasts from the camera position along camera-forward to find the aim target.
+    /// Casts the direct-aim ray and distributes its hit into the slots. The ray starts 0.1 units
+    /// along the forward of [`GetAdjustedCameraMatrix`](crate::aim::aim::PlayerAimControl::GetAdjustedCameraMatrix) from its
+    /// translation, runs [`m_RayCastDistance`](crate::aim::aim::PlayerAimControl::m_RayCastDistance) along that forward, and uses
+    /// a `CPlayerAimRaycastFilterCacheFirstHoleyHitAndMinDistanceHit` (a [`PlayerAimRaycastFilter`](crate::aim::aim::PlayerAimRaycastFilter)
+    /// that also records the first holey hit and the hit below the minimum distance) ignoring
+    /// [`m_Owner`](crate::aim::aim::PlayerAimControl::m_Owner) and, outside the stunt position, the owner's vehicle. It then
+    /// calls [`CheckDirectTargets`](crate::aim::aim::PlayerAimControl::CheckDirectTargets).
     pub unsafe fn UpdateDirectAim(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -140,11 +155,88 @@ impl PlayerAimControl {
             f(self as *mut Self as _)
         }
     }
+    pub const UpdateLastValidGrappleTarget_ADDRESS: usize = 0x140CEE700;
+    /// Refreshes the last-valid grapple cache from the grapple slot, after
+    /// [`UpdateAllTargets`](crate::aim::aim::PlayerAimControl::UpdateAllTargets): a grapplable
+    /// [`m_Target`](crate::aim::aim::PlayerAimControl::m_Target) or an in-range grapplable direct hit is cached (the latter also
+    /// sets [`m_IsGrappleUsingDirectPos`](crate::aim::aim::PlayerAimControl::m_IsGrappleUsingDirectPos)); otherwise a cache that
+    /// [`IsLastValidGrappleAimPosStillValid`](crate::aim::aim::PlayerAimControl::IsLastValidGrappleAimPosStillValid) accepts is
+    /// restored into the slot, and any other cache is cleared.
+    pub unsafe fn UpdateLastValidGrappleTarget(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateLastValidGrappleTarget_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetTargetGrappleFitness_ADDRESS: usize = 0x140CE69A0;
+    /// Scores `target` as a grapple candidate for [`UpdateAllTargets`](crate::aim::aim::PlayerAimControl::UpdateAllTargets):
+    /// rejects objects the grapple cannot attach to, the object the wire is attached to, and targets
+    /// out of range, then adds the object-kind priority to
+    /// [`GetFitnessScore`](crate::aim::aim::PlayerAimControl::GetFitnessScore)'s score. `game_object` is the target object's
+    /// `CGameObject` subobject. Only runs while the aim type is
+    /// [`EAuto`](crate::aim::aim::AimType::EAuto).
+    pub unsafe fn SetTargetGrappleFitness(
+        &mut self,
+        game_object: *mut ::std::ffi::c_void,
+        target: *mut crate::aim::target::Target,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                game_object: *mut ::std::ffi::c_void,
+                target: *mut crate::aim::target::Target,
+            ) -> bool = ::std::mem::transmute(Self::SetTargetGrappleFitness_ADDRESS);
+            f(self as *mut Self as _, game_object, target)
+        }
+    }
+    pub const GetFitnessScore_ADDRESS: usize = 0x140CE6000;
+    /// The shared fitness score of `target` for `target_type`, written to `score`: the angle between
+    /// the target's body position and the forward of
+    /// [`GetAdjustedCameraMatrix`](crate::aim::aim::PlayerAimControl::GetAdjustedCameraMatrix), against the per-purpose cone
+    /// scaled by the camera field of view, plus distance terms. Returns whether the target is inside
+    /// the cone. The disassembler mislabels it `CHeavyWeaponBlendState::UpdateSamplers`.
+    pub unsafe fn GetFitnessScore(
+        &mut self,
+        target: *mut crate::aim::target::Target,
+        target_type: crate::aim::target::TargetType,
+        score: *mut f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target: *mut crate::aim::target::Target,
+                target_type: crate::aim::target::TargetType,
+                score: *mut f32,
+            ) -> bool = ::std::mem::transmute(Self::GetFitnessScore_ADDRESS);
+            f(self as *mut Self as _, target, target_type, score)
+        }
+    }
+    pub const IsTargetVisibleCast_ADDRESS: usize = 0x140CE7410;
+    /// Whether `target` is visible for `target_type`: queues the target's visibility raycast from
+    /// the camera position
+    /// ([`GameCameraManager::GetCameraMatrix`](crate::camera::game_camera_manager::GameCameraManager::GetCameraMatrix),
+    /// 0.1 units forward) to its body position, and answers from the last completed result.
+    pub unsafe fn IsTargetVisibleCast(
+        &mut self,
+        target: *mut crate::aim::target::Target,
+        target_type: crate::aim::target::TargetType,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target: *mut crate::aim::target::Target,
+                target_type: crate::aim::target::TargetType,
+            ) -> bool = ::std::mem::transmute(Self::IsTargetVisibleCast_ADDRESS);
+            f(self as *mut Self as _, target, target_type)
+        }
+    }
     pub const UpdatePostSim_ADDRESS: usize = 0x140CF5C50;
     /// The per-tick aim update after the camera for `character`: runs
     /// [`UpdateInput`](crate::aim::aim::PlayerAimControl::UpdateInput), [`UpdateRange`](crate::aim::aim::PlayerAimControl::UpdateRange),
     /// [`UpdateDirectAim`](crate::aim::aim::PlayerAimControl::UpdateDirectAim), [`UpdateAllTargets`](crate::aim::aim::PlayerAimControl::UpdateAllTargets),
-    /// and `UpdateLastValidGrappleTarget`.
+    /// and [`UpdateLastValidGrappleTarget`](crate::aim::aim::PlayerAimControl::UpdateLastValidGrappleTarget).
     pub unsafe fn UpdatePostSim(
         &mut self,
         dt: f32,
@@ -408,6 +500,117 @@ impl std::convert::AsRef<PlayerAimControl> for PlayerAimControl {
 }
 impl std::convert::AsMut<PlayerAimControl> for PlayerAimControl {
     fn as_mut(&mut self) -> &mut PlayerAimControl {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// The player aim's ray filter (`CPlayerAimRaycastFilter`): an [`IgnoreMaterialFlagFilter`](crate::physics::IgnoreMaterialFlagFilter) that
+/// also rejects two ignored objects. A hit is rejected when the hit instance's owning game object is
+/// either ignored object or shares its object id; when, for the first ignored object, the hit is a
+/// weapon that character is using; or when the hit is a character with an unidentified exclusion flag set.
+/// Hits on vehicles are accepted once the first ignored object has been tested. Only the physics
+/// instance kinds of characters, rigid and static bodies, and a few others are accepted.
+pub struct PlayerAimRaycastFilter {
+    pub base: crate::physics::IgnoreMaterialFlagFilter,
+    /// The objects the filter never hits (primary game-object pointers, such as a `CCharacter`), or
+    /// null. The player aim sets the character and, outside the stunt position, its vehicle.
+    pub m_IgnoreObject: [*mut ::std::ffi::c_void; 2],
+}
+fn _PlayerAimRaycastFilter_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xD0], PlayerAimRaycastFilter>([0u8; 0xD0]);
+    }
+    unreachable!()
+}
+impl PlayerAimRaycastFilter {
+    /// `CRaycastFilter::CRaycastFilter`: constructs the filter with its two material masks, the
+    /// instance to ignore (may be null), and the world (null selects [`PhysicsSystem::m_World`](crate::physics::PhysicsSystem::m_World)).
+    pub unsafe fn Construct(
+        &mut self,
+        ignore_material_mask: crate::physics::MaterialPassFlags,
+        force_material_mask: crate::physics::MaterialPassFlags,
+        ignore_instance: *mut ::std::ffi::c_void,
+        world: *const crate::physics::hknpWorld,
+    ) -> *mut crate::physics::RaycastFilter {
+        unsafe {
+            self.base
+                .Construct(
+                    ignore_material_mask,
+                    force_material_mask,
+                    ignore_instance,
+                    world,
+                )
+        }
+    }
+    /// Sets or clears [`BULLET_PASS`](crate::physics::MaterialPassFlags::BULLET_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreBulletPass(&mut self, ignore: bool) {
+        unsafe { self.base.SetIgnoreBulletPass(ignore) }
+    }
+    /// Sets or clears [`RAY_PASS`](crate::physics::MaterialPassFlags::RAY_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreRayPass(&mut self, ignore: bool) {
+        unsafe { self.base.SetIgnoreRayPass(ignore) }
+    }
+    /// Sets or clears [`CAMERA_PASS`](crate::physics::MaterialPassFlags::CAMERA_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreCameraPass(&mut self, ignore: bool) {
+        unsafe { self.base.SetIgnoreCameraPass(ignore) }
+    }
+    pub const ConstructPlayerAim_ADDRESS: usize = 0x140C10380;
+    /// `CPlayerAimRaycastFilter::CPlayerAimRaycastFilter`: constructs the base
+    /// ([`RaycastFilter::Construct`](crate::physics::RaycastFilter::Construct) with the physics system's
+    /// world), clears [`m_IgnoreObject`](crate::aim::aim::PlayerAimRaycastFilter::m_IgnoreObject), and sets the virtual table.
+    pub unsafe fn ConstructPlayerAim(
+        &mut self,
+        ignore_material_mask: crate::physics::MaterialPassFlags,
+        force_material_mask: crate::physics::MaterialPassFlags,
+        ignore_instance: *mut ::std::ffi::c_void,
+    ) -> *mut crate::aim::aim::PlayerAimRaycastFilter {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ignore_material_mask: crate::physics::MaterialPassFlags,
+                force_material_mask: crate::physics::MaterialPassFlags,
+                ignore_instance: *mut ::std::ffi::c_void,
+            ) -> *mut crate::aim::aim::PlayerAimRaycastFilter = ::std::mem::transmute(
+                Self::ConstructPlayerAim_ADDRESS,
+            );
+            f(
+                self as *mut Self as _,
+                ignore_material_mask,
+                force_material_mask,
+                ignore_instance,
+            )
+        }
+    }
+}
+impl std::convert::AsRef<crate::physics::IgnoreMaterialFlagFilter>
+for PlayerAimRaycastFilter {
+    fn as_ref(&self) -> &crate::physics::IgnoreMaterialFlagFilter {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::physics::IgnoreMaterialFlagFilter>
+for PlayerAimRaycastFilter {
+    fn as_mut(&mut self) -> &mut crate::physics::IgnoreMaterialFlagFilter {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<crate::physics::RaycastFilter> for PlayerAimRaycastFilter {
+    fn as_ref(&self) -> &crate::physics::RaycastFilter {
+        &self.base.base
+    }
+}
+impl std::convert::AsMut<crate::physics::RaycastFilter> for PlayerAimRaycastFilter {
+    fn as_mut(&mut self) -> &mut crate::physics::RaycastFilter {
+        &mut self.base.base
+    }
+}
+impl std::convert::AsRef<PlayerAimRaycastFilter> for PlayerAimRaycastFilter {
+    fn as_ref(&self) -> &PlayerAimRaycastFilter {
+        self
+    }
+}
+impl std::convert::AsMut<PlayerAimRaycastFilter> for PlayerAimRaycastFilter {
+    fn as_mut(&mut self) -> &mut PlayerAimRaycastFilter {
         self
     }
 }

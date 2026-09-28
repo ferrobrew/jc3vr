@@ -407,7 +407,11 @@ pub struct WeaponBase {
     pub m_EquipSlot: crate::character::inventory::WeaponSlot,
     /// The weapon's state.
     pub m_State: crate::equipment::weapon::WeaponState,
-    _field_428: [u8; 62],
+    _field_428: [u8; 56],
+    /// The hash of the weapon type's name, which identifies the weapon type (the damage messages
+    /// carry it, and type-specific code compares it against named hashes).
+    pub m_WeaponNameHash: u32,
+    _field_464: [u8; 2],
     /// Whether precision aim is disabled for this weapon; the player's aim-input handling zeroes
     /// the aim timer while it is set.
     pub m_IsPrecisionAimDisabled: bool,
@@ -731,6 +735,23 @@ impl WeaponBase {
             f(self as *mut Self as _, dt, aim_position, input)
         }
     }
+    /// The serial counterpart of
+    /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel), called with the
+    /// same arguments by
+    /// [`Inventory::UpdateWeapons_Serial`](crate::character::inventory::Inventory::UpdateWeapons_Serial).
+    /// It does not write
+    /// [`m_AimTargetPosition`](crate::equipment::weapon::WeaponBase::m_AimTargetPosition).
+    pub unsafe fn UpdateFromUserPostSim_Serial(
+        &mut self,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).UpdateFromUserPostSim_Serial).read();
+            f(self as *mut Self as _, dt, aim_position, input)
+        }
+    }
     /// Returns the weapon type's tuning block (`SWeaponTuningBase`), from which the fire code
     /// reads recoil, scatter, and spread ranges.
     pub unsafe fn GetTuningBase(&self) -> *const ::std::ffi::c_void {
@@ -933,8 +954,17 @@ pub struct WeaponBaseVftable {
         aim_position: *const crate::types::math::Vector3,
         input: *const ::std::ffi::c_void,
     ),
-    _vfunc_55: unsafe extern "system" fn(
+    /// The serial counterpart of
+    /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel), called with the
+    /// same arguments by
+    /// [`Inventory::UpdateWeapons_Serial`](crate::character::inventory::Inventory::UpdateWeapons_Serial).
+    /// It does not write
+    /// [`m_AimTargetPosition`](crate::equipment::weapon::WeaponBase::m_AimTargetPosition).
+    pub UpdateFromUserPostSim_Serial: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const ::std::ffi::c_void,
     ),
     _vfunc_56: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,

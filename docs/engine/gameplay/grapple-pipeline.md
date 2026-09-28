@@ -17,7 +17,7 @@ There is no grapple-specific raycast. `PlayerAimControl` owns aim for the local 
 
 Where the chosen grapple result is read:
 
-- [`PlayerAimControl::GetActiveGrappleTargetPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-GetActiveGrappleTargetPosition) returns a pointer to `m_AimPos[TARGET_GRAPPLE]`. The aim blend states and `CInventory::UpdateWeapons_Serial` call it.
+- [`PlayerAimControl::GetActiveGrappleTargetPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-GetActiveGrappleTargetPosition) returns a pointer to `m_AimPos[TARGET_GRAPPLE]`. The aim blend states and the grapple's fire-input predicate (`CGrapplingHook::GetFireInputEnabled`, which the disassembler mislabels `CInventory::UpdateWeapons_Serial`) call it.
 - [`PlayerAimControl::GetCurrentGrappleTargetGO`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-GetCurrentGrappleTargetGO) and [`PlayerAimControl::GetCurrentGrappleTargetWeakGO`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-GetCurrentGrappleTargetWeakGO) return the cached grapple game object, gated on `m_HasLastValidGrapple && m_IsInRange[TARGET_GRAPPLE]`.
 - [`PlayerAimControl::IsLastValidGrappleAimPosStillValid`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-IsLastValidGrappleAimPosStillValid) re-validates the cached grapple aim by re-reading `GetCameraMatrix`. It is one of the few grapple-specific callers of the camera getter.
 

@@ -13,9 +13,13 @@
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
 //! - [`body`]: the player's body dimensions and the remap onto the character's proportions;
+//! - [`gamepad_setting`]: the game's active-input-device setting held at the gamepad under the
+//!   controller scheme;
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
 //! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
-//!   update.
+//!   update;
+//! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
+//!   off-hand's ray.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
@@ -23,6 +27,7 @@
 
 use re_utilities::hook_library::HookLibrary;
 
+pub mod aim;
 pub mod aim_state;
 // The remap is milestone 2's; until the posture and hand work call it, only its tests and the
 // debug UI's readout of the loaded dimensions do.
@@ -34,6 +39,7 @@ pub mod bindings;
 pub mod body;
 pub mod config;
 pub mod frame;
+pub mod gamepad_setting;
 pub mod hands;
 pub mod mode;
 pub mod scheme;
@@ -46,4 +52,5 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(aim_state::hook_library())
         .with_hook_library(hands::hook_library())
+        .with_hook_library(aim::hook_library())
 }

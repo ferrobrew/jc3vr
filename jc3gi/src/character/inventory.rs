@@ -4,7 +4,14 @@
 /// ([`Character::m_Inventory`](crate::character::character::Character::m_Inventory)). Only some members
 /// are mapped.
 pub struct Inventory {
-    _field_0: [u8; 192],
+    _field_0: [u8; 32],
+    /// The weapon in each slot, indexed by [`WeaponSlot`](crate::character::inventory::WeaponSlot) (up to
+    /// [`E_NUM_WEAPON_SLOTS`](crate::character::inventory::WeaponSlot::E_NUM_WEAPON_SLOTS)); a null pointer for an empty slot.
+    /// `CCharacter::GetWeaponInInventory` returns a reference to an entry.
+    pub m_Weapons: [crate::types::shared_ptr::SharedPtr<
+        crate::equipment::weapon::WeaponBase,
+    >; 8],
+    _field_a0: [u8; 32],
     /// The character's grappling hook, or null before the inventory is populated.
     /// `CCharacter::GetGrapplingHook` returns a reference to this field.
     pub m_GrapplingHook: crate::types::shared_ptr::SharedPtr<
@@ -44,9 +51,16 @@ impl Inventory {
             f(self as *mut Self as _, dt, muzzle_target, grenade_target)
         }
     }
-    pub const UpdateWeapons_Parallel_ADDRESS: usize = 0x14091BBB0;
-    /// The inventory's parallel weapon update, taking the same aim targets as
-    /// [`Update_Parallel`](crate::character::inventory::Inventory::Update_Parallel).
+    pub const UpdateWeapons_Parallel_ADDRESS: usize = 0x1408C69A0;
+    /// The inventory's parallel weapon update, called from [`Update_Parallel`](crate::character::inventory::Inventory::Update_Parallel)
+    /// with the same aim targets. It calls each active weapon's
+    /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel):
+    /// the mounted gun in [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY) while the owner is in a
+    /// mounted-gun state, otherwise the boost wingsuit's guns while wingsuiting or else the wielding
+    /// weapon, all with `muzzle_target`, and then the selected grenade with `grenade_target`. The
+    /// fire inputs passed down come from the owner's
+    /// [`m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs), zeroed while shooting
+    /// (or throwing) is not allowed. The disassembler mislabels it `CGrapplingHook::GetFireInputEnabled`.
     pub unsafe fn UpdateWeapons_Parallel(
         &mut self,
         dt: f32,
@@ -60,6 +74,27 @@ impl Inventory {
                 muzzle_target: *const crate::types::math::Vector3,
                 grenade_target: *const crate::types::math::Vector3,
             ) = ::std::mem::transmute(Self::UpdateWeapons_Parallel_ADDRESS);
+            f(self as *mut Self as _, dt, muzzle_target, grenade_target)
+        }
+    }
+    pub const UpdateWeapons_Serial_ADDRESS: usize = 0x14091BBB0;
+    /// The serial counterpart of [`UpdateWeapons_Parallel`](crate::character::inventory::Inventory::UpdateWeapons_Parallel): the same
+    /// weapons with the same targets and inputs, through
+    /// [`UpdateFromUserPostSim_Serial`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Serial),
+    /// and additionally the planted-explosive slot's weapon.
+    pub unsafe fn UpdateWeapons_Serial(
+        &mut self,
+        dt: f32,
+        muzzle_target: *const crate::types::math::Vector3,
+        grenade_target: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                muzzle_target: *const crate::types::math::Vector3,
+                grenade_target: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::UpdateWeapons_Serial_ADDRESS);
             f(self as *mut Self as _, dt, muzzle_target, grenade_target)
         }
     }
