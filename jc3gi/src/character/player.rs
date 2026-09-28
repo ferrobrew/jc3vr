@@ -120,7 +120,9 @@ pub const Player_UpdateMentalState_ADDRESS: usize = 0x140C12BE0;
 /// set, combat while [`Character_ForceCombat`](crate::character::character::get_Character_ForceCombat) is
 /// set, relaxed while the character is holstering (or a further character state check holds), and
 /// combat while it has weapon input, throws a grenade, wields a heavy weapon, or aims a weapon
-/// outside explosive planting. Otherwise combat decays to relaxed once the combat hold expires.
+/// outside explosive planting. Otherwise combat decays to relaxed once the combat hold expires,
+/// and on that transition, with a weapon wielded, it queues `ACT_ON_UNEQUIP_WEAPON_SLOW` through
+/// [`Character::QueueAct`](crate::character::character::Character::QueueAct), an automatic holster.
 pub unsafe fn Player_UpdateMentalState(
     avatar: *mut crate::character::avatar::Avatar,
     dt: f32,

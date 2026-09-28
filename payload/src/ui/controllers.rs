@@ -9,6 +9,7 @@ use glam::{Quat, Vec3};
 use crate::{
     config,
     controllers::{
+        aim_state::{self, AimStateStatus, IkTask},
         bindings::{self, Idle, TickReport, hold::Phase, inject::Outcome},
         body::{self, BodySource},
         config::{GunReadout, LocomotionDirection, Posture, SchemeSetting, SeatTransition},
@@ -30,6 +31,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let detection = mode::current();
     let snapshot = mode::last_snapshot();
     let report = bindings::last_report();
+    let aim = aim_state::status();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -63,6 +65,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 mode_readout(ui, detection, snapshot.as_ref(), &report)
             });
+
+        egui::CollapsingHeader::new("Aim state and mental state")
+            .default_open(true)
+            .show(ui, |ui| aim_state_readout(ui, &aim));
 
         egui::CollapsingHeader::new("Live controller frame")
             .default_open(true)
@@ -279,8 +285,28 @@ fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     let c = &mut cfg.controllers;
     egui::CollapsingHeader::new("Body and aiming").show(ui, |ui| {
-        ui.checkbox(&mut c.aim_state.pin, "Aim-state pin");
-        ui.checkbox(&mut c.aim_state.mental_state_cuts, "Mental-state cuts");
+        let a = &mut c.aim_state;
+        ui.checkbox(&mut a.pin, "Aim-state pin (weapon)").on_hover_text(
+            "Keep the body in the no-aim animation family while firing still works.",
+        );
+        ui.checkbox(&mut a.pin_grapple, "Aim-state pin (grapple)").on_hover_text(
+            "Also clear the grapple aim: the body stops turning to face the hook on a held tether.",
+        );
+        ui.checkbox(&mut a.skip_arm_ik, "Skip the game's arm aim IK");
+        ui.checkbox(&mut a.neutral_aim_point, "Neutral body aim point").on_hover_text(
+            "Hold the point the body turns toward ahead of the body. The weapons keep their own aim.",
+        );
+        ui.add_enabled(
+            a.neutral_aim_point,
+            egui::Slider::new(&mut a.neutral_aim_distance_m, 5.0..=100.0)
+                .text("Neutral point distance (m)"),
+        );
+        ui.checkbox(&mut a.clear_wall_block, "Clear the wall-penetration block");
+        ui.checkbox(&mut a.mental_state_cuts, "Mental-state cuts").on_hover_text(
+            "No automatic draw when combat starts and no automatic holster when it ends.",
+        );
+        ui.checkbox(&mut a.without_controllers, "Apply the above without controllers")
+            .on_hover_text("For testing with a gamepad: changes the body for every player.");
         ui.checkbox(&mut c.hands.ik, "Hand IK");
         ui.checkbox(&mut c.hands.late_update, "Render-time late update");
         ui.checkbox(&mut c.aim.gun, "Gun aim from the dominant hand");
@@ -460,6 +486,64 @@ fn mode_readout(
                 ui.end_row();
             }
         });
+}
+
+fn aim_state_readout(ui: &mut Ui, status: &AimStateStatus) {
+    let pin = &status.pin;
+    ui.label(if pin.active {
+        format!(
+            "Weapon pin: holding · flags {:08b} → {:08b} · aiming bit {} · timer positive {}",
+            pin.flags_before,
+            pin.flags_after,
+            yes_no(pin.aiming_bit_after),
+            yes_no(pin.timer_positive)
+        )
+    } else {
+        "Weapon pin: inactive".to_owned()
+    });
+    ui.label(format!(
+        "Pinned updates {} · held against the game's aim {}",
+        pin.pinned_updates, pin.held_against_aim
+    ));
+    ui.label(format!(
+        "Grapple pin: {} · cleared {} times",
+        if status.grapple_pin_active {
+            "holding"
+        } else {
+            "inactive"
+        },
+        status.grapple_cleared
+    ));
+    ui.label(format!(
+        "Aim IK skipped: {}",
+        IkTask::ALL
+            .iter()
+            .zip(status.ik_skipped)
+            .map(|(task, count)| format!("{} {count}", task.label()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    ui.label(match status.neutral_point {
+        Some(point) => format!("Neutral aim point: {}", vec3(point)),
+        None => "Neutral aim point: inactive".to_owned(),
+    });
+    ui.label(format!(
+        "Wall-penetration blocks cleared: {}",
+        status.wall_blocks_cleared
+    ));
+    let m = &status.mental;
+    ui.label(format!(
+        "Mental state {} · combat draw {} · deliberate holster pending {}",
+        m.mental_state
+            .map_or("unknown".to_owned(), |state| state.to_string()),
+        if m.draw_blocked { "blocked" } else { "allowed" },
+        yes_no(m.deliberate_pending)
+    ));
+    ui.label(format!(
+        "Automatic holsters swallowed: slow unequip {}, relaxed holster {} · deliberate holsters \
+         passed {}",
+        m.unequip_slow_swallowed, m.relaxed_holster_swallowed, m.deliberate_holsters_passed
+    ));
 }
 
 fn idle_label(idle: Idle) -> &'static str {

@@ -18,9 +18,11 @@ crate::__bitflags! {
     #[doc =
     " The character's packed aiming and presentation bit-flags (one byte of `CCharacter` bitfields)."]
     #[doc =
-    " [`HandleAimingInputPlayer`](crate::character::character::Character::HandleAimingInputPlayer) writes the aim bits each frame for"]
+    " [`HandleAimingInputPlayer`](crate::character::character::Character::HandleAimingInputPlayer) writes the weapon-aim bit each"]
     #[doc =
-    " the player; the locomotion state machine reads them to choose aim-relative (strafe) movement over"]
+    " tick for the player and [`PreSimUpdateGrapple`](crate::character::character::Character::PreSimUpdateGrapple) the grapple-aim"]
+    #[doc =
+    " bit; the locomotion state machine reads them to choose aim-relative (strafe) movement over"]
     #[doc =
     " run/steer: `m_AimingWeapon` (or `m_AimingGrapple`) is the switch that makes the body face the aim"]
     #[doc =
@@ -243,7 +245,7 @@ pub struct Character {
     vftable: *const crate::character::character::CharacterVftable,
     _field_8: [u8; 2352],
     /// The character's aiming-settings resource (`TResourceCachePtr<SCharacterAimingSettings>`, a
-    /// resource handle resolved through the resource cache). `HandleAimingInputNPC` reads the
+    /// resource handle resolved through the resource cache). Both aim-input updates read the
     /// aim-timer refill value from the resolved settings.
     pub m_AimingSettings: *mut u8,
     _field_940: [u8; 64],
@@ -498,14 +500,47 @@ impl Character {
             f(self as *mut Self as _, dt)
         }
     }
-    pub const HandleAimingInputPlayer_ADDRESS: usize = 0x1407F0530;
-    /// The per-frame player aiming-input update. Resolves whether the player is aiming a weapon or
-    /// grapple from the equipped weapon and [`m_AimTimer`](crate::character::character::Character::m_AimTimer), then writes the
-    /// result into [`m_AimFlags`](crate::character::character::Character::m_AimFlags)
-    /// ([`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon) / [`m_AimingGrapple`](crate::character::character::AimState::m_AimingGrapple)).
-    /// The locomotion tasks read those flags to select aim-relative (strafe) movement. NPCs use a
-    /// separate `HandleAimingInputNPC`; this variant is player-only and is the single point that
-    /// decides the on-foot aim/strafe state.
+    pub const HandleAimingInputPlayer_ADDRESS: usize = 0x1407F0160;
+    /// The per-tick aiming-input update of a character driven by player input. Called from
+    /// `UpdatePassPreStateMachines_Parallel` on the branch that also runs the player's global input
+    /// and the inventory's pre-state update; other characters run
+    /// [`HandleAimingInputNPC`](crate::character::character::Character::HandleAimingInputNPC) instead. It is the only code that
+    /// reads [`SB_NO_WEAPON_AIM`](crate::state::StateBitFlag::SB_NO_WEAPON_AIM) besides its NPC
+    /// counterpart.
+    ///
+    /// With the selected weapon (the planted explosive while planting), it refills
+    /// [`m_AimTimer`](crate::character::character::Character::m_AimTimer) from [`m_AimingSettings`](crate::character::character::Character::m_AimingSettings), or
+    /// from a non-negative [`WeaponBase::GetAimTimerOverride`](crate::equipment::weapon::WeaponBase::GetAimTimerOverride),
+    /// while the weapon reports that it is aiming and
+    /// [`WEAPONS_ENABLED`](crate::character::character::DamageStateFlags::WEAPONS_ENABLED) is set, or while the player's
+    /// [`m_AimMode`](crate::character::player::Player::m_AimMode) is
+    /// [`AIM_PRECISION`](crate::character::player::AimMode::AIM_PRECISION). It zeroes the timer instead
+    /// when the weapon disables precision aim
+    /// ([`m_IsPrecisionAimDisabled`](crate::equipment::weapon::WeaponBase::m_IsPrecisionAimDisabled)), when
+    /// it cannot be aimed
+    /// ([`m_AimingWeaponIsPossible`](crate::equipment::weapon::WeaponBase::m_AimingWeaponIsPossible)
+    /// clear), or while the mental state is
+    /// [`E_RELAXED`](crate::character::avatar::MentalState::E_RELAXED). With no weapon it zeroes the timer
+    /// unless [`SB_IS_DRAWING_WEAPON`](crate::state::StateBitFlag::SB_IS_DRAWING_WEAPON) or
+    /// [`SB_IN_FULLBODY_PICKUP`](crate::state::StateBitFlag::SB_IN_FULLBODY_PICKUP) is set.
+    ///
+    /// The timer then counts down, held at a 0.5 s floor while
+    /// [`SB_PAUSE_AIM_TIMER`](crate::state::StateBitFlag::SB_PAUSE_AIM_TIMER) is set, and a positive timer
+    /// means aiming. Planting an explosive outside
+    /// [`SB_IS_HOLSTERING_WEAPON`](crate::state::StateBitFlag::SB_IS_HOLSTERING_WEAPON), and
+    /// [`SB_IS_SWITCHING_WEAPONS`](crate::state::StateBitFlag::SB_IS_SWITCHING_WEAPONS) in one switch
+    /// phase, force aiming. [`SB_NO_WEAPON_AIM_NOAIM_TRANSITIONS`](crate::state::StateBitFlag::SB_NO_WEAPON_AIM_NOAIM_TRANSITIONS)
+    /// keeps the previous result, and [`SB_NO_WEAPON_AIM`](crate::state::StateBitFlag::SB_NO_WEAPON_AIM)
+    /// forces the result to "not aiming" over everything else. The result is written to
+    /// [`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon); [`m_AimingGrapple`](crate::character::character::AimState::m_AimingGrapple)
+    /// is left as [`PreSimUpdateGrapple`](crate::character::character::Character::PreSimUpdateGrapple) wrote it. The function then
+    /// records the previous state in `m_WasAiming`, mirrors `m_AimingWeapon | m_AimingGrapple` into
+    /// [`SB_IS_AIMING_WPN_OR_GRPL`](crate::state::StateBitFlag::SB_IS_AIMING_WPN_OR_GRPL), and queues
+    /// `ACT_ON_STARTING_AIM`, `ACT_AIM`, or `ACT_ON_LEAVING_AIM` on the animated model directly
+    /// (not through [`QueueAct`](crate::character::character::Character::QueueAct)). While
+    /// [`m_AimingEnabled`](crate::character::character::AimState::m_AimingEnabled) is clear it only clears `m_AimingWeapon`.
+    ///
+    /// The locomotion tasks read the aim flags to select aim-relative (strafe) movement.
     pub unsafe fn HandleAimingInputPlayer(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
@@ -896,13 +931,20 @@ impl Character {
             f(self as *const Self as _)
         }
     }
-    pub const HandleAimingInputNPC_ADDRESS: usize = 0x1407F0160;
-    /// The per-frame aiming-input update for non-player characters: refreshes and counts down
-    /// [`m_AimTimer`](crate::character::character::Character::m_AimTimer) (the refill value comes from
-    /// [`m_AimingSettings`](crate::character::character::Character::m_AimingSettings)), writes the weapon-aim bit of
-    /// [`m_AimFlags`](crate::character::character::Character::m_AimFlags), mirrors it into
-    /// [`SB_IS_AIMING_WPN_OR_GRPL`](crate::state::StateBitFlag::SB_IS_AIMING_WPN_OR_GRPL),
-    /// and queues the matching aim-transition act.
+    pub const HandleAimingInputNPC_ADDRESS: usize = 0x1407F0530;
+    /// The per-tick aiming-input update of a character not driven by player input (the other
+    /// branch of `UpdatePassPreStateMachines_Parallel` from
+    /// [`HandleAimingInputPlayer`](crate::character::character::Character::HandleAimingInputPlayer)). It refills
+    /// [`m_AimTimer`](crate::character::character::Character::m_AimTimer) from [`m_AimingSettings`](crate::character::character::Character::m_AimingSettings) (or the
+    /// wielded weapon's non-negative aim-timer override) while the wielded weapon reports that it
+    /// is aiming with [`WEAPONS_ENABLED`](crate::character::character::DamageStateFlags::WEAPONS_ENABLED) set, or while the
+    /// behaviour-tree avatar's aim request is set, and zeroes it with no wielded weapon or when the
+    /// weapon disables precision aim. The countdown and the tail are the player variant's: the
+    /// pause-aim-timer floor, the no-aim-transitions latch,
+    /// [`SB_NO_WEAPON_AIM`](crate::state::StateBitFlag::SB_NO_WEAPON_AIM), the write of
+    /// [`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon), the mirror into
+    /// [`SB_IS_AIMING_WPN_OR_GRPL`](crate::state::StateBitFlag::SB_IS_AIMING_WPN_OR_GRPL), and the
+    /// aim-transition act.
     pub unsafe fn HandleAimingInputNPC(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
@@ -986,8 +1028,13 @@ impl Character {
         }
     }
     pub const HolsterWeapon_ADDRESS: usize = 0x1407F2D80;
-    /// Holsters the current weapon when the inventory's animation state allows it by queuing the
-    /// holster act.
+    /// Holsters the selected weapon (the planted explosive while planting). For a character with
+    /// [`m_IsPlayer`](crate::character::character::Character::m_IsPlayer) set it queues nothing itself: it forces the avatar's
+    /// [`m_MentalState`](crate::character::avatar::Avatar::m_MentalState) to
+    /// [`E_RELAXED`](crate::character::avatar::MentalState::E_RELAXED) with a zero hold timer, and
+    /// [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)'s
+    /// relaxed branch then queues `UB_ACT_HOLSTER`. Other characters queue `UB_ACT_HOLSTER` on the
+    /// animated model directly when the inventory's animation state allows holstering.
     pub unsafe fn HolsterWeapon(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(

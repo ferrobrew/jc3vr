@@ -210,23 +210,48 @@ impl BindingsConfig {
     }
 }
 
-/// The aim-state pin and the mental-state cuts. Both act only under the controller scheme.
+/// The aim-state pin and the mental-state cuts (see [`crate::controllers::aim_state`]). Each part
+/// has its own toggle so that it can be tested alone, and all of them act only under the
+/// controller scheme unless [`without_controllers`](Self::without_controllers) is set.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct AimStateConfig {
-    /// Pin the local player's aim state clear, so that the body stays in the no-aim animation
-    /// family, the game's arm aim IK never runs, and the controllers own the arms.
+    /// Pin the local player's weapon aim clear, so that the body stays in the no-aim animation
+    /// family while firing still works.
     pub pin: bool,
+    /// Also pin the grapple aim clear, which the weapon pin does not reach. It changes how the
+    /// body behaves on a held tether: the body no longer turns to face the hook.
+    pub pin_grapple: bool,
+    /// Skip the local player's arm and upper-body aim IK tasks, because the controllers own the
+    /// arms.
+    pub skip_arm_ik: bool,
+    /// Hold the body's aim point neutral, ahead of the body, so that nothing turns or twists the
+    /// body toward where the gun points. The weapons keep aiming where the game aims them.
+    pub neutral_aim_point: bool,
+    /// How far ahead of the head the neutral aim point sits, metres.
+    pub neutral_aim_distance_m: f32,
+    /// Clear the wall-penetration block on the player's held weapon, which the game computes from
+    /// where the animation would put the barrel rather than where the hand holds it.
+    pub clear_wall_block: bool,
     /// Remove the combat mental state's effects on the player's body: no automatic draw when
     /// combat starts and no automatic holster when it ends. The mental state itself keeps running
-    /// for AI perception.
+    /// for AI perception, and a deliberate holster still works.
     pub mental_state_cuts: bool,
+    /// Apply every enabled part above under the gamepad scheme too, for testing the pin without
+    /// controllers. Off by default: it changes how the body behaves for every player.
+    pub without_controllers: bool,
 }
 
 impl AimStateConfig {
     pub const fn new() -> Self {
         Self {
             pin: true,
+            pin_grapple: true,
+            skip_arm_ik: true,
+            neutral_aim_point: true,
+            neutral_aim_distance_m: 25.0,
+            clear_wall_block: true,
             mental_state_cuts: true,
+            without_controllers: false,
         }
     }
 }

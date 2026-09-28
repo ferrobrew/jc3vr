@@ -36,7 +36,7 @@ fn _ContextBitFlag_size_check() {
 /// [`Character`](crate::character::character::Character) (wingsuit, parachute, free fall, fast fall,
 /// reeling in, motorbike, swimming, attached parachute, pre-reel, pre-hang), the grapple bits of
 /// `IsReeledIn` and `IsGrappleHanging`, the aim, drawing, holstering, and pause-aim-timer bits
-/// `HandleAimingInputNPC` tests, and `SB_DISABLE_SHOOT`. The other values are unconfirmed.
+/// `HandleAimingInputPlayer` tests, and `SB_DISABLE_SHOOT`. The other values are unconfirmed.
 pub enum StateBitFlag {
     SB_IS_WINGSUIT = 0isize as _,
     SB_IS_NO_FIRING = 1isize as _,

@@ -12,7 +12,8 @@
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
-//! - [`body`]: the player's body dimensions and the remap onto the character's proportions.
+//! - [`body`]: the player's body dimensions and the remap onto the character's proportions;
+//! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
@@ -20,6 +21,7 @@
 
 use re_utilities::hook_library::HookLibrary;
 
+pub mod aim_state;
 // The remap is milestone 2's; until the posture and hand work call it, only its tests and the
 // debug UI's readout of the loaded dimensions do.
 pub mod bindings;
@@ -38,5 +40,5 @@ pub use config::ControllersConfig;
 /// The controller subsystems' hooks, aggregated into the payload's hook library by
 /// [`crate::hooks`].
 pub(crate) fn hook_library() -> HookLibrary {
-    HookLibrary::new()
+    HookLibrary::new().with_hook_library(aim_state::hook_library())
 }

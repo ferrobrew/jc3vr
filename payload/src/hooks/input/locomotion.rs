@@ -239,7 +239,9 @@ static LAST_SHIM_AT: Mutex<Option<Instant>> = Mutex::new(None);
 /// sub-object at character + 8; the game type-checks that sub-object against `CCharacter::TYPE_ID`
 /// through its vtable and then subtracts (see `NStateTask_InputLocoMoveTask::Update` in the IDB).
 /// The RTTI check is not replicated here: the hooked tasks only run on character state machines.
-unsafe fn character_from_context(ctx: *mut StateContext) -> Option<&'static mut Character> {
+pub(crate) unsafe fn character_from_context(
+    ctx: *mut StateContext,
+) -> Option<&'static mut Character> {
     unsafe {
         let sub_object = *(ctx as *const *mut u8);
         if sub_object.is_null() {

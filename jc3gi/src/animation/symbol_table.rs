@@ -28,6 +28,11 @@ impl EventIdSymbolTable {
     }
 }
 impl EventIdSymbolTable {
+    /// The automatic holster queued by `CPlayer::UpdateMentalState`
+    /// ([`Player_UpdateMentalState`](crate::character::player::Player_UpdateMentalState)) when the
+    /// player's mental state decays to relaxed with a weapon wielded. It drives a state chain in
+    /// `rico_base.afsmb` whose `NWeaponUnequipTask` queues [`UB_ACT_HOLSTER`](crate::animation::symbol_table::EventIdSymbolTable::UB_ACT_HOLSTER).
+    pub const ACT_ON_UNEQUIP_WEAPON_SLOW: &::std::ffi::CStr = c"ACT_ON_UNEQUIP_WEAPON_SLOW";
     /// The on-foot / land-vehicle reversing act: drives the `S_REVERSE_*` states in
     /// `rico_base.afsmb`, where Rico turns to look over his shoulder while backing up.
     pub const ACT_REVERSE: &::std::ffi::CStr = c"ACT_REVERSE";
@@ -40,6 +45,12 @@ impl EventIdSymbolTable {
     /// per-character idle countdown (reset to a random ~8.5-12 s each time the character moves)
     /// elapses while the character is standing still, calm, and not attached to a vehicle.
     pub const ACT_TO_IDLE_ONE_OFF: &::std::ffi::CStr = c"ACT_TO_IDLE_ONE_OFF";
+    /// The upper-body holster act. Queued by
+    /// [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)'s
+    /// relaxed branch for the player, by
+    /// [`Character::HolsterWeapon`](crate::character::character::Character::HolsterWeapon) for other
+    /// characters, and by `NWeaponUnequipTask` on entering its state.
+    pub const UB_ACT_HOLSTER: &::std::ffi::CStr = c"UB_ACT_HOLSTER";
 }
 impl std::convert::AsRef<EventIdSymbolTable> for EventIdSymbolTable {
     fn as_ref(&self) -> &EventIdSymbolTable {

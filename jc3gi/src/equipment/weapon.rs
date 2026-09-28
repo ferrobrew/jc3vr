@@ -212,6 +212,67 @@ impl std::convert::AsMut<TurretWeaponComponent> for TurretWeaponComponent {
     }
 }
 #[repr(C, align(8))]
+/// `CWallPenetrationWeaponComponent`: the weapon component that detects a held weapon's barrel
+/// penetrating a wall or a character. Only the owner is bound.
+pub struct WallPenetrationWeaponComponent {
+    _field_0: [u8; 208],
+    /// The weapon the component belongs to (`CWeaponComponentBase::m_Owner`).
+    pub m_Owner: *mut crate::equipment::weapon::WeaponBase,
+}
+fn _WallPenetrationWeaponComponent_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xD8], WallPenetrationWeaponComponent>([0u8; 0xD8]);
+    }
+    unreachable!()
+}
+impl WallPenetrationWeaponComponent {
+    pub const UpdateWeapon_Serial_ADDRESS: usize = 0x14092F930;
+    /// The component's serial weapon update. It acts only while the owner's
+    /// [`m_State`](crate::equipment::weapon::WeaponBase::m_State) is [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING) or
+    /// [`E_WS_DUAL_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_DUAL_WIELDING) and the owner is used by a player,
+    /// and it is the only writer of the owner's
+    /// [`m_IsWeaponPenetratingWallIfInAim`](crate::equipment::weapon::WeaponBase::m_IsWeaponPenetratingWallIfInAim),
+    /// [`m_IsWeaponPenetratingCharacterIfInAim`](crate::equipment::weapon::WeaponBase::m_IsWeaponPenetratingCharacterIfInAim),
+    /// and [`m_IsLeanOverFirePossible`](crate::equipment::weapon::WeaponBase::m_IsLeanOverFirePossible). While the holder
+    /// is reeled in, drawing, holstering, or switching weapons, or is in a full-body pickup, it
+    /// clears both penetration flags and sets the lean-over and
+    /// [`m_AimingWeaponIsPossible`](crate::equipment::weapon::WeaponBase::m_AimingWeaponIsPossible) flags. Otherwise it
+    /// collides a box, built from the holder's shoulders or hips toward the barrel, against the
+    /// world. A character hit sets the character flag and clears the wall flag. A world hit sets
+    /// the wall flag, clears lean-over, and clears `m_AimingWeaponIsPossible` unless the component
+    /// allows aiming while penetrating (`m_CanAimWhenPenetrating`). A clear result lasting long
+    /// enough clears both penetration flags and sets lean-over and `m_AimingWeaponIsPossible`
+    /// again. The box follows the holder's animated pose, not the weapon's own transform.
+    pub unsafe fn UpdateWeapon_Serial(
+        &mut self,
+        dt: f32,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        p3: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+                p3: f32,
+            ) = ::std::mem::transmute(Self::UpdateWeapon_Serial_ADDRESS);
+            f(self as *mut Self as _, dt, weapon_data, p3)
+        }
+    }
+}
+impl std::convert::AsRef<WallPenetrationWeaponComponent>
+for WallPenetrationWeaponComponent {
+    fn as_ref(&self) -> &WallPenetrationWeaponComponent {
+        self
+    }
+}
+impl std::convert::AsMut<WallPenetrationWeaponComponent>
+for WallPenetrationWeaponComponent {
+    fn as_mut(&mut self) -> &mut WallPenetrationWeaponComponent {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The animation-graph condition `C_IS_TRYING_TO_FIRE` (`CWeapoIsTryingToFireCondition`, the name
 /// is misspelt in the game). Its layout is unmapped.
 pub struct WeapoIsTryingToFireCondition {}

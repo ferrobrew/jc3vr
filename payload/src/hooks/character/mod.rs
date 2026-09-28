@@ -24,6 +24,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
+    controllers::aim_state,
     headpose,
     hooks::{self, animation::active_state_type_id, graphics_engine::render_block},
 };
@@ -1023,19 +1024,26 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
     }
 }
 
-/// Drop the vehicle reversing look-behind acts for the local player: `ACT_REVERSE` (cars) and
-/// `ACT_REVERSE_MOTORBIKE` drive the `S_REVERSE_*` states in `rico_base.afsmb`, where Rico turns
-/// to look over his shoulder. With a player-driven head, looking behind is the player's job, so
-/// the act is swallowed and the driving pose stays forward; the state machine's rule system
-/// drops the matching return transitions on its own (they only fire from the reverse states).
+/// Filter the local player's acts:
+///
+/// - Drop the vehicle reversing look-behind acts: `ACT_REVERSE` (cars) and `ACT_REVERSE_MOTORBIKE`
+///   drive the `S_REVERSE_*` states in `rico_base.afsmb`, where Rico turns to look over his
+///   shoulder. With a player-driven head, looking behind is the player's job, so the act is
+///   swallowed and the driving pose stays forward; the state machine's rule system drops the
+///   matching return transitions on its own (they only fire from the reverse states).
+/// - Drop the automatic holsters under the controller scheme's mental-state cuts (see
+///   [`aim_state::swallow_local_act`]).
 #[detour(address = jc3gi::character::character::Character::QueueAct_ADDRESS)]
 fn character_queue_act(character: *mut Character, act: *const u32) {
-    if Config::lock_query(|c| c.movement.suppress_reverse_look)
-        && (unsafe { character.as_ref() }).is_some_and(|c| c.m_IsLocalCharacter)
+    if (unsafe { character.as_ref() }).is_some_and(|c| c.m_IsLocalCharacter)
         && let Some(&id) = (unsafe { act.as_ref() })
-        && reverse_act_ids().is_some_and(|ids| ids.contains(&(id as i32)))
     {
-        return;
+        let id = id as i32;
+        let reverse = Config::lock_query(|c| c.movement.suppress_reverse_look)
+            && reverse_act_ids().is_some_and(|ids| ids.contains(&id));
+        if reverse || aim_state::swallow_local_act(id) {
+            return;
+        }
     }
     CHARACTER_QUEUE_ACT.get().unwrap().call(character, act);
 }
@@ -1062,7 +1070,7 @@ static REVERSE_ACT_IDS: OnceLock<[i32; 2]> = OnceLock::new();
 /// is not live yet (e.g. immediately after a startup injection, before the animation system has
 /// created it). Once the table exists the lookup is a pure read: the `ACT_*` names are registered by
 /// loaded animation data before gameplay queues acts.
-fn resolve_act_id(name: &std::ffi::CStr) -> Option<i32> {
+pub(crate) fn resolve_act_id(name: &std::ffi::CStr) -> Option<i32> {
     let table = unsafe { EventIdSymbolTable::get() }?;
     Some(unsafe { table.string_to_id(name.as_ptr() as *const u8) })
 }

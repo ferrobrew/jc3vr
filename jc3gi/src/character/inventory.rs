@@ -88,7 +88,23 @@ impl Inventory {
         }
     }
     pub const UpdateWeaponHandling_ADDRESS: usize = 0x140932F10;
-    /// The inventory's per-frame weapon-handling update (`CInventory::UpdateWeaponHandling`).
+    /// The inventory's per-frame weapon-handling update (`CInventory::UpdateWeaponHandling`), run
+    /// from [`Update_Parallel`](crate::character::inventory::Inventory::Update_Parallel) after
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions). It handles the holster
+    /// input ([`Character::HolsterWeapon`](crate::character::character::Character::HolsterWeapon), or a
+    /// deferred holster while the animation does not allow one), draws a weapon when weapon input
+    /// arrives with nothing wielded, the precision-aim and grenade inputs, and the weapon-selection
+    /// HUD. For the player, with no weapon input and no draw or holster playing, it acts on the
+    /// avatar's mental state: in [`E_COMBAT`](crate::character::avatar::MentalState::E_COMBAT) with
+    /// nothing wielded it draws the selected weapon when the animation allows it (the latched
+    /// permission and a clear
+    /// [`SB_DISABLE_MENTAL_STATE_DRAW_WEAPON`](crate::state::StateBitFlag::SB_DISABLE_MENTAL_STATE_DRAW_WEAPON));
+    /// in [`E_RELAXED`](crate::character::avatar::MentalState::E_RELAXED) with a weapon wielded, while
+    /// holstering is allowed and the weapon has no deferred unequip pending, it leaves precision
+    /// aim, clears the grenade and mortar permissions, and queues `UB_ACT_HOLSTER` through
+    /// [`Character::QueueAct`](crate::character::character::Character::QueueAct). The relaxed branch
+    /// fires every tick its conditions hold, and it is how the player's holster input takes
+    /// effect, since the player's `HolsterWeapon` only forces the relaxed state.
     pub unsafe fn UpdateWeaponHandling(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
