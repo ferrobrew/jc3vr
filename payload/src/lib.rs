@@ -23,6 +23,7 @@ pub mod vr;
 mod allocator;
 mod capture;
 mod config;
+mod controllers;
 mod crash;
 mod debug;
 mod director;

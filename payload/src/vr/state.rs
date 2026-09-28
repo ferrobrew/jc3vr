@@ -22,6 +22,7 @@ use crate::{
         VIEW_TYPE, VrConfig, blit,
         eye_resolution::scaled_eye_size,
         foveation,
+        input::{self, InputState},
         loader::{LoaderUnavailable, load_entry},
         mirror,
         persist::{
@@ -171,6 +172,9 @@ pub(super) struct VrState {
     pub(super) system: Option<xr::SystemId>,
     pub(super) blend_mode: xr::EnvironmentBlendMode,
     pub(super) session: Option<Session>,
+    /// The controller input of the session. `None` when it could not be set up (VR still runs
+    /// without it) or while torn down.
+    pub(super) input: Option<InputState>,
     /// The last bring-up attempt, for the retry cadence.
     last_attempt: Option<Instant>,
     /// The recenter baseline (cockpit frame). `None` until first recenter.
@@ -193,6 +197,7 @@ impl VrState {
             system: None,
             blend_mode: xr::EnvironmentBlendMode::OPAQUE,
             session: None,
+            input: None,
             last_attempt: None,
             baseline: None,
             latest_head_pose: None,
@@ -265,6 +270,9 @@ impl VrState {
 
         let mut extensions = xr::ExtensionSet::default();
         extensions.khr_d3d11_enable = true;
+        // Optional: enabled whenever the runtime offers it, since an instance's extensions are fixed
+        // at creation. Whether the hand trackers are used is the controllers' own toggle.
+        extensions.ext_hand_tracking = available.ext_hand_tracking;
         let instance = acquire_instance(&entry, &extensions, cfg.persist_instance)?;
 
         let system = instance
@@ -293,6 +301,18 @@ impl VrState {
 
         let session = acquire_session(&instance, system, cfg)?;
 
+        // Controller input is optional: without it the headset still renders, and the mod stays on
+        // the gamepad scheme.
+        let want_hand_tracking = Config::lock_query(|c| c.controllers.input.hand_tracking);
+        let input =
+            match InputState::acquire(&instance, system, &session.handle, want_hand_tracking) {
+                Ok(input) => Some(input),
+                Err(e) => {
+                    tracing::warn!(target: "vr", "{e:#}");
+                    None
+                }
+            };
+
         let runtime_name = instance.properties().ok().map(|props| {
             tracing::info!(
                 target: "vr",
@@ -307,6 +327,7 @@ impl VrState {
         self.system = Some(system);
         self.blend_mode = blend_mode;
         self.session = Some(session);
+        self.input = input;
         self.recommended_view = recommended_view;
         self.runtime_name = runtime_name;
         Ok(())
@@ -331,6 +352,10 @@ impl VrState {
             let action = match instance.poll_event(&mut events) {
                 Ok(Some(xr::Event::SessionStateChanged(e))) => PumpAction::StateChanged(e.state()),
                 Ok(Some(xr::Event::InstanceLossPending(_))) => PumpAction::InstanceLost,
+                Ok(Some(xr::Event::InteractionProfileChanged(_))) => {
+                    input::mark_profiles_dirty();
+                    continue;
+                }
                 Ok(Some(xr::Event::EventsLost(e))) => {
                     tracing::warn!(target: "vr", "lost {} OpenXR events", e.lost_event_count());
                     continue;
@@ -462,6 +487,18 @@ impl VrState {
             }
         }
         graphics_engine::BLOCK_FLIP.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        // The controller input goes before the session and the instance it belongs to: stashed
+        // alongside them when persisting, destroyed with them otherwise.
+        if let Some(input) = self.input.take() {
+            match (&self.instance, &self.session) {
+                (Some(instance), Some(session)) if persist => {
+                    input.persist(instance, &session.handle);
+                }
+                (Some(instance), _) => input.destroy(instance),
+                (None, _) => drop(input),
+            }
+        }
 
         if persist {
             if let Some(session) = self.session.take() {

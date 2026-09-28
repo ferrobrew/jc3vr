@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 pub mod camera;
+pub mod controllers;
 pub mod diagnostics;
 pub mod director;
 pub mod environment;
@@ -35,11 +36,12 @@ pub enum Tab {
     Environment,
     Vr,
     Director,
+    Controllers,
 }
 
 impl Tab {
     /// Every tab, in the order the default layout lists them.
-    const ALL: [Tab; 10] = [
+    const ALL: [Tab; 11] = [
         Tab::Performance,
         Tab::Render,
         Tab::Previews,
@@ -50,6 +52,7 @@ impl Tab {
         Tab::Environment,
         Tab::Vr,
         Tab::Director,
+        Tab::Controllers,
     ];
 }
 
@@ -82,6 +85,7 @@ impl egui_dock::TabViewer for TabBodies<'_> {
             Tab::Environment => environment::render(ui),
             Tab::Vr => vr::egui_debug_vr(ui),
             Tab::Director => director::render(ui),
+            Tab::Controllers => controllers::egui_debug_controllers(ui),
         }
     }
 

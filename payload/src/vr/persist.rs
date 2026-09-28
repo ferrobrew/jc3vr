@@ -17,7 +17,12 @@ pub(super) fn acquire_instance(
     persist: bool,
 ) -> anyhow::Result<xr::Instance> {
     if persist && let Some(raw) = stashed_handle(INSTANCE_STASH_VAR) {
-        match unsafe { reuse_instance(entry, raw, extensions) } {
+        // A persisted instance keeps the extensions it was created with; loading the function table
+        // of one it lacks fails, so re-wrap with the optional extensions it recorded (an instance
+        // stashed by a payload that did not record them had none).
+        let mut extensions = extensions.clone();
+        extensions.ext_hand_tracking &= stashed_handle(HAND_TRACKING_STASH_VAR).is_some();
+        match unsafe { reuse_instance(entry, raw, &extensions) } {
             Ok(instance) => {
                 tracing::info!(target: "vr", handle = format_args!("{raw:#x}"), "reused the persisted OpenXR instance");
                 return Ok(instance);
@@ -49,6 +54,10 @@ pub(super) fn acquire_instance(
 /// halves (stash the handle, suppress the destroy) cannot be split. See [`VrConfig::persist_instance`].
 pub(super) fn stash_instance(instance: xr::Instance) {
     stash_handle(INSTANCE_STASH_VAR, instance.as_raw().into_raw());
+    stash_handle(
+        HAND_TRACKING_STASH_VAR,
+        u64::from(instance.exts().ext_hand_tracking.is_some()),
+    );
     std::mem::forget(instance);
 }
 
@@ -104,6 +113,7 @@ pub(super) fn persist_session(session: Session) {
 /// reinject) — a session loss, or `vr.enabled` turned off — so a later bring-up starts fresh.
 pub(super) fn clear_persisted() {
     clear_handle(INSTANCE_STASH_VAR);
+    clear_handle(HAND_TRACKING_STASH_VAR);
     clear_handle(SESSION_STASH_VAR);
 }
 
@@ -114,6 +124,10 @@ pub(super) fn clear_persisted() {
 /// reuse both rather than create new ones.
 const INSTANCE_STASH_VAR: windows::core::PCWSTR = windows::core::w!("jc3vr_xr_instance");
 const SESSION_STASH_VAR: windows::core::PCWSTR = windows::core::w!("jc3vr_xr_session");
+/// Whether the persisted instance was created with `XR_EXT_hand_tracking` (`1`), so that a reinject
+/// re-wraps it with the same extension set.
+const HAND_TRACKING_STASH_VAR: windows::core::PCWSTR =
+    windows::core::w!("jc3vr_xr_instance_hand_tracking");
 
 /// Store a handle value in the game process's environment under `var`, as hex.
 fn stash_handle(var: windows::core::PCWSTR, raw: u64) {

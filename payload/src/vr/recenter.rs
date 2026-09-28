@@ -79,7 +79,7 @@ pub fn auto_recenter_tick() {
 /// The recenter baseline: a position and a yaw-only orientation, re-based from the latest VIEW-space
 /// pose. Per-eye poses are expressed relative to this transform (the cockpit model).
 #[derive(Copy, Clone)]
-pub(super) struct Baseline {
+pub(crate) struct Baseline {
     /// The world-from-baseline transform (position + yaw). Per-eye poses are re-based by its inverse.
     position: glam::Vec3,
     /// Yaw-only orientation (rotation about the up axis).
@@ -108,6 +108,12 @@ impl Baseline {
             position: glam::Vec3::new(pose.position.x, pose.position.y, pose.position.z),
             yaw,
         }
+    }
+
+    /// Rotate a LOCAL-space vector (a velocity) into the baseline (cockpit) frame. Directions
+    /// ignore the baseline's position.
+    pub(super) fn rotate(&self, v: glam::Vec3) -> glam::Vec3 {
+        self.yaw.conjugate() * v
     }
 
     /// Re-base a located pose into the baseline (cockpit) frame: `baseline⁻¹ · pose`.

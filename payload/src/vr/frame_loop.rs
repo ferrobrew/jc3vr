@@ -309,6 +309,19 @@ impl VrState {
             self.latest_head_pose = Some(p);
         }
 
+        // The controllers are sampled at the same predicted display time and re-based against the
+        // same baseline as the eye views, so a hand and the head it is drawn beside agree.
+        if let Some(input) = self.input.as_mut() {
+            let controllers = Config::lock_query(|c| c.controllers);
+            input.update(
+                &session.handle,
+                &session.local,
+                frame_state.predicted_display_time,
+                self.baseline,
+                &controllers,
+            );
+        }
+
         Ok(FrameData {
             predicted_display_time: frame_state.predicted_display_time,
             should_render: frame_state.should_render,

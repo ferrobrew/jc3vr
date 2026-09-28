@@ -47,7 +47,8 @@ pub(super) fn install() {
             .with_hook_library(character::hook_library())
             .with_hook_library(animation::hook_library())
             .with_hook_library(input::hook_library())
-            .with_hook_library(ui::hook_library());
+            .with_hook_library(ui::hook_library())
+            .with_hook_library(crate::controllers::hook_library());
         #[cfg(feature = "profiler")]
         let library = library.with_hook_library(profiler::hook_library());
         Ok(library.enable(&mut patcher)?)

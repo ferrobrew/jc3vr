@@ -25,13 +25,15 @@
 //! [`HudConfig`](crate::hud::HudConfig) in `hud::config`,
 //! [`HeadPoseConfig`](crate::headpose::HeadPoseConfig) in `headpose::config`,
 //! [`VrConfig`](crate::vr::VrConfig) in `vr::config`, and
-//! [`DirectorConfig`](crate::director::DirectorConfig) in `director`, and
-//! [`RecorderConfig`](crate::recorder::RecorderConfig) in `recorder`.
+//! [`DirectorConfig`](crate::director::DirectorConfig) in `director`,
+//! [`RecorderConfig`](crate::recorder::RecorderConfig) in `recorder`, and
+//! [`ControllersConfig`](crate::controllers::ControllersConfig) in `controllers::config`.
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    controllers::ControllersConfig,
     director::DirectorConfig,
     far_field::FarFieldConfig,
     fsr::FsrConfig,
@@ -75,6 +77,8 @@ pub struct Config {
     pub vr: VrConfig,
     pub director: DirectorConfig,
     pub recorder: RecorderConfig,
+    #[serde(default)]
+    pub controllers: ControllersConfig,
 }
 impl Config {
     pub const fn new() -> Self {
@@ -93,6 +97,7 @@ impl Config {
             vr: VrConfig::new(),
             director: DirectorConfig::new(),
             recorder: RecorderConfig::new(),
+            controllers: ControllersConfig::new(),
         }
     }
 

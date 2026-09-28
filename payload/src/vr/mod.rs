@@ -51,6 +51,7 @@ mod eye_resolution;
 pub mod foveation;
 mod frame;
 mod frame_loop;
+pub mod input;
 mod loader;
 mod mirror;
 mod persist;

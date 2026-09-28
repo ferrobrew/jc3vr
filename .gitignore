@@ -38,3 +38,7 @@ __pycache__/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# A player's body measurements for the controller remap (see payload/src/controllers/body.rs). Read
+# from beside the payload DLL; personal, so never committed.
+body.local.json
