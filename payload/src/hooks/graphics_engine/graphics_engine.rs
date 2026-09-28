@@ -16,6 +16,7 @@ use windows::Win32::{
 };
 
 use crate::{
+    controllers::overlay,
     debug::trace::{TraceEvent, TraceState},
     hud,
     hud::egui_panel::draw_quad,
@@ -256,6 +257,9 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             [lock.texture(0).cloned(), lock.texture(1).cloned()]
         };
         let index = crate::stereo::draw_index();
+        // The world-space overlay's producers, once per frame, outside the context lock: they read
+        // the controller subsystems' published state under those subsystems' own locks.
+        overlay::tick(index);
 
         EnterCriticalSection(context.m_Mutex);
 
@@ -270,15 +274,18 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             // right after the gameplay HUD. Under collapse the render camera is centered and the
             // target is double-wide, so draw both world-locked overlays once per eye into each half
             // with that eye's own VP (see `single_pass::collapse_ui_eye_override`); otherwise the
-            // per-dispatch single draw carries the eye implicitly.
+            // per-dispatch single draw carries the eye implicitly. The world-space overlay draws
+            // first, so the panels sit on top of it.
             if collapse_active() {
                 for eye in 0..2 {
                     set_collapse_ui_eye(Some(eye));
+                    overlay::draw(&context.m_Context, device, back_buffer, eye);
                     hud::draw_quad(&context.m_Context, device, back_buffer, eye);
                     draw_quad(&context.m_Context, device, back_buffer, eye);
                 }
                 set_collapse_ui_eye(None);
             } else {
+                overlay::draw(&context.m_Context, device, back_buffer, index);
                 hud::draw_quad(&context.m_Context, device, back_buffer, index);
                 draw_quad(&context.m_Context, device, back_buffer, index);
             }

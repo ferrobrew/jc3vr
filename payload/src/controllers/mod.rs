@@ -19,7 +19,8 @@
 //! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
 //!   update;
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
-//!   off-hand's ray.
+//!   off-hand's ray;
+//! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
@@ -42,6 +43,7 @@ pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;
 pub mod mode;
+pub mod overlay;
 pub mod scheme;
 
 pub use config::ControllersConfig;

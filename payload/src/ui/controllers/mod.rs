@@ -8,6 +8,7 @@ mod body;
 mod frame;
 mod hands;
 mod mode;
+mod overlay;
 mod settings;
 
 use egui::Ui;
@@ -21,7 +22,7 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        mode as controller_mode, scheme,
+        mode as controller_mode, overlay as controller_overlay, scheme,
     },
     vr::input::{self as vr_input, ActionsOrigin},
 };
@@ -43,6 +44,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let hand_ik = hand_ik::status();
     let hand_tiers = tiers::status();
     let late_status = late::status();
+    let overlay_status = controller_overlay::status();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -92,6 +94,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 hands::hands_readout(ui, &hand_ik, &hand_tiers, &late_status)
             });
+
+        egui::CollapsingHeader::new("Overlay")
+            .default_open(true)
+            .show(ui, |ui| overlay::overlay_readout(ui, &overlay_status));
 
         egui::CollapsingHeader::new("Live controller frame")
             .default_open(true)

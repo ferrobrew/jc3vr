@@ -454,9 +454,12 @@ impl SightTable {
     }
 }
 
-/// The world-space overlay layer's readouts. Act only under the controller scheme.
+/// The world-space overlay layer: its readouts and the renderer's tuning. Acts only under the
+/// controller scheme.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct OverlayConfig {
+    /// Master switch for the layer. Off, nothing is drawn, whoever submits.
+    pub enabled: bool,
     /// What the overlay draws for the guns' aim.
     pub gun_readout: GunReadout,
     /// Highlight the surface or object the grapple would attach to, while the target is valid and
@@ -464,17 +467,35 @@ pub struct OverlayConfig {
     pub grapple_highlight: bool,
     /// Draw a beam from the grapple wrist to the grapple's target point.
     pub grapple_beam: bool,
+    /// Draw a translucent ghost at the controller of a hand the animation owns.
+    pub ghost_hands: bool,
     /// Draw axes at the controllers' grip and aim poses, for debugging.
     pub debug_gizmos: bool,
+    /// How far behind the scene's depth, in metres, a primitive still counts as visible, so that a
+    /// marker on a surface is not hidden by that surface.
+    pub depth_tolerance_m: f32,
+    /// The same tolerance as a fraction of the view distance, where it exceeds the absolute one: the
+    /// depth buffer's precision falls with distance.
+    pub depth_tolerance_rel: f32,
+    /// The thinnest a line is drawn, in pixels. A line thinner than this fades instead.
+    pub min_line_px: f32,
+    /// The alpha scale of a ghost hand where the scene is in front of it.
+    pub xray_alpha: f32,
 }
 
 impl OverlayConfig {
     pub const fn new() -> Self {
         Self {
+            enabled: true,
             gun_readout: GunReadout::None,
             grapple_highlight: true,
             grapple_beam: true,
+            ghost_hands: true,
             debug_gizmos: false,
+            depth_tolerance_m: 0.05,
+            depth_tolerance_rel: 0.01,
+            min_line_px: 1.5,
+            xray_alpha: 0.25,
         }
     }
 }

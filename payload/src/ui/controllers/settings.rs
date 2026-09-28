@@ -5,11 +5,11 @@ use egui::Ui;
 use crate::{
     config,
     controllers::{
-        config::{GunReadout, LocomotionDirection, Posture, SchemeSetting, SeatTransition},
+        config::{LocomotionDirection, Posture, SchemeSetting, SeatTransition},
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, hands},
+    ui::controllers::{aim, hands, overlay},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -122,17 +122,8 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Hands").show(ui, |ui| hands::hands_settings(ui, &mut c.hands));
 
-    egui::CollapsingHeader::new("Overlay").show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Gun readout");
-            ui.selectable_value(&mut c.overlay.gun_readout, GunReadout::None, "None");
-            ui.selectable_value(&mut c.overlay.gun_readout, GunReadout::Dot, "Dot");
-            ui.selectable_value(&mut c.overlay.gun_readout, GunReadout::Laser, "Laser");
-        });
-        ui.checkbox(&mut c.overlay.grapple_highlight, "Grapple target highlight");
-        ui.checkbox(&mut c.overlay.grapple_beam, "Grapple beam");
-        ui.checkbox(&mut c.overlay.debug_gizmos, "Controller gizmos");
-    });
+    egui::CollapsingHeader::new("Overlay")
+        .show(ui, |ui| overlay::overlay_settings(ui, &mut c.overlay));
 
     egui::CollapsingHeader::new("Weapons").show(ui, |ui| {
         let w = &mut c.weapons;
