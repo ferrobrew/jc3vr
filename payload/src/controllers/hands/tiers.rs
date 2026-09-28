@@ -1,0 +1,650 @@
+//! The hand tiers: which of the plan's four tiers each scripted state assigns the hands, and the
+//! per-hand weight that blends a hand between its controller and the animation.
+//!
+//! The plan of record ("Hand tiers" in `docs/mod/input/controllers-and-roomscale.md`) assigns every
+//! scripted state one of four tiers. The assignments are data: [`HandTierTable`] holds one tier per
+//! [`TierState`], its default is the plan's table ([`HandTierTable::PLAN`]), and the config can
+//! override any row. Two tiers are implemented so far:
+//!
+//! - [`HandTier::Free`]: the hand follows its controller;
+//! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
+//!   [`HandsConfig::yield_blend_s`] and back over [`HandsConfig::return_blend_s`].
+//!
+//! The action-runs and anchored tiers are not built yet, and until they are, a state assigned one
+//! of them yields (see [`HandTier::effective`]).
+//!
+//! The classification runs once per input tick ([`tick`]), on the main thread, from the mode
+//! detector's snapshot plus a few state-machine predicates, and publishes one weight per hand for
+//! the IK and the late update to read ([`weights`]).
+
+use jc3gi::{
+    camera::game_camera_manager::GameCameraManager, character::character::Character,
+    state::StateBitFlag,
+};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    config::Config,
+    controllers::{
+        config::HandsConfig,
+        frame::Hand,
+        mode::{
+            self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal,
+        },
+    },
+};
+
+/// The plan's hand tiers.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HandTier {
+    /// The hand follows its controller and nothing is attached to it.
+    Free,
+    /// The game performs the action while the hand stays on its controller.
+    ActionRuns,
+    /// The hand is attached to a world point, and its movement drives the game.
+    Anchored,
+    /// The animation owns the hand.
+    Yielded,
+}
+
+impl HandTier {
+    /// Every tier, in the plan's order.
+    pub const ALL: [HandTier; 4] = [
+        HandTier::Free,
+        HandTier::ActionRuns,
+        HandTier::Anchored,
+        HandTier::Yielded,
+    ];
+
+    /// The tier the hands actually take. The action-runs and anchored tiers are not implemented
+    /// yet, and the plan starts every scripted state as yielded unless its entry is free.
+    pub const fn effective(self) -> HandTier {
+        match self {
+            HandTier::Free => HandTier::Free,
+            HandTier::ActionRuns | HandTier::Anchored | HandTier::Yielded => HandTier::Yielded,
+        }
+    }
+
+    /// The weight the hand's controller blends toward in this tier: one follows the controller,
+    /// zero leaves the hand to the animation.
+    pub const fn controller_weight(self) -> f32 {
+        match self.effective() {
+            HandTier::Free => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            HandTier::Free => "free",
+            HandTier::ActionRuns => "action runs",
+            HandTier::Anchored => "anchored",
+            HandTier::Yielded => "yielded",
+        }
+    }
+}
+
+/// The scripted states the tier table distinguishes, classified per tick by [`classify`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TierState {
+    /// On foot, empty-handed or holding weapons, including grapple fire and falling.
+    OnFoot,
+    /// The reel-in wind-up and the reel-in flight.
+    GrappleReel,
+    /// The wind-up to a hang, and reeled onto an attach point (hang, upside-down, and stunt
+    /// positions).
+    GrappleHang,
+    /// Stunt traversal: the step-ups and step-downs, and the other traversal animations.
+    StuntTraversal,
+    /// Entering, exiting, or switching a vehicle seat, and hijacks.
+    VehicleTransition,
+    /// Seated in a vehicle and riding it.
+    VehicleSeated,
+    /// On a mounted gun or turret.
+    MountedGun,
+    /// The parachute.
+    Parachute,
+    /// The wingsuit, and the transition into it.
+    Wingsuit,
+    /// Swimming, on the surface or underwater.
+    Swimming,
+    /// Context actions and interactions: sabotage, planting explosives, using items, pickups, and
+    /// grapple struggles.
+    Interaction,
+    /// Melee attacks.
+    Melee,
+    /// Ragdoll, getting up, hit reactions, hard landings, death, and scripted warps.
+    Ragdoll,
+    /// A cutscene or scripted sequence camera.
+    Cutscene,
+}
+
+impl TierState {
+    /// Every state, in the table's order.
+    pub const ALL: [TierState; 14] = [
+        TierState::OnFoot,
+        TierState::GrappleReel,
+        TierState::GrappleHang,
+        TierState::StuntTraversal,
+        TierState::VehicleTransition,
+        TierState::VehicleSeated,
+        TierState::MountedGun,
+        TierState::Parachute,
+        TierState::Wingsuit,
+        TierState::Swimming,
+        TierState::Interaction,
+        TierState::Melee,
+        TierState::Ragdoll,
+        TierState::Cutscene,
+    ];
+
+    /// Which hands the state's tier applies to. The grapple states give the tier to the hand that
+    /// holds the line; the other hand stays free.
+    pub const fn scope(self) -> TierScope {
+        match self {
+            TierState::GrappleReel | TierState::GrappleHang => TierScope::GrappleHand,
+            _ => TierScope::BothHands,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            TierState::OnFoot => "on foot",
+            TierState::GrappleReel => "grapple reel-in",
+            TierState::GrappleHang => "grapple hang",
+            TierState::StuntTraversal => "stunt traversal",
+            TierState::VehicleTransition => "vehicle entry and exit",
+            TierState::VehicleSeated => "vehicle seated",
+            TierState::MountedGun => "mounted gun",
+            TierState::Parachute => "parachute",
+            TierState::Wingsuit => "wingsuit",
+            TierState::Swimming => "swimming",
+            TierState::Interaction => "interaction",
+            TierState::Melee => "melee",
+            TierState::Ragdoll => "ragdoll, hit, and death",
+            TierState::Cutscene => "cutscene",
+        }
+    }
+}
+
+/// Which hands a state's tier applies to.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TierScope {
+    BothHands,
+    /// Only the grapple hand (the non-dominant hand); the other hand is free.
+    GrappleHand,
+}
+
+/// The tier of each [`TierState`]: the plan's table as data, overridable from the config.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandTierTable {
+    pub on_foot: HandTier,
+    pub grapple_reel: HandTier,
+    pub grapple_hang: HandTier,
+    pub stunt_traversal: HandTier,
+    pub vehicle_transition: HandTier,
+    pub vehicle_seated: HandTier,
+    pub mounted_gun: HandTier,
+    pub parachute: HandTier,
+    pub wingsuit: HandTier,
+    pub swimming: HandTier,
+    pub interaction: HandTier,
+    pub melee: HandTier,
+    pub ragdoll: HandTier,
+    pub cutscene: HandTier,
+}
+
+impl HandTierTable {
+    /// The plan of record's starting assignments. Driving with stick bindings is free; physical
+    /// vehicle controls, which anchor the hands, are opt-in and come later.
+    pub const PLAN: HandTierTable = HandTierTable {
+        on_foot: HandTier::Free,
+        grapple_reel: HandTier::Anchored,
+        grapple_hang: HandTier::Anchored,
+        stunt_traversal: HandTier::Yielded,
+        vehicle_transition: HandTier::Yielded,
+        vehicle_seated: HandTier::Free,
+        mounted_gun: HandTier::Anchored,
+        parachute: HandTier::Free,
+        wingsuit: HandTier::Yielded,
+        swimming: HandTier::Yielded,
+        interaction: HandTier::Yielded,
+        melee: HandTier::Yielded,
+        ragdoll: HandTier::Yielded,
+        cutscene: HandTier::Yielded,
+    };
+
+    /// The tier assigned to `state`.
+    pub fn tier(&self, state: TierState) -> HandTier {
+        *self.slot(state)
+    }
+
+    /// The mutable slot for `state`, for the debug UI's table editor.
+    pub fn tier_mut(&mut self, state: TierState) -> &mut HandTier {
+        self.slot_mut(state)
+    }
+
+    /// The tier of `hand` in `state`, given which hand is dominant.
+    pub fn hand_tier(&self, state: TierState, hand: Hand, dominant: Hand) -> HandTier {
+        match state.scope() {
+            TierScope::BothHands => self.tier(state),
+            TierScope::GrappleHand if hand == dominant.other() => self.tier(state),
+            TierScope::GrappleHand => self.on_foot,
+        }
+    }
+
+    fn slot(&self, state: TierState) -> &HandTier {
+        match state {
+            TierState::OnFoot => &self.on_foot,
+            TierState::GrappleReel => &self.grapple_reel,
+            TierState::GrappleHang => &self.grapple_hang,
+            TierState::StuntTraversal => &self.stunt_traversal,
+            TierState::VehicleTransition => &self.vehicle_transition,
+            TierState::VehicleSeated => &self.vehicle_seated,
+            TierState::MountedGun => &self.mounted_gun,
+            TierState::Parachute => &self.parachute,
+            TierState::Wingsuit => &self.wingsuit,
+            TierState::Swimming => &self.swimming,
+            TierState::Interaction => &self.interaction,
+            TierState::Melee => &self.melee,
+            TierState::Ragdoll => &self.ragdoll,
+            TierState::Cutscene => &self.cutscene,
+        }
+    }
+
+    fn slot_mut(&mut self, state: TierState) -> &mut HandTier {
+        match state {
+            TierState::OnFoot => &mut self.on_foot,
+            TierState::GrappleReel => &mut self.grapple_reel,
+            TierState::GrappleHang => &mut self.grapple_hang,
+            TierState::StuntTraversal => &mut self.stunt_traversal,
+            TierState::VehicleTransition => &mut self.vehicle_transition,
+            TierState::VehicleSeated => &mut self.vehicle_seated,
+            TierState::MountedGun => &mut self.mounted_gun,
+            TierState::Parachute => &mut self.parachute,
+            TierState::Wingsuit => &mut self.wingsuit,
+            TierState::Swimming => &mut self.swimming,
+            TierState::Interaction => &mut self.interaction,
+            TierState::Melee => &mut self.melee,
+            TierState::Ragdoll => &mut self.ragdoll,
+            TierState::Cutscene => &mut self.cutscene,
+        }
+    }
+}
+
+/// The engine signals the classification reads, gathered once per input tick.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct TierSignals {
+    /// The mode detector's detection this tick.
+    pub detection: Detection,
+    /// The character's state words and vehicle seat, `None` while the character is unreadable.
+    pub character: Option<CharacterSnapshot>,
+    /// Whether the character is seated and riding (not entering, exiting, or switching seats).
+    pub riding_vehicle: bool,
+    /// Whether the character is in a stunt traversal.
+    pub stunt_traversing: bool,
+    /// Whether the character is on a mounted gun.
+    pub mounted_gun: bool,
+    /// Whether the selected camera is a cinematic one.
+    pub cinematic_camera: bool,
+}
+
+/// Classify the tick's state, highest priority first: a cutscene, then the body being thrown
+/// about, then the vehicle states, the scripted actions, the traversal and flight states, and
+/// finally on foot. `None` while a menu is up or the character is unreadable: the previous state
+/// holds.
+pub fn classify(signals: &TierSignals) -> Option<TierState> {
+    if signals.detection.mode == Mode::Ui {
+        return None;
+    }
+    let character = signals.character?;
+    let any = |flags: &[StateBitFlag]| flags.iter().any(|&f| character.has(f));
+    if signals.cinematic_camera {
+        return Some(TierState::Cutscene);
+    }
+    if any(&[
+        StateBitFlag::SB_IN_RAGDOLL,
+        StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL,
+        StateBitFlag::SB_IN_RAGDOLL_GRAPPLE_FIRE,
+        StateBitFlag::SB_IS_IN_DEAD_STATE,
+        StateBitFlag::SB_IN_HIT_REACTION,
+        StateBitFlag::SB_IS_LANDING_HARD,
+        StateBitFlag::SB_IN_ANCHOR_WARPING,
+    ]) {
+        return Some(TierState::Ragdoll);
+    }
+    if character.vehicle.is_some() {
+        return Some(if signals.riding_vehicle {
+            TierState::VehicleSeated
+        } else {
+            TierState::VehicleTransition
+        });
+    }
+    if signals.mounted_gun {
+        return Some(TierState::MountedGun);
+    }
+    if any(&[
+        StateBitFlag::SB_IN_LOOP_CONTEXT_ACTION,
+        StateBitFlag::SB_IN_LOOP_CHILD_CONTEXT_ACTION,
+        StateBitFlag::SB_IN_USE_ITEM,
+        StateBitFlag::SB_IN_FULLBODY_PICKUP,
+        StateBitFlag::SB_IS_PLANTING_EXPLOSIVES,
+        StateBitFlag::SB_IN_GRAPPLE_STRUGGLE,
+        StateBitFlag::SB_IN_HIJACKLING_EXPLOSIVE_STATE,
+    ]) {
+        return Some(TierState::Interaction);
+    }
+    if character.has(StateBitFlag::SB_IN_MELEE) {
+        return Some(TierState::Melee);
+    }
+    if signals.stunt_traversing {
+        return Some(TierState::StuntTraversal);
+    }
+    if any(&[
+        StateBitFlag::SB_IS_WINGSUIT,
+        StateBitFlag::SB_IN_TRANSITION_TO_WINGSUIT,
+    ]) {
+        return Some(TierState::Wingsuit);
+    }
+    match signals.detection.traversal {
+        Some(Traversal::PreReel | Traversal::ReelingIn) => return Some(TierState::GrappleReel),
+        Some(Traversal::PreHang | Traversal::ReeledIn) => return Some(TierState::GrappleHang),
+        None => {}
+    }
+    Some(match signals.detection.mode {
+        Mode::Airborne(AirborneVariant::Parachute) => TierState::Parachute,
+        Mode::Airborne(AirborneVariant::Wingsuit) => TierState::Wingsuit,
+        Mode::OnFoot(OnFootVariant::Swimming) => TierState::Swimming,
+        _ => TierState::OnFoot,
+    })
+}
+
+/// Move a hand's controller weight toward `target` at the rate the blend times set: toward zero
+/// over `yield_s`, toward one over `return_s`. A non-positive time switches at once.
+pub fn step_weight(weight: f32, target: f32, dt: f32, yield_s: f32, return_s: f32) -> f32 {
+    let duration = if target < weight { yield_s } else { return_s };
+    if duration <= 0.0 {
+        return target;
+    }
+    let step = dt.max(0.0) / duration;
+    if target < weight {
+        (weight - step).max(target)
+    } else {
+        (weight + step).min(target)
+    }
+}
+
+/// The last tick's classification, for the debug UI and the overlay's ghost hands.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct TierStatus {
+    /// The classified state, `None` before the first readable tick.
+    pub state: Option<TierState>,
+    /// Each hand's assigned tier, indexed by [`Hand::index`].
+    pub tiers: [HandTier; 2],
+    /// Each hand's controller weight: one on the controller, zero on the animation. A yielded
+    /// hand below one is where the overlay draws the ghost of the controller-driven hand.
+    pub weights: [f32; 2],
+}
+
+impl TierStatus {
+    const INITIAL: TierStatus = TierStatus {
+        state: None,
+        tiers: [HandTier::Free; 2],
+        weights: [1.0; 2],
+    };
+}
+
+/// The last tick's classification.
+pub fn status() -> TierStatus {
+    *STATUS.lock()
+}
+
+/// Each hand's controller weight, indexed by [`Hand::index`].
+pub fn weights() -> [f32; 2] {
+    STATUS.lock().weights
+}
+
+/// Classify this input tick and advance the blends. Called from the input tick after the mode
+/// detector, while the controllers are enabled.
+pub(crate) fn tick(dt: f32) {
+    let (hands, dominant) =
+        Config::lock_query(|c| (c.controllers.hands, c.controllers.dominant_hand));
+    // SAFETY: the input tick runs on the main thread outside the world update, as the mode
+    // detector's own reads require.
+    let signals = unsafe { read_signals() };
+    let mut status = STATUS.lock();
+    *status = advance(*status, classify(&signals), dt, &hands, dominant);
+}
+
+/// Fold one tick into the status: a new state (or the held one) assigns each hand its tier, and
+/// the weights step toward the tiers' targets.
+pub fn advance(
+    previous: TierStatus,
+    state: Option<TierState>,
+    dt: f32,
+    config: &HandsConfig,
+    dominant: Hand,
+) -> TierStatus {
+    let state = state.or(previous.state);
+    let tiers = Hand::BOTH.map(|hand| {
+        state.map_or(HandTier::Free, |s| {
+            config.tiers.hand_tier(s, hand, dominant)
+        })
+    });
+    let weights = Hand::BOTH.map(|hand| {
+        step_weight(
+            previous.weights[hand.index()],
+            tiers[hand.index()].controller_weight(),
+            dt,
+            config.yield_blend_s,
+            config.return_blend_s,
+        )
+    });
+    TierStatus {
+        state,
+        tiers,
+        weights,
+    }
+}
+
+static STATUS: Mutex<TierStatus> = Mutex::new(TierStatus::INITIAL);
+
+/// Read the signals: the mode detector's detection and snapshot from this tick, plus the
+/// state-machine predicates, each only while the character is readable.
+///
+/// # Safety
+///
+/// Must run on the main thread outside the world update, like [`mode::read_snapshot`].
+unsafe fn read_signals() -> TierSignals {
+    let detection = mode::current();
+    let character = mode::last_snapshot().and_then(|s| s.character);
+    let mut signals = TierSignals {
+        detection,
+        character,
+        ..TierSignals::default()
+    };
+    let Some(snapshot) = character else {
+        return signals;
+    };
+    let Some(local) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+        signals.character = None;
+        return signals;
+    };
+    unsafe {
+        signals.riding_vehicle = snapshot.vehicle.is_some() && local.IsInRidingInVehicleState();
+        signals.stunt_traversing = local.IsStuntTraversing();
+        signals.mounted_gun = local.IsInMountedGunState();
+        signals.cinematic_camera =
+            GameCameraManager::get().is_some_and(|camera| camera.IsInCinematicCamera());
+    }
+    signals
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::mode::{VehicleClass, VehicleSeat};
+
+    fn bits(flags: &[StateBitFlag]) -> [u64; 3] {
+        let mut words = [0u64; 3];
+        for &f in flags {
+            let bit = f as u32 as usize;
+            words[bit / 64] |= 1 << (bit % 64);
+        }
+        words
+    }
+
+    fn signals(mode: Mode, flags: &[StateBitFlag]) -> TierSignals {
+        TierSignals {
+            detection: Detection {
+                mode,
+                traversal: None,
+                held: None,
+            },
+            character: Some(CharacterSnapshot {
+                state_bits: bits(flags),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
+
+    #[test]
+    fn plain_on_foot_is_free() {
+        let state = classify(&signals(ON_FOOT, &[])).unwrap();
+        assert_eq!(state, TierState::OnFoot);
+        assert_eq!(HandTierTable::PLAN.tier(state), HandTier::Free);
+    }
+
+    #[test]
+    fn the_research_signals_yield() {
+        for (flags, expected) in [
+            (&[StateBitFlag::SB_IN_RAGDOLL][..], TierState::Ragdoll),
+            (&[StateBitFlag::SB_IS_IN_DEAD_STATE], TierState::Ragdoll),
+            (&[StateBitFlag::SB_IN_USE_ITEM], TierState::Interaction),
+            (
+                &[StateBitFlag::SB_IS_PLANTING_EXPLOSIVES],
+                TierState::Interaction,
+            ),
+            (
+                &[StateBitFlag::SB_IN_TRANSITION_TO_WINGSUIT],
+                TierState::Wingsuit,
+            ),
+            (&[StateBitFlag::SB_IN_MELEE], TierState::Melee),
+        ] {
+            let state = classify(&signals(ON_FOOT, flags)).unwrap();
+            assert_eq!(state, expected, "{flags:?}");
+            assert_eq!(
+                HandTierTable::PLAN.tier(state).effective(),
+                HandTier::Yielded
+            );
+        }
+        let swimming = classify(&signals(Mode::OnFoot(OnFootVariant::Swimming), &[])).unwrap();
+        assert_eq!(swimming, TierState::Swimming);
+    }
+
+    #[test]
+    fn vehicle_entry_yields_and_riding_is_free() {
+        let seat = VehicleSeat {
+            class: VehicleClass::Car,
+            driver: true,
+        };
+        let mut s = signals(Mode::Vehicle(seat), &[]);
+        s.character.as_mut().unwrap().vehicle = Some(seat);
+        assert_eq!(classify(&s), Some(TierState::VehicleTransition));
+        s.riding_vehicle = true;
+        assert_eq!(classify(&s), Some(TierState::VehicleSeated));
+        assert_eq!(
+            HandTierTable::PLAN.tier(TierState::VehicleSeated),
+            HandTier::Free
+        );
+    }
+
+    #[test]
+    fn a_cutscene_outranks_everything() {
+        let mut s = signals(ON_FOOT, &[StateBitFlag::SB_IN_RAGDOLL]);
+        s.cinematic_camera = true;
+        assert_eq!(classify(&s), Some(TierState::Cutscene));
+    }
+
+    #[test]
+    fn a_menu_or_an_unreadable_character_holds() {
+        assert_eq!(classify(&signals(Mode::Ui, &[])), None);
+        let mut s = signals(ON_FOOT, &[]);
+        s.character = None;
+        assert_eq!(classify(&s), None);
+    }
+
+    #[test]
+    fn grapple_states_apply_to_the_grapple_hand_only() {
+        let mut s = signals(ON_FOOT, &[]);
+        s.detection.traversal = Some(Traversal::ReelingIn);
+        let state = classify(&s).unwrap();
+        assert_eq!(state, TierState::GrappleReel);
+        let table = HandTierTable::PLAN;
+        assert_eq!(
+            table.hand_tier(state, Hand::Left, Hand::Right),
+            HandTier::Anchored
+        );
+        assert_eq!(
+            table.hand_tier(state, Hand::Right, Hand::Right),
+            HandTier::Free
+        );
+        assert_eq!(
+            table.hand_tier(state, Hand::Right, Hand::Left),
+            HandTier::Anchored
+        );
+    }
+
+    #[test]
+    fn unimplemented_tiers_yield_until_built() {
+        assert_eq!(HandTier::Anchored.controller_weight(), 0.0);
+        assert_eq!(HandTier::ActionRuns.controller_weight(), 0.0);
+        assert_eq!(HandTier::Free.controller_weight(), 1.0);
+    }
+
+    #[test]
+    fn the_weight_blends_out_and_back_at_the_configured_rates() {
+        let w = step_weight(1.0, 0.0, 0.1, 0.2, 0.4);
+        assert!((w - 0.5).abs() < 1e-6);
+        let w = step_weight(w, 0.0, 0.2, 0.2, 0.4);
+        assert_eq!(w, 0.0);
+        let w = step_weight(0.0, 1.0, 0.1, 0.2, 0.4);
+        assert!((w - 0.25).abs() < 1e-6);
+        assert_eq!(step_weight(0.3, 1.0, 0.1, 0.2, 0.0), 1.0);
+    }
+
+    #[test]
+    fn a_yielding_state_blends_both_hands_and_a_held_state_persists() {
+        let config = HandsConfig::new();
+        let status = advance(
+            TierStatus::INITIAL,
+            Some(TierState::Swimming),
+            config.yield_blend_s,
+            &config,
+            Hand::Right,
+        );
+        assert_eq!(status.tiers, [HandTier::Yielded; 2]);
+        assert_eq!(status.weights, [0.0; 2]);
+        let held = advance(status, None, 0.01, &config, Hand::Right);
+        assert_eq!(held.state, Some(TierState::Swimming));
+        assert_eq!(held.weights, [0.0; 2]);
+    }
+
+    #[test]
+    fn every_state_has_its_own_row() {
+        let mut table = HandTierTable::PLAN;
+        for state in TierState::ALL {
+            *table.tier_mut(state) = HandTier::ActionRuns;
+            assert_eq!(table.tier(state), HandTier::ActionRuns);
+        }
+        assert!(
+            TierState::ALL
+                .iter()
+                .all(|&s| table.tier(s) == HandTier::ActionRuns)
+        );
+    }
+}

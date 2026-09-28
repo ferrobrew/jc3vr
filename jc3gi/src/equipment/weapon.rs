@@ -651,12 +651,12 @@ impl WeaponBase {
     /// `CGameObject` subobject, not the start of the weapon.
     pub unsafe fn UpdateRender(
         game_object: *mut ::std::ffi::c_void,
-        context: *mut ::std::ffi::c_void,
+        context: *const crate::game::GameObjectRenderContext,
     ) {
         unsafe {
             let f: unsafe extern "system" fn(
                 game_object: *mut ::std::ffi::c_void,
-                context: *mut ::std::ffi::c_void,
+                context: *const crate::game::GameObjectRenderContext,
             ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
             f(game_object, context)
         }
@@ -741,6 +741,10 @@ impl WeaponBase {
     }
 }
 impl WeaponBase {
+    /// The offset of the embedded `CGameObject` subobject, which the `CGameObject` overrides
+    /// ([`GetTransform`](crate::equipment::weapon::WeaponBase::GetTransform), [`UpdateRender`](crate::equipment::weapon::WeaponBase::UpdateRender)) receive as
+    /// their `game_object` in place of the weapon.
+    pub const GAME_OBJECT_BASE_OFFSET: u64 = 8;
     /// The seconds a blocked trigger pull stays buffered in
     /// [`m_InputBufferTimer`](crate::equipment::weapon::WeaponBase::m_InputBufferTimer).
     pub const INPUT_BUFFER_TIME: f32 = 0.5;

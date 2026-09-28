@@ -14,7 +14,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::frame::{Hand, PressThresholds};
+use crate::controllers::{
+    frame::{Hand, PressThresholds},
+    hands::tiers::HandTierTable,
+};
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -256,15 +259,36 @@ impl AimStateConfig {
     }
 }
 
-/// Controller-owned hands. Both act only under the controller scheme.
+/// Controller-owned hands (see [`crate::controllers::hands`]). Every part acts only under the
+/// controller scheme and only for a hand whose controller is tracked, so the parts default on.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct HandsConfig {
     /// Drive the arms with HumanIK from the shoulders to the controller poses, with the wrists
     /// taking the controller rotations.
     pub ik: bool,
-    /// Re-pose the hand bones and the held weapon at render time from the latest controller pose,
-    /// removing the sim tick's lag behind the controllers.
+    /// Re-pose the hand and forearm bones and the held weapon at render time from the latest
+    /// controller pose, removing the sim tick's lag behind the controllers.
     pub late_update: bool,
+    /// Switch off the game's secondary hand IK (the weapon's off-hand grip, the grapple fire arm,
+    /// and the parachute handles) for every hand the controllers drive.
+    pub suppress_secondary_ik: bool,
+    /// The wrist targets' positional reach, `0..=1`, before the tier weight scales it.
+    pub reach_t: f32,
+    /// The wrist targets' rotational reach, `0..=1`, before the tier weight scales it.
+    pub reach_r: f32,
+    /// How far a wrist target out of reach pulls the torso after it, `0..=1`.
+    pub pull: f32,
+    /// How strongly a wrist resists being dragged by other effectors' pull, `0..=1`.
+    pub resist: f32,
+    /// Where the character's wrist sits relative to the controller's grip pose.
+    pub grip: GripOffset,
+    /// How long a hand takes to blend from its controller to the animation when a state yields
+    /// it, seconds.
+    pub yield_blend_s: f32,
+    /// How long a hand takes to blend from the animation back to its controller, seconds.
+    pub return_blend_s: f32,
+    /// The hand tier of each scripted state.
+    pub tiers: HandTierTable,
 }
 
 impl HandsConfig {
@@ -272,8 +296,43 @@ impl HandsConfig {
         Self {
             ik: true,
             late_update: true,
+            suppress_secondary_ik: true,
+            reach_t: 1.0,
+            reach_r: 1.0,
+            pull: 0.0,
+            resist: 0.0,
+            grip: GripOffset::INDEX_BEST_GUESS,
+            yield_blend_s: 0.25,
+            return_blend_s: 0.35,
+            tiers: HandTierTable::PLAN,
         }
     }
+}
+
+/// The offset from a controller's OpenXR grip pose to the character's wrist, given for the right
+/// hand in the grip frame and mirrored for the left (see
+/// [`grip_to_wrist`](crate::controllers::hands::pose::grip_to_wrist)).
+///
+/// The wrist frame is the hand-tracking wrist convention: the origin at the wrist joint, -Z toward
+/// the fingers, and +Y out of the back of the hand. With no adjustment the fingers point along the
+/// grip's +Y, square to the handle; the adjustment rotates the hand about the grip axes.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GripOffset {
+    /// The wrist joint's position in the right grip frame, metres.
+    pub position_m: glam::Vec3,
+    /// The hand's rotation in the right grip frame, applied about the grip's X, then Y, then Z
+    /// axes, degrees.
+    pub rotation_deg: glam::Vec3,
+}
+
+impl GripOffset {
+    /// A best guess for the Valve Index controller, not yet fitted in the headset: the wrist a few
+    /// centimetres behind and to the back-of-hand side of the grip centre, and the handle tilted
+    /// toward the fingers as a power grip holds it.
+    pub const INDEX_BEST_GUESS: GripOffset = GripOffset {
+        position_m: glam::Vec3::new(-0.02, -0.075, 0.0),
+        rotation_deg: glam::Vec3::new(-15.0, 0.0, 0.0),
+    };
 }
 
 /// Per-hand aiming. Acts only under the controller scheme.

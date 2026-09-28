@@ -500,6 +500,37 @@ impl Character {
             f(self as *mut Self as _, dt)
         }
     }
+    pub const UpdateSecondaryHandIKPass_ADDRESS: usize = 0x1407EF690;
+    /// The `SECONDARY` HumanIK pass, called from
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) after the `MAIN`
+    /// solve. It is driven entirely by one-frame keys on [`m_Blackboard`](crate::character::character::Character::m_Blackboard).
+    /// For each wrist whose weight key
+    /// ([`SECONDARY_HAND_WEIGHT_RIGHT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_RIGHT_ID),
+    /// [`SECONDARY_HAND_WEIGHT_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID)) is
+    /// positive, it queues a position target on that wrist's effector, taken from the hand's
+    /// world-space key transformed into model space or, when that key is absent, from the hand's
+    /// model-space key, with the weight as the reach. It then places the off-hand on the selected
+    /// weapon's grip: while
+    /// [`OFFHAND_IK_WEIGHT_ID`](crate::blackboard::ObjectBlackboard::OFFHAND_IK_WEIGHT_ID) is positive and
+    /// `CWeaponBase::GetGripPosition` succeeds for the hand named by
+    /// [`OFFHAND_IK_HAND_ID`](crate::blackboard::ObjectBlackboard::OFFHAND_IK_HAND_ID), it targets that wrist so that
+    /// the hand's second attach bone
+    /// ([`ATTACH_HAND_LEFT2`](crate::character::character::SafeBoneIndex::ATTACH_HAND_LEFT2) or
+    /// [`ATTACH_HAND_RIGHT2`](crate::character::character::SafeBoneIndex::ATTACH_HAND_RIGHT2)) lands on the grip point. The
+    /// weapon is the explosive slot while planting, otherwise the selected slot, and only while its
+    /// state is wielding, dual-wielding, or mounted. When anything was queued it solves from the
+    /// `MAIN`-solved pose and refreshes the inventory's attachment transforms; it always clears the
+    /// pass's targets afterwards.
+    pub unsafe fn UpdateSecondaryHandIKPass(&mut self, dt: f32, ik_has_run: *mut bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                ik_has_run: *mut bool,
+            ) = ::std::mem::transmute(Self::UpdateSecondaryHandIKPass_ADDRESS);
+            f(self as *mut Self as _, dt, ik_has_run)
+        }
+    }
     pub const HandleAimingInputPlayer_ADDRESS: usize = 0x1407F0160;
     /// The per-tick aiming-input update of a character driven by player input. Called from
     /// `UpdatePassPreStateMachines_Parallel` on the branch that also runs the player's global input

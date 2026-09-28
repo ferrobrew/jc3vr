@@ -1,0 +1,109 @@
+//! Controller-owned hands: the plan of record's "Hands", "Hand tiers", and "Body scale" sections
+//! (`docs/mod/input/controllers-and-roomscale.md`), with the engine side in
+//! `docs/engine/character/humanik.md` and `docs/engine/character/hands-locomotion-and-state.md`.
+//!
+//! - [`pose`]: the pure composition from a controller's grip pose to the character's wrist frame,
+//!   through the grip offset, the body-scale remap, and the head's world transform;
+//! - [`tiers`]: the per-state tier table and the per-hand blend between controller and animation;
+//! - [`ik`]: the wrist targets queued on HumanIK's `MAIN` pass at the pre-solve seam, and the
+//!   record of each tick's targets that the late update corrects from;
+//! - [`secondary`]: the per-hand switch for the game's `SECONDARY` hand IK pass;
+//! - [`late`]: the render-time late update of the held weapon's model and of the hand and forearm
+//!   bones in the skinning palette, and the render-time hand poses for the overlay;
+//! - [`palette`]: the pure palette-entry math of the late update.
+//!
+//! Everything here is inert unless the controller scheme is in effect and the hand's controller is
+//! tracked ([`active_hands`]), and each part has its toggle in [`HandsConfig`].
+
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    config::Config,
+    controllers::{
+        body::{self, BodyDimensions},
+        config::{ControllersConfig, HandsConfig},
+        frame::{self, ControllerFrame, Hand, Pose},
+        scheme,
+    },
+    headpose,
+};
+
+pub mod ik;
+pub mod late;
+pub mod palette;
+pub mod pose;
+pub mod secondary;
+pub mod tiers;
+
+pub use pose::CockpitHand;
+
+/// The hands' hooks, aggregated by [`crate::controllers::hook_library`].
+pub(crate) fn hook_library() -> HookLibrary {
+    late::hook_library()
+}
+
+/// The inputs every hand subsystem starts from: the controllers' configuration, the head's cockpit
+/// pose, and each tracked hand's cockpit-frame poses after the grip offset and the remap.
+#[derive(Clone)]
+pub struct ActiveHands {
+    pub config: ControllersConfig,
+    /// The head (the eye midpoint) in the cockpit frame.
+    pub head: Pose,
+    /// Indexed by [`Hand::index`]; `None` for a hand whose controller is absent or not tracked.
+    pub hands: [Option<CockpitHand>; 2],
+    /// The VR world scale the head pose composes with.
+    pub world_scale: f32,
+}
+
+/// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
+/// scheme is in effect, no VR session publishes a head pose, or no controller frame exists.
+pub fn active_hands() -> Option<ActiveHands> {
+    let (config, world_scale) = Config::lock_query(|c| (c.controllers, c.vr.world_scale));
+    if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
+        return None;
+    }
+    let cockpit = headpose::xr::cockpit_pose()?;
+    let head = Pose {
+        position: cockpit.position,
+        orientation: cockpit.orientation,
+    };
+    let player = config.body.remap_hands.then(body::player);
+    let hands = frame::with_latest(|frame| {
+        Hand::BOTH.map(|hand| cockpit_hand(frame, hand, head, &config.hands, player.as_ref()))
+    })?;
+    Some(ActiveHands {
+        config,
+        head,
+        hands,
+        world_scale,
+    })
+}
+
+fn cockpit_hand(
+    frame: &ControllerFrame,
+    hand: Hand,
+    head: Pose,
+    config: &HandsConfig,
+    player: Option<&BodyDimensions>,
+) -> Option<CockpitHand> {
+    let h = frame.hand(hand);
+    if !h.active || !h.grip.is_valid() {
+        return None;
+    }
+    // The aim pose rides with the grip when the runtime reports it invalid on its own, so that the
+    // overlay's ray still leaves the hand.
+    let aim = if h.aim.is_valid() {
+        h.aim.pose
+    } else {
+        h.grip.pose
+    };
+    let remap = player.map(|p| (p, &BodyDimensions::CHARACTER_ESTIMATE));
+    Some(pose::cockpit_hand(
+        hand,
+        h.grip.pose,
+        aim,
+        head,
+        &config.grip,
+        remap,
+    ))
+}

@@ -1,5 +1,5 @@
 //! Character render-block detours: hide the local player's head from every non-shadow pass
-//! (issue #19).
+//! (issue #19), and re-pose the controller-driven hands at render time.
 //!
 //! A character model is one render block per material, and the same block objects are drawn for
 //! every pass — shadow, depth prepass, GBuffer — branching internally on
@@ -15,6 +15,11 @@
 //! their own bones. Batches that are mostly facial are face gear and collapse wholesale. The
 //! real palette is never touched, so the shadow passes draw a full, headful character that
 //! follows the player-driven head pose.
+//!
+//! The same palette spoof carries the controller hands' render-time late update: while the player's
+//! body draws in any pass, shadows included, the hand and forearm bones' entries are re-posed from
+//! the latest controller pose (see [`crate::controllers::hands::late`]), in the same copy and the
+//! same detected layout as the collapse.
 //!
 //! Ownership is settled by pointer identity: every draw receives its owning model instance's
 //! embedded `CRBIInfo` as the `info` argument, and the character hook publishes the player's
@@ -39,7 +44,14 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, stereo::STEREO_STATE};
+use crate::{
+    config::Config,
+    controllers::hands::{
+        late::{self, PaletteEdit},
+        palette::PaletteLayout,
+    },
+    stereo::STEREO_STATE,
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -130,13 +142,12 @@ fn render_block_character_draw(
 ) {
     let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
     unsafe { maybe_dump("Character::Draw", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_DRAW
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -149,13 +160,12 @@ fn render_block_character_draw_z(
 ) {
     let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
     unsafe { maybe_dump("Character::DrawZ", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_DRAW_Z
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -168,13 +178,12 @@ fn render_block_character_skin_draw(
 ) {
     let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
     unsafe { maybe_dump("CharacterSkin::Draw", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_SKIN_DRAW
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -187,13 +196,12 @@ fn render_block_character_skin_draw_z(
 ) {
     let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
     unsafe { maybe_dump("CharacterSkin::DrawZ", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_SKIN_DRAW_Z
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -239,6 +247,12 @@ thread_local! {
     /// by index collision (observed in-game as a stretched holstered weapon).
     static HIDE_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
+    /// Set around the original `Draw`/`DrawZ` call for the local player's body in every pass,
+    /// shadows included, while the hands' late update corrects a hand: the palette hooks then
+    /// re-pose the hand and forearm bones (see [`crate::controllers::hands::late`]). Thread-local
+    /// for the same reason as the hide flag.
+    static HAND_EDIT: std::cell::Cell<Option<PaletteEdit>> = const { std::cell::Cell::new(None) };
+
     /// The scratch palette the spoof writes into, one per draw thread for the same reason.
     static PALETTE_BUF: std::cell::RefCell<[Matrix3x4; PALETTE_BUF_LEN]> =
         const { std::cell::RefCell::new([Matrix3x4 { m: [0.0; 12] }; PALETTE_BUF_LEN]) };
@@ -262,6 +276,35 @@ static PLAYER_ROOT: parking_lot::Mutex<Option<(glam::Vec3, glam::Vec3)>> =
 /// The `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero = empty).
 static PLAYER_RBI_INFOS: [AtomicUsize; PLAYER_MODEL_SLOTS] =
     [const { AtomicUsize::new(0) }; PLAYER_MODEL_SLOTS];
+
+/// Raise the draw's palette-spoof flags: the head hide for the player's body in non-shadow passes,
+/// and the hands' late update for the player's body in every pass.
+unsafe fn begin_player_draw(rc: *mut RenderContext, info: *const RBIInfo) {
+    let hide = unsafe { should_hide_facial(rc, info) };
+    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    let edit = unsafe { hand_palette_edit(rc, info) };
+    HAND_EDIT.with(|cell| cell.set(edit));
+}
+
+/// Lower the flags [`begin_player_draw`] raised.
+fn end_player_draw() {
+    HIDE_ACTIVE.with(|flag| flag.set(false));
+    HAND_EDIT.with(|cell| cell.set(None));
+}
+
+/// The hands' palette edit for this draw, when it belongs to the local player's body model: the
+/// hands' correction brought into the draw's model space through its instance matrix. Every pass
+/// takes it, so the shadow's hands match the rendered ones.
+unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Option<PaletteEdit> {
+    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
+    if body == 0 || info as usize != body {
+        return None;
+    }
+    let (rc, info) = (unsafe { rc.as_ref() }?, unsafe { info.as_ref() }?);
+    let mut instance = Matrix4::default();
+    unsafe { info.GetMatrix(&mut instance, rc.m_RenderFrameIndex as i32) };
+    late::palette_edit(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
+}
 
 /// Whether this draw belongs to the local player's body model in a non-shadow pass with the hide
 /// enabled. Ownership is pointer identity: the draw's `info` is the owning model instance's
@@ -298,26 +341,31 @@ fn ortho_error(x: glam::Vec3, y: glam::Vec3, z: glam::Vec3) -> f32 {
         + y.dot(z).abs()
 }
 
-/// While the hide flag is up and this batch references a collapse bone, build a copy of the bone
-/// matrices with the collapse bones replaced by a zero rotation and the published neck-point
-/// translation, so their vertices contract to a point inside the collar. Returns `None` — draw
-/// with the real palette — whenever the spoof does not apply.
+/// Build a spoofed copy of the bone matrices when this batch references a bone either flag edits:
+/// while the hide flag is up, the collapse bones are replaced by a zero rotation and the published
+/// neck-point translation, so their vertices contract to a point inside the collar; while the hand
+/// edit is up, the hand and forearm bones are re-posed by the hands' late update. Both edits go
+/// into the one copy. Returns `None` — draw with the real palette — whenever neither applies.
 unsafe fn spoofed_matrices(
     matrices: *const Matrix3x4,
     batch: *const SkinBatch,
 ) -> Option<*const Matrix3x4> {
-    if !HIDE_ACTIVE.with(|flag| flag.get()) || matrices.is_null() {
+    if matrices.is_null() {
+        return None;
+    }
+    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
+    let hide = HIDE_ACTIVE.with(|flag| flag.get())
+        && len > 0
+        && COLLAPSE_TARGET_VALID.load(Ordering::Relaxed);
+    let hands = HAND_EDIT.with(|cell| cell.get());
+    if !hide && hands.is_none() {
         return None;
     }
     let b = unsafe { batch.as_ref() }?;
     if b.BatchToSkeletonLookup.is_null() {
         return None;
     }
-    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
-    if len == 0 || !COLLAPSE_TARGET_VALID.load(Ordering::Relaxed) {
-        return None;
-    }
-    let collapse = &COLLAPSE_BONES[..len];
+    let collapse = if hide { &COLLAPSE_BONES[..len] } else { &[] };
     let is_collapse = |bone: usize| {
         collapse
             .iter()
@@ -325,10 +373,12 @@ unsafe fn spoofed_matrices(
     };
 
     // The upload reads `matrices[lookup[i]]` per batch slot, so the copy must span the batch's
-    // highest referenced skeleton index; skip the spoof entirely if no collapse bone is used.
+    // highest referenced skeleton index; skip the spoof entirely if neither a collapse bone nor a
+    // late-updated hand bone is used.
     let mut max_index = 0usize;
     let mut bones_counted = 0usize;
     let mut collapse_hits = 0usize;
+    let mut hand_hits = 0usize;
     for i in 0..b.BatchSize.max(0) as usize {
         let bone = unsafe { *b.BatchToSkeletonLookup.add(i) } as u16 as usize;
         max_index = max_index.max(bone);
@@ -337,9 +387,12 @@ unsafe fn spoofed_matrices(
             if is_collapse(bone) {
                 collapse_hits += 1;
             }
+            if hands.is_some_and(|edit| edit.touches(bone)) {
+                hand_hits += 1;
+            }
         }
     }
-    if collapse_hits == 0 || max_index >= PALETTE_BUF_LEN {
+    if (collapse_hits == 0 && hand_hits == 0) || max_index >= PALETTE_BUF_LEN {
         return None;
     }
     // A batch that is mostly facial is face *gear* (eyewear and the like, sometimes also rigged
@@ -347,7 +400,7 @@ unsafe fn spoofed_matrices(
     // non-facial anchor holds part of it mid-body and the connecting triangles stretch into a rod
     // (observed in-game). Mixed batches — the body skin carries the face and the hands together —
     // keep the selective collapse so the hands stay.
-    let collapse_whole_batch = collapse_hits * 2 >= bones_counted;
+    let collapse_whole_batch = collapse_hits > 0 && collapse_hits * 2 >= bones_counted;
 
     PALETTE_BUF.with(|buf| {
         let mut buf = buf.borrow_mut();
@@ -405,6 +458,16 @@ unsafe fn spoofed_matrices(
                 }
             }
         };
+        let layout = if row_layout {
+            PaletteLayout::Rows
+        } else {
+            PaletteLayout::Columns
+        };
+        // The hands first: a face-gear batch collapsed wholesale below overwrites any bone it
+        // shares with them, as it should.
+        if let Some(edit) = hands.filter(|_| hand_hits > 0) {
+            edit.apply(&mut buf[..=max_index], layout);
+        }
         if collapse_whole_batch {
             // Including the root: face gear can anchor blend weights on bone 0 (leaving it kept
             // stretched a thin thread from the ground to the collar), and the upload is
@@ -413,7 +476,7 @@ unsafe fn spoofed_matrices(
                 let bone = unsafe { *b.BatchToSkeletonLookup.add(i) } as u16 as usize;
                 collapse_bone(bone, &mut buf[..]);
             }
-        } else {
+        } else if collapse_hits > 0 {
             for slot in collapse {
                 collapse_bone(slot.load(Ordering::Relaxed) as usize, &mut buf[..]);
             }
@@ -421,10 +484,12 @@ unsafe fn spoofed_matrices(
         if DUMP_DRAWS.load(Ordering::Relaxed) > 0 {
             tracing::info!(
                 target: "render_block_dump",
-                "  spoof batch={:?} size={} target=({:.2},{:.2},{:.2}) whole={} layout={} \
-                 (col_err={:.2} row_err={:.2})",
+                "  spoof batch={:?} size={} collapse_hits={} hand_hits={} \
+                 target=({:.2},{:.2},{:.2}) whole={} layout={} (col_err={:.2} row_err={:.2})",
                 batch,
                 b.BatchSize,
+                collapse_hits,
+                hand_hits,
                 target[0],
                 target[1],
                 target[2],

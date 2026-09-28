@@ -35,6 +35,7 @@ use crate::{
         },
         config::LocomotionDirection,
         frame::{self, ControllerFrame, Hand},
+        hands::tiers,
         mode::{self, Detection},
         scheme,
     },
@@ -91,6 +92,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         return InputTickOutput::default();
     }
     let detection = mode::tick();
+    tiers::tick(dt);
 
     let frame = frame::latest().filter(ControllerFrame::any_active);
     let idle = if !config.bindings.enabled {

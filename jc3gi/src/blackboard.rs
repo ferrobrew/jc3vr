@@ -61,12 +61,45 @@ impl ObjectBlackboard {
             f(self as *mut Self as _, id, value)
         }
     }
-    pub const SetVector3_ADDRESS: usize = 0x1405C6A70;
+    pub const GetInt_ADDRESS: usize = 0x1405C57E0;
     /// The `SetBlackboardValue<CVector3f>` template instantiation. `value` is by-value `CVector3f`
     /// at the C++ level, which the MSVC x64 ABI passes by reference — hence the pointer here.
     /// `persistence` is recorded when the call creates the key, and is
     /// [`PERSISTENCE_LOCAL_FRAME`](crate::blackboard::PersistenceType::PERSISTENCE_LOCAL_FRAME) at every observed
     /// call site; `name` is an optional debug label, null in every observed call.
+    /// The `GetBlackboardValue<int>` template instantiation. Returns whether the id was present
+    /// with an integer type; the value is written through `value`.
+    pub unsafe fn GetInt(&mut self, id: u32, value: *mut i32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                id: u32,
+                value: *mut i32,
+            ) -> bool = ::std::mem::transmute(Self::GetInt_ADDRESS);
+            f(self as *mut Self as _, id, value)
+        }
+    }
+    pub const SetFloat_ADDRESS: usize = 0x1405C6850;
+    /// The `SetBlackboardValue<float>` template instantiation. Overwrites the value when the id is
+    /// present, and otherwise creates the key with `persistence`; returns false only when the key
+    /// table or the value arena is full.
+    pub unsafe fn SetFloat(
+        &mut self,
+        id: u32,
+        value: f32,
+        persistence: crate::blackboard::PersistenceType,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                id: u32,
+                value: f32,
+                persistence: crate::blackboard::PersistenceType,
+            ) -> bool = ::std::mem::transmute(Self::SetFloat_ADDRESS);
+            f(self as *mut Self as _, id, value, persistence)
+        }
+    }
+    pub const SetVector3_ADDRESS: usize = 0x1405C6A70;
     pub unsafe fn SetVector3(
         &mut self,
         id: u32,
@@ -106,11 +139,37 @@ impl ObjectBlackboard {
     /// The id of the camera-relative world-space move direction (`CVector3f`), written each frame
     /// by `NStateTask_InputLocoSetTargetDirTask::SetupTargetDir`.
     pub const MOVE_DIR_ID: u32 = 2113030792;
+    /// The id of the `int` naming the hand the weapon off-hand grip places: nonzero is the right
+    /// hand, zero the left.
+    pub const OFFHAND_IK_HAND_ID: u32 = 2602427023;
+    /// The id of the float weight of the weapon off-hand grip, written by the weapon off-hand IK
+    /// task (ramping up while its segment is active) and read by
+    /// [`Character::UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass),
+    /// which places the off-hand on the weapon's grip only while it is positive.
+    pub const OFFHAND_IK_WEIGHT_ID: u32 = 4135506754;
     /// The id of the previous target direction (`CVector3f`), written by
     /// `NStateTask_InputLocoSetTargetDirTask::SetupTargetDir` and read by
     /// `NStateTask_LocoUtil::EvaluateCharacterDisplacement` as the code-driven displacement
     /// direction inside its special segments.
     pub const PREVIOUS_TARGET_DIR_ID: u32 = 923417185;
+    /// The id of the left wrist's model-space `SECONDARY`-pass target position (`CVector3f`).
+    pub const SECONDARY_HAND_POSITION_LS_LEFT_ID: u32 = 2849370640;
+    /// The id of the right wrist's model-space `SECONDARY`-pass target position (`CVector3f`).
+    pub const SECONDARY_HAND_POSITION_LS_RIGHT_ID: u32 = 1684944817;
+    /// The id of the left wrist's world-space `SECONDARY`-pass target position (`CVector3f`).
+    pub const SECONDARY_HAND_POSITION_WS_LEFT_ID: u32 = 2514840215;
+    /// The id of the right wrist's world-space `SECONDARY`-pass target position (`CVector3f`),
+    /// preferred over [`SECONDARY_HAND_POSITION_LS_RIGHT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_POSITION_LS_RIGHT_ID)
+    /// when present.
+    pub const SECONDARY_HAND_POSITION_WS_RIGHT_ID: u32 = 1850587638;
+    /// The id of the float weight of the left wrist's `SECONDARY`-pass position target (see
+    /// [`SECONDARY_HAND_WEIGHT_RIGHT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_RIGHT_ID)). The grapple
+    /// fire-arm IK task and the parachute handle IK task write it.
+    pub const SECONDARY_HAND_WEIGHT_LEFT_ID: u32 = 3591310625;
+    /// The id of the float weight of the right wrist's `SECONDARY`-pass position target, read by
+    /// [`Character::UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass),
+    /// which targets the wrist only while it is positive. The parachute handle IK task writes it.
+    pub const SECONDARY_HAND_WEIGHT_RIGHT_ID: u32 = 1897716896;
     /// The id of the float speed value the input locomotion tasks branch on (`<= 0` routes into
     /// the stop acts).
     pub const SPEED_ID: u32 = 3396837917;

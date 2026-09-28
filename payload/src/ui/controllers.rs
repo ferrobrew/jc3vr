@@ -12,8 +12,16 @@ use crate::{
         aim_state::{self, AimStateStatus, IkTask},
         bindings::{self, Idle, TickReport, hold::Phase, inject::Outcome},
         body::{self, BodySource},
-        config::{GunReadout, LocomotionDirection, Posture, SchemeSetting, SeatTransition},
+        config::{
+            GripOffset, GunReadout, HandsConfig, LocomotionDirection, Posture, SchemeSetting,
+            SeatTransition,
+        },
         frame::{self, Hand, HandFrame, InteractionProfile, TrackedPose},
+        hands::{
+            ik::{self as hand_ik, HandIkStatus},
+            late::{self, LateStatus},
+            tiers::{self, HandTier, HandTierTable, TierState, TierStatus},
+        },
         mode::{self, Detection, ModeSnapshot},
         scheme,
     },
@@ -32,6 +40,9 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let snapshot = mode::last_snapshot();
     let report = bindings::last_report();
     let aim = aim_state::status();
+    let hand_ik = hand_ik::status();
+    let hand_tiers = tiers::status();
+    let late_status = late::status();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -69,6 +80,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Aim state and mental state")
             .default_open(true)
             .show(ui, |ui| aim_state_readout(ui, &aim));
+
+        egui::CollapsingHeader::new("Hands")
+            .default_open(true)
+            .show(ui, |ui| {
+                hands_readout(ui, &hand_ik, &hand_tiers, &late_status)
+            });
 
         egui::CollapsingHeader::new("Live controller frame")
             .default_open(true)
@@ -307,8 +324,6 @@ fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         );
         ui.checkbox(&mut a.without_controllers, "Apply the above without controllers")
             .on_hover_text("For testing with a gamepad: changes the body for every player.");
-        ui.checkbox(&mut c.hands.ik, "Hand IK");
-        ui.checkbox(&mut c.hands.late_update, "Render-time late update");
         ui.checkbox(&mut c.aim.gun, "Gun aim from the dominant hand");
         ui.checkbox(&mut c.aim.grapple, "Grapple aim from the off-hand");
         ui.add(egui::Slider::new(&mut c.aim.assist_strength, 0.0..=1.0).text("Aim assist"));
@@ -317,6 +332,8 @@ fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
         ui.checkbox(&mut c.fingers.enabled, "Finger curls");
     });
+
+    egui::CollapsingHeader::new("Hands").show(ui, |ui| hands_settings(ui, &mut c.hands));
 
     egui::CollapsingHeader::new("Overlay").show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -412,6 +429,109 @@ fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
         ui.checkbox(&mut v.wingsuit_arm_steering, "Wingsuit arm steering");
         ui.checkbox(&mut v.parachute_arm_steering, "Parachute arm steering");
+    });
+}
+
+fn hands_readout(ui: &mut Ui, ik: &[HandIkStatus; 2], tiers: &TierStatus, late: &LateStatus) {
+    ui.label(format!(
+        "State: {}",
+        tiers.state.map_or("none yet", TierState::label)
+    ));
+    ui.columns(2, |columns| {
+        for hand in Hand::BOTH {
+            let ui = &mut columns[hand.index()];
+            let i = hand.index();
+            let s = &ik[i];
+            ui.strong(hand.label());
+            ui.label(format!(
+                "tier {} (acts as {}) · weight {:.2}",
+                tiers.tiers[i].label(),
+                tiers.tiers[i].effective().label(),
+                tiers.weights[i]
+            ));
+            ui.label(match s.skip {
+                Some(skip) => format!("IK: {}", skip.label()),
+                None => format!(
+                    "IK: queued at {:.2} · reach {:.0} mm · turn {:.0}°",
+                    s.weight,
+                    s.reach_distance * 1000.0,
+                    s.rotation_deg
+                ),
+            });
+            ui.label(format!(
+                "secondary off: wrist {} · grip {}{}",
+                yes_no(s.secondary_wrist_off),
+                yes_no(s.secondary_grip_off),
+                if s.overrode_live_target {
+                    " · overrode a game target"
+                } else {
+                    ""
+                }
+            ));
+            ui.label(match late.deltas[i] {
+                Some((shift, turn)) => {
+                    format!("late update: {:.1} mm · {:.1}°", shift * 1000.0, turn)
+                }
+                None => "late update: none".to_owned(),
+            });
+        }
+    });
+    ui.label(format!(
+        "Late-updated gun matrices {} · palette uploads edited {}",
+        late.weapons_updated, late.palettes_edited
+    ));
+}
+
+fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
+    ui.checkbox(&mut h.ik, "Hand IK")
+        .on_hover_text("Drive the wrists to the controllers with HumanIK.");
+    ui.checkbox(&mut h.late_update, "Render-time late update")
+        .on_hover_text("Re-pose the hands and the held gun from the latest controller pose.");
+    ui.checkbox(
+        &mut h.suppress_secondary_ik,
+        "Switch off the game's secondary hand IK",
+    )
+    .on_hover_text("The weapon off-hand grip, the grapple fire arm, and the parachute handles.");
+    ui.add(egui::Slider::new(&mut h.reach_t, 0.0..=1.0).text("Position reach"));
+    ui.add(egui::Slider::new(&mut h.reach_r, 0.0..=1.0).text("Rotation reach"));
+    ui.add(egui::Slider::new(&mut h.pull, 0.0..=1.0).text("Pull"));
+    ui.add(egui::Slider::new(&mut h.resist, 0.0..=1.0).text("Resist"));
+    ui.add(egui::Slider::new(&mut h.yield_blend_s, 0.0..=2.0).text("Yield blend (s)"));
+    ui.add(egui::Slider::new(&mut h.return_blend_s, 0.0..=2.0).text("Return blend (s)"));
+    ui.label("Grip offset (right hand, grip frame; the left mirrors it)");
+    vec3_drag(ui, "Wrist position (m)", &mut h.grip.position_m, 0.005);
+    vec3_drag(
+        ui,
+        "Rotation (°, X then Y then Z)",
+        &mut h.grip.rotation_deg,
+        1.0,
+    );
+    if ui.button("Reset grip offset").clicked() {
+        h.grip = GripOffset::INDEX_BEST_GUESS;
+    }
+    egui::CollapsingHeader::new("Hand tiers").show(ui, |ui| {
+        for state in TierState::ALL {
+            let tier = h.tiers.tier_mut(state);
+            egui::ComboBox::from_label(state.label())
+                .selected_text(tier.label())
+                .show_ui(ui, |ui| {
+                    for option in HandTier::ALL {
+                        ui.selectable_value(tier, option, option.label());
+                    }
+                });
+        }
+        if ui.button("Reset to the plan").clicked() {
+            h.tiers = HandTierTable::PLAN;
+        }
+    });
+}
+
+fn vec3_drag(ui: &mut Ui, label: &str, v: &mut Vec3, speed: f64) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.add(egui::DragValue::new(&mut v.x).speed(speed).prefix("x "));
+        ui.add(egui::DragValue::new(&mut v.y).speed(speed).prefix("y "));
+        ui.add(egui::DragValue::new(&mut v.z).speed(speed).prefix("z "));
     });
 }
 

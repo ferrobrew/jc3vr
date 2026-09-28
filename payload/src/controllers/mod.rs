@@ -13,7 +13,9 @@
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
 //! - [`body`]: the player's body dimensions and the remap onto the character's proportions;
-//! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK.
+//! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
+//! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
+//!   update.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
@@ -32,6 +34,7 @@ pub mod bindings;
 pub mod body;
 pub mod config;
 pub mod frame;
+pub mod hands;
 pub mod mode;
 pub mod scheme;
 
@@ -40,5 +43,7 @@ pub use config::ControllersConfig;
 /// The controller subsystems' hooks, aggregated into the payload's hook library by
 /// [`crate::hooks`].
 pub(crate) fn hook_library() -> HookLibrary {
-    HookLibrary::new().with_hook_library(aim_state::hook_library())
+    HookLibrary::new()
+        .with_hook_library(aim_state::hook_library())
+        .with_hook_library(hands::hook_library())
 }
