@@ -33,6 +33,10 @@ pub struct ControllersConfig {
     pub input: InputConfig,
     /// On-foot stick locomotion.
     pub locomotion: LocomotionConfig,
+    /// The per-tick mode detector.
+    pub mode: ModeConfig,
+    /// The controller-to-game bindings.
+    pub bindings: BindingsConfig,
     /// The aim-state pin and the mental-state cuts.
     pub aim_state: AimStateConfig,
     /// Controller-owned hands.
@@ -61,6 +65,8 @@ impl ControllersConfig {
             dominant_hand: Hand::Right,
             input: InputConfig::new(),
             locomotion: LocomotionConfig::new(),
+            mode: ModeConfig::new(),
+            bindings: BindingsConfig::new(),
             aim_state: AimStateConfig::new(),
             hands: HandsConfig::new(),
             aim: AimConfig::new(),
@@ -155,6 +161,53 @@ pub enum LocomotionDirection {
     Head,
     /// Forward is where the off-hand controller points (yaw only).
     OffHand,
+}
+
+/// The per-tick mode detector (see [`crate::controllers::mode`]). It reads the game's state and
+/// selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game
+/// sees.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct ModeConfig {
+    /// How many consecutive ticks a new gameplay mode must be detected before it takes effect. One
+    /// switches at once; the default rides out a one-tick flicker during an animation blend.
+    pub debounce_ticks: u32,
+}
+
+impl ModeConfig {
+    pub const fn new() -> Self {
+        Self { debounce_ticks: 2 }
+    }
+}
+
+/// The controller-to-game bindings (see [`crate::controllers::bindings`]). They inject only under
+/// the controller scheme while a controller is active, so they default on.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct BindingsConfig {
+    /// Inject the controllers' input into the game's actions.
+    pub enabled: bool,
+    /// The radial deadzone of the stick that moves, steers, and navigates, `0..1`. The output is
+    /// rescaled so that it starts from zero at the deadzone's edge.
+    pub move_deadzone: f32,
+    /// The trigger pull below which an analog trigger action (throttle, collective, thrust) reads
+    /// as zero, `0..1`.
+    pub trigger_deadzone: f32,
+    /// How long the system button must be held to open the commlink rather than pause, seconds.
+    pub long_press_s: f32,
+    /// How far the move stick must be pushed when the wingsuit's A is pressed for the press to
+    /// evade rather than open the parachute, `0..1`.
+    pub evade_flick: f32,
+}
+
+impl BindingsConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            move_deadzone: 0.15,
+            trigger_deadzone: 0.05,
+            long_press_s: 0.5,
+            evade_flick: 0.8,
+        }
+    }
 }
 
 /// The aim-state pin and the mental-state cuts. Both act only under the controller scheme.

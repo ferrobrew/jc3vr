@@ -289,10 +289,33 @@ fn _EffectorState_size_check() {
     unreachable!()
 }
 #[repr(C, align(8))]
-/// Maps action IDs to effector slots.
-pub struct InputActionMap {}
+/// Maps action IDs to effector slots (`Input::CInputActionMap`). Each action owns a linked list of
+/// effectors, one per device that binds it; the lookups pick one of them.
+pub struct InputActionMap {
+    /// Actions that stay readable while the map is blocked.
+    pub m_ExceptionList: crate::types::std_vector::Vector<i32>,
+    _field_20: [u8; 1128],
+    /// Actions blocked individually, regardless of [`m_Disabled`](crate::input::input_action_map::InputActionMap::m_Disabled).
+    pub m_DisabledActions: crate::types::std_vector::Vector<i32>,
+    /// The blocker bits (see [`InputSystemBlocker`](crate::input::input_action_map::InputSystemBlocker)). While any bit is set and
+    /// [`m_OverrideBlocker`](crate::input::input_action_map::InputActionMap::m_OverrideBlocker) is clear, lookups for actions outside
+    /// [`m_ExceptionList`](crate::input::input_action_map::InputActionMap::m_ExceptionList) return the [`null_effector`](get_null_effector).
+    pub m_Disabled: u32,
+    /// Suspends [`m_Disabled`](crate::input::input_action_map::InputActionMap::m_Disabled) for lookups while set. `CSteering::OverrideBlocker`
+    /// sets it around the reads that must work while the map is blocked, such as the pause and
+    /// commlink toggles.
+    pub m_OverrideBlocker: bool,
+    _field_4ad: [u8; 3],
+}
+fn _InputActionMap_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4B0], InputActionMap>([0u8; 0x4B0]);
+    }
+    unreachable!()
+}
 impl InputActionMap {
     pub const GetActionEffector_ADDRESS: usize = 0x1402F43B0;
+    /// `GetActionEffector(action, device)`: the four-argument lookup with the blockers honoured.
     pub unsafe fn GetActionEffector(
         &mut self,
         action_id: i32,
@@ -307,6 +330,51 @@ impl InputActionMap {
                 Self::GetActionEffector_ADDRESS,
             );
             f(self as *mut Self as _, action_id, device_index)
+        }
+    }
+    pub const GetActionEffectorIgnoringBlockers_ADDRESS: usize = 0x1402F33A0;
+    /// The full `GetActionEffector(action, device, ignore_blockers)` lookup. Unless
+    /// `ignore_blockers` is set, it first returns the [`null_effector`](get_null_effector) when the map is blocked (see
+    /// [`m_Disabled`](crate::input::input_action_map::InputActionMap::m_Disabled)) or the action is in
+    /// [`m_DisabledActions`](crate::input::input_action_map::InputActionMap::m_DisabledActions). With `device_index` of `-1` it walks the
+    /// action's effector list and returns the effector with the largest
+    /// [`m_Value`](crate::input::input_action_map::InputDeviceEffector::m_Value), preferring a later
+    /// [`Released`](crate::input::input_action_map::EffectorState::Released) one over an earlier one that is not, and returns the
+    /// [`null_effector`](get_null_effector) for an action no device binds. With a device index it returns that device's
+    /// effector, allocating and linking a new one when the device has none.
+    pub unsafe fn GetActionEffectorIgnoringBlockers(
+        &mut self,
+        action: crate::input::input_action_map::Action,
+        device_index: i32,
+        ignore_blockers: bool,
+    ) -> *mut crate::input::input_action_map::InputDeviceEffector {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                action: crate::input::input_action_map::Action,
+                device_index: i32,
+                ignore_blockers: bool,
+            ) -> *mut crate::input::input_action_map::InputDeviceEffector = ::std::mem::transmute(
+                Self::GetActionEffectorIgnoringBlockers_ADDRESS,
+            );
+            f(self as *mut Self as _, action, device_index, ignore_blockers)
+        }
+    }
+    pub const GetActionEffectorForAction_ADDRESS: usize = 0x1402F43C0;
+    /// `GetActionEffector(action)`: the lookup with device `-1` and the blockers honoured, which is
+    /// how every `CSteering` reader resolves an action.
+    pub unsafe fn GetActionEffectorForAction(
+        &mut self,
+        action: crate::input::input_action_map::Action,
+    ) -> *mut crate::input::input_action_map::InputDeviceEffector {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                action: crate::input::input_action_map::Action,
+            ) -> *mut crate::input::input_action_map::InputDeviceEffector = ::std::mem::transmute(
+                Self::GetActionEffectorForAction_ADDRESS,
+            );
+            f(self as *mut Self as _, action)
         }
     }
 }
@@ -324,6 +392,22 @@ impl std::convert::AsMut<InputActionMap> for InputActionMap {
 /// One input effector slot. The pointer [`InputActionMap::GetActionEffector`](crate::input::input_action_map::InputActionMap::GetActionEffector) returns is the head of a
 /// linked-list node whose extra id / next fields follow this struct; reading the effector itself uses
 /// only these fields.
+///
+/// The device poll (`CInputDeviceEffector::Update`) runs once per
+/// [`InputDeviceManager::Update`](crate::input::input_device_manager::InputDeviceManager::Update) for every
+/// effector bound to a device. It overwrites [`m_Value`](crate::input::input_action_map::InputDeviceEffector::m_Value) with the device's reading and
+/// advances [`m_State`](crate::input::input_action_map::InputDeviceEffector::m_State) against the device's button threshold:
+/// [`Idle`](crate::input::input_action_map::EffectorState::Idle) moves to [`Idle2`](crate::input::input_action_map::EffectorState::Idle2);
+/// [`Idle2`](crate::input::input_action_map::EffectorState::Idle2) accumulates [`m_StateTime`](crate::input::input_action_map::InputDeviceEffector::m_StateTime) and becomes
+/// [`Clicked`](crate::input::input_action_map::EffectorState::Clicked) above the threshold; [`Clicked`](crate::input::input_action_map::EffectorState::Clicked)
+/// zeroes the time and becomes [`Pressed`](crate::input::input_action_map::EffectorState::Pressed) or
+/// [`Released`](crate::input::input_action_map::EffectorState::Released); [`Pressed`](crate::input::input_action_map::EffectorState::Pressed) accumulates the time
+/// and becomes [`Released`](crate::input::input_action_map::EffectorState::Released) at or below the threshold; and
+/// [`Released`](crate::input::input_action_map::EffectorState::Released) becomes [`Clicked`](crate::input::input_action_map::EffectorState::Clicked) or
+/// [`Idle`](crate::input::input_action_map::EffectorState::Idle). The readers report [`m_StateTime`](crate::input::input_action_map::InputDeviceEffector::m_StateTime) as the time
+/// pressed only in [`Pressed`](crate::input::input_action_map::EffectorState::Pressed), and as the time pressed before release
+/// only in [`Released`](crate::input::input_action_map::EffectorState::Released); "pressed" means
+/// [`Pressed`](crate::input::input_action_map::EffectorState::Pressed) or [`Clicked`](crate::input::input_action_map::EffectorState::Clicked).
 ///
 /// The `m_Value`, `m_State`, and `m_StateTime` offsets are confirmed against their uses.
 pub struct InputDeviceEffector {
@@ -358,7 +442,11 @@ impl InputDeviceEffector {
         }
     }
     pub const Press_ADDRESS: usize = 0x1402EE660;
-    /// Sets `m_Value` and drives the [`EffectorState::Pressed`](crate::input::input_action_map::EffectorState::Pressed) state.
+    /// Sets `m_Value` and drives the [`EffectorState::Pressed`](crate::input::input_action_map::EffectorState::Pressed) state, zeroing
+    /// [`m_PrevValue`](crate::input::input_action_map::InputDeviceEffector::m_PrevValue) and [`m_StateTime`](crate::input::input_action_map::InputDeviceEffector::m_StateTime). The next device
+    /// poll moves a pressed effector whose device reads nothing to
+    /// [`EffectorState::Released`](crate::input::input_action_map::EffectorState::Released), so a press repeated every frame reads as pressed with a hold
+    /// time that never grows. Does nothing on the [`null_effector`](get_null_effector).
     pub unsafe fn Press(&mut self, value: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, value: f32) = ::std::mem::transmute(
@@ -398,9 +486,25 @@ impl std::convert::AsMut<InputDeviceEffector> for InputDeviceEffector {
         self
     }
 }
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A bit of [`InputActionMap::m_Disabled`](crate::input::input_action_map::InputActionMap::m_Disabled): one independent reason for blocking a map's input. The
+/// map is blocked while any bit is set. `CSteering::Enable` and `CInputActionMap::SetEnabled` set and
+/// clear one bit each.
+pub enum InputSystemBlocker {
+    Ui = 1isize as _,
+}
+fn _InputSystemBlocker_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], InputSystemBlocker>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// The local player's action map: a write-side wrapper that drives effectors by [`Action`](crate::input::input_action_map::Action). Invalid
-/// action IDs resolve to a shared null-effector sentinel, which the setters guard against.
+/// action IDs resolve to the [`null_effector`](get_null_effector), which the setters guard against. The singleton is
+/// `CSteeringPlayer::m_ActionMapPlayer`: the pointer is the player steering's [`InputActionMap`](crate::input::input_action_map::InputActionMap)
+/// itself, so the two types describe one object.
 pub struct LocalPlayerActionMap {}
 impl LocalPlayerActionMap {
     pub unsafe fn get() -> Option<&'static mut Self> {
@@ -432,7 +536,9 @@ impl LocalPlayerActionMap {
         }
     }
     pub const ForceSetPressed_ADDRESS: usize = 0x140C124B0;
-    /// Drives an analog or held action: sets the effector's value and presses it.
+    /// Drives an analog or held action through [`InputDeviceEffector::Press`](crate::input::input_action_map::InputDeviceEffector::Press) on the effector
+    /// [`GetActionEffector`](crate::input::input_action_map::LocalPlayerActionMap::GetActionEffector) resolves, which zeroes the effector's hold
+    /// time.
     pub unsafe fn ForceSetPressed(
         &mut self,
         action: crate::input::input_action_map::Action,
@@ -476,4 +582,25 @@ impl std::convert::AsMut<LocalPlayerActionMap> for LocalPlayerActionMap {
 /// by the `CSteeringUtil` action/string map constructors.
 pub unsafe fn get_action_name_table() -> &'static mut [*const u8; 255] {
     unsafe { &mut *(0x142D99370 as *mut [*const u8; 255]) }
+}
+/// The shared effector every lookup returns when it finds nothing. The effector setters check for
+/// it and write nothing.
+pub unsafe fn get_null_effector() -> &'static mut crate::input::input_action_map::InputDeviceEffector {
+    unsafe {
+        &mut *(0x142D4B2D0 as *mut crate::input::input_action_map::InputDeviceEffector)
+    }
+}
+/// The UI action map (`CSteeringUI::m_ActionMapUI`), created by `CSteeringUI::LoadActionMap` with
+/// the GUI bindings. The UI screens read their navigation, confirm, cancel, tab, and page actions
+/// from it through the UI steering; null before the UI steering exists.
+pub unsafe fn get_ui_action_map() -> &'static mut *mut crate::input::input_action_map::InputActionMap {
+    unsafe {
+        &mut *(0x142F38750 as *mut *mut crate::input::input_action_map::InputActionMap)
+    }
+}
+impl LocalPlayerActionMap {
+    /// The map as the `InputActionMap` it is: the singleton points at the action map itself.
+    pub fn as_input_action_map(&mut self) -> &mut InputActionMap {
+        unsafe { &mut *(self as *mut Self as *mut InputActionMap) }
+    }
 }

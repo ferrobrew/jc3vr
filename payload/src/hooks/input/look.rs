@@ -5,7 +5,12 @@
 //! slots including `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN`. These are the mouse-look
 //! deltas the game's camera system reads. We intercept them post-call: read the values, clear the
 //! effectors so the game's camera doesn't respond, and feed the deltas into the headpose simulation.
-//! The same seam is where [`crate::hooks::input::swim`] refuses backward movement in water.
+//! The same seam is where [`crate::hooks::input::swim`] refuses backward movement in water, and
+//! where the motion controllers detect the mode and inject their bindings
+//! ([`crate::controllers::bindings::input_tick`]): after the poll, so the injected state survives
+//! until the game reads it, and before the swim refusal, so it covers the controllers' input too.
+//! The controllers' right stick turns the body through the same VR turn scheme as the look
+//! effectors.
 
 use detours_macro::detour;
 use jc3gi::input::{
@@ -14,7 +19,7 @@ use jc3gi::input::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::headpose;
+use crate::{controllers, headpose};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&INPUT_DEVICE_MANAGER_UPDATE_BINDER)
@@ -23,6 +28,8 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::input::input_device_manager::InputDeviceManager::Update_ADDRESS)]
 fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
     INPUT_DEVICE_MANAGER_UPDATE.get().unwrap().call(manager, dt);
+
+    let controllers = controllers::bindings::input_tick(dt);
 
     if !headpose::is_active() {
         return;
@@ -41,7 +48,17 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
         return;
     };
     unsafe {
-        let (look_x, look_x_delta) = read_look_axis(map, Action::LOOK_RIGHT, Action::LOOK_LEFT);
+        let (mut look_x, mut look_x_delta) =
+            read_look_axis(map, Action::LOOK_RIGHT, Action::LOOK_LEFT);
+        // A deflected controller stick takes the turn over from the look effectors: the two are
+        // different kinds of input (a stick rate against a possible mouse delta), and summing them
+        // would scale neither correctly.
+        if let Some(turn) = controllers.body_turn
+            && turn != 0.0
+        {
+            look_x = turn;
+            look_x_delta = false;
+        }
         let (look_y, _) = read_look_axis(map, Action::LOOK_UP, Action::LOOK_DOWN);
 
         clear_effector(map, Action::LOOK_LEFT);

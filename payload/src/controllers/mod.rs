@@ -9,6 +9,9 @@
 //! - [`config`]: [`ControllersConfig`], one toggle per subsystem;
 //! - [`frame`]: the published snapshot and the input edge latch;
 //! - [`scheme`]: controller versus gamepad scheme selection;
+//! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
+//! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
+//!   injection on the input tick;
 //! - [`body`]: the player's body dimensions and the remap onto the character's proportions.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
@@ -19,6 +22,7 @@ use re_utilities::hook_library::HookLibrary;
 
 // The remap is milestone 2's; until the posture and hand work call it, only its tests and the
 // debug UI's readout of the loaded dimensions do.
+pub mod bindings;
 #[allow(
     dead_code,
     reason = "the body-scale remap is published for the hands and posture subsystems"
@@ -26,6 +30,7 @@ use re_utilities::hook_library::HookLibrary;
 pub mod body;
 pub mod config;
 pub mod frame;
+pub mod mode;
 pub mod scheme;
 
 pub use config::ControllersConfig;

@@ -50,9 +50,11 @@ impl InputDeviceManager {
             as *const crate::input::input_device_manager::InputDeviceManagerVftable
     }
     pub const Update_ADDRESS: usize = 0x1402F20C0;
-    /// The per-frame device poll: reads all devices, refreshes their effector states, and then runs
-    /// [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks). The poll overwrites effector values written
-    /// before it runs.
+    /// The per-frame device poll: reads all devices and refreshes their effector states (see
+    /// [`InputDeviceEffector`](crate::input::input_action_map::InputDeviceEffector)). `CGameState::PreUpdate`
+    /// calls it, then [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks), before the frame's world
+    /// update. The poll overwrites effector values written before it runs, and skips the devices when
+    /// the clock's real time is unchanged since the previous poll.
     pub unsafe fn Update(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
