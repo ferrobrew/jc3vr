@@ -182,10 +182,6 @@ pub struct TrackedPose {
     pub angular_velocity: Option<Vec3>,
 }
 
-#[allow(
-    dead_code,
-    reason = "the validity predicates are the contract for the hand and aim subsystems"
-)]
 impl TrackedPose {
     /// Whether both the position and the orientation are usable.
     pub fn is_valid(&self) -> bool {
@@ -193,6 +189,7 @@ impl TrackedPose {
     }
 
     /// Whether both the position and the orientation are measured this frame.
+    #[allow(dead_code, reason = "part of the pose validity contract")]
     pub fn is_tracked(&self) -> bool {
         self.is_valid() && self.position_tracked && self.orientation_tracked
     }
@@ -470,10 +467,6 @@ pub struct Edges {
     pub released: [ButtonSet; 2],
 }
 
-#[allow(
-    dead_code,
-    reason = "the edge queries are the contract for the input tick's bindings"
-)]
 impl Edges {
     /// Whether `button` on `hand` was pressed since the last take.
     pub fn pressed(&self, hand: Hand, button: Button) -> bool {
@@ -508,7 +501,6 @@ pub fn with_latest<R>(f: impl FnOnce(&ControllerFrame) -> R) -> Option<R> {
 
 /// Take the edges accumulated since the last take, and reset the latch. The input tick is the one
 /// consumer.
-#[allow(dead_code, reason = "the input tick's bindings are the consumer")]
 pub fn take_edges() -> Edges {
     std::mem::take(&mut SLOT.lock().edges)
 }

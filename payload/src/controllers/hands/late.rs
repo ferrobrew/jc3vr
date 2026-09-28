@@ -91,10 +91,6 @@ pub struct RenderHand {
 
 /// The render-time hand poses of the frame in flight, indexed by [`Hand::index`]; `None` for an
 /// inert or untracked hand.
-#[allow(
-    dead_code,
-    reason = "the overlay layer's controller-driven hands read it"
-)]
 pub fn render_hands() -> [Option<RenderHand>; 2] {
     FRAME.lock().map_or([None; 2], |frame| frame.hands)
 }

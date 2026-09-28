@@ -65,7 +65,6 @@ pub fn current() -> Scheme {
 }
 
 /// Whether the controller scheme is in effect: the gate every controller subsystem checks.
-#[allow(dead_code, reason = "the gate for the controller subsystems")]
 pub fn is_controllers() -> bool {
     current() == Scheme::Controllers
 }

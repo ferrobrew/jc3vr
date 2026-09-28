@@ -30,13 +30,7 @@ use re_utilities::hook_library::HookLibrary;
 
 pub mod aim;
 pub mod aim_state;
-// The remap is milestone 2's; until the posture and hand work call it, only its tests and the
-// debug UI's readout of the loaded dimensions do.
 pub mod bindings;
-#[allow(
-    dead_code,
-    reason = "the body-scale remap is published for the hands and posture subsystems"
-)]
 pub mod body;
 pub mod config;
 pub mod frame;
