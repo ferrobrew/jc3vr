@@ -140,8 +140,8 @@ pub fn controller_activity(hand: &HandFrame, deadzone: f32) -> bool {
 /// threshold, or a stick past XInput's recommended deadzone.
 pub fn gamepad_activity(pad: &XINPUT_GAMEPAD) -> bool {
     let beyond = |x: i16, y: i16, deadzone: i16| {
-        let (x, y) = (i32::from(x), i32::from(y));
-        let deadzone = i32::from(deadzone);
+        let (x, y) = (i64::from(x), i64::from(y));
+        let deadzone = i64::from(deadzone);
         x * x + y * y > deadzone * deadzone
     };
     pad.wButtons.0 != 0
@@ -373,7 +373,11 @@ mod tests {
         assert!(!gamepad_activity(&pad));
         pad.sThumbLX = 9000;
         assert!(gamepad_activity(&pad));
+        pad.sThumbLX = i16::MIN;
+        pad.sThumbLY = i16::MIN;
+        assert!(gamepad_activity(&pad));
         pad.sThumbLX = 0;
+        pad.sThumbLY = 0;
         pad.bRightTrigger = 200;
         assert!(gamepad_activity(&pad));
         pad.bRightTrigger = 0;

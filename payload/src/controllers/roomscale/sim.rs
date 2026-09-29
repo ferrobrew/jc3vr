@@ -74,10 +74,75 @@ pub fn status() -> SimStatus {
     SIM.lock().status
 }
 
-/// The chase's share of the body's movement on the latest tick, consumed once by the frame half's
-/// cockpit shift (see [`crate::controllers::roomscale::rebase`]).
-pub(super) fn take_share() -> f32 {
-    std::mem::take(&mut SIM.lock().share)
+/// Cumulative world-space compensation at the last two completed simulation steps.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct CompletedMovement {
+    pub previous: Vec2,
+    pub current: Vec2,
+}
+
+pub(super) fn completed_movement() -> CompletedMovement {
+    let mut sim = SIM.lock();
+    if sim
+        .status
+        .at
+        .is_none_or(|at| Instant::now().duration_since(at) > probe::STALE_AFTER)
+    {
+        sim.movement.clear();
+    }
+    sim.movement.completed
+}
+
+pub(super) fn reset_movement() {
+    SIM.lock().movement.clear();
+}
+
+/// Publish after the post-physics serial pass schedules pose finalization, at the same boundary
+/// where the camera's root and animated-head pair are captured. This is not the HumanIK solve.
+///
+/// # Safety
+///
+/// Called only at the local character's pose-finalization entry, before anchor capture.
+pub(crate) unsafe fn complete_movement(character: *mut Character) {
+    let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
+        return;
+    };
+    let previous = glam::Mat4::from(character.m_WorldMatrixT0)
+        .w_axis
+        .truncate();
+    let current = glam::Mat4::from(character.m_WorldMatrixT1)
+        .w_axis
+        .truncate();
+    let mut sim = SIM.lock();
+    if teleport::epoch() != sim.seen_epoch {
+        sim.movement.clear();
+    }
+    sim.movement.complete(previous, current);
+}
+
+#[derive(Default)]
+struct Requests {
+    pending: Option<chase::Movement>,
+    completed: CompletedMovement,
+}
+
+impl Requests {
+    fn submit(&mut self, movement: chase::Movement) {
+        self.pending = Some(movement);
+    }
+
+    fn complete(&mut self, previous: Vec3, current: Vec3) {
+        self.completed.previous = self.completed.current;
+        if let Some(request) = self.pending.take() {
+            let delta = current - previous;
+            self.completed.current += request.achieved_chase(Vec2::new(delta.x, delta.z));
+        }
+    }
+
+    fn clear(&mut self) {
+        self.pending = None;
+        self.completed.previous = self.completed.current;
+    }
 }
 
 /// Release a capsule the mod holds, from outside the locomotion task (the task no longer runs, or
@@ -104,7 +169,7 @@ struct Sim {
     seen_epoch: u64,
     /// The body's position on the last tick, for the warp test.
     last_position: Option<Vec3>,
-    share: f32,
+    movement: Requests,
     status: SimStatus,
 }
 
@@ -113,7 +178,13 @@ static SIM: Mutex<Sim> = Mutex::new(Sim {
     probe: HeadProbe::new(),
     seen_epoch: 0,
     last_position: None,
-    share: 0.0,
+    movement: Requests {
+        pending: None,
+        completed: CompletedMovement {
+            previous: Vec2::ZERO,
+            current: Vec2::ZERO,
+        },
+    },
     status: SimStatus {
         at: None,
         chase_velocity: Vec2::ZERO,
@@ -162,9 +233,9 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         .is_none_or(|at| now.duration_since(at) > probe::STALE_AFTER)
     {
         sim.last_position = None;
+        sim.movement.clear();
     }
     sim.status.at = Some(now);
-    sim.share = 0.0;
 
     let wrote_velocity = character.m_CurrentMotionState == Character::MOTION_STATE_TASK_DEFINED
         && !unsafe { character.IsAttachedToVehicle() };
@@ -196,6 +267,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let epoch = teleport::epoch();
     if epoch != sim.seen_epoch {
         sim.seen_epoch = epoch;
+        sim.movement.clear();
         sim.chaser.reset();
         sim.probe.reset();
         sim.status.chase_velocity = Vec2::ZERO;
@@ -203,6 +275,7 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     }
 
     let (Some(frame), true) = (frame, live) else {
+        sim.movement.clear();
         sim.chaser.reset();
         sim.probe.reset();
         sim.status.chase_velocity = Vec2::ZERO;
@@ -218,8 +291,9 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
 
     let seated_out = frame.seat == SeatPhase::Out;
     if config.chase.enabled && frame.posture == EffectivePosture::Roomscale && seated_out {
-        unsafe { chase_tick(&mut sim, character, frame.chase_offset, &config) };
+        unsafe { chase_tick(&mut sim, character, frame.chase_offset, &config, dt) };
     } else {
+        sim.movement.clear();
         sim.chaser.reset();
         sim.status.chase_velocity = Vec2::ZERO;
         sim.status.chase_engaged = false;
@@ -253,6 +327,7 @@ unsafe fn chase_tick(
     character: &mut Character,
     offset: Vec2,
     config: &RoomscaleConfig,
+    dt: f32,
 ) {
     let stick = unsafe { move_stick() };
     let chase = sim.chaser.velocity(offset, stick, &config.chase);
@@ -267,7 +342,12 @@ unsafe fn chase_tick(
         };
         unsafe { character.SetWantedWorldVelocity(&world) };
     }
-    sim.share = chase::share(task, chase);
+    sim.movement.submit(chase::Movement::new(
+        task,
+        chase,
+        config.chase.max_speed_mps,
+        dt,
+    ));
     sim.status.chase_velocity = chase;
     sim.status.task_velocity = task;
     sim.status.chase_engaged = sim.chaser.engaged();
@@ -342,4 +422,57 @@ unsafe fn velocity(proxy: &PfxCharacterInstance) -> Vec3 {
     let mut out = Vector3 { data: [0.0; 3] };
     unsafe { proxy.GetVelocity(&mut out) };
     Vec3::from_array(out.data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stationary_prior_pair_cannot_consume_a_new_unsolved_request() {
+        let mut requests = Requests::default();
+        requests.complete(Vec3::ZERO, Vec3::ZERO);
+        requests.submit(chase::Movement::new(Vec2::X, -Vec2::X, 3.0, 1.0));
+        assert_eq!(requests.completed, CompletedMovement::default());
+        assert!(requests.pending.is_some());
+        requests.complete(Vec3::ZERO, Vec3::ZERO);
+        assert_eq!(requests.completed.current, -Vec2::X);
+        assert!(requests.pending.is_none());
+    }
+
+    #[test]
+    fn two_steps_before_render_accumulate_both_compensations() {
+        let mut requests = Requests::default();
+        for step in 0..2 {
+            requests.submit(chase::Movement::new(Vec2::ZERO, Vec2::X, 3.0, 1.0));
+            requests.complete(Vec3::X * step as f32, Vec3::X * (step + 1) as f32);
+        }
+        assert_eq!(
+            requests.completed,
+            CompletedMovement {
+                previous: Vec2::X,
+                current: Vec2::X * 2.0
+            }
+        );
+    }
+
+    #[test]
+    fn task_exit_and_stale_reset_settle_without_replaying() {
+        let mut requests = Requests::default();
+        requests.submit(chase::Movement::new(Vec2::ZERO, Vec2::X, 3.0, 1.0));
+        requests.complete(Vec3::ZERO, Vec3::X);
+        requests.complete(Vec3::X, Vec3::X + Vec3::Z);
+        assert_eq!(
+            requests.completed,
+            CompletedMovement {
+                previous: Vec2::X,
+                current: Vec2::X
+            }
+        );
+        requests.submit(chase::Movement::new(Vec2::ZERO, Vec2::Y, 3.0, 1.0));
+        requests.clear();
+        requests.complete(Vec3::ZERO, Vec3::Z);
+        assert_eq!(requests.completed.current, Vec2::X);
+        assert_eq!(requests.completed.previous, Vec2::X);
+    }
 }

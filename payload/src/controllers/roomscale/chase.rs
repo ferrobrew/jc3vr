@@ -73,15 +73,57 @@ pub fn combine(task: Vec2, chase: Vec2, max_chase_speed: f32) -> Vec2 {
     }
 }
 
-/// The share of the body's movement the chase is responsible for, `0..=1`: the chase's speed
-/// against the sum of both speeds. The body's achieved displacement is split in this proportion,
-/// so that only the chase's part is taken out of the view.
-pub fn share(task: Vec2, chase: Vec2) -> f32 {
-    let (t, c) = (task.length(), chase.length());
-    if c + t <= f32::EPSILON || !(c + t).is_finite() {
-        0.0
-    } else {
-        c / (c + t)
+/// The requested displacement split before the proxy's single collision solve.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Movement {
+    pub task: Vec2,
+    pub chase: Vec2,
+}
+
+impl Movement {
+    /// Apply the combined speed cap equally to both contributors, then integrate for this tick.
+    pub fn new(task: Vec2, chase: Vec2, max_chase_speed: f32, dt: f32) -> Self {
+        if !task.is_finite() || !chase.is_finite() || !dt.is_finite() || dt <= 0.0 {
+            return Self::default();
+        }
+        let speed = (task + chase).length();
+        let capped = combine(task, chase, max_chase_speed);
+        let scale = if speed > 0.0 {
+            capped.length() / speed
+        } else {
+            1.0
+        };
+        Self {
+            task: task * (scale * dt),
+            chase: chase * (scale * dt),
+        }
+    }
+
+    /// Attribute free movement exactly, including opposing requests. The engine exposes only one
+    /// solved proxy displacement, so collisions do not identify each contributor. For a mismatch,
+    /// remove only the chase's forward projection along achieved movement, bounded by the achieved
+    /// distance and the requested chase distance. This deliberately leaves ambiguous motion visible;
+    /// it is not a reconstruction of the collision solver or a task-only counterfactual.
+    pub fn achieved_chase(self, actual: Vec2) -> Vec2 {
+        if !actual.is_finite() || !self.task.is_finite() || !self.chase.is_finite() {
+            return Vec2::ZERO;
+        }
+        let expected = self.task + self.chase;
+        if actual.distance(expected) <= 1e-4 + expected.length() * 1e-3 {
+            return self.chase;
+        }
+        let distance = actual.length();
+        if distance <= f32::EPSILON {
+            return Vec2::ZERO;
+        }
+        let direction = actual / distance;
+        direction
+            * self
+                .chase
+                .dot(direction)
+                .max(0.0)
+                .min(distance)
+                .min(self.chase.length())
     }
 }
 
@@ -165,11 +207,33 @@ mod tests {
     }
 
     #[test]
-    fn the_share_splits_by_speed() {
-        assert_eq!(share(Vec2::ZERO, Vec2::X), 1.0);
-        assert_eq!(share(Vec2::X, Vec2::ZERO), 0.0);
-        assert_eq!(share(Vec2::ZERO, Vec2::ZERO), 0.0);
-        assert!((share(Vec2::X * 3.0, Vec2::Y) - 0.25).abs() < 1e-5);
+    fn free_motion_preserves_each_capped_task_vector() {
+        for (task, chase) in [
+            (Vec2::X, Vec2::Y),
+            (Vec2::X * 3.0, -Vec2::X),
+            (Vec2::X, -Vec2::X),
+            (Vec2::X * 5.0, Vec2::Y * 3.0),
+            (Vec2::X, Vec2::X * 3.0),
+        ] {
+            let movement = Movement::new(task, chase, 3.0, 0.02);
+            let actual = combine(task, chase, 3.0) * 0.02;
+            assert!((actual - movement.achieved_chase(actual)).distance(movement.task) < 1e-6);
+        }
+    }
+
+    #[test]
+    fn blocked_and_sliding_motion_have_bounded_compensation() {
+        let movement = Movement::new(Vec2::X, Vec2::Y, 3.0, 1.0);
+        assert_eq!(movement.achieved_chase(Vec2::ZERO), Vec2::ZERO);
+        assert_eq!(movement.achieved_chase(Vec2::X), Vec2::ZERO);
+        assert_eq!(movement.achieved_chase(Vec2::Y * 0.5), Vec2::Y * 0.5);
+        assert_eq!(movement.achieved_chase(-Vec2::Y), Vec2::ZERO);
+        for actual in [Vec2::new(0.1, 0.2), Vec2::Y * 10.0, Vec2::new(-0.2, 0.3)] {
+            let correction = movement.achieved_chase(actual);
+            assert!(correction.length() <= actual.length() + 1e-6);
+            assert!(correction.length() <= movement.chase.length() + 1e-6);
+            assert!(correction.dot(actual) >= 0.0);
+        }
     }
 
     #[test]

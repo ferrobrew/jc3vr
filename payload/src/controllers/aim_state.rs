@@ -64,6 +64,7 @@ use crate::{
     controllers::{
         aim,
         config::AimStateConfig,
+        hands,
         mode::{self, Mode},
         scheme,
     },
@@ -462,9 +463,38 @@ fn skip_ik_task(ctx: *mut StateContext, task: IkTask) -> bool {
     if !local || !active(|cfg| cfg.skip_arm_ik) {
         return false;
     }
+    if !ik_task_owned(task, hands::ik_owned()) {
+        return false;
+    }
     let index = IkTask::ALL.iter().position(|t| *t == task).unwrap_or(0);
     STATUS.lock().ik_skipped[index] += 1;
     true
+}
+
+fn ik_task_owned(task: IkTask, [left, right]: [bool; 2]) -> bool {
+    match task {
+        IkTask::Aim | IkTask::ReelIn => left && right,
+        IkTask::RightArm => right,
+        IkTask::GrappleFire => left,
+    }
+}
+
+#[cfg(test)]
+mod ik_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn native_tasks_remain_when_their_hands_are_not_owned() {
+        for task in IkTask::ALL {
+            assert!(!ik_task_owned(task, [false; 2]));
+            assert!(ik_task_owned(task, [true; 2]));
+        }
+        assert!(ik_task_owned(IkTask::RightArm, [false, true]));
+        assert!(!ik_task_owned(IkTask::RightArm, [true, false]));
+        assert!(ik_task_owned(IkTask::GrappleFire, [true, false]));
+        assert!(!ik_task_owned(IkTask::Aim, [true, false]));
+        assert!(!ik_task_owned(IkTask::ReelIn, [false, true]));
+    }
 }
 
 #[detour(address = NAimIKTask_Update_ADDRESS)]

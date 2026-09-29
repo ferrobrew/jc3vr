@@ -88,8 +88,13 @@ fn apply_one(effector: &mut InputDeviceEffector, write: &ActionWrite) -> Outcome
             effector.m_StateTime = seconds;
         }
         Phase::Released { seconds } => {
-            // The poll leaves an effector pressed only when its device reads a press.
-            if effector.m_State == EffectorState::Pressed && effector.m_Value > 0.0 {
+            // The poll leaves an effector pressed only when its device reads a press. Both states
+            // are pressed states; a physical click must not be cut short by our release write.
+            if matches!(
+                effector.m_State,
+                EffectorState::Clicked | EffectorState::Pressed
+            ) && effector.m_Value > 0.0
+            {
                 return Outcome::KeptPhysicalPress;
             }
             effector.m_Value = 0.0;
@@ -150,10 +155,12 @@ mod tests {
 
     #[test]
     fn a_release_keeps_a_physical_press() {
-        let mut e = effector(1.0, EffectorState::Pressed, 0.2);
-        let outcome = apply_one(&mut e, &write(0.0, Phase::Released { seconds: 0.5 }));
-        assert_eq!(outcome, Outcome::KeptPhysicalPress);
-        assert_eq!(e.m_State, EffectorState::Pressed);
+        for state in [EffectorState::Clicked, EffectorState::Pressed] {
+            let mut e = effector(1.0, state, 0.2);
+            let outcome = apply_one(&mut e, &write(0.0, Phase::Released { seconds: 0.5 }));
+            assert_eq!(outcome, Outcome::KeptPhysicalPress);
+            assert_eq!(e.m_State, state);
+        }
 
         let mut e = effector(0.0, EffectorState::Released, 0.2);
         apply_one(&mut e, &write(0.0, Phase::Released { seconds: 0.5 }));

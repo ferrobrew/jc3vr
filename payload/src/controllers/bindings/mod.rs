@@ -21,6 +21,7 @@ pub mod controls;
 pub mod grab;
 pub mod hold;
 pub mod inject;
+mod recovery;
 pub mod tables;
 pub mod yank;
 
@@ -35,6 +36,7 @@ use crate::{
             controls::{Controls, yaw_of},
             hold::{HoldTracker, MapKind, Phase},
             inject::Outcome,
+            recovery::{NeutralPolicy, Recovery},
             tables::Bindings,
             yank::{Yank, YankConfig, YankDetector},
         },
@@ -92,9 +94,21 @@ pub struct TickReport {
 /// Run the controllers' part of the input tick: detect the mode (which selects the action set),
 /// then evaluate and inject the bindings. `dt` is the engine's tick delta, seconds.
 pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
-    let config = Config::lock_query(|c| c.controllers);
+    let (config, neutral_policy) = Config::lock_query(|c| {
+        (
+            c.controllers,
+            NeutralPolicy::new(
+                &c.controllers.input,
+                &c.controllers.bindings,
+                &c.headpose.vr_turn,
+            ),
+        )
+    });
     if !config.enabled {
-        STATE.lock().reset();
+        let mut state = STATE.lock();
+        state.reset();
+        state.recovery.suspend();
+        frame::take_edges();
         weapons::stand_down();
         vehicles::stand_down();
         return InputTickOutput::default();
@@ -104,7 +118,9 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { hands::anchor::input_tick(&config) };
 
-    let frame = frame::latest().filter(ControllerFrame::any_active);
+    let frame = frame::latest()
+        .filter(ControllerFrame::any_active)
+        .filter(|frame| frame.focused);
     let idle = if !config.bindings.enabled {
         Some(Idle::Disabled)
     } else if !scheme::is_controllers() {
@@ -118,11 +134,12 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     };
     // The edges are taken even while idle, so that a press from before injection resumed is not
     // replayed then.
-    let edges = frame::take_edges();
+    let mut edges = frame::take_edges();
 
     let mut state = STATE.lock();
-    let (Some(frame), None) = (frame, idle) else {
+    let (Some(mut frame), None) = (frame, idle) else {
         state.reset();
+        state.recovery.suspend();
         weapons::stand_down();
         vehicles::stand_down();
         state.report = TickReport {
@@ -132,6 +149,24 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         };
         return InputTickOutput::default();
     };
+
+    if state.recovery.observe(&frame) {
+        state.reset();
+        weapons::stand_down();
+        vehicles::stand_down();
+        edges = Default::default();
+    }
+    // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it.
+    if frame.action_set != detection.mode.action_set() {
+        state.report = TickReport {
+            detection,
+            ..Default::default()
+        };
+        return InputTickOutput::default();
+    }
+    state
+        .recovery
+        .filter(&mut frame, &mut edges, &neutral_policy);
 
     let dominant = config.dominant_hand;
     let move_rotation = match config.locomotion.direction {
@@ -248,6 +283,7 @@ pub fn yank_status() -> (u64, Option<Yank>) {
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
+    recovery: Recovery::new(),
     bindings: Bindings::new(),
     tracker: HoldTracker::new(),
     yank: YankDetector::new(),
@@ -264,6 +300,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 struct State {
+    recovery: Recovery,
     bindings: Bindings,
     tracker: HoldTracker,
     yank: YankDetector,
@@ -274,8 +311,10 @@ impl State {
     /// Stop injecting: forget every hold and latch without writing. The device poll releases the
     /// held effectors on its own, keeping the last hold time written.
     fn reset(&mut self) {
+        self.recovery.disarm();
         self.bindings = Bindings::new();
         self.tracker.clear();
+        self.yank = YankDetector::new();
     }
 }
 
@@ -296,6 +335,12 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
 /// The grapple hand's distance from the body point a yank pulls toward, in the cockpit frame, or
 /// `None` while the hand is untracked or the hands are inert.
 fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
+    let tracked = frame::with_latest(|frame| {
+        frame.focused && frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
+    })?;
+    if !tracked {
+        return None;
+    }
     let active = hands::active_hands_raw()?;
     let grip = active.hands[hand.index()]?.grip.position;
     Some(grip.distance(yank::body_point(active.head.position, config)))

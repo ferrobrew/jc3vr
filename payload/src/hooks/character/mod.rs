@@ -54,6 +54,7 @@ fn character_update_pass_finalize_pose_parallel(
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
     let plan = local.then(hands::ik::plan);
     unsafe {
+        controllers::roomscale::sim::complete_movement(character);
         body_ik::capture_anchors_and_queue_body_ik(
             character,
             plan.as_ref().map_or([false; 2], HandPlan::driven),

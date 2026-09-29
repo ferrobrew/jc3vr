@@ -19,6 +19,7 @@ use jc3gi::{
     blackboard::{ObjectBlackboard, PersistenceType},
     camera::game_camera_manager::GameCameraManager,
     character::character::{AimState, Character},
+    equipment::weapon::{WeaponBase, WeaponState},
     input::{
         input_action_map::{Action, LocalPlayerActionMap},
         locomotion::{CharacterMovementSettings, get_NCharacter_ActMoveNoAim},
@@ -31,7 +32,11 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    headpose::sim::{HeadMode, LatchState},
+    controllers::scheme,
+    headpose::{
+        self,
+        sim::{HeadMode, LatchState},
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -71,7 +76,9 @@ pub static INSTANT_SPEED_FLOORS: AtomicU64 = AtomicU64::new(0);
 fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     MOVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
     with_forced_aim_state(ctx, || {
-        INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
+        with_head_forward_weapon_aim(ctx, || {
+            INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
+        });
     });
 }
 
@@ -81,10 +88,12 @@ fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut
 fn input_loco_aim_relative_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     AIM_RELATIVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
     with_forced_aim_state(ctx, || {
-        INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
-            .get()
-            .unwrap()
-            .call(ctx, p1, p2);
+        with_head_forward_weapon_aim(ctx, || {
+            INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
+                .get()
+                .unwrap()
+                .call(ctx, p1, p2);
+        });
     });
 }
 
@@ -194,7 +203,9 @@ fn update_fall_steering(
 /// thread, so nothing else reads the flags mid-task.
 fn with_forced_aim_state(ctx: *mut StateContext, call: impl FnOnce()) {
     let character = if Config::lock_query(|c| c.movement.force_fps_movement) {
-        unsafe { character_from_context(ctx).filter(|c| c.m_IsLocalCharacter) }
+        unsafe { character_from_context(ctx) }
+            .filter(|c| c.m_IsLocalCharacter)
+            .map(|c| c as *mut Character)
     } else {
         None
     };
@@ -203,7 +214,8 @@ fn with_forced_aim_state(ctx: *mut StateContext, call: impl FnOnce()) {
         return;
     };
 
-    let saved = character.m_AimFlags;
+    // No Rust reference is retained while the task and its nested scopes access the character.
+    let saved = unsafe { (*character).m_AimFlags };
     let mut forced = saved | AimState::m_AimingWeapon;
     // Mimic the game's own "was aiming last frame" latch: on the first shimmed frame after a gap
     // (loco tasks stopped running -- idle, vehicle, toggle off), leave `m_WasAiming` clear so the
@@ -221,10 +233,112 @@ fn with_forced_aim_state(ctx: *mut StateContext, call: impl FnOnce()) {
         forced |= AimState::m_WasAiming;
     }
 
-    character.m_AimFlags = forced;
+    unsafe { (*character).m_AimFlags = forced };
+    let _restore = AimFlagsGuard { character, saved };
     SHIMMED_CALLS.fetch_add(1, Ordering::Relaxed);
     call();
-    character.m_AimFlags = saved;
+}
+
+/// Temporarily aim the local player's wielded weapon at a point straight ahead of the head while
+/// the FPS locomotion task evaluates its strafe direction. The task reads the weapon's stored aim
+/// point, while the controller gun hook normally writes a hand point there; keeping the original
+/// value outside this scope prevents the locomotion shim from changing firing or aim state.
+fn with_head_forward_weapon_aim(ctx: *mut StateContext, call: impl FnOnce()) {
+    let eligible = Config::lock_query(|c| {
+        c.movement.force_fps_movement && c.controllers.enabled && c.controllers.aim.gun
+    }) && scheme::is_controllers();
+    let Some(character) = (eligible.then(|| unsafe { character_from_context(ctx) }))
+        .flatten()
+        .filter(|c| c.m_IsLocalCharacter)
+    else {
+        call();
+        return;
+    };
+    let Some(weapon) = (unsafe { mutable_held_weapon(character) }) else {
+        call();
+        return;
+    };
+    let head = headpose::query();
+    let distance = Config::lock_query(|c| c.controllers.aim_state.neutral_aim_distance_m.max(0.0));
+    let point = head_forward_point(head.position, head.orientation, distance);
+    let original = weapon.m_AimTargetPosition;
+    weapon.m_AimTargetPosition = Vector3 {
+        data: point.to_array(),
+    };
+    let _restore = WeaponAimPointGuard { weapon, original };
+    call();
+}
+
+/// The selected weapon in the local player's hands, with a mutable borrow for the scoped target
+/// override. The owner and wielding checks mirror the controller gun aim path.
+unsafe fn mutable_held_weapon(character: &mut Character) -> Option<&mut WeaponBase> {
+    let slot = unsafe {
+        (&raw const character.m_SelectedWeaponSlot)
+            .cast::<i32>()
+            .read()
+    };
+    let slot = usize::try_from(slot).ok()?;
+    let weapon = unsafe { character.m_Inventory.m_Weapons.get_mut(slot)?.px.as_mut() }?;
+    let owned = std::ptr::eq(weapon.m_User[0].cast::<Character>(), character);
+    let wielded = matches!(
+        weapon.m_State,
+        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
+    );
+    (owned && wielded).then_some(weapon)
+}
+
+/// The point used by the locomotion shim: `distance` metres along the head's world-space forward.
+fn head_forward_point(position: glam::Vec3, orientation: glam::Quat, distance: f32) -> glam::Vec3 {
+    position + orientation * glam::Vec3::NEG_Z * distance
+}
+
+struct AimFlagsGuard {
+    character: *mut Character,
+    saved: AimState,
+}
+
+impl Drop for AimFlagsGuard {
+    fn drop(&mut self) {
+        // SAFETY: the local character remains live for the synchronous task call.
+        unsafe { (*self.character).m_AimFlags = self.saved };
+    }
+}
+
+struct WeaponAimPointGuard {
+    weapon: *mut WeaponBase,
+    original: Vector3,
+}
+
+impl Drop for WeaponAimPointGuard {
+    fn drop(&mut self) {
+        // SAFETY: the guard is created only for the live selected weapon and does not outlive the
+        // wrapped task call that owns the character update.
+        unsafe {
+            (*self.weapon).m_AimTargetPosition = self.original;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn head_forward_point_uses_the_head_pose_and_distance() {
+        let position = glam::Vec3::new(1.0, 1.7, -2.0);
+        let orientation = glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let point = head_forward_point(position, orientation, 25.0);
+
+        assert!((point - glam::Vec3::new(-24.0, 1.7, -2.0)).length() < 1e-5);
+    }
+
+    #[test]
+    fn head_forward_point_has_no_offset_at_zero_distance() {
+        let position = glam::Vec3::new(-2.0, 0.4, 3.0);
+        let orientation = glam::Quat::from_rotation_x(-0.7);
+
+        assert_eq!(head_forward_point(position, orientation, 0.0), position);
+    }
 }
 
 /// The longest gap between shimmed task updates still treated as one contiguous run of forcing;

@@ -565,15 +565,21 @@ impl Slot {
 
     /// Stamp `frame`, fold its transitions from the previous frame into the edges, and store it.
     /// Without a previous frame (the first publish, or the first after a clear) there is no
-    /// transition to fold.
+    /// transition to fold. A change of action set starts a new input stream: the same physical
+    /// button can be down in both sets, but those states are not comparable, and their difference
+    /// must not manufacture an edge for the new set.
     fn publish(&mut self, mut frame: ControllerFrame, now: Instant) -> &ControllerFrame {
         self.sequence += 1;
         frame.sequence = self.sequence;
         frame.published_at = now;
         let current = [frame.hands[0].buttons, frame.hands[1].buttons];
-        if let Some(previous) = &self.frame {
-            let previous = [previous.hands[0].buttons, previous.hands[1].buttons];
-            self.edges.accumulate(previous, current);
+        match &self.frame {
+            Some(previous) if previous.action_set == frame.action_set => {
+                let previous = [previous.hands[0].buttons, previous.hands[1].buttons];
+                self.edges.accumulate(previous, current);
+            }
+            Some(_) => self.edges = Edges::default(),
+            None => {}
         }
         self.frame.insert(frame)
     }
@@ -668,6 +674,10 @@ mod tests {
     }
 
     fn frame_with(right: ButtonSet) -> ControllerFrame {
+        frame_with_set(right, ActionSetKind::OnFoot)
+    }
+
+    fn frame_with_set(right: ButtonSet, action_set: ActionSetKind) -> ControllerFrame {
         let mut hands: [HandFrame; 2] = Default::default();
         hands[Hand::Right.index()].active = true;
         hands[Hand::Right.index()].buttons = right;
@@ -676,7 +686,7 @@ mod tests {
             display_time_ns: 0,
             published_at: Instant::now(),
             focused: true,
-            action_set: ActionSetKind::OnFoot,
+            action_set,
             hands,
         }
     }
@@ -712,6 +722,22 @@ mod tests {
         slot.publish(frame_with(ButtonSet::EMPTY), t0);
         slot.publish(frame_with(set(&[Button::TriggerPress])), t0);
         assert!(slot.edges.pressed(Hand::Right, Button::TriggerPress));
+    }
+
+    #[test]
+    fn changing_action_sets_does_not_create_or_retain_edges() {
+        let mut slot = empty_slot();
+        let t0 = Instant::now();
+        let held = set(&[Button::TriggerPress]);
+        slot.publish(frame_with(ButtonSet::EMPTY), t0);
+        slot.publish(frame_with(held), t0);
+        assert!(slot.edges.pressed(Hand::Right, Button::TriggerPress));
+
+        slot.publish(frame_with_set(held, ActionSetKind::Vehicle), t0);
+        assert_eq!(slot.edges, Edges::default());
+        slot.publish(frame_with_set(ButtonSet::EMPTY, ActionSetKind::Vehicle), t0);
+        assert!(slot.edges.released(Hand::Right, Button::TriggerPress));
+        assert!(!slot.edges.pressed(Hand::Right, Button::TriggerPress));
     }
 
     #[test]

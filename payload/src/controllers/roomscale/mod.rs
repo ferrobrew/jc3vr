@@ -119,6 +119,8 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let epoch = teleport::epoch();
     if epoch != frame.seen_epoch {
         frame.seen_epoch = epoch;
+        sim::reset_movement();
+        frame.shift.synchronize(sim::completed_movement());
         if chase_on {
             frame.shift.rebase_horizontal(inputs.cockpit);
             frame.teleport_rebases += 1;
@@ -130,13 +132,14 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     if chase_on {
         frame.shift.observe(
             &TickAnchors {
-                anchor: inputs.anchor,
-                anchor_prev: inputs.anchor_prev,
                 body: inputs.body,
                 world_scale: inputs.world_scale,
             },
-            sim::take_share,
+            sim::completed_movement(),
         );
+    } else {
+        sim::reset_movement();
+        frame.shift.synchronize(sim::completed_movement());
     }
 
     let head_height = remap_head.then(|| {
@@ -253,6 +256,8 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 /// [`crate::vr::recenter`].
 pub fn on_recenter(kind: RecenterKind, turn: Quat) {
     let mut frame = FRAME.lock();
+    sim::reset_movement();
+    frame.shift.synchronize(sim::completed_movement());
     match kind {
         RecenterKind::Full => frame.shift.clear(),
         RecenterKind::YawAndHeight => frame.shift.rotate(turn),

@@ -28,7 +28,7 @@ use crate::{
         scheme, vehicles,
         weapons::{foregrip, recoil},
     },
-    headpose,
+    headpose, hooks,
 };
 
 pub mod anchor;
@@ -88,7 +88,12 @@ pub fn active_hands_raw() -> Option<ActiveHands> {
     };
     let player = config.body.remap_hands.then(body::player);
     let hands = frame::with_latest(|frame| {
-        Hand::BOTH.map(|hand| cockpit_hand(frame, hand, head, &config.hands, player.as_ref()))
+        Hand::BOTH.map(|hand| {
+            frame
+                .focused
+                .then(|| cockpit_hand(frame, hand, head, &config.hands, player.as_ref()))
+                .flatten()
+        })
     })?;
     Some(ActiveHands {
         config,
@@ -96,6 +101,28 @@ pub fn active_hands_raw() -> Option<ActiveHands> {
         hands,
         world_scale,
     })
+}
+
+/// Hand IK ownership without composing poses or acquiring weapon and vehicle state locks.
+pub(crate) fn ik_owned() -> [bool; 2] {
+    let enabled = Config::lock_query(|c| c.controllers.enabled && c.controllers.hands.ik);
+    if !enabled
+        || !scheme::is_controllers()
+        || headpose::source() != headpose::Source::Vr
+        || !headpose::is_active()
+        || !hooks::in_gameplay()
+        || headpose::xr::cockpit_pose().is_none()
+    {
+        return [false; 2];
+    }
+    let weights = tiers::weights();
+    frame::with_latest(|frame| {
+        Hand::BOTH.map(|hand| {
+            let h = frame.hand(hand);
+            frame.focused && h.active && h.grip.is_valid() && weights[hand.index()] > 0.0
+        })
+    })
+    .unwrap_or([false; 2])
 }
 
 fn cockpit_hand(
