@@ -37,6 +37,6 @@ Alongside the stick and camera mixes, `GetParachuteSteeringValues` computes a ve
 
 ## Related
 
-- The airborne/fall family that *does* route through the on-foot-style helper: [`UpdateFallSteering`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/input::locomotion##func-UpdateFallSteering), documented in the pyxis defs (`input/locomotion.pyxis`), and `UpdateStdLookSteering`, which is not yet located. The parachute does **not** use those; it is a separate movement core.
+- The airborne/fall family that *does* route through the on-foot-style helper: [`UpdateFallSteering`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/input::locomotion##func-UpdateFallSteering), documented in the pyxis defs (`input/locomotion.pyxis`), and [`NAirMovement_UpdateStdLookSteering`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/input::parachute##func-NAirMovement_UpdateStdLookSteering), the camera look-steer. The parachute does **not** use those; it is a separate movement core.
 - The shared air tuning block [`CharacterAirMovementSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::parachute::CharacterAirMovementSettings) (the `m_LookSteer*`/`m_XInputYawPitchRollAmount`/spring fields) is also embedded in the wingsuit and freefall settings.
 - Pyxis defs for the parachute family: `input/parachute.pyxis`.

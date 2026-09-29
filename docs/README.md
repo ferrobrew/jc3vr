@@ -74,7 +74,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [input.md](mod/input/input.md) — how the mod taps, consumes, and injects the game's input.
 - [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md) — the motion-controller and roomscale plan of record: the continuous-body principles, the aim-state pin, controller-owned hands and their tiers, per-hand aiming, weapon handling, per-mode bindings, roomscale, the milestones, the implementation status, and the headset test checklist.
-- [controllers.md](mod/input/controllers.md) — the motion controllers as built: the OpenXR input foundation, scheme selection, mode detection, the bindings and their injection, the gamepad-semantics pin, the aim-state pin, controller-owned hands, per-hand aiming, and the world-space overlay layer.
+- [controllers.md](mod/input/controllers.md) — the motion controllers as built: the OpenXR input foundation, scheme selection, mode detection, the bindings and their injection, the gamepad-semantics pin, the aim-state pin, controller-owned hands, per-hand aiming, the sight lines and their tuning tool, the world-space overlay layer, recoil, haptics, dual-wield, the anchored grapple hand, vehicles and flight, grenades, melee, aim assist, the magazine gesture, and scopes.
 
 ## issues/
 
