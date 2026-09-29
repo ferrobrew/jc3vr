@@ -12,7 +12,9 @@
 //!
 //! where `now` interpolates the latest controller pose between the head pose pair's two sides (as
 //! the camera does) and `reference` interpolates the two ticks' targets (as the skinning palette
-//! and the weapon's cached transforms do). The grip offset is on both sides, so it cancels.
+//! and the weapon's cached transforms do). The physical move between those poses is bounded before
+//! the correction is weighted, and the weighted pose is derived by interpolating `reference` toward
+//! `now` before computing `D`. The grip offset is on both sides, so it cancels.
 //!
 //! Both render seams apply the same `D`, so the gun and the hand never separate:
 //!
@@ -95,11 +97,62 @@ pub fn render_hands() -> [Option<RenderHand>; 2] {
     FRAME.lock().map_or([None; 2], |frame| frame.hands)
 }
 
-/// The late update's per-hand readout for the debug UI.
+/// Why a hand was or was not corrected at the sampled render interpolation fraction.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum LateReason {
+    #[default]
+    Disabled,
+    NoTrackedRenderHand,
+    NoSimTarget,
+    InvalidPoseOrWeight,
+    ExcessTranslation,
+    ExcessRotation,
+    Applied,
+}
+
+impl LateReason {
+    /// The stable label written by controller diagnostics.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::NoTrackedRenderHand => "no_tracked_render_hand",
+            Self::NoSimTarget => "no_sim_target",
+            Self::InvalidPoseOrWeight => "invalid_pose_or_weight",
+            Self::ExcessTranslation => "excess_translation",
+            Self::ExcessRotation => "excess_rotation",
+            Self::Applied => "applied",
+        }
+    }
+}
+
+/// One hand's late-correction status at the camera's last render interpolation fraction.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct HandLateStatus {
+    pub reason: LateReason,
+    /// The physical distance between the latest and reference wrist positions, in metres.
+    pub physical_displacement_m: Option<f32>,
+    /// The relative wrist rotation between the latest and reference poses, in degrees.
+    pub relative_rotation_deg: Option<f32>,
+    /// The current simulation tick's requested wrist position, in world metres.
+    pub requested_wrist_position: Option<Vec3>,
+    /// The interpolated simulation reference wrist position, in world metres.
+    pub reference_wrist_position: Option<Vec3>,
+    /// The latest render wrist position, in world metres.
+    pub latest_wrist_position: Option<Vec3>,
+    /// The interpolated solved wrist position, in character model metres.
+    ///
+    /// The late render seam has no model instance matrix, so this is deliberately not presented as a
+    /// world-space position.
+    pub achieved_wrist_position_model: Option<Vec3>,
+}
+
+/// The late update's per-hand readout and cumulative counters.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LateStatus {
-    /// Each hand's correction at the camera's last `dtf`: the shift in metres and the rotation in
-    /// degrees. `None` when the hand is not corrected.
+    /// Structured status for each hand, indexed by [`Hand::index`].
+    pub hands: [HandLateStatus; 2],
+    /// Each hand's applied physical displacement in metres and relative rotation in degrees.
+    /// `None` when the hand was not corrected. Kept for the existing debug UI callers.
     pub deltas: [Option<(f32, f32)>; 2],
     /// Gun model matrices re-pushed since the payload loaded.
     pub weapons_updated: u64,
@@ -111,12 +164,22 @@ pub struct LateStatus {
 pub fn status() -> LateStatus {
     let frame = *FRAME.lock();
     let dtf = crate::hooks::camera::last_dtf();
+    let hands = frame.map_or([HandLateStatus::default(); 2], |frame| {
+        Hand::BOTH.map(|hand| frame.hand_status(hand, dtf))
+    });
     LateStatus {
-        deltas: Hand::BOTH.map(|hand| {
-            frame.and_then(|f| f.hand_delta(hand, dtf)).map(|d| {
-                let (_, angle) = d.orientation.to_axis_angle();
-                (d.position.length(), angle.to_degrees())
-            })
+        hands,
+        deltas: hands.map(|hand| {
+            match (
+                hand.reason,
+                hand.physical_displacement_m,
+                hand.relative_rotation_deg,
+            ) {
+                (LateReason::Applied, Some(displacement), Some(rotation)) => {
+                    Some((displacement, rotation))
+                }
+                _ => None,
+            }
         }),
         weapons_updated: WEAPONS_UPDATED.load(Ordering::Relaxed),
         palettes_edited: PALETTES_EDITED.load(Ordering::Relaxed),
@@ -292,15 +355,60 @@ impl LateFrame {
     /// The world-space correction of `hand` at `dtf` (see the module docs), scaled by the weight
     /// the tick's IK was asked at.
     fn hand_delta(&self, hand: Hand, dtf: f32) -> Option<Pose> {
+        let status = self.hand_status(hand, dtf);
+        (status.reason == LateReason::Applied).then(|| {
+            let now = self.hands[hand.index()].unwrap().wrist.at(dtf);
+            let current = self.ticks.current[hand.index()].unwrap();
+            let previous = self.ticks.previous[hand.index()].unwrap_or(current);
+            let reference = hand_pose::interp(previous.wrist, current.wrist, dtf);
+            correction(now, reference, current.weight).unwrap()
+        })
+    }
+
+    fn hand_status(&self, hand: Hand, dtf: f32) -> HandLateStatus {
         if !self.enabled {
-            return None;
+            return HandLateStatus::default();
         }
-        let now = self.hands[hand.index()]?.wrist.at(dtf);
-        let current = self.ticks.current[hand.index()]?;
+        let Some(render_hand) = self.hands[hand.index()] else {
+            return HandLateStatus {
+                reason: LateReason::NoTrackedRenderHand,
+                ..HandLateStatus::default()
+            };
+        };
+        let Some(current) = self.ticks.current[hand.index()] else {
+            return HandLateStatus {
+                reason: LateReason::NoSimTarget,
+                ..HandLateStatus::default()
+            };
+        };
         let previous = self.ticks.previous[hand.index()].unwrap_or(current);
         let reference = hand_pose::interp(previous.wrist, current.wrist, dtf);
-        let d = hand_pose::delta(now, reference);
-        plausible(d).then(|| hand_pose::scale_delta(d, current.weight))
+        let now = render_hand.wrist.at(dtf);
+        let metrics = relative_metrics(now, reference);
+        let (physical_displacement_m, relative_rotation_deg) = metrics
+            .map(|(displacement, rotation)| (Some(displacement), Some(rotation)))
+            .unwrap_or((None, None));
+        let reason = match metrics {
+            _ if !current.weight.is_finite() => LateReason::InvalidPoseOrWeight,
+            None => LateReason::InvalidPoseOrWeight,
+            Some((displacement, _)) if displacement >= MAX_SHIFT_M => LateReason::ExcessTranslation,
+            Some((_, rotation)) if rotation >= MAX_TURN_RAD.to_degrees() => {
+                LateReason::ExcessRotation
+            }
+            Some(_) => LateReason::Applied,
+        };
+        let solved = (self.solved.previous[hand.index()].or(self.solved.current[hand.index()]))
+            .zip(self.solved.current[hand.index()])
+            .map(|(previous, current)| previous.wrist.lerp(current.wrist, dtf));
+        HandLateStatus {
+            reason,
+            physical_displacement_m,
+            relative_rotation_deg,
+            requested_wrist_position: Some(current.wrist.position),
+            reference_wrist_position: Some(reference.position),
+            latest_wrist_position: Some(now.position),
+            achieved_wrist_position_model: solved,
+        }
     }
 }
 
@@ -311,11 +419,40 @@ struct Solved {
     current: [Option<ArmJoints>; 2],
 }
 
-/// Whether a correction is a tick or two of hand motion rather than a discontinuity (a teleport, a
-/// recenter, a respawn), which must not be smeared onto the rendered hand.
-pub(crate) fn plausible(d: Pose) -> bool {
-    let (_, angle) = d.orientation.to_axis_angle();
-    d.position.is_finite() && d.position.length() < MAX_SHIFT_M && angle.abs() < MAX_TURN_RAD
+/// Derive a bounded correction from the physical move between the reference and current wrist.
+///
+/// The relative position and rotation are validated before the correction is weighted. This keeps
+/// a stationary wrist rotation valid even when the world origin is far away, and rejects
+/// discontinuities before they can be interpolated into a plausible-looking correction.
+pub(crate) fn correction(now: Pose, reference: Pose, weight: f32) -> Option<Pose> {
+    (weight.is_finite() && plausible(now, reference))
+        .then(|| hand_pose::weighted_delta(now, reference, weight))
+}
+
+/// The physical wrist displacement and relative rotation, or `None` for a non-finite pose.
+fn relative_metrics(now: Pose, reference: Pose) -> Option<(f32, f32)> {
+    (now.position.is_finite()
+        && reference.position.is_finite()
+        && now.orientation.is_finite()
+        && reference.orientation.is_finite())
+    .then(|| {
+        let displacement = (now.position - reference.position).length();
+        let mut relative = hand_pose::delta(now, reference).orientation;
+        if relative.w < 0.0 {
+            relative = -relative;
+        }
+        let (_, angle) = relative.to_axis_angle();
+        (displacement, angle.to_degrees())
+    })
+    .filter(|(displacement, rotation)| displacement.is_finite() && rotation.is_finite())
+}
+
+/// Whether the wrist moved by a tick or two rather than discontinuously (a teleport, a recenter, or
+/// a respawn), which must not be smeared onto the rendered hand.
+pub(crate) fn plausible(now: Pose, reference: Pose) -> bool {
+    relative_metrics(now, reference).is_some_and(|(displacement, rotation)| {
+        displacement < MAX_SHIFT_M && rotation < MAX_TURN_RAD.to_degrees()
+    })
 }
 
 const MAX_SHIFT_M: f32 = 0.5;
@@ -565,9 +702,110 @@ mod tests {
     }
 
     #[test]
-    fn a_discontinuity_is_not_corrected() {
-        let f = frame(pose(5.0, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
-        assert!(f.hand_delta(Hand::Right, 1.0).is_none());
+    fn a_stationary_rotating_wrist_is_corrected_at_a_translated_origin() {
+        let reference = Pose {
+            position: Vec3::new(1000.0, 200.0, -300.0),
+            orientation: Quat::IDENTITY,
+        };
+        let now = Pose {
+            orientation: Quat::from_rotation_y(0.4),
+            ..reference
+        };
+        let d = correction(now, reference, 0.5).unwrap();
+        let carried = hand_pose::mul(d, reference);
+        assert!(carried.position.distance(reference.position) < 1e-5);
+        assert!(
+            (carried
+                .orientation
+                .angle_between(Quat::from_rotation_y(0.2)))
+            .abs()
+                < 1e-5
+        );
+    }
+
+    #[test]
+    fn status_reports_physical_metrics_and_applied_reason() {
+        let reference = Pose {
+            position: Vec3::new(1000.0, 200.0, -300.0),
+            orientation: Quat::IDENTITY,
+        };
+        let now = Pose {
+            orientation: -Quat::from_rotation_y(0.4),
+            ..reference
+        };
+        let f = frame(now, reference, reference, 0.5);
+        let status = f.hand_status(Hand::Right, 0.5);
+        assert_eq!(status.reason, LateReason::Applied);
+        assert_eq!(status.physical_displacement_m, Some(0.0));
+        assert!((status.relative_rotation_deg.unwrap() - 22.9183).abs() < 1e-3);
+        assert_eq!(status.latest_wrist_position, Some(reference.position));
+        assert_eq!(status.reference_wrist_position, Some(reference.position));
+    }
+
+    #[test]
+    fn status_reasons_keep_the_guard_independent_of_weight() {
+        let excessive = frame(pose(5.0, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 0.01);
+        assert_eq!(
+            excessive.hand_status(Hand::Right, 1.0).reason,
+            LateReason::ExcessTranslation
+        );
+        let excessive_turn = frame(
+            pose(0.3, std::f32::consts::PI),
+            pose(0.3, 0.0),
+            pose(0.3, 0.0),
+            0.01,
+        );
+        assert_eq!(
+            excessive_turn.hand_status(Hand::Right, 1.0).reason,
+            LateReason::ExcessRotation
+        );
+        assert_eq!(
+            frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), f32::NAN)
+                .hand_status(Hand::Right, 1.0)
+                .reason,
+            LateReason::InvalidPoseOrWeight
+        );
+    }
+
+    #[test]
+    fn status_reports_missing_inputs_and_disabled_state() {
+        let mut disabled = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        disabled.enabled = false;
+        assert_eq!(
+            disabled.hand_status(Hand::Right, 1.0).reason,
+            LateReason::Disabled
+        );
+        assert_eq!(
+            frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0)
+                .hand_status(Hand::Left, 1.0)
+                .reason,
+            LateReason::NoTrackedRenderHand
+        );
+        let mut no_target = frame(pose(0.3, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        no_target.ticks.current[Hand::Right.index()] = None;
+        assert_eq!(
+            no_target.hand_status(Hand::Right, 1.0).reason,
+            LateReason::NoSimTarget
+        );
+    }
+
+    #[test]
+    fn invalid_or_discontinuous_motion_is_not_corrected() {
+        let translated = frame(pose(5.0, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
+        assert!(translated.hand_delta(Hand::Right, 1.0).is_none());
+        let reference = pose(0.3, 0.0);
+        assert!(
+            correction(
+                Pose {
+                    orientation: Quat::from_rotation_y(std::f32::consts::PI),
+                    ..reference
+                },
+                reference,
+                1.0,
+            )
+            .is_none()
+        );
+        assert!(correction(reference, reference, f32::NAN).is_none());
         let mut off = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
         off.enabled = false;
         assert!(off.hand_delta(Hand::Right, 1.0).is_none());

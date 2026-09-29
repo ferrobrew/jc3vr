@@ -174,6 +174,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Snapshot the render-time hand poses against the head pose pair just published, before
         // the engine's render update runs the weapons' render updates and the draws follow.
         hands::late::begin_frame();
+        crate::controllers::diagnostics::record();
 
         mark(Phase::OriginalUpdateRender);
         #[cfg(feature = "profiler")]

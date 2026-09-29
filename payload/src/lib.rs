@@ -139,6 +139,13 @@ fn shutdown_startup() {
         module::pin();
     }
 
+    if !controllers::testing::shutdown() {
+        module::pin();
+    }
+    if !controllers::diagnostics::shutdown() {
+        module::pin();
+    }
+
     // The cleanups cleared render-thread-driven config flags (e.g. the HUD redirect). Give the still-
     // live hooks a few frames to tick those changes through -- the per-frame restore runs on the
     // render thread -- before uninstalling.

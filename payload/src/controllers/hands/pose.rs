@@ -204,9 +204,14 @@ pub fn delta(now: Pose, reference: Pose) -> Pose {
     mul(now, inverse(reference))
 }
 
-/// A share of a correction: the identity at zero, the whole of `d` at one.
-pub fn scale_delta(d: Pose, weight: f32) -> Pose {
-    interp(Pose::IDENTITY, d, weight.clamp(0.0, 1.0))
+/// The correction for a weighted move from `reference` toward `now`.
+///
+/// Interpolating the poses before deriving the correction keeps a rotation about a translated
+/// wrist physically anchored at that wrist. Interpolating the world-space correction from identity
+/// would instead move the correction's pivot toward the world origin.
+pub fn weighted_delta(now: Pose, reference: Pose, weight: f32) -> Pose {
+    let weighted_now = interp(reference, now, weight.clamp(0.0, 1.0));
+    delta(weighted_now, reference)
 }
 
 /// `rotation` with its pitch and roll removed, keeping the heading of its -Z axis.
@@ -433,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn the_delta_carries_the_reference_onto_now() {
+    fn a_weighted_delta_carries_the_reference_toward_now() {
         let reference = Pose {
             position: Vec3::new(1.0, 2.0, 3.0),
             orientation: Quat::from_rotation_z(0.4),
@@ -446,10 +451,31 @@ mod tests {
         let carried = mul(d, reference);
         assert!(close(carried.position, now.position));
         assert!(same_rotation(carried.orientation, now.orientation));
-        let none = scale_delta(d, 0.0);
+
+        let none = weighted_delta(now, reference, 0.0);
         assert!(close(none.position, Vec3::ZERO));
         assert!(same_rotation(none.orientation, Quat::IDENTITY));
-        let inv = mul(inverse(now), now);
-        assert!(close(inv.position, Vec3::ZERO));
+        let whole = weighted_delta(now, reference, 1.0);
+        assert!(close(whole.position, d.position));
+        assert!(same_rotation(whole.orientation, d.orientation));
+    }
+
+    #[test]
+    fn a_weighted_rotation_stays_anchored_at_a_translated_origin() {
+        let reference = Pose {
+            position: Vec3::new(1000.0, -200.0, 300.0),
+            orientation: Quat::IDENTITY,
+        };
+        let now = Pose {
+            orientation: Quat::from_rotation_y(0.4),
+            ..reference
+        };
+        let correction = weighted_delta(now, reference, 0.5);
+        let carried = mul(correction, reference);
+        assert!(close(carried.position, reference.position));
+        assert!(same_rotation(
+            carried.orientation,
+            Quat::from_rotation_y(0.2)
+        ));
     }
 }

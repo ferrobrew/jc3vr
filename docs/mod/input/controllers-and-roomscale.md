@@ -69,7 +69,7 @@ The mod pins the aim state clear for the local player with the graph state bit [
 
 The existing FPS-movement shim keeps forcing the flags for the duration of each locomotion task's `Update`, so the locomotion tasks take the strafe branch and queue the aim-family strafe acts (`ACT_MOVE_AIM_FOCUS_*`). The lower body therefore plays aim-focus locomotion, while the states keyed on the aim bit and on `m_AimingWeapon` outside the task (the additive aim layers and the upper-body aim variants) stay off ([aim-state.md, "Locomotion task selection"](../../engine/gameplay/aim-state.md#locomotion-task-selection)). This combination is what ships today whenever the player is not aiming, so it has already been exercised in play. The pin extends it to the moments when the player fires.
 
-With a weapon wielded, the strafe branch chooses its act relative to the wielded weapon's own aim point. Once the per-weapon aim point carries the hand ray, the strafe direction follows where the gun points rather than where the head faces, so pointing the gun sideways while walking forward selects a sideways strafe. The shim therefore needs to hold the wielded weapons' aim points at a head-forward point for the duration of each task's `Update` and restore them afterwards. This correction is not built.
+With a weapon wielded, the strafe branch chooses its act relative to the wielded weapon's own aim point. Once the per-weapon aim point carries the hand ray, the strafe direction follows where the gun points rather than where the head faces, so pointing the gun sideways while walking forward selects a sideways strafe. The shim therefore needs to hold the wielded weapons' aim points at a head-forward point for the duration of each task's `Update` and restore them afterwards. The shim holds the selected wielded weapon's aim point ahead of the head for the task call and restores its original point afterwards.
 
 The pin was chosen over a pin to the set state for the following reasons.
 
@@ -590,6 +590,8 @@ The overlay:
 The assumptions behind milestones 2 to 5 and the finger curls are in [controllers.md, "Unverified"](controllers.md#unverified).
 
 ### Headset test checklist
+
+The Controllers tab's test presets select input-only, hands and aim, weapon handling, roomscale, and vehicle feature groups without replacing calibrated values. Save tuned settings explicitly before uninjecting, and load them after reinjection. Enable diagnostic history before reproducing a problem and capture it immediately afterwards. Test focus and tracking loss with a trigger held: recovery must require neutral controls and a new press, without firing or throwing on its own. Repeat roomscale tests with perpendicular and opposing stick movement, and at locations far from the world origin.
 
 The order puts the parts that everything else depends on first, then the parts whose failure would change the design, then the opt-in breadth. Items 11 onward need the settings named in them switched on where they are off by default.
 

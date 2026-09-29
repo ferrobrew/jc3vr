@@ -45,6 +45,7 @@ pub mod aim_state;
 pub mod bindings;
 pub mod body;
 pub mod config;
+pub mod diagnostics;
 pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
@@ -54,6 +55,7 @@ pub mod motion;
 pub mod overlay;
 pub mod roomscale;
 pub mod scheme;
+pub mod testing;
 pub mod vehicles;
 pub mod weapons;
 

@@ -42,3 +42,7 @@ __pycache__/
 # A player's body measurements for the controller remap (see payload/src/controllers/body.rs). Read
 # from beside the payload DLL; personal, so never committed.
 body.local.json
+
+# Local controller tuning and diagnostic captures, written beside the payload DLL.
+controllers.local.json
+controller_diagnostics_*.json

@@ -147,7 +147,7 @@ pub(super) fn sight_tuning(ui: &mut Ui, c: &mut ControllersConfig) {
             .button("Copy as JSON")
             .on_hover_text(
                 "Copy the weapon's entry in the line format of tools/sights/sights.json, graded \
-                 tuned. The config has no load path, so this is how a tuned value is kept.",
+                 tuned. Save controller settings to retain local tuning, or copy this entry to update the embedded table.",
             )
             .clicked()
         {

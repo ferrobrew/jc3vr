@@ -251,10 +251,7 @@ fn begin() -> Result<TickHands, AimIdle> {
         let wrist = compose(cockpit.wrist);
         let correction = records.current[hand.index()]
             .filter(|_| late_update)
-            .and_then(|target| {
-                let d = hand_pose::delta(wrist, target.wrist);
-                late::plausible(d).then(|| hand_pose::scale_delta(d, target.weight))
-            });
+            .and_then(|target| late::correction(wrist, target.wrist, target.weight));
         Some(WorldHand {
             wrist,
             grip: compose(cockpit.grip),

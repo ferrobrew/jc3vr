@@ -6,6 +6,7 @@
 mod aim;
 mod aim_state;
 mod body;
+mod diagnostics;
 mod fingers;
 mod frame;
 mod hands;
@@ -15,6 +16,7 @@ mod roomscale;
 mod scope;
 mod settings;
 mod sights;
+mod testing;
 mod vehicles;
 mod weapons;
 
@@ -36,6 +38,7 @@ use crate::{
 };
 
 pub fn egui_debug_controllers(ui: &mut Ui) {
+    crate::controllers::testing::start_pending();
     // Everything that locks the config is read before the config is locked for editing below.
     let current = scheme::current();
     let selected = scheme::selected();
@@ -144,10 +147,13 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
 
         egui::CollapsingHeader::new("Body dimensions").show(ui, |ui| body::body_readout(ui, &body));
 
+        egui::CollapsingHeader::new("Diagnostic capture").show(ui, diagnostics::diagnostics);
+
         ui.separator();
         ui.heading("Settings");
         let mut cfg = config::CONFIG.lock();
         settings::settings(ui, &mut cfg);
+        testing::settings(ui, &mut cfg);
     });
 }
 
