@@ -139,8 +139,12 @@ pub fn swing_impulse(displacement: Vec2, full_impulse: f32, config: &AnchorConfi
 /// Put the anchored hands on the line. `hands` are the cockpit-frame hands indexed by
 /// [`Hand::index`], `head` the head's cockpit pose, and `world_scale` the VR world scale.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32) {
-    let weights = tiers::status().anchor_weights;
-    if weights.iter().all(|w| *w <= 0.0) {
+    let status = tiers::status();
+    // The mounted guns anchor the hands too, to their handles
+    // ([`crate::controllers::vehicles::apply`]), which the line must not turn.
+    let mounted = status.state == Some(tiers::TierState::MountedGun);
+    let weights = status.anchor_weights;
+    if mounted || weights.iter().all(|w| *w <= 0.0) {
         return;
     }
     let Some(anchor) = line_anchor() else {

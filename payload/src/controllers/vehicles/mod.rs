@@ -1,0 +1,712 @@
+//! Vehicles, mounted guns, the wingsuit, and the parachute under the controller scheme: the plan of
+//! record's "Vehicle, mounted, and wingsuit weapons", its vehicle and wingsuit binding tables, and
+//! its decisions on physical controls and arm steering (`docs/mod/input/controllers-and-roomscale.md`).
+//!
+//! - [`config`]: the settings, all under [`ControllersConfig::vehicles`];
+//! - [`physical`]: the opt-in wheel, handlebars, cyclic, collective, flight stick, and throttle of
+//!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
+//!   hands;
+//! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
+//! - [`arm_steering`]: the opt-in arm-pose steering of the wingsuit and the parachute;
+//! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand, as an option;
+//! - [`look_steer`]: the wingsuit's head look-steer removed.
+//!
+//! The stick bindings of every class are the tables' ([`crate::controllers::bindings::tables`]).
+//! This module runs on the input tick in two halves around them, like the weapon handling:
+//!
+//! 1. [`begin_tick`] reads the mounted gun and places the physical controls' grab volumes, and
+//!    returns the volume each hand is in. A hand holding a control is always in it, so that its
+//!    next grip press lets go rather than firing a weapon.
+//! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, and replaces the tables'
+//!    analog writes for each axis a control drives; in the air, it adds the arm pose to the move
+//!    stick.
+//!
+//! The hands take the anchored poses in [`apply`], which every hand subsystem's hands pass through
+//! ([`crate::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
+//! which is only under the controller scheme with a controller active.
+//!
+//! Turrets are left to the game: a turret turns toward its weapon's aim point at its own limited
+//! rate, so a turret aimed by hand trails the hand exactly as it trails the gaze. The motorcycle's
+//! and jetski's personal weapon is a wielded weapon on the hand's attach bone, so the per-hand gun
+//! aim already aims it by hand ([`crate::controllers::aim::gun`]).
+//!
+//! [`ControllersConfig::vehicles`]: crate::controllers::config::ControllersConfig::vehicles
+
+pub mod arm_steering;
+pub mod config;
+pub mod driver_aim;
+pub mod look_steer;
+pub mod mounted;
+pub mod physical;
+
+use std::time::{Duration, Instant};
+
+use glam::{Quat, Vec2, Vec3};
+use jc3gi::{
+    character::character::Character,
+    input::input_action_map::Action::{self, *},
+};
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    controllers::{
+        bindings::{
+            controls::Controls,
+            grab::{self, GrabVolume},
+            hold::{Desired, MapKind, Target, Want},
+        },
+        body::{self, BodyDimensions},
+        config::ControllersConfig,
+        frame::{Hand, Pose},
+        hands::{self, ActiveHands, CockpitHand, pose as hand_pose, tiers},
+        mode::{AirborneVariant, Mode, VehicleSeat},
+        overlay::{
+            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
+            store,
+        },
+        vehicles::{
+            arm_steering::ArmPose,
+            mounted::{MountedGun, MountedTarget, Reference},
+            physical::{ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement},
+        },
+    },
+    headpose,
+};
+
+/// The vehicles' hooks, aggregated by [`crate::controllers::hook_library`].
+pub(crate) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_hook_library(driver_aim::hook_library())
+        .with_hook_library(look_steer::hook_library())
+}
+
+/// The mounted gun as the last input tick saw it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct MountedReadout {
+    pub gun: MountedGun,
+    /// The barrel direction the hands ask for, in the world.
+    pub direction: Option<Vec3>,
+    /// The aim point handed to the gun.
+    pub target: Option<Vec3>,
+}
+
+/// The arm steering as the last input tick saw it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ArmReadout {
+    pub pose: ArmPose,
+    /// The arms' own stick vector, `None` while they are not spread.
+    pub arms: Option<Vec2>,
+    /// The stick vector written to the move half-axes: the stick and the arms together.
+    pub written: Vec2,
+}
+
+/// The vehicles' readout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VehiclesStatus {
+    /// Whether the last input tick ran the vehicle handling.
+    pub active: bool,
+    /// The seat, while in a vehicle.
+    pub seat: Option<VehicleSeat>,
+    /// The physical controls the seat offers with their toggles on.
+    pub offered: &'static [ControlKind],
+    /// The grab volume each hand is in, indexed by [`Hand::index`].
+    pub volumes: [Option<GrabVolume>; 2],
+    /// The control each hand holds.
+    pub holds: [Option<ControlKind>; 2],
+    /// The controls' moving parts.
+    pub controls: ControlState,
+    /// The values the held controls wrote on the last tick.
+    pub outputs: Outputs,
+    /// The most recent grabs and releases, newest last.
+    pub events: Vec<ControlEvent>,
+    pub mounted: Option<MountedReadout>,
+    pub arms: Option<ArmReadout>,
+}
+
+pub fn status() -> VehiclesStatus {
+    STATE.lock().status.clone()
+}
+
+/// The mounted gun's aim point for the per-weapon update, when `weapon` is the gun the hands aim.
+pub fn mounted_target(weapon: usize) -> Option<Vec3> {
+    STATE
+        .lock()
+        .mounted_target
+        .filter(|t| t.weapon == weapon && t.fresh())
+        .map(|t| t.point)
+}
+
+/// The mounted gun's aim point for the character-level aim point, which draws the gun.
+pub fn mounted_aim_point() -> Option<Vec3> {
+    STATE
+        .lock()
+        .mounted_target
+        .filter(MountedTarget::fresh)
+        .map(|t| t.point)
+}
+
+/// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
+/// controls, and return the control each hand is in. Called while the bindings inject, before the
+/// tables.
+pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
+    let Some(active) = hands::active_hands_raw() else {
+        stand_down();
+        return [None; 2];
+    };
+    let config = active.config;
+    let seat = match mode {
+        Mode::Vehicle(seat) => Some(seat),
+        _ => None,
+    };
+    let offered = offered(seat, &config);
+    let placement = Placement {
+        config: config.vehicles.physical,
+        dominant: config.dominant_hand,
+    };
+    let grips = active.hands.map(|h| h.map(|h| h.grip.position));
+    let mounted = mounted_tick(&active);
+
+    let mut events = Vec::new();
+    let mut state = STATE.lock();
+    if state.status.seat != seat {
+        physical::release_all(&mut state.controls, &mut events);
+        state.controls = ControlState::default();
+    }
+    let candidates = physical::candidates(&placement, &state.controls, offered, grips);
+    let volumes = Hand::BOTH.map(|hand| {
+        if let Some(hold) = state.controls.holds[hand.index()] {
+            return Some(GrabVolume::VehicleControl(hold.kind));
+        }
+        grab::grab_volume(grips[hand.index()]?, hand, &candidates)
+    });
+    state.placement = Some(placement);
+    state.mounted_target = mounted.target;
+    state.mounted_handles = mounted.handles.or(state.mounted_handles);
+    state.status.active = true;
+    state.status.seat = seat;
+    state.status.offered = offered;
+    state.status.volumes = volumes;
+    state.status.mounted = mounted.readout;
+    push_events(&mut state.status, events);
+    drop(state);
+
+    submit_highlights(&config, &active, &candidates, volumes);
+    volumes
+}
+
+/// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,
+/// write their axes over the tables', and add the arm pose to the move stick in the air.
+pub(crate) fn finish_tick(
+    mode: Mode,
+    grabs: [Option<GrabVolume>; 2],
+    controls: &Controls,
+    desired: &mut Vec<Desired>,
+    dt: f32,
+) {
+    let Some(active) = hands::active_hands_raw() else {
+        return;
+    };
+    let config = active.config;
+    let grips = active.hands.map(|h| h.map(|h| h.grip.position));
+    let grabs = grabs.map(|g| match g {
+        Some(GrabVolume::VehicleControl(kind)) => Some(kind),
+        _ => None,
+    });
+
+    let mut events = Vec::new();
+    let mut state = STATE.lock();
+    let Some(placement) = state.placement else {
+        return;
+    };
+    let offered = state.status.offered;
+    let outputs = physical::step(
+        &mut state.controls,
+        &placement,
+        &physical::StepInputs {
+            kinds: offered,
+            grips,
+            grabs,
+            dt,
+        },
+        &mut events,
+    );
+    write_outputs(&outputs, desired);
+    let blend = config.hands.anchor.blend_s;
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let hold = state.controls.holds[i];
+        if hold.is_some() {
+            state.last_holds[i] = hold;
+        }
+        let target = if hold.is_some() { 1.0 } else { 0.0 };
+        state.anchor_weights[i] =
+            tiers::step_weight(state.anchor_weights[i], target, dt, blend, blend);
+        if state.anchor_weights[i] <= 0.0 {
+            state.last_holds[i] = None;
+        }
+    }
+    let arms = arm_tick(mode, controls, &active, desired);
+    state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
+    state.status.controls = state.controls;
+    state.status.outputs = outputs;
+    state.status.arms = arms;
+    push_events(&mut state.status, events);
+}
+
+/// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
+/// do not inject.
+pub(crate) fn stand_down() {
+    let mut state = STATE.lock();
+    let mut events = Vec::new();
+    physical::release_all(&mut state.controls, &mut events);
+    state.controls = ControlState::default();
+    state.last_holds = [None; 2];
+    state.anchor_weights = [0.0; 2];
+    state.mounted_reference = None;
+    state.mounted_target = None;
+    state.mounted_handles = None;
+    state.placement = None;
+    state.status.active = false;
+    state.status.seat = None;
+    state.status.volumes = [None; 2];
+    state.status.holds = [None; 2];
+    state.status.mounted = None;
+    state.status.arms = None;
+    push_events(&mut state.status, events);
+    drop(state);
+    store::clear(Source::VehicleControls);
+}
+
+/// Put the hands that hold a physical control or a mounted gun's handles on them, keeping the
+/// controllers' rotation. `hands` are the cockpit-frame hands indexed by [`Hand::index`], as the
+/// controllers hold them.
+pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
+    let tier_status = tiers::status();
+    // The grapple states' anchor weights are the line's
+    // ([`crate::controllers::hands::anchor`]), not the handles'.
+    let grapple = matches!(
+        tier_status.state,
+        Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
+    );
+    let grips = hands.map(|h| h.map(|h| h.grip.position));
+    let state = STATE.lock();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let Some(h) = hands[i] else {
+            continue;
+        };
+        let control = state.last_holds[i]
+            .filter(|_| state.anchor_weights[i] > 0.0)
+            .zip(state.placement)
+            .and_then(|(hold, placement)| {
+                let point = physical::anchor_point(&state.controls, &placement, hold, hand, grips)?;
+                Some((point, state.anchor_weights[i]))
+            });
+        let mounted = state
+            .mounted_handles
+            .and_then(|handles| handles[i])
+            .filter(|_| !grapple)
+            .map(|point| (point, tier_status.anchor_weights[i]))
+            .filter(|(_, weight)| *weight > 0.0);
+        if let Some((point, weight)) = control.or(mounted) {
+            hands[i] = Some(move_grip(h, point, weight));
+        }
+    }
+}
+
+/// How many grabs and releases the readout keeps.
+const MAX_EVENTS: usize = 6;
+
+/// The highlights are submitted at the input tick's rate, so they live a little past one tick.
+const HIGHLIGHT_TTL: Duration = Duration::from_millis(150);
+
+struct State {
+    status: VehiclesStatus,
+    controls: ControlState,
+    placement: Option<Placement>,
+    /// The control each hand held last, kept while its anchor blends out.
+    last_holds: [Option<Hold>; 2],
+    /// Each hand's share of the pose on its control.
+    anchor_weights: [f32; 2],
+    mounted_reference: Option<Reference>,
+    mounted_target: Option<MountedTarget>,
+    /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
+    mounted_handles: Option<[Option<Vec3>; 2]>,
+}
+
+static STATE: Mutex<State> = Mutex::new(State {
+    status: VehiclesStatus {
+        active: false,
+        seat: None,
+        offered: &[],
+        volumes: [None; 2],
+        holds: [None; 2],
+        controls: ControlState::new(),
+        outputs: Outputs::NONE,
+        events: Vec::new(),
+        mounted: None,
+        arms: None,
+    },
+    controls: ControlState::new(),
+    placement: None,
+    last_holds: [None; 2],
+    anchor_weights: [0.0; 2],
+    mounted_reference: None,
+    mounted_target: None,
+    mounted_handles: None,
+});
+
+/// The physical controls `seat` offers with their toggles on: only the driver's seat has any.
+fn offered(seat: Option<VehicleSeat>, config: &ControllersConfig) -> &'static [ControlKind] {
+    let physical = &config.vehicles.physical;
+    let Some(seat) = seat.filter(|s| s.driver && physical.any()) else {
+        return &[];
+    };
+    let kinds = ControlKind::for_class(seat.class);
+    match kinds {
+        [one] if one.enabled(physical) => kinds,
+        [first, second] => match (first.enabled(physical), second.enabled(physical)) {
+            (true, true) => kinds,
+            (true, false) => &kinds[..1],
+            (false, true) => &kinds[1..],
+            (false, false) => &[],
+        },
+        _ => &[],
+    }
+}
+
+/// What the mounted-gun half of the input tick produced.
+struct MountedTick {
+    readout: Option<MountedReadout>,
+    target: Option<MountedTarget>,
+    handles: Option<[Option<Vec3>; 2]>,
+}
+
+/// Read the mounted gun and derive its aim from the hands.
+fn mounted_tick(active: &ActiveHands) -> MountedTick {
+    let config = &active.config;
+    let none = MountedTick {
+        readout: None,
+        target: None,
+        handles: None,
+    };
+    if !(config.vehicles.mounted.aim_by_hands || config.vehicles.mounted.anchor_hands) {
+        STATE.lock().mounted_reference = None;
+        return none;
+    }
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    let Some(gun) = (unsafe {
+        Character::GetLocalPlayerCharacter()
+            .as_ref()
+            .and_then(|owner| mounted::read(owner))
+    }) else {
+        STATE.lock().mounted_reference = None;
+        return none;
+    };
+    let head = headpose::query();
+    let body = headpose::xr::body_rotation();
+    let to_cockpit = |world: Vec3| {
+        active.head.position
+            + body.inverse() * (world - head.position) / active.world_scale.max(1e-3)
+    };
+    let handles = gun.handles.map(|h| h.map(to_cockpit));
+    let grips = active.hands.map(|h| h.map(|h| h.grip.position));
+
+    let aim = config.vehicles.mounted.aim_by_hands;
+    let direction = mounted::hands_midpoint(grips)
+        .filter(|_| aim)
+        .and_then(|(mid, tracked)| {
+            let mut state = STATE.lock();
+            let current = state
+                .mounted_reference
+                .filter(|r| r.weapon == gun.address && r.hands == tracked);
+            let reference = current.or_else(|| {
+                let handles_mid = match handles {
+                    [Some(l), Some(r)] => Some((l + r) * 0.5),
+                    [one, other] => one.or(other),
+                };
+                mounted::take_reference(
+                    gun.address,
+                    tracked,
+                    mid,
+                    to_cockpit(gun.pivot),
+                    handles_mid,
+                    body.inverse() * gun.barrel,
+                    config.vehicles.mounted.min_lever_m,
+                )
+            });
+            state.mounted_reference = reference;
+            drop(state);
+            mounted::aim_direction(&reference?, mid).map(|d| body * d)
+        });
+    let target = direction.map(|d| MountedTarget {
+        weapon: gun.address,
+        point: gun.pivot + d * config.aim.max_distance_m.max(1.0),
+        at: Instant::now(),
+    });
+    MountedTick {
+        readout: Some(MountedReadout {
+            gun,
+            direction,
+            target: target.map(|t| t.point),
+        }),
+        target,
+        handles: config.vehicles.mounted.anchor_hands.then_some(handles),
+    }
+}
+
+/// Add the arm pose to the move stick in the wingsuit or under the parachute, when their arm
+/// steering is on.
+fn arm_tick(
+    mode: Mode,
+    controls: &Controls,
+    active: &ActiveHands,
+    desired: &mut Vec<Desired>,
+) -> Option<ArmReadout> {
+    let config = &active.config.vehicles.arm_steering;
+    let on = match mode {
+        Mode::Airborne(AirborneVariant::Wingsuit) => config.wingsuit,
+        Mode::Airborne(AirborneVariant::Parachute) => config.parachute,
+        _ => false,
+    };
+    if !on {
+        return None;
+    }
+    let left = active.hands[Hand::Left.index()]?.grip.position;
+    let right = active.hands[Hand::Right.index()]?.grip.position;
+    let dims = body_dimensions(&active.config);
+    let shoulder_y = active.head.position.y - (dims.eye_height - dims.shoulder_height);
+    let pose = arm_steering::arm_pose(left, right, shoulder_y, dims.arm_span);
+    let arms = arm_steering::steer(&pose, config);
+    let written = arm_steering::combine(controls.off().stick, arms);
+    replace_axis(desired, written.y, MOVE_BACKWARD, MOVE_FORWARD);
+    replace_axis(desired, written.x, MOVE_LEFT, MOVE_RIGHT);
+    replace_axis(desired, written.length().min(1.0), MOVE_ALL, MOVE_ALL);
+    Some(ArmReadout {
+        pose,
+        arms,
+        written,
+    })
+}
+
+/// The dimensions the hands are measured against: the character's while the hands are remapped
+/// onto them, the player's otherwise.
+fn body_dimensions(config: &ControllersConfig) -> BodyDimensions {
+    if config.body.remap_hands {
+        BodyDimensions::CHARACTER_ESTIMATE
+    } else {
+        body::player()
+    }
+}
+
+/// Write the held controls' axes over the tables' writes for the same actions.
+pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
+    if let Some(steer) = out.steer {
+        replace_axis(desired, steer, TURN_LEFT, TURN_RIGHT);
+    }
+    if let Some(lean) = out.lean {
+        replace_axis(desired, lean, BIKE_LEAN_LEFT, BIKE_LEAN_RIGHT);
+    }
+    if let Some(cyclic) = out.cyclic {
+        replace_axis(desired, cyclic.x, HELI_ROLL_LEFT, HELI_ROLL_RIGHT);
+        replace_axis(desired, cyclic.y, HELI_BACKWARD, HELI_FORWARD);
+    }
+    if let Some(collective) = out.collective {
+        replace_axis(desired, collective, HELI_DEC_ALTITUDE, HELI_INC_ALTITUDE);
+    }
+    if let Some(stick) = out.flight_stick {
+        replace_axis(desired, stick.x, PLANE_ROLL_LEFT, PLANE_ROLL_RIGHT);
+        // Pushing the stick forward pitches the nose down.
+        replace_axis(desired, stick.y, PLANE_PITCH_UP, PLANE_PITCH_DOWN);
+    }
+    if let Some(throttle) = out.throttle {
+        replace_axis(desired, throttle, PLANE_DEC_TRUST, PLANE_INC_TRUST);
+    }
+}
+
+/// Replace every player-map want on `negative` and `positive` with the signed `value` split into
+/// the two non-negative half-axes, as the tables write an axis.
+fn replace_axis(desired: &mut Vec<Desired>, value: f32, negative: Action, positive: Action) {
+    desired.retain(|d| {
+        !(d.target.map == MapKind::Player
+            && (d.target.action == negative || d.target.action == positive))
+    });
+    let value = if value.is_finite() { value } else { 0.0 };
+    for (action, half) in [(negative, -value), (positive, value)] {
+        if half > 0.0 {
+            desired.push(Desired {
+                target: Target {
+                    map: MapKind::Player,
+                    action,
+                },
+                want: Want::Analog(half.min(1.0)),
+            });
+        }
+    }
+}
+
+/// `hand` with its grip moved toward `point` by `weight`, keeping its rotation.
+fn move_grip(hand: CockpitHand, point: Vec3, weight: f32) -> CockpitHand {
+    let shift = (point - hand.grip.position) * weight.clamp(0.0, 1.0);
+    if !shift.is_finite() {
+        return hand;
+    }
+    let moved = |p: Pose| Pose {
+        position: p.position + shift,
+        orientation: p.orientation,
+    };
+    CockpitHand {
+        wrist: moved(hand.wrist),
+        grip: moved(hand.grip),
+        aim: moved(hand.aim),
+    }
+}
+
+fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>) {
+    for event in &events {
+        tracing::debug!(target: "controllers", ?event, "vehicle control");
+    }
+    status.events.extend(events);
+    let excess = status.events.len().saturating_sub(MAX_EVENTS);
+    status.events.drain(..excess);
+}
+
+/// Submit a highlight on the control each free hand can grab.
+fn submit_highlights(
+    config: &ControllersConfig,
+    active: &ActiveHands,
+    candidates: &[grab::Candidate],
+    volumes: [Option<GrabVolume>; 2],
+) {
+    if !(config.overlay.enabled && config.overlay.grab_volumes) || candidates.is_empty() {
+        store::clear(Source::VehicleControls);
+        return;
+    }
+    let head = headpose::query();
+    let body = headpose::xr::body_rotation();
+    let mut prims = Vec::new();
+    for hand in Hand::BOTH {
+        let Some(volume) = volumes[hand.index()] else {
+            continue;
+        };
+        let Some(c) = candidates
+            .iter()
+            .find(|c| c.volume == volume && c.hand == Some(hand))
+        else {
+            continue;
+        };
+        let centre = hand_pose::compose_world(
+            head.position,
+            body,
+            active.head.position,
+            Pose {
+                position: c.centre,
+                orientation: Quat::IDENTITY,
+            },
+            active.world_scale,
+        )
+        .position;
+        prims.push(Primitive::Sprite {
+            at: Anchor::World(centre),
+            size: SpriteSize::World(c.radius * 2.0 * active.world_scale),
+            facing: Facing::Billboard,
+            shape: Shape::Ring { thickness: 0.15 },
+            color: CONTROL,
+            depth: DepthMode::XRay {
+                occluded_alpha: 0.4,
+            },
+        });
+    }
+    store::submit(Source::VehicleControls, &mut prims, HIGHLIGHT_TTL);
+}
+
+const CONTROL: Rgba = [0.85, 0.55, 1.0, 0.8];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::mode::VehicleClass;
+
+    fn analog(desired: &[Desired], action: Action) -> Option<f32> {
+        desired.iter().find_map(|d| match d.want {
+            Want::Analog(v) if d.target.action == action => Some(v),
+            _ => None,
+        })
+    }
+
+    fn want(action: Action, value: f32) -> Desired {
+        Desired {
+            target: Target {
+                map: MapKind::Player,
+                action,
+            },
+            want: Want::Analog(value),
+        }
+    }
+
+    #[test]
+    fn a_held_control_replaces_the_stick_s_axis_and_leaves_the_rest() {
+        let mut desired = vec![
+            want(TURN_LEFT, 0.7),
+            want(ACCELERATE, 1.0),
+            want(PLANE_ROLL_LEFT, 0.7),
+        ];
+        let out = Outputs {
+            steer: Some(0.4),
+            ..Outputs::default()
+        };
+        write_outputs(&out, &mut desired);
+        assert_eq!(analog(&desired, TURN_LEFT), None);
+        assert_eq!(analog(&desired, TURN_RIGHT), Some(0.4));
+        assert_eq!(analog(&desired, ACCELERATE), Some(1.0));
+        assert_eq!(analog(&desired, PLANE_ROLL_LEFT), Some(0.7));
+    }
+
+    #[test]
+    fn the_flight_stick_forward_pitches_down_and_the_collective_splits_its_halves() {
+        let mut desired = Vec::new();
+        let out = Outputs {
+            flight_stick: Some(Vec2::new(0.0, 0.5)),
+            collective: Some(-0.25),
+            throttle: Some(0.0),
+            ..Outputs::default()
+        };
+        write_outputs(&out, &mut desired);
+        assert_eq!(analog(&desired, PLANE_PITCH_DOWN), Some(0.5));
+        assert_eq!(analog(&desired, PLANE_PITCH_UP), None);
+        assert_eq!(analog(&desired, HELI_DEC_ALTITUDE), Some(0.25));
+        assert_eq!(analog(&desired, HELI_INC_ALTITUDE), None);
+        assert_eq!(analog(&desired, PLANE_INC_TRUST), None);
+    }
+
+    #[test]
+    fn only_the_driver_is_offered_the_enabled_controls() {
+        let mut config = ControllersConfig::new();
+        let seat = |class, driver| Some(VehicleSeat { class, driver });
+        assert!(offered(seat(VehicleClass::Car, true), &config).is_empty());
+        config.vehicles.physical.collective.enabled = true;
+        assert_eq!(
+            offered(seat(VehicleClass::Helicopter, true), &config),
+            &[ControlKind::Collective]
+        );
+        assert!(offered(seat(VehicleClass::Helicopter, false), &config).is_empty());
+        assert!(offered(None, &config).is_empty());
+    }
+
+    #[test]
+    fn a_grip_moves_onto_its_control_by_the_weight() {
+        let pose = Pose {
+            position: Vec3::ZERO,
+            orientation: Quat::from_rotation_y(0.3),
+        };
+        let hand = CockpitHand {
+            wrist: pose,
+            grip: pose,
+            aim: pose,
+        };
+        let moved = move_grip(hand, Vec3::X, 0.5);
+        assert_eq!(moved.grip.position, Vec3::new(0.5, 0.0, 0.0));
+        assert_eq!(moved.wrist.orientation, pose.orientation);
+    }
+}

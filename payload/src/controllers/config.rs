@@ -18,6 +18,7 @@ use crate::controllers::{
     bindings::yank::YankConfig,
     frame::{Hand, PressThresholds},
     hands::{anchor::AnchorConfig, tiers::HandTierTable},
+    vehicles::config::VehiclesConfig,
     weapons::config::{
         DualWieldConfig, ForegripConfig, HapticsConfig, HolstersConfig, RecoilConfig,
     },
@@ -62,7 +63,7 @@ pub struct ControllersConfig {
     pub body: BodyRemapConfig,
     /// Posture and roomscale locomotion.
     pub roomscale: RoomscaleConfig,
-    /// Vehicles, the wingsuit, and the parachute.
+    /// Vehicles, mounted guns, the wingsuit, and the parachute.
     pub vehicles: VehiclesConfig,
     /// Finger curls on the rendered hands.
     pub fingers: FingersConfig,
@@ -776,32 +777,6 @@ pub enum SeatTransition {
     /// the other modes are proven, because it is the mod's existing behaviour.
     #[default]
     Ride,
-}
-
-/// Vehicles, the wingsuit, and the parachute. The physical controls are opt-in; stick bindings are
-/// the default.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct VehiclesConfig {
-    /// Drive with physical controls: a wheel, handlebars, a helicopter cyclic and collective, a
-    /// flight stick, and a throttle, grabbed with the grip.
-    pub physical_controls: bool,
-    /// Aim the driver's vehicle weapons along the dominant hand's ray instead of the gaze.
-    pub driver_weapons_by_hand: bool,
-    /// Steer the wingsuit with the arm pose.
-    pub wingsuit_arm_steering: bool,
-    /// Steer the parachute with the arm pose.
-    pub parachute_arm_steering: bool,
-}
-
-impl VehiclesConfig {
-    pub const fn new() -> Self {
-        Self {
-            physical_controls: false,
-            driver_weapons_by_hand: false,
-            wingsuit_arm_steering: false,
-            parachute_arm_steering: false,
-        }
-    }
 }
 
 /// Finger curls on the rendered hands. Act only under the controller scheme.

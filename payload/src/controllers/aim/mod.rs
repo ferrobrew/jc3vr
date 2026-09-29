@@ -48,7 +48,7 @@ use crate::{
         config::ControllersConfig,
         frame::{Hand, Pose},
         hands::{self, ik, late, pose as hand_pose},
-        scheme,
+        scheme, vehicles,
     },
     headpose, hooks,
 };
@@ -136,11 +136,12 @@ pub fn status() -> AimStatus {
 }
 
 /// The character-level weapon aim point while the guns follow the hands: the dominant hand's aim
-/// point, or `None` when the gun aim is not acting. The aim-state hook writes it after the game's
-/// own point is set, so the point still counts as set this frame.
+/// point, or the mounted gun's point from its handles (which the game draws the gun toward), or
+/// `None` when neither aim is acting. The aim-state hook writes it after the game's own point is
+/// set, so the point still counts as set this frame.
 pub fn character_aim_point() -> Option<Vec3> {
     let dominant = Config::lock_query(|c| c.controllers.dominant_hand);
-    gun::character_aim_point(dominant)
+    gun::character_aim_point(dominant).or_else(vehicles::mounted_aim_point)
 }
 
 /// A hand's world-space poses for a tick.

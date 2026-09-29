@@ -9,7 +9,7 @@ use crate::{
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, hands, overlay, roomscale, weapons},
+    ui::controllers::{aim, hands, overlay, roomscale, vehicles, weapons},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -157,11 +157,6 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         roomscale::roomscale_settings(ui, &mut c.roomscale);
     });
 
-    egui::CollapsingHeader::new("Vehicles and flight").show(ui, |ui| {
-        let v = &mut c.vehicles;
-        ui.checkbox(&mut v.physical_controls, "Physical vehicle controls");
-        ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
-        ui.checkbox(&mut v.wingsuit_arm_steering, "Wingsuit arm steering");
-        ui.checkbox(&mut v.parachute_arm_steering, "Parachute arm steering");
-    });
+    egui::CollapsingHeader::new("Vehicles and flight")
+        .show(ui, |ui| vehicles::vehicles_settings(ui, &mut c.vehicles));
 }

@@ -339,6 +339,11 @@ fn vehicle(out: &mut Out, c: &Controls, seat: VehicleSeat, off_grip: bool, dom_g
             out.hold(dom_grip, &[FIRE_VEHICLE_WEAPON_PRIMARY, MC_FIRE, R1]);
         }
     }
+    // Out of the driver's seat the triggers drive nothing, so the dominant one fires the weapon in
+    // the hands or on the mount, aimed by the hands.
+    if !seat.driver {
+        out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
+    }
 }
 
 /// Falling, the wingsuit, and the parachute.

@@ -3,13 +3,14 @@
 //!
 //! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, and, under
 //! the opt-in physical controls, the vehicle controls. The subsystem that owns a volume places it
-//! each input tick as a [`Candidate`] (the weapons in [`crate::controllers::weapons`]), and
+//! each input tick as a [`Candidate`] (the weapons in [`crate::controllers::weapons`], the vehicle
+//! controls in [`crate::controllers::vehicles`]), and
 //! [`grab_volume`] picks the one a hand's grab point is in. The tables latch the answer at the grip's
 //! press edge.
 
 use glam::Vec3;
 
-use crate::controllers::frame::Hand;
+use crate::controllers::{frame::Hand, vehicles::physical::ControlKind};
 
 /// A region where a grip press grabs.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -20,12 +21,9 @@ pub enum GrabVolume {
     Foregrip,
     /// The grenade pouch.
     GrenadePouch,
-    /// A physical vehicle control (a wheel, handlebars, a flight stick, a turret handle).
-    #[allow(
-        dead_code,
-        reason = "the vehicle subsystem produces these once its physical controls exist"
-    )]
-    VehicleControl,
+    /// A physical vehicle control of the driver's seat (see
+    /// [`crate::controllers::vehicles::physical`]).
+    VehicleControl(ControlKind),
 }
 
 impl GrabVolume {
@@ -34,7 +32,7 @@ impl GrabVolume {
             GrabVolume::Holster(site) => site.label(),
             GrabVolume::Foregrip => "foregrip",
             GrabVolume::GrenadePouch => "grenade pouch",
-            GrabVolume::VehicleControl => "vehicle control",
+            GrabVolume::VehicleControl(kind) => kind.label(),
         }
     }
 }

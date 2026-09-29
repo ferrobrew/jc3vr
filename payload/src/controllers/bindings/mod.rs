@@ -41,7 +41,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand},
         hands::{self, tiers},
         mode::{self, Detection, Mode, Traversal},
-        scheme,
+        scheme, vehicles,
         weapons::{self, dual_wield::TriggerInput, haptics},
     },
     headpose,
@@ -95,6 +95,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     if !config.enabled {
         STATE.lock().reset();
         weapons::stand_down();
+        vehicles::stand_down();
         return InputTickOutput::default();
     }
     let detection = mode::tick();
@@ -122,6 +123,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     let (Some(frame), None) = (frame, idle) else {
         state.reset();
         weapons::stand_down();
+        vehicles::stand_down();
         state.report = TickReport {
             detection,
             idle,
@@ -136,13 +138,18 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         LocomotionDirection::OffHand => off_hand_rotation(&frame, dominant.other()),
     };
     let start = weapons::begin_tick(detection.mode);
+    let vehicle_volumes = vehicles::begin_tick(detection.mode);
+    let volumes = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        start.volumes[i].or(vehicle_volumes[i])
+    });
     let mut controls = Controls::from_frame(
         &frame,
         &edges,
         &config.bindings,
         dominant,
         move_rotation,
-        start.volumes,
+        volumes,
     );
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
@@ -179,6 +186,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         crate::controllers::roomscale::toggle_seated_crouch();
     }
     weapons::finish_tick(step.grabs, &mut step.desired, dt);
+    vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let outcomes = unsafe { inject::apply(&writes) };

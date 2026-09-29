@@ -1,6 +1,6 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
-//! controller frame and of each controller subsystem (weapon handling, posture, and roomscale
-//! included), the player's body dimensions, and every controller setting. Each subsystem's section
+//! controller frame and of each controller subsystem (weapon handling, vehicles and flight, posture,
+//! and roomscale included), the player's body dimensions, and every controller setting. Each subsystem's section
 //! is in its own file.
 
 mod aim;
@@ -12,6 +12,7 @@ mod mode;
 mod overlay;
 mod roomscale;
 mod settings;
+mod vehicles;
 mod weapons;
 
 use egui::Ui;
@@ -51,6 +52,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
     let weapons_readout = weapons::WeaponsReadout::read();
+    let vehicles_readout = vehicles::VehiclesReadout::read();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -104,6 +106,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Weapon handling")
             .default_open(true)
             .show(ui, |ui| weapons::weapons_readout(ui, &weapons_readout));
+
+        egui::CollapsingHeader::new("Vehicles and flight")
+            .default_open(true)
+            .show(ui, |ui| vehicles::vehicles_readout(ui, &vehicles_readout));
 
         egui::CollapsingHeader::new("Overlay")
             .default_open(true)

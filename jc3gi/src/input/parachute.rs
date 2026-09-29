@@ -241,6 +241,41 @@ for NStateTask_MovementParachuteTask {
         self
     }
 }
+#[repr(C, align(8))]
+/// The wingsuit's per-frame update. It reads the move half-axes as a stick vector (`MOVE_RIGHT`
+/// minus `MOVE_LEFT` across, `MOVE_BACKWARD` minus `MOVE_FORWARD` along) and hands it to
+/// [`NAirMovement_UpdateAirPhysics`](crate::input::parachute::NAirMovement_UpdateAirPhysics) with the wingsuit's air settings. The function carries the
+/// build's tamper-check markers.
+pub struct NStateTask_MovementWingSuitTask {}
+impl NStateTask_MovementWingSuitTask {
+    pub const Update_ADDRESS: usize = 0x14082DDD0;
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_MovementWingSuitTask>
+for NStateTask_MovementWingSuitTask {
+    fn as_ref(&self) -> &NStateTask_MovementWingSuitTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_MovementWingSuitTask>
+for NStateTask_MovementWingSuitTask {
+    fn as_mut(&mut self) -> &mut NStateTask_MovementWingSuitTask {
+        self
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C, align(4))]
 /// `SParachuteActionParams`: the per-character parachute animation/physics state, embedded in
@@ -428,5 +463,54 @@ pub unsafe fn ApplyAnimationVelocityWithSteering(
             velocity_out: *mut crate::types::math::Vector3,
         ) = ::std::mem::transmute(ApplyAnimationVelocityWithSteering_ADDRESS);
         f(character, dt, para_settings, transform, blend, velocity_out)
+    }
+}
+pub const NAirMovement_UpdateAirPhysics_ADDRESS: usize = 0x1407E1680;
+/// `NAirMovement::UpdateAirPhysics`: the air movement core shared by the wingsuit, falling, and
+/// free-falling tasks. It maps the stick vector `input` through the settings'
+/// `m_XInputYawPitchRollAmount` and `m_YInputYawPitchRollAmount` into a yaw, pitch, and roll
+/// steering vector and, for the local player outside an alignment segment, adds the camera
+/// look-steer from [`NAirMovement_UpdateStdLookSteering`](crate::input::parachute::NAirMovement_UpdateStdLookSteering) to it.
+pub unsafe fn NAirMovement_UpdateAirPhysics(
+    character: *mut crate::character::character::Character,
+    dt: f32,
+    input: *const crate::types::math::Vector2,
+    settings: *const crate::input::parachute::CharacterAirMovementSettings,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            character: *mut crate::character::character::Character,
+            dt: f32,
+            input: *const crate::types::math::Vector2,
+            settings: *const crate::input::parachute::CharacterAirMovementSettings,
+        ) = ::std::mem::transmute(NAirMovement_UpdateAirPhysics_ADDRESS);
+        f(character, dt, input, settings)
+    }
+}
+pub const NAirMovement_UpdateStdLookSteering_ADDRESS: usize = 0x140791300;
+/// `NAirMovement::UpdateStdLookSteering`: the camera look-steer of the air movement, called only
+/// from [`NAirMovement_UpdateAirPhysics`](crate::input::parachute::NAirMovement_UpdateAirPhysics). It reads the camera input matrix
+/// (`GameCameraManager::GetInputMatrix`, inlined), takes the pitch and yaw differences between the
+/// camera and the character (`char_pitch`, `char_yaw`), shapes each through the settings'
+/// look-steer deadzone, range, and exponent, and mixes them through `m_XLookYawPitchRollAmount` and
+/// `m_YLookYawPitchRollAmount` into the yaw, pitch, and roll vector `out`. Each component is then
+/// reduced against `target_steering` where the two oppose. It has no other side effects; the
+/// caller adds `out` into its steering vector.
+pub unsafe fn NAirMovement_UpdateStdLookSteering(
+    out: *mut crate::types::math::Vector3,
+    target_steering: *const crate::types::math::Vector3,
+    char_pitch: f32,
+    char_yaw: f32,
+    settings: *const crate::input::parachute::CharacterAirMovementSettings,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            out: *mut crate::types::math::Vector3,
+            target_steering: *const crate::types::math::Vector3,
+            char_pitch: f32,
+            char_yaw: f32,
+            settings: *const crate::input::parachute::CharacterAirMovementSettings,
+        ) = ::std::mem::transmute(NAirMovement_UpdateStdLookSteering_ADDRESS);
+        f(out, target_steering, char_pitch, char_yaw, settings)
     }
 }

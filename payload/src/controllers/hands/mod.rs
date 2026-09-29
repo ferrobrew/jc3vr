@@ -25,7 +25,7 @@ use crate::{
         body::{self, BodyDimensions},
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
-        scheme,
+        scheme, vehicles,
         weapons::{foregrip, recoil},
     },
     headpose,
@@ -62,10 +62,12 @@ pub struct ActiveHands {
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
 /// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
-/// ([`foregrip::apply`]); a gun hand carries its recoil offset ([`recoil::apply`]); and an
-/// anchored grapple hand holds the line ([`anchor::apply`]).
+/// ([`foregrip::apply`]); a gun hand carries its recoil offset ([`recoil::apply`]); an anchored
+/// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
+/// mounted gun's handle holds it ([`vehicles::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
+    vehicles::apply(&mut active.hands);
     foregrip::apply(&mut active.hands, &active.config.weapons.foregrip);
     recoil::apply(&mut active.hands, &active.config.weapons.recoil);
     anchor::apply(&mut active.hands, active.head, active.world_scale);

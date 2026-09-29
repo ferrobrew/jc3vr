@@ -43,6 +43,7 @@ use crate::{
         config::AimConfig,
         frame::Hand,
         hands::late,
+        vehicles,
         weapons::dual_wield,
     },
 };
@@ -201,8 +202,14 @@ fn update_from_user_post_sim(
     }
 }
 
-/// The aim point for the gun `weapon` will update next, when `weapon` is the aimed weapon.
+/// The aim point for the gun `weapon` will update next, when `weapon` is the aimed weapon: a
+/// wielded gun's hand, or a mounted gun's handles ([`vehicles::mounted_target`]).
 fn hand_target(weapon: &WeaponBase) -> Option<Vec3> {
+    let address = weapon as *const WeaponBase as usize;
+    if let Some(target) = vehicles::mounted_target(address) {
+        AIMED.fetch_add(1, Ordering::Relaxed);
+        return Some(target);
+    }
     let snapshot = SNAPSHOT.lock().filter(Snapshot::fresh)?;
     if snapshot.weapon.address != weapon as *const WeaponBase as usize {
         return None;

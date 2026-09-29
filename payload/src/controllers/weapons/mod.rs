@@ -293,7 +293,7 @@ pub(crate) fn finish_tick(grabs: [Option<GrabVolume>; 2], desired: &mut Vec<Desi
                 None => GrabOutcome::ForegripUnmeasured,
             },
             GrabVolume::GrenadePouch => GrabOutcome::Pouch,
-            GrabVolume::VehicleControl => continue,
+            GrabVolume::VehicleControl(_) => continue,
         };
         tracing::debug!(target: "controllers", ?hand, volume = volume.label(), outcome = %outcome.label(), "grab");
         events.push(GrabEvent {
@@ -541,7 +541,7 @@ fn colour(volume: GrabVolume) -> Rgba {
     match volume {
         GrabVolume::Holster(_) => HOLSTER,
         GrabVolume::Foregrip => FOREGRIP,
-        GrabVolume::GrenadePouch | GrabVolume::VehicleControl => POUCH,
+        GrabVolume::GrenadePouch | GrabVolume::VehicleControl(_) => POUCH,
     }
 }
 

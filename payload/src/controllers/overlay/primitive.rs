@@ -25,10 +25,12 @@ pub enum Source {
     GhostHands,
     /// Axes at the controllers' grip and aim poses.
     DebugGizmos,
+    /// The highlights of the physical vehicle control a hand can grab.
+    VehicleControls,
 }
 
 impl Source {
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 7;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -38,6 +40,7 @@ impl Source {
         Source::GrabVolumes,
         Source::GhostHands,
         Source::DebugGizmos,
+        Source::VehicleControls,
     ];
 
     pub const fn index(self) -> usize {
@@ -48,6 +51,7 @@ impl Source {
             Source::GrabVolumes => 3,
             Source::GhostHands => 4,
             Source::DebugGizmos => 5,
+            Source::VehicleControls => 6,
         }
     }
 
@@ -59,6 +63,7 @@ impl Source {
             Source::GrabVolumes => "grab volumes",
             Source::GhostHands => "ghost hands",
             Source::DebugGizmos => "controller gizmos",
+            Source::VehicleControls => "vehicle controls",
         }
     }
 }
