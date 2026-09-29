@@ -1,5 +1,6 @@
 //! Controller input through OpenXR: the action sets, suggested bindings, the controller spaces,
-//! haptics output, `XR_EXT_hand_tracking`, and the persistence of the action handles across
+//! haptics output, `XR_EXT_hand_tracking` (with `XR_EXT_hand_joints_motion_range` when offered),
+//! and the persistence of the action handles across
 //! reinjects. Once per rendered frame the VR frame loop syncs the actions, locates the controllers
 //! at the frame's predicted display time, and publishes a
 //! [`ControllerFrame`](crate::controllers::frame::ControllerFrame) for the rest of the mod.
@@ -104,6 +105,9 @@ pub struct HandTrackingStatus {
     pub system_supported: bool,
     /// Whether hand trackers currently exist.
     pub trackers_created: bool,
+    /// Whether the instance was created with `XR_EXT_hand_joints_motion_range`, so the joints are
+    /// located with the motion range that conforms to a held controller.
+    pub conforming_motion_range: bool,
 }
 
 /// A snapshot of the controller input's state. Never touches the runtime lock.
@@ -131,5 +135,6 @@ static STATUS: Mutex<InputStatus> = Mutex::new(InputStatus {
         extension_enabled: false,
         system_supported: false,
         trackers_created: false,
+        conforming_motion_range: false,
     },
 });

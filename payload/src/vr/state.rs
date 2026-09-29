@@ -274,6 +274,10 @@ impl VrState {
         // Optional: enabled whenever the runtime offers it, since an instance's extensions are fixed
         // at creation. Whether the hand trackers are used is the controllers' own toggle.
         extensions.ext_hand_tracking = available.ext_hand_tracking;
+        // Selects the hand-joint motion range at each locate; it extends hand tracking, so it is
+        // enabled only beside it.
+        extensions.ext_hand_joints_motion_range =
+            available.ext_hand_tracking && available.ext_hand_joints_motion_range;
         let instance = acquire_instance(&entry, &extensions, cfg.persist_instance)?;
 
         let system = instance

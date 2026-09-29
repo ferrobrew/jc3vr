@@ -19,6 +19,8 @@
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
 //! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
 //!   update;
+//! - [`fingers`]: finger curls on the rendered hands, from hand tracking or estimated from the
+//!   inputs;
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
 //!   off-hand's ray;
 //! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye;
@@ -43,6 +45,7 @@ pub mod aim_state;
 pub mod bindings;
 pub mod body;
 pub mod config;
+pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;

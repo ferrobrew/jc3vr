@@ -1,11 +1,12 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
-//! controller frame and of each controller subsystem (weapon handling, scopes, vehicles and flight,
-//! posture, and roomscale included), the player's body dimensions, and every controller setting. Each subsystem's section
-//! is in its own file.
+//! controller frame and of each controller subsystem (finger curls, weapon handling, scopes,
+//! vehicles and flight, posture, and roomscale included), the player's body dimensions, and every
+//! controller setting. Each subsystem's section is in its own file.
 
 mod aim;
 mod aim_state;
 mod body;
+mod fingers;
 mod frame;
 mod hands;
 mod mode;
@@ -24,7 +25,7 @@ use crate::{
     config,
     controllers::{
         aim as controller_aim, aim_state as controller_aim_state, bindings,
-        body as controller_body,
+        body as controller_body, fingers as controller_fingers,
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
@@ -51,6 +52,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let hand_ik = hand_ik::status();
     let hand_tiers = tiers::status();
     let late_status = late::status();
+    let fingers_status = controller_fingers::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
     let weapons_readout = weapons::WeaponsReadout::read();
@@ -104,6 +106,16 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .default_open(true)
             .show(ui, |ui| {
                 hands::hands_readout(ui, &hand_ik, &hand_tiers, &late_status)
+            });
+
+        egui::CollapsingHeader::new("Finger curls")
+            .default_open(true)
+            .show(ui, |ui| {
+                fingers::fingers_readout(
+                    ui,
+                    &fingers_status,
+                    status.hand_tracking.conforming_motion_range,
+                )
             });
 
         egui::CollapsingHeader::new("Weapon handling")

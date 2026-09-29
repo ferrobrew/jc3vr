@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
     bindings::yank::YankConfig,
+    fingers::config::FingersConfig,
     frame::{Hand, PressThresholds},
     hands::{anchor::AnchorConfig, tiers::HandTierTable},
     vehicles::config::VehiclesConfig,
@@ -834,20 +835,6 @@ pub enum SeatTransition {
     /// the other modes are proven, because it is the mod's existing behaviour.
     #[default]
     Ride,
-}
-
-/// Finger curls on the rendered hands. Act only under the controller scheme.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct FingersConfig {
-    /// Curl the fingers from hand tracking when available, and otherwise from the inputs the
-    /// fingers rest on (the trigger, the grip, and the touch sensors).
-    pub enabled: bool,
-}
-
-impl FingersConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
 }
 
 #[cfg(test)]

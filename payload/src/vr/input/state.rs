@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use anyhow::Context as _;
 use openxr as xr;
-use openxr::sys::Handle as _;
+use openxr::{sys, sys::Handle as _};
 
 use crate::{
     controllers::frame::{self, ButtonSet, Hand, InteractionProfile},
@@ -32,6 +32,11 @@ pub(crate) struct InputState {
     pub(super) trackers_failed: bool,
     /// Whether the instance has `XR_EXT_hand_tracking` and the system supports it.
     pub(super) hand_tracking_supported: bool,
+    /// The instance's joint locate call, present with `XR_EXT_hand_tracking`.
+    pub(super) locate_hand_joints: Option<sys::pfn::LocateHandJointsEXT>,
+    /// Whether the joints are located with the controller-conforming motion range: the instance
+    /// has `XR_EXT_hand_joints_motion_range`.
+    pub(super) conforming_motion_range: bool,
     /// The profile paths, for recognising the bound profile.
     pub(super) profile_paths: [(xr::Path, InteractionProfile); 2],
     /// The interaction profile of each hand.
@@ -135,6 +140,7 @@ impl InputState {
             extension_enabled: instance.exts().ext_hand_tracking.is_some(),
             system_supported: self.hand_tracking_supported,
             trackers_created: self.trackers.is_some(),
+            conforming_motion_range: instance.exts().ext_hand_joints_motion_range.is_some(),
         }
     }
 
@@ -254,6 +260,11 @@ impl InputState {
             trackers: None,
             trackers_failed: false,
             hand_tracking_supported,
+            locate_hand_joints: instance
+                .exts()
+                .ext_hand_tracking
+                .map(|ext| ext.locate_hand_joints),
+            conforming_motion_range: instance.exts().ext_hand_joints_motion_range.is_some(),
             profile_paths,
             profiles: [InteractionProfile::None; 2],
             previous_buttons: [ButtonSet::EMPTY; 2],

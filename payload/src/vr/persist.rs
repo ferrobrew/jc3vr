@@ -22,6 +22,7 @@ pub(super) fn acquire_instance(
         // stashed by a payload that did not record them had none).
         let mut extensions = extensions.clone();
         extensions.ext_hand_tracking &= stashed_handle(HAND_TRACKING_STASH_VAR).is_some();
+        extensions.ext_hand_joints_motion_range &= stashed_handle(MOTION_RANGE_STASH_VAR).is_some();
         match unsafe { reuse_instance(entry, raw, &extensions) } {
             Ok(instance) => {
                 tracing::info!(target: "vr", handle = format_args!("{raw:#x}"), "reused the persisted OpenXR instance");
@@ -57,6 +58,10 @@ pub(super) fn stash_instance(instance: xr::Instance) {
     stash_handle(
         HAND_TRACKING_STASH_VAR,
         u64::from(instance.exts().ext_hand_tracking.is_some()),
+    );
+    stash_handle(
+        MOTION_RANGE_STASH_VAR,
+        u64::from(instance.exts().ext_hand_joints_motion_range.is_some()),
     );
     std::mem::forget(instance);
 }
@@ -116,6 +121,7 @@ pub(super) fn persist_session(session: Session) {
 pub(super) fn clear_persisted() {
     clear_handle(INSTANCE_STASH_VAR);
     clear_handle(HAND_TRACKING_STASH_VAR);
+    clear_handle(MOTION_RANGE_STASH_VAR);
     clear_handle(SESSION_STASH_VAR);
 }
 
@@ -130,6 +136,10 @@ const SESSION_STASH_VAR: windows::core::PCWSTR = windows::core::w!("jc3vr_xr_ses
 /// re-wraps it with the same extension set.
 const HAND_TRACKING_STASH_VAR: windows::core::PCWSTR =
     windows::core::w!("jc3vr_xr_instance_hand_tracking");
+/// Whether the persisted instance was created with `XR_EXT_hand_joints_motion_range` (`1`), for the
+/// same reason.
+const MOTION_RANGE_STASH_VAR: windows::core::PCWSTR =
+    windows::core::w!("jc3vr_xr_instance_hand_joints_motion_range");
 
 /// Store a handle value in the game process's environment under `var`, as hex.
 fn stash_handle(var: windows::core::PCWSTR, raw: u64) {

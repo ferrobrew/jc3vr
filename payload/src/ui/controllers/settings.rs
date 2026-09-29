@@ -9,7 +9,7 @@ use crate::{
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, hands, overlay, roomscale, scope, vehicles, weapons},
+    ui::controllers::{aim, fingers, hands, overlay, roomscale, scope, vehicles, weapons},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -134,12 +134,14 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut c.body.remap_head, "Remap head height")
             .on_hover_text("Moves the view for every player, controllers or not.");
         ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
-        ui.checkbox(&mut c.fingers.enabled, "Finger curls");
     });
 
     egui::CollapsingHeader::new("Aiming").show(ui, |ui| aim::aim_settings(ui, c));
 
     egui::CollapsingHeader::new("Hands").show(ui, |ui| hands::hands_settings(ui, &mut c.hands));
+
+    egui::CollapsingHeader::new("Finger curls")
+        .show(ui, |ui| fingers::fingers_settings(ui, &mut c.fingers));
 
     egui::CollapsingHeader::new("Overlay")
         .show(ui, |ui| overlay::overlay_settings(ui, &mut c.overlay));

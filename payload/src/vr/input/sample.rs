@@ -202,11 +202,19 @@ impl InputState {
         let grip = locate(&self.grip[hand.index()])?;
         let aim = locate(&self.aim[hand.index()])?;
 
-        let joints = match &self.trackers {
-            Some(trackers) => local
-                .locate_hand_joints(&trackers[hand.index()], time)?
-                .map(|locations| joints_to_cockpit(&locations, baseline)),
-            None => None,
+        let joints = match (&self.trackers, self.locate_hand_joints) {
+            (Some(trackers), Some(locate)) => {
+                let motion_range = self
+                    .conforming_motion_range
+                    .then_some(sys::HandJointsMotionRangeEXT::CONFORMING_TO_CONTROLLER);
+                // SAFETY: `locate` is the instance's own entry point, and the tracker and `local`
+                // belong to the session being sampled.
+                unsafe {
+                    locate_joints(locate, &trackers[hand.index()], local, time, motion_range)
+                }?
+                .map(|locations| joints_to_cockpit(&locations, baseline))
+            }
+            _ => None,
         };
 
         Ok(HandFrame {
@@ -314,6 +322,53 @@ fn tracked_pose(
             .filter(|_| has(xr::SpaceVelocityFlags::ANGULAR_VALID))
             .map(|v| rotate_to_cockpit(v.angular_velocity, baseline)),
     }
+}
+
+/// Locate a hand's joints in `base` at `time`, with `motion_range` chained onto the locate info when
+/// given (`XR_EXT_hand_joints_motion_range`; the crate's own locate chains nothing). `None` while
+/// the runtime reports the hand inactive.
+///
+/// # Safety
+///
+/// `locate` must be the `xrLocateHandJointsEXT` of the instance that owns `tracker` and `base`, and
+/// a motion range may be given only when that instance has `XR_EXT_hand_joints_motion_range`.
+unsafe fn locate_joints(
+    locate: sys::pfn::LocateHandJointsEXT,
+    tracker: &xr::HandTracker,
+    base: &xr::Space,
+    time: xr::Time,
+    motion_range: Option<sys::HandJointsMotionRangeEXT>,
+) -> xr::Result<Option<xr::HandJointLocations>> {
+    let range_info = motion_range.map(|range| sys::HandJointsMotionRangeInfoEXT {
+        ty: sys::HandJointsMotionRangeInfoEXT::TYPE,
+        next: ptr::null(),
+        hand_joints_motion_range: range,
+    });
+    let locate_info = sys::HandJointsLocateInfoEXT {
+        ty: sys::HandJointsLocateInfoEXT::TYPE,
+        next: range_info
+            .as_ref()
+            .map_or(ptr::null(), |info| ptr::from_ref(info).cast()),
+        base_space: base.as_raw(),
+        time,
+    };
+    let mut locations = [xr::HandJointLocation {
+        location_flags: xr::SpaceLocationFlags::EMPTY,
+        pose: xr::Posef::IDENTITY,
+        radius: 0.0,
+    }; HAND_JOINT_COUNT];
+    let mut located = sys::HandJointLocationsEXT {
+        ty: sys::HandJointLocationsEXT::TYPE,
+        next: ptr::null_mut(),
+        is_active: false.into(),
+        joint_count: HAND_JOINT_COUNT as u32,
+        joint_locations: locations.as_mut_ptr(),
+    };
+    let result = unsafe { locate(tracker.as_raw(), &locate_info, &mut located) };
+    if result.into_raw() < 0 {
+        return Err(result);
+    }
+    Ok(bool::from(located.is_active).then_some(locations))
 }
 
 fn joints_to_cockpit(

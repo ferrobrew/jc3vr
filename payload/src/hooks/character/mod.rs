@@ -1,6 +1,6 @@
 //! The character hooks: the pose-finalization pass (headset-driven body IK, the controller hands'
 //! wrist targets, and the roomscale crouch's hips and feet before the HumanIK solve, the head
-//! override and the hands' post-solve publish after it) and the act filter.
+//! override, the hands' post-solve publish, and the finger curls after it) and the act filter.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
@@ -80,5 +80,6 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
     unsafe {
         head::override_head(character);
         hands::ik::after_solve(character);
+        controllers::fingers::after_solve(character);
     }
 }
