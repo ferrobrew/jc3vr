@@ -191,7 +191,7 @@ fn hand_readout(ui: &mut Ui, h: &HandAim) {
 
 fn idle_label(idle: AimIdle) -> &'static str {
     match idle {
-        AimIdle::Disabled => "the gun and grapple aim are off",
+        AimIdle::Disabled => "the controllers are off",
         AimIdle::GamepadScheme => "the gamepad scheme is in effect",
         AimIdle::NoHands => "outside gameplay, or no tracked hands",
     }

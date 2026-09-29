@@ -115,7 +115,7 @@ pub struct GrappleAim {
 /// Why the aim did nothing on the last update.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AimIdle {
-    /// The controllers, or both the gun and grapple aim, are off.
+    /// The controllers are off.
     Disabled,
     /// The gamepad scheme is in effect.
     GamepadScheme,
@@ -221,7 +221,9 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
 /// Decide whether the aim acts this update and compose the hands into the world.
 fn begin() -> Result<TickHands, AimIdle> {
     let config = Config::lock_query(|c| c.controllers);
-    if !config.enabled || !(config.aim.gun || config.aim.grapple) {
+    // The hands are composed even with both the gun and the grapple aim off: the grenade throw and
+    // the melee target follow them too.
+    if !config.enabled {
         return Err(AimIdle::Disabled);
     }
     if !scheme::is_controllers() {

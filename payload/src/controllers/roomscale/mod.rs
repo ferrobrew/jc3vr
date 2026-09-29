@@ -124,6 +124,9 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
             frame.teleport_rebases += 1;
         }
     }
+    // With the chase off, the shift stays where the chase left it: it is the body's displacement
+    // from the baseline, and clearing it would move the view by that much. The next full recenter
+    // spends it ([`on_recenter`]).
     if chase_on {
         frame.shift.observe(
             &TickAnchors {
@@ -134,8 +137,6 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
             },
             sim::take_share,
         );
-    } else if frame.shift.current() != Vec3::ZERO {
-        frame.shift.clear();
     }
 
     let head_height = remap_head.then(|| {
@@ -151,7 +152,18 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
             &BodyDimensions::CHARACTER_ESTIMATE,
         )
     });
-    let vertical = head_height.map_or(inputs.cockpit.y, |h| h.cockpit_y);
+    // Without the head remap the seated crouch still lowers the eyes.
+    let vertical = head_height.map_or_else(
+        || {
+            inputs.cockpit.y
+                - posture::seated_crouch_drop(
+                    posture,
+                    frame.seated_crouch,
+                    config.crouch.seated_drop_m,
+                )
+        },
+        |h| h.cockpit_y,
+    );
     let (mut prev, mut cur) = frame.shift.apply(inputs.cockpit);
     prev.y = vertical;
     cur.y = vertical;

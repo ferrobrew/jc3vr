@@ -14,7 +14,9 @@
 //! - [`HandTier::Anchored`]: the hand is attached to a world point, and its movement drives the
 //!   game. It is built for the grapple states and the mounted guns ([`TierState::anchor_built`]):
 //!   the grapple hand holds the line ([`crate::controllers::hands::anchor`]), and while hanging its
-//!   displacement swings the character; on a mounted gun both hands hold the handles, and their
+//!   displacement swings the character. A grapple hand that holds a gun (the second pistol, or a
+//!   single gun in a left-handed layout) stays free instead, so that its gun aims where the
+//!   controller points rather than along the line; on a mounted gun both hands hold the handles, and their
 //!   positions aim the gun ([`crate::controllers::vehicles::mounted`]). A state assigned the tier
 //!   where it is not built yields. The physical vehicle controls anchor a holding hand within the
 //!   seated state's free tier ([`crate::controllers::vehicles::physical`]), because a hand holds a
@@ -41,6 +43,7 @@ use crate::{
         mode::{
             self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal,
         },
+        weapons,
     },
 };
 
@@ -465,6 +468,12 @@ pub(crate) fn tick(dt: f32) {
     // SAFETY: the input tick runs on the main thread outside the world update, as the mode
     // detector's own reads require.
     let signals = unsafe { read_signals() };
+    // The weapon handling's last tick: one tick behind, which the anchor's blend absorbs.
+    let weapons = weapons::status();
+    let gun_hands = weapons
+        .wielded
+        .filter(|_| weapons.active)
+        .map_or([false; 2], |w| w.weapon.wielded.hands);
     let mut status = STATUS.lock();
     *status = advance(
         *status,
@@ -473,12 +482,15 @@ pub(crate) fn tick(dt: f32) {
         &hands,
         dominant,
         mounted_anchor,
+        gun_hands,
     );
 }
 
 /// Fold one tick into the status: a new state (or the held one) assigns each hand its tier, and
 /// the weights step toward the tiers' targets. `mounted_anchor` is the mounted guns' own anchor
-/// switch; the grapple states follow [`HandsConfig::anchor`].
+/// switch; the grapple states follow [`HandsConfig::anchor`]. `gun_hands` are the hands with a gun
+/// of the wielded weapon, indexed by [`Hand::index`]: a grapple hand holding a gun stays free
+/// rather than taking the line, so that the gun keeps aiming where the controller points.
 pub fn advance(
     previous: TierStatus,
     state: Option<TierState>,
@@ -486,6 +498,7 @@ pub fn advance(
     config: &HandsConfig,
     dominant: Hand,
     mounted_anchor: bool,
+    gun_hands: [bool; 2],
 ) -> TierStatus {
     let state = state.or(previous.state);
     let tiers = Hand::BOTH.map(|hand| {
@@ -497,7 +510,13 @@ pub fn advance(
         Some(TierState::MountedGun) => mounted_anchor,
         _ => config.anchor.enabled,
     };
-    let effective = tiers.map(|t| t.effective_in(state, anchor));
+    let grapple = state.is_some_and(|s| s.scope() == TierScope::GrappleHand);
+    let effective = Hand::BOTH.map(
+        |hand| match tiers[hand.index()].effective_in(state, anchor) {
+            HandTier::Anchored if grapple && gun_hands[hand.index()] => HandTier::Free,
+            tier => tier,
+        },
+    );
     let weights = Hand::BOTH.map(|hand| {
         step_weight(
             previous.weights[hand.index()],
@@ -665,6 +684,7 @@ mod tests {
             &config,
             Hand::Right,
             false,
+            [false; 2],
         );
         assert_eq!(status.effective, [HandTier::Yielded; 2]);
     }
@@ -736,6 +756,7 @@ mod tests {
             &config,
             Hand::Right,
             true,
+            [false; 2],
         );
         assert_eq!(status.effective, [HandTier::Anchored, HandTier::Free]);
         assert_eq!(status.weights, [1.0; 2]);
@@ -747,8 +768,39 @@ mod tests {
             &config,
             Hand::Right,
             true,
+            [false; 2],
         );
         assert_eq!(released.anchor_weights, [0.0; 2]);
+    }
+
+    #[test]
+    fn a_grapple_hand_holding_a_gun_stays_free() {
+        let config = HandsConfig::new();
+        for state in [TierState::GrappleReel, TierState::GrappleHang] {
+            // The left hand is the grapple hand; it holds the second pistol, or a single gun.
+            let status = advance(
+                TierStatus::INITIAL,
+                Some(state),
+                1.0,
+                &config,
+                Hand::Right,
+                true,
+                [true, true],
+            );
+            assert_eq!(status.effective, [HandTier::Free; 2], "{state:?}");
+            assert_eq!(status.anchor_weights, [0.0; 2], "{state:?}");
+        }
+        // A mounted gun's hands anchor to its handles whatever they hold.
+        let mounted = advance(
+            TierStatus::INITIAL,
+            Some(TierState::MountedGun),
+            1.0,
+            &config,
+            Hand::Right,
+            true,
+            [true, false],
+        );
+        assert_eq!(mounted.effective, [HandTier::Anchored; 2]);
     }
 
     #[test]
@@ -798,10 +850,11 @@ mod tests {
             &config,
             Hand::Right,
             true,
+            [false; 2],
         );
         assert_eq!(status.tiers, [HandTier::Yielded; 2]);
         assert_eq!(status.weights, [0.0; 2]);
-        let held = advance(status, None, 0.01, &config, Hand::Right, true);
+        let held = advance(status, None, 0.01, &config, Hand::Right, true, [false; 2]);
         assert_eq!(held.state, Some(TierState::Swimming));
         assert_eq!(held.weights, [0.0; 2]);
     }

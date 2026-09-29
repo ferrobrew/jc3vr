@@ -19,7 +19,10 @@
 //! fingers. A hand that holds a weapon (a gun in its attach bone, or the off-hand on the foregrip)
 //! drives only its trigger finger unless
 //! [`drive_all_when_holding`](config::FingersConfig::drive_all_when_holding) is set, because the
-//! game's grip animation already wraps the other fingers round the weapon.
+//! game's grip animation already wraps the other fingers round the weapon. A hand that grips
+//! something through a sticky grab (the grapple line, a mounted gun's handles, or a physical
+//! vehicle control) is curled closed: the grab outlasts the grip press, so the grip value no longer
+//! says whether the hand is closed.
 
 pub mod config;
 pub mod curl;
@@ -39,8 +42,11 @@ use crate::{
             pose::{BoneJoint, PalmFrame},
         },
         frame::{self, Hand},
-        hands::ik,
-        scheme,
+        hands::{
+            ik,
+            tiers::{self, HandTier},
+        },
+        scheme, vehicles,
         weapons::{self, foregrip},
     },
 };
@@ -101,6 +107,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     })
     .unwrap_or([None; 2]);
     let holding = holding_hands();
+    let gripping = gripping_hands();
     let mut controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() };
 
     for hand in Hand::BOTH {
@@ -110,6 +117,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
             state.status[i] = HandFingersStatus::default();
             continue;
         };
+        let target = curl::gripping_target(target, gripping[i]);
         let curls = state.smoothed[i].map_or(target, |previous| {
             curl::smooth(previous, target, dt, config.smoothing_s)
         });
@@ -143,6 +151,14 @@ fn holding_hands() -> [bool; 2] {
         holding[hold.holder.other().index()] = true;
     }
     holding
+}
+
+/// The hands that grip through a sticky grab, indexed by [`Hand::index`]: each anchored hand (on
+/// the grapple line or a mounted gun's handles) and each hand on a physical vehicle control.
+fn gripping_hands() -> [bool; 2] {
+    let anchored = tiers::status().effective.map(|t| t == HandTier::Anchored);
+    let holds = vehicles::status().holds;
+    Hand::BOTH.map(|hand| anchored[hand.index()] || holds[hand.index()].is_some())
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

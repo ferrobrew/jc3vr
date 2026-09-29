@@ -457,7 +457,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Scheme selection | `scheme` (`Auto`, `Controllers`, or `Gamepad`) | Built. |
 | Body dimensions and remap | `body.local.json` beside the payload DLL; `body.remap_hands` (on), `body.remap_head` (off) | Built. The head remap feeds the view through the posture (milestone 2). |
 | Mode detection | `mode.debounce_ticks` | Built. The headpose sim keeps its own on-foot test. |
-| Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `bindings.evade_flick`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. |
+| Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `bindings.evade_flick`, `bindings.evade_window_s`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's A evades only on a stick flick. |
 | Gamepad semantics | `gamepad_semantics` | Built. |
 | Aim-state pin and mental-state cuts | `aim_state.pin`, `aim_state.pin_grapple`, `aim_state.skip_arm_ik`, `aim_state.neutral_aim_point`, `aim_state.neutral_aim_distance_m`, `aim_state.clear_wall_block`, `aim_state.mental_state_cuts`, and `aim_state.without_controllers` (off; applies the other parts under the gamepad scheme for testing) | Built, except the strafe reference correction (see "The aim-state pin"). |
 | Hands | `hands.ik`, `hands.late_update`, `hands.suppress_secondary_ik`, `hands.reach_t`, `hands.reach_r`, `hands.pull`, `hands.resist`, `hands.grip`, `hands.yield_blend_s`, `hands.return_blend_s`, `hands.tiers` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand. The grapple wire's render-time correction and elbow pole hints are not built. |
@@ -473,7 +473,7 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 |---|---|---|
 | Posture, STAGE space, and the stage-bounds check | `posture` (`Auto`, `Seated`, `Standing`, or `Roomscale`), `roomscale_min_extent_m` | Built. `Auto` never selects the seated posture. |
 | Head height remap | `body.remap_head` (off) | Built. |
-| Seated crouch toggle | `bindings.crouch_flick`, `crouch.seated_drop_m` | Built. |
+| Seated crouch toggle | `bindings.crouch_flick`, `crouch.seated_drop_m` | Built. It works with or without the head remap. |
 | The chase loop and the teleport re-base | `chase.enabled` (off), `chase.deadzone_m`, `chase.max_speed_mps`, `chase.time_constant_s`, `chase.warp_min_m` | Built. |
 | The head-through-geometry fade | `head_fade.enabled` (off), `head_fade.start_depth_m`, `head_fade.full_depth_m`, `fade.out_s`, `fade.in_s` | Built. The fade darkens the image in the VR blit. |
 | The visual crouch and the capsule | `crouch.visual` (off), `crouch.capsule` (off; requires the visual crouch), `crouch.hips_share`, `crouch.enter_drop_m`, `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
@@ -491,8 +491,8 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.game_rumble`, `haptics.grapple` | Built. |
 | The dual-wield split | `dual_wield.split`, `dual_wield.place_by_handedness` | Built. |
-| The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. |
-| The yank gesture | `bindings.yank.enabled` | Built. |
+| The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. A grapple hand that holds a gun stays free. |
+| The yank gesture | `bindings.yank.enabled` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 during the chase | none | Re-bases yaw and height only while the chase is active ([controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale)). |
 
 ### Milestone 4: vehicles and flight
@@ -504,9 +504,10 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 | Per-class vehicle bindings | the milestone 1 bindings | Built in milestone 1; each class needs its own playtest. Boats and jetskis share one class. |
 | Driver weapons by hand | `driver_weapons_by_hand` (off) | Built. The gaze aims the driver's weapons by default. |
 | Mounted guns and gunner seats | `mounted.aim_by_hands`, `mounted.anchor_hands`, `mounted.min_lever_m` | Built. |
-| Physical controls | `physical.wheel`, `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each off), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. |
+| Physical controls | `physical.wheel`, `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each off), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
 | Arm steering | `arm_steering.wingsuit` (off), `arm_steering.parachute` (off) | Built. The wingsuit's rendered arms stay yielded. |
 | The wingsuit's head look-steer removal | `movement.suppress_parachute_look_steer`, outside the `controllers` section | Built. |
+| Weaponized wingsuit guns aimed by the right hand | none | Not built. They aim by the gaze, because the gun aim covers only the wielded slot. |
 
 ### Milestone 5: breadth
 
@@ -546,7 +547,7 @@ Mode detection and bindings:
 
 - An analog action above 0.2 also reads as pressed, standing in for the device button threshold, which is not read.
 - The pause and commlink clicks go to both the player map and the UI map, which may toggle pause twice.
-- The wingsuit's evade (A with the move stick flicked) and its L trigger mapping (the air brake).
+- The wingsuit's evade (A with the move stick flicked out of its rest within `bindings.evade_window_s`) and its L trigger mapping (the air brake). The game's evade is `WINGSUIT_EVADE` held with `MOVE_ALL` tapped, and whether a flick that starts before the A press still reads as that tap is not checked.
 - The generic actions (`BTN_*`, `L1`, `R2`, and the others) mirrored alongside each virtual gamepad button.
 - The explosive button is the gamepad's RB, so a hold detonates.
 - A device poll that the engine skips can stretch a click over two ticks.

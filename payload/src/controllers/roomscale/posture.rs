@@ -102,17 +102,23 @@ pub fn head_height(
             source: HeadHeightSource::Floor,
         },
         (posture, _) => {
-            let crouch = if posture == EffectivePosture::Seated && input.seated_crouch {
-                input.seated_drop_m.max(0.0)
-            } else {
-                0.0
-            };
+            let crouch = seated_crouch_drop(posture, input.seated_crouch, input.seated_drop_m);
             HeadHeight {
                 cockpit_y: remap_head_translation(Vec3::Y * input.cockpit_y, player, character).y
                     - crouch,
                 source: HeadHeightSource::Baseline,
             }
         }
+    }
+}
+
+/// How far the seated crouch lowers the eyes: `seated_drop_m` while crouched in the seated
+/// posture, and nothing otherwise.
+pub fn seated_crouch_drop(posture: EffectivePosture, crouched: bool, seated_drop_m: f32) -> f32 {
+    if posture == EffectivePosture::Seated && crouched && seated_drop_m.is_finite() {
+        seated_drop_m.max(0.0)
+    } else {
+        0.0
     }
 }
 
@@ -216,6 +222,27 @@ mod tests {
             &CHARACTER,
         );
         assert!((crouched.cockpit_y - (-0.1 * ratio - 0.6)).abs() < EPS);
+    }
+
+    #[test]
+    fn only_the_crouched_seated_posture_drops_the_eyes() {
+        assert_eq!(seated_crouch_drop(EffectivePosture::Seated, true, 0.6), 0.6);
+        assert_eq!(
+            seated_crouch_drop(EffectivePosture::Seated, false, 0.6),
+            0.0
+        );
+        assert_eq!(
+            seated_crouch_drop(EffectivePosture::Standing, true, 0.6),
+            0.0
+        );
+        assert_eq!(
+            seated_crouch_drop(EffectivePosture::Seated, true, -1.0),
+            0.0
+        );
+        assert_eq!(
+            seated_crouch_drop(EffectivePosture::Seated, true, f32::NAN),
+            0.0
+        );
     }
 
     #[test]

@@ -60,6 +60,9 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.add(egui::Slider::new(&mut b.trigger_deadzone, 0.0..=0.5).text("Trigger deadzone"));
         ui.add(egui::Slider::new(&mut b.long_press_s, 0.2..=1.5).text("Commlink long press (s)"));
         ui.add(egui::Slider::new(&mut b.evade_flick, 0.3..=1.0).text("Wingsuit evade flick"));
+        ui.add(
+            egui::Slider::new(&mut b.evade_window_s, 0.05..=1.0).text("Wingsuit evade window (s)"),
+        );
         ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
         let y = &mut b.yank;
         ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(

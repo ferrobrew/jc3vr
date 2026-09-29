@@ -41,7 +41,7 @@ use crate::{
         config::LocomotionDirection,
         frame::{self, ControllerFrame, Hand},
         hands::{self, tiers},
-        mode::{self, Detection, Mode, Traversal},
+        mode::{self, Detection, Mode},
         scheme, vehicles,
         weapons::{self, dual_wield::TriggerInput, haptics},
     },
@@ -138,8 +138,18 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         LocomotionDirection::Head => 0.0,
         LocomotionDirection::OffHand => off_hand_rotation(&frame, dominant.other()),
     };
-    let start = weapons::begin_tick(detection.mode);
-    let vehicle_volumes = vehicles::begin_tick(detection.mode);
+    // A game menu or the map pauses the weapon and vehicle handling rather than standing it down,
+    // so that what the hands hold (a foregrip, a primed grenade, a physical control) is still held
+    // when gameplay resumes.
+    let in_menu = detection.mode == Mode::Ui;
+    let (start, vehicle_volumes) = if in_menu {
+        (weapons::TickStart::default(), [None; 2])
+    } else {
+        (
+            weapons::begin_tick(detection.mode),
+            vehicles::begin_tick(detection.mode),
+        )
+    };
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
         start.volumes[i].or(vehicle_volumes[i])
@@ -190,16 +200,18 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     if step.sight_capture {
         sights::tuning::request_capture();
     }
-    weapons::finish_tick(
-        &weapons::FinishInputs {
-            grabs: step.grabs,
-            grips: controls.hands.map(|h| h.grip),
-            detection,
-            dt,
-        },
-        &mut step.desired,
-    );
-    vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
+    if !in_menu {
+        weapons::finish_tick(
+            &weapons::FinishInputs {
+                grabs: step.grabs,
+                grips: controls.hands.map(|h| h.grip),
+                detection,
+                dt,
+            },
+            &mut step.desired,
+        );
+        vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
+    }
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let outcomes = unsafe { inject::apply(&writes) };
@@ -290,14 +302,57 @@ fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
 }
 
 /// Whether a yank may fire: a grapple line is live, the character is on foot or airborne, and the
-/// line is not already reeling the character in.
+/// line is not already carrying the character. During a reel-in or a hang the grapple hand holds the
+/// line and drives the hang swing, and a pull on the line there is a swing, not a yank.
 fn yank_armed(detection: &Detection) -> bool {
     let wire = mode::last_snapshot()
         .and_then(|s| s.character)
         .is_some_and(|c| c.grapple_wire);
-    let reeling = matches!(
-        detection.traversal,
-        Some(Traversal::PreReel | Traversal::ReelingIn)
-    );
-    wire && !reeling && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))
+    yank_armed_in(wire, detection)
+}
+
+/// [`yank_armed`] over its inputs.
+fn yank_armed_in(wire: bool, detection: &Detection) -> bool {
+    wire && detection.traversal.is_none()
+        && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::mode::{AirborneVariant, OnFootVariant, Traversal};
+
+    #[test]
+    fn the_yank_is_armed_only_on_a_free_line() {
+        let on_foot = Detection {
+            mode: Mode::OnFoot(OnFootVariant::Ground),
+            ..Default::default()
+        };
+        assert!(yank_armed_in(true, &on_foot));
+        assert!(!yank_armed_in(false, &on_foot));
+        let falling = Detection {
+            mode: Mode::Airborne(AirborneVariant::Falling),
+            ..Default::default()
+        };
+        assert!(yank_armed_in(true, &falling));
+        for traversal in [
+            Traversal::PreReel,
+            Traversal::ReelingIn,
+            Traversal::PreHang,
+            Traversal::ReeledIn,
+        ] {
+            let carried = Detection {
+                traversal: Some(traversal),
+                ..on_foot
+            };
+            assert!(!yank_armed_in(true, &carried), "{traversal:?}");
+        }
+        assert!(!yank_armed_in(
+            true,
+            &Detection {
+                mode: Mode::Ui,
+                ..on_foot
+            }
+        ));
+    }
 }

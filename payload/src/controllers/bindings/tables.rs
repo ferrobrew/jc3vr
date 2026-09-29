@@ -67,6 +67,8 @@ pub struct Bindings {
     grips: [Option<GripUse>; 2],
     /// Whether the current wingsuit A press was latched as an evade.
     evade_press: Option<bool>,
+    /// How long the move stick has been pushed out of its rest, seconds, or `None` while it rests.
+    move_pushed_s: Option<f32>,
     /// Whether the crouch flick has fired and waits for the stick to come back.
     crouch_flicked: bool,
 }
@@ -77,6 +79,7 @@ impl Bindings {
             system: SystemButton { held: None },
             grips: [None; 2],
             evade_press: None,
+            move_pushed_s: None,
             crouch_flicked: false,
         }
     }
@@ -89,13 +92,30 @@ impl Bindings {
         dt: f32,
         config: &BindingsConfig,
     ) -> Step {
+        let chord = match mode {
+            Mode::OnFoot(_) => SightChord::of(controls),
+            _ => SightChord::default(),
+        };
+        let off_hand = controls.dominant.other();
         let grabs = Hand::BOTH.map(|hand| {
+            let volume = controls.hand(hand).grab_volume;
+            // The chord's off-hand grip press is part of the chord, not a grab: it must not let go
+            // of a foregrip the off-hand holds.
+            let volume = volume.filter(|v| {
+                !(chord.dominant_grip && hand == off_hand && *v == GrabVolume::Foregrip)
+            });
             latch_grip(
                 &mut self.grips[hand.index()],
                 controls.hand(hand).grip,
-                controls.hand(hand).grab_volume,
+                volume,
             )
         });
+        self.move_pushed_s = step_pushed(
+            self.move_pushed_s,
+            controls.off().stick.length(),
+            config.evade_flick,
+            dt,
+        );
         let off_grapple = self.grips[controls.dominant.other().index()] == Some(GripUse::Default);
         let dom_grip = self.grips[controls.dominant.index()] == Some(GripUse::Default);
 
@@ -103,7 +123,6 @@ impl Bindings {
         let mut sight_capture = false;
         let body_turn = match mode {
             Mode::OnFoot(_) => {
-                let chord = SightChord::of(controls);
                 sight_capture = chord.capture;
                 on_foot(&mut out, controls, off_grapple, chord);
                 controls.dom().stick_raw.x
@@ -116,7 +135,13 @@ impl Bindings {
                 }
             }
             Mode::Airborne(variant) => {
-                let evade = latch_evade(&mut self.evade_press, variant, controls, config);
+                let evade = latch_evade(
+                    &mut self.evade_press,
+                    variant,
+                    controls,
+                    self.move_pushed_s,
+                    config,
+                );
                 airborne(&mut out, controls, variant, off_grapple, dom_grip, evade);
                 controls.dom().stick_raw.x
             }
@@ -227,12 +252,24 @@ impl SightChord {
     }
 }
 
-/// Decide at the wingsuit A's press edge whether the press evades (the move stick is flicked) or
-/// acts as the virtual A.
+/// Advance how long the move stick has been out of its rest: it rests below half the evade flick,
+/// and the time counts from when it last left the rest.
+fn step_pushed(pushed_s: Option<f32>, magnitude: f32, evade_flick: f32, dt: f32) -> Option<f32> {
+    let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+    if !magnitude.is_finite() || magnitude < evade_flick * 0.5 {
+        return None;
+    }
+    Some(pushed_s.map_or(0.0, |s| s + dt))
+}
+
+/// Decide at the wingsuit A's press edge whether the press evades or acts as the virtual A. It
+/// evades only on a flick: the move stick is past the evade flick and left its rest within the
+/// evade window. A stick held over to steer or dive is not a flick, so A still opens the parachute.
 fn latch_evade(
     latch: &mut Option<bool>,
     variant: AirborneVariant,
     controls: &Controls,
+    move_pushed_s: Option<f32>,
     config: &BindingsConfig,
 ) -> bool {
     let a = controls.dom().a;
@@ -240,7 +277,10 @@ fn latch_evade(
         *latch = None;
         return false;
     }
-    *latch.get_or_insert_with(|| controls.off().stick.length() >= config.evade_flick)
+    *latch.get_or_insert_with(|| {
+        controls.off().stick.length() >= config.evade_flick
+            && move_pushed_s.is_some_and(|s| s <= config.evade_window_s)
+    })
 }
 
 /// The system button: a press shorter than the long-press time clicks pause on release; holding it
@@ -389,7 +429,9 @@ fn vehicle(out: &mut Out, c: &Controls, seat: VehicleSeat, off_grip: bool, dom_g
     }
 }
 
-/// Falling, the wingsuit, and the parachute.
+/// Falling, the wingsuit, and the parachute. Falling and under the parachute the hand weapons stay
+/// in use, so the dominant hand keeps the on-foot trigger, reload, and grenade; the wingsuit's
+/// dominant hand fires the weaponized suit's guns and boosts it.
 fn airborne(
     out: &mut Out,
     c: &Controls,
@@ -415,14 +457,20 @@ fn airborne(
             &[RETRACT_GRAPPLE, WINGSUIT_AIRBRAKE, L2],
         );
     }
-    out.hold(dom.b.held(), &[WINGSUIT_BOOST]);
+    if variant == AirborneVariant::Wingsuit {
+        out.hold(dom.b.held(), &[WINGSUIT_BOOST]);
+        out.hold(dom.trigger_press.held(), &[FIRE_WINGSUIT_WEAPON_MAIN, R2]);
+        out.hold(dom_grip, &[FIRE_WINGSUIT_WEAPON_SECONDARY]);
+    } else {
+        out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
+        out.hold(dom.b.held(), PAD_X_ON_FOOT);
+        out.hold(dom.stick_click.held(), PAD_RB_ON_FOOT);
+    }
     if evade {
         out.hold(dom.a.held(), &[WINGSUIT_EVADE]);
     } else {
         out.hold(dom.a.held(), PAD_A);
     }
-    out.hold(dom.trigger_press.held(), &[FIRE_WINGSUIT_WEAPON_MAIN, R2]);
-    out.hold(dom_grip, &[FIRE_WINGSUIT_WEAPON_SECONDARY]);
     out.hold(off_grapple || c.yank, &[FIRE_GRAPPLE, L1]);
     out.hold(off.a.held(), PAD_Y_ON_FOOT);
     out.hold(off.b.held(), PAD_B);
@@ -749,6 +797,71 @@ mod tests {
     }
 
     #[test]
+    fn a_stick_held_over_in_the_wingsuit_lets_a_open_the_parachute() {
+        let mut b = Bindings::default();
+        let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
+        let banked = controls(Hand::Right, |_, off| off.stick = Vec2::new(0.9, 0.0));
+        let ticks = (CONFIG.evade_window_s / DT).ceil() as usize + 2;
+        for _ in 0..ticks {
+            b.step(wingsuit, &banked, DT, &CONFIG);
+        }
+        let mut press = banked;
+        press.hands[Hand::Right.index()].a = down();
+        let step = b.step(wingsuit, &press, DT, &CONFIG);
+        assert_eq!(player(&step, OPEN_PARACHUTE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, WINGSUIT_EVADE), None);
+    }
+
+    #[test]
+    fn a_flick_out_of_rest_evades_within_the_window() {
+        let mut b = Bindings::default();
+        let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
+        b.step(wingsuit, &Controls::default(), DT, &CONFIG);
+        let pushed = controls(Hand::Right, |_, off| off.stick = Vec2::new(0.0, -0.9));
+        b.step(wingsuit, &pushed, DT, &CONFIG);
+        let mut press = pushed;
+        press.hands[Hand::Right.index()].a = down();
+        let step = b.step(wingsuit, &press, DT, &CONFIG);
+        assert_eq!(player(&step, WINGSUIT_EVADE), Some(Want::Hold(1.0)));
+    }
+
+    #[test]
+    fn falling_and_the_parachute_keep_the_hand_weapon_bindings() {
+        let c = controls(Hand::Right, |dom, _| {
+            dom.trigger_press = down();
+            dom.b = down();
+            dom.stick_click = down();
+        });
+        for variant in [AirborneVariant::Falling, AirborneVariant::Parachute] {
+            let mut b = Bindings::default();
+            let step = b.step(Mode::Airborne(variant), &c, DT, &CONFIG);
+            for action in [FIRE_RIGHT, R2, RELOAD, THROW_GRENADE] {
+                assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
+            }
+            for action in [FIRE_WINGSUIT_WEAPON_MAIN, WINGSUIT_BOOST] {
+                assert_eq!(player(&step, action), None, "{action:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_wingsuit_fires_its_own_weapons_and_boosts() {
+        let mut b = Bindings::default();
+        let c = controls(Hand::Right, |dom, _| {
+            dom.trigger_press = down();
+            dom.b = down();
+            dom.stick_click = down();
+        });
+        let step = b.step(Mode::Airborne(AirborneVariant::Wingsuit), &c, DT, &CONFIG);
+        for action in [FIRE_WINGSUIT_WEAPON_MAIN, WINGSUIT_BOOST] {
+            assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
+        }
+        for action in [FIRE_RIGHT, RELOAD, THROW_GRENADE] {
+            assert_eq!(player(&step, action), None, "{action:?}");
+        }
+    }
+
+    #[test]
     fn menus_use_the_ui_map_on_the_physical_hands() {
         let mut b = Bindings::default();
         let c = controls(Hand::Left, |dom, off| {
@@ -911,6 +1024,30 @@ mod tests {
         assert!(!step.sight_capture);
         assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
+    }
+
+    #[test]
+    fn the_sight_chord_keeps_the_foregrip() {
+        let chord = |armed: bool| {
+            let mut c = controls(Hand::Right, |dom, off| {
+                dom.grip = ButtonControl {
+                    down: true,
+                    ..Default::default()
+                };
+                off.grip = down();
+                off.grab_volume = Some(GrabVolume::Foregrip);
+            });
+            c.sight_chord = armed;
+            c
+        };
+        let mut b = Bindings::default();
+        let step = b.step(ON_FOOT, &chord(true), DT, &CONFIG);
+        assert_eq!(step.grabs, [None; 2]);
+        assert_eq!(player(&step, FIRE_GRAPPLE), None);
+        // Without the chord armed, the same press is a foregrip grab.
+        let mut b = Bindings::default();
+        let step = b.step(ON_FOOT, &chord(false), DT, &CONFIG);
+        assert_eq!(step.grabs[Hand::Left.index()], Some(GrabVolume::Foregrip));
     }
 
     #[test]

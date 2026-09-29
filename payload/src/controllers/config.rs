@@ -37,7 +37,8 @@ pub struct ControllersConfig {
     /// Which control scheme is in effect (see [`SchemeSetting`]).
     pub scheme: SchemeSetting,
     /// The hand that holds and fires the guns. The other hand fires the grapple. Mirroring swaps the
-    /// bindings and the weapon attach bones; the grapple gauntlet stays on the model's left arm.
+    /// bindings and the dual-wield pistols' attach bones; a single gun stays on the model's right
+    /// hand, and the grapple gauntlet on the model's left arm.
     pub dominant_hand: Hand,
     /// Pin the game's "the gamepad is the active input device" setting to the gamepad while the
     /// controller scheme is in effect, so that the game applies its gamepad rules (aim assist,
@@ -209,8 +210,11 @@ pub struct BindingsConfig {
     /// How long the system button must be held to open the commlink rather than pause, seconds.
     pub long_press_s: f32,
     /// How far the move stick must be pushed when the wingsuit's A is pressed for the press to
-    /// evade rather than open the parachute, `0..1`.
+    /// evade rather than open the parachute, `0..1`. The stick rests below half of it.
     pub evade_flick: f32,
+    /// How recently the move stick must have left its rest for the wingsuit's A to evade, seconds:
+    /// a flick, not a stick held over to steer.
+    pub evade_window_s: f32,
     /// How far down the dominant stick must be flicked on foot to toggle the seated crouch, `0..1`.
     /// The stick must come back above half of it before the next flick counts.
     pub crouch_flick: f32,
@@ -227,6 +231,7 @@ impl BindingsConfig {
             trigger_deadzone: 0.05,
             long_press_s: 0.5,
             evade_flick: 0.8,
+            evade_window_s: 0.25,
             crouch_flick: 0.8,
             yank: YankConfig::new(),
         }

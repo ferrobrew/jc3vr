@@ -180,6 +180,19 @@ pub fn estimate(inputs: &HandInputs, profile: InteractionProfile) -> FingerCurls
     }
 }
 
+/// The curls of a hand that grips something (`gripping`): a closed fist whatever the fingers
+/// report, since the grab holds after the grip is let go. Otherwise `target` unchanged.
+pub fn gripping_target(target: FingerCurls, gripping: bool) -> FingerCurls {
+    if gripping {
+        FingerCurls {
+            curl: [1.0; 5],
+            splay: [0.0; 5],
+        }
+    } else {
+        target
+    }
+}
+
 /// Follow `target` from `previous` over `dt` seconds with the time constant `time_constant_s`.
 pub fn smooth(
     previous: FingerCurls,
@@ -293,6 +306,18 @@ mod tests {
             }
         }
         joints
+    }
+
+    #[test]
+    fn a_gripping_hand_closes_whatever_the_fingers_report() {
+        let open = FingerCurls {
+            curl: [0.1; 5],
+            splay: [0.2; 5],
+        };
+        assert_eq!(gripping_target(open, false), open);
+        let closed = gripping_target(open, true);
+        assert_eq!(closed.curl, [1.0; 5]);
+        assert_eq!(closed.splay, [0.0; 5]);
     }
 
     #[test]
