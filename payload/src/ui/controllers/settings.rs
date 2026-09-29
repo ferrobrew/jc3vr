@@ -9,7 +9,7 @@ use crate::{
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, hands, overlay, roomscale, vehicles, weapons},
+    ui::controllers::{aim, hands, overlay, roomscale, scope, vehicles, weapons},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -148,7 +148,11 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         let w = &mut c.weapons;
         weapons::weapons_settings(ui, w);
         weapons::breadth_settings(ui, w);
-        ui.checkbox(&mut w.scopes, "Scope lenses");
+    });
+
+    egui::CollapsingHeader::new("Scopes").show(ui, |ui| {
+        let w = &mut c.weapons;
+        scope::scope_settings(ui, &mut w.scopes, &mut w.scope);
     });
 
     egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {

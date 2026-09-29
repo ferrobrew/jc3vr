@@ -101,6 +101,8 @@ const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("i420_pack_ps", "ps_5_0"),
     ("overlay_vs", "vs_5_0"),
     ("overlay_ps", "ps_5_0"),
+    ("scope_lens_vs", "vs_5_0"),
+    ("scope_lens_ps", "ps_5_0"),
 ];
 
 fn main() {

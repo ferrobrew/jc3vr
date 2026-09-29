@@ -13,6 +13,7 @@
 //! - [`grenade`]: the physical grenade throw;
 //! - [`melee`]: melee attacks from physical strikes;
 //! - [`magazine`]: the magazine reload gesture;
+//! - [`scope`]: scoped weapons: the game's precision aim suppressed, and the lens on the scope;
 //! - [`config`]: the weapon-handling settings.
 //!
 //! The weapon handling runs on the input tick, in two halves around the bindings' tables
@@ -44,6 +45,7 @@ pub mod holster;
 pub mod magazine;
 pub mod melee;
 pub mod recoil;
+pub mod scope;
 pub mod volumes;
 
 use std::time::Duration;
@@ -90,6 +92,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(haptics::hook_library())
         .with_hook_library(camera_kick::hook_library())
         .with_hook_library(grenade::hook_library())
+        .with_hook_library(scope::hook_library())
 }
 
 /// What the first half of the weapon handling's input tick hands the bindings.
@@ -193,6 +196,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             engine::held_weapon(owner)
         })
     };
+    scope::input_tick(weapon.map(|w| w.address));
     let dual_wield = dual.split
         && mode == Mode::OnFoot(OnFootVariant::Ground)
         && weapon.is_some_and(|w| {

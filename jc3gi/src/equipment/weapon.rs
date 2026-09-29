@@ -540,7 +540,11 @@ pub struct WeaponBase {
     pub m_EquipSlot: crate::character::inventory::WeaponSlot,
     /// The weapon's state.
     pub m_State: crate::equipment::weapon::WeaponState,
-    _field_428: [u8; 56],
+    _field_428: [u8; 4],
+    /// The weapon's class, [`E_WEAPON_CLASS_NONE`](crate::equipment::weapon::WeaponClass::E_WEAPON_CLASS_NONE) until the
+    /// weapon type's data sets it.
+    pub m_Class: crate::equipment::weapon::WeaponClass,
+    _field_430: [u8; 48],
     /// The hash of the weapon type's name, which identifies the weapon type (the damage messages
     /// carry it, and type-specific code compares it against named hashes).
     pub m_WeaponNameHash: u32,
@@ -548,7 +552,11 @@ pub struct WeaponBase {
     /// Whether precision aim is disabled for this weapon; the player's aim-input handling zeroes
     /// the aim timer while it is set.
     pub m_IsPrecisionAimDisabled: bool,
-    _field_467: [u8; 21],
+    /// Whether the weapon supports precision aim. The player's weapon handling
+    /// (`CInventory::UpdateWeaponHandling`) enters precision aim on the precision-aim input only
+    /// for a weapon that sets it.
+    pub m_SupportsPrecisionAim: bool,
+    _field_468: [u8; 20],
     /// Whether the weapon is registered for pre-simulation updates; the fire path sets it and
     /// registers the weapon when a deferred action is queued.
     pub m_RequiresPreSimUpdates: bool,
@@ -1163,6 +1171,33 @@ impl std::convert::AsMut<WeaponBaseVftable> for WeaponBaseVftable {
     fn as_mut(&mut self) -> &mut WeaponBaseVftable {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A weapon's class (`CWeaponBase::EWeaponClass`), stored on the weapon as [`WeaponBase::m_Class`](crate::equipment::weapon::WeaponBase::m_Class).
+/// Type-specific code compares it, for example the character's level-of-detail update, which keeps
+/// full detail for a character wielding a rocket launcher or a sniper rifle.
+pub enum WeaponClass {
+    E_WEAPON_CLASS_NONE = 1000isize as _,
+    E_WEAPON_CLASS_PISTOL = 1001isize as _,
+    E_WEAPON_CLASS_SMG = 1002isize as _,
+    E_WEAPON_CLASS_ASSAULT_RIFLE = 1003isize as _,
+    E_WEAPON_CLASS_SHOTGUN = 1004isize as _,
+    E_WEAPON_CLASS_SNIPER = 1005isize as _,
+    E_WEAPON_CLASS_GRENADE_LAUNCHER = 1006isize as _,
+    E_WEAPON_CLASS_RPG = 1007isize as _,
+    E_WEAPON_CLASS_MINIGUN = 1008isize as _,
+    E_WEAPON_CLASS_AA_GUN = 1009isize as _,
+    E_WEAPON_CLASS_MORTAR = 1010isize as _,
+    E_WEAPON_CLASS_50CAL = 1011isize as _,
+    E_WEAPON_CLASS_SPECIAL = 1012isize as _,
+    E_WEAPON_CLASS_REVOLVER = 1013isize as _,
+}
+fn _WeaponClass_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], WeaponClass>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// One physical gun of a weapon (`CWeaponData`, a `CCombinedAttachedEffectContainer`): its model,

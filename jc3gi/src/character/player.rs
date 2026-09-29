@@ -82,6 +82,12 @@ impl Player {
     /// filled. On a change it records [`m_AimModeChangeTime`](crate::character::player::Player::m_AimModeChangeTime), adds or
     /// removes the precision-aim camera hint (adding it only when `add_camera_hint` is set), sets
     /// the aim control's aim state, and forwards the mode to the selected weapon (or draws it).
+    ///
+    /// Precision aim is entered from three places: the player's weapon handling
+    /// (`CInventory::UpdateWeaponHandling`) on the precision-aim input, for a weapon with
+    /// [`m_SupportsPrecisionAim`](crate::equipment::weapon::WeaponBase::m_SupportsPrecisionAim); the sniper
+    /// rifle's update, returning to precision aim after a bolt-action cycle that left it; and the
+    /// guided rocket launcher's `Fire_Projectile`, on each shot.
     pub unsafe fn SetAimMode(
         &mut self,
         mode: crate::character::player::AimMode,

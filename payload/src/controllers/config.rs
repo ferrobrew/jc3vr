@@ -21,7 +21,7 @@ use crate::controllers::{
     vehicles::config::VehiclesConfig,
     weapons::config::{
         DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
-        MagazineConfig, MeleeStrikeConfig, RecoilConfig,
+        MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
     },
 };
 
@@ -572,9 +572,12 @@ pub struct WeaponsConfig {
     pub melee: bool,
     /// The strike detector and the melee target's hold.
     pub melee_strike: MeleeStrikeConfig,
-    /// Render a magnified image into scoped weapons' lenses, replacing the game's precision-aim
-    /// zoom.
+    /// Draw a magnified image on a scoped weapon's lens while the scope is at an eye, in place of
+    /// the game's precision-aim zoom, which is suppressed separately
+    /// ([`ScopeConfig::suppress_precision_aim`]).
     pub scopes: bool,
+    /// The scopes' precision-aim suppression and the lens's tuning.
+    pub scope: ScopeConfig,
 }
 
 impl WeaponsConfig {
@@ -593,6 +596,7 @@ impl WeaponsConfig {
             melee: true,
             melee_strike: MeleeStrikeConfig::new(),
             scopes: true,
+            scope: ScopeConfig::new(),
         }
     }
 }

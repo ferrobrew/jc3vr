@@ -1,5 +1,5 @@
 //! The weapon-handling settings (the holsters, the foregrip, the recoil, the haptics, the
-//! dual-wield split, the grenade throw, melee strikes, and the magazine gesture), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside
+//! dual-wield split, the grenade throw, melee strikes, and the magazine gesture, and the scopes), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside
 //! the other weapon-handling subsystems' toggles.
 
 use glam::Vec3;
@@ -401,4 +401,77 @@ impl Default for MagazineConfig {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Scoped weapons (see [`crate::controllers::weapons::scope`]): the game's precision aim suppressed,
+/// and the lens drawn on the scope while it is at an eye.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ScopeConfig {
+    /// Refuse the game's precision aim under the controller scheme, and leave it when the scheme
+    /// takes over: its camera zoom, its sniper overlay, and its hiding of the character (and so of
+    /// the hands) all fight the headset. Independent of the lens.
+    pub suppress_precision_aim: bool,
+    /// How the lens image is made.
+    pub path: LensPath,
+    /// Which eye's image the resampled lens reads.
+    pub source: LensSource,
+    /// The lens's magnification.
+    pub zoom: f32,
+    /// The lens's radius, metres.
+    pub lens_radius_m: f32,
+    /// How far behind the sight line's origin the eyepiece sits along the sight line, metres. The
+    /// sight line's origin is above the muzzle (with the weapon's sight-table entry), so this is
+    /// roughly the distance from the muzzle back to the scope's rear lens.
+    pub eyepiece_back_m: f32,
+    /// How close an eye must be to the eyepiece for the lens to draw, metres.
+    pub max_eye_distance_m: f32,
+    /// Where the dark rim starts, as a fraction of the lens radius.
+    pub vignette_start: f32,
+    /// Draw a crosshair at the lens's centre, which is where the sight line points.
+    pub reticle: bool,
+}
+
+impl ScopeConfig {
+    pub const fn new() -> Self {
+        Self {
+            suppress_precision_aim: true,
+            path: LensPath::Resample,
+            source: LensSource::OtherEye,
+            zoom: 4.0,
+            lens_radius_m: 0.02,
+            eyepiece_back_m: 0.8,
+            max_eye_distance_m: 0.15,
+            vignette_start: 0.7,
+            reticle: true,
+        }
+    }
+}
+
+impl Default for ScopeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// How the lens image is made.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LensPath {
+    /// A magnified resample of an eye's own rendered frame, around the sight line's projection.
+    #[default]
+    Resample,
+    /// A narrow-field-of-view scene render of its own. Not implemented: selecting it uses the
+    /// resample (see `docs/mod/input/controllers.md`, "Scopes").
+    SceneRender,
+}
+
+/// Which eye's image the resampled lens reads.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LensSource {
+    /// The other eye's image, which the scope does not block. In two-pass stereo the second eye's
+    /// image is the previous frame's when the first eye sights, reprojected by its own camera.
+    #[default]
+    OtherEye,
+    /// The sighting eye's own image, of this frame. The scope itself sits in front of that eye
+    /// along the sight line, so the magnified region shows the scope's own model.
+    OwnEye,
 }
