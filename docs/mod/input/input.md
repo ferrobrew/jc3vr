@@ -1,6 +1,6 @@
 # VR controller input
 
-Driving the head/body from the game's own look and move input, and — eventually — from VR controllers so it isn't gamepad-only in the headset. The read side (tapping and consuming the engine's input so our schemes own the look and move deltas) ships today; the write side (injecting VR controller state as native input) is not yet wired. For the underlying engine mechanism — the action effectors, the action-ID table, the write API, and the mouse/UI pipeline — see `docs/engine/gameplay/input.md`.
+Driving the head/body from the game's own look and move input, and from VR controllers so it isn't gamepad-only in the headset. The read side (tapping and consuming the engine's input so our schemes own the look and move deltas) ships today, and the write side injects VR controller state as native input (see "The write path"). For the underlying engine mechanism — the action effectors, the action-ID table, the write API, and the mouse/UI pipeline — see `docs/engine/gameplay/input.md`.
 
 ## Tapping the look input
 
@@ -18,9 +18,9 @@ Move is handled in the locomotion tasks rather than by clearing effectors (`payl
 
 `NStateTask_InputLocoSetTargetDirTask::SetupTargetDir` reads the move axes, rotates them camera-relative, and writes the move vectors to the character blackboard; the headpose body-yaw scheme and the slide overrides build on top of it (heading via the target-face-dir blackboard, displacement via `EvaluateCharacterDisplacement`). See `head-and-body.md` for the head/body coupling.
 
-## The write path (future)
+## The write path
 
-Not yet implemented. The intended design injects VR controller state as effector values so the engine reads VR input as native input — the sticks and triggers as effector axes, the buttons as effector states — gated so real-gamepad input and VR input don't fight. Locomotion direction and turning would tie into the head/body scheme (`head-and-body.md`). It drives through the write API and timing rules documented in `docs/engine/gameplay/input.md` (`LocalPlayerActionMap::ForceSetPressed`/`ForceSetClicked`, injected after `InputDeviceManager::Update`).
+Controller input is injected as native input on the same device-poll tick, after the poll: the per-mode bindings write the game's action effectors directly, keeping each held action's hold time so that the game's tap and hold overloads work, and route menu actions to the UI action map. Nothing is injected outside the controller scheme, so a real gamepad is never fought. [controllers.md, "Bindings and injection"](controllers.md#bindings-and-injection) describes it, and the engine's write API and timing rules are in `docs/engine/gameplay/input.md`.
 
 ## The mouse and the UI (issue #9)
 

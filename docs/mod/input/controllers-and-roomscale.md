@@ -4,6 +4,8 @@ The plan for making Just Cause 3 playable with motion controllers throughout: co
 
 The engine recon behind the plan is in [aim-state.md](../../engine/gameplay/aim-state.md) (the aim state, its consumers, and fire gating), [aim-pipeline.md](../../engine/gameplay/aim-pipeline.md), [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), [input.md](../../engine/gameplay/input.md), [hands-locomotion-and-state.md](../../engine/character/hands-locomotion-and-state.md), and [humanik.md](../../engine/character/humanik.md). The head and body model it extends is [head-and-body.md](../body/head-and-body.md).
 
+Milestone 1 is implemented and has not yet been tested in the headset. "Implementation status" below lists what it covers, the setting behind each part, what needs verification, and the headset test checklist. [controllers.md](controllers.md) describes the implementation as built.
+
 ## Principles
 
 The virtual body behaves continuously and consistently with the player's body. The game switches the player's body between discrete behaviours: the aim state flips locomotion to strafing, raises the weapon, and runs the arm aim IK, and the combat mental state draws and holsters the weapon on its own. The mod dissolves these switches rather than mapping controller input onto them. A state change that the player did not perform with their own body is a defect in this model.
@@ -63,7 +65,11 @@ The limits are as follows. Native aim assist runs only on the gaze ray. The dual
 
 The aim state is the set of flags [`AimState::m_AimingWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AimState##flag-m_AimingWeapon) and [`AimState::m_AimingGrapple`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AimState##flag-m_AimingGrapple) in [`Character::m_AimFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_AimFlags), and the state bit [`StateBitFlag::SB_IS_AIMING_WPN_OR_GRPL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_AIMING_WPN_OR_GRPL) that mirrors them. It selects between the no-aim and aim families of full-body animation states, switches the locomotion tasks between run-and-steer and aim-relative strafing, runs the aim IK tasks, and changes jump and hang facing.
 
-The mod pins the aim state clear for the local player. The first approach is the graph state bit [`StateBitFlag::SB_NO_WEAPON_AIM`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_NO_WEAPON_AIM), which forces aim off natively. The fallback is to suppress the aim-flag writes in `HandleAimingInputPlayer` and `PreSimUpdateGrapple`. The existing FPS-movement shim keeps forcing the flags for the duration of each locomotion task's `Update`, so the locomotion tasks queue strafe acts while the animation graph stays in the no-aim family. This combination is what ships today outside of firing, so it has already been exercised in play.
+The mod pins the aim state clear for the local player with the graph state bit [`StateBitFlag::SB_NO_WEAPON_AIM`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_NO_WEAPON_AIM), which forces weapon aim off natively. Only the two aim-input functions read the bit, and its value persists, so the mod sets it for the duration of the player's aim-input function (`HandleAimingInputPlayer`) and restores it afterwards. The bit does not reach the grapple flag, so the mod also clears `m_AimingGrapple` after `PreSimUpdateGrapple`.
+
+The existing FPS-movement shim keeps forcing the flags for the duration of each locomotion task's `Update`, so the locomotion tasks take the strafe branch and queue the aim-family strafe acts (`ACT_MOVE_AIM_FOCUS_*`). The lower body therefore plays aim-focus locomotion, while the states keyed on the aim bit and on `m_AimingWeapon` outside the task (the additive aim layers and the upper-body aim variants) stay off ([aim-state.md, "Locomotion task selection"](../../engine/gameplay/aim-state.md#locomotion-task-selection)). This combination is what ships today whenever the player is not aiming, so it has already been exercised in play. The pin extends it to the moments when the player fires.
+
+With a weapon wielded, the strafe branch chooses its act relative to the wielded weapon's own aim point. Once the per-weapon aim point carries the hand ray, the strafe direction follows where the gun points rather than where the head faces, so pointing the gun sideways while walking forward selects a sideways strafe. The shim therefore needs to hold the wielded weapons' aim points at a head-forward point for the duration of each task's `Update` and restore them afterwards. Milestone 1 does not include this.
 
 The pin was chosen over a pin to the set state for the following reasons.
 
@@ -73,16 +79,17 @@ The pin was chosen over a pin to the set state for the following reasons.
 
 The costs are small. The laser-sight weapon component draws its beam only while `m_AimingWeapon` is set; the mod draws its own laser. The motorcycle has aim sub-states that the pin disables, and the vehicle weapon work replaces them. The upper body holds the relaxed carry grip. With the arms driven by IK from the shoulders, only the fingers and the grip pose come from that animation, and a carry grip still holds the weapon. This needs checking in the headset.
 
+The weapons' `m_aim_timer_override` is left as the game sets it, because NPC weapons share it. The aim timer still runs after a shot, but with the bit set it no longer sets the aim flag, so no aim tail follows a shot.
+
 The pin also needs:
 
-- `m_aim_timer_override = 0` on held weapons, so that no aim tail follows a shot;
 - the wall-penetration block cleared for the held weapon, because the rendered muzzle is at the controller rather than where the animation would put it;
 - the player's `NAimIKTask`, `NRightArmAimIK`, `NGrapplingFireArmIK`, and `NReelInAimIK` skipped, because the controllers own the arms;
-- the character-level aim point ([`Character::m_AimTargetPositionWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_AimTargetPositionWeapons), and its copy on the control-parameters blackboard, [`ControlParameters::m_AimTargetWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::control_parameters::ControlParameters##field-m_AimTargetWeapons)) held at a neutral point ahead of the body, so that no residual aim blend twists the spine; the per-weapon targets carry the hand rays.
+- the body's aim point on the control-parameters blackboard ([`ControlParameters::m_AimTargetWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::control_parameters::ControlParameters##field-m_AimTargetWeapons)) held at a neutral point ahead of the body, so that no residual aim blend turns the body or twists the spine. The character-level aim point ([`Character::m_AimTargetPositionWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_AimTargetPositionWeapons)) is not held neutral: it follows the dominant hand's aim point while hand aiming is on (see "Guns"), and otherwise stays at the gaze point the game computes. The per-weapon targets carry the hand rays.
 
 ### The mental state
 
-`CPlayer::UpdateMentalState` keeps running, because AI perception reads it. Its effects on the player's body are removed. [`StateBitFlag::SB_DISABLE_MENTAL_STATE_DRAW_WEAPON`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_DISABLE_MENTAL_STATE_DRAW_WEAPON) stops the automatic draw when combat starts, and the mod swallows `ACT_ON_UNEQUIP_WEAPON_SLOW`, which the relaxed transition queues as an automatic holster. The walk family stays the one the pin selects. Drawing and holstering happen only at the holsters.
+`CPlayer::UpdateMentalState` keeps running, because AI perception reads it. Its effects on the player's body are removed. [`StateBitFlag::SB_DISABLE_MENTAL_STATE_DRAW_WEAPON`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_DISABLE_MENTAL_STATE_DRAW_WEAPON) stops the automatic draw when combat starts. The inventory clears the bit every tick, so the mod sets it before each of the player's `Inventory::UpdateWeaponHandling` calls. The game has two automatic holsters ([aim-state.md, "The mental state"](../../engine/gameplay/aim-state.md#the-mental-state)), and the mod removes both: it swallows `ACT_ON_UNEQUIP_WEAPON_SLOW`, which the relaxed transition queues, and it swallows `UB_ACT_HOLSTER` when the relaxed branch of the player's weapon handling queues it on its own. The player's deliberate holster (`Character::HolsterWeapon`) takes effect through that same branch, so the mod marks a deliberate holster and lets its act through. The walk family stays the one the pin selects. Drawing and holstering happen only at the holsters, and through the reload button's short hold until holsters exist. Weapon input with nothing wielded still draws a weapon, so the fire trigger on an empty hand draws a gun.
 
 ### Locomotion and facing
 
@@ -90,7 +97,7 @@ Locomotion is aim-relative strafing in all on-foot cases, through the FPS-moveme
 
 ### Hands
 
-The arms are driven by HumanIK from the shoulders to the controller poses at all times, except in states that the hand tiers assign otherwise. The wrist effectors ([`Effector::LEFT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-LEFT_WRIST) and [`Effector::RIGHT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-RIGHT_WRIST)) take position and rotation targets from the controllers, the weapon attach bone follows the dominant hand, and the game's own arm IK is skipped (see "The aim-state pin"). The existing body IK already queues shoulder, chest, and wrist targets on the `MAIN` pass; the hand targets extend it, and its `defer_while_aiming` rule no longer applies, because the aim state no longer changes.
+The arms are driven by HumanIK from the shoulders to the controller poses at all times, except in states that the hand tiers assign otherwise. The wrist effectors ([`Effector::LEFT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-LEFT_WRIST) and [`Effector::RIGHT_WRIST`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-RIGHT_WRIST)) take position and rotation targets from the controllers, the weapon attach bone follows the dominant hand, and the game's own arm IK is skipped (see "The aim-state pin"). The wielded weapon rides the hand's attach bone, a child of the wrist, and the engine refreshes the weapon's cached transform from that bone after the `MAIN` solve, so the gun follows the IK-driven wrist within the tick without a joint override ([humanik.md, "Per-frame lifecycle"](../../engine/character/humanik.md#per-frame-lifecycle)). The game's secondary hand IK pass, which runs after the `MAIN` solve and could move the wrists again, is switched off per controller-driven hand by zeroing its one-frame blackboard weights. The existing body IK already queues shoulder, chest, and wrist targets on the `MAIN` pass; the hand targets extend it, and its `defer_while_aiming` rule no longer applies, because the aim state no longer changes.
 
 Hands and weapons are updated again at render time. The sim-phase pose places them at the 30 Hz sim tick, and the engine's interpolation adds one to two ticks of lag behind the controllers. Two render-phase seams replace the stale transforms with ones built from the latest controller pose: the `CWeaponBase::UpdateRender` post-hook for the weapon model, and the existing `SetMatrixPalette` hook for the hand and forearm bones of the player's skin. Both seams are updated together from the same pose. Updating only the weapon would move the gun away from the hand mesh, which is why the sim-phase placement drives the attach bone rather than the weapon's own cached matrix. The muzzle flash, the attached effects, and the shot origin stay at the sim rate, so at high hand speed they trail the rendered muzzle slightly.
 
@@ -144,27 +151,29 @@ OpenXR has no signal for whether the user is seated, and SteamVR's OpenXR runtim
 
 ### Action sets
 
-OpenXR action sets `onfoot`, `vehicle`, `airborne`, and `ui` are active one at a time, selected by the per-tick mode detector (see "Mode detection"). Grip and aim pose actions exist for both hands. The mod ships suggested bindings for the Touch and Index interaction profiles. Per-user remapping is the runtime's own binding interface (SteamVR or xrizer), not a mod UI. Output goes through `ForceSetPressed` and `ForceSetClicked` after `InputDeviceManager::Update`, following the timing rules in [input.md](../../engine/gameplay/input.md).
+The OpenXR actions carry raw inputs, named for the physical inputs of the Valve Index controller, and the bindings map them to game actions per mode. OpenXR gives every action exactly one owning set, so the pose actions cannot be shared between mode sets. There are five sets. `hands` is always active and holds the grip and aim poses of both hands and the haptic output. `onfoot`, `vehicle`, `airborne`, and `ui` are active one at a time, selected by the per-tick mode detector (see "Mode detection"), and each holds the same raw input actions. Per-user remapping is the runtime's own binding interface (SteamVR or xrizer), not a mod UI, and that interface remaps per set, so a player can move a button in vehicles without moving it on foot. The mod ships suggested bindings for the Index interaction profile (every input) and the Touch interaction profile (its inputs, mapped by position).
+
+Output is written after `InputDeviceManager::Update`, following the timing rules in [input.md](../../engine/gameplay/input.md). Held inputs are written to the effectors directly rather than through `ForceSetPressed`, because `ForceSetPressed` resets the effector's hold time on every call, so a held input would never register as a hold ([input.md, "The write API"](../../engine/gameplay/input.md#the-write-api)). The mod keeps each held action's hold time itself and writes the effector's value, state, and state time. Menu actions go to the UI action map, which the game's menus read instead of the player's map.
 
 The controller scheme and the gamepad scheme switch on the most recent input. Tracked controllers producing input select the controller scheme. Any gamepad or keyboard input selects the gamepad scheme, which restores gaze aiming, the gamepad bindings, and the animated hands. A setting can pin either scheme.
 
 ### Mode detection
 
-The mode detector replaces the headpose sim's binary on-foot test (the `EvaluateCharacterOrientation` call counter), which reads a swimmer as not on foot. It reads the engine's own state signals, documented in [hands-locomotion-and-state.md §5](../../engine/character/hands-locomotion-and-state.md#5-per-tick-character-state-signals): the character state-bitflag words, the state-machine-hash predicates, the vehicle class predicates, the grapple hook state, and the pause and UI signals. It runs once per sim tick, in the same phase as the headpose sim: one read of the local character, one snapshot of the three state words, and a `GetVehiclePtr` call only when a vehicle state is indicated, with the pointer cached for the tick.
+The mode detector replaces the headpose sim's binary on-foot test (the `EvaluateCharacterOrientation` call counter), which reads a swimmer as not on foot. It reads the engine's own state signals, documented in [hands-locomotion-and-state.md §5](../../engine/character/hands-locomotion-and-state.md#5-per-tick-character-state-signals): the character state-bitflag words, the state-machine-hash predicates, the vehicle class predicates, the grapple hook state, and the pause and UI signals. It runs once per engine input tick, from the same `InputDeviceManager::Update` detour as the headpose sim: one read of the local character, one snapshot of the three state words, and a `GetVehiclePtr` call only when a vehicle state is indicated, with the pointer cached for the tick.
 
 The first matching rule selects the action set. The order follows the engine's state overlaps ([§5.6](../../engine/character/hands-locomotion-and-state.md#56-state-overlap-and-precedence)).
 
-1. A menu is up: `ui`. The signals are the physics-system pause byte, the `CGamePauseUtility` paused state, the mod's own panel, and, for the game's map and commlink screens, the UI steering focus, whose per-tick global is not yet pinned.
-2. A teleport happened this tick: hold the current set and re-base the rig.
+1. A menu is up: `ui`. The signals are the game clock's stop flag ([`Clock::m_Stop`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/clock::Clock##field-m_Stop)), which covers the pause menu, the commlink, and the other pause reasons; the UI blocker bit ([`InputSystemBlocker::Ui`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputSystemBlocker##variant-Ui)) of the player action map, which covers game screens such as the map that do not pause; and the mod's own panel.
+2. A deferred teleport is in flight ([`GameWorld::IsTeleporting`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-IsTeleporting)), or the character is not readable: hold the current set. The rig re-base on a teleport belongs to the chase loop (see "The chase loop").
 3. Seated in a vehicle (`IsInVehicleAttachState`, which spans the entry and exit animations): `vehicle`, with the class resolved in the order helicopter, plane, motorcycle, car, sea, and the driver seat selecting the driver bindings.
 4. Grapple traversal (reeling in, pre-reel, hanging, or reeled in): the gameplay set stays (`onfoot` or `airborne`), and the reel or hang sub-state is flagged for the hand tiers.
 5. Wingsuit: `airborne`, wingsuit variant.
 6. Parachute, including the vehicle-parachute attachment: `airborne`, parachute variant.
 7. Freefall, fall, or fastfall: `airborne`.
 8. Swimming: `onfoot`, swim variant.
-9. Otherwise: `onfoot`. The orientation-evaluation counter stays as a corroborating on-foot heartbeat.
+9. Otherwise: `onfoot`. The headpose sim keeps its own on-foot test (the orientation-evaluation counter) until it is moved onto the detector.
 
-A mode switch is debounced by one or two ticks, so a single-tick flicker during an animation blend does not switch the action set. The state-machine-hash predicates take precedence over raw bits during known transitions. A null `m_ControlParameters` or `m_InstanceData` during the first frames after spawn holds the previous mode. Boats and jetskis share one class until the jetski discriminator is pinned.
+A switch between gameplay modes is debounced by a configurable number of ticks (two by default), so a single-tick flicker during an animation blend does not switch the action set. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The state-machine-hash predicates take precedence over raw bits during known transitions. A null `m_ControlParameters` or `m_InstanceData` during the first frames after spawn holds the previous mode. Boats and jetskis share one class until the jetski discriminator is pinned.
 
 ### Grip semantics
 
@@ -174,7 +183,7 @@ Holding a grenade is the exception to sticky grips: the grenade is held while th
 
 ### Per-mode bindings
 
-The bindings are drafts for the Touch layout. Index shares the topology, and its extra inputs (the trackpad and finger curl) stay unbound until the gesture work. The tables follow the game's own mode partition and stay congruent with [the default gamepad keymap](../../engine/gameplay/input.md#the-default-gamepad-keymap) where the VR model allows, so that a player's gamepad habits carry over; the action IDs each mapping drives are in [the mapping to action table](../../engine/gameplay/input.md#the-mapping--action-table). The action IDs that serve several mappings (holster as hold-`RELOAD`, melee as `PUSH_GRAPPLE`, sniper zoom as `PRECISION_AIM`, and nitrous and turbo jump as `USE_VEHICLE_MOD`) are separated by the game through tap versus hold and through the mode context, so the injection reproduces the tap or hold timing of the mapping it stands for. Wherever a mapping is marked as a gesture, the button remains as the fallback.
+The tables are laid out for the Valve Index controller, which has A and B on both hands. In the tables, R and L are the dominant hand and the off-hand, A and B are the dominant hand's face buttons, and X and Y are the off-hand's A and B. A left-handed layout mirrors every gameplay binding; the menu bindings stay on the physical hands, so that the previous and next tabs and pages keep their sides. The system button of either hand is free on the Index controller and carries pause and the commlink. The Touch profile shares the topology through its own suggested bindings, with its left menu button as the system button. The Index trackpads and finger curl stay unbound until the gesture work. The tables follow the game's own mode partition and stay congruent with [the default gamepad keymap](../../engine/gameplay/input.md#the-default-gamepad-keymap) where the VR model allows, so that a player's gamepad habits carry over; the action IDs each mapping drives are in [the mapping to action table](../../engine/gameplay/input.md#the-mapping--action-table). Where a controller input stands for a gamepad button, the injection holds every gameplay action that the default gamepad keymap puts on that button, and the game's own context selects the one that applies. The action IDs that serve several mappings (holster as a short hold of `RELOAD`, nitrous and turbo jump as a hold and a tap of `USE_VEHICLE_MOD`, the gunner seat as a held `ENTER_VEHICLE`, and the tether as a held `FIRE_GRAPPLE`) are separated by the game through tap versus hold and through the mode context, so the injection reproduces the hold time of the button it stands for. The system button is the one overload the mod resolves itself. Melee (`PUSH_GRAPPLE` under the hammer ability) is left off the virtual B button, because there it would melee on every tether release. Wherever a mapping is marked as a gesture, the button remains as the fallback.
 
 #### On foot
 
@@ -185,19 +194,19 @@ The bindings are drafts for the Touch layout. Index shares the topology, and its
 | Fire the dominant-hand weapon (`FIRE_RIGHT`) | R trigger |
 | Fire the left pistol while dual-wielding | L trigger (see "Dual-wield") |
 | Fire grapple (`FIRE_GRAPPLE`: fire; tap while attached to zip; hold to tether) | L grip outside grab volumes; the yank gesture also zips |
-| Retract tethers (`RETRACT_GRAPPLE`) | L trigger while the left hand is empty; the binding while dual-wielding is open |
+| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; it stays retract while dual-wielding until the dual-wield split |
 | Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | Y |
 | Jump, stunt, open parachute | A |
 | Use item, enter vehicle, open wingsuit | X |
 | Reload | B; later the magazine gesture |
-| Holster | grip press at a holster |
+| Holster | grip press at a holster; until holsters exist, a short hold of B, as on the gamepad |
 | Weapon slot select | draw from a holster; until holsters exist, L stick click cycles `NEXT_WEAPON` |
 | Throw grenade | grab from the grenade pouch and throw; R stick click is the fallback |
 | Plant and detonate explosives | R stick click (context) |
-| Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand |
+| Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand; unbound until then |
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
 | Reel-in context: cancel, boost, hang jump, slingshot | Y, hold L trigger, A, A |
-| Pause, commlink | Menu tap, Menu hold |
+| Pause, commlink | System button tap, System button hold (either hand) |
 
 #### Land vehicles (car; motorcycle in the last rows)
 
@@ -258,21 +267,21 @@ The bindings are drafts for the Touch layout. Index shares the topology, and its
 
 #### UI
 
-While a game menu is open, the `ui` action set replaces the gameplay bindings, matching the game's own `END_UI_MAPPINGS` boundary. The first version maps the game's UI actions like the gamepad: the stick navigates, A confirms (`GUI_OK`), B cancels (`GUI_CANCEL`), and the grips page and change tabs. A laser pointer on the floating panel is deferred with the rest of the mod UI. `payload/src/hud/pointer.rs` already isolates the pointer source for it.
+While a game menu is open, the `ui` action set replaces the gameplay bindings, matching the game's own `END_UI_MAPPINGS` boundary. The first version maps the game's UI actions like the gamepad, on the physical hands: the two sticks are the menu's left and right sticks, the right A confirms (`GUI_OK`), the right B cancels (`GUI_CANCEL`), the left A and B are the special and use buttons, the grips change tabs, the triggers change pages, and the stick clicks focus and recenter. A laser pointer on the floating panel is deferred with the rest of the mod UI. `payload/src/hud/pointer.rs` already isolates the pointer source for it.
 
 ## Aiming
 
 ### Guns
 
-The dominant hand's ray is written into each held weapon's `m_AimTargetPosition` at the per-weapon aim update (`CWeaponBase::UpdateFromUserPostSim_Parallel`). The ray is the weapon's sight line, not the controller's own axis: the controller pose, times the weapon's grip transform, times a per-weapon sight offset. The target point is the ray's hit point, found with `CPhysicsSystem::CastRay` from the sim phase, and it is kept well beyond the near-muzzle distance at which `GetShotMatrix` falls back to the barrel direction. The per-weapon field is the seam because it is the only one that gives two weapons two directions: the character-level aim point (`m_AimTargetPositionWeapons`) fans out unchanged to every held weapon. The character-level write still runs every frame, with the neutral point from "The aim-state pin", because a frame without it sets no `WasSetThisFrame` flag and the game then aims every weapon 25 m ahead of the body ([aim-pipeline.md, "From aim control to the character"](../../engine/gameplay/aim-pipeline.md#from-aim-control-to-the-character-cplayerupdatepostcamera)).
+The dominant hand's ray reaches each held weapon's `m_AimTargetPosition` through the per-weapon aim update: the base update (`CWeaponBase::UpdateFromUserPostSim_Parallel` through its base) is handed the hand's aim point in place of the character's shared one, and the weapon stores it before it builds the shot. The ray is the weapon's sight line, not the controller's own axis: the gun's transform carried to the controller pose, times the gun's current fire point, times a per-weapon sight correction. The target point is the ray's hit point, found with `CPhysicsSystem::CastRay` and the player aim's own ray filter from the sim phase, and it is kept well beyond the near-muzzle distance at which `GetShotMatrix` falls back to the barrel direction. The per-weapon field is the seam because it is the only one that gives two weapons two directions: the character-level aim point (`m_AimTargetPositionWeapons`) fans out unchanged to every held weapon. The character-level write still runs every frame, with the dominant hand's aim point, because a frame without it sets no `WasSetThisFrame` flag and the game then aims every weapon 25 m ahead of the body ([aim-pipeline.md, "From aim control to the character"](../../engine/gameplay/aim-pipeline.md#from-aim-control-to-the-character-cplayerupdatepostcamera)).
 
-The per-weapon sight offsets are derived and then tuned. The fire-point matrices (`m_InternalFirePositions`) give the muzzle origin, and probably the barrel axis if the matrices are oriented along it; that is an RE question. An offline pass extracts the weapon models from the game archives, finds the sight geometry along the top of the barrel axis, and emits a table keyed by weapon hash. A debug-UI tool overrides the weapons whose derived sights are wrong: the player lines up the sights on a marker and saves the offset.
+The per-weapon sight offsets are derived and then tuned. The fire-point matrices (`m_InternalFirePositions`) give the muzzle origin and the barrel axis: `GetShotMatrix` treats the composed fire-point matrix's -Z axis as the barrel. Milestone 1 derives the sight line from the fire point alone, with per-weapon corrections held in config. An offline pass extracts the weapon models from the game archives, finds the sight geometry along the top of the barrel axis, and emits a table keyed by weapon hash. A debug-UI tool overrides the weapons whose derived sights are wrong: the player lines up the sights on a marker and saves the offset.
 
 Guns show no reticle by default. The options are a dot at the hit point, at the hit point's true depth so that it fuses in stereo, and a laser line from the muzzle to the hit point. Both are drawn by the world-space overlay layer.
 
 ### The grapple
 
-A post-hook on [`PlayerAimControl::UpdateDirectAim`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-UpdateDirectAim) casts a ray from the left controller and overwrites the grapple slot, index [`TargetType::TARGET_GRAPPLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::target::TargetType##variant-TARGET_GRAPPLE), of [`m_AimPos`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_AimPos), [`m_DirectPositions`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_DirectPositions), [`m_DirectTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_DirectTargets), [`m_DirectHits`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_DirectHits), and [`m_IsInRange`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_IsInRange), and the last-valid grapple cache. Surface zips need only the ray hit. Entity attachment and tethering need the game's grapple target scoring run against the left-hand ray, so that the grapple slot of [`m_Target`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_Target) and [`m_LastHitGrappleTargetGO`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_LastHitGrappleTargetGO) are filled the way the game would fill them. Every grapple consumer reads the grapple slot, so the hook fire, the tether semantics, and `IsLastValidGrappleAimPosStillValid` follow the left hand without further changes. Two alternatives are rejected. Overwriting only the latched target at fire time (`CGrapplingHook::SetUpTarget`) corrects the hook but leaves every reader of the live slot on the gaze ray. Telling the grapple's `GetCameraMatrix` calls apart by return address does not work, because the one raycast inside `UpdateDirectAim` serves the weapon and grapple slots together.
+The grapple slot, index [`TargetType::TARGET_GRAPPLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::target::TargetType##variant-TARGET_GRAPPLE), of the player aim control's slot arrays ([`m_AimPos`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_AimPos), [`m_DirectPositions`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_DirectPositions), [`m_DirectTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_DirectTargets), [`m_DirectHits`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_DirectHits), [`m_IsInRange`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_IsInRange), and [`m_Target`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_Target)) is filled from the left controller's ray by the game's own targeting. Every part of the aim control that fills the slot takes its ray from the adjusted camera matrix or the camera matrix getter. While a thread-local override is set, both getters return a camera matrix built from the grapple ray. [`PlayerAimControl::UpdateDirectAim`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-UpdateDirectAim) runs twice: once under the override, from which the grapple slot is kept, and once without it, which refills every other slot from the camera. The grapple target scoring, its visibility casts, and the re-validation of the last-valid grapple cache also run under the override, so [`m_LastHitGrappleTargetGO`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_LastHitGrappleTargetGO) and the grapple slot of `m_Target` are filled the way the game would fill them, and entity attachment and tethering follow the left hand. Every grapple consumer reads the grapple slot, so the hook fire, the tether semantics, and `IsLastValidGrappleAimPosStillValid` follow the left hand without further changes. Three alternatives are rejected. A post-hook on `UpdateDirectAim` that casts its own ray and writes each slot array by hand would have to reproduce the game's filter, range, holey-geometry handling, and target resolution. Overwriting only the latched target at fire time (`CGrapplingHook::SetUpTarget`) corrects the hook but leaves every reader of the live slot on the gaze ray. Telling the grapple's `GetCameraMatrix` calls apart by return address does not work, because the one raycast inside `UpdateDirectAim` serves the weapon and grapple slots together.
 
 The game's grapple reticle pins to the centre of the screen when the aim uses a direct position, so it cannot show a hand ray. The grapple readout is drawn by the world-space overlay layer instead: a highlight on the surface or object the grapple would attach to, shown only when the target is valid and in range, with a distinct style for targets that support tethering, and a gauntlet beam from the wrist to the target point. Each is configurable.
 
@@ -302,7 +311,7 @@ Haptic pulses come from the game's own feedback calls (`RumbleFire`, `CameraShak
 
 ### Holsters
 
-The holsters are grab volumes on the body: the hips for pistols, over the shoulders for two-handed and special weapons, and the chest for explosives. A grip press in a holster draws that slot's weapon with `SELECT_DUEL_WIELD`, `SELECT_TWO_HANDED`, `SELECT_TWO_HANDED_SPECIAL`, or `SELECT_EXPLOSIVES`. A grip press with the held weapon inside its holster holsters it. The draw plays under the action-runs tier. The radial menu fallback is deferred with the rest of the mod UI.
+The holsters are grab volumes on the body: the hips for pistols, over the shoulders for two-handed and special weapons, and the chest for explosives. A grip press in a holster draws that slot's weapon with `SELECT_DUEL_WIELD`, `SELECT_TWO_HANDED`, `SELECT_TWO_HANDED_SPECIAL`, or `SELECT_EXPLOSIVES`. A grip press with the held weapon inside its holster holsters it. The draw plays under the action-runs tier. The radial menu fallback is deferred with the rest of the mod UI. Until holsters exist, a short hold of the reload button holsters, as on the gamepad; the game decides the hold in the animation graph, and with a heavy weapon the same hold drops it.
 
 ### Two-handed weapons
 
@@ -326,7 +335,7 @@ Precision aim adds a camera-tree FOV hint, shows a 2D sniper overlay, and hides 
 
 ## The world-space overlay layer
 
-A world-space overlay layer draws sprites and lines into the scene with depth, per eye. It carries the grapple highlight and beam, the optional gun dot and laser, the grab-volume highlights, the ghost hands of the yielded tier, and debug controller gizmos. The floating HUD panel cannot do this, because it draws a 2D texture on one plane, and the per-hand readouts need their own depths.
+A world-space overlay layer draws sprites and lines into the scene with depth, per eye. It carries the grapple highlight and beam, the optional gun dot and laser, the grab-volume highlights, the ghost hands of the yielded tier, and debug controller gizmos. The floating HUD panel cannot do this, because it draws a 2D texture on one plane, and the per-hand readouts need their own depths. The layer draws after post-processing and before the HUD, and tests against the scene depth in its pixel shader ([controllers.md, "The world-space overlay"](controllers.md#the-world-space-overlay)).
 
 ## Roomscale design
 
@@ -334,18 +343,18 @@ The design for physical locomotion is resolved against the engine answers in [ha
 
 ### The chase loop
 
-The camera is already placed from the measured HMD pose each frame (the anchor plus the cockpit offset), so the loop does not track an offset to consume. It measures the offset again from live poses each tick, and any movement the body fails to make leaves the offset nonzero. Per sim tick:
+The camera is placed from the measured HMD pose each frame as the anchor plus the cockpit offset. The anchor is the character's animated head bone, and the cockpit offset is the HMD pose relative to the recenter baseline. The anchor moves with the body, so a chase that moved the body without consuming the offset would move the camera by the body's displacement on top of the unchanged cockpit offset: the view would run ahead of the real head, the measured offset would never shrink, and the body would chase the head without end. The loop therefore re-bases the cockpit baseline by the horizontal body displacement the chase causes each tick, converted into the cockpit frame and divided by the world scale, so the camera stays with the real head while the body catches up. Per sim tick:
 
 1. Measure the body-frame XZ offset from the character to the player's physical head (the cockpit position the pose path already computes).
-2. Outside a deadzone of about 10 cm, add a chase velocity `clamp(offset / dt, max_chase_speed)` to the on-foot locomotion result. The seam is a post-call hook on the locomotion task, adding to the world velocity it writes to the character proxy ([`CharacterInput::wantedVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::CharacterInput##field-wantedVelocity), in [`PfxCharacterInstance::m_Input`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##field-m_Input)). The task runs every on-foot tick including idle, so walking from a standstill works. `dt` is the sim tick, never the render frame. The engine's own displacement evaluation uses either root motion or code-driven displacement, never both, so the add does not double-count against it.
-3. The proxy resolves collision, stairs, and slopes. The next tick's measurement reflects what happened, so no read-back step exists. A wall between the player and the body leaves a persistent offset: the view stays with the real head, and a `CastRaySimple` probe from the last unobstructed head position to the current one drives a fade when the head goes deep into geometry. The probe runs in the sim phase, never from a render hook, because scene queries run against the live physics world.
+2. Outside a deadzone of about 10 cm, add a chase velocity `clamp(offset / dt, max_chase_speed)` to the on-foot locomotion result. The seam is a post-call hook on the locomotion task, adding to the velocity it writes to the character proxy ([`CharacterInput::wantedVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::CharacterInput##field-wantedVelocity), in [`PfxCharacterInstance::m_Input`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##field-m_Input)). That velocity is in the character's local frame, not world space ([hands-locomotion-and-state.md §4.1](../../engine/character/hands-locomotion-and-state.md#41-the-locomotion-task-runs-at-idle-and-writes-the-proxy-input-directly)), so the add goes through the character's world wanted-velocity path: [`Character::GetWantedWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-GetWantedWorldVelocity) reads it in world space, the chase velocity is added, and [`Character::SetWantedWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-SetWantedWorldVelocity) converts the sum back into the local frame. The vertical component and `gameControledVelocity` stay as the task set them. The task runs every on-foot tick including idle, so walking from a standstill works. `dt` is the sim tick, never the render frame. The engine's own displacement evaluation uses either root motion or code-driven displacement, never both, so the add does not double-count against it.
+3. The proxy resolves collision, stairs, and slopes. The displacement the body achieves, measured from the character's world position with the stick-driven part excluded, is the displacement that re-bases the baseline, so a chase that a wall blocks re-bases nothing. A wall between the player and the body leaves a persistent offset: the view stays with the real head, and a `CastRaySimple` probe from the last unobstructed head position to the current one drives a fade when the head goes deep into geometry. The probe runs in the sim phase, never from a render hook, because scene queries run against the live physics world.
 4. Physical walking and stick walking share one channel. The chase velocity scales down with the stick magnitude, so deliberate stick locomotion takes precedence, and both are expressed as the same body-local move vector.
 
 The chase applies only through the post-call hook on the on-foot locomotion task. Every other state that moves the character proxy (grapple, jump, stunt, and ragdoll) is driven by a different task, which the hook does not touch, and a seated character follows its vehicle through the seat attachment, so neither receives the chase; the loop also stands down while `IsInVehicleAttachState` holds. Publishing the offset as the game's code-driven displacement direction is an alternative seam, rejected because it interacts with the game's own code-driven displacement users.
 
 Physical translation never rotates the body, consistent with the rule that orientation changes only with a movement action. The chase velocity is body-local. The aim-relative strafe blend space, which the FPS-movement shim already selects, animates sidesteps and backpedals, and the body-follows-head deadzone scheme owns the torso yaw.
 
-A teleport re-bases the cockpit baseline for that tick instead of feeding a chase spike. The game has no reliable per-character teleport flag: the character field once believed to be one is the stunt auto-exit setting ([`AbilityFlags::m_IsStuntAutoExitEnabled`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AbilityFlags##flag-m_IsStuntAutoExitEnabled) in [`Character::m_AbilityFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_AbilityFlags)), and the per-character frames-since-teleport counter is never reset. Detection therefore combines a hook on the game world's instant teleport, the `game_teleporting_initiated` and `game_teleporting_completed` events, and a per-tick distance-delta fallback for any writer those miss ([hands-locomotion-and-state.md §4.3](../../engine/character/hands-locomotion-and-state.md#43-teleport-writers-and-teleport-signals)).
+A teleport re-bases the cockpit baseline for that tick instead of feeding a chase spike. The game has no reliable per-character teleport flag: the character field once believed to be one is the stunt auto-exit setting ([`AbilityFlags::m_IsStuntAutoExitEnabled`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AbilityFlags##flag-m_IsStuntAutoExitEnabled) in [`Character::m_AbilityFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_AbilityFlags)), and the per-character frames-since-teleport counter is never reset ([hands-locomotion-and-state.md §4.3](../../engine/character/hands-locomotion-and-state.md#43-teleport-writers-and-teleport-signals)). Detection is a post-call hook on [`GameCameraManager::ResetCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::game_camera_manager::GameCameraManager##func-ResetCamera). Every discontinuity the game applies to the player resets the camera through it: the instant teleport, the placement step of the deferred teleport, the respawn after death, and loading a save. One hook therefore covers teleports, respawns, and loads, which a hook on the instant teleport alone does not. The hook records a teleport for the chase loop and the frame loop to consume: re-base the cockpit baseline, zero the chase, and hold the mode for that tick.
 
 Recentering on foot re-bases yaw and height only. The chase loop keeps the position converged, so no position needs recentering, and a position recenter could move the body through a wall that the chase could not cross. Position re-basing exists only in seat transitions.
 
@@ -386,13 +395,13 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 
 ### 1. The on-foot slice
 
-- The OpenXR action sets and pose actions, the mode detector, and the scheme hot-swap. The `onfoot` set uses the bindings above; the other sets are gamepad-shaped so that the rest of the game stays playable.
+- The OpenXR action sets and pose actions, the mode detector, and the scheme hot-swap. Every mode uses its bindings above, so the rest of the game stays playable.
 - The aim-state pin and the mental-state cuts.
 - Controller-owned hands: wrist IK to the controllers, the weapon on the dominant hand's attach bone, the game's arm IK skipped, and the render-time late update for the weapon and the hand bones. The body dimensions come from config.
 - Gun aiming from the dominant hand, with sight axes derived from the fire-point matrices only (the model-extraction pass comes later).
-- Grapple aiming from the left hand, with the slot-2 overwrite and the grapple target scoring.
+- Grapple aiming from the left hand, with the game's own targeting and target scoring run along the hand's ray.
 - The world-space overlay layer, with the grapple highlight and beam, the optional gun dot and laser, and debug controller gizmos.
-- The free and yielded hand tiers; every scripted state starts as yielded unless its table entry is free. Ghost hands can follow later in the milestone.
+- The free and yielded hand tiers; every scripted state starts as yielded unless its table entry is free, and the overlay draws ghost hands for the yielded ones.
 - Weapon slots cycle from the L stick click until holsters exist.
 
 ### 2. Posture and roomscale
@@ -429,23 +438,116 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - The model-extraction pass for sight offsets, and the sight-tuning tool.
 - Promotions in the hand-tier table, in order of how often the states occur in play.
 
+## Implementation status
+
+Milestone 1 is implemented and has not been run in the headset. [controllers.md](controllers.md) describes it as built. Every setting below is in the `controllers` section of the mod's config and in the Controllers tab of the debug UI, which also shows a live readout of each part. The master switch is `controllers.enabled`; with it off, no controller snapshot is published and every part is inert. The parts that change how the character behaves act only under the controller scheme, so the gamepad scheme behaves as before.
+
+| Part | Settings | State |
+|---|---|---|
+| OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.trigger_press`, `input.squeeze_press`, `input.stick_deadzone`, `input.hand_tracking` | Built. Nothing requests haptics yet. |
+| Scheme selection | `scheme` (`Auto`, `Controllers`, or `Gamepad`) | Built. |
+| Body dimensions and remap | `body.local.json` beside the payload DLL; `body.remap_hands` (on), `body.remap_head` (off) | The hand remap is built. The head remap is not wired into the view yet. |
+| Mode detection | `mode.debounce_ticks` | Built. The headpose sim keeps its own on-foot test. |
+| Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `bindings.evade_flick`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. No grab volume exists, so every off-hand grip press fires the grapple. |
+| Gamepad semantics | `gamepad_semantics` | Built. |
+| Aim-state pin and mental-state cuts | `aim_state.pin`, `aim_state.pin_grapple`, `aim_state.skip_arm_ik`, `aim_state.neutral_aim_point`, `aim_state.neutral_aim_distance_m`, `aim_state.clear_wall_block`, `aim_state.mental_state_cuts`, and `aim_state.without_controllers` (off; applies the other parts under the gamepad scheme for testing) | Built, except the strafe reference correction (see "The aim-state pin"). |
+| Hands | `hands.ik`, `hands.late_update`, `hands.suppress_secondary_ik`, `hands.reach_t`, `hands.reach_r`, `hands.pull`, `hands.resist`, `hands.grip`, `hands.yield_blend_s`, `hands.return_blend_s`, `hands.tiers` | The free and yielded tiers are built. States assigned the action-runs or anchored tier yield until those tiers exist. A left-handed layout mirrors the bindings but does not move the gun to the left hand. The grapple wire's render-time correction and elbow pole hints are not built. |
+| Gun aiming | `aim.gun`, `aim.max_distance_m`, `aim.min_target_distance_m`, `aim.sights` | Built, with the sight line from the fire point and per-weapon corrections in config. Per-hand aim assist (`aim.assist_strength`) is not built. |
+| Grapple aiming | `aim.grapple`, `aim.grapple_origin_m` | Built. |
+| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.ghost_hands`, `overlay.debug_gizmos` (off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. The grab-volume highlights wait for the holsters. |
+
+The settings for milestones 2 to 5 (`weapons`, `roomscale`, `vehicles`, and `fingers`) exist in the config but milestone 1 does not read them.
+
+### Unverified in milestone 1
+
+The implementation rests on the following assumptions, each of which needs checking in the headset.
+
+Input and scheme:
+
+- The Touch suggested bindings and the press thresholds are untested; the Index layout is the target.
+- `GetLastInputInfo` reports keyboard and mouse input under Proton, and XInput does not expose the VR controllers as a gamepad. If XInput does expose them, the scheme flips to the gamepad on controller input.
+- The behaviour while the session is not focused.
+- A persisted session whose action layout differs from the payload's cannot attach the new actions, so the controllers stay unavailable until the game restarts.
+- The character's proportions are an estimate from his stated height until they are measured from the skeleton.
+
+Mode detection and bindings:
+
+- An analog action above 0.2 also reads as pressed, standing in for the device button threshold, which is not read.
+- The pause and commlink clicks go to both the player map and the UI map, which may toggle pause twice.
+- The wingsuit's evade (A with the move stick flicked) and its L trigger mapping (the air brake).
+- The generic actions (`BTN_*`, `L1`, `R2`, and the others) mirrored alongside each virtual gamepad button.
+- The explosive button is the gamepad's RB, so a hold detonates.
+- A device poll that the engine skips can stretch a click over two ticks.
+- The teleport rule sees only deferred teleports.
+
+The aim-state pin:
+
+- The wall-penetration clear assumes that the weapon's first user entry is the holding character.
+- The relaxed branch resets precision aim and the grenade and mortar permissions when it runs, and they are assumed to be restored on the next tick.
+- The grapple pin changes the body's behaviour on a held tether: the body no longer turns to face the hook.
+- The relaxed carry grip holds the weapon acceptably under the IK arms.
+- The fire trigger on an empty dominant hand draws a weapon.
+- The strafe act follows the gun's aim point rather than the head (see "The aim-state pin").
+
+Hands:
+
+- The grip offset is a best guess for the Index controller: the wrist at (-0.02, -0.075, 0) m in the right grip frame, with the hand rotated -15 degrees about the grip's X axis.
+- The character's model space is right-handed with +X to the right. If it is not, the hands render upside down.
+- The skinning palette entries use the standard column-major and row-major matrix layouts.
+- The hand and finger bones are only in the body's model slot, and the knuckle bone names resolve.
+- A deferred draw at the end of the frame may see the next frame's hand snapshot.
+- The grapple wire's near end is not late-updated, so it can trail the rendered forearm by up to a tick.
+
+Aiming:
+
+- A gun's sight line is its fire point with no model offset, and the gun is aligned with the IK wrist target.
+- A grapple target counts as tetherable when it is an object rather than the world.
+- The aim filter accepts hits on the player's own vehicle before its ignore check, so a hand ray inside a vehicle can hit the vehicle.
+
+The overlay:
+
+- The producers run on the render thread. The sim-rate readouts expire 150 ms after their last submission, and the per-frame ones after 100 ms.
+- The grapple highlight takes its surface normal from the off-hand ray's hit when that hit is within 0.5 m of the target, and otherwise faces the head.
+- The laser starts at the sight's origin, pinned to the wrist.
+- The ghost hand is a ring and a pointer.
+- The colours, sizes, and depth tolerances need tuning.
+
+### Headset test checklist for milestone 1
+
+The order puts the parts that everything else depends on first.
+
+1. Input. The Controllers tab reports the OpenXR input status and the hand-tracking status. Both hands track, the grip and aim poses follow the controllers, and every button, trigger, grip, stick, and trackpad reads, including the system button.
+2. Scheme. A controller press selects the controller scheme; a gamepad, keyboard, or mouse input selects the gamepad scheme; the `Controllers` and `Gamepad` settings pin it. The gamepad scheme behaves as it did before controllers existed.
+3. Mode detection. The detected mode and the active action set follow walking, swimming, falling, the wingsuit, the parachute, each vehicle class in the driver and a passenger seat, the pause menu, the map, the commlink, and the mod's panel. No mode flickers during animation blends, and a fast travel holds the mode.
+4. On-foot bindings. Move with the head direction and the off-hand direction, turn smooth and snap, jump, fire, grapple fire, zip, and tether hold, retract, release, use and enter, reload tap and holster hold, the explosive tap and hold, and the weapon cycle. A short system press pauses, a long one opens the commlink, and neither toggles twice. The menus navigate, confirm, cancel, change tabs, and change pages.
+5. Vehicle and air bindings. The car, the motorcycle, the helicopter, the plane, and the boat drive and fire; nitrous holds and the turbo jump taps separate; a held enter reaches the gunner seat. The wingsuit boosts, evades, and brakes, and the parachute opens and steers.
+6. Gamepad semantics. The prompts show gamepad buttons under the controller scheme, and the setting returns to its previous value under the gamepad scheme.
+7. The aim-state pin. Firing while walking keeps the body in the walk family with no weapon raise and no snap. The aim flags in the readout stay clear while firing. The grapple fires and tethers, and the body's behaviour on a held tether is acceptable. Entering combat draws nothing, leaving combat holsters nothing, and the reload hold still holsters. A gun fired with its barrel near a wall is not blocked. Check the strafe direction with the gun pointed sideways, and whether the trigger on an empty hand draws a gun.
+8. Hands. The hands are the right way up with the fingers forward; fit the grip offset. The arms reach the controllers, and the arm-span remap feels right with a `body.local.json`. The gun sits in the hand, fast hand motion shows no lag, the gun and the hand never separate, and the forearm stays attached at the elbow. Ledge grabs, climbs, vehicle entry, swimming, the wingsuit, and ragdoll yield the hands and return them smoothly. The off-hand is not pulled onto the weapon, and the grapple wire leaves the left forearm.
+9. Aiming. Shots land where the barrel points; use the `Dot` and `Laser` readouts. Aim at a nearby wall. The grapple follows the off-hand ray, and its surface zips, object tethers, and highlight validity match where the hook attaches. Aim a hand ray from inside a vehicle.
+10. The overlay. The readouts appear in both eyes at the correct depth and fuse in stereo, with and without single-pass stereo, and are hidden where the scene is in front of them. Nothing is drawn in the far field or in cinematic mode. The ghost hands appear during yielded states, the gizmos match the controllers, and the readouts disappear when a menu opens.
+
 ## Reverse-engineering work
 
 These questions are open. Each is listed with the milestone that needs its answer.
 
-- Milestone 1: which systems read `SB_NO_WEAPON_AIM` besides the aim logic, whether the FPS-movement shim still selects the strafe branch with the bit set, and where a state bit can be set so that it holds across the character's graph evaluation.
-- Milestone 1: whether skipping the player's aim IK tasks leaves any blackboard state (the aim-IK weight key [`ObjectBlackboard::AIM_IK_WEIGHT_ID`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/blackboard::ObjectBlackboard::AIM_IK_WEIGHT_ID) on the character blackboard) that other tasks read.
-- Milestone 1: the bones the hand and forearm late update must replace in the skinning palette, and whether the fingers are in the same batches.
-- Milestone 1: whether the fire-point matrices are oriented along the barrel.
-- Milestone 1: whether the grapple wire's near end follows the gauntlet when the left arm is IK-driven, or is pinned to an animated bone.
-- Milestone 1: the `UpdateMentalState` behaviour to keep (the transitions the AI reads) and the transitions that affect the body.
-- Milestone 3: the inputs the grapple hang reads for movement, for the anchored hang promotion.
-- Milestone 3: how `UpdateSecondaryHandIKPass` can be suppressed per hand.
-- Milestone 4: the wingsuit's look-steer path, which cannot be hooked in the wingsuit task's `Update` because the function contains an anti-tamper branch.
+- Milestone 2: whether a head probe with the default ray filter hits the player's own capsule or ragdoll bodies; if it does, the probe uses the player aim filter, as the hand rays do.
+- Milestone 3: locating the reeled-in input task (`NStateTask_InputReeledInTask`) in the IDB, for the anchored hang promotion. The game's own stick swing on the hang is disabled, so the stick does nothing to a hanging player beyond the jump direction, and the mod has to push the hanging body itself.
 - Milestone 4: the jetski discriminator (`m_VehicleType` and the jetski-specific type), if boats and jetskis need different action sets.
 - Milestone 5: triggering a grenade throw without the wind-up animation, and moving the spawn point.
 - Milestone 5: the melee trigger path under the hammer ability.
 - Milestone 5: a render path for the scope lens that reuses the engine's scene render at a narrow FOV.
+
+The milestone 1 questions are answered:
+
+- [`StateBitFlag::SB_NO_WEAPON_AIM`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_NO_WEAPON_AIM) is read only by the two aim-input functions, its value persists, and the shim still selects the strafe branch with it set (see "The aim-state pin").
+- The aim-IK weight key [`ObjectBlackboard::AIM_IK_WEIGHT_ID`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/blackboard::ObjectBlackboard::AIM_IK_WEIGHT_ID) is read only by the right-arm and reel-in aim tasks, so skipping the player's aim IK tasks leaves no other reader stale.
+- The late update moves the hand bones by the hand's correction and swings the forearm and its twist bones about the elbow. Whether the finger bones are drawn in the same batches as the hand is unverified.
+- The fire-point matrices are oriented along the barrel, which is their -Z axis.
+- The grapple wire's near end follows the left forearm twist bone, so it follows an IK-driven forearm at the sim rate ([grapple-pipeline.md, "The wire's near end"](../../engine/gameplay/grapple-pipeline.md#the-wires-near-end)).
+- The `UpdateMentalState` transitions and the second automatic holster are in [aim-state.md, "The mental state"](../../engine/gameplay/aim-state.md#the-mental-state).
+
+Two later questions are answered too. The secondary hand IK pass is suppressed per hand through its one-frame blackboard weights (see "Hands"). The wingsuit's head look-steer is computed by a separate function, `NAirMovement::UpdateStdLookSteering`, which has no anti-tamper branch and no side effects, so a post-call hook that zeroes its output removes the look-steer; the function is not yet bound, and zeroing it also removes the look-steer of the fall camera.
 
 ## Risks
 
