@@ -72,6 +72,9 @@ pub struct Controls {
     /// The angle (radians, counter-clockwise from above) to rotate the move stick by on foot, so
     /// that its forward is the configured locomotion reference rather than the head.
     pub move_rotation: f32,
+    /// Whether the move stick's click cycles to the next weapon on foot: the fallback for drawing
+    /// weapons, on whenever the holsters are off.
+    pub weapon_cycle: bool,
 }
 
 impl Controls {
@@ -105,6 +108,7 @@ impl Controls {
             hands,
             dominant,
             move_rotation,
+            weapon_cycle: false,
         }
     }
 

@@ -24,6 +24,7 @@ use crate::{
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         scheme,
+        weapons::foregrip,
     },
     headpose,
 };
@@ -56,8 +57,18 @@ pub struct ActiveHands {
 }
 
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
-/// scheme is in effect, no VR session publishes a head pose, or no controller frame exists.
+/// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
+/// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
+/// ([`foregrip::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
+    let mut active = active_hands_raw()?;
+    foregrip::apply(&mut active.hands, &active.config.weapons.foregrip);
+    Some(active)
+}
+
+/// The active hands as the controllers hold them, before any two-handed pose: where the grab
+/// volumes are tested.
+pub fn active_hands_raw() -> Option<ActiveHands> {
     let (config, world_scale) = Config::lock_query(|c| (c.controllers, c.vr.world_scale));
     if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
         return None;

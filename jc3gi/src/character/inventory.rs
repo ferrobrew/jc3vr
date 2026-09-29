@@ -171,7 +171,7 @@ impl std::convert::AsMut<Inventory> for Inventory {
     }
 }
 #[repr(i32)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// An inventory weapon slot (`CInventory::EWeaponSlot`). Mounted guns a character picks up occupy
 /// [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY): `CCharacter::IsInMountedGunState` tests the weapon in that
 /// slot.

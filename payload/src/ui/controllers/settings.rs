@@ -9,7 +9,7 @@ use crate::{
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, hands, overlay, roomscale},
+    ui::controllers::{aim, hands, overlay, roomscale, weapons},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -128,8 +128,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Weapons").show(ui, |ui| {
         let w = &mut c.weapons;
-        ui.checkbox(&mut w.holsters, "Holsters");
-        ui.checkbox(&mut w.foregrip, "Foregrip");
+        weapons::weapons_settings(ui, w);
         ui.checkbox(&mut w.dual_wield_split, "Dual-wield split");
         ui.checkbox(&mut w.reload_gesture, "Reload gesture");
         ui.checkbox(&mut w.grenade_throw, "Physical grenade throw");

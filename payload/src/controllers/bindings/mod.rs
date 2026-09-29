@@ -4,7 +4,8 @@
 //! - [`controls`] reduces the frame to logical controls (deadzones, edges, grab volumes);
 //! - [`tables`] maps them to the wanted game actions per mode, following the plan of record;
 //! - [`hold`] turns the wanted actions into effector writes with the game's hold timing;
-//! - [`grab`] is the grab-volume query the grip bindings consult;
+//! - [`grab`] is the grab-volume query the grip bindings consult, over the volumes the weapon
+//!   handling places ([`crate::controllers::weapons`]);
 //! - [`inject`] applies the writes to the player and UI action maps.
 //!
 //! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
@@ -28,7 +29,6 @@ use crate::{
     controllers::{
         bindings::{
             controls::{Controls, yaw_of},
-            grab::grab_volume,
             hold::{HoldTracker, MapKind, Phase},
             inject::Outcome,
             tables::Bindings,
@@ -37,7 +37,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand},
         hands::tiers,
         mode::{self, Detection},
-        scheme,
+        scheme, weapons,
     },
     headpose,
 };
@@ -89,6 +89,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     let config = Config::lock_query(|c| c.controllers);
     if !config.enabled {
         STATE.lock().reset();
+        weapons::stand_down();
         return InputTickOutput::default();
     }
     let detection = mode::tick();
@@ -113,6 +114,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     let mut state = STATE.lock();
     let (Some(frame), None) = (frame, idle) else {
         state.reset();
+        weapons::stand_down();
         state.report = TickReport {
             detection,
             idle,
@@ -126,8 +128,8 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         LocomotionDirection::Head => 0.0,
         LocomotionDirection::OffHand => off_hand_rotation(&frame, dominant.other()),
     };
-    let grab_volumes = Hand::BOTH.map(|hand| grab_volume(&frame, hand));
-    let controls = Controls::from_frame(
+    let grab_volumes = weapons::begin_tick(detection.mode);
+    let mut controls = Controls::from_frame(
         &frame,
         &edges,
         &config.bindings,
@@ -135,12 +137,15 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         move_rotation,
         grab_volumes,
     );
-    let step = state
+    controls.weapon_cycle =
+        !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
+    let mut step = state
         .bindings
         .step(detection.mode, &controls, dt, &config.bindings);
     if step.crouch_toggle {
         crate::controllers::roomscale::toggle_seated_crouch();
     }
+    weapons::finish_tick(step.grabs, &mut step.desired, dt);
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let outcomes = unsafe { inject::apply(&writes) };

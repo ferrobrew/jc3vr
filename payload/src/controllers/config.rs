@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::controllers::{
     frame::{Hand, PressThresholds},
     hands::tiers::HandTierTable,
+    weapons::config::{ForegripConfig, HolstersConfig},
 };
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
@@ -473,6 +474,8 @@ pub struct OverlayConfig {
     pub grapple_beam: bool,
     /// Draw a translucent ghost at the controller of a hand the animation owns.
     pub ghost_hands: bool,
+    /// Highlight the grab volume each hand is in (a holster, the foregrip, the grenade pouch).
+    pub grab_volumes: bool,
     /// Draw axes at the controllers' grip and aim poses, for debugging.
     pub debug_gizmos: bool,
     /// How far behind the scene's depth, in metres, a primitive still counts as visible, so that a
@@ -495,6 +498,7 @@ impl OverlayConfig {
             grapple_highlight: true,
             grapple_beam: true,
             ghost_hands: true,
+            grab_volumes: true,
             debug_gizmos: false,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,
@@ -520,10 +524,13 @@ pub enum GunReadout {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct WeaponsConfig {
     /// Draw and holster weapons with a grip press at the body holsters.
-    pub holsters: bool,
+    pub holsters: HolstersConfig,
     /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's
     /// direction.
-    pub foregrip: bool,
+    pub foregrip: ForegripConfig,
+    /// Hold the fire inputs back while a reload, a draw, or a holster plays (the action-runs hand
+    /// tier), so the weapon cannot fire for the action's duration.
+    pub block_fire_during_actions: bool,
     /// The recoil offset between the controller and the rendered weapon.
     pub recoil: RecoilConfig,
     /// Controller vibration.
@@ -546,8 +553,9 @@ pub struct WeaponsConfig {
 impl WeaponsConfig {
     pub const fn new() -> Self {
         Self {
-            holsters: true,
-            foregrip: true,
+            holsters: HolstersConfig::new(),
+            foregrip: ForegripConfig::new(),
+            block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
             haptics: HapticsConfig::new(),
             dual_wield_split: true,

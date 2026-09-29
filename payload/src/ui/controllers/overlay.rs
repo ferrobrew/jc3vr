@@ -39,6 +39,8 @@ pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {
         ui.checkbox(&mut o.grapple_beam, "Grapple beam");
         ui.checkbox(&mut o.ghost_hands, "Ghost hands")
             .on_hover_text("Show the controller's hand while the animation owns it.");
+        ui.checkbox(&mut o.grab_volumes, "Grab-volume highlights")
+            .on_hover_text("Ring the holster, foregrip, or pouch each hand is in.");
         ui.checkbox(&mut o.debug_gizmos, "Controller gizmos");
         ui.add(egui::Slider::new(&mut o.depth_tolerance_m, 0.0..=0.5).text("Depth tolerance (m)"));
         ui.add(

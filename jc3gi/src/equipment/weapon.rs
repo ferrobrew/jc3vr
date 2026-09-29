@@ -450,16 +450,21 @@ impl WeaponBase {
         self.vftable as *const crate::equipment::weapon::WeaponBaseVftable
     }
     pub const GetGripPosition_ADDRESS: usize = 0x140966840;
-    /// Writes the grip transform for the given `hand` (a `E_WEAPON_GRIP_HAND_*` value).
+    /// Writes the world transform of the weapon's grip point for `hand` into `matrix`: the
+    /// weapon's grip-table entry for that hand (the entry for the mounted state while
+    /// [`m_State`](crate::equipment::weapon::WeaponBase::m_State) is [`E_WS_MOUNTED`](crate::equipment::weapon::WeaponState::E_WS_MOUNTED)), a translation in
+    /// the first gun's frame, composed with that gun's current world matrix. Returns false, writing
+    /// nothing, when the weapon has no entry for that hand. The secondary hand IK pass and the hand
+    /// IK tasks place a hand on a held weapon through it.
     pub unsafe fn GetGripPosition(
         &self,
-        hand: i32,
+        hand: crate::equipment::weapon::WeaponGripHand,
         matrix: *mut crate::types::math::Matrix4,
     ) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(
                 this: *const Self,
-                hand: i32,
+                hand: crate::equipment::weapon::WeaponGripHand,
                 matrix: *mut crate::types::math::Matrix4,
             ) -> bool = ::std::mem::transmute(Self::GetGripPosition_ADDRESS);
             f(self as *const Self as _, hand, matrix)
@@ -1105,6 +1110,20 @@ impl std::convert::AsMut<WeaponDataArray> for WeaponDataArray {
     fn as_mut(&mut self) -> &mut WeaponDataArray {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The hand a weapon grip-table entry is for (`EWeaponGripHand`), as
+/// [`WeaponBase::GetGripPosition`](crate::equipment::weapon::WeaponBase::GetGripPosition) takes it.
+pub enum WeaponGripHand {
+    E_WEAPON_GRIP_HAND_LEFT = 0isize as _,
+    E_WEAPON_GRIP_HAND_RIGHT = 1isize as _,
+}
+fn _WeaponGripHand_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], WeaponGripHand>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]

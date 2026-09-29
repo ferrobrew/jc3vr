@@ -1,6 +1,7 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
-//! controller frame and of each controller subsystem (posture and roomscale included), the
-//! player's body dimensions, and every controller setting. Each subsystem's section is in its own file.
+//! controller frame and of each controller subsystem (weapon handling, posture, and roomscale
+//! included), the player's body dimensions, and every controller setting. Each subsystem's section
+//! is in its own file.
 
 mod aim;
 mod aim_state;
@@ -11,6 +12,7 @@ mod mode;
 mod overlay;
 mod roomscale;
 mod settings;
+mod weapons;
 
 use egui::Ui;
 use glam::{Quat, Vec3};
@@ -24,7 +26,7 @@ use crate::{
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
         mode as controller_mode, overlay as controller_overlay, roomscale as controller_roomscale,
-        scheme,
+        scheme, weapons as controller_weapons,
     },
     vr::input::{self as vr_input, ActionsOrigin},
 };
@@ -48,6 +50,8 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let late_status = late::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
+    let weapons_status = controller_weapons::status();
+    let foregrip_status = controller_weapons::foregrip::status();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -96,6 +100,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .default_open(true)
             .show(ui, |ui| {
                 hands::hands_readout(ui, &hand_ik, &hand_tiers, &late_status)
+            });
+
+        egui::CollapsingHeader::new("Weapon handling")
+            .default_open(true)
+            .show(ui, |ui| {
+                weapons::weapons_readout(ui, &weapons_status, &foregrip_status, &hand_tiers)
             });
 
         egui::CollapsingHeader::new("Overlay")

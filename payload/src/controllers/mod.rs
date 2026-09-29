@@ -21,6 +21,8 @@
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
 //!   off-hand's ray;
 //! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye;
+//! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
+//!   foregrip, and the weapon actions that run with the hands on the controllers;
 //! - [`roomscale`]: posture, the head-height remap, the roomscale chase loop, crouching, the
 //!   head-through-geometry fade, and seat transitions. These need the headset rather than the
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme.
@@ -43,6 +45,7 @@ pub mod mode;
 pub mod overlay;
 pub mod roomscale;
 pub mod scheme;
+pub mod weapons;
 
 pub use config::ControllersConfig;
 

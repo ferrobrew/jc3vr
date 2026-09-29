@@ -4,14 +4,18 @@
 //! The plan of record ("Hand tiers" in `docs/mod/input/controllers-and-roomscale.md`) assigns every
 //! scripted state one of four tiers. The assignments are data: [`HandTierTable`] holds one tier per
 //! [`TierState`], its default is the plan's table ([`HandTierTable::PLAN`]), and the config can
-//! override any row. Two tiers are implemented so far:
+//! override any row. Three tiers are implemented so far:
 //!
 //! - [`HandTier::Free`]: the hand follows its controller;
+//! - [`HandTier::ActionRuns`]: the game plays the action (a reload's timer and the weapon model's
+//!   own magazine and bolt animation, a draw, a holster) while the hand stays on its controller;
+//!   the weapon handling holds the fire inputs back for the action's duration
+//!   ([`crate::controllers::weapons`]);
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
 //!   [`HandsConfig::yield_blend_s`] and back over [`HandsConfig::return_blend_s`].
 //!
-//! The action-runs and anchored tiers are not built yet, and until they are, a state assigned one
-//! of them yields (see [`HandTier::effective`]).
+//! The anchored tier is not built yet, and until it is, a state assigned it yields (see
+//! [`HandTier::effective`]).
 //!
 //! The classification runs once per input tick ([`tick`]), on the main thread, from the mode
 //! detector's snapshot plus a few state-machine predicates, and publishes one weight per hand for
@@ -57,12 +61,13 @@ impl HandTier {
         HandTier::Yielded,
     ];
 
-    /// The tier the hands actually take. The action-runs and anchored tiers are not implemented
-    /// yet, and the plan starts every scripted state as yielded unless its entry is free.
+    /// The tier the hands actually take. The anchored tier is not implemented yet, and the plan
+    /// starts every scripted state as yielded unless its tier is built.
     pub const fn effective(self) -> HandTier {
         match self {
             HandTier::Free => HandTier::Free,
-            HandTier::ActionRuns | HandTier::Anchored | HandTier::Yielded => HandTier::Yielded,
+            HandTier::ActionRuns => HandTier::ActionRuns,
+            HandTier::Anchored | HandTier::Yielded => HandTier::Yielded,
         }
     }
 
@@ -70,8 +75,8 @@ impl HandTier {
     /// zero leaves the hand to the animation.
     pub const fn controller_weight(self) -> f32 {
         match self.effective() {
-            HandTier::Free => 1.0,
-            _ => 0.0,
+            HandTier::Free | HandTier::ActionRuns => 1.0,
+            HandTier::Anchored | HandTier::Yielded => 0.0,
         }
     }
 
@@ -114,6 +119,8 @@ pub enum TierState {
     Interaction,
     /// Melee attacks.
     Melee,
+    /// A reload, a weapon draw, or a holster.
+    WeaponAction,
     /// Ragdoll, getting up, hit reactions, hard landings, death, and scripted warps.
     Ragdoll,
     /// A cutscene or scripted sequence camera.
@@ -122,7 +129,7 @@ pub enum TierState {
 
 impl TierState {
     /// Every state, in the table's order.
-    pub const ALL: [TierState; 14] = [
+    pub const ALL: [TierState; 15] = [
         TierState::OnFoot,
         TierState::GrappleReel,
         TierState::GrappleHang,
@@ -135,6 +142,7 @@ impl TierState {
         TierState::Swimming,
         TierState::Interaction,
         TierState::Melee,
+        TierState::WeaponAction,
         TierState::Ragdoll,
         TierState::Cutscene,
     ];
@@ -162,6 +170,7 @@ impl TierState {
             TierState::Swimming => "swimming",
             TierState::Interaction => "interaction",
             TierState::Melee => "melee",
+            TierState::WeaponAction => "reload, draw, and holster",
             TierState::Ragdoll => "ragdoll, hit, and death",
             TierState::Cutscene => "cutscene",
         }
@@ -191,6 +200,7 @@ pub struct HandTierTable {
     pub swimming: HandTier,
     pub interaction: HandTier,
     pub melee: HandTier,
+    pub weapon_action: HandTier,
     pub ragdoll: HandTier,
     pub cutscene: HandTier,
 }
@@ -211,6 +221,7 @@ impl HandTierTable {
         swimming: HandTier::Yielded,
         interaction: HandTier::Yielded,
         melee: HandTier::Yielded,
+        weapon_action: HandTier::ActionRuns,
         ragdoll: HandTier::Yielded,
         cutscene: HandTier::Yielded,
     };
@@ -248,6 +259,7 @@ impl HandTierTable {
             TierState::Swimming => &self.swimming,
             TierState::Interaction => &self.interaction,
             TierState::Melee => &self.melee,
+            TierState::WeaponAction => &self.weapon_action,
             TierState::Ragdoll => &self.ragdoll,
             TierState::Cutscene => &self.cutscene,
         }
@@ -267,6 +279,7 @@ impl HandTierTable {
             TierState::Swimming => &mut self.swimming,
             TierState::Interaction => &mut self.interaction,
             TierState::Melee => &mut self.melee,
+            TierState::WeaponAction => &mut self.weapon_action,
             TierState::Ragdoll => &mut self.ragdoll,
             TierState::Cutscene => &mut self.cutscene,
         }
@@ -291,8 +304,8 @@ pub struct TierSignals {
 }
 
 /// Classify the tick's state, highest priority first: a cutscene, then the body being thrown
-/// about, then the vehicle states, the scripted actions, the traversal and flight states, and
-/// finally on foot. `None` while a menu is up or the character is unreadable: the previous state
+/// about, then the vehicle states, the scripted actions, the traversal and flight states, a weapon
+/// action, and finally on foot. `None` while a menu is up or the character is unreadable: the previous state
 /// holds.
 pub fn classify(signals: &TierSignals) -> Option<TierState> {
     if signals.detection.mode == Mode::Ui {
@@ -351,6 +364,13 @@ pub fn classify(signals: &TierSignals) -> Option<TierState> {
         Some(Traversal::PreReel | Traversal::ReelingIn) => return Some(TierState::GrappleReel),
         Some(Traversal::PreHang | Traversal::ReeledIn) => return Some(TierState::GrappleHang),
         None => {}
+    }
+    if any(&[
+        StateBitFlag::SB_IS_RELOADING,
+        StateBitFlag::SB_IS_DRAWING_WEAPON,
+        StateBitFlag::SB_IS_HOLSTERING_WEAPON,
+    ]) {
+        return Some(TierState::WeaponAction);
     }
     Some(match signals.detection.mode {
         Mode::Airborne(AirborneVariant::Parachute) => TierState::Parachute,
@@ -602,8 +622,32 @@ mod tests {
     #[test]
     fn unimplemented_tiers_yield_until_built() {
         assert_eq!(HandTier::Anchored.controller_weight(), 0.0);
-        assert_eq!(HandTier::ActionRuns.controller_weight(), 0.0);
+        assert_eq!(HandTier::Anchored.effective(), HandTier::Yielded);
         assert_eq!(HandTier::Free.controller_weight(), 1.0);
+    }
+
+    #[test]
+    fn weapon_actions_run_with_the_hands_on_the_controllers() {
+        for flag in [
+            StateBitFlag::SB_IS_RELOADING,
+            StateBitFlag::SB_IS_DRAWING_WEAPON,
+            StateBitFlag::SB_IS_HOLSTERING_WEAPON,
+        ] {
+            let state = classify(&signals(ON_FOOT, &[flag])).unwrap();
+            assert_eq!(state, TierState::WeaponAction, "{flag:?}");
+            let tier = HandTierTable::PLAN.tier(state);
+            assert_eq!(tier.effective(), HandTier::ActionRuns);
+            assert_eq!(tier.controller_weight(), 1.0);
+        }
+        // A reload never outranks a state that takes the hands.
+        let s = signals(
+            ON_FOOT,
+            &[StateBitFlag::SB_IS_RELOADING, StateBitFlag::SB_IN_RAGDOLL],
+        );
+        assert_eq!(classify(&s), Some(TierState::Ragdoll));
+        let mut s = signals(ON_FOOT, &[StateBitFlag::SB_IS_RELOADING]);
+        s.detection.traversal = Some(Traversal::ReelingIn);
+        assert_eq!(classify(&s), Some(TierState::GrappleReel));
     }
 
     #[test]

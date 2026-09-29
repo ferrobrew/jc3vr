@@ -86,7 +86,7 @@ pub fn counters() -> GunCounters {
 /// # Safety
 ///
 /// `owner` must be the live local player character.
-pub(super) unsafe fn held_weapon(owner: &Character) -> Option<&'static WeaponBase> {
+pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<&'static WeaponBase> {
     // Read as the raw value: the slot can be out of the enum's range, and then indexes nothing.
     let slot = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
     let slot = usize::try_from(slot).ok()?;
@@ -229,7 +229,7 @@ static AIMED: AtomicU64 = AtomicU64::new(0);
 static KEPT: AtomicU64 = AtomicU64::new(0);
 
 /// The weapon's guns, in order.
-unsafe fn guns(weapon: &WeaponBase) -> impl Iterator<Item = Option<&WeaponData>> {
+pub(crate) unsafe fn guns(weapon: &WeaponBase) -> impl Iterator<Item = Option<&WeaponData>> {
     let list = &weapon.m_lWeaponData;
     let count = if list.m_Begin.is_null() || list.m_End < list.m_Begin {
         0
@@ -241,7 +241,7 @@ unsafe fn guns(weapon: &WeaponBase) -> impl Iterator<Item = Option<&WeaponData>>
 
 /// The gun's current fire point in its own frame, or the identity when the cursor is out of range,
 /// as the game treats it.
-unsafe fn fire_point(gun: &WeaponData) -> Mat4 {
+pub(crate) unsafe fn fire_point(gun: &WeaponData) -> Mat4 {
     let points = &gun.m_InternalFirePositions;
     let cursor = gun.m_InternalFirePositionCurrentIndex;
     usize::try_from(cursor)

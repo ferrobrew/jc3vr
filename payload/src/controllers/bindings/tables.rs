@@ -45,6 +45,10 @@ pub struct Step {
     pub body_turn: f32,
     /// The seated crouch toggle was flicked this tick.
     pub crouch_toggle: bool,
+    /// The grab each hand's grip press started this tick, indexed by [`Hand::index`]: the volume the
+    /// hand was in at the press edge. The grabbing subsystems act on it; the tables inject nothing
+    /// for it.
+    pub grabs: [Option<GrabVolume>; 2],
 }
 
 /// The tables and their cross-tick state.
@@ -77,13 +81,13 @@ impl Bindings {
         dt: f32,
         config: &BindingsConfig,
     ) -> Step {
-        for hand in Hand::BOTH {
+        let grabs = Hand::BOTH.map(|hand| {
             latch_grip(
                 &mut self.grips[hand.index()],
                 controls.hand(hand).grip,
                 controls.hand(hand).grab_volume,
-            );
-        }
+            )
+        });
         let off_grapple = self.grips[controls.dominant.other().index()] == Some(GripUse::Default);
         let dom_grip = self.grips[controls.dominant.index()] == Some(GripUse::Default);
 
@@ -126,6 +130,7 @@ impl Bindings {
             desired: out.desired,
             body_turn,
             crouch_toggle,
+            grabs,
         }
     }
 }
@@ -136,20 +141,29 @@ impl Bindings {
 enum GripUse {
     /// The grip's default action (the off-hand's grapple, a vehicle weapon).
     Default,
-    /// A grab of the volume the hand was in. The grabbing subsystems consume it; the tables inject
+    /// A grab of the volume the hand was in, reported once in [`Step::grabs`]; the tables inject
     /// nothing for it.
-    #[allow(
-        dead_code,
-        reason = "read by the grabbing subsystems once grab volumes exist"
-    )]
     Grab(GrabVolume),
 }
 
-fn latch_grip(latch: &mut Option<GripUse>, grip: ButtonControl, volume: Option<GrabVolume>) {
+/// Latch a grip press at its press edge. Returns the volume a press latched as a grab this tick.
+fn latch_grip(
+    latch: &mut Option<GripUse>,
+    grip: ButtonControl,
+    volume: Option<GrabVolume>,
+) -> Option<GrabVolume> {
     if !grip.held() {
         *latch = None;
-    } else if latch.is_none() || (grip.pressed && grip.released && !grip.down) {
-        *latch = Some(volume.map_or(GripUse::Default, GripUse::Grab));
+        return None;
+    }
+    if latch.is_some() && !(grip.pressed && grip.released && !grip.down) {
+        return None;
+    }
+    let latched = volume.map_or(GripUse::Default, GripUse::Grab);
+    *latch = Some(latched);
+    match latched {
+        GripUse::Grab(volume) => Some(volume),
+        GripUse::Default => None,
     }
 }
 
@@ -257,9 +271,9 @@ fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool) {
     out.hold(off.a.held(), PAD_Y_ON_FOOT);
     out.hold(off.b.held(), PAD_B);
     out.hold(dom.stick_click.held(), PAD_RB_ON_FOOT);
-    // Until holsters exist, the move stick's click cycles the weapons. `NEXT_WEAPON` is a mouse
+    // Weapons are drawn at the holsters; the stick click is the fallback. `NEXT_WEAPON` is a mouse
     // wheel action: one click per step.
-    out.click(off.stick_click.pressed, NEXT_WEAPON);
+    out.click(c.weapon_cycle && off.stick_click.pressed, NEXT_WEAPON);
 }
 
 /// Seated in a vehicle.
@@ -432,7 +446,10 @@ mod tests {
     use glam::Vec2;
 
     use super::*;
-    use crate::controllers::{bindings::controls::HandControls, mode::OnFootVariant};
+    use crate::controllers::{
+        bindings::{controls::HandControls, grab::HolsterSite},
+        mode::OnFootVariant,
+    };
 
     const DT: f32 = 1.0 / 30.0;
     const CONFIG: BindingsConfig = BindingsConfig::new();
@@ -562,10 +579,14 @@ mod tests {
         let mut b = Bindings::default();
         let grab = controls(Hand::Right, |_, off| {
             off.grip = down();
-            off.grab_volume = Some(GrabVolume::Holster);
+            off.grab_volume = Some(GrabVolume::Holster(HolsterSite::Chest));
         });
         let step = b.step(ON_FOOT, &grab, DT, &CONFIG);
         assert_eq!(player(&step, FIRE_GRAPPLE), None);
+        assert_eq!(
+            step.grabs[Hand::Left.index()],
+            Some(GrabVolume::Holster(HolsterSite::Chest))
+        );
         // Leaving the volume mid-press keeps the press a grab.
         let left_volume = controls(Hand::Right, |_, off| {
             off.grip = ButtonControl {
@@ -575,10 +596,40 @@ mod tests {
         });
         let step = b.step(ON_FOOT, &left_volume, DT, &CONFIG);
         assert_eq!(player(&step, FIRE_GRAPPLE), None);
+        // The grab is reported once, at its press edge.
+        assert_eq!(step.grabs, [None; 2]);
         // A fresh press outside the volume grapples.
         b.step(ON_FOOT, &Controls::default(), DT, &CONFIG);
         let step = b.step(ON_FOOT, &left_volume, DT, &CONFIG);
         assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
+    }
+
+    #[test]
+    fn a_tap_between_ticks_in_a_volume_grabs_once() {
+        let mut b = Bindings::default();
+        let tap = controls(Hand::Right, |dom, _| {
+            dom.grip = ButtonControl {
+                down: false,
+                pressed: true,
+                released: true,
+            };
+            dom.grab_volume = Some(GrabVolume::Foregrip);
+        });
+        let step = b.step(ON_FOOT, &tap, DT, &CONFIG);
+        assert_eq!(step.grabs[Hand::Right.index()], Some(GrabVolume::Foregrip));
+        let step = b.step(ON_FOOT, &Controls::default(), DT, &CONFIG);
+        assert_eq!(step.grabs, [None; 2]);
+    }
+
+    #[test]
+    fn the_stick_click_cycles_weapons_only_as_the_fallback() {
+        let mut b = Bindings::default();
+        let mut c = controls(Hand::Right, |_, off| off.stick_click = down());
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, NEXT_WEAPON), None);
+        c.weapon_cycle = true;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, NEXT_WEAPON), Some(Want::Click));
     }
 
     #[test]
