@@ -28,7 +28,7 @@ python3 extract_sights.py \
 
 `--game` defaults to `$JC3_GAME_DIR`, then to the default Steam library path. `--gibbed-tools` defaults to `$JC3_GIBBED_TOOLS`. `--output` defaults to `sights.json` beside the script. `--dump DIR` writes every file embedded in each entity archive, plus the `.epe` in use, under `DIR/<weapon>/`. `--plots DIR` writes a side view and a top view per weapon: centreline vertices in red, the bore in blue, and the derived sight line and its two defining points in green. The run takes a couple of seconds and logs one line per weapon to stderr, including the reason for each doubtful or failed result.
 
-`sights.json` is generated but kept in the repository, like `payload/src/director/spawn_defs.json`: it is small, it is derived from game data that does not change, and regenerating it needs the game install. The `--dump` and `--plots` outputs are game content and review material, so write them outside the repository.
+`sights.json` is generated but kept in the repository, like `payload/src/director/spawn_defs.json`: it is small, it is derived from game data that does not change, and regenerating it needs the game install. The payload embeds it at build time (`payload/src/controllers/aim/sights/table.rs`), so a change to it takes effect on the next payload build. The `--dump` and `--plots` outputs are game content and review material, so write them outside the repository.
 
 ## Output
 
@@ -46,8 +46,17 @@ A JSON array with one object per weapon entity, sorted by name, one object per l
   - `pistol`: iron sights on a one-handed weapon (pistols, revolvers, SMGs, and the sawn-off shotgun) whose line passes the plausibility checks. The sights sit within about 1 cm of the fire point, so an error here is small.
   - `iron_uncertain`: iron sights on a two-handed weapon, or a one-handed result that fails the checks. These need review against the plots before use.
   - `failed`: no line was derived. The entry carries a zero offset and zero angles, which is the same as no correction.
+  - `tuned`: tuned in the headset and pasted in (see "Tuned entries"). The tool never derives this grade, and keeps these entries when it regenerates the table.
 
 The fields `weapon_hash`, `offset_m`, and `angles_deg` are the serde form of `SightOverride`, so each entry deserializes into one; `weapon` and `grade` are extra fields that serde ignores by default.
+
+## In the payload
+
+The payload looks a held weapon's sight correction up by `weapon_hash`: the per-weapon entry in the mod's config first, then this table, then none, which leaves the sight line on the fire point. It uses only the `scoped`, `pistol`, and `tuned` entries; an `iron_uncertain` or `failed` entry is not trusted and leaves the weapon on its fire point. See [`docs/mod/input/controllers.md`, "Sight lines"](../../docs/mod/input/controllers.md#sight-lines).
+
+## Tuned entries
+
+The payload's sight tuning tool, in the Controllers tab's aiming settings, captures a held weapon's offset from lining its sights up on a marker, and offers fine adjustment. Its values live in the mod's config, which is not saved, so its "Copy as JSON" button puts the weapon's entry on the clipboard as one line of this table, graded `tuned`. Paste it over the weapon's line here (or add it, for a weapon the table lacks) and rebuild the payload. A regeneration keeps every `tuned` entry of the existing output in place of the derived entry for its weapon hash, so `--output` must point at the file that holds them.
 
 ## Pipeline
 

@@ -80,6 +80,9 @@ pub struct Controls {
     pub dual_wield: bool,
     /// Whether the yank gesture fired this tick: a grapple tap.
     pub yank: bool,
+    /// Whether the sight tuning capture chord is armed: the tuning tool is on and its marker is
+    /// placed.
+    pub sight_chord: bool,
 }
 
 impl Controls {
@@ -116,6 +119,7 @@ impl Controls {
             weapon_cycle: false,
             dual_wield: false,
             yank: false,
+            sight_chord: false,
         }
     }
 

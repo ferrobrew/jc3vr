@@ -30,6 +30,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        aim::sights,
         bindings::{
             controls::{Controls, yaw_of},
             hold::{HoldTracker, MapKind, Phase},
@@ -154,6 +155,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.dual_wield = start.dual_wield;
+    controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
     weapons::dual_wield::observe_triggers(
         start.dual_wield,
         controls.hands.map(|h| TriggerInput {
@@ -184,6 +186,9 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         .step(detection.mode, &controls, dt, &config.bindings);
     if step.crouch_toggle {
         crate::controllers::roomscale::toggle_seated_crouch();
+    }
+    if step.sight_capture {
+        sights::tuning::request_capture();
     }
     weapons::finish_tick(
         &weapons::FinishInputs {

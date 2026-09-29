@@ -3,11 +3,14 @@
 
 use egui::Ui;
 
-use crate::controllers::weapons::{
-    config::{LensPath, LensSource, ScopeConfig},
-    scope::{
-        self, ScopeStatus,
-        suppress::{self, SuppressCounters},
+use crate::controllers::{
+    aim::sights::SightSource,
+    weapons::{
+        config::{LensPath, LensSource, ScopeConfig},
+        scope::{
+            self, ScopeStatus,
+            suppress::{self, SuppressCounters},
+        },
     },
 };
 
@@ -46,13 +49,13 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
     ));
     match &status.scope {
         Some(s) => ui.label(format!(
-            "Scope detected: {:#010x} in the {:?} hand · sight line {}",
+            "Scope detected: {:#010x} in the {:?} hand · sight line from {}",
             s.hash,
             s.hand,
-            if s.sight_corrected {
-                "corrected"
-            } else {
-                "uncorrected (along the barrel, below the scope)"
+            match s.sight {
+                SightSource::FirePoint =>
+                    "the fire point (along the barrel, below the scope)".to_owned(),
+                source => source.label(),
             }
         )),
         None => ui.label("Scope detected: no"),

@@ -47,7 +47,7 @@ use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 use crate::{
     config::Config,
     controllers::{
-        aim::{self, HandSource},
+        aim::{self, HandSource, sights::SightSource},
         frame::Hand,
         hands::late,
         overlay::view::{self, EyeView},
@@ -103,9 +103,9 @@ pub struct ScopeReadout {
     pub hash: u32,
     /// The hand that holds it.
     pub hand: Hand,
-    /// Whether the sight table corrects its sight line; without a correction the sight line runs
-    /// along the barrel, below the scope.
-    pub sight_corrected: bool,
+    /// Where its sight correction comes from; on the fire point the sight line runs along the
+    /// barrel, below the scope.
+    pub sight: SightSource,
 }
 
 /// The scopes' readout for the debug UI.
@@ -397,7 +397,7 @@ fn plan(enabled: bool, config: &ScopeConfig, anchor: &mut Option<(u64, SightAnch
     let scope = Some(ScopeReadout {
         hash: weapon.hash,
         hand,
-        sight_corrected: weapon.sight_corrected,
+        sight: weapon.sight.source,
     });
     let dtf = hooks::camera::last_dtf();
     let Some(wrist) = late::render_hands()[hand.index()].map(|h| h.wrist.at(dtf)) else {

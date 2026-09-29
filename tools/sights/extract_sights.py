@@ -42,7 +42,9 @@ ONE_HANDED = "01_one_handed"
 # - pistol: a one-handed weapon's iron sights, whose line passes the plausibility checks;
 # - iron_uncertain: an iron-sight line on a two-handed weapon, or one that fails the checks;
 # - failed: no line was derived, and the entry carries no correction.
-GRADES = ("scoped", "pistol", "iron_uncertain", "failed")
+# A fifth grade, tuned, is never derived: it marks an entry tuned in the headset and pasted into the
+# output, which a regeneration keeps (see ``_keep_tuned``).
+GRADES = ("tuned", "scoped", "pistol", "iron_uncertain", "failed")
 
 
 def main() -> int:
@@ -69,12 +71,29 @@ def main() -> int:
         if args.plots and loaded is not None:
             plot.side_view(loaded, line, args.plots / f"{entry['weapon']}.png")
 
+    table = _keep_tuned(table, args.output)
     table.sort(key=lambda e: e["weapon"])
     # One entry per line, so that a regenerated table diffs by weapon.
     args.output.write_text("[\n" + ",\n".join("  " + json.dumps(e) for e in table) + "\n]\n")
     counts = {grade: sum(e["grade"] == grade for e in table) for grade in GRADES}
     log.info("wrote %d entries to %s (%s)", len(table), args.output, ", ".join(f"{g}: {n}" for g, n in counts.items()))
     return 0
+
+
+def _keep_tuned(table: list[dict], output: Path) -> list[dict]:
+    """The derived table with every ``tuned`` entry of the existing output in place of the derived
+    entry for its weapon hash, so that values tuned in the headset survive a regeneration."""
+    try:
+        existing = json.loads(output.read_text())
+    except FileNotFoundError:
+        return table
+    except (OSError, ValueError) as e:
+        log.warning("could not read the existing table %s to keep its tuned entries: %s", output, e)
+        return table
+    tuned = {e["weapon_hash"]: e for e in existing if e.get("grade") == "tuned"}
+    for entry in tuned.values():
+        log.info("%s %#010x: keeping the tuned entry", entry["weapon"], entry["weapon_hash"])
+    return [e for e in table if e["weapon_hash"] not in tuned] + list(tuned.values())
 
 
 def _parse_args():

@@ -8,7 +8,9 @@
 //! - [`gun`]: the guns aim along their hands' sight lines, through the per-weapon update;
 //! - [`grapple`]: the grapple slot is filled from the off-hand's ray by the game's own targeting;
 //! - [`targets`]: the game's own aim candidates, which the target selections below share;
-//! - [`assist`]: per-hand aim assist over those candidates.
+//! - [`assist`]: per-hand aim assist over those candidates;
+//! - [`sights`]: each weapon's sight correction, looked up from the config and the embedded sight
+//!   table, and the in-headset tool that tunes it.
 //!
 //! Everything runs from the player aim control's post-simulation update ([`update_post_sim`]), the
 //! simulation-phase update where the game casts its own aim ray. Before the update, the hands are
@@ -28,6 +30,7 @@ pub mod grapple;
 pub mod gun;
 pub mod ray;
 pub mod raycast;
+pub mod sights;
 pub mod targets;
 
 use std::num::NonZeroUsize;
@@ -170,9 +173,11 @@ pub(crate) struct WorldHand {
     correction: Option<Pose>,
 }
 
-/// The tick's inputs: the configuration and each tracked hand's world poses.
+/// The tick's inputs: the configuration, the head's world pose, and each tracked hand's world
+/// poses.
 pub(crate) struct TickHands {
     config: ControllersConfig,
+    head: Pose,
     hands: [Option<WorldHand>; 2],
 }
 
@@ -258,7 +263,15 @@ fn begin() -> Result<TickHands, AimIdle> {
     if hands.iter().all(Option::is_none) {
         return Err(AimIdle::NoHands);
     }
-    Ok(TickHands { config, hands })
+    let head = Pose {
+        position: head.position,
+        orientation: (body * active.head.orientation).normalize(),
+    };
+    Ok(TickHands {
+        config,
+        head,
+        hands,
+    })
 }
 
 /// Cast the hand rays, assist the guns' aim points and publish them, hand the weapon handling its
@@ -331,6 +344,12 @@ unsafe fn finish(
         }
     });
     gun::publish(held, gun_targets);
+    sights::tuning::service(
+        &cfg.sight_tuning,
+        tick.head,
+        held.as_ref(),
+        tick.config.dominant_hand,
+    );
 
     let dominant = tick.config.dominant_hand;
     // SAFETY: the aim control is live for its own update, and the original has run.

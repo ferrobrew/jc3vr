@@ -10,7 +10,7 @@ use jc3gi::{
 };
 
 use crate::controllers::{
-    aim::{gun, ray},
+    aim::{gun, ray, sights},
     config::AimConfig,
     frame::{Hand, Pose},
     hands::{ik::TickTarget, late, pose as hand_pose},
@@ -97,9 +97,13 @@ pub unsafe fn measure_geometry(
     }
     let base = unsafe { (weapon.address as *const WeaponBase).as_ref() }?;
     let first = unsafe { gun::guns(base) }.next().flatten()?;
-    let sight = aim.sights.get(base.m_WeaponNameHash);
+    let sight = sights::resolve(&aim.sights, base.m_WeaponNameHash).sight;
     let fire_point = unsafe { gun::fire_point(first) };
-    let barrel_world = ray::sight_ray(Mat4::from(first.m_WorldMatrixT1), fire_point, sight)?;
+    let barrel_world = ray::sight_ray(
+        Mat4::from(first.m_WorldMatrixT1),
+        fire_point,
+        sight.as_ref(),
+    )?;
     let to_wrist = hand_pose::inverse(target.wrist);
     let barrel = (to_wrist.orientation * barrel_world.direction).try_normalize()?;
 

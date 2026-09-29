@@ -39,6 +39,7 @@ use crate::{
         aim::{
             TickHands,
             ray::{self, Ray},
+            sights::{self, ResolvedSight},
         },
         config::AimConfig,
         frame::Hand,
@@ -62,8 +63,11 @@ pub struct HeldWeapon {
     pub hash: u32,
     /// The hand each gun rides, indexed by gun; `None` for a gun off the hands.
     pub gun_hands: [Option<Hand>; MAX_GUNS],
-    /// Whether the sight table corrects this weapon.
-    pub sight_corrected: bool,
+    /// The weapon's sight correction and where it came from.
+    pub sight: ResolvedSight,
+    /// The world frame of the fire point of the gun each hand aims, indexed by [`Hand::index`]: the
+    /// gun carried to the controller's current pose, composed with its current fire point.
+    pub fire_frames: [Option<Mat4>; 2],
 }
 
 /// The most guns per weapon the gun aim tracks. A dual-wield weapon has two.
@@ -105,8 +109,8 @@ pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<&'static WeaponBas
     (owned && wielded).then_some(weapon)
 }
 
-/// The sight line of each hand that holds a gun of `weapon`, and the weapon's readout. A hand
-/// holding two guns takes the first.
+/// The sight line of each hand that holds a gun of `weapon`, with the weapon's sight correction
+/// ([`sights::resolve`]), and the weapon's readout. A hand holding two guns takes the first.
 ///
 /// # Safety
 ///
@@ -116,12 +120,13 @@ pub(super) unsafe fn sight_rays(
     hands: &TickHands,
     config: &AimConfig,
 ) -> (HeldWeapon, [Option<(usize, Ray)>; 2]) {
-    let sight = config.sights.get(weapon.m_WeaponNameHash);
+    let sight = sights::resolve(&config.sights, weapon.m_WeaponNameHash);
     let mut held = HeldWeapon {
         address: weapon as *const WeaponBase as usize,
         hash: weapon.m_WeaponNameHash,
         gun_hands: [None; MAX_GUNS],
-        sight_corrected: sight.is_some(),
+        sight,
+        fire_frames: [None; 2],
     };
     let mut rays = [None; 2];
     for (index, gun) in unsafe { guns(weapon) }.take(MAX_GUNS).enumerate() {
@@ -144,7 +149,9 @@ pub(super) unsafe fn sight_rays(
         let correction = hands.hands[hand.index()].and_then(|h| h.correction);
         let world = ray::corrected_gun(Mat4::from(gun.m_WorldMatrixT1), correction);
         let fire_point = unsafe { fire_point(gun) };
-        rays[hand.index()] = ray::sight_ray(world, fire_point, sight).map(|r| (index, r));
+        held.fire_frames[hand.index()] = Some(world * fire_point);
+        rays[hand.index()] =
+            ray::sight_ray(world, fire_point, sight.sight.as_ref()).map(|r| (index, r));
     }
     (held, rays)
 }

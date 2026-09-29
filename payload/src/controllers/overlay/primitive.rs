@@ -29,10 +29,12 @@ pub enum Source {
     VehicleControls,
     /// The ring at a hand holding a primed grenade, warning of its fuse.
     GrenadeWarning,
+    /// The sight tuning tool's line-up marker.
+    SightTuning,
 }
 
 impl Source {
-    pub const COUNT: usize = 8;
+    pub const COUNT: usize = 9;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -44,6 +46,7 @@ impl Source {
         Source::DebugGizmos,
         Source::VehicleControls,
         Source::GrenadeWarning,
+        Source::SightTuning,
     ];
 
     pub const fn index(self) -> usize {
@@ -56,6 +59,7 @@ impl Source {
             Source::DebugGizmos => 5,
             Source::VehicleControls => 6,
             Source::GrenadeWarning => 7,
+            Source::SightTuning => 8,
         }
     }
 
@@ -69,6 +73,7 @@ impl Source {
             Source::DebugGizmos => "controller gizmos",
             Source::VehicleControls => "vehicle controls",
             Source::GrenadeWarning => "grenade fuse warning",
+            Source::SightTuning => "sight tuning marker",
         }
     }
 }

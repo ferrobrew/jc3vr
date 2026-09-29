@@ -62,11 +62,16 @@ pub fn corrected_gun(gun: Mat4, correction: Option<Pose>) -> Mat4 {
 pub fn sight_ray(gun: Mat4, fire_point: Mat4, sight: Option<&SightOverride>) -> Option<Ray> {
     let composed = gun * fire_point;
     let (offset, angles) = sight.map_or((Vec3::ZERO, Vec2::ZERO), |s| (s.offset_m, s.angles_deg));
-    let local = sight_turn(angles) * Vec3::NEG_Z;
     Ray::new(
         composed.transform_point3(offset),
-        composed.transform_vector3(local),
+        composed.transform_vector3(sight_direction(angles)),
     )
+}
+
+/// The sight line's direction in the fire point's frame: the barrel axis, -Z, turned by `angles`
+/// (pitch and yaw, degrees).
+pub fn sight_direction(angles: Vec2) -> Vec3 {
+    sight_turn(angles) * Vec3::NEG_Z
 }
 
 /// The rotation from the barrel axis to the sight line: `angles.x` pitches up (about +X) and

@@ -1,5 +1,5 @@
 //! The overlay's own producers: the grapple highlight and gauntlet beam, the guns' dot or laser,
-//! the ghosts of yielded hands, and the controller gizmos. Each builds its primitives from a
+//! the ghosts of yielded hands, the controller gizmos, and the sight tuning marker. Each builds its primitives from a
 //! published readout, behind its toggle in [`OverlayConfig`].
 //!
 //! [`tick`] runs once per rendered frame on the render thread, before the first eye's draw. The
@@ -7,7 +7,8 @@
 //! the aim has run since their last submission, and their slots expire on their own when it stops
 //! (a menu, the gamepad scheme, an idle update). Their hand-attached ends are anchored to the hand,
 //! so they still follow the controller at frame rate. The ghost hands and the gizmos follow the
-//! render-time hand poses and submit every frame.
+//! render-time hand poses and submit every frame, as does the sight tuning marker, which stays
+//! where it was placed.
 //!
 //! The grab-volume highlights are the holsters' to produce, into [`Source::GrabVolumes`].
 
@@ -21,7 +22,7 @@ use glam::Vec3;
 use crate::{
     config::Config,
     controllers::{
-        aim::{self, GrappleAim, HandAim, HandSource, raycast::RayHit},
+        aim::{self, GrappleAim, HandAim, HandSource, raycast::RayHit, sights::tuning},
         config::{GunReadout, OverlayConfig},
         frame::Hand,
         hands::tiers,
@@ -38,11 +39,12 @@ use crate::{
 /// Build and submit every producer's primitives for this frame, given the render-time hand poses.
 /// Every producer's slot is cleared while `active` is false.
 pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
-    let (config, dominant, grapple_origin) = Config::lock_query(|c| {
+    let (config, dominant, grapple_origin, sight_tuning) = Config::lock_query(|c| {
         (
             c.controllers.overlay,
             c.controllers.dominant_hand,
             c.controllers.aim.grapple_origin_m,
+            c.controllers.aim.sight_tuning.enabled,
         )
     });
     if !active {
@@ -106,6 +108,17 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
         FRAME_TTL,
         |out| {
             gizmos(hands, out);
+        },
+        &mut prims,
+    );
+    submit_or_clear(
+        Source::SightTuning,
+        sight_tuning,
+        FRAME_TTL,
+        |out| {
+            if let Some(marker) = tuning::status().marker {
+                sight_marker(marker, status.hands[dominant.index()], out);
+            }
         },
         &mut prims,
     );
@@ -293,13 +306,47 @@ pub fn gizmos(hands: &[Option<HandPoses>; 2], out: &mut Vec<Primitive>) {
     }
 }
 
+/// The sight tuning marker: a ring and a centre dot at the marker, over the scene, and a dot where
+/// the dominant hand's sight line passes closest to it, while that hand aims a gun.
+pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primitive>) {
+    for (shape, size) in [
+        (Shape::Ring { thickness: 0.25 }, MARKER_RING_RAD),
+        (Shape::Disc, MARKER_DOT_RAD),
+    ] {
+        out.push(Primitive::Sprite {
+            at: Anchor::World(marker),
+            size: SpriteSize::Angular(size),
+            facing: Facing::Billboard,
+            shape,
+            color: MARKER,
+            depth: DepthMode::Always,
+        });
+    }
+    let Some(aim) = dominant.filter(|a| matches!(a.source, HandSource::Gun { .. })) else {
+        return;
+    };
+    let along = (marker - aim.ray.origin).dot(aim.ray.direction);
+    if along <= 0.0 {
+        return;
+    }
+    out.push(Primitive::Sprite {
+        at: Anchor::World(aim.ray.at(along)),
+        size: SpriteSize::Angular(MARKER_DOT_RAD),
+        facing: Facing::Billboard,
+        shape: Shape::Disc,
+        color: LASER,
+        depth: DepthMode::Always,
+    });
+}
+
 /// The sources [`tick`] produces.
-const PRODUCED: [Source; 5] = [
+const PRODUCED: [Source; 6] = [
     Source::GrappleHighlight,
     Source::GrappleBeam,
     Source::GunReadout,
     Source::GhostHands,
     Source::DebugGizmos,
+    Source::SightTuning,
 ];
 
 /// The time to live of the sim-rate producers' slots: a few sim ticks.
@@ -314,6 +361,7 @@ const GRAPPLE: Rgba = [0.3, 0.9, 1.0, 0.9];
 const TETHER: Rgba = [1.0, 0.65, 0.15, 0.95];
 const LASER: Rgba = [1.0, 0.15, 0.1, 0.95];
 const GHOST: Rgba = [0.85, 0.92, 1.0, 0.6];
+const MARKER: Rgba = [1.0, 0.9, 0.2, 0.95];
 
 /// How close the off-hand's hit must be to the grapple's point for the highlight to take its
 /// surface normal.
@@ -327,6 +375,8 @@ const GHOST_POINTER_M: f32 = 0.12;
 const GHOST_POINTER_WIDTH_M: f32 = 0.012;
 const GIZMO_AXIS_M: f32 = 0.08;
 const GIZMO_WIDTH_M: f32 = 0.004;
+const MARKER_RING_RAD: f32 = 0.02;
+const MARKER_DOT_RAD: f32 = 0.003;
 
 /// Build `source`'s primitives into `buffer` and submit them while `enabled`, or clear the slot.
 fn submit_or_clear(
@@ -502,5 +552,31 @@ mod tests {
         let mut out = Vec::new();
         gizmos(&[Some(poses(Vec3::ZERO)), None], &mut out);
         assert_eq!(out.len(), 6);
+    }
+
+    #[test]
+    fn the_sight_marker_shows_where_the_gun_passes_it() {
+        let marker = Vec3::new(0.0, 0.0, -10.0);
+        let mut out = Vec::new();
+        sight_marker(marker, None, &mut out);
+        assert_eq!(out.len(), 2);
+
+        let aim = HandAim {
+            source: HandSource::Gun { gun: 0 },
+            ray: Ray::new(Vec3::new(0.0, 0.1, 0.0), Vec3::NEG_Z).unwrap(),
+            hit: None,
+            target: Vec3::new(0.0, 0.1, -500.0),
+        };
+        out.clear();
+        sight_marker(marker, Some(aim), &mut out);
+        assert_eq!(out.len(), 3);
+        let Primitive::Sprite {
+            at: Anchor::World(dot),
+            ..
+        } = out[2]
+        else {
+            panic!("no gun dot");
+        };
+        assert!(dot.distance(Vec3::new(0.0, 0.1, -10.0)) < 1e-5);
     }
 }

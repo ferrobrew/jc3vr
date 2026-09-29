@@ -13,6 +13,7 @@ mod overlay;
 mod roomscale;
 mod scope;
 mod settings;
+mod sights;
 mod vehicles;
 mod weapons;
 

@@ -21,6 +21,12 @@
 //! toggles the seated crouch ([`crate::controllers::roomscale::toggle_seated_crouch`]). The stick's
 //! vertical axis is otherwise unused on foot, where only its horizontal axis turns the body, and the
 //! flick works the same on the Index and Touch controllers.
+//!
+//! One chord drives the mod as well, and only while the sight tuning tool's marker is placed
+//! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
+//! held weapon's sight offset ([`crate::controllers::aim::sights::tuning`]). While it is armed, the
+//! dominant grip withholds the off-hand's grapple (squeeze the dominant grip first) and both grips
+//! withhold the dominant A's jump, so the chord neither grapples nor jumps.
 
 use jc3gi::input::input_action_map::Action::{self, *};
 
@@ -49,6 +55,8 @@ pub struct Step {
     /// hand was in at the press edge. The grabbing subsystems act on it; the tables inject nothing
     /// for it.
     pub grabs: [Option<GrabVolume>; 2],
+    /// The sight tuning capture chord was pressed this tick.
+    pub sight_capture: bool,
 }
 
 /// The tables and their cross-tick state.
@@ -92,9 +100,12 @@ impl Bindings {
         let dom_grip = self.grips[controls.dominant.index()] == Some(GripUse::Default);
 
         let mut out = Out::new(MapKind::Player);
+        let mut sight_capture = false;
         let body_turn = match mode {
             Mode::OnFoot(_) => {
-                on_foot(&mut out, controls, off_grapple);
+                let chord = SightChord::of(controls);
+                sight_capture = chord.capture;
+                on_foot(&mut out, controls, off_grapple, chord);
                 controls.dom().stick_raw.x
             }
             Mode::Vehicle(seat) => {
@@ -131,6 +142,7 @@ impl Bindings {
             body_turn,
             crouch_toggle,
             grabs,
+            sight_capture,
         }
     }
 }
@@ -184,6 +196,34 @@ fn flick_down(fired: &mut bool, y: f32, threshold: f32) -> bool {
         true
     } else {
         false
+    }
+}
+
+/// The sight tuning capture chord on foot: both grips held and the dominant A pressed, armed only
+/// while [`Controls::sight_chord`] is set.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+struct SightChord {
+    /// The dominant grip is held with the chord armed: the off-hand's grapple is withheld.
+    dominant_grip: bool,
+    /// Both grips are held with the chord armed: the dominant A's jump is withheld.
+    armed: bool,
+    /// The dominant A was pressed with both grips held.
+    capture: bool,
+}
+
+impl SightChord {
+    fn of(c: &Controls) -> Self {
+        if !c.sight_chord {
+            return Self::default();
+        }
+        let (dom, off) = (c.dom(), c.off());
+        let dominant_grip = dom.grip.held();
+        let armed = dominant_grip && off.grip.held();
+        Self {
+            dominant_grip,
+            armed,
+            capture: armed && dom.a.pressed,
+        }
     }
 }
 
@@ -256,7 +296,7 @@ const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, FIRE_GRAPPLE,
 const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 
 /// On foot and swimming.
-fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool) {
+fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool, chord: SightChord) {
     let (dom, off) = (c.dom(), c.off());
     let stick = rotate_stick(off.stick, c.move_rotation);
     out.axis(stick.y, MOVE_BACKWARD, MOVE_FORWARD);
@@ -274,8 +314,11 @@ fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool) {
         out.hold(off.trigger_press.held(), &[RETRACT_GRAPPLE, L2]);
     }
     // A yank is a one-tick press, which the game reads as a tap.
-    out.hold(off_grapple || c.yank, &[FIRE_GRAPPLE, L1]);
-    out.hold(dom.a.held(), PAD_A);
+    out.hold(
+        (off_grapple && !chord.dominant_grip) || c.yank,
+        &[FIRE_GRAPPLE, L1],
+    );
+    out.hold(dom.a.held() && !chord.armed, PAD_A);
     out.hold(dom.b.held(), PAD_X_ON_FOOT);
     out.hold(off.a.held(), PAD_Y_ON_FOOT);
     out.hold(off.b.held(), PAD_B);
@@ -822,5 +865,65 @@ mod tests {
         assert!(!flick_down(&mut fired, -0.3, 0.8));
         assert!(flick_down(&mut fired, -0.85, 0.8));
         assert!(!flick_down(&mut fired, f32::NAN, 0.8));
+    }
+
+    #[test]
+    fn the_sight_chord_captures_without_jumping_or_grappling() {
+        let mut b = Bindings::default();
+        let mut c = controls(Hand::Right, |dom, off| {
+            dom.grip = down();
+            off.grip = down();
+            dom.a = down();
+        });
+        c.sight_chord = true;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert!(step.sight_capture);
+        assert_eq!(player(&step, JUMP), None);
+        assert_eq!(player(&step, FIRE_GRAPPLE), None);
+    }
+
+    #[test]
+    fn the_sight_chord_captures_only_on_the_press() {
+        let mut b = Bindings::default();
+        let mut c = controls(Hand::Right, |dom, off| {
+            dom.grip = down();
+            off.grip = down();
+            dom.a = ButtonControl {
+                down: true,
+                ..Default::default()
+            };
+        });
+        c.sight_chord = true;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert!(!step.sight_capture);
+        assert_eq!(player(&step, JUMP), None);
+    }
+
+    #[test]
+    fn a_disarmed_sight_chord_leaves_the_bindings_alone() {
+        let mut b = Bindings::default();
+        let c = controls(Hand::Right, |dom, off| {
+            dom.grip = down();
+            off.grip = down();
+            dom.a = down();
+        });
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert!(!step.sight_capture);
+        assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
+    }
+
+    #[test]
+    fn the_sight_chord_needs_both_grips() {
+        let mut b = Bindings::default();
+        let mut c = controls(Hand::Right, |_, off| {
+            off.grip = down();
+        });
+        c.hands[1].a = down();
+        c.sight_chord = true;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert!(!step.sight_capture);
+        assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
     }
 }

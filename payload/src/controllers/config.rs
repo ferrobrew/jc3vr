@@ -384,8 +384,12 @@ pub struct AimConfig {
     /// the fingers, +Y out of the back of the hand), metres. The gauntlet sits on the forearm just
     /// behind the wrist.
     pub grapple_origin_m: glam::Vec3,
-    /// Per-weapon corrections to the sight line derived from the fire point.
+    /// Per-weapon corrections to the sight line derived from the fire point. An entry here takes
+    /// precedence over the embedded sight table
+    /// ([`crate::controllers::aim::sights`]); a weapon in neither aims from the fire point.
     pub sights: SightTable,
+    /// The in-headset sight tuning tool.
+    pub sight_tuning: SightTuningConfig,
 }
 
 impl AimConfig {
@@ -400,6 +404,28 @@ impl AimConfig {
             min_target_distance_m: 2.0,
             grapple_origin_m: glam::Vec3::ZERO,
             sights: SightTable::EMPTY,
+            sight_tuning: SightTuningConfig::new(),
+        }
+    }
+}
+
+/// The in-headset sight tuning tool (see [`crate::controllers::aim::sights::tuning`]): a marker
+/// placed ahead of the head, and a capture that stores the held weapon's sight offset that makes
+/// its sight line pass through the marker.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct SightTuningConfig {
+    /// Offer the tuning tool: the line-up marker, the capture, and the capture chord (both grips
+    /// held and the dominant A pressed, on foot, while the marker is placed).
+    pub enabled: bool,
+    /// How far ahead of the head the marker is placed, metres.
+    pub marker_distance_m: f32,
+}
+
+impl SightTuningConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            marker_distance_m: 10.0,
         }
     }
 }
@@ -438,8 +464,10 @@ pub struct SightTable {
 }
 
 impl SightTable {
-    /// How many weapons can carry a correction.
-    pub const CAPACITY: usize = 16;
+    /// How many weapons can carry a correction. The embedded sight table covers the weapons it
+    /// trusts, so this holds only the weapons tuned or corrected by hand: room for every weapon the
+    /// embedded table does not trust, in one session. Serde derives arrays up to this length.
+    pub const CAPACITY: usize = 32;
 
     pub const EMPTY: SightTable = SightTable {
         entries: [None; SightTable::CAPACITY],
@@ -453,15 +481,21 @@ impl SightTable {
             .find(|entry| entry.weapon_hash == weapon_hash)
     }
 
-    /// Add an identity correction for `weapon_hash`, unless it has one. Returns whether the table
-    /// holds one afterwards; `false` means the table is full.
-    pub fn insert(&mut self, weapon_hash: u32) -> bool {
-        if self.get(weapon_hash).is_some() {
+    /// Set the correction for its weapon, replacing any it has. Returns whether the table holds it
+    /// afterwards; `false` means the table is full.
+    pub fn set(&mut self, sight: SightOverride) -> bool {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .flatten()
+            .find(|entry| entry.weapon_hash == sight.weapon_hash)
+        {
+            *entry = sight;
             return true;
         }
         match self.entries.iter_mut().find(|entry| entry.is_none()) {
             Some(slot) => {
-                *slot = Some(SightOverride::identity(weapon_hash));
+                *slot = Some(sight);
                 true
             }
             None => false,
@@ -823,10 +857,14 @@ mod tests {
     #[test]
     fn the_sight_table_keys_by_weapon_hash() {
         let mut table = SightTable::EMPTY;
-        assert!(table.insert(7));
-        assert!(table.insert(7));
+        assert!(table.set(SightOverride::identity(7)));
+        let raised = SightOverride {
+            offset_m: glam::Vec3::Y * 0.05,
+            ..SightOverride::identity(7)
+        };
+        assert!(table.set(raised));
         assert_eq!(table.entries.iter().flatten().count(), 1);
-        assert_eq!(table.get(7), Some(&SightOverride::identity(7)));
+        assert_eq!(table.get(7), Some(&raised));
         table.remove(7);
         assert!(table.get(7).is_none());
     }
@@ -835,9 +873,9 @@ mod tests {
     fn a_full_sight_table_refuses_a_new_weapon() {
         let mut table = SightTable::EMPTY;
         for hash in 0..SightTable::CAPACITY as u32 {
-            assert!(table.insert(hash));
+            assert!(table.set(SightOverride::identity(hash)));
         }
-        assert!(!table.insert(1000));
-        assert!(table.insert(3));
+        assert!(!table.set(SightOverride::identity(1000)));
+        assert!(table.set(SightOverride::identity(3)));
     }
 }

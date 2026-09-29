@@ -1,16 +1,19 @@
 //! Per-hand aiming: each hand's ray and hit, the grapple's target, the per-weapon aim points, the
-//! gamepad-semantics pin, and the aim settings with the per-weapon sight table.
+//! gamepad-semantics pin, and the aim settings with the per-weapon sight table and the sight tuning
+//! tool ([`crate::ui::controllers::sights`]).
 
 use egui::Ui;
 
 use crate::{
     controllers::{
-        aim::{self, AimIdle, AimStatus, HandAim, HandSource, gun::GunCounters},
-        config::{ControllersConfig, SightTable},
+        aim::{
+            self, AimIdle, AimStatus, HandAim, HandSource, gun::GunCounters, sights as aim_sights,
+        },
+        config::{ControllersConfig, SightOverride, SightTable},
         frame::Hand,
         gamepad_setting::SettingStatus,
     },
-    ui::controllers::{vec3, vec3_drag, yes_no},
+    ui::controllers::{sights, vec3, vec3_drag, yes_no},
 };
 
 pub(super) fn aim_readout(
@@ -31,18 +34,14 @@ pub(super) fn aim_readout(
     }
     ui.label(match status.weapon {
         Some(w) => format!(
-            "Weapon {:08x} · guns in hands {} · sight {}",
+            "Weapon {:08x} · guns in hands {} · sight from {}",
             w.hash,
             w.gun_hands
                 .iter()
                 .map(|h| h.map_or("-", Hand::label))
                 .collect::<Vec<_>>()
                 .join("/"),
-            if w.sight_corrected {
-                "corrected"
-            } else {
-                "derived"
-            }
+            w.sight.source.label()
         ),
         None => "Weapon: none wielded".to_owned(),
     });
@@ -115,6 +114,7 @@ pub(super) fn aim_settings(ui: &mut Ui, c: &mut ControllersConfig) {
         "Hold the game's active-input-device setting at the gamepad under the controller scheme: \
          aim assist, tap-style melee, and gamepad prompts.",
     );
+    egui::CollapsingHeader::new("Sight tuning").show(ui, |ui| sights::sight_tuning(ui, c));
     egui::CollapsingHeader::new("Sight corrections")
         .show(ui, |ui| sight_table(ui, &mut c.aim.sights));
 }
@@ -128,7 +128,11 @@ fn sight_table(ui: &mut Ui, table: &mut SightTable) {
         ui.label(label);
         if let Some(hash) = held
             && ui.button("Add a correction").clicked()
-            && !table.insert(hash)
+            && !table.set(
+                aim_sights::resolve(table, hash)
+                    .sight
+                    .unwrap_or(SightOverride::identity(hash)),
+            )
         {
             tracing::warn!(target: "controllers", "aim: the sight table is full");
         }
