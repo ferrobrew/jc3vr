@@ -83,7 +83,19 @@ pub(super) fn aim_settings(ui: &mut Ui, c: &mut ControllersConfig) {
         .on_hover_text("Each gun aims along its hand's sight line instead of the gaze.");
     ui.checkbox(&mut a.grapple, "Grapple aim from the off-hand")
         .on_hover_text("The grapple targets along the off-hand's ray, with the game's targeting.");
-    ui.add(egui::Slider::new(&mut a.assist_strength, 0.0..=1.0).text("Aim assist"));
+    ui.add(egui::Slider::new(&mut a.assist_strength, 0.0..=1.0).text("Aim assist"))
+        .on_hover_text("How far each gun hand's aim moves toward the game's best target along it.");
+    ui.add_enabled_ui(a.assist_strength > 0.0, |ui| {
+        ui.add(
+            egui::Slider::new(&mut a.assist_max_distance_m, 5.0..=500.0)
+                .logarithmic(true)
+                .text("Aim assist reach (m)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut a.assist_occlusion_tolerance_m, 0.0..=3.0)
+                .text("Aim assist line-of-sight tolerance (m)"),
+        );
+    });
     ui.add(
         egui::Slider::new(&mut a.max_distance_m, 10.0..=2000.0)
             .logarithmic(true)

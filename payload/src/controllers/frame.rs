@@ -29,6 +29,8 @@ use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::controllers::motion;
+
 /// A hand, and the index of its entry in the per-hand arrays ([`ControllerFrame::hands`],
 /// [`Edges`]). The left hand is index 0.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -518,6 +520,7 @@ pub(crate) fn publish(mut frame: ControllerFrame) {
     });
     let current = [frame.hands[0].buttons, frame.hands[1].buttons];
     slot.edges.accumulate(previous, current);
+    motion::record(&frame);
     slot.frame = Some(frame);
 }
 
@@ -528,6 +531,7 @@ pub(crate) fn clear() {
     let mut slot = SLOT.lock();
     slot.frame = None;
     slot.edges = Edges::default();
+    motion::clear();
 }
 
 /// The published frame and the edge latch, under one lock so that a publish and a take never

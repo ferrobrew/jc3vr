@@ -1,8 +1,8 @@
-//! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads", and
-//! "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
+//! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads",
+//! "Grenades", "Melee", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`volumes`]: the body's grab volumes (the holsters and the grenade pouch), placed from the
-//!   body dimensions;
+//! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, and the magazine
+//!   pouch), placed from the body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
@@ -10,6 +10,9 @@
 //! - [`haptics`]: the game's rumbles and the grapple's pulses routed to the hands;
 //! - [`dual_wield`]: each dual-wielded pistol fired by its own hand's trigger;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
+//! - [`grenade`]: the physical grenade throw;
+//! - [`melee`]: melee attacks from physical strikes;
+//! - [`magazine`]: the magazine reload gesture;
 //! - [`config`]: the weapon-handling settings.
 //!
 //! The weapon handling runs on the input tick, in two halves around the bindings' tables
@@ -20,9 +23,10 @@
 //!    latch at the grip's press edge. A hand holding the foregrip is always in it, so that its next
 //!    grip press lets go rather than firing the grapple.
 //! 2. [`finish_tick`] acts on the grabs the tables report: a holster grab draws or holsters, a
-//!    foregrip grab engages or releases the two-handed grip, and a grenade-pouch grab does nothing
-//!    until the physical throw exists. It also holds the fire inputs back while a reload, a draw, or
-//!    a holster plays (the action-runs hand tier).
+//!    foregrip grab engages or releases the two-handed grip, a grenade-pouch grab primes a grenade
+//!    for the throw, and a magazine-pouch grab takes a magazine for the reload gesture. It runs the
+//!    throw, the strike detector, and the magazine gesture, and holds the fire inputs back while a
+//!    reload, a draw, or a holster plays (the action-runs hand tier).
 //!
 //! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights are
 //! submitted to the overlay's [`Source::GrabVolumes`] slot. Everything acts only while the bindings
@@ -34,8 +38,11 @@ pub mod dual_wield;
 mod engine;
 mod fire;
 pub mod foregrip;
+pub mod grenade;
 pub mod haptics;
 pub mod holster;
+pub mod magazine;
+pub mod melee;
 pub mod recoil;
 pub mod volumes;
 
@@ -50,6 +57,7 @@ use crate::{
     config::Config,
     controllers::{
         bindings::{
+            controls::ButtonControl,
             grab::{self, Candidate, GrabVolume},
             hold::{Desired, MapKind, Target, Want},
         },
@@ -60,7 +68,7 @@ use crate::{
             self, ActiveHands, ik, pose as hand_pose,
             tiers::{self, HandTier, TierState},
         },
-        mode::{AirborneVariant, Mode, OnFootVariant},
+        mode::{AirborneVariant, Detection, Mode, OnFootVariant},
         overlay::{
             primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
             store,
@@ -69,6 +77,7 @@ use crate::{
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             holster::HolsterAction,
+            magazine::{GestureEvent, GestureInputs, MagazineGesture},
         },
     },
     headpose,
@@ -80,6 +89,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(fire::hook_library())
         .with_hook_library(haptics::hook_library())
         .with_hook_library(camera_kick::hook_library())
+        .with_hook_library(grenade::hook_library())
 }
 
 /// What the first half of the weapon handling's input tick hands the bindings.
@@ -100,8 +110,10 @@ pub enum GrabOutcome {
     Foregrip(Transition),
     /// A foregrip grab that could not engage: the weapon's geometry is not measured yet.
     ForegripUnmeasured,
-    /// A grenade-pouch grab: the physical throw does not exist yet.
+    /// A grenade-pouch grab: a grenade is asked for.
     Pouch,
+    /// A magazine-pouch grab: a magazine is taken for the reload gesture.
+    Magazine,
 }
 
 impl GrabOutcome {
@@ -114,7 +126,8 @@ impl GrabOutcome {
                 format!("foregrip released ({})", r.label())
             }
             GrabOutcome::ForegripUnmeasured => "foregrip not measured yet".to_owned(),
-            GrabOutcome::Pouch => "grenade pouch (the throw is not built)".to_owned(),
+            GrabOutcome::Pouch => "grenade asked for".to_owned(),
+            GrabOutcome::Magazine => "magazine taken".to_owned(),
         }
     }
 }
@@ -150,6 +163,8 @@ pub struct WeaponsStatus {
     /// The most recent grabs, newest last.
     pub events: Vec<GrabEvent>,
     pub grabs: u64,
+    /// The magazine reload gesture.
+    pub magazine: MagazineGesture,
 }
 
 pub fn status() -> WeaponsStatus {
@@ -190,18 +205,47 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
 
     let mut candidates = Vec::new();
-    if gameplay && config.weapons.holsters.enabled {
-        let origin = volumes::body_origin(
-            active.head.position,
-            config.weapons.holsters.crouch_deadband_m,
-        );
-        let dims = body_dimensions(&config);
+    let origin = volumes::body_origin(
+        active.head.position,
+        config.weapons.holsters.crouch_deadband_m,
+    );
+    let dims = body_dimensions(&config);
+    if gameplay && (config.weapons.holsters.enabled || config.weapons.grenade_throw) {
         candidates = volumes::holster_candidates(
             origin,
             &dims,
             &config.weapons.holsters,
             config.dominant_hand,
+            config.weapons.grenade_throw,
         );
+        if !config.weapons.holsters.enabled {
+            candidates.retain(|c| c.volume == GrabVolume::GrenadePouch);
+        }
+    }
+    let off = config.dominant_hand.other();
+    let well = weapon
+        .filter(|w| {
+            gameplay
+                && config.weapons.reload_gesture
+                && w.holder == Some(config.dominant_hand)
+                && !w.wielded.hands[off.index()]
+        })
+        .and_then(|w| {
+            let holder = w.holder?;
+            let wrist = active.hands[holder.index()]?.wrist;
+            Some(magazine::well_point(
+                wrist,
+                holder,
+                config.weapons.magazine.well_offset_m,
+            ))
+        });
+    if well.is_some() {
+        candidates.push(volumes::magazine_pouch(
+            origin,
+            &dims,
+            &config.weapons.magazine.pouch,
+            off,
+        ));
     }
     let hold = foregrip::status().hold.filter(|h| h.engaged);
     let foregrip_hand = weapon.and_then(|w| w.holder).map(Hand::other);
@@ -232,19 +276,42 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
     state.gameplay = gameplay;
+    state.well = well;
+    let holding_magazine = state.status.magazine.stage != magazine::MagazineStage::Idle;
     drop(state);
 
-    submit_highlights(&config, &active, &candidates, volumes);
+    let well_ring = well
+        .filter(|_| holding_magazine)
+        .map(|centre| (centre, config.weapons.magazine.well_radius_m));
+    submit_highlights(&config, &active, &candidates, volumes, well_ring);
     TickStart {
         volumes,
         dual_wield,
     }
 }
 
-/// The second half of the weapon handling's input tick: act on the tick's grabs and hold the fire
-/// inputs back during a weapon action. `desired` is the tables' output, which a draw adds its
-/// slot-select click to.
-pub(crate) fn finish_tick(grabs: [Option<GrabVolume>; 2], desired: &mut Vec<Desired>, dt: f32) {
+/// What the bindings hand the second half of the weapon handling's input tick.
+pub(crate) struct FinishInputs {
+    /// The grab volume each hand grabbed this tick, indexed by [`Hand::index`].
+    pub grabs: [Option<GrabVolume>; 2],
+    /// Each hand's grip over the tick.
+    pub grips: [ButtonControl; 2],
+    pub detection: Detection,
+    /// The engine's tick delta, seconds.
+    pub dt: f32,
+}
+
+/// The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
+/// throw, the strike detector, and the magazine gesture, and hold the fire inputs back during a
+/// weapon action. `desired` is the tables' output, which a draw adds its slot-select click to, a
+/// strike its melee click, and an inserted magazine its reload click.
+pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+    let FinishInputs {
+        grabs,
+        grips,
+        detection,
+        dt,
+    } = *inputs;
     let config = Config::lock_query(|c| c.controllers);
     let active = hands::active_hands_raw();
     let (weapon, gameplay) = {
@@ -293,6 +360,7 @@ pub(crate) fn finish_tick(grabs: [Option<GrabVolume>; 2], desired: &mut Vec<Desi
                 None => GrabOutcome::ForegripUnmeasured,
             },
             GrabVolume::GrenadePouch => GrabOutcome::Pouch,
+            GrabVolume::MagazinePouch => GrabOutcome::Magazine,
             GrabVolume::VehicleControl(_) => continue,
         };
         tracing::debug!(target: "controllers", ?hand, volume = volume.label(), outcome = %outcome.label(), "grab");
@@ -300,6 +368,44 @@ pub(crate) fn finish_tick(grabs: [Option<GrabVolume>; 2], desired: &mut Vec<Desi
             hand,
             volume,
             outcome,
+        });
+    }
+
+    grenade::input_tick(
+        &grenade::TickInputs {
+            acting: config.weapons.grenade_throw && gameplay && active.is_some(),
+            pouch_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePouch)),
+            grips,
+            world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
+            dt,
+        },
+        &config,
+        desired,
+    );
+    match &active {
+        Some(active) if config.weapons.melee => melee::input_tick(
+            &melee::TickInputs {
+                acting: true,
+                excluded: grenade::throwing_hand(),
+                active,
+                detection,
+                dt,
+            },
+            &config,
+            desired,
+        ),
+        _ => melee::stand_down(),
+    }
+    let magazine = magazine_tick(&config, active.as_ref(), grabs, dt);
+    if magazine == Some(GestureEvent::Inserted) {
+        desired.push(Desired {
+            target: Target {
+                map: MapKind::Player,
+                action: Action::RELOAD,
+            },
+            want: Want::Click,
         });
     }
 
@@ -322,6 +428,8 @@ pub(crate) fn finish_tick(grabs: [Option<GrabVolume>; 2], desired: &mut Vec<Desi
 pub(crate) fn stand_down() {
     foregrip::clear();
     recoil::clear();
+    grenade::stand_down();
+    melee::stand_down();
     dual_wield::observe_triggers(false, [dual_wield::TriggerInput::default(); 2]);
     // SAFETY: the bindings stand down on the main thread outside the world update.
     if let Some(owner) = unsafe { engine::local_player() } {
@@ -329,6 +437,8 @@ pub(crate) fn stand_down() {
     }
     let mut state = STATE.lock();
     state.weapon = None;
+    state.well = None;
+    state.status.magazine.reset();
     state.status.active = false;
     state.status.volumes = [None; 2];
     state.status.fire_blocked = false;
@@ -353,6 +463,9 @@ struct State {
     /// The last geometry measured, and the weapon it belongs to: a measurement needs the wrist at
     /// full weight, so a tick without one keeps the last.
     measured: Option<(usize, GripGeometry)>,
+    /// The held weapon's magazine well in the cockpit frame, while the magazine gesture can reload
+    /// it.
+    well: Option<Vec3>,
 }
 
 impl State {
@@ -398,10 +511,12 @@ static STATE: Mutex<State> = Mutex::new(State {
         fire_blocked: false,
         events: Vec::new(),
         grabs: 0,
+        magazine: MagazineGesture::new(),
     },
     weapon: None,
     gameplay: false,
     measured: None,
+    well: None,
 });
 
 /// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,
@@ -423,6 +538,42 @@ fn body_dimensions(config: &ControllersConfig) -> BodyDimensions {
     } else {
         body::player()
     }
+}
+
+/// Step the magazine gesture: `grabs` says whether the off-hand took a magazine this tick.
+fn magazine_tick(
+    config: &ControllersConfig,
+    active: Option<&ActiveHands>,
+    grabs: [Option<GrabVolume>; 2],
+    dt: f32,
+) -> Option<GestureEvent> {
+    let off = config.dominant_hand.other();
+    let mut state = STATE.lock();
+    if !config.weapons.reload_gesture {
+        state.status.magazine.reset();
+        return None;
+    }
+    let inputs = GestureInputs {
+        taken: grabs[off.index()] == Some(GrabVolume::MagazinePouch),
+        hand: active
+            .and_then(|a| a.hands[off.index()])
+            .map(|h| h.grip.position),
+        well: state.well,
+        dt,
+    };
+    let event = state.status.magazine.step(inputs, &config.weapons.magazine);
+    drop(state);
+    if let Some(event) = event {
+        tracing::debug!(target: "controllers", ?event, "magazine gesture");
+        if event != GestureEvent::Dropped {
+            haptics::pulse(
+                off,
+                config.weapons.magazine.pulse,
+                haptics::PulseSource::Magazine,
+            );
+        }
+    }
+    event
 }
 
 /// Carry out a holster decision.
@@ -471,6 +622,7 @@ fn submit_highlights(
     active: &ActiveHands,
     candidates: &[Candidate],
     volumes: [Option<GrabVolume>; 2],
+    well: Option<(Vec3, f32)>,
 ) {
     if !(config.overlay.enabled && config.overlay.grab_volumes) {
         store::clear(Source::GrabVolumes);
@@ -500,6 +652,13 @@ fn submit_highlights(
                 colour(*volume),
             ));
         }
+    }
+    if let Some((centre, radius)) = well {
+        prims.push(ring(
+            to_world(centre),
+            radius * active.world_scale,
+            MAGAZINE,
+        ));
     }
     if let Some(hold) = foregrip::status().hold.filter(|h| h.engaged) {
         let mut posed = active.hands;
@@ -542,12 +701,14 @@ fn colour(volume: GrabVolume) -> Rgba {
         GrabVolume::Holster(_) => HOLSTER,
         GrabVolume::Foregrip => FOREGRIP,
         GrabVolume::GrenadePouch | GrabVolume::VehicleControl(_) => POUCH,
+        GrabVolume::MagazinePouch => MAGAZINE,
     }
 }
 
 const HOLSTER: Rgba = [1.0, 0.75, 0.25, 0.8];
 const FOREGRIP: Rgba = [0.35, 0.85, 1.0, 0.8];
 const POUCH: Rgba = [0.5, 1.0, 0.45, 0.8];
+const MAGAZINE: Rgba = [0.85, 0.55, 1.0, 0.8];
 
 #[cfg(test)]
 mod tests {

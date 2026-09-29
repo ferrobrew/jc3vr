@@ -1,11 +1,13 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
-//! line and yank, and the weapon-handling settings.
+//! line and yank, the grenade throw, physical melee, the magazine gesture, per-hand aim assist, and
+//! the weapon-handling settings.
 
 use egui::Ui;
 
 use crate::{
     controllers::{
+        aim::{self as controller_aim, AimStatus},
         bindings::{self, yank::Yank},
         config::WeaponsConfig,
         frame::Hand,
@@ -16,13 +18,16 @@ use crate::{
         weapons::{
             self, WeaponsStatus,
             config::{
-                DualWieldConfig, ForegripConfig, HapticsConfig, HolstersConfig, PulseSpec,
-                RecoilConfig, VolumeSpec,
+                DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
+                MagazineConfig, MeleeStrikeConfig, PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             foregrip::{self, ForegripStatus},
+            grenade::{self, GrenadeStatus},
             haptics::{self, HapticsStatus},
             holster::slot_label,
+            magazine::{MagazineGesture, MagazineStage},
+            melee::{self, MeleeStatus},
             recoil::{self, RecoilStatus},
         },
     },
@@ -39,6 +44,9 @@ pub(super) struct WeaponsReadout {
     dual_wield: DualWieldStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
+    grenade: GrenadeStatus,
+    melee: MeleeStatus,
+    aim: AimStatus,
 }
 
 impl WeaponsReadout {
@@ -52,6 +60,9 @@ impl WeaponsReadout {
             dual_wield: dual_wield::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
+            grenade: grenade::status(),
+            melee: melee::status(),
+            aim: controller_aim::status(),
         }
     }
 }
@@ -109,6 +120,10 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     });
     dual_wield_readout(ui, &readout.dual_wield);
     grapple_readout(ui, &readout.anchor, readout.yanks);
+    grenade_readout(ui, &readout.grenade);
+    melee_readout(ui, &readout.melee);
+    magazine_readout(ui, &status.magazine);
+    assist_readout(ui, &readout.aim);
     haptics_readout(ui, &readout.haptics);
     match &status.wielded {
         Some(w) => {
@@ -202,6 +217,97 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
     });
 }
 
+fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
+    let hand = g
+        .stage
+        .hand()
+        .map_or(String::new(), |h| format!(" in the {} hand", h.label()));
+    ui.label(format!(
+        "Grenade: {}{hand} · primed {} · thrown {} · gone before the throw {}{}",
+        g.stage.label(),
+        g.primed,
+        g.thrown,
+        g.gone,
+        if g.weapon_seen {
+            ""
+        } else {
+            " · the grenade weapon has not updated yet"
+        }
+    ));
+    if let Some(f) = g.fuse {
+        ui.label(format!(
+            "  fuse {:.1} s of {:.1} s",
+            f.remaining_s.max(0.0),
+            f.total_s
+        ));
+    }
+    if let Some(v) = g.last_release {
+        ui.label(format!(
+            "  last release {} ({:.1} m/s)",
+            vec3(v),
+            v.length()
+        ));
+    }
+    for event in g.events.iter().rev() {
+        ui.label(format!(
+            "  {}{}",
+            event
+                .hand
+                .map_or(String::new(), |h| format!("{}: ", h.label())),
+            event.outcome.label()
+        ));
+    }
+}
+
+fn melee_readout(ui: &mut Ui, m: &MeleeStatus) {
+    ui.label(format!(
+        "Melee strikes: {} · attacks {} · at a chosen target {}{}",
+        m.strikes,
+        m.attacks,
+        m.targeted,
+        if m.live { " · live" } else { "" }
+    ));
+    if let Some(last) = m.last {
+        ui.label(format!(
+            "  last: {} hand at {:.1} m/s{}",
+            last.hand.label(),
+            last.speed,
+            last.blocked
+                .map_or(String::new(), |b| format!(", dropped: {}", b.label()))
+        ));
+    }
+}
+
+fn magazine_readout(ui: &mut Ui, g: &MagazineGesture) {
+    let stage = match g.stage {
+        MagazineStage::Idle => "no magazine in hand".to_owned(),
+        MagazineStage::Holding { elapsed_s } => format!(
+            "magazine in hand for {elapsed_s:.1} s{}",
+            g.distance_m
+                .map_or(String::new(), |d| format!(", {d:.2} m from the well"))
+        ),
+    };
+    ui.label(format!(
+        "Magazine gesture: {stage} · taken {} · inserted {} · dropped {}",
+        g.taken, g.inserted, g.dropped
+    ));
+}
+
+fn assist_readout(ui: &mut Ui, a: &AimStatus) {
+    let per_hand = Hand::BOTH
+        .iter()
+        .map(|h| match a.assist[h.index()] {
+            Some(c) => format!("{} {:.1}°", h.label(), c.angle_rad.to_degrees()),
+            None => format!("{} none", h.label()),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    ui.label(format!(
+        "Aim assist: corrections {} · last update {per_hand}",
+        a.assist_corrections
+    ));
+}
+
 fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
     ui.label(format!("Haptic pulses: {}", h.routed));
     for event in h.events.iter().rev() {
@@ -247,6 +353,84 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         ui.indent("haptics", |ui| haptics_settings(ui, &mut w.haptics));
     });
     dual_wield_settings(ui, &mut w.dual_wield);
+}
+
+/// The settings of the grenade throw, physical melee, and the magazine gesture.
+pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+    ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
+        "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \
+         runs from the prime.",
+    );
+    ui.add_enabled_ui(w.grenade_throw, |ui| {
+        ui.indent("grenade", |ui| grenade_settings(ui, &mut w.grenade));
+    });
+    ui.checkbox(&mut w.melee, "Physical melee")
+        .on_hover_text("A fast strike of either hand starts a melee attack.");
+    ui.add_enabled_ui(w.melee, |ui| {
+        ui.indent("melee", |ui| melee_settings(ui, &mut w.melee_strike));
+    });
+    ui.checkbox(&mut w.reload_gesture, "Magazine reload gesture")
+        .on_hover_text(
+            "Take a magazine from the off-hand's belt pouch and bring it to the weapon's magazine \
+         well. The reload button still reloads.",
+        );
+    ui.add_enabled_ui(w.reload_gesture, |ui| {
+        ui.indent("magazine", |ui| magazine_settings(ui, &mut w.magazine));
+    });
+}
+
+fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
+    vec3_drag(
+        ui,
+        "Hold offset (grip frame, m)",
+        &mut g.hold_offset_m,
+        0.005,
+    );
+    ui.add(egui::Slider::new(&mut g.release_window_s, 0.02..=0.3).text("Release window (s)"));
+    ui.add(egui::Slider::new(&mut g.release_peak_span_s, 0.0..=0.05).text("Release peak span (s)"));
+    ui.add(egui::Slider::new(&mut g.velocity_scale, 0.25..=3.0).text("Velocity scale"));
+    ui.add(egui::Slider::new(&mut g.max_speed_mps, 5.0..=60.0).text("Fastest throw (m/s)"));
+    ui.checkbox(
+        &mut g.hand_aimed_fallback,
+        "Stick-click throw aims along the hand",
+    );
+    ui.add(egui::Slider::new(&mut g.warning_s, 0.0..=5.0).text("Fuse warning (s)"));
+    ui.checkbox(&mut g.warning_overlay, "Fuse warning ring");
+    ui.checkbox(&mut g.warning_haptics, "Fuse warning pulses");
+    pulse_settings(ui, "Warning pulse", &mut g.warning_pulse);
+    ui.add(
+        egui::Slider::new(&mut g.warning_interval_s[0], 0.05..=1.0).text("Slowest pulse gap (s)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut g.warning_interval_s[1], 0.02..=1.0).text("Fastest pulse gap (s)"),
+    );
+    pulse_settings(ui, "Prime pulse", &mut g.prime_pulse);
+}
+
+fn melee_settings(ui: &mut Ui, m: &mut MeleeStrikeConfig) {
+    ui.add(egui::Slider::new(&mut m.strike_speed_mps, 1.0..=8.0).text("Strike speed (m/s)"));
+    ui.add(egui::Slider::new(&mut m.rearm_speed_mps, 0.1..=4.0).text("Rearm speed (m/s)"));
+    ui.add(egui::Slider::new(&mut m.min_outward, -1.0..=1.0).text("Least outward share"));
+    ui.add(egui::Slider::new(&mut m.cooldown_s, 0.0..=2.0).text("Cooldown (s)"));
+    ui.add(egui::Slider::new(&mut m.target_hold_ticks, 2..=10).text("Target hold (ticks)"));
+    ui.checkbox(
+        &mut m.pointing_targets,
+        "Also target what the hand points at",
+    );
+    pulse_settings(ui, "Strike pulse", &mut m.pulse);
+}
+
+fn magazine_settings(ui: &mut Ui, m: &mut MagazineConfig) {
+    volume_settings(ui, "Magazine pouch", &mut m.pouch);
+    vec3_drag(
+        ui,
+        "Well offset (wrist frame, m)",
+        &mut m.well_offset_m,
+        0.005,
+    );
+    ui.add(egui::Slider::new(&mut m.well_radius_m, 0.02..=0.2).text("Well radius (m)"));
+    ui.add(egui::Slider::new(&mut m.timeout_s, 0.5..=10.0).text("Magazine timeout (s)"));
+    pulse_settings(ui, "Magazine pulse", &mut m.pulse);
 }
 
 fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
@@ -305,14 +489,12 @@ fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
 fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
         .on_hover_text("The fallback for drawing without reaching a holster.");
-    ui.checkbox(&mut h.grenade_pouch, "Grenade pouch")
-        .on_hover_text("A grab volume for the throw, which is not built yet.");
     ui.add(egui::Slider::new(&mut h.crouch_deadband_m, 0.0..=0.5).text("Crouch deadband (m)"));
     ui.label("Offsets from the landmark, right side (+X right, +Y up, +Z back)");
     volume_settings(ui, "Hip", &mut h.hip);
     volume_settings(ui, "Shoulder", &mut h.shoulder);
     volume_settings(ui, "Chest", &mut h.chest);
-    volume_settings(ui, "Pouch", &mut h.pouch);
+    volume_settings(ui, "Grenade pouch", &mut h.pouch);
     if ui.button("Reset holsters").clicked() {
         *h = HolstersConfig {
             enabled: h.enabled,

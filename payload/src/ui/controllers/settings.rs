@@ -147,9 +147,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
     egui::CollapsingHeader::new("Weapons").show(ui, |ui| {
         let w = &mut c.weapons;
         weapons::weapons_settings(ui, w);
-        ui.checkbox(&mut w.reload_gesture, "Reload gesture");
-        ui.checkbox(&mut w.grenade_throw, "Physical grenade throw");
-        ui.checkbox(&mut w.melee, "Physical melee");
+        weapons::breadth_settings(ui, w);
         ui.checkbox(&mut w.scopes, "Scope lenses");
     });
 

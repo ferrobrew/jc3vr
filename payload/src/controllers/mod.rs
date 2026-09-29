@@ -8,6 +8,7 @@
 //!
 //! - [`config`]: [`ControllersConfig`], one toggle per subsystem;
 //! - [`frame`]: the published snapshot and the input edge latch;
+//! - [`motion`]: the hands' recent motion, for throws and strikes;
 //! - [`scheme`]: controller versus gamepad scheme selection;
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
@@ -46,6 +47,7 @@ pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;
 pub mod mode;
+pub mod motion;
 pub mod overlay;
 pub mod roomscale;
 pub mod scheme;

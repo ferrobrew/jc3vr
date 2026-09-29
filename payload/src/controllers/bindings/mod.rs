@@ -185,7 +185,15 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     if step.crouch_toggle {
         crate::controllers::roomscale::toggle_seated_crouch();
     }
-    weapons::finish_tick(step.grabs, &mut step.desired, dt);
+    weapons::finish_tick(
+        &weapons::FinishInputs {
+            grabs: step.grabs,
+            grips: controls.hands.map(|h| h.grip),
+            detection,
+            dt,
+        },
+        &mut step.desired,
+    );
     vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.

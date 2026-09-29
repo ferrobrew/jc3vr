@@ -1,5 +1,5 @@
-//! The weapon-handling settings (the holsters, the foregrip, the recoil, the haptics, and the
-//! dual-wield split), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside
+//! The weapon-handling settings (the holsters, the foregrip, the recoil, the haptics, the
+//! dual-wield split, the grenade throw, melee strikes, and the magazine gesture), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside
 //! the other weapon-handling subsystems' toggles.
 
 use glam::Vec3;
@@ -22,11 +22,10 @@ pub struct HolstersConfig {
     pub shoulder: VolumeSpec,
     /// The explosives holster on the chest.
     pub chest: VolumeSpec,
-    /// Offer the grenade pouch as a grab volume for the dominant hand. Off by default until the
-    /// physical throw exists: a grab there does nothing yet, and it would swallow a grip press
-    /// there.
-    pub grenade_pouch: bool,
-    /// The grenade pouch at the front of the belt on the dominant side.
+    /// The grenade pouch at the front of the belt on the dominant side, a grab volume for the
+    /// dominant hand while the physical grenade throw
+    /// ([`WeaponsConfig::grenade_throw`](crate::controllers::config::WeaponsConfig::grenade_throw))
+    /// is on.
     pub pouch: VolumeSpec,
     /// How far the head may drop below its standing height before the holsters drop with it, metres.
     /// Looking down at a holster lowers the head a little without the body crouching, so a small
@@ -51,7 +50,6 @@ impl HolstersConfig {
                 offset_m: Vec3::new(0.0, -0.18, -0.14),
                 radius_m: 0.10,
             },
-            grenade_pouch: false,
             pouch: VolumeSpec {
                 offset_m: Vec3::new(-0.10, 0.04, -0.12),
                 radius_m: 0.08,
@@ -249,6 +247,157 @@ impl DualWieldConfig {
 }
 
 impl Default for DualWieldConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The physical grenade throw (see [`crate::controllers::weapons::grenade`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GrenadeConfig {
+    /// Where the held grenade sits in the throwing controller's grip frame, metres, given for the
+    /// right hand and mirrored for the left. The grip's origin is the centre of the closed fist and
+    /// its -Z runs out of the front of the fist.
+    pub hold_offset_m: Vec3,
+    /// How far back from the grip's release the throw's velocity is looked for, seconds.
+    pub release_window_s: f32,
+    /// The span around the fastest moment of the throw whose velocities are averaged, seconds on
+    /// each side.
+    pub release_peak_span_s: f32,
+    /// Scales the hand's release velocity: `1` throws exactly as fast as the hand moved.
+    pub velocity_scale: f32,
+    /// The fastest a grenade may leave the hand, metres per second, against tracking glitches.
+    pub max_speed_mps: f32,
+    /// Aim the game's own throw (the stick-click fallback) at the point the dominant hand's ray
+    /// reaches rather than at the gaze.
+    pub hand_aimed_fallback: bool,
+    /// How long before the fuse runs out the held grenade starts to warn, seconds.
+    pub warning_s: f32,
+    /// Draw a ring at the throwing hand while a grenade is held, turning from green to red as the
+    /// fuse runs down.
+    pub warning_overlay: bool,
+    /// Pulse the throwing hand as the fuse runs down, faster toward the end.
+    pub warning_haptics: bool,
+    pub warning_pulse: PulseSpec,
+    /// The gap between warning pulses when the warning starts, and when the fuse is about to run
+    /// out, seconds.
+    pub warning_interval_s: [f32; 2],
+    /// A pulse on the throwing hand when the grenade is primed in it.
+    pub prime_pulse: PulseSpec,
+}
+
+impl GrenadeConfig {
+    pub const fn new() -> Self {
+        Self {
+            hold_offset_m: Vec3::ZERO,
+            release_window_s: 0.1,
+            release_peak_span_s: 0.015,
+            velocity_scale: 1.0,
+            max_speed_mps: 30.0,
+            hand_aimed_fallback: true,
+            warning_s: 2.0,
+            warning_overlay: true,
+            warning_haptics: true,
+            warning_pulse: PulseSpec {
+                amplitude: 0.45,
+                duration_s: 0.03,
+            },
+            warning_interval_s: [0.5, 0.08],
+            prime_pulse: PulseSpec {
+                amplitude: 0.3,
+                duration_s: 0.04,
+            },
+        }
+    }
+}
+
+impl Default for GrenadeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The strike detector for physical melee (see [`crate::controllers::weapons::melee`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MeleeStrikeConfig {
+    /// How fast a hand must move to strike, metres per second.
+    pub strike_speed_mps: f32,
+    /// How slow the hand must get before it can strike again, metres per second.
+    pub rearm_speed_mps: f32,
+    /// The least share of a strike's speed that must point away from the shoulder, `-1..=1`, so
+    /// that pulling a hand back toward the body (a yank) is not a strike.
+    pub min_outward: f32,
+    /// The shortest time between two strikes of one hand, seconds.
+    pub cooldown_s: f32,
+    /// For how many input ticks after a strike the melee target the strike chose is held in the
+    /// aim control's melee slot, so that the game's melee reads it whichever tick it runs on.
+    pub target_hold_ticks: u32,
+    /// Also consider the target the striking hand points at, not only the one it moves toward.
+    pub pointing_targets: bool,
+    /// A pulse on the striking hand when a strike starts a melee attack.
+    pub pulse: PulseSpec,
+}
+
+impl MeleeStrikeConfig {
+    pub const fn new() -> Self {
+        Self {
+            strike_speed_mps: 3.0,
+            rearm_speed_mps: 1.2,
+            min_outward: 0.3,
+            cooldown_s: 0.6,
+            target_hold_ticks: 4,
+            pointing_targets: true,
+            pulse: PulseSpec {
+                amplitude: 0.6,
+                duration_s: 0.05,
+            },
+        }
+    }
+}
+
+impl Default for MeleeStrikeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The magazine reload gesture (see [`crate::controllers::weapons::magazine`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MagazineConfig {
+    /// The magazine pouch at the front of the belt on the off-hand's side, placed like the grenade
+    /// pouch, a grab volume for the off-hand. Given for the right side and mirrored for the left.
+    pub pouch: VolumeSpec,
+    /// The magazine well's centre in the holding hand's wrist frame (-Z toward the fingers, +Y out
+    /// of the back of the hand), metres: under the gun, just ahead of the grip. Given for the right
+    /// hand and mirrored for the left.
+    pub well_offset_m: Vec3,
+    /// How close the off-hand's grip must come to the well to insert the magazine, metres.
+    pub well_radius_m: f32,
+    /// How long a magazine taken from the pouch stays in the hand before it is dropped, seconds.
+    pub timeout_s: f32,
+    /// A pulse on the off-hand when it takes a magazine and when it inserts one.
+    pub pulse: PulseSpec,
+}
+
+impl MagazineConfig {
+    pub const fn new() -> Self {
+        Self {
+            pouch: VolumeSpec {
+                offset_m: Vec3::new(0.02, 0.04, -0.12),
+                radius_m: 0.08,
+            },
+            well_offset_m: Vec3::new(0.0, -0.08, -0.06),
+            well_radius_m: 0.08,
+            timeout_s: 4.0,
+            pulse: PulseSpec {
+                amplitude: 0.35,
+                duration_s: 0.04,
+            },
+        }
+    }
+}
+
+impl Default for MagazineConfig {
     fn default() -> Self {
         Self::new()
     }

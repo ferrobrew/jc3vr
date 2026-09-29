@@ -183,6 +183,125 @@ impl std::convert::AsMut<SniperWeapon> for SniperWeapon {
     }
 }
 #[repr(C, align(8))]
+/// `CThrownGrenadeWeapon`: the hand grenade weapon, a [`WeaponBase`](crate::equipment::weapon::WeaponBase) held in the grenade slot. A
+/// throw primes a grenade (spawning it live and consuming one grenade), keeps it at the weapon's
+/// attachment while held, and releases it through [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile), which launches
+/// it with [`Grenade::PropelToward`](crate::equipment::explosive::Grenade::PropelToward). The throw
+/// animation's track messages drive both steps: one raises [`m_PrimeGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimeGrenade)
+/// and a later one raises [`WeaponBase::m_ForceFireProjectile`](crate::equipment::weapon::WeaponBase::m_ForceFireProjectile). Only some members are mapped, at
+/// their offsets from the start of the weapon.
+pub struct ThrownGrenadeWeapon {
+    _field_0: [u8; 1800],
+    /// The primed grenade: the live [`Grenade`](crate::equipment::explosive::Grenade) spawned by
+    /// [`PrimeGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::PrimeGrenade) and not yet thrown, or null. `px` is the grenade's
+    /// `CGameObject` subobject
+    /// ([`Explosive::GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)).
+    /// [`Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) clears it when it launches the grenade.
+    pub m_PrimedGrenade: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_718: [u8; 177],
+    /// A pending prime request: [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::ThrownGrenadeWeapon::UpdateFromUserPostSim_Parallel)
+    /// calls [`PrimeGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::PrimeGrenade) after the base weapon update when it is set, and
+    /// clears it.
+    pub m_PrimeGrenade: bool,
+    _field_7ca: [u8; 6],
+}
+fn _ThrownGrenadeWeapon_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x7D0], ThrownGrenadeWeapon>([0u8; 0x7D0]);
+    }
+    unreachable!()
+}
+impl ThrownGrenadeWeapon {
+    pub const UpdateFromUserPostSim_Parallel_ADDRESS: usize = 0x1409A7770;
+    /// The weapon's per-tick update from its user (its override of
+    /// [`WeaponBase::UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel)): runs
+    /// [`UpdateFromUserPostSim_ParallelBase`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_ParallelBase),
+    /// which consumes [`WeaponBase::m_ForceFireProjectile`](crate::equipment::weapon::WeaponBase::m_ForceFireProjectile) among the fire inputs, and then services
+    /// [`m_PrimeGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimeGrenade). A throw released and a prime requested in the same
+    /// call therefore release nothing and prime afterwards.
+    pub unsafe fn UpdateFromUserPostSim_Parallel(
+        &mut self,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const crate::equipment::weapon::WeaponInputs,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                aim_position: *const crate::types::math::Vector3,
+                input: *const crate::equipment::weapon::WeaponInputs,
+            ) = ::std::mem::transmute(Self::UpdateFromUserPostSim_Parallel_ADDRESS);
+            f(self as *mut Self as _, dt, aim_position, input)
+        }
+    }
+    pub const PrimeGrenade_ADDRESS: usize = 0x140989470;
+    /// Primes a grenade (`CreatePrimed<CGrenade>`): consumes one grenade, allocates a
+    /// [`Grenade`](crate::equipment::explosive::Grenade) from the ammunition pool at the weapon's world
+    /// matrix (returning null when the pool is full), plays the priming effect, stores it in
+    /// [`m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade), and adds it to the update. The grenade's
+    /// detonation timer runs from this point
+    /// ([`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer)), so a
+    /// grenade held for longer than its fuse explodes before it is thrown.
+    pub unsafe fn PrimeGrenade(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) -> *mut ::std::ffi::c_void {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+                Self::PrimeGrenade_ADDRESS,
+            );
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const CancelPrimedGrenade_ADDRESS: usize = 0x14097FA50;
+    /// Removes the primed grenade, if any, clears [`m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade), and
+    /// returns one grenade to the user's inventory. The disassembler mislabels it
+    /// `rtti_cast<CThrownGrenadeWeapon,CWeaponBase>`; the function it labels
+    /// `CThrownGrenadeWeapon::CancelPrimedGrenade` clears a hash table.
+    pub unsafe fn CancelPrimedGrenade(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::CancelPrimedGrenade_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x14099EB70;
+    /// Places the weapon's attachments (its override of the `UpdateAttachmentTransforms` virtual):
+    /// after the base placement it sets the primed grenade's transform to the weapon's world
+    /// matrix, so a held grenade rides the weapon's attach bone.
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        p2: f32,
+        p3: f32,
+        transform_type: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                p2: f32,
+                p3: f32,
+                transform_type: u32,
+            ) = ::std::mem::transmute(Self::UpdateAttachmentTransforms_ADDRESS);
+            f(self as *mut Self as _, p2, p3, transform_type)
+        }
+    }
+}
+impl std::convert::AsRef<ThrownGrenadeWeapon> for ThrownGrenadeWeapon {
+    fn as_ref(&self) -> &ThrownGrenadeWeapon {
+        self
+    }
+}
+impl std::convert::AsMut<ThrownGrenadeWeapon> for ThrownGrenadeWeapon {
+    fn as_mut(&mut self) -> &mut ThrownGrenadeWeapon {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// `CTurretWeaponComponent`: a weapon component that rotates a turret toward its weapon's target.
 /// Its layout is unmapped.
 pub struct TurretWeaponComponent {}
@@ -348,7 +467,13 @@ pub struct WeaponBase {
     /// [`E_PROJECTILE_FIRE_DIRECTION_UNSET`](crate::equipment::weapon::ProjectileFireDirectionMode::E_PROJECTILE_FIRE_DIRECTION_UNSET)
     /// defers to it.
     pub m_ProjectileTempFireDirection: crate::equipment::weapon::ProjectileFireDirectionMode,
-    _field_170: [u8; 12],
+    _field_170: [u8; 8],
+    /// A one-shot fire request: while set, the next
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) clears it and calls
+    /// [`Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) once for each gun, whatever the fire input and the
+    /// aim angle. Animation track messages raise it at the release point of a throw.
+    pub m_ForceFireProjectile: bool,
+    _field_179: [u8; 3],
     /// Seconds of forced fire remaining; the weapon fires regardless of input while positive.
     pub m_ForceFireTimer: f32,
     /// Shots of forced fire remaining; decremented once per
@@ -725,6 +850,15 @@ impl WeaponBase {
             f(self as *mut Self as _, weapon_data)
         }
     }
+    /// The ammunition the weapon can still use: its magazine plus the holder's inventory stock
+    /// of its ammunition type. The thrown grenade weapon adds one while it holds a primed
+    /// grenade ([`ThrownGrenadeWeapon::m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade)).
+    pub unsafe fn GetTotalAmmo(&self) -> i32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetTotalAmmo).read();
+            f(self as *const Self as _)
+        }
+    }
     /// Deducts `count` rounds of ammunition for `weapon_data`.
     pub unsafe fn ConsumeAmmo(
         &mut self,
@@ -920,9 +1054,12 @@ pub struct WeaponBaseVftable {
     _vfunc_37: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_38: unsafe extern "system" fn(
-        this: *mut crate::equipment::weapon::WeaponBase,
-    ),
+    /// The ammunition the weapon can still use: its magazine plus the holder's inventory stock
+    /// of its ammunition type. The thrown grenade weapon adds one while it holds a primed
+    /// grenade ([`ThrownGrenadeWeapon::m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade)).
+    pub GetTotalAmmo: unsafe extern "system" fn(
+        this: *const crate::equipment::weapon::WeaponBase,
+    ) -> i32,
     _vfunc_39: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),

@@ -4,11 +4,26 @@
 /// physics body, trail effect, detonation timers, and the deferred launch that
 /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) sets up for the physics body to apply later.
 pub struct Explosive {
-    _field_0: [u8; 1344],
+    _field_0: [u8; 1208],
+    /// The explosive's physics body (`CPfxRigidBody`, the pointer of a shared pointer), or null
+    /// until the first `UpdatePostSimFromManager` after the explosive spawns creates it.
+    /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) and [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)
+    /// do nothing without it.
+    pub m_PfxInstance: *mut ::std::ffi::c_void,
+    _field_4c0: [u8; 128],
     /// The explosive's world matrix as of the current simulation tick. Its translation row is the
-    /// launch start position [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) solves from.
+    /// launch start position [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) solves from. The `CGameObject`
+    /// transform setter writes it, and the post-simulation update moves a physics body that is not
+    /// simulating to it.
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
-    _field_580: [u8; 92],
+    /// Whether [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) is pending: set by
+    /// [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform) and applied to the physics body, then
+    /// cleared, by the next `UpdatePostSimFromManager`, before a pending launch.
+    pub m_DeferredSetPhysicsTransform: bool,
+    _field_581: [u8; 3],
+    /// The transform awaiting application to the physics body.
+    pub m_DeferredPhysicsTransform: crate::types::math::Matrix4,
+    _field_5c4: [u8; 24],
     /// The velocity of the thrower when the explosive was launched, stored by
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward).
     pub m_RelativeVelocity: crate::types::math::Vector3,
@@ -24,14 +39,39 @@ pub struct Explosive {
     _field_5f8: [u8; 12],
     /// Seconds since the explosive was thrown; [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) resets it.
     pub m_TimeSinceThrow: f32,
+    /// Seconds until the explosive detonates. The constructor sets it to the grenade weapon's
+    /// detonation time; the post-simulation update counts it down by the tick delta while the
+    /// virtual `ShouldTickDetonationTimer` holds (a hand grenade's does from the moment it spawns,
+    /// primed or thrown) and calls the virtual `Detonate` once it reaches zero.
+    pub m_DetonationTimer: f32,
+    /// The detonation time [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) started from.
+    pub m_StartDetonationTimer: f32,
 }
 fn _Explosive_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x608], Explosive>([0u8; 0x608]);
+        ::std::mem::transmute::<[u8; 0x610], Explosive>([0u8; 0x610]);
     }
     unreachable!()
 }
 impl Explosive {
+    pub const SetPhysicsTransform_ADDRESS: usize = 0x1408C8180;
+    /// Queues `transform` for the physics body: when the explosive has a
+    /// [`m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance), copies it to
+    /// [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) and raises
+    /// [`m_DeferredSetPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredSetPhysicsTransform). A later call before
+    /// the body applies it replaces it.
+    pub unsafe fn SetPhysicsTransform(
+        &mut self,
+        transform: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::SetPhysicsTransform_ADDRESS);
+            f(self as *mut Self as _, transform)
+        }
+    }
     pub const PropelToward_ADDRESS: usize = 0x1408E4D50;
     /// Launches the explosive toward `target_position`: when it has a physics body, stores
     /// `relative_velocity` in [`m_RelativeVelocity`](crate::equipment::explosive::Explosive::m_RelativeVelocity), raises
@@ -102,6 +142,12 @@ impl Explosive {
             )
         }
     }
+}
+impl Explosive {
+    /// The offset of the embedded `CGameObject` subobject. Weak references to the explosive (such
+    /// as [`ThrownGrenadeWeapon::m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade))
+    /// point there rather than at the start of the explosive.
+    pub const GAME_OBJECT_BASE_OFFSET: u64 = 112;
 }
 impl std::convert::AsRef<Explosive> for Explosive {
     fn as_ref(&self) -> &Explosive {

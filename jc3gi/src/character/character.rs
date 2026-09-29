@@ -1174,6 +1174,20 @@ impl Character {
             f(self as *mut Self as _)
         }
     }
+    pub const CanUseMelee_ADDRESS: usize = 0x1407FAD40;
+    /// Whether the character may start a melee attack: the melee block bit that dropping a heavy
+    /// weapon sets is clear, the inventory's animation permission allows melee, the character is not
+    /// squeezing valid dual tethers while the gamepad is the active input device, and it is on the
+    /// ground or in a stunt position. `NStateTask_InputMeleeTask` tests it before the melee input
+    /// and the hammer ability ([`hash_ability_hammer`](crate::character::player::get_hash_ability_hammer)).
+    pub unsafe fn CanUseMelee(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::CanUseMelee_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const ForceNeutralState_ADDRESS: usize = 0x1407FD120;
     /// Forces the character's animation and control state back to neutral (on foot, idle).
     pub unsafe fn ForceNeutralState(&mut self) {

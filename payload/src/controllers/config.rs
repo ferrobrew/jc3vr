@@ -20,7 +20,8 @@ use crate::controllers::{
     hands::{anchor::AnchorConfig, tiers::HandTierTable},
     vehicles::config::VehiclesConfig,
     weapons::config::{
-        DualWieldConfig, ForegripConfig, HapticsConfig, HolstersConfig, RecoilConfig,
+        DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
+        MagazineConfig, MeleeStrikeConfig, RecoilConfig,
     },
 };
 
@@ -367,6 +368,11 @@ pub struct AimConfig {
     /// How strongly the written aim point is pulled toward the best candidate target along each
     /// hand ray, `0..=1`. Zero disables aim assist.
     pub assist_strength: f32,
+    /// The farthest a candidate may be from the hand for aim assist, metres.
+    pub assist_max_distance_m: f32,
+    /// How far short of an aim-assist candidate's body position the line of sight to it may be
+    /// blocked and still count as clear, metres: the line ends inside the target's own body.
+    pub assist_occlusion_tolerance_m: f32,
     /// How far the hand rays are cast, metres. A gun ray that hits nothing aims at this distance
     /// along the ray.
     pub max_distance_m: f32,
@@ -388,6 +394,8 @@ impl AimConfig {
             gun: true,
             grapple: true,
             assist_strength: 0.0,
+            assist_max_distance_m: 150.0,
+            assist_occlusion_tolerance_m: 0.75,
             max_distance_m: 500.0,
             min_target_distance_m: 2.0,
             grapple_origin_m: glam::Vec3::ZERO,
@@ -549,13 +557,21 @@ pub struct WeaponsConfig {
     /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
     /// own hand.
     pub dual_wield: DualWieldConfig,
-    /// Replace the reload button with the magazine gesture. Off, the reload stays on the button.
+    /// Offer the magazine gesture: the off-hand takes a magazine from its belt pouch and puts it
+    /// in the held weapon's magazine well, which starts the reload. The reload button still
+    /// reloads.
     pub reload_gesture: bool,
+    /// The magazine gesture's pouch, well, and timing.
+    pub magazine: MagazineConfig,
     /// Throw grenades physically: grab from the pouch, release the grip to throw with the hand's
-    /// velocity.
+    /// velocity. The grenade pouch exists only while this is on.
     pub grenade_throw: bool,
+    /// The physical throw's release, warning, and fallback settings.
+    pub grenade: GrenadeConfig,
     /// Trigger melee attacks with physical strikes.
     pub melee: bool,
+    /// The strike detector and the melee target's hold.
+    pub melee_strike: MeleeStrikeConfig,
     /// Render a magnified image into scoped weapons' lenses, replacing the game's precision-aim
     /// zoom.
     pub scopes: bool,
@@ -571,8 +587,11 @@ impl WeaponsConfig {
             haptics: HapticsConfig::new(),
             dual_wield: DualWieldConfig::new(),
             reload_gesture: false,
+            magazine: MagazineConfig::new(),
             grenade_throw: true,
+            grenade: GrenadeConfig::new(),
             melee: true,
+            melee_strike: MeleeStrikeConfig::new(),
             scopes: true,
         }
     }

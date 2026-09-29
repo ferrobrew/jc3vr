@@ -191,6 +191,34 @@ impl PlayerAimControl {
             f(self as *mut Self as _, game_object, target)
         }
     }
+    pub const SetTargetMeleeFitness_ADDRESS: usize = 0x140CE6F50;
+    /// Scores `target` as a melee candidate for [`UpdateAllTargets`](crate::aim::aim::PlayerAimControl::UpdateAllTargets) along
+    /// the horizontal `direction` (the move input turned into the world, or the body's forward).
+    /// Rejects anything but a live character other than the owner that is not in a vehicle outside
+    /// a stunt area, and targets beyond the player's melee reach (a front and a back range) or
+    /// outside the melee cone around `direction`. On success writes the score to the target's
+    /// [`m_Fitness`](crate::aim::target::Target::m_Fitness) for [`TARGET_MELEE`](crate::aim::target::TargetType::TARGET_MELEE), lower
+    /// being better: the angle, as a fraction of a half turn, times the distance as a fraction of
+    /// the reach, plus one for a target whose
+    /// [`m_PlayerFactionRelation`](crate::aim::target::Target::m_PlayerFactionRelation) is
+    /// [`E_RELATION_HOSTILE`](crate::aim::target::FactionRelation::E_RELATION_HOSTILE). `game_object` is
+    /// the target's `CGameObject` subobject.
+    pub unsafe fn SetTargetMeleeFitness(
+        &mut self,
+        game_object: *mut ::std::ffi::c_void,
+        target: *mut crate::aim::target::Target,
+        direction: *const crate::types::math::Vector3,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                game_object: *mut ::std::ffi::c_void,
+                target: *mut crate::aim::target::Target,
+                direction: *const crate::types::math::Vector3,
+            ) -> bool = ::std::mem::transmute(Self::SetTargetMeleeFitness_ADDRESS);
+            f(self as *mut Self as _, game_object, target, direction)
+        }
+    }
     pub const GetFitnessScore_ADDRESS: usize = 0x140CE6000;
     /// The shared fitness score of `target` for `target_type`, written to `score`: the angle between
     /// the target's body position and the forward of

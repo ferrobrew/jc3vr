@@ -1,4 +1,34 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(C, align(8))]
+/// The player's ability table (`CAbilitiesHandler`): the status of each unlockable ability, keyed
+/// by the ability's hash. It sits at [`Player::ABILITIES_OFFSET`](crate::character::player::Player::ABILITIES_OFFSET) within the player. Its layout is
+/// unmapped.
+pub struct AbilitiesHandler {}
+impl AbilitiesHandler {
+    pub const IsAbilityEnabled_ADDRESS: usize = 0x140C7E250;
+    /// Whether the ability `ability` (a `CHashString` hash, passed by reference) is enabled: its
+    /// status is forced on, or it is unlocked and not forced off. The ability must be registered,
+    /// as the game's own abilities are.
+    pub unsafe fn IsAbilityEnabled(&self, ability: *const u32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                ability: *const u32,
+            ) -> bool = ::std::mem::transmute(Self::IsAbilityEnabled_ADDRESS);
+            f(self as *const Self as _, ability)
+        }
+    }
+}
+impl std::convert::AsRef<AbilitiesHandler> for AbilitiesHandler {
+    fn as_ref(&self) -> &AbilitiesHandler {
+        self
+    }
+}
+impl std::convert::AsMut<AbilitiesHandler> for AbilitiesHandler {
+    fn as_mut(&mut self) -> &mut AbilitiesHandler {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The player's aim mode (`CPlayer::EAimModes`), held in [`Player::m_AimMode`](crate::character::player::Player::m_AimMode).
@@ -81,6 +111,8 @@ impl Player {
     }
 }
 impl Player {
+    /// The offset of the player's [`AbilitiesHandler`](crate::character::player::AbilitiesHandler) within the player.
+    pub const ABILITIES_OFFSET: u64 = 376;
     /// The offset of the [`Avatar`](crate::character::avatar::Avatar) base within the player.
     pub const AVATAR_BASE_OFFSET: u64 = 16;
 }
@@ -93,6 +125,11 @@ impl std::convert::AsMut<Player> for Player {
     fn as_mut(&mut self) -> &mut Player {
         self
     }
+}
+/// The hash of the hammer ability (`hash_ability_hammer`), which gates the player's melee attack
+/// in `NStateTask_InputMeleeTask`.
+pub unsafe fn get_hash_ability_hammer() -> &'static mut u32 {
+    unsafe { &mut *(0x142DA7988 as *mut u32) }
 }
 pub const Player_UpdatePostCamera_ADDRESS: usize = 0x140CF7BB0;
 /// `CPlayer::UpdatePostCamera`, the player's override of the `CAvatar::UpdatePostCamera` virtual;

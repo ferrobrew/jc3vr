@@ -70,6 +70,12 @@ pub enum PulseSource {
     GrappleFire,
     GrappleAttach,
     Yank,
+    /// A grenade primed in the hand, and the warning as its fuse runs down.
+    GrenadeFuse,
+    /// A physical strike that started a melee attack.
+    MeleeStrike,
+    /// A magazine taken from the pouch or inserted.
+    Magazine,
 }
 
 impl PulseSource {
@@ -84,6 +90,9 @@ impl PulseSource {
             PulseSource::GrappleFire => "grapple fire",
             PulseSource::GrappleAttach => "grapple attach",
             PulseSource::Yank => "yank",
+            PulseSource::GrenadeFuse => "grenade fuse",
+            PulseSource::MeleeStrike => "melee strike",
+            PulseSource::Magazine => "magazine",
         }
     }
 

@@ -1,4 +1,4 @@
-//! Placing the body's grab volumes: the holsters and the grenade pouch. Pure.
+//! Placing the body's grab volumes: the holsters, the grenade pouch, and the magazine pouch. Pure.
 //!
 //! The volumes are placed in the cockpit frame, where the hands' grab points are, relative to the
 //! character's body frame. The cockpit frame composes onto the character's world transform with the
@@ -40,14 +40,15 @@ pub fn body_origin(head: Vec3, crouch_deadband: f32) -> Vec3 {
     Vec3::new(0.0, drop, 0.0)
 }
 
-/// The holster volumes (and the grenade pouch when enabled) for a body at `origin` with dimensions
-/// `dims`, in the order the sites are listed. The hip and shoulder holsters may be grabbed with
-/// either hand; the pouch only with the dominant hand, which throws.
+/// The holster volumes (and the grenade pouch with `grenade_pouch`) for a body at `origin` with
+/// dimensions `dims`, in the order the sites are listed. The hip and shoulder holsters may be
+/// grabbed with either hand; the pouch only with the dominant hand, which throws.
 pub fn holster_candidates(
     origin: Vec3,
     dims: &BodyDimensions,
     config: &HolstersConfig,
     dominant: Hand,
+    grenade_pouch: bool,
 ) -> Vec<Candidate> {
     let mut out = Vec::with_capacity(6);
     for side in Hand::BOTH {
@@ -76,7 +77,7 @@ pub fn holster_candidates(
         Hand::Right,
         None,
     ));
-    if config.grenade_pouch {
+    if grenade_pouch {
         out.push(place(
             GrabVolume::GrenadePouch,
             hip(origin, dims, dominant),
@@ -86,6 +87,23 @@ pub fn holster_candidates(
         ));
     }
     out
+}
+
+/// The magazine pouch on the belt at `off`'s side, a volume only `off` may grab: the reload
+/// gesture's first step.
+pub fn magazine_pouch(
+    origin: Vec3,
+    dims: &BodyDimensions,
+    spec: &VolumeSpec,
+    off: Hand,
+) -> Candidate {
+    place(
+        GrabVolume::MagazinePouch,
+        hip(origin, dims, off),
+        spec,
+        off,
+        Some(off),
+    )
 }
 
 /// The standing height of the hip joints as a fraction of the standing height: a generic
@@ -135,12 +153,12 @@ fn side_sign(side: Hand) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::bindings::grab::grab_volume;
+    use crate::controllers::{bindings::grab::grab_volume, weapons::config::MagazineConfig};
 
     const DIMS: BodyDimensions = BodyDimensions::GENERIC_ADULT;
 
     fn candidates(config: &HolstersConfig) -> Vec<Candidate> {
-        holster_candidates(Vec3::ZERO, &DIMS, config, Hand::Right)
+        holster_candidates(Vec3::ZERO, &DIMS, config, Hand::Right, false)
     }
 
     fn centre(c: &[Candidate], volume: GrabVolume) -> Vec3 {
@@ -169,14 +187,13 @@ mod tests {
 
     #[test]
     fn the_pouch_exists_only_when_enabled_and_only_for_the_dominant_hand() {
-        let mut config = HolstersConfig::new();
+        let config = HolstersConfig::new();
         assert!(
             candidates(&config)
                 .iter()
                 .all(|c| c.volume != GrabVolume::GrenadePouch)
         );
-        config.grenade_pouch = true;
-        let c = candidates(&config);
+        let c = holster_candidates(Vec3::ZERO, &DIMS, &config, Hand::Right, true);
         let pouch = c
             .iter()
             .find(|c| c.volume == GrabVolume::GrenadePouch)
@@ -186,6 +203,25 @@ mod tests {
         assert_eq!(
             grab_volume(pouch.centre, Hand::Right, &c),
             Some(GrabVolume::GrenadePouch)
+        );
+    }
+
+    #[test]
+    fn the_magazine_pouch_is_on_the_off_hand_side_for_the_off_hand() {
+        let spec = MagazineConfig::new().pouch;
+        let pouch = magazine_pouch(Vec3::ZERO, &DIMS, &spec, Hand::Left);
+        assert!(pouch.centre.x < 0.0);
+        assert_eq!(pouch.hand, Some(Hand::Left));
+        let mut c =
+            holster_candidates(Vec3::ZERO, &DIMS, &HolstersConfig::new(), Hand::Right, true);
+        c.push(pouch);
+        assert_eq!(
+            grab_volume(pouch.centre, Hand::Left, &c),
+            Some(GrabVolume::MagazinePouch)
+        );
+        assert_ne!(
+            grab_volume(pouch.centre, Hand::Right, &c),
+            Some(GrabVolume::MagazinePouch)
         );
     }
 

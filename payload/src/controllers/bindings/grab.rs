@@ -1,12 +1,12 @@
 //! The grab-volume query: whether a hand is inside a region where a grip press grabs rather than
 //! performing the grip's default action (the off-hand's grapple). Pure.
 //!
-//! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, and, under
-//! the opt-in physical controls, the vehicle controls. The subsystem that owns a volume places it
-//! each input tick as a [`Candidate`] (the weapons in [`crate::controllers::weapons`], the vehicle
-//! controls in [`crate::controllers::vehicles`]), and
-//! [`grab_volume`] picks the one a hand's grab point is in. The tables latch the answer at the grip's
-//! press edge.
+//! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, the
+//! magazine pouch, and, under the opt-in physical controls, the vehicle controls. The subsystem
+//! that owns a volume places it each input tick as a [`Candidate`] (the weapons in
+//! [`crate::controllers::weapons`], the vehicle controls in [`crate::controllers::vehicles`]), and
+//! [`grab_volume`] picks the one a hand's grab point is in. The tables latch the answer at the
+//! grip's press edge.
 
 use glam::Vec3;
 
@@ -21,6 +21,8 @@ pub enum GrabVolume {
     Foregrip,
     /// The grenade pouch.
     GrenadePouch,
+    /// The off-hand's magazine pouch, while the magazine reload gesture is on.
+    MagazinePouch,
     /// A physical vehicle control of the driver's seat (see
     /// [`crate::controllers::vehicles::physical`]).
     VehicleControl(ControlKind),
@@ -32,6 +34,7 @@ impl GrabVolume {
             GrabVolume::Holster(site) => site.label(),
             GrabVolume::Foregrip => "foregrip",
             GrabVolume::GrenadePouch => "grenade pouch",
+            GrabVolume::MagazinePouch => "magazine pouch",
             GrabVolume::VehicleControl(kind) => kind.label(),
         }
     }

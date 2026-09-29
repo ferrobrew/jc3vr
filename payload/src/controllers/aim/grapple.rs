@@ -77,15 +77,22 @@ thread_local! {
     static OVERRIDE: Cell<Option<Matrix4>> = const { Cell::new(None) };
 }
 
-/// Run `f` with the camera getters returning the grapple view, when one is set.
-fn with_grapple_view<R>(f: impl FnOnce() -> R) -> R {
-    let Some(view) = VIEW.with(Cell::get) else {
-        return f();
-    };
+/// Run `f` with the camera getters returning `view`, the camera matrix of a ray: the scoring the
+/// aim control does around its camera then happens around the ray. Per-hand aim assist scores the
+/// candidates this way ([`crate::controllers::aim::assist`]).
+pub(super) fn with_view<R>(view: Matrix4, f: impl FnOnce() -> R) -> R {
     let previous = OVERRIDE.with(|o| o.replace(Some(view)));
     let result = f();
     OVERRIDE.with(|o| o.set(previous));
     result
+}
+
+/// Run `f` with the camera getters returning the grapple view, when one is set.
+fn with_grapple_view<R>(f: impl FnOnce() -> R) -> R {
+    match VIEW.with(Cell::get) {
+        Some(view) => with_view(view, f),
+        None => f(),
+    }
 }
 
 /// The direct-aim raycast, run from the grapple ray and then from the camera, with the grapple

@@ -21,7 +21,19 @@ pub struct Inventory {
     /// Whether the current animation permits shooting; one half of
     /// [`GetAnimationAllowsShooting`](crate::character::inventory::Inventory::GetAnimationAllowsShooting).
     pub m_DoesAnimationAllowShooting: bool,
-    _field_185: [u8; 603],
+    /// Whether the character may reload: recomputed by
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions), and cleared by the
+    /// [`SB_DISABLE_RELOAD`](crate::state::StateBitFlag::SB_DISABLE_RELOAD) state bit.
+    pub m_DoesAnimationAllowReloading: bool,
+    /// Whether the character may use grenades: recomputed by
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions) (off while planting an
+    /// explosive, while a camera hint of the wielded weapon is active, while the grapple is busy, and
+    /// without the grenade ability), and cleared by the
+    /// [`SB_DISABLE_USE_GRENADES`](crate::state::StateBitFlag::SB_DISABLE_USE_GRENADES) state bit.
+    /// [`UpdateWeapons_Parallel`](crate::character::inventory::Inventory::UpdateWeapons_Parallel) zeroes the grenade input while it
+    /// is clear.
+    pub m_DoesAnimationAllowGrenades: bool,
+    _field_187: [u8; 601],
     /// The character that owns the inventory.
     pub m_Character: *mut crate::character::character::Character,
 }
