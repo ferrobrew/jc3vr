@@ -186,7 +186,6 @@ pub fn reload() {
 }
 
 /// The ratio of the character's height to the player's, which scales vertical head travel.
-#[allow(dead_code, reason = "the posture subsystem is the consumer")]
 pub fn height_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f32 {
     character.height / player.height
 }
@@ -201,7 +200,6 @@ pub fn arm_span_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f3
 /// Standing straight puts the eyes at the character's standing eye height, and every metre the
 /// player ducks below their own standing eye height moves the character's eyes by the height
 /// ratio.
-#[allow(dead_code, reason = "the posture subsystem is the consumer")]
 pub fn remap_head_height(
     player_eye_height: f32,
     player: &BodyDimensions,
@@ -213,7 +211,6 @@ pub fn remap_head_height(
 /// Remap a head translation (a change in the head position, in a frame with +Y up): the vertical
 /// component scales by the height ratio, and the horizontal components stay 1:1 so that walking a
 /// metre in the room walks a metre in the world.
-#[allow(dead_code, reason = "the posture subsystem is the consumer")]
 pub fn remap_head_translation(
     delta: Vec3,
     player: &BodyDimensions,

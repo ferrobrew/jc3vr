@@ -8,11 +8,14 @@
 // shader linearizes the sampled colour first (g_linearize != 0), so the hardware re-encode cancels
 // it out. g_linearize == 0 passes the colour through unchanged (for a genuine-linear source or a
 // non-sRGB target). See vr::config::BlitGamma for the reasoning and the runtime toggle.
+//
+// g_brightness scales the colour for the comfort fade (1 leaves the image as it is, 0 is black).
 
 cbuffer BlitParams : register(b0)
 {
     uint g_linearize;
-    uint3 _pad;
+    float g_brightness;
+    uint2 _pad;
 };
 
 Texture2D EyeTexture : register(t0);
@@ -30,5 +33,6 @@ float4 main(float4 position : SV_Position, float2 uv : TEXCOORD0) : SV_Target
     {
         colour.rgb = srgb_to_linear(colour.rgb);
     }
+    colour.rgb *= g_brightness;
     return colour;
 }

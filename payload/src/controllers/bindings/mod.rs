@@ -138,6 +138,9 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     let step = state
         .bindings
         .step(detection.mode, &controls, dt, &config.bindings);
+    if step.crouch_toggle {
+        crate::controllers::roomscale::toggle_seated_crouch();
+    }
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let outcomes = unsafe { inject::apply(&writes) };

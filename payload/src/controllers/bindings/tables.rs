@@ -16,6 +16,11 @@
 //! hold, all decided by the game from the hold time the tracker ([`crate::controllers::bindings::hold`])
 //! writes. The system button is the one overload the mod resolves itself: a short press pauses and
 //! a long press opens the commlink.
+//!
+//! One binding drives the mod rather than the game: on foot, flicking the dominant stick down
+//! toggles the seated crouch ([`crate::controllers::roomscale::toggle_seated_crouch`]). The stick's
+//! vertical axis is otherwise unused on foot, where only its horizontal axis turns the body, and the
+//! flick works the same on the Index and Touch controllers.
 
 use jc3gi::input::input_action_map::Action::{self, *};
 
@@ -38,6 +43,8 @@ pub struct Step {
     /// The body-turn input for the headpose's VR turn scheme, `-1..=1`, positive turning right.
     /// Zero in the modes whose tables use the dominant stick themselves.
     pub body_turn: f32,
+    /// The seated crouch toggle was flicked this tick.
+    pub crouch_toggle: bool,
 }
 
 /// The tables and their cross-tick state.
@@ -48,6 +55,8 @@ pub struct Bindings {
     grips: [Option<GripUse>; 2],
     /// Whether the current wingsuit A press was latched as an evade.
     evade_press: Option<bool>,
+    /// Whether the crouch flick has fired and waits for the stick to come back.
+    crouch_flicked: bool,
 }
 
 impl Bindings {
@@ -56,6 +65,7 @@ impl Bindings {
             system: SystemButton { held: None },
             grips: [None; 2],
             evade_press: None,
+            crouch_flicked: false,
         }
     }
 
@@ -106,9 +116,16 @@ impl Bindings {
         }
         self.system
             .step(&mut out, controls.system(), dt, config.long_press_s);
+        let crouch_toggle = matches!(mode, Mode::OnFoot(_))
+            && flick_down(
+                &mut self.crouch_flicked,
+                controls.dom().stick_raw.y,
+                config.crouch_flick,
+            );
         Step {
             desired: out.desired,
             body_turn,
+            crouch_toggle,
         }
     }
 }
@@ -133,6 +150,26 @@ fn latch_grip(latch: &mut Option<GripUse>, grip: ButtonControl, volume: Option<G
         *latch = None;
     } else if latch.is_none() || (grip.pressed && grip.released && !grip.down) {
         *latch = Some(volume.map_or(GripUse::Default, GripUse::Grab));
+    }
+}
+
+/// A downward flick of a stick axis `y` (+Y forward) past `threshold`: fires once, then re-arms
+/// once the stick is back above half the threshold.
+fn flick_down(fired: &mut bool, y: f32, threshold: f32) -> bool {
+    let threshold = threshold.clamp(0.05, 1.0);
+    if !y.is_finite() {
+        return false;
+    }
+    if *fired {
+        if y > -threshold * 0.5 {
+            *fired = false;
+        }
+        false
+    } else if y <= -threshold {
+        *fired = true;
+        true
+    } else {
+        false
     }
 }
 
@@ -671,5 +708,16 @@ mod tests {
         b.step(Mode::Ui, &system(true, true, false), DT, &CONFIG);
         let step = b.step(Mode::Ui, &Controls::default(), DT, &CONFIG);
         assert!(clicked(&step, GUI_PAUSE));
+    }
+
+    #[test]
+    fn a_crouch_flick_fires_once_until_the_stick_returns() {
+        let mut fired = false;
+        assert!(!flick_down(&mut fired, -0.5, 0.8));
+        assert!(flick_down(&mut fired, -0.9, 0.8));
+        assert!(!flick_down(&mut fired, -1.0, 0.8));
+        assert!(!flick_down(&mut fired, -0.3, 0.8));
+        assert!(flick_down(&mut fired, -0.85, 0.8));
+        assert!(!flick_down(&mut fired, f32::NAN, 0.8));
     }
 }

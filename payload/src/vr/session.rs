@@ -1,12 +1,12 @@
-//! The OpenXR session and its per-session resources: creation against the game's `ID3D11Device` and
-//! the LOCAL reference space. The state machine that drives the session (READY..STOPPING, teardown)
+//! The OpenXR session and its per-session resources: creation against the game's `ID3D11Device`,
+//! the LOCAL reference space, and the STAGE reference space where the runtime offers one. The state machine that drives the session (READY..STOPPING, teardown)
 //! lives in [`crate::vr::state`]; persistence across inject cycles in [`crate::vr::persist`].
 
 use anyhow::Context as _;
 use openxr as xr;
 use windows::core::Interface as _;
 
-use crate::vr::{VrConfig, swapchain::Swapchain};
+use crate::vr::{VrConfig, stage, swapchain::Swapchain};
 
 /// A created OpenXR session and its per-session resources. `running` tracks the READY..STOPPING
 /// window driven by the event pump.
@@ -16,6 +16,9 @@ pub(super) struct Session {
     pub(super) frame_stream: xr::FrameStream<xr::D3D11>,
     /// The LOCAL reference space -- the cockpit-relative world frame.
     pub(super) local: xr::Space,
+    /// The STAGE reference space (the floor-level play area), or `None` when the runtime does not
+    /// offer one. Located against [`local`](Self::local) once per frame (see [`crate::vr::stage`]).
+    pub(super) stage: Option<xr::Space>,
     /// The stereo swapchain, created lazily once the session is running and first rendered.
     pub(super) swapchain: Option<Swapchain>,
     pub(super) running: bool,
@@ -57,12 +60,14 @@ impl Session {
         let local = handle
             .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
             .context("vr: creating the LOCAL reference space")?;
+        let stage = stage::create_space(&handle);
 
         Ok(Self {
             handle,
             frame_wait,
             frame_stream,
             local,
+            stage,
             swapchain: None,
             running: false,
         })

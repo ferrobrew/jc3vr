@@ -204,6 +204,9 @@ pub struct BindingsConfig {
     /// How far the move stick must be pushed when the wingsuit's A is pressed for the press to
     /// evade rather than open the parachute, `0..1`.
     pub evade_flick: f32,
+    /// How far down the dominant stick must be flicked on foot to toggle the seated crouch, `0..1`.
+    /// The stick must come back above half of it before the next flick counts.
+    pub crouch_flick: f32,
 }
 
 impl BindingsConfig {
@@ -214,6 +217,7 @@ impl BindingsConfig {
             trigger_deadzone: 0.05,
             long_press_s: 0.5,
             evade_flick: 0.8,
+            crouch_flick: 0.8,
         }
     }
 }
@@ -624,30 +628,43 @@ impl BodyRemapConfig {
     }
 }
 
-/// Posture and roomscale locomotion. These act on the headset alone, controllers or not, so the
-/// behaviour-changing parts default off.
+/// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
+/// headset alone, controllers or not, so the behaviour-changing parts default off. The head height
+/// itself is remapped only under [`BodyRemapConfig::remap_head`].
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct RoomscaleConfig {
     /// The player's posture.
     pub posture: Posture,
+    /// In the automatic posture, the smallest play area (both sides, metres) that counts as a
+    /// room-scale setup. A runtime reports a standing-only setup as no bounds or a very small
+    /// rectangle.
+    pub roomscale_min_extent_m: f32,
     /// The body chasing the physical head in the roomscale posture.
     pub chase: ChaseConfig,
     /// Crouching.
     pub crouch: CrouchConfig,
-    /// Fade the view when the head goes deep into geometry the body cannot follow it through.
-    pub head_fade: bool,
+    /// Fading the view when the head goes deep into geometry the body cannot follow it through.
+    pub head_fade: HeadFadeConfig,
+    /// How fast the comfort fade darkens and clears.
+    pub fade: FadeConfig,
     /// How the view behaves while the character enters or exits a vehicle seat.
     pub seat_transition: SeatTransition,
+    /// Under [`SeatTransition::Fade`], how long the view stays dark after the seat locks, so that
+    /// the re-based view settles before it clears, seconds.
+    pub seat_fade_hold_s: f32,
 }
 
 impl RoomscaleConfig {
     pub const fn new() -> Self {
         Self {
             posture: Posture::Auto,
+            roomscale_min_extent_m: 1.0,
             chase: ChaseConfig::new(),
             crouch: CrouchConfig::new(),
-            head_fade: false,
+            head_fade: HeadFadeConfig::new(),
+            fade: FadeConfig::new(),
             seat_transition: SeatTransition::Ride,
+            seat_fade_hold_s: 0.3,
         }
     }
 }
@@ -673,10 +690,18 @@ pub enum Posture {
 pub struct ChaseConfig {
     /// Off by default: it moves the character from head motion, which the headset alone produces.
     pub enabled: bool,
-    /// Horizontal head offsets from the body below this many metres are left alone.
+    /// Horizontal head offsets from the body below this many metres are left alone. A chase that
+    /// has started runs until the offset is below half of it.
     pub deadzone_m: f32,
     /// The fastest the chase moves the body, metres per second.
     pub max_speed_mps: f32,
+    /// How quickly the chase closes the offset: the chase speed is the offset divided by this,
+    /// seconds, before the speed limit. A few simulation ticks, so that the body does not overshoot
+    /// the head.
+    pub time_constant_s: f32,
+    /// The shortest single-tick jump of the body, metres, that counts as a teleport the game made
+    /// without announcing it. The threshold also grows with the body's speed.
+    pub warp_min_m: f32,
 }
 
 impl ChaseConfig {
@@ -685,6 +710,8 @@ impl ChaseConfig {
             enabled: false,
             deadzone_m: 0.10,
             max_speed_mps: 3.0,
+            time_constant_s: 0.15,
+            warp_min_m: 8.0,
         }
     }
 }
@@ -695,9 +722,21 @@ pub struct CrouchConfig {
     /// Fold the body with the lowered head through the body IK: the feet stay planted and the hips
     /// drop. Off by default: it changes the body for every player who ducks.
     pub visual: bool,
-    /// Shorten the character's collision capsule while crouched. Requires [`visual`](Self::visual).
+    /// Shorten the character's collision capsule while crouched, with the game's own crouching
+    /// proxy state. Requires [`visual`](Self::visual). The game hands the proxy state to its own
+    /// states (swimming, vehicles, the parachute, ragdoll) whenever they want it.
     pub capsule: bool,
-    /// In the seated posture, how far (metres) the crouch toggle lowers the eyes.
+    /// How much of the head's drop the hips take, `0..=1`. A squat lowers the hips nearly as far as
+    /// the head; the spine takes the rest.
+    pub hips_share: f32,
+    /// How far (metres, at the character's scale) the head must drop below the standing eye height
+    /// before the character counts as crouched, for the capsule and the readouts.
+    pub enter_drop_m: f32,
+    /// How far the head must come back up (metres below the standing eye height) before the
+    /// character counts as standing again.
+    pub exit_drop_m: f32,
+    /// In the seated posture, how far (metres, at the character's scale) the crouch toggle lowers
+    /// the eyes.
     pub seated_drop_m: f32,
 }
 
@@ -706,7 +745,49 @@ impl CrouchConfig {
         Self {
             visual: false,
             capsule: false,
+            hips_share: 0.8,
+            enter_drop_m: 0.45,
+            exit_drop_m: 0.30,
             seated_drop_m: 0.6,
+        }
+    }
+}
+
+/// The head-through-geometry fade.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct HeadFadeConfig {
+    /// Off by default: it darkens the view for every player whose head enters a wall.
+    pub enabled: bool,
+    /// How deep (metres) past the obstruction the head may go before the view starts to darken.
+    pub start_depth_m: f32,
+    /// How deep (metres) past the obstruction the view is fully dark.
+    pub full_depth_m: f32,
+}
+
+impl HeadFadeConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            start_depth_m: 0.05,
+            full_depth_m: 0.25,
+        }
+    }
+}
+
+/// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions).
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct FadeConfig {
+    /// How long a fade from clear to fully dark takes, seconds.
+    pub out_s: f32,
+    /// How long a fade from fully dark to clear takes, seconds.
+    pub in_s: f32,
+}
+
+impl FadeConfig {
+    pub const fn new() -> Self {
+        Self {
+            out_s: 0.15,
+            in_s: 0.3,
         }
     }
 }
@@ -714,9 +795,12 @@ impl CrouchConfig {
 /// How the view behaves while the character enters or exits a vehicle seat.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SeatTransition {
-    /// Re-base the cockpit at seat lock, hiding the entry animation behind a fade.
+    /// Re-base the cockpit the moment the seat locks. The entry animation plays behind a fade that
+    /// clears at the lock; the exit plays live, and the view re-bases its yaw and height once the
+    /// character is out.
     Instant,
-    /// Fade out when the entry animation takes the camera, and fade in seated.
+    /// Fade out when the entry animation takes the camera, and fade in seated once the re-based
+    /// view has settled. The exit also plays behind a fade.
     Fade,
     /// Keep the head anchored through the whole animation with nothing hidden. The default until
     /// the other modes are proven, because it is the mod's existing behaviour.

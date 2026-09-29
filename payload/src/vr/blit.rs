@@ -11,7 +11,10 @@
 //! same model as [`crate::capture::composite`].
 //!
 //! The gamma bridge (linear source vs `_SRGB` target) is a runtime toggle; see
-//! [`crate::vr::config::BlitGamma`] and `vr_blit_ps.hlsl`.
+//! [`crate::vr::config::BlitGamma`] and `vr_blit_ps.hlsl`. The blit also darkens the image by the
+//! comfort fade's level ([`crate::controllers::roomscale::fade`]): the engine's own screen fade
+//! belongs to the game's fades (loading, teleports, cutscenes), so the mod's fade is applied here,
+//! at the last stage before the compositor.
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
@@ -176,6 +179,7 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
         unsafe { device.m_Context.as_ref() }.context("vr: the graphics context is unavailable")?;
 
     let linearize = matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize);
+    let brightness = 1.0 - crate::controllers::roomscale::fade::level();
 
     let mut guard = VR_BLIT.lock();
     if guard.is_none() {
@@ -187,7 +191,7 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
     // engine's render work.
     unsafe {
         EnterCriticalSection(context.m_Mutex);
-        blit.set_gamma(&context.m_Context, linearize);
+        blit.set_params(&context.m_Context, linearize, brightness);
         for (eye, src) in eye_textures.iter().enumerate() {
             let (Some(image), Some(src)) = (frame.eye_image(eye), src.as_ref()) else {
                 continue;
@@ -206,15 +210,16 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The blit pipeline: shaders, sampler, rasterizer, gamma constant buffer, and caches of the
+/// The blit pipeline: shaders, sampler, rasterizer, parameter constant buffer, and caches of the
 /// per-slice render-target views and per-eye source shader-resource views.
 struct VrBlit {
     vertex_shader: ID3D11VertexShader,
     pixel_shader: ID3D11PixelShader,
     sampler: ID3D11SamplerState,
     rasterizer: ID3D11RasterizerState,
-    /// The gamma-mode constant buffer (`b0`), updated per submit.
-    gamma_cb: ID3D11Buffer,
+    /// The parameter constant buffer (`b0`): the gamma mode and the comfort fade's brightness,
+    /// updated per submit.
+    params_cb: ID3D11Buffer,
     /// Render-target views over swapchain slices, keyed by `(texture pointer, array slice)`. The
     /// swapchain images are enumerated once and stable, so this cache is valid for the runtime's
     /// lifetime.
@@ -271,9 +276,10 @@ impl VrBlit {
             .context("vr: creating the blit rasterizer state")?;
             let rasterizer = rasterizer.context("vr: the blit rasterizer state was not created")?;
 
-            // 16-byte constant buffer holding the gamma mode in the first uint; the rest is padding.
-            let initial: [u32; 4] = [1, 0, 0, 0];
-            let mut gamma_cb: Option<ID3D11Buffer> = None;
+            // 16-byte constant buffer: the gamma mode as a uint, then the brightness as a float; the
+            // rest is padding.
+            let initial: [u32; 4] = [1, 1.0f32.to_bits(), 0, 0];
+            let mut params_cb: Option<ID3D11Buffer> = None;
             d3d.CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     ByteWidth: std::mem::size_of::<[u32; 4]>() as u32,
@@ -288,32 +294,38 @@ impl VrBlit {
                     SysMemPitch: 0,
                     SysMemSlicePitch: 0,
                 }),
-                Some(&mut gamma_cb),
+                Some(&mut params_cb),
             )
-            .context("vr: creating the blit gamma constant buffer")?;
-            let gamma_cb =
-                gamma_cb.context("vr: the blit gamma constant buffer was not created")?;
+            .context("vr: creating the blit parameter constant buffer")?;
+            let params_cb =
+                params_cb.context("vr: the blit parameter constant buffer was not created")?;
 
             Ok(Self {
                 vertex_shader,
                 pixel_shader,
                 sampler,
                 rasterizer,
-                gamma_cb,
+                params_cb,
                 rtv_cache: Vec::new(),
                 srv_cache: [None, None],
             })
         }
     }
 
-    /// Update the gamma constant buffer. The caller must hold the context mutex.
+    /// Update the parameter constant buffer: the gamma mode and the comfort fade's brightness
+    /// (`0..=1`). The caller must hold the context mutex.
     ///
     /// # Safety
     /// `context` must be the live engine immediate context.
-    unsafe fn set_gamma(&self, context: &ID3D11DeviceContext, linearize: bool) {
-        let data: [u32; 4] = [u32::from(linearize), 0, 0, 0];
+    unsafe fn set_params(&self, context: &ID3D11DeviceContext, linearize: bool, brightness: f32) {
+        let brightness = if brightness.is_finite() {
+            brightness.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let data: [u32; 4] = [u32::from(linearize), brightness.to_bits(), 0, 0];
         unsafe {
-            context.UpdateSubresource(&self.gamma_cb, 0, None, data.as_ptr().cast(), 0, 0);
+            context.UpdateSubresource(&self.params_cb, 0, None, data.as_ptr().cast(), 0, 0);
         }
     }
 
@@ -356,7 +368,7 @@ impl VrBlit {
             context.VSSetShader(&self.vertex_shader, None);
             context.PSSetShader(&self.pixel_shader, None);
             context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-            context.PSSetConstantBuffers(0, Some(&[Some(self.gamma_cb.clone())]));
+            context.PSSetConstantBuffers(0, Some(&[Some(self.params_cb.clone())]));
             context.PSSetShaderResources(0, Some(&[Some(srv)]));
             context.RSSetState(&self.rasterizer);
             context.Draw(3, 0);

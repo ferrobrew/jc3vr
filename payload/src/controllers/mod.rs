@@ -20,7 +20,10 @@
 //!   update;
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
 //!   off-hand's ray;
-//! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye.
+//! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye;
+//! - [`roomscale`]: posture, the head-height remap, the roomscale chase loop, crouching, the
+//!   head-through-geometry fade, and seat transitions. These need the headset rather than the
+//!   controllers, so they are gated on the VR source and their own toggles instead of the scheme.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
@@ -38,6 +41,7 @@ pub mod gamepad_setting;
 pub mod hands;
 pub mod mode;
 pub mod overlay;
+pub mod roomscale;
 pub mod scheme;
 
 pub use config::ControllersConfig;
@@ -49,4 +53,5 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(aim_state::hook_library())
         .with_hook_library(hands::hook_library())
         .with_hook_library(aim::hook_library())
+        .with_hook_library(roomscale::hook_library())
 }

@@ -136,13 +136,20 @@ impl std::convert::AsMut<CastRayInfoBase> for CastRayInfoBase {
 pub struct CharacterInput {
     pub jump: bool,
     /// Whether [`wantedVelocity`](crate::physics::CharacterInput::wantedVelocity) is game-controlled. The on-foot locomotion
-    /// task sets it when it takes its velocity from the blackboard's code-driven path and clears it
-    /// otherwise.
+    /// task sets it while the proxy is supported on stairs
+    /// ([`PfxCharacterInstance::m_IsSupportedOnStairs`](crate::physics::PfxCharacterInstance::m_IsSupportedOnStairs)) and the character's blackboard carries a
+    /// slope direction, and clears it otherwise. The proxy update rotates the wanted velocity by
+    /// the proxy's rotation only while it is set; otherwise it hands the vector to the character
+    /// state as it stands.
     pub gameControledVelocity: bool,
     _field_2: [u8; 2],
-    /// The velocity the proxy should move at (world space). The on-foot locomotion task
+    /// The velocity the proxy should move at, metres per second, in the character's local frame
+    /// (not world space). The on-foot locomotion task
     /// (`NStateTask_MovementLocomotionTask::Update`) writes its solved velocity here every tick,
-    /// including standing idle.
+    /// including standing idle, and returns without writing while the character is attached to a
+    /// vehicle. [`Character::SetWantedWorldVelocity`](crate::character::character::Character::SetWantedWorldVelocity)
+    /// and [`Character::GetWantedWorldVelocity`](crate::character::character::Character::GetWantedWorldVelocity)
+    /// convert it from and to world space.
     pub wantedVelocity: crate::types::math::Vector3,
 }
 fn _CharacterInput_size_check() {
@@ -266,9 +273,13 @@ pub struct PfxCharacterInstance {
     _field_0: [u8; 56],
     /// The proxy input the physics step reads; see [`CharacterInput`](crate::physics::CharacterInput).
     pub m_Input: crate::physics::CharacterInput,
-    _field_48: [u8; 128],
-    /// The current proxy state (`CPfxCharacterInstance::EProxyState`), which selects the proxy's
-    /// collision shape. Written by [`SetProxyState`](crate::physics::PfxCharacterInstance::SetProxyState).
+    _field_48: [u8; 124],
+    /// Whether the proxy is standing on stairs. The on-foot locomotion task takes its velocity
+    /// along the blackboard's slope direction while it is set.
+    pub m_IsSupportedOnStairs: bool,
+    _field_c5: [u8; 3],
+    /// The current proxy state, a [`ProxyState`](crate::physics::ProxyState) value, which selects the proxy's collision shape.
+    /// Written by [`SetProxyState`](crate::physics::PfxCharacterInstance::SetProxyState).
     pub m_ProxyState: i32,
     _field_cc: [u8; 4],
     /// The Havok character rigid body (`hknpCharacterRigidBody*`), which holds the body id that
@@ -577,6 +588,30 @@ impl std::convert::AsMut<PhysicsSystem> for PhysicsSystem {
 /// vehicle fin forces, and the water-surface ray query read water heights from.
 pub unsafe fn get_PhysicsSystem_s_WaterQueryProxy() -> &'static mut *mut crate::physics::WaterProxy {
     unsafe { &mut *(0x142EDC230 as *mut *mut crate::physics::WaterProxy) }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// `CPfxCharacterInstance::EProxyState`: the character proxy's state, each with its own pre-built
+/// collision shape. Every character has the shape of every state. The crouching shape is a
+/// shortened capsule with the non-player standing radius; the player stands in
+/// [`PLAYER_STANDING`](crate::physics::ProxyState::PLAYER_STANDING), whose capsule has the player's own radius.
+pub enum ProxyState {
+    STANDING = 0isize as _,
+    CROUCHING = 1isize as _,
+    SWIMMING = 2isize as _,
+    ROTATED_AND_OFFSETTED = 3isize as _,
+    ROTATING_CROUCHING = 4isize as _,
+    QUADRUPED_LARGE = 5isize as _,
+    QUADRUPED_SMALL = 6isize as _,
+    QUADRUPED_TINY = 7isize as _,
+    PLAYER_STANDING = 8isize as _,
+    WINGSUITING = 9isize as _,
+}
+fn _ProxyState_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], ProxyState>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// The ragdoll's proxy phantom (`CRagdollProxyPhantom`), the shape set that stands in for a

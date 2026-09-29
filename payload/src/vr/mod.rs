@@ -59,6 +59,7 @@ pub mod pose_control;
 mod recenter;
 mod resolution;
 mod session;
+pub mod stage;
 mod state;
 mod swapchain;
 pub mod tail;
@@ -72,7 +73,7 @@ pub use blit::present_and_submit;
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
 pub use mirror::{MIRROR_ZOOM_RANGE, present_mirror};
-pub use recenter::{auto_recenter_tick, recenter};
+pub use recenter::{RecenterKind, auto_recenter_tick, recenter, request_recenter};
 pub use resolution::apply_native_resolution;
 pub use state::{VrStatus, install, is_running, status, uninstall, update};
 

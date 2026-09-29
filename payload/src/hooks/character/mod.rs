@@ -1,6 +1,6 @@
-//! The character hooks: the pose-finalization pass (headset-driven body IK and the controller
-//! hands' wrist targets before the HumanIK solve, the head override and the hands' post-solve
-//! publish after it) and the act filter.
+//! The character hooks: the pose-finalization pass (headset-driven body IK, the controller hands'
+//! wrist targets, and the roomscale crouch's hips and feet before the HumanIK solve, the head
+//! override and the hands' post-solve publish after it) and the act filter.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
@@ -10,7 +10,10 @@ use detours_macro::detour;
 use jc3gi::character::character::Character;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::hands::{self, ik::HandPlan};
+use crate::controllers::{
+    self,
+    hands::{self, ik::HandPlan},
+};
 
 pub(crate) mod acts;
 pub(crate) mod body_ik;
@@ -58,6 +61,7 @@ fn character_update_pass_finalize_pose_parallel(
         if let Some(plan) = &plan {
             hands::ik::queue(character, plan);
         }
+        controllers::roomscale::queue_crouch_ik(character);
     }
 
     CHARACTER_UPDATE_PASS_FINALIZE_POSE_PARALLEL

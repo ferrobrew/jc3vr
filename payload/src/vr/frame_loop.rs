@@ -14,6 +14,7 @@ use crate::{
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig, pose_control,
         recenter::mid_pose,
+        stage,
         state::{VR_STATE, VrState},
         swapchain::Swapchain,
     },
@@ -308,6 +309,13 @@ impl VrState {
         if let Some(p) = head_pose {
             self.latest_head_pose = Some(p);
         }
+        stage::locate_head(
+            &session.handle,
+            &session.local,
+            session.stage.as_ref(),
+            frame_state.predicted_display_time,
+            head_pose,
+        );
 
         // The controllers are sampled at the same predicted display time and re-based against the
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.

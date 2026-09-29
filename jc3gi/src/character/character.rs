@@ -279,12 +279,24 @@ pub struct Character {
     pub m_UnlimitedAmmo: bool,
     /// Packed aiming-state bit-flags; see [`AimState`](crate::character::character::AimState).
     pub m_AimFlags: crate::character::character::AimState,
-    _field_20f2: [u8; 930],
+    _field_20f2: [u8; 66],
+    /// The proxy state requested for the character, a [`ProxyState`](crate::physics::ProxyState) value.
+    /// [`SetProxyState`](crate::character::character::Character::SetProxyState) writes it, and
+    /// [`UpdateProxyState`](crate::character::character::Character::UpdateProxyState) applies it to the physics proxy on the
+    /// simulation thread. The animation graph's proxy-state task requests states on its state's
+    /// entry and exit.
+    pub m_PendingProxyState: i32,
+    /// The proxy state the character returns to, a [`ProxyState`](crate::physics::ProxyState) value. The graph's proxy-state
+    /// restores and the paratrooper logic request it. The player's is
+    /// [`PLAYER_STANDING`](crate::physics::ProxyState::PLAYER_STANDING), set at player initialization through
+    /// [`SetDefaultProxyState`](crate::character::character::Character::SetDefaultProxyState).
+    pub m_DefaultProxyState: i32,
+    _field_213c: [u8; 856],
     /// How the character's motion is integrated this frame (`CCharacter::EMotionState`), read by
     /// the dispatch in `CCharacter::UpdateIntegratingPhysics`. Each movement actuator sets it as
     /// part of its per-frame update. Left as a raw integer because only a few of its ~25 values have
-    /// been confirmed: `MOTION_STATE_SWIMMING` and `MOTION_STATE_RAGDOLL`
-    /// on this type.
+    /// been confirmed: `MOTION_STATE_SWIMMING`, `MOTION_STATE_RAGDOLL`, and
+    /// `MOTION_STATE_TASK_DEFINED` on this type.
     pub m_CurrentMotionState: u32,
     _field_2498: [u8; 402],
     pub m_IsLocalCharacter: bool,
@@ -860,6 +872,76 @@ impl Character {
             f(self as *const Self as _)
         }
     }
+    pub const SetProxyState_ADDRESS: usize = 0x14075EB20;
+    /// Requests proxy state `state` (a [`ProxyState`](crate::physics::ProxyState) value) by writing
+    /// [`m_PendingProxyState`](crate::character::character::Character::m_PendingProxyState); the physics proxy changes shape when
+    /// [`UpdateProxyState`](crate::character::character::Character::UpdateProxyState) next runs.
+    pub unsafe fn SetProxyState(&mut self, state: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, state: i32) = ::std::mem::transmute(
+                Self::SetProxyState_ADDRESS,
+            );
+            f(self as *mut Self as _, state)
+        }
+    }
+    pub const SetDefaultProxyState_ADDRESS: usize = 0x14077D6C0;
+    /// Sets [`m_DefaultProxyState`](crate::character::character::Character::m_DefaultProxyState) to `state`, and also requests it as
+    /// the pending state when the proxy was in the previous default.
+    pub unsafe fn SetDefaultProxyState(&mut self, state: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, state: i32) = ::std::mem::transmute(
+                Self::SetDefaultProxyState_ADDRESS,
+            );
+            f(self as *mut Self as _, state)
+        }
+    }
+    pub const UpdateProxyState_ADDRESS: usize = 0x14077E4D0;
+    /// Applies [`m_PendingProxyState`](crate::character::character::Character::m_PendingProxyState) to the physics proxy when it
+    /// differs from the proxy's current state
+    /// ([`PfxCharacterInstance::SetProxyState`](crate::physics::PfxCharacterInstance::SetProxyState)),
+    /// then refreshes the character's obstacle in the AI pathfinder. The same body is inlined at the
+    /// end of the character's serial state-machine pass, after the state tasks run.
+    pub unsafe fn UpdateProxyState(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateProxyState_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const GetWantedWorldVelocity_ADDRESS: usize = 0x14077E9A0;
+    /// Writes the proxy's wanted velocity ([`CharacterInput::wantedVelocity`](crate::physics::CharacterInput::wantedVelocity),
+    /// character-local) rotated into world space by [`m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1) to
+    /// `out`, and returns `out`.
+    pub unsafe fn GetWantedWorldVelocity(
+        &self,
+        out: *mut crate::types::math::Vector3,
+    ) -> *mut crate::types::math::Vector3 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut crate::types::math::Vector3,
+            ) -> *mut crate::types::math::Vector3 = ::std::mem::transmute(
+                Self::GetWantedWorldVelocity_ADDRESS,
+            );
+            f(self as *const Self as _, out)
+        }
+    }
+    pub const SetWantedWorldVelocity_ADDRESS: usize = 0x14077E9F0;
+    /// Sets the proxy's wanted velocity from the world-space `velocity`, converting it into the
+    /// character-local frame with the inverse of the proxy's transform.
+    pub unsafe fn SetWantedWorldVelocity(
+        &mut self,
+        velocity: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                velocity: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::SetWantedWorldVelocity_ADDRESS);
+            f(self as *mut Self as _, velocity)
+        }
+    }
     pub const IsAttachedToLandVehicle_ADDRESS: usize = 0x1407D5FA0;
     /// Whether the attached vehicle is a `CLandVehicle` (cars and motorcycles), by RTTI `IsType`.
     pub unsafe fn IsAttachedToLandVehicle(&self) -> bool {
@@ -1203,6 +1285,11 @@ impl Character {
     pub const MOTION_STATE_RAGDOLL: u32 = 20;
     /// `m_CurrentMotionState` while swimming, written by both swim movement cores every frame.
     pub const MOTION_STATE_SWIMMING: u32 = 24;
+    /// `m_CurrentMotionState` while a movement task drives the proxy velocity itself. The on-foot
+    /// locomotion task (`NStateTask_MovementLocomotionTask::Update`) sets it on every update in
+    /// which it writes the proxy's wanted velocity, and leaves the value alone when it returns
+    /// early because the character is attached to a vehicle.
+    pub const MOTION_STATE_TASK_DEFINED: u32 = 25;
 }
 impl std::convert::AsRef<Character> for Character {
     fn as_ref(&self) -> &Character {

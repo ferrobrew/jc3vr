@@ -1,5 +1,8 @@
 //! Recentering the cockpit: the baseline the per-eye poses are expressed relative to, the manual
-//! [`recenter`], and the gameplay-resume auto-recenter ([`auto_recenter_tick`]).
+//! [`recenter`], the deferred [`request_recenter`], and the gameplay-resume auto-recenter
+//! ([`auto_recenter_tick`]).
+
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use openxr as xr;
 use parking_lot::Mutex;
@@ -13,17 +16,68 @@ use crate::{
 /// its position and yaw only (the cockpit model). The frame loop consumes the baseline when
 /// mapping per-eye poses (see [`crate::vr::frame`]). No-op until a frame has located a head pose.
 pub fn recenter() {
+    recenter_as(RecenterKind::Full);
+}
+
+/// What a recenter re-bases.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum RecenterKind {
+    /// Position and yaw: the head's current pose becomes the cockpit's origin.
+    Full,
+    /// Yaw and height only: the horizontal position stays where it was, so that a body standing
+    /// where the head is does not move relative to it.
+    YawAndHeight,
+}
+
+/// Ask for a recenter at the start of the next frame. For callers that run while the frame in
+/// flight holds the runtime lock (the frame's own pose composition, or anything inside the engine's
+/// render update), where [`recenter`] would deadlock. A full request outranks a yaw-and-height one.
+pub fn request_recenter(kind: RecenterKind) {
+    let code = match kind {
+        RecenterKind::YawAndHeight => REQUEST_YAW_HEIGHT,
+        RecenterKind::Full => REQUEST_FULL,
+    };
+    PENDING_RECENTER.fetch_max(code, Ordering::Relaxed);
+}
+
+fn recenter_as(kind: RecenterKind) {
     let mut state = VR_STATE.lock();
     match state.latest_head_pose {
         Some(pose) => {
-            state.baseline = Some(Baseline::from_pose(pose));
-            tracing::info!(target: "vr", "recentered the cockpit baseline");
+            let fresh = Baseline::from_pose(pose);
+            let previous = state.baseline;
+            state.baseline = Some(match (kind, previous) {
+                (RecenterKind::YawAndHeight, Some(previous)) => fresh.keeping_horizontal(previous),
+                _ => fresh,
+            });
+            drop(state);
+            // The cockpit frame turns by the yaw change: new frame from old.
+            let turn = previous.map_or(glam::Quat::IDENTITY, |p| fresh.yaw.conjugate() * p.yaw);
+            crate::controllers::roomscale::on_recenter(kind, turn);
+            tracing::info!(target: "vr", ?kind, "recentered the cockpit baseline");
         }
         None => {
             tracing::warn!(target: "vr", "recenter requested before any head pose was located");
         }
     }
 }
+
+/// Service a recenter asked for through [`request_recenter`]. Called at the top of
+/// [`auto_recenter_tick`], before the frame takes the runtime lock.
+fn service_requested_recenter() {
+    match PENDING_RECENTER.swap(REQUEST_NONE, Ordering::Relaxed) {
+        REQUEST_FULL => recenter_as(RecenterKind::Full),
+        REQUEST_YAW_HEIGHT => recenter_as(RecenterKind::YawAndHeight),
+        _ => {}
+    }
+}
+
+/// The pending [`request_recenter`], as one of the `REQUEST_*` codes, ordered so that the larger
+/// request wins.
+static PENDING_RECENTER: AtomicU8 = AtomicU8::new(REQUEST_NONE);
+const REQUEST_NONE: u8 = 0;
+const REQUEST_YAW_HEIGHT: u8 = 1;
+const REQUEST_FULL: u8 = 2;
 
 /// Drive the gameplay-resume auto-recenter. Call once per frame on the game thread. Arms while the
 /// game is not in settled gameplay (frontend, loading, or no local player character), and fires a
@@ -32,7 +86,12 @@ pub fn recenter() {
 /// transitions such as exiting a vehicle keep a live character, so they never re-arm and never fire.
 /// See [`crate::vr::VrConfig::auto_recenter_on_gameplay`].
 pub fn auto_recenter_tick() {
-    if !Config::lock_query(|c| c.vr.auto_recenter_on_gameplay) || !is_running() {
+    if !is_running() {
+        PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
+        return;
+    }
+    service_requested_recenter();
+    if !Config::lock_query(|c| c.vr.auto_recenter_on_gameplay) {
         return;
     }
     let in_gameplay = crate::hooks::in_gameplay();
@@ -107,6 +166,14 @@ impl Baseline {
         Self {
             position: glam::Vec3::new(pose.position.x, pose.position.y, pose.position.z),
             yaw,
+        }
+    }
+
+    /// This baseline's yaw and height with `previous`'s horizontal position.
+    fn keeping_horizontal(self, previous: Baseline) -> Self {
+        Self {
+            position: glam::Vec3::new(previous.position.x, self.position.y, previous.position.z),
+            yaw: self.yaw,
         }
     }
 

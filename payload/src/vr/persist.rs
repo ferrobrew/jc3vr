@@ -6,7 +6,7 @@ use anyhow::Context as _;
 use openxr as xr;
 use openxr::sys::Handle as _;
 
-use crate::vr::{VrConfig, session::Session};
+use crate::vr::{VrConfig, session::Session, stage};
 
 /// Acquire an OpenXR instance: reuse a persisted handle if `persist` is set and one is stashed and
 /// still live, otherwise create a fresh one. A stashed handle that fails to re-wrap or validate (the
@@ -95,11 +95,13 @@ pub(super) fn persist_session(session: Session) {
         frame_wait,
         frame_stream,
         local,
+        stage,
         swapchain,
         running: _,
     } = session;
     // Destroy the cheap-to-recreate children; the reinject rebuilds them on the reused session.
     drop(swapchain);
+    drop(stage);
     drop(local);
     // The frame waiter/stream hold session references but issue no XR destroy; dropping them just
     // releases those references (the leaked handle below keeps the session alive).
@@ -207,11 +209,13 @@ unsafe fn reuse_session(instance: &xr::Instance, raw: u64) -> anyhow::Result<Ses
     let local = session
         .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
         .context("recreating the LOCAL reference space for the persisted session")?;
+    let stage = stage::create_space(&session);
     Ok(Session {
         handle: session,
         frame_wait,
         frame_stream,
         local,
+        stage,
         swapchain: None,
         running: true,
     })

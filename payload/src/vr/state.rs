@@ -31,6 +31,7 @@ use crate::{
         recenter::Baseline,
         resolution,
         session::Session,
+        stage,
     },
 };
 
@@ -356,6 +357,10 @@ impl VrState {
                     input::mark_profiles_dirty();
                     continue;
                 }
+                Ok(Some(xr::Event::ReferenceSpaceChangePending(_))) => {
+                    stage::mark_bounds_dirty();
+                    continue;
+                }
                 Ok(Some(xr::Event::EventsLost(e))) => {
                     tracing::warn!(target: "vr", "lost {} OpenXR events", e.lost_event_count());
                     continue;
@@ -519,6 +524,7 @@ impl VrState {
         self.system = None;
         self.baseline = None;
         self.latest_head_pose = None;
+        stage::clear();
         self.recommended_view = None;
         self.runtime_name = None;
     }

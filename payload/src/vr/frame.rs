@@ -196,15 +196,27 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
     // transition without pinning the camera to the body (issue #27).
     headpose::xr::set_cockpit_pose(center_position, center_orientation);
 
+    // The posture's head height and the roomscale cockpit shift. The per-eye offsets below stay
+    // relative to the located centre, so they are untouched by either.
+    let cockpit = crate::controllers::roomscale::compose_cockpit(
+        &crate::controllers::roomscale::FrameInputs {
+            cockpit: center_position,
+            anchor: anchor_raw,
+            anchor_prev: anchor_prev_raw,
+            body: body_rotation,
+            world_scale: cfg.world_scale,
+        },
+    );
+
     let cur = headpose::xr::compose(
-        center_position,
+        cockpit.cur,
         center_orientation,
         body_rotation,
         anchor,
         cfg.world_scale,
     );
     let prev = headpose::xr::compose(
-        center_position,
+        cockpit.prev,
         center_orientation,
         body_rotation_prev,
         anchor_prev,

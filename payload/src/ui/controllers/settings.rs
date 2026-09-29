@@ -5,11 +5,11 @@ use egui::Ui;
 use crate::{
     config,
     controllers::{
-        config::{LocomotionDirection, Posture, SchemeSetting, SeatTransition},
+        config::{LocomotionDirection, SchemeSetting},
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, hands, overlay},
+    ui::controllers::{aim, hands, overlay, roomscale},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -60,6 +60,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.add(egui::Slider::new(&mut b.trigger_deadzone, 0.0..=0.5).text("Trigger deadzone"));
         ui.add(egui::Slider::new(&mut b.long_press_s, 0.2..=1.5).text("Commlink long press (s)"));
         ui.add(egui::Slider::new(&mut b.evade_flick, 0.3..=1.0).text("Wingsuit evade flick"));
+        ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
         ui.add(egui::Slider::new(&mut c.mode.debounce_ticks, 1..=6).text("Mode debounce (ticks)"));
     });
 
@@ -165,40 +166,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
     });
 
     egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {
-        let r = &mut c.roomscale;
-        ui.horizontal(|ui| {
-            ui.label("Posture");
-            ui.selectable_value(&mut r.posture, Posture::Auto, "Auto");
-            ui.selectable_value(&mut r.posture, Posture::Seated, "Seated");
-            ui.selectable_value(&mut r.posture, Posture::Standing, "Standing");
-            ui.selectable_value(&mut r.posture, Posture::Roomscale, "Roomscale");
-        });
-        ui.checkbox(&mut r.chase.enabled, "Roomscale chase");
-        ui.add_enabled_ui(r.chase.enabled, |ui| {
-            ui.indent("chase", |ui| {
-                ui.add(egui::Slider::new(&mut r.chase.deadzone_m, 0.0..=0.5).text("Deadzone (m)"));
-                ui.add(
-                    egui::Slider::new(&mut r.chase.max_speed_mps, 0.5..=8.0)
-                        .text("Max speed (m/s)"),
-                );
-            });
-        });
-        ui.checkbox(&mut r.crouch.visual, "Visual crouch");
-        ui.add_enabled(
-            r.crouch.visual,
-            egui::Checkbox::new(&mut r.crouch.capsule, "Crouch capsule"),
-        );
-        ui.add(
-            egui::Slider::new(&mut r.crouch.seated_drop_m, 0.1..=1.0)
-                .text("Seated crouch drop (m)"),
-        );
-        ui.checkbox(&mut r.head_fade, "Head-through-geometry fade");
-        ui.horizontal(|ui| {
-            ui.label("Seat transition");
-            ui.selectable_value(&mut r.seat_transition, SeatTransition::Instant, "Instant");
-            ui.selectable_value(&mut r.seat_transition, SeatTransition::Fade, "Fade");
-            ui.selectable_value(&mut r.seat_transition, SeatTransition::Ride, "Ride");
-        });
+        roomscale::roomscale_settings(ui, &mut c.roomscale);
     });
 
     egui::CollapsingHeader::new("Vehicles and flight").show(ui, |ui| {
