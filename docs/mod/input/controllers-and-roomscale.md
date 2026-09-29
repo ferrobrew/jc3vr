@@ -4,7 +4,7 @@ The plan for making Just Cause 3 playable with motion controllers throughout: co
 
 The engine recon behind the plan is in [aim-state.md](../../engine/gameplay/aim-state.md) (the aim state, its consumers, and fire gating), [aim-pipeline.md](../../engine/gameplay/aim-pipeline.md), [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md), [input.md](../../engine/gameplay/input.md), [hands-locomotion-and-state.md](../../engine/character/hands-locomotion-and-state.md), and [humanik.md](../../engine/character/humanik.md). The head and body model it extends is [head-and-body.md](../body/head-and-body.md).
 
-Milestones 1 to 5 are implemented and have not yet been tested in the headset. "Implementation status" below lists what each milestone built, the setting behind each part, what needs verification, and the headset test checklist. [controllers.md](controllers.md) describes the implementation as built.
+Milestones 1 to 5 are implemented and have not yet been tested in the headset. "Implementation status" below lists what each milestone built, the setting behind each part, and the headset test checklist; the unverified assumptions of milestone 1 are listed there, and those of the later milestones in [controllers.md, "Unverified"](controllers.md#unverified). [controllers.md](controllers.md) describes the implementation as built.
 
 ## Principles
 
@@ -467,7 +467,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 
 ### Milestone 2: posture and roomscale
 
-The settings are under `roomscale`, except the seated crouch flick (`bindings.crouch_flick`) and the head remap (`body.remap_head`). The description is in [controllers.md](controllers.md).
+The settings are under `roomscale`, except the seated crouch flick (`bindings.crouch_flick`) and the head remap (`body.remap_head`). The description is in [controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale).
 
 | Part | Settings | State |
 |---|---|---|
@@ -481,7 +481,7 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 
 ### Milestone 3: holding
 
-The settings are under `weapons` unless named otherwise. The description is in [controllers.md](controllers.md), with recoil, haptics, dual-wield, the anchored tier, and the yank in ["Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand).
+The settings are under `weapons` unless named otherwise. The description is in [controllers.md, "Holsters, grab volumes, the foregrip, and the action-runs tier"](controllers.md#holsters-grab-volumes-the-foregrip-and-the-action-runs-tier), with recoil, haptics, dual-wield, the anchored tier, and the yank in ["Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand).
 
 | Part | Settings | State |
 |---|---|---|
@@ -493,7 +493,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | The dual-wield split | `dual_wield.split`, `dual_wield.place_by_handedness` | Built. |
 | The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. |
 | The yank gesture | `bindings.yank.enabled` | Built. |
-| F7 during the chase | none | Re-bases yaw and height only while the chase is active. |
+| F7 during the chase | none | Re-bases yaw and height only while the chase is active ([controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale)). |
 
 ### Milestone 4: vehicles and flight
 
@@ -528,7 +528,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 `tools/sights/` is a standard-library Python tool that reads the game's archives, derives each hand weapon's sight line from its model, and writes `tools/sights/sights.json`, which the payload embeds ([`tools/sights/README.md`](../../../tools/sights/README.md); the files it reads are in [weapon-data.md](../../engine/gameplay/weapon-data.md)). It regenerates the table without discarding `tuned` entries.
 
-Finger curls on the rendered hands, behind the `fingers` settings, are outside the plan's milestones; [controllers.md](controllers.md) describes their state.
+Finger curls on the rendered hands, behind the `fingers` settings, are outside the plan's milestones; [controllers.md, "Finger curls"](controllers.md#finger-curls) describes their state.
 
 ### Unverified in milestone 1
 
@@ -584,26 +584,9 @@ The overlay:
 - The ghost hand is a ring and a pointer.
 - The colours, sizes, and depth tolerances need tuning.
 
-### Unverified in milestones 2 and 3
+### Unverified in milestones 2 to 5
 
-Posture and roomscale:
-
-- Which tick's share of the chase displacement pairs with which side of the head anchor's tick-spaced pair, so that the camera holds still between ticks while the body catches up.
-- The hips' share of the head's drop and the full-body solve step in the visual crouch.
-- That the crouching proxy state's capsule, which has the non-player standing radius, suits the player.
-- The seat-state name tables are incomplete; a state in none of them counts as out of the vehicle and is logged.
-- The fade timings.
-
-Holding:
-
-- The body frame used for the grab volumes is the cockpit frame, with its origin and axes treated as the body's.
-- The hip height and every volume offset and radius are untuned.
-- The foregrip assumes that the gun sits on the wrist IK target, and falls back to a point a fixed distance along the barrel.
-- The slot each holster's select action draws is not yet confirmed in the IDB or in play.
-- Drawing another slot while a heavy weapon is held may drop the heavy weapon.
-- Whether fire has to be held back during the action-runs tier at all.
-
-The assumptions behind the second half of milestone 3, milestone 4, and milestone 5 are in [controllers.md, "Unverified"](controllers.md#unverified).
+The assumptions behind milestones 2 to 5 and the finger curls are in [controllers.md, "Unverified"](controllers.md#unverified).
 
 ### Headset test checklist
 
