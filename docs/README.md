@@ -32,6 +32,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [grapple-pipeline.md](engine/gameplay/grapple-pipeline.md) — grapple targeting, hook flight and attach, and the zip/tether/retract dispatch.
 - [swim-locomotion.md](engine/gameplay/swim-locomotion.md) — the swim state-task family: act-quantized turn dispatch (fixed-angle turn clips past a threshold angle), the two heading paths (animated-turn slerp vs continuous `DoRotate`), the swimming capsule offsets that make `SetOrientation` receive a pitched frame, and why none of the on-foot orientation machinery applies in water.
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md) — the parachute state task and steering core, and how the camera input matrix is mixed into the chute's steering through the look-steer block.
+- [weapon-data.md](engine/gameplay/weapon-data.md) — where a weapon entity's files live, the weapon object and its fire points in the entity property file, the model parts, and the name hash; tooling in `tools/sights/`.
 
 ## mod/
 
