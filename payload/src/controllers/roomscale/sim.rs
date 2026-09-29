@@ -91,18 +91,10 @@ pub(super) unsafe fn release_capsule() {
     if !sim.status.capsule_owned {
         return;
     }
-    if let Some(character) = unsafe { Character::GetLocalPlayerCharacter().as_mut() } {
-        let step = capsule_step(
-            false,
-            true,
-            character.m_PendingProxyState,
-            character.m_DefaultProxyState,
-        );
-        if let Some(value) = step.write {
-            character.m_PendingProxyState = value;
-        }
+    match unsafe { Character::GetLocalPlayerCharacter().as_mut() } {
+        Some(character) => unsafe { release_owned(&mut sim, character) },
+        None => sim.status.capsule_owned = false,
     }
-    sim.status.capsule_owned = false;
 }
 
 struct Sim {
@@ -176,10 +168,10 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
 
     let wrote_velocity = character.m_CurrentMotionState == Character::MOTION_STATE_TASK_DEFINED
         && !unsafe { character.IsAttachedToVehicle() };
-    let live = headpose::source() == headpose::Source::Vr
+    let driven = headpose::source() == headpose::Source::Vr
         && hooks::in_gameplay()
-        && frame.is_some_and(|f| f.fresh(now))
-        && wrote_velocity;
+        && frame.is_some_and(|f| f.fresh(now));
+    let live = driven && wrote_velocity;
     let position = glam::Mat4::from(character.m_WorldMatrixT1)
         .w_axis
         .truncate();
@@ -216,6 +208,11 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         sim.status.chase_velocity = Vec2::ZERO;
         sim.status.chase_engaged = false;
         sim.status.probe = None;
+        // Without the headset driving the view, nothing asks for the crouch any more, and the frame
+        // half's release does not run (no VR frames) or sees this tick as fresh.
+        if !driven {
+            unsafe { release_owned(&mut sim, character) };
+        }
         return;
     };
 
@@ -275,6 +272,24 @@ unsafe fn chase_tick(
     sim.status.task_velocity = task;
     sim.status.chase_engaged = sim.chaser.engaged();
     sim.status.stick = stick;
+}
+
+/// Hand an owned crouch capsule back to the character's default state.
+unsafe fn release_owned(sim: &mut Sim, character: &mut Character) {
+    if !sim.status.capsule_owned {
+        return;
+    }
+    let step = capsule_step(
+        false,
+        true,
+        character.m_PendingProxyState,
+        character.m_DefaultProxyState,
+    );
+    if let Some(value) = step.write {
+        character.m_PendingProxyState = value;
+    }
+    sim.status.capsule_owned = false;
+    sim.status.capsule_blocked = false;
 }
 
 /// Request or release the crouch capsule. Standing up waits for the headroom to stand in.

@@ -14,9 +14,12 @@
 //!   target resolution; the grapple slot is taken out of it. The second pass, without the override,
 //!   refills every other slot from the camera exactly as the game does, and the grapple slot is put
 //!   back.
-//! - The grapple target scoring ([`set_target_grapple_fitness`]) and its visibility casts
-//!   ([`is_target_visible_cast`]) run under the override, so that entity attachment and tethering
-//!   select their target the way the game does, but around the hand's ray.
+//! - The grapple target scoring ([`set_target_grapple_fitness`]) runs under the override, so that
+//!   entity attachment and tethering select their target the way the game does, but around the
+//!   hand's ray. Its visibility check ([`is_target_visible_cast`]) is a synchronous cast from the
+//!   hand's ray origin instead: the engine keeps one scheduled visibility request per target and
+//!   answers every target type from its last result, so queuing the grapple's from the hand would
+//!   answer the camera-based types from the hand too, and the grapple's from the camera.
 //! - The last-valid grapple cache is re-validated under the override
 //!   ([`is_last_valid_grapple_aim_pos_still_valid`]); the cache itself is derived by the game from
 //!   the slot in the same update.
@@ -28,6 +31,7 @@
 use std::{cell::Cell, ffi::c_void, ptr};
 
 use detours_macro::detour;
+use glam::Mat4;
 use jc3gi::{
     aim::{
         aim::PlayerAimControl,
@@ -39,6 +43,12 @@ use jc3gi::{
     },
 };
 use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::aim::{
+    ray::DIRECT_AIM_START_OFFSET,
+    raycast::{self, CastOptions},
+    targets,
+};
 
 /// The grapple hooks, aggregated by [`crate::controllers::aim::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
@@ -140,24 +150,26 @@ fn set_target_grapple_fitness(
     })
 }
 
-/// The target visibility cast, from the grapple ray's origin for the grapple slot.
+/// The target visibility cast. For the grapple under a grapple view, a synchronous cast from the
+/// grapple ray's origin, leaving the target's scheduled request to the camera-based types (see the
+/// module docs).
 #[detour(address = jc3gi::aim::aim::PlayerAimControl::IsTargetVisibleCast_ADDRESS)]
 fn is_target_visible_cast(
     aim: *mut PlayerAimControl,
     target: *mut Target,
     target_type: i32,
 ) -> bool {
-    let original = || {
-        IS_TARGET_VISIBLE_CAST
-            .get()
-            .unwrap()
-            .call(aim, target, target_type)
-    };
-    if target_type == GRAPPLE as i32 {
-        with_grapple_view(original)
-    } else {
-        original()
+    if target_type == GRAPPLE as i32
+        && let Some(view) = VIEW.with(Cell::get)
+    {
+        // SAFETY: the player aim control's update, in the simulation phase, with the engine's own
+        // aim control and target.
+        return unsafe { visible_from_view(aim, target, view) };
     }
+    IS_TARGET_VISIBLE_CAST
+        .get()
+        .unwrap()
+        .call(aim, target, target_type)
 }
 
 /// The last-valid grapple cache's re-validation, against the grapple ray.
@@ -171,6 +183,41 @@ fn is_last_valid_grapple_aim_pos_still_valid(aim: *mut PlayerAimControl) -> bool
             .unwrap()
             .call(aim)
     })
+}
+
+/// How far short of a grapple candidate's body position its line of sight may be blocked and still
+/// count as clear, metres: the line ends inside the candidate's own body, or its vehicle's.
+const GRAPPLE_OCCLUSION_TOLERANCE_M: f32 = 0.75;
+
+/// Whether `target`'s body position is in sight of the ray `view` stands for, cast from where the
+/// engine's visibility cast starts from a camera matrix, ignoring the aim control's owner and its
+/// vehicle.
+///
+/// # Safety
+///
+/// `aim` and `target` must be null or live, called from the aim control's update.
+unsafe fn visible_from_view(
+    aim: *mut PlayerAimControl,
+    target: *mut Target,
+    view: Matrix4,
+) -> bool {
+    let Some(owner) = (unsafe { aim.as_ref() }).and_then(|a| unsafe { a.m_Owner.as_ref() }) else {
+        return false;
+    };
+    if target.is_null() {
+        return false;
+    }
+    let Some(end) = (unsafe { targets::body_position(target) }) else {
+        return false;
+    };
+    let view = Mat4::from(view);
+    let origin = view.w_axis.truncate() - view.z_axis.truncate() * DIRECT_AIM_START_OFFSET;
+    let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
+    let options = CastOptions {
+        ignore: [owner as *const _ as usize, vehicle],
+        see_through: true,
+    };
+    unsafe { raycast::line_of_sight(origin, end, GRAPPLE_OCCLUSION_TOLERANCE_M, &options) }
 }
 
 /// Everything the direct-aim distribution writes for the grapple slot.

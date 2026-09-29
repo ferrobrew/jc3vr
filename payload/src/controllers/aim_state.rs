@@ -252,13 +252,25 @@ pub fn deliberate_holster_holds(relaxed: bool, drawing_or_holstering: bool) -> b
 /// The `QueueAct` filter for the local player's acts, called by the detour in
 /// [`crate::hooks::character`]. Returns whether to swallow the act.
 pub(crate) fn swallow_local_act(id: i32) -> bool {
+    let in_weapon_handling = IN_LOCAL_WEAPON_HANDLING.with(Cell::get);
+    // The weapon-handling scope is set only while the cuts act. Outside it, nothing is swallowed
+    // unless the cuts act, so that check comes before resolving the act ids through the engine's
+    // symbol table.
+    if !in_weapon_handling {
+        let cfg = aim_state_config();
+        if !part_active(
+            cfg.mental_state_cuts,
+            cfg.without_controllers,
+            controllers(),
+        ) {
+            return false;
+        }
+    }
     let Some(act) = watched_act(id) else {
         return false;
     };
-    let in_weapon_handling = IN_LOCAL_WEAPON_HANDLING.with(Cell::get);
-    // The weapon-handling scope is set only while the cuts act, so a holster inside it needs no
-    // second gate; the slow unequip does.
-    if act == WatchedAct::UnequipSlow {
+    // A holster inside the scope needs no second gate; the slow unequip does.
+    if in_weapon_handling && act == WatchedAct::UnequipSlow {
         let cfg = aim_state_config();
         if !part_active(
             cfg.mental_state_cuts,

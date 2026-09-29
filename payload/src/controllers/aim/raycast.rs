@@ -139,6 +139,31 @@ pub unsafe fn cast(
     }))
 }
 
+/// Whether the line from `origin` to `end` is clear, allowing a hit within `tolerance` metres
+/// short of `end`: the line to a target's body position ends inside the target's own body. A failed
+/// cast counts as blocked.
+///
+/// # Safety
+///
+/// As [`cast`].
+pub unsafe fn line_of_sight(
+    origin: Vec3,
+    end: Vec3,
+    tolerance: f32,
+    options: &CastOptions,
+) -> bool {
+    let offset = end - origin;
+    let distance = offset.length();
+    let Some(line) = Ray::new(origin, offset) else {
+        return false;
+    };
+    match unsafe { cast(&line, distance, options) } {
+        Ok(Some(hit)) => hit.distance >= distance - tolerance.max(0.0),
+        Ok(None) => true,
+        Err(_) => false,
+    }
+}
+
 fn vector(v: Vec3) -> Vector3 {
     Vector3 { data: v.to_array() }
 }

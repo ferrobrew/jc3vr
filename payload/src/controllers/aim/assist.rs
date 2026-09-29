@@ -131,7 +131,14 @@ unsafe fn best_candidate(
     scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     scored
         .into_iter()
-        .find(|(_, position)| unsafe { visible(ray.origin, *position, options, config) })
+        .find(|(_, position)| unsafe {
+            raycast::line_of_sight(
+                ray.origin,
+                *position,
+                config.assist_occlusion_tolerance_m,
+                options,
+            )
+        })
         .map(|(_, position)| position)
 }
 
@@ -166,24 +173,6 @@ unsafe fn score(
     let mut fitness = 0.0f32;
     let inside = unsafe { aim.GetFitnessScore(target, TargetType::TARGET_WEAPONS, &mut fitness) };
     (inside && fitness.is_finite()).then_some((fitness, position))
-}
-
-/// Whether the line from `origin` to `position` is clear up to the target's own body.
-///
-/// # Safety
-///
-/// As [`assist`].
-unsafe fn visible(origin: Vec3, position: Vec3, options: &CastOptions, config: &AimConfig) -> bool {
-    let offset = position - origin;
-    let distance = offset.length();
-    let Some(line) = Ray::new(origin, offset) else {
-        return false;
-    };
-    match unsafe { raycast::cast(&line, distance, options) } {
-        Ok(Some(hit)) => hit.distance >= distance - config.assist_occlusion_tolerance_m.max(0.0),
-        Ok(None) => true,
-        Err(_) => false,
-    }
 }
 
 #[cfg(test)]

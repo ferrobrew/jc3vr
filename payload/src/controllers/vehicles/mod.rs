@@ -39,7 +39,10 @@ pub mod look_steer;
 pub mod mounted;
 pub mod physical;
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::{Duration, Instant},
+};
 
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::{
@@ -128,6 +131,12 @@ pub fn status() -> VehiclesStatus {
     STATE.lock().status.clone()
 }
 
+/// Whether `weapon` is the mounted gun the hands last aimed. Lock-free, for the per-weapon update
+/// of every character's weapons to rule a weapon out before taking any lock.
+pub fn is_mounted_weapon(weapon: usize) -> bool {
+    weapon != 0 && MOUNTED_WEAPON.load(Ordering::Relaxed) == weapon
+}
+
 /// The mounted gun's aim point for the per-weapon update, when `weapon` is the gun the hands aim.
 pub fn mounted_target(weapon: usize) -> Option<Vec3> {
     STATE
@@ -182,6 +191,7 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     });
     state.placement = Some(placement);
     state.mounted_target = mounted.target;
+    MOUNTED_WEAPON.store(mounted.target.map_or(0, |t| t.weapon), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
     state.status.active = true;
     state.status.seat = seat;
@@ -265,6 +275,7 @@ pub(crate) fn stand_down() {
     state.anchor_weights = [0.0; 2];
     state.mounted_reference = None;
     state.mounted_target = None;
+    MOUNTED_WEAPON.store(0, Ordering::Relaxed);
     state.mounted_handles = None;
     state.placement = None;
     state.status.active = false;
@@ -356,6 +367,10 @@ static STATE: Mutex<State> = Mutex::new(State {
     mounted_target: None,
     mounted_handles: None,
 });
+
+/// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
+/// [`is_mounted_weapon`].
+static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
 
 /// The physical controls `seat` offers with their toggles on: only the driver's seat has any.
 fn offered(seat: Option<VehicleSeat>, config: &ControllersConfig) -> &'static [ControlKind] {

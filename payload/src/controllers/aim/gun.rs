@@ -194,6 +194,11 @@ fn update_from_user_post_sim(
     let Some(w) = (unsafe { weapon.as_mut() }) else {
         return original(aim_position, input);
     };
+    // Every character's weapons pass through here on the worker threads, so anything that is
+    // neither the local player's nor the mounted gun the hands aim is ruled out before any lock.
+    if !(w.m_IsUserLocalPlayer || vehicles::is_mounted_weapon(weapon as usize)) {
+        return original(aim_position, input);
+    }
     let split = unsafe { input.as_ref() }
         .filter(|_| Config::lock_query(|c| c.controllers.weapons.dual_wield.split))
         .and_then(|i| unsafe { dual_wield::before_update(w, i) });
