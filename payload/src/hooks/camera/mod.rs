@@ -113,11 +113,13 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // streaming/LOD system does not read -- around the frozen upright loading base, so the player can
     // look around during the load. Written before the engine call so it builds the view-projections
     // from the head-tracked view; the per-eye offset below then applies on top.
+    let pointer_cockpit = crate::headpose::xr::cockpit_pose();
+    let pointer_scale = Config::lock_query(|c| c.vr.world_scale);
     if is_render_camera
         && vr_loading_view_active()
         && let Some(camera) = unsafe { camera.as_mut() }
     {
-        head_track_render_camera(camera);
+        head_track_render_camera(camera, pointer_cockpit, pointer_scale);
     }
 
     // The full-camera freeze diagnostic. This is the last write to the scene camera before the engine
@@ -148,6 +150,11 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
         // Snapshot the un-offset world transform for the HUD panel pose (see `StereoState::center_transform`).
         STEREO_STATE.lock().center_transform = Some(camera.m_TransformF);
+        crate::hud::pointer::publish_camera(
+            glam::Mat4::from(camera.m_TransformF),
+            pointer_cockpit,
+            pointer_scale,
+        );
     }
 
     // FSR is a temporal reconstructor: it needs the camera jittered by its sequence, with the same
@@ -476,15 +483,18 @@ pub fn vr_loading_view_active() -> bool {
 /// The caller gates on [`vr_loading_view_active`] (non-gameplay, VR source, base captured), so this only
 /// resolves the frame's data: it no-ops on a VR frame that published no cockpit pose (a skipped render),
 /// leaving the render copy as the engine left it.
-fn head_track_render_camera(camera: &mut Camera) {
-    let Some(cockpit) = crate::headpose::xr::cockpit_pose() else {
+fn head_track_render_camera(
+    camera: &mut Camera,
+    cockpit: Option<crate::headpose::xr::CockpitPose>,
+    world_scale: f32,
+) {
+    let Some(cockpit) = cockpit else {
         return;
     };
     let Some((base_position, base_rotation)) = *LOADING_BASE.lock() else {
         return;
     };
     let base = glam::Mat4::from_rotation_translation(base_rotation, base_position);
-    let world_scale = Config::lock_query(|c| c.vr.world_scale);
     let world = compose_relative(base, &cockpit, world_scale);
     camera.m_TransformF = Matrix4::from(world);
     camera.m_View = Matrix4::from(world.inverse());

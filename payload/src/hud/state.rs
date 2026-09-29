@@ -383,6 +383,18 @@ impl HudState {
         self.cursor_corners = corners;
     }
 
+    /// Clear the cached panel geometry when the redirected panel is not being rendered.
+    pub fn clear_panel_corners(&mut self) {
+        self.cached_corners = None;
+    }
+
+    /// The world-space corners of the panel rendered this frame. The pointer uses this exact cache
+    /// rather than reconstructing the pose, so world-lock, depth shifting, and follow damping cannot
+    /// make the ray hit a different surface than the player sees.
+    pub fn panel_corners(&self) -> Option<[Vec4; 4]> {
+        self.cached_corners
+    }
+
     /// The redirected texture's size, or `None` while the redirect is not applied. The mouse
     /// cursor's coordinate mapping rescales to this (movie rectangle = texture; see
     /// [`crate::hud::cursor`]).

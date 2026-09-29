@@ -3,7 +3,7 @@
 use crate::{
     controllers::{
         config::{BindingsConfig, InputConfig},
-        frame::{ButtonSet, ControllerFrame, Edges, HandFrame},
+        frame::{ButtonSet, ControllerFrame, Edges, Hand, HandFrame},
     },
     headpose::config::VrTurnConfig,
 };
@@ -51,6 +51,13 @@ impl Recovery {
     pub fn suspend(&mut self) {
         self.usable = [false; 2];
         self.disarm();
+    }
+
+    /// Whether this hand has produced a neutral sample since it became usable again. Consumers that
+    /// own a separate click path must use this gate as well as the filtered frame, because filtering
+    /// a held trigger makes the copied frame look released.
+    pub fn ready(&self, hand: Hand) -> bool {
+        self.usable[hand.index()] && self.armed[hand.index()]
     }
 
     /// Observe pose loss even during an action-set transition. Inferred valid poses remain usable.

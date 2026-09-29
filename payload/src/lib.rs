@@ -188,6 +188,7 @@ fn initialize_from_game() -> anyhow::Result<()> {
 
 /// Called to undo `initialize_from_game`; called once shutdown is triggered
 fn shutdown_from_game() {
+    hooks::ui::cancel_pointer_on_game_thread();
     // Re-create the original vertex shaders before anything is torn down: single-pass substitutes
     // patched (cb13-reading) shaders that the game holds, so without this the clean game would keep
     // rendering with them after eject. `SHUTTING_DOWN` is already set, so the reload's create hooks

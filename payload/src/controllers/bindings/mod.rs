@@ -105,6 +105,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         )
     });
     if !config.enabled {
+        crate::hud::pointer::clear_controller();
         let mut state = STATE.lock();
         state.reset();
         state.recovery.suspend();
@@ -138,6 +139,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
 
     let mut state = STATE.lock();
     let (Some(mut frame), None) = (frame, idle) else {
+        crate::hud::pointer::clear_controller();
         state.reset();
         state.recovery.suspend();
         weapons::stand_down();
@@ -150,7 +152,9 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         return InputTickOutput::default();
     };
 
-    if state.recovery.observe(&frame) {
+    let tracking_lost = state.recovery.observe(&frame);
+    if tracking_lost {
+        crate::hud::pointer::clear_controller();
         state.reset();
         weapons::stand_down();
         vehicles::stand_down();
@@ -158,6 +162,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     }
     // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it.
     if frame.action_set != detection.mode.action_set() {
+        crate::hud::pointer::clear_controller();
         state.report = TickReport {
             detection,
             ..Default::default()
@@ -167,6 +172,16 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     state
         .recovery
         .filter(&mut frame, &mut edges, &neutral_policy);
+    if tracking_lost {
+        crate::hud::pointer::clear_controller();
+    } else {
+        crate::hud::pointer::update_controller(
+            Some(&frame),
+            detection.mode == Mode::Ui,
+            config.dominant_hand,
+            state.recovery.ready(config.dominant_hand),
+        );
+    }
 
     let dominant = config.dominant_hand;
     let move_rotation = match config.locomotion.direction {
@@ -199,6 +214,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     );
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
+    controls.pointer_hand = crate::hud::pointer::owns_menu_trigger();
     controls.dual_wield = start.dual_wield;
     controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
     weapons::dual_wield::observe_triggers(

@@ -83,6 +83,8 @@ pub struct Controls {
     /// Whether the sight tuning capture chord is armed: the tuning tool is on and its marker is
     /// placed.
     pub sight_chord: bool,
+    /// The hand whose trigger belongs to the native UI pointer.
+    pub pointer_hand: Option<Hand>,
 }
 
 impl Controls {
@@ -120,6 +122,7 @@ impl Controls {
             dual_wield: false,
             yank: false,
             sight_chord: false,
+            pointer_hand: None,
         }
     }
 

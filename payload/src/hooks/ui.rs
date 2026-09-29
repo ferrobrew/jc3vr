@@ -15,12 +15,36 @@ use jc3gi::{
         ui_manager::{ScreenPos, UIManager},
     },
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    hud::{HUD_STATE, compute_panel_vp, current_aspect, cursor, split::roots},
+    hud::{HUD_STATE, compute_panel_vp, current_aspect, cursor, pointer, split::roots},
 };
+
+/// Cancel input on the game thread before shutdown removes the UI hooks.
+pub(crate) fn cancel_pointer_on_game_thread() {
+    pointer::clear_controller();
+    pointer::reset_route();
+    cursor::set_frame(None);
+    // SAFETY: shutdown calls this on the game thread while engine singletons are live.
+    unsafe {
+        let movie = UIManager::get().and_then(|manager| manager.m_Movie.as_mut());
+        release_pointer(movie);
+    }
+}
+
+fn release_pointer(movie: Option<&mut MovieImpl>) {
+    let live = movie
+        .as_ref()
+        .map(|movie| std::ptr::from_ref::<MovieImpl>(*movie) as usize);
+    let release = SYNTHETIC_MOUSE.lock().cancel(live);
+    if let (Some(movie), Some((x, y))) = (movie, release) {
+        // SAFETY: the caller supplies only the current live movie, on an engine UI thread.
+        unsafe { movie.NotifyMouseState(x, y, 0, 0) };
+    }
+}
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -279,6 +303,268 @@ fn get_2d_info(
     }
 }
 
+#[derive(Default)]
+struct SyntheticMouse {
+    movie: Option<usize>,
+    position: (f32, f32),
+    buttons: u32,
+    pointer: Option<(pointer::RoutedPointer, std::time::Instant)>,
+}
+
+fn pointer_visible(controller: bool, desktop_visible: bool, gamepad: bool) -> bool {
+    controller || (desktop_visible && !gamepad)
+}
+
+impl SyntheticMouse {
+    pub(crate) fn resolve_delivery(
+        &self,
+        live: usize,
+        mut routed: pointer::RoutedPointer,
+        desktop_uv: (f32, f32),
+    ) -> (pointer::RoutedPointer, Option<(f32, f32)>) {
+        let cancellation = routed.controller && routed.uv.is_none();
+        let previous = self
+            .pointer
+            .filter(|(pointer, _)| self.movie == Some(live) && pointer.controller);
+        if cancellation {
+            routed.uv = previous.and_then(|(pointer, _)| pointer.uv);
+            routed.buttons = 0;
+        }
+        routed.uv = Some(routed.uv.unwrap_or(desktop_uv));
+        (
+            routed,
+            (cancellation && previous.is_some()).then_some(self.position),
+        )
+    }
+
+    fn selected_uv(&self, live: usize, now: std::time::Instant) -> Option<(f32, f32)> {
+        self.pointer
+            .filter(|(_, time)| {
+                self.movie == Some(live)
+                    && now.saturating_duration_since(*time)
+                        <= crate::controllers::frame::MAX_FRAME_AGE
+            })
+            .and_then(|(pointer, _)| pointer.controller.then_some(pointer.uv).flatten())
+    }
+
+    fn cancel(&mut self, live: Option<usize>) -> Option<(f32, f32)> {
+        let release = (self.buttons != 0 && self.movie.is_some() && self.movie == live)
+            .then_some(self.position);
+        *self = Self::default();
+        release
+    }
+}
+
+static SYNTHETIC_MOUSE: Mutex<SyntheticMouse> = Mutex::new(SyntheticMouse {
+    movie: None,
+    position: (0.0, 0.0),
+    buttons: 0,
+    pointer: None,
+});
+
+#[cfg(test)]
+mod pointer_tests {
+    use super::*;
+
+    fn controller(uv: (f32, f32), buttons: u32) -> pointer::ControllerPointer {
+        pointer::ControllerPointer {
+            hand: crate::controllers::frame::Hand::Right,
+            uv,
+            buttons,
+            owns_ui: true,
+        }
+    }
+
+    fn deliver(
+        router: &mut pointer::RouterState,
+        state: &mut SyntheticMouse,
+        controller: Option<pointer::ControllerPointer>,
+        desktop_uv: (f32, f32),
+        buttons: u32,
+    ) -> (pointer::RoutedPointer, (f32, f32)) {
+        let routed = router.route(controller, buttons);
+        let (routed, position) = state.resolve_delivery(1, routed, desktop_uv);
+        let uv = routed.uv.unwrap();
+        let position = position.unwrap_or((uv.0 * 1000.0, uv.1 * 1000.0));
+        *state = SyntheticMouse {
+            movie: Some(1),
+            position,
+            buttons: routed.buttons,
+            pointer: Some((routed, std::time::Instant::now())),
+        };
+        (routed, position)
+    }
+
+    #[test]
+    fn desktop_release_is_delivered_before_controller_hover() {
+        let mut router = pointer::RouterState::new();
+        let mut state = SyntheticMouse::default();
+        let hover = Some(controller((0.9, 0.8), 0));
+        let (press, position) = deliver(&mut router, &mut state, None, (0.1, 0.2), 1);
+        assert_eq!(
+            (press.uv, position, press.buttons),
+            (Some((0.1, 0.2)), (100.0, 200.0), 1)
+        );
+        let (release, position) = deliver(&mut router, &mut state, hover, (0.2, 0.3), 0);
+        assert!(!release.controller);
+        assert_eq!(
+            (release.uv, position, release.buttons),
+            (Some((0.2, 0.3)), (200.0, 300.0), 0)
+        );
+        assert_eq!(state.selected_uv(1, std::time::Instant::now()), None);
+        let (hover, position) = deliver(&mut router, &mut state, hover, (0.2, 0.3), 0);
+        assert_eq!(
+            (hover.uv, position, hover.buttons),
+            (Some((0.9, 0.8)), (900.0, 800.0), 0)
+        );
+    }
+
+    #[test]
+    fn controller_loss_releases_at_last_delivered_position_before_desktop() {
+        let mut router = pointer::RouterState::new();
+        let mut state = SyntheticMouse::default();
+        let desktop = (0.1, 0.2);
+        deliver(
+            &mut router,
+            &mut state,
+            Some(controller((0.8, 0.9), 0)),
+            desktop,
+            0,
+        );
+        let (press, _) = deliver(
+            &mut router,
+            &mut state,
+            Some(controller((0.8, 0.9), 1)),
+            desktop,
+            0,
+        );
+        assert_eq!((press.uv, press.buttons), (Some((0.8, 0.9)), 1));
+        // A cancellation preserves delivered pixels even if the live viewport mapping changes.
+        state.position = (731.0, 842.0);
+        let (release, position) = deliver(&mut router, &mut state, None, desktop, 0);
+        assert!(release.controller);
+        assert_eq!(
+            (release.uv, position, release.buttons),
+            (Some((0.8, 0.9)), (731.0, 842.0), 0)
+        );
+        assert_eq!(
+            state.selected_uv(1, std::time::Instant::now()),
+            Some((0.8, 0.9))
+        );
+        let (fallback, position) = deliver(&mut router, &mut state, None, desktop, 0);
+        assert_eq!(
+            (fallback.uv, position, fallback.buttons),
+            (Some(desktop), (100.0, 200.0), 0)
+        );
+        assert!(!fallback.controller);
+    }
+
+    #[test]
+    fn controller_release_uses_current_outside_hit_not_previous_position() {
+        let mut router = pointer::RouterState::new();
+        let mut state = SyntheticMouse::default();
+        let desktop = (0.1, 0.2);
+        deliver(
+            &mut router,
+            &mut state,
+            Some(controller((0.8, 0.9), 0)),
+            desktop,
+            0,
+        );
+        let (press, position) = deliver(
+            &mut router,
+            &mut state,
+            Some(controller((0.8, 0.9), 1)),
+            desktop,
+            0,
+        );
+        assert_eq!(
+            (press.uv, position, press.buttons),
+            (Some((0.8, 0.9)), (800.0, 900.0), 1)
+        );
+        let (release, position) = deliver(
+            &mut router,
+            &mut state,
+            Some(controller((1.0, 0.7), 0)),
+            desktop,
+            0,
+        );
+        assert_eq!(
+            (release.uv, position, release.buttons),
+            (Some((1.0, 0.7)), (1000.0, 700.0), 0)
+        );
+        assert_eq!(
+            state.selected_uv(1, std::time::Instant::now()),
+            Some((1.0, 0.7))
+        );
+    }
+
+    #[test]
+    fn controller_feedback_is_independent_of_desktop_policy() {
+        for desktop in [false, true] {
+            for gamepad in [false, true] {
+                assert!(pointer_visible(true, desktop, gamepad));
+                assert_eq!(
+                    pointer_visible(false, desktop, gamepad),
+                    desktop && !gamepad
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn selected_map_uv_matches_only_fresh_live_controller_delivery() {
+        let now = std::time::Instant::now();
+        let mut state = SyntheticMouse {
+            movie: Some(1),
+            position: (12.0, 24.0),
+            buttons: 1,
+            pointer: Some((
+                pointer::RoutedPointer {
+                    controller: true,
+                    uv: Some((0.2, 0.8)),
+                    buttons: 1,
+                },
+                now,
+            )),
+        };
+        assert_eq!(state.selected_uv(1, now), Some((0.2, 0.8)));
+        assert_eq!(state.selected_uv(2, now), None);
+        assert_eq!(
+            state.selected_uv(
+                1,
+                now + crate::controllers::frame::MAX_FRAME_AGE
+                    + std::time::Duration::from_millis(1)
+            ),
+            None
+        );
+        state.pointer.as_mut().unwrap().0.controller = false;
+        assert_eq!(state.selected_uv(1, now), None);
+        state.pointer.as_mut().unwrap().0.controller = true;
+        state.cancel(None);
+        assert_eq!(state.selected_uv(1, now), None);
+        assert_eq!(state.buttons, 0);
+    }
+
+    #[test]
+    fn cancellation_releases_only_the_live_movie_once() {
+        for live in [Some(1), Some(2), None] {
+            let mut state = SyntheticMouse {
+                movie: Some(1),
+                position: (12.0, 24.0),
+                buttons: 1,
+                pointer: None,
+            };
+            let mut events = vec![1];
+            if state.cancel(live).is_some() {
+                events.push(0);
+            }
+            assert_eq!(events, if live == Some(1) { vec![1, 0] } else { vec![1] });
+            assert!(state.cancel(live).is_none());
+        }
+    }
+}
+
 /// Replace the game's mouse-to-UI coordinate mapping while the HUD redirect is active.
 ///
 /// The original converts window-client pixels to movie-viewport pixels by subtracting the
@@ -302,7 +588,8 @@ fn get_2d_info(
 fn send_mouse_events(this: *mut UIManager, steering: *mut std::ffi::c_void) -> bool {
     let original = SEND_MOUSE_EVENTS.get().unwrap();
 
-    let active = Config::lock_query(|c| c.hud.redirect && c.hud.cursor.enabled);
+    let active = !crate::is_shutting_down()
+        && Config::lock_query(|c| c.hud.redirect && c.hud.cursor.enabled);
     // While egui captures input the debug panel owns the mouse; leave the game's own path in
     // place (its input manager is disabled anyway) and hide the panel cursor.
     let egui_captured = crate::egui_impl::EguiState::get()
@@ -313,8 +600,18 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut std::ffi::c_void) -> b
     let geometry = cursor::geometry();
     if !active || egui_captured || geometry.is_none() {
         cursor::set_frame(None);
+        // Clearing the source before restoring it prevents a held controller trigger from being
+        // resurrected if the redirect, geometry, or egui ownership returns later.
+        pointer::clear_controller();
+        pointer::reset_route();
+        // SAFETY: only the movie supplied by the current live manager is dereferenced.
+        unsafe {
+            release_pointer(this.as_mut().and_then(|manager| manager.m_Movie.as_mut()));
+        }
         return original.call(this, steering);
     }
+    let controller = pointer::controller_output().filter(|p| p.owns_ui);
+    let routed = pointer::route_game_pointer(controller);
     let ((window_w, window_h), (movie_w, movie_h)) = geometry.unwrap();
 
     // SAFETY: `this` is the live UI singleton (the engine's own callers pass it); the movie
@@ -323,22 +620,54 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut std::ffi::c_void) -> b
         return original.call(this, steering);
     };
     let Some(movie) = (unsafe { manager.m_Movie.as_mut() }) else {
+        pointer::clear_controller();
+        pointer::reset_route();
+        SYNTHETIC_MOUSE.lock().cancel(None);
         cursor::set_frame(None);
         return false;
     };
+    let movie_identity = std::ptr::from_ref(movie) as usize;
+    if SYNTHETIC_MOUSE
+        .lock()
+        .movie
+        .is_some_and(|id| id != movie_identity)
+    {
+        SYNTHETIC_MOUSE.lock().cancel(None);
+        pointer::clear_controller();
+        pointer::reset_route();
+        cursor::set_frame(None);
+        unsafe { movie.NotifyMouseState(-1000.0, -1000.0, 0, 0) };
+        return true;
+    }
 
     // Mirror the original's gamepad handling: park the Scaleform mouse out of the movie so
     // gamepad-driven menu focus is not fought by a stale hover.
-    if manager.m_IsUsingGamepad {
+    let desktop_capture = {
+        let delivered = SYNTHETIC_MOUSE.lock();
+        delivered.movie == Some(movie_identity)
+            && delivered.buttons != 0
+            && delivered
+                .pointer
+                .is_some_and(|(pointer, _)| !pointer.controller)
+    };
+    if manager.m_IsUsingGamepad && !routed.controller && !desktop_capture {
         // SAFETY: NotifyMouseState is the movie's own embedding API, called from the same
         // contexts the engine calls HandleEvent from.
         unsafe { movie.NotifyMouseState(-1000.0, -1000.0, 0, 0) };
+        SYNTHETIC_MOUSE.lock().cancel(None);
         cursor::set_frame(None);
         return true;
     }
 
-    let u = (manager.m_MouseX as f32 / window_w as f32).clamp(0.0, 1.0);
-    let v = (manager.m_MouseY as f32 / window_h as f32).clamp(0.0, 1.0);
+    let desktop_uv = (
+        (manager.m_MouseX as f32 / window_w as f32).clamp(0.0, 1.0),
+        (manager.m_MouseY as f32 / window_h as f32).clamp(0.0, 1.0),
+    );
+    let (routed, release_position) =
+        SYNTHETIC_MOUSE
+            .lock()
+            .resolve_delivery(movie_identity, routed, desktop_uv);
+    let (u, v) = routed.uv.expect("delivery resolves pointer coordinates");
 
     // Map through the movie's LIVE stage-to-viewport matrix rather than assuming any pixel
     // scale: HandleEvent/NotifyMouseState invert `MovieImpl.ViewportMatrix` to produce the stage
@@ -361,10 +690,18 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut std::ffi::c_void) -> b
         (u * movie_w as f32, v * movie_h as f32)
     };
 
+    let (x, y) = release_position.unwrap_or((x, y));
+
     // SAFETY: as above; the wheel event matches the layout the engine itself builds for
     // HandleEvent, and the overlay call no-ops unless the overlay is active.
     unsafe {
-        movie.NotifyMouseState(x, y, cursor::buttons(), 0);
+        movie.NotifyMouseState(x, y, routed.buttons, 0);
+        *SYNTHETIC_MOUSE.lock() = SyntheticMouse {
+            movie: Some(movie_identity),
+            position: (x, y),
+            buttons: routed.buttons,
+            pointer: Some((routed, std::time::Instant::now())),
+        };
 
         let wheel_lines = cursor::take_wheel_lines();
         if wheel_lines != 0.0 {
@@ -383,13 +720,14 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut std::ffi::c_void) -> b
         }
     }
 
-    // The panel cursor shows exactly when the game's own policy would show a cursor: the overlay
-    // visibility refcount is driven per frame by `CUIManager::MousePointerVisibility` (overlay
-    // active, no gamepad, no cursor-hiding HUD state).
+    // Controller feedback remains visible when gamepad policy hides the desktop cursor.
     // SAFETY: reads a field of the live overlay singleton.
     let visible =
         unsafe { OverlayUI::get() }.is_some_and(|overlay| overlay.m_MouseCursorShowRefCount > 0);
-    cursor::set_frame(visible.then_some(cursor::CursorFrame { u, v }));
+    cursor::set_frame(
+        pointer_visible(routed.controller, visible, manager.m_IsUsingGamepad)
+            .then_some(cursor::CursorFrame { u, v }),
+    );
     true
 }
 
@@ -424,8 +762,15 @@ fn get_movie_space_mouse_cursor(
         if stage_w <= 0.0 || stage_h <= 0.0 {
             return original.call(this, viewport_x, viewport_y, out);
         }
-        let u = (viewport_x / window.0 as f32).clamp(0.0, 1.0);
-        let v = (viewport_y / window.1 as f32).clamp(0.0, 1.0);
+        let selected = SYNTHETIC_MOUSE
+            .lock()
+            .selected_uv(manager.m_Movie as usize, std::time::Instant::now());
+        let (u, v) = selected.unwrap_or_else(|| {
+            (
+                (viewport_x / window.0 as f32).clamp(0.0, 1.0),
+                (viewport_y / window.1 as f32).clamp(0.0, 1.0),
+            )
+        });
         if let Some(out) = out.as_mut() {
             out.data = [u * stage_w, v * stage_h];
         }

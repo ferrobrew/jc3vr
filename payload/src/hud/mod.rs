@@ -230,19 +230,23 @@ fn hud_target_size(
 /// captured/presented, with the engine context mutex held.
 pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let cfg = Config::lock_query(|c| c.hud);
+    let mut hud = HUD_STATE.lock();
     if !cfg.redirect || !cfg.quad {
+        hud.clear_panel_corners();
+        pointer::publish_panel(None);
         return;
     }
-
-    let mut hud = HUD_STATE.lock();
 
     // Compute world-space corners once per frame on eye 0 and cache them. Both eyes then
     // project the same world-space quad through their own per-eye VP, producing correct stereo
     // disparity. Computing corners per-eye instead would cancel the world transform against the
     // per-eye view (VP = Inverse(Transform) · Projection), collapsing the panel to view space
     // (head-locked, zero disparity, appears at infinity).
+    let pointer_camera = pointer::rendered_camera();
     if eye == 0
-        && let Some((head_pos, head_rotation)) = render_camera_pose()
+        && let Some((head_pos, head_rotation)) = pointer_camera
+            .map(|camera| (camera.head.position, camera.head.orientation))
+            .or_else(render_camera_pose)
     {
         let mode = current_mode();
         let aspect = aspect_for(&cfg, mode);
@@ -271,6 +275,14 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
             panel_height: panel_height(cfg.panel_scale, distance, aspect),
         };
         hud.compute_world_corners(&params_at(panel_distance));
+        pointer::publish_panel(pointer_camera.and_then(|camera| {
+            Some(pointer::RenderedPanel {
+                head: camera.head,
+                cockpit_head: camera.cockpit_head,
+                scale: camera.scale,
+                corners: hud.panel_corners()?,
+            })
+        }));
         // The virtual cursor rides the panel at its UV position, lifted toward the camera; its
         // world-space corners are computed here (eye 0) like the panel's so both eyes project the
         // same dot with correct stereo disparity (see `cursor`).
