@@ -11,6 +11,7 @@ use parking_lot::MutexGuard;
 
 use crate::{
     config::Config,
+    controllers::frame as controller_frame,
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig, pose_control,
         recenter::mid_pose,
@@ -38,7 +39,10 @@ pub fn frame_begin() -> Option<FrameContext> {
     #[cfg(feature = "profiler")]
     drop(lock_scope);
 
+    // No controller frame is sampled on either early return, so the last one published must not
+    // keep standing for the controllers' state.
     if !guard.is_running() {
+        controller_frame::clear();
         return None;
     }
 
@@ -58,6 +62,7 @@ pub fn frame_begin() -> Option<FrameContext> {
             })
         }
         Err(e) => {
+            controller_frame::clear();
             let count = FRAME_BEGIN_FAIL_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
             // This runs once a frame, so a session state that fails `wait_frame`/`begin_frame`
             // persistently (rather than a one-off) would otherwise flood the log at the frame rate and

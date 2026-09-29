@@ -52,6 +52,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 pub use haptics::{HapticPulse, request as request_haptic};
 use parking_lot::Mutex;
+pub(crate) use stash::clear as clear_stash;
 pub(crate) use state::InputState;
 
 use crate::controllers::frame::{ActionSetKind, InteractionProfile};

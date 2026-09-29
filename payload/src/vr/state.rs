@@ -17,6 +17,7 @@ use windows::{
 
 use crate::{
     config::Config,
+    controllers::frame as controller_frame,
     hooks::graphics_engine::graphics_engine,
     vr::{
         VIEW_TYPE, VrConfig, blit,
@@ -421,6 +422,7 @@ impl VrState {
                     tracing::error!(target: "vr", "session end failed: {e}");
                 }
                 session.running = false;
+                controller_frame::clear();
             }
             xr::SessionState::EXITING | xr::SessionState::LOSS_PENDING => {
                 return true;
@@ -524,6 +526,8 @@ impl VrState {
             }
             self.instance = None;
             clear_persisted();
+            // A stash left by a failed bring-up names handles that die with the instance.
+            input::clear_stash();
         }
         self.system = None;
         self.baseline = None;

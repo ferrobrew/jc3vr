@@ -198,6 +198,17 @@ impl InputState {
                     (actions, ActionsOrigin::RewrappedAndAttached)
                 }
             }
+            Some(s) if s.instance == instance_raw => {
+                // The previous payload's action sets are alive on this instance under this
+                // layout's names, and a set it attached to this session blocks attaching another.
+                // Put the stash back so a payload with the matching layout can still use it.
+                stash::store(&s);
+                anyhow::bail!(
+                    "input: controller input is unavailable: a payload with a different action \
+                     layout created the action sets on the persisted OpenXR instance; restart the \
+                     game"
+                );
+            }
             stale => {
                 if let Some(s) = stale {
                     tracing::warn!(
@@ -235,7 +246,16 @@ impl InputState {
         let (left, right) = match (left, right) {
             (Ok(l), Ok(r)) => (l, r),
             (Err(e), _) | (_, Err(e)) => {
-                actions.destroy(instance);
+                // The sets are attached to this session now, and a session accepts action sets
+                // once, so destroying them would leave it without controller input for good.
+                // Stash them instead, for a reinject to re-wrap and retry the spaces.
+                stash::store(&InputStash {
+                    instance: instance_raw,
+                    session: session_raw,
+                    layout: layout::fingerprint(),
+                    handles: actions.raw_handles(),
+                });
+                drop(actions);
                 return Err(e.context("input: creating the controller spaces"));
             }
         };

@@ -6,7 +6,9 @@
 //! as the eye views are, and calls [`publish`]. Everything downstream reads the snapshot:
 //!
 //! - [`latest`] (a copy) or [`with_latest`] (a borrow under the slot lock) for the current state:
-//!   poses, velocities, tracking validity, and every input value.
+//!   poses, velocities, tracking validity, and every input value. Both hide a frame older than
+//!   [`MAX_FRAME_AGE`], so a frame that stops being refreshed stops driving anything even when no
+//!   path cleared it.
 //! - [`take_edges`] for the press and release edges since the last take. Render frames outpace the
 //!   engine's roughly 30 Hz sim tick, so a button pressed and released between two ticks would be
 //!   invisible to a consumer that only compared states tick to tick. The latch accumulates edges
@@ -459,7 +461,19 @@ impl ControllerFrame {
     pub fn age(&self) -> Duration {
         self.published_at.elapsed()
     }
+
+    /// Whether the frame is recent enough at `now` to stand for the controllers' current state.
+    pub fn is_fresh_at(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.published_at) <= MAX_FRAME_AGE
+    }
 }
+
+/// The oldest a published frame may be and still be read as the controllers' current state. The
+/// frame loop publishes every rendered frame, so an older frame means the loop stopped sampling.
+/// The bound sits well above a frame interval because a main-thread hitch delays the publish too,
+/// and the input tick can run after the hitch before the next frame is sampled; idling the bindings
+/// for one such tick would drop whatever the hands hold.
+pub const MAX_FRAME_AGE: Duration = Duration::from_millis(500);
 
 /// The press and release edges of every button since the last [`take_edges`], per hand. A button
 /// pressed and released between two takes appears in both sets.
@@ -490,15 +504,17 @@ impl Edges {
 }
 
 /// A copy of the latest published frame, or `None` when no frame has been published since the
-/// controllers were last cleared (no session, controllers disabled, or the payload just loaded).
+/// controllers were last cleared (no session, controllers disabled, or the payload just loaded) or
+/// the latest is older than [`MAX_FRAME_AGE`].
 pub fn latest() -> Option<ControllerFrame> {
-    SLOT.lock().frame.clone()
+    SLOT.lock().fresh(Instant::now()).cloned()
 }
 
-/// Run `f` against the latest published frame without copying it. The slot lock is held for `f`,
-/// so `f` must be short and must not call back into this module.
+/// Run `f` against the latest published frame without copying it, under the same conditions as
+/// [`latest`]. The slot lock is held for `f`, so `f` must be short and must not call back into
+/// this module.
 pub fn with_latest<R>(f: impl FnOnce(&ControllerFrame) -> R) -> Option<R> {
-    SLOT.lock().frame.as_ref().map(f)
+    SLOT.lock().fresh(Instant::now()).map(f)
 }
 
 /// Take the edges accumulated since the last take, and reset the latch. The input tick is the one
@@ -510,27 +526,18 @@ pub fn take_edges() -> Edges {
 /// Publish a frame: fold its button transitions into the edge latch and make it the latest. The
 /// caller leaves [`ControllerFrame::sequence`] and [`ControllerFrame::published_at`] to this
 /// function, which stamps them.
-pub(crate) fn publish(mut frame: ControllerFrame) {
+pub(crate) fn publish(frame: ControllerFrame) {
     let mut slot = SLOT.lock();
-    slot.sequence += 1;
-    frame.sequence = slot.sequence;
-    frame.published_at = Instant::now();
-    let previous = slot.frame.as_ref().map_or([ButtonSet::EMPTY; 2], |f| {
-        [f.hands[0].buttons, f.hands[1].buttons]
-    });
-    let current = [frame.hands[0].buttons, frame.hands[1].buttons];
-    slot.edges.accumulate(previous, current);
-    motion::record(&frame);
-    slot.frame = Some(frame);
+    let frame = slot.publish(frame, Instant::now());
+    motion::record(frame);
 }
 
-/// Drop the latest frame and any untaken edges: the controllers are disabled or the session is
-/// gone. Buttons held at the time produce no release edge; consumers treat a missing frame as
-/// everything released.
+/// Drop the latest frame and any untaken edges: the controllers are disabled, the session is gone,
+/// or the frame loop stopped sampling. Buttons held at the time produce no release edge; consumers
+/// treat a missing frame as everything released. The first frame published after a clear has no
+/// baseline, so it produces no edges either: a button held across the clear is not pressed anew.
 pub(crate) fn clear() {
-    let mut slot = SLOT.lock();
-    slot.frame = None;
-    slot.edges = Edges::default();
+    SLOT.lock().clear();
     motion::clear();
 }
 
@@ -549,6 +556,32 @@ struct Slot {
     frame: Option<ControllerFrame>,
     edges: Edges,
     sequence: u64,
+}
+
+impl Slot {
+    fn fresh(&self, now: Instant) -> Option<&ControllerFrame> {
+        self.frame.as_ref().filter(|f| f.is_fresh_at(now))
+    }
+
+    /// Stamp `frame`, fold its transitions from the previous frame into the edges, and store it.
+    /// Without a previous frame (the first publish, or the first after a clear) there is no
+    /// transition to fold.
+    fn publish(&mut self, mut frame: ControllerFrame, now: Instant) -> &ControllerFrame {
+        self.sequence += 1;
+        frame.sequence = self.sequence;
+        frame.published_at = now;
+        let current = [frame.hands[0].buttons, frame.hands[1].buttons];
+        if let Some(previous) = &self.frame {
+            let previous = [previous.hands[0].buttons, previous.hands[1].buttons];
+            self.edges.accumulate(previous, current);
+        }
+        self.frame.insert(frame)
+    }
+
+    fn clear(&mut self) {
+        self.frame = None;
+        self.edges = Edges::default();
+    }
 }
 
 #[cfg(test)]
@@ -624,6 +657,76 @@ mod tests {
             s.difference(set(&[Button::SystemClick])),
             set(&[Button::TriggerClick])
         );
+    }
+
+    fn empty_slot() -> Slot {
+        Slot {
+            frame: None,
+            edges: Edges::default(),
+            sequence: 0,
+        }
+    }
+
+    fn frame_with(right: ButtonSet) -> ControllerFrame {
+        let mut hands: [HandFrame; 2] = Default::default();
+        hands[Hand::Right.index()].active = true;
+        hands[Hand::Right.index()].buttons = right;
+        ControllerFrame {
+            sequence: 0,
+            display_time_ns: 0,
+            published_at: Instant::now(),
+            focused: true,
+            action_set: ActionSetKind::OnFoot,
+            hands,
+        }
+    }
+
+    #[test]
+    fn a_frame_goes_stale_past_the_age_bound() {
+        let mut slot = empty_slot();
+        let t0 = Instant::now();
+        slot.publish(frame_with(ButtonSet::EMPTY), t0);
+        assert!(slot.fresh(t0).is_some());
+        assert!(slot.fresh(t0 + MAX_FRAME_AGE).is_some());
+        assert!(
+            slot.fresh(t0 + MAX_FRAME_AGE + Duration::from_millis(1))
+                .is_none()
+        );
+        slot.publish(frame_with(ButtonSet::EMPTY), t0 + Duration::from_secs(5));
+        assert!(slot.fresh(t0 + Duration::from_secs(5)).is_some());
+    }
+
+    #[test]
+    fn a_clear_hides_the_frame() {
+        let mut slot = empty_slot();
+        let t0 = Instant::now();
+        slot.publish(frame_with(ButtonSet::EMPTY), t0);
+        slot.clear();
+        assert!(slot.fresh(t0).is_none());
+    }
+
+    #[test]
+    fn publishing_latches_press_edges() {
+        let mut slot = empty_slot();
+        let t0 = Instant::now();
+        slot.publish(frame_with(ButtonSet::EMPTY), t0);
+        slot.publish(frame_with(set(&[Button::TriggerPress])), t0);
+        assert!(slot.edges.pressed(Hand::Right, Button::TriggerPress));
+    }
+
+    #[test]
+    fn a_button_held_across_a_clear_is_not_pressed_again() {
+        let mut slot = empty_slot();
+        let t0 = Instant::now();
+        let held = set(&[Button::TriggerPress]);
+        slot.publish(frame_with(ButtonSet::EMPTY), t0);
+        slot.publish(frame_with(held), t0);
+        slot.edges = Edges::default();
+        slot.clear();
+        slot.publish(frame_with(held), t0);
+        assert_eq!(slot.edges, Edges::default());
+        slot.publish(frame_with(ButtonSet::EMPTY), t0);
+        assert!(slot.edges.released(Hand::Right, Button::TriggerPress));
     }
 
     #[test]

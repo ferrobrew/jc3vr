@@ -71,7 +71,12 @@ impl InputState {
         let mut first_error = None;
         for hand in Hand::BOTH {
             match self.sample_hand(&sampling, hand) {
-                Ok(frame) => hands[hand.index()] = frame,
+                Ok((frame, joints_error)) => {
+                    hands[hand.index()] = frame;
+                    if let Some(e) = joints_error {
+                        first_error.get_or_insert(e);
+                    }
+                }
                 Err(e) => {
                     first_error.get_or_insert(e);
                 }
@@ -123,7 +128,13 @@ impl InputState {
         STATUS.lock().profiles = self.profiles;
     }
 
-    fn sample_hand(&self, sampling: &Sampling, hand: Hand) -> anyhow::Result<HandFrame> {
+    /// Sample `hand`. A failure to locate the hand joints does not fail the hand, since the joints
+    /// only feed the finger curls: the frame goes without them, and the error rides alongside.
+    fn sample_hand(
+        &self,
+        sampling: &Sampling,
+        hand: Hand,
+    ) -> anyhow::Result<(HandFrame, Option<anyhow::Error>)> {
         let Sampling {
             session,
             local,
@@ -202,6 +213,7 @@ impl InputState {
         let grip = locate(&self.grip[hand.index()])?;
         let aim = locate(&self.aim[hand.index()])?;
 
+        let mut joints_error = None;
         let joints = match (&self.trackers, self.locate_hand_joints) {
             (Some(trackers), Some(locate)) => {
                 let motion_range = self
@@ -209,15 +221,26 @@ impl InputState {
                     .then_some(sys::HandJointsMotionRangeEXT::CONFORMING_TO_CONTROLLER);
                 // SAFETY: `locate` is the instance's own entry point, and the tracker and `local`
                 // belong to the session being sampled.
-                unsafe {
+                let located = unsafe {
                     locate_joints(locate, &trackers[hand.index()], local, time, motion_range)
-                }?
-                .map(|locations| joints_to_cockpit(&locations, baseline))
+                };
+                match located {
+                    Ok(locations) => {
+                        locations.map(|locations| joints_to_cockpit(&locations, baseline))
+                    }
+                    Err(e) => {
+                        joints_error = Some(anyhow::anyhow!(
+                            "locating the {} hand joints: {e}",
+                            hand.label()
+                        ));
+                        None
+                    }
+                }
             }
             _ => None,
         };
 
-        Ok(HandFrame {
+        let frame = HandFrame {
             active,
             profile: self.profiles[hand.index()],
             grip,
@@ -225,7 +248,8 @@ impl InputState {
             inputs,
             buttons,
             joints,
-        })
+        };
+        Ok((frame, joints_error))
     }
 
     /// Play the queued pulses, scaled by the haptics intensity, or drop them with haptics off.
