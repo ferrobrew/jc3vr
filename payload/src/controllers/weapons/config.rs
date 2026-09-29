@@ -1,6 +1,6 @@
-//! The holster and foregrip settings, held in
-//! [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other weapon-handling
-//! subsystems' toggles.
+//! The weapon-handling settings (the holsters, the foregrip, the recoil, the haptics, and the
+//! dual-wield split), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside
+//! the other weapon-handling subsystems' toggles.
 
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -112,6 +112,143 @@ impl ForegripConfig {
 }
 
 impl Default for ForegripConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The recoil offset (see [`crate::controllers::weapons::recoil`]): each shot kicks the gun hand
+/// away from the controller pose, and a damped spring returns it. Acts only under the controller
+/// scheme, so it defaults on.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RecoilConfig {
+    pub enabled: bool,
+    /// Scales the kick taken from the game's per-shot recoil.
+    pub kick_scale: f32,
+    /// How far the gun moves back along the grip per radian of pitch kick, metres.
+    pub kick_back_m_per_rad: f32,
+    /// The largest rotation the offset reaches, degrees, however fast the shots come.
+    pub max_angle_deg: f32,
+    /// The return spring's stiffness, per second squared.
+    pub spring_stiffness: f32,
+    /// The return spring's damping ratio: `1` is critically damped, below `1` overshoots.
+    pub spring_damping_ratio: f32,
+    /// Multiplies the stiffness while the off-hand holds the foregrip.
+    pub two_hand_stiffness_scale: f32,
+    /// Multiplies the kick while the off-hand holds the foregrip.
+    pub two_hand_kick_scale: f32,
+    /// Keep the game's weapon camera modifier from turning the camera by the recoil (and from its
+    /// snap-aim assist) while the guns aim by hand: the camera belongs to the headset.
+    pub suppress_camera_kick: bool,
+}
+
+impl RecoilConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            kick_scale: 1.0,
+            kick_back_m_per_rad: 0.5,
+            max_angle_deg: 25.0,
+            spring_stiffness: 400.0,
+            spring_damping_ratio: 0.8,
+            two_hand_stiffness_scale: 2.0,
+            two_hand_kick_scale: 0.5,
+            suppress_camera_kick: true,
+        }
+    }
+}
+
+impl Default for RecoilConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Controller vibration (see [`crate::controllers::weapons::haptics`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HapticsConfig {
+    /// Off, every queued pulse is dropped.
+    pub enabled: bool,
+    /// Scales every pulse's amplitude, `0..=1`.
+    pub intensity: f32,
+    /// Play the game's own rumbles (weapon fire, damage, impacts, and the rest) on the
+    /// controllers, each on the hand that caused it.
+    pub game_rumble: bool,
+    /// How much a shot's recoil kick adds to its pulse's amplitude, per radian of kick.
+    pub kick_amplitude_per_rad: f32,
+    /// The longest pulse a game rumble plays for, seconds: the game's rumbles can last long enough
+    /// to blur into one another on a controller.
+    pub max_pulse_s: f32,
+    /// Pulse the grapple hand when the grapple fires and when its hook attaches.
+    pub grapple: bool,
+    pub grapple_fire: PulseSpec,
+    pub grapple_attach: PulseSpec,
+    /// Pulse the grapple hand when a yank is detected.
+    pub yank: PulseSpec,
+}
+
+impl HapticsConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            intensity: 1.0,
+            game_rumble: true,
+            kick_amplitude_per_rad: 6.0,
+            max_pulse_s: 0.4,
+            grapple: true,
+            grapple_fire: PulseSpec {
+                amplitude: 0.35,
+                duration_s: 0.04,
+            },
+            grapple_attach: PulseSpec {
+                amplitude: 0.7,
+                duration_s: 0.06,
+            },
+            yank: PulseSpec {
+                amplitude: 0.5,
+                duration_s: 0.05,
+            },
+        }
+    }
+}
+
+impl Default for HapticsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One fixed haptic pulse.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PulseSpec {
+    /// `0..=1`.
+    pub amplitude: f32,
+    pub duration_s: f32,
+}
+
+/// Dual-wielded pistols (see [`crate::controllers::weapons::dual_wield`]). Acts only under the
+/// controller scheme, so it defaults on.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DualWieldConfig {
+    /// Fire each pistol with its own hand's trigger and aim it with its own hand's ray. While it
+    /// acts, the off-hand's trigger fires the off-hand pistol and the off-hand's stick click
+    /// retracts the tethers instead.
+    pub split: bool,
+    /// Put the first pistol in the dominant hand and the second in the other, moving the pistols'
+    /// attach bones when the game's layout has them the other way round.
+    pub place_by_handedness: bool,
+}
+
+impl DualWieldConfig {
+    pub const fn new() -> Self {
+        Self {
+            split: true,
+            place_by_handedness: true,
+        }
+    }
+}
+
+impl Default for DualWieldConfig {
     fn default() -> Self {
         Self::new()
     }

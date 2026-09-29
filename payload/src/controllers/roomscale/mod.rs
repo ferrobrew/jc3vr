@@ -247,6 +247,30 @@ pub fn on_recenter(kind: RecenterKind, turn: Quat) {
     }
 }
 
+/// What a recenter outside a seat transition (the F7 key, the debug UI's button, and the
+/// gameplay-resume recenter) re-bases: yaw and height while the roomscale chase is active, and the
+/// full re-base otherwise ([`recenter_kind`]).
+pub fn manual_recenter_kind() -> RecenterKind {
+    let chase = Config::lock_query(|c| c.controllers.roomscale.chase.enabled);
+    let frame = frame_shared().filter(|f| f.fresh(Instant::now()));
+    recenter_kind(chase, frame.map(|f| (f.posture, f.seat)))
+}
+
+/// The recenter for a chase toggle and the latest frame's posture and seat phase: the chase is
+/// active in the roomscale posture out of a seat, where it keeps the body under the head, so only
+/// the yaw and the height need re-basing. Without a recent frame, the full re-base.
+pub fn recenter_kind(
+    chase_enabled: bool,
+    frame: Option<(EffectivePosture, SeatPhase)>,
+) -> RecenterKind {
+    match frame {
+        Some((EffectivePosture::Roomscale, SeatPhase::Out)) if chase_enabled => {
+            RecenterKind::YawAndHeight
+        }
+        _ => RecenterKind::Full,
+    }
+}
+
 /// Toggle the seated crouch. Acts only in the seated posture, where the eyes have a crouched preset;
 /// standing and roomscale players crouch physically.
 pub fn toggle_seated_crouch() {
@@ -480,5 +504,29 @@ unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Insta
             frame.seat_fade_release = None;
             fade::set_target(FadeSource::Seat, target);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recenter_under_the_chase_keeps_the_position() {
+        let roomscale_out = Some((EffectivePosture::Roomscale, SeatPhase::Out));
+        assert_eq!(
+            recenter_kind(true, roomscale_out),
+            RecenterKind::YawAndHeight
+        );
+        assert_eq!(recenter_kind(false, roomscale_out), RecenterKind::Full);
+        assert_eq!(
+            recenter_kind(true, Some((EffectivePosture::Standing, SeatPhase::Out))),
+            RecenterKind::Full
+        );
+        assert_eq!(
+            recenter_kind(true, Some((EffectivePosture::Roomscale, SeatPhase::Locked))),
+            RecenterKind::Full
+        );
+        assert_eq!(recenter_kind(true, None), RecenterKind::Full);
     }
 }

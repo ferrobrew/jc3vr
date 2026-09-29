@@ -6,6 +6,8 @@
 //! - [`hold`] turns the wanted actions into effector writes with the game's hold timing;
 //! - [`grab`] is the grab-volume query the grip bindings consult, over the volumes the weapon
 //!   handling places ([`crate::controllers::weapons`]);
+//! - [`yank`] detects the yank gesture on the grapple hand, which the tables turn into a grapple
+//!   tap;
 //! - [`inject`] applies the writes to the player and UI action maps.
 //!
 //! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
@@ -20,6 +22,7 @@ pub mod grab;
 pub mod hold;
 pub mod inject;
 pub mod tables;
+pub mod yank;
 
 use jc3gi::input::input_action_map::Action;
 use parking_lot::Mutex;
@@ -32,12 +35,14 @@ use crate::{
             hold::{HoldTracker, MapKind, Phase},
             inject::Outcome,
             tables::Bindings,
+            yank::{Yank, YankConfig, YankDetector},
         },
         config::LocomotionDirection,
         frame::{self, ControllerFrame, Hand},
-        hands::tiers,
-        mode::{self, Detection},
-        scheme, weapons,
+        hands::{self, tiers},
+        mode::{self, Detection, Mode, Traversal},
+        scheme,
+        weapons::{self, dual_wield::TriggerInput, haptics},
     },
     headpose,
 };
@@ -94,6 +99,8 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     }
     let detection = mode::tick();
     tiers::tick(dt);
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    unsafe { hands::anchor::input_tick(&config) };
 
     let frame = frame::latest().filter(ControllerFrame::any_active);
     let idle = if !config.bindings.enabled {
@@ -128,17 +135,43 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         LocomotionDirection::Head => 0.0,
         LocomotionDirection::OffHand => off_hand_rotation(&frame, dominant.other()),
     };
-    let grab_volumes = weapons::begin_tick(detection.mode);
+    let start = weapons::begin_tick(detection.mode);
     let mut controls = Controls::from_frame(
         &frame,
         &edges,
         &config.bindings,
         dominant,
         move_rotation,
-        grab_volumes,
+        start.volumes,
     );
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
+    controls.dual_wield = start.dual_wield;
+    weapons::dual_wield::observe_triggers(
+        start.dual_wield,
+        controls.hands.map(|h| TriggerInput {
+            held: h.trigger_press.held(),
+            pressed: h.trigger_press.pressed,
+        }),
+    );
+    let grapple_hand = dominant.other();
+    let yank = state.yank.step(
+        dt,
+        grapple_hand_distance(grapple_hand, &config.bindings.yank),
+        yank_armed(&detection),
+        &config.bindings.yank,
+    );
+    if let Some(yank) = yank {
+        controls.yank = true;
+        tracing::debug!(target: "controllers", ?yank, "yank");
+        if config.weapons.haptics.grapple {
+            haptics::pulse(
+                grapple_hand,
+                config.weapons.haptics.yank,
+                haptics::PulseSource::Yank,
+            );
+        }
+    }
     let mut step = state
         .bindings
         .step(detection.mode, &controls, dt, &config.bindings);
@@ -175,9 +208,16 @@ pub fn last_report() -> TickReport {
     STATE.lock().report.clone()
 }
 
+/// The yank gesture's readout: how many yanks were detected, and the last one.
+pub fn yank_status() -> (u64, Option<Yank>) {
+    let state = STATE.lock();
+    (state.yank.count, state.yank.last)
+}
+
 static STATE: Mutex<State> = Mutex::new(State {
     bindings: Bindings::new(),
     tracker: HoldTracker::new(),
+    yank: YankDetector::new(),
     report: TickReport {
         detection: Detection {
             mode: mode::Mode::OnFoot(mode::OnFootVariant::Ground),
@@ -193,6 +233,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 struct State {
     bindings: Bindings,
     tracker: HoldTracker,
+    yank: YankDetector,
     report: TickReport,
 }
 
@@ -217,4 +258,25 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
         (Some(hand), Some(head)) => hand - head,
         _ => 0.0,
     }
+}
+
+/// The grapple hand's distance from the body point a yank pulls toward, in the cockpit frame, or
+/// `None` while the hand is untracked or the hands are inert.
+fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
+    let active = hands::active_hands_raw()?;
+    let grip = active.hands[hand.index()]?.grip.position;
+    Some(grip.distance(yank::body_point(active.head.position, config)))
+}
+
+/// Whether a yank may fire: a grapple line is live, the character is on foot or airborne, and the
+/// line is not already reeling the character in.
+fn yank_armed(detection: &Detection) -> bool {
+    let wire = mode::last_snapshot()
+        .and_then(|s| s.character)
+        .is_some_and(|c| c.grapple_wire);
+    let reeling = matches!(
+        detection.traversal,
+        Some(Traversal::PreReel | Traversal::ReelingIn)
+    );
+    wire && !reeling && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))
 }

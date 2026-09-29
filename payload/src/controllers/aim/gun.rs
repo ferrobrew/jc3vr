@@ -17,7 +17,6 @@
 //! points are always the current tick's.
 
 use std::{
-    ffi::c_void,
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
@@ -26,20 +25,26 @@ use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
-    equipment::weapon::{InternalFireInformation, WeaponBase, WeaponData, WeaponState},
+    equipment::weapon::{
+        InternalFireInformation, WeaponBase, WeaponData, WeaponInputs, WeaponState,
+    },
     types::math::Vector3,
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::{
-        TickHands,
-        ray::{self, Ray},
+use crate::{
+    config::Config,
+    controllers::{
+        aim::{
+            TickHands,
+            ray::{self, Ray},
+        },
+        config::AimConfig,
+        frame::Hand,
+        hands::late,
+        weapons::dual_wield,
     },
-    config::AimConfig,
-    frame::Hand,
-    hands::late,
 };
 
 /// The gun hooks, aggregated by [`crate::controllers::aim::hook_library`].
@@ -163,28 +168,36 @@ pub fn character_aim_point(dominant: Hand) -> Option<Vec3> {
 }
 
 /// The weapons' per-tick update from their user, handed the aiming hand's point for the player's
-/// wielded weapon.
+/// wielded weapon. For dual-wielded pistols, the split first picks the gun that may fire and the
+/// trigger it fires with ([`dual_wield::before_update`]), so the point is that gun's hand's.
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::UpdateFromUserPostSim_ParallelBase_ADDRESS)]
 fn update_from_user_post_sim(
     weapon: *mut WeaponBase,
     dt: f32,
     aim_position: *const Vector3,
-    input: *const c_void,
+    input: *const WeaponInputs,
 ) {
-    let original = |aim_position: *const Vector3| {
+    let original = |aim_position: *const Vector3, input: *const WeaponInputs| {
         UPDATE_FROM_USER_POST_SIM
             .get()
             .unwrap()
             .call(weapon, dt, aim_position, input)
     };
-    match unsafe { weapon.as_ref() }.and_then(hand_target) {
+    let Some(w) = (unsafe { weapon.as_mut() }) else {
+        return original(aim_position, input);
+    };
+    let split = unsafe { input.as_ref() }
+        .filter(|_| Config::lock_query(|c| c.controllers.weapons.dual_wield.split))
+        .and_then(|i| unsafe { dual_wield::before_update(w, i) });
+    let input = split.as_ref().map_or(input, |i| i as *const WeaponInputs);
+    match hand_target(w) {
         Some(target) => {
             let target = Vector3 {
                 data: target.to_array(),
             };
-            original(&target);
+            original(&target, input);
         }
-        None => original(aim_position),
+        None => original(aim_position, input),
     }
 }
 

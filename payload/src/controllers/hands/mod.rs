@@ -5,6 +5,8 @@
 //! - [`pose`]: the pure composition from a controller's grip pose to the character's wrist frame,
 //!   through the grip offset, the body-scale remap, and the head's world transform;
 //! - [`tiers`]: the per-state tier table and the per-hand blend between controller and animation;
+//! - [`anchor`]: the anchored tier of the grapple states: the grapple hand holding the line, and
+//!   the hang it swings;
 //! - [`ik`]: the wrist targets queued on HumanIK's `MAIN` pass at the pre-solve seam, and the
 //!   record of each tick's targets that the late update corrects from;
 //! - [`secondary`]: the per-hand switch for the game's `SECONDARY` hand IK pass;
@@ -24,11 +26,12 @@ use crate::{
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         scheme,
-        weapons::foregrip,
+        weapons::{foregrip, recoil},
     },
     headpose,
 };
 
+pub mod anchor;
 pub mod ik;
 pub mod late;
 pub mod palette;
@@ -40,7 +43,7 @@ pub use pose::CockpitHand;
 
 /// The hands' hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    late::hook_library()
+    late::hook_library().with_hook_library(anchor::hook_library())
 }
 
 /// The inputs every hand subsystem starts from: the controllers' configuration, the head's cockpit
@@ -59,10 +62,13 @@ pub struct ActiveHands {
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
 /// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
-/// ([`foregrip::apply`]).
+/// ([`foregrip::apply`]); a gun hand carries its recoil offset ([`recoil::apply`]); and an
+/// anchored grapple hand holds the line ([`anchor::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
     foregrip::apply(&mut active.hands, &active.config.weapons.foregrip);
+    recoil::apply(&mut active.hands, &active.config.weapons.recoil);
+    anchor::apply(&mut active.hands, active.head, active.world_scale);
     Some(active)
 }
 

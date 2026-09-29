@@ -4,18 +4,20 @@
 //! The plan of record ("Hand tiers" in `docs/mod/input/controllers-and-roomscale.md`) assigns every
 //! scripted state one of four tiers. The assignments are data: [`HandTierTable`] holds one tier per
 //! [`TierState`], its default is the plan's table ([`HandTierTable::PLAN`]), and the config can
-//! override any row. Three tiers are implemented so far:
+//! override any row. The tiers:
 //!
 //! - [`HandTier::Free`]: the hand follows its controller;
 //! - [`HandTier::ActionRuns`]: the game plays the action (a reload's timer and the weapon model's
 //!   own magazine and bolt animation, a draw, a holster) while the hand stays on its controller;
 //!   the weapon handling holds the fire inputs back for the action's duration
 //!   ([`crate::controllers::weapons`]);
+//! - [`HandTier::Anchored`]: the hand is attached to a world point where its controller is, and its
+//!   movement drives the game. It is built for the grapple states ([`TierState::anchor_built`]):
+//!   the grapple hand holds the line ([`crate::controllers::hands::anchor`]), and while hanging its
+//!   displacement swings the character. A state assigned the tier where it is not built yet (the
+//!   mounted guns) yields;
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
 //!   [`HandsConfig::yield_blend_s`] and back over [`HandsConfig::return_blend_s`].
-//!
-//! The anchored tier is not built yet, and until it is, a state assigned it yields (see
-//! [`HandTier::effective`]).
 //!
 //! The classification runs once per input tick ([`tick`]), on the main thread, from the mode
 //! detector's snapshot plus a few state-machine predicates, and publishes one weight per hand for
@@ -61,22 +63,26 @@ impl HandTier {
         HandTier::Yielded,
     ];
 
-    /// The tier the hands actually take. The anchored tier is not implemented yet, and the plan
-    /// starts every scripted state as yielded unless its tier is built.
-    pub const fn effective(self) -> HandTier {
+    /// The tier the hands actually take in `state`: the anchored tier where it is built and
+    /// switched on (`anchor`), and the yielded tier in its place elsewhere, as the plan starts every
+    /// scripted state yielded until its tier is built.
+    pub const fn effective_in(self, state: Option<TierState>, anchor: bool) -> HandTier {
         match self {
-            HandTier::Free => HandTier::Free,
-            HandTier::ActionRuns => HandTier::ActionRuns,
-            HandTier::Anchored | HandTier::Yielded => HandTier::Yielded,
+            HandTier::Anchored => match state {
+                Some(state) if anchor && state.anchor_built() => HandTier::Anchored,
+                _ => HandTier::Yielded,
+            },
+            other => other,
         }
     }
 
-    /// The weight the hand's controller blends toward in this tier: one follows the controller,
-    /// zero leaves the hand to the animation.
+    /// The weight the hand's controller blends toward in this effective tier: one follows the
+    /// controller, zero leaves the hand to the animation. An anchored hand stays where its
+    /// controller is.
     pub const fn controller_weight(self) -> f32 {
-        match self.effective() {
-            HandTier::Free | HandTier::ActionRuns => 1.0,
-            HandTier::Anchored | HandTier::Yielded => 0.0,
+        match self {
+            HandTier::Free | HandTier::ActionRuns | HandTier::Anchored => 1.0,
+            HandTier::Yielded => 0.0,
         }
     }
 
@@ -146,6 +152,12 @@ impl TierState {
         TierState::Ragdoll,
         TierState::Cutscene,
     ];
+
+    /// Whether the anchored tier is built for this state: the grapple states, where the grapple
+    /// hand holds the line.
+    pub const fn anchor_built(self) -> bool {
+        matches!(self, TierState::GrappleReel | TierState::GrappleHang)
+    }
 
     /// Which hands the state's tier applies to. The grapple states give the tier to the hand that
     /// holds the line; the other hand stays free.
@@ -402,16 +414,23 @@ pub struct TierStatus {
     pub state: Option<TierState>,
     /// Each hand's assigned tier, indexed by [`Hand::index`].
     pub tiers: [HandTier; 2],
+    /// Each hand's effective tier ([`HandTier::effective_in`]).
+    pub effective: [HandTier; 2],
     /// Each hand's controller weight: one on the controller, zero on the animation. A yielded
     /// hand below one is where the overlay draws the ghost of the controller-driven hand.
     pub weights: [f32; 2],
+    /// Each hand's share of the anchored pose: one while anchored, blending over
+    /// [`AnchorConfig::blend_s`](crate::controllers::hands::anchor::AnchorConfig::blend_s).
+    pub anchor_weights: [f32; 2],
 }
 
 impl TierStatus {
     const INITIAL: TierStatus = TierStatus {
         state: None,
         tiers: [HandTier::Free; 2],
+        effective: [HandTier::Free; 2],
         weights: [1.0; 2],
+        anchor_weights: [0.0; 2],
     };
 }
 
@@ -452,19 +471,36 @@ pub fn advance(
             config.tiers.hand_tier(s, hand, dominant)
         })
     });
+    let effective = tiers.map(|t| t.effective_in(state, config.anchor.enabled));
     let weights = Hand::BOTH.map(|hand| {
         step_weight(
             previous.weights[hand.index()],
-            tiers[hand.index()].controller_weight(),
+            effective[hand.index()].controller_weight(),
             dt,
             config.yield_blend_s,
             config.return_blend_s,
         )
     });
+    let anchor_weights = Hand::BOTH.map(|hand| {
+        let target = if effective[hand.index()] == HandTier::Anchored {
+            1.0
+        } else {
+            0.0
+        };
+        step_weight(
+            previous.anchor_weights[hand.index()],
+            target,
+            dt,
+            config.anchor.blend_s,
+            config.anchor.blend_s,
+        )
+    });
     TierStatus {
         state,
         tiers,
+        effective,
         weights,
+        anchor_weights,
     }
 }
 
@@ -558,7 +594,9 @@ mod tests {
             let state = classify(&signals(ON_FOOT, flags)).unwrap();
             assert_eq!(state, expected, "{flags:?}");
             assert_eq!(
-                HandTierTable::PLAN.tier(state).effective(),
+                HandTierTable::PLAN
+                    .tier(state)
+                    .effective_in(Some(state), true),
                 HandTier::Yielded
             );
         }
@@ -620,10 +658,37 @@ mod tests {
     }
 
     #[test]
-    fn unimplemented_tiers_yield_until_built() {
-        assert_eq!(HandTier::Anchored.controller_weight(), 0.0);
-        assert_eq!(HandTier::Anchored.effective(), HandTier::Yielded);
+    fn the_anchored_tier_is_built_only_for_the_grapple_states() {
+        let anchored = HandTier::Anchored;
+        for state in [TierState::GrappleReel, TierState::GrappleHang] {
+            assert_eq!(anchored.effective_in(Some(state), true), HandTier::Anchored);
+            assert_eq!(anchored.effective_in(Some(state), false), HandTier::Yielded);
+        }
+        assert_eq!(
+            anchored.effective_in(Some(TierState::MountedGun), true),
+            HandTier::Yielded
+        );
+        assert_eq!(anchored.effective_in(None, true), HandTier::Yielded);
+        assert_eq!(HandTier::Anchored.controller_weight(), 1.0);
+        assert_eq!(HandTier::Yielded.controller_weight(), 0.0);
         assert_eq!(HandTier::Free.controller_weight(), 1.0);
+    }
+
+    #[test]
+    fn a_hang_anchors_the_grapple_hand_and_leaves_the_other_free() {
+        let config = HandsConfig::new();
+        let status = advance(
+            TierStatus::INITIAL,
+            Some(TierState::GrappleHang),
+            1.0,
+            &config,
+            Hand::Right,
+        );
+        assert_eq!(status.effective, [HandTier::Anchored, HandTier::Free]);
+        assert_eq!(status.weights, [1.0; 2]);
+        assert_eq!(status.anchor_weights, [1.0, 0.0]);
+        let released = advance(status, Some(TierState::OnFoot), 1.0, &config, Hand::Right);
+        assert_eq!(released.anchor_weights, [0.0; 2]);
     }
 
     #[test]
@@ -635,8 +700,10 @@ mod tests {
         ] {
             let state = classify(&signals(ON_FOOT, &[flag])).unwrap();
             assert_eq!(state, TierState::WeaponAction, "{flag:?}");
-            let tier = HandTierTable::PLAN.tier(state);
-            assert_eq!(tier.effective(), HandTier::ActionRuns);
+            let tier = HandTierTable::PLAN
+                .tier(state)
+                .effective_in(Some(state), true);
+            assert_eq!(tier, HandTier::ActionRuns);
             assert_eq!(tier.controller_weight(), 1.0);
         }
         // A reload never outranks a state that takes the hands.

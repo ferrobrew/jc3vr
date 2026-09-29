@@ -147,7 +147,24 @@ for CameraEnvironmentPresetWeights {
 #[repr(C, align(8))]
 /// The opaque per-frame camera pipeline context.
 pub struct CameraPipelineContext {}
-impl CameraPipelineContext {}
+impl CameraPipelineContext {
+    pub const CalculateCameraTransform_ADDRESS: usize = 0x140448800;
+    /// Writes the pipeline's camera transform, the camera boom's transform composed with the
+    /// pipeline's base transform, into `transform`: the camera modifiers end their pass with it,
+    /// writing their output context's [`m_CameraTransform`](crate::camera::camera_context::CameraContext::m_CameraTransform).
+    pub unsafe fn CalculateCameraTransform(
+        &self,
+        transform: *mut crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                transform: *mut crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::CalculateCameraTransform_ADDRESS);
+            f(self as *const Self as _, transform)
+        }
+    }
+}
 impl std::convert::AsRef<CameraPipelineContext> for CameraPipelineContext {
     fn as_ref(&self) -> &CameraPipelineContext {
         self

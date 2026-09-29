@@ -5,7 +5,12 @@
 //!   body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
-//! - [`config`]: the holster and foregrip settings.
+//! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
+//! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
+//! - [`haptics`]: the game's rumbles and the grapple's pulses routed to the hands;
+//! - [`dual_wield`]: each dual-wielded pistol fired by its own hand's trigger;
+//! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
+//! - [`config`]: the weapon-handling settings.
 //!
 //! The weapon handling runs on the input tick, in two halves around the bindings' tables
 //! ([`crate::controllers::bindings::input_tick`]):
@@ -23,17 +28,23 @@
 //! submitted to the overlay's [`Source::GrabVolumes`] slot. Everything acts only while the bindings
 //! inject, which is only under the controller scheme with a controller active.
 
+mod camera_kick;
 pub mod config;
+pub mod dual_wield;
 mod engine;
+mod fire;
 pub mod foregrip;
+pub mod haptics;
 pub mod holster;
+pub mod recoil;
 pub mod volumes;
 
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
-use jc3gi::input::input_action_map::Action;
+use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
 use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
@@ -62,6 +73,23 @@ use crate::{
     },
     headpose,
 };
+
+/// The weapon handling's hooks, aggregated by [`crate::controllers::hook_library`].
+pub(crate) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_hook_library(fire::hook_library())
+        .with_hook_library(haptics::hook_library())
+        .with_hook_library(camera_kick::hook_library())
+}
+
+/// What the first half of the weapon handling's input tick hands the bindings.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct TickStart {
+    /// The grab volume each hand is in, indexed by [`Hand::index`].
+    pub volumes: [Option<GrabVolume>; 2],
+    /// Whether the dual-wield split acts: a pistol in each hand, on foot, with the split on.
+    pub dual_wield: bool,
+}
 
 /// What a grab did, for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -128,17 +156,33 @@ pub fn status() -> WeaponsStatus {
     STATE.lock().status.clone()
 }
 
-/// The first half of the weapon handling's input tick: read the weapon, place the volumes, and
-/// return the volume each hand is in. Called while the bindings inject, before the tables.
-pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
+/// The first half of the weapon handling's input tick: read the weapon, place the volumes and the
+/// pistols, and return the volume each hand is in and whether the dual-wield split acts. Called
+/// while the bindings inject, before the tables.
+pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let config = Config::lock_query(|c| c.controllers);
     let Some(active) = hands::active_hands_raw() else {
         stand_down();
-        return [None; 2];
+        return TickStart::default();
     };
     let gameplay = gameplay(mode);
+    let dual = config.weapons.dual_wield;
     // SAFETY: the input tick runs on the main thread outside the world update.
-    let weapon = unsafe { engine::local_player().and_then(|owner| engine::held_weapon(owner)) };
+    let weapon = unsafe {
+        engine::local_player().and_then(|owner| {
+            dual_wield::place(
+                owner,
+                config.dominant_hand,
+                dual.split && dual.place_by_handedness,
+            );
+            engine::held_weapon(owner)
+        })
+    };
+    let dual_wield = dual.split
+        && mode == Mode::OnFoot(OnFootVariant::Ground)
+        && weapon.is_some_and(|w| {
+            w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD && w.wielded.hands == [true; 2]
+        });
 
     let mut state = STATE.lock();
     let geometry = weapon
@@ -191,7 +235,10 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     drop(state);
 
     submit_highlights(&config, &active, &candidates, volumes);
-    volumes
+    TickStart {
+        volumes,
+        dual_wield,
+    }
 }
 
 /// The second half of the weapon handling's input tick: act on the tick's grabs and hold the fire
@@ -274,6 +321,12 @@ pub(crate) fn finish_tick(grabs: [Option<GrabVolume>; 2], desired: &mut Vec<Desi
 /// do not inject.
 pub(crate) fn stand_down() {
     foregrip::clear();
+    recoil::clear();
+    dual_wield::observe_triggers(false, [dual_wield::TriggerInput::default(); 2]);
+    // SAFETY: the bindings stand down on the main thread outside the world update.
+    if let Some(owner) = unsafe { engine::local_player() } {
+        unsafe { dual_wield::place(owner, Hand::Right, false) };
+    }
     let mut state = STATE.lock();
     state.weapon = None;
     state.status.active = false;
@@ -409,7 +462,7 @@ fn hold_fire_back(desired: &mut Vec<Desired>) {
 fn weapon_action_running(dominant: Hand) -> bool {
     let status = tiers::status();
     status.state == Some(TierState::WeaponAction)
-        && status.tiers[dominant.index()].effective() == HandTier::ActionRuns
+        && status.effective[dominant.index()] == HandTier::ActionRuns
 }
 
 /// Submit a highlight for the volume each hand is in, and a marker on a held foregrip.

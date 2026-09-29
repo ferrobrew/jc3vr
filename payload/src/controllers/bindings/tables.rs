@@ -263,9 +263,18 @@ fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool) {
     out.axis(stick.x, MOVE_LEFT, MOVE_RIGHT);
     out.analog(stick.length().min(1.0), MOVE_ALL);
 
-    out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
-    out.hold(off.trigger_press.held(), &[RETRACT_GRAPPLE, L2]);
-    out.hold(off_grapple, &[FIRE_GRAPPLE, L1]);
+    if c.dual_wield {
+        // Each trigger fires its own pistol through the one fire action, which the dual-wield
+        // split hands to the pistol of the pulling hand. The tethers retract from the stick click.
+        let either = dom.trigger_press.held() || off.trigger_press.held();
+        out.hold(either, &[FIRE_RIGHT, R2]);
+        out.hold(off.stick_click.held(), &[RETRACT_GRAPPLE, L2]);
+    } else {
+        out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
+        out.hold(off.trigger_press.held(), &[RETRACT_GRAPPLE, L2]);
+    }
+    // A yank is a one-tick press, which the game reads as a tap.
+    out.hold(off_grapple || c.yank, &[FIRE_GRAPPLE, L1]);
     out.hold(dom.a.held(), PAD_A);
     out.hold(dom.b.held(), PAD_X_ON_FOOT);
     out.hold(off.a.held(), PAD_Y_ON_FOOT);
@@ -273,7 +282,10 @@ fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool) {
     out.hold(dom.stick_click.held(), PAD_RB_ON_FOOT);
     // Weapons are drawn at the holsters; the stick click is the fallback. `NEXT_WEAPON` is a mouse
     // wheel action: one click per step.
-    out.click(c.weapon_cycle && off.stick_click.pressed, NEXT_WEAPON);
+    out.click(
+        c.weapon_cycle && !c.dual_wield && off.stick_click.pressed,
+        NEXT_WEAPON,
+    );
 }
 
 /// Seated in a vehicle.
@@ -363,7 +375,7 @@ fn airborne(
     }
     out.hold(dom.trigger_press.held(), &[FIRE_WINGSUIT_WEAPON_MAIN, R2]);
     out.hold(dom_grip, &[FIRE_WINGSUIT_WEAPON_SECONDARY]);
-    out.hold(off_grapple, &[FIRE_GRAPPLE, L1]);
+    out.hold(off_grapple || c.yank, &[FIRE_GRAPPLE, L1]);
     out.hold(off.a.held(), PAD_Y_ON_FOOT);
     out.hold(off.b.held(), PAD_B);
 }
@@ -759,6 +771,41 @@ mod tests {
         b.step(Mode::Ui, &system(true, true, false), DT, &CONFIG);
         let step = b.step(Mode::Ui, &Controls::default(), DT, &CONFIG);
         assert!(clicked(&step, GUI_PAUSE));
+    }
+
+    #[test]
+    fn dual_wielding_moves_the_off_trigger_to_its_pistol_and_retract_to_the_stick_click() {
+        let mut b = Bindings::default();
+        let mut c = controls(Hand::Right, |_, off| off.trigger_press = down());
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, FIRE_RIGHT), None);
+
+        c.dual_wield = true;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, RETRACT_GRAPPLE), None);
+
+        let mut c = controls(Hand::Right, |_, off| off.stick_click = down());
+        c.dual_wield = true;
+        c.weapon_cycle = true;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, NEXT_WEAPON), None);
+    }
+
+    #[test]
+    fn a_yank_presses_the_grapple_for_one_tick() {
+        let mut b = Bindings::default();
+        let mut c = Controls {
+            yank: true,
+            ..Default::default()
+        };
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
+        c.yank = false;
+        let step = b.step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, FIRE_GRAPPLE), None);
     }
 
     #[test]

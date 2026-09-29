@@ -927,6 +927,24 @@ impl Character {
             f(self as *const Self as _, out)
         }
     }
+    pub const GetHipsPosition_ADDRESS: usize = 0x1407AF370;
+    /// Writes the world position of the hips bone to `out` and returns `out`: the bone's model-space
+    /// matrix, looked up by the bone's name hash, composed with the
+    /// character's world matrix.
+    pub unsafe fn GetHipsPosition(
+        &self,
+        out: *mut crate::types::math::Vector3,
+    ) -> *mut crate::types::math::Vector3 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut crate::types::math::Vector3,
+            ) -> *mut crate::types::math::Vector3 = ::std::mem::transmute(
+                Self::GetHipsPosition_ADDRESS,
+            );
+            f(self as *const Self as _, out)
+        }
+    }
     pub const SetWantedWorldVelocity_ADDRESS: usize = 0x14077E9F0;
     /// Sets the proxy's wanted velocity from the world-space `velocity`, converting it into the
     /// character-local frame with the inverse of the proxy's transform.

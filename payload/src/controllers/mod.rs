@@ -22,7 +22,8 @@
 //!   off-hand's ray;
 //! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye;
 //! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
-//!   foregrip, and the weapon actions that run with the hands on the controllers;
+//!   foregrip, the weapon actions that run with the hands on the controllers, recoil, haptics, and
+//!   the dual-wield split;
 //! - [`roomscale`]: posture, the head-height remap, the roomscale chase loop, crouching, the
 //!   head-through-geometry fade, and seat transitions. These need the headset rather than the
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme.
@@ -57,4 +58,5 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(hands::hook_library())
         .with_hook_library(aim::hook_library())
         .with_hook_library(roomscale::hook_library())
+        .with_hook_library(weapons::hook_library())
 }

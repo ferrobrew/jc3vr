@@ -34,7 +34,7 @@ pub(super) fn hands_readout(
             ui.label(format!(
                 "tier {} (acts as {}) · weight {:.2}",
                 tiers.tiers[i].label(),
-                tiers.tiers[i].effective().label(),
+                tiers.effective[i].label(),
                 tiers.weights[i]
             ));
             ui.label(match s.skip {
@@ -111,5 +111,22 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
         if ui.button("Reset to the plan").clicked() {
             h.tiers = HandTierTable::PLAN;
         }
+    });
+    let a = &mut h.anchor;
+    ui.checkbox(&mut a.enabled, "Anchor the grapple hand to the line")
+        .on_hover_text("Off, the grapple states yield the hand to the animation.");
+    ui.add_enabled_ui(a.enabled, |ui| {
+        ui.indent("anchor", |ui| {
+            ui.add(egui::Slider::new(&mut a.blend_s, 0.0..=1.0).text("Anchor blend (s)"));
+            ui.checkbox(&mut a.hang_swing, "Swing a hang with the hand");
+            ui.add(
+                egui::Slider::new(&mut a.swing_deadzone_m, 0.0..=0.2).text("Swing deadzone (m)"),
+            );
+            ui.add(egui::Slider::new(&mut a.swing_full_m, 0.05..=0.6).text("Full swing at (m)"));
+            ui.add(
+                egui::Slider::new(&mut a.swing_scale, -3.0..=3.0)
+                    .text("Swing strength (× the game's)"),
+            );
+        });
     });
 }

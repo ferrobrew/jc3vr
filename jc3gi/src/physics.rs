@@ -381,6 +381,42 @@ impl std::convert::AsMut<PfxCharacterInstance> for PfxCharacterInstance {
     }
 }
 #[repr(C, align(8))]
+/// `CPfxRigidBody`: the engine's wrapper around a Havok rigid body in the physics system's world.
+/// Only some members are bound.
+pub struct PfxRigidBody {}
+impl PfxRigidBody {
+    pub const ApplyImpulse_ADDRESS: usize = 0x14024ED80;
+    /// Applies the linear impulse `impulse` (world space) to the body at the world point
+    /// `position`, through `hknpWorld::applyBodyImpulseAt`, and then notifies the body's own
+    /// impulse virtual. The last argument only scales the debug display of the impulse.
+    pub unsafe fn ApplyImpulse(
+        &mut self,
+        impulse: *const crate::types::math::Vector3,
+        position: *const crate::types::math::Vector3,
+        debug_scale: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                impulse: *const crate::types::math::Vector3,
+                position: *const crate::types::math::Vector3,
+                debug_scale: f32,
+            ) = ::std::mem::transmute(Self::ApplyImpulse_ADDRESS);
+            f(self as *mut Self as _, impulse, position, debug_scale)
+        }
+    }
+}
+impl std::convert::AsRef<PfxRigidBody> for PfxRigidBody {
+    fn as_ref(&self) -> &PfxRigidBody {
+        self
+    }
+}
+impl std::convert::AsMut<PfxRigidBody> for PfxRigidBody {
+    fn as_mut(&mut self) -> &mut PfxRigidBody {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The physics system (`CPhysicsSystem`), a `Base::CSingle` singleton that owns the Havok world and
 /// serves the engine's scene queries. The queries are sim-phase calls against the live Havok world.
 /// Only some members are bound.

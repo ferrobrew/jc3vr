@@ -15,9 +15,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
+    bindings::yank::YankConfig,
     frame::{Hand, PressThresholds},
-    hands::tiers::HandTierTable,
-    weapons::config::{ForegripConfig, HolstersConfig},
+    hands::{anchor::AnchorConfig, tiers::HandTierTable},
+    weapons::config::{
+        DualWieldConfig, ForegripConfig, HapticsConfig, HolstersConfig, RecoilConfig,
+    },
 };
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
@@ -208,6 +211,9 @@ pub struct BindingsConfig {
     /// How far down the dominant stick must be flicked on foot to toggle the seated crouch, `0..1`.
     /// The stick must come back above half of it before the next flick counts.
     pub crouch_flick: f32,
+    /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
+    /// line.
+    pub yank: YankConfig,
 }
 
 impl BindingsConfig {
@@ -219,6 +225,7 @@ impl BindingsConfig {
             long_press_s: 0.5,
             evade_flick: 0.8,
             crouch_flick: 0.8,
+            yank: YankConfig::new(),
         }
     }
 }
@@ -299,6 +306,8 @@ pub struct HandsConfig {
     pub return_blend_s: f32,
     /// The hand tier of each scripted state.
     pub tiers: HandTierTable,
+    /// The anchored tier of the grapple states, and the hang movement it drives.
+    pub anchor: AnchorConfig,
 }
 
 impl HandsConfig {
@@ -315,6 +324,7 @@ impl HandsConfig {
             yield_blend_s: 0.25,
             return_blend_s: 0.35,
             tiers: HandTierTable::PLAN,
+            anchor: AnchorConfig::new(),
         }
     }
 }
@@ -535,9 +545,9 @@ pub struct WeaponsConfig {
     pub recoil: RecoilConfig,
     /// Controller vibration.
     pub haptics: HapticsConfig,
-    /// Split dual-wielded pistols onto both hands, each fired by its own trigger and aimed by its
+    /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
     /// own hand.
-    pub dual_wield_split: bool,
+    pub dual_wield: DualWieldConfig,
     /// Replace the reload button with the magazine gesture. Off, the reload stays on the button.
     pub reload_gesture: bool,
     /// Throw grenades physically: grab from the pouch, release the grip to throw with the hand's
@@ -558,59 +568,11 @@ impl WeaponsConfig {
             block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
             haptics: HapticsConfig::new(),
-            dual_wield_split: true,
+            dual_wield: DualWieldConfig::new(),
             reload_gesture: false,
             grenade_throw: true,
             melee: true,
             scopes: true,
-        }
-    }
-}
-
-/// The recoil offset: each shot kicks the rendered weapon away from the controller pose, and a
-/// damped spring returns it.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct RecoilConfig {
-    pub enabled: bool,
-    /// Scales the kick derived from the game's per-weapon recoil accumulators.
-    pub kick_scale: f32,
-    /// The return spring's stiffness, per second squared.
-    pub spring_stiffness: f32,
-    /// The return spring's damping ratio: `1` is critically damped, below `1` overshoots.
-    pub spring_damping_ratio: f32,
-    /// Multiplies the stiffness while the off-hand holds the foregrip.
-    pub two_hand_stiffness_scale: f32,
-    /// Multiplies the kick while the off-hand holds the foregrip.
-    pub two_hand_kick_scale: f32,
-}
-
-impl RecoilConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            kick_scale: 1.0,
-            spring_stiffness: 400.0,
-            spring_damping_ratio: 0.8,
-            two_hand_stiffness_scale: 2.0,
-            two_hand_kick_scale: 0.5,
-        }
-    }
-}
-
-/// Controller vibration.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct HapticsConfig {
-    /// Off, every queued pulse is dropped.
-    pub enabled: bool,
-    /// Scales every pulse's amplitude, `0..=1`.
-    pub intensity: f32,
-}
-
-impl HapticsConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            intensity: 1.0,
         }
     }
 }

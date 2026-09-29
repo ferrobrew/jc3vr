@@ -97,10 +97,6 @@ pub struct ForegripStatus {
 }
 
 /// An engaged two-hand grip, for the recoil spring.
-#[allow(
-    dead_code,
-    reason = "read by the recoil spring, which is not built yet"
-)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TwoHandGrip {
     pub holder: Hand,
@@ -109,10 +105,6 @@ pub struct TwoHandGrip {
 }
 
 /// The engaged two-hand grip, or `None` while the weapon is held in one hand.
-#[allow(
-    dead_code,
-    reason = "read by the recoil spring, which is not built yet"
-)]
 pub fn two_hand_grip() -> Option<TwoHandGrip> {
     STATE
         .lock()

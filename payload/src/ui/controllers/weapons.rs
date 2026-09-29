@@ -1,29 +1,68 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
-//! did, the foregrip, the hand tiers, and the holster and foregrip settings.
+//! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
+//! line and yank, and the weapon-handling settings.
 
 use egui::Ui;
 
 use crate::{
     controllers::{
+        bindings::{self, yank::Yank},
         config::WeaponsConfig,
         frame::Hand,
-        hands::tiers::{TierState, TierStatus},
+        hands::{
+            anchor::{self, AnchorStatus},
+            tiers::{self, TierState, TierStatus},
+        },
         weapons::{
-            WeaponsStatus,
-            config::{ForegripConfig, HolstersConfig, VolumeSpec},
-            foregrip::ForegripStatus,
+            self, WeaponsStatus,
+            config::{
+                DualWieldConfig, ForegripConfig, HapticsConfig, HolstersConfig, PulseSpec,
+                RecoilConfig, VolumeSpec,
+            },
+            dual_wield::{self, DualWieldStatus},
+            foregrip::{self, ForegripStatus},
+            haptics::{self, HapticsStatus},
             holster::slot_label,
+            recoil::{self, RecoilStatus},
         },
     },
     ui::controllers::{vec3, vec3_drag, yes_no},
 };
 
-pub(super) fn weapons_readout(
-    ui: &mut Ui,
-    status: &WeaponsStatus,
-    foregrip: &ForegripStatus,
-    tiers: &TierStatus,
-) {
+/// Everything the weapon-handling section shows, read before the config is locked for editing.
+pub(super) struct WeaponsReadout {
+    status: WeaponsStatus,
+    foregrip: ForegripStatus,
+    tiers: TierStatus,
+    recoil: RecoilStatus,
+    haptics: HapticsStatus,
+    dual_wield: DualWieldStatus,
+    anchor: AnchorStatus,
+    yanks: (u64, Option<Yank>),
+}
+
+impl WeaponsReadout {
+    pub(super) fn read() -> Self {
+        Self {
+            status: weapons::status(),
+            foregrip: foregrip::status(),
+            tiers: tiers::status(),
+            recoil: recoil::status(),
+            haptics: haptics::status(),
+            dual_wield: dual_wield::status(),
+            anchor: anchor::status(),
+            yanks: bindings::yank_status(),
+        }
+    }
+}
+
+pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
+    let WeaponsReadout {
+        status,
+        foregrip,
+        tiers,
+        ..
+    } = readout;
     if !status.active {
         ui.label("Inactive: the bindings are not injecting.");
     }
@@ -42,12 +81,35 @@ pub(super) fn weapons_readout(
                 status.volumes[hand.index()].map_or("no volume", |v| v.label())
             ));
             ui.label(format!(
-                "tier: {} (acts as {})",
+                "tier: {} (acts as {}) · anchor {:.2}",
                 tiers.tiers[hand.index()].label(),
-                tiers.tiers[hand.index()].effective().label()
+                tiers.effective[hand.index()].label(),
+                tiers.anchor_weights[hand.index()]
+            ));
+            let r = &readout.recoil;
+            ui.label(format!(
+                "recoil: pitch {:+.1}° yaw {:+.1}° back {:.3} m · kicks {}",
+                r.offsets[hand.index()].x,
+                r.offsets[hand.index()].y,
+                r.offsets[hand.index()].z,
+                r.kicks[hand.index()]
+            ));
+            let d = &readout.dual_wield;
+            ui.label(format!(
+                "trigger {} fires gun {} · shots {}",
+                if d.triggers[hand.index()].held {
+                    "held"
+                } else {
+                    "up"
+                },
+                d.guns[hand.index()].map_or("none".to_owned(), |g| g.to_string()),
+                d.shots[hand.index()]
             ));
         }
     });
+    dual_wield_readout(ui, &readout.dual_wield);
+    grapple_readout(ui, &readout.anchor, readout.yanks);
+    haptics_readout(ui, &readout.haptics);
     match &status.wielded {
         Some(w) => {
             let hands = Hand::BOTH
@@ -109,6 +171,53 @@ pub(super) fn weapons_readout(
     }
 }
 
+fn dual_wield_readout(ui: &mut Ui, d: &DualWieldStatus) {
+    ui.label(format!(
+        "Dual wield: split {} · last update handed {} · pistols swapped from the game's layout {}",
+        if d.active { "acting" } else { "idle" },
+        d.chosen.map_or("no hand", Hand::label),
+        yes_no(d.swapped)
+    ));
+}
+
+fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Yank>)) {
+    ui.label(format!(
+        "Grapple line: live {} · attached at {}",
+        yes_no(a.wire),
+        a.anchor.map_or("nothing".to_owned(), vec3)
+    ));
+    ui.label(match a.displacement {
+        Some(d) => format!(
+            "Hang: hand moved ({:+.2}, {:+.2}) m · impulse ({:+.1}, {:+.1}) · swings {}",
+            d.x, d.y, a.impulse.x, a.impulse.y, a.swings
+        ),
+        None => format!("Hang: not swinging · swings {}", a.swings),
+    });
+    ui.label(match last {
+        Some(y) => format!(
+            "Yanks: {yanks} · last {:.2} m at {:.1} m/s",
+            y.distance_m, y.speed_mps
+        ),
+        None => format!("Yanks: {yanks}"),
+    });
+}
+
+fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
+    ui.label(format!("Haptic pulses: {}", h.routed));
+    for event in h.events.iter().rev() {
+        let amplitude = |hand: Hand| {
+            event.amplitudes[hand.index()].map_or("-".to_owned(), |a| format!("{a:.2}"))
+        };
+        ui.label(format!(
+            "  {}: left {} right {} for {:.0} ms",
+            event.source.label(),
+            amplitude(Hand::Left),
+            amplitude(Hand::Right),
+            event.duration_s * 1000.0
+        ));
+    }
+}
+
 pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.holsters.enabled, "Holsters")
         .on_hover_text("Draw and holster weapons with a grip press at the body holsters.");
@@ -123,6 +232,73 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(
         &mut w.block_fire_during_actions,
         "Hold fire back during reloads and draws",
+    );
+    ui.checkbox(&mut w.recoil.enabled, "Recoil")
+        .on_hover_text("Kick the gun hand away from the controller on each shot.");
+    ui.add_enabled_ui(w.recoil.enabled, |ui| {
+        ui.indent("recoil", |ui| recoil_settings(ui, &mut w.recoil));
+    });
+    ui.checkbox(
+        &mut w.recoil.suppress_camera_kick,
+        "Suppress the camera recoil while aiming by hand",
+    );
+    ui.checkbox(&mut w.haptics.enabled, "Haptics");
+    ui.add_enabled_ui(w.haptics.enabled, |ui| {
+        ui.indent("haptics", |ui| haptics_settings(ui, &mut w.haptics));
+    });
+    dual_wield_settings(ui, &mut w.dual_wield);
+}
+
+fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
+    ui.add(egui::Slider::new(&mut r.kick_scale, 0.0..=5.0).text("Kick"));
+    ui.add(egui::Slider::new(&mut r.kick_back_m_per_rad, 0.0..=2.0).text("Kick back (m/rad)"));
+    ui.add(egui::Slider::new(&mut r.max_angle_deg, 1.0..=60.0).text("Largest angle (°)"));
+    ui.add(
+        egui::Slider::new(&mut r.spring_stiffness, 10.0..=2000.0)
+            .logarithmic(true)
+            .text("Spring stiffness"),
+    );
+    ui.add(egui::Slider::new(&mut r.spring_damping_ratio, 0.1..=2.0).text("Damping ratio"));
+    ui.add(
+        egui::Slider::new(&mut r.two_hand_stiffness_scale, 1.0..=5.0).text("Two-hand stiffness"),
+    );
+    ui.add(egui::Slider::new(&mut r.two_hand_kick_scale, 0.0..=1.0).text("Two-hand kick"));
+}
+
+fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
+    ui.add(egui::Slider::new(&mut h.intensity, 0.0..=1.0).text("Intensity"));
+    ui.checkbox(&mut h.game_rumble, "Game rumbles")
+        .on_hover_text("Weapon fire, damage, impacts, and the game's other rumbles.");
+    ui.add(
+        egui::Slider::new(&mut h.kick_amplitude_per_rad, 0.0..=20.0)
+            .text("Kick amplitude (per rad)"),
+    );
+    ui.add(egui::Slider::new(&mut h.max_pulse_s, 0.02..=2.0).text("Longest pulse (s)"));
+    ui.checkbox(&mut h.grapple, "Grapple pulses");
+    pulse_settings(ui, "Grapple fire", &mut h.grapple_fire);
+    pulse_settings(ui, "Grapple attach", &mut h.grapple_attach);
+    pulse_settings(ui, "Yank", &mut h.yank);
+}
+
+fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.add(egui::Slider::new(&mut p.amplitude, 0.0..=1.0).text("amplitude"));
+        ui.add(egui::Slider::new(&mut p.duration_s, 0.0..=0.5).text("s"));
+    });
+}
+
+fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
+    ui.checkbox(&mut d.split, "Dual-wield split").on_hover_text(
+        "Each pistol fires from its own hand's trigger; the off-hand's stick click retracts \
+         tethers while both pistols are out.",
+    );
+    ui.add_enabled(
+        d.split,
+        egui::Checkbox::new(
+            &mut d.place_by_handedness,
+            "First pistol in the dominant hand",
+        ),
     );
 }
 

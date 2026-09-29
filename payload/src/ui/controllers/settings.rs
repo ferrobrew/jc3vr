@@ -61,6 +61,24 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.add(egui::Slider::new(&mut b.long_press_s, 0.2..=1.5).text("Commlink long press (s)"));
         ui.add(egui::Slider::new(&mut b.evade_flick, 0.3..=1.0).text("Wingsuit evade flick"));
         ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
+        let y = &mut b.yank;
+        ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(
+            "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
+        );
+        ui.add_enabled_ui(y.enabled, |ui| {
+            ui.indent("yank", |ui| {
+                ui.add(egui::Slider::new(&mut y.min_distance_m, 0.05..=0.5).text("Yank pull (m)"));
+                ui.add(
+                    egui::Slider::new(&mut y.min_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"),
+                );
+                ui.add(egui::Slider::new(&mut y.window_s, 0.05..=0.5).text("Yank window (s)"));
+                ui.add(egui::Slider::new(&mut y.cooldown_s, 0.0..=2.0).text("Yank cooldown (s)"));
+                ui.add(
+                    egui::Slider::new(&mut y.body_drop_m, 0.0..=0.6)
+                        .text("Body point below the head (m)"),
+                );
+            });
+        });
         ui.add(egui::Slider::new(&mut c.mode.debounce_ticks, 1..=6).text("Mode debounce (ticks)"));
     });
 
@@ -129,39 +147,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
     egui::CollapsingHeader::new("Weapons").show(ui, |ui| {
         let w = &mut c.weapons;
         weapons::weapons_settings(ui, w);
-        ui.checkbox(&mut w.dual_wield_split, "Dual-wield split");
         ui.checkbox(&mut w.reload_gesture, "Reload gesture");
         ui.checkbox(&mut w.grenade_throw, "Physical grenade throw");
         ui.checkbox(&mut w.melee, "Physical melee");
         ui.checkbox(&mut w.scopes, "Scope lenses");
-        ui.checkbox(&mut w.recoil.enabled, "Recoil");
-        ui.add_enabled_ui(w.recoil.enabled, |ui| {
-            ui.indent("recoil", |ui| {
-                ui.add(egui::Slider::new(&mut w.recoil.kick_scale, 0.0..=3.0).text("Kick"));
-                ui.add(
-                    egui::Slider::new(&mut w.recoil.spring_stiffness, 10.0..=2000.0)
-                        .logarithmic(true)
-                        .text("Spring stiffness"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut w.recoil.spring_damping_ratio, 0.1..=2.0)
-                        .text("Damping ratio"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut w.recoil.two_hand_stiffness_scale, 1.0..=5.0)
-                        .text("Two-hand stiffness"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut w.recoil.two_hand_kick_scale, 0.0..=1.0)
-                        .text("Two-hand kick"),
-                );
-            });
-        });
-        ui.checkbox(&mut w.haptics.enabled, "Haptics");
-        ui.add_enabled(
-            w.haptics.enabled,
-            egui::Slider::new(&mut w.haptics.intensity, 0.0..=1.0).text("Haptic intensity"),
-        );
     });
 
     egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {

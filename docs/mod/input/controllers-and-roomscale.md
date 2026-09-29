@@ -194,7 +194,7 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Fire the dominant-hand weapon (`FIRE_RIGHT`) | R trigger |
 | Fire the left pistol while dual-wielding | L trigger (see "Dual-wield") |
 | Fire grapple (`FIRE_GRAPPLE`: fire; tap while attached to zip; hold to tether) | L grip outside grab volumes; the yank gesture also zips |
-| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; it stays retract while dual-wielding until the dual-wield split |
+| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol |
 | Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | Y |
 | Jump, stunt, open parachute | A |
 | Use item, enter vehicle, open wingsuit | X |
@@ -205,7 +205,7 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Plant and detonate explosives | R stick click (context) |
 | Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand; unbound until then |
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
-| Reel-in context: cancel, boost, hang jump, slingshot | Y, hold L trigger, A, A |
+| Reel-in context: cancel, boost, hang jump, slingshot | Y, hold L trigger (hold L stick click while dual-wielding), A, A |
 | Pause, commlink | System button tap, System button hold (either hand) |
 
 #### Land vehicles (car; motorcycle in the last rows)
@@ -290,6 +290,8 @@ The yank gesture is a sharp pull of the left hand back toward the body while a l
 ### Dual-wield
 
 The dual-wield slot is one `CWeaponBase` with a `CWeaponData` component per gun. Each gun has its own attach bone, so gun 0 rides the dominant hand and gun 1 rides the other hand. On foot the game exposes one fire input and alternates the barrels internally, at the tail of `Fire_Projectile` (the component index [`WeaponBase::m_NextWeaponToFire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_NextWeaponToFire) and each component's fire-position cursor [`WeaponData::m_InternalFirePositionCurrentIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_InternalFirePositionCurrentIndex)). Each trigger fires its own component: the mod pins both the cursor and the dispatched `CWeaponData` to that component, so that the muzzle origin and the flash stay consistent, and writes that hand's ray into `m_AimTargetPosition` before the shot is built. Ammunition, recoil, heat, and effects are counted per fire call, never per barrel, so nothing is counted twice.
+
+While both pistols are out on foot, the left trigger fires the left pistol, so retracting the tethers (and the reel boost, which is the same action) moves to the left stick click. The stick click's weapon-cycle fallback, when it is enabled, yields to it while dual-wielding; the holsters draw the other slots. The stick click is the one off-hand input that is otherwise idle on foot once holsters exist, and it keeps retraction on the grapple hand.
 
 The two guns share one weapon state, so a reload is one animation for both. Under the action-runs tier the hands stay on the controllers, and both guns stop firing for the reload's duration.
 

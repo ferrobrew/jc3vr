@@ -26,7 +26,7 @@ use crate::{
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
         mode as controller_mode, overlay as controller_overlay, roomscale as controller_roomscale,
-        scheme, weapons as controller_weapons,
+        scheme,
     },
     vr::input::{self as vr_input, ActionsOrigin},
 };
@@ -50,8 +50,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let late_status = late::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
-    let weapons_status = controller_weapons::status();
-    let foregrip_status = controller_weapons::foregrip::status();
+    let weapons_readout = weapons::WeaponsReadout::read();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -104,9 +103,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
 
         egui::CollapsingHeader::new("Weapon handling")
             .default_open(true)
-            .show(ui, |ui| {
-                weapons::weapons_readout(ui, &weapons_status, &foregrip_status, &hand_tiers)
-            });
+            .show(ui, |ui| weapons::weapons_readout(ui, &weapons_readout));
 
         egui::CollapsingHeader::new("Overlay")
             .default_open(true)

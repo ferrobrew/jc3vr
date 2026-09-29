@@ -377,9 +377,17 @@ pub struct WeaponBase {
     /// The physical recoil impulse strength; a non-zero value defers a physical recoil after each
     /// shot.
     pub m_PhysicalRecoilStrength: f32,
-    /// The accumulated recoil yaw, kicked left or right at random by each shot.
+    /// This tick's recoil yaw, radians: the base update
+    /// ([`UpdateFromUserPostSim_ParallelBase`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_ParallelBase)) zeroes it
+    /// at the start of every tick, and each shot ([`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase))
+    /// kicks it left or right at random. The weapon camera modifier
+    /// ([`WeaponCameraModifier::ProcessCameraContext`](crate::camera::weapon_camera_modifier::WeaponCameraModifier::ProcessCameraContext))
+    /// turns the camera boom by it.
     pub m_RecoilYaw: f32,
-    /// The accumulated recoil pitch, raised by each shot.
+    /// This tick's recoil pitch, radians: the base update zeroes it at the start of every tick and
+    /// then, while [`m_CurrentRecoilPitchValueToRecover`](crate::equipment::weapon::WeaponBase::m_CurrentRecoilPitchValueToRecover)
+    /// is positive, sets it to the negated share recovered this tick; each shot raises it by the
+    /// shot's pitch kick. The weapon camera modifier pitches the camera boom by it.
     pub m_RecoilPitch: f32,
     _field_27c: [u8; 272],
     /// Whether the weapon overheats.
@@ -426,7 +434,12 @@ pub struct WeaponBase {
     /// The character using the weapon (a `boost::weak_ptr<CCharacter>`: object pointer and weak
     /// control block).
     pub m_User: [*mut ::std::ffi::c_void; 2],
-    _field_508: [u8; 88],
+    _field_508: [u8; 17],
+    /// Whether the weapon's user is the local player. The trigger's semi-automatic rule, the fire
+    /// rumble ([`RumbleFire`](crate::equipment::weapon::WeaponBase::RumbleFire)), and the fire camera shake apply only while it is
+    /// set.
+    pub m_IsUserLocalPlayer: bool,
+    _field_51a: [u8; 70],
     /// Whether the weapon blocks firing while its barrel penetrates a wall in aim.
     pub m_IsWeaponPenetratingWallIfInAim: bool,
     /// Whether the weapon's barrel penetrates a character in aim;
@@ -539,6 +552,23 @@ impl WeaponBase {
             f(self as *mut Self as _, weapon_data)
         }
     }
+    pub const RumbleFire_ADDRESS: usize = 0x1409510C0;
+    /// Spawns the fire rumble for a shot through [`RumbleManager::SpawnRumble`](crate::rumble_manager::RumbleManager::SpawnRumble),
+    /// named `"WeaponFire"`, with the tuning's rumble strength and time, when the user is the local
+    /// player ([`m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer)) and the strength is positive. On
+    /// the dual-wield slot the gun about to fire ([`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire))
+    /// picks the motor: gun 1 drives the left motor only, and any other gun the right motor only.
+    /// Called only from [`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase), after the shot's recoil
+    /// is added to [`m_RecoilPitch`](crate::equipment::weapon::WeaponBase::m_RecoilPitch) and [`m_RecoilYaw`](crate::equipment::weapon::WeaponBase::m_RecoilYaw)
+    /// and before the gun index advances.
+    pub unsafe fn RumbleFire(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RumbleFire_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const IsWeaponAimingBase_ADDRESS: usize = 0x140950F90;
     /// The base implementation of the [`IsWeaponAiming`](crate::equipment::weapon::WeaponBase::IsWeaponAiming) virtual.
     pub unsafe fn IsWeaponAimingBase(&self) -> bool {
@@ -556,14 +586,14 @@ impl WeaponBase {
         &mut self,
         dt: f32,
         aim_position: *const crate::types::math::Vector3,
-        input: *const ::std::ffi::c_void,
+        input: *const crate::equipment::weapon::WeaponInputs,
     ) {
         unsafe {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
                 dt: f32,
                 aim_position: *const crate::types::math::Vector3,
-                input: *const ::std::ffi::c_void,
+                input: *const crate::equipment::weapon::WeaponInputs,
             ) = ::std::mem::transmute(Self::UpdateFromUserPostSim_ParallelBase_ADDRESS);
             f(self as *mut Self as _, dt, aim_position, input)
         }
@@ -576,14 +606,14 @@ impl WeaponBase {
         &mut self,
         dt: f32,
         weapon_data: *mut crate::equipment::weapon::WeaponData,
-        input: *const ::std::ffi::c_void,
+        input: *const crate::equipment::weapon::WeaponInputs,
     ) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
                 dt: f32,
                 weapon_data: *mut crate::equipment::weapon::WeaponData,
-                input: *const ::std::ffi::c_void,
+                input: *const crate::equipment::weapon::WeaponInputs,
             ) -> bool = ::std::mem::transmute(Self::UpdateWeapon_Parallel_ADDRESS);
             f(self as *mut Self as _, dt, weapon_data, input)
         }
@@ -733,7 +763,7 @@ impl WeaponBase {
         &mut self,
         dt: f32,
         aim_position: *const crate::types::math::Vector3,
-        input: *const ::std::ffi::c_void,
+        input: *const crate::equipment::weapon::WeaponInputs,
     ) {
         unsafe {
             let f = (&raw const (*self.vftable()).UpdateFromUserPostSim_Parallel).read();
@@ -750,7 +780,7 @@ impl WeaponBase {
         &mut self,
         dt: f32,
         aim_position: *const crate::types::math::Vector3,
-        input: *const ::std::ffi::c_void,
+        input: *const crate::equipment::weapon::WeaponInputs,
     ) {
         unsafe {
             let f = (&raw const (*self.vftable()).UpdateFromUserPostSim_Serial).read();
@@ -957,7 +987,7 @@ pub struct WeaponBaseVftable {
         this: *mut crate::equipment::weapon::WeaponBase,
         dt: f32,
         aim_position: *const crate::types::math::Vector3,
-        input: *const ::std::ffi::c_void,
+        input: *const crate::equipment::weapon::WeaponInputs,
     ),
     /// The serial counterpart of
     /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel), called with the
@@ -969,7 +999,7 @@ pub struct WeaponBaseVftable {
         this: *mut crate::equipment::weapon::WeaponBase,
         dt: f32,
         aim_position: *const crate::types::math::Vector3,
-        input: *const ::std::ffi::c_void,
+        input: *const crate::equipment::weapon::WeaponInputs,
     ),
     _vfunc_56: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
@@ -1125,6 +1155,35 @@ fn _WeaponGripHand_size_check() {
     }
     unreachable!()
 }
+#[derive(Copy, Clone)]
+#[repr(C, align(8))]
+/// The fire inputs a weapon's user hands its per-tick update (`SWeaponInputs`), each `0..=1`. The
+/// base update ([`WeaponBase::UpdateFromUserPostSim_ParallelBase`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_ParallelBase)) copies them before passing them
+/// on to [`WeaponBase::UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel).
+pub struct WeaponInputs {
+    /// The primary trigger, compared against the tuning's
+    /// [`m_trigger_sensitivity`](crate::equipment::weapon::WeaponTuning::m_trigger_sensitivity).
+    pub m_PrimaryFireInput: f32,
+    /// The secondary trigger, for weapons with a secondary action.
+    pub m_SecondaryFireInput: f32,
+}
+fn _WeaponInputs_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], WeaponInputs>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl WeaponInputs {}
+impl std::convert::AsRef<WeaponInputs> for WeaponInputs {
+    fn as_ref(&self) -> &WeaponInputs {
+        self
+    }
+}
+impl std::convert::AsMut<WeaponInputs> for WeaponInputs {
+    fn as_mut(&mut self) -> &mut WeaponInputs {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// The situation a weapon is in (`CWeaponData::EWeaponState`), stored on the weapon as
@@ -1163,7 +1222,22 @@ pub struct WeaponTuning {
     /// these over the wielded, wingsuit, and vehicle weapons as the weapon slot's maximum aim
     /// distance.
     pub m_max_range: f32,
-    _field_48: [u8; 36],
+    _field_48: [u8; 8],
+    /// The seconds between shots: [`WeaponBase::UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) starts a shot only once
+    /// [`WeaponBase::m_TimeSinceLastFire`](crate::equipment::weapon::WeaponBase::m_TimeSinceLastFire) has reached it. The interval is weapon-wide, so the guns
+    /// of a multi-gun weapon share it.
+    pub m_fire_rate: f32,
+    /// The replacement for [`m_fire_rate`](crate::equipment::weapon::WeaponTuning::m_fire_rate) once the player owns the weapon's
+    /// fire-rate upgrade.
+    pub m_fire_rate_level_2: f32,
+    _field_58: [u8; 8],
+    /// Whether a held trigger keeps firing. Otherwise a local player's weapon fires once per pull
+    /// ([`WeaponBase::m_FiredThisInput`](crate::equipment::weapon::WeaponBase::m_FiredThisInput)); other users always fire while the trigger is pulled.
+    pub m_fully_automatic: bool,
+    _field_61: [u8; 3],
+    /// The trigger thresholds: index 0 is the value a released trigger must exceed to count as
+    /// pulled, index 1 the lower value a pulled trigger must stay above.
+    pub m_trigger_sensitivity: [f32; 2],
     /// A per-weapon replacement for the character's aim-timer refill value; non-negative values
     /// override the character's aim settings (see [`WeaponBase::GetAimTimerOverride`](crate::equipment::weapon::WeaponBase::GetAimTimerOverride)).
     pub m_aim_timer_override: f32,

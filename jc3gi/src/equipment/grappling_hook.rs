@@ -1,5 +1,106 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
+/// The physics proxy a character hangs from under a grapple line (`CGrapplingHangPhysicsProxy`, a
+/// `CGrapplePointProxy`): a rigid body the hang task swings, with the character attached to it.
+/// Only some members are bound.
+pub struct GrapplingHangPhysicsProxy {
+    vftable: *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxyVftable,
+    _field_8: [u8; 24],
+    /// The proxy's rigid body, which the character hangs from. The hang task sets its angular
+    /// velocity and applies its impulses to it.
+    pub m_PfxProxyBody: crate::types::shared_ptr::SharedPtr<
+        crate::physics::PfxRigidBody,
+    >,
+}
+fn _GrapplingHangPhysicsProxy_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], GrapplingHangPhysicsProxy>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl GrapplingHangPhysicsProxy {
+    pub fn vftable(
+        &self,
+    ) -> *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxyVftable {
+        self.vftable
+            as *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxyVftable
+    }
+    /// Whether the proxy is set up and its body live. The hang task
+    /// ([`NStateTask_GrapplingHangTask::Update`](crate::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update)) acts on the proxy only while it holds.
+    pub unsafe fn IsOk(&self) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsOk).read();
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<GrapplingHangPhysicsProxy> for GrapplingHangPhysicsProxy {
+    fn as_ref(&self) -> &GrapplingHangPhysicsProxy {
+        self
+    }
+}
+impl std::convert::AsMut<GrapplingHangPhysicsProxy> for GrapplingHangPhysicsProxy {
+    fn as_mut(&mut self) -> &mut GrapplingHangPhysicsProxy {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct GrapplingHangPhysicsProxyVftable {
+    _vfunc_0: unsafe extern "system" fn(
+        this: *mut crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ),
+    _vfunc_1: unsafe extern "system" fn(
+        this: *mut crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ),
+    _vfunc_2: unsafe extern "system" fn(
+        this: *mut crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ),
+    /// Whether the proxy is set up and its body live. The hang task
+    /// ([`NStateTask_GrapplingHangTask::Update`](crate::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update)) acts on the proxy only while it holds.
+    pub IsOk: unsafe extern "system" fn(
+        this: *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ) -> bool,
+}
+fn _GrapplingHangPhysicsProxyVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x20],
+            GrapplingHangPhysicsProxyVftable,
+        >([0u8; 0x20]);
+    }
+    unreachable!()
+}
+impl GrapplingHangPhysicsProxyVftable {}
+impl std::convert::AsRef<GrapplingHangPhysicsProxyVftable>
+for GrapplingHangPhysicsProxyVftable {
+    fn as_ref(&self) -> &GrapplingHangPhysicsProxyVftable {
+        self
+    }
+}
+impl std::convert::AsMut<GrapplingHangPhysicsProxyVftable>
+for GrapplingHangPhysicsProxyVftable {
+    fn as_mut(&mut self) -> &mut GrapplingHangPhysicsProxyVftable {
+        self
+    }
+}
+/// Enables the hang task's discrete stick swing (`NStateTask_GrapplingHangTask::s_enable_discrete_swing`).
+/// Zero-initialised and written by no code in this build.
+pub unsafe fn get_GrapplingHangTask_EnableDiscreteSwing() -> &'static mut bool {
+    unsafe { &mut *(0x142F30E90 as *mut bool) }
+}
+/// Enables the hang task's continuous stick swing
+/// (`NStateTask_GrapplingHangTask::s_enable_small_impulse_swing`). Zero-initialised and written by
+/// no code in this build.
+pub unsafe fn get_GrapplingHangTask_EnableSmallImpulseSwing() -> &'static mut bool {
+    unsafe { &mut *(0x142F30E84 as *mut bool) }
+}
+/// The continuous stick swing's impulse at full stick deflection
+/// ([`GrapplingHangTask_EnableSmallImpulseSwing`](get_GrapplingHangTask_EnableSmallImpulseSwing)), applied once per hang-task tick and scaled by
+/// the stick's magnitude.
+pub unsafe fn get_GrapplingHangTask_SmallImpulseSwingMagnitude() -> &'static mut f32 {
+    unsafe { &mut *(0x142D65A80 as *mut f32) }
+}
+#[repr(C, align(8))]
 /// The grappling-hook equipment item (`CGrapplingHook`, a `CGameObject`): owns the wires, the
 /// reel/tether state machine, and the cached fire target. A character's hook is held by its
 /// inventory ([`Inventory::m_GrapplingHook`](crate::character::inventory::Inventory::m_GrapplingHook)).
@@ -40,10 +141,14 @@ pub struct GrapplingHook {
     pub m_ActiveWire: crate::types::shared_ptr::SharedPtr<
         crate::equipment::grappling_hook::GrapplingHookWire,
     >,
+    _field_3d8: [u8; 24],
+    /// The physics proxy the character hangs from while reeled into a hang
+    /// ([`GHS_REELED_HANG`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_HANG)).
+    pub m_GrapplingHangProxy: crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
 }
 fn _GrapplingHook_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x3D8], GrapplingHook>([0u8; 0x3D8]);
+        ::std::mem::transmute::<[u8; 0x420], GrapplingHook>([0u8; 0x420]);
     }
     unreachable!()
 }
@@ -295,6 +400,53 @@ impl std::convert::AsRef<GrapplingHookWire> for GrapplingHookWire {
 }
 impl std::convert::AsMut<GrapplingHookWire> for GrapplingHookWire {
     fn as_mut(&mut self) -> &mut GrapplingHookWire {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The hang task (`NStateTask_GrapplingHangTask`): the character state task that runs while the
+/// character hangs under a grapple line.
+pub struct NStateTask_GrapplingHangTask {}
+impl NStateTask_GrapplingHangTask {
+    pub const Update_ADDRESS: usize = 0x1408151D0;
+    /// The per-tick update. While the hook's
+    /// [`m_GrapplingHangProxy`](crate::equipment::grappling_hook::GrapplingHook::m_GrapplingHangProxy) is
+    /// [`IsOk`](crate::equipment::grappling_hook::GrapplingHangPhysicsProxy::IsOk), it post-updates the proxy for the context's
+    /// time step, reads the move stick (squared to a circle and turned into the world through the
+    /// camera's input matrix), and blends the proxy body's angular velocity toward a yaw rate: toward
+    /// the weapon aim point while the character aims a weapon or the grapple or throws a grenade,
+    /// and toward zero otherwise. A gun held in a hand that fired within the last tenth of a second
+    /// pushes the body back along the weapon's forward axis at that hand. Two stick-driven swings
+    /// follow, each behind its own flag: a discrete swing impulse
+    /// ([`GrapplingHangTask_EnableDiscreteSwing`](get_GrapplingHangTask_EnableDiscreteSwing)) and a continuous one scaled by the stick's
+    /// magnitude ([`GrapplingHangTask_EnableSmallImpulseSwing`](get_GrapplingHangTask_EnableSmallImpulseSwing),
+    /// [`GrapplingHangTask_SmallImpulseSwingMagnitude`](get_GrapplingHangTask_SmallImpulseSwingMagnitude)), both applied at the hips
+    /// ([`Character::GetHipsPosition`](crate::character::character::Character::GetHipsPosition)) with
+    /// [`PfxRigidBody::ApplyImpulse`](crate::physics::PfxRigidBody::ApplyImpulse). Nothing in this build sets either flag, so the stick does not
+    /// swing a hanging character. Without a valid proxy it runs the drop-out alignment instead, or
+    /// cancels the hang.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_GrapplingHangTask> for NStateTask_GrapplingHangTask {
+    fn as_ref(&self) -> &NStateTask_GrapplingHangTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_GrapplingHangTask> for NStateTask_GrapplingHangTask {
+    fn as_mut(&mut self) -> &mut NStateTask_GrapplingHangTask {
         self
     }
 }
