@@ -145,7 +145,7 @@ pub struct UIManager {
     /// The active `CSteering`, whose action map [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents)
     /// polls for the mouse-button actions ([`MOUSE1`](crate::input::input_action_map::Action::MOUSE1) and
     /// [`MOUSE2`](crate::input::input_action_map::Action::MOUSE2)).
-    pub m_Steering: *mut ::std::ffi::c_void,
+    pub m_Steering: *mut crate::input::steering::Steering,
     _field_228: [u8; 4240],
     /// The lock serializing the UI update (`PreRender`: `Advance` + `Capture`) against the UI
     /// render (`Render`, `RenderOffScreenTextures`). A Win32 critical section, so re-entrant on

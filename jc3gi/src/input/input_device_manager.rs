@@ -1,6 +1,21 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The ordering used by [`InputDeviceManager::GetDevice`](crate::input::input_device_manager::InputDeviceManager::GetDevice). Appearance order counts devices of the
+/// requested class in the manager's device vector. Hardware-index order matches the index encoded in
+/// [`InputDevice::ID`](crate::input::input_device_manager::InputDevice::ID).
+pub enum DeviceOrder {
+    Appearance = 0isize as _,
+    HardwareIndex = 1isize as _,
+}
+fn _DeviceOrder_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], DeviceOrder>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// An input device class (`Input::EDeviceType`), as passed to the device manager's device lookup
 /// and action mapping.
 pub enum DeviceType {
@@ -20,6 +35,58 @@ fn _DeviceType_size_check() {
         ::std::mem::transmute::<[u8; 0x4], DeviceType>([0u8; 0x4]);
     }
     unreachable!()
+}
+#[repr(C, align(8))]
+/// The common input-device object (`Input::IInputDevice`). Only the identity field is modeled; the
+/// concrete device state and object collections are intentionally left opaque.
+pub struct InputDevice {
+    pub __vftable: u64,
+    _field_8: [u8; 40],
+    /// The packed device identity used by device lookup and action-effector selection.
+    pub ID: crate::input::input_device_manager::InputDeviceId,
+    _field_34: [u8; 4],
+}
+fn _InputDevice_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x38], InputDevice>([0u8; 0x38]);
+    }
+    unreachable!()
+}
+impl InputDevice {}
+impl std::convert::AsRef<InputDevice> for InputDevice {
+    fn as_ref(&self) -> &InputDevice {
+        self
+    }
+}
+impl std::convert::AsMut<InputDevice> for InputDevice {
+    fn as_mut(&mut self) -> &mut InputDevice {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// The packed identifier stored by every input device. The low nibble is the [`DeviceType`](crate::input::input_device_manager::DeviceType), and the
+/// hardware index occupies the bits used by the action-map device selector. The remaining bits are
+/// device-specific identity data.
+pub struct InputDeviceId {
+    pub raw: u32,
+}
+fn _InputDeviceId_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], InputDeviceId>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+impl InputDeviceId {}
+impl std::convert::AsRef<InputDeviceId> for InputDeviceId {
+    fn as_ref(&self) -> &InputDeviceId {
+        self
+    }
+}
+impl std::convert::AsMut<InputDeviceId> for InputDeviceId {
+    fn as_mut(&mut self) -> &mut InputDeviceId {
+        self
+    }
 }
 #[repr(C, align(8))]
 pub struct InputDeviceManager {
@@ -48,6 +115,29 @@ impl InputDeviceManager {
     ) -> *const crate::input::input_device_manager::InputDeviceManagerVftable {
         self.vftable
             as *const crate::input::input_device_manager::InputDeviceManagerVftable
+    }
+    pub const GetDevice_ADDRESS: usize = 0x1402F1F00;
+    /// Finds a device of `device_type`. With [`DeviceOrder::Appearance`](crate::input::input_device_manager::DeviceOrder::Appearance), `index` selects the
+    /// matching device's position among devices of that class. With [`DeviceOrder::HardwareIndex`](crate::input::input_device_manager::DeviceOrder::HardwareIndex),
+    /// `index` selects the packed hardware index in [`InputDevice::ID`](crate::input::input_device_manager::InputDevice::ID). Returns null when no device
+    /// matches.
+    pub unsafe fn GetDevice(
+        &mut self,
+        device_type: crate::input::input_device_manager::DeviceType,
+        index: i32,
+        order: crate::input::input_device_manager::DeviceOrder,
+    ) -> *mut crate::input::input_device_manager::InputDevice {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                device_type: crate::input::input_device_manager::DeviceType,
+                index: i32,
+                order: crate::input::input_device_manager::DeviceOrder,
+            ) -> *mut crate::input::input_device_manager::InputDevice = ::std::mem::transmute(
+                Self::GetDevice_ADDRESS,
+            );
+            f(self as *mut Self as _, device_type, index, order)
+        }
     }
     pub const Update_ADDRESS: usize = 0x1402F20C0;
     /// The per-frame device poll: reads all devices and refreshes their effector states (see
@@ -111,5 +201,36 @@ impl std::convert::AsRef<InputDeviceManagerVftable> for InputDeviceManagerVftabl
 impl std::convert::AsMut<InputDeviceManagerVftable> for InputDeviceManagerVftable {
     fn as_mut(&mut self) -> &mut InputDeviceManagerVftable {
         self
+    }
+}
+impl InputDeviceId {
+    /// Returns the packed device identity exactly as stored by the engine.
+    pub fn raw_value(&self) -> u32 {
+        self.raw
+    }
+    /// Returns the device class encoded in the identity's low nibble.
+    pub fn device_type(&self) -> DeviceType {
+        match self.raw & 0xF {
+            0x0 => DeviceType::Default,
+            0x1 => DeviceType::Keyboard,
+            0x2 => DeviceType::Mouse,
+            0x3 => DeviceType::Joystick,
+            0x4 => DeviceType::Gamepad,
+            0x5 => DeviceType::Memorycard,
+            0x6 => DeviceType::Microphone,
+            0x7 => DeviceType::Headphone,
+            0x8 => DeviceType::Unknown,
+            _ => DeviceType::Unknown,
+        }
+    }
+    /// Returns the signed hardware index used by the manager's hardware-index lookup. The engine
+    /// compares this as `(ID * 4) >> 19`, which is an arithmetic `ID >> 17`.
+    pub fn hardware_index(&self) -> i32 {
+        ((self.raw << 2) as i32) >> 19
+    }
+    /// Returns the device selector passed to an action-map effector lookup. The high part identifies
+    /// the device class, and the low part is the signed packed-ID component `(ID << 15) >> 19`.
+    pub fn action_device_index(&self) -> i32 {
+        ((self.raw & 0xF) << 16) as i32 | (((self.raw << 15) as i32) >> 19)
     }
 }

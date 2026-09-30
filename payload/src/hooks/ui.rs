@@ -25,6 +25,7 @@ use crate::{
 
 /// Cancel input on the game thread before shutdown removes the UI hooks.
 pub(crate) fn cancel_pointer_on_game_thread() {
+    crate::controllers::map::cancel();
     pointer::clear_controller();
     pointer::reset_route();
     cursor::set_frame(None);
@@ -610,8 +611,10 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut std::ffi::c_void) -> b
         }
         return original.call(this, steering);
     }
-    let controller = pointer::controller_output().filter(|p| p.owns_ui);
-    let routed = pointer::route_game_pointer(controller);
+    let routed = crate::controllers::map::prepared_routed().unwrap_or_else(|| {
+        let controller = pointer::controller_output().filter(|p| p.owns_ui);
+        pointer::route_game_pointer(controller)
+    });
     let ((window_w, window_h), (movie_w, movie_h)) = geometry.unwrap();
 
     // SAFETY: `this` is the live UI singleton (the engine's own callers pass it); the movie
@@ -762,9 +765,16 @@ fn get_movie_space_mouse_cursor(
         if stage_w <= 0.0 || stage_h <= 0.0 {
             return original.call(this, viewport_x, viewport_y, out);
         }
-        let selected = SYNTHETIC_MOUSE
-            .lock()
-            .selected_uv(manager.m_Movie as usize, std::time::Instant::now());
+        // Native map input runs before `SendMouseEvents` in `UIManager::PreUpdate`. Prefer the
+        // controller owner snapshot directly so map hit-testing sees this tick's coherent UV rather
+        // than the previous delivered movie event. This read does not advance the router; the mouse
+        // detour remains the sole owner of source transitions and button delivery.
+        let selected = crate::controllers::map::prepared_uv().map(|uv| (uv.x, uv.y));
+        let selected = selected.or_else(|| {
+            SYNTHETIC_MOUSE
+                .lock()
+                .selected_uv(manager.m_Movie as usize, std::time::Instant::now())
+        });
         let (u, v) = selected.unwrap_or_else(|| {
             (
                 (viewport_x / window.0 as f32).clamp(0.0, 1.0),

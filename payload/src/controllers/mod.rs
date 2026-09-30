@@ -50,6 +50,7 @@ pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;
+pub mod map;
 pub mod mode;
 pub mod motion;
 pub mod overlay;
@@ -68,6 +69,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(aim_state::hook_library())
         .with_hook_library(hands::hook_library())
         .with_hook_library(aim::hook_library())
+        .with_hook_library(map::hook_library())
         .with_hook_library(roomscale::hook_library())
         .with_hook_library(weapons::hook_library())
         .with_hook_library(vehicles::hook_library())

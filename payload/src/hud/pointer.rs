@@ -411,13 +411,19 @@ pub fn clear_controller() {
     state.updated = None;
 }
 
+/// Return the current controller-owned pointer sample for consumers that run before the UI mouse
+/// delivery hook. This is a read-only snapshot: callers must not route it through
+/// [`route_game_pointer`] or otherwise advance source ownership. The later mouse delivery hook uses
+/// the same sample and owns the one state transition through the router.
+pub fn selected_controller() -> Option<ControllerPointer> {
+    controller_output().filter(|pointer| pointer.owns_ui)
+}
+
 /// Whether the controller pointer owns the menu trigger while it is over the displayed panel. The
 /// UI binding table uses that trigger for page navigation; suppressing that one route avoids a page
 /// turn or gameplay action being delivered alongside the Scaleform click.
 pub fn owns_menu_trigger() -> Option<Hand> {
-    controller_output()
-        .filter(|pointer| pointer.owns_ui)
-        .map(|pointer| pointer.hand)
+    selected_controller().map(|pointer| pointer.hand)
 }
 
 /// Route the game UI's button state between the controller pointer and the desktop mouse. A source
