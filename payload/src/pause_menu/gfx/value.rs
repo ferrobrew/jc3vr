@@ -1,16 +1,16 @@
 //! The owned Scaleform value.
 
 use std::{
-    ffi::{CStr, c_void},
+    ffi::{CStr, CString, c_char, c_void},
     marker::PhantomData,
 };
 
-use jc3gi::ui::{
-    scaleform::{Value, ValueObjectInterface},
-    ui_base::UIBase,
-};
+use jc3gi::ui::scaleform::{Value, ValueObjectInterface};
 
-use crate::pause_menu::{gfx::CaptureThread, model::command::Arg};
+use crate::pause_menu::{
+    gfx::{CaptureThread, Screen},
+    model::command::Arg,
+};
 
 /// An AS3 value the mod owns: a heap-pinned [`Value`] that is released through its movie's object
 /// interface when dropped.
@@ -61,27 +61,28 @@ impl<'t> GfxValue<'t> {
         this
     }
 
-    /// A new empty AS3 `Object` in `ui`'s movie.
-    pub(crate) fn create_object(thread: &'t CaptureThread, ui: &mut UIBase) -> Option<Self> {
+    /// A new empty AS3 `Object` in `screen`'s movie.
+    pub(crate) fn create_object(thread: &'t CaptureThread, screen: &Screen) -> Option<Self> {
         let mut value = Self::undefined(thread);
-        // SAFETY: `ui` is a live screen whose movie exists (the caller holds its clip); the
-        // capture-thread token makes this the engine's own thread for movie calls.
-        unsafe { ui.CreateObject(value.value.as_mut()) };
+        // SAFETY: `screen` is a live screen whose movie exists (the caller holds its clip); the
+        // capture-thread token makes this the engine's own thread for movie calls, and creating an
+        // object runs no AS3.
+        screen.with_ui(|ui| unsafe { ui.CreateObject(value.value.as_mut()) });
         value.is_object().then_some(value)
     }
 
-    /// A new empty AS3 `Array` in `ui`'s movie.
-    pub(crate) fn create_array(thread: &'t CaptureThread, ui: &mut UIBase) -> Option<Self> {
+    /// A new empty AS3 `Array` in `screen`'s movie.
+    pub(crate) fn create_array(thread: &'t CaptureThread, screen: &Screen) -> Option<Self> {
         let mut value = Self::undefined(thread);
         // SAFETY: as `create_object`.
-        unsafe { ui.CreateArray(value.value.as_mut()) };
+        screen.with_ui(|ui| unsafe { ui.CreateArray(value.value.as_mut()) });
         value.is_object().then_some(value)
     }
 
     /// Whether this is a managed object (an object, array, or display object) the object interface
-    /// can operate on.
+    /// can operate on. A managed string or closure is not.
     pub(crate) fn is_object(&self) -> bool {
-        self.is_managed() && self.value.mValue != 0
+        self.is_managed() && self.value.mValue != 0 && is_object_type(self.value.value_type())
     }
 
     /// The member `name`, whatever its type.
@@ -100,7 +101,7 @@ impl<'t> GfxValue<'t> {
     pub(crate) fn path(&self, path: &str) -> Option<GfxValue<'t>> {
         let mut current: Option<GfxValue<'t>> = None;
         for segment in path.split('.') {
-            let name = std::ffi::CString::new(segment).ok()?;
+            let name = CString::new(segment).ok()?;
             let next = current.as_ref().unwrap_or(self).member(&name)?;
             if !next.is_object() {
                 return None;
@@ -187,7 +188,7 @@ impl<'t> GfxValue<'t> {
         let pointer = if self.is_managed() {
             // SAFETY: a managed string's payload points at the movie's string-data pointer, as
             // the engine's own command handlers read it.
-            unsafe { *(pointer as *const *const std::ffi::c_char) }
+            unsafe { *(pointer as *const *const c_char) }
         } else {
             pointer
         };
@@ -249,6 +250,14 @@ impl Drop for GfxValue<'_> {
     }
 }
 
+/// Whether the base type tag `value_type` is one the object interface's object calls take.
+fn is_object_type(value_type: u32) -> bool {
+    matches!(
+        value_type,
+        Value::VT_OBJECT | Value::VT_ARRAY | Value::VT_DISPLAY_OBJECT
+    )
+}
+
 /// Decode a command argument from the movie.
 pub(crate) fn decode_arg(value: &Value) -> Arg {
     if let Some(int) = value.as_int() {
@@ -280,5 +289,27 @@ fn param_value(param: Param<'_>) -> Value {
         Param::Int(value) => unmanaged(Value::VT_INT, value as u32 as u64),
         Param::Bool(value) => unmanaged(Value::VT_BOOLEAN, u64::from(value)),
         Param::Str(value) => unmanaged(Value::VT_STRING, value.as_ptr() as u64),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_objects_arrays_and_display_objects_are_objects() {
+        for object in [Value::VT_OBJECT, Value::VT_ARRAY, Value::VT_DISPLAY_OBJECT] {
+            assert!(is_object_type(object));
+        }
+        for other in [
+            Value::VT_BOOLEAN,
+            Value::VT_INT,
+            Value::VT_NUMBER,
+            Value::VT_STRING,
+            Value::VT_CLOSURE,
+            0,
+        ] {
+            assert!(!is_object_type(other));
+        }
     }
 }

@@ -5,8 +5,12 @@
 //! [`crate::vr::stage`]) and, in a T-pose, the distance between the two controllers' grip poses.
 //! Every other dimension is derived from those with generic adult proportions ([`derive`]): the
 //! segment ratios of Drillis and Contini's anthropometric tables as tabulated in Winter's
-//! *Biomechanics and Motor Control of Human Movement*, which are the same ratios
-//! [`BodyDimensions::GENERIC_ADULT`] follows.
+//! *Biomechanics and Motor Control of Human Movement*. The height, shoulder, and hand ratios are
+//! the ones [`BodyDimensions::GENERIC_ADULT`] follows. The arm segments are not: the tables'
+//! per-height upper arm and forearm lengths, with the shoulders and hands, add up to more than an
+//! adult's arm span, so the derivation fits the two segments to the measured span instead and
+//! takes only their proportion to each other from the tables. The generic adult keeps the tables'
+//! longer segments.
 //!
 //! [`Calibration`] is the flow's state: which step it is on, what it has measured, and the capture
 //! in progress. It takes the time and the live measurement as arguments, so it runs without a
@@ -472,6 +476,31 @@ mod tests {
         assert!((SHOULDER_HEIGHT_RATIO * height - adult.shoulder_height).abs() < 0.02);
         assert!((SHOULDER_WIDTH_RATIO * height - adult.shoulder_width).abs() < 0.01);
         assert!((HAND_RATIO * height - adult.hand).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_generic_adults_measurements_derive_arms_that_fit_its_span() {
+        let adult = BodyDimensions::GENERIC_ADULT;
+        let height = height_from_eye_height(adult.eye_height);
+        let body = derive(Measurements {
+            eye_height: adult.eye_height,
+            grip_span: adult.arm_span - 2.0 * GRIP_TO_FINGERTIP_SHARE * HAND_RATIO * height,
+        })
+        .unwrap();
+        assert!((body.arm_span - adult.arm_span).abs() < 2.0 * EPS);
+        // The derived segments add up to the span, as the tables' own do not.
+        let across =
+            |b: &BodyDimensions| b.shoulder_width + 2.0 * (b.upper_arm + b.forearm + b.hand);
+        assert!((across(&body) - body.arm_span).abs() < 4.0 * EPS);
+        assert!(across(&adult) > adult.arm_span + 0.1);
+        // They keep the tables' proportion to each other, and are therefore shorter.
+        let proportion = |b: &BodyDimensions| b.upper_arm / b.forearm;
+        assert!((proportion(&body) - proportion(&adult)).abs() < 0.02);
+        assert!(body.upper_arm < adult.upper_arm && body.forearm < adult.forearm);
+        // The rest match the generic adult.
+        assert!((body.height - adult.height).abs() < 0.01);
+        assert!((body.shoulder_width - adult.shoulder_width).abs() < 0.01);
+        assert!((body.hand - adult.hand).abs() < 0.01);
     }
 
     #[test]

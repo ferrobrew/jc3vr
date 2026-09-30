@@ -1,6 +1,11 @@
 //! The pause-menu detours: H1 adds the VR entries when the movie loads, H2 installs a VR page when
-//! the settings screen reads its pages, H3 takes the VR rows' commands, and H4 applies deferred
-//! rebuilds and writes live values each frame. See `docs/mod/pause-menu.md`.
+//! the settings screen reads its pages, H3 takes the VR rows' commands, H4 applies deferred
+//! rebuilds and writes live values each frame, and H5 ends the session when the menu deactivates.
+//! See `docs/mod/pause-menu.md`.
+//!
+//! Every path that ends a VR page's stay (the player backing out, the menu deactivating by any
+//! route, the movie unloading, a failed or off-thread reinstall) goes through
+//! [`transition`], which runs the page's `on_close` once, after the session lock is released.
 //!
 //! H1 is the only hook gated on [`PauseMenuConfig::enabled`](crate::pause_menu::PauseMenuConfig):
 //! without the entries the session stays closed, and H2 and H4 do nothing in a closed session, so
@@ -8,11 +13,14 @@
 //! the player. H3 routes every command regardless, which for a closed session passes everything
 //! through except a command carrying a VR row id (only possible if a page was installed).
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    mem::take,
+    ptr::{addr_of, addr_of_mut},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use detours_macro::detour;
 use jc3gi::ui::{
-    overlay_ui::UIBaseState,
     pause_ui::{PauseMenuType, PauseUI},
     scaleform::{MovieImpl, Value},
 };
@@ -21,7 +29,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     pause_menu::{
-        gfx::{CaptureThread, decode_arg},
+        gfx::{CaptureThread, Screen, decode_arg},
         model::{
             command::{Action, Arg, Route, parse, route},
             page::{Applied, ButtonOutcome, Item},
@@ -38,6 +46,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_static_binder(&POPULATE_SETTINGS_BINDER)
         .with_static_binder(&HANDLE_COMMAND_BINDER)
         .with_static_binder(&UPDATE_BINDER)
+        .with_static_binder(&ON_DEACTIVATE_BINDER)
 }
 
 /// The most command arguments decoded; the commands the menu handles take at most two.
@@ -48,19 +57,24 @@ const MAX_ARGS: usize = 4;
 fn on_active(this: *mut PauseUI) {
     ON_ACTIVE.get().unwrap().call(this);
 
-    // A fresh movie: whatever the last session held is gone with the old one.
-    SESSION.lock().close();
+    // A fresh movie: whatever the last session held is gone with the old one. H5 has normally
+    // closed it already; this catches an unload that bypassed the deactivation.
+    transition(MenuState::closed);
 
-    if !Config::lock_query(|c| c.pause_menu.enabled) {
+    if !Config::lock_query(|c| c.pause_menu.enabled) || this.is_null() {
         return;
     }
-    // SAFETY: the detour's own `this`, the live pause screen.
-    let Some(pause) = (unsafe { this.as_ref() }) else {
+    // SAFETY: the detour's own non-null `this`, the live pause screen; the field is read through
+    // its place, without a reference to the screen.
+    let options_valid =
+        unsafe { addr_of!((*this).m_IsValidMenu).read() }[PauseMenuType::PAUSE_OPTIONS as usize];
+    if !options_valid {
+        return;
+    }
+    // SAFETY: as above.
+    let Some(screen) = (unsafe { pause_screen(this) }) else {
         return;
     };
-    if !pause.m_IsValidMenu[PauseMenuType::PAUSE_OPTIONS as usize] {
-        return;
-    }
     let Some(thread) = CaptureThread::current() else {
         tracing::warn!("pause menu: the menu activated off the capture thread; no VR entries");
         return;
@@ -71,7 +85,7 @@ fn on_active(this: *mut PauseUI) {
             PAGES.len()
         );
     }
-    match render::add_entries(&thread, pause, &PAGES[..PAGES.len().min(MAX_PAGES)]) {
+    match render::add_entries(&thread, &screen, &PAGES[..PAGES.len().min(MAX_PAGES)]) {
         Ok(count) => {
             SESSION.lock().state = MenuState::entries_added(count);
             tracing::debug!("pause menu: added {count} VR entries to the options menu");
@@ -94,16 +108,18 @@ fn populate_settings(this: *mut PauseUI) {
         return;
     }
     // SAFETY: the detour's own `this`, the live pause screen.
-    let Some(pause) = (unsafe { this.as_mut() }) else {
+    let Some(screen) = (unsafe { pause_screen(this) }) else {
         return;
     };
     let Some(thread) = CaptureThread::current() else {
         tracing::warn!("pause menu: the settings populated off the capture thread; left native");
+        // The game has just refilled the page slot with its own page, which the screen shows next.
+        transition(MenuState::install_failed);
         return;
     };
 
     let source = if opening {
-        let selected = render::selected_entry(&thread, pause, PAGES, state.entry_count())
+        let selected = render::selected_entry(&thread, &screen, PAGES, state.entry_count())
             .unwrap_or_else(|error| {
                 tracing::warn!("pause menu: finding the selected entry: {error}");
                 None
@@ -115,29 +131,27 @@ fn populate_settings(this: *mut PauseUI) {
     let (next, install) = state.populate(source);
 
     let Some(page_index) = install else {
-        let mut session = SESSION.lock();
-        session.state = next;
-        if next.shown_page().is_none() {
-            session.set_page(None);
-        }
+        transition(|_| next);
         return;
     };
     let Some(def) = PAGES.get(page_index) else {
-        SESSION.lock().state = next.install_failed();
+        transition(|_| next.install_failed());
         return;
     };
     let page = (def.build)();
-    match render::install_page(&thread, pause, page_index, &page) {
+    match render::install_page(&thread, &screen, page_index, &page) {
         Ok(()) => {
-            let mut session = SESSION.lock();
-            session.state = next;
-            session.set_page(Some(page));
+            let left = {
+                let mut session = SESSION.lock();
+                let left = session.transition(next);
+                session.set_page(Some(page));
+                left
+            };
+            run_on_close(left);
         }
         Err(error) => {
             tracing::error!("pause menu: installing the page {:?}: {error}", def.entry);
-            let mut session = SESSION.lock();
-            session.state = next.install_failed();
-            session.set_page(None);
+            transition(|_| next.install_failed());
         }
     }
 }
@@ -194,10 +208,10 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
         return;
     };
     // SAFETY: the detour's own `this`, the live pause screen.
-    let Some(pause) = (unsafe { this.as_mut() }) else {
+    let Some(screen) = (unsafe { pause_screen(this) }) else {
         return;
     };
-    if pause.base.m_Current != UIBaseState::ACTIVE {
+    if !screen.is_active() {
         return;
     }
     let Some(thread) = CaptureThread::current() else {
@@ -210,8 +224,16 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
     {
         SESSION.lock().rebuild = true;
     }
-    if std::mem::take(&mut SESSION.lock().rebuild) {
-        rebuild(&thread, pause, page_index);
+    if SESSION.lock().rebuild {
+        let in_root_state =
+            render::settings_in_root_state(&thread, &screen).unwrap_or_else(|error| {
+                // The rebuild itself reports what is missing.
+                tracing::debug!("pause menu: reading the list's state: {error}");
+                true
+            });
+        if SESSION.lock().take_rebuild(in_root_state) {
+            rebuild(&thread, &screen, page_index);
+        }
     }
 
     let (page, mut live, generation) = {
@@ -219,15 +241,26 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
         let Some(page) = session.page.clone() else {
             return;
         };
-        (page, std::mem::take(&mut session.live), session.generation)
+        (page, take(&mut session.live), session.generation)
     };
-    if let Err(error) = render::push_live(&thread, pause, page_index, &page, &mut live) {
+    if let Err(error) = render::push_live(&thread, &screen, page_index, &page, &mut live) {
         tracing::debug!("pause menu: live values: {error}");
     }
     let mut session = SESSION.lock();
     if session.generation == generation {
         session.live = live;
     }
+}
+
+/// H5: after the game's own deactivation work, end the session. Every deactivation of the loaded
+/// menu runs this, including those that close it from the settings screen without the movie
+/// sending `persist_changes` (the pause key, the UI manager forcing the menu closed, and game-state
+/// changes), so the shown page's `on_close` runs here for them. It may run off the capture thread;
+/// it touches only the session and the page's close work, never the movie.
+#[detour(address = PauseUI::OnDeactivateImpl_ADDRESS)]
+fn on_deactivate(this: *mut PauseUI) {
+    ON_DEACTIVATE.get().unwrap().call(this);
+    transition(MenuState::closed);
 }
 
 /// Carry out a command's action.
@@ -266,22 +299,8 @@ fn act(action: Action) {
             page.reset_to_defaults();
             SESSION.lock().rebuild = true;
         }
-        Action::LeavePage => {
-            let page_index = {
-                let mut session = SESSION.lock();
-                let page_index = session.state.shown_page();
-                session.state = session.state.left_settings();
-                session.set_page(None);
-                page_index
-            };
-            if let Some(on_close) = page_index
-                .and_then(|index| PAGES.get(index))
-                .and_then(|def| def.on_close)
-            {
-                on_close();
-            }
-        }
-        Action::Close => SESSION.lock().close(),
+        Action::LeavePage => transition(MenuState::left_settings),
+        Action::Close => transition(MenuState::closed),
     }
 }
 
@@ -294,15 +313,54 @@ fn shown_item(index: usize) -> Option<Item> {
         .and_then(|page| page.items.get(index).cloned())
 }
 
-/// Rebuild the shown page and install its rows, focusing its first button.
-fn rebuild(thread: &CaptureThread, pause: &mut PauseUI, page_index: usize) {
+/// Move the session to the state `next` computes from the current one, then run the `on_close` of
+/// the page the move left, if any, without the session lock.
+fn transition(next: impl FnOnce(MenuState) -> MenuState) {
+    let left = {
+        let mut session = SESSION.lock();
+        let state = next(session.state);
+        session.transition(state)
+    };
+    run_on_close(left);
+}
+
+/// Run the `on_close` of registered page `page`, if any.
+fn run_on_close(page: Option<usize>) {
+    if let Some(on_close) = page
+        .and_then(|index| PAGES.get(index))
+        .and_then(|def| def.on_close)
+    {
+        on_close();
+    }
+}
+
+/// The pause screen at `this`, held by pointer.
+///
+/// # Safety
+/// `this` must be null or the live pause screen for as long as the value is used.
+unsafe fn pause_screen(this: *mut PauseUI) -> Option<Screen> {
+    if this.is_null() {
+        return None;
+    }
+    // SAFETY: the caller's contract; the base is reached through its place, without a reference.
+    unsafe { Screen::new(addr_of_mut!((*this).base)) }
+}
+
+/// Rebuild the shown page and install its rows, focusing its first button. The session records the
+/// new page once the screen shows it, unless the session moved on meanwhile.
+fn rebuild(thread: &CaptureThread, screen: &Screen, page_index: usize) {
     let Some(def) = PAGES.get(page_index) else {
         return;
     };
+    let generation = SESSION.lock().generation;
     let page = (def.build)();
     let focus = page.first_button();
-    match render::replace_rows(thread, pause, page_index, &page, focus) {
-        Ok(()) => SESSION.lock().set_page(Some(page)),
+    match render::replace_rows(thread, screen, page_index, &page, focus) {
+        Ok(()) => {
+            if !SESSION.lock().rebuilt(generation, page_index, page) {
+                tracing::debug!("pause menu: the session moved on during a rebuild");
+            }
+        }
         Err(error) => tracing::error!("pause menu: rebuilding the page {:?}: {error}", def.entry),
     }
 }

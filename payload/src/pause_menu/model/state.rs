@@ -3,7 +3,8 @@
 //!
 //! `Closed` → (entries added on activation) `EntriesAdded` → (a VR entry opens the settings
 //! screen) `Shown` → (the player leaves the screen) `EntriesAdded` → (the menu deactivates)
-//! `Closed`. The runtime drives the transitions from the hooks; this module only decides them.
+//! `Closed`. The runtime drives the transitions from the hooks; this module only decides them,
+//! including which page a transition leaves ([`left_page`]), whose close work is then due.
 
 /// The menu state.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
@@ -69,6 +70,12 @@ impl MenuState {
         self.left_settings()
     }
 
+    /// The state after the menu deactivated or its movie unloaded: the entries are gone with the
+    /// movie, or about to be.
+    pub(crate) fn closed(self) -> Self {
+        MenuState::Closed
+    }
+
     /// The VR page shown, if any.
     pub(crate) fn shown_page(self) -> Option<usize> {
         match self {
@@ -84,6 +91,15 @@ impl MenuState {
             MenuState::EntriesAdded { count } | MenuState::Shown { count, .. } => count,
         }
     }
+}
+
+/// The VR page the transition from `before` to `after` leaves, if any: the page `before` showed,
+/// when `after` no longer shows it. A page's close work runs exactly once per stay, whichever path
+/// ends it, because a second transition out of a state that shows no page leaves nothing.
+pub(crate) fn left_page(before: MenuState, after: MenuState) -> Option<usize> {
+    before
+        .shown_page()
+        .filter(|&page| after.shown_page() != Some(page))
 }
 
 #[cfg(test)]
@@ -166,5 +182,35 @@ mod tests {
         let shown = MenuState::Shown { count: 1, page: 0 };
         assert_eq!(shown.install_failed(), MenuState::EntriesAdded { count: 1 });
         assert_eq!(shown.entry_count(), 1);
+    }
+
+    #[test]
+    fn every_way_out_of_a_page_leaves_it_once() {
+        let shown = MenuState::Shown { count: 3, page: 1 };
+        for after in [
+            shown.left_settings(),
+            shown.install_failed(),
+            shown.closed(),
+            shown.populate(OPENED_NATIVE).0,
+            shown.populate(opened(2)).0,
+        ] {
+            assert_eq!(left_page(shown, after), Some(1), "{after:?}");
+            // A second close, from whichever path comes next, does not leave the page again.
+            assert_ne!(left_page(after, after.closed()), Some(1), "{after:?}");
+        }
+    }
+
+    #[test]
+    fn staying_on_a_page_leaves_nothing() {
+        let shown = MenuState::Shown { count: 3, page: 1 };
+        assert_eq!(left_page(shown, shown), None);
+        assert_eq!(
+            left_page(shown, shown.populate(PopulateSource::Refresh).0),
+            None
+        );
+        assert_eq!(left_page(shown, shown.populate(opened(1)).0), None);
+        let entries = MenuState::entries_added(3);
+        assert_eq!(left_page(entries, entries.closed()), None);
+        assert_eq!(left_page(MenuState::Closed, MenuState::Closed), None);
     }
 }

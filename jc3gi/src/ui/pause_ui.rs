@@ -40,7 +40,8 @@ pub struct PauseUI {
     /// (its `RefreshCurrentSettings` method), then clears it.
     pub m_RefreshSettings: bool,
     /// Set by every [`COMMAND_SET_SETTING_VALUE`](crate::ui::pause_ui::PauseUI::COMMAND_SET_SETTING_VALUE); tells
-    /// [`PersistChanges`](crate::ui::pause_ui::PauseUI::PersistChanges) there is something to save.
+    /// [`PersistChanges`](crate::ui::pause_ui::PauseUI::PersistChanges) and [`OnDeactivateImpl`](crate::ui::pause_ui::PauseUI::OnDeactivateImpl)
+    /// there is something to save.
     pub m_AnySettingsChanged: bool,
     /// Set while the settings manager captures a key for
     /// [`COMMAND_GET_KEY_FOR_ACTION`](crate::ui::pause_ui::PauseUI::COMMAND_GET_KEY_FOR_ACTION).
@@ -77,7 +78,7 @@ impl PauseUI {
     /// The base [`HandleCommand`](crate::ui::ui_base::UIBase::HandleCommand): the commands shared by every screen.
     /// [`COMMAND_ACTIVE`](crate::ui::ui_base::UIBase::COMMAND_ACTIVE) stores the clip and calls
     /// [`OnActive`](crate::ui::ui_base::UIBase::OnActive); [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE) calls
-    /// `OnInactive` and releases it; [`COMMAND_EVENT`](crate::ui::ui_base::UIBase::COMMAND_EVENT) posts an engine event;
+    /// [`OnInactive`](crate::ui::ui_base::UIBase::OnInactive) and releases it; [`COMMAND_EVENT`](crate::ui::ui_base::UIBase::COMMAND_EVENT) posts an engine event;
     /// the rest cover activation of other screens, tweens, localized-string lookups, and input
     /// priority.
     pub unsafe fn BaseHandleCommand(
@@ -88,6 +89,19 @@ impl PauseUI {
         movie: *mut crate::ui::scaleform::MovieImpl,
     ) {
         unsafe { self.base.BaseHandleCommand(command, args, num_args, movie) }
+    }
+    /// Requests the screen's deactivation: sets [`m_Desired`](crate::ui::ui_base::UIBase::m_Desired) to
+    /// [`INACTIVE`](crate::ui::overlay_ui::UIBaseState::INACTIVE) and, unless the screen is already
+    /// inactive, calls [`OnDeactivate`](crate::ui::ui_base::UIBase::OnDeactivate), moves
+    /// [`m_Current`](crate::ui::ui_base::UIBase::m_Current) to
+    /// [`DEACTIVATING`](crate::ui::overlay_ui::UIBaseState::DEACTIVATING), clears the command queue and
+    /// the tweens, and, when `unload` is set, has the root movie unload the clip (its
+    /// `root.Deactivate` or `root.DeactivateDyn`), which ends in
+    /// [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE). The engine's deactivation requests go
+    /// through it: the movies' deactivate commands, `CUIManager::ForceDeactivatePause`, the UI manager's
+    /// event handling, and the game-state transitions.
+    pub unsafe fn Deactivate(&mut self, unload: bool) {
+        unsafe { self.base.Deactivate(unload) }
     }
     /// The [`Invoke`](crate::ui::ui_base::UIBase::Invoke) implementation. When the screen is
     /// [`ACTIVE`](crate::ui::overlay_ui::UIBaseState::ACTIVE), `delay` is zero, and the caller is the
@@ -137,6 +151,34 @@ impl PauseUI {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
                 Self::OnActiveImpl_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const OnDeactivateImpl_ADDRESS: usize = 0x140E508A0;
+    /// The [`OnDeactivate`](crate::ui::ui_base::UIBase::OnDeactivate) override: when
+    /// [`m_AnySettingsChanged`](crate::ui::pause_ui::PauseUI::m_AnySettingsChanged) is set, has the settings manager
+    /// persist its settings (`CSettingsManager::PersistChanges`) and clears the flag, then stops
+    /// observing the login manager. Every deactivation of the loaded pause menu runs it, whether
+    /// or not the movie's settings screen sent [`COMMAND_PERSIST_CHANGES`](crate::ui::pause_ui::PauseUI::COMMAND_PERSIST_CHANGES)
+    /// first.
+    pub unsafe fn OnDeactivateImpl(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::OnDeactivateImpl_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const OnInactiveImpl_ADDRESS: usize = 0x140E31B20;
+    /// The [`OnInactive`](crate::ui::ui_base::UIBase::OnInactive) override: empties and releases two cached AS3
+    /// arrays, calls the base, freezes a set of input actions' device effectors, and has the
+    /// overlay screen show its game messages again, and clears
+    /// [`m_ShowingFullScreenVideo`](crate::ui::pause_ui::PauseUI::m_ShowingFullScreenVideo).
+    pub unsafe fn OnInactiveImpl(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::OnInactiveImpl_ADDRESS,
             );
             f(self as *mut Self as _)
         }
@@ -254,6 +296,26 @@ impl PauseUI {
     pub unsafe fn OnActive(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).OnActive).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Called by [`Deactivate`](crate::ui::ui_base::UIBase::Deactivate) when a deactivation is requested while the
+    /// screen is not [`INACTIVE`](crate::ui::overlay_ui::UIBaseState::INACTIVE), before
+    /// [`m_Current`](crate::ui::ui_base::UIBase::m_Current) moves to
+    /// [`DEACTIVATING`](crate::ui::overlay_ui::UIBaseState::DEACTIVATING) and the root movie is asked
+    /// to unload the clip. The clip is still loaded. Runs on the thread that requested the
+    /// deactivation, which is not necessarily the capture thread.
+    pub unsafe fn OnDeactivate(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnDeactivate).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Called by the [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE) handling once the root
+    /// movie has unloaded the clip, before [`m_Clip`](crate::ui::ui_base::UIBase::m_Clip) is released.
+    pub unsafe fn OnInactive(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnInactive).read();
             f(self as *mut Self as _)
         }
     }

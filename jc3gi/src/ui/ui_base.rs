@@ -42,7 +42,7 @@ impl UIBase {
     /// The base [`HandleCommand`](crate::ui::ui_base::UIBase::HandleCommand): the commands shared by every screen.
     /// [`COMMAND_ACTIVE`](crate::ui::ui_base::UIBase::COMMAND_ACTIVE) stores the clip and calls
     /// [`OnActive`](crate::ui::ui_base::UIBase::OnActive); [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE) calls
-    /// `OnInactive` and releases it; [`COMMAND_EVENT`](crate::ui::ui_base::UIBase::COMMAND_EVENT) posts an engine event;
+    /// [`OnInactive`](crate::ui::ui_base::UIBase::OnInactive) and releases it; [`COMMAND_EVENT`](crate::ui::ui_base::UIBase::COMMAND_EVENT) posts an engine event;
     /// the rest cover activation of other screens, tweens, localized-string lookups, and input
     /// priority.
     pub unsafe fn BaseHandleCommand(
@@ -61,6 +61,25 @@ impl UIBase {
                 movie: *mut crate::ui::scaleform::MovieImpl,
             ) = ::std::mem::transmute(Self::BaseHandleCommand_ADDRESS);
             f(self as *mut Self as _, command, args, num_args, movie)
+        }
+    }
+    pub const Deactivate_ADDRESS: usize = 0x140FF80D0;
+    /// Requests the screen's deactivation: sets [`m_Desired`](crate::ui::ui_base::UIBase::m_Desired) to
+    /// [`INACTIVE`](crate::ui::overlay_ui::UIBaseState::INACTIVE) and, unless the screen is already
+    /// inactive, calls [`OnDeactivate`](crate::ui::ui_base::UIBase::OnDeactivate), moves
+    /// [`m_Current`](crate::ui::ui_base::UIBase::m_Current) to
+    /// [`DEACTIVATING`](crate::ui::overlay_ui::UIBaseState::DEACTIVATING), clears the command queue and
+    /// the tweens, and, when `unload` is set, has the root movie unload the clip (its
+    /// `root.Deactivate` or `root.DeactivateDyn`), which ends in
+    /// [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE). The engine's deactivation requests go
+    /// through it: the movies' deactivate commands, `CUIManager::ForceDeactivatePause`, the UI manager's
+    /// event handling, and the game-state transitions.
+    pub unsafe fn Deactivate(&mut self, unload: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, unload: bool) = ::std::mem::transmute(
+                Self::Deactivate_ADDRESS,
+            );
+            f(self as *mut Self as _, unload)
         }
     }
     pub const InvokeImpl_ADDRESS: usize = 0x140FF8300;
@@ -160,6 +179,26 @@ impl UIBase {
             f(self as *mut Self as _)
         }
     }
+    /// Called by [`Deactivate`](crate::ui::ui_base::UIBase::Deactivate) when a deactivation is requested while the
+    /// screen is not [`INACTIVE`](crate::ui::overlay_ui::UIBaseState::INACTIVE), before
+    /// [`m_Current`](crate::ui::ui_base::UIBase::m_Current) moves to
+    /// [`DEACTIVATING`](crate::ui::overlay_ui::UIBaseState::DEACTIVATING) and the root movie is asked
+    /// to unload the clip. The clip is still loaded. Runs on the thread that requested the
+    /// deactivation, which is not necessarily the capture thread.
+    pub unsafe fn OnDeactivate(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnDeactivate).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Called by the [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE) handling once the root
+    /// movie has unloaded the clip, before [`m_Clip`](crate::ui::ui_base::UIBase::m_Clip) is released.
+    pub unsafe fn OnInactive(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnInactive).read();
+            f(self as *mut Self as _)
+        }
+    }
     /// Handles an ExternalInterface command from the clip. `command` is the `hashlittle` hash
     /// of the command name (the part after the colon), `args` the call's arguments, and
     /// `movie` the calling movie, through which a command that returns a value sets it with
@@ -240,8 +279,16 @@ pub struct UIBaseVftable {
     /// [`ACTIVE`](crate::ui::overlay_ui::UIBaseState::ACTIVE). Screens push their initial data to
     /// the clip here.
     pub OnActive: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
-    _vfunc_8: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
-    _vfunc_9: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
+    /// Called by [`Deactivate`](crate::ui::ui_base::UIBase::Deactivate) when a deactivation is requested while the
+    /// screen is not [`INACTIVE`](crate::ui::overlay_ui::UIBaseState::INACTIVE), before
+    /// [`m_Current`](crate::ui::ui_base::UIBase::m_Current) moves to
+    /// [`DEACTIVATING`](crate::ui::overlay_ui::UIBaseState::DEACTIVATING) and the root movie is asked
+    /// to unload the clip. The clip is still loaded. Runs on the thread that requested the
+    /// deactivation, which is not necessarily the capture thread.
+    pub OnDeactivate: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
+    /// Called by the [`COMMAND_INACTIVE`](crate::ui::ui_base::UIBase::COMMAND_INACTIVE) handling once the root
+    /// movie has unloaded the clip, before [`m_Clip`](crate::ui::ui_base::UIBase::m_Clip) is released.
+    pub OnInactive: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
     _vfunc_10: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
     _vfunc_11: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),
     _vfunc_12: unsafe extern "system" fn(this: *mut crate::ui::ui_base::UIBase),

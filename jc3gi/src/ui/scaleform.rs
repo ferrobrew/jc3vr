@@ -2256,15 +2256,21 @@ impl Value {
     /// The managed bit: set on values owned by the movie (which must be released through the
     /// object interface, never constructed by hand).
     pub const VTC_MANAGED_BIT: u32 = 64;
+    /// The type tag for an AS3 `Array` (managed).
+    pub const VT_ARRAY: u32 = 9;
     /// The type tag for a boolean value ([`mValue`](crate::ui::scaleform::Value::mValue) carries the `bool` in its
     /// first byte).
     pub const VT_BOOLEAN: u32 = 2;
+    /// The type tag for a closure (managed): a method bound to its object.
+    pub const VT_CLOSURE: u32 = 11;
     /// The type tag for a display-object value (managed; owned by the movie).
     pub const VT_DISPLAY_OBJECT: u32 = 10;
     /// The type tag for an int value.
     pub const VT_INT: u32 = 3;
     /// The type tag for a number (f64) value.
     pub const VT_NUMBER: u32 = 5;
+    /// The type tag for an AS3 object that is neither an array nor a display object (managed).
+    pub const VT_OBJECT: u32 = 8;
     /// The type tag for a string value (`mValue` is a `*const c_char`).
     pub const VT_STRING: u32 = 6;
     /// The mask isolating the base `VT_*` value-type tag in [`Type`](crate::ui::scaleform::Value::Type) from the `VTC_*`

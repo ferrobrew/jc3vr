@@ -8,10 +8,12 @@
 //! clip ([`UIBase::m_Clip`](jc3gi::ui::ui_base::UIBase::m_Clip)), which is only valid while the
 //! screen is active.
 
+mod screen;
 mod thread;
 mod value;
 
 pub(crate) use crate::pause_menu::gfx::{
+    screen::Screen,
     thread::CaptureThread,
     value::{GfxValue, Param, decode_arg},
 };

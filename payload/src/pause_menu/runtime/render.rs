@@ -2,12 +2,12 @@
 //! installing a page's rows into the settings screen, and writing live text into the visible rows.
 //! Everything here goes through [`GfxValue`] and starts from the pause screen's clip.
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 use jc3gi::ui::pause_ui::{PauseMenuType, PauseUI, SettingsUI};
 
 use crate::pause_menu::{
-    gfx::{CaptureThread, GfxValue, Param},
+    gfx::{CaptureThread, GfxValue, Param, Screen},
     model::{
         entries::{MainButton, selected_page},
         ids::RowId,
@@ -55,10 +55,10 @@ impl std::error::Error for RenderError {}
 /// added.
 pub(crate) fn add_entries(
     thread: &CaptureThread,
-    pause: &PauseUI,
+    screen: &Screen,
     pages: &[PageDef],
 ) -> Result<usize, RenderError> {
-    let clip = clip(thread, pause)?;
+    let clip = clip(thread, screen)?;
     for page in pages {
         let label = cstring(page.entry);
         let entry = clip
@@ -85,11 +85,11 @@ pub(crate) fn add_entries(
 /// [`selected_page`].
 pub(crate) fn selected_entry(
     thread: &CaptureThread,
-    pause: &PauseUI,
+    screen: &Screen,
     pages: &[PageDef],
     count: usize,
 ) -> Result<Option<usize>, RenderError> {
-    let clip = clip(thread, pause)?;
+    let clip = clip(thread, screen)?;
     let container = clip
         .path("MCI_button_container.MCI_root")
         .ok_or(RenderError::Missing("the main-button container"))?;
@@ -128,20 +128,20 @@ pub(crate) fn selected_entry(
 /// in place of the graphics page.
 pub(crate) fn install_page(
     thread: &CaptureThread,
-    pause: &mut PauseUI,
+    screen: &Screen,
     page_index: usize,
     page: &Page,
 ) -> Result<(), RenderError> {
     let specs = encode_page(page_index, page).map_err(RenderError::Encode)?;
-    let clip = clip(thread, pause)?;
+    let clip = clip(thread, screen)?;
     let settings = clip
         .member(c"m_SettingsArray")
         .filter(GfxValue::is_object)
         .ok_or(RenderError::Missing("m_SettingsArray"))?;
-    let page_object = GfxValue::create_object(thread, &mut pause.base)
-        .ok_or(RenderError::CreateFailed("page object"))?;
+    let page_object =
+        GfxValue::create_object(thread, screen).ok_or(RenderError::CreateFailed("page object"))?;
     let title = cstring(&page.title);
-    let rows = build_rows(thread, pause, &specs)?;
+    let rows = build_rows(thread, screen, &specs)?;
     if !page_object.set(c"m_Name", Param::Str(&title))
         || !page_object.set_value(c"m_Settings", &rows)
     {
@@ -153,51 +153,59 @@ pub(crate) fn install_page(
     Ok(())
 }
 
-/// Replace the rows of the shown page with `page`'s and have the screen redraw them, focusing
+/// Whether the settings screen's list is in its root state: no option picker or message box of its
+/// own is open. The list keeps the row a picker or box was opened on only as its highlighted row,
+/// so replacing the rows under an open one would send its answer to whichever row is then
+/// highlighted.
+pub(crate) fn settings_in_root_state(
+    thread: &CaptureThread,
+    screen: &Screen,
+) -> Result<bool, RenderError> {
+    clip(thread, screen)?
+        .path("MCI_settings_screen")
+        .ok_or(RenderError::Missing("MCI_settings_screen"))?
+        .invoke(c"IsInRootState", &[])
+        .and_then(|result| result.as_bool())
+        .ok_or(RenderError::Refused("IsInRootState"))
+}
+
+/// Replace the rows of the shown page with `page`'s and have the screen redraw them, then focus
 /// `focus` when it is on the first screenful.
+///
+/// Returns `Ok` once the screen has redrawn the new rows, so the caller's record of the shown page
+/// must follow. Focusing is best effort: a refused focus call is logged and leaves the first row
+/// highlighted. An `Err` means the screen still draws the old rows.
 pub(crate) fn replace_rows(
     thread: &CaptureThread,
-    pause: &mut PauseUI,
+    screen: &Screen,
     page_index: usize,
     page: &Page,
     focus: Option<usize>,
 ) -> Result<(), RenderError> {
     let specs = encode_page(page_index, page).map_err(RenderError::Encode)?;
-    let clip = clip(thread, pause)?;
+    let clip = clip(thread, screen)?;
     let page_object = clip
         .member(c"m_SettingsArray")
         .filter(GfxValue::is_object)
         .and_then(|settings| settings.element(SettingsUI::PAGE_GRAPHICS as u32))
         .filter(GfxValue::is_object)
         .ok_or(RenderError::Missing("the shown page object"))?;
+    let settings_screen = clip
+        .path("MCI_settings_screen")
+        .ok_or(RenderError::Missing("MCI_settings_screen"))?;
     let title = cstring(&page.title);
-    let rows = build_rows(thread, pause, &specs)?;
+    let rows = build_rows(thread, screen, &specs)?;
     if !page_object.set(c"m_Name", Param::Str(&title))
         || !page_object.set_value(c"m_Settings", &rows)
     {
         return Err(RenderError::Refused("the page object's members"));
     }
-    clip.path("MCI_settings_screen")
-        .ok_or(RenderError::Missing("MCI_settings_screen"))?
+    settings_screen
         .invoke(c"RefreshCurrentScreen", &[])
         .ok_or(RenderError::Refused("RefreshCurrentScreen"))?;
 
-    let manager = list_manager(&clip)?;
-    if let Some(title_field) = manager.member(c"MCI_title").filter(GfxValue::is_object) {
-        title_field.set(c"text", Param::Str(&title));
-    }
-    // The refresh leaves the first row clip highlighted and selected; move both to the focus.
-    if let Some(focus) = focus.filter(|&f| f > 0 && f < SettingsUI::ROW_CLIP_COUNT as usize) {
-        let focus = focus as i32;
-        manager
-            .invoke(
-                c"MoveSelectionHighlight",
-                &[Param::Int(0), Param::Int(focus)],
-            )
-            .ok_or(RenderError::Refused("MoveSelectionHighlight"))?;
-        manager
-            .invoke(c"SetHighlightedRow", &[Param::Int(focus)])
-            .ok_or(RenderError::Refused("SetHighlightedRow"))?;
+    if let Err(error) = focus_row(&clip, &title, focus) {
+        tracing::warn!("pause menu: focusing the rebuilt page: {error}");
     }
     Ok(())
 }
@@ -207,12 +215,12 @@ pub(crate) fn replace_rows(
 /// field, upper-cased as the list draws it.
 pub(crate) fn push_live(
     thread: &CaptureThread,
-    pause: &PauseUI,
+    screen: &Screen,
     page_index: usize,
     page: &Page,
     live: &mut LiveSlots,
 ) -> Result<(), RenderError> {
-    let clip = clip(thread, pause)?;
+    let clip = clip(thread, screen)?;
     let manager = list_manager(&clip)?;
     for slot in 0..SettingsUI::ROW_CLIP_COUNT as usize {
         let written = manager
@@ -268,11 +276,31 @@ fn push_live_row(
 }
 
 /// A new reference to the pause screen's clip.
-fn clip<'t>(thread: &'t CaptureThread, pause: &PauseUI) -> Result<GfxValue<'t>, RenderError> {
-    // SAFETY: `m_Clip` is the screen's live clip value while the screen is loaded; the copy takes
-    // its own reference, released on drop.
-    let clip = unsafe { GfxValue::copy_of(thread, &pause.base.m_Clip) };
-    clip.is_object().then_some(clip).ok_or(RenderError::NoClip)
+fn clip<'t>(thread: &'t CaptureThread, screen: &Screen) -> Result<GfxValue<'t>, RenderError> {
+    screen.clip(thread).ok_or(RenderError::NoClip)
+}
+
+/// After a refresh, rewrite the list's title and move the highlight and the selection to `focus`
+/// when it is on the first screenful (the refresh leaves the first row clip highlighted and
+/// selected).
+fn focus_row(clip: &GfxValue<'_>, title: &CStr, focus: Option<usize>) -> Result<(), RenderError> {
+    let manager = list_manager(clip)?;
+    if let Some(title_field) = manager.member(c"MCI_title").filter(GfxValue::is_object) {
+        title_field.set(c"text", Param::Str(title));
+    }
+    if let Some(focus) = focus.filter(|&f| f > 0 && f < SettingsUI::ROW_CLIP_COUNT as usize) {
+        let focus = focus as i32;
+        manager
+            .invoke(
+                c"MoveSelectionHighlight",
+                &[Param::Int(0), Param::Int(focus)],
+            )
+            .ok_or(RenderError::Refused("MoveSelectionHighlight"))?;
+        manager
+            .invoke(c"SetHighlightedRow", &[Param::Int(focus)])
+            .ok_or(RenderError::Refused("SetHighlightedRow"))?;
+    }
+    Ok(())
 }
 
 /// The settings screen's list manager.
@@ -284,13 +312,13 @@ fn list_manager<'t>(clip: &GfxValue<'t>) -> Result<GfxValue<'t>, RenderError> {
 /// Build the AS3 row array for `specs`.
 fn build_rows<'t>(
     thread: &'t CaptureThread,
-    pause: &mut PauseUI,
+    screen: &Screen,
     specs: &[RowSpec],
 ) -> Result<GfxValue<'t>, RenderError> {
-    let rows = GfxValue::create_array(thread, &mut pause.base)
-        .ok_or(RenderError::CreateFailed("row array"))?;
+    let rows =
+        GfxValue::create_array(thread, screen).ok_or(RenderError::CreateFailed("row array"))?;
     for spec in specs {
-        let row = build_row(thread, pause, spec)?;
+        let row = build_row(thread, screen, spec)?;
         if !rows.push_value(&row) {
             return Err(RenderError::Refused("a row in the row array"));
         }
@@ -301,11 +329,11 @@ fn build_rows<'t>(
 /// Build one row object.
 fn build_row<'t>(
     thread: &'t CaptureThread,
-    pause: &mut PauseUI,
+    screen: &Screen,
     spec: &RowSpec,
 ) -> Result<GfxValue<'t>, RenderError> {
-    let row = GfxValue::create_object(thread, &mut pause.base)
-        .ok_or(RenderError::CreateFailed("row object"))?;
+    let row =
+        GfxValue::create_object(thread, screen).ok_or(RenderError::CreateFailed("row object"))?;
     let name = cstring(&spec.name);
     let mut ok = row.set(c"m_Type", Param::Int(spec.id))
         && row.set(c"m_Format", Param::Int(spec.widget.format()))
@@ -315,9 +343,9 @@ fn build_row<'t>(
         && row.set(c"m_NeedConfirm", Param::Bool(false));
     match &spec.widget {
         RowWidget::Toggle { labels, values } => {
-            let label_array = GfxValue::create_array(thread, &mut pause.base)
+            let label_array = GfxValue::create_array(thread, screen)
                 .ok_or(RenderError::CreateFailed("label array"))?;
-            let value_array = GfxValue::create_array(thread, &mut pause.base)
+            let value_array = GfxValue::create_array(thread, screen)
                 .ok_or(RenderError::CreateFailed("value array"))?;
             for label in labels {
                 let label = cstring(label);

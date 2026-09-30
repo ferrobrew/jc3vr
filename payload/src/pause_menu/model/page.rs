@@ -21,8 +21,10 @@ pub(crate) struct PageDef {
     /// rebuilt (a step-by-step page changed step, the page was reset, or the game repopulated the
     /// settings).
     pub(crate) build: fn() -> Page,
-    /// Called when the player leaves the page (the movie's `persist_changes`), to save what the
-    /// page changed.
+    /// Called once when the page's stay ends, whichever way: the player leaving the settings
+    /// screen, the menu deactivating or unloading, or the page failing to reinstall. Saves what the
+    /// page changed and resets any state the page keeps between frames. It may run off the capture
+    /// thread (a deactivation requested from another thread), so it must not call into the movie.
     pub(crate) on_close: Option<fn()>,
     /// Called every frame while the page is shown, before its live values are written, for work
     /// that runs over time (a calibration's capture). Returning
