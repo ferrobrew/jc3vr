@@ -1,0 +1,101 @@
+# The pause menu and its Scaleform screen
+
+How Just Cause 3's pause and options menu is built: the screen framework it sits on, the `ui/pause.gfx` movie's structure and widgets, the traffic between the movie and native code, its input and navigation, and which of its parts code outside the movie can reach. The addresses, offsets, hashes, and constants are in the pyxis defs, chiefly [`ui::pause_ui`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::pause_ui), [`ui::ui_base`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::ui_base), and [`ui::scaleform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::scaleform).
+
+The movie's ActionScript was read by decompiling the shipped movie with JPEXS FFDec (`scripts/ffdec.sh`, see [Reading the movies](#reading-the-movies)). The native side is verified in the IDB; where a statement rests only on the AS3, it says so.
+
+## Screens and the root movie
+
+Every Scaleform screen is a static [`UIBase`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase) subclass, and all of them share one root movie, `ui/root.gfx`. The root movie's AS3 keeps a hard-coded table from screen class name to movie file, draw order, and input level (`CPauseUI` maps to `pause`). Activating a screen calls the root's `Activate(<class name>)`, which loads `<file>.gfx` with a `flash.display.Loader`, adds the loaded document to the root's display list, and reports it back through the ExternalInterface call `<class name>:active`. [`UIBase::BaseHandleCommand`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##func-BaseHandleCommand) stores the reported clip in [`m_Clip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##field-m_Clip), marks the screen active, and calls the [`OnActive`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##vfunc-OnActive) virtual. Deactivation unloads the movie (`unloadAndStop`) and reports `inactive`, which releases the clip. The native screen object lives for the whole session; its movie is loaded fresh on each activation, so any state kept in AS3 is lost when the menu closes.
+
+Scaleform runs with application domains disabled, so every loaded movie shares one AS3 class namespace. A class defined by any loaded movie can be constructed by its qualified name, from AS3 or from native code through [`MovieImpl::CreateObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##func-CreateObject). The screens' base class `uibase` and the widget classes under `shared.*` are compiled into several movies at once; the first definition loaded wins.
+
+### Calls from the movie to native code
+
+AS3 reaches native code only through `ExternalInterface.call("<class name>:<command>", ...)`. `uibase` wraps it: `Invoke(name, ...)` prefixes the screen's class name, `SendEvent(name)` and `PlaySound(name)` are both `Invoke("event", name)`, and helpers such as `SetSettingValue` and `GetLocalizedStringFromString` name their own commands. [`ScaleformEIHandler::Callback`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::ScaleformEIHandler##func-Callback) splits the name at the colon, ignores the root movie's own prefix, finds the screen (the movie's user data, or the screen registered under the prefix), and calls its [`HandleCommand`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##vfunc-HandleCommand) virtual with the `hashlittle` hash of the command. A call with an unknown prefix is dropped. The call is synchronous: AS3 resumes only after the handler returns, so a handler's changes to the movie are visible to the code that made the call. Commands that return a value set it with [`SetExternalInterfaceRetVal`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##func-SetExternalInterfaceRetVal). The base handler covers the commands every screen shares; `event` posts its argument as an engine event.
+
+`fscommand` is not used by any of these movies.
+
+### Calls from native code to the movie
+
+The engine calls AS3 methods on a screen's clip through the [`Invoke`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##vfunc-Invoke) virtual, whose single implementation is [`UIBase::InvokeImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##func-InvokeImpl). It calls the method at once when the screen is active and the caller is on the UI capture thread; otherwise it queues the call for the screen's next update. Underneath, it and every other native access to AS3 objects go through the per-movie [`ValueObjectInterface`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::ValueObjectInterface): `GetMember`, `SetMember`, `Invoke`, and the array operations `GetArraySize`, `GetElement`, `SetElement`, `PushBack`, and `RemoveElements`. Native code builds AS3 values with `MovieImpl::CreateObject`, `CreateArray`, and `CreateString`, and can wrap a native callback as an AS3 function with `CreateFunction`. All of these run AS3 synchronously and belong on the capture thread.
+
+## The pause movie
+
+The document class of `ui/pause.gfx` is `pause` (extending `uibase`). Its own code is in `pause`, the `pause_code` package, and a few timeline classes; it also compiles in its own copies of `uibase`, `shared_lib`, and several `shared.*` widgets (`generic_scrolling_list`, `generic_scrolling_list_row`, `scrollbar_manager`, `button_hint_bar`, `ctx_menu`, `c_msgbox_base`, `menu_button`, and others). The tab bar class `shared.main_nav` is not in it: it comes from `ui/shared_lib.gfx`, which `pause.gfx` imports.
+
+### Menus and entries
+
+The pause movie is not tab-driven. It shows one list of entries at a time on a fixed column of main buttons (`stat_category_button` instances under `MCI_button_container`), and keeps one list per [`PauseMenuType`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseMenuType). An entry is an `OptionClass` object: a name, a type, and, for event entries, an event string, whether to confirm first, and whether to close the menu afterwards. `SwitchToMenu(type)` lays a list out on the buttons.
+
+The lists are partly hard-coded in AS3 and partly pushed by native code:
+
+- `InitMenu(valid_menus, dlc_flags)` builds the fixed lists for the valid menus. The options menu's list is fixed: graphics (PC only), sound, gameplay, controller mapping, keyboard mapping (PC only), credits, and DLC.
+- `AddEventOption(menu, folder, label, event, add_to_top, need_confirm, confirm_text, close_menu)` appends or prepends an event entry. The engine fills the in-game, front-end, and main menus this way (resume, restart, quit, and the rest).
+- `AddOption(menu, folder, label, add_to_top)` is the public primitive under both; it returns the new entry, whose fields are public.
+
+Selecting an entry dispatches on its type in a hard-coded chain inside `pause.OnSelect`. An event entry sends its event (confirming first if asked) and may close the menu; the settings entries open the settings screen on a fixed page; other types switch menus or open the credits, the controls screen, and so on. No type opens an arbitrary page, and the chain cannot be extended from outside the movie.
+
+[`PauseUI::OnActiveImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-OnActiveImpl) fills a freshly loaded movie in a fixed order: `InitMenu`, the engine's event entries, the player and infocast text, and `SwitchToMenu` to the in-game or front-end menu. The options menu is laid out only when the player switches to it, so entries added to its list after `OnActiveImpl` returns are shown.
+
+### The settings screen
+
+The settings screen (`MCI_settings_screen`, class `pause_code.settings_screen`) shows one page of rows from the document's public `m_SettingsArray`, an array of page objects `{m_Name, m_Settings}`. Opening it (`pause.ShowSettings(page)`, private) first invokes `populate_settings`; [`PauseUI::PopulateSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-PopulateSettings) empties the array and [`SettingsUI::PopulateSettingsMenu`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI##func-PopulateSettingsMenu) refills it with the graphics, sound, gameplay, and DLC pages, in the order of the `PAGE_*` constants on [`SettingsUI`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI). Only then does the screen read the array, so anything native code does to the array inside that call is what the screen shows. [`PauseUI::UpdateImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-UpdateImpl) also repopulates the array, and has the screen redraw its page (`RefreshCurrentSettings`), whenever [`m_RefreshSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##field-m_RefreshSettings) is set.
+
+The screen owns a tab bar, `MCI_tabs.MCI_navbar` on the document (a `shared.main_nav`), but the settings screen hides it: `settings_screen.Show` names and unlocks a tab for each of the graphics, sound, and gameplay pages, locks the rest, and sets the bar invisible. The page is chosen by which options entry was selected. The controls screen does show the bar.
+
+The page is drawn by `MCI_panel.MCI_container.MCI_root.MCI_manager`, a `pause_code.controls_manager` (a `shared.generic_scrolling_list`): a title text field, a fixed set of `pause_code.controls_row` row clips over a scrolling window of the page's rows, a scrollbar, and a button-hint bar (select, reset value, reset all, back). `SetRowArray(rows)` shows a row array from its top; `UpdateRows(top_index)` refills the visible rows in place; `HighlightByIndex`, `GetTopIndex`, and `GetSelectedData` are public too.
+
+### Row objects and widgets
+
+A row is a plain AS3 object whose `m_Format` selects the widget (the `WIDGET_*` constants on `SettingsUI`). [`SettingsUI::AppendSettingToggle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI##func-AppendSettingToggle) shows the native side of the schema.
+
+- Every row has `m_Name` (drawn upper-cased), `m_Type` (an integer the movie sends back with the new value), `m_Value`, `m_DefaultValue`, and `m_NeedConfirm`.
+- A toggle shows the entry of `m_Labels` whose `m_Values` entry equals `m_Value`, and `---` when none does. Selecting it opens the document's shared context menu (`MCI_ctx_menu`, `shared.ctx_menu.ctx_menu`) listing every label; the choice is the matching value. It is the game's only option picker, so it serves any list of choices, not just two.
+- A slider (`pause_code.slider`) shows a notch between `m_MinValue` and `m_MaxValue`, integers only, and no number. Left and right move it by a fixed fraction of the range; the mouse drags the notch.
+- A key-binding row shows a button glyph or `m_KeyText`, with a hold or release prefix chosen by `m_Interaction`. Selecting it invokes `get_key_for_action` with `m_Action` when `m_IsCustomizable` is set, and only plays a refusal sound otherwise.
+
+A change goes back through `controls_manager.AssignNewValue`, which writes `m_Value`, redraws the row, and calls `SetSettingValue(m_Type, m_Value)`; on the DLC page it calls `SetUpgradeValue` instead. When `m_NeedConfirm` is set it then asks to keep or revert the change. The special button asks to reset the selected row to `m_DefaultValue`; the Y button asks to reset every row on the page, sending one `SetSettingValue` per row, or, when the selected row is a key-binding row, asks to reset all key bindings.
+
+There is no header row, no read-only value row, no button row, and no description or help pane. The shared message box (`MCI_msgbox`, `shared.msg.c_msgbox_base`, with a header, a body, and a short list of options) is the only place for longer text; the settings screen uses it for its confirmations.
+
+### Commands the pause movie sends
+
+[`PauseUI::HandleCommandImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-HandleCommandImpl) handles the pause movie's commands; their hashes are the `COMMAND_*` constants on [`PauseUI`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI). The settings-related ones:
+
+| Command | Arguments | Native handling |
+|---|---|---|
+| `populate_settings` | none | `PopulateSettings` |
+| `set_setting_value` | `m_Type`, `m_Value` (ints) | sets `m_AnySettingsChanged`, then [`SettingsManager::SetValue`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/settings_manager::SettingsManager##func-SetValue) |
+| `get_setting_value` | `m_Type` | returns the setting's value |
+| `set_upgrade_value` | `m_Type`, `m_Value` | loads the chosen DLC gear upgrade |
+| `get_key_for_action` | `m_Action` | starts a key capture and sets `m_Waitingforkey` |
+| `restore_default_keymap` | none | `RestoreDefaultMapping` |
+| `persist_changes` | none | `PersistChanges`, which has the settings manager save when anything changed |
+| `load_controller_mapping` | category | fills the controls screen's rows |
+
+The movie also sends `show_fullscreen_video`, `hide_fullscreen_video`, `request_new_infocast`, `check_dlc_sell_messages`, the membership-page commands, and, through `event`, the entry events (among them `ui.manager.disable_pause`, which closes the menu) and every sound. `SetValue` ignores a value it does not allow for the setting.
+
+### Native calls into the pause movie
+
+Besides `InitMenu`, `AddEventOption`, and `SwitchToMenu`, the engine invokes `SetOptionEnabled`, `SetPlayerInfo`, `SetInfoCastText`, `ShowPercentageInstall`, `UpdatePercentageInstall`, `HidePercentageInstall`, `RefreshCurrentSettings`, `RefreshKeyMap`, the membership-page methods, `ShowMercenaryModePrompt`, `ShowSellDLCMessage`, and the input handlers below. It reads `m_SettingsArray`, `m_ControllerActionArray`, and `m_KeyboardActionArray` off the clip.
+
+## Input, focus, and navigation
+
+Gamepad and keyboard input reach the movie only as method calls. Each frame the screen with the highest input priority runs its [`OnManageInput`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##vfunc-OnManageInput), and [`UIBase::BaseOnManageInput`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##func-BaseOnManageInput) turns the steering's UI actions into `Invoke` calls: `OnUp`, `OnDown`, `OnLeft`, `OnRight`, the `OnDpad*` family, `OnSelect`, `OnCancel`, `OnSpecialButton`, `OnYButton`, `OnNextTabButton`, `OnPrevTabButton`, and the page buttons. The pause screen adds gamepad-only select and cancel handlers for the membership page.
+
+The `pause` document routes each handler by a private `m_MenuState`: the main-button lists, the settings screen, the controls screen, a confirmation box, the credits, and a few more. There is no general page stack. Back is state-specific: in the settings screen, `OnCancel` first closes an open context menu or message box inside the list, and otherwise leaves the screen (`HideSettings`, which sends `persist_changes`) for the options menu; in the options menu it returns to the in-game or front-end menu; in the in-game menu it closes the pause menu. A message box or video remembers one previous state to return to. The tab buttons do nothing in the settings screen; in the controls screen they switch category and move the tab bar.
+
+The mouse works through ordinary AS3 mouse events on the widgets' hit areas: rolling over a main button selects it and releasing on it calls `OnSelect`; rolling over a row highlights it and releasing on it activates it; the slider drags; the tab bar's arrows and selectors call its select callback; the button-hint bar's hints and the back button (shown only without a gamepad) call the document's handlers. A mouse release anywhere else while a context menu or message box is open in the settings or controls screen cancels it. Gamepad focus and mouse hover share the same highlight: both move the selected button or row.
+
+## Reaching the menu from outside the movie
+
+Everything a new settings page needs is public on the loaded `pause` clip, which [`UIBase::m_Clip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_base::UIBase##field-m_Clip) holds while the menu is open: `AddOption` and the returned entry's fields, `m_SettingsArray`, the settings screen and its list manager and row clips, the tab bar, the message box, and `RefreshCurrentSettings`. What is private is the document's state machine: `m_MenuState`, `ShowSettings`, `OnSelect`'s dispatch, and the entry lists themselves. Whether native `GetMember` resolves an AS3 private member has not been tested.
+
+The pause movie defines its own classes (`pause_code.*`) in its own ABC, so they are constructible by name only while the pause movie is loaded; `shared.main_nav` and the rest of `shared_lib` are available whenever `shared_lib.gfx` is. A second movie loaded into the shared domain can use either by name, but gains nothing over native `CreateObject` and `Invoke` for the menu's public surface, and cannot reach the private state machine either.
+
+Native code sees the menu at three points: [`PauseUI::OnActiveImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-OnActiveImpl) (the movie is loaded and its menus built), [`PauseUI::PopulateSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-PopulateSettings) (the settings screen is about to read its pages), and [`PauseUI::HandleCommandImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI##func-HandleCommandImpl) (every change the movie sends). All three run on the capture thread inside the root movie's advance. The movie file itself is read through [`ScaleformFileOpener::OpenFile`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::ScaleformFileOpener##func-OpenFile), which also serves later loads from the UI manager's file cache, since `ui/pause.gfx` is one of the movies the cache keeps.
+
+## Reading the movies
+
+The shipped movies are CFX files (a zlib SWF with a renamed signature and Scaleform's exporter tags). JPEXS FFDec reads them directly. `scripts/fetch_ffdec.sh` fetches a pinned FFDec release into the git-ignored `vendor/ffdec/`, and `scripts/ffdec.sh` runs it headless from the dev shell, for example `scripts/ffdec.sh -export script <out dir> <movie>.gfx`. Export into a git-ignored directory; decompiled game code is never committed. Extract the movies themselves with the Gibbed tools, taking the `patch_win64` copy where one exists.

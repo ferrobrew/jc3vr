@@ -111,6 +111,27 @@ impl SettingsManager {
             f(self as *const Self as _, setting)
         }
     }
+    pub const SetValue_ADDRESS: usize = 0x140D4E080;
+    /// Sets `setting` to `value` when the value is allowed for it: writes the entry in
+    /// [`m_Settings`](crate::settings_manager::SettingsManager::m_Settings) (a few settings keep their value elsewhere) and raises the
+    /// update flag of the setting's category (graphics, display, controller, mouse, sound, and so
+    /// on), which a later update applies to the owning system. A value that is not allowed changes
+    /// nothing. The pause menu's `set_setting_value` command calls it with the type and value a
+    /// settings row sends. Disassemblers may name this function `CommandLineParser::getEntity`.
+    pub unsafe fn SetValue(
+        &mut self,
+        setting: crate::settings_manager::SettingType,
+        value: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                setting: crate::settings_manager::SettingType,
+                value: i32,
+            ) = ::std::mem::transmute(Self::SetValue_ADDRESS);
+            f(self as *mut Self as _, setting, value)
+        }
+    }
 }
 impl std::convert::AsRef<SettingsManager> for SettingsManager {
     fn as_ref(&self) -> &SettingsManager {

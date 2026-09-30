@@ -672,6 +672,93 @@ impl MovieImpl {
     pub fn vftable(&self) -> *const crate::ui::scaleform::MovieImplVftable {
         self.vftable as *const crate::ui::scaleform::MovieImplVftable
     }
+    pub const CreateString_ADDRESS: usize = 0x14197E4E0;
+    /// Creates an AS3 string value in the movie (`GFx::Movie::CreateString`, forwarding to the
+    /// AS3 movie root at [`pASMovieRoot`](crate::ui::scaleform::MovieImpl::pASMovieRoot)).
+    pub unsafe fn CreateString(
+        &mut self,
+        value: *mut crate::ui::scaleform::Value,
+        string: *const u8,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                value: *mut crate::ui::scaleform::Value,
+                string: *const u8,
+            ) = ::std::mem::transmute(Self::CreateString_ADDRESS);
+            f(self as *mut Self as _, value, string)
+        }
+    }
+    pub const CreateObject_ADDRESS: usize = 0x14197E500;
+    /// Constructs an instance of the AS3 class `class_name` (`Object` when null) with `num_args`
+    /// constructor arguments into `value` (`GFx::Movie::CreateObject`). The class is looked up in
+    /// the application domain of the running AS3 code, or the VM's default domain when none is
+    /// running, so every class a loaded movie defines is reachable by its qualified name. A
+    /// constructor that throws is logged and leaves `value` undefined.
+    pub unsafe fn CreateObject(
+        &mut self,
+        value: *mut crate::ui::scaleform::Value,
+        class_name: *const u8,
+        args: *const crate::ui::scaleform::Value,
+        num_args: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                value: *mut crate::ui::scaleform::Value,
+                class_name: *const u8,
+                args: *const crate::ui::scaleform::Value,
+                num_args: u32,
+            ) = ::std::mem::transmute(Self::CreateObject_ADDRESS);
+            f(self as *mut Self as _, value, class_name, args, num_args)
+        }
+    }
+    pub const CreateArray_ADDRESS: usize = 0x14197E520;
+    /// Creates an empty AS3 `Array` into `value` (`GFx::Movie::CreateArray`).
+    pub unsafe fn CreateArray(&mut self, value: *mut crate::ui::scaleform::Value) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                value: *mut crate::ui::scaleform::Value,
+            ) = ::std::mem::transmute(Self::CreateArray_ADDRESS);
+            f(self as *mut Self as _, value)
+        }
+    }
+    pub const CreateFunction_ADDRESS: usize = 0x14197E530;
+    /// Wraps a native `GFx::FunctionHandler` in an AS3 function object into `value`
+    /// (`GFx::Movie::CreateFunction`). The AS3 movie root adds a reference to `handler` and keeps
+    /// `user_data` beside it for the handler's calls.
+    pub unsafe fn CreateFunction(
+        &mut self,
+        value: *mut crate::ui::scaleform::Value,
+        handler: *mut ::std::ffi::c_void,
+        user_data: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                value: *mut crate::ui::scaleform::Value,
+                handler: *mut ::std::ffi::c_void,
+                user_data: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::CreateFunction_ADDRESS);
+            f(self as *mut Self as _, value, handler, user_data)
+        }
+    }
+    pub const SetExternalInterfaceRetVal_ADDRESS: usize = 0x14197E550;
+    /// Sets the return value of the ExternalInterface call being handled
+    /// (`GFx::Movie::SetExternalInterfaceRetVal`).
+    pub unsafe fn SetExternalInterfaceRetVal(
+        &mut self,
+        value: *const crate::ui::scaleform::Value,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                value: *const crate::ui::scaleform::Value,
+            ) = ::std::mem::transmute(Self::SetExternalInterfaceRetVal_ADDRESS);
+            f(self as *mut Self as _, value)
+        }
+    }
     pub const CaptureImpl_ADDRESS: usize = 0x14198B7D0;
     /// The concrete implementation behind the [`Capture`](crate::ui::scaleform::MovieImpl::Capture) virtual: gates on `Context::HasChanges` when `if_changed` is set, suspends the GC, and
     /// runs `Render::Context::Capture` to publish the frame's display-tree changes as the pending
@@ -1749,6 +1836,90 @@ impl std::convert::AsMut<RenderTargetVftable> for RenderTargetVftable {
     }
 }
 #[repr(C, align(8))]
+/// The engine's ExternalInterface handler (`CScaleformEIHandler`), installed on the UI loader so
+/// every movie it creates shares it. AS3 `ExternalInterface.call("<class name>:<command>", ...)`
+/// arrives at [`Callback`](crate::ui::scaleform::ScaleformEIHandler::Callback).
+pub struct ScaleformEIHandler {
+    _field_0: [u8; 24],
+    /// The `GetFastHash` of `"ROOT"`: calls with this prefix come from the root movie's own AS3
+    /// and are not dispatched.
+    pub m_RootHash: u32,
+    _field_1c: [u8; 4],
+}
+fn _ScaleformEIHandler_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x20], ScaleformEIHandler>([0u8; 0x20]);
+    }
+    unreachable!()
+}
+impl ScaleformEIHandler {
+    pub const Callback_ADDRESS: usize = 0x140F1C940;
+    /// Splits `method_name` at the colon and hashes both halves with `GetFastHash`. Unless the
+    /// prefix is the root's, finds the target screen: the movie's user data when set, otherwise
+    /// the screen registered under the prefix (`CUIManager::FindUI`). Calls the screen's
+    /// [`HandleCommand`](crate::ui::ui_base::UIBase::HandleCommand) with the command hash and the
+    /// arguments; a call with an unknown prefix is dropped. Runs synchronously inside the calling
+    /// AS3 code, on the capture thread.
+    pub unsafe fn Callback(
+        &mut self,
+        movie: *mut crate::ui::scaleform::MovieImpl,
+        method_name: *const u8,
+        args: *const crate::ui::scaleform::Value,
+        num_args: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                movie: *mut crate::ui::scaleform::MovieImpl,
+                method_name: *const u8,
+                args: *const crate::ui::scaleform::Value,
+                num_args: u32,
+            ) = ::std::mem::transmute(Self::Callback_ADDRESS);
+            f(self as *mut Self as _, movie, method_name, args, num_args)
+        }
+    }
+}
+impl std::convert::AsRef<ScaleformEIHandler> for ScaleformEIHandler {
+    fn as_ref(&self) -> &ScaleformEIHandler {
+        self
+    }
+}
+impl std::convert::AsMut<ScaleformEIHandler> for ScaleformEIHandler {
+    fn as_mut(&mut self) -> &mut ScaleformEIHandler {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The engine's Scaleform file opener (`CScaleformFileOpener`), installed on the UI loader: every
+/// file a movie loads (movies, imports, images) opens through [`OpenFile`](crate::ui::scaleform::ScaleformFileOpener::OpenFile).
+pub struct ScaleformFileOpener {}
+impl ScaleformFileOpener {
+    pub const OpenFile_ADDRESS: usize = 0x141035600;
+    /// Opens `url` as a `Scaleform::File`. Returns the UI manager's file cache entry for `url`
+    /// when there is one (adding a reference); otherwise sizes the file on the game's virtual
+    /// file system, reads it into a new `CScaleformCachedFile`, and offers that to the file cache,
+    /// which keeps only a fixed set of movies. Returns null when the file does not exist.
+    pub unsafe fn OpenFile(&mut self, url: *const u8) -> *mut ::std::ffi::c_void {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                url: *const u8,
+            ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(Self::OpenFile_ADDRESS);
+            f(self as *mut Self as _, url)
+        }
+    }
+}
+impl std::convert::AsRef<ScaleformFileOpener> for ScaleformFileOpener {
+    fn as_ref(&self) -> &ScaleformFileOpener {
+        self
+    }
+}
+impl std::convert::AsMut<ScaleformFileOpener> for ScaleformFileOpener {
+    fn as_mut(&mut self) -> &mut ScaleformFileOpener {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// Static clip names placed on the root timeline of `ui/hud.gfx` via PlaceObject2 tags. The root
 /// movie (`ui/root.gfx`) creates its clips entirely through ActionScript, so it has no static
 /// PlaceObject2 tags; `hud.gfx` uses a mix of static placement and dynamic creation.
@@ -2176,6 +2347,185 @@ impl ValueObjectInterface {
                 data: *mut ::std::ffi::c_void,
             ) = ::std::mem::transmute(Self::ObjectRelease_ADDRESS);
             f(self as *mut Self as _, value, data)
+        }
+    }
+    pub const ObjectAddRef_ADDRESS: usize = 0x141BB8560;
+    /// Adds a reference to a managed value that is being copied into `value` (which must already
+    /// carry the owning interface). `data` is the value's [`mValue`](crate::ui::scaleform::Value::mValue) payload.
+    pub unsafe fn ObjectAddRef(
+        &mut self,
+        value: *mut crate::ui::scaleform::Value,
+        data: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                value: *mut crate::ui::scaleform::Value,
+                data: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::ObjectAddRef_ADDRESS);
+            f(self as *mut Self as _, value, data)
+        }
+    }
+    pub const GetMember_ADDRESS: usize = 0x141C4CE20;
+    /// Reads the AS3 member `name` of the object `data` into `value`, releasing whatever `value`
+    /// held. `is_display_object` is whether the object is a display object (its
+    /// [`Type`](crate::ui::scaleform::Value::Type) is [`VT_DISPLAY_OBJECT`](crate::ui::scaleform::Value::VT_DISPLAY_OBJECT)); the engine
+    /// passes that test inline. Returns false when the member is not found.
+    pub unsafe fn GetMember(
+        &self,
+        data: *mut ::std::ffi::c_void,
+        name: *const u8,
+        value: *mut crate::ui::scaleform::Value,
+        is_display_object: bool,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                data: *mut ::std::ffi::c_void,
+                name: *const u8,
+                value: *mut crate::ui::scaleform::Value,
+                is_display_object: bool,
+            ) -> bool = ::std::mem::transmute(Self::GetMember_ADDRESS);
+            f(self as *const Self as _, data, name, value, is_display_object)
+        }
+    }
+    pub const SetMember_ADDRESS: usize = 0x141C45B00;
+    /// Writes `value` to the AS3 member `name` of the object `data`. `is_display_object` as for
+    /// [`GetMember`](crate::ui::scaleform::ValueObjectInterface::GetMember).
+    pub unsafe fn SetMember(
+        &mut self,
+        data: *mut ::std::ffi::c_void,
+        name: *const u8,
+        value: *const crate::ui::scaleform::Value,
+        is_display_object: bool,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut ::std::ffi::c_void,
+                name: *const u8,
+                value: *const crate::ui::scaleform::Value,
+                is_display_object: bool,
+            ) -> bool = ::std::mem::transmute(Self::SetMember_ADDRESS);
+            f(self as *mut Self as _, data, name, value, is_display_object)
+        }
+    }
+    pub const Invoke_ADDRESS: usize = 0x141C4D380;
+    /// Calls the AS3 method `name` of the object `data` with `num_args` arguments, storing the
+    /// return value in `result` when it is not null. `is_display_object` as for
+    /// [`GetMember`](crate::ui::scaleform::ValueObjectInterface::GetMember). Runs the method to completion before returning; call on
+    /// the capture thread.
+    pub unsafe fn Invoke(
+        &mut self,
+        data: *mut ::std::ffi::c_void,
+        result: *mut crate::ui::scaleform::Value,
+        name: *const u8,
+        args: *const crate::ui::scaleform::Value,
+        num_args: u64,
+        is_display_object: bool,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut ::std::ffi::c_void,
+                result: *mut crate::ui::scaleform::Value,
+                name: *const u8,
+                args: *const crate::ui::scaleform::Value,
+                num_args: u64,
+                is_display_object: bool,
+            ) -> bool = ::std::mem::transmute(Self::Invoke_ADDRESS);
+            f(
+                self as *mut Self as _,
+                data,
+                result,
+                name,
+                args,
+                num_args,
+                is_display_object,
+            )
+        }
+    }
+    pub const PushBack_ADDRESS: usize = 0x141BE3820;
+    /// Appends `value` to the AS3 array `data`.
+    pub unsafe fn PushBack(
+        &mut self,
+        data: *mut ::std::ffi::c_void,
+        value: *const crate::ui::scaleform::Value,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut ::std::ffi::c_void,
+                value: *const crate::ui::scaleform::Value,
+            ) -> bool = ::std::mem::transmute(Self::PushBack_ADDRESS);
+            f(self as *mut Self as _, data, value)
+        }
+    }
+    pub const RemoveElements_ADDRESS: usize = 0x141BA0E30;
+    /// Removes `count` elements of the AS3 array `data` starting at `index`; a negative `count`
+    /// removes through the end.
+    pub unsafe fn RemoveElements(
+        &mut self,
+        data: *mut ::std::ffi::c_void,
+        index: u32,
+        count: i32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut ::std::ffi::c_void,
+                index: u32,
+                count: i32,
+            ) -> bool = ::std::mem::transmute(Self::RemoveElements_ADDRESS);
+            f(self as *mut Self as _, data, index, count)
+        }
+    }
+    pub const GetElement_ADDRESS: usize = 0x141C4E830;
+    /// Reads element `index` of the AS3 array `data` into `value`, releasing whatever `value`
+    /// held. Returns false past the end.
+    pub unsafe fn GetElement(
+        &self,
+        data: *mut ::std::ffi::c_void,
+        index: u32,
+        value: *mut crate::ui::scaleform::Value,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                data: *mut ::std::ffi::c_void,
+                index: u32,
+                value: *mut crate::ui::scaleform::Value,
+            ) -> bool = ::std::mem::transmute(Self::GetElement_ADDRESS);
+            f(self as *const Self as _, data, index, value)
+        }
+    }
+    pub const SetElement_ADDRESS: usize = 0x141BE3720;
+    /// Writes `value` to element `index` of the AS3 array `data`, growing the array as needed.
+    pub unsafe fn SetElement(
+        &mut self,
+        data: *mut ::std::ffi::c_void,
+        index: u32,
+        value: *const crate::ui::scaleform::Value,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut ::std::ffi::c_void,
+                index: u32,
+                value: *const crate::ui::scaleform::Value,
+            ) -> bool = ::std::mem::transmute(Self::SetElement_ADDRESS);
+            f(self as *mut Self as _, data, index, value)
+        }
+    }
+    pub const GetArraySize_ADDRESS: usize = 0x141B921B0;
+    /// The length of the AS3 array `data`.
+    pub unsafe fn GetArraySize(&self, data: *mut ::std::ffi::c_void) -> u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                data: *mut ::std::ffi::c_void,
+            ) -> u32 = ::std::mem::transmute(Self::GetArraySize_ADDRESS);
+            f(self as *const Self as _, data)
         }
     }
 }

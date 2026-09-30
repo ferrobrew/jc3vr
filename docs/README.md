@@ -6,6 +6,8 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ## engine/
 
+- [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus, settings screen, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
+
 ### rendering/
 
 - [rendering.md](engine/rendering/rendering.md) — the frame pipeline: camera and projection (§2), buffers, the depth-reconstruction passes, the draw entry points and how shaders address the screen (§4), present and `BLOCK_FLIP` (§7), device and context (§8), resolution and render setups (§9), the stereo double-Draw machinery (§11–13).
