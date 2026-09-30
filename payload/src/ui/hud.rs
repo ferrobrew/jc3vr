@@ -342,6 +342,25 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
     }
 
     scaleform_debug_ui(ui);
+    pause_menu_ui(ui);
+}
+
+/// The VR menu's toggle and its current state.
+fn pause_menu_ui(ui: &mut egui::Ui) {
+    ui.collapsing("Pause menu", |ui| {
+        {
+            let mut cfg = config::CONFIG.lock();
+            ui.checkbox(
+                &mut cfg.pause_menu.enabled,
+                "VR pages in the pause menu's options",
+            )
+            .on_hover_text(
+                "Adds the VR entries to the top of the options menu, each opening the game's own \
+                 settings screen on a VR page. Takes effect the next time the pause menu opens.",
+            );
+        }
+        ui.label(format!("State: {:?}", crate::pause_menu::state()));
+    });
 }
 
 /// The Scaleform display-tree debug controls: dump the live clip tree to the log, and toggle a

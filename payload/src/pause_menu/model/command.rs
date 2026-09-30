@@ -1,0 +1,288 @@
+//! Command parsing and routing: which of the pause movie's commands the VR menu handles itself,
+//! which it lets the game handle, and which it observes on the way through.
+//!
+//! The VR rows talk to native code through the game's own settings commands, so the command detour
+//! decides per command. A command carrying a VR row id is always swallowed: the settings manager
+//! would ignore it, but the key capture would start listening for a key binding.
+
+use jc3gi::ui::{pause_ui::PauseUI, ui_base::UIBase};
+
+use crate::pause_menu::model::{ids::RowId, state::MenuState};
+
+/// One argument of a command, as the runtime decoded it from the movie's value.
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub(crate) enum Arg {
+    Int(i32),
+    Number(f64),
+    Bool(bool),
+    /// Any other type (a string, an object, undefined).
+    Other,
+}
+
+impl Arg {
+    /// The argument as an integer: an int, or a number with an exact integer value (AS3 may widen
+    /// an int to a number on the way out).
+    pub(crate) fn as_int(self) -> Option<i32> {
+        match self {
+            Arg::Int(value) => Some(value),
+            Arg::Number(value)
+                if value.fract() == 0.0
+                    && value >= f64::from(i32::MIN)
+                    && value <= f64::from(i32::MAX) =>
+            {
+                Some(value as i32)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// A pause-movie command the VR menu cares about.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Command {
+    /// `populate_settings`: the movie is opening the settings screen.
+    PopulateSettings,
+    /// `set_setting_value(id, value)`.
+    SetSettingValue { id: i32, value: i32 },
+    /// `get_key_for_action(action)`.
+    GetKeyForAction { action: i32 },
+    /// `restore_default_keymap`.
+    RestoreDefaultKeymap,
+    /// `persist_changes`: the settings or controls screen is closing.
+    PersistChanges,
+    /// The base `inactive` command: the movie was unloaded.
+    Inactive,
+    /// Anything else, including a known command with arguments of the wrong shape.
+    Other,
+}
+
+/// Parse a command from its hash and arguments.
+pub(crate) fn parse(hash: u32, args: &[Arg]) -> Command {
+    let int = |index: usize| args.get(index).and_then(|arg| arg.as_int());
+    match hash {
+        PauseUI::COMMAND_POPULATE_SETTINGS => Command::PopulateSettings,
+        PauseUI::COMMAND_SET_SETTING_VALUE => match (int(0), int(1)) {
+            (Some(id), Some(value)) => Command::SetSettingValue { id, value },
+            _ => Command::Other,
+        },
+        PauseUI::COMMAND_GET_KEY_FOR_ACTION => match int(0) {
+            Some(action) => Command::GetKeyForAction { action },
+            None => Command::Other,
+        },
+        PauseUI::COMMAND_RESTORE_DEFAULT_KEYMAP => Command::RestoreDefaultKeymap,
+        PauseUI::COMMAND_PERSIST_CHANGES => Command::PersistChanges,
+        UIBase::COMMAND_INACTIVE => Command::Inactive,
+        _ => Command::Other,
+    }
+}
+
+/// What the command detour does with a command.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Route {
+    /// Call the game's handler and nothing else.
+    Pass,
+    /// Call the game's handler with the populate flag raised, so the populate hook knows the
+    /// screen is being opened rather than refreshed.
+    Populate,
+    /// Handle the command instead of the game.
+    Swallow(Action),
+    /// Call the game's handler, then act.
+    PassThen(Action),
+}
+
+/// A VR-menu action a command leads to.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Action {
+    /// Apply `value` to the row `row`.
+    SetValue { row: RowId, value: i32 },
+    /// Run the button on row `row`.
+    Press { row: RowId },
+    /// A command carried a VR id the current state cannot use (no page shown, or another page's
+    /// row); drop it.
+    Drop,
+    /// Reset the shown page's values to their defaults.
+    ResetPage,
+    /// The player left the shown page.
+    LeavePage,
+    /// The movie was unloaded.
+    Close,
+}
+
+/// Route `command` given the menu `state`.
+pub(crate) fn route(command: Command, state: MenuState) -> Route {
+    // `None` for a native id; `Some(None)` for a VR id the state cannot use.
+    let resolve = |raw: i32| {
+        RowId::decode(raw).map(|row| (state.shown_page() == Some(row.page)).then_some(row))
+    };
+    match command {
+        Command::PopulateSettings => Route::Populate,
+        Command::SetSettingValue { id, value } => match resolve(id) {
+            None => Route::Pass,
+            Some(None) => Route::Swallow(Action::Drop),
+            Some(Some(row)) => Route::Swallow(Action::SetValue { row, value }),
+        },
+        Command::GetKeyForAction { action } => match resolve(action) {
+            None => Route::Pass,
+            Some(None) => Route::Swallow(Action::Drop),
+            Some(Some(row)) => Route::Swallow(Action::Press { row }),
+        },
+        Command::RestoreDefaultKeymap if state.shown_page().is_some() => {
+            Route::Swallow(Action::ResetPage)
+        }
+        Command::PersistChanges if state.shown_page().is_some() => {
+            Route::PassThen(Action::LeavePage)
+        }
+        Command::Inactive => Route::PassThen(Action::Close),
+        Command::RestoreDefaultKeymap | Command::PersistChanges | Command::Other => Route::Pass,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id(page: usize, item: usize) -> i32 {
+        RowId::new(page, item).encode().unwrap()
+    }
+
+    const SHOWN_1: MenuState = MenuState::Shown { count: 3, page: 1 };
+    const ENTRIES: MenuState = MenuState::EntriesAdded { count: 3 };
+
+    #[test]
+    fn parses_known_commands() {
+        assert_eq!(
+            parse(PauseUI::COMMAND_POPULATE_SETTINGS, &[]),
+            Command::PopulateSettings
+        );
+        assert_eq!(
+            parse(
+                PauseUI::COMMAND_SET_SETTING_VALUE,
+                &[Arg::Int(5), Arg::Number(2.0)]
+            ),
+            Command::SetSettingValue { id: 5, value: 2 }
+        );
+        assert_eq!(
+            parse(PauseUI::COMMAND_GET_KEY_FOR_ACTION, &[Arg::Int(9)]),
+            Command::GetKeyForAction { action: 9 }
+        );
+        assert_eq!(
+            parse(PauseUI::COMMAND_RESTORE_DEFAULT_KEYMAP, &[]),
+            Command::RestoreDefaultKeymap
+        );
+        assert_eq!(
+            parse(PauseUI::COMMAND_PERSIST_CHANGES, &[]),
+            Command::PersistChanges
+        );
+        assert_eq!(parse(UIBase::COMMAND_INACTIVE, &[]), Command::Inactive);
+        assert_eq!(parse(UIBase::COMMAND_EVENT, &[Arg::Other]), Command::Other);
+    }
+
+    #[test]
+    fn malformed_arguments_are_other() {
+        assert_eq!(
+            parse(PauseUI::COMMAND_SET_SETTING_VALUE, &[Arg::Int(5)]),
+            Command::Other
+        );
+        assert_eq!(
+            parse(
+                PauseUI::COMMAND_SET_SETTING_VALUE,
+                &[Arg::Other, Arg::Int(1)]
+            ),
+            Command::Other
+        );
+        assert_eq!(
+            parse(PauseUI::COMMAND_GET_KEY_FOR_ACTION, &[Arg::Number(1.5)]),
+            Command::Other
+        );
+        assert_eq!(
+            parse(PauseUI::COMMAND_GET_KEY_FOR_ACTION, &[Arg::Bool(true)]),
+            Command::Other
+        );
+    }
+
+    #[test]
+    fn numbers_convert_only_when_exact() {
+        assert_eq!(Arg::Number(-3.0).as_int(), Some(-3));
+        assert_eq!(Arg::Number(0.5).as_int(), None);
+        assert_eq!(Arg::Number(1e12).as_int(), None);
+        assert_eq!(Arg::Number(f64::NAN).as_int(), None);
+    }
+
+    #[test]
+    fn native_settings_pass_through() {
+        for state in [MenuState::Closed, ENTRIES, SHOWN_1] {
+            assert_eq!(
+                route(Command::SetSettingValue { id: 3, value: 1 }, state),
+                Route::Pass
+            );
+            assert_eq!(
+                route(Command::GetKeyForAction { action: 40 }, state),
+                Route::Pass
+            );
+            assert_eq!(route(Command::Other, state), Route::Pass);
+        }
+    }
+
+    #[test]
+    fn rows_of_the_shown_page_are_handled() {
+        let row = RowId::new(1, 4);
+        assert_eq!(
+            route(
+                Command::SetSettingValue {
+                    id: id(1, 4),
+                    value: 7
+                },
+                SHOWN_1
+            ),
+            Route::Swallow(Action::SetValue { row, value: 7 })
+        );
+        assert_eq!(
+            route(Command::GetKeyForAction { action: id(1, 4) }, SHOWN_1),
+            Route::Swallow(Action::Press { row })
+        );
+    }
+
+    #[test]
+    fn vr_ids_never_reach_the_game() {
+        for state in [MenuState::Closed, ENTRIES, SHOWN_1] {
+            for raw in [id(0, 0), id(2, 3)] {
+                assert_eq!(
+                    route(Command::SetSettingValue { id: raw, value: 0 }, state),
+                    Route::Swallow(Action::Drop)
+                );
+                assert_eq!(
+                    route(Command::GetKeyForAction { action: raw }, state),
+                    Route::Swallow(Action::Drop)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn page_commands_depend_on_a_shown_page() {
+        assert_eq!(
+            route(Command::RestoreDefaultKeymap, SHOWN_1),
+            Route::Swallow(Action::ResetPage)
+        );
+        assert_eq!(route(Command::RestoreDefaultKeymap, ENTRIES), Route::Pass);
+        assert_eq!(
+            route(Command::PersistChanges, SHOWN_1),
+            Route::PassThen(Action::LeavePage)
+        );
+        assert_eq!(route(Command::PersistChanges, ENTRIES), Route::Pass);
+    }
+
+    #[test]
+    fn lifecycle_commands() {
+        assert_eq!(
+            route(Command::PopulateSettings, MenuState::Closed),
+            Route::Populate
+        );
+        for state in [MenuState::Closed, ENTRIES, SHOWN_1] {
+            assert_eq!(
+                route(Command::Inactive, state),
+                Route::PassThen(Action::Close)
+            );
+        }
+    }
+}

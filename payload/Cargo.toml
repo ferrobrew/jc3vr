@@ -57,6 +57,7 @@ jiff = "0.2.29"
 # PNG-only: the render-trace screenshot diagnostic encodes eye-0 frames; no other formats needed.
 image = { version = "0.25", default-features = false, features = ["png"] }
 egui_dock = { version = "0.20", features = ["serde"] }
+smol_str = "0.3.6"
 
 [build-dependencies]
 jiff = "0.2.29"

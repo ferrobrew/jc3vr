@@ -35,6 +35,7 @@ mod hooks;
 mod hud;
 mod lifecycle;
 mod logging;
+mod pause_menu;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod recorder;

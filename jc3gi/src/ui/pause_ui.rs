@@ -325,6 +325,11 @@ impl PauseUI {
     pub const COMMAND_SET_UPGRADE_VALUE: u32 = 1643712435;
     /// The command hash for `show_fullscreen_video`.
     pub const COMMAND_SHOW_FULLSCREEN_VIDEO: u32 = 1075637403;
+    /// The number of main buttons the movie lays a menu's entries out on
+    /// (`MCI_button_container.MCI_root.MCI_button_00` onwards, each holding a
+    /// `stat_category_button` as `MCI_button`). The movie's `SetMainMenuOption` shows the first
+    /// entries of a list on them and silently drops the rest.
+    pub const MAIN_BUTTON_COUNT: i32 = 11;
     /// The movie's `OptionClass.m_Type` for the options menu's graphics entry: selecting an entry
     /// of this type opens the settings screen on the
     /// [`PAGE_GRAPHICS`](crate::ui::pause_ui::SettingsUI::PAGE_GRAPHICS) page. The value is a constant of the movie's
@@ -433,6 +438,11 @@ impl SettingsUI {
     pub const PAGE_GRAPHICS: i32 = 0;
     /// The page index of the sound settings.
     pub const PAGE_SOUND: i32 = 1;
+    /// The number of `pause_code.controls_row` row clips the settings screen's list manager
+    /// (`MCI_settings_screen.MCI_panel.MCI_container.MCI_root.MCI_manager`) draws a page's rows on,
+    /// named `MCI_controls_row_00` onwards. The clips show a scrolling window of the page, and each
+    /// clip's `GetData()` returns the row object it currently shows (null for an empty clip).
+    pub const ROW_CLIP_COUNT: i32 = 13;
     /// The `m_Format` of a key-binding row (used by the controls screen's pages).
     pub const WIDGET_KEY: i32 = 2;
     /// The `m_Format` of a slider row: an integer between `m_MinValue` and `m_MaxValue`.

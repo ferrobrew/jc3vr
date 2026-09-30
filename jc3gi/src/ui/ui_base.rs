@@ -286,3 +286,41 @@ impl std::convert::AsMut<UIBaseVftable> for UIBaseVftable {
         self
     }
 }
+pub const SetIntField_ADDRESS: usize = 0x140F68ED0;
+/// `CUIBase::SetIntField` (static): sets the member `name` of the AS3 object `object` to `value`,
+/// passing an unmanaged int value to
+/// [`ValueObjectInterface::SetMember`](crate::ui::scaleform::ValueObjectInterface::SetMember). The
+/// settings-page builders fill their row objects with it.
+pub unsafe fn SetIntField(
+    object: *mut crate::ui::scaleform::Value,
+    name: *const u8,
+    value: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            object: *mut crate::ui::scaleform::Value,
+            name: *const u8,
+            value: i32,
+        ) = ::std::mem::transmute(SetIntField_ADDRESS);
+        f(object, name, value)
+    }
+}
+pub const SetStringField_ADDRESS: usize = 0x140F690F0;
+/// `CUIBase::SetStringField` (static): sets the member `name` of the AS3 object `object` to the
+/// C string `value`, passed as an unmanaged string value (the pointer itself, which the movie
+/// copies into an AS3 string) to
+/// [`ValueObjectInterface::SetMember`](crate::ui::scaleform::ValueObjectInterface::SetMember).
+pub unsafe fn SetStringField(
+    object: *mut crate::ui::scaleform::Value,
+    name: *const u8,
+    value: *const u8,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            object: *mut crate::ui::scaleform::Value,
+            name: *const u8,
+            value: *const u8,
+        ) = ::std::mem::transmute(SetStringField_ADDRESS);
+        f(object, name, value)
+    }
+}

@@ -26,7 +26,7 @@ The document class of `ui/pause.gfx` is `pause` (extending `uibase`). Its own co
 
 ### Menus and entries
 
-The pause movie is not tab-driven. It shows one list of entries at a time on a fixed column of main buttons (`stat_category_button` instances under `MCI_button_container`), and keeps one list per [`PauseMenuType`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseMenuType). An entry is an `OptionClass` object: a name, a type, and, for event entries, an event string, whether to confirm first, and whether to close the menu afterwards. `SwitchToMenu(type)` lays a list out on the buttons.
+The pause movie is not tab-driven. It shows one list of entries at a time on a fixed column of main buttons ([`MAIN_BUTTON_COUNT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI) `stat_category_button` instances under `MCI_button_container`, named `MCI_button_00` onwards); entries past the last button are not shown, and keeps one list per [`PauseMenuType`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseMenuType). An entry is an `OptionClass` object: a name, a type, and, for event entries, an event string, whether to confirm first, and whether to close the menu afterwards. `SwitchToMenu(type)` lays a list out on the buttons.
 
 The lists are partly hard-coded in AS3 and partly pushed by native code:
 
@@ -44,11 +44,11 @@ The settings screen (`MCI_settings_screen`, class `pause_code.settings_screen`) 
 
 The screen owns a tab bar, `MCI_tabs.MCI_navbar` on the document (a `shared.main_nav`), but the settings screen hides it: `settings_screen.Show` names and unlocks a tab for each of the graphics, sound, and gameplay pages, locks the rest, and sets the bar invisible. The page is chosen by which options entry was selected. The controls screen does show the bar.
 
-The page is drawn by `MCI_panel.MCI_container.MCI_root.MCI_manager`, a `pause_code.controls_manager` (a `shared.generic_scrolling_list`): a title text field, a fixed set of `pause_code.controls_row` row clips over a scrolling window of the page's rows, a scrollbar, and a button-hint bar (select, reset value, reset all, back). `SetRowArray(rows)` shows a row array from its top; `UpdateRows(top_index)` refills the visible rows in place; `HighlightByIndex`, `GetTopIndex`, and `GetSelectedData` are public too.
+The page is drawn by `MCI_panel.MCI_container.MCI_root.MCI_manager`, a `pause_code.controls_manager` (a `shared.generic_scrolling_list`): a title text field, a fixed set of `pause_code.controls_row` row clips ([`ROW_CLIP_COUNT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI), `MCI_controls_row_00` onwards, each returning the row object it shows from `GetData()`) over a scrolling window of the page's rows, a scrollbar, and a button-hint bar (select, reset value, reset all, back). `SetRowArray(rows)` shows a row array from its top; `UpdateRows(top_index)` refills the visible rows in place; `HighlightByIndex`, `GetTopIndex`, and `GetSelectedData` are public too.
 
 ### Row objects and widgets
 
-A row is a plain AS3 object whose `m_Format` selects the widget (the `WIDGET_*` constants on `SettingsUI`). [`SettingsUI::AppendSettingToggle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI##func-AppendSettingToggle) shows the native side of the schema.
+A row is a plain AS3 object whose `m_Format` selects the widget (the `WIDGET_*` constants on `SettingsUI`). [`SettingsUI::AppendSettingToggle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::SettingsUI##func-AppendSettingToggle) shows the native side of the schema: it creates the row with `UIBase::CreateObject` and fills it through the static [`SetIntField`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::ui_base##func-SetIntField) and [`SetStringField`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::ui_base##func-SetStringField), which pass unmanaged values (an int, or a C string pointer the movie copies).
 
 - Every row has `m_Name` (drawn upper-cased), `m_Type` (an integer the movie sends back with the new value), `m_Value`, `m_DefaultValue`, and `m_NeedConfirm`.
 - A toggle shows the entry of `m_Labels` whose `m_Values` entry equals `m_Value`, and `---` when none does. Selecting it opens the document's shared context menu (`MCI_ctx_menu`, `shared.ctx_menu.ctx_menu`) listing every label; the choice is the matching value. It is the game's only option picker, so it serves any list of choices, not just two.
@@ -66,7 +66,7 @@ There is no header row, no read-only value row, no button row, and no descriptio
 | Command | Arguments | Native handling |
 |---|---|---|
 | `populate_settings` | none | `PopulateSettings` |
-| `set_setting_value` | `m_Type`, `m_Value` (ints) | sets `m_AnySettingsChanged`, then [`SettingsManager::SetValue`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/settings_manager::SettingsManager##func-SetValue) |
+| `set_setting_value` | `m_Type`, `m_Value` (ints, read without a type check) | sets `m_AnySettingsChanged`, then [`SettingsManager::SetValue`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/settings_manager::SettingsManager##func-SetValue) |
 | `get_setting_value` | `m_Type` | returns the setting's value |
 | `set_upgrade_value` | `m_Type`, `m_Value` | loads the chosen DLC gear upgrade |
 | `get_key_for_action` | `m_Action` | starts a key capture and sets `m_Waitingforkey` |
