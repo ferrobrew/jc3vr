@@ -1,10 +1,29 @@
-//! The cockpit shift consumes cumulative compensation published at completed simulation steps.
-//! Animated head motion is not attributed to locomotion, and rendering never consumes a request.
+//! The cockpit shift: how far the view's cockpit origin has been moved to keep the camera on the
+//! physical head while the body catches up with it. Pure.
+//!
+//! The camera is `anchor + body × (cockpit × scale)`, and the anchor is the animated head bone. When
+//! the chase walks the body toward the head, the anchor moves with the body while the cockpit
+//! offset stays, so without a correction the camera runs ahead by the distance the body covered and
+//! the measured offset never shrinks: the body would chase the head forever. The shift takes the
+//! chase's part of the body's displacement back out of the cockpit, so the camera stays with the
+//! real head and the offset closes.
+//!
+//! The simulation half ([`crate::controllers::roomscale::sim`]) attributes each completed step's
+//! displacement to the chase and publishes the running total at the last two completed steps
+//! ([`CompletedMovement`]). The shift folds in everything completed since it last looked, so
+//! several steps between rendered frames all count, and rendering never consumes a request.
+//! Animated head motion is not attributed to locomotion.
+//!
+//! The shift is kept as a step-spaced pair, like the anchor it compensates: the view composes the
+//! previous step's side with the previous shift and the current side with the current one, so that
+//! the engine's sub-step interpolation moves the anchor and the shift together and the camera holds
+//! still between steps.
 
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::roomscale::sim::CompletedMovement;
 
+/// The shift pair, and the cumulative completed movement it has folded in.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct CockpitShift {
     prev: Vec3,
@@ -14,8 +33,10 @@ pub struct CockpitShift {
 
 /// The cockpit frame in which the world-space correction is expressed.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TickAnchors {
+pub struct CockpitBasis {
+    /// The body rotation the cockpit composes with.
     pub body: Quat,
+    /// World metres per cockpit metre.
     pub world_scale: f32,
 }
 
@@ -28,16 +49,19 @@ impl CockpitShift {
         }
     }
 
+    /// The shift for the current step's side of the pose pair, cockpit frame.
     pub fn current(&self) -> Vec3 {
         self.cur
     }
 
+    /// The raw cockpit position with the shift taken out, for the previous and current sides of the
+    /// pose pair.
     pub fn apply(&self, raw: Vec3) -> (Vec3, Vec3) {
         (raw - self.prev, raw - self.cur)
     }
 
     /// Apply every completed step since the last observation, then reconstruct the latest pair.
-    pub fn observe(&mut self, frame: &TickAnchors, movement: CompletedMovement) {
+    pub fn observe(&mut self, frame: &CockpitBasis, movement: CompletedMovement) {
         let scale = frame.world_scale;
         if !scale.is_finite() || scale <= 0.0 || !frame.body.is_finite() {
             self.settle();
@@ -58,21 +82,29 @@ impl CockpitShift {
         self.settle();
     }
 
+    /// Collapse the pair onto the current shift, so the view does not interpolate across a jump.
     pub fn settle(&mut self) {
         self.prev = self.cur;
     }
 
+    /// Re-base the horizontal offset: the shift takes out all of `raw`'s horizontal component, so
+    /// that the head sits over the body, with no interpolation from the previous shift. For a
+    /// teleport, which moves the body to a new place and must not leave the head where the old
+    /// offset put it.
     pub fn rebase_horizontal(&mut self, raw: Vec3) {
         self.cur = Vec3::new(raw.x, self.cur.y, raw.z);
         self.settle();
     }
 
+    /// Clear the shift, when a recenter re-bases the baseline's position.
     pub fn clear(&mut self) {
         self.cur = Vec3::ZERO;
         self.settle();
     }
 
-    /// Carry the offset into the yaw-recentered cockpit frame.
+    /// Carry the shift into a cockpit frame turned by `rotation` (new frame from old), when a
+    /// recenter re-bases only the baseline's yaw and height: the shift is a fixed offset in the room,
+    /// so it turns with the frame it is expressed in.
     pub fn rotate(&mut self, rotation: Quat) {
         let turned = rotation * Vec3::new(self.cur.x, 0.0, self.cur.z);
         self.cur = if turned.is_finite() {
@@ -88,8 +120,8 @@ impl CockpitShift {
 mod tests {
     use super::*;
 
-    fn frame() -> TickAnchors {
-        TickAnchors {
+    fn frame() -> CockpitBasis {
+        CockpitBasis {
             body: Quat::IDENTITY,
             world_scale: 1.0,
         }

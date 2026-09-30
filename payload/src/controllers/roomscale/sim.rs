@@ -135,7 +135,9 @@ impl Requests {
         self.completed.previous = self.completed.current;
         if let Some(request) = self.pending.take() {
             let delta = current - previous;
-            self.completed.current += request.achieved_chase(Vec2::new(delta.x, delta.z));
+            let position_scale = previous.abs().max(current.abs()).max_element();
+            self.completed.current +=
+                request.achieved_chase(Vec2::new(delta.x, delta.z), position_scale);
         }
     }
 

@@ -201,8 +201,6 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
     let cockpit = crate::controllers::roomscale::compose_cockpit(
         &crate::controllers::roomscale::FrameInputs {
             cockpit: center_position,
-            anchor: anchor_raw,
-            anchor_prev: anchor_prev_raw,
             body: body_rotation,
             world_scale: cfg.world_scale,
         },

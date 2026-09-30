@@ -59,7 +59,7 @@ use crate::{
             fade::FadeSource,
             posture::{EffectivePosture, HeadHeight, HeadHeightInput},
             probe::ProbeResult,
-            rebase::{CockpitShift, TickAnchors},
+            rebase::{CockpitBasis, CockpitShift},
             seat::{SeatEvent, SeatTracker},
         },
     },
@@ -80,9 +80,6 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub struct FrameInputs {
     /// The head's cockpit position (relative to the recenter baseline), metres.
     pub cockpit: Vec3,
-    /// The animated head anchor this tick and the previous tick.
-    pub anchor: Vec3,
-    pub anchor_prev: Vec3,
     /// The body rotation the cockpit composes with.
     pub body: Quat,
     pub world_scale: f32,
@@ -131,7 +128,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     // spends it ([`on_recenter`]).
     if chase_on {
         frame.shift.observe(
-            &TickAnchors {
+            &CockpitBasis {
                 body: inputs.body,
                 world_scale: inputs.world_scale,
             },

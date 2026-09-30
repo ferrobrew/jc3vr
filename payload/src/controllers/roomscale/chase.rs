@@ -104,12 +104,17 @@ impl Movement {
     /// remove only the chase's forward projection along achieved movement, bounded by the achieved
     /// distance and the requested chase distance. This deliberately leaves ambiguous motion visible;
     /// it is not a reconstruction of the collision solver or a task-only counterfactual.
-    pub fn achieved_chase(self, actual: Vec2) -> Vec2 {
+    ///
+    /// `actual` is the difference of two absolute world positions, so it carries their `f32`
+    /// rounding, which grows with the distance from the world origin. `position_scale` is the
+    /// larger magnitude of the two positions (any coordinate bound will do), and the match
+    /// tolerance widens with it so that free movement far from the origin still matches.
+    pub fn achieved_chase(self, actual: Vec2, position_scale: f32) -> Vec2 {
         if !actual.is_finite() || !self.task.is_finite() || !self.chase.is_finite() {
             return Vec2::ZERO;
         }
         let expected = self.task + self.chase;
-        if actual.distance(expected) <= 1e-4 + expected.length() * 1e-3 {
+        if actual.distance(expected) <= exact_tolerance(expected.length(), position_scale) {
             return self.chase;
         }
         let distance = actual.length();
@@ -139,8 +144,32 @@ pub fn is_warp(distance: f32, speed: f32, dt: f32, min_m: f32) -> bool {
     distance.is_finite() && distance > min_m.max(travelled)
 }
 
+/// The absolute part of the exact-match tolerance, metres.
+const EXACT_ABSOLUTE_M: f32 = 1e-4;
+/// The part of the exact-match tolerance relative to the requested displacement.
+const EXACT_RELATIVE: f32 = 1e-3;
+/// The exact-match tolerance in units in the last place of the positions' magnitude. Each of the
+/// two positions rounds by up to half a unit per axis, and the engine's own integration of the
+/// displacement rounds once more, so a free step can miss by about two units along its length.
+const EXACT_POSITION_ULPS: f32 = 4.0;
+
+/// How far the achieved displacement may be from the requested one and still count as free
+/// movement, for a request of `expected` metres between positions of magnitude `position_scale`.
+fn exact_tolerance(expected: f32, position_scale: f32) -> f32 {
+    let position_scale = if position_scale.is_finite() {
+        position_scale.abs()
+    } else {
+        0.0
+    };
+    EXACT_ABSOLUTE_M
+        + expected * EXACT_RELATIVE
+        + position_scale * f32::EPSILON * EXACT_POSITION_ULPS
+}
+
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
+
     use super::*;
 
     const CONFIG: ChaseConfig = ChaseConfig {
@@ -217,23 +246,59 @@ mod tests {
         ] {
             let movement = Movement::new(task, chase, 3.0, 0.02);
             let actual = combine(task, chase, 3.0) * 0.02;
-            assert!((actual - movement.achieved_chase(actual)).distance(movement.task) < 1e-6);
+            assert!((actual - movement.achieved_chase(actual, 0.0)).distance(movement.task) < 1e-6);
         }
     }
 
     #[test]
     fn blocked_and_sliding_motion_have_bounded_compensation() {
         let movement = Movement::new(Vec2::X, Vec2::Y, 3.0, 1.0);
-        assert_eq!(movement.achieved_chase(Vec2::ZERO), Vec2::ZERO);
-        assert_eq!(movement.achieved_chase(Vec2::X), Vec2::ZERO);
-        assert_eq!(movement.achieved_chase(Vec2::Y * 0.5), Vec2::Y * 0.5);
-        assert_eq!(movement.achieved_chase(-Vec2::Y), Vec2::ZERO);
+        assert_eq!(movement.achieved_chase(Vec2::ZERO, 0.0), Vec2::ZERO);
+        assert_eq!(movement.achieved_chase(Vec2::X, 0.0), Vec2::ZERO);
+        assert_eq!(movement.achieved_chase(Vec2::Y * 0.5, 0.0), Vec2::Y * 0.5);
+        assert_eq!(movement.achieved_chase(-Vec2::Y, 0.0), Vec2::ZERO);
         for actual in [Vec2::new(0.1, 0.2), Vec2::Y * 10.0, Vec2::new(-0.2, 0.3)] {
-            let correction = movement.achieved_chase(actual);
+            let correction = movement.achieved_chase(actual, 0.0);
             assert!(correction.length() <= actual.length() + 1e-6);
             assert!(correction.length() <= movement.chase.length() + 1e-6);
             assert!(correction.dot(actual) >= 0.0);
         }
+    }
+
+    #[test]
+    fn free_motion_far_from_the_origin_is_attributed_exactly() {
+        let dt = 1.0 / 30.0;
+        for origin in [
+            Vec3::new(2_000.0, 300.0, -2_000.0),
+            Vec3::new(-8_000.0, 50.0, 8_000.0),
+            Vec3::new(16_000.0, 0.0, 16_000.0),
+        ] {
+            for (task, chase) in [
+                (Vec2::new(0.0, 1.5), Vec2::new(0.7, 0.0)),
+                (Vec2::new(0.0, 3.0), Vec2::new(0.0, -0.4)),
+                (Vec2::new(1.0, 1.0), Vec2::new(-0.3, 0.2)),
+            ] {
+                let movement = Movement::new(task, chase, 3.0, dt);
+                let wanted = movement.task + movement.chase;
+                // The engine integrates the displacement onto the absolute position in `f32`.
+                let current = origin + Vec3::new(wanted.x, 0.0, wanted.y);
+                let solved = current - origin;
+                let scale = origin.abs().max(current.abs()).max_element();
+                let achieved = movement.achieved_chase(Vec2::new(solved.x, solved.z), scale);
+                assert_eq!(achieved, movement.chase, "at {origin} for {task} + {chase}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_real_shortfall_far_from_the_origin_is_not_exact() {
+        let movement = Movement::new(Vec2::new(0.0, 1.5), Vec2::new(0.9, 0.0), 3.0, 1.0 / 30.0);
+        let wanted = movement.task + movement.chase;
+        // Wall sliding stops the sideways chase: well beyond the rounding at 8 km.
+        let actual = Vec2::new(0.0, wanted.y);
+        let achieved = movement.achieved_chase(actual, 8_000.0);
+        assert_ne!(achieved, movement.chase);
+        assert_eq!(achieved, Vec2::ZERO);
     }
 
     #[test]

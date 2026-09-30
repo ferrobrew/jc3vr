@@ -5,6 +5,7 @@ use egui::Ui;
 use crate::{
     config,
     controllers::{
+        bindings::{self, Blocker, HandRecovery},
         config::{LocomotionDirection, SchemeSetting},
         frame::Hand,
     },
@@ -30,6 +31,18 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.selectable_value(&mut c.dominant_hand, Hand::Right, "Right");
         ui.selectable_value(&mut c.dominant_hand, Hand::Left, "Left");
     });
+    let recovery = bindings::recovery_status();
+    for hand in Hand::BOTH {
+        ui.label(format!(
+            "Input {}: {}",
+            hand.label(),
+            recovery_label(recovery[hand.index()])
+        ))
+        .on_hover_text(
+            "After a loss of tracking or focus, a hand's input stays masked until its trigger, \
+             grip, buttons, and stick rest.",
+        );
+    }
 
     egui::CollapsingHeader::new("Input").show(ui, |ui| {
         ui.add(
@@ -166,4 +179,24 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Vehicles and flight")
         .show(ui, |ui| vehicles::vehicles_settings(ui, &mut c.vehicles));
+}
+
+fn recovery_label(recovery: HandRecovery) -> String {
+    match recovery {
+        HandRecovery::Unusable => "not injecting".to_owned(),
+        HandRecovery::Ready => "ready".to_owned(),
+        HandRecovery::Masked(None) => "masked, waiting for a sample".to_owned(),
+        HandRecovery::Masked(Some(blocker)) => format!("masked until {}", blocker_label(blocker)),
+    }
+}
+
+fn blocker_label(blocker: Blocker) -> String {
+    match blocker {
+        Blocker::Button(button) => format!("{button:?} is released"),
+        Blocker::Trigger(value) => format!("the trigger rests (at {value:.2})"),
+        Blocker::Squeeze(value) => format!("the grip rests (at {value:.2})"),
+        Blocker::Stick { magnitude, neutral } => {
+            format!("the stick rests under {neutral:.2} (at {magnitude:.2})")
+        }
+    }
 }

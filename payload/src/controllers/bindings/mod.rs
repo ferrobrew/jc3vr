@@ -8,6 +8,8 @@
 //!   handling places ([`crate::controllers::weapons`]);
 //! - [`yank`] detects the yank gesture on the grapple hand, which the tables turn into a grapple
 //!   tap;
+//! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
+//!   ([`HandRecovery`]);
 //! - [`inject`] applies the writes to the player and UI action maps.
 //!
 //! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
@@ -25,9 +27,12 @@ mod recovery;
 pub mod tables;
 pub mod yank;
 
+use std::time::Instant;
+
 use jc3gi::input::input_action_map::Action;
 use parking_lot::Mutex;
 
+pub use crate::controllers::bindings::recovery::{Blocker, HandRecovery};
 use crate::{
     config::Config,
     controllers::{
@@ -36,7 +41,7 @@ use crate::{
             controls::{Controls, yaw_of},
             hold::{HoldTracker, MapKind, Phase},
             inject::Outcome,
-            recovery::{NeutralPolicy, Recovery},
+            recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             tables::Bindings,
             yank::{Yank, YankConfig, YankDetector},
         },
@@ -101,6 +106,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
                 &c.controllers.input,
                 &c.controllers.bindings,
                 &c.headpose.vr_turn,
+                c.controllers.dominant_hand,
             ),
         )
     });
@@ -109,6 +115,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         let mut state = STATE.lock();
         state.reset();
         state.recovery.suspend();
+        state.publish_recovery();
         frame::take_edges();
         weapons::stand_down();
         vehicles::stand_down();
@@ -142,6 +149,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         crate::hud::pointer::clear_controller();
         state.reset();
         state.recovery.suspend();
+        state.publish_recovery();
         weapons::stand_down();
         vehicles::stand_down();
         state.report = TickReport {
@@ -163,6 +171,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it.
     if frame.action_set != detection.mode.action_set() {
         crate::hud::pointer::clear_controller();
+        state.publish_recovery();
         state.report = TickReport {
             detection,
             ..Default::default()
@@ -172,6 +181,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     state
         .recovery
         .filter(&mut frame, &mut edges, &neutral_policy);
+    state.publish_recovery();
     if tracking_lost {
         crate::hud::pointer::clear_controller();
     } else {
@@ -292,14 +302,23 @@ pub fn last_report() -> TickReport {
     STATE.lock().report.clone()
 }
 
+/// Each hand's input recovery at the last input tick, in [`Hand::index`] order. Safe to call with
+/// the config locked: it takes only a lock that is never held while taking another.
+pub fn recovery_status() -> [HandRecovery; 2] {
+    *RECOVERY_STATUS.lock()
+}
+
 /// The yank gesture's readout: how many yanks were detected, and the last one.
 pub fn yank_status() -> (u64, Option<Yank>) {
     let state = STATE.lock();
     (state.yank.count, state.yank.last)
 }
 
+static RECOVERY_STATUS: Mutex<[HandRecovery; 2]> = Mutex::new([HandRecovery::Unusable; 2]);
+
 static STATE: Mutex<State> = Mutex::new(State {
     recovery: Recovery::new(),
+    mask_log: MaskLog::new(),
     bindings: Bindings::new(),
     tracker: HoldTracker::new(),
     yank: YankDetector::new(),
@@ -317,6 +336,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 struct State {
     recovery: Recovery,
+    mask_log: MaskLog,
     bindings: Bindings,
     tracker: HoldTracker,
     yank: YankDetector,
@@ -331,6 +351,33 @@ impl State {
         self.bindings = Bindings::new();
         self.tracker.clear();
         self.yank = YankDetector::new();
+    }
+
+    /// Publish each hand's recovery for the debug UI, and log a hand that keeps waiting for its
+    /// controls to rest and its rearm, rate-limited by [`MaskLog`]: a masked hand otherwise looks
+    /// like a broken binding.
+    fn publish_recovery(&mut self) {
+        let status = self.recovery.status();
+        *RECOVERY_STATUS.lock() = status;
+        let events = self.mask_log.step(status, Instant::now());
+        for (hand, event) in Hand::BOTH.into_iter().zip(events) {
+            match event {
+                Some(MaskEvent::StillMasked { waited, blocker }) => tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    ?waited,
+                    ?blocker,
+                    "hand input masked until its controls rest"
+                ),
+                Some(MaskEvent::Rearmed { waited }) => tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    ?waited,
+                    "hand input rearmed"
+                ),
+                None => {}
+            }
+        }
     }
 }
 

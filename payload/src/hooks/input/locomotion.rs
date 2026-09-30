@@ -19,7 +19,7 @@ use jc3gi::{
     blackboard::{ObjectBlackboard, PersistenceType},
     camera::game_camera_manager::GameCameraManager,
     character::character::{AimState, Character},
-    equipment::weapon::{WeaponBase, WeaponState},
+    equipment::weapon::WeaponBase,
     input::{
         input_action_map::{Action, LocalPlayerActionMap},
         locomotion::{CharacterMovementSettings, get_NCharacter_ActMoveNoAim},
@@ -32,7 +32,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    controllers::scheme,
+    controllers::{aim::gun::held_weapon, scheme},
     headpose::{
         self,
         sim::{HeadMode, LatchState},
@@ -239,7 +239,7 @@ fn with_forced_aim_state(ctx: *mut StateContext, call: impl FnOnce()) {
     call();
 }
 
-/// Temporarily aim the local player's wielded weapon at a point straight ahead of the head while
+/// Temporarily aim the local player's wielded weapon at a point level ahead of the head while
 /// the FPS locomotion task evaluates its strafe direction. The task reads the weapon's stored aim
 /// point, while the controller gun hook normally writes a hand point there; keeping the original
 /// value outside this scope prevents the locomotion shim from changing firing or aim state.
@@ -254,43 +254,79 @@ fn with_head_forward_weapon_aim(ctx: *mut StateContext, call: impl FnOnce()) {
         call();
         return;
     };
-    let Some(weapon) = (unsafe { mutable_held_weapon(character) }) else {
+    let Some(weapon) = (unsafe { held_weapon_ptr(character) }) else {
         call();
         return;
     };
     let head = headpose::query();
-    let distance = Config::lock_query(|c| c.controllers.aim_state.neutral_aim_distance_m.max(0.0));
-    let point = head_forward_point(head.position, head.orientation, distance);
-    let original = weapon.m_AimTargetPosition;
-    weapon.m_AimTargetPosition = Vector3 {
-        data: point.to_array(),
+    let body_forward = -glam::Mat4::from(character.m_WorldMatrixT1)
+        .z_axis
+        .truncate();
+    let distance = Config::lock_query(|c| c.controllers.aim_state.neutral_aim_distance_m);
+    let Some(point) =
+        strafe_reference_point(head.position, head.orientation, body_forward, distance)
+    else {
+        call();
+        return;
     };
+    // SAFETY: `held_weapon_ptr` returned the live selected weapon, and no reference to it is held.
+    let original = unsafe { (*weapon).m_AimTargetPosition };
+    unsafe {
+        (*weapon).m_AimTargetPosition = Vector3 {
+            data: point.to_array(),
+        };
+    }
     let _restore = WeaponAimPointGuard { weapon, original };
     call();
 }
 
-/// The selected weapon in the local player's hands, with a mutable borrow for the scoped target
-/// override. The owner and wielding checks mirror the controller gun aim path.
-unsafe fn mutable_held_weapon(character: &mut Character) -> Option<&mut WeaponBase> {
-    let slot = unsafe {
-        (&raw const character.m_SelectedWeaponSlot)
-            .cast::<i32>()
-            .read()
-    };
-    let slot = usize::try_from(slot).ok()?;
-    let weapon = unsafe { character.m_Inventory.m_Weapons.get_mut(slot)?.px.as_mut() }?;
-    let owned = std::ptr::eq(weapon.m_User[0].cast::<Character>(), character);
-    let wielded = matches!(
-        weapon.m_State,
-        WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    );
-    (owned && wielded).then_some(weapon)
+/// The selected weapon in the local player's hands, as the inventory's own pointer for the scoped
+/// target override. The ownership and wielding rules are [`held_weapon`]'s.
+///
+/// # Safety
+///
+/// `character` must be the live local player character.
+unsafe fn held_weapon_ptr(character: &Character) -> Option<*mut WeaponBase> {
+    let held = unsafe { held_weapon(character) }?;
+    character
+        .m_Inventory
+        .m_Weapons
+        .iter()
+        .map(|weapon| weapon.px)
+        .find(|&px| std::ptr::eq(px, held))
 }
 
-/// The point used by the locomotion shim: `distance` metres along the head's world-space forward.
-fn head_forward_point(position: glam::Vec3, orientation: glam::Quat, distance: f32) -> glam::Vec3 {
-    position + orientation * glam::Vec3::NEG_Z * distance
+/// The point the locomotion shim aims the weapon at: `distance` metres (at least
+/// [`MIN_STRAFE_REFERENCE_M`]) ahead of the head along the head's forward flattened onto the
+/// horizontal plane, or the body's when the head looks straight up or down. The engine takes the
+/// strafe direction from this point minus the character's position, so a point that keeps the
+/// head's pitch would shrink toward the head as the player looks down, leaving only the head's
+/// small offset from the body to pick the strafe act. `None` when neither forward is horizontal
+/// enough to use.
+fn strafe_reference_point(
+    head_position: glam::Vec3,
+    head_orientation: glam::Quat,
+    body_forward: glam::Vec3,
+    distance: f32,
+) -> Option<glam::Vec3> {
+    let flat = |v: glam::Vec3| {
+        glam::Vec3::new(v.x, 0.0, v.z)
+            .try_normalize()
+            .filter(|f| f.is_finite())
+    };
+    let head_forward = flat(head_orientation * glam::Vec3::NEG_Z)
+        .filter(|_| (head_orientation * glam::Vec3::NEG_Z).y.abs() < MAX_HEAD_FORWARD_Y);
+    let forward = head_forward.or_else(|| flat(body_forward))?;
+    let point = head_position + forward * distance.max(MIN_STRAFE_REFERENCE_M);
+    point.is_finite().then_some(point)
 }
+
+/// The nearest the strafe reference may sit ahead of the head, metres: far enough that the head's
+/// offset from the body cannot turn the direction the engine derives from it.
+const MIN_STRAFE_REFERENCE_M: f32 = 5.0;
+/// The vertical component of the head's unit forward beyond which its horizontal heading is too
+/// short to trust (about 85° of pitch), and the body's forward is used instead.
+const MAX_HEAD_FORWARD_Y: f32 = 0.996;
 
 struct AimFlagsGuard {
     character: *mut Character,
@@ -323,21 +359,54 @@ impl Drop for WeaponAimPointGuard {
 mod tests {
     use super::*;
 
+    const BODY_FORWARD: glam::Vec3 = glam::Vec3::X;
+
     #[test]
-    fn head_forward_point_uses_the_head_pose_and_distance() {
+    fn the_strafe_reference_follows_the_head_heading() {
         let position = glam::Vec3::new(1.0, 1.7, -2.0);
         let orientation = glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let point = head_forward_point(position, orientation, 25.0);
+        let point = strafe_reference_point(position, orientation, BODY_FORWARD, 25.0).unwrap();
 
         assert!((point - glam::Vec3::new(-24.0, 1.7, -2.0)).length() < 1e-5);
     }
 
     #[test]
-    fn head_forward_point_has_no_offset_at_zero_distance() {
-        let position = glam::Vec3::new(-2.0, 0.4, 3.0);
-        let orientation = glam::Quat::from_rotation_x(-0.7);
+    fn the_strafe_reference_is_level_when_looking_down() {
+        let position = glam::Vec3::new(-2.0, 1.6, 3.0);
+        let heading = glam::Quat::from_rotation_y(0.4);
+        let level = strafe_reference_point(position, heading, BODY_FORWARD, 25.0).unwrap();
+        for pitch in [-0.3, -1.0, -1.4, 0.8] {
+            let orientation = heading * glam::Quat::from_rotation_x(pitch);
+            let point = strafe_reference_point(position, orientation, BODY_FORWARD, 25.0).unwrap();
+            assert!(point.distance(level) < 1e-4, "pitch {pitch}");
+            assert_eq!(point.y, position.y);
+        }
+    }
 
-        assert_eq!(head_forward_point(position, orientation, 0.0), position);
+    #[test]
+    fn a_vertical_head_falls_back_to_the_body_forward() {
+        let position = glam::Vec3::new(0.0, 1.6, 0.0);
+        let down = glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+        let point = strafe_reference_point(position, down, BODY_FORWARD, 10.0).unwrap();
+        assert!(point.distance(glam::Vec3::new(10.0, 1.6, 0.0)) < 1e-4);
+        let tilted_body = glam::Vec3::new(0.0, -0.5, -0.5);
+        let point = strafe_reference_point(position, down, tilted_body, 10.0).unwrap();
+        assert!(point.distance(glam::Vec3::new(0.0, 1.6, -10.0)) < 1e-4);
+        assert_eq!(
+            strafe_reference_point(position, down, glam::Vec3::Y, 10.0),
+            None
+        );
+    }
+
+    #[test]
+    fn the_strafe_reference_is_never_at_the_head() {
+        let position = glam::Vec3::new(-2.0, 0.4, 3.0);
+        for distance in [0.0, -3.0, f32::NAN] {
+            let point =
+                strafe_reference_point(position, glam::Quat::IDENTITY, BODY_FORWARD, distance)
+                    .unwrap();
+            assert!((point.distance(position) - MIN_STRAFE_REFERENCE_M).abs() < 1e-5);
+        }
     }
 }
 
