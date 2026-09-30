@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings are the default; the
 /// physical controls and the arm steering are opt-in.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct VehiclesConfig {
     /// Aim the driver's vehicle weapons at the dominant hand's aim point instead of the gaze. Off,
     /// they aim along the gaze as the game does.
@@ -45,6 +46,7 @@ impl Default for VehiclesConfig {
 /// Mounted guns and gunner seats (see [`crate::controllers::vehicles::mounted`]). Acts only under
 /// the controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MountedConfig {
     /// Aim the mounted gun from the hands' positions on its handles. Off, it aims along the gaze.
     pub aim_by_hands: bool,
@@ -66,10 +68,17 @@ impl MountedConfig {
     }
 }
 
+impl Default for MountedConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The physical controls of the driver's seat (see [`crate::controllers::vehicles::physical`]).
 /// Each is off by default: stick driving is the plan's default, and a control in reach swallows the
 /// grip presses that would fire the vehicle's weapons.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PhysicalControlsConfig {
     /// The car's and the boat's wheel.
     pub wheel: WheelSpec,
@@ -146,6 +155,12 @@ impl PhysicalControlsConfig {
             || self.collective.enabled
             || self.flight_stick.enabled
             || self.throttle.enabled
+    }
+}
+
+impl Default for PhysicalControlsConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -226,6 +241,7 @@ impl LeverAxis {
 /// hands' heights banks, and both hands raised or lowered pitches. Off by default: stick steering
 /// is the plan's default.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ArmSteeringConfig {
     pub wingsuit: bool,
     pub parachute: bool,
@@ -253,5 +269,11 @@ impl ArmSteeringConfig {
             full_pitch_m: 0.30,
             invert_pitch: false,
         }
+    }
+}
+
+impl Default for ArmSteeringConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }

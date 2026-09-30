@@ -4,10 +4,10 @@
 //! the trace arm-flag) does NOT live here -- see [`crate::stereo::StereoState`] and the per-subsystem
 //! runtime statics.
 //!
-//! The trace manifest and screenshot sidecar serialize the capture's configuration. The controller
-//! testing controls explicitly save and load controller tuning and shared VR turn settings through
-//! [`crate::controllers::testing`]. The remaining configuration has no load path; startup defaults
-//! come from the `new()` constructors.
+//! The trace manifest and screenshot sidecar serialize the capture's configuration. The Controllers
+//! tab explicitly saves and loads controller tuning and shared VR turn settings through
+//! [`crate::controllers::persistence`]. The remaining configuration has no load path; startup
+//! defaults come from the `new()` constructors.
 //!
 //! The sub-structs are defined in their owning modules:
 //! [`StereoConfig`](crate::stereo::config::StereoConfig) and

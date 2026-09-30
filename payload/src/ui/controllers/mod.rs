@@ -12,11 +12,11 @@ mod frame;
 mod hands;
 mod mode;
 mod overlay;
+mod persistence;
 mod roomscale;
 mod scope;
 mod settings;
 mod sights;
-mod testing;
 mod vehicles;
 mod weapons;
 
@@ -31,14 +31,14 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        mode as controller_mode, overlay as controller_overlay, roomscale as controller_roomscale,
-        scheme,
+        mode as controller_mode, overlay as controller_overlay,
+        persistence as controller_persistence, roomscale as controller_roomscale, scheme,
     },
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
 pub fn egui_debug_controllers(ui: &mut Ui) {
-    crate::controllers::testing::start_pending();
+    controller_persistence::start_pending();
     // Everything that locks the config is read before the config is locked for editing below.
     let current = scheme::current();
     let selected = scheme::selected();
@@ -153,7 +153,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         ui.heading("Settings");
         let mut cfg = config::CONFIG.lock();
         settings::settings(ui, &mut cfg);
-        testing::settings(ui, &mut cfg);
+        persistence::settings(ui, &mut cfg);
     });
 }
 

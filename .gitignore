@@ -43,6 +43,5 @@ __pycache__/
 # from beside the payload DLL; personal, so never committed.
 body.local.json
 
-# Local controller tuning and diagnostic captures, written beside the payload DLL.
+# Local controller tuning, saved to the workspace root (see payload/src/controllers/persistence).
 controllers.local.json
-controller_diagnostics_*.json

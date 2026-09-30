@@ -139,7 +139,7 @@ fn shutdown_startup() {
         module::pin();
     }
 
-    if !controllers::testing::shutdown() {
+    if !controllers::persistence::shutdown() {
         module::pin();
     }
     if !controllers::diagnostics::shutdown() {

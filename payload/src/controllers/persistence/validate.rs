@@ -1,180 +1,18 @@
-//! Persistent controller tuning, validation, and named switch presets.
-//!
-//! The controller file is intentionally separate from the runtime configuration type. Loading is
-//! explicit, and the complete file is parsed and validated before either the controller settings or
-//! the shared VR turn settings are changed. Player body dimensions remain owned by `body.local.json`.
-
-use std::{
-    fs::{self, OpenOptions},
-    io::Write as _,
-    path::{Path, PathBuf},
-};
+//! Range and consistency checks for a controller settings file, run before any of it is applied.
 
 use glam::{Vec2, Vec3};
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::Config, controllers::config::ControllersConfig, headpose::config::VrTurnConfig,
+use crate::controllers::{
+    config::SightTable,
+    persistence::{ControllerFile, Error, FILE_VERSION},
+    vehicles::config::WheelSpec,
+    weapons::config::{PulseSpec, VolumeSpec},
 };
 
-/// The file written beside the payload DLL.
-pub const FILE_NAME: &str = "controllers.local.json";
-/// The current on-disk format version.
-pub const FILE_VERSION: u32 = 1;
-
-mod presets;
-mod worker;
-pub use presets::{Preset, apply_preset, preset_modified};
-pub use worker::shutdown;
-pub(crate) use worker::{Request, Status, queue, start_pending, status};
-
-/// The versioned controller settings file.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ControllerFile {
-    /// The file format version, not the payload version.
-    pub version: u32,
-    /// The controller settings, including tuning and sight calibration.
-    pub controllers: ControllersConfig,
-    /// Settings shared with the headpose subsystem.
-    pub headpose: HeadposeFile,
-}
-
-/// The part of the headpose configuration owned by this file.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HeadposeFile {
-    /// The VR body-turn settings also used by the controller right stick.
-    pub vr_turn: VrTurnConfig,
-}
-
-/// Why a controller settings operation failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error {
-    /// The payload path is not available yet.
-    PathUnavailable,
-    /// A file operation failed.
-    Io {
-        operation: &'static str,
-        detail: String,
-    },
-    /// JSON could not be parsed or serialized.
-    Json(String),
-    /// The file has a version this payload does not understand.
-    UnknownVersion(u32),
-    /// A value is syntactically valid but unsafe or inconsistent.
-    Invalid(String),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::PathUnavailable => write!(f, "controller settings: the payload path is unknown"),
-            Self::Io { operation, detail } => {
-                write!(f, "controller settings: could not {operation}: {detail}")
-            }
-            Self::Json(detail) => write!(f, "controller settings: invalid JSON: {detail}"),
-            Self::UnknownVersion(version) => write!(
-                f,
-                "controller settings: unsupported file version {version} (expected {FILE_VERSION})"
-            ),
-            Self::Invalid(detail) => write!(f, "controller settings: invalid value: {detail}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-/// The path used by the explicit save and load operations.
-pub fn file_path() -> Option<PathBuf> {
-    Some(crate::module::get_path()?.parent()?.join(FILE_NAME))
-}
-
-/// Build the persisted representation from the runtime configuration.
-pub fn from_config(config: &Config) -> ControllerFile {
-    ControllerFile {
-        version: FILE_VERSION,
-        controllers: config.controllers,
-        headpose: HeadposeFile {
-            vr_turn: config.headpose.vr_turn,
-        },
-    }
-}
-
-/// Parse, validate, and return a controller settings file without changing runtime state.
-pub fn parse(text: &str) -> Result<ControllerFile, Error> {
-    let value: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| Error::Json(e.to_string()))?;
-    let version = value
-        .get("version")
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| {
-            Error::Json("the top-level `version` is missing or is not an integer".into())
-        })?;
-    let version = u32::try_from(version)
-        .map_err(|_| Error::Json("the top-level `version` is too large".into()))?;
-    if version != FILE_VERSION {
-        return Err(Error::UnknownVersion(version));
-    }
-    let file: ControllerFile =
-        serde_json::from_value(value.clone()).map_err(|e| Error::Json(e.to_string()))?;
-    let expected = serde_json::to_value(file).map_err(|e| Error::Json(e.to_string()))?;
-    check_shape(&value, &expected, "settings")?;
-    validate(&file)?;
-    Ok(file)
-}
-
-/// Apply a previously parsed file after validating it again at the mutation boundary.
-pub fn apply(file: &ControllerFile, config: &mut Config) -> Result<(), Error> {
-    validate(file)?;
-    config.controllers = file.controllers;
-    config.headpose.vr_turn = file.headpose.vr_turn;
-    Ok(())
-}
-
-/// Save an immutable snapshot without accessing the live configuration.
-pub fn save_snapshot_to_path(path: &Path, file: &ControllerFile) -> Result<PathBuf, Error> {
-    validate(file)?;
-    let json = serde_json::to_string_pretty(file).map_err(|e| Error::Json(e.to_string()))?;
-    atomic_replace(path, json.as_bytes())?;
-    Ok(path.to_owned())
-}
-
-fn check_shape(
-    actual: &serde_json::Value,
-    expected: &serde_json::Value,
-    path: &str,
-) -> Result<(), Error> {
-    match (actual, expected) {
-        (serde_json::Value::Object(a), serde_json::Value::Object(e)) => {
-            for key in a.keys() {
-                if !e.contains_key(key) {
-                    return Err(Error::Json(format!("unknown field {path}.{key}")));
-                }
-            }
-            for (key, value) in e {
-                let actual = a
-                    .get(key)
-                    .ok_or_else(|| Error::Json(format!("missing field {path}.{key}")))?;
-                check_shape(actual, value, &format!("{path}.{key}"))?;
-            }
-        }
-        (serde_json::Value::Array(a), serde_json::Value::Array(e)) => {
-            if a.len() != e.len() {
-                return Err(Error::Json(format!("wrong array length at {path}")));
-            }
-            for (index, (a, e)) in a.iter().zip(e).enumerate() {
-                check_shape(a, e, &format!("{path}[{index}]"))?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn validate(file: &ControllerFile) -> Result<(), Error> {
+/// Check every value the file carries, returning the first that is out of range or inconsistent.
+pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
     if file.version != FILE_VERSION {
-        return Err(Error::UnknownVersion(file.version));
+        return Err(Error::UnknownVersion(u64::from(file.version)));
     }
     let c = &file.controllers;
     let input = &c.input;
@@ -297,7 +135,7 @@ fn validate(file: &ControllerFile) -> Result<(), Error> {
         100.0,
     )?;
     vec3("aim.grapple_origin_m", c.aim.grapple_origin_m, 5.0)?;
-    let mut hashes = [0; crate::controllers::config::SightTable::CAPACITY];
+    let mut hashes = [0; SightTable::CAPACITY];
     for (hash_count, sight) in c.aim.sights.entries.iter().flatten().enumerate() {
         vec3("aim.sights.offset_m", sight.offset_m, 5.0)?;
         vec2("aim.sights.angles_deg", sight.angles_deg, 360.0)?;
@@ -700,20 +538,17 @@ fn vec3(name: &str, value: Vec3, max: f32) -> Result<(), Error> {
     range(&format!("{name}.z"), value.z, -max, max)
 }
 
-fn volume(
-    name: &str,
-    value: &crate::controllers::weapons::config::VolumeSpec,
-) -> Result<(), Error> {
+fn volume(name: &str, value: &VolumeSpec) -> Result<(), Error> {
     vec3(&format!("{name}.offset_m"), value.offset_m, 10.0)?;
     positive(&format!("{name}.radius_m"), value.radius_m, 10.0)
 }
 
-fn pulse(name: &str, value: &crate::controllers::weapons::config::PulseSpec) -> Result<(), Error> {
+fn pulse(name: &str, value: &PulseSpec) -> Result<(), Error> {
     range(&format!("{name}.amplitude"), value.amplitude, 0.0, 1.0)?;
     nonnegative(&format!("{name}.duration_s"), value.duration_s, 60.0)
 }
 
-fn physical_wheel(value: &crate::controllers::vehicles::config::WheelSpec) -> Result<(), Error> {
+fn physical_wheel(value: &WheelSpec) -> Result<(), Error> {
     vec3("vehicles.physical.wheel.centre_m", value.centre_m, 10.0)?;
     positive("vehicles.physical.wheel.radius_m", value.radius_m, 10.0)?;
     range(
@@ -744,212 +579,4 @@ fn lever(name: &str, position: Vec3, travel: f32, detent: f32) -> Result<(), Err
     vec3(name, position, 10.0)?;
     positive(&format!("{name}.travel_m"), travel, 10.0)?;
     range(&format!("{name}.detent"), detent, 0.0, 1.0)
-}
-
-fn io_error(operation: &'static str, error: std::io::Error) -> Error {
-    Error::Io {
-        operation,
-        detail: error.to_string(),
-    }
-}
-
-static TEMP_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-fn atomic_replace(path: &Path, contents: &[u8]) -> Result<(), Error> {
-    let parent = path.parent().ok_or(Error::PathUnavailable)?;
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| Error::Io {
-            operation: "name the settings file",
-            detail: "the path has no valid file name".into(),
-        })?;
-    let (temporary, mut file) = loop {
-        let sequence = TEMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let temporary = parent.join(format!(
-            ".{file_name}.{}.{sequence}.tmp",
-            std::process::id()
-        ));
-        match OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)
-        {
-            Ok(file) => break (temporary, file),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(io_error("create the temporary settings file", error)),
-        }
-    };
-    let result = (|| {
-        file.write_all(contents)
-            .map_err(|e| io_error("write the temporary settings file", e))?;
-        file.sync_all()
-            .map_err(|e| io_error("flush the temporary settings file", e))?;
-        drop(file);
-        replace_path(&temporary, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-#[cfg(windows)]
-fn replace_path(temporary: &Path, destination: &Path) -> Result<(), Error> {
-    use std::{iter, os::windows::ffi::OsStrExt};
-
-    use windows::{
-        Win32::Storage::FileSystem::{
-            MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-        },
-        core::PCWSTR,
-    };
-
-    let source: Vec<u16> = temporary
-        .as_os_str()
-        .encode_wide()
-        .chain(iter::once(0))
-        .collect();
-    let target: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(iter::once(0))
-        .collect();
-    unsafe {
-        MoveFileExW(
-            PCWSTR(source.as_ptr()),
-            PCWSTR(target.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    }
-    .map_err(|e| {
-        io_error(
-            "replace the settings file",
-            std::io::Error::other(e.to_string()),
-        )
-    })
-}
-
-#[cfg(not(windows))]
-fn replace_path(temporary: &Path, destination: &Path) -> Result<(), Error> {
-    fs::rename(temporary, destination).map_err(|e| io_error("replace the settings file", e))
-}
-
-#[cfg(test)]
-mod review_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::controllers::{config::SchemeSetting, frame::Hand};
-
-    fn config() -> Config {
-        Config::new()
-    }
-
-    #[test]
-    fn the_versioned_format_round_trips_a_real_controller_file() {
-        let mut original = config();
-        original.controllers.dominant_hand = Hand::Left;
-        original.controllers.hands.grip.position_m = Vec3::new(0.1, -0.2, 0.3);
-        original
-            .controllers
-            .aim
-            .sights
-            .set(crate::controllers::config::SightOverride {
-                weapon_hash: 42,
-                offset_m: Vec3::new(0.0, 0.03, 0.0),
-                angles_deg: Vec2::new(1.0, -2.0),
-            });
-        original.headpose.vr_turn.smooth_scale = 1.75;
-        let file = from_config(&original);
-        let text = serde_json::to_string(&file).unwrap();
-        let parsed = parse(&text).unwrap();
-        let mut loaded = config();
-        apply(&parsed, &mut loaded).unwrap();
-        assert_eq!(loaded.controllers.dominant_hand, Hand::Left);
-        assert_eq!(
-            loaded.controllers.hands.grip.position_m,
-            Vec3::new(0.1, -0.2, 0.3)
-        );
-        assert_eq!(
-            loaded.controllers.aim.sights.get(42).unwrap().angles_deg,
-            Vec2::new(1.0, -2.0)
-        );
-        assert_eq!(loaded.headpose.vr_turn.smooth_scale, 1.75);
-    }
-
-    #[test]
-    fn an_invalid_file_does_not_partially_apply() {
-        let mut loaded = config();
-        let before = loaded.controllers.hands.grip.position_m;
-        let mut file = from_config(&loaded);
-        file.controllers.hands.grip.position_m.x = 0.25;
-        file.controllers.aim.grapple_origin_m.x = f32::NAN;
-        assert!(apply(&file, &mut loaded).is_err());
-        assert_eq!(loaded.controllers.hands.grip.position_m, before);
-    }
-
-    #[test]
-    fn presets_preserve_tuning_and_calibration() {
-        let mut config = config();
-        config.controllers.hands.grip.position_m = Vec3::new(0.12, -0.08, 0.04);
-        config
-            .controllers
-            .aim
-            .sights
-            .set(crate::controllers::config::SightOverride {
-                weapon_hash: 99,
-                offset_m: Vec3::new(0.0, 0.02, -0.01),
-                angles_deg: Vec2::new(2.0, 3.0),
-            });
-        config.headpose.vr_turn.snap_angle_deg = 47.0;
-        let grip = config.controllers.hands.grip;
-        let sight = config.controllers.aim.sights.get(99).copied();
-        let turn = config.headpose.vr_turn.snap_angle_deg;
-        apply_preset(&mut config.controllers, Preset::VehiclesAndAdvanced);
-        assert_eq!(config.controllers.hands.grip, grip);
-        assert_eq!(config.controllers.aim.sights.get(99).copied(), sight);
-        assert_eq!(config.headpose.vr_turn.snap_angle_deg, turn);
-    }
-
-    #[test]
-    fn preset_modified_reports_switch_differences_without_tuning_differences() {
-        let mut config = config();
-        apply_preset(&mut config.controllers, Preset::VehiclesAndAdvanced);
-        assert!(!preset_modified(
-            &config.controllers,
-            Preset::VehiclesAndAdvanced
-        ));
-        config.controllers.hands.grip.position_m.x += 0.1;
-        assert!(!preset_modified(
-            &config.controllers,
-            Preset::VehiclesAndAdvanced
-        ));
-        config.controllers.vehicles.physical.wheel.enabled = false;
-        assert!(preset_modified(
-            &config.controllers,
-            Preset::VehiclesAndAdvanced
-        ));
-    }
-
-    #[test]
-    fn gamepad_baseline_turns_off_controller_and_roomscale_features() {
-        let mut config = config();
-        apply_preset(&mut config.controllers, Preset::GamepadBaseline);
-        assert!(!config.controllers.enabled);
-        assert_eq!(config.controllers.scheme, SchemeSetting::Gamepad);
-        assert!(!config.controllers.roomscale.chase.enabled);
-        assert!(!config.controllers.roomscale.crouch.visual);
-        assert!(!config.controllers.roomscale.crouch.capsule);
-        assert!(!config.controllers.roomscale.head_fade.enabled);
-        assert!(!config.controllers.body.remap_head);
-        assert!(!config.controllers.body.remap_hands);
-    }
-
-    #[test]
-    fn unknown_versions_are_rejected_before_deserialization() {
-        let text = r#"{"version":99,"controllers":{},"headpose":{}}"#;
-        assert!(matches!(parse(text), Err(Error::UnknownVersion(99))));
-    }
 }

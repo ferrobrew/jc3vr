@@ -28,6 +28,7 @@ use crate::controllers::{
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ControllersConfig {
     /// Master switch. Off, the mod reads no controller input and publishes no controller frame, so
     /// every controller subsystem is inert and the gamepad scheme is in effect. The OpenXR actions
@@ -119,6 +120,7 @@ pub enum SchemeSetting {
 
 /// Raw input interpretation.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct InputConfig {
     /// The trigger values that press and release
     /// [`Button::TriggerPress`](crate::controllers::frame::Button::TriggerPress).
@@ -154,8 +156,15 @@ impl InputConfig {
     }
 }
 
+impl Default for InputConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// On-foot stick locomotion. Turning is configured in `headpose.vr_turn` (see the module docs).
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LocomotionConfig {
     /// The frame the off-hand stick's direction is relative to.
     pub direction: LocomotionDirection,
@@ -166,6 +175,12 @@ impl LocomotionConfig {
         Self {
             direction: LocomotionDirection::Head,
         }
+    }
+}
+
+impl Default for LocomotionConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -183,6 +198,7 @@ pub enum LocomotionDirection {
 /// selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game
 /// sees.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ModeConfig {
     /// How many consecutive ticks a new gameplay mode must be detected before it takes effect. One
     /// switches at once; the default rides out a one-tick flicker during an animation blend.
@@ -195,9 +211,16 @@ impl ModeConfig {
     }
 }
 
+impl Default for ModeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The controller-to-game bindings (see [`crate::controllers::bindings`]). They inject only under
 /// the controller scheme while a controller is active, so they default on.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BindingsConfig {
     /// Inject the controllers' input into the game's actions.
     pub enabled: bool,
@@ -238,10 +261,17 @@ impl BindingsConfig {
     }
 }
 
+impl Default for BindingsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The aim-state pin and the mental-state cuts (see [`crate::controllers::aim_state`]). Each part
 /// has its own toggle so that it can be tested alone, and all of them act only under the
 /// controller scheme unless [`without_controllers`](Self::without_controllers) is set.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AimStateConfig {
     /// Pin the local player's weapon aim clear, so that the body stays in the no-aim animation
     /// family while firing still works.
@@ -284,9 +314,16 @@ impl AimStateConfig {
     }
 }
 
+impl Default for AimStateConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Controller-owned hands (see [`crate::controllers::hands`]). Every part acts only under the
 /// controller scheme and only for a hand whose controller is tracked, so the parts default on.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HandsConfig {
     /// Drive the arms with HumanIK from the shoulders to the controller poses, with the wrists
     /// taking the controller rotations.
@@ -337,6 +374,12 @@ impl HandsConfig {
     }
 }
 
+impl Default for HandsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The offset from a controller's OpenXR grip pose to the character's wrist, given for the right
 /// hand in the grip frame and mirrored for the left (see
 /// [`grip_to_wrist`](crate::controllers::hands::pose::grip_to_wrist)).
@@ -365,6 +408,7 @@ impl GripOffset {
 
 /// Per-hand aiming (see [`crate::controllers::aim`]). Acts only under the controller scheme.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AimConfig {
     /// Aim the held guns along the dominant hand's sight line (and, dual-wielding, each pistol
     /// along its own hand's).
@@ -415,10 +459,17 @@ impl AimConfig {
     }
 }
 
+impl Default for AimConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The in-headset sight tuning tool (see [`crate::controllers::aim::sights::tuning`]): a marker
 /// placed ahead of the head, and a capture that stores the held weapon's sight offset that makes
 /// its sight line pass through the marker.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SightTuningConfig {
     /// Offer the tuning tool: the line-up marker, the capture, and the capture chord (both grips
     /// held and the dominant A pressed, on foot, while the marker is placed).
@@ -433,6 +484,12 @@ impl SightTuningConfig {
             enabled: false,
             marker_distance_m: 10.0,
         }
+    }
+}
+
+impl Default for SightTuningConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -465,6 +522,7 @@ impl SightOverride {
 
 /// The per-weapon sight corrections: a small fixed table, so that the configuration stays `Copy`.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SightTable {
     pub entries: [Option<SightOverride>; SightTable::CAPACITY],
 }
@@ -518,9 +576,16 @@ impl SightTable {
     }
 }
 
+impl Default for SightTable {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
 /// The world-space overlay layer: its readouts and the renderer's tuning. Acts only under the
 /// controller scheme.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OverlayConfig {
     /// Master switch for the layer. Off, nothing is drawn, whoever submits.
     pub enabled: bool,
@@ -567,6 +632,12 @@ impl OverlayConfig {
     }
 }
 
+impl Default for OverlayConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// What the overlay draws for a gun's aim.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum GunReadout {
@@ -581,6 +652,7 @@ pub enum GunReadout {
 
 /// Physical weapon handling. Acts only under the controller scheme.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WeaponsConfig {
     /// Draw and holster weapons with a grip press at the body holsters.
     pub holsters: HolstersConfig,
@@ -641,9 +713,16 @@ impl WeaponsConfig {
     }
 }
 
+impl Default for WeaponsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Body scale remapping between the player's body and the character's (see
 /// [`crate::controllers::body`]).
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BodyRemapConfig {
     /// Place the eyes at the character's eye height and scale vertical head travel by the ratio of
     /// the heights. Off by default: it moves the view for every player, controllers or not.
@@ -662,10 +741,17 @@ impl BodyRemapConfig {
     }
 }
 
+impl Default for BodyRemapConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
 /// headset alone, controllers or not, so the behaviour-changing parts default off. The head height
 /// itself is remapped only under [`BodyRemapConfig::remap_head`].
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RoomscaleConfig {
     /// The player's posture.
     pub posture: Posture,
@@ -703,6 +789,12 @@ impl RoomscaleConfig {
     }
 }
 
+impl Default for RoomscaleConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The player's posture.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Posture {
@@ -721,6 +813,7 @@ pub enum Posture {
 
 /// The roomscale chase loop: in the roomscale posture, the body walks toward the physical head.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ChaseConfig {
     /// Off by default: it moves the character from head motion, which the headset alone produces.
     pub enabled: bool,
@@ -750,8 +843,15 @@ impl ChaseConfig {
     }
 }
 
+impl Default for ChaseConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Crouching.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CrouchConfig {
     /// Fold the body with the lowered head through the body IK: the feet stay planted and the hips
     /// drop. Off by default: it changes the body for every player who ducks.
@@ -787,8 +887,15 @@ impl CrouchConfig {
     }
 }
 
+impl Default for CrouchConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The head-through-geometry fade.
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HeadFadeConfig {
     /// Off by default: it darkens the view for every player whose head enters a wall.
     pub enabled: bool,
@@ -808,8 +915,15 @@ impl HeadFadeConfig {
     }
 }
 
+impl Default for HeadFadeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The comfort fade's timing, shared by every source (the head in geometry, the seat transitions).
 #[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FadeConfig {
     /// How long a fade from clear to fully dark takes, seconds.
     pub out_s: f32,
@@ -823,6 +937,12 @@ impl FadeConfig {
             out_s: 0.15,
             in_s: 0.3,
         }
+    }
+}
+
+impl Default for FadeConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

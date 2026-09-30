@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Finger curls on the rendered hands. They act only on a hand the controllers drive, so they
 /// default on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FingersConfig {
     /// Curl the fingers from hand tracking when available, and otherwise from the inputs the
     /// fingers rest on (the trigger, the grip, and the touch sensors).

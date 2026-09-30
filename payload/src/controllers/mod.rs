@@ -54,9 +54,10 @@ pub mod map;
 pub mod mode;
 pub mod motion;
 pub mod overlay;
+pub mod persistence;
+pub mod presets;
 pub mod roomscale;
 pub mod scheme;
-pub mod testing;
 pub mod vehicles;
 pub mod weapons;
 

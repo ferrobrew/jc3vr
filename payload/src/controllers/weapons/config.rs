@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// The body holsters and the grenade pouch (see [`crate::controllers::weapons`]). They act only
 /// under the controller scheme, so they default on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HolstersConfig {
     /// Draw a weapon with a grip press at its holster, and holster the held weapon with a grip
     /// press at its own holster.
@@ -78,6 +79,7 @@ pub struct VolumeSpec {
 /// The two-handed weapon's foregrip (see [`crate::controllers::weapons::foregrip`]). Acts only under
 /// the controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ForegripConfig {
     /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's direction.
     pub enabled: bool,
@@ -119,6 +121,7 @@ impl Default for ForegripConfig {
 /// away from the controller pose, and a damped spring returns it. Acts only under the controller
 /// scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RecoilConfig {
     pub enabled: bool,
     /// Scales the kick taken from the game's per-shot recoil.
@@ -164,6 +167,7 @@ impl Default for RecoilConfig {
 
 /// Controller vibration (see [`crate::controllers::weapons::haptics`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HapticsConfig {
     /// Off, every queued pulse is dropped.
     pub enabled: bool,
@@ -227,6 +231,7 @@ pub struct PulseSpec {
 /// Dual-wielded pistols (see [`crate::controllers::weapons::dual_wield`]). Acts only under the
 /// controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DualWieldConfig {
     /// Fire each pistol with its own hand's trigger and aim it with its own hand's ray. While it
     /// acts, the off-hand's trigger fires the off-hand pistol and the off-hand's stick click
@@ -254,6 +259,7 @@ impl Default for DualWieldConfig {
 
 /// The physical grenade throw (see [`crate::controllers::weapons::grenade`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GrenadeConfig {
     /// Where the held grenade sits in the throwing controller's grip frame, metres, given for the
     /// right hand and mirrored for the left. The grip's origin is the centre of the closed fist and
@@ -319,6 +325,7 @@ impl Default for GrenadeConfig {
 
 /// The strike detector for physical melee (see [`crate::controllers::weapons::melee`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MeleeStrikeConfig {
     /// How fast a hand must move to strike, metres per second.
     pub strike_speed_mps: f32,
@@ -363,6 +370,7 @@ impl Default for MeleeStrikeConfig {
 
 /// The magazine reload gesture (see [`crate::controllers::weapons::magazine`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MagazineConfig {
     /// The magazine pouch at the front of the belt on the off-hand's side, placed like the grenade
     /// pouch, a grab volume for the off-hand. Given for the right side and mirrored for the left.
@@ -406,6 +414,7 @@ impl Default for MagazineConfig {
 /// Scoped weapons (see [`crate::controllers::weapons::scope`]): the game's precision aim suppressed,
 /// and the lens drawn on the scope while it is at an eye.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ScopeConfig {
     /// Refuse the game's precision aim under the controller scheme, and leave it when the scheme
     /// takes over: its camera zoom, its sniper overlay, and its hiding of the character (and so of

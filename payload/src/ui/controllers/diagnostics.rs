@@ -12,13 +12,12 @@ use crate::controllers::diagnostics;
 pub(super) fn diagnostics(ui: &mut Ui) {
     let status = diagnostics::status();
     let mut enabled = status.enabled;
-    if ui
-        .checkbox(
-            &mut enabled,
-            "Enable bounded controller diagnostics (up to 120 samples at 30 Hz)",
-        )
-        .changed()
-    {
+    let label = format!(
+        "Enable bounded controller diagnostics (up to {} samples at {} Hz)",
+        diagnostics::MAX_SAMPLES,
+        diagnostics::SAMPLE_RATE_HZ
+    );
+    if ui.checkbox(&mut enabled, label).changed() {
         diagnostics::set_enabled(enabled);
     }
     ui.label(format!(
@@ -35,7 +34,8 @@ pub(super) fn diagnostics(ui: &mut Ui) {
             egui::Button::new("Capture controller diagnostics"),
         )
         .on_hover_text(
-            "Write the recent structured controller history to a new timestamped file beside the payload DLL.",
+            "Write the recent structured controller history to a new timestamped file in this \
+             session's controller_diagnostics folder.",
         )
         .clicked()
         && let Err(error) = diagnostics::capture()

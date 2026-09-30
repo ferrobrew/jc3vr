@@ -21,7 +21,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    controllers::hands,
+    controllers::{diagnostics, hands},
     crash::{Phase, mark},
     debug::{
         camera::capture_render_camera,
@@ -174,7 +174,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Snapshot the render-time hand poses against the head pose pair just published, before
         // the engine's render update runs the weapons' render updates and the draws follow.
         hands::late::begin_frame();
-        crate::controllers::diagnostics::record();
 
         mark(Phase::OriginalUpdateRender);
         #[cfg(feature = "profiler")]
@@ -186,6 +185,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         GameState::PostUpdateRender(update_contexts);
         #[cfg(feature = "profiler")]
         drop(engine_scope);
+        // After the engine's render update, whose camera update stores this frame's `dtf`: the
+        // late hand readout is evaluated at it, and before it the readout would pair this frame's
+        // hand snapshot with the previous frame's `dtf`.
+        diagnostics::record();
 
         let game = game.as_mut().unwrap();
 
