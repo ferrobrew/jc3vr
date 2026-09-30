@@ -27,6 +27,10 @@ pkgs.mkShell {
     # Run the injector (and, by extension, the target game) under wine.
     wineWow64Packages.stable
 
+    # A full JDK runs JPEXS FFDec (`scripts/ffdec.sh`, fetched into `vendor/ffdec/`), headless for
+    # exports and with its GUI for inspecting the game's Scaleform movies.
+    jdk
+
     pkgconf
   ];
 
