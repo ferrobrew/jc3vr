@@ -1,8 +1,9 @@
 //! The VR menu's pure logic, testable without the game: the page model, row ids and row encoding,
-//! slider mapping, flow steps, the live-value diff, the menu state machine, and command routing.
+//! slider mapping, the live-value diff, the menu state machine, command routing, and finding the
+//! chosen VR entry.
 
 pub(crate) mod command;
-pub(crate) mod flow;
+pub(crate) mod entries;
 pub(crate) mod ids;
 pub(crate) mod live;
 pub(crate) mod page;

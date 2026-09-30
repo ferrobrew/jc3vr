@@ -135,7 +135,7 @@ The starting assignments are as follows.
 
 Rico is about 1.8 to 1.9 m tall. The mapping follows Bonelab's remapping rather than scaling the world. The world stays at true scale, because vehicle sizes, building sizes, and the sense of speed depend on it. The eyes sit at Rico's eye height. Hand offsets from the shoulders scale by the ratio of Rico's arm span to the player's. Vertical head travel (ducking and crouching) scales by the ratio of the two heights. Horizontal roomscale travel stays 1:1. Boneworks keeps motion 1:1 against a fixed body, and players report the mismatch as permanently bent knees or a misplaced floor; the remap avoids that.
 
-The player's height and arm span are hardcoded in config for now. A calibration step (stand straight, then T-pose) is deferred with the rest of the mod UI.
+The player's dimensions come from `body.local.json`, which the calibration on the pause menu's `VR: BODY` page writes: stand straight, then T-pose (see [pause-menu.md](../pause-menu.md#body-calibration)).
 
 ### Posture
 
@@ -672,7 +672,6 @@ Two questions raised during milestone 1 are answered too. The secondary hand IK 
 These features wait for a VR-native redesign of the mod's in-VR interface.
 
 - The posture prompt that suggests the seated posture when the head is low.
-- The height and arm-span calibration flow (the dimensions are in config until then).
 - The radial weapon menu, the seated and accessibility fallback for holsters.
 - The Ceremony seat-transition mode and its confirmation prompt.
 - The laser pointer for the floating panel and the game's menus.

@@ -1,17 +1,18 @@
-//! The registry of VR pages: one options-menu entry per page, in this order at the top of the
-//! options menu. A page's definition lives beside the settings it edits; register it here.
+//! The registry of VR pages: one options-menu entry per page, in this order after the options
+//! menu's own entries. A page's definition lives beside the settings it edits; register it here.
 
-mod demo;
-
-use crate::pause_menu::model::page::PageDef;
+use crate::{
+    controllers::{body, menu},
+    pause_menu::model::page::PageDef,
+};
 
 /// The registered pages.
-pub(crate) const PAGES: &[PageDef] = &[demo::PAGE];
+pub(crate) const PAGES: &[PageDef] = &[body::menu::PAGE, menu::controls::PAGE, menu::comfort::PAGE];
 
 /// The most pages the options menu can take: the movie lays a menu out on a fixed number of main
 /// buttons ([`PauseUI::MAIN_BUTTON_COUNT`](jc3gi::ui::pause_ui::PauseUI::MAIN_BUTTON_COUNT)) and
 /// drops the entries past the last, and the options menu's own entries fill all but this many on
-/// PC. The VR entries go first, so a page past this limit would push a native entry off the menu.
+/// PC. The VR entries go after the native ones, so a page past this limit would not be shown.
 pub(crate) const MAX_PAGES: usize = 4;
 
 #[cfg(test)]
@@ -19,6 +20,7 @@ mod tests {
     use jc3gi::ui::pause_ui::PauseUI;
 
     use super::*;
+    use crate::pause_menu::model::{page::Item, rows::encode_page};
 
     #[test]
     fn the_registry_fits_the_options_menu() {
@@ -37,6 +39,53 @@ mod tests {
                 "{:?} would be translated",
                 page.entry
             );
+        }
+    }
+
+    #[test]
+    fn every_page_builds_and_encodes() {
+        for (index, page) in PAGES.iter().enumerate() {
+            let built = (page.build)();
+            assert!(!built.items.is_empty(), "{}", page.entry);
+            assert_eq!(encode_page(index, &built).unwrap().len(), built.items.len());
+        }
+    }
+
+    #[test]
+    fn slider_notches_step_evenly_from_the_keyboard() {
+        // The movie's left and right move a slider by a tenth of its notches, truncated to an
+        // integer: fewer than ten notches would not move at all, and a count that is not a
+        // multiple of ten would step unevenly.
+        for page in PAGES {
+            for item in (page.build)().items {
+                if let Item::Slider(slider) = item {
+                    let steps = slider.range.max_notch();
+                    assert!(steps >= 10 && steps % 10 == 0, "{}", slider.label);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn labels_are_written_as_the_movie_shows_them() {
+        // The movie upper-cases row labels but shows option labels as given; writing both in upper
+        // case keeps the source what the player sees.
+        for page in PAGES {
+            let built = (page.build)();
+            assert_eq!(built.title, built.title.to_uppercase(), "{}", page.entry);
+            for item in &built.items {
+                let (label, options): (&str, &[&str]) = match item {
+                    Item::Header(text) | Item::Text(text) => (text, &[]),
+                    Item::Toggle(toggle) => (&toggle.label, &[]),
+                    Item::Choice(choice) => (&choice.label, choice.options),
+                    Item::Slider(slider) => (&slider.label, &[]),
+                    Item::Readout(readout) => (&readout.label, &[]),
+                    Item::Button(button) => (&button.label, &[]),
+                };
+                for text in std::iter::once(label).chain(options.iter().copied()) {
+                    assert_eq!(text, text.to_uppercase(), "{}", page.entry);
+                }
+            }
         }
     }
 

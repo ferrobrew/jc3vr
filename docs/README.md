@@ -40,7 +40,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
 - [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, and cursor interaction.
-- [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one options entry per VR page drawn by the movie's own settings screen, the four hooks, command routing, the value wrappers, the page model and row encoding, flow pages, live values, and the in-game status list.
+- [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one options entry per VR page drawn by the movie's own settings screen, the four hooks, command routing, the value wrappers, the page model and row encoding, step pages, live values, the `VR: BODY`, `VR: CONTROLS`, and `VR: COMFORT` pages with the body calibration and saving, and the in-game status list.
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
 - [capture.md](mod/capture.md) — the in-process recorder: the GPU pack and readback ring, the y4m stream to the host encoder, the pose sidecar, and the reframe tool.
 - [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the in-process eye capture for the trailer: decisions and the working todo list.

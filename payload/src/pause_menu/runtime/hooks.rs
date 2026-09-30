@@ -184,7 +184,8 @@ fn handle_command(
     }
 }
 
-/// H4: after the game's update, rebuild the shown page if asked and write its live values.
+/// H4: after the game's update, run the shown page's per-frame work, rebuild the page if asked, and
+/// write its live values.
 #[detour(address = PauseUI::UpdateImpl_ADDRESS)]
 fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
     UPDATE.get().unwrap().call(this, dt, dtf);
@@ -204,6 +205,11 @@ fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
         return;
     };
 
+    if let Some(on_frame) = PAGES.get(page_index).and_then(|def| def.on_frame)
+        && on_frame() == ButtonOutcome::Rebuild
+    {
+        SESSION.lock().rebuild = true;
+    }
     if std::mem::take(&mut SESSION.lock().rebuild) {
         rebuild(&thread, pause, page_index);
     }

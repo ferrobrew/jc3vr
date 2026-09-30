@@ -28,8 +28,14 @@
 //! ```
 //!
 //! A missing file uses the defaults. A malformed file logs an error and uses the defaults; it
-//! never stops the mod. A calibration flow that measures the player in the headset is deferred with
-//! the rest of the mod UI.
+//! never stops the mod.
+//!
+//! The file can be written by hand, or by the calibration flow on the pause menu's `VR: BODY` page
+//! ([`menu`]), which measures the player's eye height and arm span in the headset and derives the
+//! other dimensions from them ([`calibration`]) before saving them with [`save`].
+
+pub mod calibration;
+pub(crate) mod menu;
 
 use std::path::{Path, PathBuf};
 
@@ -185,6 +191,31 @@ pub fn reload() {
     *PLAYER.lock() = Some(load());
 }
 
+/// Validate `dimensions`, write them to the body file (replacing it whole), and use them from now
+/// on. Returns the file's path. On failure, the file and the dimensions in use are unchanged.
+pub fn save(dimensions: BodyDimensions) -> Result<PathBuf, BodyFileError> {
+    let path = body_file_path().ok_or_else(|| BodyFileError {
+        path: PathBuf::from(BODY_FILE_NAME),
+        kind: BodyFileErrorKind::Write("the payload's path is unknown".to_owned()),
+    })?;
+    let error = |kind| BodyFileError {
+        path: path.clone(),
+        kind,
+    };
+    dimensions
+        .validate()
+        .map_err(|e| error(BodyFileErrorKind::Invalid(e)))?;
+    let text = serde_json::to_string_pretty(&dimensions)
+        .map_err(|e| error(BodyFileErrorKind::Write(e.to_string())))?;
+    write_replacing(&path, text.as_bytes()).map_err(|e| error(BodyFileErrorKind::Write(e)))?;
+    tracing::info!(target: "controllers", path = %path.display(), ?dimensions, "body dimensions saved");
+    *PLAYER.lock() = Some(PlayerBody {
+        dimensions,
+        source: BodySource::File { path: path.clone() },
+    });
+    Ok(path)
+}
+
 /// The ratio of the character's height to the player's, which scales vertical head travel.
 pub fn height_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f32 {
     character.height / player.height
@@ -278,6 +309,8 @@ pub enum BodyFileErrorKind {
     Parse(String),
     /// A dimension cannot describe a body.
     Invalid(InvalidDimension),
+    /// The file could not be written.
+    Write(String),
 }
 
 impl std::fmt::Display for BodyFileErrorKind {
@@ -286,6 +319,7 @@ impl std::fmt::Display for BodyFileErrorKind {
             BodyFileErrorKind::Read(e) => write!(f, "could not read the file: {e}"),
             BodyFileErrorKind::Parse(e) => write!(f, "could not parse the file: {e}"),
             BodyFileErrorKind::Invalid(e) => write!(f, "invalid dimension: {e}"),
+            BodyFileErrorKind::Write(e) => write!(f, "could not write the file: {e}"),
         }
     }
 }
@@ -370,6 +404,19 @@ fn load_from(path: &Path) -> Result<Option<BodyDimensions>, BodyFileError> {
             path: path.to_owned(),
             kind,
         })
+}
+
+/// Write `contents` to a temporary file beside `path` and move it over `path`, so a failed write
+/// never leaves a truncated body file behind.
+fn write_replacing(path: &Path, contents: &[u8]) -> Result<(), String> {
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
+    std::fs::write(&temporary, contents).map_err(|e| format!("{}: {e}", temporary.display()))?;
+    std::fs::rename(&temporary, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temporary);
+        format!("{}: {e}", path.display())
+    })
 }
 
 #[cfg(test)]

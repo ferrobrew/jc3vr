@@ -12,7 +12,7 @@ pub(crate) enum MenuState {
     /// entries failed).
     #[default]
     Closed,
-    /// The first `count` options-menu entries are the VR pages, in registry order.
+    /// The last `count` options-menu entries are the VR pages, in registry order.
     EntriesAdded { count: usize },
     /// The settings screen shows VR page `page`.
     Shown { count: usize, page: usize },
@@ -21,8 +21,8 @@ pub(crate) enum MenuState {
 /// Why the settings pages are being populated.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum PopulateSource {
-    /// The movie is opening the settings screen from an options-menu entry. `selected` is the
-    /// options-menu position of the entry the player chose, when one reports itself selected.
+    /// The movie is opening the settings screen from an options-menu entry. `selected` is the VR
+    /// page whose entry the player chose, or `None` for a native entry.
     Opened { selected: Option<usize> },
     /// The game repopulated the pages of a screen already shown (its refresh flag).
     Refresh,
@@ -77,7 +77,7 @@ impl MenuState {
         }
     }
 
-    /// How many VR entries lead the options menu.
+    /// How many VR entries the options menu ends with.
     pub(crate) fn entry_count(self) -> usize {
         match self {
             MenuState::Closed => 0,

@@ -18,11 +18,16 @@ pub(crate) struct PageDef {
     /// `#` as a localisation key.
     pub(crate) entry: &'static str,
     /// Builds the page's current contents. Called when the page opens and again whenever it is
-    /// rebuilt (a flow step changed, the page was reset, or the game repopulated the settings).
+    /// rebuilt (a step-by-step page changed step, the page was reset, or the game repopulated the
+    /// settings).
     pub(crate) build: fn() -> Page,
     /// Called when the player leaves the page (the movie's `persist_changes`), to save what the
     /// page changed.
     pub(crate) on_close: Option<fn()>,
+    /// Called every frame while the page is shown, before its live values are written, for work
+    /// that runs over time (a calibration's capture). Returning
+    /// [`ButtonOutcome::Rebuild`] rebuilds the page, as a button can.
+    pub(crate) on_frame: Option<fn() -> ButtonOutcome>,
 }
 
 /// One page's contents: the panel title and its rows, top to bottom.
@@ -58,7 +63,7 @@ impl Page {
         self.item(Item::Text(text.into()))
     }
 
-    /// The index of the first button, which a rebuilt flow page focuses.
+    /// The index of the first button, which a rebuilt page focuses.
     pub(crate) fn first_button(&self) -> Option<usize> {
         self.items
             .iter()
@@ -143,7 +148,8 @@ pub(crate) struct Button {
 pub(crate) enum ButtonOutcome {
     /// Keep the rows as they are.
     Stay,
-    /// Rebuild the page (a flow moved to another step, or the action changed what the page lists).
+    /// Rebuild the page (a step-by-step page moved to another step, or the action changed what the
+    /// page lists).
     Rebuild,
 }
 

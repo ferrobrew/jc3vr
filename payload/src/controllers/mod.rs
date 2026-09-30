@@ -13,7 +13,8 @@
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
-//! - [`body`]: the player's body dimensions and the remap onto the character's proportions;
+//! - [`body`]: the player's body dimensions, their calibration in the headset, and the remap onto
+//!   the character's proportions;
 //! - [`gamepad_setting`]: the game's active-input-device setting held at the gamepad under the
 //!   controller scheme;
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
@@ -32,7 +33,10 @@
 //!   look-steer removed;
 //! - [`roomscale`]: posture, the head-height remap, the roomscale chase loop, crouching, the
 //!   head-through-geometry fade, and seat transitions. These need the headset rather than the
-//!   controllers, so they are gated on the VR source and their own toggles instead of the scheme.
+//!   controllers, so they are gated on the VR source and their own toggles instead of the scheme;
+//! - [`persistence`]: saving and loading `controllers.local.json`;
+//! - [`menu`]: the pause menu's `VR: CONTROLS` and `VR: COMFORT` pages over these settings (the
+//!   `VR: BODY` page is [`body::menu`]).
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no
@@ -51,6 +55,7 @@ pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;
 pub mod map;
+pub(crate) mod menu;
 pub mod mode;
 pub mod motion;
 pub mod overlay;

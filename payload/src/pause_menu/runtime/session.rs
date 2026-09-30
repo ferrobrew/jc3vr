@@ -18,7 +18,7 @@ pub(crate) struct Session {
     pub(crate) page: Option<Page>,
     /// What the live-value pass last wrote per row clip.
     pub(crate) live: LiveSlots,
-    /// Set when the shown page must be rebuilt on the next update (a flow step changed, or the page
+    /// Set when the shown page must be rebuilt on the next update (a step changed, or the page
     /// was reset). Deferred rather than done in the command hook, because the movie is still inside
     /// its own handler there and redraws the selected row after the command returns.
     pub(crate) rebuild: bool,

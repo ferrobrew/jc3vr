@@ -9,6 +9,7 @@ use jc3gi::ui::pause_ui::{PauseMenuType, PauseUI, SettingsUI};
 use crate::pause_menu::{
     gfx::{CaptureThread, GfxValue, Param},
     model::{
+        entries::{MainButton, selected_page},
         ids::RowId,
         live::LiveSlots,
         page::{LiveField, Page, PageDef},
@@ -48,16 +49,17 @@ impl std::fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
-/// Add one options-menu entry per page, in `pages` order at the top of the list, each opening the
-/// settings screen like the graphics entry. Returns how many were added.
+/// Add one options-menu entry per page, in `pages` order after the menu's own entries, each opening
+/// the settings screen like the graphics entry. Appending leaves the native entries where they
+/// were, so the menu still opens with its first native entry highlighted. Returns how many were
+/// added.
 pub(crate) fn add_entries(
     thread: &CaptureThread,
     pause: &PauseUI,
     pages: &[PageDef],
 ) -> Result<usize, RenderError> {
     let clip = clip(thread, pause)?;
-    // Each entry goes to the top, so adding in reverse leaves the first page first.
-    for page in pages.iter().rev() {
+    for page in pages {
         let label = cstring(page.entry);
         let entry = clip
             .invoke(
@@ -66,7 +68,7 @@ pub(crate) fn add_entries(
                     Param::Int(PauseMenuType::PAUSE_OPTIONS as i32),
                     Param::Str(c""),
                     Param::Str(&label),
-                    Param::Bool(true),
+                    Param::Bool(false),
                 ],
             )
             .filter(GfxValue::is_object)
@@ -78,9 +80,9 @@ pub(crate) fn add_entries(
     Ok(pages.len())
 }
 
-/// The options-menu position of the selected VR entry, among the first `count` entries. An entry
-/// counts when its main button reports itself selected and, where its label can be read, the
-/// label is the page's.
+/// The page, among the first `count` of `pages`, whose VR entry is selected in the options menu,
+/// or `None` when a native entry is. Reads every main button and leaves the decision to
+/// [`selected_page`].
 pub(crate) fn selected_entry(
     thread: &CaptureThread,
     pause: &PauseUI,
@@ -88,37 +90,38 @@ pub(crate) fn selected_entry(
     count: usize,
 ) -> Result<Option<usize>, RenderError> {
     let clip = clip(thread, pause)?;
-    let buttons = clip
+    let container = clip
         .path("MCI_button_container.MCI_root")
         .ok_or(RenderError::Missing("the main-button container"))?;
-    for (index, page) in pages.iter().enumerate().take(count) {
-        let Some(button) = buttons.path(&format!("MCI_button_{index:02}.MCI_button")) else {
-            continue;
-        };
-        let selected = button
-            .invoke(c"IsSelected", &[])
-            .and_then(|result| result.as_bool())
-            .unwrap_or(false);
-        if !selected {
-            continue;
-        }
-        let label = button
-            .path("MCI_button.MCI_name_text.TXT_name")
-            .and_then(|field| field.member(c"text"))
-            .and_then(|text| text.as_str().map(|s| s.to_string_lossy().into_owned()));
-        match label {
-            Some(label) if label != page.entry => {
-                tracing::warn!(
-                    "pause menu: main button {index} is selected but reads {label:?}, not the VR \
-                     entry {:?}; treating the selection as native",
-                    page.entry
-                );
-                return Ok(None);
+    let buttons: Vec<MainButton> = (0..PauseUI::MAIN_BUTTON_COUNT as usize)
+        .map(|index| container.path(&format!("MCI_button_{index:02}.MCI_button")))
+        .map(|button| {
+            // A button that does not resolve keeps its place, so the positions stay the movie's.
+            let Some(button) = button else {
+                return MainButton {
+                    visible: false,
+                    selected: false,
+                    label: None,
+                };
+            };
+            MainButton {
+                visible: button
+                    .member(c"visible")
+                    .and_then(|visible| visible.as_bool())
+                    .unwrap_or(true),
+                selected: button
+                    .invoke(c"IsSelected", &[])
+                    .and_then(|result| result.as_bool())
+                    .unwrap_or(false),
+                label: button
+                    .path("MCI_button.MCI_name_text.TXT_name")
+                    .and_then(|field| field.member(c"text"))
+                    .and_then(|text| text.as_str().map(|s| s.to_string_lossy().into_owned())),
             }
-            _ => return Ok(Some(index)),
-        }
-    }
-    Ok(None)
+        })
+        .collect();
+    let entries: Vec<&str> = pages.iter().take(count).map(|page| page.entry).collect();
+    Ok(selected_page(&buttons, &entries))
 }
 
 /// Install `page` (registered at `page_index`) as the page the settings screen is about to show,
