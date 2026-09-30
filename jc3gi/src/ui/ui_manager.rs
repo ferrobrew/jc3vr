@@ -178,7 +178,10 @@ pub struct UIManager {
     /// views it renders into.
     pub m_RenderBuffer: *mut crate::ui::ui_manager::RenderTargetData,
     _field_1398: [u8; 229],
-    /// Whether the player is currently driving the UI with a gamepad. While set,
+    /// Whether the player is currently driving the UI with a gamepad.
+    /// [`PreUpdate`](crate::ui::ui_manager::UIManager::PreUpdate) copies it from the use-gamepad setting every frame; when the
+    /// value changes it passes the new value to every registered UI, whose base implementation
+    /// forwards it to the UI's movie as the ActionScript `OnUseGamepad` call. While set,
     /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) parks the Scaleform mouse at
     /// [`GAMEPAD_PARKED_MOUSE_POSITION`](crate::ui::ui_manager::UIManager::GAMEPAD_PARKED_MOUSE_POSITION) on both axes and [`MousePointerVisibility`](crate::ui::ui_manager::UIManager::MousePointerVisibility) hides
     /// the overlay cursor.
@@ -500,7 +503,8 @@ impl UIManager {
     /// The per-frame UI input step: computes gamepad use, runs
     /// [`MousePointerVisibility`](crate::ui::ui_manager::UIManager::MousePointerVisibility), dispatches the
     /// highest-input-priority `CUIBase`'s input management, then calls
-    /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) and drains the queued key events.
+    /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) and drains the queued key events. On a frame with
+    /// no input-priority UI it skips both the dispatch and `SendMouseEvents`.
     pub unsafe fn PreUpdate(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(

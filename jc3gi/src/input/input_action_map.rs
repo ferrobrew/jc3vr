@@ -316,6 +316,8 @@ fn _InputActionMap_size_check() {
 impl InputActionMap {
     pub const GetActionEffector_ADDRESS: usize = 0x1402F43B0;
     /// `GetActionEffector(action, device)`: the four-argument lookup with the blockers honoured.
+    /// Every [`Steering`](crate::input::steering::Steering) reader resolves its action through this form,
+    /// with the steering's [`m_DeviceIndex`](crate::input::steering::Steering::m_DeviceIndex).
     pub unsafe fn GetActionEffector(
         &mut self,
         action_id: i32,
@@ -361,8 +363,8 @@ impl InputActionMap {
         }
     }
     pub const GetActionEffectorForAction_ADDRESS: usize = 0x1402F43C0;
-    /// `GetActionEffector(action)`: the lookup with device `-1` and the blockers honoured, which is
-    /// how every `CSteering` reader resolves an action.
+    /// `GetActionEffector(action)`: the lookup with device `-1` and the blockers honoured. The
+    /// [`LocalPlayerActionMap`](crate::input::input_action_map::LocalPlayerActionMap) readers and setters and several camera and script readers use it.
     pub unsafe fn GetActionEffectorForAction(
         &mut self,
         action: crate::input::input_action_map::Action,

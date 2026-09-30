@@ -66,8 +66,9 @@ impl std::convert::AsMut<InputDevice> for InputDevice {
 #[derive(Copy, Clone)]
 #[repr(C, align(4))]
 /// The packed identifier stored by every input device. The low nibble is the [`DeviceType`](crate::input::input_device_manager::DeviceType), and the
-/// hardware index occupies the bits used by the action-map device selector. The remaining bits are
-/// device-specific identity data.
+/// higher bits carry the hardware index and the component that
+/// [`InputActionMap::GetActionEffector`](crate::input::input_action_map::InputActionMap::GetActionEffector)
+/// takes as its device selector. The remaining bits are device-specific identity data.
 pub struct InputDeviceId {
     pub raw: u32,
 }
@@ -119,8 +120,10 @@ impl InputDeviceManager {
     pub const GetDevice_ADDRESS: usize = 0x1402F1F00;
     /// Finds a device of `device_type`. With [`DeviceOrder::Appearance`](crate::input::input_device_manager::DeviceOrder::Appearance), `index` selects the
     /// matching device's position among devices of that class. With [`DeviceOrder::HardwareIndex`](crate::input::input_device_manager::DeviceOrder::HardwareIndex),
-    /// `index` selects the packed hardware index in [`InputDevice::ID`](crate::input::input_device_manager::InputDevice::ID). Returns null when no device
-    /// matches.
+    /// `index` selects the hardware index packed into [`InputDevice::ID`](crate::input::input_device_manager::InputDevice::ID). [`DeviceType::Default`](crate::input::input_device_manager::DeviceType::Default)
+    /// ignores `order` and returns the `index`-th device in the manager's device vector regardless
+    /// of class, falling back to the class search only when `index` is past the end. Returns null
+    /// when no device matches.
     pub unsafe fn GetDevice(
         &mut self,
         device_type: crate::input::input_device_manager::DeviceType,
@@ -204,27 +207,9 @@ impl std::convert::AsMut<InputDeviceManagerVftable> for InputDeviceManagerVftabl
     }
 }
 impl InputDeviceId {
-    /// Returns the packed device identity exactly as stored by the engine.
-    pub fn raw_value(&self) -> u32 {
-        self.raw
-    }
-    /// Returns the device class encoded in the identity's low nibble.
-    pub fn device_type(&self) -> DeviceType {
-        match self.raw & 0xF {
-            0x0 => DeviceType::Default,
-            0x1 => DeviceType::Keyboard,
-            0x2 => DeviceType::Mouse,
-            0x3 => DeviceType::Joystick,
-            0x4 => DeviceType::Gamepad,
-            0x5 => DeviceType::Memorycard,
-            0x6 => DeviceType::Microphone,
-            0x7 => DeviceType::Headphone,
-            0x8 => DeviceType::Unknown,
-            _ => DeviceType::Unknown,
-        }
-    }
     /// Returns the signed hardware index used by the manager's hardware-index lookup. The engine
-    /// compares this as `(ID * 4) >> 19`, which is an arithmetic `ID >> 17`.
+    /// computes it as `(ID << 2) >> 19` with an arithmetic right shift: the identity's bits 17
+    /// through 29, sign-extended from bit 29. Bits 30 and 31 do not take part.
     pub fn hardware_index(&self) -> i32 {
         ((self.raw << 2) as i32) >> 19
     }

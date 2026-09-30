@@ -46,6 +46,8 @@ mod state;
 mod target;
 mod warp;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 pub use config::{HudConfig, ReticleAlign};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::{
@@ -283,6 +285,14 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
                 corners: hud.panel_corners()?,
             })
         }));
+        // The panel can draw from the render-camera fallback without the captured tracking sample,
+        // which leaves it visible but out of the controller pointer's reach.
+        let missing = pointer_camera.is_none();
+        if POINTER_BASIS_MISSING.swap(missing, Ordering::Relaxed) != missing && missing {
+            tracing::debug!(
+                "hud: the panel draws without a pointer basis; the pointer is inactive"
+            );
+        }
         // The virtual cursor rides the panel at its UV position, lifted toward the camera; its
         // world-space corners are computed here (eye 0) like the panel's so both eyes project the
         // same dot with correct stereo disparity (see `cursor`).
@@ -353,11 +363,18 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
                 base_distance: panel_distance,
             }));
         }
+    } else if eye == 0 {
+        // No panel pose this frame: the previous corners are not what the player sees.
+        pointer::publish_panel(None);
     }
 
     hud.draw_quad(context, device, target, eye);
     hud.clear(context);
 }
+
+/// Whether the last panel drawn on eye 0 lacked the pointer's captured camera basis, so the
+/// transition is logged once rather than every frame.
+static POINTER_BASIS_MISSING: AtomicBool = AtomicBool::new(false);
 
 /// Extract the head's world-space pose `(position, rotation)` from the render camera's world
 /// transform, or `None` if the camera is not available.
