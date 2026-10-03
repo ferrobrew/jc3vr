@@ -2,6 +2,11 @@
 //! calibration that measures the player in the headset ([`Calibration`]) and saves the result to
 //! the body file.
 //!
+//! The calibration runs standing or seated ([`Stance`]), as the summary's `STANCE` choice says; it
+//! defaults from the posture setting each time the page opens. A seated calibration measures the
+//! seated eye height instead of the height, and the review offers a slider for the height it
+//! estimates from the arm span.
+//!
 //! The calibration runs on the pause menu's frames: MEASURE starts a countdown so the player can
 //! take the pose (a T-pose leaves no hand free to point at the menu), the page's per-frame hook
 //! feeds the live measurement to the capture, and a finished capture moves the flow on and has the
@@ -18,14 +23,17 @@ use crate::{
         body::{
             self, BodyDimensions, BodySource,
             calibration::{
-                Calibration, CalibrationError, CaptureStatus, Notice, Step, Unavailable,
-                arm_span_from_grip_span, height_from_eye_height, span_out_of_proportion,
+                Calibration, CalibrationError, CaptureStatus, Notice, Stance, Step, Unavailable,
+                height_from_eye_height, span_out_of_proportion,
             },
         },
         frame::{self, Hand, TrackedPose},
-        menu::{config_toggle, save_if_changed},
+        menu::{config_toggle, read_config, save_if_changed},
     },
-    pause_menu::model::page::{Button, ButtonOutcome, Page, PageDef, Readout},
+    pause_menu::model::{
+        page::{Button, ButtonOutcome, Choice, Page, PageDef, Readout, Slider},
+        slider::{SliderFormat, SliderRange},
+    },
     vr::{self, stage::StageInfo},
 };
 
@@ -38,13 +46,18 @@ pub(crate) const PAGE: PageDef = PageDef {
 };
 
 fn build() -> Page {
-    let step = CALIBRATION.lock().step();
+    let (step, stance) = {
+        let calibration = CALIBRATION.lock();
+        (calibration.step(), calibration.stance())
+    };
     let page = Page::new("VR: BODY");
-    match step {
-        Step::Summary => summary(page),
-        Step::Stand => stand(page),
-        Step::Span => span(page),
-        Step::Review => review(page),
+    match (step, stance) {
+        (Step::Summary, _) => summary(page),
+        (Step::EyeHeight, Stance::Standing) => stand(page),
+        (Step::EyeHeight, Stance::Seated) => sit(page),
+        (Step::Span, _) => span(page),
+        (Step::Review, Stance::Standing) => review_standing(page),
+        (Step::Review, Stance::Seated) => review_seated(page),
     }
 }
 
@@ -66,13 +79,25 @@ fn summary(page: Page) -> Page {
             label: "ARM SPAN".into(),
             read: || metres(body::player().arm_span),
         })
+        .item(Readout {
+            label: "SEATED EYE HEIGHT".into(),
+            read: || optional_metres(body::player().seated_eye_height),
+        })
         .header("CALIBRATION")
+        .item(Choice {
+            label: "STANCE".into(),
+            options: &STANCE_OPTIONS,
+            get: || stance_index(chosen_stance()),
+            set: |index| *STANCE.lock() = Stance::ALL.get(index).copied(),
+            default: stance_index(posture_stance()),
+        })
         .item(Button {
             label: "CALIBRATE IN HEADSET".into(),
             caption: "START".into(),
-            action: || rebuild_if(CALIBRATION.lock().start()),
+            action: start,
         })
-        .text("MEASURES YOUR HEIGHT AND ARM SPAN.")
+        .text("STANDING: HEIGHT AND ARM SPAN.")
+        .text("SEATED: SEATED EYES AND ARM SPAN.")
         .item(Button {
             label: "RELOAD BODY FILE".into(),
             caption: "RELOAD".into(),
@@ -116,8 +141,40 @@ fn stand(page: Page) -> Page {
         .item(cancel_button())
 }
 
+fn sit(page: Page) -> Page {
+    page.header("STEP 1 OF 3: SEATED EYES")
+        .text("SIT UPRIGHT AND LOOK AHEAD.")
+        .text("SELECT MEASURE, THEN HOLD STILL.")
+        .item(Button {
+            label: "MEASURE SEATED EYES".into(),
+            caption: "MEASURE".into(),
+            action: || measure(live_eye_height()),
+        })
+        .item(Readout {
+            label: "STATUS".into(),
+            read: || status(live_eye_height()),
+        })
+        .item(Readout {
+            label: "EYE HEIGHT, LIVE".into(),
+            read: || live_text(live_eye_height()),
+        })
+        .text("YOUR HEIGHT COMES FROM THE ARM SPAN.")
+        .item(cancel_button())
+}
+
 fn span(page: Page) -> Page {
-    page.header("STEP 2 OF 3: ARM SPAN")
+    let step_one = match CALIBRATION.lock().stance() {
+        Stance::Standing => Readout {
+            label: "HEIGHT, FROM STEP 1".into(),
+            read: || optional_metres(CALIBRATION.lock().height_before_span()),
+        },
+        Stance::Seated => Readout {
+            label: "SEATED EYES, FROM STEP 1".into(),
+            read: || optional_metres(CALIBRATION.lock().eye_height()),
+        },
+    };
+    let page = page
+        .header("STEP 2 OF 3: ARM SPAN")
         .text("SELECT MEASURE, THEN T-POSE:")
         .text("ARMS OUT AT SHOULDER HEIGHT.")
         .text("HOLD IT UNTIL THE PAGE MOVES ON.")
@@ -136,41 +193,26 @@ fn span(page: Page) -> Page {
         })
         .item(Readout {
             label: "ARM SPAN, ESTIMATED".into(),
-            read: || {
-                let height = CALIBRATION.lock().eye_height().map(height_from_eye_height);
-                live_text(
-                    live_grip_span()
-                        .map(|grip| arm_span_from_grip_span(grip, height.unwrap_or(f32::NAN))),
-                )
-            },
-        })
-        .item(Readout {
-            label: "HEIGHT, FROM STEP 1".into(),
-            read: || {
-                let eye_height = CALIBRATION.lock().eye_height();
-                eye_height.map_or("---".into(), |eye| metres(height_from_eye_height(eye)))
-            },
-        })
+            read: || live_estimate(|c, grip| c.arm_span_for(grip)),
+        });
+    let page = match CALIBRATION.lock().stance() {
+        Stance::Standing => page,
+        Stance::Seated => page.item(Readout {
+            label: "HEIGHT, ESTIMATED".into(),
+            read: || live_estimate(|c, grip| c.height_for_span(grip)),
+        }),
+    };
+    page.item(step_one)
         .item(Button {
-            label: "MEASURE HEIGHT AGAIN".into(),
+            label: "MEASURE STEP 1 AGAIN".into(),
             caption: "BACK".into(),
             action: back,
         })
         .item(cancel_button())
 }
 
-fn review(page: Page) -> Page {
-    page.header("STEP 3 OF 3: REVIEW")
-        .text("CHECK THE VALUES, THEN SAVE.")
-        .item(Button {
-            label: "SAVE TO BODY FILE".into(),
-            caption: "SAVE".into(),
-            action: save,
-        })
-        .item(Readout {
-            label: "STATUS".into(),
-            read: review_status,
-        })
+fn review_standing(page: Page) -> Page {
+    let page = review_top(page)
         .header("MEASURED")
         .item(Readout {
             label: "HEIGHT".into(),
@@ -183,36 +225,102 @@ fn review(page: Page) -> Page {
         .item(Readout {
             label: "ARM SPAN".into(),
             read: || result_text(|b| b.arm_span),
+        });
+    let page = estimated_segments(page.header("ESTIMATED"));
+    let page = if CALIBRATION.lock().kept_seated_eye_height().is_some() {
+        page.header("KEPT FROM THE BODY FILE").item(Readout {
+            label: "SEATED EYE HEIGHT".into(),
+            read: || optional_metres(CALIBRATION.lock().kept_seated_eye_height()),
+        })
+    } else {
+        page
+    };
+    review_bottom(page)
+}
+
+fn review_seated(page: Page) -> Page {
+    let estimate = CALIBRATION.lock().estimated_height();
+    let page = review_top(page)
+        .header("MEASURED")
+        .item(Readout {
+            label: "SEATED EYE HEIGHT".into(),
+            read: || optional_metres(CALIBRATION.lock().eye_height()),
+        })
+        .item(Readout {
+            label: "ARM SPAN".into(),
+            read: || result_text(|b| b.arm_span),
         })
         .header("ESTIMATED")
-        .item(Readout {
-            label: "SHOULDER HEIGHT".into(),
-            read: || result_text(|b| b.shoulder_height),
+        .text("HEIGHT IS FROM THE ARM SPAN.")
+        .text("SET IT HERE IF IT IS OFF.")
+        .item(Slider {
+            label: "HEIGHT".into(),
+            range: HEIGHT_RANGE,
+            format: SliderFormat::new(2, " M"),
+            get: || CALIBRATION.lock().height().unwrap_or(f32::NAN),
+            set: |height| {
+                CALIBRATION.lock().set_height(height);
+            },
+            default: estimate.map_or(HEIGHT_RANGE.min, |height| {
+                height.clamp(HEIGHT_RANGE.min, HEIGHT_RANGE.max)
+            }),
         })
         .item(Readout {
-            label: "SHOULDER WIDTH".into(),
-            read: || result_text(|b| b.shoulder_width),
+            label: "EYE HEIGHT".into(),
+            read: || result_text(|b| b.eye_height),
+        });
+    review_bottom(estimated_segments(page))
+}
+
+/// The review's title, instruction, `SAVE`, and `STATUS`.
+fn review_top(page: Page) -> Page {
+    page.header("STEP 3 OF 3: REVIEW")
+        .text("CHECK THE VALUES, THEN SAVE.")
+        .item(Button {
+            label: "SAVE TO BODY FILE".into(),
+            caption: "SAVE".into(),
+            action: save,
         })
         .item(Readout {
-            label: "UPPER ARM".into(),
-            read: || result_text(|b| b.upper_arm),
+            label: "STATUS".into(),
+            read: review_status,
         })
-        .item(Readout {
-            label: "FOREARM".into(),
-            read: || result_text(|b| b.forearm),
-        })
-        .item(Readout {
-            label: "HAND".into(),
-            read: || result_text(|b| b.hand),
-        })
-        .header("MEASURE AGAIN")
+}
+
+/// The review's readouts of the dimensions scaled from the height and fitted to the span.
+fn estimated_segments(page: Page) -> Page {
+    page.item(Readout {
+        label: "SHOULDER HEIGHT".into(),
+        read: || result_text(|b| b.shoulder_height),
+    })
+    .item(Readout {
+        label: "SHOULDER WIDTH".into(),
+        read: || result_text(|b| b.shoulder_width),
+    })
+    .item(Readout {
+        label: "UPPER ARM".into(),
+        read: || result_text(|b| b.upper_arm),
+    })
+    .item(Readout {
+        label: "FOREARM".into(),
+        read: || result_text(|b| b.forearm),
+    })
+    .item(Readout {
+        label: "HAND".into(),
+        read: || result_text(|b| b.hand),
+    })
+}
+
+/// The review's way back: measure the span again, start over in the same stance, or cancel.
+fn review_bottom(page: Page) -> Page {
+    page.header("MEASURE AGAIN")
         .item(Button {
             label: "ARM SPAN ONLY".into(),
             caption: "BACK".into(),
             action: back,
         })
         .item(Button {
-            label: "HEIGHT AND ARM SPAN".into(),
+            label: "BOTH STEPS".into(),
             caption: "RETRY".into(),
             action: || rebuild_if(CALIBRATION.lock().retry()),
         })
@@ -231,6 +339,47 @@ fn back() -> ButtonOutcome {
     rebuild_if(CALIBRATION.lock().back())
 }
 
+/// Start the calibration in the chosen stance, keeping the body file's seated eye height for a
+/// standing one.
+fn start() -> ButtonOutcome {
+    let stance = chosen_stance();
+    let kept = body::player().seated_eye_height;
+    rebuild_if(CALIBRATION.lock().start(stance, kept))
+}
+
+/// The `STANCE` choice's options, in [`Stance::ALL`]'s order.
+const STANCE_OPTIONS: [&str; 2] = ["STANDING", "SEATED"];
+
+/// The range of the seated review's height slider, metres, a centimetre a notch: the heights whose
+/// standing eye heights a standing calibration accepts.
+const HEIGHT_RANGE: SliderRange = SliderRange::new(1.2, 2.4, 120);
+
+/// The stance the player chose on the summary since the page opened, `None` for the posture's.
+static STANCE: Mutex<Option<Stance>> = Mutex::new(None);
+
+fn chosen_stance() -> Stance {
+    STANCE.lock().unwrap_or_else(posture_stance)
+}
+
+/// The stance the posture setting implies.
+fn posture_stance() -> Stance {
+    Stance::for_posture(read_config(|c| c.controllers.roomscale.posture))
+}
+
+fn stance_index(stance: Stance) -> usize {
+    Stance::ALL
+        .iter()
+        .position(|s| *s == stance)
+        .unwrap_or_default()
+}
+
+/// A live estimate from the controllers' gap and what the flow has measured so far.
+fn live_estimate(estimate: fn(&Calibration, f32) -> Option<f32>) -> SmolStr {
+    let grip = live_grip_span();
+    let calibration = CALIBRATION.lock();
+    live_text(grip.map(|grip| estimate(&calibration, grip).unwrap_or(f32::NAN)))
+}
+
 /// A derived dimension for a review readout.
 fn result_text(field: fn(&BodyDimensions) -> f32) -> SmolStr {
     match CALIBRATION.lock().result() {
@@ -239,7 +388,8 @@ fn result_text(field: fn(&BodyDimensions) -> f32) -> SmolStr {
     }
 }
 
-/// The review's status: the last problem, else whether the result is ready to save.
+/// The review's status: the last problem, else why the result cannot be saved, else whether it is
+/// ready to save.
 fn review_status() -> SmolStr {
     let calibration = CALIBRATION.lock();
     if let Some(text) = notice_text(calibration.notice()) {
@@ -248,7 +398,8 @@ fn review_status() -> SmolStr {
     match calibration.result() {
         Some(Ok(body)) if span_out_of_proportion(&body) => "CHECK: SPAN OVER HEIGHT".into(),
         Some(Ok(_)) => "READY TO SAVE".into(),
-        Some(Err(_)) | None => "---".into(),
+        Some(Err(error)) => rejection_text(&error),
+        None => "---".into(),
     }
 }
 
@@ -285,7 +436,7 @@ fn save() -> ButtonOutcome {
 fn on_frame() -> ButtonOutcome {
     let step = CALIBRATION.lock().step();
     let live = match step {
-        Step::Stand => live_eye_height(),
+        Step::EyeHeight => live_eye_height(),
         Step::Span => live_grip_span(),
         Step::Summary | Step::Review => return ButtonOutcome::Stay,
     };
@@ -295,9 +446,11 @@ fn on_frame() -> ButtonOutcome {
     rebuild_if(changed)
 }
 
-/// Leaving the page abandons a calibration in progress and saves the scaling switches.
+/// Leaving the page abandons a calibration in progress, returns the stance choice to the
+/// posture's, and saves the scaling switches.
 fn on_close() {
     CALIBRATION.lock().cancel();
+    *STANCE.lock() = None;
     save_if_changed();
 }
 
@@ -473,6 +626,13 @@ fn rejection_text(error: &CalibrationError) -> SmolStr {
         CalibrationError::EyeHeightTooHigh(eye) => {
             format_smolstr!("EYES TOO HIGH: {}", metres(*eye))
         }
+        CalibrationError::SeatedEyeHeightTooLow(eye) => {
+            format_smolstr!("EYES TOO LOW: {}", metres(*eye))
+        }
+        CalibrationError::SeatedEyeHeightTooHigh(eye) => {
+            format_smolstr!("STANDING? EYES: {}", metres(*eye))
+        }
+        CalibrationError::SeatedAboveStanding { .. } => "HEIGHT TOO SHORT".into(),
         CalibrationError::ArmsNotSpread { arm_span, .. } => {
             format_smolstr!("SPAN TOO SHORT: {}", metres(*arm_span))
         }
@@ -502,6 +662,11 @@ fn source_label(source: &BodySource) -> &'static str {
     }
 }
 
+/// A length that may be missing, as [`metres`] reads it.
+fn optional_metres(value: Option<f32>) -> SmolStr {
+    value.map_or("---".into(), metres)
+}
+
 /// A length in metres to the centimetre, or `---` when it is not a number.
 fn metres(value: f32) -> SmolStr {
     if value.is_finite() {
@@ -518,9 +683,13 @@ mod tests {
     use super::*;
     use crate::{
         controllers::{
-            body::{InvalidDimension, calibration::check_eye_height},
+            body::{
+                InvalidDimension,
+                calibration::{check_eye_height, check_seated_eye_height},
+            },
+            config::Posture,
             frame::Pose,
-            menu::tests::exercise_page,
+            menu::{edit_config, tests::exercise_page},
         },
         pause_menu::model::{page::Item, rows::encode_page},
     };
@@ -646,6 +815,14 @@ mod tests {
             "SPAN TOO LONG: 2.61 M"
         );
         assert_eq!(
+            text(Notice::Rejected(check_seated_eye_height(1.68).unwrap_err())),
+            "STANDING? EYES: 1.68 M"
+        );
+        assert_eq!(
+            text(Notice::Rejected(check_seated_eye_height(0.62).unwrap_err())),
+            "EYES TOO LOW: 0.62 M"
+        );
+        assert_eq!(
             text(Notice::TooFewSamples {
                 cause: Some(Unavailable::ControllerLost(Hand::Left))
             }),
@@ -683,6 +860,12 @@ mod tests {
                 height: 1.8,
             }),
             Notice::Rejected(CalibrationError::ArmSpanTooLong(12.34)),
+            Notice::Rejected(CalibrationError::SeatedEyeHeightTooLow(0.55)),
+            Notice::Rejected(CalibrationError::SeatedEyeHeightTooHigh(12.34)),
+            Notice::Rejected(CalibrationError::SeatedAboveStanding {
+                seated_eye_height: 1.4,
+                eye_height: 1.3,
+            }),
             Notice::Rejected(CalibrationError::Invalid(InvalidDimension::Misordered {
                 lower: "eye_height",
                 upper: "height",
@@ -738,11 +921,13 @@ mod tests {
 
     #[test]
     fn every_step_builds_and_focuses_its_action() {
-        let pages = [summary, stand, span, review];
+        let pages = [summary, stand, sit, span, review_standing, review_seated];
         let first_labels = [
             "CALIBRATE IN HEADSET",
             "MEASURE HEIGHT",
+            "MEASURE SEATED EYES",
             "MEASURE ARM SPAN",
+            "SAVE TO BODY FILE",
             "SAVE TO BODY FILE",
         ];
         for (build_step, label) in pages.into_iter().zip(first_labels) {
@@ -757,7 +942,7 @@ mod tests {
 
     #[test]
     fn every_calibration_step_can_go_back_and_cancel() {
-        for build_step in [stand, span, review] {
+        for build_step in [stand, sit, span, review_standing, review_seated] {
             let page = build_step(Page::new("VR: BODY"));
             let captions: Vec<&str> = page
                 .items
@@ -769,8 +954,8 @@ mod tests {
                 .collect();
             assert!(captions.contains(&"CANCEL"), "{captions:?}");
         }
-        // The standing step's way back is its cancel; the later steps also step back one.
-        for build_step in [span, review] {
+        // The first step's way back is its cancel; the later steps also step back one.
+        for build_step in [span, review_standing, review_seated] {
             let page = build_step(Page::new("VR: BODY"));
             assert!(page.items.iter().any(|item| matches!(
                 item,
@@ -781,7 +966,7 @@ mod tests {
 
     #[test]
     fn every_step_fits_its_rows() {
-        for build_step in [summary, stand, span, review] {
+        for build_step in [summary, stand, sit, span, review_standing, review_seated] {
             let page = build_step(Page::new("VR: BODY"));
             assert!(page.is_header(0));
             for item in &page.items {
@@ -795,6 +980,24 @@ mod tests {
                 assert!(text.len() <= max, "{text}");
             }
         }
+    }
+
+    #[test]
+    fn the_stance_choice_defaults_from_the_posture() {
+        let stance_default = || {
+            summary(Page::new("VR: BODY"))
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::Choice(choice) if choice.label == "STANCE" => Some(choice.default),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        edit_config(|c| c.controllers.roomscale.posture = Posture::Seated);
+        assert_eq!(STANCE_OPTIONS[stance_default()], "SEATED");
+        edit_config(|c| c.controllers.roomscale.posture = Posture::Auto);
+        assert_eq!(STANCE_OPTIONS[stance_default()], "STANDING");
     }
 
     #[test]

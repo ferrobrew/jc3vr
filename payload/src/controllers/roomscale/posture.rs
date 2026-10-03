@@ -2,9 +2,10 @@
 //!
 //! The posture decides where the eyes sit and whether the body chases the head:
 //!
-//! - seated: the eye height at the last recenter (the calibrated seated eye height) maps to the
-//!   character's standing eye height, and vertical travel from it scales by the height ratio; the
-//!   crouch toggle lowers the eyes by a preset;
+//! - seated: the seated eye height maps to the character's standing eye height, and vertical
+//!   travel from it scales by the height ratio; the crouch toggle lowers the eyes by a preset. The
+//!   seated eye height is the body file's calibrated one, measured against the STAGE floor, when
+//!   both exist, and the eye height at the last recenter otherwise;
 //! - standing: the head's true height above the STAGE floor is remapped onto the character
 //!   ([`remap_head_height`]), so that ducking and crouching are physical;
 //! - roomscale: standing, with the chase loop on.
@@ -70,7 +71,7 @@ pub struct HeadHeightInput {
 /// Where the head height came from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HeadHeightSource {
-    /// The STAGE floor.
+    /// The STAGE floor: standing, or seated against the calibrated seated eye height.
     Floor,
     /// The recenter baseline, as the seated eye height (the seated posture, or a standing posture
     /// on a runtime without a STAGE space).
@@ -89,19 +90,33 @@ pub struct HeadHeight {
 /// Remap the head height onto the character. In a standing posture with a floor, the eyes sit at
 /// [`remap_head_height`] of the true eye height; the cockpit offset is how far that is from the
 /// character's standing eye height, which is where the animated head anchor already puts the eyes.
-/// Otherwise the baseline is the calibrated eye height, and travel from it scales by the height
-/// ratio, less the seated crouch.
+/// Seated with a floor and the player's calibrated seated eye height, the offset is the head's
+/// travel from that height above the floor, scaled by the height ratio, less the seated crouch.
+/// Otherwise the baseline is the eye height at the last recenter, and travel from it scales the
+/// same way.
 pub fn head_height(
     input: &HeadHeightInput,
     player: &BodyDimensions,
     character: &BodyDimensions,
 ) -> HeadHeight {
-    match (input.posture, input.stage_height) {
-        (EffectivePosture::Standing | EffectivePosture::Roomscale, Some(height)) => HeadHeight {
+    match (input.posture, input.stage_height, player.seated_eye_height) {
+        (EffectivePosture::Standing | EffectivePosture::Roomscale, Some(height), _) => HeadHeight {
             cockpit_y: remap_head_height(height, player, character) - character.eye_height,
             source: HeadHeightSource::Floor,
         },
-        (posture, _) => {
+        (EffectivePosture::Seated, Some(height), Some(seated)) => {
+            let crouch = seated_crouch_drop(
+                EffectivePosture::Seated,
+                input.seated_crouch,
+                input.seated_drop_m,
+            );
+            HeadHeight {
+                cockpit_y: remap_head_translation(Vec3::Y * (height - seated), player, character).y
+                    - crouch,
+                source: HeadHeightSource::Floor,
+            }
+        }
+        (posture, _, _) => {
             let crouch = seated_crouch_drop(posture, input.seated_crouch, input.seated_drop_m);
             HeadHeight {
                 cockpit_y: remap_head_translation(Vec3::Y * input.cockpit_y, player, character).y
@@ -222,6 +237,68 @@ mod tests {
             &CHARACTER,
         );
         assert!((crouched.cockpit_y - (-0.1 * ratio - 0.6)).abs() < EPS);
+    }
+
+    #[test]
+    fn a_calibrated_seated_eye_height_is_measured_from_the_floor() {
+        let calibrated = BodyDimensions {
+            seated_eye_height: Some(1.2),
+            ..PLAYER
+        };
+        let ratio = CHARACTER.height / PLAYER.height;
+        let seated = HeadHeightInput {
+            // The recenter was taken leaning; the floor measurement ignores it.
+            cockpit_y: 0.3,
+            stage_height: Some(1.1),
+            ..input(EffectivePosture::Seated)
+        };
+        let h = head_height(&seated, &calibrated, &CHARACTER);
+        assert_eq!(h.source, HeadHeightSource::Floor);
+        assert!((h.cockpit_y - (-0.1 * ratio)).abs() < EPS);
+
+        // Sitting upright puts the eyes at the anchor.
+        let upright = head_height(
+            &HeadHeightInput {
+                stage_height: Some(1.2),
+                ..seated
+            },
+            &calibrated,
+            &CHARACTER,
+        );
+        assert!(upright.cockpit_y.abs() < EPS);
+
+        let crouched = head_height(
+            &HeadHeightInput {
+                seated_crouch: true,
+                ..seated
+            },
+            &calibrated,
+            &CHARACTER,
+        );
+        assert!((crouched.cockpit_y - (-0.1 * ratio - 0.6)).abs() < EPS);
+
+        // Without a floor, the recenter baseline stands in.
+        let no_floor = head_height(
+            &HeadHeightInput {
+                stage_height: None,
+                ..seated
+            },
+            &calibrated,
+            &CHARACTER,
+        );
+        assert_eq!(no_floor.source, HeadHeightSource::Baseline);
+        assert!((no_floor.cockpit_y - 0.3 * ratio).abs() < EPS);
+
+        // The standing postures ignore it.
+        let standing = head_height(
+            &HeadHeightInput {
+                stage_height: Some(PLAYER.eye_height),
+                ..input(EffectivePosture::Standing)
+            },
+            &calibrated,
+            &CHARACTER,
+        );
+        assert!(standing.cockpit_y.abs() < EPS);
     }
 
     #[test]

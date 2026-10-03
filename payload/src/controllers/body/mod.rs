@@ -24,15 +24,22 @@
 //!
 //! ```json
 //! { "height": 1.80, "eye_height": 1.68, "shoulder_height": 1.47, "shoulder_width": 0.40,
-//!   "arm_span": 1.80, "upper_arm": 0.34, "forearm": 0.26, "hand": 0.19 }
+//!   "arm_span": 1.80, "upper_arm": 0.34, "forearm": 0.26, "hand": 0.19,
+//!   "seated_eye_height": 1.21 }
 //! ```
+//!
+//! `seated_eye_height` is the one field without a default: it is the head's height above the STAGE
+//! floor while the player sits upright in their chair, and only a seated calibration (or the
+//! player) can supply it. While it is set, the seated posture measures the head against it rather
+//! than against the recenter baseline ([`crate::controllers::roomscale::posture`]).
 //!
 //! A missing file uses the defaults. A malformed file logs an error and uses the defaults; it
 //! never stops the mod.
 //!
 //! The file can be written by hand, or by the calibration flow on the pause menu's `VR: BODY` page
-//! ([`menu`]), which measures the player's eye height and arm span in the headset and derives the
-//! other dimensions from them ([`calibration`]) before saving them with [`save`].
+//! ([`menu`]), which measures the player's eye height (standing or seated) and arm span in the
+//! headset and derives the other dimensions from them ([`calibration`]) before saving them with
+//! [`save`].
 
 pub mod calibration;
 pub(crate) mod menu;
@@ -63,6 +70,10 @@ pub struct BodyDimensions {
     pub forearm: f32,
     /// Wrist to the tip of the middle finger.
     pub hand: f32,
+    /// The eye height while sitting upright in the player's chair, when calibrated. It belongs to
+    /// the chair as much as to the body, so there is no generic default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seated_eye_height: Option<f32>,
 }
 
 impl BodyDimensions {
@@ -76,6 +87,7 @@ impl BodyDimensions {
         upper_arm: 0.33,
         forearm: 0.26,
         hand: 0.19,
+        seated_eye_height: None,
     };
 
     /// The character's proportions, estimated from his stated height of about 1.8 to 1.9 m and
@@ -90,10 +102,12 @@ impl BodyDimensions {
         upper_arm: 0.35,
         forearm: 0.27,
         hand: 0.20,
+        seated_eye_height: None,
     };
 
     /// Check that every dimension is a positive finite length and that the heights are ordered
-    /// (shoulders below the eyes, eyes below the top of the head).
+    /// (shoulders below the eyes, eyes below the top of the head, and the seated eyes, when set,
+    /// below the standing eyes).
     pub fn validate(&self) -> Result<(), InvalidDimension> {
         for (field, value) in [
             ("height", self.height),
@@ -120,6 +134,20 @@ impl BodyDimensions {
                 lower: "shoulder_height",
                 upper: "eye_height",
             });
+        }
+        if let Some(seated) = self.seated_eye_height {
+            if !seated.is_finite() || seated <= 0.0 {
+                return Err(InvalidDimension::NotPositive {
+                    field: "seated_eye_height",
+                    value: seated,
+                });
+            }
+            if seated >= self.eye_height {
+                return Err(InvalidDimension::Misordered {
+                    lower: "seated_eye_height",
+                    upper: "eye_height",
+                });
+            }
         }
         Ok(())
     }
@@ -434,6 +462,7 @@ mod tests {
         upper_arm: 0.34,
         forearm: 0.26,
         hand: 0.19,
+        seated_eye_height: None,
     };
 
     const SHORT_PLAYER: BodyDimensions = BodyDimensions {
@@ -445,6 +474,7 @@ mod tests {
         upper_arm: 0.28,
         forearm: 0.22,
         hand: 0.17,
+        seated_eye_height: None,
     };
 
     const CHARACTER: BodyDimensions = BodyDimensions::CHARACTER_ESTIMATE;
@@ -547,6 +577,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(body, PLAYER);
+    }
+
+    #[test]
+    fn the_seated_eye_height_is_optional_and_below_the_standing_eyes() {
+        let body = parse_body_file(r#"{ "seated_eye_height": 1.2 }"#).unwrap();
+        assert_eq!(body.seated_eye_height, Some(1.2));
+        assert_eq!(parse_body_file("{}").unwrap().seated_eye_height, None);
+        let err = parse_body_file(r#"{ "seated_eye_height": 1.7 }"#).unwrap_err();
+        assert!(matches!(
+            err,
+            BodyFileErrorKind::Invalid(InvalidDimension::Misordered {
+                lower: "seated_eye_height",
+                ..
+            })
+        ));
+        let err = parse_body_file(r#"{ "seated_eye_height": -1 }"#).unwrap_err();
+        assert!(matches!(
+            err,
+            BodyFileErrorKind::Invalid(InvalidDimension::NotPositive { .. })
+        ));
+        // Without one, the file is written without the field.
+        let text = serde_json::to_string(&PLAYER).unwrap();
+        assert!(!text.contains("seated_eye_height"));
+        assert_eq!(parse_body_file(&text).unwrap(), PLAYER);
     }
 
     #[test]

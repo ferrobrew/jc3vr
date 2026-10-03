@@ -6,8 +6,13 @@ use std::time::{Duration, Instant};
 use crate::controllers::{
     body::{
         BodyDimensions,
-        calibration::{CalibrationError, Measurements, check_eye_height, derive},
+        calibration::{
+            CalibrationError, Measurements, SeatedMeasurements, arm_span_from_grip_span,
+            check_eye_height, check_seated_eye_height, derive, derive_seated,
+            height_from_eye_height, height_from_grip_span, keeping_seated_eye_height,
+        },
     },
+    config::Posture,
     frame::Hand,
 };
 
@@ -50,13 +55,35 @@ impl std::fmt::Display for Unavailable {
     }
 }
 
+/// How the player is calibrated: standing, which measures the height, or seated, which measures
+/// the seated eye height and estimates the height from the arm span.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Stance {
+    Standing,
+    Seated,
+}
+
+impl Stance {
+    /// Both stances, in the order the page lists them.
+    pub const ALL: [Stance; 2] = [Stance::Standing, Stance::Seated];
+
+    /// The stance a calibration defaults to under the posture setting: seated in the seated
+    /// posture, standing otherwise (the automatic posture never resolves to seated).
+    pub fn for_posture(posture: Posture) -> Stance {
+        match posture {
+            Posture::Seated => Stance::Seated,
+            Posture::Auto | Posture::Standing | Posture::Roomscale => Stance::Standing,
+        }
+    }
+}
+
 /// A step of the calibration flow.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Step {
     /// Not calibrating: the page shows the saved dimensions.
     Summary,
-    /// Standing straight, to measure the eye height.
-    Stand,
+    /// Standing straight or sitting upright, by the stance, to measure the eye height.
+    EyeHeight,
     /// The T-pose, to measure the arm span.
     Span,
     /// Reviewing the derived dimensions before saving.
@@ -114,8 +141,14 @@ pub enum CaptureStatus {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Calibration {
     step: Step,
+    stance: Stance,
+    /// The seated eye height of the body file being replaced, which a standing calibration keeps.
+    kept_seated_eye_height: Option<f32>,
+    /// The eye height measured in the stance.
     eye_height: Option<f32>,
     grip_span: Option<f32>,
+    /// The standing height a seated player set on the review.
+    height: Option<f32>,
     capture: Capture,
     notice: Option<Notice>,
     /// How many notices have been raised since the flow was created, kept across resets so that a
@@ -128,8 +161,11 @@ impl Calibration {
     pub const fn new() -> Self {
         Self {
             step: Step::Summary,
+            stance: Stance::Standing,
+            kept_seated_eye_height: None,
             eye_height: None,
             grip_span: None,
+            height: None,
             capture: Capture::Idle,
             notice: None,
             notices: 0,
@@ -151,9 +187,67 @@ impl Calibration {
         self.notices
     }
 
-    /// The measured eye height, once the standing step is done.
+    /// The stance being calibrated.
+    pub fn stance(&self) -> Stance {
+        self.stance
+    }
+
+    /// The eye height measured in the stance, once the eye-height step is done.
     pub fn eye_height(&self) -> Option<f32> {
         self.eye_height
+    }
+
+    /// The seated eye height a standing calibration keeps from the body file it replaces.
+    pub fn kept_seated_eye_height(&self) -> Option<f32> {
+        match self.stance {
+            Stance::Standing => self.kept_seated_eye_height,
+            Stance::Seated => None,
+        }
+    }
+
+    /// The standing height before the arm span is measured: from the standing eye height, and
+    /// unknown seated, where it comes from the span.
+    pub fn height_before_span(&self) -> Option<f32> {
+        match self.stance {
+            Stance::Standing => self.eye_height.map(height_from_eye_height),
+            Stance::Seated => None,
+        }
+    }
+
+    /// The standing height a grip span of `grip_span` gives with what is measured so far: the
+    /// standing calibration's measured height, or the seated calibration's estimate from the span.
+    pub fn height_for_span(&self, grip_span: f32) -> Option<f32> {
+        match self.stance {
+            Stance::Standing => self.height_before_span(),
+            Stance::Seated => Some(height_from_grip_span(grip_span)),
+        }
+    }
+
+    /// The fingertip arm span a grip span of `grip_span` gives with what is measured so far, for
+    /// the arm-span step's live readout.
+    pub fn arm_span_for(&self, grip_span: f32) -> Option<f32> {
+        Some(arm_span_from_grip_span(
+            grip_span,
+            self.height_for_span(grip_span)?,
+        ))
+    }
+
+    /// The seated calibration's standing height estimated from the measured span, once it is
+    /// measured. The player's own setting replaces it ([`Calibration::set_height`]).
+    pub fn estimated_height(&self) -> Option<f32> {
+        match self.stance {
+            Stance::Seated => self.grip_span.map(height_from_grip_span),
+            Stance::Standing => None,
+        }
+    }
+
+    /// The standing height on the review: the player's setting, else the estimate (seated), or the
+    /// measured one (standing).
+    pub fn height(&self) -> Option<f32> {
+        match self.stance {
+            Stance::Seated => self.height.or(self.estimated_height()),
+            Stance::Standing => self.height_before_span(),
+        }
     }
 
     /// What the capture is doing at `now`.
@@ -168,27 +262,52 @@ impl Calibration {
         }
     }
 
-    /// The dimensions derived from both measurements, once both are taken.
+    /// The dimensions derived from both measurements, once both are taken: the standing body with
+    /// the kept seated eye height, or the seated body with its standing height estimated or set.
     pub fn result(&self) -> Option<Result<BodyDimensions, CalibrationError>> {
-        Some(derive(Measurements {
-            eye_height: self.eye_height?,
-            grip_span: self.grip_span?,
-        }))
+        let eye_height = self.eye_height?;
+        let grip_span = self.grip_span?;
+        Some(match self.stance {
+            Stance::Standing => derive(Measurements {
+                eye_height,
+                grip_span,
+            })
+            .map(|body| keeping_seated_eye_height(body, self.kept_seated_eye_height)),
+            Stance::Seated => derive_seated(SeatedMeasurements {
+                seated_eye_height: eye_height,
+                grip_span,
+                height: self.height,
+            }),
+        })
     }
 
-    /// Begin calibrating, from the summary. Returns whether the step changed.
-    pub fn start(&mut self) -> bool {
+    /// Begin calibrating in `stance`, from the summary. `kept_seated_eye_height` is the body file's
+    /// seated eye height, which a standing calibration keeps. Returns whether the step changed.
+    pub fn start(&mut self, stance: Stance, kept_seated_eye_height: Option<f32>) -> bool {
         if self.step != Step::Summary {
             return false;
         }
-        self.reset(Step::Stand);
+        self.stance = stance;
+        self.kept_seated_eye_height = kept_seated_eye_height;
+        self.reset(Step::EyeHeight);
+        true
+    }
+
+    /// Set the seated calibration's standing height on the review, replacing the estimate from the
+    /// span. Returns whether it was taken: only a seated review has a height to set, and only a
+    /// finite one.
+    pub fn set_height(&mut self, height: f32) -> bool {
+        if self.step != Step::Review || self.stance != Stance::Seated || !height.is_finite() {
+            return false;
+        }
+        self.height = Some(height);
         true
     }
 
     /// Start a capture on a measuring step, given the live measurement at `now`. Refuses, with a
     /// notice, when the measurement is unavailable. Returns whether a capture started.
     pub fn measure(&mut self, now: Instant, live: Result<f32, Unavailable>) -> bool {
-        if !matches!(self.step, Step::Stand | Step::Span) || self.capture != Capture::Idle {
+        if !matches!(self.step, Step::EyeHeight | Step::Span) || self.capture != Capture::Idle {
             return false;
         }
         if let Err(unavailable) = live {
@@ -235,15 +354,16 @@ impl Calibration {
         }
     }
 
-    /// Go back one step: from the T-pose to the standing step, from the review to the T-pose
-    /// (keeping the height), or from the standing step to the summary. Returns whether the step
+    /// Go back one step: from the T-pose to the eye-height step, from the review to the T-pose
+    /// (keeping the eye height, and dropping a height set on the review, which the new span
+    /// re-estimates), or from the eye-height step to the summary. Returns whether the step
     /// changed.
     pub fn back(&mut self) -> bool {
         match self.step {
             Step::Summary => false,
-            Step::Stand => self.cancel(),
+            Step::EyeHeight => self.cancel(),
             Step::Span => {
-                self.step = Step::Stand;
+                self.step = Step::EyeHeight;
                 self.eye_height = None;
                 self.capture = Capture::Idle;
                 self.notice = None;
@@ -252,18 +372,20 @@ impl Calibration {
             Step::Review => {
                 self.step = Step::Span;
                 self.grip_span = None;
+                self.height = None;
                 self.notice = None;
                 true
             }
         }
     }
 
-    /// Measure again from the standing step, from the review. Returns whether the step changed.
+    /// Measure again from the eye-height step, in the same stance, from the review. Returns
+    /// whether the step changed.
     pub fn retry(&mut self) -> bool {
         if self.step != Step::Review {
             return false;
         }
-        self.reset(Step::Stand);
+        self.reset(Step::EyeHeight);
         true
     }
 
@@ -284,10 +406,13 @@ impl Calibration {
         self.raise(Notice::SaveFailed(message));
     }
 
-    /// Clear everything but the notice count and go to `step`.
+    /// Clear the measurements and the notice and go to `step`, keeping the stance, the kept seated
+    /// eye height, and the notice count.
     fn reset(&mut self, step: Step) {
         *self = Self {
             step,
+            stance: self.stance,
+            kept_seated_eye_height: self.kept_seated_eye_height,
             notices: self.notices,
             ..Self::new()
         };
@@ -307,10 +432,14 @@ impl Calibration {
             return false;
         }
         match self.step {
-            Step::Stand => {
-                // Standing still: the mean rides out the head's sway.
+            Step::EyeHeight => {
+                // Holding still: the mean rides out the head's sway.
                 let eye_height = samples.mean();
-                if let Err(error) = check_eye_height(eye_height) {
+                let checked = match self.stance {
+                    Stance::Standing => check_eye_height(eye_height),
+                    Stance::Seated => check_seated_eye_height(eye_height),
+                };
+                if let Err(error) = checked {
                     self.raise(Notice::Rejected(error));
                     return false;
                 }
@@ -385,8 +514,8 @@ impl Samples {
 mod tests {
     use super::*;
     use crate::controllers::body::calibration::{
-        arm_span_from_grip_span, height_from_eye_height, span_out_of_proportion,
-        tests::{SEATED_EYE_HEIGHT, player},
+        EYE_HEIGHT_RATIO, span_out_of_proportion,
+        tests::{SEATED_EYE_HEIGHT, player, seated_player},
     };
 
     /// Run a capture from MEASURE to the end of its sampling window with a constant value.
@@ -412,8 +541,8 @@ mod tests {
         let mut calibration = Calibration::new();
         assert_eq!(calibration.step(), Step::Summary);
         assert!(calibration.result().is_none());
-        assert!(calibration.start());
-        assert_eq!(calibration.step(), Step::Stand);
+        assert!(calibration.start(Stance::Standing, None));
+        assert_eq!(calibration.step(), Step::EyeHeight);
 
         assert!(capture(&mut calibration, t0, player().eye_height));
         assert_eq!(calibration.step(), Step::Span);
@@ -433,7 +562,7 @@ mod tests {
     fn the_countdown_counts_whole_seconds() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         assert_eq!(calibration.capture_status(t0), CaptureStatus::Idle);
         calibration.measure(t0, Ok(1.6));
         assert_eq!(calibration.capture_status(t0), CaptureStatus::Countdown(3));
@@ -453,7 +582,7 @@ mod tests {
     fn measure_refuses_without_a_measurement() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         assert!(!calibration.measure(t0, Err(Unavailable::NoFloor)));
         assert_eq!(
             calibration.notice(),
@@ -481,7 +610,7 @@ mod tests {
     fn missed_samples_are_skipped() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.6));
         let start = t0 + COUNTDOWN;
         calibration.tick(start, Ok(1.6));
@@ -499,7 +628,7 @@ mod tests {
     fn a_window_of_missed_samples_says_why() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         capture(&mut calibration, t0, player().eye_height);
         calibration.measure(t0, Ok(1.6));
         let start = t0 + COUNTDOWN;
@@ -520,7 +649,7 @@ mod tests {
     fn too_few_samples_do_not_count() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.6));
         calibration.tick(t0 + COUNTDOWN, Ok(1.6));
         assert!(!calibration.tick(t0 + COUNTDOWN + SAMPLE_WINDOW, Ok(1.6)));
@@ -528,16 +657,16 @@ mod tests {
             calibration.notice(),
             Some(&Notice::TooFewSamples { cause: None })
         );
-        assert_eq!(calibration.step(), Step::Stand);
+        assert_eq!(calibration.step(), Step::EyeHeight);
     }
 
     #[test]
     fn an_implausible_capture_stays_on_its_step() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         assert!(!capture(&mut calibration, t0, 0.8));
-        assert_eq!(calibration.step(), Step::Stand);
+        assert_eq!(calibration.step(), Step::EyeHeight);
         assert!(matches!(
             calibration.notice(),
             Some(Notice::Rejected(CalibrationError::EyeHeightTooLow(_)))
@@ -554,14 +683,143 @@ mod tests {
     }
 
     #[test]
-    fn a_seated_calibration_reaches_the_review() {
+    fn the_stance_defaults_to_seated_only_in_the_seated_posture() {
+        assert_eq!(Stance::for_posture(Posture::Seated), Stance::Seated);
+        for posture in [Posture::Auto, Posture::Standing, Posture::Roomscale] {
+            assert_eq!(Stance::for_posture(posture), Stance::Standing);
+        }
+    }
+
+    #[test]
+    fn a_seated_calibration_saves_a_standing_height_and_the_seated_eyes() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        assert!(calibration.start(Stance::Seated, None));
+        assert_eq!(calibration.stance(), Stance::Seated);
+        assert_eq!(calibration.step(), Step::EyeHeight);
+        assert!(capture(&mut calibration, t0, SEATED_EYE_HEIGHT));
+        assert_eq!(calibration.step(), Step::Span);
+        // The height waits for the span.
+        assert_eq!(calibration.height_before_span(), None);
+        assert_eq!(calibration.height(), None);
+        let grip_span = player().grip_span;
+        assert!((calibration.height_for_span(grip_span).unwrap() - 1.80).abs() < 1e-4);
+        assert!((calibration.arm_span_for(grip_span).unwrap() - 1.80).abs() < 1e-4);
+
+        assert!(capture(&mut calibration, t0, grip_span));
+        assert_eq!(calibration.step(), Step::Review);
+        assert!(calibration.notice().is_none());
+        let body = calibration.result().unwrap().unwrap();
+        assert_eq!(body, derive_seated(seated_player()).unwrap());
+        // Not the seated eye height as the standing one.
+        assert!((body.height - 1.80).abs() < 1e-3);
+        assert!(body.eye_height > SEATED_EYE_HEIGHT);
+        assert_eq!(body.seated_eye_height, Some(SEATED_EYE_HEIGHT));
+        assert!(!span_out_of_proportion(&body));
+    }
+
+    #[test]
+    fn a_seated_review_takes_a_height_correction_until_the_span_is_measured_again() {
+        let t0 = Instant::now();
+        let mut calibration = Calibration::new();
+        calibration.start(Stance::Seated, None);
+        // No height to set before the review.
+        assert!(!calibration.set_height(1.7));
+        capture(&mut calibration, t0, SEATED_EYE_HEIGHT);
+        capture(&mut calibration, t0, player().grip_span);
+        let estimate = calibration.estimated_height().unwrap();
+        assert_eq!(calibration.height(), Some(estimate));
+
+        assert!(calibration.set_height(1.7));
+        assert!(!calibration.set_height(f32::NAN));
+        assert_eq!(calibration.height(), Some(1.7));
+        assert_eq!(calibration.estimated_height(), Some(estimate));
+        let body = calibration.result().unwrap().unwrap();
+        assert!((body.height - 1.7).abs() < 1e-3);
+        assert!((body.eye_height - EYE_HEIGHT_RATIO * 1.7).abs() < 1e-3);
+        assert_eq!(
+            body,
+            derive_seated(SeatedMeasurements {
+                height: Some(1.7),
+                ..seated_player()
+            })
+            .unwrap()
+        );
+
+        // A height that puts the standing eyes under the seated ones is refused on the review.
+        calibration.set_height(1.25);
+        assert!(matches!(
+            calibration.result(),
+            Some(Err(CalibrationError::SeatedAboveStanding { .. }))
+        ));
+
+        // Back to the span drops the setting; the new span is estimated afresh.
+        assert!(calibration.back());
+        assert_eq!(calibration.height(), None);
+        capture(&mut calibration, t0, player().grip_span);
+        assert_eq!(calibration.height(), Some(estimate));
+        // Retry keeps the stance.
+        assert!(calibration.retry());
+        assert_eq!(calibration.stance(), Stance::Seated);
+        assert_eq!(calibration.step(), Step::EyeHeight);
+    }
+
+    #[test]
+    fn a_seated_step_refuses_a_standing_eye_height_and_a_standing_step_a_seated_one() {
+        let t0 = Instant::now();
+        let mut seated = Calibration::new();
+        seated.start(Stance::Seated, None);
+        assert!(!capture(&mut seated, t0, player().eye_height));
+        assert_eq!(seated.step(), Step::EyeHeight);
+        assert!(matches!(
+            seated.notice(),
+            Some(Notice::Rejected(CalibrationError::SeatedEyeHeightTooHigh(
+                _
+            )))
+        ));
+
+        let mut standing = Calibration::new();
+        standing.start(Stance::Standing, None);
+        assert!(!capture(&mut standing, t0, 0.9));
+        assert!(matches!(
+            standing.notice(),
+            Some(Notice::Rejected(CalibrationError::EyeHeightTooLow(_)))
+        ));
+    }
+
+    #[test]
+    fn a_standing_calibration_keeps_the_seated_eye_height_and_has_no_height_to_set() {
+        let t0 = Instant::now();
+        let mut calibration = Calibration::new();
+        calibration.start(Stance::Standing, Some(SEATED_EYE_HEIGHT));
+        assert_eq!(
+            calibration.kept_seated_eye_height(),
+            Some(SEATED_EYE_HEIGHT)
+        );
+        capture(&mut calibration, t0, player().eye_height);
+        capture(&mut calibration, t0, player().grip_span);
+        assert!(!calibration.set_height(1.7));
+        assert_eq!(calibration.estimated_height(), None);
+        let body = calibration.result().unwrap().unwrap();
+        assert_eq!(body.seated_eye_height, Some(SEATED_EYE_HEIGHT));
+        assert_eq!(
+            body,
+            keeping_seated_eye_height(derive(player()).unwrap(), Some(SEATED_EYE_HEIGHT))
+        );
+        // A seated calibration replaces the kept value with its own measurement.
+        let mut seated = Calibration::new();
+        seated.start(Stance::Seated, Some(1.0));
+        assert_eq!(seated.kept_seated_eye_height(), None);
+    }
+
+    #[test]
+    fn a_standing_calibration_taken_seated_is_still_flagged() {
+        let t0 = Instant::now();
+        let mut calibration = Calibration::new();
+        calibration.start(Stance::Standing, None);
         assert!(capture(&mut calibration, t0, SEATED_EYE_HEIGHT));
         assert!(capture(&mut calibration, t0, player().grip_span));
         assert_eq!(calibration.step(), Step::Review);
-        assert!(calibration.notice().is_none());
         assert!(span_out_of_proportion(
             &calibration.result().unwrap().unwrap()
         ));
@@ -571,7 +829,7 @@ mod tests {
     fn every_notice_is_counted() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         assert_eq!(calibration.notice_count(), 0);
         calibration.measure(t0, Err(Unavailable::NoFloor));
         calibration.measure(t0, Err(Unavailable::NoFloor));
@@ -583,7 +841,7 @@ mod tests {
         // The count survives leaving the flow, so a reader never sees it go backwards.
         calibration.cancel();
         assert_eq!(calibration.notice_count(), 2);
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         calibration.measure(t0, Err(Unavailable::NoHeadset));
         assert_eq!(calibration.notice_count(), 3);
     }
@@ -592,7 +850,7 @@ mod tests {
     fn the_span_takes_the_widest_sample_and_the_height_the_mean() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.0));
         let start = t0 + COUNTDOWN;
         calibration.tick(start, Ok(1.66));
@@ -623,11 +881,11 @@ mod tests {
         assert!(!calibration.retry());
         assert!(!calibration.cancel());
 
-        calibration.start();
-        assert!(!calibration.start());
+        calibration.start(Stance::Standing, None);
+        assert!(!calibration.start(Stance::Standing, None));
         capture(&mut calibration, t0, player().eye_height);
         assert!(calibration.back());
-        assert_eq!(calibration.step(), Step::Stand);
+        assert_eq!(calibration.step(), Step::EyeHeight);
         assert!(calibration.eye_height().is_none());
 
         capture(&mut calibration, t0, player().eye_height);
@@ -646,7 +904,7 @@ mod tests {
             Some(&Notice::SaveFailed("disk full".into()))
         );
         assert!(calibration.retry());
-        assert_eq!(calibration.step(), Step::Stand);
+        assert_eq!(calibration.step(), Step::EyeHeight);
         assert!(calibration.result().is_none());
         assert!(calibration.notice().is_none());
 
@@ -655,7 +913,7 @@ mod tests {
         assert_eq!(calibration.step(), Step::Summary);
         assert!(!calibration.cancel());
 
-        calibration.start();
+        calibration.start(Stance::Standing, None);
         assert!(calibration.cancel());
         assert_eq!(calibration.step(), Step::Summary);
         assert!(calibration.result().is_none());

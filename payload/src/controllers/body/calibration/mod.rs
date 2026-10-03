@@ -1,9 +1,12 @@
 //! Body calibration: the dimensions the body file holds, derived from the two things the headset can
 //! measure, and the guided flow that measures them.
 //!
-//! The headset measures the standing eye height (the head above the STAGE floor, see
-//! [`crate::vr::stage`]) and, in a T-pose, the distance between the two controllers' grip poses.
-//! Every other dimension is derived from those with generic adult proportions ([`derive`]): the
+//! The headset measures the eye height (the head above the STAGE floor, see [`crate::vr::stage`])
+//! and, in a T-pose, the distance between the two controllers' grip poses. A standing player's eye
+//! height gives their height. A seated player's gives the seated eye height the seated posture
+//! measures the head against, and their height is estimated from the arm span instead, which is
+//! close to the height for most adults; the player can correct it on the review. Every other
+//! dimension is derived from the height and the span with generic adult proportions ([`derive`]): the
 //! segment ratios of Drillis and Contini's anthropometric tables as tabulated in Winter's
 //! *Biomechanics and Motor Control of Human Movement*. The height, shoulder, and hand ratios are
 //! the ones [`BodyDimensions::GENERIC_ADULT`] follows. The arm segments are not: the tables'
@@ -27,7 +30,7 @@ pub use flow::*;
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::controllers::body::calibration::{
-        EYE_HEIGHT_RATIO, GRIP_TO_FINGERTIP_SHARE, HAND_RATIO, Measurements,
+        EYE_HEIGHT_RATIO, GRIP_TO_FINGERTIP_SHARE, HAND_RATIO, Measurements, SeatedMeasurements,
     };
 
     /// A player of about 1.80 m with a span equal to their height.
@@ -41,4 +44,13 @@ pub(crate) mod tests {
 
     /// The eye height of a 1.80 m player sitting on an ordinary chair.
     pub(crate) const SEATED_EYE_HEIGHT: f32 = 1.2;
+
+    /// [`player`] sitting on an ordinary chair, with no height set.
+    pub(crate) fn seated_player() -> SeatedMeasurements {
+        SeatedMeasurements {
+            seated_eye_height: SEATED_EYE_HEIGHT,
+            grip_span: player().grip_span,
+            height: None,
+        }
+    }
 }
