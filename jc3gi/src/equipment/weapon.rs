@@ -493,7 +493,21 @@ pub struct WeaponBase {
     _field_1a8: [u8; 4],
     /// Shots remaining that use the spread ring; decremented once per shot.
     pub m_ProjectileOffsetFireCount: i32,
-    _field_1b0: [u8; 184],
+    _field_1b0: [u8; 164],
+    /// The animation modifier id (`ava::idstring<NAnimationSystem::SModifierIdTag>`) for holding
+    /// this weapon without aiming.
+    /// [`Character::SetCharacterModifiers`](crate::character::character::Character::SetCharacterModifiers)
+    /// sets it for the wielded weapon while the holder is not trying to aim.
+    pub m_AnimationModifier: u32,
+    /// The animation modifier id for aiming this weapon, set by
+    /// [`Character::SetCharacterModifiers`](crate::character::character::Character::SetCharacterModifiers)
+    /// in place of [`m_AnimationModifier`](crate::equipment::weapon::WeaponBase::m_AnimationModifier) while the holder is trying
+    /// to aim.
+    pub m_AimAnimationModifier: u32,
+    /// The animation modifier id for having this weapon equipped, set alongside the held or aimed
+    /// modifier every tick the weapon is wielded.
+    pub m_EquippedAnimationModifier: u32,
+    _field_260: [u8; 8],
     /// The accumulated scatter, raised by each shot up to the tuning's maximum and scaling the
     /// shot's scatter rotation.
     pub m_CurrentScatterValue: f32,

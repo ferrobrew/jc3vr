@@ -12,7 +12,7 @@ use crate::{
             probe::ProbeResult,
         },
     },
-    ui::controllers::{vec3, yes_no},
+    ui::controllers::{stance, vec3, yes_no},
 };
 
 pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
@@ -168,4 +168,7 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
         r.seat_transition == SeatTransition::Fade,
         egui::Slider::new(&mut r.seat_fade_hold_s, 0.0..=2.0).text("Seat fade hold (s)"),
     );
+
+    ui.separator();
+    stance::stance_settings(ui, &mut r.stance);
 }

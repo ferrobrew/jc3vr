@@ -1,4 +1,19 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// How long a modifier set through [`AnimationRuleSystem::SetModifier`](crate::animation::rule_system::AnimationRuleSystem::SetModifier) stays active
+/// (`CAnimationRuleSystem::EAnimationModifierType`). Each value is a bit index in the rule system's
+/// per-modifier type mask.
+pub enum AnimationModifierType {
+    FRAME_BOUND = 0isize as _,
+    STATE_BOUND = 1isize as _,
+}
+fn _AnimationModifierType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], AnimationModifierType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// An animation rule system (`CAnimationRuleSystem`): drives one afsmb state machine for a character.
 /// A character's [`AnimatedModel`](crate::character::character::AnimatedModel) holds one per animated model,
@@ -16,7 +31,29 @@ fn _AnimationRuleSystem_size_check() {
     }
     unreachable!()
 }
-impl AnimationRuleSystem {}
+impl AnimationRuleSystem {
+    pub const SetModifier_ADDRESS: usize = 0x140479A10;
+    /// Marks an animation modifier (`ava::idstring<NAnimationSystem::SModifierIdTag>`, passed as a
+    /// pointer to its id) active on this rule system: it sets the bit for `modifier_type` in the
+    /// rule system's modifier-to-type-mask map. The animation set's nodes select their variant clips
+    /// by the active modifiers (an `ANIM_*` node lists one variant per modifier combination, such as
+    /// a weapon's held or aimed stance). [`Character::SetModifier`](crate::character::character::Character::SetModifier)
+    /// forwards to this for every rule system of the character's animated model.
+    pub unsafe fn SetModifier(
+        &mut self,
+        modifier: *const u32,
+        modifier_type: crate::animation::rule_system::AnimationModifierType,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                modifier: *const u32,
+                modifier_type: crate::animation::rule_system::AnimationModifierType,
+            ) = ::std::mem::transmute(Self::SetModifier_ADDRESS);
+            f(self as *mut Self as _, modifier, modifier_type)
+        }
+    }
+}
 impl std::convert::AsRef<AnimationRuleSystem> for AnimationRuleSystem {
     fn as_ref(&self) -> &AnimationRuleSystem {
         self

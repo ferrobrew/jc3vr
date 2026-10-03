@@ -129,6 +129,8 @@ The relaxed and aimed holds are separate full-body state families in the base gr
 - Transitions: `S_IDLE_TRANS_TO_AIM`, `S_IDLE_TRANS_TO_NO_AIM`, and `S_IDLE_TRANS_TO_NO_AIM_SLOW`; [`StateBitFlag::SB_IN_NOAIM_TO_AIM`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_NOAIM_TO_AIM) and [`StateBitFlag::SB_IN_IDLE_AIMING`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_IDLE_AIMING) report them.
 - Non-combat: `S_MOVE_NON_COMBAT`, `S_WALK_START_*_NON_COMBAT`, and `S_COMBAT_IDLE_TO_UNARMED_IDLE`, selected by `C_IS_NON_COMBAT` (`CIsPlayerNonCombat`, the player in the relaxed mental state).
 
+The idle is the exception to the split: `S_IDLE_AIM_FOCUS` plays only the minigun's idle, and the held and aimed idles of the other weapons are clip variants of `S_IDLE` chosen by animation modifiers rather than by the aim states ([idle-stance.md](../character/idle-stance.md)).
+
 Weapon-specific grip, reload, pump, bolt, draw, holster, switch, and pickup animations are in the upper-body partial graph (`S_UB_*`, keyed by per-weapon `C_<WEAPON>` conditions) and are independent of the aim families.
 
 ## The mental state

@@ -22,6 +22,7 @@ use crate::{
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+        roomscale::stance::StanceConfig,
         summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
         weapons::config::{
@@ -716,6 +717,8 @@ pub struct RoomscaleConfig {
     /// Under [`SeatTransition::Fade`], how long the view stays dark after the seat locks, so that
     /// the re-based view settles before it clears, seconds.
     pub seat_fade_hold_s: f32,
+    /// Keeping the standing stance square with the player's.
+    pub stance: StanceConfig,
 }
 
 impl RoomscaleConfig {
@@ -729,6 +732,7 @@ impl RoomscaleConfig {
             fade: FadeConfig::new(),
             seat_transition: SeatTransition::Ride,
             seat_fade_hold_s: 0.3,
+            stance: StanceConfig::new(),
         }
     }
 }

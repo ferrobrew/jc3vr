@@ -1105,6 +1105,51 @@ impl Character {
             f(self as *const Self as _)
         }
     }
+    pub const SetCharacterModifiers_ADDRESS: usize = 0x1407F52E0;
+    /// Sets the character's frame-bound animation modifiers for this tick, which select the variant
+    /// clips of the animation set's nodes. Called once per tick from the pre-state-machine pass,
+    /// after the aim input and before the state tasks. In order: the grapple modifier on every rule
+    /// system while the hook is in its aiming state
+    /// ([`GrapplingHook::IsHookAimingState`](crate::equipment::grappling_hook::GrapplingHook::IsHookAimingState));
+    /// then, for the wielded weapon (the planted explosive while planting, otherwise the selected
+    /// slot's weapon while it is wielded, dual-wielded, or mounted, or the weapon being switched to
+    /// or drawn), through [`SetModifier`](crate::character::character::Character::SetModifier), the weapon's
+    /// [`m_AimAnimationModifier`](crate::equipment::weapon::WeaponBase::m_AimAnimationModifier) when
+    /// [`IsTryingToAim`](crate::character::character::Character::IsTryingToAim) holds and the hook is not aiming, its
+    /// [`m_AnimationModifier`](crate::equipment::weapon::WeaponBase::m_AnimationModifier) otherwise, and
+    /// always its
+    /// [`m_EquippedAnimationModifier`](crate::equipment::weapon::WeaponBase::m_EquippedAnimationModifier);
+    /// for a character other than the player, a faction or ghost modifier; the relaxed modifier
+    /// while the avatar's mental state is relaxed; and a stunt modifier (combat with a weapon,
+    /// non-combat without) while attached to a vehicle or while stunt mode is forced. Rico's on-foot
+    /// idle node picks its unarmed relaxed clip with no weapon modifier, the weapon's held stance
+    /// with its plain modifier, and the aimed stance with its aim modifier, the grapple modifier,
+    /// or the explosive's modifier.
+    pub unsafe fn SetCharacterModifiers(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::SetCharacterModifiers_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetModifier_ADDRESS: usize = 0x14079A7B0;
+    /// Marks an animation modifier active with `modifier_type` on every rule system of the
+    /// character's animated model, through [`AnimationRuleSystem::SetModifier`](crate::animation::rule_system::AnimationRuleSystem::SetModifier).
+    pub unsafe fn SetModifier(
+        &mut self,
+        modifier: *const u32,
+        modifier_type: crate::animation::rule_system::AnimationModifierType,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                modifier: *const u32,
+                modifier_type: crate::animation::rule_system::AnimationModifierType,
+            ) = ::std::mem::transmute(Self::SetModifier_ADDRESS);
+            f(self as *mut Self as _, modifier, modifier_type)
+        }
+    }
     pub const IsTryingToFireAnyWeapons_ADDRESS: usize = 0x1407F2AF0;
     /// Whether any weapon fire input is active: fire, precision-aim fire, or explosive planting.
     /// `ignore_animation` skips the inventory's animation-permission checks.

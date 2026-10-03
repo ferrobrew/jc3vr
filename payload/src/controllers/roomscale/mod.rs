@@ -12,7 +12,8 @@
 //! - [`probe`]: the head-through-geometry probe;
 //! - [`fade`]: the comfort fade the VR blit applies;
 //! - [`crouch`]: the visual crouch's IK targets and the capsule's proxy-state rules;
-//! - [`seat`]: the seat-transition phases and modes.
+//! - [`seat`]: the seat-transition phases and modes;
+//! - [`stance`]: the standing stance: the relaxed idle and the squared stance.
 //!
 //! The frame half runs once per rendered VR frame from the pose composition
 //! ([`compose_cockpit`], called by [`crate::vr::begin_render_frame`] on the game thread, after the
@@ -36,6 +37,7 @@ pub mod probe;
 pub mod rebase;
 pub mod seat;
 pub mod sim;
+pub mod stance;
 pub mod teleport;
 
 use std::{
@@ -327,6 +329,12 @@ pub(crate) unsafe fn queue_crouch_ik(character: *mut Character) {
         _ => false,
     };
     FRAME.lock().visual_crouch = queued;
+}
+
+/// Whether the visual crouch queued its targets on the latest pose finalization; read after
+/// [`queue_crouch_ik`] in the same pass, this tick's.
+pub(crate) fn visual_crouch_queued() -> bool {
+    FRAME.lock().visual_crouch
 }
 
 /// What the frame half publishes for the simulation half.

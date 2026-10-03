@@ -217,10 +217,13 @@ pub(crate) fn shoulders_driven() -> [bool; 2] {
 /// Capture the headpose anchors (pre-IK) and queue the HumanIK head effector target for the local
 /// player. Every engine-pointer hop is null-guarded; any failure leaves the previous anchors and
 /// queues nothing. `controller_hands` (indexed by [`Hand::index`]) marks the wrists the controllers
-/// drive this tick, whose hand pins stand down.
+/// drive this tick, whose hand pins stand down. `stance_chest_yaw` is the standing stance's turn of
+/// the chest toward the body's forward, radians about the model's up axis, which joins the torso
+/// rotation ([`crate::controllers::roomscale::stance`]).
 pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
     character: *mut Character,
     controller_hands: [bool; 2],
+    stance_chest_yaw: f32,
 ) {
     unsafe {
         let Some(character) = character.as_mut().filter(|c| c.m_IsLocalCharacter) else {
@@ -455,7 +458,15 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // The body-relative rotation is the identity at neutral by construction.
         let torso_yaw =
             headpose::sim::body_yaw_of(headpose::body_relative_rotation()) * cfg.yaw_share;
-        let torso = lean * glam::Quat::from_rotation_y(torso_yaw);
+        // The stance's chest turn squares a bladed idle's chest with the body's forward. It joins
+        // the yaw rather than queuing its own chest target, because a second target for the chest
+        // would replace this one.
+        let stance_chest_yaw = if stance_chest_yaw.is_finite() {
+            stance_chest_yaw
+        } else {
+            0.0
+        };
+        let torso = lean * glam::Quat::from_rotation_y(torso_yaw + stance_chest_yaw);
 
         // While aiming, the torso targets and hand pins stand down wholesale (the head target
         // remains). The aim IK claims only the one arm effector it rotates but needs the whole
