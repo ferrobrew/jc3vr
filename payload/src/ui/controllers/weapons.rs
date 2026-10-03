@@ -188,9 +188,10 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
 
 fn dual_wield_readout(ui: &mut Ui, d: &DualWieldStatus) {
     ui.label(format!(
-        "Dual wield: split {} · last update handed {} · pistols swapped from the game's layout {}",
+        "Dual wield: split {} · last update handed {} · pinned gun {} · pistols swapped from the game's layout {}",
         if d.active { "acting" } else { "idle" },
         d.chosen.map_or("no hand", Hand::label),
+        d.pinned.map_or("none".to_owned(), |g| g.to_string()),
         yes_no(d.swapped)
     ));
 }

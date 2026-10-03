@@ -50,7 +50,11 @@ use crate::{
         hands::{self, tiers},
         mode::{self, Detection, Mode},
         scheme, vehicles,
-        weapons::{self, dual_wield::TriggerInput, haptics},
+        weapons::{
+            self,
+            dual_wield::{self, TriggerInput, TriggerTick},
+            haptics,
+        },
     },
     headpose,
     hud::pointer::{clear_controller, owns_menu_trigger, update_controller},
@@ -227,15 +231,16 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
-    controls.dual_wield = start.dual_wield;
+    let pistols = start.dual_wield && dual_wield::triggers_fire_pistols(detection.mode);
+    controls.dual_wield = pistols;
     controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
-    weapons::dual_wield::observe_triggers(
-        start.dual_wield,
-        controls.hands.map(|h| TriggerInput {
-            held: h.trigger_press.held(),
-            pressed: h.trigger_press.pressed,
+    dual_wield::observe_triggers(start.dual_wield.then(|| TriggerTick {
+        dominant,
+        triggers: controls.hands.map(|h| TriggerInput {
+            held: pistols && h.trigger_press.held(),
+            pressed: pistols && h.trigger_press.pressed,
         }),
-    );
+    }));
     let grapple_hand = dominant.other();
     let yank = state.yank.step(
         dt,

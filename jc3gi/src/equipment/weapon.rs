@@ -714,7 +714,14 @@ impl WeaponBase {
     }
     pub const UpdateFromUserPostSim_ParallelBase_ADDRESS: usize = 0x1409A3C50;
     /// The base implementation of the
-    /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel) virtual.
+    /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel) virtual. It returns
+    /// early, processing no input, when any gun's muzzle is within about 0.1 m of `aim_position`.
+    /// After the aim target, the recoil recovery, and the fire timer, it reads
+    /// [`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire) once and walks
+    /// [`m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData): only the gun at that index gets
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel), and so only that gun can start a
+    /// shot this tick, while every gun gets its attached-effect update. A weapon owned by a remote
+    /// peer skips the per-gun update and fires from its network component's fire flags instead.
     pub unsafe fn UpdateFromUserPostSim_ParallelBase(
         &mut self,
         dt: f32,
@@ -734,7 +741,15 @@ impl WeaponBase {
     pub const UpdateWeapon_Parallel_ADDRESS: usize = 0x140992B00;
     /// The per-gun fire-input update: cools heat, reads the trigger against the tuning's
     /// sensitivities, applies semi-automatic, forced-fire, wall-penetration, and aim-angle gating,
-    /// and starts or stops fire on `weapon_data`.
+    /// and starts or stops fire on `weapon_data`. The trigger, semi-automatic, cancel, and buffer
+    /// state it keeps ([`m_IsTriggerPulled`](crate::equipment::weapon::WeaponBase::m_IsTriggerPulled),
+    /// [`m_FiredThisInput`](crate::equipment::weapon::WeaponBase::m_FiredThisInput),
+    /// [`m_IsFiringCancelled`](crate::equipment::weapon::WeaponBase::m_IsFiringCancelled), and
+    /// [`m_InputBufferTimer`](crate::equipment::weapon::WeaponBase::m_InputBufferTimer)) and the fire interval
+    /// ([`m_TimeSinceLastFire`](crate::equipment::weapon::WeaponBase::m_TimeSinceLastFire)) are the weapon's, shared by its guns;
+    /// only the burst counter ([`WeaponData::m_BurstShotsLeft`](crate::equipment::weapon::WeaponData::m_BurstShotsLeft)) is the gun's. A shot it allows
+    /// calls [`Fire_Start`](crate::equipment::weapon::WeaponBase::Fire_Start) once, on `weapon_data` alone; with no shot while
+    /// firing, it calls [`Fire_Stop`](crate::equipment::weapon::WeaponBase::Fire_Stop) on every gun.
     pub unsafe fn UpdateWeapon_Parallel(
         &mut self,
         dt: f32,
@@ -749,6 +764,110 @@ impl WeaponBase {
                 input: *const crate::equipment::weapon::WeaponInputs,
             ) -> bool = ::std::mem::transmute(Self::UpdateWeapon_Parallel_ADDRESS);
             f(self as *mut Self as _, dt, weapon_data, input)
+        }
+    }
+    pub const Fire_StartBase_ADDRESS: usize = 0x140965620;
+    /// The base implementation of the [`Fire_Start`](crate::equipment::weapon::WeaponBase::Fire_Start) virtual. At the first shot
+    /// of a pull (the weapon not yet [`m_IsFiring`](crate::equipment::weapon::WeaponBase::m_IsFiring)) it sets
+    /// [`m_IsFirstShot`](crate::equipment::weapon::WeaponBase::m_IsFirstShot), resets the gun's tracer counters
+    /// ([`WeaponData::m_TracerCounter`](crate::equipment::weapon::WeaponData::m_TracerCounter)), and loads its burst
+    /// ([`WeaponData::m_BurstShotsLeft`](crate::equipment::weapon::WeaponData::m_BurstShotsLeft)) from the tuning. It then sets `m_IsFiring`, runs the
+    /// enabled weapon components' fire start on `weapon_data`, and fires one shot from it through
+    /// [`Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile). The mech's magnet and machine-gun weapons skip
+    /// all of it under conditions on game-wide state.
+    pub unsafe fn Fire_StartBase(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_StartBase_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const Fire_StopBase_ADDRESS: usize = 0x140965820;
+    /// The base implementation of the [`Fire_Stop`](crate::equipment::weapon::WeaponBase::Fire_Stop) virtual: clears
+    /// [`m_IsFiring`](crate::equipment::weapon::WeaponBase::m_IsFiring) and runs the enabled weapon components' fire stop on
+    /// `weapon_data`. The disassembler mislabels it `CEffectInstance::Release`.
+    pub unsafe fn Fire_StopBase(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_StopBase_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const UpdateFromUserPostSim_SerialBase_ADDRESS: usize = 0x14096E3B0;
+    /// The base implementation of the
+    /// [`UpdateFromUserPostSim_Serial`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Serial) virtual. Like the
+    /// parallel base, it reads [`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire) once and calls
+    /// [`UpdateWeapon_Serial`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Serial) only for the gun at that index, and only
+    /// for a weapon owned locally.
+    pub unsafe fn UpdateFromUserPostSim_SerialBase(
+        &mut self,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const crate::equipment::weapon::WeaponInputs,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                aim_position: *const crate::types::math::Vector3,
+                input: *const crate::equipment::weapon::WeaponInputs,
+            ) = ::std::mem::transmute(Self::UpdateFromUserPostSim_SerialBase_ADDRESS);
+            f(self as *mut Self as _, dt, aim_position, input)
+        }
+    }
+    pub const UpdateWeapon_Serial_ADDRESS: usize = 0x140965BF0;
+    /// The serial per-gun update: runs the enabled weapon components' serial update on
+    /// `weapon_data` and, for the local player's weapon, refreshes a readiness flag. It never
+    /// starts or stops fire.
+    pub unsafe fn UpdateWeapon_Serial(
+        &mut self,
+        dt: f32,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        input: *const crate::equipment::weapon::WeaponInputs,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+                input: *const crate::equipment::weapon::WeaponInputs,
+            ) = ::std::mem::transmute(Self::UpdateWeapon_Serial_ADDRESS);
+            f(self as *mut Self as _, dt, weapon_data, input)
+        }
+    }
+    pub const GetLastFireFromPosition_ADDRESS: usize = 0x140966B50;
+    /// Writes the start point of a projectile fired from `weapon_data` into `result` and returns
+    /// it: the gun's fire point at its current fire-point cursor
+    /// ([`WeaponData::m_InternalFirePositionCurrentIndex`](crate::equipment::weapon::WeaponData::m_InternalFirePositionCurrentIndex)), composed with the gun's world matrix
+    /// of the previous simulation tick ([`WeaponData::m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0)). In the
+    /// [`E_WS_WINGSUIT_WEAPON`](crate::equipment::weapon::WeaponState::E_WS_WINGSUIT_WEAPON) state it is the translation of
+    /// the gun's current world matrix instead. The projectile weapons' shots read it after
+    /// [`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase) has advanced the gun index and the
+    /// cursor.
+    pub unsafe fn GetLastFireFromPosition(
+        &self,
+        result: *mut crate::types::math::Vector3,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) -> *mut crate::types::math::Vector3 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                result: *mut crate::types::math::Vector3,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) -> *mut crate::types::math::Vector3 = ::std::mem::transmute(
+                Self::GetLastFireFromPosition_ADDRESS,
+            );
+            f(self as *const Self as _, result, weapon_data)
         }
     }
     pub const GetAimTimerOverride_ADDRESS: usize = 0x140958F70;
@@ -844,6 +963,27 @@ impl WeaponBase {
         unsafe {
             let f = (&raw const (*self.vftable()).GetFireFromPosition).read();
             f(self as *const Self as _, result, weapon_data)
+        }
+    }
+    /// Starts fire on one gun, `weapon_data`. The base implementation is
+    /// [`Fire_StartBase`](crate::equipment::weapon::WeaponBase::Fire_StartBase).
+    pub unsafe fn Fire_Start(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Fire_Start).read();
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    /// Stops fire. The base implementation is [`Fire_StopBase`](crate::equipment::weapon::WeaponBase::Fire_StopBase).
+    pub unsafe fn Fire_Stop(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Fire_Stop).read();
+            f(self as *mut Self as _, weapon_data)
         }
     }
     /// Fires one shot from `weapon_data`. The base implementation is
@@ -1022,11 +1162,16 @@ pub struct WeaponBaseVftable {
         result: *mut crate::types::math::Vector3,
         weapon_data: *mut crate::equipment::weapon::WeaponData,
     ) -> *mut crate::types::math::Vector3,
-    _vfunc_26: unsafe extern "system" fn(
+    /// Starts fire on one gun, `weapon_data`. The base implementation is
+    /// [`Fire_StartBase`](crate::equipment::weapon::WeaponBase::Fire_StartBase).
+    pub Fire_Start: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
     ),
-    _vfunc_27: unsafe extern "system" fn(
+    /// Stops fire. The base implementation is [`Fire_StopBase`](crate::equipment::weapon::WeaponBase::Fire_StopBase).
+    pub Fire_Stop: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
     ),
     /// Fires one shot from `weapon_data`. The base implementation is
     /// [`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase); subclasses such as
@@ -1238,7 +1383,21 @@ pub struct WeaponData {
     _field_1d8: [u8; 208],
     /// Seconds since this gun last fired; reset by [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile).
     pub m_TimeSinceLastFire: f32,
-    _field_2ac: [u8; 48],
+    /// The gun's shot counter for tracers: the bullet weapons' shot
+    /// ([`BulletWeaponBase::Fire_Projectile`](crate::equipment::weapon::BulletWeaponBase::Fire_Projectile)) increments it per bullet and draws a tracer every
+    /// tuning-set number of bullets. [`WeaponBase::Fire_StartBase`](crate::equipment::weapon::WeaponBase::Fire_StartBase) resets it at the first shot of
+    /// a pull, and [`WeaponBase::UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) resets it after a long enough pause in
+    /// fire.
+    pub m_TracerCounter: u16,
+    /// The gun's counter of tracers, which the bullet weapons' shot increments per tracer to give
+    /// every tuning-set number of tracers a smoke trail. Reset with
+    /// [`m_TracerCounter`](crate::equipment::weapon::WeaponData::m_TracerCounter).
+    pub m_SmokeTrailCounter: u16,
+    /// Shots of the gun's current burst still to fire. [`WeaponBase::Fire_StartBase`](crate::equipment::weapon::WeaponBase::Fire_StartBase) loads it
+    /// from the tuning at the first shot of a pull, and while it is non-zero
+    /// [`WeaponBase::UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) tries to fire this gun whatever the trigger input.
+    pub m_BurstShotsLeft: u32,
+    _field_2b4: [u8; 40],
     /// The uniform scale applied to the gun's world matrix while holstered.
     pub m_HolsteredScaleValue: f32,
     _field_2e0: [u8; 6],

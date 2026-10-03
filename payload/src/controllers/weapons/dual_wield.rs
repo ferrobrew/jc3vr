@@ -10,23 +10,36 @@
 //! - **Placement.** Gun 0 rides the dominant hand and gun 1 the other: when the game's layout has
 //!   them the other way round (a left-handed layout), the two guns' attach bones for the
 //!   dual-wielding state are swapped, and swapped back when the split stops acting ([`place`]).
+//! - **Acting.** The split acts whenever the bindings inject and both pistols are in the hands, in
+//!   every mode. The mode governs only which triggers fire them ([`triggers_fire_pistols`]): on
+//!   foot, swimming, falling, under the parachute, and in a passenger seat each trigger fires its
+//!   own pistol; elsewhere (the wingsuit, the driver's seat) neither does.
 //! - **Input.** The bindings hold the game's fire action while either trigger is pulled, so the
-//!   game's own permission to shoot still reaches the weapon. On foot, the off-hand's trigger then
-//!   fires the off-hand gun rather than retracting the tethers; the tethers retract with the
-//!   off-hand's stick click instead ([`crate::controllers::bindings::tables`]). The triggers' press
-//!   edges are latched per hand at the input tick ([`observe_triggers`]).
-//! - **Firing.** At the weapon's per-tick update ([`before_update`], from the gun aim's detour on
-//!   the base update), the split chooses a hand ([`Split::choose`]), points the weapon's next gun
-//!   ([`WeaponBase::m_NextWeaponToFire`]) at that hand's gun, and hands the weapon that hand's pull,
-//!   so the update fires that gun, from its own muzzle, at that hand's aim point. The weapon counts
-//!   ammunition, heat, and recoil once per shot, whichever gun fires.
+//!   game's own permission to shoot still reaches the weapon. The off-hand's trigger then fires
+//!   the off-hand gun rather than retracting the tethers; the tethers retract with the off-hand's
+//!   stick click instead ([`crate::controllers::bindings::tables`]). The triggers' press edges are
+//!   latched per hand at the input tick ([`observe_triggers`]).
+//! - **Firing.** The game updates one gun per tick, the one at the weapon's next gun
+//!   ([`WeaponBase::m_NextWeaponToFire`]), and points the index at the other gun after every shot,
+//!   so left alone a held fire action fires both pistols in turn. At the weapon's per-tick update
+//!   ([`before_update`], from the gun aim's detour on the base update), the split decides
+//!   ([`Split::decide`]) and always pins the index: to the chosen hand's gun with that hand's pull,
+//!   so the update fires that gun, from its own muzzle, at that hand's aim point; otherwise to a
+//!   gun that is not firing, with the fire input withheld when no hand may fire. A buffered shot
+//!   is dropped when no hand has a live pull, since it would come out of whichever gun is pinned.
+//!   When the input tick has gone stale, the dominant gun is pinned and the input passed through,
+//!   so the worst case is the dominant pistol alone firing. The weapon counts ammunition, heat,
+//!   and recoil once per shot, whichever gun fires.
 //! - **Semi-automatic fire.** The weapon keeps one fired-this-pull flag, which only clears when its
 //!   input drops, and the held fire action never drops while the other trigger is pulled. The
 //!   split keeps a pull per hand instead: a semi-automatic weapon fires each hand's pull once, the
 //!   older pull first, and the weapon's own flag (with its cancel flag and its buffered shot) is
 //!   cleared when a fresh pull is first presented. A fully automatic weapon fires the held hands in
-//!   turn. The two guns share the weapon's fire interval, so a pull inside it fires when the
-//!   interval ends, and a reload stops both.
+//!   turn. Both triggers together therefore fire both pistols alternately, never in the same tick:
+//!   the engine fires at most one gun per update, and the guns share the weapon's fire interval,
+//!   trigger state, and magazine, so a second gun fired in the same tick would bypass the fire
+//!   rate and the semi-automatic rule. A pull inside the interval fires when the interval ends, and
+//!   a reload stops both.
 
 use std::time::{Duration, Instant};
 
@@ -36,7 +49,12 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{aim::gun, frame::Hand, hands::late};
+use crate::controllers::{
+    aim::gun,
+    frame::Hand,
+    hands::late,
+    mode::{AirborneVariant, Mode},
+};
 
 /// One hand's trigger at an input tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -69,6 +87,43 @@ pub struct Choice {
     /// Whether this is a pull the weapon has not been handed before, so that its own
     /// fired-this-pull state belongs to another pull.
     pub fresh: bool,
+}
+
+/// What the weapon's update is handed through the fire action.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum FireInput {
+    /// The game's fire input, unchanged.
+    Pass,
+    /// No fire input: no hand may fire this update.
+    Withhold,
+}
+
+/// The weapon's state at its per-tick update, for [`Split::decide`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct UpdateRequest {
+    /// Whether the game's fire input is pulled: the fire action held and shooting allowed.
+    pub pulled: bool,
+    /// Whether the input tick's triggers are current.
+    pub current: bool,
+    pub fully_automatic: bool,
+    /// The gun each hand holds, indexed by [`Hand::index`].
+    pub guns: [Option<usize>; 2],
+    pub dominant: Hand,
+}
+
+/// What to do to the weapon before its update.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Decision {
+    /// The gun to point the weapon's next gun at.
+    pub gun: usize,
+    /// The hand whose pull is handed to the weapon, when one is.
+    pub chosen: Option<Hand>,
+    pub input: FireInput,
+    /// Clear the weapon's fired-this-pull, cancel, and buffered-shot state: the pull handed over
+    /// is not the one that state belongs to.
+    pub reset_pull: bool,
+    /// Clear the weapon's buffered shot: no hand has a live pull.
+    pub clear_buffer: bool,
 }
 
 /// The per-hand pulls. Pure.
@@ -111,11 +166,78 @@ impl Split {
         h.held = true;
     }
 
-    /// Choose the hand to hand the weapon this update: for a semi-automatic weapon, the hand with
-    /// the oldest pull that has not fired; for a fully automatic one, a held hand, taking turns
-    /// while both are held. `None` when no hand qualifies.
+    /// Decide what the weapon's update this tick is handed. `None` only when neither hand holds a
+    /// gun, so there is nothing to pin.
+    pub fn decide(&mut self, request: UpdateRequest) -> Option<Decision> {
+        let UpdateRequest {
+            pulled,
+            current,
+            fully_automatic,
+            guns,
+            dominant,
+        } = request;
+        let gun_of = |hand: Hand| guns[hand.index()].or(guns[hand.other().index()]);
+        let resting = |chosen, input, live: Option<Hand>, split: &Self| {
+            let hand = live.or(split.last_fired).unwrap_or(dominant);
+            gun_of(hand).map(|gun| Decision {
+                gun,
+                chosen,
+                input,
+                reset_pull: false,
+                clear_buffer: live.is_none(),
+            })
+        };
+        if !current {
+            return gun_of(dominant).map(|gun| Decision {
+                gun,
+                chosen: None,
+                input: FireInput::Pass,
+                reset_pull: false,
+                clear_buffer: false,
+            });
+        }
+        if !pulled {
+            let live = self.candidate(fully_automatic);
+            return resting(None, FireInput::Pass, live, self);
+        }
+        match self.choose(fully_automatic) {
+            Some(choice) => match guns[choice.hand.index()] {
+                Some(gun) => Some(Decision {
+                    gun,
+                    chosen: Some(choice.hand),
+                    input: FireInput::Pass,
+                    reset_pull: choice.fresh,
+                    clear_buffer: false,
+                }),
+                None => resting(None, FireInput::Withhold, None, self),
+            },
+            None => resting(None, FireInput::Withhold, None, self),
+        }
+    }
+
+    /// Choose the hand to hand the weapon this update ([`Self::candidate`]), marking its pull as
+    /// presented. `None` when no hand qualifies.
     pub fn choose(&mut self, fully_automatic: bool) -> Option<Choice> {
-        let hand = if fully_automatic {
+        let hand = self.candidate(fully_automatic);
+        let Some(hand) = hand else {
+            self.last_chosen = None;
+            return None;
+        };
+        let pending = &mut self.hands[hand.index()].pending;
+        let unpresented = pending.is_some_and(|p| !p.presented);
+        if let Some(p) = pending {
+            p.presented = true;
+        }
+        let fresh = self.last_chosen != Some(hand) || unpresented;
+        self.last_chosen = Some(hand);
+        Some(Choice { hand, fresh })
+    }
+
+    /// The hand with a live pull the weapon would be handed: for a semi-automatic weapon, the hand
+    /// with the oldest pull that has not fired; for a fully automatic one, a held hand, taking
+    /// turns while both are held.
+    fn candidate(&self, fully_automatic: bool) -> Option<Hand> {
+        if fully_automatic {
             let held = Hand::BOTH.map(|h| self.hands[h.index()].held);
             match held {
                 [true, true] => Some(self.last_fired.map_or(Hand::Right, Hand::other)),
@@ -129,19 +251,7 @@ impl Split {
                 .filter_map(|h| self.hands[h.index()].pending.map(|p| (h, p.order)))
                 .min_by_key(|&(_, order)| order)
                 .map(|(h, _)| h)
-        };
-        let Some(hand) = hand else {
-            self.last_chosen = None;
-            return None;
-        };
-        let pending = &mut self.hands[hand.index()].pending;
-        let unpresented = pending.is_some_and(|p| !p.presented);
-        if let Some(p) = pending {
-            p.presented = true;
         }
-        let fresh = self.last_chosen != Some(hand) || unpresented;
-        self.last_chosen = Some(hand);
-        Some(Choice { hand, fresh })
     }
 
     /// A shot from `hand`'s gun: its pull has fired.
@@ -163,6 +273,8 @@ pub struct DualWieldStatus {
     pub shots: [u64; 2],
     /// The hand the last update handed the weapon.
     pub chosen: Option<Hand>,
+    /// The gun the last update pinned as the weapon's next gun.
+    pub pinned: Option<usize>,
     /// Whether the guns' attach bones are swapped from the game's layout.
     pub swapped: bool,
 }
@@ -171,26 +283,50 @@ pub fn status() -> DualWieldStatus {
     STATE.lock().status
 }
 
-/// Fold in the input tick's triggers. `active` is whether the split acts this tick: the toggle, the
-/// bindings injecting, and both hands holding a pistol of the dual-wield slot.
-pub(crate) fn observe_triggers(active: bool, triggers: [TriggerInput; 2]) {
+/// Whether the hands' triggers fire the hand weapons in `mode`, so that with a pistol in each hand
+/// each trigger fires its own. In the wingsuit and the driver's seat the triggers drive the suit
+/// or the vehicle.
+pub const fn triggers_fire_pistols(mode: Mode) -> bool {
+    match mode {
+        Mode::OnFoot(_) => true,
+        Mode::Airborne(variant) => !matches!(variant, AirborneVariant::Wingsuit),
+        Mode::Vehicle(seat) => !seat.driver,
+        Mode::Ui => false,
+    }
+}
+
+/// One input tick's triggers while the split acts.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TriggerTick {
+    pub dominant: Hand,
+    /// Each hand's trigger as it fires a pistol, indexed by [`Hand::index`]: released in a mode
+    /// whose triggers do not fire them.
+    pub triggers: [TriggerInput; 2],
+}
+
+/// Fold in the input tick's triggers, or `None` when the split does not act this tick: the toggle
+/// is off, the bindings do not inject, or the hands do not both hold a pistol of the dual-wield
+/// slot.
+pub(crate) fn observe_triggers(tick: Option<TriggerTick>) {
     let mut state = STATE.lock();
-    state.status.active = active;
-    state.status.triggers = triggers;
-    if !active {
+    state.status.active = tick.is_some();
+    let Some(tick) = tick else {
+        state.status.triggers = [TriggerInput::default(); 2];
         state.split = Split::new();
         state.active_at = None;
         return;
-    }
+    };
+    state.status.triggers = tick.triggers;
     for hand in Hand::BOTH {
-        state.split.observe(hand, triggers[hand.index()]);
+        state.split.observe(hand, tick.triggers[hand.index()]);
     }
+    state.dominant = tick.dominant;
     state.active_at = Some(Instant::now());
 }
 
-/// Hand the weapon the chosen hand's pull, for the local player's dual-wielded weapon while the
-/// split acts. Returns the inputs to update the weapon with in place of `input`, or `None` to leave
-/// the update alone.
+/// Pin the gun that may fire and hand the weapon its pull ([`Split::decide`]), for the local
+/// player's dual-wielded weapon while the split acts. Returns the inputs to update the weapon with
+/// in place of `input`, or `None` to leave the update alone.
 ///
 /// # Safety
 ///
@@ -206,40 +342,42 @@ pub(crate) unsafe fn before_update(
         return None;
     }
     let mut state = STATE.lock();
-    if !state
-        .active_at
-        .is_some_and(|at| at.elapsed() < MAX_INPUT_AGE)
-    {
-        return None;
-    }
-    // The game's own fire action is held while either trigger is pulled, and it reaches the weapon
-    // as zero whenever shooting is not allowed.
-    if input.m_PrimaryFireInput.is_nan() || input.m_PrimaryFireInput <= 0.0 {
-        state.status.chosen = None;
-        return None;
-    }
+    let at = state.active_at?;
     let guns = unsafe { gun_by_hand(weapon) };
-    state.status.guns = guns;
     let fully_automatic =
         unsafe { weapon.m_Tuning.as_ref() }.is_some_and(|tuning| tuning.m_fully_automatic);
-    let choice = state
-        .split
-        .choose(fully_automatic)
-        .and_then(|c| guns[c.hand.index()].map(|gun| (c, gun)));
-    state.status.chosen = choice.map(|(c, _)| c.hand);
-    let Some((choice, gun)) = choice else {
-        return Some(WeaponInputs {
-            m_PrimaryFireInput: 0.0,
-            ..*input
-        });
+    // The game's own fire action is held while either trigger is pulled, and it reaches the weapon
+    // as zero whenever shooting is not allowed.
+    let primary = input.m_PrimaryFireInput;
+    let request = UpdateRequest {
+        pulled: primary.is_finite() && primary > 0.0,
+        current: at.elapsed() < MAX_INPUT_AGE,
+        fully_automatic,
+        guns,
+        dominant: state.dominant,
     };
-    if choice.fresh {
+    let decision = state.split.decide(request);
+    state.status.guns = guns;
+    state.status.chosen = decision.and_then(|d| d.chosen);
+    state.status.pinned = decision.map(|d| d.gun);
+    drop(state);
+    let decision = decision?;
+    let gun = u8::try_from(decision.gun).ok()?;
+    if decision.reset_pull {
         weapon.m_FiredThisInput = false;
         weapon.m_IsFiringCancelled = false;
+    }
+    if decision.reset_pull || decision.clear_buffer {
         weapon.m_InputBufferTimer = 0.0;
     }
-    weapon.m_NextWeaponToFire = gun as u8;
-    Some(*input)
+    weapon.m_NextWeaponToFire = gun;
+    Some(match decision.input {
+        FireInput::Pass => *input,
+        FireInput::Withhold => WeaponInputs {
+            m_PrimaryFireInput: 0.0,
+            ..*input
+        },
+    })
 }
 
 /// A shot from `hand`'s gun of the player's weapon, from the per-shot seam.
@@ -295,6 +433,7 @@ const MAX_INPUT_AGE: Duration = Duration::from_millis(250);
 struct State {
     split: Split,
     active_at: Option<Instant>,
+    dominant: Hand,
     /// The weapon whose attach bones are swapped from the game's layout.
     swapped: Option<usize>,
     status: DualWieldStatus,
@@ -303,6 +442,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     split: Split::new(),
     active_at: None,
+    dominant: Hand::Right,
     swapped: None,
     status: DualWieldStatus {
         active: false,
@@ -313,6 +453,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         guns: [None; 2],
         shots: [0; 2],
         chosen: None,
+        pinned: None,
         swapped: false,
     },
 });
@@ -373,6 +514,24 @@ unsafe fn swap_dual_bones(weapon: &mut WeaponBase) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
+
+    /// Gun 0 in the right hand, gun 1 in the left.
+    const GUNS: [Option<usize>; 2] = [Some(1), Some(0)];
+
+    fn request(pulled: bool, fully_automatic: bool) -> UpdateRequest {
+        UpdateRequest {
+            pulled,
+            current: true,
+            fully_automatic,
+            guns: GUNS,
+            dominant: Hand::Right,
+        }
+    }
+
+    fn gun(hand: Hand) -> usize {
+        GUNS[hand.index()].unwrap()
+    }
 
     fn pull() -> TriggerInput {
         TriggerInput {
@@ -460,5 +619,204 @@ mod tests {
         split.observe(Hand::Left, TriggerInput::default());
         assert_eq!(split.choose(false), None);
         assert_eq!(split.choose(true), None);
+    }
+
+    #[test]
+    fn each_trigger_fires_only_its_own_gun() {
+        let cases = [
+            (false, false, None),
+            (true, false, Some(Hand::Left)),
+            (false, true, Some(Hand::Right)),
+        ];
+        for ((left, right, fires), fully_automatic) in cases
+            .into_iter()
+            .flat_map(|case| [(case, false), (case, true)])
+        {
+            let mut split = Split::new();
+            split.observe(
+                Hand::Left,
+                TriggerInput {
+                    held: left,
+                    pressed: left,
+                },
+            );
+            split.observe(
+                Hand::Right,
+                TriggerInput {
+                    held: right,
+                    pressed: right,
+                },
+            );
+            for _ in 0..4 {
+                let d = split
+                    .decide(request(left || right, fully_automatic))
+                    .unwrap();
+                assert_eq!(d.chosen, fires);
+                if let Some(hand) = fires {
+                    assert_eq!(d.gun, gun(hand));
+                    assert_eq!(d.input, FireInput::Pass);
+                    split.on_shot(hand);
+                    // A semi-automatic gun fires once per press, so each shot needs a new pull.
+                    if !fully_automatic {
+                        split.observe(hand, pull());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_semi_automatic_hold_fires_once_and_then_withholds_on_its_own_gun() {
+        let mut split = Split::new();
+        split.observe(Hand::Left, pull());
+        let d = split.decide(request(true, false)).unwrap();
+        assert_eq!(
+            (d.chosen, d.gun, d.reset_pull),
+            (Some(Hand::Left), gun(Hand::Left), true)
+        );
+        split.on_shot(Hand::Left);
+        split.observe(Hand::Left, hold());
+        let d = split.decide(request(true, false)).unwrap();
+        assert_eq!(d.chosen, None);
+        assert_eq!(d.input, FireInput::Withhold);
+        assert_eq!(d.gun, gun(Hand::Left), "the gun that fired stays pinned");
+        assert!(d.clear_buffer);
+    }
+
+    #[test]
+    fn both_semi_automatic_triggers_fire_both_guns_in_turn() {
+        let mut split = Split::new();
+        split.observe(Hand::Right, pull());
+        split.observe(Hand::Left, pull());
+        let first = split.decide(request(true, false)).unwrap();
+        assert_eq!(first.chosen, Some(Hand::Right));
+        split.on_shot(Hand::Right);
+        let second = split.decide(request(true, false)).unwrap();
+        assert_eq!(
+            (second.chosen, second.gun),
+            (Some(Hand::Left), gun(Hand::Left))
+        );
+        assert!(
+            second.reset_pull,
+            "the left pull is not the one the weapon fired"
+        );
+        split.on_shot(Hand::Left);
+        let third = split.decide(request(true, false)).unwrap();
+        assert_eq!(third.input, FireInput::Withhold);
+    }
+
+    #[test]
+    fn both_fully_automatic_triggers_alternate_the_guns() {
+        let mut split = Split::new();
+        split.observe(Hand::Right, pull());
+        split.observe(Hand::Left, pull());
+        let mut fired = Vec::new();
+        for _ in 0..4 {
+            let d = split.decide(request(true, true)).unwrap();
+            let hand = d.chosen.unwrap();
+            assert_eq!(d.gun, gun(hand));
+            split.on_shot(hand);
+            fired.push(hand);
+        }
+        assert_eq!(fired, [Hand::Right, Hand::Left, Hand::Right, Hand::Left]);
+    }
+
+    #[test]
+    fn no_fire_input_pins_without_firing() {
+        let mut split = Split::new();
+        let d = split.decide(request(false, false)).unwrap();
+        assert_eq!(
+            (d.gun, d.chosen, d.input),
+            (gun(Hand::Right), None, FireInput::Pass)
+        );
+        assert!(
+            d.clear_buffer,
+            "no pull is live, so a buffered shot has no owner"
+        );
+
+        split.observe(Hand::Left, pull());
+        let d = split.decide(request(false, false)).unwrap();
+        assert_eq!(
+            d.gun,
+            gun(Hand::Left),
+            "a live pull keeps its gun for a buffered shot"
+        );
+        assert!(!d.clear_buffer);
+        let d = split.decide(request(true, false)).unwrap();
+        assert!(
+            d.reset_pull,
+            "a pull withheld by the game is still unpresented"
+        );
+    }
+
+    #[test]
+    fn the_last_gun_to_fire_stays_pinned_at_rest() {
+        let mut split = Split::new();
+        split.observe(Hand::Left, pull());
+        split.decide(request(true, false));
+        split.on_shot(Hand::Left);
+        split.observe(Hand::Left, TriggerInput::default());
+        let d = split.decide(request(false, false)).unwrap();
+        assert_eq!(d.gun, gun(Hand::Left));
+    }
+
+    #[test]
+    fn a_stale_tick_pins_the_dominant_gun_and_passes_the_input() {
+        let mut split = Split::new();
+        split.observe(Hand::Right, pull());
+        for dominant in Hand::BOTH {
+            let d = split
+                .decide(UpdateRequest {
+                    current: false,
+                    dominant,
+                    ..request(true, false)
+                })
+                .unwrap();
+            assert_eq!(
+                (d.gun, d.chosen, d.input),
+                (gun(dominant), None, FireInput::Pass)
+            );
+        }
+    }
+
+    #[test]
+    fn a_hand_without_a_gun_withholds_and_pins_the_gun_there_is() {
+        let mut split = Split::new();
+        split.observe(Hand::Left, pull());
+        let d = split
+            .decide(UpdateRequest {
+                guns: [None, Some(0)],
+                ..request(true, false)
+            })
+            .unwrap();
+        assert_eq!((d.gun, d.input), (0, FireInput::Withhold));
+        let none = split.decide(UpdateRequest {
+            guns: [None; 2],
+            ..request(true, false)
+        });
+        assert_eq!(none, None);
+    }
+
+    #[test]
+    fn the_modes_whose_triggers_fire_the_pistols() {
+        let seat = |driver| {
+            Mode::Vehicle(VehicleSeat {
+                class: VehicleClass::Car,
+                driver,
+            })
+        };
+        let cases = [
+            (Mode::OnFoot(OnFootVariant::Ground), true),
+            (Mode::OnFoot(OnFootVariant::Swimming), true),
+            (Mode::Airborne(AirborneVariant::Falling), true),
+            (Mode::Airborne(AirborneVariant::Parachute), true),
+            (Mode::Airborne(AirborneVariant::Wingsuit), false),
+            (seat(false), true),
+            (seat(true), false),
+            (Mode::Ui, false),
+        ];
+        for (mode, fires) in cases {
+            assert_eq!(triggers_fire_pistols(mode), fires, "{mode:?}");
+        }
     }
 }

@@ -343,14 +343,11 @@ fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool, chord: SightChord) {
     out.axis(stick.x, MOVE_LEFT, MOVE_RIGHT);
     out.analog(stick.length().min(1.0), MOVE_ALL);
 
+    out.hold(fire_trigger(c), &[FIRE_RIGHT, R2]);
     if c.dual_wield {
-        // Each trigger fires its own pistol through the one fire action, which the dual-wield
-        // split hands to the pistol of the pulling hand. The tethers retract from the stick click.
-        let either = dom.trigger_press.held() || off.trigger_press.held();
-        out.hold(either, &[FIRE_RIGHT, R2]);
+        // The off-hand's trigger fires its pistol, so the tethers retract from the stick click.
         out.hold(off.stick_click.held(), &[RETRACT_GRAPPLE, L2]);
     } else {
-        out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
         out.hold(off.trigger_press.held(), &[RETRACT_GRAPPLE, L2]);
     }
     // A yank is a one-tick press, which the game reads as a tap.
@@ -369,6 +366,13 @@ fn on_foot(out: &mut Out, c: &Controls, off_grapple: bool, chord: SightChord) {
         c.weapon_cycle && !c.dual_wield && off.stick_click.pressed,
         NEXT_WEAPON,
     );
+}
+
+/// Whether the hand-weapon fire action is held: the dominant trigger, or with a pistol in each hand
+/// either trigger. The one fire action reaches the weapon, and the dual-wield split
+/// ([`crate::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
+fn fire_trigger(c: &Controls) -> bool {
+    c.dom().trigger_press.held() || (c.dual_wield && c.off().trigger_press.held())
 }
 
 /// Seated in a vehicle.
@@ -423,9 +427,10 @@ fn vehicle(out: &mut Out, c: &Controls, seat: VehicleSeat, off_grip: bool, dom_g
         }
     }
     // Out of the driver's seat the triggers drive nothing, so the dominant one fires the weapon in
-    // the hands or on the mount, aimed by the hands.
+    // the hands or on the mount, aimed by the hands, and with a pistol in each hand either trigger
+    // fires.
     if !seat.driver {
-        out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
+        out.hold(fire_trigger(c), &[FIRE_RIGHT, R2]);
     }
 }
 
@@ -452,17 +457,20 @@ fn airborne(
         // `RETRACT_GRAPPLE` is left off, since it also keeps a stalling wingsuit from closing.
         out.hold(off.trigger_press.held(), &[CANCEL, WINGSUIT_AIRBRAKE]);
     } else {
-        out.hold(
-            off.trigger_press.held(),
-            &[RETRACT_GRAPPLE, WINGSUIT_AIRBRAKE, L2],
-        );
+        // As on foot, a pistol in each hand moves the tethers to the off-hand's stick click.
+        let retract = if c.dual_wield {
+            off.stick_click.held()
+        } else {
+            off.trigger_press.held()
+        };
+        out.hold(retract, &[RETRACT_GRAPPLE, WINGSUIT_AIRBRAKE, L2]);
     }
     if variant == AirborneVariant::Wingsuit {
         out.hold(dom.b.held(), &[WINGSUIT_BOOST]);
         out.hold(dom.trigger_press.held(), &[FIRE_WINGSUIT_WEAPON_MAIN, R2]);
         out.hold(dom_grip, &[FIRE_WINGSUIT_WEAPON_SECONDARY]);
     } else {
-        out.hold(dom.trigger_press.held(), &[FIRE_RIGHT, R2]);
+        out.hold(fire_trigger(c), &[FIRE_RIGHT, R2]);
         out.hold(dom.b.held(), PAD_X_ON_FOOT);
         out.hold(dom.stick_click.held(), PAD_RB_ON_FOOT);
     }

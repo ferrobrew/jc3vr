@@ -122,3 +122,41 @@ fn the_wingsuit_fires_its_own_weapons_and_boosts() {
         assert_eq!(player(&step, action), None, "{action:?}");
     }
 }
+
+#[test]
+fn dual_wielding_in_the_air_moves_the_off_trigger_to_its_pistol() {
+    for variant in [AirborneVariant::Falling, AirborneVariant::Parachute] {
+        let mode = Mode::Airborne(variant);
+        let mut b = Bindings::default();
+        let mut c = controls(Hand::Right, |_, off| off.trigger_press = down());
+        let step = b.step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, FIRE_RIGHT), None);
+
+        c.dual_wield = true;
+        let step = b.step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, RETRACT_GRAPPLE), None);
+
+        let mut c = controls(Hand::Right, |_, off| off.stick_click = down());
+        c.dual_wield = true;
+        let step = b.step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, FIRE_RIGHT), None);
+    }
+}
+
+#[test]
+fn a_dual_wielding_passenger_fires_from_either_trigger() {
+    let mode = Mode::Vehicle(VehicleSeat {
+        class: VehicleClass::Car,
+        driver: false,
+    });
+    let mut b = Bindings::default();
+    let mut c = controls(Hand::Left, |_, off| off.trigger_press = down());
+    let step = b.step(mode, &c, DT, &CONFIG);
+    assert_eq!(player(&step, FIRE_RIGHT), None);
+    c.dual_wield = true;
+    let step = b.step(mode, &c, DT, &CONFIG);
+    assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
+}

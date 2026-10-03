@@ -100,7 +100,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub struct TickStart {
     /// The grab volume each hand is in, indexed by [`Hand::index`].
     pub volumes: [Option<GrabVolume>; 2],
-    /// Whether the dual-wield split acts: a pistol in each hand, on foot, with the split on.
+    /// Whether the dual-wield split acts: a pistol of the dual-wield slot in each hand, with the
+    /// split on, in any mode.
     pub dual_wield: bool,
 }
 
@@ -198,7 +199,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     };
     scope::input_tick(weapon.map(|w| w.address));
     let dual_wield = dual.split
-        && mode == Mode::OnFoot(OnFootVariant::Ground)
         && weapon.is_some_and(|w| {
             w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD && w.wielded.hands == [true; 2]
         });
@@ -434,7 +434,7 @@ pub(crate) fn stand_down() {
     recoil::clear();
     grenade::stand_down();
     melee::stand_down();
-    dual_wield::observe_triggers(false, [dual_wield::TriggerInput::default(); 2]);
+    dual_wield::observe_triggers(None);
     // SAFETY: the bindings stand down on the main thread outside the world update.
     if let Some(owner) = unsafe { engine::local_player() } {
         unsafe { dual_wield::place(owner, Hand::Right, false) };
