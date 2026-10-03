@@ -102,7 +102,7 @@ The engine side is [humanik.md](../../engine/character/humanik.md) and [hands-lo
 Each hand's wrist target is composed from its controller, all in pure functions:
 
 1. the grip pose in the cockpit frame;
-2. times the grip offset (`controllers.hands.grip`, a position and a rotation in the right hand's grip frame, mirrored for the left), giving the wrist frame: the origin at the wrist joint, -Z toward the fingers, and +Y out of the back of the hand;
+2. times the grip offset (`controllers.hands.grip`, a position and a rotation in the right hand's grip frame, mirrored for the left), giving the wrist frame: the origin at the wrist joint, -Z toward the fingers, and +Y out of the back of the hand. OpenXR gives both hands' grip frames the same axes (+X points into the right palm and out of the left one, so to the player's right on both hands), so the mirror flips the grip's X as it flips the wrist's;
 3. the body remap: the wrist's offset from the player's shoulder, scaled by the ratio of the arm spans and placed at the character's shoulder;
 4. into the world through the head's transform, the same composition the head pose uses, so that the hands and the view agree.
 

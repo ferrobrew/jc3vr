@@ -65,11 +65,12 @@ pub fn cockpit_hand(
 /// The wrist frame in the grip frame of `hand`: the offset `offset` describes for the right hand,
 /// mirrored across the body's sagittal plane for the left.
 ///
-/// The OpenXR grip frames of the two hands are mirror images with one axis flipped to stay
-/// right-handed (the left grip's +Y points the other way), and so are the two wrist frames (the
-/// left wrist's +X points the other way). Mirroring a right-hand transform `(R, t)` therefore gives
-/// `(F_g R F_w, F_g t)` for the left, with `F_g` negating the grip's Y and `F_w` negating the
-/// wrist's X.
+/// OpenXR defines both hands' grip frames with the same axes: +X is the palm normal taken into the
+/// right palm but out of the left one, so it points to the player's right for both hands held
+/// symmetrically. Mirrored, a grip frame therefore needs its X flipped back to match the other
+/// hand's. The two wrist frames are mirror images with their X flipped too (+Y is out of the back
+/// of each hand). Mirroring a right-hand transform `(R, t)` therefore gives `(F R F, F t)` for the
+/// left, with `F` negating X.
 pub fn grip_to_wrist(hand: Hand, offset: &GripOffset) -> Pose {
     let adjust = offset.rotation_deg;
     let rotation = Mat3::from_quat(Quat::from_euler(
@@ -81,12 +82,8 @@ pub fn grip_to_wrist(hand: Hand, offset: &GripOffset) -> Pose {
     let (rotation, position) = match hand {
         Hand::Right => (rotation, offset.position_m),
         Hand::Left => {
-            let flip_grip = Mat3::from_diagonal(Vec3::new(1.0, -1.0, 1.0));
-            let flip_wrist = Mat3::from_diagonal(Vec3::new(-1.0, 1.0, 1.0));
-            (
-                flip_grip * rotation * flip_wrist,
-                flip_grip * offset.position_m,
-            )
+            let flip_x = Mat3::from_diagonal(Vec3::new(-1.0, 1.0, 1.0));
+            (flip_x * rotation * flip_x, flip_x * offset.position_m)
         }
     };
     Pose {
@@ -224,14 +221,16 @@ fn yaw_only(rotation: Quat) -> Quat {
 }
 
 /// The right wrist frame in the right grip frame, from the two OpenXR definitions for a hand
-/// closed on a vertical handle with the thumb on top: the grip's -Z runs up the tube of the fingers
-/// and its +X into the palm, while the wrist frame's fingers point forward, square to the tube, with
-/// the back of the hand outward and the little finger (the wrist's +X) down.
+/// closed on a vertical handle with the thumb on top and the arm forward: the grip's -Z runs up the
+/// tube of the fingers, its +X points into the palm (to the right, the palm facing left), and its
+/// +Y back toward the player. The wrist frame's fingers point forward (the grip's -Y), square to
+/// the tube, with the back of the hand (the wrist's +Y) out to the right (the grip's +X) and the
+/// little finger (the wrist's +X) down (the grip's +Z).
 fn right_wrist_in_grip() -> Mat3 {
     Mat3::from_cols(
         Vec3::new(0.0, 0.0, 1.0),
-        Vec3::new(-1.0, 0.0, 0.0),
-        Vec3::new(0.0, -1.0, 0.0),
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
     )
 }
 
@@ -254,19 +253,50 @@ mod tests {
         rotation_deg: Vec3::ZERO,
     };
 
-    /// A right hand closed on a vertical handle, thumb up, arm forward, in a world with +X right,
-    /// +Y up, -Z forward: the grip's -Z is up and its +X into the palm (leftward).
-    fn right_grip_on_vertical_handle() -> Quat {
-        let x = Vec3::NEG_X;
+    /// A hand closed on a vertical handle, thumb up, arm forward, in a world with +X right, +Y up,
+    /// -Z forward: the grip's -Z is up and its +X to the right, into the right palm (which faces
+    /// left) and out of the left palm (which faces right). OpenXR gives both hands the same frame.
+    fn grip_on_vertical_handle() -> Quat {
+        let x = Vec3::X;
         let z = Vec3::NEG_Y;
         Quat::from_mat3(&Mat3::from_cols(x, z.cross(x), z))
     }
 
-    /// The same for the left hand: -Z up, +X away from the palm (the palm faces right).
+    fn right_grip_on_vertical_handle() -> Quat {
+        grip_on_vertical_handle()
+    }
+
     fn left_grip_on_vertical_handle() -> Quat {
-        let x = Vec3::X;
-        let z = Vec3::NEG_Y;
-        Quat::from_mat3(&Mat3::from_cols(x, z.cross(x), z))
+        grip_on_vertical_handle()
+    }
+
+    /// The wrist frame for `hand` holding a controller at `grip`, with `offset`.
+    fn wrist_at(hand: Hand, grip: Quat, offset: &GripOffset) -> Quat {
+        grip * grip_to_wrist(hand, offset).orientation
+    }
+
+    #[test]
+    fn a_controller_pointing_forward_points_both_hands_forward() {
+        // A controller held level and pointing forward has the identity grip pose on both hands,
+        // up to the handle's tilt; tilting the handle back by the best guess's pitch stands it
+        // upright as a pistol grip would, and the fingers then point forward on both hands.
+        let pitch = GripOffset::INDEX_BEST_GUESS.rotation_deg.x.to_radians();
+        let tilted = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2 - pitch);
+        for (hand, outward) in [(Hand::Right, Vec3::X), (Hand::Left, Vec3::NEG_X)] {
+            let level = wrist_at(hand, Quat::IDENTITY, &NO_OFFSET);
+            assert!(close(level * Vec3::NEG_Z, Vec3::NEG_Y), "{hand:?} level");
+            assert!(close(level * Vec3::Y, outward), "{hand:?} level back");
+
+            let wrist = wrist_at(hand, tilted, &GripOffset::INDEX_BEST_GUESS);
+            assert!(
+                (wrist * Vec3::NEG_Z).dot(Vec3::NEG_Z) > 0.99,
+                "{hand:?} fingers point forward"
+            );
+            assert!(
+                (wrist * Vec3::Y).dot(outward) > 0.99,
+                "{hand:?} back of hand"
+            );
+        }
     }
 
     #[test]
@@ -330,10 +360,10 @@ mod tests {
     }
 
     #[test]
-    fn a_negative_pitch_tilts_the_handle_toward_the_fingers() {
+    fn a_positive_pitch_tilts_the_handle_toward_the_fingers() {
         let tilted = GripOffset {
             position_m: Vec3::ZERO,
-            rotation_deg: Vec3::new(-15.0, 0.0, 0.0),
+            rotation_deg: Vec3::new(15.0, 0.0, 0.0),
         };
         let fingers = grip_to_wrist(Hand::Right, &tilted).orientation * Vec3::NEG_Z;
         // The grip's -Z is the handle; the fingers now lean toward it.

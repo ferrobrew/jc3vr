@@ -386,7 +386,9 @@ impl Default for HandsConfig {
 ///
 /// The wrist frame is the hand-tracking wrist convention: the origin at the wrist joint, -Z toward
 /// the fingers, and +Y out of the back of the hand. With no adjustment the fingers point along the
-/// grip's +Y, square to the handle; the adjustment rotates the hand about the grip axes.
+/// grip's -Y, square to the handle, with the back of the right hand along the grip's +X; the
+/// adjustment rotates the hand about the grip axes. The grip frame is OpenXR's: -Z up the handle
+/// toward the thumb, +X into the right palm, and +Y back toward the wrist.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GripOffset {
     /// The wrist joint's position in the right grip frame, metres.
@@ -401,8 +403,8 @@ impl GripOffset {
     /// centimetres behind and to the back-of-hand side of the grip centre, and the handle tilted
     /// toward the fingers as a power grip holds it.
     pub const INDEX_BEST_GUESS: GripOffset = GripOffset {
-        position_m: glam::Vec3::new(-0.02, -0.075, 0.0),
-        rotation_deg: glam::Vec3::new(-15.0, 0.0, 0.0),
+        position_m: glam::Vec3::new(0.02, 0.075, 0.0),
+        rotation_deg: glam::Vec3::new(15.0, 0.0, 0.0),
     };
 }
 

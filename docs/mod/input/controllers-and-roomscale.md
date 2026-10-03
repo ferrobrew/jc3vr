@@ -407,7 +407,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - Grapple aiming from the left hand, with the game's own targeting and target scoring run along the hand's ray.
 - The world-space overlay layer, with the grapple highlight and beam, the optional gun dot and laser, and debug controller gizmos.
 - The free and yielded hand tiers; every scripted state starts as yielded unless its table entry is free, and the overlay draws ghost hands for the yielded ones.
-- Weapon slots cycle from the L stick click. Milestone 3's holsters replace the cycle, which stays as an opt-in fallback.
+- Weapon slots cycle from the L stick click. Milestone 3's holsters replace the cycle, which stays on as a fallback.
 
 ### 2. Posture and roomscale
 
@@ -564,7 +564,7 @@ The aim-state pin:
 
 Hands:
 
-- The grip offset is a best guess for the Index controller: the wrist at (-0.02, -0.075, 0) m in the right grip frame, with the hand rotated -15 degrees about the grip's X axis.
+- The grip offset is a best guess for the Index controller: the wrist at (0.02, 0.075, 0) m in the right grip frame, with the hand rotated 15 degrees about the grip's X axis.
 - The character's model space is right-handed with +X to the right. If it is not, the hands render upside down.
 - The skinning palette entries use the standard column-major and row-major matrix layouts.
 - The hand and finger bones are only in the body's model slot, and the knuckle bone names resolve.
