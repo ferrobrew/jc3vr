@@ -274,3 +274,24 @@ fn the_trackpad_touch_row_stays_on_the_off_hand_beside_the_paging() {
             .any(|r| r.control == Control::EitherTrackpad && r.gesture == Gesture::PressLeftHalf)
     );
 }
+
+#[test]
+fn the_parachute_handles_are_described_only_under_the_parachute() {
+    let features = Features {
+        parachute_handles: true,
+        ..Features::default()
+    };
+    let handles = |mode| {
+        describe(&DescribeCtx {
+            features,
+            ..ctx(mode, Hand::Right, TableCtx::default())
+        })
+        .iter()
+        .any(|r| {
+            r.control == Control::EitherGrip && r.effect == Effect::Mod(ModAction::ParachuteHandles)
+        })
+    };
+    assert!(handles(Mode::Airborne(AirborneVariant::Parachute)));
+    assert!(!handles(Mode::Airborne(AirborneVariant::Wingsuit)));
+    assert!(!handles(ON_FOOT));
+}

@@ -11,8 +11,8 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings always work; the
-/// physical controls and the arm steering are additional and, as part of the full gameplay
-/// preset, on by default too.
+/// physical controls, the arm steering, and the parachute handles are additional and, as part of
+/// the full gameplay preset, on by default too.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VehiclesConfig {
@@ -23,8 +23,10 @@ pub struct VehiclesConfig {
     pub mounted: MountedConfig,
     /// The opt-in physical controls of the driver's seat.
     pub physical: PhysicalControlsConfig,
-    /// The opt-in arm-pose steering of the wingsuit and the parachute.
+    /// The arm-pose steering of the wingsuit.
     pub arm_steering: ArmSteeringConfig,
+    /// The parachute's handles, grabbed and pulled to steer and brake.
+    pub parachute_handles: ParachuteHandlesConfig,
 }
 
 impl VehiclesConfig {
@@ -34,6 +36,7 @@ impl VehiclesConfig {
             mounted: MountedConfig::new(),
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),
+            parachute_handles: ParachuteHandlesConfig::new(),
         }
     }
 }
@@ -237,15 +240,14 @@ impl LeverAxis {
     }
 }
 
-/// The arm-pose steering of the wingsuit and the parachute (see
-/// [`crate::controllers::vehicles::arm_steering`]): with the arms spread, the difference in the
-/// hands' heights banks, and both hands raised or lowered pitches. On by default, as part of the
-/// full gameplay preset, alongside the stick steering it adds to.
+/// The arm-pose steering of the wingsuit (see [`crate::controllers::vehicles::arm_steering`]):
+/// with the arms spread, the difference in the hands' heights banks, and both hands raised or
+/// lowered pitches. On by default, as part of the full gameplay preset, alongside the stick
+/// steering it adds to.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArmSteeringConfig {
     pub wingsuit: bool,
-    pub parachute: bool,
     /// How far apart the hands must be, as a share of the arm span, for the arms to count as
     /// spread. Closer together, the arms steer nothing and the stick steers alone.
     pub min_spread: f32,
@@ -263,7 +265,6 @@ impl ArmSteeringConfig {
     pub const fn new() -> Self {
         Self {
             wingsuit: true,
-            parachute: true,
             min_spread: 0.6,
             deadzone_m: 0.04,
             full_bank_m: 0.45,
@@ -274,6 +275,51 @@ impl ArmSteeringConfig {
 }
 
 impl Default for ArmSteeringConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The parachute's handles (see [`crate::controllers::vehicles::parachute`]): one grab volume per
+/// hand above and outside its shoulder, where a canopy's toggle lines hang. A grip press inside one
+/// takes the handle, and pulling it down from where it was taken banks to that side; both pulled
+/// down brake. On by default, as part of the full gameplay preset; the stick still steers and
+/// dives alongside them.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ParachuteHandlesConfig {
+    pub enabled: bool,
+    /// The right handle's centre from the right shoulder joint (+X out, +Y up, +Z back), metres;
+    /// the left handle mirrors it.
+    pub offset_m: Vec3,
+    /// How far from a handle's centre a hand's grip may be for a grip press to take it, metres.
+    pub radius_m: f32,
+    /// How far down from where it was taken a handle is pulled to act fully, metres.
+    pub full_pull_m: f32,
+    /// Pulls shorter than this act on nothing, metres.
+    pub deadzone_m: f32,
+    /// How far both handles must be pulled, as a share of a full pull, before they brake. Below it,
+    /// both pulled together only bank by their difference.
+    pub brake_threshold: f32,
+    /// How far a holding hand may move from its handle before it lets go, metres.
+    pub release_distance_m: f32,
+}
+
+impl ParachuteHandlesConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            offset_m: Vec3::new(0.18, 0.28, -0.05),
+            radius_m: 0.12,
+            full_pull_m: 0.30,
+            deadzone_m: 0.03,
+            brake_threshold: 0.2,
+            release_distance_m: 0.25,
+        }
+    }
+}
+
+impl Default for ParachuteHandlesConfig {
     fn default() -> Self {
         Self::new()
     }

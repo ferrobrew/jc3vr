@@ -1,6 +1,7 @@
 //! Vehicles and flight: the seat and the physical controls it offers, what each hand holds, the
-//! values the controls write, the mounted gun's aim, the arm steering's pose and output, and the
-//! vehicle, mounted-gun, and arm-steering settings.
+//! values the controls write, the mounted gun's aim, the arm steering's pose and output, the
+//! parachute handles' pulls and output, and the vehicle, mounted-gun, arm-steering, and handle
+//! settings.
 
 use egui::Ui;
 
@@ -11,7 +12,8 @@ use crate::{
             self, VehiclesStatus,
             config::{
                 ArmSteeringConfig, HandlebarsSpec, LeverAxis, LeverSpec, MountedConfig,
-                PhysicalControlsConfig, StickSpec, VehiclesConfig, WheelSpec,
+                ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec, VehiclesConfig,
+                WheelSpec,
             },
             driver_aim, look_steer,
             physical::{ControlEvent, ControlKind},
@@ -171,6 +173,34 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
             ui.label("Arm steering: not acting");
         }
     }
+    match &status.handles {
+        Some(h) => {
+            let side = |i: usize| {
+                if h.held[i] {
+                    format!("pulled {:.0}%", h.pulls[i] * 100.0)
+                } else {
+                    "free".to_owned()
+                }
+            };
+            ui.label(format!(
+                "Parachute handles: left {} · right {}",
+                side(Hand::Left.index()),
+                side(Hand::Right.index())
+            ));
+            ui.label(format!(
+                "Handle steer {} · written {}",
+                h.handles
+                    .map_or("none".to_owned(), |v| format!("({:+.2}, {:+.2})", v.x, v.y)),
+                h.written.map_or("the stick's".to_owned(), |v| format!(
+                    "({:+.2}, {:+.2})",
+                    v.x, v.y
+                )),
+            ));
+        }
+        None => {
+            ui.label("Parachute handles: not acting");
+        }
+    }
     ui.label(format!(
         "Wingsuit look-steer removals: {}",
         readout.look_steer_suppressions
@@ -183,8 +213,10 @@ pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     egui::CollapsingHeader::new("Mounted guns").show(ui, |ui| mounted_settings(ui, &mut v.mounted));
     egui::CollapsingHeader::new("Physical controls")
         .show(ui, |ui| physical_settings(ui, &mut v.physical));
-    egui::CollapsingHeader::new("Arm steering")
+    egui::CollapsingHeader::new("Arm steering (wingsuit)")
         .show(ui, |ui| arm_settings(ui, &mut v.arm_steering));
+    egui::CollapsingHeader::new("Parachute handles")
+        .show(ui, |ui| handle_settings(ui, &mut v.parachute_handles));
 }
 
 fn mounted_settings(ui: &mut Ui, m: &mut MountedConfig) {
@@ -265,7 +297,6 @@ fn lever(ui: &mut Ui, l: &mut LeverSpec) {
 
 fn arm_settings(ui: &mut Ui, a: &mut ArmSteeringConfig) {
     ui.checkbox(&mut a.wingsuit, "Wingsuit");
-    ui.checkbox(&mut a.parachute, "Parachute");
     ui.add(egui::Slider::new(&mut a.min_spread, 0.1..=1.0).text("spread to engage (of arm span)"));
     ui.add(
         egui::Slider::new(&mut a.deadzone_m, 0.0..=0.2)
@@ -283,4 +314,39 @@ fn arm_settings(ui: &mut Ui, a: &mut ArmSteeringConfig) {
             .fixed_decimals(2),
     );
     ui.checkbox(&mut a.invert_pitch, "Raised hands dive");
+}
+
+fn handle_settings(ui: &mut Ui, h: &mut ParachuteHandlesConfig) {
+    ui.checkbox(&mut h.enabled, "Enabled");
+    vec3_drag(
+        ui,
+        "right handle from the shoulder (m)",
+        &mut h.offset_m,
+        0.005,
+    );
+    ui.add(
+        egui::Slider::new(&mut h.radius_m, 0.03..=0.3)
+            .text("grab radius (m)")
+            .fixed_decimals(2),
+    );
+    ui.add(
+        egui::Slider::new(&mut h.full_pull_m, 0.1..=0.6)
+            .text("full pull (m)")
+            .fixed_decimals(2),
+    );
+    ui.add(
+        egui::Slider::new(&mut h.deadzone_m, 0.0..=0.15)
+            .text("deadzone (m)")
+            .fixed_decimals(2),
+    );
+    ui.add(
+        egui::Slider::new(&mut h.brake_threshold, 0.0..=0.9)
+            .text("brake threshold (of a full pull)")
+            .fixed_decimals(2),
+    );
+    ui.add(
+        egui::Slider::new(&mut h.release_distance_m, 0.1..=0.6)
+            .text("release distance (m)")
+            .fixed_decimals(2),
+    );
 }

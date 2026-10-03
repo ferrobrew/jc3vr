@@ -117,6 +117,7 @@ pub(crate) fn refresh(
             sight_chord: controls.sight_chord,
             trackpad_shows_summary: config.summary.show_on_trackpad_touch
                 && frame.hand(off).profile == InteractionProfile::ValveIndex,
+            parachute_handles: config.vehicles.parachute_handles.enabled,
         },
     };
     // SAFETY: the input tick runs on the main thread past startup.

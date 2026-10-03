@@ -39,6 +39,7 @@ use crate::{
         aim::sights,
         bindings::{
             controls::{Controls, yaw_of},
+            grab::GrabVolume,
             hold::{HoldTracker, MapKind, Phase},
             inject::Outcome,
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
@@ -216,9 +217,14 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
             vehicles::begin_tick(detection.mode),
         )
     };
+    // A parachute handle wins over the body's volumes: a hand up by the risers reaches for its
+    // toggle, and a hand holding one must keep it rather than draw from a shoulder holster.
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        start.volumes[i].or(vehicle_volumes[i])
+        match vehicle_volumes[i] {
+            handle @ Some(GrabVolume::ParachuteHandle(_)) => handle,
+            vehicle => start.volumes[i].or(vehicle),
+        }
     });
     let mut controls = Controls::from_frame(
         &frame,

@@ -118,7 +118,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.physical.flight_stick.enabled = vehicles;
     c.vehicles.physical.throttle.enabled = vehicles;
     c.vehicles.arm_steering.wingsuit = vehicles;
-    c.vehicles.arm_steering.parachute = vehicles;
+    c.vehicles.parachute_handles.enabled = vehicles;
     c.fingers.enabled = hands;
 }
 

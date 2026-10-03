@@ -35,7 +35,7 @@ The following decisions are settled and the rest of the plan assumes them.
 - Recoil is an offset between the controller pose and the rendered weapon, driven by the game's per-weapon recoil state, with a spring return, a stiffer spring under a two-hand grip, and matching haptics.
 - Haptics, physical melee, and the head-through-geometry fade are in scope.
 - Vehicles use stick bindings by default. Physical controls (a wheel, handlebars, a helicopter cyclic and collective, a flight stick) are opt-in.
-- The wingsuit and parachute use stick steering by default. Arm-pose steering is opt-in.
+- The wingsuit and parachute use stick steering by default. Arm-pose steering for the wingsuit and grabbed handles for the parachute add to it.
 - Grenades are thrown physically.
 - Weapons are drawn from body holsters. A radial menu is the seated and accessibility fallback, deferred with the rest of the mod UI.
 - Reloads start from a button. A magazine gesture is an opt-in alternative, and the button remains.
@@ -125,7 +125,7 @@ The starting assignments are as follows.
 | Driving and flying with stick bindings | Free: the wheel animates without the hands | none needed |
 | Driving and flying with physical controls | Anchored: the hands on the wheel, handlebars, or sticks | none needed |
 | Mounted guns and turrets | Anchored: the hands on the handles, which aim the gun | none needed |
-| Parachute, stick steering | Free | opt-in arm steering reads the free hands; anchoring them to the toggles is not built |
+| Parachute | Free, or anchored on a handle a hand has taken | the handles: a hand takes the handle above its shoulder with the grip and pulls it down to steer or brake |
 | Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | opt-in arm steering reads the controllers while the rendered arms stay yielded; anchoring the arms to the wing pose is not built |
 | Swimming | Yielded | arm-stroke swimming |
 | Interactions (sabotage, planting, using objects) | Yielded | per interaction |
@@ -431,7 +431,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - Per-class vehicle bindings, playtested class by class.
 - Vehicle weapon aiming (the gaze by default, with the hand option), and hand-aimed mounted guns and turrets.
 - The opt-in physical controls: wheel, handlebars, cyclic and collective, flight stick, and throttle.
-- The opt-in arm steering for the wingsuit and parachute, and the removal of the head look-steer from the wingsuit's steering.
+- The arm steering for the wingsuit, the handles for the parachute, and the removal of the head look-steer from the wingsuit's steering.
 
 ### 5. Breadth
 
@@ -505,7 +505,8 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 | Driver weapons by hand | `driver_weapons_by_hand` (on) | Built. The dominant hand aims the driver's weapons by default. |
 | Mounted guns and gunner seats | `mounted.aim_by_hands`, `mounted.anchor_hands`, `mounted.min_lever_m` | Built. |
 | Physical controls | `physical.wheel`, `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each on), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
-| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.parachute` (on) | Built. The wingsuit's rendered arms stay yielded. |
+| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.min_spread`, `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.full_pitch_m`, `arm_steering.invert_pitch` | Built for the wingsuit. Its rendered arms stay yielded. |
+| Parachute handles | `parachute_handles.enabled` (on), `parachute_handles.offset_m`, `parachute_handles.radius_m`, `parachute_handles.full_pull_m`, `parachute_handles.deadzone_m`, `parachute_handles.brake_threshold`, `parachute_handles.release_distance_m` | Built. They replace the parachute's arm steering. The placement and the pull are untuned, and whether the stick-back slow-down the handles brake with is a strong brake depends on shipped tuning that was not read. |
 | The wingsuit's head look-steer removal | `movement.suppress_parachute_look_steer`, outside the `controllers` section | Built. |
 | Weaponized wingsuit guns aimed by the right hand | none | Not built. They aim by the gaze, because the gun aim covers only the wielded slot. |
 
@@ -619,7 +620,7 @@ The order puts the parts that everything else depends on first, then the parts w
 22. Mounted guns. A mounted gun and a gunner seat anchor the hands to the handles, and moving the hands swings the muzzle about the pivot without runaway turning.
 23. Vehicle weapons (`vehicles.driver_weapons_by_hand`). The driver's weapons follow the dominant hand, turrets trail it, and the motorcycle and jetski personal weapon aims with the hand.
 24. Physical controls (each under `vehicles.physical`). The wheel, handlebars, cyclic, collective, flight stick, and throttle sit where the hands expect them, grab and release, steer in the right direction, and leave the vehicle's weapons unfired.
-25. Arm steering (`vehicles.arm_steering.wingsuit` and `.parachute`). Lowering the right hand banks right and lowering both hands dives; the head no longer steers the wingsuit.
+25. Arm steering and the parachute handles (`vehicles.arm_steering.wingsuit`, `vehicles.parachute_handles`). In the wingsuit, lowering the right hand banks right and lowering both hands dives; the head no longer steers the wingsuit. Under the parachute, the hands steer nothing until they take the handles above the shoulders with the grip; pulling the right handle down banks right, pulling both down slows the canopy, and letting go or raising them flies level.
 26. Scopes. Precision aim does not engage from the input, the sniper's bolt cycle, or the guided rocket launcher, and the launcher's missile still guides. The lens appears when the eye is behind the scope, magnifies the target the right way round, and is not blocked by the gun or the hands.
 27. Grenades. A grip at the pouch primes a grenade into the hand, the fuse ring counts down, a release throws with the hand's speed and direction, and a grenade held too long explodes in the hand. The stick click still throws along the hand's aim.
 28. Melee. A strike away from the shoulder hits the target struck at, a pull toward the body does not strike, and a strike in the air, while reeling, or without the hammer ability does nothing.

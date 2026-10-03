@@ -1,7 +1,7 @@
 //! The describing reader: what each controller input does in a mode, read from the same table
 //! declarations the injection evaluates ([`crate::controllers::bindings::tables::declare`]), plus
 //! the inputs the mod handles outside the tables (the system button, the body turn, the crouch
-//! flick, the sight chord, and the weapon gestures). Pure; the controls summary
+//! flick, the sight chord, the weapon gestures, and the parachute handles). Pure; the controls summary
 //! ([`crate::controllers::summary`]) labels and draws the rows.
 
 use jc3gi::input::input_action_map::Action;
@@ -130,6 +130,8 @@ pub enum ModAction {
     Magazine,
     /// Take a grenade from its pouch, and throw it by letting go.
     Grenade,
+    /// Take a parachute handle, and pull it down to steer, or both to brake.
+    ParachuteHandles,
     /// Show the controls summary.
     ShowSummary,
 }
@@ -168,6 +170,8 @@ pub struct Features {
     pub sight_chord: bool,
     /// The trackpad touch shows the summary.
     pub trackpad_shows_summary: bool,
+    /// The parachute's handles.
+    pub parachute_handles: bool,
 }
 
 /// What a description is for.
@@ -357,6 +361,13 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
                 Effect::Actions(vec![Action::PUSH_GRAPPLE]),
             );
         }
+    }
+    if features.parachute_handles && ctx.mode == Mode::Airborne(AirborneVariant::Parachute) {
+        add(
+            Control::EitherGrip,
+            Gesture::Press,
+            modded(ModAction::ParachuteHandles),
+        );
     }
     if features.trackpad_shows_summary {
         add(

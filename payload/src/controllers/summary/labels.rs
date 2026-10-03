@@ -249,6 +249,7 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::Foregrip => ModText::Foregrip,
         ModAction::Magazine => ModText::Magazine,
         ModAction::Grenade => ModText::Grenade,
+        ModAction::ParachuteHandles => ModText::ParachuteHandles,
         ModAction::ShowSummary => ModText::ShowSummary,
     })
 }
@@ -274,6 +275,7 @@ pub enum ModText {
     Foregrip,
     Magazine,
     Grenade,
+    ParachuteHandles,
     ShowSummary,
 }
 
@@ -297,6 +299,7 @@ impl ModText {
             ModText::Foregrip => "At the Foregrip: Steady the Weapon",
             ModText::Magazine => "Belt Pouch to Weapon: Reload",
             ModText::Grenade => "At the Pouch: Grab, Let Go to Throw",
+            ModText::ParachuteHandles => "At a Handle: Grab, Pull Down to Steer, Both to Brake",
             ModText::ShowSummary => "Show Controls",
         }
     }
@@ -335,6 +338,7 @@ mod tests {
             melee: true,
             sight_chord: true,
             trackpad_shows_summary: true,
+            parachute_handles: true,
         };
         for mode in all_modes() {
             for (dominant, table) in all_contexts() {

@@ -1,9 +1,10 @@
-//! Arm-pose steering for the wingsuit and the parachute. Pure.
+//! Arm-pose steering for the wingsuit. Pure. The parachute steers with its handles instead
+//! ([`crate::controllers::vehicles::parachute`]), which share [`combine`].
 //!
 //! With the arms spread as wings, the difference in the hands' heights banks (the lower hand is the
 //! side the turn goes to), and both hands raised or lowered from the shoulders pitches (lowered
 //! dives by default). The result is a stick vector in the move stick's convention (+X right, +Y
-//! forward), which the bindings write to the move half-axes both flight tasks read, exactly as the
+//! forward), which the bindings write to the move half-axes the wingsuit task reads, exactly as the
 //! stick does.
 //!
 //! Heights are measured in the cockpit frame, whose vertical is the player's real vertical: the

@@ -425,6 +425,37 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         v.arm_steering.full_pitch_m,
         10.0,
     )?;
+    vec3(
+        "vehicles.parachute_handles.offset_m",
+        v.parachute_handles.offset_m,
+        10.0,
+    )?;
+    positive(
+        "vehicles.parachute_handles.radius_m",
+        v.parachute_handles.radius_m,
+        10.0,
+    )?;
+    positive(
+        "vehicles.parachute_handles.full_pull_m",
+        v.parachute_handles.full_pull_m,
+        10.0,
+    )?;
+    nonnegative(
+        "vehicles.parachute_handles.deadzone_m",
+        v.parachute_handles.deadzone_m,
+        10.0,
+    )?;
+    range(
+        "vehicles.parachute_handles.brake_threshold",
+        v.parachute_handles.brake_threshold,
+        0.0,
+        1.0,
+    )?;
+    positive(
+        "vehicles.parachute_handles.release_distance_m",
+        v.parachute_handles.release_distance_m,
+        10.0,
+    )?;
 
     for (index, finger_range) in c.fingers.curl_ranges.into_iter().enumerate() {
         range(

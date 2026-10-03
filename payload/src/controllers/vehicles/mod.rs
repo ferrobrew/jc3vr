@@ -7,19 +7,21 @@
 //!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
 //!   hands;
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
-//! - [`arm_steering`]: the opt-in arm-pose steering of the wingsuit and the parachute;
+//! - [`arm_steering`]: the arm-pose steering of the wingsuit;
+//! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
 //! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand, as an option;
 //! - [`look_steer`]: the wingsuit's head look-steer removed.
 //!
 //! The stick bindings of every class are the tables' ([`crate::controllers::bindings::tables`]).
 //! This module runs on the input tick in two halves around them, like the weapon handling:
 //!
-//! 1. [`begin_tick`] reads the mounted gun and places the physical controls' grab volumes, and
-//!    returns the volume each hand is in. A hand holding a control is always in it, so that its
-//!    next grip press lets go rather than firing a weapon.
+//! 1. [`begin_tick`] reads the mounted gun and places the physical controls' and the parachute
+//!    handles' grab volumes, and returns the volume each hand is in. A hand holding a control or a
+//!    handle is always in it, so that its next grip press lets go rather than firing a weapon or
+//!    the grapple.
 //! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, and replaces the tables'
-//!    analog writes for each axis a control drives; in the air, it adds the arm pose to the move
-//!    stick.
+//!    analog writes for each axis a control drives; in the wingsuit it adds the arm pose to the
+//!    move stick, and under the parachute the held handles.
 //!
 //! The hands take the anchored poses in [`apply`], which every hand subsystem's hands pass through
 //! ([`crate::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
@@ -37,6 +39,7 @@ pub mod config;
 pub mod driver_aim;
 pub mod look_steer;
 pub mod mounted;
+pub mod parachute;
 pub mod physical;
 
 use std::{
@@ -69,8 +72,10 @@ use crate::{
             store,
         },
         vehicles::{
-            arm_steering::ArmPose,
+            arm_steering::{self as arm, ArmPose},
+            config::ParachuteHandlesConfig,
             mounted::{MountedGun, MountedTarget, Reference},
+            parachute::{HandleEvent, HandleHold, HandleState},
             physical::{ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement},
         },
     },
@@ -104,6 +109,20 @@ pub struct ArmReadout {
     pub written: Vec2,
 }
 
+/// The parachute handles as the last input tick saw them.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HandlesReadout {
+    /// Whether each hand holds its handle, indexed by [`Hand::index`].
+    pub held: [bool; 2],
+    /// Each hand's pull, `0..=1`.
+    pub pulls: [f32; 2],
+    /// The handles' own stick vector, `None` while neither is held.
+    pub handles: Option<Vec2>,
+    /// The stick vector written to the move half-axes: the stick and the handles together, `None`
+    /// while the tables' stick writes stand.
+    pub written: Option<Vec2>,
+}
+
 /// The vehicles' readout.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct VehiclesStatus {
@@ -125,6 +144,8 @@ pub struct VehiclesStatus {
     pub events: Vec<ControlEvent>,
     pub mounted: Option<MountedReadout>,
     pub arms: Option<ArmReadout>,
+    /// The parachute handles, while they act.
+    pub handles: Option<HandlesReadout>,
 }
 
 pub fn status() -> VehiclesStatus {
@@ -175,20 +196,43 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let mounted = mounted_tick(&active);
+    let handles_on = handles_act(mode, &config);
+    let handles_config = config.vehicles.parachute_handles;
 
     let mut events = Vec::new();
+    let mut handle_events = Vec::new();
     let mut state = STATE.lock();
     if state.status.seat != seat {
         physical::release_all(&mut state.controls, &mut events);
         state.controls = ControlState::default();
     }
-    let candidates = physical::candidates(&placement, &state.controls, offered, grips);
+    if !handles_on {
+        parachute::release_all(&mut state.handles, &mut handle_events);
+    }
+    let mut candidates = physical::candidates(&placement, &state.controls, offered, grips);
+    if handles_on {
+        let dims = body_dimensions(&config);
+        let shoulders = body::shoulder_positions(active.head.position, Quat::IDENTITY, &dims);
+        let centres = parachute::handle_centres(&handles_config, shoulders);
+        candidates.extend(parachute::candidates(
+            &handles_config,
+            &state.handles,
+            centres,
+            grips,
+        ));
+    }
     let volumes = Hand::BOTH.map(|hand| {
-        if let Some(hold) = state.controls.holds[hand.index()] {
+        let i = hand.index();
+        if let Some(hold) = state.controls.holds[i] {
             return Some(GrabVolume::VehicleControl(hold.kind));
         }
-        grab::grab_volume(grips[hand.index()]?, hand, &candidates)
+        if state.handles.holds[i].is_some() {
+            return Some(GrabVolume::ParachuteHandle(hand));
+        }
+        grab::grab_volume(grips[i]?, hand, &candidates)
     });
+    state.handles_on = handles_on;
+    state.handles_config = handles_config;
     state.placement = Some(placement);
     state.mounted_target = mounted.target;
     MOUNTED_WEAPON.store(mounted.target.map_or(0, |t| t.weapon), Ordering::Relaxed);
@@ -198,15 +242,20 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     state.status.offered = offered;
     state.status.volumes = volumes;
     state.status.mounted = mounted.readout;
+    if !handles_on {
+        state.status.handles = None;
+    }
     push_events(&mut state.status, events);
     drop(state);
+    log_handle_events(&handle_events);
 
     submit_highlights(&config, &active, &candidates, volumes);
     volumes
 }
 
 /// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,
-/// write their axes over the tables', and add the arm pose to the move stick in the air.
+/// write their axes over the tables', add the arm pose to the move stick in the wingsuit, and steer
+/// with the held handles under the parachute.
 pub(crate) fn finish_tick(
     mode: Mode,
     grabs: [Option<GrabVolume>; 2],
@@ -219,12 +268,14 @@ pub(crate) fn finish_tick(
     };
     let config = active.config;
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
+    let handle_grabs = grabs.map(|g| matches!(g, Some(GrabVolume::ParachuteHandle(_))));
     let grabs = grabs.map(|g| match g {
         Some(GrabVolume::VehicleControl(kind)) => Some(kind),
         _ => None,
     });
 
     let mut events = Vec::new();
+    let mut handle_events = Vec::new();
     let mut state = STATE.lock();
     let Some(placement) = state.placement else {
         return;
@@ -242,26 +293,53 @@ pub(crate) fn finish_tick(
         &mut events,
     );
     write_outputs(&outputs, desired);
+    let handles_config = state.handles_config;
+    let pulls = state.handles_on.then(|| {
+        parachute::step(
+            &mut state.handles,
+            &handles_config,
+            &parachute::StepInputs {
+                grips,
+                grabs: handle_grabs,
+            },
+            &mut handle_events,
+        )
+    });
     let blend = config.hands.anchor.blend_s;
     for hand in Hand::BOTH {
         let i = hand.index();
         let hold = state.controls.holds[i];
+        let handle = state.handles.holds[i];
         if hold.is_some() {
             state.last_holds[i] = hold;
+            state.last_handles[i] = None;
+        } else if handle.is_some() {
+            state.last_handles[i] = handle;
+            state.last_holds[i] = None;
         }
-        let target = if hold.is_some() { 1.0 } else { 0.0 };
+        let target = if hold.is_some() || handle.is_some() {
+            1.0
+        } else {
+            0.0
+        };
         state.anchor_weights[i] =
             tiers::step_weight(state.anchor_weights[i], target, dt, blend, blend);
         if state.anchor_weights[i] <= 0.0 {
             state.last_holds[i] = None;
+            state.last_handles[i] = None;
         }
     }
     let arms = arm_tick(mode, controls, &active, desired);
+    let handles =
+        pulls.map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &handles_config));
     state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
     state.status.controls = state.controls;
     state.status.outputs = outputs;
     state.status.arms = arms;
+    state.status.handles = handles;
     push_events(&mut state.status, events);
+    drop(state);
+    log_handle_events(&handle_events);
 }
 
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
@@ -269,9 +347,13 @@ pub(crate) fn finish_tick(
 pub(crate) fn stand_down() {
     let mut state = STATE.lock();
     let mut events = Vec::new();
+    let mut handle_events = Vec::new();
     physical::release_all(&mut state.controls, &mut events);
+    parachute::release_all(&mut state.handles, &mut handle_events);
     state.controls = ControlState::default();
+    state.handles_on = false;
     state.last_holds = [None; 2];
+    state.last_handles = [None; 2];
     state.anchor_weights = [0.0; 2];
     state.mounted_reference = None;
     state.mounted_target = None;
@@ -284,13 +366,15 @@ pub(crate) fn stand_down() {
     state.status.holds = [None; 2];
     state.status.mounted = None;
     state.status.arms = None;
+    state.status.handles = None;
     push_events(&mut state.status, events);
     drop(state);
+    log_handle_events(&handle_events);
     store::clear(Source::VehicleControls);
 }
 
-/// Put the hands that hold a physical control or a mounted gun's handles on them, keeping the
-/// controllers' rotation. `hands` are the cockpit-frame hands indexed by [`Hand::index`], as the
+/// Put the hands that hold a physical control, a parachute handle, or a mounted gun's handles on
+/// them, keeping the controllers' rotation. `hands` are the cockpit-frame hands indexed by [`Hand::index`], as the
 /// controllers hold them.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let tier_status = tiers::status();
@@ -314,13 +398,19 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
                 let point = physical::anchor_point(&state.controls, &placement, hold, hand, grips)?;
                 Some((point, state.anchor_weights[i]))
             });
+        let handle = state.last_handles[i]
+            .filter(|_| state.anchor_weights[i] > 0.0)
+            .map(|hold| {
+                let point = parachute::anchor_point(&state.handles_config, hold, h.grip.position);
+                (point, state.anchor_weights[i])
+            });
         let mounted = state
             .mounted_handles
             .and_then(|handles| handles[i])
             .filter(|_| !grapple)
             .map(|point| (point, tier_status.anchor_weights[i]))
             .filter(|(_, weight)| *weight > 0.0);
-        if let Some((point, weight)) = control.or(mounted) {
+        if let Some((point, weight)) = control.or(handle).or(mounted) {
             hands[i] = Some(move_grip(h, point, weight));
         }
     }
@@ -338,8 +428,15 @@ struct State {
     placement: Option<Placement>,
     /// The control each hand held last, kept while its anchor blends out.
     last_holds: [Option<Hold>; 2],
-    /// Each hand's share of the pose on its control.
+    /// The handle each hand held last, kept while its anchor blends out.
+    last_handles: [Option<HandleHold>; 2],
+    /// Each hand's share of the pose on its control or handle.
     anchor_weights: [f32; 2],
+    handles: HandleState,
+    /// Whether the parachute handles act this tick: under the parachute, with them switched on.
+    handles_on: bool,
+    /// The handles' settings as the last tick read them, kept while a hand blends off its handle.
+    handles_config: ParachuteHandlesConfig,
     mounted_reference: Option<Reference>,
     mounted_target: Option<MountedTarget>,
     /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
@@ -358,11 +455,16 @@ static STATE: Mutex<State> = Mutex::new(State {
         events: Vec::new(),
         mounted: None,
         arms: None,
+        handles: None,
     },
     controls: ControlState::new(),
     placement: None,
     last_holds: [None; 2],
+    last_handles: [None; 2],
     anchor_weights: [0.0; 2],
+    handles: HandleState::new(),
+    handles_on: false,
+    handles_config: ParachuteHandlesConfig::new(),
     mounted_reference: None,
     mounted_target: None,
     mounted_handles: None,
@@ -471,8 +573,7 @@ fn mounted_tick(active: &ActiveHands) -> MountedTick {
     }
 }
 
-/// Add the arm pose to the move stick in the wingsuit or under the parachute, when their arm
-/// steering is on.
+/// Add the arm pose to the move stick in the wingsuit, when its arm steering is on.
 fn arm_tick(
     mode: Mode,
     controls: &Controls,
@@ -480,12 +581,7 @@ fn arm_tick(
     desired: &mut Vec<Desired>,
 ) -> Option<ArmReadout> {
     let config = &active.config.vehicles.arm_steering;
-    let on = match mode {
-        Mode::Airborne(AirborneVariant::Wingsuit) => config.wingsuit,
-        Mode::Airborne(AirborneVariant::Parachute) => config.parachute,
-        _ => false,
-    };
-    if !on {
+    if !(config.wingsuit && mode == Mode::Airborne(AirborneVariant::Wingsuit)) {
         return None;
     }
     let left = active.hands[Hand::Left.index()]?.grip.position;
@@ -493,16 +589,58 @@ fn arm_tick(
     let dims = body_dimensions(&active.config);
     let shoulder_y = active.head.position.y - (dims.eye_height - dims.shoulder_height);
     let pose = arm_steering::arm_pose(left, right, shoulder_y, dims.arm_span);
-    let arms = arm_steering::steer(&pose, config);
-    let written = arm_steering::combine(controls.off().stick, arms);
-    replace_axis(desired, written.y, MOVE_BACKWARD, MOVE_FORWARD);
-    replace_axis(desired, written.x, MOVE_LEFT, MOVE_RIGHT);
-    replace_axis(desired, written.length().min(1.0), MOVE_ALL, MOVE_ALL);
+    let arms = arm::steer(&pose, config);
+    let written = arm::combine(controls.off().stick, arms);
+    write_move(desired, written);
     Some(ArmReadout {
         pose,
         arms,
         written,
     })
+}
+
+/// Whether the parachute handles act in `mode`.
+fn handles_act(mode: Mode, config: &ControllersConfig) -> bool {
+    config.vehicles.parachute_handles.enabled && mode == Mode::Airborne(AirborneVariant::Parachute)
+}
+
+/// Steer with the held handles under the parachute: their vector added to the move stick, written
+/// to the move half-axes the parachute task reads, as the stick's. With neither handle held, the
+/// tables' stick writes stand.
+fn handles_tick(
+    state: &HandleState,
+    pulls: [f32; 2],
+    controls: &Controls,
+    desired: &mut Vec<Desired>,
+    config: &ParachuteHandlesConfig,
+) -> HandlesReadout {
+    let held = state.holds.map(|h| h.is_some());
+    let handles = held
+        .contains(&true)
+        .then(|| parachute::steer(pulls, config));
+    let written = handles.map(|h| arm::combine(controls.off().stick, Some(h)));
+    if let Some(written) = written {
+        write_move(desired, written);
+    }
+    HandlesReadout {
+        held,
+        pulls,
+        handles,
+        written,
+    }
+}
+
+/// Write `stick` (+X right, +Y forward) over the tables' move half-axes and their length.
+fn write_move(desired: &mut Vec<Desired>, stick: Vec2) {
+    replace_axis(desired, stick.y, MOVE_BACKWARD, MOVE_FORWARD);
+    replace_axis(desired, stick.x, MOVE_LEFT, MOVE_RIGHT);
+    replace_axis(desired, stick.length().min(1.0), MOVE_ALL, MOVE_ALL);
+}
+
+fn log_handle_events(events: &[HandleEvent]) {
+    for event in events {
+        tracing::debug!(target: "controllers", ?event, "parachute handle");
+    }
 }
 
 /// The dimensions the hands are measured against: the character's while the hands are remapped

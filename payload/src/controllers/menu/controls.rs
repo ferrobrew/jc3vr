@@ -210,11 +210,23 @@ fn build() -> Page {
             .vehicles
             .arm_steering
             .wingsuit))
-        .item(config_toggle!("PARACHUTE ARM STEERING", |c| c
+        .item(config_toggle!("PARACHUTE HANDLES", |c| c
             .controllers
             .vehicles
-            .arm_steering
-            .parachute))
+            .parachute_handles
+            .enabled))
+        .item(config_slider!(
+            "HANDLE FULL PULL",
+            FULL_PULL_RANGE,
+            SliderFormat::new(2, " M"),
+            |c| c.controllers.vehicles.parachute_handles.full_pull_m
+        ))
+        .item(config_slider!(
+            "HANDLE BRAKE THRESHOLD",
+            UNIT_RANGE,
+            SliderFormat::new(2, ""),
+            |c| c.controllers.vehicles.parachute_handles.brake_threshold
+        ))
         .header("SAVED SETTINGS")
         .text("CHANGES APPLY AT ONCE AND ARE SAVED")
         .text("WHEN YOU LEAVE A VR PAGE.")
@@ -313,6 +325,8 @@ const DEADZONE_RANGE: SliderRange = SliderRange::new(0.0, 0.5, 50);
 const TURN_SPEED_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 /// The recoil kick scale, in twentieths.
 const RECOIL_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
+/// The parachute handles' full pull, metres, in centimetres.
+const FULL_PULL_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
 
 /// The switches of the six physical vehicle controls.
 fn physical_controls(c: &Config) -> [&bool; 6] {

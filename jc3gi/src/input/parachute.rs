@@ -211,9 +211,10 @@ impl std::convert::AsMut<CharacterSpring> for CharacterSpring {
 pub struct NStateTask_MovementParachuteTask {}
 impl NStateTask_MovementParachuteTask {
     pub const Update_ADDRESS: usize = 0x14082AB10;
-    /// The per-frame update. Reads the parachute movement effectors (pitch/yaw inputs via the
-    /// action map), calls [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics) with the resulting input vector, then handles
-    /// the cancel input that closes the parachute.
+    /// The per-frame update. Reads the move half-axes from the avatar's action map as a stick
+    /// vector (`MOVE_RIGHT` minus `MOVE_LEFT` across, `MOVE_BACKWARD` minus `MOVE_FORWARD` along,
+    /// so the stick pulled back is positive), calls [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics) with it, then
+    /// handles the cancel input that closes the parachute.
     pub unsafe fn Update(
         ctx: *mut crate::state::StateContext,
         p1: *mut ::std::ffi::c_void,
@@ -326,7 +327,12 @@ pub const UpdateParachutePhysics_ADDRESS: usize = 0x1407E6DF0;
 /// [`NStateTask_MovementParachuteTask::Update`](crate::input::parachute::NStateTask_MovementParachuteTask::Update). Computes the parachute steering values, the
 /// wanted character yaw/pitch/roll, and the camera-relative look steer via
 /// [`GetParachuteSteeringValues`](crate::input::parachute::GetParachuteSteeringValues), then drives the parachute velocities and the character/
-/// canopy orientation through the parachute action params' proxy matrices.
+/// canopy orientation through the parachute action params' proxy matrices. Besides steering
+/// through the input mixes, the input's along axis is the target of the lift and drag amounts,
+/// which follow it through the air settings' `m_LiftInputSpring` and `m_DragInputSpring`; the
+/// conventional velocity then takes its lift and drag between the settings' `m_Lift` and
+/// `m_DragX`/`m_DragY`/`m_DragZ` entries by those amounts, the last entry with the stick fully
+/// back and the first with it fully forward.
 pub unsafe fn UpdateParachutePhysics(
     character: *mut crate::character::character::Character,
     dt: f32,

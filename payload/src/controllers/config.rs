@@ -4,8 +4,8 @@
 //!
 //! `ControllersConfig::new()` ships as the full gameplay preset
 //! ([`presets::Preset::VehiclesAndAdvanced`](crate::controllers::presets::Preset::VehiclesAndAdvanced)),
-//! so that hand aiming, roomscale, weapon handling, vehicle steering (including the wingsuit's and
-//! the parachute's arm steering), and the debug gizmos all work, and show, out of the box.
+//! so that hand aiming, roomscale, weapon handling, vehicle steering (including the wingsuit's arm
+//! steering and the parachute's handles), and the debug gizmos all work, and show, out of the box.
 //! `presets::preset_modified` checked against that preset stays false for the defaults.
 //!
 //! Stick turning is not configured here: the controller scheme's right stick drives the same body
