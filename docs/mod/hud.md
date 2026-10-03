@@ -75,6 +75,8 @@ Input comes from the desktop mouse re-sourced onto the panel (`payload/src/hud/p
 
 The egui panel is gated behind an OpenXR session and the opt-in `hud.egui_panel.enabled` flag, and defaults off, so with it off the debug-panel path remains byte-identical to the flat-overlay baseline. F8 summons and dismisses the panel in-headset, toggling the enabled flag and egui's input capture together so "panel visible" always means "egui focused". Distance, size, and follow lag are on the HUD debug tab.
 
+Separately, `hud.flat_overlay_visible` (on by default) hides the flat egui overlay from the desktop window only — both the direct back-buffer path and the deferred mirror-overlay texture (`payload/src/hud/mirror_overlay.rs`) honour it — without touching the VR floating panel, the headset image, or the in-world overlays. F4 toggles it, releasing egui's input capture while hiding so the game keeps input; this is for recording the desktop side-by-side stereo preview without the debug UI in frame.
+
 ## Controller pointing in the game UI
 
 The game's Scaleform UI takes the dominant controller's aim ray as its mouse while a menu action set is active (`payload/src/hud/pointer/`, `payload/src/hooks/ui/mouse.rs`). It follows `hud.redirect`, `hud.quad`, and `hud.cursor.enabled`, and does not depend on the egui panel.

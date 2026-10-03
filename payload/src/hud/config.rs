@@ -113,6 +113,14 @@ pub struct HudConfig {
     /// only takes effect while an OpenXR session is running.
     #[serde(default)]
     pub egui_panel: EguiPanelConfig,
+    /// Whether the flat egui debug overlay draws onto the desktop window: both the direct
+    /// back-buffer path (`EguiState::render`, no VR session or the panel path inactive) and the
+    /// deferred mirror-overlay texture (`crate::hud::mirror_overlay`, a VR session with the mirror
+    /// on and [`egui_panel`](HudConfig::egui_panel) off). On by default. Off hides the overlay from
+    /// the desktop image only -- the VR floating panel, the headset image, and the in-world
+    /// overlays are unaffected.
+    #[serde(default = "default_true")]
+    pub flat_overlay_visible: bool,
 }
 impl HudConfig {
     pub const fn new() -> Self {
@@ -141,8 +149,13 @@ impl HudConfig {
             reticle_align: ReticleAlign::PanelSubtense,
             split_path_prefix: SplitPathPrefix::new(),
             egui_panel: EguiPanelConfig::new(),
+            flat_overlay_visible: true,
         }
     }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 /// How the aim reticle is projected onto the floating panel (issue #6). An A/B knob for the

@@ -61,7 +61,7 @@ While a session runs the compositor owns the HMD present and the engine's own pr
 
 ## Recenter and the VR debug tab
 
-Recenter is bound to **F7** (`payload/src/hooks/wndproc.rs`), edge-detected like the other function-key toggles (F5 uninject, F6 egui capture, F10 stereo capture, F11 shadow-PCF A/B) — F7 was the free key in that block. The same action is a Recenter button in two places in the debug overlay: the Camera tab's Headpose section and the dedicated **VR tab** (`payload/src/ui/vr.rs`). The VR tab shows the session state, the runtime name, the effective per-eye resolution, and the live headpose source, and exposes the `vr.enabled`, `vr.native_resolution`, `vr.mirror` (with its eye, framing, and zoom), and `body_ik.enabled` controls live.
+Recenter is bound to **F7** (`payload/src/hooks/wndproc.rs`), edge-detected like the other function-key toggles (F4 flat overlay visibility, F5 uninject, F6 egui capture, F10 stereo capture, F11 shadow-PCF A/B) — F7 was the free key in that block. The same action is a Recenter button in two places in the debug overlay: the Camera tab's Headpose section and the dedicated **VR tab** (`payload/src/ui/vr.rs`). The VR tab shows the session state, the runtime name, the effective per-eye resolution, and the live headpose source, and exposes the `vr.enabled`, `vr.native_resolution`, `vr.mirror` (with its eye, framing, and zoom), and `body_ik.enabled` controls live.
 
 ## Config reference
 

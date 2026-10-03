@@ -295,6 +295,14 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
             });
         }
 
+        // The flat egui overlay on the desktop window (direct back-buffer or deferred mirror-overlay
+        // path). Toggle with F4; the VR floating panel above is unaffected.
+        ui.separator();
+        ui.checkbox(
+            &mut cfg.hud.flat_overlay_visible,
+            "Flat debug overlay on the desktop window (F4)",
+        );
+
         cfg.hud.redirect
     };
 

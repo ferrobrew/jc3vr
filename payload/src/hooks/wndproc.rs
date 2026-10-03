@@ -5,7 +5,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     UI::{
-        Input::KeyboardAndMouse::{VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
+        Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
         WindowsAndMessaging::{
             GetClientRect, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
             WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN,
@@ -25,6 +25,35 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::window::WndProc_ADDRESS)]
 fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // F4 hides the flat egui debug overlay from the desktop window only (both the direct
+    // back-buffer path and the deferred mirror-overlay path honour `hud.flat_overlay_visible`):
+    // useful while recording the side-by-side stereo preview without the overlay in frame. The VR
+    // floating panel (F8), the headset image, and the in-world overlays are untouched. While hiding,
+    // egui's input capture is released too (if held) so the game keeps input with nothing left to
+    // click; showing it again does not re-capture on its own. Edge-detected like the other
+    // function-key toggles.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F4.0 as usize {
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            let visible = {
+                let mut cfg = CONFIG.lock();
+                cfg.hud.flat_overlay_visible = !cfg.hud.flat_overlay_visible;
+                cfg.hud.flat_overlay_visible
+            };
+            if !visible
+                && let Some(egui_state) = EguiState::get().as_mut()
+                && egui_state.is_input_captured()
+            {
+                egui_state.toggle_game_input_capture();
+            }
+            tracing::info!(
+                "F4: flat debug overlay {}",
+                if visible { "ON" } else { "OFF" }
+            );
+        }
+        return LRESULT(0);
+    }
+
     // F7 recenters the headpose: snapshots the current headpose as the neutral reference so
     // subsequent poses are relative to it. Edge-detected like F10/F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F7.0 as usize {

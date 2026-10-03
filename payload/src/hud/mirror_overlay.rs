@@ -8,9 +8,9 @@
 //! an offscreen texture, and let the mirror composite that texture from whichever thread runs it —
 //! exactly the model the floating panel (issue #24) already uses.
 //!
-//! Only active while a VR session renders, the mirror is on, and the floating panel is off (with the
-//! panel on, the mirror composites the panel texture instead). Off, every path is the untouched flat
-//! overlay.
+//! Only active while a VR session renders, the mirror is on, the floating panel is off (with the
+//! panel on, the mirror composites the panel texture instead), and the flat overlay is visible
+//! (`hud.flat_overlay_visible`, toggled with F4). Off, every path is the untouched flat overlay.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
@@ -28,7 +28,9 @@ static OVERLAY: Mutex<Option<HudTarget>> = Mutex::new(None);
 pub(crate) fn is_active() -> bool {
     crate::vr::render_params(0).is_some()
         && !crate::director::cinematic::active()
-        && crate::config::Config::lock_query(|c| c.vr.mirror && !c.hud.egui_panel.enabled)
+        && crate::config::Config::lock_query(|c| {
+            c.vr.mirror && !c.hud.egui_panel.enabled && c.hud.flat_overlay_visible
+        })
 }
 
 /// Render this frame's egui output into the overlay texture. Called from the eye-0 post-draw hook

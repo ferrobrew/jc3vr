@@ -186,8 +186,12 @@ fn graphics_flip(device: *mut Device) -> u64 {
 
     if let Some(egui_state) = crate::egui_impl::EguiState::get().as_mut() {
         // Hide the debug overlay while the F10 capture window is up or cinematic mode is on, so the
-        // recording is clean.
-        if !crate::capture::is_active() && !crate::director::cinematic::active() {
+        // recording is clean, or while F4 has hidden it from the desktop window (the deferred
+        // mirror-overlay path in `crate::hud::mirror_overlay` honours the same flag).
+        if !crate::capture::is_active()
+            && !crate::director::cinematic::active()
+            && crate::config::Config::lock_query(|c| c.hud.flat_overlay_visible)
+        {
             egui_state.render();
         }
     }
