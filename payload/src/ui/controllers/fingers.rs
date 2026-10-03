@@ -72,9 +72,9 @@ pub(super) fn fingers_settings(ui: &mut Ui, f: &mut FingersConfig) {
             "Drive every finger of a hand holding a weapon",
         )
         .on_hover_text("Off, only the trigger finger moves and the game's grip wraps the weapon.");
-        ui.label("Bend at open and closed (share of the full bend, added to the animation)");
+        ui.label("Bend at open and closed (share of the full bend from straight)");
         for finger in Finger::ALL {
-            let range = &mut f.ranges[finger.index()];
+            let range = &mut f.curl_ranges[finger.index()];
             ui.horizontal(|ui| {
                 ui.label(finger.label());
                 ui.add(
@@ -93,6 +93,18 @@ pub(super) fn fingers_settings(ui: &mut Ui, f: &mut FingersConfig) {
         }
         joint_degrees(ui, "Finger full bend (°)", &mut f.finger_bend_deg);
         joint_degrees(ui, "Thumb full bend (°)", &mut f.thumb_bend_deg);
+        ui.label("Rest offset per joint (°, toward the palm)")
+            .on_hover_text(
+                "Corrects the straight finger the curls are measured from. Raise a joint whose \
+                 open finger bends backward, lower one that stays bent with the hand open.",
+            );
+        for finger in Finger::ALL {
+            rest_offsets(ui, finger.label(), &mut f.rest_offset_deg[finger.index()]);
+        }
+        ui.add(
+            egui::Slider::new(&mut f.thumb_spread_deg, 0.0..=90.0).text("Open thumb spread (°)"),
+        )
+        .on_hover_text("The open thumb's angle from the fingers toward the thumb side.");
         ui.add(egui::Slider::new(&mut f.splay_scale, 0.0..=2.0).text("Splay share"));
         ui.add(egui::Slider::new(&mut f.max_splay_deg, 0.0..=45.0).text("Largest splay (°)"));
         ui.add(egui::Slider::new(&mut f.smoothing_s, 0.0..=0.3).text("Smoothing (s)"));
@@ -103,6 +115,20 @@ pub(super) fn fingers_settings(ui: &mut Ui, f: &mut FingersConfig) {
                 drive_all_when_holding: f.drive_all_when_holding,
                 ..FingersConfig::new()
             };
+        }
+    });
+}
+
+fn rest_offsets(ui: &mut Ui, label: &str, degrees: &mut [f32; 3]) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        for (value, prefix) in degrees.iter_mut().zip(["base ", "middle ", "tip "]) {
+            ui.add(
+                egui::DragValue::new(value)
+                    .speed(0.5)
+                    .range(-90.0..=90.0)
+                    .prefix(prefix),
+            );
         }
     });
 }

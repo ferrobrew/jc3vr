@@ -440,15 +440,15 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         10.0,
     )?;
 
-    for (index, finger_range) in c.fingers.ranges.into_iter().enumerate() {
+    for (index, finger_range) in c.fingers.curl_ranges.into_iter().enumerate() {
         range(
-            &format!("fingers.ranges[{index}].open"),
+            &format!("fingers.curl_ranges[{index}].open"),
             finger_range.open,
             -2.0,
             2.0,
         )?;
         range(
-            &format!("fingers.ranges[{index}].closed"),
+            &format!("fingers.curl_ranges[{index}].closed"),
             finger_range.closed,
             -2.0,
             2.0,
@@ -470,6 +470,22 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
             360.0,
         )?;
     }
+    for (finger, offsets) in c.fingers.rest_offset_deg.into_iter().enumerate() {
+        for (joint, value) in offsets.into_iter().enumerate() {
+            range(
+                &format!("fingers.rest_offset_deg[{finger}][{joint}]"),
+                value,
+                -180.0,
+                180.0,
+            )?;
+        }
+    }
+    range(
+        "fingers.thumb_spread_deg",
+        c.fingers.thumb_spread_deg,
+        -180.0,
+        180.0,
+    )?;
     nonnegative("fingers.splay_scale", c.fingers.splay_scale, 10.0)?;
     range("fingers.max_splay_deg", c.fingers.max_splay_deg, 0.0, 180.0)?;
     nonnegative("fingers.smoothing_s", c.fingers.smoothing_s, 60.0)?;

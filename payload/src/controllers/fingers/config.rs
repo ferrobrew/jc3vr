@@ -16,14 +16,21 @@ pub struct FingersConfig {
     /// Drive every finger of a hand that holds a weapon. Off, such a hand drives only its trigger
     /// finger, and the rest keep the game's grip, which wraps the weapon.
     pub drive_all_when_holding: bool,
-    /// The bend applied at each finger's open and closed curl, indexed by
-    /// [`Finger::index`](crate::controllers::fingers::Finger::index).
-    pub ranges: [CurlRange; 5],
-    /// The full bend of a finger's proximal, middle, and distal joints, degrees: the bend at a
-    /// range value of one.
+    /// The bend each finger takes at its open and closed curl, as a share of its full joint
+    /// bends, indexed by [`Finger::index`](crate::controllers::fingers::Finger::index).
+    pub curl_ranges: [CurlRange; 5],
+    /// The full bend of a finger's proximal, middle, and distal joints from straight, degrees: the
+    /// bend at a range share of one.
     pub finger_bend_deg: [f32; 3],
-    /// The full bend of the thumb's base, middle, and distal joints, degrees.
+    /// The full bend of the thumb's base, middle, and distal joints across the palm, degrees.
     pub thumb_bend_deg: [f32; 3],
+    /// Each joint's bend at a share of zero, degrees, indexed by finger and then from the root
+    /// joint outward: a correction to the straight finger built from the animated hand, positive
+    /// toward the palm.
+    pub rest_offset_deg: [[f32; 3]; 5],
+    /// The open thumb's turn from the fingers' direction toward the thumb side, in the palm's
+    /// plane, degrees.
+    pub thumb_spread_deg: f32,
     /// The share of the tracked finger splay applied (hand tracking only).
     pub splay_scale: f32,
     /// The largest splay applied either way, degrees.
@@ -39,35 +46,14 @@ impl FingersConfig {
             enabled: true,
             source: FingerSource::Auto,
             drive_all_when_holding: false,
-            ranges: [
-                // The thumb.
-                CurlRange {
-                    open: -0.2,
-                    closed: 0.9,
-                },
-                // The index finger.
-                CurlRange {
-                    open: -0.15,
-                    closed: 0.85,
-                },
-                // The middle finger.
-                CurlRange {
-                    open: -0.15,
-                    closed: 0.9,
-                },
-                // The ring finger.
-                CurlRange {
-                    open: -0.15,
-                    closed: 0.9,
-                },
-                // The little finger.
-                CurlRange {
-                    open: -0.15,
-                    closed: 0.95,
-                },
-            ],
-            finger_bend_deg: [80.0, 95.0, 65.0],
-            thumb_bend_deg: [20.0, 45.0, 60.0],
+            curl_ranges: [CurlRange {
+                open: 0.0,
+                closed: 1.0,
+            }; 5],
+            finger_bend_deg: [85.0, 100.0, 70.0],
+            thumb_bend_deg: [25.0, 45.0, 60.0],
+            rest_offset_deg: [[0.0; 3]; 5],
+            thumb_spread_deg: 40.0,
             splay_scale: 1.0,
             max_splay_deg: 20.0,
             smoothing_s: 0.04,
@@ -110,8 +96,7 @@ impl FingerSource {
 }
 
 /// The bend a finger takes at its open (curl 0) and closed (curl 1) ends, as a share of its full
-/// joint bends, added to the animated pose. A negative value straightens a finger the animation
-/// holds bent.
+/// joint bends from straight. The bend replaces the animated one rather than adding to it.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CurlRange {
     pub open: f32,

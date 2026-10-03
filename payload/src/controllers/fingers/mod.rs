@@ -14,9 +14,13 @@
 //! the corrected hand in the skinning palette, so the curled fingers follow the controller at frame
 //! rate without per-joint palette edits.
 //!
+//! The pose is absolute: each joint's bend is measured from a straight finger built from the
+//! animated palm, and replaces the animated bend rather than adding to it, so an animation that
+//! holds the fingers curled neither keeps an open hand curled nor pushes a fist into the palm.
+//!
 //! A hand is curled only while the controllers drive it: its wrist target was queued this tick, and
-//! its curl is scaled by the same tier weight, so a yielded hand blends back to the animated
-//! fingers. A hand that holds a weapon (a gun in its attach bone, or the off-hand on the foregrip)
+//! its fingers go from the animated pose to the curled one by the same tier weight, so a yielded
+//! hand blends back to the animated fingers. A hand that holds a weapon (a gun in its attach bone, or the off-hand on the foregrip)
 //! drives only its trigger finger unless
 //! [`drive_all_when_holding`](config::FingersConfig::drive_all_when_holding) is set, because the
 //! game's grip animation already wraps the other fingers round the weapon. A hand that grips
@@ -58,7 +62,7 @@ pub struct HandFingersStatus {
     pub source: Option<CurlSource>,
     /// The smoothed curls.
     pub curls: FingerCurls,
-    /// The tier weight the bend was scaled by.
+    /// The tier weight the pose was blended by.
     pub weight: f32,
     /// Whether the hand held a weapon, so only its trigger finger was driven.
     pub holding: bool,
@@ -207,8 +211,10 @@ unsafe fn apply_hand(
         let read = chains[i].map(|b| unsafe { read_joint(controller, b) });
         let joints = read.map(|(_, j)| j);
         let bent = match finger {
-            Finger::Thumb => pose::bend_thumb(joints, &palm, bend.bend[i]),
-            _ => pose::bend_finger(joints, &palm, bend.bend[i], bend.splay[i]),
+            Finger::Thumb => {
+                pose::bend_thumb(joints, &palm, bend.bend[i], bend.thumb_spread, bend.weight)
+            }
+            _ => pose::bend_finger(joints, &palm, bend.bend[i], bend.splay[i], bend.weight),
         };
         for ((&index, (mut joint, _)), new) in chains[i].iter().zip(read).zip(bent) {
             joint.m_Translation.data = new.position.to_array();
