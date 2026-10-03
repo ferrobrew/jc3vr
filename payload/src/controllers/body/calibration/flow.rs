@@ -1,50 +1,15 @@
-//! Body calibration: the dimensions the body file holds, derived from the two things the headset can
-//! measure, and the guided flow that measures them.
-//!
-//! The headset measures the standing eye height (the head above the STAGE floor, see
-//! [`crate::vr::stage`]) and, in a T-pose, the distance between the two controllers' grip poses.
-//! Every other dimension is derived from those with generic adult proportions ([`derive`]): the
-//! segment ratios of Drillis and Contini's anthropometric tables as tabulated in Winter's
-//! *Biomechanics and Motor Control of Human Movement*. The height, shoulder, and hand ratios are
-//! the ones [`BodyDimensions::GENERIC_ADULT`] follows. The arm segments are not: the tables'
-//! per-height upper arm and forearm lengths, with the shoulders and hands, add up to more than an
-//! adult's arm span, so the derivation fits the two segments to the measured span instead and
-//! takes only their proportion to each other from the tables. The generic adult keeps the tables'
-//! longer segments.
-//!
-//! [`Calibration`] is the flow's state: which step it is on, what it has measured, and the capture
-//! in progress. It takes the time and the live measurement as arguments, so it runs without a
-//! headset in tests; the pause menu's `VR: BODY` page ([`crate::controllers::body::menu`]) drives
-//! it.
+//! The calibration flow: its steps, the capture that samples a live measurement, and what went
+//! wrong.
 
 use std::time::{Duration, Instant};
 
 use crate::controllers::{
-    body::{BodyDimensions, InvalidDimension},
+    body::{
+        BodyDimensions,
+        calibration::{CalibrationError, Measurements, check_eye_height, derive},
+    },
     frame::Hand,
 };
-
-/// Standing eye height as a fraction of standing height.
-pub const EYE_HEIGHT_RATIO: f32 = 0.933;
-/// Standing shoulder-joint height as a fraction of standing height.
-pub const SHOULDER_HEIGHT_RATIO: f32 = 0.818;
-/// The distance between the shoulder joints as a fraction of standing height.
-pub const SHOULDER_WIDTH_RATIO: f32 = 0.223;
-/// Hand length (wrist to the tip of the middle finger) as a fraction of standing height.
-pub const HAND_RATIO: f32 = 0.108;
-/// The upper arm's share of the shoulder-to-wrist length; the forearm takes the rest.
-pub const UPPER_ARM_SHARE: f32 = 0.186 / (0.186 + 0.146);
-/// How far along the hand, from the wrist, the fingertip lies beyond the grip pose, as a fraction
-/// of the hand's length. The grip pose is the centre of the closed hand, about three tenths of the
-/// hand's length from the wrist.
-pub const GRIP_TO_FINGERTIP_SHARE: f32 = 0.7;
-
-/// The standing eye heights a calibration accepts, metres. Outside this, the player is most likely
-/// seated or the runtime's floor is wrong.
-pub const EYE_HEIGHT_RANGE: (f32, f32) = (1.0, 2.3);
-/// The arm spans a calibration accepts, as a fraction of standing height. An adult's span is
-/// within a few percent of their height; outside this range the arms were most likely not spread.
-pub const ARM_SPAN_RATIO_RANGE: (f32, f32) = (0.85, 1.15);
 
 /// How long the flow waits after MEASURE is selected, so that the player can take the pose.
 pub const COUNTDOWN: Duration = Duration::from_secs(3);
@@ -52,93 +17,6 @@ pub const COUNTDOWN: Duration = Duration::from_secs(3);
 pub const SAMPLE_WINDOW: Duration = Duration::from_secs(1);
 /// The fewest samples a capture needs to count.
 pub const MIN_SAMPLES: u32 = 5;
-
-/// What the headset measured.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Measurements {
-    /// The standing eye height above the floor, metres.
-    pub eye_height: f32,
-    /// The distance between the two controllers' grip poses in a T-pose, metres.
-    pub grip_span: f32,
-}
-
-/// Why measurements cannot describe a body.
-#[derive(Debug, Clone, PartialEq)]
-pub enum CalibrationError {
-    /// The eye height is outside [`EYE_HEIGHT_RANGE`], or not a number.
-    EyeHeight(f32),
-    /// The arm span is outside [`ARM_SPAN_RATIO_RANGE`] of the height, or not a number.
-    ArmSpan { arm_span: f32, height: f32 },
-    /// A derived dimension failed validation. The ranges above rule this out; it is kept so that a
-    /// change to the ratios cannot save an impossible body.
-    Invalid(InvalidDimension),
-}
-
-impl std::fmt::Display for CalibrationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "body calibration: ")?;
-        match self {
-            CalibrationError::EyeHeight(eye) => write!(
-                f,
-                "an eye height of {eye:.2} m is outside {:.1} to {:.1} m",
-                EYE_HEIGHT_RANGE.0, EYE_HEIGHT_RANGE.1
-            ),
-            CalibrationError::ArmSpan { arm_span, height } => write!(
-                f,
-                "an arm span of {arm_span:.2} m does not fit a height of {height:.2} m"
-            ),
-            CalibrationError::Invalid(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-impl std::error::Error for CalibrationError {}
-
-/// The standing height of a player whose standing eyes are `eye_height` above the floor.
-pub fn height_from_eye_height(eye_height: f32) -> f32 {
-    eye_height / EYE_HEIGHT_RATIO
-}
-
-/// The fingertip-to-fingertip arm span of a player of `height` whose grip poses are `grip_span`
-/// apart in a T-pose: the grip span plus, on each side, the part of the hand beyond the grip.
-pub fn arm_span_from_grip_span(grip_span: f32, height: f32) -> f32 {
-    grip_span + 2.0 * GRIP_TO_FINGERTIP_SHARE * HAND_RATIO * height
-}
-
-/// Derive the body file's dimensions from the measurements, rounded to the millimetre. The height
-/// comes from the eye height and the arm span from the grip span; the shoulders and the hand scale
-/// with the height, and the arm segments split what the arm span leaves once the shoulders and the
-/// hands are taken out of it.
-pub fn derive(measurements: Measurements) -> Result<BodyDimensions, CalibrationError> {
-    let Measurements {
-        eye_height,
-        grip_span,
-    } = measurements;
-    if !(EYE_HEIGHT_RANGE.0..=EYE_HEIGHT_RANGE.1).contains(&eye_height) {
-        return Err(CalibrationError::EyeHeight(eye_height));
-    }
-    let height = height_from_eye_height(eye_height);
-    let arm_span = arm_span_from_grip_span(grip_span, height);
-    let ratio = arm_span / height;
-    if !(ARM_SPAN_RATIO_RANGE.0..=ARM_SPAN_RATIO_RANGE.1).contains(&ratio) {
-        return Err(CalibrationError::ArmSpan { arm_span, height });
-    }
-    let shoulder_width = SHOULDER_WIDTH_RATIO * height;
-    let hand = HAND_RATIO * height;
-    let shoulder_to_wrist = (arm_span - shoulder_width) * 0.5 - hand;
-    let body = BodyDimensions {
-        height: millimetres(height),
-        eye_height: millimetres(eye_height),
-        shoulder_height: millimetres(SHOULDER_HEIGHT_RATIO * height),
-        shoulder_width: millimetres(shoulder_width),
-        arm_span: millimetres(arm_span),
-        upper_arm: millimetres(UPPER_ARM_SHARE * shoulder_to_wrist),
-        forearm: millimetres((1.0 - UPPER_ARM_SHARE) * shoulder_to_wrist),
-        hand: millimetres(hand),
-    };
-    body.validate().map_err(CalibrationError::Invalid)?;
-    Ok(body)
-}
 
 /// Why a live measurement is not available.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -151,8 +29,25 @@ pub enum Unavailable {
     HeadNotTracked,
     /// No controller frame is being published (the controllers are off or absent).
     NoControllers,
-    /// This hand's controller position is not tracked.
-    ControllerNotTracked(Hand),
+    /// This hand's controller has no position this frame, measured or inferred.
+    ControllerLost(Hand),
+}
+
+impl std::fmt::Display for Unavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Unavailable::NoHeadset => write!(f, "no VR frame is rendering"),
+            Unavailable::NoFloor => write!(f, "the session has no STAGE space"),
+            Unavailable::HeadNotTracked => write!(f, "the STAGE space cannot be located"),
+            Unavailable::NoControllers => write!(f, "no controller frame is published"),
+            Unavailable::ControllerLost(Hand::Left) => {
+                write!(f, "the left controller has no position")
+            }
+            Unavailable::ControllerLost(Hand::Right) => {
+                write!(f, "the right controller has no position")
+            }
+        }
+    }
 }
 
 /// A step of the calibration flow.
@@ -173,14 +68,35 @@ pub enum Step {
 pub enum Notice {
     /// MEASURE was selected while the measurement was unavailable.
     Refused(Unavailable),
-    /// The measurement became unavailable while sampling.
-    Lost(Unavailable),
-    /// The sampling window ended with too few samples.
-    TooFewSamples,
+    /// The sampling window ended with too few samples; `cause` is why the last sample was missed,
+    /// when one was.
+    TooFewSamples { cause: Option<Unavailable> },
     /// The measurement cannot describe a body.
     Rejected(CalibrationError),
     /// Saving the body file failed.
     SaveFailed(String),
+}
+
+impl std::fmt::Display for Notice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Notice::Refused(unavailable) => {
+                write!(f, "body calibration: measuring refused: {unavailable}")
+            }
+            Notice::TooFewSamples { cause } => {
+                write!(
+                    f,
+                    "body calibration: fewer than {MIN_SAMPLES} samples in the window"
+                )?;
+                match cause {
+                    Some(cause) => write!(f, ": {cause}"),
+                    None => Ok(()),
+                }
+            }
+            Notice::Rejected(error) => write!(f, "{error}"),
+            Notice::SaveFailed(message) => write!(f, "body calibration: {message}"),
+        }
+    }
 }
 
 /// What the capture is doing, for the status readout.
@@ -202,6 +118,9 @@ pub struct Calibration {
     grip_span: Option<f32>,
     capture: Capture,
     notice: Option<Notice>,
+    /// How many notices have been raised since the flow was created, kept across resets so that a
+    /// reader can tell a new notice from one it has seen.
+    notices: u32,
 }
 
 impl Calibration {
@@ -213,6 +132,7 @@ impl Calibration {
             grip_span: None,
             capture: Capture::Idle,
             notice: None,
+            notices: 0,
         }
     }
 
@@ -224,6 +144,11 @@ impl Calibration {
     /// The last problem, if the flow has one to show.
     pub fn notice(&self) -> Option<&Notice> {
         self.notice.as_ref()
+    }
+
+    /// How many notices have been raised; it changes whenever one is, even when it equals the last.
+    pub fn notice_count(&self) -> u32 {
+        self.notices
     }
 
     /// The measured eye height, once the standing step is done.
@@ -256,10 +181,7 @@ impl Calibration {
         if self.step != Step::Summary {
             return false;
         }
-        *self = Self {
-            step: Step::Stand,
-            ..Self::new()
-        };
+        self.reset(Step::Stand);
         true
     }
 
@@ -270,7 +192,7 @@ impl Calibration {
             return false;
         }
         if let Err(unavailable) = live {
-            self.notice = Some(Notice::Refused(unavailable));
+            self.raise(Notice::Refused(unavailable));
             return false;
         }
         self.notice = None;
@@ -280,9 +202,10 @@ impl Calibration {
         true
     }
 
-    /// Advance the capture to `now` with the live measurement. The countdown tolerates an
-    /// unavailable measurement (the player is moving into the pose); the sampling window does not.
-    /// A finished capture moves to the next step when the value is plausible. Returns whether the
+    /// Advance the capture to `now` with the live measurement. An unavailable measurement is
+    /// skipped, during the countdown (the player is moving into the pose) and during sampling (a
+    /// controller out of sight for a frame); the window then counts only the samples it got. A
+    /// finished capture moves to the next step when the value is plausible. Returns whether the
     /// step changed.
     pub fn tick(&mut self, now: Instant, live: Result<f32, Unavailable>) -> bool {
         match &mut self.capture {
@@ -300,11 +223,7 @@ impl Calibration {
                 match live {
                     Ok(value) if value.is_finite() => samples.add(value),
                     Ok(_) => {}
-                    Err(unavailable) => {
-                        self.capture = Capture::Idle;
-                        self.notice = Some(Notice::Lost(unavailable));
-                        return false;
-                    }
+                    Err(unavailable) => samples.missed = Some(unavailable),
                 }
                 if now < *ends {
                     return false;
@@ -316,16 +235,27 @@ impl Calibration {
         }
     }
 
-    /// Go back from the T-pose to the standing step. Returns whether the step changed.
+    /// Go back one step: from the T-pose to the standing step, from the review to the T-pose
+    /// (keeping the height), or from the standing step to the summary. Returns whether the step
+    /// changed.
     pub fn back(&mut self) -> bool {
-        if self.step != Step::Span {
-            return false;
+        match self.step {
+            Step::Summary => false,
+            Step::Stand => self.cancel(),
+            Step::Span => {
+                self.step = Step::Stand;
+                self.eye_height = None;
+                self.capture = Capture::Idle;
+                self.notice = None;
+                true
+            }
+            Step::Review => {
+                self.step = Step::Span;
+                self.grip_span = None;
+                self.notice = None;
+                true
+            }
         }
-        self.step = Step::Stand;
-        self.eye_height = None;
-        self.capture = Capture::Idle;
-        self.notice = None;
-        true
     }
 
     /// Measure again from the standing step, from the review. Returns whether the step changed.
@@ -333,42 +263,59 @@ impl Calibration {
         if self.step != Step::Review {
             return false;
         }
-        self.step = Step::Summary;
-        self.start()
+        self.reset(Step::Stand);
+        true
     }
 
     /// Abandon the calibration and return to the summary. Returns whether the step changed.
     pub fn cancel(&mut self) -> bool {
         let changed = self.step != Step::Summary;
-        *self = Self::new();
+        self.reset(Step::Summary);
         changed
     }
 
     /// Record that the result was saved: the flow returns to the summary.
     pub fn saved(&mut self) {
-        *self = Self::new();
+        self.reset(Step::Summary);
     }
 
     /// Record that saving the result failed; the flow stays on the review.
     pub fn save_failed(&mut self, message: String) {
-        self.notice = Some(Notice::SaveFailed(message));
+        self.raise(Notice::SaveFailed(message));
+    }
+
+    /// Clear everything but the notice count and go to `step`.
+    fn reset(&mut self, step: Step) {
+        *self = Self {
+            step,
+            notices: self.notices,
+            ..Self::new()
+        };
+    }
+
+    fn raise(&mut self, notice: Notice) {
+        self.notice = Some(notice);
+        self.notices = self.notices.wrapping_add(1);
     }
 
     /// Take a finished sampling window's value and move on if it is plausible.
     fn finish(&mut self, samples: Samples) -> bool {
         if samples.count < MIN_SAMPLES {
-            self.notice = Some(Notice::TooFewSamples);
+            self.raise(Notice::TooFewSamples {
+                cause: samples.missed,
+            });
             return false;
         }
         match self.step {
             Step::Stand => {
                 // Standing still: the mean rides out the head's sway.
                 let eye_height = samples.mean();
-                if !(EYE_HEIGHT_RANGE.0..=EYE_HEIGHT_RANGE.1).contains(&eye_height) {
-                    self.notice = Some(Notice::Rejected(CalibrationError::EyeHeight(eye_height)));
+                if let Err(error) = check_eye_height(eye_height) {
+                    self.raise(Notice::Rejected(error));
                     return false;
                 }
                 self.eye_height = Some(eye_height);
+                self.notice = None;
                 self.step = Step::Span;
                 true
             }
@@ -377,12 +324,13 @@ impl Calibration {
                 self.grip_span = Some(samples.max);
                 match self.result() {
                     Some(Ok(_)) => {
+                        self.notice = None;
                         self.step = Step::Review;
                         true
                     }
                     Some(Err(error)) => {
                         self.grip_span = None;
-                        self.notice = Some(Notice::Rejected(error));
+                        self.raise(Notice::Rejected(error));
                         false
                     }
                     None => false,
@@ -413,6 +361,8 @@ struct Samples {
     count: u32,
     sum: f32,
     max: f32,
+    /// Why the last missed sample was missed.
+    missed: Option<Unavailable>,
 }
 
 impl Samples {
@@ -431,132 +381,13 @@ impl Samples {
     }
 }
 
-fn millimetres(metres: f32) -> f32 {
-    (metres * 1000.0).round() / 1000.0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const EPS: f32 = 1e-3;
-
-    /// A player of about 1.80 m with a span equal to their height.
-    fn player() -> Measurements {
-        let height = 1.80;
-        Measurements {
-            eye_height: height * EYE_HEIGHT_RATIO,
-            grip_span: height - 2.0 * GRIP_TO_FINGERTIP_SHARE * HAND_RATIO * height,
-        }
-    }
-
-    #[test]
-    fn derives_a_valid_body_from_the_measurements() {
-        let body = derive(player()).unwrap();
-        body.validate().unwrap();
-        assert!((body.height - 1.80).abs() < EPS);
-        assert!((body.arm_span - 1.80).abs() < EPS);
-        assert!((body.shoulder_height - 1.80 * SHOULDER_HEIGHT_RATIO).abs() < EPS);
-        assert!(body.shoulder_height < body.eye_height && body.eye_height < body.height);
-    }
-
-    #[test]
-    fn the_arm_adds_up_to_the_span() {
-        let body = derive(player()).unwrap();
-        let reach = body.upper_arm + body.forearm + body.hand;
-        assert!((body.shoulder_width + 2.0 * reach - body.arm_span).abs() < 4.0 * EPS);
-        assert!(body.upper_arm > body.forearm);
-    }
-
-    #[test]
-    fn the_generic_adult_follows_the_same_ratios() {
-        let adult = BodyDimensions::GENERIC_ADULT;
-        let height = height_from_eye_height(adult.eye_height);
-        assert!((height - adult.height).abs() < 0.01);
-        assert!((SHOULDER_HEIGHT_RATIO * height - adult.shoulder_height).abs() < 0.02);
-        assert!((SHOULDER_WIDTH_RATIO * height - adult.shoulder_width).abs() < 0.01);
-        assert!((HAND_RATIO * height - adult.hand).abs() < 0.01);
-    }
-
-    #[test]
-    fn the_generic_adults_measurements_derive_arms_that_fit_its_span() {
-        let adult = BodyDimensions::GENERIC_ADULT;
-        let height = height_from_eye_height(adult.eye_height);
-        let body = derive(Measurements {
-            eye_height: adult.eye_height,
-            grip_span: adult.arm_span - 2.0 * GRIP_TO_FINGERTIP_SHARE * HAND_RATIO * height,
-        })
-        .unwrap();
-        assert!((body.arm_span - adult.arm_span).abs() < 2.0 * EPS);
-        // The derived segments add up to the span, as the tables' own do not.
-        let across =
-            |b: &BodyDimensions| b.shoulder_width + 2.0 * (b.upper_arm + b.forearm + b.hand);
-        assert!((across(&body) - body.arm_span).abs() < 4.0 * EPS);
-        assert!(across(&adult) > adult.arm_span + 0.1);
-        // They keep the tables' proportion to each other, and are therefore shorter.
-        let proportion = |b: &BodyDimensions| b.upper_arm / b.forearm;
-        assert!((proportion(&body) - proportion(&adult)).abs() < 0.02);
-        assert!(body.upper_arm < adult.upper_arm && body.forearm < adult.forearm);
-        // The rest match the generic adult.
-        assert!((body.height - adult.height).abs() < 0.01);
-        assert!((body.shoulder_width - adult.shoulder_width).abs() < 0.01);
-        assert!((body.hand - adult.hand).abs() < 0.01);
-    }
-
-    #[test]
-    fn a_longer_span_lengthens_only_the_arms() {
-        let base = derive(player()).unwrap();
-        let wide = derive(Measurements {
-            grip_span: player().grip_span + 0.1,
-            ..player()
-        })
-        .unwrap();
-        assert_eq!(wide.height, base.height);
-        assert_eq!(wide.shoulder_width, base.shoulder_width);
-        assert_eq!(wide.hand, base.hand);
-        assert!(wide.upper_arm > base.upper_arm && wide.forearm > base.forearm);
-        assert!((wide.arm_span - base.arm_span - 0.1).abs() < 2.0 * EPS);
-    }
-
-    #[test]
-    fn values_are_rounded_to_the_millimetre() {
-        let body = derive(player()).unwrap();
-        for value in [body.height, body.upper_arm, body.forearm, body.hand] {
-            assert!(((value * 1000.0).round() - value * 1000.0).abs() < 1e-2);
-        }
-    }
-
-    #[test]
-    fn a_seated_eye_height_is_rejected() {
-        let err = derive(Measurements {
-            eye_height: 0.9,
-            ..player()
-        })
-        .unwrap_err();
-        assert!(matches!(err, CalibrationError::EyeHeight(_)));
-        let err = derive(Measurements {
-            eye_height: f32::NAN,
-            ..player()
-        })
-        .unwrap_err();
-        assert!(matches!(err, CalibrationError::EyeHeight(_)));
-    }
-
-    #[test]
-    fn arms_not_spread_are_rejected() {
-        let err = derive(Measurements {
-            grip_span: 0.5,
-            ..player()
-        })
-        .unwrap_err();
-        assert!(matches!(err, CalibrationError::ArmSpan { .. }));
-        let err = derive(Measurements {
-            grip_span: 3.0,
-            ..player()
-        })
-        .unwrap_err();
-        assert!(matches!(err, CalibrationError::ArmSpan { .. }));
-    }
+    use crate::controllers::body::calibration::{
+        arm_span_from_grip_span, height_from_eye_height, span_out_of_proportion,
+        tests::{SEATED_EYE_HEIGHT, player},
+    };
 
     /// Run a capture from MEASURE to the end of its sampling window with a constant value.
     fn capture(calibration: &mut Calibration, t0: Instant, value: f32) -> bool {
@@ -594,7 +425,8 @@ mod tests {
         assert_eq!(body, derive(player()).unwrap());
 
         calibration.saved();
-        assert_eq!(calibration, Calibration::new());
+        assert_eq!(calibration.step(), Step::Summary);
+        assert!(calibration.result().is_none());
     }
 
     #[test]
@@ -646,16 +478,41 @@ mod tests {
     }
 
     #[test]
-    fn losing_tracking_while_sampling_ends_the_capture() {
+    fn missed_samples_are_skipped() {
         let t0 = Instant::now();
         let mut calibration = Calibration::new();
         calibration.start();
         calibration.measure(t0, Ok(1.6));
-        calibration.tick(t0 + COUNTDOWN, Ok(1.6));
-        let lost = Unavailable::ControllerNotTracked(Hand::Left);
-        assert!(!calibration.tick(t0 + COUNTDOWN, Err(lost)));
-        assert_eq!(calibration.notice(), Some(&Notice::Lost(lost)));
-        assert_eq!(calibration.step(), Step::Stand);
+        let start = t0 + COUNTDOWN;
+        calibration.tick(start, Ok(1.6));
+        let lost = Unavailable::HeadNotTracked;
+        for i in 1..=10 {
+            let live = if i % 2 == 0 { Err(lost) } else { Ok(1.6) };
+            let now = start + SAMPLE_WINDOW * i / 10;
+            assert_eq!(calibration.tick(now, live), i == 10);
+        }
+        assert_eq!(calibration.step(), Step::Span);
+        assert!(calibration.notice().is_none());
+    }
+
+    #[test]
+    fn a_window_of_missed_samples_says_why() {
+        let t0 = Instant::now();
+        let mut calibration = Calibration::new();
+        calibration.start();
+        capture(&mut calibration, t0, player().eye_height);
+        calibration.measure(t0, Ok(1.6));
+        let start = t0 + COUNTDOWN;
+        calibration.tick(start, Ok(1.6));
+        let lost = Unavailable::ControllerLost(Hand::Left);
+        for i in 1..=10 {
+            assert!(!calibration.tick(start + SAMPLE_WINDOW * i / 10, Err(lost)));
+        }
+        assert_eq!(
+            calibration.notice(),
+            Some(&Notice::TooFewSamples { cause: Some(lost) })
+        );
+        assert_eq!(calibration.step(), Step::Span);
         assert_eq!(calibration.capture_status(t0), CaptureStatus::Idle);
     }
 
@@ -667,7 +524,10 @@ mod tests {
         calibration.measure(t0, Ok(1.6));
         calibration.tick(t0 + COUNTDOWN, Ok(1.6));
         assert!(!calibration.tick(t0 + COUNTDOWN + SAMPLE_WINDOW, Ok(1.6)));
-        assert_eq!(calibration.notice(), Some(&Notice::TooFewSamples));
+        assert_eq!(
+            calibration.notice(),
+            Some(&Notice::TooFewSamples { cause: None })
+        );
         assert_eq!(calibration.step(), Step::Stand);
     }
 
@@ -680,7 +540,7 @@ mod tests {
         assert_eq!(calibration.step(), Step::Stand);
         assert!(matches!(
             calibration.notice(),
-            Some(Notice::Rejected(CalibrationError::EyeHeight(_)))
+            Some(Notice::Rejected(CalibrationError::EyeHeightTooLow(_)))
         ));
 
         assert!(capture(&mut calibration, t0, player().eye_height));
@@ -688,9 +548,44 @@ mod tests {
         assert_eq!(calibration.step(), Step::Span);
         assert!(matches!(
             calibration.notice(),
-            Some(Notice::Rejected(CalibrationError::ArmSpan { .. }))
+            Some(Notice::Rejected(CalibrationError::ArmsNotSpread { .. }))
         ));
         assert!(calibration.result().is_none());
+    }
+
+    #[test]
+    fn a_seated_calibration_reaches_the_review() {
+        let t0 = Instant::now();
+        let mut calibration = Calibration::new();
+        calibration.start();
+        assert!(capture(&mut calibration, t0, SEATED_EYE_HEIGHT));
+        assert!(capture(&mut calibration, t0, player().grip_span));
+        assert_eq!(calibration.step(), Step::Review);
+        assert!(calibration.notice().is_none());
+        assert!(span_out_of_proportion(
+            &calibration.result().unwrap().unwrap()
+        ));
+    }
+
+    #[test]
+    fn every_notice_is_counted() {
+        let t0 = Instant::now();
+        let mut calibration = Calibration::new();
+        calibration.start();
+        assert_eq!(calibration.notice_count(), 0);
+        calibration.measure(t0, Err(Unavailable::NoFloor));
+        calibration.measure(t0, Err(Unavailable::NoFloor));
+        assert_eq!(calibration.notice_count(), 2);
+        // A success clears the notice without counting.
+        calibration.measure(t0, Ok(1.6));
+        assert!(calibration.notice().is_none());
+        assert_eq!(calibration.notice_count(), 2);
+        // The count survives leaving the flow, so a reader never sees it go backwards.
+        calibration.cancel();
+        assert_eq!(calibration.notice_count(), 2);
+        calibration.start();
+        calibration.measure(t0, Err(Unavailable::NoHeadset));
+        assert_eq!(calibration.notice_count(), 3);
     }
 
     #[test]
@@ -738,6 +633,13 @@ mod tests {
         capture(&mut calibration, t0, player().eye_height);
         capture(&mut calibration, t0, player().grip_span);
         assert_eq!(calibration.step(), Step::Review);
+        // Back from the review keeps the height and measures the span again.
+        assert!(calibration.back());
+        assert_eq!(calibration.step(), Step::Span);
+        assert!(calibration.eye_height().is_some());
+        assert!(calibration.result().is_none());
+        capture(&mut calibration, t0, player().grip_span);
+        assert_eq!(calibration.step(), Step::Review);
         calibration.save_failed("disk full".into());
         assert_eq!(
             calibration.notice(),
@@ -748,7 +650,14 @@ mod tests {
         assert!(calibration.result().is_none());
         assert!(calibration.notice().is_none());
 
+        // Back from the standing step leaves the flow.
+        assert!(calibration.back());
+        assert_eq!(calibration.step(), Step::Summary);
+        assert!(!calibration.cancel());
+
+        calibration.start();
         assert!(calibration.cancel());
-        assert_eq!(calibration, Calibration::new());
+        assert_eq!(calibration.step(), Step::Summary);
+        assert!(calibration.result().is_none());
     }
 }

@@ -5,9 +5,9 @@
 //! The calibration runs on the pause menu's frames: MEASURE starts a countdown so the player can
 //! take the pose (a T-pose leaves no hand free to point at the menu), the page's per-frame hook
 //! feeds the live measurement to the capture, and a finished capture moves the flow on and has the
-//! page rebuilt.
+//! page rebuilt. Every refusal shows in the step's `STATUS` readout and is logged, rate-limited.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use parking_lot::Mutex;
@@ -19,7 +19,7 @@ use crate::{
             self, BodyDimensions, BodySource,
             calibration::{
                 Calibration, CalibrationError, CaptureStatus, Notice, Step, Unavailable,
-                arm_span_from_grip_span, height_from_eye_height,
+                arm_span_from_grip_span, height_from_eye_height, span_out_of_proportion,
             },
         },
         frame::{self, Hand, TrackedPose},
@@ -66,11 +66,13 @@ fn summary(page: Page) -> Page {
             label: "ARM SPAN".into(),
             read: || metres(body::player().arm_span),
         })
+        .header("CALIBRATION")
         .item(Button {
-            label: "CALIBRATE".into(),
+            label: "CALIBRATE IN HEADSET".into(),
             caption: "START".into(),
             action: || rebuild_if(CALIBRATION.lock().start()),
         })
+        .text("MEASURES YOUR HEIGHT AND ARM SPAN.")
         .item(Button {
             label: "RELOAD BODY FILE".into(),
             caption: "RELOAD".into(),
@@ -79,8 +81,6 @@ fn summary(page: Page) -> Page {
                 ButtonOutcome::Stay
             },
         })
-        .text("CALIBRATION MEASURES YOUR HEIGHT AND")
-        .text("ARM SPAN WITH THE HEADSET.")
         .header("SCALING")
         .item(config_toggle!("MATCH CHARACTER HEIGHT", |c| c
             .controllers
@@ -94,71 +94,84 @@ fn summary(page: Page) -> Page {
 
 fn stand(page: Page) -> Page {
     page.header("STEP 1 OF 3: HEIGHT")
-        .text("STAND UP STRAIGHT AND LOOK AHEAD.")
-        .text("SELECT MEASURE, THEN HOLD STILL")
-        .text("FOR A FEW SECONDS.")
-        .item(Readout {
-            label: "EYE HEIGHT".into(),
-            read: || live_text(live_eye_height()),
-        })
-        .item(Readout {
-            label: "HEIGHT".into(),
-            read: || live_text(live_eye_height().map(height_from_eye_height)),
+        .text("STAND STRAIGHT AND LOOK AHEAD.")
+        .text("SELECT MEASURE, THEN HOLD STILL.")
+        .item(Button {
+            label: "MEASURE HEIGHT".into(),
+            caption: "MEASURE".into(),
+            action: || measure(live_eye_height()),
         })
         .item(Readout {
             label: "STATUS".into(),
             read: || status(live_eye_height()),
         })
-        .item(Button {
-            label: "MEASURE HEIGHT".into(),
-            caption: "MEASURE".into(),
-            action: || measure(live_eye_height()),
+        .item(Readout {
+            label: "EYE HEIGHT, LIVE".into(),
+            read: || live_text(live_eye_height()),
+        })
+        .item(Readout {
+            label: "HEIGHT, ESTIMATED".into(),
+            read: || live_text(live_eye_height().map(height_from_eye_height)),
         })
         .item(cancel_button())
 }
 
 fn span(page: Page) -> Page {
     page.header("STEP 2 OF 3: ARM SPAN")
-        .text("HOLD THE CONTROLLERS AND SPREAD YOUR")
-        .text("ARMS OUT TO THE SIDES AT SHOULDER")
-        .text("HEIGHT. SELECT MEASURE, THEN TAKE")
-        .text("THE POSE AND HOLD IT.")
-        .item(Readout {
-            label: "CONTROLLER SPAN".into(),
-            read: || live_text(live_grip_span()),
-        })
-        .item(Readout {
-            label: "ARM SPAN".into(),
-            read: || {
-                let eye_height = CALIBRATION.lock().eye_height();
-                live_text(live_grip_span().map(|grip| {
-                    let height = height_from_eye_height(eye_height.unwrap_or(f32::NAN));
-                    arm_span_from_grip_span(grip, height)
-                }))
-            },
-        })
-        .item(Readout {
-            label: "STATUS".into(),
-            read: || status(live_grip_span()),
-        })
+        .text("SELECT MEASURE, THEN T-POSE:")
+        .text("ARMS OUT AT SHOULDER HEIGHT.")
+        .text("HOLD IT UNTIL THE PAGE MOVES ON.")
         .item(Button {
             label: "MEASURE ARM SPAN".into(),
             caption: "MEASURE".into(),
             action: || measure(live_grip_span()),
         })
+        .item(Readout {
+            label: "STATUS".into(),
+            read: || status(live_grip_span()),
+        })
+        .item(Readout {
+            label: "CONTROLLER GAP, LIVE".into(),
+            read: || live_text(live_grip_span()),
+        })
+        .item(Readout {
+            label: "ARM SPAN, ESTIMATED".into(),
+            read: || {
+                let height = CALIBRATION.lock().eye_height().map(height_from_eye_height);
+                live_text(
+                    live_grip_span()
+                        .map(|grip| arm_span_from_grip_span(grip, height.unwrap_or(f32::NAN))),
+                )
+            },
+        })
+        .item(Readout {
+            label: "HEIGHT, FROM STEP 1".into(),
+            read: || {
+                let eye_height = CALIBRATION.lock().eye_height();
+                eye_height.map_or("---".into(), |eye| metres(height_from_eye_height(eye)))
+            },
+        })
         .item(Button {
             label: "MEASURE HEIGHT AGAIN".into(),
             caption: "BACK".into(),
-            action: || rebuild_if(CALIBRATION.lock().back()),
+            action: back,
         })
         .item(cancel_button())
 }
 
 fn review(page: Page) -> Page {
     page.header("STEP 3 OF 3: REVIEW")
-        .text("CHECK THE MEASUREMENTS, THEN SAVE.")
-        .text("THE OTHER LENGTHS ARE ESTIMATED FROM")
-        .text("YOUR HEIGHT AND ARM SPAN.")
+        .text("CHECK THE VALUES, THEN SAVE.")
+        .item(Button {
+            label: "SAVE TO BODY FILE".into(),
+            caption: "SAVE".into(),
+            action: save,
+        })
+        .item(Readout {
+            label: "STATUS".into(),
+            read: review_status,
+        })
+        .header("MEASURED")
         .item(Readout {
             label: "HEIGHT".into(),
             read: || result_text(|b| b.height),
@@ -171,6 +184,7 @@ fn review(page: Page) -> Page {
             label: "ARM SPAN".into(),
             read: || result_text(|b| b.arm_span),
         })
+        .header("ESTIMATED")
         .item(Readout {
             label: "SHOULDER HEIGHT".into(),
             read: || result_text(|b| b.shoulder_height),
@@ -191,20 +205,14 @@ fn review(page: Page) -> Page {
             label: "HAND".into(),
             read: || result_text(|b| b.hand),
         })
-        .item(Readout {
-            label: "STATUS".into(),
-            read: || {
-                let calibration = CALIBRATION.lock();
-                notice_text(calibration.notice()).unwrap_or("READY").into()
-            },
+        .header("MEASURE AGAIN")
+        .item(Button {
+            label: "ARM SPAN ONLY".into(),
+            caption: "BACK".into(),
+            action: back,
         })
         .item(Button {
-            label: "SAVE TO BODY FILE".into(),
-            caption: "SAVE".into(),
-            action: save,
-        })
-        .item(Button {
-            label: "START AGAIN".into(),
+            label: "HEIGHT AND ARM SPAN".into(),
             caption: "RETRY".into(),
             action: || rebuild_if(CALIBRATION.lock().retry()),
         })
@@ -219,6 +227,10 @@ fn cancel_button() -> Button {
     }
 }
 
+fn back() -> ButtonOutcome {
+    rebuild_if(CALIBRATION.lock().back())
+}
+
 /// A derived dimension for a review readout.
 fn result_text(field: fn(&BodyDimensions) -> f32) -> SmolStr {
     match CALIBRATION.lock().result() {
@@ -227,10 +239,25 @@ fn result_text(field: fn(&BodyDimensions) -> f32) -> SmolStr {
     }
 }
 
+/// The review's status: the last problem, else whether the result is ready to save.
+fn review_status() -> SmolStr {
+    let calibration = CALIBRATION.lock();
+    if let Some(text) = notice_text(calibration.notice()) {
+        return text;
+    }
+    match calibration.result() {
+        Some(Ok(body)) if span_out_of_proportion(&body) => "CHECK: SPAN OVER HEIGHT".into(),
+        Some(Ok(_)) => "READY TO SAVE".into(),
+        Some(Err(_)) | None => "---".into(),
+    }
+}
+
 /// Start a capture with the live measurement. The status readout shows the countdown, or why the
 /// capture was refused.
 fn measure(live: Result<f32, Unavailable>) -> ButtonOutcome {
-    CALIBRATION.lock().measure(Instant::now(), live);
+    let mut calibration = CALIBRATION.lock();
+    calibration.measure(Instant::now(), live);
+    log_notice(&calibration);
     ButtonOutcome::Stay
 }
 
@@ -246,8 +273,9 @@ fn save() -> ButtonOutcome {
             ButtonOutcome::Rebuild
         }
         Err(error) => {
-            tracing::error!(target: "controllers", "{error}");
-            CALIBRATION.lock().save_failed(error.to_string());
+            let mut calibration = CALIBRATION.lock();
+            calibration.save_failed(error.to_string());
+            log_notice(&calibration);
             ButtonOutcome::Stay
         }
     }
@@ -261,7 +289,10 @@ fn on_frame() -> ButtonOutcome {
         Step::Span => live_grip_span(),
         Step::Summary | Step::Review => return ButtonOutcome::Stay,
     };
-    rebuild_if(CALIBRATION.lock().tick(Instant::now(), live))
+    let mut calibration = CALIBRATION.lock();
+    let changed = calibration.tick(Instant::now(), live);
+    log_notice(&calibration);
+    rebuild_if(changed)
 }
 
 /// Leaving the page abandons a calibration in progress and saves the scaling switches.
@@ -272,6 +303,69 @@ fn on_close() {
 
 /// The calibration flow's state, shared by the page's rows.
 static CALIBRATION: Mutex<Calibration> = Mutex::new(Calibration::new());
+
+/// Log the flow's notice when it is a new one, at most once per [`NOTICE_LOG_INTERVAL`].
+fn log_notice(calibration: &Calibration) {
+    let Some(notice) = calibration.notice() else {
+        return;
+    };
+    let suppressed = NOTICE_LOG
+        .lock()
+        .take(calibration.notice_count(), Instant::now());
+    match suppressed {
+        Some(0) => tracing::warn!(target: "controllers", "{notice}"),
+        Some(suppressed) => {
+            tracing::warn!(target: "controllers", "{notice} ({suppressed} earlier not logged)")
+        }
+        None => {}
+    }
+}
+
+/// The shortest time between two logged notices.
+const NOTICE_LOG_INTERVAL: Duration = Duration::from_secs(1);
+
+static NOTICE_LOG: Mutex<NoticeLog> = Mutex::new(NoticeLog::new());
+
+/// Which notices have been logged, for [`log_notice`]'s rate limit.
+#[derive(Debug)]
+struct NoticeLog {
+    /// The notice count last seen.
+    seen: u32,
+    /// When a notice was last logged.
+    logged_at: Option<Instant>,
+    /// New notices not logged since then.
+    suppressed: u32,
+}
+
+impl NoticeLog {
+    const fn new() -> Self {
+        Self {
+            seen: 0,
+            logged_at: None,
+            suppressed: 0,
+        }
+    }
+
+    /// Given the flow's notice count at `now`, whether to log its notice: `Some` with the number
+    /// of notices skipped since the last one logged, or `None` when there is no new notice or the
+    /// last was logged too recently.
+    fn take(&mut self, count: u32, now: Instant) -> Option<u32> {
+        let new = count.wrapping_sub(self.seen);
+        self.seen = count;
+        if new == 0 {
+            return None;
+        }
+        let recent = self
+            .logged_at
+            .is_some_and(|at| now.saturating_duration_since(at) < NOTICE_LOG_INTERVAL);
+        if recent {
+            self.suppressed = self.suppressed.saturating_add(new);
+            return None;
+        }
+        self.logged_at = Some(now);
+        Some(std::mem::take(&mut self.suppressed).saturating_add(new - 1))
+    }
+}
 
 fn rebuild_if(changed: bool) -> ButtonOutcome {
     if changed {
@@ -302,8 +396,10 @@ fn eye_height_from(rendering: bool, stage: StageInfo) -> Result<f32, Unavailable
     stage.head_height.ok_or(Unavailable::HeadNotTracked)
 }
 
-/// The grip span from both hands' grips, indexed by [`Hand::index`]. A grip counts only while its
-/// position is measured, not inferred.
+/// The grip span from both hands' grips, indexed by [`Hand::index`]. A grip counts while its
+/// position is valid, whether measured or inferred: arms spread in a T-pose are outside the view
+/// of a headset's own cameras, where inside-out tracking reports the controllers' positions as
+/// inferred.
 fn grip_span_from(rendering: bool, grips: Option<[TrackedPose; 2]>) -> Result<f32, Unavailable> {
     if !rendering {
         return Err(Unavailable::NoHeadset);
@@ -311,10 +407,10 @@ fn grip_span_from(rendering: bool, grips: Option<[TrackedPose; 2]>) -> Result<f3
     let grips = grips.ok_or(Unavailable::NoControllers)?;
     let position = |hand: Hand| -> Result<Vec3, Unavailable> {
         let grip = grips[hand.index()];
-        if grip.position_valid && grip.position_tracked {
+        if grip.position_valid {
             Ok(grip.pose.position)
         } else {
-            Err(Unavailable::ControllerNotTracked(hand))
+            Err(Unavailable::ControllerLost(hand))
         }
     };
     Ok(position(Hand::Left)?.distance(position(Hand::Right)?))
@@ -323,8 +419,7 @@ fn grip_span_from(rendering: bool, grips: Option<[TrackedPose; 2]>) -> Result<f3
 /// A live measurement for a readout.
 fn live_text(live: Result<f32, Unavailable>) -> SmolStr {
     match live {
-        Ok(value) if value.is_finite() => metres(value),
-        Ok(_) => "---".into(),
+        Ok(value) => metres(value),
         Err(unavailable) => unavailable_text(unavailable).into(),
     }
 }
@@ -346,29 +441,46 @@ fn status_text(
     live: Result<f32, Unavailable>,
 ) -> SmolStr {
     match capture {
-        CaptureStatus::Countdown(seconds) => return format_smolstr!("GET READY: {seconds}"),
-        CaptureStatus::Sampling => return "HOLD STILL".into(),
+        CaptureStatus::Countdown(seconds) => return format_smolstr!("GET READY: {seconds} S"),
+        CaptureStatus::Sampling => return "MEASURING, HOLD STILL".into(),
         CaptureStatus::Idle => {}
     }
     if let Some(text) = notice_text(notice) {
-        return text.into();
+        return text;
     }
     match live {
-        Ok(_) => "READY".into(),
+        Ok(_) => "READY TO MEASURE".into(),
         Err(unavailable) => unavailable_text(unavailable).into(),
     }
 }
 
-fn notice_text(notice: Option<&Notice>) -> Option<&'static str> {
+/// The status text for a notice: what went wrong, with the value that was refused.
+fn notice_text(notice: Option<&Notice>) -> Option<SmolStr> {
     Some(match notice? {
-        Notice::Refused(unavailable) => unavailable_text(*unavailable),
-        Notice::Lost(_) => "TRACKING LOST, TRY AGAIN",
-        Notice::TooFewSamples => "NOT ENOUGH SAMPLES, TRY AGAIN",
-        Notice::Rejected(CalibrationError::EyeHeight(_)) => "EYE HEIGHT OUT OF RANGE",
-        Notice::Rejected(CalibrationError::ArmSpan { .. }) => "SPREAD YOUR ARMS FULLY",
-        Notice::Rejected(CalibrationError::Invalid(_)) => "INVALID MEASUREMENT",
-        Notice::SaveFailed(_) => "SAVE FAILED, SEE LOG",
+        Notice::Refused(unavailable) => unavailable_text(*unavailable).into(),
+        Notice::TooFewSamples {
+            cause: Some(unavailable),
+        } => unavailable_text(*unavailable).into(),
+        Notice::TooFewSamples { cause: None } => "TOO FEW SAMPLES, RETRY".into(),
+        Notice::Rejected(error) => rejection_text(error),
+        Notice::SaveFailed(_) => "SAVE FAILED, SEE LOG".into(),
     })
+}
+
+fn rejection_text(error: &CalibrationError) -> SmolStr {
+    match error {
+        CalibrationError::EyeHeightTooLow(eye) => format_smolstr!("EYES TOO LOW: {}", metres(*eye)),
+        CalibrationError::EyeHeightTooHigh(eye) => {
+            format_smolstr!("EYES TOO HIGH: {}", metres(*eye))
+        }
+        CalibrationError::ArmsNotSpread { arm_span, .. } => {
+            format_smolstr!("SPAN TOO SHORT: {}", metres(*arm_span))
+        }
+        CalibrationError::ArmSpanTooLong(arm_span) => {
+            format_smolstr!("SPAN TOO LONG: {}", metres(*arm_span))
+        }
+        CalibrationError::Invalid(_) => "INVALID BODY, SEE LOG".into(),
+    }
 }
 
 fn unavailable_text(unavailable: Unavailable) -> &'static str {
@@ -377,21 +489,26 @@ fn unavailable_text(unavailable: Unavailable) -> &'static str {
         Unavailable::NoFloor => "NO FLOOR HEIGHT",
         Unavailable::HeadNotTracked => "HEADSET NOT TRACKED",
         Unavailable::NoControllers => "NO CONTROLLERS",
-        Unavailable::ControllerNotTracked(Hand::Left) => "LEFT CONTROLLER NOT TRACKED",
-        Unavailable::ControllerNotTracked(Hand::Right) => "RIGHT CONTROLLER NOT TRACKED",
+        Unavailable::ControllerLost(Hand::Left) => "LEFT CONTROLLER LOST",
+        Unavailable::ControllerLost(Hand::Right) => "RIGHT CONTROLLER LOST",
     }
 }
 
 fn source_label(source: &BodySource) -> &'static str {
     match source {
         BodySource::File { .. } => "BODY FILE",
-        BodySource::Defaults { .. } => "DEFAULTS, NO FILE",
-        BodySource::Invalid { .. } => "DEFAULTS, FILE INVALID",
+        BodySource::Defaults { .. } => "DEFAULT, NO FILE",
+        BodySource::Invalid { .. } => "DEFAULT, FILE INVALID",
     }
 }
 
+/// A length in metres to the centimetre, or `---` when it is not a number.
 fn metres(value: f32) -> SmolStr {
-    format_smolstr!("{value:.2} M")
+    if value.is_finite() {
+        format_smolstr!("{value:.2} M")
+    } else {
+        "---".into()
+    }
 }
 
 #[cfg(test)]
@@ -400,9 +517,20 @@ mod tests {
 
     use super::*;
     use crate::{
-        controllers::{frame::Pose, menu::tests::exercise_page},
+        controllers::{
+            body::{InvalidDimension, calibration::check_eye_height},
+            frame::Pose,
+            menu::tests::exercise_page,
+        },
         pause_menu::model::{page::Item, rows::encode_page},
     };
+
+    /// The longest text row that fits one line of the list.
+    const TEXT_ROW_MAX: usize = 37;
+    /// The longest label that fits beside a row's value.
+    const LABEL_MAX: usize = 26;
+    /// The longest value a readout shows.
+    const VALUE_MAX: usize = 24;
 
     fn tracked(position: Vec3) -> TrackedPose {
         TrackedPose {
@@ -440,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn the_grip_span_needs_both_controllers_tracked() {
+    fn the_grip_span_needs_both_controllers_located() {
         let left = tracked(Vec3::new(-0.8, 1.4, 0.0));
         let right = tracked(Vec3::new(0.7, 1.4, 0.0));
         let span = grip_span_from(true, Some([left, right])).unwrap();
@@ -450,17 +578,23 @@ mod tests {
             Err(Unavailable::NoHeadset)
         );
         assert_eq!(grip_span_from(true, None), Err(Unavailable::NoControllers));
+        // An inferred position counts: spread arms are outside an inside-out headset's view.
         let inferred = TrackedPose {
             position_tracked: false,
             ..right
         };
+        assert_eq!(grip_span_from(true, Some([left, inferred])), Ok(span));
+        let invalid = TrackedPose {
+            position_valid: false,
+            ..right
+        };
         assert_eq!(
-            grip_span_from(true, Some([left, inferred])),
-            Err(Unavailable::ControllerNotTracked(Hand::Right))
+            grip_span_from(true, Some([left, invalid])),
+            Err(Unavailable::ControllerLost(Hand::Right))
         );
         assert_eq!(
             grip_span_from(true, Some([TrackedPose::default(), right])),
-            Err(Unavailable::ControllerNotTracked(Hand::Left))
+            Err(Unavailable::ControllerLost(Hand::Left))
         );
     }
 
@@ -469,11 +603,11 @@ mod tests {
         let refused = Notice::Refused(Unavailable::NoFloor);
         assert_eq!(
             status_text(CaptureStatus::Countdown(2), Some(&refused), Ok(1.0)),
-            "GET READY: 2"
+            "GET READY: 2 S"
         );
         assert_eq!(
             status_text(CaptureStatus::Sampling, None, Err(Unavailable::NoHeadset)),
-            "HOLD STILL"
+            "MEASURING, HOLD STILL"
         );
         assert_eq!(
             status_text(CaptureStatus::Idle, Some(&refused), Ok(1.0)),
@@ -483,7 +617,96 @@ mod tests {
             status_text(CaptureStatus::Idle, None, Err(Unavailable::NoControllers)),
             "NO CONTROLLERS"
         );
-        assert_eq!(status_text(CaptureStatus::Idle, None, Ok(1.0)), "READY");
+        assert_eq!(
+            status_text(CaptureStatus::Idle, None, Ok(1.0)),
+            "READY TO MEASURE"
+        );
+    }
+
+    #[test]
+    fn refusals_name_the_reason_and_the_value() {
+        let text = |notice: Notice| notice_text(Some(&notice)).unwrap();
+        assert_eq!(
+            text(Notice::Rejected(check_eye_height(0.95).unwrap_err())),
+            "EYES TOO LOW: 0.95 M"
+        );
+        assert_eq!(
+            text(Notice::Rejected(check_eye_height(2.41).unwrap_err())),
+            "EYES TOO HIGH: 2.41 M"
+        );
+        assert_eq!(
+            text(Notice::Rejected(CalibrationError::ArmsNotSpread {
+                arm_span: 1.1,
+                height: 1.8
+            })),
+            "SPAN TOO SHORT: 1.10 M"
+        );
+        assert_eq!(
+            text(Notice::Rejected(CalibrationError::ArmSpanTooLong(2.61))),
+            "SPAN TOO LONG: 2.61 M"
+        );
+        assert_eq!(
+            text(Notice::TooFewSamples {
+                cause: Some(Unavailable::ControllerLost(Hand::Left))
+            }),
+            "LEFT CONTROLLER LOST"
+        );
+        assert_eq!(
+            text(Notice::TooFewSamples { cause: None }),
+            "TOO FEW SAMPLES, RETRY"
+        );
+        assert_eq!(
+            text(Notice::Rejected(CalibrationError::EyeHeightTooLow(
+                f32::NAN
+            ))),
+            "EYES TOO LOW: ---"
+        );
+    }
+
+    #[test]
+    fn every_status_fits_its_row() {
+        let unavailable = [
+            Unavailable::NoHeadset,
+            Unavailable::NoFloor,
+            Unavailable::HeadNotTracked,
+            Unavailable::NoControllers,
+            Unavailable::ControllerLost(Hand::Left),
+            Unavailable::ControllerLost(Hand::Right),
+        ];
+        let mut notices = vec![
+            Notice::TooFewSamples { cause: None },
+            Notice::SaveFailed("disk full".into()),
+            Notice::Rejected(CalibrationError::EyeHeightTooLow(0.95)),
+            Notice::Rejected(CalibrationError::EyeHeightTooHigh(12.34)),
+            Notice::Rejected(CalibrationError::ArmsNotSpread {
+                arm_span: 0.5,
+                height: 1.8,
+            }),
+            Notice::Rejected(CalibrationError::ArmSpanTooLong(12.34)),
+            Notice::Rejected(CalibrationError::Invalid(InvalidDimension::Misordered {
+                lower: "eye_height",
+                upper: "height",
+            })),
+        ];
+        for u in unavailable {
+            notices.push(Notice::Refused(u));
+            notices.push(Notice::TooFewSamples { cause: Some(u) });
+        }
+        let mut texts: Vec<SmolStr> = notices
+            .iter()
+            .map(|n| notice_text(Some(n)).unwrap())
+            .collect();
+        texts.extend(unavailable.map(|u| SmolStr::from(unavailable_text(u))));
+        texts.extend([
+            status_text(CaptureStatus::Countdown(3), None, Ok(1.0)),
+            status_text(CaptureStatus::Sampling, None, Ok(1.0)),
+            status_text(CaptureStatus::Idle, None, Ok(1.0)),
+            "CHECK: SPAN OVER HEIGHT".into(),
+        ]);
+        for text in texts {
+            assert!(text.len() <= VALUE_MAX, "{text}");
+            assert_eq!(text, text.to_uppercase());
+        }
     }
 
     #[test]
@@ -491,16 +714,33 @@ mod tests {
         assert_eq!(live_text(Ok(1.684)), "1.68 M");
         assert_eq!(live_text(Ok(f32::NAN)), "---");
         assert_eq!(
-            live_text(Err(Unavailable::ControllerNotTracked(Hand::Left))),
-            "LEFT CONTROLLER NOT TRACKED"
+            live_text(Err(Unavailable::ControllerLost(Hand::Left))),
+            "LEFT CONTROLLER LOST"
         );
+    }
+
+    #[test]
+    fn notices_are_logged_once_and_rate_limited() {
+        let t0 = Instant::now();
+        let mut log = NoticeLog::new();
+        assert_eq!(log.take(0, t0), None);
+        assert_eq!(log.take(1, t0), Some(0));
+        // The same notice is not logged again.
+        assert_eq!(log.take(1, t0 + Duration::from_secs(5)), None);
+        // New notices within the interval are held back and counted in the next line.
+        let soon = t0 + Duration::from_secs(5);
+        assert_eq!(log.take(2, soon), Some(0));
+        assert_eq!(log.take(3, soon + Duration::from_millis(200)), None);
+        assert_eq!(log.take(5, soon + Duration::from_millis(400)), None);
+        assert_eq!(log.take(6, soon + NOTICE_LOG_INTERVAL), Some(3));
+        assert_eq!(log.take(7, soon + NOTICE_LOG_INTERVAL * 3), Some(0));
     }
 
     #[test]
     fn every_step_builds_and_focuses_its_action() {
         let pages = [summary, stand, span, review];
         let first_labels = [
-            "CALIBRATE",
+            "CALIBRATE IN HEADSET",
             "MEASURE HEIGHT",
             "MEASURE ARM SPAN",
             "SAVE TO BODY FILE",
@@ -512,6 +752,48 @@ mod tests {
                 unreachable!();
             };
             assert_eq!(first.label, label);
+        }
+    }
+
+    #[test]
+    fn every_calibration_step_can_go_back_and_cancel() {
+        for build_step in [stand, span, review] {
+            let page = build_step(Page::new("VR: BODY"));
+            let captions: Vec<&str> = page
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Button(button) => Some(button.caption.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(captions.contains(&"CANCEL"), "{captions:?}");
+        }
+        // The standing step's way back is its cancel; the later steps also step back one.
+        for build_step in [span, review] {
+            let page = build_step(Page::new("VR: BODY"));
+            assert!(page.items.iter().any(|item| matches!(
+                item,
+                Item::Button(button) if button.caption == "BACK"
+            )));
+        }
+    }
+
+    #[test]
+    fn every_step_fits_its_rows() {
+        for build_step in [summary, stand, span, review] {
+            let page = build_step(Page::new("VR: BODY"));
+            assert!(page.is_header(0));
+            for item in &page.items {
+                let (text, max) = match item {
+                    Item::Header(text) | Item::Text(text) => (text.as_str(), TEXT_ROW_MAX),
+                    Item::Readout(readout) => (readout.label.as_str(), LABEL_MAX),
+                    Item::Button(button) => (button.label.as_str(), LABEL_MAX),
+                    Item::Toggle(toggle) => (toggle.label.as_str(), LABEL_MAX),
+                    Item::Choice(_) | Item::Slider(_) => continue,
+                };
+                assert!(text.len() <= max, "{text}");
+            }
         }
     }
 
