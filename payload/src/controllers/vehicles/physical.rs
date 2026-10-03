@@ -947,7 +947,8 @@ mod tests {
             ControlKind::for_class(VehicleClass::Motorcycle),
             &[ControlKind::Handlebars]
         );
-        let off = PhysicalControlsConfig::new();
+        let mut off = PhysicalControlsConfig::new();
+        off.wheel.enabled = false;
         assert!(!ControlKind::Wheel.enabled(&off));
     }
 }

@@ -697,7 +697,15 @@ mod tests {
 
     #[test]
     fn only_the_driver_is_offered_the_enabled_controls() {
+        // The defaults enable every physical control, so disable them all here and re-enable
+        // only the one this test means to exercise.
         let mut config = ControllersConfig::new();
+        config.vehicles.physical.wheel.enabled = false;
+        config.vehicles.physical.handlebars.enabled = false;
+        config.vehicles.physical.cyclic.enabled = false;
+        config.vehicles.physical.collective.enabled = false;
+        config.vehicles.physical.flight_stick.enabled = false;
+        config.vehicles.physical.throttle.enabled = false;
         let seat = |class, driver| Some(VehicleSeat { class, driver });
         assert!(offered(seat(VehicleClass::Car, true), &config).is_empty());
         config.vehicles.physical.collective.enabled = true;

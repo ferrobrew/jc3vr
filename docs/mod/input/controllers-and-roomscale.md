@@ -445,7 +445,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 
 ## Implementation status
 
-Milestones 1 to 5 are implemented and have not been run in the headset. [controllers.md](controllers.md) describes the implementation as built; the tables below map each milestone's parts to the settings that control them and to the section of controllers.md that describes them. Every setting below is in the `controllers` section of the mod's config and in the Controllers tab of the debug UI, which also shows a live readout of each part. The master switch is `controllers.enabled`; with it off, no controller snapshot is published and every controller part is inert. The parts that change how the character behaves act only under the controller scheme, so the gamepad scheme behaves as before. The posture and roomscale parts are the exception: they act on the headset alone, controllers or not, so each part of them that changes behaviour is off by default.
+Milestones 1 to 5 are implemented and have not been run in the headset. [controllers.md](controllers.md) describes the implementation as built; the tables below map each milestone's parts to the settings that control them and to the section of controllers.md that describes them. Every setting below is in the `controllers` section of the mod's config and in the Controllers tab of the debug UI, which also shows a live readout of each part. The master switch is `controllers.enabled`; with it off, no controller snapshot is published and every controller part is inert. The parts that change how the character behaves act only under the controller scheme, so the gamepad scheme behaves as before. The posture and roomscale parts are the exception: they act on the headset alone, controllers or not; the defaults are the full `Vehicles and advanced` preset (see [controllers.md, "Test controls and saved tuning"](controllers.md#test-controls-and-saved-tuning)), so these too are on by default.
 
 A setting marked "off" below is off by default and has to be switched on to test its part. Every other part is on by default.
 
@@ -455,7 +455,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 |---|---|---|
 | OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.trigger_press`, `input.squeeze_press`, `input.stick_deadzone`, `input.hand_tracking` | Built. The hand-tracking joints are published for the finger curls. |
 | Scheme selection | `scheme` (`Auto`, `Controllers`, or `Gamepad`) | Built. |
-| Body dimensions and remap | `body.local.json` beside the payload DLL; `body.remap_hands` (on), `body.remap_head` (off) | Built. The head remap feeds the view through the posture (milestone 2). |
+| Body dimensions and remap | `body.local.json` beside the payload DLL; `body.remap_hands` (on), `body.remap_head` (on) | Built. The head remap feeds the view through the posture (milestone 2). |
 | Mode detection | `mode.debounce_ticks` | Built. The headpose sim keeps its own on-foot test. |
 | Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `bindings.evade_flick`, `bindings.evade_window_s`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's A evades only on a stick flick. |
 | Gamepad semantics | `gamepad_semantics` | Built. |
@@ -463,7 +463,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Hands | `hands.ik`, `hands.late_update`, `hands.suppress_secondary_ik`, `hands.reach_t`, `hands.reach_r`, `hands.pull`, `hands.resist`, `hands.grip`, `hands.yield_blend_s`, `hands.return_blend_s`, `hands.tiers` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand. The grapple wire's render-time correction and elbow pole hints are not built. |
 | Gun aiming | `aim.gun`, `aim.max_distance_m`, `aim.min_target_distance_m`, `aim.sights` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
 | Grapple aiming | `aim.grapple`, `aim.grapple_origin_m` | Built. |
-| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.ghost_hands`, `overlay.debug_gizmos` (off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
+| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.ghost_hands`, `overlay.debug_gizmos` (on), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
 
 ### Milestone 2: posture and roomscale
 
@@ -472,11 +472,11 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 | Part | Settings | State |
 |---|---|---|
 | Posture, STAGE space, and the stage-bounds check | `posture` (`Auto`, `Seated`, `Standing`, or `Roomscale`), `roomscale_min_extent_m` | Built. `Auto` never selects the seated posture. |
-| Head height remap | `body.remap_head` (off) | Built. |
+| Head height remap | `body.remap_head` (on) | Built. |
 | Seated crouch toggle | `bindings.crouch_flick`, `crouch.seated_drop_m` | Built. It works with or without the head remap. |
-| The chase loop and the teleport re-base | `chase.enabled` (off), `chase.deadzone_m`, `chase.max_speed_mps`, `chase.time_constant_s`, `chase.warp_min_m` | Built. |
-| The head-through-geometry fade | `head_fade.enabled` (off), `head_fade.start_depth_m`, `head_fade.full_depth_m`, `fade.out_s`, `fade.in_s` | Built. The fade darkens the image in the VR blit. |
-| The visual crouch and the capsule | `crouch.visual` (off), `crouch.capsule` (off; requires the visual crouch), `crouch.hips_share`, `crouch.enter_drop_m`, `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
+| The chase loop and the teleport re-base | `chase.enabled` (on), `chase.deadzone_m`, `chase.max_speed_mps`, `chase.time_constant_s`, `chase.warp_min_m` | Built. |
+| The head-through-geometry fade | `head_fade.enabled` (on), `head_fade.start_depth_m`, `head_fade.full_depth_m`, `fade.out_s`, `fade.in_s` | Built. The fade darkens the image in the VR blit. |
+| The visual crouch and the capsule | `crouch.visual` (on), `crouch.capsule` (on; requires the visual crouch), `crouch.hips_share`, `crouch.enter_drop_m`, `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
 | Seat transitions | `seat_transition` (`Ride` by default, `Instant`, or `Fade`), `seat_fade_hold_s` | Built. Ceremony is deferred with the mod UI. |
 
 ### Milestone 3: holding
@@ -502,10 +502,10 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 | Part | Settings | State |
 |---|---|---|
 | Per-class vehicle bindings | the milestone 1 bindings | Built in milestone 1; each class needs its own playtest. Boats and jetskis share one class. |
-| Driver weapons by hand | `driver_weapons_by_hand` (off) | Built. The gaze aims the driver's weapons by default. |
+| Driver weapons by hand | `driver_weapons_by_hand` (on) | Built. The dominant hand aims the driver's weapons by default. |
 | Mounted guns and gunner seats | `mounted.aim_by_hands`, `mounted.anchor_hands`, `mounted.min_lever_m` | Built. |
-| Physical controls | `physical.wheel`, `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each off), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
-| Arm steering | `arm_steering.wingsuit` (off), `arm_steering.parachute` (off) | Built. The wingsuit's rendered arms stay yielded. |
+| Physical controls | `physical.wheel`, `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each on), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
+| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.parachute` (on) | Built. The wingsuit's rendered arms stay yielded. |
 | The wingsuit's head look-steer removal | `movement.suppress_parachute_look_steer`, outside the `controllers` section | Built. |
 | Weaponized wingsuit guns aimed by the right hand | none | Not built. They aim by the gaze, because the gun aim covers only the wielded slot. |
 
@@ -520,7 +520,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Precision aim suppression | `scope.suppress_precision_aim` | Built. |
 | Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off), `aim.assist_max_distance_m`, `aim.assist_occlusion_tolerance_m` | Built. |
-| The magazine gesture | `reload_gesture` (off), and the pouch, well, and timing under `magazine` | Built. The reload button remains. |
+| The magazine gesture | `reload_gesture` (on), and the pouch, well, and timing under `magazine` | Built. The reload button remains. |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |
 | The sight tuning tool | `aim.sight_tuning.enabled` (off), `aim.sight_tuning.marker_distance_m` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
 | Hand-tier promotions | none | Not built beyond the anchored grapple and mounted-gun rows. |
@@ -593,7 +593,7 @@ The assumptions behind milestones 2 to 5 and the finger curls are in [controller
 
 The Controllers tab's test presets select input-only, hands and aim, weapon handling, roomscale, and vehicle feature groups without replacing calibrated values. Save tuned settings explicitly before uninjecting, and load them after reinjection. Enable diagnostic history before reproducing a problem and capture it immediately afterwards. Test focus and tracking loss with a trigger held: recovery must require neutral controls and a new press, without firing or throwing on its own. Repeat roomscale tests with perpendicular and opposing stick movement, and at locations far from the world origin.
 
-The order puts the parts that everything else depends on first, then the parts whose failure would change the design, then the opt-in breadth. Items 11 onward need the settings named in them switched on where they are off by default.
+The order puts the parts that everything else depends on first, then the parts whose failure would change the design, then the opt-in breadth. The defaults are the full `Vehicles and advanced` preset, so items 11 onward are already on; only the sight tuning tool (item 12, `aim.sight_tuning.enabled`) and aim assist (item 29, `aim.assist_strength`) need switching on to test them.
 
 1. Input. The Controllers tab reports the OpenXR input status and the hand-tracking status. Both hands track, the grip and aim poses follow the controllers, and every button, trigger, grip, stick, and trackpad reads, including the system button.
 2. Scheme. A controller press selects the controller scheme; a gamepad, keyboard, or mouse input selects the gamepad scheme; the `Controllers` and `Gamepad` settings pin it. The gamepad scheme behaves as it did before controllers existed.

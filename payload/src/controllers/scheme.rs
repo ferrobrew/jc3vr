@@ -12,7 +12,9 @@
 //!
 //! Without a controller frame (no session, controllers disabled, or no controller connected) the
 //! scheme is always the gamepad scheme, so the mod's behaviour without controllers is unchanged.
-//! [`SchemeSetting::Controllers`] and [`SchemeSetting::Gamepad`] pin the scheme regardless.
+//! [`SchemeSetting::Controllers`] pins the controller scheme while a controller is present, so
+//! keyboard and gamepad input do not take it away, and [`SchemeSetting::Gamepad`] pins the gamepad
+//! scheme regardless.
 //!
 //! The observation runs once per rendered frame from the VR frame loop, right after the controller
 //! frame is published ([`tick`]). The game's own input reaches the payload in two places that are
@@ -117,8 +119,8 @@ impl Default for SchemeSelector {
 /// present.
 pub fn resolve(setting: SchemeSetting, selected: Scheme, controllers_present: bool) -> Scheme {
     match setting {
-        SchemeSetting::Controllers => Scheme::Controllers,
-        SchemeSetting::Gamepad => Scheme::Gamepad,
+        SchemeSetting::Controllers if controllers_present => Scheme::Controllers,
+        SchemeSetting::Controllers | SchemeSetting::Gamepad => Scheme::Gamepad,
         SchemeSetting::Auto if controllers_present => selected,
         SchemeSetting::Auto => Scheme::Gamepad,
     }
@@ -322,8 +324,10 @@ mod tests {
 
     #[test]
     fn settings_pin_and_auto_needs_a_controller() {
-        let pinned = resolve(SchemeSetting::Controllers, Scheme::Gamepad, false);
+        let pinned = resolve(SchemeSetting::Controllers, Scheme::Gamepad, true);
         assert_eq!(pinned, Scheme::Controllers);
+        let absent = resolve(SchemeSetting::Controllers, Scheme::Controllers, false);
+        assert_eq!(absent, Scheme::Gamepad);
         let pinned = resolve(SchemeSetting::Gamepad, Scheme::Controllers, true);
         assert_eq!(pinned, Scheme::Gamepad);
         let auto = resolve(SchemeSetting::Auto, Scheme::Controllers, true);

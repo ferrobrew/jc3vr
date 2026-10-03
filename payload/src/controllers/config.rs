@@ -2,10 +2,11 @@
 //! subsystem of the plan of record (`docs/mod/input/controllers-and-roomscale.md`), each holding its
 //! toggle and the tuning beside it.
 //!
-//! Defaults follow one rule. A subsystem that acts only under the controller scheme defaults on,
-//! because it changes nothing until controllers are in use. A subsystem that would change the
-//! gamepad scheme's behaviour, or the behaviour of the headset alone, defaults off, so that the mod
-//! behaves as it did before controllers existed until the player opts in.
+//! `ControllersConfig::new()` ships as the full gameplay preset
+//! ([`presets::Preset::VehiclesAndAdvanced`](crate::controllers::presets::Preset::VehiclesAndAdvanced)),
+//! so that hand aiming, roomscale, weapon handling, vehicle steering (including the wingsuit's and
+//! the parachute's arm steering), and the debug gizmos all work, and show, out of the box.
+//! `presets::preset_modified` checked against that preset stays false for the defaults.
 //!
 //! Stick turning is not configured here: the controller scheme's right stick drives the same body
 //! yaw as the gamepad's look input, so it shares
@@ -81,7 +82,7 @@ impl ControllersConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            scheme: SchemeSetting::Auto,
+            scheme: SchemeSetting::Controllers,
             dominant_hand: Hand::Right,
             gamepad_semantics: true,
             input: InputConfig::new(),
@@ -518,7 +519,7 @@ impl OverlayConfig {
             hide_game_reticle: true,
             ghost_hands: true,
             grab_volumes: true,
-            debug_gizmos: false,
+            debug_gizmos: true,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,
             min_line_px: 1.5,
@@ -596,7 +597,7 @@ impl WeaponsConfig {
             recoil: RecoilConfig::new(),
             haptics: HapticsConfig::new(),
             dual_wield: DualWieldConfig::new(),
-            reload_gesture: false,
+            reload_gesture: true,
             magazine: MagazineConfig::new(),
             grenade_throw: true,
             grenade: GrenadeConfig::new(),
@@ -620,7 +621,8 @@ impl Default for WeaponsConfig {
 #[serde(default)]
 pub struct BodyRemapConfig {
     /// Place the eyes at the character's eye height and scale vertical head travel by the ratio of
-    /// the heights. Off by default: it moves the view for every player, controllers or not.
+    /// the heights. On by default, as part of the full gameplay preset; it moves the view for
+    /// every player, controllers or not.
     pub remap_head: bool,
     /// Scale the hands' offsets from the shoulders by the ratio of the arm spans. Acts only under
     /// the controller scheme.
@@ -630,7 +632,7 @@ pub struct BodyRemapConfig {
 impl BodyRemapConfig {
     pub const fn new() -> Self {
         Self {
-            remap_head: false,
+            remap_head: true,
             remap_hands: true,
         }
     }
@@ -643,8 +645,8 @@ impl Default for BodyRemapConfig {
 }
 
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
-/// headset alone, controllers or not, so the behaviour-changing parts default off. The head height
-/// itself is remapped only under [`BodyRemapConfig::remap_head`].
+/// headset alone, controllers or not, and default on as part of the full gameplay preset. The head
+/// height itself is remapped only under [`BodyRemapConfig::remap_head`].
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RoomscaleConfig {
@@ -710,7 +712,8 @@ pub enum Posture {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChaseConfig {
-    /// Off by default: it moves the character from head motion, which the headset alone produces.
+    /// On by default, as part of the full gameplay preset: it moves the character from head
+    /// motion, which the headset alone produces.
     pub enabled: bool,
     /// Horizontal head offsets from the body below this many metres are left alone. A chase that
     /// has started runs until the offset is below half of it.
@@ -729,7 +732,7 @@ pub struct ChaseConfig {
 impl ChaseConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             deadzone_m: 0.10,
             max_speed_mps: 3.0,
             time_constant_s: 0.15,
@@ -749,7 +752,8 @@ impl Default for ChaseConfig {
 #[serde(default)]
 pub struct CrouchConfig {
     /// Fold the body with the lowered head through the body IK: the feet stay planted and the hips
-    /// drop. Off by default: it changes the body for every player who ducks.
+    /// drop. On by default, as part of the full gameplay preset: it changes the body for every
+    /// player who ducks.
     pub visual: bool,
     /// Shorten the character's collision capsule while crouched, with the game's own crouching
     /// proxy state. Requires [`visual`](Self::visual). The game hands the proxy state to its own
@@ -772,8 +776,8 @@ pub struct CrouchConfig {
 impl CrouchConfig {
     pub const fn new() -> Self {
         Self {
-            visual: false,
-            capsule: false,
+            visual: true,
+            capsule: true,
             hips_share: 0.8,
             enter_drop_m: 0.45,
             exit_drop_m: 0.30,
@@ -792,7 +796,8 @@ impl Default for CrouchConfig {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HeadFadeConfig {
-    /// Off by default: it darkens the view for every player whose head enters a wall.
+    /// On by default, as part of the full gameplay preset: it darkens the view for every player
+    /// whose head enters a wall.
     pub enabled: bool,
     /// How deep (metres) past the obstruction the head may go before the view starts to darken.
     pub start_depth_m: f32,
@@ -803,7 +808,7 @@ pub struct HeadFadeConfig {
 impl HeadFadeConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             start_depth_m: 0.05,
             full_depth_m: 0.25,
         }

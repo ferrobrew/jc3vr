@@ -10,8 +10,9 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-/// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings are the default; the
-/// physical controls and the arm steering are opt-in.
+/// Vehicles, mounted guns, the wingsuit, and the parachute. Stick bindings always work; the
+/// physical controls and the arm steering are additional and, as part of the full gameplay
+/// preset, on by default too.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VehiclesConfig {
@@ -29,7 +30,7 @@ pub struct VehiclesConfig {
 impl VehiclesConfig {
     pub const fn new() -> Self {
         Self {
-            driver_weapons_by_hand: false,
+            driver_weapons_by_hand: true,
             mounted: MountedConfig::new(),
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),
@@ -75,7 +76,7 @@ impl Default for MountedConfig {
 }
 
 /// The physical controls of the driver's seat (see [`crate::controllers::vehicles::physical`]).
-/// Each is off by default: stick driving is the plan's default, and a control in reach swallows the
+/// Each is on by default, as part of the full gameplay preset; a control in reach swallows the
 /// grip presses that would fire the vehicle's weapons.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -102,7 +103,7 @@ impl PhysicalControlsConfig {
     pub const fn new() -> Self {
         Self {
             wheel: WheelSpec {
-                enabled: false,
+                enabled: true,
                 centre_m: Vec3::new(0.0, -0.42, -0.40),
                 radius_m: 0.19,
                 tilt_deg: 25.0,
@@ -110,19 +111,19 @@ impl PhysicalControlsConfig {
                 return_deg_per_s: 360.0,
             },
             handlebars: HandlebarsSpec {
-                enabled: false,
+                enabled: true,
                 centre_m: Vec3::new(0.0, -0.50, -0.45),
                 half_width_m: 0.34,
                 max_steer_deg: 30.0,
                 max_lean_deg: 25.0,
             },
             cyclic: StickSpec {
-                enabled: false,
+                enabled: true,
                 top_m: Vec3::new(0.12, -0.78, -0.30),
                 max_deflection_m: 0.12,
             },
             collective: LeverSpec {
-                enabled: false,
+                enabled: true,
                 rest_m: Vec3::new(-0.28, -0.80, -0.10),
                 axis: LeverAxis::Vertical,
                 travel_m: 0.30,
@@ -130,12 +131,12 @@ impl PhysicalControlsConfig {
                 hold_on_release: false,
             },
             flight_stick: StickSpec {
-                enabled: false,
+                enabled: true,
                 top_m: Vec3::new(0.10, -0.75, -0.32),
                 max_deflection_m: 0.12,
             },
             throttle: LeverSpec {
-                enabled: false,
+                enabled: true,
                 rest_m: Vec3::new(-0.28, -0.70, -0.20),
                 axis: LeverAxis::ForeAft,
                 travel_m: 0.24,
@@ -238,8 +239,8 @@ impl LeverAxis {
 
 /// The arm-pose steering of the wingsuit and the parachute (see
 /// [`crate::controllers::vehicles::arm_steering`]): with the arms spread, the difference in the
-/// hands' heights banks, and both hands raised or lowered pitches. Off by default: stick steering
-/// is the plan's default.
+/// hands' heights banks, and both hands raised or lowered pitches. On by default, as part of the
+/// full gameplay preset, alongside the stick steering it adds to.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArmSteeringConfig {
@@ -261,8 +262,8 @@ pub struct ArmSteeringConfig {
 impl ArmSteeringConfig {
     pub const fn new() -> Self {
         Self {
-            wingsuit: false,
-            parachute: false,
+            wingsuit: true,
+            parachute: true,
             min_spread: 0.6,
             deadzone_m: 0.04,
             full_bank_m: 0.45,

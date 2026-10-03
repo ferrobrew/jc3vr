@@ -398,7 +398,7 @@ pub(crate) mod tests {
         reset_to_defaults(&mut config);
         assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
         assert_eq!(config.controllers.dominant_hand, Hand::Right);
-        assert_eq!(config.controllers.scheme, SchemeSetting::Auto);
+        assert_eq!(config.controllers.scheme, SchemeSetting::Controllers);
         assert_eq!(config.headpose.vr_turn.snap_angle_deg, 30.0);
         // Settings outside the file are not the menu's to reset.
         assert_eq!(config.headpose.mouse_sensitivity, 3.0);

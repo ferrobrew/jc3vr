@@ -170,6 +170,17 @@ mod tests {
     }
 
     #[test]
+    fn defaults_are_the_full_gameplay_preset() {
+        // `ControllersConfig::new()` ships as the full "Vehicles and advanced" preset, so that
+        // wingsuit and parachute arm steering, roomscale, and every other subsystem work out of
+        // the box.
+        assert!(!preset_modified(
+            &ControllersConfig::new(),
+            Preset::VehiclesAndAdvanced
+        ));
+    }
+
+    #[test]
     fn gamepad_baseline_turns_off_controller_and_roomscale_features() {
         let mut c = ControllersConfig::new();
         apply_preset(&mut c, Preset::GamepadBaseline);
