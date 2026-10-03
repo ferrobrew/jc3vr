@@ -2,8 +2,9 @@
 //! (`docs/mod/input/controllers-and-roomscale.md`), with the engine side on
 //! [`ThrownGrenadeWeapon`] and [`Explosive`].
 //!
-//! A grip press at the grenade pouch primes a grenade in the dominant hand, and opening the grip
-//! throws it with the hand's velocity at the release. The game's own grenade weapon does the work,
+//! A grip press at the grenade pouch primes a grenade in whichever hand grabbed it, and opening the
+//! grip throws it with that hand's velocity at the release. The game's own grenade weapon does the
+//! work,
 //! driven through its two requests instead of the throw animation that normally raises them: its
 //! prime request ([`ThrownGrenadeWeapon::m_PrimeGrenade`]), which spawns the grenade live and starts
 //! its fuse, and its fire request ([`WeaponBase::m_ForceFireProjectile`]), which launches it. The

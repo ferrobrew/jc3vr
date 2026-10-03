@@ -485,7 +485,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.15 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.10 m), `holsters.pouch`, `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `holsters.detect_seated` (on), `holsters.seated_eye_fraction` (0.8), `holsters.seated_after_s` (4 s), `overlay.grab_volumes` | Built, with a seated placement. The volume offsets and radii are untuned. |
+| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.15 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.10 m), `holsters.pouch` (0.10 m, at the belt front on the off-hand side, either hand), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `holsters.detect_seated` (on), `holsters.seated_eye_fraction` (0.8), `holsters.seated_after_s` (4 s), `overlay.grab_volumes` | Built, with a seated placement. The volume offsets and radii are untuned. |
 | The two-handed foregrip | `foregrip.enabled`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
@@ -520,7 +520,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Precision aim suppression | `scope.suppress_precision_aim` | Built. |
 | Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off), `aim.assist_max_distance_m`, `aim.assist_occlusion_tolerance_m` | Built. |
-| The magazine gesture | `reload_gesture` (on), and the pouch, well, and timing under `magazine` | Built. The reload button remains. |
+| The magazine gesture | `reload_gesture` (on), and the pouch (0.09 m, at the belt front on the dominant side, off-hand only), well, and timing under `magazine` | Built. The reload button remains. |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |
 | The sight tuning tool | `aim.sight_tuning.enabled` (off), `aim.sight_tuning.marker_distance_m` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
 | Hand-tier promotions | none | Not built beyond the anchored grapple and mounted-gun rows. |

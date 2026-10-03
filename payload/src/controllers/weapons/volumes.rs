@@ -18,7 +18,11 @@
 //!   forward over the thighs, because the seat is where a standing body's hip joints are;
 //! - the shoulder joints ([`body::shoulder_positions`]); seated, a little forward, over the tops of
 //!   the shoulders, because a backrest is behind them;
-//! - the chest, at the middle of the shoulder joints.
+//! - the chest, at the middle of the shoulder joints;
+//! - the belt front, for the grenade and magazine pouches: higher up the torso and further forward
+//!   than the hips, clear of the body, and biased toward one side so the pouch sits apart from both
+//!   the hip holster beside it and the other pouch mirrored on the opposite side; seated, adjusted
+//!   like the hips.
 //!
 //! The dimensions are the character's while the hands are remapped onto the character's proportions
 //! (a hand the player puts on their own hip lands on the character's), and the player's otherwise.
@@ -209,8 +213,9 @@ impl Default for SeatedDetector {
 pub const SEATED_EXIT_MARGIN: f32 = 0.06;
 
 /// The holster volumes (and the grenade pouch with `grenade_pouch`) for a body in `frame` with
-/// dimensions `dims`, in the order the sites are listed. The hip and shoulder holsters may be
-/// grabbed with either hand; the pouch only with the dominant hand, which throws.
+/// dimensions `dims`, in the order the sites are listed. Every site may be grabbed with either
+/// hand: the hip and shoulder holsters by design, and the pouch because a player holding a weapon
+/// in the dominant hand reaches for a grenade with the other. Whichever hand grabs the pouch throws.
 pub fn holster_candidates(
     frame: &BodyFrame,
     dims: &BodyDimensions,
@@ -251,31 +256,33 @@ pub fn holster_candidates(
         None,
     ));
     if grenade_pouch {
+        let off = dominant.other();
         out.push(place(
             GrabVolume::GrenadePouch,
-            hip(frame, dims, dominant),
+            belt(frame, dims, off),
             &config.pouch,
-            dominant,
-            Some(dominant),
+            off,
+            None,
         ));
     }
     out
 }
 
-/// The magazine pouch on the belt at `off`'s side, a volume only `off` may grab: the reload
-/// gesture's first step.
+/// The magazine pouch on the belt at the dominant side, mirrored from the grenade pouch so the two
+/// do not share a site, but a volume only the off-hand may grab: the reload gesture's first step
+/// (the dominant hand holds the weapon being reloaded).
 pub fn magazine_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     spec: &VolumeSpec,
-    off: Hand,
+    dominant: Hand,
 ) -> Candidate {
     place(
         GrabVolume::MagazinePouch,
-        hip(frame, dims, off),
+        belt(frame, dims, dominant),
         spec,
-        off,
-        Some(off),
+        dominant,
+        Some(dominant.other()),
     )
 }
 
@@ -288,8 +295,8 @@ pub struct NearMiss {
     pub offset: Vec3,
 }
 
-/// The holster nearest `point` among `candidates` that `hand` may grab, when `point` is outside
-/// every one of them and within `margin` of that one's surface.
+/// The holster or pouch nearest `point` among `candidates` that `hand` may grab, when `point` is
+/// outside every one of them and within `margin` of that one's surface.
 pub fn near_miss(
     point: Vec3,
     hand: Hand,
@@ -300,8 +307,10 @@ pub fn near_miss(
         return None;
     }
     let holsters = candidates.iter().filter(|c| {
-        matches!(c.volume, GrabVolume::Holster(_))
-            && c.hand.is_none_or(|h| h == hand)
+        matches!(
+            c.volume,
+            GrabVolume::Holster(_) | GrabVolume::GrenadePouch | GrabVolume::MagazinePouch
+        ) && c.hand.is_none_or(|h| h == hand)
             && c.radius.is_finite()
             && c.radius > 0.0
     });
@@ -337,6 +346,20 @@ const SEATED_HIP_FORWARD_M: f32 = 0.15;
 /// the tops of the shoulders rather than behind them, where a backrest is. A best guess.
 const SEATED_SHOULDER_FORWARD_M: f32 = 0.05;
 
+/// How far up the torso, as a fraction of the standing height, the belt-front landmark sits for the
+/// grenade and magazine pouches: above the hip joints, clear of the hip holster beside it. A best
+/// guess.
+const BELT_HEIGHT_FRACTION: f32 = 0.6;
+
+/// How far out from the midline, as a fraction of the shoulder width, the belt-front landmark sits
+/// toward its side: less than the hip joints', so the pouch on one side and its mirror on the other
+/// stay apart. A best guess.
+const BELT_OUT_FRACTION: f32 = 0.3;
+
+/// How far in front of the eye plane the belt-front landmark sits, metres: clear of the body and of
+/// the hip holster beside it, rather than at the hips' depth behind the eyes. A best guess.
+const BELT_FORWARD_M: f32 = 0.18;
+
 /// The hip landmark on `side`: as far out as the shoulder joint; standing, at the hip joints' height
 /// and the shoulders' depth; seated, higher up the torso and forward over the thighs.
 fn hip(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
@@ -347,13 +370,34 @@ fn hip(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
         hip_height - dims.eye_height,
         body::EYES_FORWARD_OF_SHOULDERS,
     );
-    let landmark = if frame.seated {
-        let torso = (dims.shoulder_height - hip_height).max(0.0);
-        standing + Vec3::new(0.0, torso * SEATED_HIP_RISE_FRACTION, -SEATED_HIP_FORWARD_M)
-    } else {
-        standing
-    };
-    frame.origin + landmark
+    frame.origin + seated_waist_adjust(frame, dims, hip_height, standing)
+}
+
+/// The belt-front landmark on `side`: higher up the torso than the hips, in front of the eye plane
+/// rather than behind it, and biased toward `side` by less than the hips are, so a pouch here sits
+/// clear of the hip holster beside it and of its own mirror on the opposite side. Standing and
+/// seated as [`hip`].
+fn belt(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
+    let out = dims.shoulder_width * BELT_OUT_FRACTION * side_sign(side);
+    let belt_height = dims.height * BELT_HEIGHT_FRACTION;
+    let standing = Vec3::new(out, belt_height - dims.eye_height, -BELT_FORWARD_M);
+    frame.origin + seated_waist_adjust(frame, dims, belt_height, standing)
+}
+
+/// Adjust a standing waist-level landmark for a seated body: higher up the torso and forward over
+/// the thighs, because the seat is where a standing body's hip joints are. `base_height` is the
+/// landmark's standing height above the floor, used to find how much torso remains above it.
+fn seated_waist_adjust(
+    frame: &BodyFrame,
+    dims: &BodyDimensions,
+    base_height: f32,
+    standing: Vec3,
+) -> Vec3 {
+    if !frame.seated {
+        return standing;
+    }
+    let torso = (dims.shoulder_height - base_height).max(0.0);
+    standing + Vec3::new(0.0, torso * SEATED_HIP_RISE_FRACTION, -SEATED_HIP_FORWARD_M)
 }
 
 /// A volume at `spec`'s offset from `landmark`, mirrored for the left side.
@@ -460,12 +504,14 @@ mod tests {
     #[test]
     fn the_default_holsters_do_not_overlap() {
         let config = HolstersConfig::new();
+        let magazine = MagazineConfig::new().pouch;
         for frame in [STANDING, SEATED] {
             for dims in [
                 BodyDimensions::GENERIC_ADULT,
                 BodyDimensions::CHARACTER_ESTIMATE,
             ] {
-                let c = holster_candidates(&frame, &dims, &config, Hand::Right, false);
+                let mut c = holster_candidates(&frame, &dims, &config, Hand::Right, true);
+                c.push(magazine_pouch(&frame, &dims, &magazine, Hand::Right));
                 for (i, a) in c.iter().enumerate() {
                     for b in &c[i + 1..] {
                         assert!(
@@ -495,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn the_pouch_exists_only_when_enabled_and_only_for_the_dominant_hand() {
+    fn the_pouch_exists_only_when_enabled_and_either_hand_may_grab_it() {
         let config = HolstersConfig::new();
         assert!(
             candidates(&config)
@@ -507,8 +553,13 @@ mod tests {
             .iter()
             .find(|c| c.volume == GrabVolume::GrenadePouch)
             .unwrap();
-        assert_eq!(pouch.hand, Some(Hand::Right));
-        assert_eq!(grab_volume(pouch.centre, Hand::Left, &c), None);
+        assert_eq!(pouch.hand, None);
+        // On the off-hand side, away from the dominant hand's hip holster and gun.
+        assert!(pouch.centre.x < 0.0);
+        assert_eq!(
+            grab_volume(pouch.centre, Hand::Left, &c),
+            Some(GrabVolume::GrenadePouch)
+        );
         assert_eq!(
             grab_volume(pouch.centre, Hand::Right, &c),
             Some(GrabVolume::GrenadePouch)
@@ -516,11 +567,12 @@ mod tests {
     }
 
     #[test]
-    fn the_magazine_pouch_is_on_the_off_hand_side_for_the_off_hand() {
+    fn the_magazine_pouch_is_on_the_dominant_side_for_the_off_hand_only() {
         let spec = MagazineConfig::new().pouch;
         for frame in [STANDING, SEATED] {
-            let pouch = magazine_pouch(&frame, &DIMS, &spec, Hand::Left);
-            assert!(pouch.centre.x < 0.0);
+            let pouch = magazine_pouch(&frame, &DIMS, &spec, Hand::Right);
+            // Mirrored from the grenade pouch, on the dominant side, so neither pouch shares a site.
+            assert!(pouch.centre.x > 0.0);
             assert_eq!(pouch.hand, Some(Hand::Left));
             let mut c =
                 holster_candidates(&frame, &DIMS, &HolstersConfig::new(), Hand::Right, true);
@@ -710,5 +762,17 @@ mod tests {
             None
         );
         assert_eq!(near_miss(Vec3::NAN, Hand::Right, &c, 0.3), None);
+    }
+
+    #[test]
+    fn a_near_miss_also_names_a_pouch() {
+        let c = holster_candidates(&STANDING, &DIMS, &HolstersConfig::new(), Hand::Right, true);
+        let pouch = c
+            .iter()
+            .find(|c| c.volume == GrabVolume::GrenadePouch)
+            .unwrap();
+        let point = pouch.centre + Vec3::new(0.0, pouch.radius + 0.05, 0.0);
+        let miss = near_miss(point, Hand::Left, &c, 0.3).unwrap();
+        assert_eq!(miss.volume, GrabVolume::GrenadePouch);
     }
 }

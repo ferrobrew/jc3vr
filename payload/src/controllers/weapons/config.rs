@@ -24,8 +24,8 @@ pub struct HolstersConfig {
     pub shoulder: VolumeSpec,
     /// The explosives holster on the chest.
     pub chest: VolumeSpec,
-    /// The grenade pouch at the front of the belt on the dominant side, a grab volume for the
-    /// dominant hand while the physical grenade throw
+    /// The grenade pouch at the front of the belt on the off-hand side, a grab volume for either
+    /// hand (whichever grabs it throws) while the physical grenade throw
     /// ([`WeaponsConfig::grenade_throw`](crate::controllers::config::WeaponsConfig::grenade_throw))
     /// is on.
     pub pouch: VolumeSpec,
@@ -66,8 +66,8 @@ impl HolstersConfig {
                 radius_m: 0.10,
             },
             pouch: VolumeSpec {
-                offset_m: Vec3::new(-0.10, 0.04, -0.12),
-                radius_m: 0.08,
+                offset_m: Vec3::ZERO,
+                radius_m: 0.10,
             },
             crouch_deadband_m: 0.15,
             show_volumes: false,
@@ -390,8 +390,10 @@ impl Default for MeleeStrikeConfig {
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MagazineConfig {
-    /// The magazine pouch at the front of the belt on the off-hand's side, placed like the grenade
-    /// pouch, a grab volume for the off-hand. Given for the right side and mirrored for the left.
+    /// The magazine pouch at the front of the belt on the dominant side, placed like the grenade
+    /// pouch but mirrored across the midline so the two pouches do not share a site. A grab volume
+    /// for the off-hand only: the dominant hand holds the weapon being reloaded. Given for the
+    /// right side and mirrored for the left.
     pub pouch: VolumeSpec,
     /// The magazine well's centre in the holding hand's wrist frame (-Z toward the fingers, +Y out
     /// of the back of the hand), metres: under the gun, just ahead of the grip. Given for the right
@@ -409,8 +411,8 @@ impl MagazineConfig {
     pub const fn new() -> Self {
         Self {
             pouch: VolumeSpec {
-                offset_m: Vec3::new(0.02, 0.04, -0.12),
-                radius_m: 0.08,
+                offset_m: Vec3::ZERO,
+                radius_m: 0.09,
             },
             well_offset_m: Vec3::new(0.0, -0.08, -0.06),
             well_radius_m: 0.08,

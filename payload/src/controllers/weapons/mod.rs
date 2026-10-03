@@ -257,7 +257,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             &body_frame,
             &dims,
             &config.weapons.magazine.pouch,
-            off,
+            config.dominant_hand,
         ));
     }
     let hold = foregrip::status().hold.filter(|h| h.engaged);
