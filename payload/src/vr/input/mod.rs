@@ -43,7 +43,7 @@
 
 mod actions;
 mod haptics;
-mod layout;
+pub(crate) mod layout;
 mod sample;
 mod stash;
 mod state;

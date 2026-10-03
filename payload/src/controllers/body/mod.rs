@@ -6,8 +6,8 @@
 //! - the eyes sit at the character's eye height, and vertical head travel (ducking, crouching)
 //!   scales by the ratio of the two heights ([`remap_head_height`], [`remap_head_translation`]);
 //! - horizontal head travel stays 1:1;
-//! - the hands' offsets from the shoulders scale by the ratio of the arm spans
-//!   ([`remap_hand_position`]).
+//! - the hands' offsets from the shoulders scale by the ratio of the arm lengths
+//!   ([`ArmRemap`](crate::controllers::hands::reach::ArmRemap)).
 //!
 //! Keeping motion 1:1 against a fixed body instead (the Boneworks approach) reads to players as
 //! permanently bent knees or a misplaced floor, which the remap avoids.
@@ -293,19 +293,6 @@ pub fn shoulder_positions(eye_position: Vec3, torso: Quat, body: &BodyDimensions
     [centre - half, centre + half]
 }
 
-/// Remap a hand position from the player's body onto the character's: the hand's offset from the
-/// player's shoulder, scaled by the arm-span ratio, applied at the character's shoulder. A hand at
-/// full reach for the player is at full reach for the character.
-pub fn remap_hand_position(
-    hand: Vec3,
-    player_shoulder: Vec3,
-    character_shoulder: Vec3,
-    player: &BodyDimensions,
-    character: &BodyDimensions,
-) -> Vec3 {
-    character_shoulder + (hand - player_shoulder) * arm_span_ratio(player, character)
-}
-
 /// How far the eyes sit in front of the shoulder joints, metres. A generic anthropometric figure;
 /// the body file does not carry it because it varies little between adults.
 pub const EYES_FORWARD_OF_SHOULDERS: f32 = 0.09;
@@ -515,29 +502,8 @@ mod tests {
 
     #[test]
     fn the_same_body_remaps_to_itself() {
-        let hand = Vec3::new(0.4, 1.1, -0.5);
-        let shoulder = Vec3::new(0.2, 1.47, 0.0);
-        let remapped = remap_hand_position(hand, shoulder, shoulder, &PLAYER, &PLAYER);
-        assert!((remapped - hand).length() < EPS);
         let h = remap_head_height(1.2, &PLAYER, &PLAYER);
         assert!((h - 1.2).abs() < EPS);
-    }
-
-    #[test]
-    fn full_reach_maps_to_full_reach() {
-        let [_, player_shoulder] = shoulder_positions(Vec3::ZERO, Quat::IDENTITY, &SHORT_PLAYER);
-        let [_, character_shoulder] = shoulder_positions(Vec3::ZERO, Quat::IDENTITY, &CHARACTER);
-        let player_reach = SHORT_PLAYER.arm_span * 0.5;
-        let hand = player_shoulder + Vec3::X * player_reach;
-        let remapped = remap_hand_position(
-            hand,
-            player_shoulder,
-            character_shoulder,
-            &SHORT_PLAYER,
-            &CHARACTER,
-        );
-        let reach = (remapped - character_shoulder).length();
-        assert!((reach - CHARACTER.arm_span * 0.5).abs() < EPS);
     }
 
     #[test]

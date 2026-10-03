@@ -93,3 +93,54 @@ fn the_system_button_works_in_menus() {
     let step = b.step(Mode::Ui, &Controls::default(), DT, &CONFIG);
     assert!(clicked(&step, GUI_PAUSE));
 }
+
+#[test]
+fn with_trackpads_either_hands_halves_page_and_the_grips_do_not() {
+    for dominant in Hand::BOTH {
+        let mut c = controls(dominant, |dom, off| {
+            dom.grip = down();
+            off.grip = down();
+        });
+        c.trackpad_paging = true;
+        let step = Bindings::default().step(Mode::Ui, &c, DT, &CONFIG);
+        assert_eq!(wants(&step, MapKind::Ui, GUI_TAB_PREV), None);
+        assert_eq!(wants(&step, MapKind::Ui, GUI_TAB_NEXT), None);
+
+        for hand in Hand::BOTH {
+            let mut c = Controls {
+                dominant,
+                trackpad_paging: true,
+                ..Default::default()
+            };
+            c.hands[hand.index()].trackpad_left = down();
+            let step = Bindings::default().step(Mode::Ui, &c, DT, &CONFIG);
+            assert_eq!(
+                wants(&step, MapKind::Ui, GUI_TAB_PREV),
+                Some(Want::Hold(1.0))
+            );
+            assert_eq!(wants(&step, MapKind::Ui, GUI_TAB_NEXT), None);
+
+            let mut c = Controls {
+                dominant,
+                trackpad_paging: true,
+                ..Default::default()
+            };
+            c.hands[hand.index()].trackpad_right = down();
+            let step = Bindings::default().step(Mode::Ui, &c, DT, &CONFIG);
+            assert_eq!(
+                wants(&step, MapKind::Ui, GUI_TAB_NEXT),
+                Some(Want::Hold(1.0))
+            );
+            assert_eq!(wants(&step, MapKind::Ui, GUI_TAB_PREV), None);
+        }
+    }
+}
+
+#[test]
+fn without_trackpads_the_trackpad_halves_page_nothing() {
+    let mut c = Controls::default();
+    c.hands[0].trackpad_left = down();
+    c.hands[1].trackpad_right = down();
+    let step = Bindings::default().step(Mode::Ui, &c, DT, &CONFIG);
+    assert!(step.desired.is_empty());
+}

@@ -22,8 +22,10 @@
 //!
 //! The values are raw: the OpenXR actions are named for the physical inputs (trigger, squeeze, A,
 //! B, ...), and mapping them to game actions happens in the bindings layer. The only derived states
-//! are the digital [`Button::TriggerPress`] and [`Button::SqueezePress`], thresholded here with
-//! hysteresis so that their edges are latched at frame rate like every other button.
+//! are the digital presses ([`Button::TriggerPress`], [`Button::SqueezePress`],
+//! [`Button::TrackpadPressLeft`], and [`Button::TrackpadPressRight`]), thresholded here with
+//! hysteresis ([`PressRules`]) so that their edges are latched at frame rate like every other
+//! button.
 
 use std::time::{Duration, Instant};
 
@@ -242,7 +244,9 @@ pub enum Button {
     /// (hysteresis; see [`PressThresholds`]). Available on every controller, unlike
     /// [`TriggerClick`](Self::TriggerClick).
     TriggerPress,
-    /// The grip squeezed past the press threshold, released past the release threshold.
+    /// The grip squeezed past the press threshold, released past the release threshold, read from
+    /// the squeeze force on a force-sensing grip and from the squeeze value elsewhere (see
+    /// [`GripPress`]).
     SqueezePress,
     ThumbstickClick,
     ThumbstickTouch,
@@ -252,11 +256,16 @@ pub enum Button {
     BClick,
     BTouch,
     SystemClick,
+    /// The trackpad pressed past the press threshold on its left half, released past the release
+    /// threshold. The half is decided at the press and kept until the release.
+    TrackpadPressLeft,
+    /// As [`TrackpadPressLeft`](Self::TrackpadPressLeft), on the right half.
+    TrackpadPressRight,
 }
 
 impl Button {
     /// Every button, in bit order.
-    pub const ALL: [Button; 12] = [
+    pub const ALL: [Button; 14] = [
         Button::TriggerClick,
         Button::TriggerTouch,
         Button::TriggerPress,
@@ -269,6 +278,8 @@ impl Button {
         Button::BClick,
         Button::BTouch,
         Button::SystemClick,
+        Button::TrackpadPressLeft,
+        Button::TrackpadPressRight,
     ];
 
     /// Whether this is a capacitive touch rather than a press. Touches change whenever the player
@@ -299,6 +310,8 @@ impl Button {
             Button::BClick => "B",
             Button::BTouch => "B touch",
             Button::SystemClick => "system",
+            Button::TrackpadPressLeft => "pad press left",
+            Button::TrackpadPressRight => "pad press right",
         }
     }
 
@@ -361,25 +374,114 @@ impl PressThresholds {
     }
 }
 
-/// The digital state of every button of one controller: the raw booleans, plus the trigger and
-/// squeeze presses derived from their analog values with hysteresis against `previous`.
-pub fn derive_buttons(
+/// Which grip reading derives [`Button::SqueezePress`] on one controller, with its thresholds.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum GripPress {
+    /// The squeeze value, [`HandInputs::squeeze`]: how far the fingers close round the handle, or
+    /// how far a pull-style grip is pulled.
+    Value(PressThresholds),
+    /// The squeeze force, [`HandInputs::squeeze_force`]: how hard a force-sensing grip is squeezed
+    /// once the hand is closed. A capacitive grip's value reaches its top with the hand merely
+    /// resting round the handle, so only the force tells a deliberate squeeze from a held
+    /// controller.
+    Force(PressThresholds),
+}
+
+impl GripPress {
+    /// The reading this press is derived from, and its thresholds.
+    pub fn reading(self, inputs: &HandInputs) -> (f32, PressThresholds) {
+        match self {
+            GripPress::Value(thresholds) => (inputs.squeeze, thresholds),
+            GripPress::Force(thresholds) => (inputs.squeeze_force, thresholds),
+        }
+    }
+}
+
+/// How one controller's derived presses are read from its analog inputs.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PressRules {
+    /// The trigger value thresholds of [`Button::TriggerPress`].
+    pub trigger: PressThresholds,
+    /// The reading and thresholds of [`Button::SqueezePress`].
+    pub grip: GripPress,
+    /// The trackpad force thresholds of [`Button::TrackpadPressLeft`] and
+    /// [`Button::TrackpadPressRight`].
+    pub trackpad: PressThresholds,
+}
+
+/// A half of the trackpad, left or right of its vertical centre line.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TrackpadHalf {
+    Left,
+    Right,
+}
+
+impl TrackpadHalf {
+    /// The derived button of a press on this half.
+    pub const fn button(self) -> Button {
+        match self {
+            TrackpadHalf::Left => Button::TrackpadPressLeft,
+            TrackpadHalf::Right => Button::TrackpadPressRight,
+        }
+    }
+}
+
+/// How far from the trackpad's vertical centre line, in its `-1..=1` horizontal axis, a press must
+/// land to count for a half. A press on the centre line names neither half, and waits for the thumb
+/// to move off it.
+pub const TRACKPAD_HALF_MARGIN: f32 = 0.2;
+
+/// The half of the trackpad pressed after observing `inputs`, given the half pressed before, if
+/// any. The half is decided at the press and kept, wherever the thumb slides, until the force falls
+/// below the release threshold.
+pub fn trackpad_press(
+    previous: Option<TrackpadHalf>,
     inputs: &HandInputs,
-    previous: ButtonSet,
-    trigger: PressThresholds,
-    squeeze: PressThresholds,
-) -> ButtonSet {
+    thresholds: PressThresholds,
+) -> Option<TrackpadHalf> {
+    let force = inputs.trackpad_force;
+    if !force.is_finite() {
+        return None;
+    }
+    if let Some(half) = previous {
+        return thresholds.apply(true, force).then_some(half);
+    }
+    if !thresholds.apply(false, force) {
+        return None;
+    }
+    let x = inputs.trackpad.x;
+    if x <= -TRACKPAD_HALF_MARGIN {
+        Some(TrackpadHalf::Left)
+    } else if x >= TRACKPAD_HALF_MARGIN {
+        Some(TrackpadHalf::Right)
+    } else {
+        None
+    }
+}
+
+/// The digital state of every button of one controller: the raw booleans, plus the presses derived
+/// from the analog values by `rules`, with hysteresis against `previous`.
+pub fn derive_buttons(inputs: &HandInputs, previous: ButtonSet, rules: &PressRules) -> ButtonSet {
     let mut set = ButtonSet::EMPTY;
     set.set(Button::TriggerClick, inputs.trigger_click);
     set.set(Button::TriggerTouch, inputs.trigger_touch);
     set.set(
         Button::TriggerPress,
-        trigger.apply(previous.contains(Button::TriggerPress), inputs.trigger),
+        rules
+            .trigger
+            .apply(previous.contains(Button::TriggerPress), inputs.trigger),
     );
+    let (grip, grip_thresholds) = rules.grip.reading(inputs);
     set.set(
         Button::SqueezePress,
-        squeeze.apply(previous.contains(Button::SqueezePress), inputs.squeeze),
+        grip.is_finite() && grip_thresholds.apply(previous.contains(Button::SqueezePress), grip),
     );
+    let previous_half = [TrackpadHalf::Left, TrackpadHalf::Right]
+        .into_iter()
+        .find(|half| previous.contains(half.button()));
+    if let Some(half) = trackpad_press(previous_half, inputs, rules.trackpad) {
+        set.set(half.button(), true);
+    }
     set.set(Button::ThumbstickClick, inputs.thumbstick_click);
     set.set(Button::ThumbstickTouch, inputs.thumbstick_touch);
     set.set(Button::TrackpadTouch, inputs.trackpad_touch);
@@ -616,22 +718,131 @@ mod tests {
         assert!(!THRESHOLDS.apply(true, 0.49));
     }
 
+    const FORCE: PressThresholds = PressThresholds {
+        press: 0.3,
+        release: 0.1,
+    };
+
+    fn rules(grip: GripPress) -> PressRules {
+        PressRules {
+            trigger: THRESHOLDS,
+            grip,
+            trackpad: FORCE,
+        }
+    }
+
     #[test]
     fn derived_presses_follow_the_analog_values() {
+        let value = rules(GripPress::Value(THRESHOLDS));
         let mut inputs = HandInputs {
             trigger: 0.8,
             squeeze: 0.2,
             a_click: true,
             ..Default::default()
         };
-        let first = derive_buttons(&inputs, ButtonSet::EMPTY, THRESHOLDS, THRESHOLDS);
+        let first = derive_buttons(&inputs, ButtonSet::EMPTY, &value);
         assert_eq!(first, set(&[Button::TriggerPress, Button::AClick]));
 
         inputs.trigger = 0.6;
-        let held = derive_buttons(&inputs, first, THRESHOLDS, THRESHOLDS);
+        let held = derive_buttons(&inputs, first, &value);
         assert!(held.contains(Button::TriggerPress));
-        let fresh = derive_buttons(&inputs, ButtonSet::EMPTY, THRESHOLDS, THRESHOLDS);
+        let fresh = derive_buttons(&inputs, ButtonSet::EMPTY, &value);
         assert!(!fresh.contains(Button::TriggerPress));
+    }
+
+    #[test]
+    fn a_force_grip_presses_on_force_alone_with_hysteresis() {
+        let force = rules(GripPress::Force(FORCE));
+        // A hand resting round a capacitive grip reads a full squeeze value and no force.
+        let mut inputs = HandInputs {
+            squeeze: 1.0,
+            squeeze_force: 0.05,
+            ..Default::default()
+        };
+        let resting = derive_buttons(&inputs, ButtonSet::EMPTY, &force);
+        assert!(!resting.contains(Button::SqueezePress));
+
+        inputs.squeeze_force = 0.29;
+        assert!(!derive_buttons(&inputs, resting, &force).contains(Button::SqueezePress));
+        inputs.squeeze_force = 0.3;
+        let pressed = derive_buttons(&inputs, resting, &force);
+        assert!(pressed.contains(Button::SqueezePress));
+
+        // Easing off to between the thresholds holds the press; below the release lets go, even
+        // with the hand still closed round the grip.
+        inputs.squeeze_force = 0.15;
+        let held = derive_buttons(&inputs, pressed, &force);
+        assert!(held.contains(Button::SqueezePress));
+        inputs.squeeze_force = 0.09;
+        assert!(!derive_buttons(&inputs, held, &force).contains(Button::SqueezePress));
+        inputs.squeeze_force = f32::NAN;
+        assert!(!derive_buttons(&inputs, held, &force).contains(Button::SqueezePress));
+    }
+
+    #[test]
+    fn a_value_grip_ignores_the_force() {
+        let value = rules(GripPress::Value(THRESHOLDS));
+        let inputs = HandInputs {
+            squeeze: 0.2,
+            squeeze_force: 1.0,
+            ..Default::default()
+        };
+        assert!(!derive_buttons(&inputs, ButtonSet::EMPTY, &value).contains(Button::SqueezePress));
+        let inputs = HandInputs {
+            squeeze: 0.8,
+            ..Default::default()
+        };
+        assert!(derive_buttons(&inputs, ButtonSet::EMPTY, &value).contains(Button::SqueezePress));
+    }
+
+    fn pad(x: f32, force: f32) -> HandInputs {
+        HandInputs {
+            trackpad: Vec2::new(x, 0.0),
+            trackpad_force: force,
+            trackpad_touch: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_trackpad_press_picks_the_half_under_the_thumb() {
+        assert_eq!(
+            trackpad_press(None, &pad(-0.6, 0.5), FORCE),
+            Some(TrackpadHalf::Left)
+        );
+        assert_eq!(
+            trackpad_press(None, &pad(0.6, 0.5), FORCE),
+            Some(TrackpadHalf::Right)
+        );
+        // A touch without force, or a press on the centre line, is no press.
+        assert_eq!(trackpad_press(None, &pad(0.6, 0.2), FORCE), None);
+        assert_eq!(trackpad_press(None, &pad(0.1, 1.0), FORCE), None);
+        assert_eq!(trackpad_press(None, &pad(-0.1, 1.0), FORCE), None);
+        assert_eq!(trackpad_press(None, &pad(0.6, f32::NAN), FORCE), None);
+    }
+
+    #[test]
+    fn a_trackpad_press_keeps_its_half_until_released() {
+        let left = Some(TrackpadHalf::Left);
+        // The thumb slides across under pressure: the press stays on its half.
+        assert_eq!(trackpad_press(left, &pad(0.8, 0.2), FORCE), left);
+        assert_eq!(trackpad_press(left, &pad(0.8, 0.1), FORCE), left);
+        assert_eq!(trackpad_press(left, &pad(0.8, 0.09), FORCE), None);
+    }
+
+    #[test]
+    fn trackpad_presses_derive_their_buttons() {
+        let rules = rules(GripPress::Value(THRESHOLDS));
+        let right = derive_buttons(&pad(0.7, 0.5), ButtonSet::EMPTY, &rules);
+        assert!(right.contains(Button::TrackpadPressRight));
+        assert!(!right.contains(Button::TrackpadPressLeft));
+        assert!(right.contains(Button::TrackpadTouch));
+        let slid = derive_buttons(&pad(-0.7, 0.2), right, &rules);
+        assert!(slid.contains(Button::TrackpadPressRight));
+        assert!(!slid.contains(Button::TrackpadPressLeft));
+        let released = derive_buttons(&pad(-0.7, 0.0), slid, &rules);
+        assert!(!released.contains(Button::TrackpadPressRight));
+        assert!(!Button::TrackpadPressLeft.is_touch());
     }
 
     #[test]

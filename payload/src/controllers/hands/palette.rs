@@ -4,9 +4,10 @@
 //! A palette entry is a bone's model-space transform times its inverse bind pose, so pre-multiplying
 //! an entry by a model-space transform moves every vertex the bone carries by that transform. The
 //! hand bones take the hand's whole correction; the forearm bones take a swing about the elbow
-//! that follows the corrected wrist, so the forearm stays attached at both ends.
+//! that follows the corrected wrist, optionally stretched along the forearm so its far end reaches
+//! a hand detached from the arm, so the forearm stays attached at both ends.
 
-use glam::{Mat4, Quat, Vec3, Vec4};
+use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 /// How a block's palette stores a 3x4 affine matrix (see the layout detection in
 /// `crate::hooks::graphics_engine::render_block`).
@@ -65,6 +66,29 @@ pub fn forearm_swing(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3) -> Mat4 {
         * Mat4::from_translation(-elbow)
 }
 
+/// The forearm's transform toward the corrected wrist: the swing about the elbow
+/// ([`forearm_swing`]), and with `stretch` a scale along the corrected forearm's axis about the
+/// elbow, so the forearm's far end lands on the corrected wrist even when the hand has moved off the
+/// end of the arm. The stretch is bounded to [`MAX_FOREARM_STRETCH`] either way.
+pub fn forearm_reach(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3, stretch: bool) -> Mat4 {
+    let swing = forearm_swing(elbow, wrist, wrist_corrected);
+    let (Some(axis), true) = ((wrist_corrected - elbow).try_normalize(), stretch) else {
+        return swing;
+    };
+    let from = (wrist - elbow).length();
+    let to = (wrist_corrected - elbow).length();
+    if !(from.is_finite() && to.is_finite()) || from <= f32::EPSILON {
+        return swing;
+    }
+    let ratio = (to / from).clamp(1.0 / MAX_FOREARM_STRETCH, MAX_FOREARM_STRETCH);
+    let along = Mat3::IDENTITY
+        + Mat3::from_cols(axis * axis.x, axis * axis.y, axis * axis.z) * (ratio - 1.0);
+    Mat4::from_translation(elbow) * Mat4::from_mat3(along) * Mat4::from_translation(-elbow) * swing
+}
+
+/// The most the forearm stretches or shrinks along its axis, as a ratio of its length.
+pub const MAX_FOREARM_STRETCH: f32 = 1.5;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +142,43 @@ mod tests {
         let direction = (corrected - elbow).normalize();
         assert!((swung - elbow).normalize().abs_diff_eq(direction, 1e-5));
         assert_eq!(forearm_swing(elbow, elbow, corrected), Mat4::IDENTITY);
+    }
+
+    #[test]
+    fn the_stretch_lands_the_forearm_on_a_detached_wrist() {
+        let elbow = Vec3::new(0.3, 1.2, 0.0);
+        let wrist = elbow + Vec3::new(0.0, 0.0, -0.25);
+        let corrected = wrist + Vec3::new(0.02, 0.0, -0.08);
+        let reach = forearm_reach(elbow, wrist, corrected, true);
+        assert!(reach.transform_point3(elbow).abs_diff_eq(elbow, 1e-6));
+        assert!(reach.transform_point3(wrist).abs_diff_eq(corrected, 1e-5));
+        // A point beside the forearm keeps its distance from the axis.
+        let side = elbow + Vec3::new(0.03, 0.0, -0.1);
+        let moved = reach.transform_point3(side) - elbow;
+        let axis = (corrected - elbow).normalize();
+        let radial = (moved - axis * moved.dot(axis)).length();
+        assert!((radial - 0.03).abs() < 1e-3);
+    }
+
+    #[test]
+    fn without_the_stretch_the_reach_is_the_swing() {
+        let elbow = Vec3::new(0.3, 1.2, 0.0);
+        let wrist = elbow + Vec3::new(0.0, 0.0, -0.25);
+        let corrected = wrist + Vec3::new(0.0, 0.0, -0.08);
+        assert_eq!(
+            forearm_reach(elbow, wrist, corrected, false),
+            forearm_swing(elbow, wrist, corrected)
+        );
+    }
+
+    #[test]
+    fn the_stretch_is_bounded() {
+        let elbow = Vec3::ZERO;
+        let wrist = Vec3::NEG_Z * 0.2;
+        let far = Vec3::NEG_Z * 1.0;
+        let reach = forearm_reach(elbow, wrist, far, true);
+        let end = reach.transform_point3(wrist);
+        assert!((end.length() - 0.2 * MAX_FOREARM_STRETCH).abs() < 1e-5);
+        assert_eq!(forearm_reach(elbow, elbow, far, true), Mat4::IDENTITY);
     }
 }

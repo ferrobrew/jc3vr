@@ -41,6 +41,8 @@ pub enum Control {
     Motion(Hand),
     /// The grip of either hand.
     EitherGrip,
+    /// The trackpad of either hand.
+    EitherTrackpad,
     /// A motion of either hand.
     EitherMotion,
     /// The system (menu) button, whichever hand reports it.
@@ -59,7 +61,10 @@ impl Control {
             | Control::StickClick(h)
             | Control::Trackpad(h)
             | Control::Motion(h) => Some(h),
-            Control::EitherGrip | Control::EitherMotion | Control::System => None,
+            Control::EitherGrip
+            | Control::EitherTrackpad
+            | Control::EitherMotion
+            | Control::System => None,
         }
     }
 
@@ -76,7 +81,7 @@ impl Control {
             Control::Stick(_, StickDir::Horizontal) => 6,
             Control::Stick(_, StickDir::Down) => 7,
             Control::StickClick(_) => 8,
-            Control::Trackpad(_) => 9,
+            Control::Trackpad(_) | Control::EitherTrackpad => 9,
             Control::Motion(_) | Control::EitherMotion => 10,
             Control::System => 11,
         }
@@ -96,6 +101,10 @@ pub enum Gesture {
     Flick,
     /// Touched.
     Touch,
+    /// Pressed on the left half.
+    PressLeftHalf,
+    /// Pressed on the right half.
+    PressRightHalf,
     /// A sharp pull of the hand back toward the body.
     Yank,
     /// A fast strike of the hand.
@@ -171,7 +180,7 @@ pub struct DescribeCtx {
 }
 
 /// Every input of `ctx.mode` and what it does, with the rows that share an input and a gesture
-/// merged, in declaration order.
+/// merged, in declaration order, and a trackpad row that both hands share folded into one.
 pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
     let mut sink = DescribeSink {
         dominant: ctx.dominant,
@@ -181,7 +190,7 @@ pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
     declare(&mut sink, ctx.mode, &ctx.table);
     let mut rows = sink.rows;
     rows.extend(outside_rows(ctx));
-    merge(rows)
+    fold_trackpads(merge(rows))
 }
 
 /// The describing [`Sink`]: records a row per input instead of resolving it.
@@ -201,6 +210,8 @@ impl DescribeSink {
             Input::A => (Control::A(hand), Gesture::Press),
             Input::B => (Control::B(hand), Gesture::Press),
             Input::StickClick => (Control::StickClick(hand), Gesture::Press),
+            Input::TrackpadLeft => (Control::Trackpad(hand), Gesture::PressLeftHalf),
+            Input::TrackpadRight => (Control::Trackpad(hand), Gesture::PressRightHalf),
             Input::Yank if self.yank => (Control::Motion(hand), Gesture::Yank),
             Input::Yank => return None,
         };
@@ -365,6 +376,28 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
         Effect::Actions(vec![Action::GUI_PDA]),
     );
     rows
+}
+
+/// Fold each pair of rows that give both hands' trackpads the same gesture and effect into one row
+/// on [`Control::EitherTrackpad`], in the first row's place.
+fn fold_trackpads(rows: Vec<Row>) -> Vec<Row> {
+    let mut folded: Vec<Row> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Control::Trackpad(hand) = row.control else {
+            folded.push(row);
+            continue;
+        };
+        let twin = folded.iter_mut().find(|r| {
+            r.control == Control::Trackpad(hand.other())
+                && r.gesture == row.gesture
+                && r.effect == row.effect
+        });
+        match twin {
+            Some(twin) => twin.control = Control::EitherTrackpad,
+            None => folded.push(row),
+        }
+    }
+    folded
 }
 
 /// Merge the rows that share a control and a gesture and both drive game actions, keeping the

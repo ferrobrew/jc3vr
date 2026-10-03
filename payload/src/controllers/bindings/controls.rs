@@ -4,10 +4,13 @@
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::{
-    bindings::grab::GrabVolume,
-    config::BindingsConfig,
-    frame::{Button, ControllerFrame, Edges, Hand, HandFrame},
+use crate::{
+    controllers::{
+        bindings::grab::GrabVolume,
+        config::BindingsConfig,
+        frame::{Button, ControllerFrame, Edges, Hand, HandFrame},
+    },
+    vr::input::layout::{Input, Vec2Input, provides},
 };
 
 /// One digital input over the tick.
@@ -53,6 +56,10 @@ pub struct HandControls {
     pub stick_click: ButtonControl,
     /// The system (or menu) button.
     pub system: ButtonControl,
+    /// The trackpad pressed on its left half.
+    pub trackpad_left: ButtonControl,
+    /// The trackpad pressed on its right half.
+    pub trackpad_right: ButtonControl,
     /// The thumbstick past the radial deadzone, rescaled, +Y forward.
     pub stick: Vec2,
     /// The thumbstick as reported, for consumers with their own deadzone (the body turn).
@@ -86,6 +93,9 @@ pub struct Controls {
     pub sight_chord: bool,
     /// The hand whose trigger belongs to the native UI pointer.
     pub pointer_hand: Option<Hand>,
+    /// Whether a controller has a trackpad, so the menus page with the trackpads rather than the
+    /// grips.
+    pub trackpad_paging: bool,
 }
 
 impl Controls {
@@ -110,6 +120,8 @@ impl Controls {
                 b: button(Button::BClick),
                 stick_click: button(Button::ThumbstickClick),
                 system: button(Button::SystemClick),
+                trackpad_left: button(Button::TrackpadPressLeft),
+                trackpad_right: button(Button::TrackpadPressRight),
                 stick: radial_deadzone(hand.inputs.thumbstick, config.move_deadzone),
                 stick_raw: hand.inputs.thumbstick,
                 grab_volume: grab_volumes[which.index()],
@@ -124,6 +136,13 @@ impl Controls {
             yank: false,
             sight_chord: false,
             pointer_hand: None,
+            trackpad_paging: Hand::BOTH.into_iter().any(|which| {
+                provides(
+                    frame.hand(which).profile,
+                    which,
+                    Input::Vec2(Vec2Input::Trackpad),
+                )
+            }),
         }
     }
 
@@ -193,9 +212,10 @@ pub fn yaw_of(orientation: Quat) -> Option<f32> {
 
 #[cfg(test)]
 mod tests {
-    use std::f32::consts::FRAC_PI_2;
+    use std::{f32::consts::FRAC_PI_2, time::Instant};
 
     use super::*;
+    use crate::controllers::frame::{ActionSetKind, InteractionProfile};
 
     fn close(a: Vec2, b: Vec2) -> bool {
         (a - b).length() < 1e-5
@@ -256,5 +276,63 @@ mod tests {
         };
         assert!(tap.held());
         assert!(!ButtonControl::default().held());
+    }
+
+    fn frame_with_profiles(profiles: [InteractionProfile; 2]) -> ControllerFrame {
+        let mut hands: [HandFrame; 2] = Default::default();
+        for (hand, profile) in hands.iter_mut().zip(profiles) {
+            hand.active = profile != InteractionProfile::None;
+            hand.profile = profile;
+        }
+        ControllerFrame {
+            sequence: 0,
+            display_time_ns: 0,
+            published_at: Instant::now(),
+            focused: true,
+            action_set: ActionSetKind::Ui,
+            hands,
+        }
+    }
+
+    #[test]
+    fn the_menus_page_with_the_trackpads_only_on_a_controller_that_has_one() {
+        let paging = |profiles| {
+            Controls::from_frame(
+                &frame_with_profiles(profiles),
+                &Edges::default(),
+                &BindingsConfig::new(),
+                Hand::Right,
+                0.0,
+                [None; 2],
+            )
+            .trackpad_paging
+        };
+        let index = InteractionProfile::ValveIndex;
+        let none = InteractionProfile::None;
+        assert!(paging([index, index]));
+        assert!(paging([none, index]));
+        assert!(!paging([InteractionProfile::OculusTouch; 2]));
+        assert!(!paging([InteractionProfile::Other; 2]));
+        assert!(!paging([none, none]));
+    }
+
+    #[test]
+    fn the_trackpad_halves_carry_their_edges() {
+        let mut frame = frame_with_profiles([InteractionProfile::ValveIndex; 2]);
+        frame.hands[0].buttons.set(Button::TrackpadPressLeft, true);
+        let mut edges = Edges::default();
+        edges.pressed[1].set(Button::TrackpadPressRight, true);
+        edges.released[1].set(Button::TrackpadPressRight, true);
+        let c = Controls::from_frame(
+            &frame,
+            &edges,
+            &BindingsConfig::new(),
+            Hand::Right,
+            0.0,
+            [None; 2],
+        );
+        assert!(c.hand(Hand::Left).trackpad_left.down);
+        assert!(!c.hand(Hand::Left).trackpad_right.held());
+        assert!(c.hand(Hand::Right).trackpad_right.held());
     }
 }

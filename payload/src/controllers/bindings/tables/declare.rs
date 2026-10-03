@@ -12,7 +12,7 @@ use crate::controllers::{
         controls::Controls,
         tables::sink::{
             Axis, Gate, Input,
-            Input::{A, B, Grip, GripDefault, StickClick, Trigger},
+            Input::{A, B, Grip, GripDefault, StickClick, TrackpadLeft, TrackpadRight, Trigger},
             Press,
             Role::{self, Dom, Left, Off, Right},
             Sink,
@@ -32,6 +32,8 @@ pub struct TableCtx {
     pub weapon_cycle: bool,
     /// See [`Controls::pointer_hand`].
     pub pointer_hand: Option<Hand>,
+    /// See [`Controls::trackpad_paging`].
+    pub trackpad_paging: bool,
 }
 
 impl TableCtx {
@@ -40,6 +42,7 @@ impl TableCtx {
             dual_wield: controls.dual_wield,
             weapon_cycle: controls.weapon_cycle,
             pointer_hand: controls.pointer_hand,
+            trackpad_paging: controls.trackpad_paging,
         }
     }
 }
@@ -226,8 +229,22 @@ fn ui<S: Sink>(s: &mut S, ctx: &TableCtx) {
     s.hold(&[press(Right, B)], &[GUI_CANCEL]);
     s.hold(&[press(Left, A)], &[GUI_SPECIAL_BUTTON, GUI_FILTER]);
     s.hold(&[press(Left, B)], &[GUI_USE_BUTTON]);
-    s.hold(&[press(Left, Grip)], &[GUI_TAB_PREV]);
-    s.hold(&[press(Right, Grip)], &[GUI_TAB_NEXT]);
+    // The tabs page with a press on either trackpad's left or right half where the controllers
+    // have trackpads, since the Index grip is capacitive and a hand resting on it would page. A
+    // touch alone does not page, so the off-hand's touch stays free to show the controls summary.
+    if ctx.trackpad_paging {
+        s.hold(
+            &[press(Left, TrackpadLeft), press(Right, TrackpadLeft)],
+            &[GUI_TAB_PREV],
+        );
+        s.hold(
+            &[press(Left, TrackpadRight), press(Right, TrackpadRight)],
+            &[GUI_TAB_NEXT],
+        );
+    } else {
+        s.hold(&[press(Left, Grip)], &[GUI_TAB_PREV]);
+        s.hold(&[press(Right, Grip)], &[GUI_TAB_NEXT]);
+    }
     // The pointer's hand keeps its trigger for the native UI pointer.
     if ctx.pointer_hand != Some(Hand::Left) {
         s.hold(&[press(Left, Trigger)], &[GUI_PAGE_PREV]);

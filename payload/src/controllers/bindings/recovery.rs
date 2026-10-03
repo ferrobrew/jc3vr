@@ -40,7 +40,8 @@ pub enum Blocker {
     Button(Button),
     /// The trigger's analog value.
     Trigger(f32),
-    /// The grip's analog value.
+    /// The grip reading its press is derived from: the squeeze force on a force-sensing grip, the
+    /// squeeze value elsewhere ([`InputConfig::grip_press`]).
     Squeeze(f32),
     /// The thumbstick's magnitude and the neutral threshold it must fall under.
     Stick { magnitude: f32, neutral: f32 },
@@ -50,7 +51,8 @@ pub enum Blocker {
 pub(super) struct NeutralPolicy {
     trigger_release: f32,
     trigger_deadzone: f32,
-    squeeze_release: f32,
+    /// The grip press thresholds, per profile ([`InputConfig::grip_press`]).
+    input: InputConfig,
     /// Per hand, in [`Hand::index`] order.
     stick_neutral: [f32; 2],
 }
@@ -76,7 +78,7 @@ impl NeutralPolicy {
         Self {
             trigger_release: input.trigger_press.release,
             trigger_deadzone: bindings.trigger_deadzone.clamp(0.0, 0.99),
-            squeeze_release: input.squeeze_press.release,
+            input: *input,
             stick_neutral,
         }
     }
@@ -210,7 +212,8 @@ fn hand_usable(hand: &HandFrame) -> bool {
 /// The first control of `hand` that is not at rest, or `None` when the hand is neutral.
 fn blocker(hand: &HandFrame, config: &NeutralPolicy, index: usize) -> Option<Blocker> {
     let input = &hand.inputs;
-    // Force and touch positions have no gameplay binding; their noise must not prevent recovery.
+    // Touch positions and forces below their press thresholds act on nothing; their noise must not
+    // prevent recovery. A trackpad pressed past its threshold is a derived button, caught here.
     if let Some(button) = hand.buttons.iter().find(|button| !button.is_touch()) {
         return Some(Blocker::Button(button));
     }
@@ -222,11 +225,12 @@ fn blocker(hand: &HandFrame, config: &NeutralPolicy, index: usize) -> Option<Blo
     {
         return Some(Blocker::Trigger(input.trigger));
     }
-    if !(input.squeeze.is_finite()
-        && input.squeeze >= 0.0
-        && input.squeeze < config.squeeze_release)
-    {
-        return Some(Blocker::Squeeze(input.squeeze));
+    let (grip, grip_thresholds) = config
+        .input
+        .grip_press(hand.profile, Hand::BOTH[index])
+        .reading(input);
+    if !(grip.is_finite() && grip >= 0.0 && grip < grip_thresholds.release) {
+        return Some(Blocker::Squeeze(grip));
     }
     let magnitude = input.thumbstick.length();
     let neutral = config.stick_neutral[index];
@@ -326,8 +330,7 @@ mod tests {
             hand.buttons = derive_buttons(
                 &hand.inputs,
                 ButtonSet::EMPTY,
-                config.trigger_press,
-                config.squeeze_press,
+                &config.press_rules(hand.profile, Hand::BOTH[i]),
             );
             hand
         });
@@ -435,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_neutral_allows_index_resting_grip_and_ignores_touch_position() {
+    fn configured_neutral_allows_a_resting_grip_and_ignores_touch_position() {
         let mut input = InputConfig::new();
         input.trigger_press.release = 0.4;
         input.squeeze_press.release = 0.6;
@@ -448,17 +451,17 @@ mod tests {
         let config = NeutralPolicy::new(&input, &bindings, &turn, Hand::Right);
         let mut sample = published(1, [true, false], [0.0; 2]);
         let hand = &mut sample.hands[0];
-        hand.profile = InteractionProfile::ValveIndex;
+        hand.profile = InteractionProfile::OculusTouch;
         hand.inputs.trigger = 0.3;
         hand.inputs.squeeze = 0.5;
         hand.inputs.thumbstick = Vec2::new(0.2, 0.0);
         hand.inputs.trackpad = Vec2::ONE;
         hand.buttons.set(Button::TrackpadTouch, true);
         assert!(neutral(hand, &config, Hand::Left));
-        hand.inputs.squeeze = config.squeeze_release;
+        hand.inputs.squeeze = input.squeeze_press.release;
         assert!(!neutral(hand, &config, Hand::Left));
         hand.inputs.squeeze = 0.5;
-        hand.inputs.trigger = config.trigger_release;
+        hand.inputs.trigger = input.trigger_press.release;
         assert!(!neutral(hand, &config, Hand::Left));
         hand.inputs.trigger = 0.3;
         hand.inputs.thumbstick = Vec2::X;
@@ -467,6 +470,27 @@ mod tests {
         hand.inputs.squeeze_force = 0.01;
         hand.inputs.trackpad_force = 0.02;
         assert!(neutral(hand, &config, Hand::Left));
+    }
+
+    #[test]
+    fn a_force_grip_rests_on_its_force_not_its_value() {
+        let input = InputConfig::new();
+        let config = policy();
+        let mut hand = published(1, [true, false], [0.0; 2]).hands[0].clone();
+        hand.profile = InteractionProfile::ValveIndex;
+        // The hand closed round the capacitive grip reads a full squeeze value, and is at rest.
+        hand.inputs.squeeze = 1.0;
+        hand.inputs.squeeze_force = input.squeeze_force_press.release * 0.5;
+        assert!(neutral(&hand, &config, Hand::Left));
+        hand.inputs.squeeze_force = input.squeeze_force_press.release;
+        assert_eq!(
+            blocker(&hand, &config, Hand::Left.index()),
+            Some(Blocker::Squeeze(input.squeeze_force_press.release))
+        );
+        // The same reading on a value grip is a held squeeze.
+        hand.profile = InteractionProfile::OculusTouch;
+        hand.inputs.squeeze_force = 0.0;
+        assert!(!neutral(&hand, &config, Hand::Left));
     }
 
     #[test]

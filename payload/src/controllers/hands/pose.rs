@@ -7,8 +7,8 @@
 //! 2. Times the grip offset ([`grip_to_wrist`]): the **wrist frame**, the hand-tracking wrist
 //!    convention (origin at the wrist joint, -Z toward the fingers, +Y out of the back of the
 //!    hand, X = Y × Z).
-//! 3. The Bonelab-style remap ([`remap_wrist`]): the wrist's offset from the player's shoulder,
-//!    scaled by the ratio of the arm spans, placed at the character's shoulder.
+//! 3. The Bonelab-style remap ([`ArmRemap`]): the wrist's offset from the player's shoulder, scaled
+//!    by the ratio of the arm lengths, placed at the character's shoulder.
 //! 4. Into the world through the head's transform ([`compose_world`]), the same composition the
 //!    head pose uses, so that the hands and the view agree.
 //!
@@ -20,9 +20,9 @@
 use glam::{EulerRot, Mat3, Quat, Vec3};
 
 use crate::controllers::{
-    body::{self, BodyDimensions},
     config::GripOffset,
     frame::{Hand, Pose},
+    hands::reach::ArmRemap,
 };
 
 /// One hand's poses in the cockpit frame, after the grip offset and the remap.
@@ -37,19 +37,18 @@ pub struct CockpitHand {
 }
 
 /// A hand's cockpit-frame poses: the wrist frame from the grip pose and the grip offset, and, with
-/// `remap` (the player's and the character's dimensions), all three poses shifted by the remap of
-/// the wrist, so the controller's rays leave the remapped hand.
+/// `remap`, all three poses shifted by the remap of the wrist, so the controller's rays leave the
+/// remapped hand.
 pub fn cockpit_hand(
     hand: Hand,
     grip: Pose,
     aim: Pose,
-    head: Pose,
     offset: &GripOffset,
-    remap: Option<(&BodyDimensions, &BodyDimensions)>,
+    remap: Option<ArmRemap>,
 ) -> CockpitHand {
     let wrist = mul(grip, grip_to_wrist(hand, offset));
-    let shift = remap.map_or(Vec3::ZERO, |(player, character)| {
-        remap_wrist(wrist.position, hand, head, player, character) - wrist.position
+    let shift = remap.map_or(Vec3::ZERO, |remap| {
+        remap.apply(wrist.position) - wrist.position
     });
     let shifted = |p: Pose| Pose {
         position: p.position + shift,
@@ -90,31 +89,6 @@ pub fn grip_to_wrist(hand: Hand, offset: &GripOffset) -> Pose {
         position,
         orientation: Quat::from_mat3(&rotation).normalize(),
     }
-}
-
-/// Remap a wrist position in the cockpit frame from the player's body onto the character's: the
-/// offset from the player's shoulder on that side, scaled by the arm-span ratio, placed at the
-/// character's shoulder. The shoulders are estimated from the head (the eye midpoint) and its yaw,
-/// for both bodies at the same eye point, because the view puts the character's eyes where the
-/// player's are.
-pub fn remap_wrist(
-    wrist: Vec3,
-    hand: Hand,
-    head: Pose,
-    player: &BodyDimensions,
-    character: &BodyDimensions,
-) -> Vec3 {
-    let torso = yaw_only(head.orientation);
-    let player_shoulder = body::shoulder_positions(head.position, torso, player)[hand.index()];
-    let character_shoulder =
-        body::shoulder_positions(head.position, torso, character)[hand.index()];
-    body::remap_hand_position(
-        wrist,
-        player_shoulder,
-        character_shoulder,
-        player,
-        character,
-    )
 }
 
 /// A cockpit-frame pose in the world, composed relative to the head: `head_world` is the head's
@@ -209,15 +183,6 @@ pub fn delta(now: Pose, reference: Pose) -> Pose {
 pub fn weighted_delta(now: Pose, reference: Pose, weight: f32) -> Pose {
     let weighted_now = interp(reference, now, weight.clamp(0.0, 1.0));
     delta(weighted_now, reference)
-}
-
-/// `rotation` with its pitch and roll removed, keeping the heading of its -Z axis.
-fn yaw_only(rotation: Quat) -> Quat {
-    let forward = rotation * Vec3::NEG_Z;
-    match Vec3::new(forward.x, 0.0, forward.z).try_normalize() {
-        Some(flat) => Quat::from_rotation_arc(Vec3::NEG_Z, flat),
-        None => Quat::IDENTITY,
-    }
 }
 
 /// The right wrist frame in the right grip frame, from the two OpenXR definitions for a hand
@@ -410,40 +375,6 @@ mod tests {
         let bone_offset = Quat::from_rotation_x(0.7);
         let bone = Quat::from_axis_angle(axis, angle) * (animated * bone_offset);
         assert!(same_rotation(bone, target * bone_offset));
-    }
-
-    #[test]
-    fn the_remap_is_the_identity_for_the_same_body() {
-        let head = Pose {
-            position: Vec3::new(0.1, 1.6, 0.2),
-            orientation: Quat::from_rotation_y(0.5),
-        };
-        let wrist = Vec3::new(0.4, 1.1, -0.3);
-        let dims = BodyDimensions::GENERIC_ADULT;
-        assert!(close(
-            remap_wrist(wrist, Hand::Right, head, &dims, &dims),
-            wrist
-        ));
-    }
-
-    #[test]
-    fn the_remap_extends_a_short_players_reach() {
-        let player = BodyDimensions {
-            arm_span: 1.5,
-            ..BodyDimensions::GENERIC_ADULT
-        };
-        let character = BodyDimensions::CHARACTER_ESTIMATE;
-        let head = Pose {
-            position: Vec3::new(0.0, player.eye_height, 0.0),
-            orientation: Quat::IDENTITY,
-        };
-        let shoulder = body::shoulder_positions(head.position, Quat::IDENTITY, &player)[1];
-        let wrist = shoulder + Vec3::NEG_Z * 0.5;
-        let remapped = remap_wrist(wrist, Hand::Right, head, &player, &character);
-        let character_shoulder =
-            body::shoulder_positions(head.position, Quat::IDENTITY, &character)[1];
-        let reach = (remapped - character_shoulder).length();
-        assert!((reach - 0.5 * character.arm_span / player.arm_span).abs() < EPS);
     }
 
     #[test]

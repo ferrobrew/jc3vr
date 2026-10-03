@@ -48,14 +48,17 @@ pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
         for dual_wield in [false, true] {
             for weapon_cycle in [false, true] {
                 for pointer_hand in [None, Some(Hand::Left), Some(Hand::Right)] {
-                    contexts.push((
-                        dominant,
-                        TableCtx {
-                            dual_wield,
-                            weapon_cycle,
-                            pointer_hand,
-                        },
-                    ));
+                    for trackpad_paging in [false, true] {
+                        contexts.push((
+                            dominant,
+                            TableCtx {
+                                dual_wield,
+                                weapon_cycle,
+                                pointer_hand,
+                                trackpad_paging,
+                            },
+                        ));
+                    }
                 }
             }
         }
@@ -73,6 +76,7 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
         dual_wield: ctx.dual_wield,
         weapon_cycle: ctx.weapon_cycle,
         pointer_hand: ctx.pointer_hand,
+        trackpad_paging: ctx.trackpad_paging,
         ..Default::default()
     };
     let everything = |stick: Vec2| {
@@ -87,6 +91,8 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
                 b: DOWN,
                 stick_click: DOWN,
                 system: ButtonControl::default(),
+                trackpad_left: DOWN,
+                trackpad_right: DOWN,
                 stick,
                 stick_raw: stick,
                 grab_volume: None,

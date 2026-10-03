@@ -29,10 +29,10 @@ The panel is the third egui-to-texture panel, after the HUD and the debug panel.
 It shows while any of these holds, and fades in and out over `fade_s`:
 
 - a glance: the panel is within `glance.view_cone_deg` of the head's forward and its face is within `glance.facing_deg` of the head, held for `glance.dwell_s`; both angles widen by `glance.hysteresis_deg` once it shows, and it lingers for `glance.linger_s` after the look ends;
-- the off-hand's trackpad is touched (Index controllers only);
+- the off-hand's trackpad is touched (Index controllers only) for a fifth of a second without a press; a press during the touch, which pages the menu tabs, cancels the pin until the thumb lifts, and the delay keeps a touch that is about to press from flashing the panel;
 - the mode changed within `show_on_mode_change_s`.
 
-The rows are grouped under a controller glyph: the off-hand, then the dominant hand, then the inputs of either hand. Each row shows the input's glyph, the gesture's prefix in grey, and the label; the row height shrinks to fit a long summary, down to a readable minimum.
+The rows are grouped under a controller glyph: the off-hand, then the dominant hand, then the inputs of either hand. A trackpad row that both hands share (the menu's tab paging on the Index, prefixed with the half pressed) is folded into one row of either hand, drawn with the single trackpad glyph. Each row shows the input's glyph, the gesture's prefix in grey, and the label; the row height shrinks to fit a long summary, down to a readable minimum.
 
 ## Assets
 

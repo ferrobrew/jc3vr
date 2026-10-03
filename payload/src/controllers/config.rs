@@ -16,17 +16,20 @@
 use serde::{Deserialize, Serialize};
 
 pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};
-use crate::controllers::{
-    bindings::yank::YankConfig,
-    fingers::config::FingersConfig,
-    frame::{Hand, PressThresholds},
-    hands::{anchor::AnchorConfig, tiers::HandTierTable},
-    summary::SummaryConfig,
-    vehicles::config::VehiclesConfig,
-    weapons::config::{
-        DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
-        MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
+use crate::{
+    controllers::{
+        bindings::yank::YankConfig,
+        fingers::config::FingersConfig,
+        frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
+        hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+        summary::SummaryConfig,
+        vehicles::config::VehiclesConfig,
+        weapons::config::{
+            DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
+            MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
+        },
     },
+    vr::input::layout::{FloatInput, Input, provides},
 };
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
@@ -132,10 +135,23 @@ pub struct InputConfig {
     /// [`Button::TriggerPress`](crate::controllers::frame::Button::TriggerPress).
     pub trigger_press: PressThresholds,
     /// The squeeze values that press and release
-    /// [`Button::SqueezePress`](crate::controllers::frame::Button::SqueezePress).
-    /// The grip is used only as an edge, so the press threshold sits high enough that resting a
-    /// hand on the grip does not press it.
+    /// [`Button::SqueezePress`](crate::controllers::frame::Button::SqueezePress) on a controller
+    /// without a force-sensing grip (Touch, or a profile the runtime emulates). The grip is used
+    /// only as an edge, so the press threshold sits high enough that resting a hand on the grip
+    /// does not press it.
     pub squeeze_press: PressThresholds,
+    /// The squeeze forces that press and release
+    /// [`Button::SqueezePress`](crate::controllers::frame::Button::SqueezePress) on a controller
+    /// whose profile provides the grip force (the Index). The Index grip's value is capacitive and
+    /// reads a full squeeze with the hand merely closed round the handle, so the press waits for a
+    /// deliberate squeeze, and the release sits low enough that a held grab does not need a hard
+    /// squeeze to keep.
+    pub squeeze_force_press: PressThresholds,
+    /// The trackpad forces that press and release
+    /// [`Button::TrackpadPressLeft`](crate::controllers::frame::Button::TrackpadPressLeft) and
+    /// [`Button::TrackpadPressRight`](crate::controllers::frame::Button::TrackpadPressRight), on
+    /// a controller with a trackpad. A resting thumb reads no force, so a light press is enough.
+    pub trackpad_press: PressThresholds,
     /// Thumbstick and trackpad magnitudes below this count as centred when deciding whether the
     /// controllers are in use (see [`crate::controllers::scheme`]).
     pub stick_deadzone: f32,
@@ -156,8 +172,35 @@ impl InputConfig {
                 press: 0.75,
                 release: 0.5,
             },
+            squeeze_force_press: PressThresholds {
+                press: 0.3,
+                release: 0.1,
+            },
+            trackpad_press: PressThresholds {
+                press: 0.4,
+                release: 0.2,
+            },
             stick_deadzone: 0.3,
             hand_tracking: true,
+        }
+    }
+
+    /// What derives `hand`'s grip press under `profile`: the squeeze force where the profile
+    /// provides it, and the squeeze value elsewhere.
+    pub fn grip_press(&self, profile: InteractionProfile, hand: Hand) -> GripPress {
+        if provides(profile, hand, Input::Float(FloatInput::SqueezeForce)) {
+            GripPress::Force(self.squeeze_force_press)
+        } else {
+            GripPress::Value(self.squeeze_press)
+        }
+    }
+
+    /// How `hand`'s derived presses are read under `profile`.
+    pub fn press_rules(&self, profile: InteractionProfile, hand: Hand) -> PressRules {
+        PressRules {
+            trigger: self.trigger_press,
+            grip: self.grip_press(profile, hand),
+            trackpad: self.trackpad_press,
         }
     }
 }
@@ -359,6 +402,9 @@ pub struct HandsConfig {
     pub tiers: HandTierTable,
     /// The anchored tier of the grapple states, and the hang movement it drives.
     pub anchor: AnchorConfig,
+    /// How the character's arm reaches for the controllers: the remap about his measured shoulders,
+    /// the pull near full extension, and the render-time detach.
+    pub reach: ReachConfig,
 }
 
 impl HandsConfig {
@@ -376,6 +422,7 @@ impl HandsConfig {
             return_blend_s: 0.35,
             tiers: HandTierTable::PLAN,
             anchor: AnchorConfig::new(),
+            reach: ReachConfig::new(),
         }
     }
 }

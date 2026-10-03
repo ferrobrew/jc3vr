@@ -207,6 +207,13 @@ pub(crate) unsafe fn effector_live_targeted(hik: &HumanIK, effector: i32) -> boo
     }
 }
 
+/// The shoulders the body IK queued a position target on this tick, indexed by [`Hand::index`].
+/// Valid at the pre-solve seam after [`capture_anchors_and_queue_body_ik`] has run for the local
+/// player.
+pub(crate) fn shoulders_driven() -> [bool; 2] {
+    *SHOULDERS_DRIVEN.lock()
+}
+
 /// Capture the headpose anchors (pre-IK) and queue the HumanIK head effector target for the local
 /// player. Every engine-pointer hop is null-guarded; any failure leaves the previous anchors and
 /// queues nothing. `controller_hands` (indexed by [`Hand::index`]) marks the wrists the controllers
@@ -219,6 +226,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let Some(character) = character.as_mut().filter(|c| c.m_IsLocalCharacter) else {
             return;
         };
+        *SHOULDERS_DRIVEN.lock() = [false; 2];
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
             return;
@@ -472,17 +480,26 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // shoulder nodes" apart from "there was nothing to do this frame" — the two look identical
         // from a count of targets queued, and the first masqueraded as the second for a while.
         let shoulder_bones = [
-            Effector::LEFT_SHOULDER as i32,
-            Effector::RIGHT_SHOULDER as i32,
+            (Hand::Left, Effector::LEFT_SHOULDER as i32),
+            (Hand::Right, Effector::RIGHT_SHOULDER as i32),
         ]
-        .map(|effector| (effector, bone_for_effector(&character.m_HIK, effector)));
-        let shoulders_mapped = shoulder_bones.iter().filter(|(_, b)| b.is_some()).count() as u8;
+        .map(|(hand, effector)| {
+            (
+                hand,
+                effector,
+                bone_for_effector(&character.m_HIK, effector),
+            )
+        });
+        let shoulders_mapped = shoulder_bones
+            .iter()
+            .filter(|(_, _, b)| b.is_some())
+            .count() as u8;
 
         let mut shoulders_driven = 0;
         if drive_torso {
             let shoulder_reach_t = (cfg.shoulder_reach_t * weight).clamp(0.0, 1.0);
             let shoulder_pull = (cfg.shoulder_pull * weight).clamp(0.0, 1.0);
-            for (shoulder_effector, index) in shoulder_bones {
+            for (hand, shoulder_effector, index) in shoulder_bones {
                 let Some(index) = index else {
                     continue;
                 };
@@ -507,6 +524,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                 );
                 character.m_HIK.m_TargetReachT[shoulder_effector as usize] = shoulder_reach_t;
                 character.m_HIK.m_TargetPull[shoulder_effector as usize] = shoulder_pull;
+                SHOULDERS_DRIVEN.lock()[hand.index()] = true;
                 shoulders_driven += 1;
             }
         }
@@ -774,3 +792,4 @@ fn throttle(at: &Mutex<Option<Instant>>, interval: Duration) -> bool {
 static BODY_IK_LOG_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static GATE_SKIP_LOGGED: AtomicBool = AtomicBool::new(false);
 static UNMAPPED_LOGGED: AtomicBool = AtomicBool::new(false);
+static SHOULDERS_DRIVEN: Mutex<[bool; 2]> = Mutex::new([false; 2]);

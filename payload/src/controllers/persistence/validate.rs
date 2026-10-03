@@ -4,6 +4,7 @@ use glam::{Vec2, Vec3};
 
 use crate::controllers::{
     config::SightTable,
+    frame::PressThresholds,
     persistence::{ControllerFile, Error, FILE_VERSION},
     vehicles::config::WheelSpec,
     weapons::config::{PulseSpec, VolumeSpec},
@@ -16,40 +17,10 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
     }
     let c = &file.controllers;
     let input = &c.input;
-    range(
-        "input.trigger_press.press",
-        input.trigger_press.press,
-        0.0,
-        1.0,
-    )?;
-    range(
-        "input.trigger_press.release",
-        input.trigger_press.release,
-        0.0,
-        1.0,
-    )?;
-    if input.trigger_press.release > input.trigger_press.press {
-        return Err(Error::Invalid(
-            "input.trigger_press.release exceeds press".into(),
-        ));
-    }
-    range(
-        "input.squeeze_press.press",
-        input.squeeze_press.press,
-        0.0,
-        1.0,
-    )?;
-    range(
-        "input.squeeze_press.release",
-        input.squeeze_press.release,
-        0.0,
-        1.0,
-    )?;
-    if input.squeeze_press.release > input.squeeze_press.press {
-        return Err(Error::Invalid(
-            "input.squeeze_press.release exceeds press".into(),
-        ));
-    }
+    press_thresholds("input.trigger_press", input.trigger_press)?;
+    press_thresholds("input.squeeze_press", input.squeeze_press)?;
+    press_thresholds("input.squeeze_force_press", input.squeeze_force_press)?;
+    press_thresholds("input.trackpad_press", input.trackpad_press)?;
     range("input.stick_deadzone", input.stick_deadzone, 0.0, 1.0)?;
 
     range("bindings.move_deadzone", c.bindings.move_deadzone, 0.0, 1.0)?;
@@ -116,6 +87,21 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         -100.0,
         100.0,
     )?;
+    let reach = &c.hands.reach;
+    nonnegative(
+        "hands.reach.shoulder_smoothing_s",
+        reach.shoulder_smoothing_s,
+        60.0,
+    )?;
+    nonnegative("hands.reach.pull_start", reach.pull_start, 10.0)?;
+    nonnegative("hands.reach.pull_full", reach.pull_full, 10.0)?;
+    range("hands.reach.pull_max", reach.pull_max, 0.0, 1.0)?;
+    nonnegative(
+        "hands.reach.detach_threshold_m",
+        reach.detach_threshold_m,
+        1.0,
+    )?;
+    nonnegative("hands.reach.detach_cap_m", reach.detach_cap_m, 1.0)?;
 
     range("aim.assist_strength", c.aim.assist_strength, 0.0, 1.0)?;
     nonnegative(
@@ -531,6 +517,15 @@ fn range(name: &str, value: f32, min: f32, max: f32) -> Result<(), Error> {
         return Err(Error::Invalid(format!(
             "{name} must be finite and in [{min}, {max}], got {value}"
         )));
+    }
+    Ok(())
+}
+
+fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Error> {
+    range(&format!("{name}.press"), thresholds.press, 0.0, 1.0)?;
+    range(&format!("{name}.release"), thresholds.release, 0.0, 1.0)?;
+    if thresholds.release > thresholds.press {
+        return Err(Error::Invalid(format!("{name}.release exceeds press")));
     }
     Ok(())
 }

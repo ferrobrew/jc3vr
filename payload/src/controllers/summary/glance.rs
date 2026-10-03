@@ -120,6 +120,44 @@ impl Glance {
     }
 }
 
+/// The trackpad touch's pin across frames. A touch held for [`TrackpadPin::DELAY_S`] pins the
+/// panel until the thumb lifts; a press during the touch (which pages the menu tabs) cancels the
+/// pin for the rest of that touch, and the delay keeps a touch that is about to press from
+/// flashing the panel first.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct TrackpadPin {
+    /// How long the current touch has held, seconds, or `None` without a touch.
+    touched_s: Option<f32>,
+    /// Whether the current touch has pressed.
+    pressed: bool,
+}
+
+impl TrackpadPin {
+    /// How long a touch holds before it pins, seconds.
+    pub const DELAY_S: f32 = 0.2;
+
+    pub const fn new() -> Self {
+        Self {
+            touched_s: None,
+            pressed: false,
+        }
+    }
+
+    /// Advance by `dt` seconds with the trackpad's touch and press as given, and return whether
+    /// the panel is pinned.
+    pub fn step(&mut self, touched: bool, pressed: bool, dt: f32) -> bool {
+        if !touched && !pressed {
+            *self = Self::new();
+            return false;
+        }
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        let held = self.touched_s.map_or(0.0, |s| s + dt);
+        self.touched_s = Some(held);
+        self.pressed |= pressed;
+        !self.pressed && held >= Self::DELAY_S
+    }
+}
+
 /// Move the panel's opacity toward fully shown or hidden over `fade_s` seconds.
 pub fn fade(alpha: f32, shown: bool, dt: f32, fade_s: f32) -> f32 {
     let target = if shown { 1.0 } else { 0.0 };
@@ -270,5 +308,27 @@ mod tests {
         assert_eq!(tr, Vec3::new(1.0, 2.0, 0.0));
         assert_eq!(bl, Vec3::new(-1.0, -2.0, 0.0));
         assert_eq!(br, Vec3::new(1.0, -2.0, 0.0));
+    }
+
+    #[test]
+    fn a_held_touch_pins_after_the_delay_until_lifted() {
+        let mut pin = TrackpadPin::new();
+        assert!(!pin.step(true, false, 0.0));
+        assert!(!pin.step(true, false, TrackpadPin::DELAY_S * 0.5));
+        assert!(pin.step(true, false, TrackpadPin::DELAY_S));
+        assert!(!pin.step(false, false, 0.01));
+        assert!(!pin.step(true, false, 0.01));
+    }
+
+    #[test]
+    fn a_press_cancels_the_pin_for_the_rest_of_the_touch() {
+        let mut pin = TrackpadPin::new();
+        assert!(!pin.step(true, false, 0.05));
+        assert!(!pin.step(true, true, 0.05));
+        assert!(!pin.step(true, false, 1.0));
+        assert!(!pin.step(false, false, 0.01));
+        // The next touch pins again.
+        pin.step(true, false, 0.0);
+        assert!(pin.step(true, false, TrackpadPin::DELAY_S));
     }
 }

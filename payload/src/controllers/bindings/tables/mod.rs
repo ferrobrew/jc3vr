@@ -6,7 +6,9 @@
 //! controller, which has A and B on both hands: the plan's left X and Y are the off-hand's A and B.
 //! The "right" and "left" of the plan are the dominant and the off hand, so a left-handed layout
 //! mirrors every gameplay binding. The menu bindings stay on the physical hands, so that the
-//! previous and next tabs and pages keep their sides.
+//! previous and next tabs and pages keep their sides. Where a controller has a trackpad, the tabs
+//! page with a press on either trackpad's left or right half rather than with the grips
+//! ([`Controls::trackpad_paging`]).
 //!
 //! Where a controller input stands for a gamepad button, it injects every gameplay action the
 //! game's default gamepad keymap puts on that button, and the game's own context picks the one that

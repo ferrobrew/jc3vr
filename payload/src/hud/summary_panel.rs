@@ -27,13 +27,13 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use crate::{
     config::Config,
     controllers::{
-        frame::{self, InteractionProfile, Pose},
+        frame::{self, Button, InteractionProfile, Pose},
         hands::late,
         scheme,
         summary::{
             self, SummaryConfig,
             content::{Side, Summary, metrics},
-            glance::{Glance, fade, looking, wrist_pose},
+            glance::{Glance, TrackpadPin, fade, looking, wrist_pose},
             glyphs::{Glyph, glyphs},
         },
     },
@@ -79,6 +79,7 @@ static PANEL: Mutex<Panel> = Mutex::new(Panel::new());
 
 struct Panel {
     glance: Glance,
+    trackpad_pin: TrackpadPin,
     alpha: f32,
     last_prepare: Option<Instant>,
     corners: Option<[Vec4; 4]>,
@@ -91,6 +92,7 @@ impl Panel {
     const fn new() -> Self {
         Self {
             glance: Glance::new(),
+            trackpad_pin: TrackpadPin::new(),
             alpha: 0.0,
             last_prepare: None,
             corners: None,
@@ -136,13 +138,19 @@ impl Panel {
             _ => false,
         };
         let glance = self.glance.step(looked, dt, &config.glance);
-        let pinned = active
-            && config.show_on_trackpad_touch
-            && frame::with_latest(|f| {
+        let (touched, pressed) = if active && config.show_on_trackpad_touch {
+            frame::with_latest(|f| {
                 let hand = f.hand(off);
-                hand.profile == InteractionProfile::ValveIndex && hand.inputs.trackpad_touch
+                let index = hand.profile == InteractionProfile::ValveIndex;
+                let pressed = hand.buttons.contains(Button::TrackpadPressLeft)
+                    || hand.buttons.contains(Button::TrackpadPressRight);
+                (index && hand.inputs.trackpad_touch, index && pressed)
             })
-            .unwrap_or(false);
+            .unwrap_or_default()
+        } else {
+            (false, false)
+        };
+        let pinned = self.trackpad_pin.step(touched, pressed, dt);
         let mode_recent = active
             && published.as_ref().is_some_and(|p| {
                 summary::mode_changed_within(

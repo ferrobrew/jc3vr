@@ -4,6 +4,9 @@
 //!
 //! - [`pose`]: the pure composition from a controller's grip pose to the character's wrist frame,
 //!   through the grip offset, the body-scale remap, and the head's world transform;
+//! - [`reach`]: the pure arm-reach logic: the remap about the character's measured shoulder, the
+//!   pull ramp near full extension, and the capped detach of the rendered hand;
+//! - [`rig`]: the character's arms measured from his animated skeleton at the pre-solve seam;
 //! - [`tiers`]: the per-state tier table and the per-hand blend between controller and animation;
 //! - [`anchor`]: the anchored tier of the grapple states: the grapple hand holding the line, and
 //!   the hang it swings;
@@ -25,6 +28,7 @@ use crate::{
         body::{self, BodyDimensions},
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
+        hands::reach::ArmRemap,
         scheme, vehicles,
         weapons::{foregrip, recoil},
     },
@@ -36,6 +40,8 @@ pub mod ik;
 pub mod late;
 pub mod palette;
 pub mod pose;
+pub mod reach;
+pub mod rig;
 pub mod secondary;
 pub mod tiers;
 
@@ -86,12 +92,12 @@ pub fn active_hands_raw() -> Option<ActiveHands> {
         position: cockpit.position,
         orientation: cockpit.orientation,
     };
-    let player = config.body.remap_hands.then(body::player);
+    let remaps = arm_remaps(&config, head, world_scale);
     let hands = frame::with_latest(|frame| {
         Hand::BOTH.map(|hand| {
             frame
                 .focused
-                .then(|| cockpit_hand(frame, hand, head, &config.hands, player.as_ref()))
+                .then(|| cockpit_hand(frame, hand, &config.hands, remaps[hand.index()]))
                 .flatten()
         })
     })?;
@@ -125,12 +131,35 @@ pub(crate) fn ik_owned() -> [bool; 2] {
     .unwrap_or([false; 2])
 }
 
+/// Each hand's remap: about the character's measured shoulder when that is on and the arm is
+/// measured, else about the estimated shoulders when `body.remap_hands` is on, else none.
+fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Option<ArmRemap>; 2] {
+    let measured = config
+        .hands
+        .reach
+        .measured_remap
+        .then(rig::arms)
+        .unwrap_or([None; 2]);
+    if measured.iter().all(Option::is_none) && !config.body.remap_hands {
+        return [None; 2];
+    }
+    let player = body::player();
+    Hand::BOTH.map(|hand| {
+        measured[hand.index()]
+            .and_then(|arm| ArmRemap::measured(hand, head, &player, &arm, world_scale))
+            .or_else(|| {
+                config.body.remap_hands.then(|| {
+                    ArmRemap::estimated(hand, head, &player, &BodyDimensions::CHARACTER_ESTIMATE)
+                })
+            })
+    })
+}
+
 fn cockpit_hand(
     frame: &ControllerFrame,
     hand: Hand,
-    head: Pose,
     config: &HandsConfig,
-    player: Option<&BodyDimensions>,
+    remap: Option<ArmRemap>,
 ) -> Option<CockpitHand> {
     let h = frame.hand(hand);
     if !h.active || !h.grip.is_valid() {
@@ -143,12 +172,10 @@ fn cockpit_hand(
     } else {
         h.grip.pose
     };
-    let remap = player.map(|p| (p, &BodyDimensions::CHARACTER_ESTIMATE));
     Some(pose::cockpit_hand(
         hand,
         h.grip.pose,
         aim,
-        head,
         &config.grip,
         remap,
     ))

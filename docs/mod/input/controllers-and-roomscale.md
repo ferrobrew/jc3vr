@@ -268,7 +268,7 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 
 #### UI
 
-While a game menu is open, the `ui` action set replaces the gameplay bindings, matching the game's own `END_UI_MAPPINGS` boundary. The first version maps the game's UI actions like the gamepad, on the physical hands: the two sticks are the menu's left and right sticks, the right A confirms (`GUI_OK`), the right B cancels (`GUI_CANCEL`), the left A and B are the special and use buttons, the grips change tabs, the triggers change pages, and the stick clicks focus and recenter. A laser pointer on the floating panel is deferred with the rest of the mod UI. `payload/src/hud/pointer.rs` already isolates the pointer source for it.
+While a game menu is open, the `ui` action set replaces the gameplay bindings, matching the game's own `END_UI_MAPPINGS` boundary. The first version maps the game's UI actions like the gamepad, on the physical hands: the two sticks are the menu's left and right sticks, the right A confirms (`GUI_OK`), the right B cancels (`GUI_CANCEL`), the left A and B are the special and use buttons, the grips change tabs (on the Index, a press on either trackpad's left or right half, since its grips are capacitive), the triggers change pages, and the stick clicks focus and recenter. A laser pointer on the floating panel is deferred with the rest of the mod UI. `payload/src/hud/pointer.rs` already isolates the pointer source for it.
 
 ## Aiming
 

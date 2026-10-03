@@ -13,6 +13,10 @@
 //! - both are queued at `UPPER_BODY` so the combined pass step does not depend on the order in
 //!   which targets were queued, without interpolation or blend-out because they are re-queued every
 //!   tick, and with the reaches scaled by the hand's tier weight;
+//! - the position target's pull ramps up as the target nears the full length of the character's
+//!   measured arm ([`reach::pull_ramp`]), so reach propagates into the shoulder and chest only when
+//!   the arm alone cannot get there, and the body IK's pin on that shoulder yields by the same ramp
+//!   so it does not hold the girdle back;
 //! - the `SECONDARY` pass is switched off for the hand ([`crate::controllers::hands::secondary`]).
 //!
 //! The wielded weapon rides the hand's attach bone, a child of the wrist, and the engine refreshes
@@ -20,7 +24,10 @@
 //! the IK-driven wrist within the same tick without a joint override.
 //!
 //! Each tick's world-space targets are recorded ([`tick_records`]) for the render-time late update,
-//! which corrects the rendered hands and weapon by the controllers' motion since.
+//! which corrects the rendered hands and weapon by the controllers' motion since. Before anything is
+//! queued, the character's arms are measured from the pre-solve pose ([`rig::measure`]); after the
+//! solve, each driven hand's shortfall (the target less the solved wrist) is published with the
+//! solved joints for the late update's detach.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -37,10 +44,12 @@ use jc3gi::{
 use parking_lot::Mutex;
 
 use crate::{
+    config::Config,
     controllers::{
         frame::{Hand, Pose},
         hands::{
-            self, ActiveHands, late, pose as hand_pose,
+            self, ActiveHands, late, pose as hand_pose, reach,
+            rig::{self, TickArm},
             secondary::{self, SecondaryParts},
             tiers,
         },
@@ -98,6 +107,13 @@ pub struct HandIkStatus {
     pub reach_distance: f32,
     /// The angle of the queued rotation target, degrees.
     pub rotation_deg: f32,
+    /// The target's distance from the character's pre-solve shoulder joint, as a fraction of his
+    /// measured arm length; `None` before the arm is measured.
+    pub extension: Option<f32>,
+    /// The pull the position target was queued with, after the tier weight.
+    pub pull: f32,
+    /// How far the body IK's shoulder pin on this side was released for the reach, `0..=1`.
+    pub shoulder_yield: f32,
     /// Whether the `SECONDARY` pass's wrist target was switched off this tick.
     pub secondary_wrist_off: bool,
     /// Whether the weapon off-hand grip was switched off this tick.
@@ -178,22 +194,34 @@ pub(crate) unsafe fn queue(character: *mut Character, plan: &HandPlan) {
     };
     LOCAL_CHARACTER.store(character as *mut Character as usize, Ordering::Relaxed);
 
+    let smoothing = Config::lock_query(|c| c.controllers.hands.reach.shoulder_smoothing_s);
+    let arms = match unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() } {
+        Some(controller) => unsafe { rig::measure(character, controller, smoothing) },
+        None => [None; 2],
+    };
+    let shoulders_pinned = body_ik::shoulders_driven();
+
     let mut status = [HandIkStatus::default(); 2];
     let mut targets = [None; 2];
     for hand in Hand::BOTH {
         status[hand.index()] = match (&plan.active, plan.drives(hand)) {
             (Some(active), true) => {
-                unsafe { queue_hand(character, active, hand, plan.weights[hand.index()]) }
-                    .map_or_else(
-                        |skip| HandIkStatus {
-                            skip: Some(skip),
-                            ..HandIkStatus::default()
-                        },
-                        |(status, target)| {
-                            targets[hand.index()] = Some(target);
-                            status
-                        },
-                    )
+                let request = HandRequest {
+                    hand,
+                    weight: plan.weights[hand.index()],
+                    arm: arms[hand.index()],
+                    shoulder_pinned: shoulders_pinned[hand.index()],
+                };
+                unsafe { queue_hand(character, active, request) }.map_or_else(
+                    |skip| HandIkStatus {
+                        skip: Some(skip),
+                        ..HandIkStatus::default()
+                    },
+                    |(status, target)| {
+                        targets[hand.index()] = Some(target);
+                        status
+                    },
+                )
             }
             _ => HandIkStatus {
                 skip: Some(HandIkSkip::NotDriven),
@@ -240,14 +268,33 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         return;
     };
     let bones = Hand::BOTH.map(|hand| unsafe { late::HandBones::resolve(controller, hand) });
+    let to_world = Mat4::from(character.m_WorldMatrixT1);
+    let targets = TICKS.lock().current;
     let joints = Hand::BOTH.map(|hand| {
         let b = &bones[hand.index()];
-        (b.elbow() != 0 && b.wrist() != 0).then(|| late::ArmJoints {
-            elbow: unsafe { joint(controller, b.elbow() as u32) }.0,
-            wrist: unsafe { joint(controller, b.wrist() as u32) }.0,
+        (b.elbow() != 0 && b.wrist() != 0).then(|| {
+            let wrist = unsafe { joint(controller, b.wrist() as u32) }.0;
+            late::ArmJoints {
+                elbow: unsafe { joint(controller, b.elbow() as u32) }.0,
+                wrist,
+                miss: targets[hand.index()]
+                    .map(|t| t.wrist.position - to_world.transform_point3(wrist))
+                    .filter(|m| m.is_finite()),
+            }
         })
     });
     late::publish_solved(bones, joints);
+}
+
+/// What one hand's targets are queued from, besides the active hands.
+struct HandRequest {
+    hand: Hand,
+    /// The tier weight.
+    weight: f32,
+    /// The character's arm on this side as read this tick, if measured.
+    arm: Option<TickArm>,
+    /// Whether the body IK queued a position target on this side's shoulder this tick.
+    shoulder_pinned: bool,
 }
 
 /// Queue one hand's targets. Returns the status and the recorded world target, or why nothing was
@@ -255,9 +302,14 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
 unsafe fn queue_hand(
     character: &mut Character,
     active: &ActiveHands,
-    hand: Hand,
-    weight: f32,
+    request: HandRequest,
 ) -> Result<(HandIkStatus, TickTarget), HandIkSkip> {
+    let HandRequest {
+        hand,
+        weight,
+        arm,
+        shoulder_pinned,
+    } = request;
     let cockpit = active.hands[hand.index()].ok_or(HandIkSkip::NotDriven)?;
     // The same gates the engine checks before the solve: a target queued with no solve is never
     // consumed or cleared.
@@ -326,6 +378,14 @@ unsafe fn queue_hand(
     }
 
     let cfg = &active.config.hands;
+    let reach_cfg = &cfg.reach;
+    let extension = arm
+        .filter(|a| a.length > 0.0)
+        .map(|a| target_position.distance(a.shoulder_model) / a.length);
+    let ramp = extension.filter(|_| reach_cfg.reach_pull).map_or(0.0, |e| {
+        reach::pull_ramp(e, reach_cfg.pull_start, reach_cfg.pull_full)
+    });
+    let pull = (cfg.pull.max(ramp * reach_cfg.pull_max) * weight).clamp(0.0, 1.0);
     let hik = &mut character.m_HIK;
     let slot = effector as usize;
     let position = Vector3 {
@@ -344,7 +404,22 @@ unsafe fn queue_hand(
         );
     }
     hik.m_TargetReachT[slot] = (cfg.reach_t * weight).clamp(0.0, 1.0);
-    hik.m_TargetPull[slot] = (cfg.pull * weight).clamp(0.0, 1.0);
+    hik.m_TargetPull[slot] = pull;
+
+    // The body IK's shoulder target holds the girdle where the lean put it, which would cancel the
+    // pull; it yields by the same ramp. Its reach was written this tick, so scaling it is safe.
+    let shoulder_yield = if shoulder_pinned {
+        (ramp * weight).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if shoulder_yield > 0.0 {
+        let shoulder = match hand {
+            Hand::Left => Effector::LEFT_SHOULDER,
+            Hand::Right => Effector::RIGHT_SHOULDER,
+        } as usize;
+        hik.m_TargetReachT[shoulder] *= 1.0 - shoulder_yield;
+    }
 
     let (axis, angle) = hand_pose::wrist_rotation_delta(target_rotation, animated_frame);
     let axis = if axis.is_finite() { axis } else { Vec3::Y };
@@ -376,6 +451,9 @@ unsafe fn queue_hand(
             weight,
             reach_distance: target_position.distance(wrist_position),
             rotation_deg: angle.to_degrees(),
+            extension,
+            pull,
+            shoulder_yield,
             overrode_live_target,
             ..HandIkStatus::default()
         },
@@ -423,6 +501,9 @@ static STATUS: Mutex<[HandIkStatus; 2]> = Mutex::new(
         weight: 0.0,
         reach_distance: 0.0,
         rotation_deg: 0.0,
+        extension: None,
+        pull: 0.0,
+        shoulder_yield: 0.0,
         secondary_wrist_off: false,
         secondary_grip_off: false,
         overrode_live_target: false,

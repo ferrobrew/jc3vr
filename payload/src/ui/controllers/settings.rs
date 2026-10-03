@@ -6,8 +6,8 @@ use crate::{
     config,
     controllers::{
         bindings::{self, Blocker, HandRecovery},
-        config::{LocomotionDirection, SchemeSetting},
-        frame::Hand,
+        config::{InputConfig, LocomotionDirection, SchemeSetting},
+        frame::{self, Button, GripPress, Hand},
     },
     headpose::config::VrTurnMode,
     ui::controllers::{aim, fingers, hands, overlay, roomscale, scope, summary, vehicles, weapons},
@@ -54,11 +54,33 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         );
         ui.add(
             egui::Slider::new(&mut c.input.squeeze_press.press, 0.05..=1.0).text("Squeeze press"),
-        );
+        )
+        .on_hover_text("The grip press on a controller without grip force (Touch).");
         ui.add(
             egui::Slider::new(&mut c.input.squeeze_press.release, 0.0..=1.0)
                 .text("Squeeze release"),
         );
+        ui.add(
+            egui::Slider::new(&mut c.input.squeeze_force_press.press, 0.05..=1.0)
+                .text("Grip force press"),
+        )
+        .on_hover_text(
+            "The grip press on a controller with grip force (Index), whose capacitive squeeze \
+             value is full whenever the hand rests round the handle.",
+        );
+        ui.add(
+            egui::Slider::new(&mut c.input.squeeze_force_press.release, 0.0..=1.0)
+                .text("Grip force release"),
+        );
+        ui.add(
+            egui::Slider::new(&mut c.input.trackpad_press.press, 0.05..=1.0).text("Trackpad press"),
+        )
+        .on_hover_text("The trackpad force that presses a half, which pages the menu tabs.");
+        ui.add(
+            egui::Slider::new(&mut c.input.trackpad_press.release, 0.0..=1.0)
+                .text("Trackpad release"),
+        );
+        grip_readout(ui, &c.input);
         ui.add(egui::Slider::new(&mut c.input.stick_deadzone, 0.0..=0.9).text("Stick deadzone"));
         ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
             .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
@@ -182,6 +204,42 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Vehicles and flight")
         .show(ui, |ui| vehicles::vehicles_settings(ui, &mut c.vehicles));
+}
+
+/// Each hand's grip and trackpad readings beside their thresholds, for tuning them.
+fn grip_readout(ui: &mut Ui, input: &InputConfig) {
+    let Some(hands) =
+        frame::with_latest(|f| f.hands.each_ref().map(|h| (h.profile, h.inputs, h.buttons)))
+    else {
+        ui.label("Grip: no controller frame.");
+        return;
+    };
+    for hand in Hand::BOTH {
+        let (profile, inputs, buttons) = hands[hand.index()];
+        let source = match input.grip_press(profile, hand) {
+            GripPress::Force(_) => "force",
+            GripPress::Value(_) => "value",
+        };
+        let pad = if buttons.contains(Button::TrackpadPressLeft) {
+            "pressed left"
+        } else if buttons.contains(Button::TrackpadPressRight) {
+            "pressed right"
+        } else {
+            "up"
+        };
+        ui.label(format!(
+            "Grip {}: value {:.2} · force {:.2} · press by {source} · {} · pad force {:.2} {pad}",
+            hand.label(),
+            inputs.squeeze,
+            inputs.squeeze_force,
+            if buttons.contains(Button::SqueezePress) {
+                "pressed"
+            } else {
+                "up"
+            },
+            inputs.trackpad_force,
+        ));
+    }
 }
 
 fn recovery_label(recovery: HandRecovery) -> String {

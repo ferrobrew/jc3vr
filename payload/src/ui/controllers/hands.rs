@@ -4,11 +4,14 @@ use egui::Ui;
 
 use crate::{
     controllers::{
+        body,
         config::{GripOffset, HandsConfig},
         frame::Hand,
         hands::{
             ik::HandIkStatus,
-            late::LateStatus,
+            late::{HandLateStatus, LateStatus},
+            reach::{self, ReachConfig},
+            rig,
             tiers::{HandTier, HandTierTable, TierState, TierStatus},
         },
     },
@@ -24,6 +27,12 @@ pub(super) fn hands_readout(
     ui.label(format!(
         "State: {}",
         tiers.state.map_or("none yet", TierState::label)
+    ));
+    let arms = rig::status();
+    let player_arm = reach::player_arm_length(&body::player());
+    ui.label(format!(
+        "Player arm (shoulder to wrist, from the body file): {:.0} mm",
+        player_arm * 1000.0
     ));
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
@@ -62,12 +71,105 @@ pub(super) fn hands_readout(
                 }
                 None => "late update: none".to_owned(),
             });
+            arm_readout(ui, &arms[i], s, &late.hands[i], player_arm);
         }
     });
     ui.label(format!(
         "Late-updated gun matrices {} · palette uploads edited {}",
         late.weapons_updated, late.palettes_edited
     ));
+}
+
+/// One arm's measurement, remap, pull, and detach readouts.
+fn arm_readout(
+    ui: &mut Ui,
+    arm: &rig::ArmStatus,
+    ik: &HandIkStatus,
+    late: &HandLateStatus,
+    player_arm: f32,
+) {
+    match arm.arm {
+        Some(a) => {
+            ui.label(format!(
+                "Rico's arm: upper {:.0} · forearm {:.0} · total {:.0} mm (ratio {:.3})",
+                a.upper_arm * 1000.0,
+                a.forearm * 1000.0,
+                a.length() * 1000.0,
+                a.length() / player_arm
+            ));
+            let e = a.eye_to_shoulder * 1000.0;
+            ui.label(format!(
+                "eyes → shoulder: right {:.0} · up {:.0} · back {:.0} mm",
+                e.x, e.y, e.z
+            ));
+        }
+        None => {
+            ui.label(if arm.resolved {
+                "Rico's arm: no plausible sample yet"
+            } else {
+                "Rico's arm: joints unresolved"
+            });
+        }
+    }
+    ui.label(format!(
+        "samples {} · dropped {}",
+        arm.samples, arm.rejected
+    ));
+    if ik.queued {
+        ui.label(format!(
+            "extension {} · pull {:.2} · shoulder pin released {:.0}%",
+            ik.extension
+                .map_or("unmeasured".to_owned(), |e| format!("{:.0}%", e * 100.0)),
+            ik.pull,
+            ik.shoulder_yield * 100.0
+        ));
+    }
+    ui.label(format!(
+        "solve miss {} · detach {}",
+        mm(late.solve_miss_m),
+        mm(late.detach_m)
+    ));
+}
+
+fn mm(metres: Option<f32>) -> String {
+    metres.map_or("none".to_owned(), |m| format!("{:.0} mm", m * 1000.0))
+}
+
+fn reach_settings(ui: &mut Ui, r: &mut ReachConfig) {
+    ui.checkbox(
+        &mut r.measured_remap,
+        "Remap about Rico's measured shoulders",
+    )
+    .on_hover_text(
+        "Scale the hands' offsets from your shoulders by Rico's measured arm length over yours, \
+             about his animated shoulder joints. Off, the estimated remap applies when \
+             \"Remap hand reach\" is on.",
+    );
+    ui.add(
+        egui::Slider::new(&mut r.shoulder_smoothing_s, 0.0..=1.0).text("Shoulder smoothing (s)"),
+    );
+    ui.checkbox(&mut r.reach_pull, "Pull the torso near full extension")
+        .on_hover_text("Ramp the wrist pull up so Rico's shoulder and chest follow a reach.");
+    ui.add_enabled_ui(r.reach_pull, |ui| {
+        ui.add(egui::Slider::new(&mut r.pull_start, 0.5..=1.2).text("Pull starts at (× arm)"));
+        ui.add(egui::Slider::new(&mut r.pull_full, 0.5..=1.5).text("Full pull at (× arm)"));
+        ui.add(egui::Slider::new(&mut r.pull_max, 0.0..=1.0).text("Pull at full extension"));
+    });
+    ui.checkbox(&mut r.detach, "Detach the rendered hand from a short arm")
+        .on_hover_text(
+            "Move the rendered hand off the end of an arm that cannot reach, toward the \
+             controller, up to the cap. Needs the render-time late update.",
+        );
+    ui.add_enabled_ui(r.detach, |ui| {
+        ui.add(
+            egui::Slider::new(&mut r.detach_threshold_m, 0.0..=0.05).text("Detach threshold (m)"),
+        );
+        ui.add(egui::Slider::new(&mut r.detach_cap_m, 0.0..=0.3).text("Detach cap (m)"));
+        ui.checkbox(&mut r.stretch_forearm, "Stretch the forearm to the hand");
+    });
+    if ui.button("Reset reach").clicked() {
+        *r = ReachConfig::new();
+    }
 }
 
 pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
@@ -97,6 +199,7 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
     if ui.button("Reset grip offset").clicked() {
         h.grip = GripOffset::INDEX_BEST_GUESS;
     }
+    egui::CollapsingHeader::new("Arm reach").show(ui, |ui| reach_settings(ui, &mut h.reach));
     egui::CollapsingHeader::new("Hand tiers").show(ui, |ui| {
         for state in TierState::ALL {
             let tier = h.tiers.tier_mut(state);

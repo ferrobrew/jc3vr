@@ -212,3 +212,65 @@ fn rows_sharing_an_input_merge_without_repeating_actions() {
         ])
     );
 }
+
+#[test]
+fn menu_tabs_page_on_the_grips_or_on_either_trackpads_halves() {
+    for dominant in Hand::BOTH {
+        let rows = describe(&ctx(Mode::Ui, dominant, TableCtx::default()));
+        assert_eq!(
+            actions_of(&rows, Control::Grip(Hand::Left), Gesture::Press),
+            vec![GUI_TAB_PREV]
+        );
+        assert_eq!(
+            actions_of(&rows, Control::Grip(Hand::Right), Gesture::Press),
+            vec![GUI_TAB_NEXT]
+        );
+        assert!(rows.iter().all(|r| r.control != Control::EitherTrackpad));
+
+        let table = TableCtx {
+            trackpad_paging: true,
+            ..TableCtx::default()
+        };
+        let rows = describe(&ctx(Mode::Ui, dominant, table));
+        assert_eq!(
+            actions_of(&rows, Control::EitherTrackpad, Gesture::PressLeftHalf),
+            vec![GUI_TAB_PREV]
+        );
+        assert_eq!(
+            actions_of(&rows, Control::EitherTrackpad, Gesture::PressRightHalf),
+            vec![GUI_TAB_NEXT]
+        );
+        for hand in Hand::BOTH {
+            assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
+            assert!(rows.iter().all(|r| r.control != Control::Trackpad(hand)));
+        }
+    }
+}
+
+#[test]
+fn the_trackpad_touch_row_stays_on_the_off_hand_beside_the_paging() {
+    let table = TableCtx {
+        trackpad_paging: true,
+        ..TableCtx::default()
+    };
+    let features = Features {
+        trackpad_shows_summary: true,
+        ..Features::default()
+    };
+    let rows = describe(&DescribeCtx {
+        mode: Mode::Ui,
+        dominant: Hand::Right,
+        table,
+        features,
+    });
+    assert!(
+        rows.iter()
+            .any(|r| r.control == Control::Trackpad(Hand::Left)
+                && r.gesture == Gesture::Touch
+                && r.effect == Effect::Mod(ModAction::ShowSummary))
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.control == Control::EitherTrackpad && r.gesture == Gesture::PressLeftHalf)
+    );
+}

@@ -104,6 +104,8 @@ The mapping (`GetEffectorIdMapping`, node to effector) fixes the ids, bound as t
 | `HEAD` | Head |
 | `LEFT_HIP` / `RIGHT_HIP` | Left / Right hip |
 
+Each effector's bone is the one named after its HumanIK node, and HumanIK names its nodes in MotionBuilder's convention (`HIKNodeNameFromNodeId` reads a fixed name table): the shoulder node is the upper-arm joint, so `LEFT_SHOULDER` drives the bone named `LeftArm`, `LEFT_ELBOW` drives `LeftForeArm`, and `LEFT_WRIST` drives `LeftHand`, and likewise on the right. The rig's `LeftShoulder` bone is the collar, HumanIK's separate collar node, which has no effector. The shoulder, elbow, and wrist effectors therefore span exactly the arm chain from the glenohumeral joint to the wrist.
+
 The head effector is therefore [`Effector::HEAD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-HEAD), provided the characterization uses a head node, which the humanoid rig does. The per-effector control arrays (`m_TargetReachT` and the others) are indexed by this effector id.
 
 ## Parameter and coordinate-space recipe

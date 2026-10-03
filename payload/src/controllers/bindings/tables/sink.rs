@@ -53,6 +53,10 @@ pub enum Input {
     A,
     B,
     StickClick,
+    /// The trackpad pressed on its left half.
+    TrackpadLeft,
+    /// The trackpad pressed on its right half.
+    TrackpadRight,
     /// The yank gesture fired this tick (a one-tick press, which the game reads as a tap).
     Yank,
 }
@@ -172,6 +176,8 @@ impl<'a> EvalSink<'a> {
             Input::A => Some(hand.a),
             Input::B => Some(hand.b),
             Input::StickClick => Some(hand.stick_click),
+            Input::TrackpadLeft => Some(hand.trackpad_left),
+            Input::TrackpadRight => Some(hand.trackpad_right),
             Input::Yank => None,
         }
     }

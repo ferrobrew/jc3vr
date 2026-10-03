@@ -199,11 +199,11 @@ impl InputState {
             b_touch,
             system_click,
         };
+        let profile = self.profiles[hand.index()];
         let buttons = derive_buttons(
             &inputs,
             self.previous_buttons[hand.index()],
-            cfg.input.trigger_press,
-            cfg.input.squeeze_press,
+            &cfg.input.press_rules(profile, hand),
         );
 
         let locate = |space: &xr::Space| -> anyhow::Result<TrackedPose> {
@@ -242,7 +242,7 @@ impl InputState {
 
         let frame = HandFrame {
             active,
-            profile: self.profiles[hand.index()],
+            profile,
             grip,
             aim,
             inputs,

@@ -16,6 +16,13 @@
 //! the correction is weighted, and the weighted pose is derived by interpolating `reference` toward
 //! `now` before computing `D`. The grip offset is on both sides, so it cancels.
 //!
+//! The rendered hand sits on the *solved* wrist, which falls short of the tick's target when the
+//! arm cannot reach it. With the detach on, `reference` is taken from the solved wrist instead: the
+//! target moved back along the shortfall by the part of it the detach covers
+//! ([`reach::detach_offset`]: past a small threshold, up to a cap), so `D` carries the rendered hand
+//! that far off the end of the arm toward the controller, and the forearm stretches along its axis
+//! to stay attached ([`palette::forearm_reach`]). Past the cap, the hand stays at the cap.
+//!
 //! Both render seams apply the same `D`, so the gun and the hand never separate:
 //!
 //! - the post-call `CWeaponBase::UpdateRender` detour re-pushes the gun's model matrix as `D` times
@@ -50,6 +57,7 @@ use crate::{
             self, ActiveHands, ik,
             palette::{self, PaletteLayout},
             pose as hand_pose,
+            reach::{self, ReachConfig},
         },
     },
     headpose,
@@ -144,6 +152,10 @@ pub struct HandLateStatus {
     /// The late render seam has no model instance matrix, so this is deliberately not presented as a
     /// world-space position.
     pub achieved_wrist_position_model: Option<Vec3>,
+    /// The interpolated shortfall of the solved wrist from its target, metres.
+    pub solve_miss_m: Option<f32>,
+    /// How far the rendered hand is detached from the solved wrist toward the target, metres.
+    pub detach_m: Option<f32>,
 }
 
 /// The late update's per-hand readout and cumulative counters.
@@ -200,6 +212,7 @@ pub(crate) fn begin_frame() {
         ticks: ik::tick_records(),
         solved,
         enabled: active.config.hands.late_update,
+        reach: active.config.hands.reach,
     });
 }
 
@@ -248,11 +261,15 @@ impl HandBones {
     }
 }
 
-/// The post-solve model-space elbow and wrist of one arm.
+/// The post-solve model-space elbow and wrist of one arm, and the solved wrist's shortfall from the
+/// tick's target.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmJoints {
     pub elbow: Vec3,
     pub wrist: Vec3,
+    /// The tick's world-space wrist target less the solved wrist in the world; `None` when the
+    /// hand had no target this tick.
+    pub miss: Option<Vec3>,
 }
 
 /// Publish a tick's resolved bones and post-solve arm joints; the previous tick's joints shift
@@ -319,9 +336,10 @@ pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
         let previous = frame.solved.previous[hand.index()].unwrap_or(joints);
         let elbow = previous.elbow.lerp(joints.elbow, dtf);
         let wrist = previous.wrist.lerp(joints.wrist, dtf);
+        let stretch = frame.reach.detach && frame.reach.stretch_forearm;
         Some(HandPaletteEdit {
             hand: d_model,
-            forearm: palette::forearm_swing(elbow, wrist, d_model.transform_point3(wrist)),
+            forearm: palette::forearm_reach(elbow, wrist, d_model.transform_point3(wrist), stretch),
         })
     });
     hands.iter().any(Option::is_some).then_some(PaletteEdit {
@@ -349,6 +367,8 @@ struct LateFrame {
     solved: Solved,
     /// The late update's toggle; the render hands are published for the overlay either way.
     enabled: bool,
+    /// The detach's settings.
+    reach: ReachConfig,
 }
 
 impl LateFrame {
@@ -359,9 +379,42 @@ impl LateFrame {
         (status.reason == LateReason::Applied).then(|| {
             let now = self.hands[hand.index()].unwrap().wrist.at(dtf);
             let current = self.ticks.current[hand.index()].unwrap();
-            let previous = self.ticks.previous[hand.index()].unwrap_or(current);
-            let reference = hand_pose::interp(previous.wrist, current.wrist, dtf);
-            correction(now, reference, current.weight).unwrap()
+            let reference = self.reference(hand, dtf).unwrap();
+            let detached = Pose {
+                position: reference.position - self.detach(hand, dtf),
+                ..reference
+            };
+            // The detached reference can fail the plausibility bound the status passed only by the
+            // cap's margin; the hand then stays on the arm rather than going uncorrected.
+            correction(now, detached, current.weight)
+                .or_else(|| correction(now, reference, current.weight))
+                .unwrap()
+        })
+    }
+
+    /// The tick targets interpolated at `dtf`.
+    fn reference(&self, hand: Hand, dtf: f32) -> Option<Pose> {
+        let current = self.ticks.current[hand.index()]?;
+        let previous = self.ticks.previous[hand.index()].unwrap_or(current);
+        Some(hand_pose::interp(previous.wrist, current.wrist, dtf))
+    }
+
+    /// The solved wrist's shortfall from its target, interpolated at `dtf`.
+    fn miss(&self, hand: Hand, dtf: f32) -> Option<Vec3> {
+        let current = self.solved.current[hand.index()]?.miss?;
+        let previous = self.solved.previous[hand.index()]
+            .and_then(|j| j.miss)
+            .unwrap_or(current);
+        Some(previous.lerp(current, dtf))
+    }
+
+    /// How far the rendered hand leaves the solved wrist toward the target at `dtf`, in the world.
+    fn detach(&self, hand: Hand, dtf: f32) -> Vec3 {
+        if !self.reach.detach {
+            return Vec3::ZERO;
+        }
+        self.miss(hand, dtf).map_or(Vec3::ZERO, |miss| {
+            reach::detach_offset(miss, self.reach.detach_threshold_m, self.reach.detach_cap_m)
         })
     }
 
@@ -408,6 +461,8 @@ impl LateFrame {
             reference_wrist_position: Some(reference.position),
             latest_wrist_position: Some(now.position),
             achieved_wrist_position_model: solved,
+            solve_miss_m: self.miss(hand, dtf).map(Vec3::length),
+            detach_m: (reason == LateReason::Applied).then(|| self.detach(hand, dtf).length()),
         }
     }
 }
@@ -679,7 +734,51 @@ mod tests {
             },
             solved: Solved::default(),
             enabled: true,
+            reach: ReachConfig::new(),
         }
+    }
+
+    /// `f` with the right wrist solved `miss` short of its targets on both ticks.
+    fn with_miss(mut f: LateFrame, miss: Vec3) -> LateFrame {
+        let joints = Some(ArmJoints {
+            elbow: Vec3::ZERO,
+            wrist: Vec3::X,
+            miss: Some(miss),
+        });
+        f.solved.previous[Hand::Right.index()] = joints;
+        f.solved.current[Hand::Right.index()] = joints;
+        f
+    }
+
+    #[test]
+    fn a_short_solve_detaches_the_hand_beyond_the_threshold() {
+        let p = pose(0.3, 0.0);
+        let f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - 0.04).abs() < 1e-5);
+        let status = f.hand_status(Hand::Right, 0.5);
+        assert!((status.solve_miss_m.unwrap() - 0.05).abs() < 1e-5);
+        assert!((status.detach_m.unwrap() - 0.04).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_detach_is_capped_and_adds_to_the_motion_since_the_tick() {
+        let f = with_miss(
+            frame(pose(0.5, 0.0), pose(0.4, 0.0), pose(0.4, 0.0), 1.0),
+            Vec3::new(0.0, 0.0, -0.5),
+        );
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!((d.position.x - 0.1).abs() < 1e-5);
+        assert!((d.position.z + 0.1).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_detach_off_keeps_the_hand_on_the_arm() {
+        let p = pose(0.3, 0.0);
+        let mut f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
+        f.reach.detach = false;
+        let d = f.hand_delta(Hand::Right, 0.5).unwrap();
+        assert!(d.position.length() < 1e-5);
     }
 
     #[test]

@@ -131,7 +131,8 @@ pub fn glyphs(control: Control) -> &'static [Glyph] {
         Control::StickClick(hand) => {
             sided(&[Glyph::StickLeftPress], &[Glyph::StickRightPress], hand)
         }
-        Control::Trackpad(_) => &[Glyph::Trackpad],
+        // The Index trackpad glyph is not sided, so either hand's trackpad draws it once.
+        Control::Trackpad(_) | Control::EitherTrackpad => &[Glyph::Trackpad],
         Control::Motion(hand) => sided(&[Glyph::ControllerLeft], &[Glyph::ControllerRight], hand),
         Control::EitherGrip => &[Glyph::GripLeft, Glyph::GripRight],
         Control::EitherMotion => &[Glyph::ControllerLeft, Glyph::ControllerRight],

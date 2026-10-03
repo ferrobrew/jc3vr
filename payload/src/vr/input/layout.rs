@@ -6,7 +6,7 @@
 //! [`crate::vr::input::stash`]), and [`fingerprint`] hashes it, so that a payload with a different
 //! layout never re-wraps another layout's handles.
 
-use crate::controllers::frame::{ActionSetKind, Hand};
+use crate::controllers::frame::{ActionSetKind, Hand, InteractionProfile};
 
 /// A boolean input.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -216,6 +216,26 @@ pub(crate) const fn binding(profile: Profile, hand: Hand, input: Input) -> Optio
     }
 }
 
+/// The shipped profile `profile` names, or `None` for no profile or one the runtime emulates
+/// through another profile's bindings.
+pub(crate) const fn shipped(profile: InteractionProfile) -> Option<Profile> {
+    match profile {
+        InteractionProfile::ValveIndex => Some(Profile::ValveIndex),
+        InteractionProfile::OculusTouch => Some(Profile::OculusTouch),
+        InteractionProfile::None | InteractionProfile::Other => None,
+    }
+}
+
+/// Whether a hand bound to `profile` reads `input` from a physical input of its own. Only a
+/// profile the mod ships bindings for is known to: an emulated profile reads whatever the runtime
+/// maps onto the shipped bindings, which for an input the emulated controller lacks is nothing.
+pub(crate) const fn provides(profile: InteractionProfile, hand: Hand, input: Input) -> bool {
+    match shipped(profile) {
+        Some(profile) => binding(profile, hand, input).is_some(),
+        None => false,
+    }
+}
+
 /// Every action's name in stash order, for [`fingerprint`] and the stash's handle count: the hands
 /// set and its actions, then each mode set and its actions.
 pub(crate) fn stash_order() -> impl Iterator<Item = &'static str> {
@@ -417,6 +437,29 @@ mod tests {
             .chain(std::iter::once(HANDS_SET_NAME))
             .collect();
         assert_eq!(sets.len(), ActionSetKind::ALL.len() + 1);
+    }
+
+    #[test]
+    fn only_the_index_provides_the_grip_force_and_the_trackpad() {
+        let force = Input::Float(FloatInput::SqueezeForce);
+        let pad = Input::Vec2(Vec2Input::Trackpad);
+        for hand in Hand::BOTH {
+            assert!(provides(InteractionProfile::ValveIndex, hand, force));
+            assert!(provides(InteractionProfile::ValveIndex, hand, pad));
+            for profile in [
+                InteractionProfile::OculusTouch,
+                InteractionProfile::Other,
+                InteractionProfile::None,
+            ] {
+                assert!(!provides(profile, hand, force), "{profile:?}");
+                assert!(!provides(profile, hand, pad), "{profile:?}");
+            }
+            assert!(provides(
+                InteractionProfile::OculusTouch,
+                hand,
+                Input::Float(FloatInput::Squeeze)
+            ));
+        }
     }
 
     #[test]
