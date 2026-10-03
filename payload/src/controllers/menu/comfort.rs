@@ -15,7 +15,7 @@ use crate::{
 
 /// The `VR: COMFORT` page.
 pub(crate) const PAGE: PageDef = PageDef {
-    entry: "VR: COMFORT",
+    tab: "COMFORT",
     build,
     on_close: Some(save_if_changed),
     on_frame: Some(on_frame),

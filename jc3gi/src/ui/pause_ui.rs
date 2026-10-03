@@ -505,6 +505,12 @@ impl SettingsUI {
     /// named `MCI_controls_row_00` onwards. The clips show a scrolling window of the page, and each
     /// clip's `GetData()` returns the row object it currently shows (null for an empty clip).
     pub const ROW_CLIP_COUNT: i32 = 13;
+    /// The number of tab selectors on the settings screen's tab bar (`MCI_tabs.MCI_navbar` on the
+    /// pause movie's document, a `shared.main_nav` from `ui/shared_lib.gfx`), named
+    /// `MCI_button_00` onwards and listed in its public `m_Selectors`. A selector's position in the
+    /// bar is its page index: selecting it calls the bar's select callback with that index. The
+    /// settings screen names one selector per page and hides the bar.
+    pub const TAB_COUNT: i32 = 9;
     /// The `m_Format` of a key-binding row (used by the controls screen's pages).
     pub const WIDGET_KEY: i32 = 2;
     /// The `m_Format` of a slider row: an integer between `m_MinValue` and `m_MaxValue`.

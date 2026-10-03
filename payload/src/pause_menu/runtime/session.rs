@@ -1,4 +1,5 @@
-//! The session: the menu state and the shown page, shared by the hooks.
+//! The session: the menu state, the shown page, and the VR tabs' and headers' bookkeeping, shared
+//! by the hooks.
 //!
 //! The lock is never held across a call into the movie or into an item's functions. Calls into
 //! the movie can re-enter the command hook synchronously (a widget playing a sound sends an event
@@ -9,9 +10,11 @@
 use parking_lot::Mutex;
 
 use crate::pause_menu::model::{
+    headers::HeaderStyles,
     live::LiveSlots,
     page::Page,
     state::{MenuState, left_page},
+    tabs::TabMemory,
 };
 
 /// The session state.
@@ -31,6 +34,21 @@ pub(crate) struct Session {
     pub(crate) opening: bool,
     /// Bumped whenever the shown page is installed, replaced, or dropped.
     pub(crate) generation: u64,
+    /// The VR tabs' memory for this pause: the last tab shown and each tab's position.
+    pub(crate) tabs: TabMemory,
+    /// Set when the VR entry opened the settings screen: the screen sets its tab bar up for the
+    /// native pages after the page is installed, so the update after it replaces that with the VR
+    /// tabs.
+    pub(crate) setup_tabs: bool,
+    /// A tab the player chose, switched to on the next update with the list in its root state.
+    pub(crate) pending_tab: Option<usize>,
+    /// The row the highlight was on at the last update, for the direction a header is skipped in.
+    pub(crate) last_selected: Option<usize>,
+    /// The row clips' label styles.
+    pub(crate) styles: HeaderStyles,
+    /// The address of the pause screen that added the VR entry, to tell its input calls from other
+    /// screens'.
+    pub(crate) screen: usize,
 }
 
 impl Session {
@@ -39,6 +57,7 @@ impl Session {
         self.page = page;
         self.live.invalidate();
         self.rebuild = false;
+        self.last_selected = None;
         self.generation = self.generation.wrapping_add(1);
     }
 
@@ -49,6 +68,13 @@ impl Session {
         self.state = next;
         if next == MenuState::Closed {
             self.opening = false;
+            self.tabs = TabMemory::new();
+            self.styles.forget();
+            self.screen = 0;
+        }
+        if next.shown_page().is_none() {
+            self.setup_tabs = false;
+            self.pending_tab = None;
         }
         if left.is_some() || next.shown_page().is_none() {
             self.set_page(None);
@@ -87,13 +113,19 @@ pub(crate) static SESSION: Mutex<Session> = Mutex::new(Session {
     rebuild: false,
     opening: false,
     generation: 0,
+    tabs: TabMemory::new(),
+    setup_tabs: false,
+    pending_tab: None,
+    last_selected: None,
+    styles: HeaderStyles::new(),
+    screen: 0,
 });
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const SHOWN: MenuState = MenuState::Shown { count: 3, page: 1 };
+    const SHOWN: MenuState = MenuState::Shown { pages: 3, page: 1 };
 
     fn shown_session() -> Session {
         let mut session = Session {
@@ -119,9 +151,39 @@ mod tests {
     fn leaving_the_screen_keeps_the_entries() {
         let mut session = shown_session();
         assert_eq!(session.transition(SHOWN.left_settings()), Some(1));
-        assert_eq!(session.state, MenuState::EntriesAdded { count: 3 });
+        assert_eq!(session.state, MenuState::EntryAdded { pages: 3 });
         assert!(session.page.is_none());
         assert_eq!(session.transition(MenuState::Closed), None);
+    }
+
+    #[test]
+    fn closing_forgets_the_tabs_and_the_clip_styles() {
+        let mut session = shown_session();
+        session.tabs.shown(2);
+        session.styles.changed(4, true);
+        session.setup_tabs = true;
+        session.pending_tab = Some(0);
+        session.screen = 0x1000;
+        session.transition(SHOWN.left_settings());
+        // Leaving the screen keeps the memory for the next visit, and drops the pending tab work.
+        assert_eq!(session.tabs.last(), 2);
+        assert_eq!(session.styles.styled().count(), 1);
+        assert!(!session.setup_tabs);
+        assert_eq!(session.pending_tab, None);
+        session.transition(MenuState::Closed);
+        assert_eq!(session.tabs.last(), 0);
+        assert_eq!(session.styles.styled().count(), 0);
+        assert_eq!(session.screen, 0);
+    }
+
+    #[test]
+    fn switching_tabs_leaves_the_old_page() {
+        let mut session = shown_session();
+        session.last_selected = Some(3);
+        assert_eq!(session.transition(SHOWN.switch_tab(2)), Some(1));
+        assert!(session.page.is_none());
+        assert_eq!(session.last_selected, None);
+        assert_eq!(session.state.shown_page(), Some(2));
     }
 
     #[test]

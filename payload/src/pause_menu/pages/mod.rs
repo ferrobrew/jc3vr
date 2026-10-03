@@ -1,44 +1,43 @@
-//! The registry of VR pages: one options-menu entry per page, in this order after the options
-//! menu's own entries. A page's definition lives beside the settings it edits; register it here.
+//! The registry of VR pages: one tab per page under the options menu's VR entry, in this order. A
+//! page's definition lives beside the settings it edits; register it here.
 
 use crate::{
     controllers::{body, menu},
-    pause_menu::model::page::PageDef,
+    pause_menu::model::{page::PageDef, tabs::TAB_LIMIT},
 };
+
+/// The VR entry's label in the options menu. Plain text: the movie treats a label beginning with
+/// `&` or `#` as a localisation key.
+pub(crate) const ENTRY_LABEL: &str = "VR";
 
 /// The registered pages.
 pub(crate) const PAGES: &[PageDef] = &[body::menu::PAGE, menu::controls::PAGE, menu::comfort::PAGE];
 
-/// The most pages the options menu can take: the movie lays a menu out on a fixed number of main
-/// buttons ([`PauseUI::MAIN_BUTTON_COUNT`](jc3gi::ui::pause_ui::PauseUI::MAIN_BUTTON_COUNT)) and
-/// drops the entries past the last, and the options menu's own entries fill all but this many on
-/// PC. The VR entries go after the native ones, so a page past this limit would not be shown.
-pub(crate) const MAX_PAGES: usize = 4;
+/// The most pages the VR entry can show: one per selector on the settings screen's tab bar. A page
+/// past this limit would have no tab.
+pub(crate) const MAX_PAGES: usize = TAB_LIMIT;
 
 #[cfg(test)]
 mod tests {
-    use jc3gi::ui::pause_ui::PauseUI;
-
     use super::*;
     use crate::pause_menu::model::{page::Item, rows::encode_page};
 
     #[test]
-    fn the_registry_fits_the_options_menu() {
+    fn the_registry_fits_the_tab_bar() {
         assert!(!PAGES.is_empty());
         assert!(PAGES.len() <= MAX_PAGES);
-        assert!(MAX_PAGES < PauseUI::MAIN_BUTTON_COUNT as usize);
     }
 
     #[test]
-    fn entry_labels_are_plain_text() {
+    fn labels_are_plain_text() {
         // The movie's translator treats a label beginning with `&` or `#` as a localisation key.
-        for page in PAGES {
-            assert!(!page.entry.is_empty());
+        for label in std::iter::once(ENTRY_LABEL).chain(PAGES.iter().map(|page| page.tab)) {
+            assert!(!label.is_empty());
             assert!(
-                !page.entry.starts_with(['&', '#']),
-                "{:?} would be translated",
-                page.entry
+                !label.starts_with(['&', '#']),
+                "{label:?} would be translated"
             );
+            assert_eq!(label, label.to_uppercase());
         }
     }
 
@@ -46,7 +45,7 @@ mod tests {
     fn every_page_builds_and_encodes() {
         for (index, page) in PAGES.iter().enumerate() {
             let built = (page.build)();
-            assert!(!built.items.is_empty(), "{}", page.entry);
+            assert!(!built.items.is_empty(), "{}", page.tab);
             assert_eq!(encode_page(index, &built).unwrap().len(), built.items.len());
         }
     }
@@ -72,7 +71,7 @@ mod tests {
         // case keeps the source what the player sees.
         for page in PAGES {
             let built = (page.build)();
-            assert_eq!(built.title, built.title.to_uppercase(), "{}", page.entry);
+            assert_eq!(built.title, built.title.to_uppercase(), "{}", page.tab);
             for item in &built.items {
                 let (label, options): (&str, &[&str]) = match item {
                     Item::Header(text) | Item::Text(text) => (text, &[]),
@@ -83,18 +82,17 @@ mod tests {
                     Item::Button(button) => (&button.label, &[]),
                 };
                 for text in std::iter::once(label).chain(options.iter().copied()) {
-                    assert_eq!(text, text.to_uppercase(), "{}", page.entry);
+                    assert_eq!(text, text.to_uppercase(), "{}", page.tab);
                 }
             }
         }
     }
 
     #[test]
-    fn entry_labels_are_distinct() {
-        // The selected entry is confirmed by its label, so two pages must not share one.
+    fn tab_labels_are_distinct() {
         for (i, a) in PAGES.iter().enumerate() {
             for b in &PAGES[i + 1..] {
-                assert_ne!(a.entry, b.entry);
+                assert_ne!(a.tab, b.tab);
             }
         }
     }

@@ -5,6 +5,11 @@
 //! (`m_KeyText`) and whose selection either plays the refusal sound or, for a customisable row,
 //! sends `get_key_for_action`, which the command detour turns into the button's action. Toggles and
 //! choices use the toggle format's option picker, and sliders the slider format.
+//!
+//! The list has no header row of its own. A header is a key-binding row with no right-hand text,
+//! which the page model marks ([`Page::is_header`]): the runtime draws its label in the list
+//! title's type style and moves the highlight off it (see
+//! [`headers`](crate::pause_menu::model::headers)).
 
 use jc3gi::ui::pause_ui::SettingsUI;
 use smol_str::SmolStr;

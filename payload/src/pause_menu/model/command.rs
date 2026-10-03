@@ -3,11 +3,12 @@
 //!
 //! The VR rows talk to native code through the game's own settings commands, so the command detour
 //! decides per command. A command carrying a VR row id is always swallowed: the settings manager
-//! would ignore it, but the key capture would start listening for a key binding.
+//! would ignore it, but the key capture would start listening for a key binding. So is a tab
+//! command ([`TabCommands`]): the game does not know it.
 
 use jc3gi::ui::{pause_ui::PauseUI, ui_base::UIBase};
 
-use crate::pause_menu::model::{ids::RowId, state::MenuState};
+use crate::pause_menu::model::{ids::RowId, state::MenuState, tabs::TabCommands};
 
 /// One argument of a command, as the runtime decoded it from the movie's value.
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -52,13 +53,18 @@ pub(crate) enum Command {
     PersistChanges,
     /// The base `inactive` command: the movie was unloaded.
     Inactive,
+    /// The tab bar's callback chose tab `tab`.
+    SelectTab { tab: usize },
     /// Anything else, including a known command with arguments of the wrong shape.
     Other,
 }
 
-/// Parse a command from its hash and arguments.
-pub(crate) fn parse(hash: u32, args: &[Arg]) -> Command {
+/// Parse a command from its hash and arguments, recognising the tab commands `tabs`.
+pub(crate) fn parse(hash: u32, args: &[Arg], tabs: &TabCommands) -> Command {
     let int = |index: usize| args.get(index).and_then(|arg| arg.as_int());
+    if let Some(tab) = tabs.tab_of(hash) {
+        return Command::SelectTab { tab };
+    }
     match hash {
         PauseUI::COMMAND_POPULATE_SETTINGS => Command::PopulateSettings,
         PauseUI::COMMAND_SET_SETTING_VALUE => match (int(0), int(1)) {
@@ -102,6 +108,8 @@ pub(crate) enum Action {
     Drop,
     /// Reset the shown page's values to their defaults.
     ResetPage,
+    /// The player chose tab `tab` while the VR tabs are shown.
+    SelectTab { tab: usize },
     /// The player left the shown page.
     LeavePage,
     /// The movie was unloaded.
@@ -133,6 +141,12 @@ pub(crate) fn route(command: Command, state: MenuState) -> Route {
             Route::PassThen(Action::LeavePage)
         }
         Command::Inactive => Route::PassThen(Action::Close),
+        Command::SelectTab { tab } => match state.shown_page() {
+            Some(_) => Route::Swallow(Action::SelectTab { tab }),
+            // The callback outlives the VR tabs until the screen next opens; the game must not
+            // see the command.
+            None => Route::Swallow(Action::Drop),
+        },
         Command::RestoreDefaultKeymap | Command::PersistChanges | Command::Other => Route::Pass,
     }
 }
@@ -140,13 +154,24 @@ pub(crate) fn route(command: Command, state: MenuState) -> Route {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pause_menu::model::tabs::TAB_LIMIT;
 
     fn id(page: usize, item: usize) -> i32 {
         RowId::new(page, item).encode().unwrap()
     }
 
-    const SHOWN_1: MenuState = MenuState::Shown { count: 3, page: 1 };
-    const ENTRIES: MenuState = MenuState::EntriesAdded { count: 3 };
+    const SHOWN_1: MenuState = MenuState::Shown { pages: 3, page: 1 };
+    const ENTRIES: MenuState = MenuState::EntryAdded { pages: 3 };
+
+    /// Stand-in tab command hashes, clear of every command hash the tests use.
+    fn tabs() -> TabCommands {
+        TabCommands::new(|name| 0x7000_0000 + name.parse::<u32>().unwrap())
+    }
+
+    /// [`super::parse`] with the stand-in tab commands.
+    fn parse(hash: u32, args: &[Arg]) -> Command {
+        super::parse(hash, args, &tabs())
+    }
 
     #[test]
     fn parses_known_commands() {
@@ -270,6 +295,26 @@ mod tests {
             Route::PassThen(Action::LeavePage)
         );
         assert_eq!(route(Command::PersistChanges, ENTRIES), Route::Pass);
+    }
+
+    #[test]
+    fn tab_commands_are_parsed_before_anything_else() {
+        assert_eq!(parse(0x7000_0002, &[]), Command::SelectTab { tab: 2 });
+        assert_eq!(parse(0x7000_0000 + TAB_LIMIT as u32, &[]), Command::Other);
+    }
+
+    #[test]
+    fn tab_commands_never_reach_the_game() {
+        assert_eq!(
+            route(Command::SelectTab { tab: 2 }, SHOWN_1),
+            Route::Swallow(Action::SelectTab { tab: 2 })
+        );
+        for state in [MenuState::Closed, ENTRIES] {
+            assert_eq!(
+                route(Command::SelectTab { tab: 0 }, state),
+                Route::Swallow(Action::Drop)
+            );
+        }
     }
 
     #[test]

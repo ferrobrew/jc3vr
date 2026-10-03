@@ -1,6 +1,8 @@
-//! The movie side: adding the VR entries to the options menu, finding the one the player chose,
-//! installing a page's rows into the settings screen, and writing live text into the visible rows.
-//! Everything here goes through [`GfxValue`] and starts from the pause screen's clip.
+//! The movie side: adding the VR entry to the options menu and telling whether the player chose it,
+//! putting the VR tabs on the settings screen's tab bar, installing a page's rows, keeping each
+//! tab's scroll position, and, each frame, moving the highlight off section headers, styling the
+//! header rows, and writing live text into the visible rows. Everything here goes through
+//! [`GfxValue`] and starts from the pause screen's clip.
 
 use std::ffi::{CStr, CString};
 
@@ -9,11 +11,13 @@ use jc3gi::ui::pause_ui::{PauseMenuType, PauseUI, SettingsUI};
 use crate::pause_menu::{
     gfx::{CaptureThread, GfxValue, Param, Screen},
     model::{
-        entries::{MainButton, selected_page},
+        entries::{MainButton, vr_entry_selected},
+        headers::{HeaderStyles, Step},
         ids::RowId,
         live::LiveSlots,
-        page::{LiveField, Page, PageDef},
+        page::{LiveField, Page},
         rows::{EncodeError, RowSpec, RowWidget, encode_page},
+        tabs::{ScrollState, TAB_LIMIT},
     },
 };
 
@@ -49,46 +53,41 @@ impl std::fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
-/// Add one options-menu entry per page, in `pages` order after the menu's own entries, each opening
-/// the settings screen like the graphics entry. Appending leaves the native entries where they
-/// were, so the menu still opens with its first native entry highlighted. Returns how many were
-/// added.
-pub(crate) fn add_entries(
+/// Add the VR entry, labelled `label`, after the options menu's own entries, opening the settings
+/// screen like the graphics entry. Appending leaves the native entries where they were, so the
+/// menu still opens with its first native entry highlighted.
+pub(crate) fn add_entry(
     thread: &CaptureThread,
     screen: &Screen,
-    pages: &[PageDef],
-) -> Result<usize, RenderError> {
+    label: &str,
+) -> Result<(), RenderError> {
     let clip = clip(thread, screen)?;
-    for page in pages {
-        let label = cstring(page.entry);
-        let entry = clip
-            .invoke(
-                c"AddOption",
-                &[
-                    Param::Int(PauseMenuType::PAUSE_OPTIONS as i32),
-                    Param::Str(c""),
-                    Param::Str(&label),
-                    Param::Bool(false),
-                ],
-            )
-            .filter(GfxValue::is_object)
-            .ok_or(RenderError::Refused("AddOption"))?;
-        if !entry.set(c"m_Type", Param::Int(PauseUI::OPTION_GRAPHICS)) {
-            return Err(RenderError::Refused("the entry's m_Type"));
-        }
+    let label = cstring(label);
+    let entry = clip
+        .invoke(
+            c"AddOption",
+            &[
+                Param::Int(PauseMenuType::PAUSE_OPTIONS as i32),
+                Param::Str(c""),
+                Param::Str(&label),
+                Param::Bool(false),
+            ],
+        )
+        .filter(GfxValue::is_object)
+        .ok_or(RenderError::Refused("AddOption"))?;
+    if !entry.set(c"m_Type", Param::Int(PauseUI::OPTION_GRAPHICS)) {
+        return Err(RenderError::Refused("the entry's m_Type"));
     }
-    Ok(pages.len())
+    Ok(())
 }
 
-/// The page, among the first `count` of `pages`, whose VR entry is selected in the options menu,
-/// or `None` when a native entry is. Reads every main button and leaves the decision to
-/// [`selected_page`].
-pub(crate) fn selected_entry(
+/// Whether the VR entry, labelled `label`, is the one selected in the options menu. Reads every
+/// main button and leaves the decision to [`vr_entry_selected`].
+pub(crate) fn entry_selected(
     thread: &CaptureThread,
     screen: &Screen,
-    pages: &[PageDef],
-    count: usize,
-) -> Result<Option<usize>, RenderError> {
+    label: &str,
+) -> Result<bool, RenderError> {
     let clip = clip(thread, screen)?;
     let container = clip
         .path("MCI_button_container.MCI_root")
@@ -120,8 +119,7 @@ pub(crate) fn selected_entry(
             }
         })
         .collect();
-    let entries: Vec<&str> = pages.iter().take(count).map(|page| page.entry).collect();
-    Ok(selected_page(&buttons, &entries))
+    Ok(vr_entry_selected(&buttons, label))
 }
 
 /// Install `page` (registered at `page_index`) as the page the settings screen is about to show,
@@ -210,52 +208,340 @@ pub(crate) fn replace_rows(
     Ok(())
 }
 
-/// Write the live text of the visible rows of `page` (registered at `page_index`) where it
-/// changed: into the row object, so the list's own redraws show it, and into the row clip's text
-/// field, upper-cased as the list draws it.
-pub(crate) fn push_live(
+/// The per-frame pass over the visible rows of `page` (registered at `page_index`): give each row
+/// clip the label style of the row it shows (the title style for a header, the row style
+/// otherwise), and write live text where it changed, into the row object, so the list's own
+/// redraws show it, and into the row clip's text field, upper-cased as the list draws it.
+pub(crate) fn refresh_rows(
     thread: &CaptureThread,
     screen: &Screen,
     page_index: usize,
     page: &Page,
     live: &mut LiveSlots,
+    styles: &mut HeaderStyles,
 ) -> Result<(), RenderError> {
     let clip = clip(thread, screen)?;
     let manager = list_manager(&clip)?;
     for slot in 0..SettingsUI::ROW_CLIP_COUNT as usize {
-        let written = manager
-            .path(&format!("MCI_controls_row_{slot:02}"))
-            .map(|row_clip| push_live_row(&row_clip, slot, page_index, page, live));
-        if written != Some(true) {
+        let Some(row_clip) = manager.path(&format!("MCI_controls_row_{slot:02}")) else {
+            live.clear_slot(slot);
+            continue;
+        };
+        let item = shown_item(&row_clip, page_index);
+        let header = item.as_ref().is_some_and(|(_, item)| page.is_header(*item));
+        if styles.needs_change(slot, header) {
+            match style_row(&manager, &row_clip, header) {
+                Ok(()) => styles.changed(slot, header),
+                Err(error) => tracing::debug!("pause menu: styling row clip {slot}: {error}"),
+            }
+        }
+        let written = item
+            .is_some_and(|(data, item)| push_live_row(&row_clip, &data, slot, item, page, live));
+        if !written {
             live.clear_slot(slot);
         }
     }
     Ok(())
 }
 
-/// The live pass for one row clip. Returns whether the clip shows a live item of the page.
-fn push_live_row(
-    row_clip: &GfxValue<'_>,
-    slot: usize,
-    page_index: usize,
-    page: &Page,
-    live: &mut LiveSlots,
-) -> bool {
-    let Some(data) = row_clip.invoke(c"GetData", &[]).filter(GfxValue::is_object) else {
-        return false;
+/// Give every row clip styled as a header its row style back, so a native page drawn on the clips
+/// shows its rows as the game draws them.
+pub(crate) fn restore_row_styles(
+    thread: &CaptureThread,
+    screen: &Screen,
+    styles: &mut HeaderStyles,
+) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    let manager = list_manager(&clip)?;
+    let styled: Vec<usize> = styles.styled().collect();
+    for slot in styled {
+        let row_clip = manager
+            .path(&format!("MCI_controls_row_{slot:02}"))
+            .ok_or(RenderError::Missing("a row clip"))?;
+        style_row(&manager, &row_clip, false)?;
+        styles.changed(slot, false);
+    }
+    Ok(())
+}
+
+/// The list's scroll position and selected row.
+pub(crate) fn list_scroll(
+    thread: &CaptureThread,
+    screen: &Screen,
+) -> Result<ScrollState, RenderError> {
+    let clip = clip(thread, screen)?;
+    let manager = list_manager(&clip)?;
+    let read = |method: &'static CStr, what: &'static str| {
+        manager
+            .invoke(method, &[])
+            .and_then(|result| result.as_int())
+            .ok_or(RenderError::Refused(what))
     };
-    let Some(row) = data
+    let top = read(c"GetTopIndex", "GetTopIndex")?;
+    let selected = read(c"GetSelectedRow", "GetSelectedRow")?;
+    ScrollState::from_list(top, selected).ok_or(RenderError::Refused("a negative list index"))
+}
+
+/// Scroll the list to `state` and highlight its selected row, as the screen's own tab switch
+/// restores a tab: the current highlight is cleared first, since the list's restore only adds one.
+pub(crate) fn restore_scroll(
+    thread: &CaptureThread,
+    screen: &Screen,
+    state: ScrollState,
+) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    let manager = list_manager(&clip)?;
+    let to_int = |index: usize| i32::try_from(index).unwrap_or(i32::MAX);
+    manager
+        .invoke(c"DeHighlightCurrent", &[])
+        .ok_or(RenderError::Refused("DeHighlightCurrent"))?;
+    manager
+        .invoke(
+            c"RestoreSavedState",
+            &[
+                Param::Int(to_int(state.top)),
+                Param::Int(to_int(state.selected)),
+            ],
+        )
+        .ok_or(RenderError::Refused("RestoreSavedState"))?;
+    Ok(())
+}
+
+/// Move the list's highlight one row in `step`'s direction, as the list's own up and down do.
+pub(crate) fn step_highlight(
+    thread: &CaptureThread,
+    screen: &Screen,
+    step: Step,
+) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    let manager = list_manager(&clip)?;
+    let method = match step {
+        Step::Next => c"HighlightNext",
+        Step::Prev => c"HighlightPrev",
+    };
+    manager
+        .invoke(method, &[])
+        .map(drop)
+        .ok_or(RenderError::Refused("the highlight step"))
+}
+
+/// Put the VR tabs on the settings screen's tab bar: one unlocked selector per label, the rest
+/// locked, `current` selected, and the bar's select callback set to the document's `Invoke`, so a
+/// chosen tab arrives as a tab command rather than through the screen's own tab switch. Then show
+/// the bar. Called after the screen has opened, since opening it sets the bar up for the native
+/// pages and hides it.
+pub(crate) fn setup_tabs(
+    thread: &CaptureThread,
+    screen: &Screen,
+    labels: &[&str],
+    current: usize,
+) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    let navbar = tab_bar(&clip)?;
+    let selectors = navbar
+        .member(c"m_Selectors")
+        .filter(GfxValue::is_object)
+        .ok_or(RenderError::Missing("the tab bar's selectors"))?;
+    for index in 0..TAB_LIMIT {
+        let selector = selectors
+            .element(index as u32)
+            .filter(GfxValue::is_object)
+            .ok_or(RenderError::Missing("a tab selector"))?;
+        selector
+            .invoke(c"SetDeselected", &[])
+            .ok_or(RenderError::Refused("SetDeselected"))?;
+        let label = labels.get(index);
+        if let Some(label) = label {
+            let label = cstring(label);
+            selector
+                .invoke(c"SetNew", &[Param::Bool(false)])
+                .ok_or(RenderError::Refused("SetNew"))?;
+            selector
+                .invoke(
+                    c"SetButtonVariables",
+                    &[Param::Str(&label), Param::Str(c"")],
+                )
+                .ok_or(RenderError::Refused("SetButtonVariables"))?;
+        }
+        navbar
+            .invoke(
+                c"SetButtonLocked",
+                &[Param::Int(index as i32), Param::Bool(label.is_none())],
+            )
+            .ok_or(RenderError::Refused("SetButtonLocked"))?;
+    }
+    let callback = clip
+        .member(c"Invoke")
+        .filter(GfxValue::is_closure)
+        .ok_or(RenderError::Missing("the document's Invoke method"))?;
+    navbar
+        .invoke(c"SetSelectFunctionCB", &[Param::Value(&callback)])
+        .ok_or(RenderError::Refused("SetSelectFunctionCB"))?;
+    select_on_bar(&navbar, &selectors, None, current)?;
+    if !navbar.set(c"visible", Param::Bool(true)) {
+        return Err(RenderError::Refused("the tab bar's visibility"));
+    }
+    Ok(())
+}
+
+/// Move the tab bar's selection from tab `from` to tab `to`.
+pub(crate) fn select_tab(
+    thread: &CaptureThread,
+    screen: &Screen,
+    from: usize,
+    to: usize,
+) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    let navbar = tab_bar(&clip)?;
+    let selectors = navbar
+        .member(c"m_Selectors")
+        .filter(GfxValue::is_object)
+        .ok_or(RenderError::Missing("the tab bar's selectors"))?;
+    select_on_bar(&navbar, &selectors, Some(from), to)
+}
+
+/// Step the tab bar to its next tab when `forward` is set, its previous otherwise, as its own
+/// shoulder-button hints do; the bar then calls its select callback with the tab.
+pub(crate) fn step_tab(
+    thread: &CaptureThread,
+    screen: &Screen,
+    forward: bool,
+) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    let method = if forward {
+        c"OnNextTabButton"
+    } else {
+        c"OnPrevTabButton"
+    };
+    tab_bar(&clip)?
+        .invoke(method, &[])
+        .map(drop)
+        .ok_or(RenderError::Refused("the tab step"))
+}
+
+/// Hide the tab bar, as the native pages and the controls screen have it.
+pub(crate) fn hide_tabs(thread: &CaptureThread, screen: &Screen) -> Result<(), RenderError> {
+    let clip = clip(thread, screen)?;
+    if !tab_bar(&clip)?.set(c"visible", Param::Bool(false)) {
+        return Err(RenderError::Refused("the tab bar's visibility"));
+    }
+    Ok(())
+}
+
+/// The row object a row clip shows and its item index, when it is a row of page `page_index`.
+fn shown_item<'t>(row_clip: &GfxValue<'t>, page_index: usize) -> Option<(GfxValue<'t>, usize)> {
+    let data = row_clip
+        .invoke(c"GetData", &[])
+        .filter(GfxValue::is_object)?;
+    let row = data
         .member(c"m_Type")
         .and_then(|id| id.as_int())
         .and_then(RowId::decode)
-        .filter(|row| row.page == page_index)
-    else {
+        .filter(|row| row.page == page_index)?;
+    Some((data, row.item))
+}
+
+/// Give a row clip's label the list title's text format (`header`), or the row's own format back.
+/// The row's format is kept on the clip's row container (a dynamic class) the first time the clip
+/// is styled, so it can be restored however the clip was drawn since. Both the field's current
+/// text and its default format change, since the list sets the label's text on every redraw.
+fn style_row(
+    manager: &GfxValue<'_>,
+    row_clip: &GfxValue<'_>,
+    header: bool,
+) -> Result<(), RenderError> {
+    let container = row_clip
+        .path("MCI_row")
+        .ok_or(RenderError::Missing("a row container"))?;
+    let label = row_clip
+        .path("MCI_row.MCI_name_text.TXT_name")
+        .ok_or(RenderError::Missing("a row label"))?;
+    let saved = container
+        .member(ROW_FORMAT_MEMBER)
+        .filter(GfxValue::is_object);
+    let format = if header {
+        if saved.is_none() {
+            let own = label
+                .invoke(c"getTextFormat", &[])
+                .filter(GfxValue::is_object)
+                .ok_or(RenderError::Refused("the row label's getTextFormat"))?;
+            if !container.set_value(ROW_FORMAT_MEMBER, &own) {
+                return Err(RenderError::Refused("keeping the row label's format"));
+            }
+        }
+        manager
+            .member(c"MCI_title")
+            .filter(GfxValue::is_object)
+            .ok_or(RenderError::Missing("the list title"))?
+            .invoke(c"getTextFormat", &[])
+            .filter(GfxValue::is_object)
+            .ok_or(RenderError::Refused("the list title's getTextFormat"))?
+    } else {
+        // A clip never styled has its own format still.
+        let Some(saved) = saved else {
+            return Ok(());
+        };
+        saved
+    };
+    if !label.set_value(c"defaultTextFormat", &format) {
+        return Err(RenderError::Refused("the row label's defaultTextFormat"));
+    }
+    label
+        .invoke(c"setTextFormat", &[Param::Value(&format)])
+        .map(drop)
+        .ok_or(RenderError::Refused("the row label's setTextFormat"))
+}
+
+/// The member of a row container that keeps the row label's own text format.
+const ROW_FORMAT_MEMBER: &CStr = c"m_VrRowFormat";
+
+/// The tab bar.
+fn tab_bar<'t>(clip: &GfxValue<'t>) -> Result<GfxValue<'t>, RenderError> {
+    clip.path("MCI_tabs.MCI_navbar")
+        .ok_or(RenderError::Missing("the tab bar"))
+}
+
+/// Deselect `from` (when given), select `to`, and point the bar's shoulder-button cycling at `to`.
+fn select_on_bar(
+    navbar: &GfxValue<'_>,
+    selectors: &GfxValue<'_>,
+    from: Option<usize>,
+    to: usize,
+) -> Result<(), RenderError> {
+    let selector = |index: usize| {
+        selectors
+            .element(index as u32)
+            .filter(GfxValue::is_object)
+            .ok_or(RenderError::Missing("a tab selector"))
+    };
+    if let Some(from) = from {
+        selector(from)?
+            .invoke(c"SetDeselected", &[])
+            .ok_or(RenderError::Refused("SetDeselected"))?;
+    }
+    selector(to)?
+        .invoke(c"SetSelected", &[])
+        .ok_or(RenderError::Refused("SetSelected"))?;
+    navbar
+        .invoke(c"FindUnlockedIndex", &[Param::Int(to as i32)])
+        .map(drop)
+        .ok_or(RenderError::Refused("FindUnlockedIndex"))
+}
+
+/// The live pass for one row clip showing `item` of the page, whose row object is `data`. Returns
+/// whether the item is live.
+fn push_live_row(
+    row_clip: &GfxValue<'_>,
+    data: &GfxValue<'_>,
+    slot: usize,
+    item: usize,
+    page: &Page,
+    live: &mut LiveSlots,
+) -> bool {
+    let Some(live_text) = page.items.get(item).and_then(|item| item.live_text()) else {
         return false;
     };
-    let Some(live_text) = page.items.get(row.item).and_then(|item| item.live_text()) else {
-        return false;
-    };
-    if !live.needs_write(slot, row.item, &live_text.text) {
+    if !live.needs_write(slot, item, &live_text.text) {
         return true;
     }
     let (member, field_path) = match live_text.field {

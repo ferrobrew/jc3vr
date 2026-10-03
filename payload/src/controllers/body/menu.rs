@@ -31,7 +31,7 @@ use crate::{
 
 /// The `VR: BODY` page.
 pub(crate) const PAGE: PageDef = PageDef {
-    entry: "VR: BODY",
+    tab: "BODY",
     build,
     on_close: Some(on_close),
     on_frame: Some(on_frame),

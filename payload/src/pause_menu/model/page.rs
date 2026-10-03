@@ -11,18 +11,19 @@ use smol_str::SmolStr;
 
 use crate::pause_menu::model::slider::{SliderFormat, SliderRange, slider_label};
 
-/// A registered VR page: the options-menu entry that opens it and how to build its contents.
+/// A registered VR page: its tab under the VR entry and how to build its contents.
 #[derive(Copy, Clone)]
 pub(crate) struct PageDef {
-    /// The options-menu entry's label. Plain text: the movie treats a label beginning with `&` or
-    /// `#` as a localisation key.
-    pub(crate) entry: &'static str,
+    /// The tab's label on the settings screen's tab bar. Plain text: the movie treats a label
+    /// beginning with `&` or `#` as a localisation key.
+    pub(crate) tab: &'static str,
     /// Builds the page's current contents. Called when the page opens and again whenever it is
     /// rebuilt (a step-by-step page changed step, the page was reset, or the game repopulated the
     /// settings).
     pub(crate) build: fn() -> Page,
-    /// Called once when the page's stay ends, whichever way: the player leaving the settings
-    /// screen, the menu deactivating or unloading, or the page failing to reinstall. Saves what the
+    /// Called once when the page's stay ends, whichever way: the player switching to another tab
+    /// or leaving the settings screen, the menu deactivating or unloading, or the page failing to
+    /// reinstall. Saves what the
     /// page changed and resets any state the page keeps between frames. It may run off the capture
     /// thread (a deactivation requested from another thread), so it must not call into the movie.
     pub(crate) on_close: Option<fn()>,
@@ -54,7 +55,8 @@ impl Page {
         self
     }
 
-    /// Append a section header.
+    /// Append a section header: a title over the rows that follow it, which the highlight passes
+    /// over.
     pub(crate) fn header(self, title: impl Into<SmolStr>) -> Self {
         self.item(Item::Header(title.into()))
     }
@@ -63,6 +65,11 @@ impl Page {
     /// instructions are split over several text rows.
     pub(crate) fn text(self, text: impl Into<SmolStr>) -> Self {
         self.item(Item::Text(text.into()))
+    }
+
+    /// Whether row `index` is a section header.
+    pub(crate) fn is_header(&self, index: usize) -> bool {
+        matches!(self.items.get(index), Some(Item::Header(_)))
     }
 
     /// The index of the first button, which a rebuilt page focuses.
@@ -84,7 +91,7 @@ impl Page {
 /// One row of a page.
 #[derive(Clone)]
 pub(crate) enum Item {
-    /// A section header: a label with nothing to select.
+    /// A section header: a title over the rows that follow, with nothing to select.
     Header(SmolStr),
     /// A line of explanatory text.
     Text(SmolStr),
@@ -412,5 +419,14 @@ mod tests {
             .item(button);
         assert_eq!(page.first_button(), Some(1));
         assert_eq!(Page::new("Empty").text("x").first_button(), None);
+    }
+
+    #[test]
+    fn finds_headers() {
+        let page = Page::new("Sections").header("A").text("x").header("B");
+        assert!(page.is_header(0));
+        assert!(!page.is_header(1));
+        assert!(page.is_header(2));
+        assert!(!page.is_header(3));
     }
 }

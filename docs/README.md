@@ -6,7 +6,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ## engine/
 
-- [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus, settings screen, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
+- [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus and folders, settings screen, tab bar, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
 
 ### rendering/
 
@@ -40,7 +40,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
 - [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, and cursor interaction.
-- [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one options entry per VR page drawn by the movie's own settings screen, the four hooks, command routing, the value wrappers, the page model and row encoding, step pages, live values, the `VR: BODY`, `VR: CONTROLS`, and `VR: COMFORT` pages with the body calibration and saving, and the in-game status list.
+- [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one `VR` options entry whose pages are tabs on the settings screen's own tab bar, section headers in the list title's style, the six hooks, command routing, the value wrappers, the page model and row encoding, step pages, live values, the `BODY`, `CONTROLS`, and `COMFORT` pages with the body calibration and saving, and the in-game status list.
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
 - [capture.md](mod/capture.md) — the in-process recorder: the GPU pack and readback ring, the y4m stream to the host encoder, the pose sidecar, and the reframe tool.
 - [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the in-process eye capture for the trailer: decisions and the working todo list.

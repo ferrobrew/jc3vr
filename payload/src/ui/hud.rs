@@ -355,8 +355,8 @@ fn pause_menu_ui(ui: &mut egui::Ui) {
                 "VR pages in the pause menu's options",
             )
             .on_hover_text(
-                "Adds the VR entries to the end of the options menu, each opening the game's own \
-                 settings screen on a VR page. Takes effect the next time the pause menu opens.",
+                "Adds a VR entry to the end of the options menu, opening the game's own settings \
+                 screen with a tab per VR page. Takes effect the next time the pause menu opens.",
             );
         }
         ui.label(format!("State: {:?}", crate::pause_menu::state()));

@@ -24,12 +24,15 @@ pub(crate) struct GfxValue<'t> {
     _thread: PhantomData<&'t CaptureThread>,
 }
 
-/// An unmanaged value passed into the movie: the movie copies it, and nothing needs releasing.
-#[derive(Copy, Clone, Debug)]
+/// A value passed into the movie: the movie copies it, and nothing needs releasing.
+#[derive(Copy, Clone)]
 pub(crate) enum Param<'a> {
     Int(i32),
     Bool(bool),
     Str(&'a CStr),
+    /// A value the mod holds (an object or a closure read from the movie), passed by reference:
+    /// the movie takes its own reference when it stores it.
+    Value(&'a GfxValue<'a>),
 }
 
 impl<'t> GfxValue<'t> {
@@ -77,6 +80,11 @@ impl<'t> GfxValue<'t> {
         // SAFETY: as `create_object`.
         screen.with_ui(|ui| unsafe { ui.CreateArray(value.value.as_mut()) });
         value.is_object().then_some(value)
+    }
+
+    /// Whether this is a closure: a method bound to its object, as reading a method member yields.
+    pub(crate) fn is_closure(&self) -> bool {
+        self.is_managed() && self.value.value_type() == Value::VT_CLOSURE
     }
 
     /// Whether this is a managed object (an object, array, or display object) the object interface
@@ -289,6 +297,9 @@ fn param_value(param: Param<'_>) -> Value {
         Param::Int(value) => unmanaged(Value::VT_INT, value as u32 as u64),
         Param::Bool(value) => unmanaged(Value::VT_BOOLEAN, u64::from(value)),
         Param::Str(value) => unmanaged(Value::VT_STRING, value.as_ptr() as u64),
+        // SAFETY: a bitwise copy of a live value, read by the movie for the length of one call
+        // while `value` keeps its reference; the copy is never released or linked.
+        Param::Value(value) => unsafe { std::ptr::read(value.value.as_ref()) },
     }
 }
 
