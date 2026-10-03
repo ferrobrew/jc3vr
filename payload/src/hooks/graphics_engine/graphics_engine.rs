@@ -286,6 +286,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                     scope::draw(&context.m_Context, device, back_buffer, eye);
                     hud::draw_quad(&context.m_Context, device, back_buffer, eye);
                     draw_quad(&context.m_Context, device, back_buffer, eye);
+                    hud::summary_panel::draw(&context.m_Context, device, back_buffer, eye);
                 }
                 set_collapse_ui_eye(None);
             } else {
@@ -293,6 +294,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 scope::draw(&context.m_Context, device, back_buffer, index);
                 hud::draw_quad(&context.m_Context, device, back_buffer, index);
                 draw_quad(&context.m_Context, device, back_buffer, index);
+                hud::summary_panel::draw(&context.m_Context, device, back_buffer, index);
             }
             // Redirect the flat mirror overlay into an offscreen texture on eye 0 (consuming this
             // frame's egui output) so the desktop mirror can composite it from the deferred frame

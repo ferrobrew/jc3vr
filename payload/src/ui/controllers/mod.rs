@@ -1,7 +1,7 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
 //! controller frame and of each controller subsystem (finger curls, weapon handling, scopes,
-//! vehicles and flight, posture, and roomscale included), the player's body dimensions, and every
-//! controller setting. Each subsystem's section is in its own file.
+//! vehicles and flight, the controls summary, posture, and roomscale included), the player's body
+//! dimensions, and every controller setting. Each subsystem's section is in its own file.
 
 mod aim;
 mod aim_state;
@@ -17,6 +17,7 @@ mod roomscale;
 mod scope;
 mod settings;
 mod sights;
+mod summary;
 mod vehicles;
 mod weapons;
 
@@ -33,7 +34,9 @@ use crate::{
         hands::{ik as hand_ik, late, tiers},
         mode as controller_mode, overlay as controller_overlay,
         persistence as controller_persistence, roomscale as controller_roomscale, scheme,
+        summary as controller_summary,
     },
+    hud::summary_panel,
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
@@ -61,6 +64,8 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let weapons_readout = weapons::WeaponsReadout::read();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
+    let summary_status = controller_summary::status();
+    let panel_status = summary_panel::status();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.heading("Status");
@@ -136,6 +141,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Overlay")
             .default_open(true)
             .show(ui, |ui| overlay::overlay_readout(ui, &overlay_status));
+
+        egui::CollapsingHeader::new("Controls summary")
+            .default_open(true)
+            .show(ui, |ui| {
+                summary::summary_readout(ui, &summary_status, &panel_status)
+            });
 
         egui::CollapsingHeader::new("Posture and roomscale")
             .default_open(true)

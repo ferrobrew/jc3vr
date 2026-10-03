@@ -10,7 +10,7 @@ use crate::{
         frame::Hand,
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, fingers, hands, overlay, roomscale, scope, vehicles, weapons},
+    ui::controllers::{aim, fingers, hands, overlay, roomscale, scope, summary, vehicles, weapons},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -161,6 +161,9 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Overlay")
         .show(ui, |ui| overlay::overlay_settings(ui, &mut c.overlay));
+
+    egui::CollapsingHeader::new("Controls summary")
+        .show(ui, |ui| summary::summary_settings(ui, &mut c.summary));
 
     egui::CollapsingHeader::new("Weapons").show(ui, |ui| {
         let w = &mut c.weapons;

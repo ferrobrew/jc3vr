@@ -1,0 +1,30 @@
+# Button hints and localisation
+
+How the HUD shows its button prompts, how a prompt picks its glyph, and how the game resolves a localised string from its key. The semantic button-mapping table these prompts are named from is documented in [input.md](gameplay/input.md#the-mapping--action-table).
+
+## Localised strings
+
+The localisation store is `CLocator`, a singleton ([`Locator`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::locator::Locator)). It owns every loaded string table (`.stringlookup` resources) plus a map of strings registered at runtime. A string table is an ADF resource holding, per language, a sorted array of key hash and offset pairs over one shared UTF-8 string blob. `ui/ui_localization.stringlookup` carries the UI's strings in eleven languages: English, French, German, Italian, Spanish, Russian, Polish, Japanese, Brazilian Portuguese, Latin American Spanish, and Arabic.
+
+A string's key is its name hashed with `hashlittle` and a zero seed (the game's `HashString`, the same hash [`HashString`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/hash::HashString) stores). [`GetLocalizedStringRaw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::locator::Locator##func-GetLocalizedStringRaw) takes that hash, enters the store's reader lock, binary-searches each loaded table's block for the current language, then falls back to the runtime map, and returns a null-terminated UTF-8 string owned by the table, or null when no table has the key. The thin `GetLocalizedString` wrappers call it.
+
+The current language is [`m_CurrentLocale`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::locator::Locator##field-m_CurrentLocale), a [`Locale`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::locator::Locale). `CGame::SetGameLanguage` writes it from the two-letter language code (the platform's, unless one is given), falling back to English for a code it does not know, and then tells the UI manager to switch language.
+
+Every `buttonhint_*` key the button-mapping table names resolves in all eleven languages, as do `buttonhint_hold` and `buttonhint_release` (the "HOLD" and "RELEASE" prefixes) and the controls screen's tab names, `gui_settings_controller_mapping_*` ("ON FOOT", "CAR", "HELICOPTER", ...).
+
+## The button-mapping table names the prompts
+
+Each [`MappingInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::button_mapping::MappingInfo) of the semantic button-mapping table carries the hash of a `buttonhint_*` key as its description, beside the action or actions it consults and its interaction (tap, hold, hold and tap, release). The options menu's controls screen (`CPauseUI::LoadControllerMapping`) names each row by resolving that key, so the controls screen, the HUD's prompts, and the table are one source. Several mappings share a key (the reload, holster, and fire keys recur per vehicle class), and some differ from their action's name (the melee mapping's key is `buttonhint_hammer`; the car's turn uses the helicopter's `buttonhint_heli_turn_*` keys).
+
+## How the HUD shows its hints
+
+1. **Sources.** `CPlayerActionObserver` raises the context hints: one predicate pair per hint (release the tethers, reel in, hang jump, detonate, the gunner seat, the handbrake, look back, the parachute, the sniper zoom, holster, and the rest), plus the systemic hints, tutorial-like nudges whose show and hide times it saves. Graph scripts raise mission hints through the `ButtonHint` and `SystemicButtonHint` script nodes. All of them end in `CHUDUI::AddButtonHint` and `RemoveButtonHint`.
+2. **The queue.** `CHUDUI` keeps a lock-guarded vector of `SButtonHint`: the request (its type, normal, Y-use, or big; the mapping; the lifetime), the two key ids, the time left, and an id.
+3. **The push.** `CHUDUI::UpdateButtonHints`, called from the HUD's update, ages the timed hints and, when the queue changed, builds three arrays for the movie (normal, at most three of them; Y-use; big) of id, two key strings, interaction, and description. The description is `GetLocalizedStringRaw` of the mapping's key. Each key string comes from `CUIBase::SetKeyString`, which formats the hash of the action's input name as `{hash}`: a placeholder naming the action, not a button.
+4. **The movie.** `hud.gfx` lays the normal hints out in `MCI_safe_area_bottom_right.MCI_sys_button_hints_stage` (three hint clips) and the big hint in `MCI_safe_area_center.MCI_button_hints_stage`. Each hint's text is the hold or release prefix, the placeholder, and the description. The movie writes its hint clips' visibility, not the two stages'; the cinematic code lists the centre stage among the clips it re-shows after a cinematic. These paths are read from the decompiled movie and are not yet confirmed against the running game's display tree.
+
+## How a prompt picks its glyph
+
+The glyphs are Scaleform image substitutions in text fields, not a font. A movie registers its text fields for button mapping (`uibase.RegisterButtonMappingTextFields`). Native `CUIBase::UpdateInputActionMap` fills the movie's public `m_ButtonMapping` array with one `{subString: "{hash}", image: <class name>}` entry per action the button-mapping table offers the UI, but only while the UI manager considers the gamepad the active device. The image name comes from the action's bound gamepad key through `CUIBase::GetSteeringActionImage` (`button_a`, `button_rt`, `button_lsup`, ...). The shared library turns each entry into an image substitution, so the renderer swaps every placeholder in the registered fields for a bitmap embedded in `shared_lib.gfx`, in a plain, an Xbox, and a PS4 set. The mapping is by action, so a prompt shows the glyph of whatever gamepad button the action is bound to, whatever input actually drives it.
+
+The same mechanism draws the use-item and weapon-pickup prompt (whose localised string is the bare placeholder in every language), the skip-cutscene prompt, the HUD notifications, and the pause menu's hint bars.

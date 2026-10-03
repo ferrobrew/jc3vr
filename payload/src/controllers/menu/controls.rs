@@ -121,6 +121,15 @@ fn build() -> Page {
             .overlay
             .hide_game_reticle))
         .item(config_toggle!("FINGERS", |c| c.controllers.fingers.enabled))
+        .header("CONTROLS SUMMARY")
+        .item(config_toggle!("CONTROLS ON WRIST", |c| c
+            .controllers
+            .summary
+            .enabled))
+        .item(config_toggle!("HIDE GAME BUTTON HINTS", |c| c
+            .controllers
+            .summary
+            .hide_game_hints))
         .header("WEAPONS")
         .item(config_toggle!("HOLSTERS", |c| c
             .controllers

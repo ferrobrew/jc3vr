@@ -43,6 +43,7 @@ mod quad;
 pub mod scaleform;
 pub mod split;
 mod state;
+pub(crate) mod summary_panel;
 mod target;
 mod warp;
 

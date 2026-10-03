@@ -1,11 +1,12 @@
 //! The binding table tests, split by concern. The shared fixtures live here.
 
 use glam::Vec2;
+use jc3gi::input::input_action_map::Action::{self, *};
 
 use super::*;
 use crate::controllers::{
     bindings::{controls::HandControls, grab::HolsterSite},
-    mode::OnFootVariant,
+    mode::{OnFootVariant, VehicleSeat},
 };
 
 const DT: f32 = 1.0 / 30.0;

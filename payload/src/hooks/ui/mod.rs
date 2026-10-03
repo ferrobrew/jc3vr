@@ -28,7 +28,9 @@ use re_utilities::hook_library::HookLibrary;
 pub(crate) use crate::hooks::ui::mouse::cancel_pointer_on_game_thread;
 use crate::{
     config::Config,
-    controllers::overlay::game_reticle::hide_game_reticles,
+    controllers::{
+        overlay::game_reticle::hide_game_reticles, summary::game_hints::hide_game_hints,
+    },
     hud::{HUD_STATE, compute_panel_vp, current_aspect, split::roots},
 };
 
@@ -111,9 +113,8 @@ fn convert_3d_coords_default(
 /// on the game update thread with the deferred render lock held -- the only point in the frame
 /// where every display-tree writer is quiescent. The render-root partition maintains itself here
 /// (build, per-frame reconcile against pool churn, teardown), and the issue #8 overlay suppression
-/// and the controller scheme's reticle hiding write here, so the engine's own capture carries
-/// everything; the original then
-/// runs unchanged. Movies other than the main UI movie (the render-to-texture instances) pass
+/// and the controller scheme's reticle and button-hint hiding write here, so the engine's own
+/// capture carries everything; the original then runs unchanged. Movies other than the main UI movie (the render-to-texture instances) pass
 /// through untouched. See [`crate::hud::split::roots`] and [`crate::hud::scaleform`].
 #[detour(address = MovieImpl::CaptureImpl_ADDRESS)]
 fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
@@ -139,6 +140,7 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
         unsafe {
             crate::hud::scaleform::apply_overlay_suppression(suppress_overlays);
             hide_game_reticles();
+            hide_game_hints();
             if let Some(movie) = this.as_mut() {
                 roots::on_capture(movie, split_active);
                 log_pipeline_lag(movie, split_active);

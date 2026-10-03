@@ -13,6 +13,7 @@
 //!
 //! [`AimConfig::sights`]: crate::controllers::config::AimConfig::sights
 
+pub mod config;
 pub mod table;
 pub mod tuning;
 

@@ -6,6 +6,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ## engine/
 
+- [button-hints-and-localisation.md](engine/button-hints-and-localisation.md) — the localisation store and its string lookup, the button-mapping table's prompt keys, the HUD's button-hint pipeline and its two hint stages, and how a prompt picks its gamepad glyph.
 - [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus and folders, settings screen, tab bar, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
 
 ### rendering/
@@ -77,6 +78,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [input.md](mod/input/input.md) — how the mod taps, consumes, and injects the game's input.
 - [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md) — the motion-controller and roomscale plan of record: the continuous-body principles, the aim-state pin, controller-owned hands and their tiers, per-hand aiming, weapon handling, per-mode bindings, roomscale, the milestones, the implementation status, and the headset test checklist.
+- [controls-summary.md](mod/input/controls-summary.md) — the controls summary on the off-hand wrist: hiding the game's button hints, the binding tables read by both the injection and a describer, labels from the game's localisation, the panel and its glance, the glyph and font assets, and the in-game status list.
 - [controllers.md](mod/input/controllers.md) — the motion controllers as built: the OpenXR input foundation, scheme selection, mode detection, the bindings and their injection, the gamepad-semantics pin, the aim-state pin, controller-owned hands, per-hand aiming, the sight lines and their tuning tool, the world-space overlay layer, recoil, haptics, dual-wield, the anchored grapple hand, vehicles and flight, grenades, melee, aim assist, the magazine gesture, and scopes.
 
 ## issues/

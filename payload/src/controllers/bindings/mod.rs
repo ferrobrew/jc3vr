@@ -49,7 +49,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand},
         hands::{self, tiers},
         mode::{self, Detection, Mode},
-        scheme, vehicles,
+        scheme, summary, vehicles,
         weapons::{
             self,
             dual_wield::{self, TriggerInput, TriggerTick},
@@ -262,6 +262,7 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     let mut step = state
         .bindings
         .step(detection.mode, &controls, dt, &config.bindings);
+    summary::refresh(detection.mode, &controls, &config, &frame);
     if step.crouch_toggle {
         crate::controllers::roomscale::toggle_seated_crouch();
     }
