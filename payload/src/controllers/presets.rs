@@ -77,6 +77,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.overlay.gun_readout = GunReadout::None;
     c.overlay.grapple_highlight = hands;
     c.overlay.grapple_beam = hands;
+    c.overlay.hide_game_reticle = hands;
     c.overlay.ghost_hands = hands;
     c.overlay.grab_volumes = hands;
     c.overlay.debug_gizmos = hands;

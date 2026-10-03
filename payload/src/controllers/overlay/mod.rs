@@ -4,6 +4,7 @@
 //! highlight and beam, the guns' dot or laser, the grab-volume highlights, the ghosts of yielded
 //! hands, and the controller gizmos.
 //!
+//! - [`game_reticle`]: the game's own HUD reticles, hidden while the hands aim;
 //! - [`primitive`]: what a producer submits;
 //! - [`store`]: the retained per-source slots, replaced by each submission and expiring on their
 //!   own, which any thread may submit to ([`store::submit`], [`store::clear`]);
@@ -18,6 +19,7 @@
 //! primitives are snapshotted and uploaded once, on the first eye's draw, so both eyes draw the same
 //! geometry.
 
+pub mod game_reticle;
 pub mod primitive;
 pub mod producers;
 pub mod renderer;

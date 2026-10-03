@@ -116,6 +116,10 @@ fn build() -> Page {
             &GUN_READOUT_LABELS,
             |c| c.controllers.overlay.gun_readout
         ))
+        .item(config_toggle!("HIDE GAME CROSSHAIR", |c| c
+            .controllers
+            .overlay
+            .hide_game_reticle))
         .item(config_toggle!("FINGERS", |c| c.controllers.fingers.enabled))
         .header("WEAPONS")
         .item(config_toggle!("HOLSTERS", |c| c
@@ -123,6 +127,11 @@ fn build() -> Page {
             .weapons
             .holsters
             .enabled))
+        .item(config_toggle!("STICK CLICK CYCLES WEAPONS", |c| c
+            .controllers
+            .weapons
+            .holsters
+            .stick_click_cycles))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons

@@ -101,6 +101,15 @@ pub(crate) const OVERLAY_CLIPS: &[&str] = &[
     "MCI_safe_area_center.MCI_sniper",
 ];
 
+/// The HUD's weapon and grapple reticle groups, children of the center container's reticle
+/// container, in that order: held invisible by [`apply_reticle_suppression`]. The movie's own
+/// `UpdateWeaponReticle` writes the weapon group's visibility on every HUD update, which the intent
+/// tracking absorbs; nothing in the movie writes the grapple group's.
+pub(crate) const RETICLE_CLIPS: [&str; 2] = [
+    "MCI_safe_area_center.MCI_reticles.MCI_weapon_reticle_group",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group",
+];
+
 /// A heap-pinned managed [`Value`] handle to a clip, plus the game-intent tracking the mask needs.
 /// The `Value` is an intrusive list node on the movie's external-references list, so it must never
 /// move after `GetVariable` fills it -- hence the box. Release (on the capture thread) before
@@ -151,6 +160,8 @@ pub(crate) struct ClipHandles {
     pub containers: [Vec<ClipHandle>; LAYER_COUNT],
     /// The issue #8 overlay clips.
     pub overlays: Vec<ClipHandle>,
+    /// The reticle groups, in [`RETICLE_CLIPS`] order.
+    pub reticles: Vec<ClipHandle>,
     /// The anonymous POI pool (markers layer).
     pub dynamic: Vec<ClipHandle>,
 }
@@ -179,6 +190,32 @@ pub unsafe fn apply_overlay_suppression(suppress: bool) {
     // values from the registry.
     unsafe {
         for handle in &mut handles.overlays {
+            if suppress {
+                refresh_intent(handle);
+                force_visible(handle, false);
+            } else if handle.forced.is_some() {
+                refresh_intent(handle);
+                unforce_visible(handle);
+            }
+        }
+    }
+}
+
+/// Hold the weapon reticle group hidden while `weapon` is set and the grapple reticle group while
+/// `grapple` is, tracking the game's own visibility intent across our writes and restoring it when
+/// released. Runs at the capture seam, like [`apply_overlay_suppression`].
+///
+/// # Safety
+/// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
+pub unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
+    let mut handles = CLIP_HANDLES.lock();
+    let Some(handles) = handles.as_mut() else {
+        return;
+    };
+    // SAFETY: capture-seam threading per the function contract; the handles are pinned managed
+    // values from the registry.
+    unsafe {
+        for (handle, suppress) in handles.reticles.iter_mut().zip([weapon, grapple]) {
             if suppress {
                 refresh_intent(handle);
                 force_visible(handle, false);
@@ -284,6 +321,7 @@ fn release_clip_handles() {
                 .iter_mut()
                 .flatten()
                 .chain(handles.overlays.iter_mut())
+                .chain(handles.reticles.iter_mut())
                 .chain(handles.dynamic.iter_mut())
             {
                 unforce_visible(handle);
@@ -317,7 +355,11 @@ pub fn process_requests() {
     // handle registry; request the initial discovery when either wants it. While the partition
     // is live the registry must stay stable (a rebuild would tear the partition down for a
     // frame), so the periodic refresh only runs before the partition takes.
-    let handles_needed = Config::lock_query(|c| c.hud.split || c.hud.suppress_overlays);
+    let handles_needed = Config::lock_query(|c| {
+        c.hud.split
+            || c.hud.suppress_overlays
+            || (c.controllers.enabled && c.controllers.overlay.hide_game_reticle)
+    });
     let handles_live = CLIP_HANDLES.lock().is_some();
     if handles_needed
         && (!handles_live
@@ -420,7 +462,10 @@ fn dump_tree(movie_impl: &MovieImpl, movie_root: &Movie) {
         let prefix = prefix.as_str();
         tracing::info!("scaleform: split path probe (prefix {prefix:?})");
         let containers = LAYER_CONTAINERS.iter().flat_map(|layer| layer.iter());
-        for path in containers.chain(OVERLAY_CLIPS.iter()) {
+        for path in containers
+            .chain(OVERLAY_CLIPS.iter())
+            .chain(RETICLE_CLIPS.iter())
+        {
             let full = format!("{prefix}{path}.visible\0");
             let mut value = Value::new_boolean(true);
             let ok = movie_root.GetVariable(&mut value, full.as_ptr());
@@ -541,6 +586,7 @@ fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
                     .collect()
             }),
             overlays: OVERLAY_CLIPS.iter().map(|path| resolve(path)).collect(),
+            reticles: RETICLE_CLIPS.iter().map(|path| resolve(path)).collect(),
             dynamic: anonymous.iter().map(|name| resolve(name)).collect(),
         };
         tracing::debug!(

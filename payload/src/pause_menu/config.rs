@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct PauseMenuConfig {
     /// Add the VR pages to the pause menu's options menu. Read when the menu opens, so a change
-    /// takes effect the next time it does. Off by default until the menu is verified in game.
+    /// takes effect the next time it does.
     pub enabled: bool,
 }
 
 impl PauseMenuConfig {
     pub const fn new() -> Self {
-        Self { enabled: false }
+        Self { enabled: true }
     }
 }
 

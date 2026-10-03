@@ -200,7 +200,7 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Use item, enter vehicle, open wingsuit | X |
 | Reload | B; the opt-in magazine gesture also reloads |
 | Holster | grip press with the weapon hand at the held weapon's holster; a short hold of B also holsters, as on the gamepad |
-| Weapon slot select | draw from a holster; the L stick click cycles `NEXT_WEAPON` as an opt-in fallback |
+| Weapon slot select | draw from a holster; the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
 | Throw grenade | grab from the grenade pouch and throw; R stick click is the fallback |
 | Plant and detonate explosives | R stick click (context) |
 | Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand; no button |
@@ -278,7 +278,7 @@ The dominant hand's ray reaches each held weapon's `m_AimTargetPosition` through
 
 The per-weapon sight offsets are derived and then tuned. The fire-point matrices (`m_InternalFirePositions`) give the muzzle origin and the barrel axis: `GetShotMatrix` treats the composed fire-point matrix's -Z axis as the barrel. An offline tool, `tools/sights/`, reads the weapon models from the game archives, derives the sight line from the model geometry above the fire point, and emits `tools/sights/sights.json`, keyed by the weapon name hash, with a confidence grade per weapon ([weapon-data.md](../../engine/gameplay/weapon-data.md) has the files it reads). Scoped sights and pistols derive reliably; iron sights on rifles with rails, muzzle devices, or carry handles do not, and are graded uncertain. The payload embeds the table and uses only its trusted grades; a per-weapon config entry overrides it, and a weapon with neither aims along its fire point. A tuning tool in the debug UI writes the config entry: the player lines up the sights on a marker and captures, and the entry can be copied into the table ([controllers.md, "Sight lines"](controllers.md#sight-lines)).
 
-Guns show no reticle by default. The options are a dot at the hit point, at the hit point's true depth so that it fuses in stereo, and a laser line from the muzzle to the hit point. Both are drawn by the world-space overlay layer.
+Guns show no reticle by default. The options are a dot at the hit point, at the hit point's true depth so that it fuses in stereo, and a laser line from the muzzle to the hit point. Both are drawn by the world-space overlay layer. The game's own weapon reticle, which marks the gaze's aim point, is hidden while the guns aim by hand, and its grapple reticle while the grapple does (`overlay.hide_game_reticle`, on).
 
 ### The grapple
 
@@ -316,7 +316,7 @@ Haptic pulses come from the game's own rumbles: every one-off rumble goes throug
 
 ### Holsters
 
-The holsters are grab volumes on the body: the hips for pistols, over the shoulders for two-handed and special weapons, and the chest for explosives. The two shoulders split the long weapons: the dominant shoulder holds the two-handed slot and the other shoulder the special slot. The volumes are placed from the player's body dimensions. A grip press in a holster draws that slot's weapon with `SELECT_DUEL_WIELD`, `SELECT_TWO_HANDED`, `SELECT_TWO_HANDED_SPECIAL`, or `SELECT_EXPLOSIVES`. A grip press by the hand holding a weapon, inside that weapon's own holster, holsters it through `Character::HolsterWeapon`. The short hold of the reload button that holsters on the gamepad still works, but the game decides that hold in the animation graph, and with a heavy weapon the same hold drops it, so the holsters do not use it. The draw and the holster play under the action-runs tier. The weapon cycle on the L stick click is an opt-in fallback. The radial menu fallback is deferred with the rest of the mod UI.
+The holsters are grab volumes on the body: the hips for pistols, over the shoulders for two-handed and special weapons, and the chest for explosives. The two shoulders split the long weapons: the dominant shoulder holds the two-handed slot and the other shoulder the special slot. The volumes are placed from the player's body dimensions. A grip press in a holster draws that slot's weapon with `SELECT_DUEL_WIELD`, `SELECT_TWO_HANDED`, `SELECT_TWO_HANDED_SPECIAL`, or `SELECT_EXPLOSIVES`. A grip press by the hand holding a weapon, inside that weapon's own holster, holsters it through `Character::HolsterWeapon`. The short hold of the reload button that holsters on the gamepad still works, but the game decides that hold in the animation graph, and with a heavy weapon the same hold drops it, so the holsters do not use it. The draw and the holster play under the action-runs tier. The weapon cycle on the L stick click stays on as a fallback, for a player (seated, say) who cannot reach the holsters. The radial menu fallback is deferred with the rest of the mod UI.
 
 ### Two-handed weapons
 
@@ -463,7 +463,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Hands | `hands.ik`, `hands.late_update`, `hands.suppress_secondary_ik`, `hands.reach_t`, `hands.reach_r`, `hands.pull`, `hands.resist`, `hands.grip`, `hands.yield_blend_s`, `hands.return_blend_s`, `hands.tiers` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand. The grapple wire's render-time correction and elbow pole hints are not built. |
 | Gun aiming | `aim.gun`, `aim.max_distance_m`, `aim.min_target_distance_m`, `aim.sights` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
 | Grapple aiming | `aim.grapple`, `aim.grapple_origin_m` | Built. |
-| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.ghost_hands`, `overlay.debug_gizmos` (off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
+| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.ghost_hands`, `overlay.debug_gizmos` (off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
 
 ### Milestone 2: posture and roomscale
 
@@ -485,7 +485,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| Holsters and grab volumes | `holsters.enabled`, `holsters.hip`, `holsters.shoulder`, `holsters.chest`, `holsters.pouch`, `holsters.stick_click_cycles` (off), `overlay.grab_volumes` | Built. The volume offsets and radii are untuned. |
+| Holsters and grab volumes | `holsters.enabled`, `holsters.hip`, `holsters.shoulder`, `holsters.chest`, `holsters.pouch`, `holsters.stick_click_cycles` (on), `overlay.grab_volumes` | Built. The volume offsets and radii are untuned. |
 | The two-handed foregrip | `foregrip.enabled`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |

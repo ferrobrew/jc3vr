@@ -26,6 +26,14 @@ pub(super) fn overlay_readout(ui: &mut Ui, status: &OverlayStatus) {
 }
 
 pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {
+    ui.checkbox(
+        &mut o.hide_game_reticle,
+        "Hide the game's reticles while the hands aim",
+    )
+    .on_hover_text(
+        "Hide the HUD's weapon reticle while the guns aim by hand, and its grapple reticle \
+             while the grapple does: both mark where the gaze aims.",
+    );
     ui.checkbox(&mut o.enabled, "Enabled")
         .on_hover_text("Draw the world-space overlay layer.");
     ui.add_enabled_ui(o.enabled, |ui| {

@@ -2,7 +2,7 @@
 
 The mod's VR settings live inside the game's own pause menu. Each VR page is an entry at the end of the options menu that opens the game's settings screen on a page the mod describes in Rust, so the page is drawn by the pause movie's own list, rows, option picker, slider, message box, sounds, and gamepad and mouse handling. The mod ships no Flash of its own and does not patch `pause.gfx`: it reaches the movie through the Scaleform value API from five detours on [`PauseUI`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::pause_ui::PauseUI). The engine side (the movie's structure, the commands it sends, and what code outside it can reach) is in [`engine/pause-menu.md`](../engine/pause-menu.md). The code is `payload/src/pause_menu/`.
 
-The feature is behind `pause_menu.enabled`, off by default, with a checkbox in the debug UI's HUD tab (under "Pause menu", which also shows the menu state). The setting is read when the pause menu opens, so a change takes effect the next time it does. With it off, no entries are added and every hook calls through.
+The feature is behind `pause_menu.enabled`, on by default, with a checkbox in the debug UI's HUD tab (under "Pause menu", which also shows the menu state). The setting is read when the pause menu opens, so a change takes effect the next time it does. With it off, no entries are added and every hook calls through.
 
 ## Route
 

@@ -14,7 +14,9 @@ pub struct HolstersConfig {
     /// press at its own holster.
     pub enabled: bool,
     /// Keep the move stick's click cycling to the next weapon while the holsters are on, as a
-    /// fallback for players who cannot reach them. Off the holsters, the click always cycles.
+    /// fallback for players who cannot reach them (seated, the estimated hip height can put the
+    /// hip holsters out of reach). Off the holsters, the click always cycles. Under the
+    /// dual-wield split the click retracts the tethers instead.
     pub stick_click_cycles: bool,
     /// The pistol holsters on both hips: the dual-wield slot.
     pub hip: VolumeSpec,
@@ -38,7 +40,7 @@ impl HolstersConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            stick_click_cycles: false,
+            stick_click_cycles: true,
             hip: VolumeSpec {
                 offset_m: Vec3::new(0.04, 0.02, 0.0),
                 radius_m: 0.10,
