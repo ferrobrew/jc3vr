@@ -29,6 +29,7 @@ use crate::{
             magazine::{MagazineGesture, MagazineStage},
             melee::{self, MeleeStatus},
             recoil::{self, RecoilStatus},
+            volumes::Stance,
         },
     },
     ui::controllers::{vec3, vec3_drag, yes_no},
@@ -83,6 +84,23 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         status.candidates,
         yes_no(status.fire_blocked)
     ));
+    ui.label(format!(
+        "Body volumes placed for: {}",
+        match status.stance {
+            Some(Stance::Seated { eye_y }) => format!("seated (eyes at {eye_y:+.2} m)"),
+            Some(stance) => stance.label().to_owned(),
+            None => "nothing".to_owned(),
+        }
+    ));
+    if let Some((hand, miss)) = status.last_miss {
+        ui.label(format!(
+            "Last near miss: {} hand {:.2} m outside the {} (offset from its centre {})",
+            hand.label(),
+            miss.outside_m,
+            miss.volume.label(),
+            vec3(miss.offset)
+        ));
+    }
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
             let ui = &mut columns[hand.index()];
@@ -488,9 +506,28 @@ fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
 }
 
 fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
+    ui.checkbox(&mut h.show_volumes, "Show every holster volume")
+        .on_hover_text(
+            "Draw all the body volumes through the overlay, the one a hand is in highlighted.",
+        );
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
         .on_hover_text("The fallback for drawing without reaching a holster.");
     ui.add(egui::Slider::new(&mut h.crouch_deadband_m, 0.0..=0.5).text("Crouch deadband (m)"));
+    ui.checkbox(
+        &mut h.detect_seated,
+        "Detect seating in the automatic posture",
+    )
+    .on_hover_text(
+        "Place the volumes for a seated body once the head stays low. The seated posture \
+             always does.",
+    );
+    ui.add_enabled_ui(h.detect_seated, |ui| {
+        ui.add(
+            egui::Slider::new(&mut h.seated_eye_fraction, 0.5..=0.95)
+                .text("Seated below this fraction of the standing eye height"),
+        );
+        ui.add(egui::Slider::new(&mut h.seated_after_s, 0.0..=15.0).text("Seated after (s)"));
+    });
     ui.label("Offsets from the landmark, right side (+X right, +Y up, +Z back)");
     volume_settings(ui, "Hip", &mut h.hip);
     volume_settings(ui, "Shoulder", &mut h.shoulder);
@@ -505,7 +542,13 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
 }
 
 fn volume_settings(ui: &mut Ui, label: &str, v: &mut VolumeSpec) {
-    vec3_drag(ui, &format!("{label} offset (m)"), &mut v.offset_m, 0.005);
+    for (axis, value) in [
+        ("x", &mut v.offset_m.x),
+        ("y", &mut v.offset_m.y),
+        ("z", &mut v.offset_m.z),
+    ] {
+        ui.add(egui::Slider::new(value, -0.4..=0.4).text(format!("{label} offset {axis} (m)")));
+    }
     ui.add(egui::Slider::new(&mut v.radius_m, 0.02..=0.3).text(format!("{label} radius (m)")));
 }
 

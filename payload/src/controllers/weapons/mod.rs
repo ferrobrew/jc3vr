@@ -29,9 +29,11 @@
 //!    throw, the strike detector, and the magazine gesture, and holds the fire inputs back while a
 //!    reload, a draw, or a holster plays (the action-runs hand tier).
 //!
-//! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights are
-//! submitted to the overlay's [`Source::GrabVolumes`] slot. Everything acts only while the bindings
-//! inject, which is only under the controller scheme with a controller active.
+//! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights (and,
+//! with `holsters.show_volumes`, every body volume) are submitted to the overlay's
+//! [`Source::GrabVolumes`] slot. A grip press that grabs nothing near a holster is logged with its
+//! distance from the nearest one. Everything acts only while the bindings inject, which is only
+//! under the controller scheme with a controller active.
 
 mod camera_kick;
 pub mod config;
@@ -48,7 +50,7 @@ pub mod recoil;
 pub mod scope;
 pub mod volumes;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
@@ -80,9 +82,10 @@ use crate::{
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             holster::HolsterAction,
             magazine::{GestureEvent, GestureInputs, MagazineGesture},
+            volumes::{NearMiss, SeatedDetector, Stance, StanceInputs},
         },
     },
-    headpose,
+    headpose, vr,
 };
 
 /// The weapon handling's hooks, aggregated by [`crate::controllers::hook_library`].
@@ -161,12 +164,16 @@ pub struct WeaponsStatus {
     pub volumes: [Option<GrabVolume>; 2],
     /// How many volumes were placed.
     pub candidates: usize,
+    /// The stance the body volumes were placed for.
+    pub stance: Option<Stance>,
     pub wielded: Option<WieldedReadout>,
     /// Whether the fire inputs were held back for a weapon action on the last tick.
     pub fire_blocked: bool,
     /// The most recent grabs, newest last.
     pub events: Vec<GrabEvent>,
     pub grabs: u64,
+    /// The last grip press near but outside a holster.
+    pub last_miss: Option<(Hand, NearMiss)>,
     /// The magazine reload gesture.
     pub magazine: MagazineGesture,
 }
@@ -209,14 +216,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
 
     let mut candidates = Vec::new();
-    let origin = volumes::body_origin(
+    let stance = state.step_stance(&config, active.head.position.y);
+    let body_frame = volumes::body_frame(
         active.head.position,
+        stance,
         config.weapons.holsters.crouch_deadband_m,
     );
     let dims = body_dimensions(&config);
     if gameplay && (config.weapons.holsters.enabled || config.weapons.grenade_throw) {
         candidates = volumes::holster_candidates(
-            origin,
+            &body_frame,
             &dims,
             &config.weapons.holsters,
             config.dominant_hand,
@@ -245,7 +254,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         });
     if well.is_some() {
         candidates.push(volumes::magazine_pouch(
-            origin,
+            &body_frame,
             &dims,
             &config.weapons.magazine.pouch,
             off,
@@ -277,6 +286,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.status.active = true;
     state.status.volumes = volumes;
     state.status.candidates = candidates.len();
+    state.status.stance = Some(stance);
+    state.placed.clone_from(&candidates);
+    state.grab_points = active.hands.map(|h| h.map(|h| h.grip.position));
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
     state.gameplay = gameplay;
@@ -374,6 +386,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             outcome,
         });
     }
+    if gameplay {
+        log_near_misses(&grabs, &grips);
+    }
 
     grenade::input_tick(
         &grenade::TickInputs {
@@ -446,11 +461,21 @@ pub(crate) fn stand_down() {
     state.status.active = false;
     state.status.volumes = [None; 2];
     state.status.fire_blocked = false;
+    state.status.stance = None;
+    state.placed.clear();
+    state.grab_points = [None; 2];
+    state.last_stance_tick = None;
     store::clear(Source::GrabVolumes);
 }
 
 /// The fire inputs a weapon action holds back.
 const FIRE_ACTIONS: [Action; 2] = [Action::FIRE_RIGHT, Action::R2];
+
+/// How far outside a holster's surface a grip press counts as a near miss, metres.
+const NEAR_MISS_MARGIN_M: f32 = 0.3;
+
+/// The shortest time between two near-miss log lines.
+const NEAR_MISS_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How many grabs the readout keeps.
 const MAX_EVENTS: usize = 6;
@@ -470,9 +495,40 @@ struct State {
     /// The held weapon's magazine well in the cockpit frame, while the magazine gesture can reload
     /// it.
     well: Option<Vec3>,
+    /// The tick's placed volumes and each hand's grab point, for the near-miss log.
+    placed: Vec<Candidate>,
+    grab_points: [Option<Vec3>; 2],
+    seated: SeatedDetector,
+    last_stance_tick: Option<Instant>,
+    last_miss_log: Option<Instant>,
 }
 
 impl State {
+    /// Step the seated detector for a head at the cockpit frame height `head_y`, logging a change
+    /// of stance.
+    fn step_stance(&mut self, config: &ControllersConfig, head_y: f32) -> Stance {
+        let now = Instant::now();
+        let dt = self
+            .last_stance_tick
+            .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
+        self.last_stance_tick = Some(now);
+        let previous = self.status.stance;
+        let stance = self.seated.step(
+            &StanceInputs {
+                setting: config.roomscale.posture,
+                head_y,
+                floor_eye_height: vr::stage::stage().head_height,
+                standing_eye_height: body::player().eye_height,
+                dt,
+            },
+            &config.weapons.holsters,
+        );
+        if previous.map(Stance::label) != Some(stance.label()) {
+            tracing::debug!(target: "controllers", stance = stance.label(), ?stance, "holsters: placed for a new stance");
+        }
+        stance
+    }
+
     /// The two-handed geometry of `weapon`, measured afresh when possible.
     fn geometry_for(
         &mut self,
@@ -515,12 +571,19 @@ static STATE: Mutex<State> = Mutex::new(State {
         fire_blocked: false,
         events: Vec::new(),
         grabs: 0,
+        last_miss: None,
         magazine: MagazineGesture::new(),
+        stance: None,
     },
     weapon: None,
     gameplay: false,
     measured: None,
     well: None,
+    placed: Vec::new(),
+    grab_points: [None; 2],
+    seated: SeatedDetector::new(),
+    last_stance_tick: None,
+    last_miss_log: None,
 });
 
 /// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,
@@ -580,6 +643,43 @@ fn magazine_tick(
     event
 }
 
+/// Record, and log at most once per [`NEAR_MISS_LOG_INTERVAL`], a grip press this tick that grabbed
+/// nothing within [`NEAR_MISS_MARGIN_M`] of a holster, so that a reach that falls short in the
+/// headset can be read from the log.
+fn log_near_misses(grabs: &[Option<GrabVolume>; 2], grips: &[ButtonControl; 2]) {
+    let mut state = STATE.lock();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if !grips[i].pressed || grabs[i].is_some() {
+            continue;
+        }
+        let Some(point) = state.grab_points[i] else {
+            continue;
+        };
+        let Some(miss) = volumes::near_miss(point, hand, &state.placed, NEAR_MISS_MARGIN_M) else {
+            continue;
+        };
+        state.status.last_miss = Some((hand, miss));
+        let now = Instant::now();
+        if state
+            .last_miss_log
+            .is_some_and(|t| now.saturating_duration_since(t) < NEAR_MISS_LOG_INTERVAL)
+        {
+            continue;
+        }
+        state.last_miss_log = Some(now);
+        tracing::debug!(
+            target: "controllers",
+            ?hand,
+            nearest = miss.volume.label(),
+            outside_m = miss.outside_m,
+            offset_from_centre = ?miss.offset,
+            stance = state.status.stance.map_or("none", Stance::label),
+            "holsters: grip press outside the nearest holster"
+        );
+    }
+}
+
 /// Carry out a holster decision.
 fn act(action: HolsterAction, desired: &mut Vec<Desired>) -> GrabOutcome {
     match action {
@@ -628,7 +728,8 @@ fn submit_highlights(
     volumes: [Option<GrabVolume>; 2],
     well: Option<(Vec3, f32)>,
 ) {
-    if !(config.overlay.enabled && config.overlay.grab_volumes) {
+    let show_all = config.weapons.holsters.show_volumes;
+    if !(config.overlay.enabled && (config.overlay.grab_volumes || show_all)) {
         store::clear(Source::GrabVolumes);
         return;
     }
@@ -648,6 +749,19 @@ fn submit_highlights(
         .position
     };
     let mut prims = Vec::new();
+    if show_all {
+        for c in candidates
+            .iter()
+            .filter(|c| is_body_volume(c.volume) && !volumes.contains(&Some(c.volume)))
+        {
+            let [r, g, b, _] = colour(c.volume);
+            prims.push(ring(
+                to_world(c.centre),
+                c.radius * active.world_scale,
+                [r, g, b, SHOWN_ALPHA],
+            ));
+        }
+    }
     for volume in volumes.iter().flatten() {
         if let Some(c) = candidates.iter().find(|c| c.volume == *volume) {
             prims.push(ring(
@@ -700,6 +814,14 @@ fn marker(at: Vec3, world_scale: f32) -> Primitive {
     }
 }
 
+/// Whether `volume` is placed on the body: a holster or a pouch.
+fn is_body_volume(volume: GrabVolume) -> bool {
+    matches!(
+        volume,
+        GrabVolume::Holster(_) | GrabVolume::GrenadePouch | GrabVolume::MagazinePouch
+    )
+}
+
 fn colour(volume: GrabVolume) -> Rgba {
     match volume {
         GrabVolume::Holster(_) => HOLSTER,
@@ -713,6 +835,9 @@ const HOLSTER: Rgba = [1.0, 0.75, 0.25, 0.8];
 const FOREGRIP: Rgba = [0.35, 0.85, 1.0, 0.8];
 const POUCH: Rgba = [0.5, 1.0, 0.45, 0.8];
 const MAGAZINE: Rgba = [0.85, 0.55, 1.0, 0.8];
+/// The opacity of a body volume drawn with `show_volumes` that no hand is in, fainter than a
+/// highlighted one.
+const SHOWN_ALPHA: f32 = 0.3;
 
 #[cfg(test)]
 mod tests {

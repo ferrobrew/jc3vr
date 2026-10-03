@@ -14,9 +14,8 @@ pub struct HolstersConfig {
     /// press at its own holster.
     pub enabled: bool,
     /// Keep the move stick's click cycling to the next weapon while the holsters are on, as a
-    /// fallback for players who cannot reach them (seated, the estimated hip height can put the
-    /// hip holsters out of reach). Off the holsters, the click always cycles. Under the
-    /// dual-wield split the click retracts the tethers instead.
+    /// fallback for players who cannot reach them. Off the holsters, the click always cycles.
+    /// Under the dual-wield split the click retracts the tethers instead.
     pub stick_click_cycles: bool,
     /// The pistol holsters on both hips: the dual-wield slot.
     pub hip: VolumeSpec,
@@ -34,6 +33,19 @@ pub struct HolstersConfig {
     /// Looking down at a holster lowers the head a little without the body crouching, so a small
     /// drop leaves the volumes where they are; a crouch carries them down.
     pub crouch_deadband_m: f32,
+    /// Draw every body volume through the world-space overlay at all times, not only the one a
+    /// hand is in, so that their placement can be seen and tuned. Needs the overlay on.
+    pub show_volumes: bool,
+    /// In the automatic posture, place the volumes for a seated body once the head has stayed
+    /// below `seated_eye_fraction` of the player's standing eye height for `seated_after_s`. The
+    /// seated posture always places them for a seated body.
+    pub detect_seated: bool,
+    /// The fraction of the player's standing eye height (measured from the STAGE floor) below
+    /// which the head counts as low enough to be seated.
+    pub seated_eye_fraction: f32,
+    /// How long the head must stay that low before the body counts as seated, seconds. A crouch
+    /// shorter than this keeps the standing placement.
+    pub seated_after_s: f32,
 }
 
 impl HolstersConfig {
@@ -42,15 +54,15 @@ impl HolstersConfig {
             enabled: true,
             stick_click_cycles: true,
             hip: VolumeSpec {
-                offset_m: Vec3::new(0.04, 0.02, 0.0),
-                radius_m: 0.10,
+                offset_m: Vec3::new(0.04, 0.04, 0.0),
+                radius_m: 0.15,
             },
             shoulder: VolumeSpec {
                 offset_m: Vec3::new(0.0, 0.10, 0.10),
-                radius_m: 0.13,
+                radius_m: 0.17,
             },
             chest: VolumeSpec {
-                offset_m: Vec3::new(0.0, -0.18, -0.14),
+                offset_m: Vec3::new(0.0, -0.14, -0.14),
                 radius_m: 0.10,
             },
             pouch: VolumeSpec {
@@ -58,6 +70,10 @@ impl HolstersConfig {
                 radius_m: 0.08,
             },
             crouch_deadband_m: 0.15,
+            show_volumes: false,
+            detect_seated: true,
+            seated_eye_fraction: 0.8,
+            seated_after_s: 4.0,
         }
     }
 }
