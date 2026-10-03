@@ -8,6 +8,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [button-hints-and-localisation.md](engine/button-hints-and-localisation.md) — the localisation store and its string lookup, the button-mapping table's prompt keys, the HUD's button-hint pipeline and its two hint stages, and how a prompt picks its gamepad glyph.
 - [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus and folders, settings screen, tab bar, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
+- [scaleform.md](engine/scaleform.md) — the Scaleform runtime: version and language, the loader and its states, the file opener and the VFS mounts, standalone movies (`CRenderToTextureUI`), fonts, widgets, and localisation, the movie files, and building a movie the loader accepts.
 
 ### rendering/
 
@@ -16,6 +17,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [shaders.md](engine/rendering/shaders.md) — extracting, naming, and disassembling the game's shaders, how the engine creates and reloads them, the DXBC container checksum, and the screen-pixel PCF rotation hash in the sun-shadow resolve; tooling in `tools/shaders/`.
 - [render-setups-reinit.md](engine/rendering/render-setups-reinit.md) — the runtime resize path: `CreateRenderSetups`, its callers, what `ApplyResize` and `DestroyRenderSetups` touch, and how far the swapchain is separable from the scene targets.
 - [model-culling.md](engine/rendering/model-culling.md) — the two model visibility gates: the instance-level BFBC cull, and the per-render-block frustum cull against the active camera that pops buildings at a widened view's edge.
+- [ui-rendering.md](engine/rendering/ui-rendering.md) — how the UI renders: the `PreRender` update and capture on the game thread, the snapshot, the render worker, off-screen movies, display-info writes, blending and premultiplied alpha, and the HUD movie's layout.
 
 ### performance/
 
@@ -36,6 +38,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [swim-locomotion.md](engine/gameplay/swim-locomotion.md) — the swim state-task family: act-quantized turn dispatch (fixed-angle turn clips past a threshold angle), the two heading paths (animated-turn slerp vs continuous `DoRotate`), the swimming capsule offsets that make `SetOrientation` receive a pitched frame, and why none of the on-foot orientation machinery applies in water.
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md) — the parachute state task and steering core, and how the camera input matrix is mixed into the chute's steering through the look-steer block.
 - [weapon-data.md](engine/gameplay/weapon-data.md) — where a weapon entity's files live, the weapon object and its fire points in the entity property file, the model parts, and the name hash; tooling in `tools/sights/`.
+- [weapon-selection.md](engine/gameplay/weapon-selection.md) — the slot-select and cycle actions, the inventory's selection and commit logic, the HUD's selection cross, and its placement.
 
 ## mod/
 
@@ -45,6 +48,8 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
 - [capture.md](mod/capture.md) — the in-process recorder: the GPU pack and readback ring, the y4m stream to the host encoder, the pose sidecar, and the reframe tool.
 - [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the in-process eye capture for the trailer: decisions and the working todo list.
+- [weapon-selector.md](mod/weapon-selector.md) — the planned hand-steered weapon selector on the game's cross (not built): the two phases, the fallback, the bindings and the dual-wield conflict, and the in-game unknowns.
+- [scaleform-movie.md](mod/scaleform-movie.md) — a mod-owned Scaleform movie (not built): why the VR settings use the pause menu instead, the hosting routes, binding and input, and the risks.
 
 ### stereo/
 
@@ -61,6 +66,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [fsr.md](mod/rendering/fsr.md) — FSR anti-aliasing and upscaling in the stereo pipeline.
 - [shader-patching.md](mod/rendering/shader-patching.md) — patching the game's shaders in memory at creation: the create hooks, the DXBC checksum refresh, the forced reload through `LoadShaderBundle`, the restore on eject, the sun-shadow PCF hash patch (issue #10), and the LOD dissolve patch.
 - [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md) — Intel XeSS assessed against the shipped FSR2 as anti-aliasing and as a VR upscaler: the Arc-only D3D11 backend, the D3D11on12 route that does work and what it costs, XeSS's sub-rectangle API against the eye seam, and why the recommendation is still to finish FSR2 and validate foveation.
+- [ui-decoupling.md](mod/rendering/ui-decoupling.md) — splitting HUD parts out of the one texture (proposal): why the issue #14 attempts failed, the premultiplied-alpha bug in the composite, the techniques, the atlas proposal, and the pending experiments.
 
 ### performance/
 
