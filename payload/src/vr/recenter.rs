@@ -2,7 +2,7 @@
 //! [`recenter`], the deferred [`request_recenter`], and the gameplay-resume auto-recenter
 //! ([`auto_recenter_tick`]).
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 use openxr as xr;
 use parking_lot::Mutex;
@@ -45,6 +45,13 @@ pub fn request_recenter(kind: RecenterKind) {
     PENDING_RECENTER.fetch_max(code, Ordering::Relaxed);
 }
 
+/// How many recenters have re-based the baseline since the mod loaded, wrapping. A caller that
+/// asked for one through [`request_recenter`] compares it with the count when it asked, to tell
+/// that the request ran.
+pub fn recenter_count() -> u32 {
+    RECENTERS.load(Ordering::Relaxed)
+}
+
 fn recenter_as(kind: RecenterKind) {
     let mut state = VR_STATE.lock();
     match state.latest_head_pose {
@@ -59,6 +66,7 @@ fn recenter_as(kind: RecenterKind) {
             // The cockpit frame turns by the yaw change: new frame from old.
             let turn = previous.map_or(glam::Quat::IDENTITY, |p| fresh.yaw.conjugate() * p.yaw);
             crate::controllers::roomscale::on_recenter(kind, turn);
+            RECENTERS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "vr", ?kind, "recentered the cockpit baseline");
         }
         None => {
@@ -76,6 +84,9 @@ fn service_requested_recenter() {
         _ => {}
     }
 }
+
+/// The recenters done, for [`recenter_count`].
+static RECENTERS: AtomicU32 = AtomicU32::new(0);
 
 /// The pending [`request_recenter`], as one of the `REQUEST_*` codes, ordered so that the larger
 /// request wins.
