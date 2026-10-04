@@ -34,6 +34,18 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
     range("bindings.evade_flick", c.bindings.evade_flick, 0.0, 1.0)?;
     positive("bindings.evade_window_s", c.bindings.evade_window_s, 60.0)?;
     range("bindings.crouch_flick", c.bindings.crouch_flick, 0.0, 1.0)?;
+    range(
+        "bindings.menu_stick_push",
+        c.bindings.menu_stick_push,
+        0.0,
+        1.0,
+    )?;
+    nonnegative(
+        "bindings.stick_chord_window_s",
+        c.bindings.stick_chord_window_s,
+        1.0,
+    )?;
+    positive("bindings.recenter_hold_s", c.bindings.recenter_hold_s, 60.0)?;
     positive(
         "bindings.yank.min_distance_m",
         c.bindings.yank.min_distance_m,

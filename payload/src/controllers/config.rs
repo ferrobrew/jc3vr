@@ -291,6 +291,14 @@ pub struct BindingsConfig {
     /// How far down the dominant stick must be flicked on foot to toggle the seated crouch, `0..1`.
     /// The stick must come back above half of it before the next flick counts.
     pub crouch_flick: f32,
+    /// How far either stick must be pushed along one axis to step a menu, `0..1`. The step holds,
+    /// and the game repeats it, until the push falls back below half of it.
+    pub menu_stick_push: f32,
+    /// How long a lone stick click waits for the other before it acts, seconds: both clicks pressed
+    /// within it are the recenter chord, and neither acts on its own.
+    pub stick_chord_window_s: f32,
+    /// How long both stick clicks must be held together to recenter the VR view, seconds.
+    pub recenter_hold_s: f32,
     /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
     /// line.
     pub yank: YankConfig,
@@ -306,6 +314,9 @@ impl BindingsConfig {
             evade_flick: 0.8,
             evade_window_s: 0.25,
             crouch_flick: 0.8,
+            menu_stick_push: 0.5,
+            stick_chord_window_s: 0.1,
+            recenter_hold_s: 1.0,
             yank: YankConfig::new(),
         }
     }

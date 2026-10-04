@@ -67,8 +67,9 @@ pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
 }
 
 /// Every action the tables inject in `mode` under `ctx` over a set of ticks that between them
-/// press every input, push every stick both ways, flick into the wingsuit's evade and not, and
-/// press the system button both briefly and long.
+/// press every input with the grips held and without, push every stick each way, hold each stick
+/// click alone past the chord window, flick into the wingsuit's evade and not, and press the system
+/// button both briefly and long.
 pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
     let config = BindingsConfig::new();
     let base = Controls {
@@ -79,17 +80,17 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
         trackpad_paging: ctx.trackpad_paging,
         ..Default::default()
     };
-    let everything = |stick: Vec2| {
+    let everything = |stick: Vec2, grip: bool| {
         let mut c = base;
         c.yank = true;
         for hand in &mut c.hands {
             *hand = HandControls {
                 trigger: 1.0,
                 trigger_press: DOWN,
-                grip: DOWN,
+                grip: if grip { DOWN } else { ButtonControl::default() },
                 a: DOWN,
                 b: DOWN,
-                stick_click: DOWN,
+                stick_click: ButtonControl::default(),
                 system: ButtonControl::default(),
                 trackpad_left: DOWN,
                 trackpad_right: DOWN,
@@ -108,9 +109,24 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
             actions.extend(step.desired.iter().map(|d| d.target.action));
         }
     };
-    run(&[(everything(Vec2::splat(0.8)), DT)]);
-    run(&[(everything(Vec2::splat(-0.8)), DT)]);
-    run(&[(everything(Vec2::ZERO), DT)]);
+    for grip in [false, true] {
+        for stick in [
+            Vec2::splat(0.8),
+            Vec2::splat(-0.8),
+            Vec2::new(0.8, 0.0),
+            Vec2::new(-0.8, 0.0),
+            Vec2::new(0.0, 0.8),
+            Vec2::new(0.0, -0.8),
+            Vec2::ZERO,
+        ] {
+            run(&[(everything(stick, grip), DT)]);
+        }
+    }
+    for hand in Hand::BOTH {
+        let mut click = base;
+        click.hands[hand.index()].stick_click = DOWN;
+        run(&[(click, DT), (click, config.stick_chord_window_s * 2.0)]);
+    }
     let mut system = base;
     system.hands[0].system = DOWN;
     run(&[(system, DT), (base, DT)]);

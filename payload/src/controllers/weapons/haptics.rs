@@ -76,6 +76,8 @@ pub enum PulseSource {
     MeleeStrike,
     /// A magazine taken from the pouch or inserted.
     Magazine,
+    /// A controller chord the mod acts on: the recenter or the debug panel.
+    Chord,
 }
 
 impl PulseSource {
@@ -93,6 +95,7 @@ impl PulseSource {
             PulseSource::GrenadeFuse => "grenade fuse",
             PulseSource::MeleeStrike => "melee strike",
             PulseSource::Magazine => "magazine",
+            PulseSource::Chord => "chord",
         }
     }
 

@@ -1,8 +1,9 @@
 //! The describing reader: what each controller input does in a mode, read from the same table
 //! declarations the injection evaluates ([`crate::controllers::bindings::tables::declare`]), plus
 //! the inputs the mod handles outside the tables (the system button, the body turn, the crouch
-//! flick, the sight chord, the weapon gestures, and the parachute handles). Pure; the controls summary
-//! ([`crate::controllers::summary`]) labels and draws the rows.
+//! flick, the sight chord, the recenter and debug panel chords, the weapon gestures, and the
+//! parachute handles). Pure; the controls summary ([`crate::controllers::summary`]) labels and draws
+//! the rows.
 
 use jc3gi::input::input_action_map::Action;
 
@@ -10,7 +11,7 @@ use crate::controllers::{
     bindings::tables::{
         body_turn_bound,
         declare::{TableCtx, declare},
-        sink::{Axis, Gate, Input, Press, Role, Sink},
+        sink::{Axis, Direction, Gate, Input, Press, Role, Sink},
     },
     frame::Hand,
     mode::{AirborneVariant, Mode},
@@ -41,12 +42,22 @@ pub enum Control {
     Motion(Hand),
     /// The grip of either hand.
     EitherGrip,
+    /// The A of either hand.
+    EitherA,
+    /// The B of either hand.
+    EitherB,
+    /// The stick of either hand.
+    EitherStick(StickDir),
     /// The trackpad of either hand.
     EitherTrackpad,
     /// A motion of either hand.
     EitherMotion,
+    /// Both stick clicks together.
+    BothStickClicks,
     /// The system (menu) button, whichever hand reports it.
     System,
+    /// The right trigger pulled while the system button is held.
+    SystemAndRightTrigger,
 }
 
 impl Control {
@@ -62,9 +73,14 @@ impl Control {
             | Control::Trackpad(h)
             | Control::Motion(h) => Some(h),
             Control::EitherGrip
+            | Control::EitherA
+            | Control::EitherB
+            | Control::EitherStick(_)
             | Control::EitherTrackpad
             | Control::EitherMotion
-            | Control::System => None,
+            | Control::BothStickClicks
+            | Control::System
+            | Control::SystemAndRightTrigger => None,
         }
     }
 
@@ -74,16 +90,17 @@ impl Control {
         match self {
             Control::Trigger(_) => 0,
             Control::Grip(_) | Control::EitherGrip => 1,
-            Control::A(_) => 2,
-            Control::B(_) => 3,
-            Control::Stick(_, StickDir::Any) => 4,
-            Control::Stick(_, StickDir::Vertical) => 5,
-            Control::Stick(_, StickDir::Horizontal) => 6,
-            Control::Stick(_, StickDir::Down) => 7,
-            Control::StickClick(_) => 8,
+            Control::A(_) | Control::EitherA => 2,
+            Control::B(_) | Control::EitherB => 3,
+            Control::Stick(_, StickDir::Any) | Control::EitherStick(StickDir::Any) => 4,
+            Control::Stick(_, StickDir::Vertical) | Control::EitherStick(StickDir::Vertical) => 5,
+            Control::Stick(_, StickDir::Horizontal)
+            | Control::EitherStick(StickDir::Horizontal) => 6,
+            Control::Stick(_, StickDir::Down) | Control::EitherStick(StickDir::Down) => 7,
+            Control::StickClick(_) | Control::BothStickClicks => 8,
             Control::Trackpad(_) | Control::EitherTrackpad => 9,
             Control::Motion(_) | Control::EitherMotion => 10,
-            Control::System => 11,
+            Control::System | Control::SystemAndRightTrigger => 11,
         }
     }
 }
@@ -111,6 +128,8 @@ pub enum Gesture {
     Strike,
     /// Pressed while both grips are held.
     WithBothGrips,
+    /// Pressed while the same hand's grip is held.
+    WithGrip,
 }
 
 /// What the mod, rather than the game, does with an input.
@@ -134,6 +153,10 @@ pub enum ModAction {
     ParachuteHandles,
     /// Show the controls summary.
     ShowSummary,
+    /// Recenter the VR view.
+    Recenter,
+    /// Show or hide the mod's debug panel.
+    DebugPanel,
 }
 
 /// What a row does.
@@ -184,7 +207,8 @@ pub struct DescribeCtx {
 }
 
 /// Every input of `ctx.mode` and what it does, with the rows that share an input and a gesture
-/// merged, in declaration order, and a trackpad row that both hands share folded into one.
+/// merged, in declaration order, and a face button, stick, or trackpad row that both hands share
+/// folded into one.
 pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
     let mut sink = DescribeSink {
         dominant: ctx.dominant,
@@ -194,7 +218,7 @@ pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
     declare(&mut sink, ctx.mode, &ctx.table);
     let mut rows = sink.rows;
     rows.extend(outside_rows(ctx));
-    fold_trackpads(merge(rows))
+    fold_hands(merge(rows))
 }
 
 /// The describing [`Sink`]: records a row per input instead of resolving it.
@@ -210,7 +234,7 @@ impl DescribeSink {
         let hand = press.role.hand(self.dominant);
         let (control, gesture) = match press.input {
             Input::Trigger => (Control::Trigger(hand), Gesture::Press),
-            Input::Grip | Input::GripDefault => (Control::Grip(hand), Gesture::Press),
+            Input::GripDefault => (Control::Grip(hand), Gesture::Press),
             Input::A => (Control::A(hand), Gesture::Press),
             Input::B => (Control::B(hand), Gesture::Press),
             Input::StickClick => (Control::StickClick(hand), Gesture::Press),
@@ -218,12 +242,21 @@ impl DescribeSink {
             Input::TrackpadRight => (Control::Trackpad(hand), Gesture::PressRightHalf),
             Input::Yank if self.yank => (Control::Motion(hand), Gesture::Yank),
             Input::Yank => return None,
+            Input::Stick(Direction::Up | Direction::Down) => {
+                (Control::Stick(hand, StickDir::Vertical), Gesture::Press)
+            }
+            Input::Stick(Direction::Left | Direction::Right) => {
+                (Control::Stick(hand, StickDir::Horizontal), Gesture::Press)
+            }
         };
         let gesture = match press.gate {
             Gate::EvadeFlick => Gesture::AfterFlick,
-            Gate::Always | Gate::UnlessChordArmed | Gate::UnlessChordGrip | Gate::NoEvadeFlick => {
-                gesture
-            }
+            Gate::Gripped => Gesture::WithGrip,
+            Gate::Always
+            | Gate::UnlessChordArmed
+            | Gate::UnlessChordGrip
+            | Gate::NoEvadeFlick
+            | Gate::Ungripped => gesture,
         };
         Some(Row {
             control,
@@ -377,6 +410,16 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
         );
     }
     add(
+        Control::BothStickClicks,
+        Gesture::Hold,
+        modded(ModAction::Recenter),
+    );
+    add(
+        Control::SystemAndRightTrigger,
+        Gesture::Press,
+        modded(ModAction::DebugPanel),
+    );
+    add(
         Control::System,
         Gesture::Press,
         Effect::Actions(vec![Action::GUI_PAUSE]),
@@ -389,26 +432,36 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
     rows
 }
 
-/// Fold each pair of rows that give both hands' trackpads the same gesture and effect into one row
-/// on [`Control::EitherTrackpad`], in the first row's place.
-fn fold_trackpads(rows: Vec<Row>) -> Vec<Row> {
+/// Fold each pair of rows that give both hands' A, B, stick, or trackpad the same gesture and
+/// effect into one row on the control of either hand, in the first row's place.
+fn fold_hands(rows: Vec<Row>) -> Vec<Row> {
     let mut folded: Vec<Row> = Vec::with_capacity(rows.len());
     for row in rows {
-        let Control::Trackpad(hand) = row.control else {
+        let Some((twin, either)) = twin_of(row.control) else {
             folded.push(row);
             continue;
         };
-        let twin = folded.iter_mut().find(|r| {
-            r.control == Control::Trackpad(hand.other())
-                && r.gesture == row.gesture
-                && r.effect == row.effect
-        });
+        let twin = folded
+            .iter_mut()
+            .find(|r| r.control == twin && r.gesture == row.gesture && r.effect == row.effect);
         match twin {
-            Some(twin) => twin.control = Control::EitherTrackpad,
+            Some(twin) => twin.control = either,
             None => folded.push(row),
         }
     }
     folded
+}
+
+/// The same control on the other hand, and the control of either hand the two fold into, for the
+/// controls that fold.
+const fn twin_of(control: Control) -> Option<(Control, Control)> {
+    Some(match control {
+        Control::A(hand) => (Control::A(hand.other()), Control::EitherA),
+        Control::B(hand) => (Control::B(hand.other()), Control::EitherB),
+        Control::Stick(hand, dir) => (Control::Stick(hand.other(), dir), Control::EitherStick(dir)),
+        Control::Trackpad(hand) => (Control::Trackpad(hand.other()), Control::EitherTrackpad),
+        _ => return None,
+    })
 }
 
 /// Merge the rows that share a control and a gesture and both drive game actions, keeping the

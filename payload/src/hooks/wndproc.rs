@@ -13,7 +13,12 @@ use windows::Win32::{
     },
 };
 
-use crate::{config::CONFIG, egui_impl::EguiState, hooks::graphics_engine::shader, hud::cursor};
+use crate::{
+    config::CONFIG,
+    egui_impl::EguiState,
+    hooks::graphics_engine::shader,
+    hud::{cursor, egui_panel},
+};
 
 /// Whether F10 toggles the fullscreen stereo capture mode. Off for now: the capture window's
 /// fullscreen toggle is finicky under some setups. The F12 screenshot path covers diagnosis meanwhile.
@@ -103,23 +108,12 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     }
 
-    // F8 summons/dismisses the interactive egui floating panel in VR (issue #24). The panel-up state
-    // and egui's input capture are toggled together so "panel visible" always means "egui focused":
-    // the mirror composite and the `SendMouseEvents` cursor suppression both key off the input
-    // capture, so they cannot disagree with the panel's visibility. Edge-detected like F7/F10/F11.
+    // F8 summons/dismisses the interactive egui floating panel in VR (issue #24), together with
+    // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7/F10/F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F8.0 as usize {
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            let enabled = {
-                let mut cfg = CONFIG.lock();
-                cfg.hud.egui_panel.enabled = !cfg.hud.egui_panel.enabled;
-                cfg.hud.egui_panel.enabled
-            };
-            if let Some(egui_state) = EguiState::get().as_mut()
-                && egui_state.is_input_captured() != enabled
-            {
-                egui_state.toggle_game_input_capture();
-            }
+            let enabled = egui_panel::toggle();
             tracing::info!(
                 "F8: egui floating panel {}",
                 if enabled { "ON" } else { "OFF" }

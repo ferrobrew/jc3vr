@@ -25,7 +25,8 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
 use crate::{
-    config::Config,
+    config::{CONFIG, Config},
+    egui_impl::EguiState,
     hud::{
         config::EguiPanelConfig,
         cursor::CursorFrame,
@@ -56,6 +57,25 @@ pub(crate) fn is_active() -> bool {
     Config::lock_query(|c| c.hud.egui_panel.enabled)
         && !crate::director::cinematic::active()
         && crate::vr::render_params(0).is_some()
+}
+
+/// Show or hide the panel, and bring egui's input capture in line with it, so that "panel visible"
+/// always means "egui focused": the mirror composite and the `SendMouseEvents` cursor suppression
+/// both key off the input capture, so they cannot disagree with the panel's visibility. Returns
+/// whether the panel is now enabled. The F8 key and the controllers' debug panel chord both call
+/// it, from the game thread.
+pub(crate) fn toggle() -> bool {
+    let enabled = {
+        let mut cfg = CONFIG.lock();
+        cfg.hud.egui_panel.enabled = !cfg.hud.egui_panel.enabled;
+        cfg.hud.egui_panel.enabled
+    };
+    if let Some(egui_state) = EguiState::get().as_mut()
+        && egui_state.is_input_captured() != enabled
+    {
+        egui_state.toggle_game_input_capture();
+    }
+    enabled
 }
 
 /// The panel texture size when the panel is active, or `None` otherwise. The egui layout is sized to

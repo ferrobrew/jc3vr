@@ -5,10 +5,10 @@
 //! The tables follow the plan of record ("Per-mode bindings"), laid out for the Valve Index
 //! controller, which has A and B on both hands: the plan's left X and Y are the off-hand's A and B.
 //! The "right" and "left" of the plan are the dominant and the off hand, so a left-handed layout
-//! mirrors every gameplay binding. The menu bindings stay on the physical hands, so that the
-//! previous and next tabs and pages keep their sides. Where a controller has a trackpad, the tabs
-//! page with a press on either trackpad's left or right half rather than with the grips
-//! ([`Controls::trackpad_paging`]).
+//! mirrors every gameplay binding. In the menus both hands navigate alike, with each hand's grip as
+//! its modifier ([`menu`]), and the previous and next tabs and pages keep their physical sides.
+//! Where a controller has a trackpad, a press on either trackpad's left or right half also steps
+//! the tabs ([`Controls::trackpad_paging`]).
 //!
 //! Where a controller input stands for a gamepad button, it injects every gameplay action the
 //! game's default gamepad keymap puts on that button, and the game's own context picks the one that
@@ -24,7 +24,11 @@
 //! vertical axis is otherwise unused on foot, where only its horizontal axis turns the body, and the
 //! flick works the same on the Index and Touch controllers.
 //!
-//! One chord drives the mod as well, and only while the sight tuning tool's marker is placed
+//! Holding both stick clicks together recenters the VR view, in every mode ([`stick_chord`]). A lone
+//! stick click waits a short window for the other before it reaches the tables, so that the chord
+//! never also fires either click's own binding.
+//!
+//! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
 //! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
 //! held weapon's sight offset ([`crate::controllers::aim::sights::tuning`]). While it is armed, the
 //! dominant grip withholds the off-hand's grapple (squeeze the dominant grip first) and both grips
@@ -39,7 +43,9 @@
 pub(crate) mod coverage;
 pub mod declare;
 pub mod describe;
+pub mod menu;
 pub mod sink;
+pub mod stick_chord;
 
 use jc3gi::input::input_action_map::Action;
 
@@ -50,7 +56,8 @@ use crate::controllers::{
         hold::{Desired, MapKind, Target, Want},
         tables::{
             declare::{TableCtx, declare},
-            sink::{EvalSink, Latches},
+            sink::{EvalSink, Latches, MenuLatch},
+            stick_chord::StickChord,
         },
     },
     config::BindingsConfig,
@@ -74,6 +81,9 @@ pub struct Step {
     pub grabs: [Option<GrabVolume>; 2],
     /// The sight tuning capture chord was pressed this tick.
     pub sight_capture: bool,
+    /// Both stick clicks were held together for the recenter hold time this tick
+    /// ([`stick_chord`]).
+    pub recenter: bool,
 }
 
 /// The tables and their cross-tick state.
@@ -88,6 +98,9 @@ pub struct Bindings {
     move_pushed_s: Option<f32>,
     /// Whether the crouch flick has fired and waits for the stick to come back.
     crouch_flicked: bool,
+    /// Each hand's menu press latches, by [`Hand::index`].
+    menu: [MenuLatch; 2],
+    stick_chord: StickChord,
 }
 
 impl Bindings {
@@ -98,7 +111,19 @@ impl Bindings {
             evade_press: None,
             move_pushed_s: None,
             crouch_flicked: false,
+            menu: [MenuLatch {
+                a: None,
+                b: None,
+                stick: None,
+            }; 2],
+            stick_chord: StickChord::new(),
         }
+    }
+
+    /// Forget the system button's current press, so that neither its release nor its long press
+    /// acts: the press belongs to a chord the mod handles outside the tables.
+    pub fn cancel_system(&mut self) {
+        self.system = SystemButton { held: None };
     }
 
     /// Evaluate the tables for `mode`.
@@ -109,6 +134,20 @@ impl Bindings {
         dt: f32,
         config: &BindingsConfig,
     ) -> Step {
+        let arbitrated = self.stick_chord.step(
+            controls.hands.map(|h| h.stick_click),
+            dt,
+            config.stick_chord_window_s,
+            config.recenter_hold_s,
+        );
+        let mut controls = *controls;
+        for (hand, click) in controls.hands.iter_mut().zip(arbitrated.clicks) {
+            hand.stick_click = click;
+        }
+        let controls = &controls;
+        for (latch, hand) in self.menu.iter_mut().zip(&controls.hands) {
+            menu::step(latch, hand, config.menu_stick_push);
+        }
         let chord = match mode {
             Mode::OnFoot(_) => SightChord::of(controls),
             _ => SightChord::default(),
@@ -148,6 +187,7 @@ impl Bindings {
             chord_grip: chord.dominant_grip,
             chord_armed: chord.armed,
             evade,
+            menu: self.menu,
         };
         let map = match mode {
             Mode::Ui => MapKind::Ui,
@@ -173,6 +213,7 @@ impl Bindings {
             crouch_toggle,
             grabs,
             sight_capture: chord.capture,
+            recenter: arbitrated.recenter,
         }
     }
 }

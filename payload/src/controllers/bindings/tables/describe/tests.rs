@@ -214,17 +214,54 @@ fn rows_sharing_an_input_merge_without_repeating_actions() {
 }
 
 #[test]
-fn menu_tabs_page_on_the_grips_or_on_either_trackpads_halves() {
+fn the_menu_folds_both_hands_and_lists_the_grip_modifier() {
     for dominant in Hand::BOTH {
         let rows = describe(&ctx(Mode::Ui, dominant, TableCtx::default()));
         assert_eq!(
-            actions_of(&rows, Control::Grip(Hand::Left), Gesture::Press),
-            vec![GUI_TAB_PREV]
+            actions_of(&rows, Control::EitherA, Gesture::Press),
+            vec![GUI_OK]
         );
         assert_eq!(
-            actions_of(&rows, Control::Grip(Hand::Right), Gesture::Press),
-            vec![GUI_TAB_NEXT]
+            actions_of(&rows, Control::EitherB, Gesture::Press),
+            vec![GUI_CANCEL]
         );
+        assert_eq!(
+            actions_of(&rows, Control::EitherA, Gesture::WithGrip),
+            vec![GUI_SPECIAL_BUTTON, GUI_FILTER]
+        );
+        assert_eq!(
+            actions_of(&rows, Control::EitherB, Gesture::WithGrip),
+            vec![GUI_USE_BUTTON]
+        );
+        assert_eq!(
+            actions_of(
+                &rows,
+                Control::EitherStick(StickDir::Vertical),
+                Gesture::Press
+            ),
+            vec![GUI_LSTICK_UP, GUI_LSTICK_DOWN]
+        );
+        assert_eq!(
+            actions_of(
+                &rows,
+                Control::EitherStick(StickDir::Horizontal),
+                Gesture::Press
+            ),
+            vec![GUI_LSTICK_LEFT, GUI_LSTICK_RIGHT]
+        );
+        assert_eq!(
+            actions_of(
+                &rows,
+                Control::EitherStick(StickDir::Horizontal),
+                Gesture::WithGrip
+            ),
+            vec![GUI_TAB_PREV, GUI_TAB_NEXT]
+        );
+        for hand in Hand::BOTH {
+            assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
+            assert!(rows.iter().all(|r| r.control.hand() != Some(hand)
+                || matches!(r.control, Control::Trigger(_) | Control::StickClick(_))));
+        }
         assert!(rows.iter().all(|r| r.control != Control::EitherTrackpad));
 
         let table = TableCtx {
@@ -240,11 +277,31 @@ fn menu_tabs_page_on_the_grips_or_on_either_trackpads_halves() {
             actions_of(&rows, Control::EitherTrackpad, Gesture::PressRightHalf),
             vec![GUI_TAB_NEXT]
         );
-        for hand in Hand::BOTH {
-            assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
-            assert!(rows.iter().all(|r| r.control != Control::Trackpad(hand)));
-        }
     }
+}
+
+#[test]
+fn the_chords_are_listed_in_every_mode() {
+    for mode in all_modes() {
+        let rows = describe(&ctx(mode, Hand::Right, TableCtx::default()));
+        assert!(rows.iter().any(|r| r.control == Control::BothStickClicks
+            && r.gesture == Gesture::Hold
+            && r.effect == Effect::Mod(ModAction::Recenter)));
+        assert!(
+            rows.iter()
+                .any(|r| r.control == Control::SystemAndRightTrigger
+                    && r.effect == Effect::Mod(ModAction::DebugPanel))
+        );
+    }
+}
+
+#[test]
+fn gameplay_rows_of_different_hands_stay_apart() {
+    let rows = describe(&ctx(ON_FOOT, Hand::Right, TableCtx::default()));
+    assert!(rows.iter().all(|r| !matches!(
+        r.control,
+        Control::EitherA | Control::EitherB | Control::EitherStick(_)
+    )));
 }
 
 #[test]

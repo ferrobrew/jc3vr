@@ -135,8 +135,19 @@ pub fn glyphs(control: Control) -> &'static [Glyph] {
         Control::Trackpad(_) | Control::EitherTrackpad => &[Glyph::Trackpad],
         Control::Motion(hand) => sided(&[Glyph::ControllerLeft], &[Glyph::ControllerRight], hand),
         Control::EitherGrip => &[Glyph::GripLeft, Glyph::GripRight],
+        // The Index face button glyphs are not sided either.
+        Control::EitherA => &[Glyph::ButtonA],
+        Control::EitherB => &[Glyph::ButtonB],
+        Control::EitherStick(dir) => match dir {
+            StickDir::Any => &[Glyph::StickLeft, Glyph::StickRight],
+            StickDir::Vertical => &[Glyph::StickLeftVertical, Glyph::StickRightVertical],
+            StickDir::Horizontal => &[Glyph::StickLeftHorizontal, Glyph::StickRightHorizontal],
+            StickDir::Down => &[Glyph::StickLeftDown, Glyph::StickRightDown],
+        },
         Control::EitherMotion => &[Glyph::ControllerLeft, Glyph::ControllerRight],
+        Control::BothStickClicks => &[Glyph::StickLeftPress, Glyph::StickRightPress],
         Control::System => &[Glyph::System],
+        Control::SystemAndRightTrigger => &[Glyph::System, Glyph::TriggerRight],
     }
 }
 

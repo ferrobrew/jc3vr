@@ -10,7 +10,8 @@
 //!   tap;
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]);
-//! - [`inject`] applies the writes to the player and UI action maps.
+//! - [`inject`] applies the writes to the player and UI action maps;
+//! - [`panel_chord`] reads the debug panel chord, which acts even while the bindings stand down.
 //!
 //! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
 //! ([`crate::hooks::input::look`]), after the device poll and before the game reads its actions.
@@ -27,6 +28,7 @@ pub mod controls;
 pub mod grab;
 pub mod hold;
 pub mod inject;
+pub mod panel_chord;
 mod recovery;
 pub mod tables;
 pub mod yank;
@@ -46,6 +48,7 @@ use crate::{
             grab::GrabVolume,
             hold::{ActionWrite, DevicePoll, HoldTracker, MapKind, Phase},
             inject::{Landing, Outcome},
+            panel_chord::{ChordInput, ChordTick, PanelChord},
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             tables::Bindings,
             yank::{Yank, YankConfig, YankDetector},
@@ -54,15 +57,20 @@ use crate::{
         frame::{self, ControllerFrame, Hand},
         hands::{self, tiers},
         mode::{self, Detection, Mode},
-        scheme, summary, vehicles,
+        roomscale, scheme, summary, vehicles,
         weapons::{
             self,
+            config::PulseSpec,
             dual_wield::{self, TriggerInput, TriggerTick},
-            haptics,
+            haptics::{self, PulseSource},
         },
     },
     headpose,
-    hud::pointer::{clear_controller, owns_menu_trigger, update_controller},
+    hud::{
+        egui_panel,
+        pointer::{clear_controller, owns_menu_trigger, update_controller},
+    },
+    vr,
 };
 
 /// What the input tick hands back to the look detour.
@@ -159,9 +167,19 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // The edges are taken even while idle, so that a press from before injection resumed is not
     // replayed then.
     let mut edges = frame::take_edges();
+    let chord = panel_chord_tick(
+        frame
+            .as_ref()
+            .filter(|_| config.bindings.enabled)
+            .map(|frame| ChordInput::of(frame, &edges))
+            .unwrap_or_default(),
+    );
 
     let mut state = STATE.lock();
     state.observe_poll(poll);
+    if chord.cancel_system {
+        state.bindings.cancel_system();
+    }
     let (Some(mut frame), None) = (frame, idle) else {
         clear_controller();
         let writes = state.stand_down(poll);
@@ -206,6 +224,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     state
         .recovery
         .filter(&mut frame, &mut edges, &neutral_policy);
+    panel_chord::mask(&mut frame, &mut edges, chord);
     state.publish_recovery();
     if tracking_lost {
         clear_controller();
@@ -294,6 +313,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     if step.sight_capture {
         sights::tuning::request_capture();
     }
+    if step.recenter {
+        // The deferred recenter: the input tick may run while a frame holds the runtime lock.
+        let kind = roomscale::manual_recenter_kind();
+        vr::request_recenter(kind);
+        tracing::info!(target: "controllers", ?kind, "stick click chord: recentering the view");
+        chord_pulse(Hand::BOTH);
+    }
     if !in_menu {
         weapons::finish_tick(
             &weapons::FinishInputs {
@@ -339,6 +365,39 @@ pub fn yank_status() -> (u64, Option<Yank>) {
     let state = STATE.lock();
     (state.yank.count, state.yank.last)
 }
+
+/// Step the debug panel chord ([`panel_chord`]) and act on it. Runs on every input tick that has
+/// the controllers enabled, whether or not the bindings inject, and takes no lock the bindings
+/// hold.
+fn panel_chord_tick(input: ChordInput) -> ChordTick {
+    let tick = PANEL_CHORD.lock().step(input);
+    if tick.toggle {
+        let enabled = egui_panel::toggle();
+        tracing::info!(
+            target: "controllers",
+            enabled,
+            "debug panel chord: toggled the debug panel"
+        );
+        chord_pulse([panel_chord::TRIGGER_HAND]);
+    }
+    tick
+}
+
+/// The short pulse that confirms a chord, on each of `hands`.
+fn chord_pulse(hands: impl IntoIterator<Item = Hand>) {
+    for hand in hands {
+        haptics::pulse(hand, CHORD_PULSE, PulseSource::Chord);
+    }
+}
+
+const CHORD_PULSE: PulseSpec = PulseSpec {
+    amplitude: 0.5,
+    duration_s: 0.05,
+};
+
+/// The debug panel chord's latches, apart from [`STATE`] so that standing the bindings down does
+/// not reset them.
+static PANEL_CHORD: Mutex<PanelChord> = Mutex::new(PanelChord::new());
 
 static RECOVERY_STATUS: Mutex<[HandRecovery; 2]> = Mutex::new([HandRecovery::Unusable; 2]);
 

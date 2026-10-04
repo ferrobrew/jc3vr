@@ -236,6 +236,7 @@ pub fn gesture_prefix(gesture: Gesture) -> Option<Text> {
         Gesture::Yank => Some(Text::Mod(ModText::Yank)),
         Gesture::Strike => Some(Text::Mod(ModText::Strike)),
         Gesture::WithBothGrips => Some(Text::Mod(ModText::WithBothGrips)),
+        Gesture::WithGrip => Some(Text::Mod(ModText::WithGrip)),
     }
 }
 
@@ -251,6 +252,8 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::Grenade => ModText::Grenade,
         ModAction::ParachuteHandles => ModText::ParachuteHandles,
         ModAction::ShowSummary => ModText::ShowSummary,
+        ModAction::Recenter => ModText::Recenter,
+        ModAction::DebugPanel => ModText::DebugPanel,
     })
 }
 
@@ -268,6 +271,7 @@ pub enum ModText {
     Yank,
     Strike,
     WithBothGrips,
+    WithGrip,
     Turn,
     SeatedCrouch,
     SightCapture,
@@ -277,6 +281,8 @@ pub enum ModText {
     Grenade,
     ParachuteHandles,
     ShowSummary,
+    Recenter,
+    DebugPanel,
 }
 
 impl ModText {
@@ -292,6 +298,7 @@ impl ModText {
             ModText::Yank => "YANK",
             ModText::Strike => "STRIKE",
             ModText::WithBothGrips => "BOTH GRIPS +",
+            ModText::WithGrip => "GRIP +",
             ModText::Turn => "Turn",
             ModText::SeatedCrouch => "Crouch (seated)",
             ModText::SightCapture => "Capture Sight Offset",
@@ -301,6 +308,8 @@ impl ModText {
             ModText::Grenade => "At the Pouch: Grab, Let Go to Throw",
             ModText::ParachuteHandles => "At a Handle: Grab, Pull Down to Steer, Both to Brake",
             ModText::ShowSummary => "Show Controls",
+            ModText::Recenter => "Recenter View",
+            ModText::DebugPanel => "Mod Debug Panel",
         }
     }
 }

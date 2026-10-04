@@ -11,8 +11,8 @@ use crate::controllers::{
     bindings::{
         controls::Controls,
         tables::sink::{
-            Axis, Gate, Input,
-            Input::{A, B, Grip, GripDefault, StickClick, TrackpadLeft, TrackpadRight, Trigger},
+            Axis, Direction, Gate, Input,
+            Input::{A, B, GripDefault, Stick, StickClick, TrackpadLeft, TrackpadRight, Trigger},
             Press,
             Role::{self, Dom, Left, Off, Right},
             Sink,
@@ -219,31 +219,53 @@ fn airborne<S: Sink>(s: &mut S, ctx: &TableCtx, variant: AirborneVariant) {
     s.hold(&[press(Off, B)], PAD_B);
 }
 
-/// A game menu: the gamepad's menu layout on the physical hands.
+/// A game menu. The two hands navigate alike, whichever is dominant: either A confirms, either B
+/// goes back, and either stick steps through the menu. A hand's grip is its modifier, latched at
+/// each press: with it held, the stick's left and right step the tabs instead of adjusting the
+/// selected row, and A and B are the gamepad's X and Y. The game repeats a held step itself, so the
+/// stick is read as one latched direction at a time ([`Input::Stick`]).
 fn ui<S: Sink>(s: &mut S, ctx: &TableCtx) {
-    s.axis(Axis::StickY(Left), GUI_LSTICK_DOWN, GUI_LSTICK_UP);
-    s.axis(Axis::StickX(Left), GUI_LSTICK_LEFT, GUI_LSTICK_RIGHT);
-    s.axis(Axis::StickY(Right), GUI_RSTICK_DOWN, GUI_RSTICK_UP);
-    s.axis(Axis::StickX(Right), GUI_RSTICK_LEFT, GUI_RSTICK_RIGHT);
-    s.hold(&[press(Right, A)], &[GUI_OK]);
-    s.hold(&[press(Right, B)], &[GUI_CANCEL]);
-    s.hold(&[press(Left, A)], &[GUI_SPECIAL_BUTTON, GUI_FILTER]);
-    s.hold(&[press(Left, B)], &[GUI_USE_BUTTON]);
-    // The tabs page with a press on either trackpad's left or right half where the controllers
-    // have trackpads, since the Index grip is capacitive and a hand resting on it would page. A
-    // touch alone does not page, so the off-hand's touch stays free to show the controls summary.
+    let either = |input: Input, gate: Gate| {
+        [
+            press(Left, input).gated(gate),
+            press(Right, input).gated(gate),
+        ]
+    };
+    s.hold(&either(A, Gate::Ungripped), &[GUI_OK]);
+    s.hold(&either(B, Gate::Ungripped), &[GUI_CANCEL]);
+    s.hold(&either(A, Gate::Gripped), &[GUI_SPECIAL_BUTTON, GUI_FILTER]);
+    s.hold(&either(B, Gate::Gripped), &[GUI_USE_BUTTON]);
+    // The game's base menu input reads only the left stick's actions, so both sticks drive them.
+    s.hold(
+        &either(Stick(Direction::Up), Gate::Always),
+        &[GUI_LSTICK_UP],
+    );
+    s.hold(
+        &either(Stick(Direction::Down), Gate::Always),
+        &[GUI_LSTICK_DOWN],
+    );
+    s.hold(
+        &either(Stick(Direction::Left), Gate::Ungripped),
+        &[GUI_LSTICK_LEFT],
+    );
+    s.hold(
+        &either(Stick(Direction::Right), Gate::Ungripped),
+        &[GUI_LSTICK_RIGHT],
+    );
+    s.hold(
+        &either(Stick(Direction::Left), Gate::Gripped),
+        &[GUI_TAB_PREV],
+    );
+    s.hold(
+        &either(Stick(Direction::Right), Gate::Gripped),
+        &[GUI_TAB_NEXT],
+    );
+    // Where a controller has a trackpad, a press on either trackpad's left or right half also steps
+    // the tabs. A touch alone does not, so the off-hand's touch stays free to show the controls
+    // summary.
     if ctx.trackpad_paging {
-        s.hold(
-            &[press(Left, TrackpadLeft), press(Right, TrackpadLeft)],
-            &[GUI_TAB_PREV],
-        );
-        s.hold(
-            &[press(Left, TrackpadRight), press(Right, TrackpadRight)],
-            &[GUI_TAB_NEXT],
-        );
-    } else {
-        s.hold(&[press(Left, Grip)], &[GUI_TAB_PREV]);
-        s.hold(&[press(Right, Grip)], &[GUI_TAB_NEXT]);
+        s.hold(&either(TrackpadLeft, Gate::Always), &[GUI_TAB_PREV]);
+        s.hold(&either(TrackpadRight, Gate::Always), &[GUI_TAB_NEXT]);
     }
     // The pointer's hand keeps its trigger for the native UI pointer.
     if ctx.pointer_hand != Some(Hand::Left) {

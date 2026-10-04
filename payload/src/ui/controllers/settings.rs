@@ -99,6 +99,17 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
             egui::Slider::new(&mut b.evade_window_s, 0.05..=1.0).text("Wingsuit evade window (s)"),
         );
         ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
+        ui.add(egui::Slider::new(&mut b.menu_stick_push, 0.2..=0.95).text("Menu stick push"));
+        ui.add(
+            egui::Slider::new(&mut b.stick_chord_window_s, 0.0..=0.3)
+                .text("Stick click chord window (s)"),
+        )
+        .on_hover_text("How long a lone stick click waits for the other before it acts.");
+        ui.add(
+            egui::Slider::new(&mut b.recenter_hold_s, 0.3..=3.0)
+                .text("Recenter chord hold (s)"),
+        )
+        .on_hover_text("Hold both stick clicks this long to recenter the VR view.");
         let y = &mut b.yank;
         ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(
             "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",

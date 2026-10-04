@@ -46,8 +46,6 @@ impl Role {
 pub enum Input {
     /// The trigger pulled past its press threshold.
     Trigger,
-    /// The grip squeezed, whatever its press was latched to.
-    Grip,
     /// The grip squeezed with its press latched to the grip's default use rather than to a grab.
     GripDefault,
     A,
@@ -59,6 +57,18 @@ pub enum Input {
     TrackpadRight,
     /// The yank gesture fired this tick (a one-tick press, which the game reads as a tap).
     Yank,
+    /// The stick pushed one way for menu navigation: held while the push latched to that direction
+    /// lasts ([`MenuLatch::stick`]).
+    Stick(Direction),
+}
+
+/// A menu stick push's direction.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 /// A per-tick condition an input must also meet, beyond being held.
@@ -73,6 +83,10 @@ pub enum Gate {
     EvadeFlick,
     /// Only when the wingsuit A press was not latched as an evade flick.
     NoEvadeFlick,
+    /// Only when the press began with its own hand's grip held ([`MenuLatch`]).
+    Gripped,
+    /// Only when the press began without its own hand's grip held ([`MenuLatch`]).
+    Ungripped,
 }
 
 /// A digital input on a hand, with its gate.
@@ -143,6 +157,36 @@ pub struct Latches {
     pub chord_armed: bool,
     /// The wingsuit A press was latched as an evade flick.
     pub evade: bool,
+    /// Each hand's menu presses, by [`Hand::index`].
+    pub menu: [MenuLatch; 2],
+}
+
+/// One hand's menu presses, each latched at its press edge with whether that hand's grip was held
+/// then, so that squeezing or letting go of the grip mid-press never turns one action into another.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct MenuLatch {
+    /// Whether the A press began with the grip held, while A is held.
+    pub a: Option<bool>,
+    /// Whether the B press began with the grip held, while B is held.
+    pub b: Option<bool>,
+    /// The direction the stick push latched to, and whether it began with the grip held.
+    pub stick: Option<(Direction, bool)>,
+}
+
+impl MenuLatch {
+    /// Whether the press of `input` latched with the grip held, or `None` while it is not held (or
+    /// for an input that does not latch).
+    pub const fn gripped(&self, input: Input) -> Option<bool> {
+        match input {
+            Input::A => self.a,
+            Input::B => self.b,
+            Input::Stick(_) => match self.stick {
+                Some((_, gripped)) => Some(gripped),
+                None => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 /// The evaluating reader: resolves the tables' inputs against one tick's controls and collects the
@@ -172,23 +216,29 @@ impl<'a> EvalSink<'a> {
         let hand = self.hand(role);
         match input {
             Input::Trigger => Some(hand.trigger_press),
-            Input::Grip | Input::GripDefault => Some(hand.grip),
+            Input::GripDefault => Some(hand.grip),
             Input::A => Some(hand.a),
             Input::B => Some(hand.b),
             Input::StickClick => Some(hand.stick_click),
             Input::TrackpadLeft => Some(hand.trackpad_left),
             Input::TrackpadRight => Some(hand.trackpad_right),
-            Input::Yank => None,
+            Input::Yank | Input::Stick(_) => None,
         }
     }
 
-    fn gate(&self, gate: Gate) -> bool {
-        match gate {
+    fn menu(&self, role: Role) -> &MenuLatch {
+        &self.latches.menu[role.hand(self.controls.dominant).index()]
+    }
+
+    fn gate(&self, press: Press) -> bool {
+        match press.gate {
             Gate::Always => true,
             Gate::UnlessChordArmed => !self.latches.chord_armed,
             Gate::UnlessChordGrip => !self.latches.chord_grip,
             Gate::EvadeFlick => self.latches.evade,
             Gate::NoEvadeFlick => !self.latches.evade,
+            Gate::Gripped => self.menu(press.role).gripped(press.input) == Some(true),
+            Gate::Ungripped => self.menu(press.role).gripped(press.input) == Some(false),
         }
     }
 
@@ -198,9 +248,13 @@ impl<'a> EvalSink<'a> {
                 self.latches.grip_default[press.role.hand(self.controls.dominant).index()]
             }
             Input::Yank => self.controls.yank,
+            Input::Stick(direction) => self
+                .menu(press.role)
+                .stick
+                .is_some_and(|(latched, _)| latched == direction),
             input => self.button(press.role, input).is_some_and(|b| b.held()),
         };
-        held && self.gate(press.gate)
+        held && self.gate(press)
     }
 
     fn value(&self, axis: Axis) -> f32 {
@@ -248,7 +302,7 @@ impl Sink for EvalSink<'_> {
             Input::Yank => self.controls.yank,
             input => self.button(press.role, input).is_some_and(|b| b.pressed),
         };
-        if pressed && self.gate(press.gate) {
+        if pressed && self.gate(press) {
             self.push(action, Want::Click);
         }
     }
