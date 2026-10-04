@@ -347,8 +347,9 @@ pub struct Character {
     /// The world-space point thrown grenades aim at, written by
     /// [`UpdateGrenadeAiming`](crate::character::character::Character::UpdateGrenadeAiming).
     pub m_AimTargetPositionGrenade: crate::types::math::Vector3,
-    /// The per-frame weapon input values (fire, precision aim, plant, and the rest), cleared by
-    /// [`UpdateWeapons_Parallel`](crate::character::character::Character::UpdateWeapons_Parallel) after the inventory consumes them.
+    /// The per-frame weapon input values (fire, precision aim, plant, and the rest), indexed by
+    /// [`WeaponInput`](crate::character::character::WeaponInput), cleared by [`UpdateWeapons_Parallel`](crate::character::character::Character::UpdateWeapons_Parallel) after
+    /// the inventory consumes them.
     pub m_WeaponInputs: [f32; 16],
     /// Set by [`UpdateWeaponAiming`](crate::character::character::Character::UpdateWeaponAiming) and cleared by
     /// [`UpdateWeapons_Parallel`](crate::character::character::Character::UpdateWeapons_Parallel): whether the weapon aim target was
@@ -373,7 +374,12 @@ pub struct Character {
     /// [`SetOrientation`](crate::character::character::Character::SetOrientation) writes the rotation into
     /// [`m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1) and stores the same quaternion here.
     pub m_RotationGoal: [f32; 4],
-    _field_2944: [u8; 108],
+    _field_2944: [u8; 36],
+    /// The character's measured world velocity, metres per second.
+    /// [`PlantedExplosiveWeapon::Fire_Projectile`](crate::equipment::weapon::PlantedExplosiveWeapon::Fire_Projectile)
+    /// drops a charge with it under a parachute.
+    pub m_MeasuredWorldVelocity: crate::types::math::Vector3,
+    _field_2974: [u8; 60],
     /// The character's avatar (`CAvatar`), the controller that drives it. For the player it is the
     /// [`Avatar`](crate::character::avatar::Avatar) base of the `CPlayer`. Holds the mental state written by
     /// [`SetMentalState`](crate::character::character::Character::SetMentalState).
@@ -701,6 +707,17 @@ impl Character {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
                 Self::IsUsingParachute_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsDetonatingExplosives_ADDRESS: usize = 0x14075F4B0;
+    /// Whether the character is playing the detonate act:
+    /// [`SB_IS_DETONATING_EXPLOSIVES`](crate::state::StateBitFlag::SB_IS_DETONATING_EXPLOSIVES).
+    pub unsafe fn IsDetonatingExplosives(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsDetonatingExplosives_ADDRESS,
             );
             f(self as *const Self as _)
         }
@@ -1725,6 +1742,36 @@ pub enum SafeBoneIndex {
 fn _SafeBoneIndex_size_check() {
     unsafe {
         ::std::mem::transmute::<[u8; 0x4], SafeBoneIndex>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// An index into [`Character::m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs) (`CCharacter::EWeaponInput`). The player's weapon
+/// input state task writes the fire, grenade, detonate, plant, reload, precision-aim, and use-item
+/// entries from the action map each frame, and the global input update the weapon-select entries.
+pub enum WeaponInput {
+    E_INPUT_MAIN_WEAPON = 0isize as _,
+    E_INPUT_GRENADE = 1isize as _,
+    E_INPUT_DETONATE_EXPLOSIVES = 2isize as _,
+    E_INPUT_PLANT_EXPLOSIVES = 3isize as _,
+    E_INPUT_RELOAD = 4isize as _,
+    E_INPUT_PRECISION_AIM = 5isize as _,
+    E_INPUT_USE_ITEM = 6isize as _,
+    E_INPUT_PICKUP_ITEM = 7isize as _,
+    E_INPUT_SELECT_DUEL_WIELD = 8isize as _,
+    E_INPUT_SELECT_TWO_HANDED = 9isize as _,
+    E_INPUT_SELECT_TWO_HANDED_SPECIAL = 10isize as _,
+    E_INPUT_SELECT_PLANT_EXPLOSIVES = 11isize as _,
+    E_INPUT_SELECT_PREVIOUS_WEAPON = 12isize as _,
+    E_INPUT_SELECT_NEXT_WEAPON = 13isize as _,
+    E_INPUT_BAVARIUM_WINGSUIT_MAIN = 14isize as _,
+    E_INPUT_BAVARIUM_WINGSUIT_SECONDARY = 15isize as _,
+    E_INPUT_COUNT = 16isize as _,
+}
+fn _WeaponInput_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], WeaponInput>([0u8; 0x4]);
     }
     unreachable!()
 }

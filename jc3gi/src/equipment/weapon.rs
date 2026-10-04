@@ -138,6 +138,226 @@ impl std::convert::AsMut<NWeaponUtil> for NWeaponUtil {
         self
     }
 }
+#[repr(C, align(8))]
+/// `CPlantedExplosiveWeapon`: the C4 weapon, a [`WeaponBase`](crate::equipment::weapon::WeaponBase) held in the
+/// [`E_SLOT_PLANTED_EXPLOSIVE`](crate::character::inventory::WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE) slot.
+/// It owns the charges the character has placed and their remote detonation.
+///
+/// Placing a charge runs through the planting mode, which equipping the weapon enters
+/// ([`m_IsInPlantingMode`](crate::equipment::weapon::PlantedExplosiveWeapon::m_IsInPlantingMode)): an animation track message primes a charge
+/// into [`m_PrimedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::m_PrimedExplosive) with
+/// [`PrimeExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::PrimeExplosive), the fire input places it at the aimed surface
+/// (`CPlantedExplosive::PlaceExplosiveAtPosition`, outside a parachute) and queues the throw act,
+/// and a later track message calls [`Fire_Projectile`](crate::equipment::weapon::PlantedExplosiveWeapon::Fire_Projectile), which makes the
+/// charge live. The weapon refuses to place a charge once
+/// [`NumActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::NumActiveExplosives) reaches
+/// [`MaxActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::MaxActiveExplosives); placed charges do not consume an inventory
+/// stock.
+///
+/// Detonation does not need the planting mode: the inventory runs the weapon's
+/// [`UpdateFromUserPostSim_Serial`](crate::equipment::weapon::PlantedExplosiveWeapon::UpdateFromUserPostSim_Serial) every frame whatever is
+/// wielded, and it starts a detonation from the character's detonate input. Only some members
+/// are mapped, at their offsets from the start of the weapon.
+pub struct PlantedExplosiveWeapon {
+    _field_0: [u8; 1848],
+    /// The primed charge: the live [`PlantedExplosive`](crate::equipment::explosive::PlantedExplosive)
+    /// spawned by [`PrimeExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::PrimeExplosive) and not yet placed, or null. `px` is
+    /// the charge's `CGameObject` subobject
+    /// ([`Explosive::GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)).
+    /// [`Fire_Projectile`](crate::equipment::weapon::PlantedExplosiveWeapon::Fire_Projectile) moves it to
+    /// [`m_LastPlantedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::m_LastPlantedExplosive) and clears it;
+    /// [`DespawnPrimedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::DespawnPrimedExplosive) removes the charge and clears it.
+    pub m_PrimedExplosive: crate::types::shared_ptr::WeakPtrGameObject,
+    /// The charge [`Fire_Projectile`](crate::equipment::weapon::PlantedExplosiveWeapon::Fire_Projectile) made live most recently.
+    pub m_LastPlantedExplosive: crate::types::shared_ptr::WeakPtrGameObject,
+    /// The most charges that may be live at once, at each explosives-capacity upgrade level;
+    /// [`MaxActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::MaxActiveExplosives) picks the entry for the player's
+    /// upgrades.
+    pub m_MaxActiveExplosivesAtLevel: [i32; 3],
+    _field_764: [u8; 164],
+    /// Whether the weapon is in the planting mode: set when the weapon is equipped, and cleared by
+    /// the weapon's `StopUsing`, which also despawns a primed charge.
+    pub m_IsInPlantingMode: bool,
+    _field_809: [u8; 2],
+    /// Set when [`UpdateFromUserPostSim_Serial`](crate::equipment::weapon::PlantedExplosiveWeapon::UpdateFromUserPostSim_Serial) starts a
+    /// detonation, and cleared by it once the character's detonate input
+    /// ([`E_INPUT_DETONATE_EXPLOSIVES`](crate::character::character::WeaponInput::E_INPUT_DETONATE_EXPLOSIVES))
+    /// is zero, so a held input detonates once.
+    pub m_AlreadyDetonatedOnThisInput: bool,
+    _field_80c: [u8; 4],
+}
+fn _PlantedExplosiveWeapon_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x810], PlantedExplosiveWeapon>([0u8; 0x810]);
+    }
+    unreachable!()
+}
+impl PlantedExplosiveWeapon {
+    pub const UpdateFromUserPostSim_Serial_ADDRESS: usize = 0x14098EBE0;
+    /// The weapon's serial per-frame update from its user (its override of
+    /// [`WeaponBase::UpdateFromUserPostSim_Serial`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Serial)). The inventory runs it for the planted
+    /// explosive slot's weapon every frame, wielded or not
+    /// ([`Inventory::UpdateWeapons_Serial`](crate::character::inventory::Inventory::UpdateWeapons_Serial)).
+    ///
+    /// Among the rest, it reads the holder's detonate input
+    /// ([`Character::m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs) at
+    /// [`E_INPUT_DETONATE_EXPLOSIVES`](crate::character::character::WeaponInput::E_INPUT_DETONATE_EXPLOSIVES))
+    /// directly rather than through `input`. While the input is positive, the inventory allows
+    /// triggering explosives
+    /// ([`Inventory::GetAnimationAllowsTriggeringExplosives`](crate::character::inventory::Inventory::GetAnimationAllowsTriggeringExplosives)),
+    /// the character is not already detonating
+    /// ([`Character::IsDetonatingExplosives`](crate::character::character::Character::IsDetonatingExplosives)),
+    /// and [`m_AlreadyDetonatedOnThisInput`](crate::equipment::weapon::PlantedExplosiveWeapon::m_AlreadyDetonatedOnThisInput) is clear, it
+    /// queues the upper-body detonate act when the character can take it (cancelling a reload when
+    /// it cannot), adds heat when charges are live, and sets
+    /// [`m_AlreadyDetonatedOnThisInput`](crate::equipment::weapon::PlantedExplosiveWeapon::m_AlreadyDetonatedOnThisInput). The act's animation
+    /// sends the track message that schedules the live charges for detonation. Outside the
+    /// planting mode it neither primes nor despawns a charge.
+    pub unsafe fn UpdateFromUserPostSim_Serial(
+        &mut self,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const crate::equipment::weapon::WeaponInputs,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                aim_position: *const crate::types::math::Vector3,
+                input: *const crate::equipment::weapon::WeaponInputs,
+            ) = ::std::mem::transmute(Self::UpdateFromUserPostSim_Serial_ADDRESS);
+            f(self as *mut Self as _, dt, aim_position, input)
+        }
+    }
+    pub const PrimeExplosive_ADDRESS: usize = 0x140990A40;
+    /// Primes a charge: puts the weapon in the
+    /// [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING) state when it is not (adding its models to
+    /// the world) and hides it, then allocates a
+    /// [`PlantedExplosive`](crate::equipment::explosive::PlantedExplosive) from the ammunition pool at
+    /// the weapon's shot matrix ([`WeaponBase::GetShotMatrix`](crate::equipment::weapon::WeaponBase::GetShotMatrix)), sets up its trail effect, adds it
+    /// to the update, and stores it in [`m_PrimedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::m_PrimedExplosive). Nothing is
+    /// spawned when the shot matrix is unavailable or the pool is full. It consumes nothing and
+    /// does not check the planting mode; the planting mode's track message is its caller.
+    pub unsafe fn PrimeExplosive(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::PrimeExplosive_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const Fire_Projectile_ADDRESS: usize = 0x1409A01E0;
+    /// Makes the primed charge live (its override of [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile)). A charge
+    /// whose parent is a vehicle with an active bavarium shield is removed instead. Otherwise it
+    /// calls [`PlantedExplosive::Activate`](crate::equipment::explosive::PlantedExplosive::Activate); under
+    /// a deployed parachute ([`Character::IsUsingParachute`](crate::character::character::Character::IsUsingParachute))
+    /// it also moves the charge to the right-hand bone (the transform setter and
+    /// [`Explosive::SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)),
+    /// drops it ([`PlantedExplosive::DropExplosive`](crate::equipment::explosive::PlantedExplosive::DropExplosive)),
+    /// gives it the character's
+    /// [`m_MeasuredWorldVelocity`](crate::character::character::Character::m_MeasuredWorldVelocity) with
+    /// one metre per second downward ([`PlantedExplosive::SetVelocity`](crate::equipment::explosive::PlantedExplosive::SetVelocity)),
+    /// and plays its trail ([`Explosive::PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect)).
+    /// It then adds heat, runs [`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase), adds the
+    /// charge to the live list (which the charge's detonation timer and HUD hint come from, and
+    /// which ignores a charge beyond [`MaxActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::MaxActiveExplosives)), adds it
+    /// to the update, and moves [`m_PrimedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::m_PrimedExplosive) to
+    /// [`m_LastPlantedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::m_LastPlantedExplosive).
+    pub unsafe fn Fire_Projectile(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Projectile_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const DespawnPrimedExplosive_ADDRESS: usize = 0x140980EA0;
+    /// Removes the primed charge, if any, and clears
+    /// [`m_PrimedExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::m_PrimedExplosive).
+    pub unsafe fn DespawnPrimedExplosive(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DespawnPrimedExplosive_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x14099FF80;
+    /// Places the weapon's attachments (its override of the `UpdateAttachmentTransforms` virtual):
+    /// after the base placement, while the weapon has a user, it puts the primed charge's
+    /// in-hand model on the user's right-hand bone
+    /// ([`PlantedExplosive::SetInactiveModelMatrix`](crate::equipment::explosive::PlantedExplosive::SetInactiveModelMatrix)).
+    /// The inventory's attachment pass calls it for every slot weapon
+    /// ([`Inventory::UpdateAttachmentTransforms`](crate::character::inventory::Inventory::UpdateAttachmentTransforms)).
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        p2: f32,
+        p3: f32,
+        transform_type: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                p2: f32,
+                p3: f32,
+                transform_type: u32,
+            ) = ::std::mem::transmute(Self::UpdateAttachmentTransforms_ADDRESS);
+            f(self as *mut Self as _, p2, p3, transform_type)
+        }
+    }
+    pub const NumActiveExplosives_ADDRESS: usize = 0x140957F10;
+    /// How many placed charges are live.
+    pub unsafe fn NumActiveExplosives(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::NumActiveExplosives_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const MaxActiveExplosives_ADDRESS: usize = 0x140980F70;
+    /// The most charges that may be live at once: for the player, the entry of
+    /// [`m_MaxActiveExplosivesAtLevel`](crate::equipment::weapon::PlantedExplosiveWeapon::m_MaxActiveExplosivesAtLevel) for the highest
+    /// explosives-capacity upgrade bought and enabled; for any other holder, the first entry.
+    pub unsafe fn MaxActiveExplosives(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::MaxActiveExplosives_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const CanPlantExplosive_ADDRESS: usize = 0x1409902D0;
+    /// Whether another charge may be placed:
+    /// [`NumActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::NumActiveExplosives) is below
+    /// [`MaxActiveExplosives`](crate::equipment::weapon::PlantedExplosiveWeapon::MaxActiveExplosives).
+    pub unsafe fn CanPlantExplosive(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::CanPlantExplosive_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<PlantedExplosiveWeapon> for PlantedExplosiveWeapon {
+    fn as_ref(&self) -> &PlantedExplosiveWeapon {
+        self
+    }
+}
+impl std::convert::AsMut<PlantedExplosiveWeapon> for PlantedExplosiveWeapon {
+    fn as_mut(&mut self) -> &mut PlantedExplosiveWeapon {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// How a weapon orients its projectiles (`CWeaponBase::EProjectileFireDirectionMode`), read by

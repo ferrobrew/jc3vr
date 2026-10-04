@@ -41,6 +41,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md) — the parachute state task and steering core, and how the camera input matrix is mixed into the chute's steering through the look-steer block.
 - [weapon-data.md](engine/gameplay/weapon-data.md) — where a weapon entity's files live, the weapon object and its fire points in the entity property file, the model parts, and the name hash; tooling in `tools/sights/`.
 - [weapon-selection.md](engine/gameplay/weapon-selection.md) — the slot-select and cycle actions, the inventory's selection and commit logic, the automatic switch away from an empty weapon, the HUD's selection cross, and its placement.
+- [planted-explosives.md](engine/gameplay/planted-explosives.md) — the C4 weapon and its charges: the cap on placed charges, the planting mode, the drop under the parachute, the collision that sticks a charge, and the detonate input.
 - [vehicle-parts.md](engine/gameplay/vehicle-parts.md) — a vehicle's parts: the parts resource and its entries, the live part instances on the physics body, how the render update draws them from their root-space transforms, which vehicles have a steering wheel part, the hinged parts the engine turns, and the vehicle type hash.
 
 ## mod/

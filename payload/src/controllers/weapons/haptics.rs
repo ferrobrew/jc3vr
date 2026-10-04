@@ -80,6 +80,8 @@ pub enum PulseSource {
     Chord,
     /// A trigger pull of an empty gun that cannot reload.
     DryFire,
+    /// A C4 charge primed in the hand, and a press of the wrist detonator.
+    C4,
 }
 
 impl PulseSource {
@@ -99,6 +101,7 @@ impl PulseSource {
             PulseSource::Magazine => "magazine",
             PulseSource::Chord => "chord",
             PulseSource::DryFire => "dry fire",
+            PulseSource::C4 => "C4",
         }
     }
 

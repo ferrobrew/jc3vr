@@ -142,6 +142,17 @@ impl Explosive {
             )
         }
     }
+    pub const PlayTrailEffect_ADDRESS: usize = 0x1408D6E20;
+    /// Plays the explosive's trail effect at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1), when it
+    /// has one.
+    pub unsafe fn PlayTrailEffect(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::PlayTrailEffect_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl Explosive {
     /// The offset of the embedded `CGameObject` subobject. Weak references to the explosive (such
@@ -250,6 +261,99 @@ impl std::convert::AsRef<Grenade> for Grenade {
 }
 impl std::convert::AsMut<Grenade> for Grenade {
     fn as_mut(&mut self) -> &mut Grenade {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A C4 charge (`CPlantedExplosive`, a [`Explosive`](crate::equipment::explosive::Explosive)), spawned and owned by the
+/// [`PlantedExplosiveWeapon`](crate::equipment::weapon::PlantedExplosiveWeapon). It has two models: the
+/// in-hand model, shown while the charge is primed and placed at
+/// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1), and the live model at
+/// the explosive's own transform, which [`Activate`](crate::equipment::explosive::PlantedExplosive::Activate) shows in its place.
+///
+/// The charge keeps the base explosive's collision handler (the grenade overrides it): on a
+/// collision it moves the charge to the contact point, oriented by the
+/// contact normal, and attaches itself to the object it hit (or plays its stick effect against the
+/// world), so a charge that is dropped
+/// ([`DropExplosive`](crate::equipment::explosive::PlantedExplosive::DropExplosive)) sticks where it lands.
+pub struct PlantedExplosive {
+    _field_0: [u8; 1640],
+    /// The in-hand model's world matrix, written by
+    /// [`SetInactiveModelMatrix`](crate::equipment::explosive::PlantedExplosive::SetInactiveModelMatrix). The pre-simulation update copies
+    /// it to the previous frame's matrix, and the render update draws the in-hand model between
+    /// the two.
+    pub m_InactiveModelWorldMatrixT1: crate::types::math::Matrix4,
+    _field_6a8: [u8; 12],
+    /// Whether the charge is live, set by [`Activate`](crate::equipment::explosive::PlantedExplosive::Activate).
+    pub m_ExplosiveIsPlanted: bool,
+    _field_6b5: [u8; 3],
+}
+fn _PlantedExplosive_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x6B8], PlantedExplosive>([0u8; 0x6B8]);
+    }
+    unreachable!()
+}
+impl PlantedExplosive {
+    pub const Activate_ADDRESS: usize = 0x140922BE0;
+    /// Makes the charge live: sets [`m_ExplosiveIsPlanted`](crate::equipment::explosive::PlantedExplosive::m_ExplosiveIsPlanted), plays the
+    /// stick effect, shows the live model, and hides the in-hand model.
+    pub unsafe fn Activate(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Activate_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const DropExplosive_ADDRESS: usize = 0x140922CD0;
+    /// Drops the charge into the simulation: makes its physics body dynamic in the world, disables
+    /// collision between it and the thrower's character body, and, under a parachute, moves the body
+    /// into the thrower's collision group. The body must exist
+    /// ([`Explosive::m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance)).
+    pub unsafe fn DropExplosive(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DropExplosive_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetVelocity_ADDRESS: usize = 0x1408C8870;
+    /// Sets the physics body's linear velocity, world axes, metres per second. The body must exist
+    /// ([`Explosive::m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance)); the call dereferences it unchecked. The velocity is a
+    /// by-value `CVector3f`, which the calling convention passes by address.
+    pub unsafe fn SetVelocity(&mut self, velocity: *const crate::types::math::Vector3) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                velocity: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::SetVelocity_ADDRESS);
+            f(self as *mut Self as _, velocity)
+        }
+    }
+    pub const SetInactiveModelMatrix_ADDRESS: usize = 0x1408BCC40;
+    /// Copies `world_matrix` to [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1).
+    pub unsafe fn SetInactiveModelMatrix(
+        &mut self,
+        world_matrix: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world_matrix: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::SetInactiveModelMatrix_ADDRESS);
+            f(self as *mut Self as _, world_matrix)
+        }
+    }
+}
+impl std::convert::AsRef<PlantedExplosive> for PlantedExplosive {
+    fn as_ref(&self) -> &PlantedExplosive {
+        self
+    }
+}
+impl std::convert::AsMut<PlantedExplosive> for PlantedExplosive {
+    fn as_mut(&mut self) -> &mut PlantedExplosive {
         self
     }
 }

@@ -270,6 +270,52 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         )?;
     }
     pulse("weapons.grenade.prime_pulse", &w.grenade.prime_pulse)?;
+    let c4 = &w.c4;
+    volume("weapons.c4.pouch", &c4.pouch)?;
+    vec3("weapons.c4.hold_offset_m", c4.hold_offset_m, 5.0)?;
+    positive("weapons.c4.release_window_s", c4.release_window_s, 60.0)?;
+    nonnegative(
+        "weapons.c4.release_peak_span_s",
+        c4.release_peak_span_s,
+        60.0,
+    )?;
+    nonnegative("weapons.c4.velocity_scale", c4.velocity_scale, 100.0)?;
+    nonnegative("weapons.c4.max_speed_mps", c4.max_speed_mps, 1_000.0)?;
+    pulse("weapons.c4.prime_pulse", &c4.prime_pulse)?;
+    let d = &c4.detonator;
+    vec3("weapons.c4.detonator.offset_m", d.offset_m, 5.0)?;
+    vec3("weapons.c4.detonator.normal", d.normal, 5.0)?;
+    positive("weapons.c4.detonator.radius_m", d.radius_m, 1.0)?;
+    positive("weapons.c4.detonator.press_depth_m", d.press_depth_m, 1.0)?;
+    range(
+        "weapons.c4.detonator.release_depth_m",
+        d.release_depth_m,
+        -1.0,
+        d.press_depth_m,
+    )?;
+    range(
+        "weapons.c4.detonator.max_depth_m",
+        d.max_depth_m,
+        d.press_depth_m,
+        1.0,
+    )?;
+    nonnegative(
+        "weapons.c4.detonator.min_approach_speed_mps",
+        d.min_approach_speed_mps,
+        100.0,
+    )?;
+    nonnegative("weapons.c4.detonator.dwell_s", d.dwell_s, 60.0)?;
+    vec3(
+        "weapons.c4.detonator.fingertip_pointing_m",
+        d.fingertip_pointing_m,
+        5.0,
+    )?;
+    vec3(
+        "weapons.c4.detonator.fingertip_resting_m",
+        d.fingertip_resting_m,
+        5.0,
+    )?;
+    pulse("weapons.c4.detonator.pulse", &d.pulse)?;
     positive(
         "weapons.melee_strike.strike_speed_mps",
         w.melee_strike.strike_speed_mps,

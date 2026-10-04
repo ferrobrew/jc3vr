@@ -26,8 +26,8 @@ use crate::{
         summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
         weapons::config::{
-            DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
-            MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
+            C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
+            HolstersConfig, MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
         },
     },
     vr::input::layout::{FloatInput, Input, provides},
@@ -656,6 +656,15 @@ pub struct WeaponsConfig {
     pub grenade_throw: bool,
     /// The physical throw's release, warning, and fallback settings.
     pub grenade: GrenadeConfig,
+    /// Throw C4 physically: grab a charge from the chest pouch, release the grip to throw it with
+    /// the hand's velocity, and it sticks where it lands. The C4 pouch exists only while this is
+    /// on.
+    pub c4_throw: bool,
+    /// Detonate the placed charges by pushing the dominant index fingertip into the button on the
+    /// inside of the off-hand's wrist.
+    pub wrist_detonator: bool,
+    /// The C4 pouch, the throw's release, and the wrist detonator's placement and press tuning.
+    pub c4: C4Config,
     /// Trigger melee attacks with physical strikes.
     pub melee: bool,
     /// The strike detector and the melee target's hold.
@@ -685,6 +694,9 @@ impl WeaponsConfig {
             magazine: MagazineConfig::new(),
             grenade_throw: true,
             grenade: GrenadeConfig::new(),
+            c4_throw: true,
+            wrist_detonator: true,
+            c4: C4Config::new(),
             melee: true,
             melee_strike: MeleeStrikeConfig::new(),
             scopes: true,

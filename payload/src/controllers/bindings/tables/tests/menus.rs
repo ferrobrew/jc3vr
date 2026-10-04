@@ -357,7 +357,7 @@ fn a_short_stick_click_chord_neither_recenters_nor_acts() {
 
 #[test]
 fn a_lone_stick_click_still_acts_after_the_chord_window() {
-    // Right-handed: the dominant stick click throws a grenade on foot.
+    // Right-handed: the dominant stick click detonates on foot.
     let mut b = Bindings::default();
     let window_ticks = (CHORD_CONFIG.stick_chord_window_s / DT).ceil() as usize;
     let first = b.step(
@@ -366,7 +366,7 @@ fn a_lone_stick_click_still_acts_after_the_chord_window() {
         DT,
         &CHORD_CONFIG,
     );
-    assert_eq!(player(&first, THROW_GRENADE), None);
+    assert_eq!(player(&first, DETONATE_EXPLOSIVE), None);
     let mut thrown = None;
     for tick in 1..=window_ticks + 1 {
         let step = b.step(
@@ -375,7 +375,7 @@ fn a_lone_stick_click_still_acts_after_the_chord_window() {
             DT,
             &CHORD_CONFIG,
         );
-        if player(&step, THROW_GRENADE).is_some() {
+        if player(&step, DETONATE_EXPLOSIVE).is_some() {
             thrown = Some(tick);
             break;
         }
@@ -399,5 +399,5 @@ fn a_lone_stick_click_still_acts_after_the_chord_window() {
         DT,
         &CHORD_CONFIG,
     );
-    assert_eq!(player(&step, THROW_GRENADE), Some(Want::Hold(1.0)));
+    assert_eq!(player(&step, DETONATE_EXPLOSIVE), Some(Want::Hold(1.0)));
 }

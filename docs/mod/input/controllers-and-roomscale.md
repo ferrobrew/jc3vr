@@ -203,8 +203,9 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Reload | B; the opt-in magazine gesture also reloads |
 | Holster | grip press with the weapon hand at the held weapon's holster; a short hold of B also holsters, as on the gamepad |
 | Weapon slot select | draw from a holster; the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
-| Throw grenade | grab from the grenade pouch and throw; R stick click is the fallback |
-| Plant and detonate explosives | R stick click (context) |
+| Throw grenade | grab from the grenade pouch and throw; no button |
+| Throw C4 | grab from the C4 pouch on the chest and throw; it sticks where it lands; no button |
+| Detonate C4 | push the right index fingertip into the button on the inside of the left wrist; or hold the R stick click (`DETONATE_EXPLOSIVE` alone) |
 | Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand; no button |
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
 | Reel-in context: cancel, boost, hang jump, slingshot | Y, hold L trigger (hold L stick click while dual-wielding), A, A |
@@ -332,7 +333,11 @@ The reload button starts the native reload. The weapon cannot fire until the rel
 
 ### Grenades
 
-A grip press on the grenade pouch puts a grenade in the hand; releasing the grip throws it. The throw animation normally drives the grenade weapon through two requests, and the mod raises them itself, so no wind-up plays ([aim-pipeline.md, "Grenades"](../../engine/gameplay/aim-pipeline.md#grenades)): the grip press raises the prime request ([`ThrownGrenadeWeapon::m_PrimeGrenade`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::ThrownGrenadeWeapon##field-m_PrimeGrenade)), and the release raises the fire request once the grenade has its physics body. A post-hook on [`Grenade::PropelToward`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Grenade##func-PropelToward) moves the launch to the hand and overwrites the solved launch velocity, [`Explosive::m_DeferredInitialVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Explosive##field-m_DeferredInitialVelocity), with the hand's release velocity, estimated from a short history of the hand's motion. The fuse runs from the prime, so a grenade held too long explodes in the hand; a ring at the hand counts the fuse down. The R stick click fallback throws with the game's own animation and arc, toward the hand ray's aim point.
+A grip press on the grenade pouch puts a grenade in the hand; releasing the grip throws it. The throw animation normally drives the grenade weapon through two requests, and the mod raises them itself, so no wind-up plays ([aim-pipeline.md, "Grenades"](../../engine/gameplay/aim-pipeline.md#grenades)): the grip press raises the prime request ([`ThrownGrenadeWeapon::m_PrimeGrenade`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::ThrownGrenadeWeapon##field-m_PrimeGrenade)), and the release raises the fire request once the grenade has its physics body. A post-hook on [`Grenade::PropelToward`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Grenade##func-PropelToward) moves the launch to the hand and overwrites the solved launch velocity, [`Explosive::m_DeferredInitialVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Explosive##field-m_DeferredInitialVelocity), with the hand's release velocity, estimated from a short history of the hand's motion. The fuse runs from the prime, so a grenade held too long explodes in the hand; a ring at the hand counts the fuse down. No button throws a grenade.
+
+### C4
+
+A grip press on the C4 pouch on the chest puts a charge in the hand; releasing the grip throws it, and it sticks where it lands. The game's planting mode (select the explosives, aim a ghost with the camera, and plant at the aimed surface with an animation) is bypassed: the mod drives the C4 weapon's own prime and make-live steps and drops the charge from the hand the way the game drops one under the parachute ([planted-explosives.md](../../engine/gameplay/planted-explosives.md)). The game's cap on placed charges and its planting permission still apply. Pushing the right index fingertip into a button on the inside of the left wrist detonates the placed charges through the game's own detonate input, as does holding the R stick click.
 
 ### Melee
 
@@ -520,7 +525,8 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| The physical grenade throw | `grenade_throw`, and the release, warning, and fallback tuning under `grenade` | Built. |
+| The physical grenade throw | `grenade_throw`, and the release, warning, and fallback tuning under `grenade` | Built. No button throws a grenade. |
+| The C4 throw and the wrist detonator | `c4_throw` and `wrist_detonator` (both on), and the pouch, release, and button tuning under `c4` | Built. The R stick click detonates. |
 | Physical melee | `melee`, and the strike tuning under `melee_strike` | Built. |
 | Precision aim suppression | `scope.suppress_precision_aim` | Built. |
 | Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
@@ -554,7 +560,7 @@ Mode detection and bindings:
 - The pause and commlink clicks go to both the player map and the UI map, which may toggle pause twice.
 - The wingsuit's evade (A with the move stick flicked out of its rest within `bindings.evade_window_s`) and its L trigger mapping (the air brake). The game's evade is `WINGSUIT_EVADE` held with `MOVE_ALL` tapped, and whether a flick that starts before the A press still reads as that tap is not checked.
 - The generic actions (`BTN_*`, `L1`, `R2`, and the others) mirrored alongside each virtual gamepad button.
-- The explosive button is the gamepad's RB, so a hold detonates.
+- The R stick click carries only `DETONATE_EXPLOSIVE`, which the gamepad rules act on once it is held past the hold threshold, as the gamepad's RB hold detonates.
 - A device poll that the engine skips can stretch a click over two ticks.
 - The teleport rule sees only deferred teleports.
 
@@ -626,10 +632,11 @@ The order puts the parts that everything else depends on first, then the parts w
 24. Physical controls (each under `vehicles.physical`). The wheel, handlebars, cyclic, collective, flight stick, and throttle sit where the hands expect them, grab and release, steer in the right direction, and leave the vehicle's weapons unfired.
 25. Arm steering and the parachute handles (`vehicles.arm_steering.wingsuit`, `vehicles.parachute_handles`). In the wingsuit, lowering the right hand banks right and lowering both hands dives; the head no longer steers the wingsuit. Under the parachute, the hands steer nothing until they take the handles above the shoulders with the grip; pulling the right handle down banks right, pulling both down slows the canopy, and letting go or raising them flies level.
 26. Scopes. Precision aim does not engage from the input, the sniper's bolt cycle, or the guided rocket launcher, and the launcher's missile still guides. The lens appears when the eye is behind the scope, magnifies the target the right way round, and is not blocked by the gun or the hands.
-27. Grenades. A grip at the pouch primes a grenade into the hand, the fuse ring counts down, a release throws with the hand's speed and direction, and a grenade held too long explodes in the hand. The stick click still throws along the hand's aim.
+27. Grenades. A grip at the pouch primes a grenade into the hand, the fuse ring counts down, a release throws with the hand's speed and direction, and a grenade held too long explodes in the hand.
 28. Melee. A strike away from the shoulder hits the target struck at, a pull toward the body does not strike, and a strike in the air, while reeling, or without the hammer ability does nothing.
 29. Aim assist (`aim.assist_strength` above 0). Each hand's aim point pulls toward a hostile target near its sight line, and never toward a target behind cover.
 30. The magazine gesture (`weapons.reload_gesture`). Taking a magazine from the off-hand pouch and bringing it to the well starts the reload, a one-tick reload click does not holster, and the button still reloads.
+31. C4 (`weapons.c4_throw`, `weapons.wrist_detonator`). A grip at the chest pouch primes a charge into either hand, a release throws it with the hand's speed and direction, and it sticks to the ground, a wall, and a vehicle where it lands. A grab is refused at the cap of placed charges. A deliberate push of the right fingertip into the left wrist button detonates the charges, with a click on both hands and the button lit while charges are placed; brushing the wrist, sliding a finger along the forearm, and a hand passing through the wrist do not. Holding the R stick click detonates too, a tap does not, and it never throws a grenade.
 
 ## Reverse-engineering work
 

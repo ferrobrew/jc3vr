@@ -1,4 +1,5 @@
-//! Placing the body's grab volumes: the holsters, the grenade pouch, and the magazine pouch. Pure.
+//! Placing the body's grab volumes: the holsters, the grenade pouch, the magazine pouch, and the C4
+//! pouch. Pure.
 //!
 //! The volumes are placed in the cockpit frame, where the hands' grab points are, relative to the
 //! character's body frame. The cockpit frame composes onto the character's world transform with the
@@ -18,7 +19,7 @@
 //!   forward over the thighs, because the seat is where a standing body's hip joints are;
 //! - the shoulder joints ([`body::shoulder_positions`]); seated, a little forward, over the tops of
 //!   the shoulders, because a backrest is behind them;
-//! - the chest, at the middle of the shoulder joints;
+//! - the chest, at the middle of the shoulder joints, for the chest holster and the C4 pouch;
 //! - the belt front, for the grenade and magazine pouches: higher up the torso and further forward
 //!   than the hips, clear of the body, and biased toward one side so the pouch sits apart from both
 //!   the hip holster beside it and the other pouch mirrored on the opposite side; seated, adjusted
@@ -286,6 +287,25 @@ pub fn magazine_pouch(
     )
 }
 
+/// The C4 pouch on the chest at the dominant side, a volume either hand may grab (whichever grabs it
+/// throws). It is placed from the middle of the shoulder joints, like the chest holster, and offset
+/// toward the dominant side, below the dominant shoulder's holster and beside the chest holster.
+pub fn c4_pouch(
+    frame: &BodyFrame,
+    dims: &BodyDimensions,
+    spec: &VolumeSpec,
+    dominant: Hand,
+) -> Candidate {
+    let shoulders = body::shoulder_positions(frame.origin, Quat::IDENTITY, dims);
+    place(
+        GrabVolume::C4Pouch,
+        (shoulders[0] + shoulders[1]) * 0.5,
+        spec,
+        dominant,
+        None,
+    )
+}
+
 /// A grab point outside every holster that `hand` may grab: the nearest holster, how far the point
 /// is outside its surface, and the point's offset from its centre.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -309,7 +329,10 @@ pub fn near_miss(
     let holsters = candidates.iter().filter(|c| {
         matches!(
             c.volume,
-            GrabVolume::Holster(_) | GrabVolume::GrenadePouch | GrabVolume::MagazinePouch
+            GrabVolume::Holster(_)
+                | GrabVolume::GrenadePouch
+                | GrabVolume::MagazinePouch
+                | GrabVolume::C4Pouch
         ) && c.hand.is_none_or(|h| h == hand)
             && c.radius.is_finite()
             && c.radius > 0.0
@@ -431,7 +454,10 @@ fn side_sign(side: Hand) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::{bindings::grab::grab_volume, weapons::config::MagazineConfig};
+    use crate::controllers::{
+        bindings::grab::grab_volume,
+        weapons::config::{C4Config, MagazineConfig},
+    };
 
     const DIMS: BodyDimensions = BodyDimensions::GENERIC_ADULT;
     const STANDING: BodyFrame = BodyFrame {
@@ -512,6 +538,7 @@ mod tests {
             ] {
                 let mut c = holster_candidates(&frame, &dims, &config, Hand::Right, true);
                 c.push(magazine_pouch(&frame, &dims, &magazine, Hand::Right));
+                c.push(c4_pouch(&frame, &dims, &C4Config::new().pouch, Hand::Right));
                 for (i, a) in c.iter().enumerate() {
                     for b in &c[i + 1..] {
                         assert!(
@@ -586,6 +613,44 @@ mod tests {
                 Some(GrabVolume::MagazinePouch)
             );
         }
+    }
+
+    #[test]
+    fn the_c4_pouch_is_on_the_dominant_side_of_the_chest_for_either_hand() {
+        let spec = C4Config::new().pouch;
+        for dominant in Hand::BOTH {
+            for frame in [STANDING, SEATED] {
+                let mut c =
+                    holster_candidates(&frame, &DIMS, &HolstersConfig::new(), dominant, true);
+                let pouch = c4_pouch(&frame, &DIMS, &spec, dominant);
+                c.push(magazine_pouch(
+                    &frame,
+                    &DIMS,
+                    &MagazineConfig::new().pouch,
+                    dominant,
+                ));
+                c.push(pouch);
+                // On the dominant side, between the shoulders' height and the belt's, in front of
+                // the eyes.
+                assert_eq!(pouch.centre.x > 0.0, dominant == Hand::Right);
+                let chest = centre(&c, GrabVolume::Holster(HolsterSite::Chest));
+                let belt = centre(&c, GrabVolume::MagazinePouch);
+                assert!(pouch.centre.y < 0.0 && pouch.centre.y > belt.y, "{pouch:?}");
+                assert!((pouch.centre.y - chest.y).abs() < 0.1, "{pouch:?}");
+                assert!(pouch.centre.z < 0.0);
+                assert_eq!(pouch.hand, None);
+                for hand in Hand::BOTH {
+                    assert_eq!(
+                        grab_volume(pouch.centre, hand, &c),
+                        Some(GrabVolume::C4Pouch)
+                    );
+                }
+            }
+        }
+        // A left-handed player's pouch mirrors a right-handed player's.
+        let right = c4_pouch(&STANDING, &DIMS, &spec, Hand::Right).centre;
+        let left = c4_pouch(&STANDING, &DIMS, &spec, Hand::Left).centre;
+        assert!((right.x + left.x).abs() < 1e-6 && right.y == left.y && right.z == left.z);
     }
 
     #[test]

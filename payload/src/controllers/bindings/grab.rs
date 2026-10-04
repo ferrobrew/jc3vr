@@ -2,7 +2,7 @@
 //! performing the grip's default action (the off-hand's grapple). Pure.
 //!
 //! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, the
-//! magazine pouch, the vehicle controls, and the parachute's handles. The subsystem
+//! magazine pouch, the C4 pouch, the vehicle controls, and the parachute's handles. The subsystem
 //! that owns a volume places it each input tick as a [`Candidate`] (the weapons in
 //! [`crate::controllers::weapons`], the vehicle controls and the parachute's handles in
 //! [`crate::controllers::vehicles`]), and
@@ -24,6 +24,8 @@ pub enum GrabVolume {
     GrenadePouch,
     /// The off-hand's magazine pouch, while the magazine reload gesture is on.
     MagazinePouch,
+    /// The C4 pouch on the chest, while the C4 throw is on.
+    C4Pouch,
     /// A physical vehicle control of the driver's seat (see
     /// [`crate::controllers::vehicles::physical`]).
     VehicleControl(ControlKind),
@@ -38,6 +40,7 @@ impl GrabVolume {
             GrabVolume::Foregrip => "foregrip",
             GrabVolume::GrenadePouch => "grenade pouch",
             GrabVolume::MagazinePouch => "magazine pouch",
+            GrabVolume::C4Pouch => "C4 pouch",
             GrabVolume::VehicleControl(kind) => kind.label(),
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
             GrabVolume::ParachuteHandle(Hand::Right) => "right parachute handle",

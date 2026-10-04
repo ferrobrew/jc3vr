@@ -97,7 +97,7 @@ fn falling_and_the_parachute_keep_the_hand_weapon_bindings() {
     for variant in [AirborneVariant::Falling, AirborneVariant::Parachute] {
         let mut b = Bindings::default();
         let step = b.step(Mode::Airborne(variant), &c, DT, &CONFIG);
-        for action in [FIRE_RIGHT, R2, RELOAD, THROW_GRENADE] {
+        for action in [FIRE_RIGHT, R2, RELOAD, DETONATE_EXPLOSIVE] {
             assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
         }
         for action in [FIRE_WINGSUIT_WEAPON_MAIN, WINGSUIT_BOOST] {
@@ -118,7 +118,7 @@ fn the_wingsuit_fires_its_own_weapons_and_boosts() {
     for action in [FIRE_WINGSUIT_WEAPON_MAIN, WINGSUIT_BOOST] {
         assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
     }
-    for action in [FIRE_RIGHT, RELOAD, THROW_GRENADE] {
+    for action in [FIRE_RIGHT, RELOAD, DETONATE_EXPLOSIVE] {
         assert_eq!(player(&step, action), None, "{action:?}");
     }
 }

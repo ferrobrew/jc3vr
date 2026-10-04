@@ -166,6 +166,14 @@ fn build() -> Page {
             .controllers
             .weapons
             .grenade_throw))
+        .item(config_toggle!("THROWN C4", |c| c
+            .controllers
+            .weapons
+            .c4_throw))
+        .item(config_toggle!("WRIST DETONATOR", |c| c
+            .controllers
+            .weapons
+            .wrist_detonator))
         .item(config_toggle!("MELEE STRIKES", |c| c
             .controllers
             .weapons

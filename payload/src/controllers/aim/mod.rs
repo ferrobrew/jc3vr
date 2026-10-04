@@ -18,7 +18,7 @@
 //! grapple's hooks; after it, the hand rays are cast, the guns' aim points are published for the
 //! per-weapon update that follows on the same thread, and the tick's results are published for the
 //! world-space overlay ([`status`]). The same update hands the weapon handling what it needs from
-//! the hands in the world: the grips for the grenade throw, the dominant hand's aim point for the
+//! the hands in the world: the grips for the grenade and C4 throws, the dominant hand's aim point for the
 //! game's own grenade throw, and the pointing directions for a physical strike's melee target.
 //!
 //! Both parts act only under the controller scheme, in gameplay, and for a tracked hand, each behind
@@ -59,7 +59,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::{self, ik, late, pose as hand_pose},
         scheme, vehicles,
-        weapons::{grenade, melee},
+        weapons::{c4, grenade, melee},
     },
     headpose, hooks,
 };
@@ -194,11 +194,13 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         Some(Err(idle)) => {
             idle_update(idle);
             grenade::observe_hands([None; 2]);
+            c4::observe_hands([None; 2]);
             return original();
         }
         None => return original(),
     };
     grenade::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
+    c4::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
 
     let off = tick.config.dominant_hand.other();
     let grapple_ray = tick

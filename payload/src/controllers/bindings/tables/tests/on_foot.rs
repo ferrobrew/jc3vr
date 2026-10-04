@@ -27,6 +27,30 @@ fn on_foot_face_buttons_follow_the_plan() {
 }
 
 #[test]
+fn the_dominant_stick_click_only_detonates() {
+    for dominant in Hand::BOTH {
+        let c = controls(dominant, |dom, _| dom.stick_click = down());
+        for mode in [
+            ON_FOOT,
+            Mode::Airborne(AirborneVariant::Falling),
+            Mode::Airborne(AirborneVariant::Parachute),
+        ] {
+            let mut b = Bindings::default();
+            let step = b.step(mode, &c, DT, &CONFIG);
+            assert_eq!(
+                player(&step, DETONATE_EXPLOSIVE),
+                Some(Want::Hold(1.0)),
+                "{mode:?}"
+            );
+            // Grenades come from the pouch and C4 from its own pouch: neither is on the click.
+            for action in [THROW_GRENADE, PLANT_EXPLOSIVE, DETONATE_EXPLOSIVE_TAP, R1] {
+                assert_eq!(player(&step, action), None, "{mode:?}: {action:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn the_dominant_hand_mirrors_the_layout() {
     let mut b = Bindings::default();
     let right_handed = controls(Hand::Right, |dom, off| {

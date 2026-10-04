@@ -39,7 +39,17 @@ pub struct Inventory {
     /// committed slot selection (`CCharacter::SwitchWeapon`), and
     /// [`TryToSwitchToValidWeapon`](crate::character::inventory::Inventory::TryToSwitchToValidWeapon) all wait on it.
     pub m_DoesAnimationAllowSwitchingWeapons: bool,
-    _field_18a: [u8; 598],
+    /// Whether the character may plant explosives: recomputed by
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions), and off for the player
+    /// without the planted-explosives ability. One half of
+    /// [`GetAnimationAllowsPlantingExplosives`](crate::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives).
+    pub m_DoesAnimationAllowPlantingExplosives: bool,
+    /// Whether the character may detonate its placed explosives: recomputed by
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions), and off for the player
+    /// without the planted-explosives ability. One half of
+    /// [`GetAnimationAllowsTriggeringExplosives`](crate::character::inventory::Inventory::GetAnimationAllowsTriggeringExplosives).
+    pub m_DoesAnimationAllowTriggeringExplosives: bool,
+    _field_18c: [u8; 596],
     /// The character that owns the inventory.
     pub m_Character: *mut crate::character::character::Character,
 }
@@ -125,6 +135,34 @@ impl Inventory {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
                 Self::GetAnimationAllowsShooting_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetAnimationAllowsPlantingExplosives_ADDRESS: usize = 0x1408BB7B0;
+    /// Whether the character may plant explosives:
+    /// [`m_DoesAnimationAllowPlantingExplosives`](crate::character::inventory::Inventory::m_DoesAnimationAllowPlantingExplosives) is
+    /// set and the owner's
+    /// [`SB_DISABLE_PLANT_EXPLOSIVES`](crate::state::StateBitFlag::SB_DISABLE_PLANT_EXPLOSIVES) state bit
+    /// is clear.
+    pub unsafe fn GetAnimationAllowsPlantingExplosives(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsPlantingExplosives_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetAnimationAllowsTriggeringExplosives_ADDRESS: usize = 0x1408BB7E0;
+    /// Whether the character may detonate its placed explosives:
+    /// [`m_DoesAnimationAllowTriggeringExplosives`](crate::character::inventory::Inventory::m_DoesAnimationAllowTriggeringExplosives)
+    /// is set and the owner's
+    /// [`SB_DISABLE_TRIGGER_EXPLOSIVES`](crate::state::StateBitFlag::SB_DISABLE_TRIGGER_EXPLOSIVES) state
+    /// bit is clear.
+    pub unsafe fn GetAnimationAllowsTriggeringExplosives(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsTriggeringExplosives_ADDRESS,
             );
             f(self as *const Self as _)
         }

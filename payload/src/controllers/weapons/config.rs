@@ -303,8 +303,9 @@ pub struct GrenadeConfig {
     pub velocity_scale: f32,
     /// The fastest a grenade may leave the hand, metres per second, against tracking glitches.
     pub max_speed_mps: f32,
-    /// Aim the game's own throw (the stick-click fallback) at the point the dominant hand's ray
-    /// reaches rather than at the gaze.
+    /// Aim the game's own throw at the point the dominant hand's ray reaches rather than at the
+    /// gaze. No controller input binds the game's throw (grenades come from the pouch), so this
+    /// matters only to a throw the game starts by other means.
     pub hand_aimed_fallback: bool,
     /// How long before the fuse runs out the held grenade starts to warn, seconds.
     pub warning_s: f32,
@@ -347,6 +348,129 @@ impl GrenadeConfig {
 }
 
 impl Default for GrenadeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The C4 pouch and the throw of a charge (see [`crate::controllers::weapons::c4`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct C4Config {
+    /// The C4 pouch on the chest at the dominant side, a grab volume for either hand while the C4
+    /// throw ([`WeaponsConfig::c4_throw`](crate::controllers::config::WeaponsConfig::c4_throw)) is
+    /// on. Its offset is from the middle of the shoulder joints, given for the right side and
+    /// mirrored for the left.
+    pub pouch: VolumeSpec,
+    /// Where the held charge sits in the throwing controller's grip frame, metres, given for the
+    /// right hand and mirrored for the left.
+    pub hold_offset_m: Vec3,
+    /// How far back from the grip's release the throw's velocity is looked for, seconds.
+    pub release_window_s: f32,
+    /// The span around the fastest moment of the throw whose velocities are averaged, seconds on
+    /// each side.
+    pub release_peak_span_s: f32,
+    /// Scales the hand's release velocity: `1` throws exactly as fast as the hand moved.
+    pub velocity_scale: f32,
+    /// The fastest a charge may leave the hand, metres per second, against tracking glitches.
+    pub max_speed_mps: f32,
+    /// A pulse on the hand a charge is primed in.
+    pub prime_pulse: PulseSpec,
+    /// The detonator button on the off-hand's wrist.
+    pub detonator: WristDetonatorConfig,
+}
+
+impl C4Config {
+    pub const fn new() -> Self {
+        Self {
+            pouch: VolumeSpec {
+                offset_m: Vec3::new(0.17, -0.08, -0.19),
+                radius_m: 0.07,
+            },
+            hold_offset_m: Vec3::ZERO,
+            release_window_s: 0.1,
+            release_peak_span_s: 0.015,
+            velocity_scale: 1.0,
+            max_speed_mps: 25.0,
+            prime_pulse: PulseSpec {
+                amplitude: 0.3,
+                duration_s: 0.04,
+            },
+            detonator: WristDetonatorConfig::new(),
+        }
+    }
+}
+
+impl Default for C4Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The detonator button on the inside of the off-hand's wrist, pressed by the dominant hand's
+/// index fingertip (see [`crate::controllers::weapons::c4::press`]). The button's frame is the
+/// off-hand controller's grip frame, given for the left hand (the off-hand of a right-handed
+/// player) and mirrored for the right.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WristDetonatorConfig {
+    /// The centre of the button's face, metres. The grip's origin is the centre of the closed
+    /// fist, -Z runs out of the front of the fist and +Z back toward the wrist, and +X on the left
+    /// hand points out of the palm.
+    pub offset_m: Vec3,
+    /// The direction out of the button's face, which a press pushes against. Normalised on use.
+    pub normal: Vec3,
+    /// The button face's radius, metres: a fingertip further off the button's axis does not press.
+    pub radius_m: f32,
+    /// How far past the face the fingertip must push to press, metres.
+    pub press_depth_m: f32,
+    /// How far past the face the fingertip must come back to before the button presses again,
+    /// metres. Less than `press_depth_m`, so the press has hysteresis.
+    pub release_depth_m: f32,
+    /// How far past the face a fingertip may go and still press, metres: deeper is a hand passing
+    /// through the wrist rather than a press.
+    pub max_depth_m: f32,
+    /// How fast the fingertip must be moving into the face as it reaches it, metres per second,
+    /// for the press to count at once.
+    pub min_approach_speed_mps: f32,
+    /// How long a slower fingertip must stay pushed in to press, seconds.
+    pub dwell_s: f32,
+    /// Where the index fingertip is in the dominant controller's aim frame while the finger points
+    /// (off the trigger), metres, given for the right hand and mirrored for the left. Used when the
+    /// runtime reports no tracked hand skeleton.
+    pub fingertip_pointing_m: Vec3,
+    /// Where the index fingertip is in the dominant controller's aim frame while it rests on the
+    /// trigger, metres, given for the right hand and mirrored for the left.
+    pub fingertip_resting_m: Vec3,
+    /// Draw the button on the wrist: dim with no charges placed, lit while charges are placed.
+    pub overlay: bool,
+    /// A pulse on both hands when the button presses.
+    pub pulse: PulseSpec,
+}
+
+impl WristDetonatorConfig {
+    pub const fn new() -> Self {
+        Self {
+            offset_m: Vec3::new(0.03, 0.0, 0.08),
+            normal: Vec3::X,
+            radius_m: 0.03,
+            press_depth_m: 0.012,
+            release_depth_m: 0.004,
+            max_depth_m: 0.06,
+            min_approach_speed_mps: 0.15,
+            dwell_s: 0.25,
+            fingertip_pointing_m: Vec3::new(0.0, -0.02, -0.04),
+            fingertip_resting_m: Vec3::new(0.0, -0.04, 0.02),
+            overlay: true,
+            pulse: PulseSpec {
+                amplitude: 0.6,
+                duration_s: 0.03,
+            },
+        }
+    }
+}
+
+impl Default for WristDetonatorConfig {
     fn default() -> Self {
         Self::new()
     }

@@ -8,6 +8,7 @@ mod aim;
 mod aim_state;
 mod body;
 mod diagnostics;
+mod explosives;
 mod fingers;
 mod frame;
 mod hands;

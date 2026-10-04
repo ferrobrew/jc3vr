@@ -26,9 +26,9 @@
 //! - After the game solves the launch ([`Grenade::PropelToward`]), the launch is moved to the hand
 //!   and its velocity replaced by the hand's, plus the character's velocity the game recorded.
 //!
-//! The stick-click fallback keeps the game's own throw and arc; with
-//! [`GrenadeConfig::hand_aimed_fallback`] its target is the point the dominant hand's ray reaches
-//! ([`fallback_target`]) rather than the gaze's.
+//! No controller input binds the game's own throw; with [`GrenadeConfig::hand_aimed_fallback`]
+//! its target is still the point the dominant hand's ray reaches ([`fallback_target`]) rather than
+//! the gaze's.
 //!
 //! [`WeaponBase::m_ForceFireProjectile`]: jc3gi::equipment::weapon::WeaponBase::m_ForceFireProjectile
 

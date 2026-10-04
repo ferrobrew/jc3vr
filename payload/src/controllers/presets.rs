@@ -96,6 +96,9 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.grenade_throw = weapons;
     c.weapons.grenade.warning_overlay = weapons;
     c.weapons.grenade.warning_haptics = weapons;
+    c.weapons.c4_throw = weapons;
+    c.weapons.wrist_detonator = weapons;
+    c.weapons.c4.detonator.overlay = weapons;
     c.weapons.melee = weapons;
     c.weapons.melee_strike.pointing_targets = weapons;
     c.weapons.scopes = weapons;

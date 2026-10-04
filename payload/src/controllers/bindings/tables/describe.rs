@@ -151,6 +151,10 @@ pub enum ModAction {
     Magazine,
     /// Take a grenade from its pouch, and throw it by letting go.
     Grenade,
+    /// Take a C4 charge from its chest pouch, and throw it by letting go.
+    C4,
+    /// Push the dominant fingertip into the wrist button to detonate the placed charges.
+    WristDetonator,
     /// Take a parachute handle, and pull it down to steer, or both to brake.
     ParachuteHandles,
     /// Show the controls summary.
@@ -189,6 +193,10 @@ pub struct Features {
     pub magazine: bool,
     /// The physical grenade throw.
     pub grenade_throw: bool,
+    /// The C4 throw from the chest pouch.
+    pub c4_throw: bool,
+    /// The wrist detonator.
+    pub wrist_detonator: bool,
     /// Physical melee strikes.
     pub melee: bool,
     /// The sight tuning capture chord is armed.
@@ -389,6 +397,9 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
                 modded(ModAction::Grenade),
             );
         }
+        if features.c4_throw {
+            add(Control::EitherGrip, Gesture::Press, modded(ModAction::C4));
+        }
         if features.melee {
             add(
                 Control::EitherMotion,
@@ -396,6 +407,13 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
                 Effect::Actions(vec![Action::PUSH_GRAPPLE]),
             );
         }
+    }
+    if features.wrist_detonator && ctx.mode != Mode::Ui {
+        add(
+            Control::Motion(dom),
+            Gesture::Press,
+            modded(ModAction::WristDetonator),
+        );
     }
     if features.parachute_handles && ctx.mode == Mode::Airborne(AirborneVariant::Parachute) {
         add(

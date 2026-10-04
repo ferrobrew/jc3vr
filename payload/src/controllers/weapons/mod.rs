@@ -1,8 +1,8 @@
 //! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads",
 //! "Grenades", "Melee", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, and the magazine
-//!   pouch), placed from the body dimensions;
+//! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, the magazine pouch, and
+//!   the C4 pouch), placed from the body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
@@ -12,6 +12,7 @@
 //!   trigger;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
 //! - [`grenade`]: the physical grenade throw;
+//! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
 //! - [`melee`]: melee attacks from physical strikes;
 //! - [`magazine`]: the magazine reload gesture;
 //! - [`empty`]: the game's automatic switch away from an empty weapon suppressed, and the dry fire
@@ -28,9 +29,10 @@
 //!    grip press lets go rather than firing the grapple.
 //! 2. [`finish_tick`] acts on the grabs the tables report: a holster grab draws or holsters, a
 //!    foregrip grab engages or releases the two-handed grip, a grenade-pouch grab primes a grenade
-//!    for the throw, and a magazine-pouch grab takes a magazine for the reload gesture. It runs the
-//!    throw, the strike detector, and the magazine gesture, and holds the fire inputs back while a
-//!    reload, a draw, or a holster plays (the action-runs hand tier).
+//!    for the throw, a C4-pouch grab primes a charge, and a magazine-pouch grab takes a magazine for
+//!    the reload gesture. It runs the throws, the wrist detonator, the strike detector, and the
+//!    magazine gesture, and holds the fire inputs back while a reload, a draw, or a holster plays
+//!    (the action-runs hand tier).
 //!
 //! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights (and,
 //! with `holsters.show_volumes`, every body volume) are submitted to the overlay's
@@ -38,6 +40,7 @@
 //! distance from the nearest one. Everything acts only while the bindings inject, which is only
 //! under the controller scheme with a controller active.
 
+pub mod c4;
 mod camera_kick;
 pub mod config;
 pub mod dual_wield;
@@ -99,6 +102,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(haptics::hook_library())
         .with_hook_library(camera_kick::hook_library())
         .with_hook_library(grenade::hook_library())
+        .with_hook_library(c4::hook_library())
         .with_hook_library(scope::hook_library())
         .with_hook_library(dual_wield::hook_library())
         .with_hook_library(empty::hook_library())
@@ -127,6 +131,8 @@ pub enum GrabOutcome {
     Pouch,
     /// A magazine-pouch grab: a magazine is taken for the reload gesture.
     Magazine,
+    /// A C4-pouch grab: a charge is asked for.
+    C4,
 }
 
 impl GrabOutcome {
@@ -141,6 +147,7 @@ impl GrabOutcome {
             GrabOutcome::ForegripUnmeasured => "foregrip not measured yet".to_owned(),
             GrabOutcome::Pouch => "grenade asked for".to_owned(),
             GrabOutcome::Magazine => "magazine taken".to_owned(),
+            GrabOutcome::C4 => "charge asked for".to_owned(),
         }
     }
 }
@@ -246,6 +253,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         if !config.weapons.holsters.enabled {
             candidates.retain(|c| c.volume == GrabVolume::GrenadePouch);
         }
+    }
+    if gameplay && config.weapons.c4_throw {
+        candidates.push(volumes::c4_pouch(
+            &body_frame,
+            &dims,
+            &config.weapons.c4.pouch,
+            config.dominant_hand,
+        ));
     }
     let off = config.dominant_hand.other();
     let well = weapon
@@ -391,6 +406,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             },
             GrabVolume::GrenadePouch => GrabOutcome::Pouch,
             GrabVolume::MagazinePouch => GrabOutcome::Magazine,
+            GrabVolume::C4Pouch => GrabOutcome::C4,
             GrabVolume::VehicleControl(_) | GrabVolume::ParachuteHandle(_) => continue,
         };
         tracing::debug!(target: "controllers", ?hand, volume = volume.label(), outcome = %outcome.label(), "grab");
@@ -417,11 +433,29 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         &config,
         desired,
     );
+    c4::input_tick(
+        &c4::TickInputs {
+            acting: config.weapons.c4_throw && gameplay && active.is_some(),
+            pouch_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
+            grips,
+            world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
+        },
+        &config.weapons.c4,
+    );
+    c4::wrist::input_tick(
+        &c4::wrist::TickInputs {
+            acting: config.weapons.wrist_detonator && active.is_some(),
+            dt,
+        },
+        &config,
+    );
     match &active {
         Some(active) if config.weapons.melee => melee::input_tick(
             &melee::TickInputs {
                 acting: true,
-                excluded: grenade::throwing_hand(),
+                excluded: grenade::throwing_hand().or_else(c4::throwing_hand),
                 active,
                 detection,
                 dt,
@@ -462,6 +496,8 @@ pub(crate) fn stand_down() {
     foregrip::clear();
     recoil::clear();
     grenade::stand_down();
+    c4::stand_down();
+    c4::wrist::stand_down();
     melee::stand_down();
     dual_wield::observe_triggers(None);
     dual_wield::attach::clear();
@@ -862,7 +898,10 @@ fn marker(at: Vec3, world_scale: f32) -> Primitive {
 fn is_body_volume(volume: GrabVolume) -> bool {
     matches!(
         volume,
-        GrabVolume::Holster(_) | GrabVolume::GrenadePouch | GrabVolume::MagazinePouch
+        GrabVolume::Holster(_)
+            | GrabVolume::GrenadePouch
+            | GrabVolume::MagazinePouch
+            | GrabVolume::C4Pouch
     )
 }
 
@@ -874,6 +913,7 @@ fn colour(volume: GrabVolume) -> Rgba {
         | GrabVolume::VehicleControl(_)
         | GrabVolume::ParachuteHandle(_) => POUCH,
         GrabVolume::MagazinePouch => MAGAZINE,
+        GrabVolume::C4Pouch => C4,
     }
 }
 
@@ -881,6 +921,7 @@ const HOLSTER: Rgba = [1.0, 0.75, 0.25, 0.8];
 const FOREGRIP: Rgba = [0.35, 0.85, 1.0, 0.8];
 const POUCH: Rgba = [0.5, 1.0, 0.45, 0.8];
 const MAGAZINE: Rgba = [0.85, 0.55, 1.0, 0.8];
+const C4: Rgba = [1.0, 0.4, 0.3, 0.8];
 /// The opacity of a body volume drawn with `show_volumes` that no hand is in, fainter than a
 /// highlighted one.
 const SHOWN_ALPHA: f32 = 0.3;

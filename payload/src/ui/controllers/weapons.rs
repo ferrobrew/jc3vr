@@ -1,7 +1,7 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
-//! line and yank, the grenade throw, physical melee, the magazine gesture, the empty weapon,
-//! per-hand aim assist, and the weapon-handling settings.
+//! line and yank, the grenade throw, the C4 throw and the wrist detonator, physical melee, the
+//! magazine gesture, the empty weapon, per-hand aim assist, and the weapon-handling settings.
 
 use egui::Ui;
 
@@ -33,7 +33,10 @@ use crate::{
             volumes::Stance,
         },
     },
-    ui::controllers::{vec3, vec3_drag, yes_no},
+    ui::controllers::{
+        explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
+        vec3, vec3_drag, yes_no,
+    },
 };
 
 /// Everything the weapon-handling section shows, read before the config is locked for editing.
@@ -47,6 +50,7 @@ pub(super) struct WeaponsReadout {
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
     grenade: GrenadeStatus,
+    explosives: ExplosivesReadout,
     melee: MeleeStatus,
     aim: AimStatus,
     empty: EmptyStatus,
@@ -64,6 +68,7 @@ impl WeaponsReadout {
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
             grenade: grenade::status(),
+            explosives: ExplosivesReadout::read(),
             melee: melee::status(),
             aim: controller_aim::status(),
             empty: empty::status(),
@@ -142,6 +147,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     dual_wield_readout(ui, &readout.dual_wield);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
+    explosives_readout(ui, &readout.explosives);
     melee_readout(ui, &readout.melee);
     magazine_readout(ui, &status.magazine);
     empty_readout(ui, &readout.empty);
@@ -403,7 +409,8 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     dual_wield_settings(ui, &mut w.dual_wield);
 }
 
-/// The settings of the grenade throw, physical melee, and the magazine gesture.
+/// The settings of the grenade throw, the C4 throw and the wrist detonator, physical melee, and
+/// the magazine gesture.
 pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
         "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \
@@ -412,6 +419,7 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.add_enabled_ui(w.grenade_throw, |ui| {
         ui.indent("grenade", |ui| grenade_settings(ui, &mut w.grenade));
     });
+    explosives_settings(ui, w);
     ui.checkbox(&mut w.melee, "Physical melee")
         .on_hover_text("A fast strike of either hand starts a melee attack.");
     ui.add_enabled_ui(w.melee, |ui| {
@@ -448,7 +456,7 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
     ui.add(egui::Slider::new(&mut g.max_speed_mps, 5.0..=60.0).text("Fastest throw (m/s)"));
     ui.checkbox(
         &mut g.hand_aimed_fallback,
-        "Stick-click throw aims along the hand",
+        "The game's own throw aims along the hand",
     );
     ui.add(egui::Slider::new(&mut g.warning_s, 0.0..=5.0).text("Fuse warning (s)"));
     ui.checkbox(&mut g.warning_overlay, "Fuse warning ring");
@@ -521,7 +529,7 @@ fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
     pulse_settings(ui, "Dry fire", &mut h.dry_fire);
 }
 
-fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
+pub(super) fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
     ui.horizontal(|ui| {
         ui.label(label);
         ui.add(egui::Slider::new(&mut p.amplitude, 0.0..=1.0).text("amplitude"));
@@ -587,7 +595,7 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
     }
 }
 
-fn volume_settings(ui: &mut Ui, label: &str, v: &mut VolumeSpec) {
+pub(super) fn volume_settings(ui: &mut Ui, label: &str, v: &mut VolumeSpec) {
     for (axis, value) in [
         ("x", &mut v.offset_m.x),
         ("y", &mut v.offset_m.y),

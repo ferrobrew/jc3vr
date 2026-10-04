@@ -1,0 +1,750 @@
+//! C4 by hand: the charge thrown from the chest pouch, and the detonation from the wrist button,
+//! with the engine side on [`PlantedExplosiveWeapon`] and [`PlantedExplosive`].
+//!
+//! A grip press at the C4 pouch primes a charge in whichever hand grabbed it, and opening the grip
+//! throws it with that hand's velocity; it sticks where it lands. The game's own C4 weapon does the
+//! work, driven directly rather than through its planting mode (which equips the weapon, aims a
+//! placement ghost with the camera, and places the charge at the aimed surface with an animation):
+//!
+//! - Before the weapon's serial update, the stage asks it to prime
+//!   ([`PlantedExplosiveWeapon::PrimeExplosive`]), which spawns the charge as the game's planting
+//!   does. Priming moves the weapon to its wielding state; the state it had is put back, so the
+//!   weapon still reads as holstered to everything else.
+//! - While the charge is held, the weapon's attachment update places its in-hand model and its
+//!   transform at the hand instead of the character's right-hand bone.
+//! - Once the grip opens and the charge's physics body exists, the weapon makes it live
+//!   ([`PlantedExplosiveWeapon::Fire_Projectile`]), which counts it among the placed charges, and
+//!   the charge is then dropped from the hand ([`PlantedExplosive::DropExplosive`]) with the hand's
+//!   velocity plus the character's ([`PlantedExplosive::SetVelocity`]): the path the game takes for
+//!   a charge placed under the parachute, from the hand instead of the right-hand bone. The base
+//!   explosive's collision handler sticks it to what it hits.
+//!
+//! The selected explosive is never touched: the throw does not need the C4 weapon selected or
+//! equipped. A charge is refused while as many are placed as may be
+//! ([`PlantedExplosiveWeapon::CanPlantExplosive`]), while the game does not allow planting
+//! ([`Inventory::GetAnimationAllowsPlantingExplosives`]), and while the game's own planting holds
+//! the weapon. When the throw stops acting, a held charge is taken back
+//! ([`PlantedExplosiveWeapon::DespawnPrimedExplosive`]); priming consumes nothing, so nothing is
+//! refunded.
+//!
+//! Detonation goes through the game's own detonate input
+//! ([`WeaponInput::E_INPUT_DETONATE_EXPLOSIVES`]): a request ([`request_detonation`], from the
+//! wrist button in [`wrist`]) raises it for the weapon's serial update, which detonates every
+//! placed charge as the game's own detonation does, until the weapon starts the detonation or the
+//! request times out. The stick click's `DETONATE_EXPLOSIVE` reaches the same input through the
+//! game's own hold rule.
+//!
+//! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
+
+pub mod press;
+pub mod stage;
+pub mod wrist;
+
+use detours_macro::detour;
+use glam::{Mat4, Vec3};
+use jc3gi::{
+    character::character::{Character, WeaponInput},
+    equipment::{
+        explosive::{Explosive, PlantedExplosive},
+        weapon::{PlantedExplosiveWeapon, WeaponBase, WeaponData, WeaponInputs, WeaponState},
+    },
+    types::math::{Matrix4, Vector3},
+};
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    config::Config,
+    controllers::{
+        aim::targets::weak_target,
+        bindings::controls::ButtonControl,
+        frame::{Hand, Pose},
+        motion::{self, ReleaseEstimate},
+        scheme,
+        weapons::{
+            c4::stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
+            config::C4Config,
+            grenade::stage::Release,
+            haptics::{self, PulseSource},
+        },
+    },
+    headpose,
+};
+
+/// The C4 handling's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
+pub(super) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_static_binder(&UPDATE_FROM_USER_SERIAL_BINDER)
+        .with_static_binder(&UPDATE_ATTACHMENT_TRANSFORMS_BINDER)
+}
+
+/// One reported step of a throw, for the debug UI.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct C4Event {
+    pub hand: Option<Hand>,
+    pub outcome: Outcome,
+}
+
+/// What asked for a detonation.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DetonationSource {
+    /// The wrist button.
+    WristButton,
+    /// The game's own detonate input: the stick click's `DETONATE_EXPLOSIVE`, held.
+    GameInput,
+}
+
+impl DetonationSource {
+    pub const fn label(self) -> &'static str {
+        match self {
+            DetonationSource::WristButton => "wrist button",
+            DetonationSource::GameInput => "detonate button",
+        }
+    }
+}
+
+/// A detonation the weapon started, or a request it did not act on.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Detonation {
+    pub source: DetonationSource,
+    /// Whether the weapon started it; `false` for a request that timed out.
+    pub started: bool,
+    /// How many charges were placed when it started or timed out.
+    pub charges: i32,
+}
+
+/// The C4 handling's readout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct C4Status {
+    pub stage: Stage,
+    /// Whether the C4 weapon's update ran for the local player since the payload loaded.
+    pub weapon_seen: bool,
+    /// The placed charges, and the most that may be placed, at the weapon's last update.
+    pub charges: Option<(i32, i32)>,
+    /// The game's permissions to plant and to detonate, at the weapon's last update.
+    pub may_plant: bool,
+    pub may_detonate: bool,
+    /// Whether the weapon is in the game's own planting mode.
+    pub planting_mode: bool,
+    /// The last release's velocity relative to the character, world axes, metres per second.
+    pub last_release: Option<Vec3>,
+    pub primed: u64,
+    pub thrown: u64,
+    /// The most recent throw steps, newest last.
+    pub events: Vec<C4Event>,
+    /// Whether a detonation request waits for the weapon.
+    pub detonation_pending: bool,
+    pub detonations: u64,
+    pub last_detonation: Option<Detonation>,
+}
+
+pub fn status() -> C4Status {
+    STATE.lock().status.clone()
+}
+
+/// The placed charges at the weapon's last update, or `None` before it ran.
+pub fn charges() -> Option<i32> {
+    STATE.lock().status.charges.map(|(live, _)| live)
+}
+
+/// The hand a throw holds, from the grab at the pouch until the charge leaves it.
+pub fn throwing_hand() -> Option<Hand> {
+    STATE.lock().stage.hand()
+}
+
+/// Ask the weapon to detonate every placed charge, as the game's own detonation does.
+pub(crate) fn request_detonation(source: DetonationSource) {
+    let mut state = STATE.lock();
+    state.detonation = Some(PendingDetonation {
+        source,
+        remaining_s: DETONATION_TIMEOUT_S,
+    });
+    state.status.detonation_pending = true;
+}
+
+/// What the input tick hands the throw.
+pub(super) struct TickInputs {
+    /// Whether the throw may act this tick: its toggle is on and the mode has free hands.
+    pub acting: bool,
+    /// The hand that grabbed the C4 pouch this tick.
+    pub pouch_grab: Option<Hand>,
+    /// Each hand's grip over the tick, indexed by [`Hand::index`].
+    pub grips: [ButtonControl; 2],
+    /// The VR world scale the hands compose with.
+    pub world_scale: f32,
+}
+
+/// The input tick's half of the throw: fold the grab and the release into the stage.
+pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
+    if !inputs.acting {
+        stand_down();
+        return;
+    }
+    let mut state = STATE.lock();
+    if let Some(hand) = inputs.pouch_grab {
+        state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
+    }
+    if let Some(hand) = state.stage.hand()
+        && inputs.grips[hand.index()].released
+    {
+        // Without a tracked sample of the throw, the charge is dropped where it is rather than kept
+        // in a hand that has opened.
+        let release = release(hand, inputs.world_scale, tuning).unwrap_or(Release {
+            velocity: Vec3::ZERO,
+        });
+        state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
+        state.status.last_release = Some(release.velocity);
+        tracing::debug!(target: "controllers", ?hand, velocity = ?release.velocity, "c4 release");
+    }
+    state.status.stage = state.stage;
+}
+
+/// Stop the throw: a held charge is taken back at the weapon's next update, and a grab not yet
+/// served is forgotten. A detonation request stands: it was asked for before the stop.
+pub(super) fn stand_down() {
+    let mut state = STATE.lock();
+    state.stage = stage::on_input(state.stage, InputEvent::StandDown);
+    state.status.stage = state.stage;
+}
+
+/// Note the controllers' grips in the world for the weapon's updates: where a held charge sits and
+/// where a throw leaves from. `None` for a hand the aim update did not compose.
+pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
+    STATE.lock().grips = grips;
+}
+
+/// How long a detonation request waits for the weapon to start the detonation, seconds: long
+/// enough for the character to finish an act that keeps the detonate act out.
+const DETONATION_TIMEOUT_S: f32 = 0.5;
+
+/// How many throw steps the readout keeps.
+const MAX_EVENTS: usize = 6;
+
+/// A detonation request waiting for the weapon.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct PendingDetonation {
+    source: DetonationSource,
+    remaining_s: f32,
+}
+
+struct State {
+    stage: Stage,
+    status: C4Status,
+    /// The controllers' grips in the world, from the last aim update.
+    grips: [Option<Pose>; 2],
+    detonation: Option<PendingDetonation>,
+    /// Whether the weapon had started a detonation on its last update.
+    was_detonating: bool,
+}
+
+static STATE: Mutex<State> = Mutex::new(State {
+    stage: Stage::Idle,
+    status: C4Status {
+        stage: Stage::Idle,
+        weapon_seen: false,
+        charges: None,
+        may_plant: false,
+        may_detonate: false,
+        planting_mode: false,
+        last_release: None,
+        primed: 0,
+        thrown: 0,
+        events: Vec::new(),
+        detonation_pending: false,
+        detonations: 0,
+        last_detonation: None,
+    },
+    grips: [None; 2],
+    detonation: None,
+    was_detonating: false,
+});
+
+/// The release of a throw by `hand`: the velocity of the held charge's point over the samples just
+/// before now, turned into world axes and scaled. `None` without samples.
+fn release(hand: Hand, world_scale: f32, tuning: &C4Config) -> Option<Release> {
+    let samples = motion::history(hand);
+    let now = motion::latest_time()?;
+    let velocity = motion::release_velocity(
+        &samples,
+        now,
+        hold_offset(hand, tuning),
+        ReleaseEstimate {
+            window_s: tuning.release_window_s,
+            peak_span_s: tuning.release_peak_span_s,
+        },
+    )?;
+    let world = headpose::xr::body_rotation() * velocity * world_scale * tuning.velocity_scale;
+    Some(Release {
+        velocity: world.clamp_length_max(tuning.max_speed_mps.max(0.0)),
+    })
+}
+
+/// The held charge's offset in `hand`'s grip frame: the configured right-hand offset, mirrored for
+/// the left.
+fn hold_offset(hand: Hand, tuning: &C4Config) -> Vec3 {
+    let o = tuning.hold_offset_m;
+    match hand {
+        Hand::Left => Vec3::new(-o.x, o.y, o.z),
+        Hand::Right => o,
+    }
+}
+
+/// The held charge's world matrix: the grip's world pose moved to the charge's point.
+fn held_matrix(grip: Pose, offset: Vec3) -> Matrix4 {
+    let position = grip.position + grip.orientation * offset;
+    Matrix4::from(Mat4::from_rotation_translation(
+        grip.orientation.normalize(),
+        position,
+    ))
+}
+
+/// Record a throw step's outcome.
+fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome) {
+    tracing::debug!(target: "controllers", ?hand, outcome = %outcome.label(), "c4");
+    match outcome {
+        Outcome::Primed => state.status.primed += 1,
+        Outcome::Thrown(_) => state.status.thrown += 1,
+        _ => {}
+    }
+    state.status.events.push(C4Event { hand, outcome });
+    let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
+    state.status.events.drain(..excess);
+}
+
+/// The C4 weapon's serial update from its user: the throw's action and the detonation request
+/// before it, and both settled after it.
+#[detour(address = jc3gi::equipment::weapon::PlantedExplosiveWeapon::UpdateFromUserPostSim_Serial_ADDRESS)]
+fn update_from_user_serial(
+    weapon: *mut PlantedExplosiveWeapon,
+    dt: f32,
+    aim_position: *const Vector3,
+    input: *const WeaponInputs,
+) {
+    let original = move || {
+        UPDATE_FROM_USER_SERIAL
+            .get()
+            .unwrap()
+            .call(weapon, dt, aim_position, input)
+    };
+    // SAFETY: the weapon is live for its own update.
+    let Some(user) = (unsafe { local_user(weapon) }) else {
+        return original();
+    };
+    let (enabled, tuning) =
+        Config::lock_query(|c| (c.controllers.enabled, c.controllers.weapons.c4));
+    let acting = enabled && scheme::is_controllers();
+
+    // SAFETY: the weapon and its user are live, on the thread that updates the weapon; the
+    // references end before the original update runs.
+    let (reading, pulse, raised, previous) = unsafe {
+        let (w, user) = (&mut *weapon, &mut *user);
+        let reading = read_weapon(w, user);
+        let mut state = STATE.lock();
+        state.status.weapon_seen = true;
+        state.status.charges = Some((reading.live, reading.max));
+        state.status.may_plant = reading.may_plant;
+        state.status.may_detonate = reading.may_detonate;
+        state.status.planting_mode = reading.view.planting;
+        let mut pulse = None;
+        if acting || state.stage != Stage::Idle {
+            let hand = state.stage.hand();
+            let (next, action, outcome) = stage::before_update(state.stage, reading.view);
+            if let Some(outcome) = outcome {
+                report(&mut state, hand, outcome);
+            }
+            let grip = hand.and_then(|h| {
+                state.grips[h.index()].map(|g| held_matrix(g, hold_offset(h, &tuning)))
+            });
+            let primed = act(w, user, action, grip);
+            let (next, outcome) = stage::after_action(next, action, primed);
+            state.stage = next;
+            state.status.stage = next;
+            if let Some(outcome) = outcome {
+                report(&mut state, hand, outcome);
+                if outcome == Outcome::Primed {
+                    pulse = hand;
+                }
+            }
+        }
+        // The detonate input is raised for the weapon's update only, and the game's own value is
+        // put back after it.
+        let raised = state.detonation.is_some() && acting;
+        let previous = user.m_WeaponInputs[DETONATE_INPUT];
+        if raised {
+            user.m_WeaponInputs[DETONATE_INPUT] = previous.max(1.0);
+        }
+        (reading, pulse, raised, previous)
+    };
+
+    original();
+
+    // SAFETY: as above, after the original update.
+    let detonating = unsafe {
+        if raised {
+            (*user).m_WeaponInputs[DETONATE_INPUT] = previous;
+        }
+        (*weapon).m_AlreadyDetonatedOnThisInput
+    };
+    let mut state = STATE.lock();
+    let started = detonating && !state.was_detonating;
+    state.was_detonating = detonating;
+    if started || state.detonation.is_some() {
+        settle_detonation(&mut state, started, reading.live, dt);
+    }
+    drop(state);
+    if let Some(hand) = pulse {
+        haptics::pulse(hand, tuning.prime_pulse, PulseSource::C4);
+    }
+}
+
+/// The character's detonate input's slot in its weapon inputs.
+const DETONATE_INPUT: usize = WeaponInput::E_INPUT_DETONATE_EXPLOSIVES as usize;
+
+/// Settle the detonation after the weapon's update: a started detonation is credited to the
+/// pending request, or to the game's own input without one; a request that has waited too long is
+/// dropped.
+fn settle_detonation(state: &mut State, started: bool, charges: i32, dt: f32) {
+    let pending = state.detonation.take();
+    let event = if started {
+        Some(Detonation {
+            source: pending.map_or(DetonationSource::GameInput, |p| p.source),
+            started: true,
+            charges,
+        })
+    } else if let Some(mut pending) = pending {
+        pending.remaining_s -= if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if pending.remaining_s > 0.0 {
+            state.detonation = Some(pending);
+            None
+        } else {
+            Some(Detonation {
+                source: pending.source,
+                started: false,
+                charges,
+            })
+        }
+    } else {
+        None
+    };
+    state.status.detonation_pending = state.detonation.is_some();
+    if let Some(event) = event {
+        tracing::debug!(target: "controllers", ?event, "c4 detonation");
+        if event.started {
+            state.status.detonations += 1;
+        }
+        state.status.last_detonation = Some(event);
+    }
+}
+
+/// The weapon's attachment update: a charge held by the throw rides the hand rather than the
+/// character's right-hand bone.
+#[detour(address = jc3gi::equipment::weapon::PlantedExplosiveWeapon::UpdateAttachmentTransforms_ADDRESS)]
+fn update_attachment_transforms(
+    weapon: *mut PlantedExplosiveWeapon,
+    p2: f32,
+    p3: f32,
+    transform_type: u32,
+) {
+    UPDATE_ATTACHMENT_TRANSFORMS
+        .get()
+        .unwrap()
+        .call(weapon, p2, p3, transform_type);
+    // SAFETY: the weapon is live for its own update.
+    if unsafe { local_user(weapon) }.is_none() {
+        return;
+    }
+    let (stage, grips) = {
+        let state = STATE.lock();
+        (state.stage, state.grips)
+    };
+    let Some(hand) = stage.hand().filter(|_| stage.charge_in_hand()) else {
+        return;
+    };
+    let Some(grip) = grips[hand.index()] else {
+        return;
+    };
+    let offset = hold_offset(hand, &Config::lock_query(|c| c.controllers.weapons.c4));
+    let matrix = held_matrix(grip, offset);
+    // SAFETY: the primed charge is live while the weak reference locks, on this thread.
+    if let Some(charge) = unsafe { primed_charge(&*weapon) } {
+        unsafe { place(charge, &matrix) };
+    }
+}
+
+/// The weapon's user, when the weapon is the local player's.
+///
+/// # Safety
+///
+/// `weapon` must be null or a live C4 weapon.
+unsafe fn local_user(weapon: *mut PlantedExplosiveWeapon) -> Option<*mut Character> {
+    let base = unsafe { weapon.cast::<WeaponBase>().as_ref() }?;
+    if !base.m_IsUserLocalPlayer {
+        return None;
+    }
+    let user = base.m_User[0].cast::<Character>();
+    (!user.is_null()).then_some(user)
+}
+
+/// What the serial update reads of the weapon before acting.
+struct WeaponReading {
+    view: WeaponView,
+    live: i32,
+    max: i32,
+    may_plant: bool,
+    may_detonate: bool,
+}
+
+/// Read the weapon and its user's permissions.
+///
+/// # Safety
+///
+/// The weapon and its user must be live, on the thread that updates the weapon.
+unsafe fn read_weapon(weapon: &mut PlantedExplosiveWeapon, user: &Character) -> WeaponReading {
+    let primed = unsafe { primed_charge(weapon) };
+    let physics_ready = primed
+        .and_then(|c| unsafe { c.cast::<Explosive>().as_ref() })
+        .is_some_and(|e| !e.m_PfxInstance.is_null());
+    let live = unsafe { weapon.NumActiveExplosives() };
+    let max = unsafe { weapon.MaxActiveExplosives() };
+    let may_plant = unsafe { user.m_Inventory.GetAnimationAllowsPlantingExplosives() };
+    let may_detonate = unsafe { user.m_Inventory.GetAnimationAllowsTriggeringExplosives() };
+    let refusal = if !may_plant {
+        Some(Refusal::NotAllowed)
+    } else if live >= max {
+        Some(Refusal::NoRoom)
+    } else {
+        None
+    };
+    WeaponReading {
+        view: WeaponView {
+            primed: primed.is_some(),
+            physics_ready,
+            planting: weapon.m_IsInPlantingMode,
+            refusal,
+        },
+        live,
+        max,
+        may_plant,
+        may_detonate,
+    }
+}
+
+/// Carry out `action` on the weapon, with the held charge at `grip` when the hand is known, and
+/// return whether the weapon holds a primed charge afterwards.
+///
+/// # Safety
+///
+/// The weapon and its user must be live, on the thread that updates the weapon.
+unsafe fn act(
+    weapon: &mut PlantedExplosiveWeapon,
+    user: &mut Character,
+    action: WeaponAction,
+    grip: Option<Matrix4>,
+) -> bool {
+    match action {
+        WeaponAction::None => {}
+        WeaponAction::Prime => {
+            if let Some(data) = unsafe { first_weapon_data(weapon) } {
+                // Priming puts the weapon in its wielding state; everything else keeps reading it
+                // in the state it was in.
+                let base = unsafe { &mut *std::ptr::from_mut(weapon).cast::<WeaponBase>() };
+                let state = base.m_State;
+                unsafe { weapon.PrimeExplosive(data) };
+                let base = unsafe { &mut *std::ptr::from_mut(weapon).cast::<WeaponBase>() };
+                if state != WeaponState::E_WS_WIELDING {
+                    base.m_State = state;
+                }
+                if let (Some(charge), Some(grip)) = (unsafe { primed_charge(weapon) }, grip) {
+                    unsafe { place(charge, &grip) };
+                }
+            }
+        }
+        WeaponAction::Throw(release) => unsafe { throw(weapon, user, release, grip) },
+        WeaponAction::Cancel => unsafe { weapon.DespawnPrimedExplosive() },
+    }
+    unsafe { primed_charge(weapon) }.is_some()
+}
+
+/// Make the primed charge live and drop it from the hand at `grip` (or where it is) with the
+/// release velocity plus the character's.
+///
+/// # Safety
+///
+/// As [`act`], with a primed charge whose physics body exists.
+unsafe fn throw(
+    weapon: &mut PlantedExplosiveWeapon,
+    user: &mut Character,
+    release: Release,
+    grip: Option<Matrix4>,
+) {
+    let Some(data) = (unsafe { first_weapon_data(weapon) }) else {
+        return;
+    };
+    let Some(charge) = (unsafe { primed_charge(weapon) }) else {
+        return;
+    };
+    // Under the parachute the weapon drops the charge itself, from the right-hand bone.
+    let parachute = unsafe { user.IsUsingParachute() };
+    let carried = Vec3::from_array(user.m_MeasuredWorldVelocity.data);
+    unsafe { weapon.Fire_Projectile(data) };
+    // The weapon made this charge live only if it moved it to the last placed one.
+    let placed = unsafe { weak_target(&weapon.m_LastPlantedExplosive) }.is_some_and(|object| {
+        object.cast::<u8>().wrapping_sub(GAME_OBJECT_OFFSET) == charge.cast::<u8>()
+    });
+    if !placed {
+        return;
+    }
+    // SAFETY: the charge is live: the weapon's last placed charge, on this thread.
+    let explosive = unsafe { &mut *charge.cast::<Explosive>() };
+    if let Some(grip) = grip {
+        explosive.m_WorldMatrixT1 = grip;
+        unsafe { explosive.SetPhysicsTransform(&grip) };
+    }
+    let charge = unsafe { &mut *charge };
+    if !parachute {
+        unsafe { charge.DropExplosive() };
+    }
+    let velocity = release.velocity
+        + if carried.is_finite() {
+            carried
+        } else {
+            Vec3::ZERO
+        };
+    let velocity = Vector3 {
+        data: velocity.to_array(),
+    };
+    unsafe { charge.SetVelocity(&velocity) };
+    if !parachute {
+        let explosive = unsafe { &mut *std::ptr::from_mut(charge).cast::<Explosive>() };
+        unsafe { explosive.PlayTrailEffect() };
+    }
+}
+
+/// Put a held charge's in-hand model and its transform at `matrix`.
+///
+/// # Safety
+///
+/// `charge` must be live, on the thread that updates its weapon.
+unsafe fn place(charge: *mut PlantedExplosive, matrix: &Matrix4) {
+    unsafe {
+        (*charge).SetInactiveModelMatrix(matrix);
+        (*charge.cast::<Explosive>()).m_WorldMatrixT1 = *matrix;
+    }
+}
+
+/// The offset of a charge's `CGameObject` subobject, which the weapon's weak references point at.
+const GAME_OBJECT_OFFSET: usize = Explosive::GAME_OBJECT_BASE_OFFSET as usize;
+
+/// The weapon's primed charge, while its weak reference is live.
+///
+/// # Safety
+///
+/// `weapon` must be a live C4 weapon, on the thread that updates it.
+unsafe fn primed_charge(weapon: &PlantedExplosiveWeapon) -> Option<*mut PlantedExplosive> {
+    let object = unsafe { weak_target(&weapon.m_PrimedExplosive) }?;
+    Some(
+        object
+            .cast::<u8>()
+            .wrapping_sub(GAME_OBJECT_OFFSET)
+            .cast::<PlantedExplosive>(),
+    )
+}
+
+/// The weapon's first (and only) gun entry.
+///
+/// # Safety
+///
+/// `weapon` must be a live C4 weapon.
+unsafe fn first_weapon_data(weapon: &mut PlantedExplosiveWeapon) -> Option<*mut WeaponData> {
+    let base = unsafe { &*std::ptr::from_mut(weapon).cast::<WeaponBase>() };
+    let list = &base.m_lWeaponData;
+    if list.m_Begin.is_null() || list.m_Begin >= list.m_End {
+        return None;
+    }
+    let data = unsafe { *list.m_Begin };
+    (!data.is_null()).then_some(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::Quat;
+
+    use super::*;
+
+    fn fresh() -> State {
+        State {
+            stage: Stage::Idle,
+            status: C4Status::default(),
+            grips: [None; 2],
+            detonation: None,
+            was_detonating: false,
+        }
+    }
+
+    #[test]
+    fn a_started_detonation_is_credited_to_the_request_or_the_game() {
+        let mut state = fresh();
+        state.detonation = Some(PendingDetonation {
+            source: DetonationSource::WristButton,
+            remaining_s: DETONATION_TIMEOUT_S,
+        });
+        settle_detonation(&mut state, true, 3, 0.03);
+        assert_eq!(
+            state.status.last_detonation,
+            Some(Detonation {
+                source: DetonationSource::WristButton,
+                started: true,
+                charges: 3,
+            })
+        );
+        assert!(state.detonation.is_none() && !state.status.detonation_pending);
+        settle_detonation(&mut state, true, 2, 0.03);
+        assert_eq!(
+            state.status.last_detonation.map(|d| d.source),
+            Some(DetonationSource::GameInput)
+        );
+        assert_eq!(state.status.detonations, 2);
+    }
+
+    #[test]
+    fn an_unanswered_request_times_out() {
+        let mut state = fresh();
+        state.detonation = Some(PendingDetonation {
+            source: DetonationSource::WristButton,
+            remaining_s: DETONATION_TIMEOUT_S,
+        });
+        settle_detonation(&mut state, false, 1, 0.1);
+        assert!(state.status.detonation_pending);
+        for _ in 0..10 {
+            settle_detonation(&mut state, false, 1, 0.1);
+        }
+        assert!(!state.status.detonation_pending);
+        assert_eq!(
+            state.status.last_detonation,
+            Some(Detonation {
+                source: DetonationSource::WristButton,
+                started: false,
+                charges: 1,
+            })
+        );
+        assert_eq!(state.status.detonations, 0);
+    }
+
+    #[test]
+    fn the_held_charge_sits_at_the_mirrored_offset() {
+        let tuning = C4Config {
+            hold_offset_m: Vec3::new(0.02, 0.0, -0.05),
+            ..C4Config::new()
+        };
+        assert_eq!(
+            hold_offset(Hand::Left, &tuning),
+            Vec3::new(-0.02, 0.0, -0.05)
+        );
+        let grip = Pose {
+            position: Vec3::new(1.0, 2.0, 3.0),
+            orientation: Quat::IDENTITY,
+        };
+        let m = Mat4::from(held_matrix(grip, hold_offset(Hand::Right, &tuning)));
+        assert!(m.w_axis.truncate().distance(Vec3::new(1.02, 2.0, 2.95)) < 1e-6);
+    }
+}

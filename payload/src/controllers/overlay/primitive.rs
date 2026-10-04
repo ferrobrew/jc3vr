@@ -33,10 +33,12 @@ pub enum Source {
     SightTuning,
     /// The laser of the hand pointing at the mod's debug panel.
     PanelPointer,
+    /// The detonator button on the off-hand's wrist.
+    WristDetonator,
 }
 
 impl Source {
-    pub const COUNT: usize = 10;
+    pub const COUNT: usize = 11;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -50,6 +52,7 @@ impl Source {
         Source::GrenadeWarning,
         Source::SightTuning,
         Source::PanelPointer,
+        Source::WristDetonator,
     ];
 
     pub const fn index(self) -> usize {
@@ -64,6 +67,7 @@ impl Source {
             Source::GrenadeWarning => 7,
             Source::SightTuning => 8,
             Source::PanelPointer => 9,
+            Source::WristDetonator => 10,
         }
     }
 
@@ -79,6 +83,7 @@ impl Source {
             Source::GrenadeWarning => "grenade fuse warning",
             Source::SightTuning => "sight tuning marker",
             Source::PanelPointer => "debug panel pointer",
+            Source::WristDetonator => "wrist detonator",
         }
     }
 }

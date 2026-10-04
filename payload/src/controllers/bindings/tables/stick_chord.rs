@@ -2,7 +2,7 @@
 //! VR view, in every mode. Pure.
 //!
 //! Each stick click also has its own binding, and the game acts on a press as soon as it sees it
-//! (a grenade throw, a weapon step, a horn). So that a chord never leaks one of those, a lone click
+//! (a detonation, a weapon step, a horn). So that a chord never leaks one of those, a lone click
 //! is withheld from the tables for the chord window: if the other click joins within it, the two are
 //! a chord and neither click reaches the tables until both are released; if it does not, the click
 //! passes through from then on, as pressed at the window's end. A click released within the window

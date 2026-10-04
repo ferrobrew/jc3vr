@@ -65,7 +65,11 @@ pub const PAD_B: &[Action] = &[RELEASE_GRAPPLE, CANCEL, BYPASS_FALL_PREVENTION, 
 pub const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
 pub const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
 pub const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
-pub const PAD_RB_ON_FOOT: &[Action] = &[THROW_GRENADE, PLANT_EXPLOSIVE, DETONATE_EXPLOSIVE, R1];
+/// The dominant stick click's actions on foot and in the air: the detonation of the placed charges
+/// alone, which the game starts once the action has been held past its hold time. The gamepad's
+/// RB also throws a grenade and plants C4; the controllers take a grenade from its pouch and a
+/// charge from its own pouch instead, so neither is on a button.
+pub const STICK_CLICK_DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
 pub const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, FIRE_GRAPPLE, MC_RELOAD, L1];
 pub const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 
@@ -93,7 +97,7 @@ fn on_foot<S: Sink>(s: &mut S, ctx: &TableCtx) {
     s.hold(&[press(Dom, B)], PAD_X_ON_FOOT);
     s.hold(&[press(Off, A)], PAD_Y_ON_FOOT);
     s.hold(&[press(Off, B)], PAD_B);
-    s.hold(&[press(Dom, StickClick)], PAD_RB_ON_FOOT);
+    s.hold(&[press(Dom, StickClick)], STICK_CLICK_DETONATE);
     // Weapons are drawn at the holsters; the stick click is the fallback. `NEXT_WEAPON` is a mouse
     // wheel action: one click per step.
     if ctx.weapon_cycle && !ctx.dual_wield {
@@ -179,7 +183,7 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
 }
 
 /// Falling, the wingsuit, and the parachute. Falling and under the parachute the hand weapons stay
-/// in use, so the dominant hand keeps the on-foot trigger, reload, and grenade; the wingsuit's
+/// in use, so the dominant hand keeps the on-foot trigger, reload, and detonation; the wingsuit's
 /// dominant hand fires the weaponized suit's guns and boosts it.
 fn airborne<S: Sink>(s: &mut S, ctx: &TableCtx, variant: AirborneVariant) {
     // The air movement reads the move half-axes as the stick's own frame, not the camera's.
@@ -206,7 +210,7 @@ fn airborne<S: Sink>(s: &mut S, ctx: &TableCtx, variant: AirborneVariant) {
     } else {
         s.hold(fire_trigger(ctx), &[FIRE_RIGHT, R2]);
         s.hold(&[press(Dom, B)], PAD_X_ON_FOOT);
-        s.hold(&[press(Dom, StickClick)], PAD_RB_ON_FOOT);
+        s.hold(&[press(Dom, StickClick)], STICK_CLICK_DETONATE);
     }
     if wingsuit {
         s.hold(&[press(Dom, A).gated(Gate::EvadeFlick)], &[WINGSUIT_EVADE]);
