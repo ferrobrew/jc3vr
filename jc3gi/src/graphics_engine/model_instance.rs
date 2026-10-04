@@ -119,6 +119,24 @@ impl ModelInstance {
             f(self as *mut Self as _, matrix)
         }
     }
+    pub const GetModelSpaceBoundingBox_ADDRESS: usize = 0x140313F70;
+    /// Writes the model's bounding box, in the model's own space, to `min` and `max`. It is the
+    /// box the shared model resource carries, and the box [`UpdateMatrix`](crate::graphics_engine::model_instance::ModelInstance::UpdateMatrix)
+    /// transforms into the instance's world bounding box.
+    pub unsafe fn GetModelSpaceBoundingBox(
+        &self,
+        min: *mut crate::types::math::Vector3,
+        max: *mut crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                min: *mut crate::types::math::Vector3,
+                max: *mut crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::GetModelSpaceBoundingBox_ADDRESS);
+            f(self as *const Self as _, min, max)
+        }
+    }
     pub const ForEachRb_1_1_ADDRESS: usize = 0x140316E50;
     /// `NModelSystem::ForEachRb<1, 1>`: walks `count` render blocks, frustum-tests each block's
     /// world bounding box against the context camera (`CCamera::IsBoxVisible`), skipping failing

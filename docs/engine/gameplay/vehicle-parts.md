@@ -1,0 +1,45 @@
+# Vehicle parts
+
+A vehicle is built from parts: the body, the doors, the wheels, the mirrors, the steering wheel, and so on, each a separately modelled piece that can deform, loosen, and break off. This covers where the parts are described, how the live parts are reached and drawn, which vehicles have a steering wheel part, and the hinged parts that the engine turns by a vehicle value.
+
+## The parts resource
+
+Each vehicle entity embeds a `<model>_vehicle_parts.vmodc`, an ADF `VehicleParts` resource whose `parts` array holds one [`Part`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::Part) per piece. A part entry carries its `name`, `damage_type`, `behavior`, `model`, and `model_swap` as ADF hash strings (a string pointer with its `hashlittle` hash, [`AdfHashString`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::AdfHashString)), its own index and its parent's, and its `parent_space_offset`, the part's pivot in its parent's space. The resource also lists `hinged_parts`, `rotating_parts`, and `skinned_parts`, which name parts the engine animates.
+
+Part names follow `<model>_<piece>`. A part's damage type is chosen for the damage it takes, not for what it is, so it does not identify a part: some steering wheels use `Land_Generic` or `Boat_Body`, and the mirrors of the modern mini and the old moped use `Land_Steering_Wheel`. The name does.
+
+A part's mesh is authored in the part's own space, whose origin is the pivot the parent space offset places. Most parts have an identity offset under the body, so their meshes are authored in the vehicle's space (+X right, +Y up, -Z forward, the driver on -X in a car). A hinged part's offset is its hinge pivot.
+
+## The live parts
+
+A vehicle's physics body, [`Vehicle::m_PfxVehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_PfxVehicle), is a `CPfxVehicle`, whose `CPfxBreakable` base ([`PfxBreakable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::PfxBreakable)) holds one [`PartInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::PartInstance) per part entry, contiguous and indexed by part index. `GetPartByIndex` bounds the index by the resource's part count. The valid parts are listed separately, in `m_ValidPartIndices`, and the render and update passes walk that list.
+
+A part instance points back at its entry (`m_PartProperties`) and at its parent instance (`m_ParentPart`). Its `m_RootSpaceTransform` maps the part's own space into the body's root space: the parent space offset under the parent's root-space transform, further moved by a hinge's angle, a loosened part's swing, or deformation. Its model instance is `m_PartModelInstance`, and [`ModelInstance::GetModelSpaceBoundingBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-GetModelSpaceBoundingBox) gives the model's box in the part's own space, read from the shared model resource. `BrokeOffOrAncestorBrokeOff` is true once the part, or any part it hangs from, has broken off.
+
+## Drawing the parts
+
+The vehicle keeps its world transform at both ends of the simulation step, `m_WorldMatrixT0` and `m_WorldMatrixT1`. Each render update, `CVehicle::UpdateRender_Parallel` interpolates them by the frame fraction into [`m_InterpolatedWorldMatrix`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_InterpolatedWorldMatrix), runs the vehicle's procedurally animated parts and its animation, and hands the interpolated transform to [`Vehicle::UpdateRender_ModelMatrices`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##func-UpdateRender_ModelMatrices). The render update runs on the parallel update's worker threads.
+
+`UpdateRender_ModelMatrices` walks the valid parts through `NPfxBreakable::ForEachValidRenderablePart`. For each part that has a model, whose damage owner is this vehicle, and that has not broken off, it sets the model matrix to the part's root-space transform times the vehicle's transform. A zero frame fraction, or a vehicle flagged to snap, initialises the model matrix instead of updating it. One part behaviour gets an extra scale from the vehicle's state before the multiply; what it is for has not been traced. After the parts, the function copies the root-space transforms of the parts that attached objects hang from into those attachments.
+
+The root-space transform is the only input the drawn part takes from the part itself, so a part can be drawn turned by changing its root-space transform for the duration of the call.
+
+## Steering wheels
+
+Almost every car and boat ships its steering wheel as its own part, named `<model>_steeringwheel` or `<model>_steering_wheel`. The cars without one are the modern bus and the old truck, whose wheels are part of another mesh, and the tanks, which have none. The boats without one are the spy speedboat, the medium old fishing boat, the heavy patrol boat, and the corvette.
+
+Every steering wheel part has an identity parent space offset under the body (the grand tourer's and the transport boat's hang from another part, also at identity), so its mesh, and its model-space box, are in the vehicle's space. For a disc-shaped wheel the box's centre is the hub, half its width is the rim's radius, and its depth against its height gives the face's tilt. A few meshes include the column or are not discs, and their boxes mislead: the circuit racer's and the ladbil's run far forward, the old bus's runs down to the floor, the old jeep's depth reads as a steep tilt, and the transport boat's ship's wheel spans its handles.
+
+The game never turns a car's or a boat's steering wheel. The hands' grip on it in third person is the driving animation's, one per animation set, and there is no hand IK to a wheel.
+
+## Hinged parts
+
+The engine turns some parts by a vehicle value. For each part in `hinged_parts`, `CVehicle::OnModuleChanged_HingedParts` looks up the vehicle-common hinged-part properties by the part's behaviour, builds a `CHingedPart` driven by the property's target variable, and takes the hinge's frame and axis from the part's constraint in the physics prototype. Each post-simulation update, `CHingedPart::Update_PostSim` turns the target value, clamped to the hinge's range, into an angle, and sets the part's root-space transform to the hinge's local turn under its parent's root-space transform. This much has been read in `Update_PostSim`; the setup in `OnModuleChanged_HingedParts`, including that a part without a constraint fails the setup, is unverified.
+
+The vehicle-common properties include a `SteeringWheel` hinge driven by `steering_turn`, a `SteeringFork` hinge driven by `steering_angle_inverted`, `BoatEngine` driven by `steering_turn`, and the ailerons, rudders, flaps, and landing gear. The handlebars of the motorcycles, the ATV, the jetski, and the duck are `SteeringFork` hinged parts named `<model>_upper_steering`, with the steering head as their pivot (the snowmobile's has no behaviour and is not hinged). A few cars give their steering wheel the `SteeringWheel` behaviour, but no car lists it in `hinged_parts`, so it drives nothing.
+
+`steering_turn` is the vehicle's [`m_SteeringTurn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringTurn), the signed steering amount the vehicle's controller last applied. Which sign is right has not been checked.
+
+## The vehicle type hash
+
+[`Vehicle::m_VehicleTypeNameHash`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_VehicleTypeNameHash) keys the vehicle's profile item and its localised name. The entity property file of each vehicle variant carries a `name` (such as `v0405_car_mugello_moderncircuitracer_civilian_01`, or `..._generated` for the debug variants) and its `name_hash`; that the type hash is this `name_hash`, one per variant rather than one per model, is unverified.

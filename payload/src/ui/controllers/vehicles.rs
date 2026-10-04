@@ -1,5 +1,6 @@
 //! Vehicles and flight: the seat and the physical controls it offers, what each hand holds, the
-//! values the controls write, the mounted gun's aim, the arm steering's pose and output, the
+//! values the controls write, where the wheel and handlebars were placed from and the rendered
+//! wheel's turn, the mounted gun's aim, the arm steering's pose and output, the
 //! parachute handles' pulls and output, and the vehicle, mounted-gun, arm-steering, and handle
 //! settings.
 
@@ -15,8 +16,12 @@ use crate::{
                 ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec, VehiclesConfig,
                 WheelSpec,
             },
-            driver_aim, look_steer,
+            driver_aim,
+            fit::FitReadout,
+            look_steer,
             physical::{ControlEvent, ControlKind},
+            wheel::WheelFrame,
+            wheel_render,
         },
     },
     ui::controllers::{vec3, vec3_drag},
@@ -27,6 +32,7 @@ pub(super) struct VehiclesReadout {
     status: VehiclesStatus,
     driver_substitutions: u64,
     look_steer_suppressions: u64,
+    wheel_turns: u64,
 }
 
 impl VehiclesReadout {
@@ -35,6 +41,7 @@ impl VehiclesReadout {
             status: vehicles::status(),
             driver_substitutions: driver_aim::substitutions(),
             look_steer_suppressions: look_steer::suppressions(),
+            wheel_turns: wheel_render::turned(),
         }
     }
 }
@@ -111,6 +118,7 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         pair(o.flight_stick),
         axis(o.throttle),
     ));
+    wheel_readout(ui, status, readout.wheel_turns);
     for event in status.events.iter().rev() {
         ui.label(match event {
             ControlEvent::Grabbed(hand, kind) => {
@@ -207,6 +215,64 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     ));
 }
 
+/// Where the wheel and the handlebars were placed from, the wheel as placed, and the rendered
+/// wheel's turn.
+fn wheel_readout(ui: &mut Ui, status: &VehiclesStatus, turns: u64) {
+    let Some(fit) = &status.fit else {
+        return;
+    };
+    fit_readout(ui, fit);
+    if let Some(wheel) = &status.wheel {
+        placed_wheel(ui, wheel);
+    }
+    ui.label(match status.rendered_angle {
+        Some(angle) => format!(
+            "Rendered wheel turned {:+.0}° ({turns} render updates turned it)",
+            angle.to_degrees()
+        ),
+        None => format!("Rendered wheel: not turned ({turns} render updates turned it)"),
+    });
+}
+
+fn fit_readout(ui: &mut Ui, fit: &FitReadout) {
+    ui.label(format!(
+        "Vehicle type hash {:08x} · wheel part {} · fork part {}",
+        fit.vehicle_type_hash,
+        fit.wheel_part.as_deref().unwrap_or("none"),
+        fit.fork_part.as_deref().unwrap_or("none"),
+    ));
+    ui.label(format!("Wheel from {}", fit.source.label()));
+    if fit.fallback_latched {
+        ui.label("The configured wheel is held in the vehicle's space.");
+    }
+    if let Some(w) = &fit.part_wheel {
+        ui.label(format!(
+            "Part-space hub {} · radius {:.3} m · tilt {:.0}°",
+            vec3(w.hub),
+            w.radius,
+            w.tilt.to_degrees()
+        ));
+    }
+    ui.label(format!(
+        "Handlebars from {}",
+        if fit.bars_from_vehicle {
+            "the vehicle's steering fork"
+        } else {
+            "the configured handlebars"
+        }
+    ));
+}
+
+fn placed_wheel(ui: &mut Ui, wheel: &WheelFrame) {
+    let tilt = wheel.up.z.atan2(wheel.up.y).to_degrees();
+    ui.label(format!(
+        "Cockpit hub {} · radius {:.3} m · tilt {:.0}° from the cockpit's vertical",
+        vec3(wheel.centre),
+        wheel.radius,
+        -tilt
+    ));
+}
+
 pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
     ui.label("The wingsuit's head look-steer removal follows the parachute's movement setting.");
@@ -240,8 +306,17 @@ fn physical_settings(ui: &mut Ui, p: &mut PhysicalControlsConfig) {
             .text("release distance (m)")
             .fixed_decimals(2),
     );
+    ui.checkbox(
+        &mut p.from_vehicle,
+        "Place the wheel and handlebars where the vehicle's are",
+    );
+    ui.checkbox(
+        &mut p.animate_wheel,
+        "Turn the vehicle's wheel with the steering",
+    );
+    ui.checkbox(&mut p.show_wheel, "Draw the wheel's rim and axis");
     egui::CollapsingHeader::new("Wheel (car, boat)").show(ui, |ui| wheel(ui, &mut p.wheel));
-    egui::CollapsingHeader::new("Handlebars (motorcycle)")
+    egui::CollapsingHeader::new("Handlebars (motorcycle, ATV, jetski)")
         .show(ui, |ui| handlebars(ui, &mut p.handlebars));
     egui::CollapsingHeader::new("Cyclic (helicopter)").show(ui, |ui| stick(ui, &mut p.cyclic));
     egui::CollapsingHeader::new("Collective (helicopter)")

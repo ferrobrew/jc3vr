@@ -2,9 +2,11 @@
 //! collective, and a plane's flight stick and throttle. Pure.
 //!
 //! Every control lives in the cockpit frame, placed relative to the seated character's eyes (see
-//! [`crate::controllers::vehicles::config`]), and is grabbed like any other grab volume: a grip
-//! press with the hand's grip near the control grabs it, and the next grip press, or moving the hand
-//! further than the release distance from where it holds the control, lets go. While held:
+//! [`crate::controllers::vehicles::config`]); the wheel and the handlebars are placed where the
+//! vehicle's own are where they are found ([`crate::controllers::vehicles::wheel`]), so they arrive
+//! here as frames already in the cockpit frame. Each control is grabbed like any other grab volume:
+//! a grip press with the hand's grip near the control grabs it, and the next grip press, or moving
+//! the hand further than the release distance from where it holds the control, lets go. While held:
 //!
 //! - the wheel turns by the holding hands' angular travel around its hub, in the wheel's plane, and
 //!   its angle over the full-steer angle is the steering; let go, it returns to centre;
@@ -27,7 +29,10 @@ use crate::controllers::{
     bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
     mode::VehicleClass,
-    vehicles::config::{HandlebarsSpec, LeverSpec, PhysicalControlsConfig, StickSpec, WheelSpec},
+    vehicles::{
+        config::{HandlebarsSpec, LeverSpec, PhysicalControlsConfig, StickSpec},
+        wheel::{BarsFrame, WheelFrame},
+    },
 };
 
 /// A physical control.
@@ -53,10 +58,14 @@ impl ControlKind {
         }
     }
 
-    /// The controls a vehicle class offers its driver. Boats and jetskis share one class, so both
-    /// get the wheel until the jetski can be told apart.
-    pub const fn for_class(class: VehicleClass) -> &'static [ControlKind] {
+    /// The controls a vehicle of `class` offers its driver. Cars and boats share their classes with
+    /// the ATV, the jetski, and the duck, which steer by handlebars: a vehicle with a steering fork
+    /// (`fork`) gets the handlebars in place of the wheel.
+    pub const fn for_seat(class: VehicleClass, fork: bool) -> &'static [ControlKind] {
         match class {
+            VehicleClass::Car | VehicleClass::Sea | VehicleClass::Unknown if fork => {
+                &[ControlKind::Handlebars]
+            }
             VehicleClass::Car | VehicleClass::Sea | VehicleClass::Unknown => &[ControlKind::Wheel],
             VehicleClass::Motorcycle => &[ControlKind::Handlebars],
             VehicleClass::Helicopter => &[ControlKind::Cyclic, ControlKind::Collective],
@@ -181,27 +190,32 @@ impl Outputs {
     };
 }
 
-/// The controls placed for one seat: the specs with their sides mirrored for the handedness.
+/// The controls placed for one seat: the wheel and the handlebars where the vehicle's are, and the
+/// sticks and levers from the specs with their sides mirrored for the handedness.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Placement {
     pub config: PhysicalControlsConfig,
     pub dominant: Hand,
+    pub wheel: WheelFrame,
+    pub bars: BarsFrame,
 }
 
 impl Placement {
+    /// Every control placed from the specs.
+    pub fn new(config: PhysicalControlsConfig, dominant: Hand) -> Self {
+        Self {
+            wheel: WheelFrame::from_spec(&config.wheel),
+            bars: BarsFrame::from_spec(&config.handlebars),
+            config,
+            dominant,
+        }
+    }
+
     fn mirror(&self, v: Vec3) -> Vec3 {
         match self.dominant {
             Hand::Right => v,
             Hand::Left => Vec3::new(-v.x, v.y, v.z),
         }
-    }
-
-    fn wheel_centre(&self) -> Vec3 {
-        self.mirror(self.config.wheel.centre_m)
-    }
-
-    fn bars_centre(&self) -> Vec3 {
-        self.mirror(self.config.handlebars.centre_m)
     }
 
     fn stick(&self, kind: ControlKind) -> Option<StickSpec> {
@@ -231,14 +245,11 @@ impl Placement {
     ) -> Option<Vec3> {
         match kind {
             ControlKind::Wheel => {
-                let spec = &self.config.wheel;
-                let centre = self.wheel_centre();
-                let angle = wheel_hand_angle(spec, centre, point).unwrap_or(0.0);
-                Some(rim_point(spec, centre, angle))
+                let angle = self.wheel.hand_angle(point).unwrap_or(0.0);
+                Some(self.wheel.rim_point(angle))
             }
             ControlKind::Handlebars => {
-                let spec = &self.config.handlebars;
-                let ends = bar_ends(self.bars_centre(), spec.half_width_m, state.bars);
+                let ends = bar_ends(self.bars.centre, self.bars.half_width, state.bars);
                 Some(ends[hand.index()])
             }
             kind => {
@@ -399,17 +410,15 @@ pub fn anchor_point(
     let point = grips[hand.index()]?;
     match hold.kind {
         ControlKind::Wheel => {
-            let spec = &placement.config.wheel;
-            let centre = placement.wheel_centre();
-            let angle = wheel_hand_angle(spec, centre, point)?;
-            Some(rim_point(spec, centre, angle))
+            let angle = placement.wheel.hand_angle(point)?;
+            Some(placement.wheel.rim_point(angle))
         }
         ControlKind::Handlebars => {
             let spec = &placement.config.handlebars;
-            let centre = placement.bars_centre();
+            let centre = placement.bars.centre;
             let bars = bar_angles(centre, grips_holding(state, ControlKind::Handlebars, grips))
                 .map_or(state.bars, |angles| clamp_bars(angles, spec));
-            Some(bar_ends(centre, spec.half_width_m, bars)[hand.index()])
+            Some(bar_ends(centre, placement.bars.half_width, bars)[hand.index()])
         }
         kind => {
             if let Some(spec) = placement.stick(kind) {
@@ -444,8 +453,7 @@ fn grab(
             .map_or(Vec3::ZERO, |handle| point - handle),
     };
     if kind == ControlKind::Wheel {
-        state.wheel_last[hand.index()] =
-            wheel_hand_angle(&placement.config.wheel, placement.wheel_centre(), point);
+        state.wheel_last[hand.index()] = placement.wheel.hand_angle(point);
     }
     state.holds[hand.index()] = Some(Hold { kind, offset });
     events.push(ControlEvent::Grabbed(hand, kind));
@@ -478,7 +486,6 @@ fn step_wheel(
     dt: f32,
 ) -> Option<f32> {
     let spec = &placement.config.wheel;
-    let centre = placement.wheel_centre();
     let max = spec.max_angle_deg.to_radians().max(1e-3);
     let mut turn = 0.0;
     let mut count = 0;
@@ -488,7 +495,7 @@ fn step_wheel(
             state.wheel_last[i] = None;
             continue;
         };
-        let Some(now) = wheel_hand_angle(spec, centre, point) else {
+        let Some(now) = placement.wheel.hand_angle(point) else {
             continue;
         };
         if let Some(last) = state.wheel_last[i] {
@@ -515,7 +522,7 @@ fn step_bars(
 ) -> Option<(f32, f32)> {
     let spec = &placement.config.handlebars;
     let grips = holding.map(|h| h.map(|(_, point)| point));
-    let Some(angles) = bar_angles(placement.bars_centre(), grips) else {
+    let Some(angles) = bar_angles(placement.bars.centre, grips) else {
         state.bars = Vec2::ZERO;
         return None;
     };
@@ -562,29 +569,6 @@ fn step_lever(
         None => {}
     }
     Some(detent(state.levers[index], spec.detent))
-}
-
-/// The wheel's in-plane axes: right, and up along the tilted face (its top leans away from the
-/// driver).
-fn wheel_axes(spec: &WheelSpec) -> (Vec3, Vec3) {
-    let (sin, cos) = spec.tilt_deg.to_radians().sin_cos();
-    (Vec3::X, Vec3::new(0.0, cos, -sin))
-}
-
-/// The angle of `point` around the wheel's hub in the wheel's plane, radians clockwise from the
-/// top as the driver sees it. `None` at the hub itself.
-pub fn wheel_hand_angle(spec: &WheelSpec, centre: Vec3, point: Vec3) -> Option<f32> {
-    let (right, up) = wheel_axes(spec);
-    let d = point - centre;
-    let (x, y) = (d.dot(right), d.dot(up));
-    (x * x + y * y > 1e-6 && x.is_finite() && y.is_finite()).then(|| x.atan2(y))
-}
-
-/// The point on the rim at `angle` (clockwise from the top).
-pub fn rim_point(spec: &WheelSpec, centre: Vec3, angle: f32) -> Vec3 {
-    let (right, up) = wheel_axes(spec);
-    let (sin, cos) = angle.sin_cos();
-    centre + (right * sin + up * cos) * spec.radius_m
 }
 
 /// Wrap an angle difference into `-π..=π`.
@@ -674,10 +658,7 @@ mod tests {
     fn placement(set: impl FnOnce(&mut PhysicalControlsConfig)) -> Placement {
         let mut config = PhysicalControlsConfig::new();
         set(&mut config);
-        Placement {
-            config,
-            dominant: Hand::Right,
-        }
+        Placement::new(config, Hand::Right)
     }
 
     fn step_with(
@@ -703,37 +684,21 @@ mod tests {
     }
 
     #[test]
-    fn angles_around_the_wheel_run_clockwise_from_the_top() {
-        let spec = PhysicalControlsConfig::new().wheel;
-        let c = Vec3::ZERO;
-        assert!(
-            wheel_hand_angle(&spec, c, rim_point(&spec, c, 0.0))
-                .unwrap()
-                .abs()
-                < 1e-5
-        );
-        let right = rim_point(&spec, c, FRAC_PI_2);
-        assert!(right.x > 0.0);
-        assert!((wheel_hand_angle(&spec, c, right).unwrap() - FRAC_PI_2).abs() < 1e-5);
-        assert_eq!(wheel_hand_angle(&spec, c, c), None);
-    }
-
-    #[test]
     fn turning_the_wheel_clockwise_steers_right_and_it_returns_when_let_go() {
         let p = placement(|c| c.wheel.enabled = true);
         let spec = p.config.wheel;
-        let centre = spec.centre_m;
+        let wheel = p.wheel;
         let kinds = [ControlKind::Wheel];
         let mut state = ControlState::default();
-        let left = rim_point(&spec, centre, -FRAC_PI_2);
-        let right = rim_point(&spec, centre, FRAC_PI_2);
+        let left = wheel.rim_point(-FRAC_PI_2);
+        let right = wheel.rim_point(FRAC_PI_2);
         let grabs = [Some(ControlKind::Wheel); 2];
         step_with(&mut state, &p, &kinds, [Some(left), Some(right)], grabs);
         assert!(state.holds.iter().all(Option::is_some));
 
         let turn = 0.5;
-        let left = rim_point(&spec, centre, -FRAC_PI_2 + turn);
-        let right = rim_point(&spec, centre, FRAC_PI_2 + turn);
+        let left = wheel.rim_point(-FRAC_PI_2 + turn);
+        let right = wheel.rim_point(FRAC_PI_2 + turn);
         let (out, _) = step_with(&mut state, &p, &kinds, [Some(left), Some(right)], [None; 2]);
         let expected = turn / spec.max_angle_deg.to_radians();
         assert!((out.steer.unwrap() - expected).abs() < 1e-4, "{out:?}");
@@ -751,7 +716,7 @@ mod tests {
         let p = placement(|c| c.wheel.enabled = true);
         let kinds = [ControlKind::Wheel];
         let mut state = ControlState::default();
-        let on = rim_point(&p.config.wheel, p.config.wheel.centre_m, 0.3);
+        let on = p.wheel.rim_point(0.3);
         step_with(
             &mut state,
             &p,
@@ -918,11 +883,10 @@ mod tests {
     }
 
     #[test]
-    fn a_left_handed_layout_mirrors_the_sides() {
-        let p = Placement {
-            config: PhysicalControlsConfig::new(),
-            dominant: Hand::Left,
-        };
+    fn a_left_handed_layout_mirrors_the_sticks_but_not_the_wheel() {
+        let mut config = PhysicalControlsConfig::new();
+        config.wheel.centre_m.x = -0.3;
+        let p = Placement::new(config, Hand::Left);
         let state = ControlState::default();
         let stick = p
             .grab_point(&state, ControlKind::Cyclic, Hand::Left, Vec3::ZERO)
@@ -932,6 +896,16 @@ mod tests {
             .grab_point(&state, ControlKind::Collective, Hand::Right, Vec3::ZERO)
             .unwrap();
         assert!(lever.x > 0.0);
+        assert_eq!(p.wheel.centre, config.wheel.centre_m);
+        let rim = p
+            .grab_point(
+                &state,
+                ControlKind::Wheel,
+                Hand::Left,
+                Vec3::new(-0.3, 0.0, 0.0),
+            )
+            .unwrap();
+        assert!(rim.x < -0.25, "{rim}");
     }
 
     #[test]
@@ -944,9 +918,19 @@ mod tests {
     #[test]
     fn only_the_seat_class_s_controls_are_offered() {
         assert_eq!(
-            ControlKind::for_class(VehicleClass::Motorcycle),
+            ControlKind::for_seat(VehicleClass::Motorcycle, false),
             &[ControlKind::Handlebars]
         );
+        assert_eq!(
+            ControlKind::for_seat(VehicleClass::Car, false),
+            &[ControlKind::Wheel]
+        );
+        for class in [VehicleClass::Car, VehicleClass::Sea] {
+            assert_eq!(
+                ControlKind::for_seat(class, true),
+                &[ControlKind::Handlebars]
+            );
+        }
         let mut off = PhysicalControlsConfig::new();
         off.wheel.enabled = false;
         assert!(!ControlKind::Wheel.enabled(&off));

@@ -635,7 +635,7 @@ Each question is listed with the milestone that needed its answer.
 
 One question is open:
 
-- Milestone 4: the jetski discriminator (`m_VehicleType` and the jetski-specific type), if boats and jetskis need different action sets or controls. Until it is pinned, boats and jetskis share the sea class, and the physical wheel serves both.
+- Milestone 4: the jetski discriminator (`m_VehicleType` and the jetski-specific type), if boats and jetskis need different action sets. Boats and jetskis share the sea class; the physical controls tell them apart by the jetski's steering fork part ([steering-wheel.md](steering-wheel.md#handlebars)).
 
 The narrow-field scene render for the scope lens is not a reverse-engineering question: the resampled lens replaced it, and [controllers.md, "Scopes"](controllers.md#scopes) lists what building it would take.
 

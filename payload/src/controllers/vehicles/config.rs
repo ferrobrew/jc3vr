@@ -4,8 +4,11 @@
 //! The physical controls are placed in the seated character's body frame (+X right, +Y up, +Z back,
 //! metres) with the character's eyes at the origin: the cockpit frame, whose origin the head pose
 //! pins to the character's animated head, which rides the seat. Offsets are given for a
-//! right-handed layout, and every control's X is mirrored for a left-handed one, so the stick that
-//! sits by the dominant knee moves with the dominant hand.
+//! right-handed layout, and the sticks' and levers' X is mirrored for a left-handed one, so the
+//! stick that sits by the dominant knee moves with the dominant hand. The wheel and the handlebars
+//! are centred on the vehicle and never mirrored; where the vehicle's own wheel or handlebars are
+//! found, they are placed from it instead ([`crate::controllers::vehicles::wheel`]), and the specs
+//! here are the fallback.
 
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -86,7 +89,7 @@ impl Default for MountedConfig {
 pub struct PhysicalControlsConfig {
     /// The car's and the boat's wheel.
     pub wheel: WheelSpec,
-    /// The motorcycle's handlebars.
+    /// The handlebars of the motorcycles, the ATV, the jetski, and the duck.
     pub handlebars: HandlebarsSpec,
     /// The helicopter's cyclic, by the dominant knee.
     pub cyclic: StickSpec,
@@ -100,6 +103,14 @@ pub struct PhysicalControlsConfig {
     pub grab_radius_m: f32,
     /// How far a holding hand may move from the control before it lets go, metres.
     pub release_distance_m: f32,
+    /// Place the wheel and the handlebars where the vehicle's own are. Off, or where the vehicle
+    /// has none, the specs place them.
+    pub from_vehicle: bool,
+    /// Turn the vehicle's rendered steering wheel with the steering: by the held wheel's angle, or
+    /// otherwise by the vehicle's own steering, so the stick turns it too.
+    pub animate_wheel: bool,
+    /// Draw the wheel's rim and axis, for tuning.
+    pub show_wheel: bool,
 }
 
 impl PhysicalControlsConfig {
@@ -148,6 +159,9 @@ impl PhysicalControlsConfig {
             },
             grab_radius_m: 0.09,
             release_distance_m: 0.25,
+            from_vehicle: true,
+            animate_wheel: true,
+            show_wheel: false,
         }
     }
 
@@ -168,7 +182,9 @@ impl Default for PhysicalControlsConfig {
     }
 }
 
-/// A steering wheel: a rim in a plane facing the driver, tilted back with its column.
+/// A steering wheel: a rim in a plane facing the driver, tilted back with its column. The hub,
+/// radius, and tilt place the wheel where the vehicle's own is not found; the full-steer angle and
+/// the return apply to every wheel.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WheelSpec {
     pub enabled: bool,
@@ -183,7 +199,8 @@ pub struct WheelSpec {
     pub return_deg_per_s: f32,
 }
 
-/// Motorcycle handlebars, pivoting about their centre.
+/// Handlebars, pivoting about their centre. The middle and half width place them where the
+/// vehicle's own are not found.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HandlebarsSpec {
     pub enabled: bool,

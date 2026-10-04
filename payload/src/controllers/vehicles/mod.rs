@@ -6,6 +6,8 @@
 //! - [`physical`]: the opt-in wheel, handlebars, cyclic, collective, flight stick, and throttle of
 //!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
 //!   hands;
+//! - [`wheel`] and [`fit`]: the wheel and the handlebars placed where the driven vehicle's own are;
+//! - [`wheel_render`]: the vehicle's rendered steering wheel turned with the steering;
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
 //! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
@@ -15,13 +17,14 @@
 //! The stick bindings of every class are the tables' ([`crate::controllers::bindings::tables`]).
 //! This module runs on the input tick in two halves around them, like the weapon handling:
 //!
-//! 1. [`begin_tick`] reads the mounted gun and places the physical controls' and the parachute
-//!    handles' grab volumes, and returns the volume each hand is in. A hand holding a control or a
-//!    handle is always in it, so that its next grip press lets go rather than firing a weapon or
-//!    the grapple.
-//! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, and replaces the tables'
-//!    analog writes for each axis a control drives; in the wingsuit it adds the arm pose to the
-//!    move stick, and under the parachute the held handles.
+//! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
+//!    places the physical controls' and the parachute handles' grab volumes, and returns the volume
+//!    each hand is in. A hand holding a control or a handle is always in it, so that its next grip
+//!    press lets go rather than firing a weapon or the grapple.
+//! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, replaces the tables'
+//!    analog writes for each axis a control drives, and publishes the wheel angle for the rendered
+//!    wheel; in the wingsuit it adds the arm pose to the move stick, and under the parachute the
+//!    held handles.
 //!
 //! The hands take the anchored poses in [`apply`], which every hand subsystem's hands pass through
 //! ([`crate::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
@@ -37,14 +40,18 @@
 pub mod arm_steering;
 pub mod config;
 pub mod driver_aim;
+pub mod fit;
+mod highlights;
 pub mod look_steer;
 pub mod mounted;
 pub mod parachute;
 pub mod physical;
+pub mod wheel;
+pub mod wheel_render;
 
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use glam::{Quat, Vec2, Vec3};
@@ -65,18 +72,18 @@ use crate::{
         body::{self, BodyDimensions},
         config::ControllersConfig,
         frame::{Hand, Pose},
-        hands::{self, ActiveHands, CockpitHand, pose as hand_pose, tiers},
+        hands::{self, ActiveHands, CockpitHand, tiers},
         mode::{AirborneVariant, Mode, VehicleSeat},
-        overlay::{
-            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
-            store,
-        },
+        overlay::{primitive::Source, store},
         vehicles::{
             arm_steering::{self as arm, ArmPose},
-            config::ParachuteHandlesConfig,
+            config::{ParachuteHandlesConfig, PhysicalControlsConfig},
+            fit::{FallbackLatch, FitReadout},
             mounted::{MountedGun, MountedTarget, Reference},
             parachute::{HandleEvent, HandleHold, HandleState},
             physical::{ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement},
+            wheel::{CockpitTransform, WheelFrame},
+            wheel_render::RenderWheel,
         },
     },
     headpose,
@@ -87,6 +94,7 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(driver_aim::hook_library())
         .with_hook_library(look_steer::hook_library())
+        .with_hook_library(wheel_render::hook_library())
 }
 
 /// The mounted gun as the last input tick saw it.
@@ -146,6 +154,12 @@ pub struct VehiclesStatus {
     pub arms: Option<ArmReadout>,
     /// The parachute handles, while they act.
     pub handles: Option<HandlesReadout>,
+    /// What the wheel and handlebars fit found, while driving.
+    pub fit: Option<FitReadout>,
+    /// The wheel as placed, in the cockpit frame.
+    pub wheel: Option<WheelFrame>,
+    /// The angle the rendered wheel is turned to, radians, while it is turned.
+    pub rendered_angle: Option<f32>,
 }
 
 pub fn status() -> VehiclesStatus {
@@ -189,10 +203,20 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,
     };
-    let offered = offered(seat, &config);
+    let physical_config = config.vehicles.physical;
+    let xf = CockpitTransform {
+        head_world: headpose::query().position,
+        head_cockpit: active.head.position,
+        body: headpose::xr::body_rotation(),
+        world_scale: active.world_scale,
+    };
+    let mut latch = STATE.lock().latch.take();
+    let fit = fit::fit(&physical_config, seat, &xf, &mut latch);
+    let offered = offered(seat, &config, fit.fork);
     let placement = Placement {
-        config: config.vehicles.physical,
-        dominant: config.dominant_hand,
+        wheel: fit.wheel,
+        bars: fit.bars,
+        ..Placement::new(physical_config, config.dominant_hand)
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let mounted = mounted_tick(&active);
@@ -234,6 +258,11 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     state.handles_on = handles_on;
     state.handles_config = handles_config;
     state.placement = Some(placement);
+    state.latch = latch;
+    state.render = fit.render.filter(|_| physical_config.animate_wheel);
+    state.steering_turn = fit.steering_turn;
+    state.status.fit = fit.readout;
+    state.status.wheel = seat.is_some_and(|s| s.driver).then_some(fit.wheel);
     state.mounted_target = mounted.target;
     MOUNTED_WEAPON.store(mounted.target.map_or(0, |t| t.weapon), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
@@ -249,7 +278,8 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     drop(state);
     log_handle_events(&handle_events);
 
-    submit_highlights(&config, &active, &candidates, volumes);
+    let shown = (physical_config.show_wheel && seat.is_some_and(|s| s.driver)).then_some(fit.wheel);
+    highlights::submit(&config, &candidates, volumes, shown, &xf);
     volumes
 }
 
@@ -293,6 +323,12 @@ pub(crate) fn finish_tick(
         &mut events,
     );
     write_outputs(&outputs, desired);
+    let rendered = state.render.map(|target| {
+        let angle = rendered_angle(&state.controls, &placement.config, state.steering_turn);
+        (target, angle)
+    });
+    wheel_render::publish(rendered);
+    state.status.rendered_angle = rendered.map(|(_, angle)| angle);
     let handles_config = state.handles_config;
     let pulls = state.handles_on.then(|| {
         parachute::step(
@@ -360,6 +396,10 @@ pub(crate) fn stand_down() {
     MOUNTED_WEAPON.store(0, Ordering::Relaxed);
     state.mounted_handles = None;
     state.placement = None;
+    state.latch = None;
+    state.render = None;
+    state.steering_turn = None;
+    wheel_render::publish(None);
     state.status.active = false;
     state.status.seat = None;
     state.status.volumes = [None; 2];
@@ -367,6 +407,9 @@ pub(crate) fn stand_down() {
     state.status.mounted = None;
     state.status.arms = None;
     state.status.handles = None;
+    state.status.fit = None;
+    state.status.wheel = None;
+    state.status.rendered_angle = None;
     push_events(&mut state.status, events);
     drop(state);
     log_handle_events(&handle_events);
@@ -374,8 +417,8 @@ pub(crate) fn stand_down() {
 }
 
 /// Put the hands that hold a physical control, a parachute handle, or a mounted gun's handles on
-/// them, keeping the controllers' rotation. `hands` are the cockpit-frame hands indexed by [`Hand::index`], as the
-/// controllers hold them.
+/// them, keeping the controllers' rotation. `hands` are the cockpit-frame hands indexed by
+/// [`Hand::index`], as the controllers hold them.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
     let tier_status = tiers::status();
     // The grapple states' anchor weights are the line's
@@ -419,9 +462,6 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
 /// How many grabs and releases the readout keeps.
 const MAX_EVENTS: usize = 6;
 
-/// The highlights are submitted at the input tick's rate, so they live a little past one tick.
-const HIGHLIGHT_TTL: Duration = Duration::from_millis(150);
-
 struct State {
     status: VehiclesStatus,
     controls: ControlState,
@@ -441,6 +481,12 @@ struct State {
     mounted_target: Option<MountedTarget>,
     /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
     mounted_handles: Option<[Option<Vec3>; 2]>,
+    /// The fallback wheel held in the driven vehicle's space.
+    latch: Option<FallbackLatch>,
+    /// The vehicle's wheel part the rendered wheel turns, while the animation is on.
+    render: Option<RenderWheel>,
+    /// The driven vehicle's own steering, as the last fit read it.
+    steering_turn: Option<f32>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -456,6 +502,9 @@ static STATE: Mutex<State> = Mutex::new(State {
         mounted: None,
         arms: None,
         handles: None,
+        fit: None,
+        wheel: None,
+        rendered_angle: None,
     },
     controls: ControlState::new(),
     placement: None,
@@ -468,19 +517,27 @@ static STATE: Mutex<State> = Mutex::new(State {
     mounted_reference: None,
     mounted_target: None,
     mounted_handles: None,
+    latch: None,
+    render: None,
+    steering_turn: None,
 });
 
 /// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
 /// [`is_mounted_weapon`].
 static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
 
-/// The physical controls `seat` offers with their toggles on: only the driver's seat has any.
-fn offered(seat: Option<VehicleSeat>, config: &ControllersConfig) -> &'static [ControlKind] {
+/// The physical controls `seat` offers with their toggles on: only the driver's seat has any. A
+/// vehicle with a steering fork (`fork`) offers handlebars.
+fn offered(
+    seat: Option<VehicleSeat>,
+    config: &ControllersConfig,
+    fork: bool,
+) -> &'static [ControlKind] {
     let physical = &config.vehicles.physical;
     let Some(seat) = seat.filter(|s| s.driver && physical.any()) else {
         return &[];
     };
-    let kinds = ControlKind::for_class(seat.class);
+    let kinds = ControlKind::for_seat(seat.class, fork);
     match kinds {
         [one] if one.enabled(physical) => kinds,
         [first, second] => match (first.enabled(physical), second.enabled(physical)) {
@@ -725,56 +782,24 @@ fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>) {
     status.events.drain(..excess);
 }
 
-/// Submit a highlight on the control each free hand can grab.
-fn submit_highlights(
-    config: &ControllersConfig,
-    active: &ActiveHands,
-    candidates: &[grab::Candidate],
-    volumes: [Option<GrabVolume>; 2],
-) {
-    if !(config.overlay.enabled && config.overlay.grab_volumes) || candidates.is_empty() {
-        store::clear(Source::VehicleControls);
-        return;
+/// The angle to turn the rendered wheel to, radians clockwise: the held wheel's, or otherwise the
+/// vehicle's own steering over the full-steer angle, so the stick turns it too.
+fn rendered_angle(
+    controls: &ControlState,
+    config: &PhysicalControlsConfig,
+    steering_turn: Option<f32>,
+) -> f32 {
+    let held = controls
+        .holds
+        .iter()
+        .flatten()
+        .any(|h| h.kind == ControlKind::Wheel);
+    if held {
+        return controls.wheel_angle;
     }
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let mut prims = Vec::new();
-    for hand in Hand::BOTH {
-        let Some(volume) = volumes[hand.index()] else {
-            continue;
-        };
-        let Some(c) = candidates
-            .iter()
-            .find(|c| c.volume == volume && c.hand == Some(hand))
-        else {
-            continue;
-        };
-        let centre = hand_pose::compose_world(
-            head.position,
-            body,
-            active.head.position,
-            Pose {
-                position: c.centre,
-                orientation: Quat::IDENTITY,
-            },
-            active.world_scale,
-        )
-        .position;
-        prims.push(Primitive::Sprite {
-            at: Anchor::World(centre),
-            size: SpriteSize::World(c.radius * 2.0 * active.world_scale),
-            facing: Facing::Billboard,
-            shape: Shape::Ring { thickness: 0.15 },
-            color: CONTROL,
-            depth: DepthMode::XRay {
-                occluded_alpha: 0.4,
-            },
-        });
-    }
-    store::submit(Source::VehicleControls, &mut prims, HIGHLIGHT_TTL);
+    let max = config.wheel.max_angle_deg.to_radians();
+    steering_turn.map_or(0.0, |turn| turn.clamp(-1.0, 1.0) * max)
 }
-
-const CONTROL: Rgba = [0.85, 0.55, 1.0, 0.8];
 
 #[cfg(test)]
 mod tests {
@@ -845,14 +870,35 @@ mod tests {
         config.vehicles.physical.flight_stick.enabled = false;
         config.vehicles.physical.throttle.enabled = false;
         let seat = |class, driver| Some(VehicleSeat { class, driver });
-        assert!(offered(seat(VehicleClass::Car, true), &config).is_empty());
+        assert!(offered(seat(VehicleClass::Car, true), &config, false).is_empty());
         config.vehicles.physical.collective.enabled = true;
         assert_eq!(
-            offered(seat(VehicleClass::Helicopter, true), &config),
+            offered(seat(VehicleClass::Helicopter, true), &config, false),
             &[ControlKind::Collective]
         );
-        assert!(offered(seat(VehicleClass::Helicopter, false), &config).is_empty());
-        assert!(offered(None, &config).is_empty());
+        assert!(offered(seat(VehicleClass::Helicopter, false), &config, false).is_empty());
+        assert!(offered(None, &config, false).is_empty());
+        config.vehicles.physical.handlebars.enabled = true;
+        assert_eq!(
+            offered(seat(VehicleClass::Sea, true), &config, true),
+            &[ControlKind::Handlebars]
+        );
+    }
+
+    #[test]
+    fn the_rendered_wheel_follows_the_held_wheel_and_otherwise_the_steering() {
+        let config = PhysicalControlsConfig::new();
+        let max = config.wheel.max_angle_deg.to_radians();
+        let mut controls = ControlState::new();
+        controls.wheel_angle = 0.4;
+        assert!((rendered_angle(&controls, &config, Some(0.5)) - 0.5 * max).abs() < 1e-5);
+        assert!((rendered_angle(&controls, &config, Some(3.0)) - max).abs() < 1e-5);
+        assert_eq!(rendered_angle(&controls, &config, None), 0.0);
+        controls.holds[1] = Some(Hold {
+            kind: ControlKind::Wheel,
+            offset: Vec3::ZERO,
+        });
+        assert_eq!(rendered_angle(&controls, &config, Some(0.5)), 0.4);
     }
 
     #[test]

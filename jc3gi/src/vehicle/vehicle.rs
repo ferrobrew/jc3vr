@@ -23,7 +23,23 @@ fn _Seat_size_check() {
 /// ([`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)),
 /// and the vtable there serves RTTI and the transform virtuals. Only some members are bound.
 pub struct Vehicle {
-    _field_0: [u8; 2856],
+    _field_0: [u8; 1108],
+    /// The signed steering amount the vehicle's controller last applied
+    /// (`m_SteeringValues.Turn`). It is the value of the vehicle's `steering_turn` variable, which
+    /// value-driven effects and hinged parts can be driven by.
+    pub m_SteeringTurn: f32,
+    _field_458: [u8; 32],
+    /// The vehicle's world transform at the start of the current simulation step, as the engine's
+    /// row-major matrix.
+    pub m_WorldMatrixT0: crate::types::math::Matrix4,
+    /// The vehicle's world transform at the end of the current simulation step.
+    pub m_WorldMatrixT1: crate::types::math::Matrix4,
+    /// The render transform: [`m_WorldMatrixT0`](crate::vehicle::vehicle::Vehicle::m_WorldMatrixT0) and
+    /// [`m_WorldMatrixT1`](crate::vehicle::vehicle::Vehicle::m_WorldMatrixT1) interpolated by the render update's frame
+    /// fraction. `CVehicle::UpdateRender_Parallel` hands it to
+    /// [`UpdateRender_ModelMatrices`](crate::vehicle::vehicle::Vehicle::UpdateRender_ModelMatrices).
+    pub m_InterpolatedWorldMatrix: crate::types::math::Matrix4,
+    _field_538: [u8; 1520],
     /// The vehicle's seats, indexed by [`Seat`](crate::vehicle::vehicle::Seat).
     pub m_Seats: [crate::vehicle::vehicle::VehicleSeat; 42],
     _field_1308: [u8; 724],
@@ -40,9 +56,10 @@ pub struct Vehicle {
     /// drives and to `2` otherwise.
     pub m_AIVehicleWeaponAimTimeout: f32,
     _field_4d4c: [u8; 132],
-    /// The vehicle's physics body (`CPfxVehicle*`). [`IsMech`](crate::vehicle::vehicle::Vehicle::IsMech) tests its strafing
-    /// wheel-steering controller.
-    pub m_PfxVehicle: *mut u8,
+    /// The vehicle's physics body (`CPfxVehicle*`), whose breakable base, with the vehicle's
+    /// parts, is at offset zero. [`IsMech`](crate::vehicle::vehicle::Vehicle::IsMech) tests its strafing wheel-steering
+    /// controller.
+    pub m_PfxVehicle: *mut crate::vehicle::parts::PfxBreakable,
     _field_4dd8: [u8; 1480],
     /// The hash of the vehicle's type name (`HashString` of names such as
     /// `v1706_boat_na_rocketboat`), compared by [`IsRocketBoat`](crate::vehicle::vehicle::Vehicle::IsRocketBoat).
@@ -125,6 +142,30 @@ impl Vehicle {
                 Self::GetWeaponTurretCurrentYawAngle_ADDRESS,
             );
             f(self as *const Self as _)
+        }
+    }
+    pub const UpdateRender_ModelMatrices_ADDRESS: usize = 0x140F90740;
+    /// Sets the model matrix of every valid, unbroken part with a model to the part's
+    /// [`m_RootSpaceTransform`](crate::vehicle::parts::PartInstance::m_RootSpaceTransform) times
+    /// `transform` (through `NPfxBreakable::ForEachValidRenderablePart`), then copies the root-space
+    /// transforms of the parts that attached objects hang from into those attachments. A zero
+    /// `dtf`, or a vehicle flagged to snap, initialises each model matrix instead of updating it.
+    /// Called from
+    /// `CVehicle::UpdateRender_Parallel` with
+    /// [`m_InterpolatedWorldMatrix`](crate::vehicle::vehicle::Vehicle::m_InterpolatedWorldMatrix) on the parallel render update,
+    /// and from `CVehicle::InitTransform`.
+    pub unsafe fn UpdateRender_ModelMatrices(
+        &mut self,
+        transform: *const crate::types::math::Matrix4,
+        dtf: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *const crate::types::math::Matrix4,
+                dtf: f32,
+            ) = ::std::mem::transmute(Self::UpdateRender_ModelMatrices_ADDRESS);
+            f(self as *mut Self as _, transform, dtf)
         }
     }
     pub const IsRocketBoat_ADDRESS: usize = 0x140F6F8F0;
