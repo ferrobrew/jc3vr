@@ -11,7 +11,7 @@
 //! ([`BindingsConfig::stick_click_windows`](crate::controllers::config::BindingsConfig::stick_click_windows)),
 //! and the chord counts only a B pressed within that window, so the stick click never reaches the
 //! game before the chord claims it. Once the chord fires, the left stick click and the right B are
-//! masked from the bindings, the native UI pointer, and the debug panel's own pointer until each is
+//! masked from the bindings (the raw frame, and the semantic actions bound to them), the native UI pointer, and the debug panel's own pointer until each is
 //! released, so neither acts in the game nor right-clicks on the panel. The caller also tells the
 //! tables to forget the withheld stick click ([`crate::controllers::bindings::tables::Bindings::cancel_stick_clicks`]),
 //! which would otherwise pass through as a tap when the mask hides it.
@@ -20,9 +20,12 @@
 //! stick click belongs to the recenter chord until it is released. A B pressed after the window is
 //! the B's own binding (a horn with nitrous, a tether retract with a reload), not the chord.
 
-use crate::controllers::{
-    bindings::controls::ButtonControl,
-    frame::{Button, ControllerFrame, Edges, Hand},
+use crate::{
+    controllers::{
+        bindings::controls::ButtonControl,
+        frame::{Button, ControllerFrame, Edges, Hand},
+    },
+    vr::input::semantic::bound::{Physical, PhysicalSet},
 };
 
 /// The hand whose stick click starts the chord.
@@ -139,6 +142,21 @@ pub fn mask(frame: &mut ControllerFrame, edges: &mut Edges, tick: ChordTick) {
         clear(frame, edges, B_HAND, Button::BClick);
         frame.hands[B_HAND.index()].inputs.b_click = false;
     }
+}
+
+/// The inputs `tick` masks, by [`Hand::index`], for the semantic actions bound to them: the masks
+/// of [`mask`] reach the raw frame only.
+pub fn masked_inputs(tick: ChordTick) -> [PhysicalSet; 2] {
+    let mut out = [PhysicalSet::EMPTY; 2];
+    if tick.mask_click {
+        let i = CLICK_HAND.index();
+        out[i] = out[i].with(Physical::ThumbstickClick);
+    }
+    if tick.mask_b {
+        let i = B_HAND.index();
+        out[i] = out[i].with(Physical::UpperFace);
+    }
+    out
 }
 
 /// Where the chord stands on the current stick click.

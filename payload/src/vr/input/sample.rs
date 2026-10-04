@@ -29,9 +29,7 @@ use crate::{
             self_check::CheckFrame,
             semantic::{
                 SemanticSet,
-                frame::{
-                    self as semantic_frame, ActionState, ActionValue, SemanticFrame, SetState,
-                },
+                frame::{self as semantic_frame, ActionState, SemanticFrame, SetState},
             },
             state::InputState,
         },
@@ -111,8 +109,8 @@ impl InputState {
         let semantic = SemanticFrame {
             published_at: Instant::now(),
             action_set: mode,
-            global: self.read_set(session, SemanticSet::Global, &mut first_error),
-            mode: self.read_set(session, SemanticSet::of(mode), &mut first_error),
+            global: self.read_set(session, SemanticSet::Global, cfg, &mut first_error),
+            mode: self.read_set(session, SemanticSet::of(mode), cfg, &mut first_error),
         };
         if cfg.input.self_check {
             self.self_check.update(&CheckFrame {
@@ -148,29 +146,43 @@ impl InputState {
         }
     }
 
-    /// Read every action of the semantic `set`, both hands. An action that cannot be read reads
-    /// at rest and inactive, and the first error rides alongside.
+    /// Read every action of the semantic `set`, both hands, and derive each one's digital state
+    /// against the previous frame's ([`semantic_frame::digital`]). An action that cannot be read
+    /// reads at rest and inactive, and the first error rides alongside.
     fn read_set(
         &self,
         session: &xr::Session<xr::D3D11>,
         set: SemanticSet,
+        cfg: &ControllersConfig,
         first_error: &mut Option<anyhow::Error>,
     ) -> SetState {
+        let previous = semantic_frame::previous_down(set);
+        let rules = Hand::BOTH.map(|hand| cfg.input.press_rules(self.profiles[hand.index()], hand));
         let actions = set
             .actions()
             .iter()
             .enumerate()
             .map(|(index, def)| {
                 Hand::BOTH.map(|hand| {
-                    self.actions
+                    let mut state = self
+                        .actions
                         .semantic_state(session, set, index, hand)
                         .unwrap_or_else(|e| {
                             first_error.get_or_insert(e);
-                            ActionState {
-                                value: ActionValue::rest(def.kind),
-                                active: false,
-                            }
-                        })
+                            ActionState::rest(def.kind)
+                        });
+                    let was_down = previous
+                        .as_ref()
+                        .and_then(|p| p.get(index))
+                        .is_some_and(|p| p[hand.index()]);
+                    state.down = semantic_frame::digital(
+                        set,
+                        index,
+                        state.value,
+                        &rules[hand.index()],
+                        was_down,
+                    );
+                    state
                 })
             })
             .collect();

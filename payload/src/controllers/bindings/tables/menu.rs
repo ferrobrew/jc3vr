@@ -1,6 +1,7 @@
-//! The menu presses' latches ([`MenuLatch`]): each A, B, and stick press of a hand remembers whether
-//! that hand's grip was held when it began, and the stick reads as one latched direction at a time.
-//! Pure.
+//! The menu presses' latches ([`MenuLatch`]): each confirm, back, and stick press of a hand
+//! remembers whether that hand's menu modifier was held when it began, and the stick reads as one
+//! latched direction at a time; and the pad presses' latches ([`PadLatch`]), which keep the zone a
+//! press began on. Pure.
 //!
 //! The game repeats a held menu step itself, firing at once and then faster the longer the input
 //! is held, and it ranks the stick's directions up, down, left, right. A stick read as raw half-axes
@@ -10,18 +11,53 @@
 
 use glam::Vec2;
 
-use crate::controllers::bindings::{
-    controls::{ButtonControl, HandControls},
-    tables::sink::{Direction, MenuLatch},
+use crate::{
+    controllers::{
+        bindings::{
+            controls::ButtonControl,
+            intents::Intents,
+            tables::sink::{Direction, MenuLatch, PadLatch, pad_of, pad_press_of},
+        },
+        frame::Hand,
+    },
+    vr::input::semantic::vocabulary::MenuAction,
 };
 
-/// Advance `latch` by one tick of `hand`'s controls. `push` is how far the stick must be pushed
-/// along one axis to latch a direction, `0..=1`.
-pub fn step(latch: &mut MenuLatch, hand: &HandControls, push: f32) {
-    let gripped = hand.grip.held();
-    latch.a = latch_button(latch.a, hand.a, gripped);
-    latch.b = latch_button(latch.b, hand.b, gripped);
-    latch.stick = latch_stick(latch.stick, hand.stick_raw, push, gripped);
+/// Advance `latch` by one tick of `hand`'s menu actions. `push` is how far the stick must be
+/// pushed along one axis to latch a direction, `0..=1`.
+pub fn step(latch: &mut MenuLatch, intents: &Intents, hand: Hand, push: f32) {
+    let read = |action: MenuAction| intents.hand(action.id(), hand);
+    let gripped = read(MenuAction::MenuModifier).button.held();
+    latch.confirm = latch_button(latch.confirm, read(MenuAction::MenuConfirm).button, gripped);
+    latch.back = latch_button(latch.back, read(MenuAction::MenuBack).button, gripped);
+    latch.stick = latch_stick(
+        latch.stick,
+        read(MenuAction::MenuNavigate).vector_raw,
+        push,
+        gripped,
+    );
+}
+
+/// Advance `latch` by one tick of `hand`'s pad press in the tick's mode set: the zone under the
+/// thumb is latched at the press edge and kept until the release, wherever the thumb slides. A
+/// press on a line between zones latches once the thumb moves off it.
+pub fn step_pad(latch: &mut PadLatch, intents: &Intents, hand: Hand) {
+    let Some((press, (pad, layout))) =
+        pad_press_of(intents.mode_set()).and_then(|press| Some((press, pad_of(press)?)))
+    else {
+        latch.press = None;
+        return;
+    };
+    let button = intents.hand(press, hand).button;
+    if !button.held() {
+        latch.press = None;
+        return;
+    }
+    let repressed = button.pressed && button.released && button.down;
+    latch.press = match latch.press {
+        Some((latched, Some(zone))) if latched == press && !repressed => Some((press, Some(zone))),
+        _ => Some((press, layout.zone(intents.hand(pad, hand).vector_raw))),
+    };
 }
 
 /// A button's latch: whether its press began with the grip held, kept while it is held. A release

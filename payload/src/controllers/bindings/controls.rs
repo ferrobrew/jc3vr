@@ -10,7 +10,10 @@ use crate::{
         config::BindingsConfig,
         frame::{Button, ControllerFrame, Edges, Hand, HandFrame},
     },
-    vr::input::layout::{Input, Vec2Input, provides},
+    vr::input::{
+        layout::{Input, Vec2Input, provides},
+        semantic::bound::PhysicalSet,
+    },
 };
 
 /// One digital input over the tick.
@@ -64,6 +67,8 @@ pub struct HandControls {
     pub stick: Vec2,
     /// The thumbstick as reported, for consumers with their own deadzone (the body turn).
     pub stick_raw: Vec2,
+    /// The thumb's position on the trackpad, each axis `-1..=1`, zero on a controller without one.
+    pub trackpad: Vec2,
     /// The grab volume the hand is in.
     pub grab_volume: Option<GrabVolume>,
 }
@@ -96,6 +101,11 @@ pub struct Controls {
     /// Whether a controller has a trackpad, so the menus page with the trackpads rather than the
     /// grips.
     pub trackpad_paging: bool,
+    /// Each hand masked whole from the semantic actions by input recovery, by [`Hand::index`].
+    pub masked_hands: [bool; 2],
+    /// The inputs of each hand claimed by mechanisms outside the tables (the debug panel chord),
+    /// masked from the semantic actions, by [`Hand::index`].
+    pub masked_inputs: [PhysicalSet; 2],
 }
 
 impl Controls {
@@ -124,6 +134,7 @@ impl Controls {
                 trackpad_right: button(Button::TrackpadPressRight),
                 stick: radial_deadzone(hand.inputs.thumbstick, config.move_deadzone),
                 stick_raw: hand.inputs.thumbstick,
+                trackpad: hand.inputs.trackpad,
                 grab_volume: grab_volumes[which.index()],
             }
         });
@@ -136,6 +147,8 @@ impl Controls {
             yank: false,
             sight_chord: false,
             pointer_hand: None,
+            masked_hands: [false; 2],
+            masked_inputs: [PhysicalSet::EMPTY; 2],
             trackpad_paging: Hand::BOTH.into_iter().any(|which| {
                 provides(
                     frame.hand(which).profile,
@@ -158,17 +171,6 @@ impl Controls {
     /// The hand in the layout's "left" role.
     pub fn off(&self) -> &HandControls {
         self.hand(self.dominant.other())
-    }
-
-    /// The system button of either hand: runtimes reserve it on one hand or both, so whichever
-    /// hand reports it counts.
-    pub fn system(&self) -> ButtonControl {
-        let [l, r] = self.hands.map(|h| h.system);
-        ButtonControl {
-            down: l.down || r.down,
-            pressed: l.pressed || r.pressed,
-            released: (l.released || r.released) && !(l.down || r.down),
-        }
     }
 }
 

@@ -122,7 +122,8 @@ fn a_seat_lists_its_class_and_the_passenger_fires() {
     });
     let rows = describe(&ctx(passenger, Hand::Right, TableCtx::default()));
     let trigger = actions_of(&rows, Control::Trigger(Hand::Right), Gesture::Press);
-    assert!(trigger.contains(&ACCELERATE) && trigger.contains(&FIRE_RIGHT));
+    // Out of the driver's seat the throttle is not read, and the trigger fires.
+    assert!(!trigger.contains(&ACCELERATE) && trigger.contains(&FIRE_RIGHT));
 }
 
 #[test]

@@ -2,14 +2,15 @@
 //! and its edges to the game's actions for the current mode, and inject them.
 //!
 //! - [`controls`] reduces the frame to logical controls (deadzones, edges, grab volumes);
-//! - [`tables`] maps them to the wanted game actions per mode, following the plan of record;
+//! - [`intents`] reads the tick's semantic actions and masks what the mod claims of each hand;
+//! - [`tables`] maps the semantic actions to the wanted game actions per mode;
 //! - [`hold`] turns the wanted actions into effector writes with the game's hold timing;
 //! - [`grab`] is the grab-volume query the grip bindings consult, over the volumes the weapon
 //!   handling places ([`crate::controllers::weapons`]);
 //! - [`yank`] detects the yank gesture on the grapple hand, which the tables turn into a grapple
 //!   tap;
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
-//!   ([`HandRecovery`]);
+//!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
 //! - [`panel_chord`] reads the debug panel chord, which acts even while the bindings stand down.
 //!
@@ -28,6 +29,7 @@ pub mod controls;
 pub mod grab;
 pub mod hold;
 pub mod inject;
+pub mod intents;
 pub mod panel_chord;
 mod recovery;
 pub mod tables;
@@ -48,6 +50,7 @@ use crate::{
             grab::GrabVolume,
             hold::{ActionWrite, DevicePoll, HoldTracker, MapKind, Phase},
             inject::{Landing, Outcome},
+            intents::SemanticInput,
             panel_chord::{ChordInput, ChordTick, PanelChord},
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             tables::Bindings,
@@ -70,7 +73,10 @@ use crate::{
         egui_panel,
         pointer::{clear_controller, owns_menu_trigger, update_controller, update_egui_controller},
     },
-    vr,
+    vr::{
+        self,
+        input::semantic::{SemanticSet, frame as semantic_frame},
+    },
 };
 
 /// What the input tick hands back to the look detour.
@@ -140,6 +146,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         state.recovery.suspend();
         state.publish_recovery();
         frame::take_edges();
+        semantic_frame::take();
         weapons::stand_down();
         vehicles::stand_down();
         return InputTickOutput::default();
@@ -168,6 +175,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // The edges are taken even while idle, so that a press from before injection resumed is not
     // replayed then.
     let mut edges = frame::take_edges();
+    let (semantic, mut semantic_edges) = semantic_frame::take();
     let chord = panel_chord_tick(
         frame
             .as_ref()
@@ -219,10 +227,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         weapons::stand_down();
         vehicles::stand_down();
         edges = Default::default();
+        semantic_edges = Default::default();
     }
     // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it;
     // the poll runs here, so it releases their effectors, and only the clicks need undoing.
-    if frame.action_set != detection.mode.action_set() {
+    let set_pending = frame.action_set != detection.mode.action_set()
+        || semantic
+            .as_ref()
+            .is_some_and(|s| s.action_set != detection.mode.action_set());
+    if set_pending {
         clear_controller();
         let paused = state.tracker.pause();
         // SAFETY: the input tick runs on the main thread after the device poll.
@@ -287,6 +300,23 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         move_rotation,
         volumes,
     );
+    controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
+    controls.masked_inputs = panel_chord::masked_inputs(chord);
+    let profiles = Hand::BOTH.map(|hand| frame.hand(hand).profile);
+    let semantic_input = match &semantic {
+        Some(semantic) => SemanticInput::from_frame(
+            semantic,
+            &semantic_edges,
+            profiles,
+            dominant,
+            &config.bindings,
+        ),
+        None => SemanticInput::rest(
+            SemanticSet::of(detection.mode.action_set()),
+            profiles,
+            dominant,
+        ),
+    };
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
@@ -326,9 +356,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             );
         }
     }
-    let mut step = state
-        .bindings
-        .step(detection.mode, &controls, dt, &config.bindings);
+    let mut step = state.bindings.step(
+        detection.mode,
+        &controls,
+        &semantic_input,
+        dt,
+        &config.bindings,
+    );
     summary::refresh(detection.mode, &controls, &config, &frame);
     if step.crouch_toggle {
         crate::controllers::roomscale::toggle_seated_crouch();

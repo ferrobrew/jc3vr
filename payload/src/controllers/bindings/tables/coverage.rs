@@ -6,14 +6,18 @@ use std::collections::BTreeSet;
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
 
-use crate::controllers::{
-    bindings::{
-        controls::{ButtonControl, Controls, HandControls},
-        tables::{Bindings, declare::TableCtx},
+use crate::{
+    controllers::{
+        bindings::{
+            controls::{ButtonControl, Controls, HandControls},
+            intents::simulate::simulate,
+            tables::{Bindings, declare::TableCtx},
+        },
+        config::BindingsConfig,
+        frame::Hand,
+        mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass, VehicleSeat},
     },
-    config::BindingsConfig,
-    frame::Hand,
-    mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass, VehicleSeat},
+    vr::input::semantic::{SemanticSet, bound::Layout, defaults::default_binding},
 };
 
 /// Every mode the detector reports.
@@ -66,11 +70,22 @@ pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
     contexts
 }
 
-/// Every action the tables inject in `mode` under `ctx` over a set of ticks that between them
-/// press every input with the grips held and without, push every stick each way, hold each stick
-/// click alone past the chord window, flick into the wingsuit's evade and not, and press the system
-/// button both briefly and long.
+/// Every action the tables inject in `mode` under `ctx` with the shipped default bindings, over a
+/// set of ticks that between them press every input with the grips held and without, push every
+/// stick each way, press each trackpad quadrant, hold each stick click alone past the chord
+/// window, flick into the wingsuit's evade and not, and press the system button both briefly and
+/// long.
 pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
+    injected_with(mode, dominant, ctx, default_binding)
+}
+
+/// [`injected`], under `layout`.
+pub fn injected_with(
+    mode: Mode,
+    dominant: Hand,
+    ctx: TableCtx,
+    layout: Layout,
+) -> BTreeSet<Action> {
     let config = BindingsConfig::new();
     let base = Controls {
         dominant,
@@ -80,7 +95,7 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
         trackpad_paging: ctx.trackpad_paging,
         ..Default::default()
     };
-    let everything = |stick: Vec2, grip: bool| {
+    let everything = |stick: Vec2, grip: bool, pad: Vec2| {
         let mut c = base;
         c.yank = true;
         for hand in &mut c.hands {
@@ -96,21 +111,24 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
                 trackpad_right: DOWN,
                 stick,
                 stick_raw: stick,
+                trackpad: pad,
                 grab_volume: None,
             };
         }
         c
     };
     let mut actions = BTreeSet::new();
+    let set = SemanticSet::of(mode.action_set());
     let mut run = |ticks: &[(Controls, f32)]| {
         let mut bindings = Bindings::new();
         for (controls, dt) in ticks {
-            let step = bindings.step(mode, controls, *dt, &config);
+            let input = simulate(controls, set, layout);
+            let step = bindings.step(mode, controls, &input, *dt, &config);
             actions.extend(step.desired.iter().map(|d| d.target.action));
         }
     };
     for grip in [false, true] {
-        for stick in [
+        for (i, stick) in [
             Vec2::splat(0.8),
             Vec2::splat(-0.8),
             Vec2::new(0.8, 0.0),
@@ -118,8 +136,21 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
             Vec2::new(0.0, 0.8),
             Vec2::new(0.0, -0.8),
             Vec2::ZERO,
-        ] {
-            run(&[(everything(stick, grip), DT)]);
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            // The trackpads take each quadrant in turn, the centre too.
+            let pad = [
+                Vec2::new(0.0, 0.8),
+                Vec2::new(0.8, 0.0),
+                Vec2::new(-0.8, 0.0),
+                Vec2::new(0.0, -0.8),
+            ]
+            .get(i)
+            .copied()
+            .unwrap_or(Vec2::ZERO);
+            run(&[(everything(stick, grip, pad), DT)]);
         }
     }
     for hand in Hand::BOTH {

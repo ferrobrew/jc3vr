@@ -1,42 +1,39 @@
-//! The per-mode binding tables: from the logical controls to the game actions wanted this tick.
-//! Pure, with the little state the tables need across ticks (the system button's long press, what
-//! each grip press was latched to, and the wingsuit's evade press).
+//! The per-mode binding tables: from the tick's semantic actions to the game actions wanted this
+//! tick. Pure, with the little state the tables need across ticks (the pause button's long press,
+//! what each grip press was latched to, the wingsuit's evade press, and the menu and pad latches).
 //!
-//! The tables follow the plan of record ("Per-mode bindings"), laid out for the Valve Index
-//! controller, which has A and B on both hands: the plan's left X and Y are the off-hand's A and B.
-//! The "right" and "left" of the plan are the dominant and the off hand, so a left-handed layout
-//! mirrors every gameplay binding. In the menus both hands navigate alike, with each hand's grip as
-//! its modifier ([`menu`]), and the previous and next tabs and pages keep their physical sides.
-//! Where a controller has a trackpad, a press on either trackpad's left or right half also steps
-//! the tabs ([`Controls::trackpad_paging`]).
+//! Each mode reads the semantic actions of its action set ([`crate::vr::input::semantic`]), which
+//! the player can rebind in the runtime; [`crate::vr::input::semantic::defaults`] suggests the
+//! layout. The gestures, the grabs, the chords, and the pointers read the raw controls instead, and
+//! what they claim of a hand is masked from the semantic actions bound there
+//! ([`crate::controllers::bindings::intents`]).
 //!
-//! Where a controller input stands for a gamepad button, it injects every gameplay action the
+//! Where a semantic action stands for a gamepad button, it injects every gameplay action the
 //! game's default gamepad keymap puts on that button, and the game's own context picks the one that
 //! applies (a virtual gamepad button). This is what keeps the game's tap and hold overloads
 //! intact: the reload button is also the holster (hold), `USE_VEHICLE_MOD` is nitrous (hold) and
 //! the turbo jump (tap), `ENTER_VEHICLE` held enters the gunner seat, and the grapple tethers on a
 //! hold, all decided by the game from the hold time the tracker ([`crate::controllers::bindings::hold`])
-//! writes. The system button is the one overload the mod resolves itself: a short press pauses and
+//! writes. The pause action is the one overload the mod resolves itself: a short press pauses and
 //! a long press opens the commlink.
 //!
-//! One binding drives the mod rather than the game: on foot, flicking the dominant stick down
-//! toggles the seated crouch ([`crate::controllers::roomscale::toggle_seated_crouch`]). The stick's
-//! vertical axis is otherwise unused on foot, where only its horizontal axis turns the body, and the
-//! flick works the same on the Index and Touch controllers.
+//! One action drives the mod rather than the game: on foot, flicking `crouch_flick` (the dominant
+//! stick's vertical axis by default) down toggles the seated crouch
+//! ([`crate::controllers::roomscale::toggle_seated_crouch`]).
 //!
 //! Holding both stick clicks together recenters the VR view, in every mode ([`stick_chord`]). A lone
-//! stick click waits a short window for the other before it reaches the tables, so that the chord
-//! never also fires either click's own binding. The left click waits longer, for the debug panel
-//! chord too ([`crate::controllers::bindings::panel_chord`]).
+//! stick click waits a short window for the other before it reaches the actions bound to it, so
+//! that the chord never also fires either click's own binding. The left click waits longer, for
+//! the debug panel chord too ([`crate::controllers::bindings::panel_chord`]).
 //!
 //! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
 //! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
 //! held weapon's sight offset ([`crate::controllers::aim::sights::tuning`]). While it is armed, the
-//! dominant grip withholds the off-hand's grapple (squeeze the dominant grip first) and both grips
-//! withhold the dominant A's jump, so the chord neither grapples nor jumps.
+//! dominant grip withholds the grapple (squeeze the dominant grip first) and both grips withhold the
+//! jump, so the chord neither grapples nor jumps.
 //!
-//! The tables themselves are declared once, in [`declare`], over the symbolic inputs of [`sink`].
-//! [`Bindings::step`] evaluates them against the tick's controls, and [`describe`] reads the same
+//! The tables themselves are declared once, in [`declare`], over the vocabulary of [`sink`].
+//! [`Bindings::step`] evaluates them against the tick's intents, and [`describe`] reads the same
 //! declarations to list what each input does, for the controls summary
 //! ([`crate::controllers::summary`]).
 
@@ -50,20 +47,31 @@ pub mod stick_chord;
 
 use jc3gi::input::input_action_map::Action;
 
-use crate::controllers::{
-    bindings::{
-        controls::{ButtonControl, Controls},
-        grab::GrabVolume,
-        hold::{Desired, MapKind, Target, Want},
-        tables::{
-            declare::{TableCtx, declare},
-            sink::{EvalSink, Latches, MenuLatch},
-            stick_chord::StickChord,
+use crate::{
+    controllers::{
+        bindings::{
+            controls::{ButtonControl, Controls},
+            grab::GrabVolume,
+            hold::{Desired, MapKind, Target, Want},
+            intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
+            tables::{
+                declare::{TableCtx, declare},
+                sink::{EvalSink, Latches, MenuLatch, PadLatch},
+                stick_chord::StickChord,
+            },
+        },
+        config::BindingsConfig,
+        frame::Hand,
+        mode::{AirborneVariant, Mode, VehicleClass},
+    },
+    vr::input::semantic::{
+        SemanticSet,
+        bound::Physical,
+        vocabulary::{
+            ActionId, GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
+            PlaneAction, WingsuitAction,
         },
     },
-    config::BindingsConfig,
-    frame::Hand,
-    mode::{AirborneVariant, Mode, VehicleClass},
 };
 
 /// One tick's output of the tables.
@@ -72,7 +80,7 @@ pub struct Step {
     /// The wanted game actions.
     pub desired: Vec<Desired>,
     /// The body-turn input for the headpose's VR turn scheme, `-1..=1`, positive turning right.
-    /// Zero in the modes whose tables use the dominant stick themselves.
+    /// Zero in the modes whose tables use the turn stick themselves.
     pub body_turn: f32,
     /// The seated crouch toggle was flicked this tick.
     pub crouch_toggle: bool,
@@ -93,7 +101,7 @@ pub struct Bindings {
     system: SystemButton,
     /// What each hand's current grip press was latched to at its press edge, by [`Hand::index`].
     grips: [Option<GripUse>; 2],
-    /// Whether the current wingsuit A press was latched as an evade.
+    /// Whether the current wingsuit parachute press was latched as an evade.
     evade_press: Option<bool>,
     /// How long the move stick has been pushed out of its rest, seconds, or `None` while it rests.
     move_pushed_s: Option<f32>,
@@ -101,6 +109,8 @@ pub struct Bindings {
     crouch_flicked: bool,
     /// Each hand's menu press latches, by [`Hand::index`].
     menu: [MenuLatch; 2],
+    /// Each hand's pad press latch, by [`Hand::index`].
+    pads: [PadLatch; 2],
     stick_chord: StickChord,
 }
 
@@ -113,10 +123,11 @@ impl Bindings {
             move_pushed_s: None,
             crouch_flicked: false,
             menu: [MenuLatch {
-                a: None,
-                b: None,
+                confirm: None,
+                back: None,
                 stick: None,
             }; 2],
+            pads: [PadLatch { press: None }; 2],
             stick_chord: StickChord::new(),
         }
     }
@@ -127,11 +138,13 @@ impl Bindings {
         self.stick_chord.cancel();
     }
 
-    /// Evaluate the tables for `mode`.
+    /// Evaluate the tables for `mode`: `controls` are the tick's raw controls, which the gestures,
+    /// grabs, and chords read, and `input` its semantic actions, which the tables read.
     pub fn step(
         &mut self,
         mode: Mode,
         controls: &Controls,
+        input: &SemanticInput,
         dt: f32,
         config: &BindingsConfig,
     ) -> Step {
@@ -141,14 +154,6 @@ impl Bindings {
             config.stick_click_windows(),
             config.recenter_hold_s,
         );
-        let mut controls = *controls;
-        for (hand, click) in controls.hands.iter_mut().zip(arbitrated.clicks) {
-            hand.stick_click = click;
-        }
-        let controls = &controls;
-        for (latch, hand) in self.menu.iter_mut().zip(&controls.hands) {
-            menu::step(latch, hand, config.menu_stick_push);
-        }
         let chord = match mode {
             Mode::OnFoot(_) => SightChord::of(controls),
             _ => SightChord::default(),
@@ -167,45 +172,89 @@ impl Bindings {
                 volume,
             )
         });
-        self.move_pushed_s = step_pushed(
-            self.move_pushed_s,
-            controls.off().stick.length(),
-            config.evade_flick,
-            dt,
+        let ctx = TableCtx::of(controls);
+        let mut masks = context_masks(mode, &ctx, controls.dominant);
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            // A grip press latched to a grab belongs to the grab for the whole press.
+            if matches!(self.grips[i], Some(GripUse::Grab(_))) {
+                masks.push(Mask {
+                    hand,
+                    scope: MaskScope::Input(Physical::Grip),
+                    exempt: None,
+                });
+            }
+            if controls.masked_hands[i] {
+                masks.push(Mask {
+                    hand,
+                    scope: MaskScope::Hand,
+                    exempt: None,
+                });
+            }
+            for physical in MASKABLE {
+                if controls.masked_inputs[i].contains(physical) {
+                    masks.push(Mask {
+                        hand,
+                        scope: MaskScope::Input(physical),
+                        exempt: None,
+                    });
+                }
+            }
+        }
+        let intents = Intents::build(
+            input,
+            arbitrated.clicks,
+            &masks,
+            Gestures {
+                yank: controls.yank,
+            },
+            off_hand,
         );
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            menu::step(&mut self.menu[i], &intents, hand, config.menu_stick_push);
+            menu::step_pad(&mut self.pads[i], &intents, hand);
+        }
+        let move_stick =
+            move_action(intents.mode_set()).map_or(0.0, |a| intents.vector(a).length());
+        self.move_pushed_s = step_pushed(self.move_pushed_s, move_stick, config.evade_flick, dt);
         let evade = match mode {
             Mode::Airborne(variant) => latch_evade(
                 &mut self.evade_press,
                 variant,
-                controls,
+                &intents,
                 self.move_pushed_s,
                 config,
             ),
             _ => false,
         };
         let latches = Latches {
-            grip_default: self.grips.map(|g| g == Some(GripUse::Default)),
             chord_grip: chord.dominant_grip,
             chord_armed: chord.armed,
             evade,
             menu: self.menu,
+            pads: self.pads,
         };
         let map = match mode {
             Mode::Ui => MapKind::Ui,
             _ => MapKind::Player,
         };
-        let mut out = EvalSink::new(controls, latches, map);
-        declare(&mut out, mode, &TableCtx::of(controls));
-        let body_turn = body_turn(mode, controls);
+        let mut out = EvalSink::new(&intents, latches, controls.move_rotation, map);
+        declare(&mut out, mode, &ctx);
+        let body_turn = body_turn_action(mode).map_or(0.0, |a| intents.raw(a));
         if !matches!(mode, Mode::Airborne(AirborneVariant::Wingsuit)) {
             self.evade_press = None;
         }
-        self.system
-            .step(&mut out.desired, controls.system(), dt, config.long_press_s);
+        self.system.step(
+            &mut out.desired,
+            intents.button(GlobalAction::Pause.id()),
+            dt,
+            config.long_press_s,
+        );
         let crouch_toggle = matches!(mode, Mode::OnFoot(_))
             && flick_down(
                 &mut self.crouch_flicked,
-                controls.dom().stick_raw.y,
+                intents.raw(OnFootAction::CrouchFlick.id()),
                 config.crouch_flick,
             );
         Step {
@@ -219,24 +268,96 @@ impl Bindings {
     }
 }
 
-/// The body-turn input for the headpose's VR turn scheme: the dominant stick's horizontal axis,
-/// except in the modes whose tables use that stick themselves.
-pub fn body_turn(mode: Mode, controls: &Controls) -> f32 {
-    if body_turn_bound(mode) {
-        controls.dom().stick_raw.x
-    } else {
-        0.0
+/// The masks the table context implies in `mode`: with a pistol in the off-hand, its trigger
+/// belongs to the pistol's fire action; in a menu, the native UI pointer's trigger belongs to the
+/// pointer.
+pub fn context_masks(mode: Mode, ctx: &TableCtx, dominant: Hand) -> Vec<Mask> {
+    let mut masks = Vec::new();
+    let set = SemanticSet::of(mode.action_set());
+    if ctx.dual_wield
+        && triggers_fire_pistols(mode)
+        && let Some(pistol) = fire_off_hand_pistol(set)
+    {
+        masks.push(Mask {
+            hand: dominant.other(),
+            scope: MaskScope::Input(Physical::Trigger),
+            exempt: Some(pistol),
+        });
+    }
+    if mode == Mode::Ui
+        && let Some(hand) = ctx.pointer_hand
+    {
+        masks.push(Mask {
+            hand,
+            scope: MaskScope::Input(Physical::Trigger),
+            exempt: Some(MenuAction::PointerSelect.id()),
+        });
+    }
+    masks
+}
+
+/// Whether the hands' triggers fire the hand weapons in `mode`: everywhere but the wingsuit, a
+/// driver's seat, and the menus.
+const fn triggers_fire_pistols(mode: Mode) -> bool {
+    match mode {
+        Mode::OnFoot(_) => true,
+        Mode::Airborne(variant) => !matches!(variant, AirborneVariant::Wingsuit),
+        Mode::Vehicle(seat) => !seat.driver,
+        Mode::Ui => false,
     }
 }
 
-/// Whether the dominant stick's horizontal axis turns the body in `mode`.
-pub const fn body_turn_bound(mode: Mode) -> bool {
+/// The off-hand pistol's fire action of `set`, for the sets whose hands fire pistols.
+const fn fire_off_hand_pistol(set: SemanticSet) -> Option<ActionId> {
+    match set {
+        SemanticSet::OnFoot => Some(OnFootAction::FireOffHandPistol.id()),
+        SemanticSet::LandVehicle => Some(LandVehicleAction::FireOffHandPistol.id()),
+        SemanticSet::Helicopter => Some(HelicopterAction::FireOffHandPistol.id()),
+        SemanticSet::Plane => Some(PlaneAction::FireOffHandPistol.id()),
+        SemanticSet::Global | SemanticSet::Wingsuit | SemanticSet::Menu => None,
+    }
+}
+
+/// The inputs a mechanism outside the tables may claim ([`Controls::masked_inputs`]).
+const MASKABLE: [Physical; 8] = [
+    Physical::Trigger,
+    Physical::Grip,
+    Physical::Thumbstick,
+    Physical::ThumbstickClick,
+    Physical::Trackpad,
+    Physical::LowerFace,
+    Physical::UpperFace,
+    Physical::System,
+];
+
+/// The vector action of `set` that moves or steers, whose flick the wingsuit's evade reads.
+const fn move_action(set: SemanticSet) -> Option<ActionId> {
+    match set {
+        SemanticSet::OnFoot => Some(OnFootAction::Move.id()),
+        SemanticSet::Wingsuit => Some(WingsuitAction::Steer.id()),
+        SemanticSet::LandVehicle => Some(LandVehicleAction::Steer.id()),
+        SemanticSet::Helicopter => Some(HelicopterAction::Cyclic.id()),
+        SemanticSet::Plane => Some(PlaneAction::PitchRoll.id()),
+        SemanticSet::Global | SemanticSet::Menu => None,
+    }
+}
+
+/// The action whose value turns the body in `mode`, or `None` in the modes whose tables use the
+/// turn input themselves.
+pub const fn body_turn_action(mode: Mode) -> Option<ActionId> {
     match mode {
-        Mode::OnFoot(_) | Mode::Airborne(_) => true,
-        Mode::Vehicle(seat) => {
-            !matches!(seat.class, VehicleClass::Helicopter | VehicleClass::Plane)
+        Mode::OnFoot(_) | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
+            Some(OnFootAction::Turn.id())
         }
-        Mode::Ui => false,
+        Mode::Airborne(AirborneVariant::Wingsuit) => Some(WingsuitAction::Turn.id()),
+        Mode::Vehicle(seat) => match seat.class {
+            VehicleClass::Helicopter | VehicleClass::Plane => None,
+            VehicleClass::Car
+            | VehicleClass::Motorcycle
+            | VehicleClass::Sea
+            | VehicleClass::Unknown => Some(LandVehicleAction::Turn.id()),
+        },
+        Mode::Ui => None,
     }
 }
 
@@ -330,28 +451,29 @@ fn step_pushed(pushed_s: Option<f32>, magnitude: f32, evade_flick: f32, dt: f32)
     Some(pushed_s.map_or(0.0, |s| s + dt))
 }
 
-/// Decide at the wingsuit A's press edge whether the press evades or acts as the virtual A. It
-/// evades only on a flick: the move stick is past the evade flick and left its rest within the
-/// evade window. A stick held over to steer or dive is not a flick, so A still opens the parachute.
+/// Decide at the wingsuit parachute press's edge whether the press evades or acts as the virtual A.
+/// It evades only on a flick: the steer stick is past the evade flick and left its rest within the
+/// evade window. A stick held over to steer or dive is not a flick, so the press still opens the
+/// parachute.
 fn latch_evade(
     latch: &mut Option<bool>,
     variant: AirborneVariant,
-    controls: &Controls,
+    intents: &Intents,
     move_pushed_s: Option<f32>,
     config: &BindingsConfig,
 ) -> bool {
-    let a = controls.dom().a;
-    if variant != AirborneVariant::Wingsuit || !a.held() {
+    let press = intents.button(WingsuitAction::OpenParachute.id());
+    if variant != AirborneVariant::Wingsuit || !press.held() {
         *latch = None;
         return false;
     }
     *latch.get_or_insert_with(|| {
-        controls.off().stick.length() >= config.evade_flick
+        intents.vector(WingsuitAction::Steer.id()).length() >= config.evade_flick
             && move_pushed_s.is_some_and(|s| s <= config.evade_window_s)
     })
 }
 
-/// The system button: a press shorter than the long-press time clicks pause on release; holding it
+/// The pause action: a press shorter than the long-press time clicks pause on release; holding it
 /// that long clicks the commlink at once, and the release then does nothing. Both clicks go to the
 /// player map through its blockers, which is where the game reads the toggles while a menu is up,
 /// and to the UI map, which the open screen reads.

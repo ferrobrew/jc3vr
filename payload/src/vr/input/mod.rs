@@ -13,13 +13,14 @@
 //!   for the physical inputs of the Valve Index controller (see [`layout`]): triggers, grips,
 //!   sticks, trackpads, face buttons, the system button, and their touches. The raw inputs feed
 //!   the published [`ControllerFrame`](crate::controllers::frame::ControllerFrame), whatever the
-//!   mode, and everything that reads it: the binding tables, the gestures, the finger curls, the
-//!   chords, input recovery, scheme detection, and the pointers.
+//!   mode, and everything that reads it: the gestures, the grabs, the finger curls, the chords,
+//!   input recovery, scheme detection, and the pointers.
 //! - `global`, always active, and one mode set at a time (`on_foot`, `wingsuit`, `land_vehicle`,
 //!   `helicopter`, `plane`, or `menu`): the semantic actions, named for what they do in the game
 //!   ([`semantic`]). The mode detector picks the mode set through [`set_active_action_set`]. Their
 //!   per-hand states are published each frame as a
-//!   [`SemanticFrame`](semantic::frame::SemanticFrame), which only the debug UI reads so far.
+//!   [`SemanticFrame`](semantic::frame::SemanticFrame), which the binding tables read
+//!   ([`crate::controllers::bindings::intents`]).
 //!
 //! Every set has priority 0, so an input bound in `hands` and in a semantic set reaches both. Every
 //! action is created with both hands as subaction paths and is read per hand. Suggested bindings
@@ -30,7 +31,7 @@
 //! actions are created.
 //!
 //! [`self_check`] probes, once per session, how the runtime treats this layout, and [`sources`]
-//! caches the runtime's bound sources for the debug UI.
+//! caches the runtime's bound sources for the debug UI and the bindings' masks.
 //!
 //! # Persistence
 //!

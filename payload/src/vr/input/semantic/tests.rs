@@ -472,12 +472,45 @@ fn actions_sharing_a_default_input_are_never_read_together() {
 }
 
 #[test]
-fn the_defaults_encode_todays_layout() {
+fn the_defaults_mirror_the_gamepad_by_side() {
     let path = |set, index, hand| default_path(set, index, Profile::ValveIndex, hand, Hand::Right);
     let on_foot = |a: F, hand| path(SemanticSet::OnFoot, a as usize, hand);
     assert_eq!(on_foot(F::Jump, Hand::Right), Some("input/a/click"));
-    assert_eq!(on_foot(F::Reload, Hand::Right), Some("input/b/click"));
-    assert_eq!(on_foot(F::Use, Hand::Left), Some("input/a/click"));
+    assert_eq!(on_foot(F::Use, Hand::Right), Some("input/b/click"));
+    assert_eq!(on_foot(F::Reload, Hand::Left), Some("input/a/click"));
+    assert_eq!(on_foot(F::Use, Hand::Left), None);
+    let land = |a: L, hand| path(SemanticSet::LandVehicle, a as usize, hand);
+    // A vehicle is exited with the button it was entered with.
+    assert_eq!(
+        land(L::ExitVehicle, Hand::Right),
+        on_foot(F::Use, Hand::Right)
+    );
+    assert_eq!(land(L::VehicleMod, Hand::Left), Some("input/b/click"));
+    assert_eq!(land(L::Handbrake, Hand::Left), Some("input/a/click"));
+    for (set, exit) in [
+        (SemanticSet::Helicopter, H::ExitVehicle as usize),
+        (SemanticSet::Plane, P::ExitVehicle as usize),
+    ] {
+        assert_eq!(path(set, exit, Hand::Right), Some("input/b/click"));
+    }
+    assert_eq!(
+        on_foot(F::WeaponSelectPress, Hand::Left),
+        Some("input/trackpad/force")
+    );
+    assert_eq!(
+        on_foot(F::WeaponSelectPad, Hand::Left),
+        Some("input/trackpad")
+    );
+    assert_eq!(
+        default_path(
+            SemanticSet::OnFoot,
+            F::WeaponSelectPress as usize,
+            Profile::OculusTouch,
+            Hand::Left,
+            Hand::Right
+        ),
+        None
+    );
     assert_eq!(
         on_foot(F::ReleaseTethers, Hand::Left),
         Some("input/b/click")
@@ -500,9 +533,10 @@ fn the_defaults_encode_todays_layout() {
         ),
         Some("input/squeeze/value")
     );
-    for unbound in [F::ThrowGrenade, F::WeaponSelectPad, F::WeaponSelectPress] {
-        assert_eq!(default_binding(SemanticSet::OnFoot, unbound as usize), None);
-    }
+    assert_eq!(
+        default_binding(SemanticSet::OnFoot, F::ThrowGrenade as usize),
+        None
+    );
     for unbound in [G::OpenCommlink, G::RecenterView, G::ToggleDebugPanel] {
         assert_eq!(default_binding(SemanticSet::Global, unbound as usize), None);
     }

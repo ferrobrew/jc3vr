@@ -151,7 +151,7 @@ OpenXR has no signal for whether the user is seated, and SteamVR's OpenXR runtim
 
 ### Action sets
 
-The OpenXR actions come in two layers. The always-active `hands` set holds the grip and aim poses, the haptic output, and the raw inputs, named for the physical inputs of the Valve Index controller; the bindings map the raw inputs to game actions per mode. The semantic sets hold actions named for their game meaning: `global` is always active, and one mode set (`on_foot`, `wingsuit`, `land_vehicle`, `helicopter`, `plane`, or `menu`) is selected by the per-tick mode detector (see "Mode detection"). All sets have the same priority, so an input can drive a raw and a semantic action at once. Per-user remapping is the runtime's own binding interface (SteamVR or xrizer), not a mod UI, and that interface remaps per set and shows the semantic actions by their game meaning. The mod ships suggested bindings for the Index interaction profile and the Touch interaction profile. The layer as built, and the binding tables' move onto the semantic actions that is still to come, are in [controllers.md, "Input foundation"](controllers.md#input-foundation).
+The OpenXR actions come in two layers. The always-active `hands` set holds the grip and aim poses, the haptic output, and the raw inputs, named for the physical inputs of the Valve Index controller; the gestures, grabs, chords, and pointers read them. The semantic sets hold actions named for their game meaning, and the binding tables read those: `global` is always active, and one mode set (`on_foot`, `wingsuit`, `land_vehicle`, `helicopter`, `plane`, or `menu`) is selected by the per-tick mode detector (see "Mode detection"). All sets have the same priority, so an input can drive a raw and a semantic action at once. Per-user remapping is the runtime's own binding interface (SteamVR or xrizer), not a mod UI, and that interface remaps per set and shows the semantic actions by their game meaning. The mod ships suggested bindings for the Index interaction profile and the Touch interaction profile. The layer as built is in [controllers.md, "Input foundation"](controllers.md#input-foundation).
 
 Output is written after `InputDeviceManager::Update`, following the timing rules in [input.md](../../engine/gameplay/input.md). Held inputs are written to the effectors directly rather than through `ForceSetPressed`, because `ForceSetPressed` resets the effector's hold time on every call, so a held input would never register as a hold ([input.md, "The write API"](../../engine/gameplay/input.md#the-write-api)). The mod keeps each held action's hold time itself and writes the effector's value, state, and state time. Menu actions go to the UI action map, which the game's menus read instead of the player's map.
 
@@ -185,7 +185,7 @@ Holding a grenade is the exception to sticky grips: the grenade is held while th
 
 ### Per-mode bindings
 
-The tables are laid out for the Valve Index controller, which has A and B on both hands. In the tables, R and L are the dominant hand and the off-hand, A and B are the dominant hand's face buttons, and X and Y are the off-hand's A and B. A left-handed layout mirrors every gameplay binding; the menu bindings stay on the physical hands, so that the previous and next tabs and pages keep their sides. The system button of either hand is free on the Index controller and carries pause and the commlink. The Touch profile shares the topology through its own suggested bindings, with its left menu button as the system button. The Index trackpads and finger curl stay unbound until the gesture work. The tables follow the game's own mode partition and stay congruent with [the default gamepad keymap](../../engine/gameplay/input.md#the-default-gamepad-keymap) where the VR model allows, so that a player's gamepad habits carry over; the action IDs each mapping drives are in [the mapping to action table](../../engine/gameplay/input.md#the-mapping--action-table). Where a controller input stands for a gamepad button, the injection holds every gameplay action that the default gamepad keymap puts on that button, and the game's own context selects the one that applies. The action IDs that serve several mappings (holster as a short hold of `RELOAD`, nitrous and turbo jump as a hold and a tap of `USE_VEHICLE_MOD`, the gunner seat as a held `ENTER_VEHICLE`, and the tether as a held `FIRE_GRAPPLE`) are separated by the game through tap versus hold and through the mode context, so the injection reproduces the hold time of the button it stands for. The system button is the one overload the mod resolves itself. Melee (`PUSH_GRAPPLE` under the hammer ability) is left off the virtual B button, because there it would melee on every tether release. Wherever a mapping is marked as a gesture, the button remains as the fallback.
+The tables are the default bindings of the semantic actions, laid out for the Valve Index controller, which has A and B on both hands; the player can rebind each action in the runtime's binding interface. In the tables, R and L are the dominant hand and the off-hand, A and B are the dominant hand's face buttons, and X and Y are the off-hand's A and B. The face buttons mirror the gamepad's by side: the gamepad's A and Y (jump, and use or enter) are on the dominant hand, and its X and B (reload, and release tethers) on the off-hand, so a vehicle is exited with the button that entered it. A left-handed layout mirrors every gameplay binding; the menu bindings stay on the physical hands, so that the previous and next tabs and pages keep their sides. The system button of either hand is free on the Index controller and carries pause and the commlink. The Touch profile shares the topology through its own suggested bindings, with its left menu button as the system button, and has no trackpad. The off-hand Index trackpad selects weapon slots, as the gamepad's d-pad does. The tables follow the game's own mode partition and stay congruent with [the default gamepad keymap](../../engine/gameplay/input.md#the-default-gamepad-keymap) where the VR model allows, so that a player's gamepad habits carry over; the action IDs each mapping drives are in [the mapping to action table](../../engine/gameplay/input.md#the-mapping--action-table). Where a controller input stands for a gamepad button, the injection holds every gameplay action that the default gamepad keymap puts on that button, and the game's own context selects the one that applies. The action IDs that serve several mappings (holster as a short hold of `RELOAD`, nitrous and turbo jump as a hold and a tap of `USE_VEHICLE_MOD`, the gunner seat as a held `ENTER_VEHICLE`, and the tether as a held `FIRE_GRAPPLE`) are separated by the game through tap versus hold and through the mode context, so the injection reproduces the hold time of the button it stands for. The system button is the one overload the mod resolves itself. Melee (`PUSH_GRAPPLE` under the hammer ability) is left off the virtual B button, because there it would melee on every tether release. Wherever a mapping is marked as a gesture, the button remains as the fallback.
 
 #### On foot
 
@@ -199,11 +199,11 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol |
 | Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | Y |
 | Jump, stunt, open parachute | A |
-| Use item, enter vehicle, open wingsuit | X |
-| Reload | B; the opt-in magazine gesture also reloads |
-| Holster | grip press with the weapon hand at the held weapon's holster; a short hold of B also holsters, as on the gamepad |
-| Weapon slot select | draw from a holster; the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
-| Throw grenade | grab from the grenade pouch and throw; no button |
+| Use item, enter vehicle (hold: gunner seat), open wingsuit | B |
+| Reload | X; the opt-in magazine gesture also reloads |
+| Holster | grip press with the weapon hand at the held weapon's holster; a short hold of X also holsters, as on the gamepad |
+| Weapon slot select | draw from a holster; press the L trackpad up, right, left, or down for the pistols, the two-handed, the special, or the explosives slot (Index); the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
+| Throw grenade | grab from the grenade pouch and throw; `throw_grenade` is an action with no default binding |
 | Throw C4 | grab from the C4 pouch on the chest and throw; it sticks where it lands; no button |
 | Detonate C4 | push the right index fingertip into the button on the inside of the left wrist; or hold the R stick click (`DETONATE_EXPLOSIVE` alone) |
 | Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand; no button |
@@ -218,11 +218,11 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 |---|---|
 | Steer | L stick; opt-in wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
-| Handbrake | Y |
-| Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold B and tap B |
+| Handbrake | X |
+| Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold Y and tap Y |
 | Fire vehicle weapons, primary and secondary | R grip and L grip |
-| Enter gunner seat, roof stunt | hold X, A |
-| Exit vehicle | X |
+| Enter gunner seat, roof stunt | hold B, A |
+| Exit vehicle | B |
 | Horn | L stick click |
 | Look back, vehicle camera, recenter camera | removed; the neck replaces them, and F7 recenters |
 | Motorcycle personal weapon (`MC_FIRE`) | R grip, aimed by the right hand |
@@ -236,7 +236,7 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Cyclic (forward, back, and roll) | L stick; opt-in cyclic stick |
 | Yaw | R stick X |
 | Fire primary and secondary | R grip and L grip, aimed by the gaze |
-| Exit, stunt, nitrous | X, A, hold B |
+| Exit, stunt, nitrous | B, A, hold Y |
 
 #### Plane
 
@@ -246,7 +246,7 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Rudder | R stick X |
 | Thrust up and down | R trigger and L trigger; opt-in throttle |
 | Fire primary and secondary | R grip and L grip, aimed by the gaze |
-| Exit, stunt | X, A |
+| Exit, stunt | B, A |
 
 #### Boats and jetskis
 
@@ -255,8 +255,8 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Steer | L stick; opt-in wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
 | Fire, and the jetski personal weapon | R grip, aimed by the gaze (boat) or the right hand (jetski) |
-| Nitrous and turbo jump | hold B and tap B |
-| Exit | X |
+| Nitrous and turbo jump | hold Y and tap Y |
+| Exit | B |
 
 #### Wingsuit and parachute
 
@@ -266,7 +266,9 @@ The tables are laid out for the Valve Index controller, which has A and B on bot
 | Air brake (`CANCEL` hold, upgrade-gated; `WINGSUIT_AIRBRAKE` when weaponized) | L trigger |
 | Boost and evade (weaponized) | B; A with a stick flick |
 | Fire weapons (weaponized wingsuit or parachute) | R trigger and R grip, aimed by the right hand |
-| Open or close the parachute | A |
+| Open the parachute | A |
+| Close the wingsuit | X |
+| Release tethers | Y |
 | Grapple (slingshot boost) | L grip |
 
 #### UI

@@ -40,7 +40,7 @@ use crate::controllers::{
         controls::Controls,
         tables::{
             declare::TableCtx,
-            describe::{DescribeCtx, Features, describe},
+            describe::{DescribeCtx, Features, PhysicalFeatures, describe},
         },
     },
     config::ControllersConfig,
@@ -103,6 +103,7 @@ pub(crate) fn refresh(
     }
     let off = controls.dominant.other();
     let weapons = &config.weapons;
+    let physical = &config.vehicles.physical;
     let ctx = DescribeCtx {
         mode,
         dominant: controls.dominant,
@@ -120,6 +121,13 @@ pub(crate) fn refresh(
             trackpad_shows_summary: config.summary.show_on_trackpad_touch
                 && frame.hand(off).profile == InteractionProfile::ValveIndex,
             parachute_handles: config.vehicles.parachute_handles.enabled,
+            arm_steering: config.vehicles.arm_steering.wingsuit,
+            physical: PhysicalFeatures {
+                wheel: physical.wheel.enabled,
+                handlebars: physical.handlebars.enabled,
+                helicopter: physical.cyclic.enabled || physical.collective.enabled,
+                plane: physical.flight_stick.enabled || physical.throttle.enabled,
+            },
         },
     };
     // SAFETY: the input tick runs on the main thread past startup.

@@ -6,14 +6,29 @@
 //! localized names are English sentence case and mention the overloads the game or the mod resolves
 //! within the one action, such as a tap and a hold.
 
-use crate::vr::input::semantic::{ActionDef, ActionKind};
+use crate::vr::input::semantic::{ActionDef, ActionKind, SemanticSet};
+
+/// One semantic action of any set: the set, and the action's index in the set's `ALL` table. The
+/// binding tables name actions through their set's enum and convert them to this.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ActionId {
+    pub(crate) set: SemanticSet,
+    pub(crate) index: u8,
+}
+
+impl ActionId {
+    /// The action's index, for the per-action tables.
+    pub(crate) const fn index(self) -> usize {
+        self.index as usize
+    }
+}
 
 /// Declare one set's action enum, its `ALL` table, and its `DEFS` table, from one list so that the
 /// two tables cannot disagree. A variant's discriminant is its index in both.
 macro_rules! semantic_actions {
     (
         $(#[$meta:meta])*
-        $name:ident {
+        $name:ident in $set:ident {
             $(
                 $(#[$vmeta:meta])*
                 $variant:ident => ($action:literal, $kind:ident, $localized:literal),
@@ -39,13 +54,27 @@ macro_rules! semantic_actions {
                     localized_name: $localized,
                 },
             )+];
+
+            /// The action as an [`ActionId`].
+            pub(crate) const fn id(self) -> ActionId {
+                ActionId {
+                    set: SemanticSet::$set,
+                    index: self as u8,
+                }
+            }
+        }
+
+        impl From<$name> for ActionId {
+            fn from(action: $name) -> ActionId {
+                action.id()
+            }
         }
     };
 }
 
 semantic_actions! {
     /// The `global` set, active in every mode.
-    GlobalAction {
+    GlobalAction in Global {
         /// A tap pauses, a hold opens the commlink; the mod tells the two apart.
         Pause => ("pause", Bool, "Pause (hold: commlink)"),
         OpenCommlink => ("open_commlink", Bool, "Open the commlink"),
@@ -60,7 +89,7 @@ semantic_actions! {
 
 semantic_actions! {
     /// The `on_foot` set: on foot, swimming, falling, and under the parachute.
-    OnFootAction {
+    OnFootAction in OnFoot {
         /// Camera-relative on foot, in the stick's own frame while airborne.
         Move => ("move", Vec2, "Move"),
         Turn => ("turn", Float, "Turn"),
@@ -91,7 +120,7 @@ semantic_actions! {
 
 semantic_actions! {
     /// The `wingsuit` set.
-    WingsuitAction {
+    WingsuitAction in Wingsuit {
         Steer => ("steer", Vec2, "Steer"),
         Turn => ("turn", Float, "Turn"),
         AirBrake => ("air_brake", Float, "Air brake"),
@@ -108,7 +137,7 @@ semantic_actions! {
 
 semantic_actions! {
     /// The `land_vehicle` set: cars, motorcycles, boats, and unresolved vehicles.
-    LandVehicleAction {
+    LandVehicleAction in LandVehicle {
         Steer => ("steer", Vec2, "Steer, lean, and tilt"),
         Turn => ("turn", Float, "Turn"),
         /// Read in the driver's seat.
@@ -131,7 +160,7 @@ semantic_actions! {
 
 semantic_actions! {
     /// The `helicopter` set.
-    HelicopterAction {
+    HelicopterAction in Helicopter {
         Cyclic => ("cyclic", Vec2, "Pitch and roll"),
         Yaw => ("yaw", Float, "Yaw"),
         /// Read in the driver's seat.
@@ -153,7 +182,7 @@ semantic_actions! {
 
 semantic_actions! {
     /// The `plane` set.
-    PlaneAction {
+    PlaneAction in Plane {
         /// Forward pitches the nose down, as on the gamepad.
         PitchRoll => ("pitch_roll", Vec2, "Pitch and roll"),
         Rudder => ("rudder", Float, "Rudder"),
@@ -175,7 +204,7 @@ semantic_actions! {
 
 semantic_actions! {
     /// The `menu` set: the game's menus and the native map.
-    MenuAction {
+    MenuAction in Menu {
         MenuConfirm => ("menu_confirm", Bool, "Confirm (with the grip: special or filter)"),
         MenuBack => ("menu_back", Bool, "Back (with the grip: reset to default)"),
         /// Each hand's modifier for its own presses, latched at each press.

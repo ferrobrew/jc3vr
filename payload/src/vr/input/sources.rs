@@ -1,5 +1,7 @@
 //! Bound sources: the physical inputs the runtime bound each action to, with the runtime's
-//! localized names for them, cached for the debug UI.
+//! localized names for them, cached for the debug UI, and reduced for each semantic action to the
+//! physical inputs it reads on each hand ([`enumerated`]), which the binding tables' masks act on
+//! ([`crate::vr::input::semantic::bound`]).
 //!
 //! The queries need the session, so they run on the VR thread inside the frame's input update,
 //! which publishes the cache; the UI only reads it. The source paths are opaque to OpenXR and are
@@ -27,6 +29,10 @@ use crate::{
     vr::input::{
         actions::{Actions, SetId},
         layout::hand_path,
+        semantic::{
+            SemanticSet,
+            bound::{self, PhysicalSet},
+        },
     },
 };
 
@@ -64,7 +70,14 @@ pub(crate) fn cached() -> Vec<SetSources> {
     CACHE.lock().clone()
 }
 
-/// Note that the debug UI is showing the sources, so the VR thread keeps them fresh.
+/// The physical inputs each action of the semantic `set` was last enumerated as reading, by action
+/// index (`None` where its enumeration failed), or `None` before the set has been enumerated.
+pub(crate) fn enumerated(set: SemanticSet) -> Option<Enumerated> {
+    ENUMERATED.lock()[set.index()].clone()
+}
+
+/// Note that the debug UI or the controls summary is showing the sources, so the VR thread keeps
+/// them fresh.
 pub(crate) fn note_viewed() {
     *VIEWED_AT.lock() = Some(Instant::now());
 }
@@ -72,6 +85,7 @@ pub(crate) fn note_viewed() {
 /// Drop the cache: the session's actions are gone.
 pub(crate) fn clear() {
     CACHE.lock().clear();
+    *ENUMERATED.lock() = [const { None }; SemanticSet::ALL.len()];
 }
 
 /// The sources `action` is bound to, enumerated and named by the runtime.
@@ -173,6 +187,14 @@ impl SourcesRefresh {
         if fresh.is_empty() {
             return;
         }
+        {
+            let mut enumerated = ENUMERATED.lock();
+            for entry in &fresh {
+                if let SetId::Semantic(set) = entry.set {
+                    enumerated[set.index()] = Some(physical_inputs(entry));
+                }
+            }
+        }
         let mut cache = CACHE.lock();
         for entry in fresh {
             match cache.iter_mut().find(|c| c.set == entry.set) {
@@ -191,6 +213,28 @@ const VIEW_LINGER: Duration = Duration::from_secs(2);
 const VIEWED_INTERVAL: Duration = Duration::from_secs(1);
 
 static CACHE: Mutex<Vec<SetSources>> = Mutex::new(Vec::new());
+
+/// Each action of one set's physical inputs per hand, by action index, `None` where its
+/// enumeration failed.
+type Enumerated = Vec<Option<[PhysicalSet; 2]>>;
+
+static ENUMERATED: Mutex<[Option<Enumerated>; SemanticSet::ALL.len()]> =
+    Mutex::new([const { None }; SemanticSet::ALL.len()]);
+
+/// Each action's physical inputs per hand, from its enumerated sources.
+fn physical_inputs(entry: &SetSources) -> Enumerated {
+    entry
+        .actions
+        .iter()
+        .map(|action| {
+            action
+                .sources
+                .as_ref()
+                .ok()
+                .map(|sources| bound::of_sources(sources.iter().map(|s| s.path.as_str())))
+        })
+        .collect()
+}
 
 static VIEWED_AT: Mutex<Option<Instant>> = Mutex::new(None);
 

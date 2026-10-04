@@ -25,11 +25,10 @@ pub enum Text {
 /// How an action is labelled in a mode.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ActionLabel {
-    /// Shown, with the key of what a press does and the key of what a hold does, either of which
-    /// may be absent.
+    /// Shown, with what a press does and what a hold does, either of which may be absent.
     Shown {
-        tap: Option<&'static str>,
-        hold: Option<&'static str>,
+        tap: Option<Text>,
+        hold: Option<Text>,
     },
     /// Deliberately left out in this mode: the gamepad-button mirrors, which only feed the game's
     /// raw button reads, and the actions another label on the same input already covers or that do
@@ -54,7 +53,11 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
     let wingsuit = airborne == Some(AirborneVariant::Wingsuit);
     let personal_weapon = matches!(class, Some(VehicleClass::Motorcycle | VehicleClass::Sea));
     let tap = |key| ActionLabel::Shown {
-        tap: Some(key),
+        tap: Some(Text::Game(key)),
+        hold: None,
+    };
+    let mod_tap = |text| ActionLabel::Shown {
+        tap: Some(Text::Mod(text)),
         hold: None,
     };
     let shown_if = |shown: bool, key| if shown { tap(key) } else { ActionLabel::Hidden };
@@ -94,19 +97,19 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
             None => ActionLabel::Hidden,
         },
         RELOAD => ActionLabel::Shown {
-            tap: Some("buttonhint_reload"),
-            hold: Some("buttonhint_holster_weapon"),
+            tap: Some(Text::Game("buttonhint_reload")),
+            hold: Some(Text::Game("buttonhint_holster_weapon")),
         },
         MC_RELOAD if personal_weapon => ActionLabel::Shown {
-            tap: Some("buttonhint_reload"),
-            hold: Some("buttonhint_holster_weapon"),
+            tap: Some(Text::Game("buttonhint_reload")),
+            hold: Some(Text::Game("buttonhint_holster_weapon")),
         },
         MC_RELOAD => ActionLabel::Hidden,
         USE_ITEM => tap("buttonhint_use_item"),
         // On foot the vehicle is entered by the same press that interacts.
         ENTER_VEHICLE if class.is_some() => ActionLabel::Shown {
             tap: None,
-            hold: Some("buttonhint_enter_gunner_seat"),
+            hold: Some(Text::Game("buttonhint_enter_gunner_seat")),
         },
         ENTER_VEHICLE => ActionLabel::Hidden,
         CANCEL if wingsuit => tap("buttonhint_air_brake"),
@@ -117,9 +120,14 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         // The gamepad rules detonate once the action has been held past the hold time.
         DETONATE_EXPLOSIVE => ActionLabel::Shown {
             tap: None,
-            hold: Some("buttonhint_detonate_explosive"),
+            hold: Some(Text::Game("buttonhint_detonate_explosive")),
         },
         NEXT_WEAPON => tap("buttonhint_next_weapon"),
+        // The game names the slots only by their icons on the selection cross.
+        SELECT_DUEL_WIELD => mod_tap(ModText::SelectDualWield),
+        SELECT_TWO_HANDED => mod_tap(ModText::SelectTwoHanded),
+        SELECT_TWO_HANDED_SPECIAL => mod_tap(ModText::SelectSpecial),
+        SELECT_EXPLOSIVES => mod_tap(ModText::SelectExplosives),
         WINGSUIT_BOOST => tap("buttonhint_wingsuit_nitrous"),
         WINGSUIT_EVADE => tap("buttonhint_wingsuit_evade"),
         FIRE_WINGSUIT_WEAPON_MAIN => tap("buttonhint_wingsuit_weapon_primary"),
@@ -140,8 +148,8 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         TOGGLE_MAGNET_1 => tap("buttonhint_toggle_magnet"),
         USE_VEHICLE_MOD if class == Some(VehicleClass::Helicopter) => tap("buttonhint_nitrous"),
         USE_VEHICLE_MOD => ActionLabel::Shown {
-            tap: Some("buttonhint_turbo_jump"),
-            hold: Some("buttonhint_nitrous"),
+            tap: Some(Text::Game("buttonhint_turbo_jump")),
+            hold: Some(Text::Game("buttonhint_nitrous")),
         },
         HANDBRAKE => tap("buttonhint_handbrake"),
         ACCELERATE if class == Some(VehicleClass::Sea) => tap("buttonhint_forward_sea_vehicle"),
@@ -237,6 +245,10 @@ pub fn gesture_prefix(gesture: Gesture) -> Option<Text> {
         Gesture::Touch => Some(Text::Mod(ModText::Touch)),
         Gesture::PressLeftHalf => Some(Text::Mod(ModText::PressLeftHalf)),
         Gesture::PressRightHalf => Some(Text::Mod(ModText::PressRightHalf)),
+        Gesture::PressUp => Some(Text::Mod(ModText::PressUp)),
+        Gesture::PressDown => Some(Text::Mod(ModText::PressDown)),
+        Gesture::PressLeft => Some(Text::Mod(ModText::PressLeft)),
+        Gesture::PressRight => Some(Text::Mod(ModText::PressRight)),
         Gesture::Yank => Some(Text::Mod(ModText::Yank)),
         Gesture::Strike => Some(Text::Mod(ModText::Strike)),
         Gesture::WithBothGrips => Some(Text::Mod(ModText::WithBothGrips)),
@@ -257,6 +269,11 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::C4 => ModText::C4,
         ModAction::WristDetonator => ModText::WristDetonator,
         ModAction::ParachuteHandles => ModText::ParachuteHandles,
+        ModAction::ArmSteering => ModText::ArmSteering,
+        ModAction::Wheel => ModText::Wheel,
+        ModAction::Handlebars => ModText::Handlebars,
+        ModAction::HelicopterControls => ModText::HelicopterControls,
+        ModAction::PlaneControls => ModText::PlaneControls,
         ModAction::ShowSummary => ModText::ShowSummary,
         ModAction::Recenter => ModText::Recenter,
         ModAction::DebugPanel => ModText::DebugPanel,
@@ -288,6 +305,19 @@ pub enum ModText {
     C4,
     WristDetonator,
     ParachuteHandles,
+    ArmSteering,
+    Wheel,
+    Handlebars,
+    HelicopterControls,
+    PlaneControls,
+    SelectDualWield,
+    SelectTwoHanded,
+    SelectSpecial,
+    SelectExplosives,
+    PressUp,
+    PressDown,
+    PressLeft,
+    PressRight,
     ShowSummary,
     Recenter,
     DebugPanel,
@@ -317,6 +347,19 @@ impl ModText {
             ModText::C4 => "At the Chest Pouch: Grab C4, Let Go to Throw",
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
+            ModText::ArmSteering => "Spread Arms: Lower One to Bank, Both to Dive, Raise to Climb",
+            ModText::Wheel => "Hold at the Wheel: Steer",
+            ModText::Handlebars => "Hold at the Handlebars: Steer",
+            ModText::HelicopterControls => "Hold at the Cyclic or Collective: Fly",
+            ModText::PlaneControls => "Hold at the Stick or Throttle: Fly",
+            ModText::SelectDualWield => "Select Pistols",
+            ModText::SelectTwoHanded => "Select Two-Handed Weapon",
+            ModText::SelectSpecial => "Select Special Weapon",
+            ModText::SelectExplosives => "Select Explosives",
+            ModText::PressUp => "PRESS UP",
+            ModText::PressDown => "PRESS DOWN",
+            ModText::PressLeft => "PRESS LEFT",
+            ModText::PressRight => "PRESS RIGHT",
             ModText::ShowSummary => "Show Controls",
             ModText::Recenter => "Recenter View",
             ModText::DebugPanel => "Mod Debug Panel",
@@ -329,7 +372,7 @@ mod tests {
     use super::*;
     use crate::controllers::bindings::tables::{
         coverage::{all_contexts, all_modes, injected},
-        describe::{DescribeCtx, Effect, Features, describe},
+        describe::{DescribeCtx, Effect, Features, PhysicalFeatures, describe},
     };
 
     #[test]
@@ -360,6 +403,13 @@ mod tests {
             sight_chord: true,
             trackpad_shows_summary: true,
             parachute_handles: true,
+            arm_steering: true,
+            physical: PhysicalFeatures {
+                wheel: true,
+                handlebars: true,
+                helicopter: true,
+                plane: true,
+            },
         };
         for mode in all_modes() {
             for (dominant, table) in all_contexts() {
@@ -387,8 +437,8 @@ mod tests {
         assert_eq!(
             action_label(RELOAD, on_foot),
             Some(ActionLabel::Shown {
-                tap: Some("buttonhint_reload"),
-                hold: Some("buttonhint_holster_weapon"),
+                tap: Some(Text::Game("buttonhint_reload")),
+                hold: Some(Text::Game("buttonhint_holster_weapon")),
             })
         );
     }
@@ -399,7 +449,7 @@ mod tests {
         assert_eq!(
             action_label(CANCEL, wingsuit),
             Some(ActionLabel::Shown {
-                tap: Some("buttonhint_air_brake"),
+                tap: Some(Text::Game("buttonhint_air_brake")),
                 hold: None
             })
         );

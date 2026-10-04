@@ -241,11 +241,13 @@ fn on_foot(action: OnFootAction) -> Option<DefaultBinding> {
         RetractTethersAlt | NextWeapon => on(Off, ThumbstickClick),
         FireGrapple => on(Off, GripPress),
         Jump => on(Dom, LowerFace),
-        Use => on(Off, LowerFace),
-        Reload => on(Dom, UpperFace),
+        Use => on(Dom, UpperFace),
+        Reload => on(Off, LowerFace),
         ReleaseTethers => on(Off, UpperFace),
         Detonate => on(Dom, ThumbstickClick),
-        ThrowGrenade | WeaponSelectPad | WeaponSelectPress => None,
+        ThrowGrenade => None,
+        WeaponSelectPad => on(Off, Trackpad),
+        WeaponSelectPress => on(Off, TrackpadForce),
     }
 }
 
@@ -279,9 +281,9 @@ fn land_vehicle(action: LandVehicleAction) -> Option<DefaultBinding> {
         FirePrimary => on(Dom, GripPress),
         FireSecondary => on(Off, GripPress),
         Stunt => on(Dom, LowerFace),
-        ExitVehicle => on(Off, LowerFace),
-        VehicleMod => on(Dom, UpperFace),
-        Handbrake => on(Off, UpperFace),
+        ExitVehicle => on(Dom, UpperFace),
+        VehicleMod => on(Off, UpperFace),
+        Handbrake => on(Off, LowerFace),
         Horn => on(Off, ThumbstickClick),
     }
 }
@@ -298,8 +300,8 @@ fn helicopter(action: HelicopterAction) -> Option<DefaultBinding> {
         FirePrimary => on(Dom, GripPress),
         FireSecondary => on(Off, GripPress),
         Stunt => on(Dom, LowerFace),
-        ExitVehicle => on(Off, LowerFace),
-        VehicleMod => on(Dom, UpperFace),
+        ExitVehicle => on(Dom, UpperFace),
+        VehicleMod => on(Off, UpperFace),
         Horn => on(Off, ThumbstickClick),
     }
 }
@@ -316,7 +318,7 @@ fn plane(action: PlaneAction) -> Option<DefaultBinding> {
         FirePrimary => on(Dom, GripPress),
         FireSecondary => on(Off, GripPress),
         Stunt => on(Dom, LowerFace),
-        ExitVehicle => on(Off, LowerFace),
+        ExitVehicle => on(Dom, UpperFace),
         Horn => on(Off, ThumbstickClick),
     }
 }

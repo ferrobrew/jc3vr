@@ -19,9 +19,13 @@
 //!   right-handed one.
 //! - [`frame`] publishes each frame's per-hand state of the active set's and `global`'s actions.
 //!
-//! The default bindings encode the layout the binding tables use today; the tables still read the
-//! raw inputs, and nothing reads the semantic state but the debug UI yet.
+//! The binding tables read the semantic state ([`crate::controllers::bindings::intents`]); the
+//! gestures, grabs, chords, and pointers read the raw inputs of the `hands` set.
+//!
+//! - [`bound`] reduces the runtime's bound sources to the physical inputs each action reads on
+//!   each hand, which the bindings' masks act on.
 
+pub(crate) mod bound;
 pub(crate) mod defaults;
 pub(crate) mod frame;
 pub(crate) mod vocabulary;

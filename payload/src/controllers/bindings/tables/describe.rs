@@ -1,20 +1,34 @@
 //! The describing reader: what each controller input does in a mode, read from the same table
 //! declarations the injection evaluates ([`crate::controllers::bindings::tables::declare`]), plus
-//! the inputs the mod handles outside the tables (the system button, the body turn, the crouch
+//! the inputs the mod handles outside the tables (the pause button, the body turn, the crouch
 //! flick, the sight chord, the recenter and debug panel chords, the weapon gestures, and the
 //! parachute handles). Pure; the controls summary ([`crate::controllers::summary`]) labels and draws
 //! the rows.
+//!
+//! The tables name semantic actions; each is described on the physical inputs its default binding
+//! ([`crate::vr::input::semantic::defaults`]) puts it on, less the inputs the table context masks
+//! ([`crate::controllers::bindings::tables::context_masks`]).
 
 use jc3gi::input::input_action_map::Action;
 
-use crate::controllers::{
-    bindings::tables::{
-        body_turn_bound,
-        declare::{TableCtx, declare},
-        sink::{Axis, Direction, Gate, Input, Press, Role, Sink},
+use crate::{
+    controllers::{
+        bindings::{
+            intents::{Mask, YANK_ACTIONS},
+            tables::{
+                body_turn_action, context_masks,
+                declare::{TableCtx, declare},
+                sink::{Axis, Direction, Gate, Input, PadLayout, PadZone, Press, Sink, pad_of},
+            },
+        },
+        frame::Hand,
+        mode::{AirborneVariant, Mode, VehicleClass},
     },
-    frame::Hand,
-    mode::{AirborneVariant, Mode},
+    vr::input::semantic::{
+        bound::{Layout, PhysicalSet},
+        defaults::{Component, default_binding},
+        vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
+    },
 };
 
 /// Which way a stick is pushed for a row.
@@ -124,6 +138,14 @@ pub enum Gesture {
     PressLeftHalf,
     /// Pressed on the right half.
     PressRightHalf,
+    /// Pressed on the top quadrant.
+    PressUp,
+    /// Pressed on the bottom quadrant.
+    PressDown,
+    /// Pressed on the left quadrant.
+    PressLeft,
+    /// Pressed on the right quadrant.
+    PressRight,
     /// A sharp pull of the hand back toward the body.
     Yank,
     /// A fast strike of the hand.
@@ -157,6 +179,16 @@ pub enum ModAction {
     WristDetonator,
     /// Take a parachute handle, and pull it down to steer, or both to brake.
     ParachuteHandles,
+    /// Spread the arms in the wingsuit and lower or raise them to bank, dive, and climb.
+    ArmSteering,
+    /// Hold the car's or the boat's wheel to steer.
+    Wheel,
+    /// Hold the handlebars to steer.
+    Handlebars,
+    /// Hold the helicopter's cyclic and collective to fly.
+    HelicopterControls,
+    /// Hold the plane's flight stick and throttle to fly.
+    PlaneControls,
     /// Show the controls summary.
     ShowSummary,
     /// Recenter the VR view.
@@ -205,6 +237,21 @@ pub struct Features {
     pub trackpad_shows_summary: bool,
     /// The parachute's handles.
     pub parachute_handles: bool,
+    /// The wingsuit's arm steering.
+    pub arm_steering: bool,
+    /// The physical vehicle controls offered to a driver, by kind.
+    pub physical: PhysicalFeatures,
+}
+
+/// The physical vehicle controls that are on, by kind.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+pub struct PhysicalFeatures {
+    pub wheel: bool,
+    pub handlebars: bool,
+    /// The helicopter's cyclic or collective.
+    pub helicopter: bool,
+    /// The plane's flight stick or throttle.
+    pub plane: bool,
 }
 
 /// What a description is for.
@@ -220,46 +267,49 @@ pub struct DescribeCtx {
 /// merged, in declaration order, and a face button, stick, or trackpad row that both hands share
 /// folded into one.
 pub fn describe(ctx: &DescribeCtx) -> Vec<Row> {
+    describe_with(ctx, default_binding)
+}
+
+/// [`describe`], with the actions on the inputs `layout` binds them to.
+pub(crate) fn describe_with(ctx: &DescribeCtx, layout: Layout) -> Vec<Row> {
     let mut sink = DescribeSink {
         dominant: ctx.dominant,
         yank: ctx.features.yank,
+        layout,
+        masks: context_masks(ctx.mode, &ctx.table, ctx.dominant),
         rows: Vec::new(),
     };
     declare(&mut sink, ctx.mode, &ctx.table);
     let mut rows = sink.rows;
-    rows.extend(outside_rows(ctx));
+    rows.extend(outside_rows(ctx, layout));
     fold_hands(merge(rows))
 }
 
 /// The describing [`Sink`]: records a row per input instead of resolving it.
 pub struct DescribeSink {
     dominant: Hand,
-    /// Whether the yank gesture is on; off, its presses are left out.
+    /// Whether the yank gesture is on; off, its rows are left out.
     yank: bool,
+    layout: Layout,
+    masks: Vec<Mask>,
     pub rows: Vec<Row>,
 }
 
 impl DescribeSink {
-    fn press_row(&self, press: Press, actions: &[Action]) -> Option<Row> {
-        let hand = press.role.hand(self.dominant);
-        let (control, gesture) = match press.input {
-            Input::Trigger => (Control::Trigger(hand), Gesture::Press),
-            Input::GripDefault => (Control::Grip(hand), Gesture::Press),
-            Input::A => (Control::A(hand), Gesture::Press),
-            Input::B => (Control::B(hand), Gesture::Press),
-            Input::StickClick => (Control::StickClick(hand), Gesture::Press),
-            Input::TrackpadLeft => (Control::Trackpad(hand), Gesture::PressLeftHalf),
-            Input::TrackpadRight => (Control::Trackpad(hand), Gesture::PressRightHalf),
-            Input::Yank if self.yank => (Control::Motion(hand), Gesture::Yank),
-            Input::Yank => return None,
-            Input::Stick(Direction::Up | Direction::Down) => {
-                (Control::Stick(hand, StickDir::Vertical), Gesture::Press)
-            }
-            Input::Stick(Direction::Left | Direction::Right) => {
-                (Control::Stick(hand, StickDir::Horizontal), Gesture::Press)
-            }
-        };
-        let gesture = match press.gate {
+    /// The hands and components `action` is bound to, in [`Hand::BOTH`] order, less the masked.
+    fn bound(&self, action: ActionId) -> Vec<(Hand, Component)> {
+        bound_inputs(self.layout, action, self.dominant)
+            .into_iter()
+            .filter(|&(hand, component)| {
+                !self.masks.iter().any(|m| {
+                    m.hand == hand && m.covers(action, PhysicalSet::of(component.physical()))
+                })
+            })
+            .collect()
+    }
+
+    fn press_rows(&self, press: Press, actions: &[Action]) -> Vec<Row> {
+        let gate = |gesture| match press.gate {
             Gate::EvadeFlick => Gesture::AfterFlick,
             Gate::Gripped => Gesture::WithGrip,
             Gate::Always
@@ -268,25 +318,58 @@ impl DescribeSink {
             | Gate::NoEvadeFlick
             | Gate::Ungripped => gesture,
         };
-        Some(Row {
+        let row = |control, gesture| Row {
             control,
-            gesture,
+            gesture: gate(gesture),
             effect: Effect::Actions(actions.to_vec()),
-        })
+        };
+        let mut rows = Vec::new();
+        match press.input {
+            Input::Action(action) => {
+                for (hand, component) in self.bound(action) {
+                    rows.push(row(
+                        press_control(component, hand),
+                        press_gesture(component),
+                    ));
+                }
+                if self.yank && YANK_ACTIONS.contains(&action) {
+                    rows.push(row(Control::Motion(self.dominant.other()), Gesture::Yank));
+                }
+            }
+            Input::Zone(action, zone) => {
+                let layout = pad_of(action).map_or(PadLayout::Halves, |(_, layout)| layout);
+                for (hand, _) in self.bound(action) {
+                    rows.push(row(Control::Trackpad(hand), zone_gesture(layout, zone)));
+                }
+            }
+            Input::MenuStick(direction) => {
+                let dir = match direction {
+                    Direction::Up | Direction::Down => StickDir::Vertical,
+                    Direction::Left | Direction::Right => StickDir::Horizontal,
+                };
+                for (hand, _) in self.bound(MenuAction::MenuNavigate.id()) {
+                    rows.push(row(Control::Stick(hand, dir), Gesture::Press));
+                }
+            }
+        }
+        rows
     }
 
-    fn axis_control(&self, axis: Axis) -> Control {
-        let hand = |role: Role| role.hand(self.dominant);
-        let off = self.dominant.other();
-        match axis {
-            Axis::MoveX => Control::Stick(off, StickDir::Horizontal),
-            Axis::MoveY => Control::Stick(off, StickDir::Vertical),
-            Axis::MoveLength => Control::Stick(off, StickDir::Any),
-            Axis::StickX(role) => Control::Stick(hand(role), StickDir::Horizontal),
-            Axis::StickY(role) => Control::Stick(hand(role), StickDir::Vertical),
-            Axis::StickLength(role) => Control::Stick(hand(role), StickDir::Any),
-            Axis::Trigger(role) => Control::Trigger(hand(role)),
-        }
+    fn axis_controls(&self, axis: Axis) -> Vec<Control> {
+        let dir = match axis {
+            Axis::MoveX(_) | Axis::X(_) => StickDir::Horizontal,
+            Axis::MoveY(_) | Axis::Y(_) => StickDir::Vertical,
+            Axis::MoveLength(_) | Axis::Length(_) => StickDir::Any,
+            Axis::Value(_) => StickDir::Any,
+        };
+        self.bound(axis.action())
+            .into_iter()
+            .map(|(hand, component)| match (axis, component) {
+                (Axis::Value(_), component) => press_control(component, hand),
+                (_, Component::Trackpad) => Control::Trackpad(hand),
+                _ => Control::Stick(hand, dir),
+            })
+            .collect()
     }
 
     fn push(&mut self, control: Control, actions: Vec<Action>) {
@@ -301,9 +384,8 @@ impl DescribeSink {
 impl Sink for DescribeSink {
     fn hold(&mut self, presses: &[Press], actions: &[Action]) {
         for &press in presses {
-            if let Some(row) = self.press_row(press, actions) {
-                self.rows.push(row);
-            }
+            let rows = self.press_rows(press, actions);
+            self.rows.extend(rows);
         }
     }
 
@@ -312,21 +394,77 @@ impl Sink for DescribeSink {
     }
 
     fn analog(&mut self, axis: Axis, action: Action) {
-        self.push(self.axis_control(axis), vec![action]);
+        for control in self.axis_controls(axis) {
+            self.push(control, vec![action]);
+        }
     }
 
     fn axis(&mut self, axis: Axis, negative: Action, positive: Action) {
         // Forward before back, and left before right, as a reader expects them.
         let actions = match axis {
-            Axis::MoveY | Axis::StickY(_) => vec![positive, negative],
+            Axis::MoveY(_) | Axis::Y(_) => vec![positive, negative],
             _ => vec![negative, positive],
         };
-        self.push(self.axis_control(axis), actions);
+        for control in self.axis_controls(axis) {
+            self.push(control, actions.clone());
+        }
+    }
+}
+
+/// The hands and components `layout` binds `action` to under `dominant`, in [`Hand::BOTH`] order.
+fn bound_inputs(layout: Layout, action: ActionId, dominant: Hand) -> Vec<(Hand, Component)> {
+    let Some(binding) = layout(action.set, action.index()) else {
+        return Vec::new();
+    };
+    Hand::BOTH
+        .into_iter()
+        .filter(|&hand| binding.side.covers(hand, dominant))
+        .map(|hand| (hand, binding.component))
+        .collect()
+}
+
+/// The control a press of `component` on `hand` is.
+const fn press_control(component: Component, hand: Hand) -> Control {
+    match component {
+        Component::TriggerValue => Control::Trigger(hand),
+        Component::GripPress => Control::Grip(hand),
+        Component::LowerFace => Control::A(hand),
+        Component::UpperFace => Control::B(hand),
+        Component::ThumbstickClick => Control::StickClick(hand),
+        Component::Thumbstick => Control::Stick(hand, StickDir::Any),
+        Component::ThumbstickX => Control::Stick(hand, StickDir::Horizontal),
+        Component::ThumbstickY => Control::Stick(hand, StickDir::Vertical),
+        Component::Trackpad | Component::TrackpadForce | Component::TrackpadTouch => {
+            Control::Trackpad(hand)
+        }
+        Component::System => Control::System,
+    }
+}
+
+/// How a press of `component` is worked.
+const fn press_gesture(component: Component) -> Gesture {
+    match component {
+        Component::TrackpadTouch => Gesture::Touch,
+        _ => Gesture::Press,
+    }
+}
+
+/// The gesture of a pad press latched to `zone`.
+const fn zone_gesture(layout: PadLayout, zone: PadZone) -> Gesture {
+    match (layout, zone) {
+        (PadLayout::Halves, PadZone::Left) => Gesture::PressLeftHalf,
+        (PadLayout::Halves, PadZone::Right) => Gesture::PressRightHalf,
+        (PadLayout::Halves, PadZone::Up) | (PadLayout::Quadrants, PadZone::Up) => Gesture::PressUp,
+        (PadLayout::Halves, PadZone::Down) | (PadLayout::Quadrants, PadZone::Down) => {
+            Gesture::PressDown
+        }
+        (PadLayout::Quadrants, PadZone::Left) => Gesture::PressLeft,
+        (PadLayout::Quadrants, PadZone::Right) => Gesture::PressRight,
     }
 }
 
 /// The inputs the mod handles outside the tables, in `ctx.mode`.
-fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
+fn outside_rows(ctx: &DescribeCtx, layout: Layout) -> Vec<Row> {
     let dom = ctx.dominant;
     let off = dom.other();
     let features = ctx.features;
@@ -340,20 +478,25 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
     };
     let modded = |action| Effect::Mod(action);
 
-    if body_turn_bound(ctx.mode) {
-        add(
-            Control::Stick(dom, StickDir::Horizontal),
-            Gesture::Press,
-            modded(ModAction::Turn),
-        );
+    let bound = |action: ActionId| bound_inputs(layout, action, dom);
+    if let Some(turn) = body_turn_action(ctx.mode) {
+        for (hand, component) in bound(turn) {
+            add(
+                press_control(component, hand),
+                Gesture::Press,
+                modded(ModAction::Turn),
+            );
+        }
     }
     let on_foot = matches!(ctx.mode, Mode::OnFoot(_));
     if on_foot {
-        add(
-            Control::Stick(dom, StickDir::Down),
-            Gesture::Flick,
-            modded(ModAction::SeatedCrouch),
-        );
+        for (hand, component) in bound(OnFootAction::CrouchFlick.id()) {
+            let control = match press_control(component, hand) {
+                Control::Stick(hand, _) => Control::Stick(hand, StickDir::Down),
+                control => control,
+            };
+            add(control, Gesture::Flick, modded(ModAction::SeatedCrouch));
+        }
         if features.sight_chord {
             add(
                 Control::A(dom),
@@ -422,12 +565,36 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
             modded(ModAction::ParachuteHandles),
         );
     }
-    if features.trackpad_shows_summary {
+    if features.arm_steering && ctx.mode == Mode::Airborne(AirborneVariant::Wingsuit) {
         add(
-            Control::Trackpad(off),
-            Gesture::Touch,
-            modded(ModAction::ShowSummary),
+            Control::EitherMotion,
+            Gesture::Press,
+            modded(ModAction::ArmSteering),
         );
+    }
+    if let Mode::Vehicle(seat) = ctx.mode
+        && seat.driver
+    {
+        let physical = features.physical;
+        let held = match seat.class {
+            VehicleClass::Car | VehicleClass::Sea if physical.wheel => Some(ModAction::Wheel),
+            VehicleClass::Motorcycle if physical.handlebars => Some(ModAction::Handlebars),
+            VehicleClass::Helicopter if physical.helicopter => Some(ModAction::HelicopterControls),
+            VehicleClass::Plane if physical.plane => Some(ModAction::PlaneControls),
+            _ => None,
+        };
+        if let Some(action) = held {
+            add(Control::EitherGrip, Gesture::Press, modded(action));
+        }
+    }
+    if features.trackpad_shows_summary {
+        for (hand, component) in bound(GlobalAction::ShowControlsSummary.id()) {
+            add(
+                press_control(component, hand),
+                press_gesture(component),
+                modded(ModAction::ShowSummary),
+            );
+        }
     }
     add(
         Control::BothStickClicks,
@@ -439,16 +606,25 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
         Gesture::Press,
         modded(ModAction::DebugPanel),
     );
-    add(
-        Control::System,
-        Gesture::Press,
-        Effect::Actions(vec![Action::GUI_PAUSE]),
-    );
-    add(
-        Control::System,
-        Gesture::Hold,
-        Effect::Actions(vec![Action::GUI_PDA]),
-    );
+    let mut pause: Vec<Control> = Vec::new();
+    for (hand, component) in bound(GlobalAction::Pause.id()) {
+        let control = press_control(component, hand);
+        if !pause.contains(&control) {
+            pause.push(control);
+        }
+    }
+    for control in pause {
+        add(
+            control,
+            Gesture::Press,
+            Effect::Actions(vec![Action::GUI_PAUSE]),
+        );
+        add(
+            control,
+            Gesture::Hold,
+            Effect::Actions(vec![Action::GUI_PDA]),
+        );
+    }
     rows
 }
 

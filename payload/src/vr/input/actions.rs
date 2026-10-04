@@ -270,7 +270,11 @@ impl Actions {
         };
         let (value, active) =
             read.with_context(|| format!("reading {}.{}", set.name(), def.name))?;
-        Ok(ActionState { value, active })
+        Ok(ActionState {
+            value,
+            active,
+            down: false,
+        })
     }
 
     /// Every action of `set` with its name, in stash order.

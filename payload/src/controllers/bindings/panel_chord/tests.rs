@@ -3,14 +3,18 @@ use std::time::Instant;
 use jc3gi::input::input_action_map::Action;
 
 use super::*;
-use crate::controllers::{
-    bindings::{
-        controls::Controls,
-        tables::{Bindings, Step},
+use crate::{
+    controllers::{
+        bindings::{
+            controls::Controls,
+            intents::simulate::simulate,
+            tables::{Bindings, Step},
+        },
+        config::BindingsConfig,
+        frame::ActionSetKind,
+        mode::{Mode, OnFootVariant, VehicleClass, VehicleSeat},
     },
-    config::BindingsConfig,
-    frame::ActionSetKind,
-    mode::{Mode, OnFootVariant, VehicleClass, VehicleSeat},
+    vr::input::semantic::{SemanticSet, defaults::default_binding},
 };
 
 const DT: f32 = 0.05;
@@ -204,7 +208,16 @@ fn run(mode: Mode, dominant: Hand, ticks: &[Buttons]) -> Vec<(Step, bool)> {
         mask(&mut frame, &mut edges, tick);
         let mut controls = Controls::from_frame(&frame, &edges, &config, dominant, 0.0, [None; 2]);
         controls.weapon_cycle = true;
-        out.push((bindings.step(mode, &controls, DT, &config), tick.toggle));
+        controls.masked_inputs = masked_inputs(tick);
+        let input = simulate(
+            &controls,
+            SemanticSet::of(mode.action_set()),
+            default_binding,
+        );
+        out.push((
+            bindings.step(mode, &controls, &input, DT, &config),
+            tick.toggle,
+        ));
     }
     out
 }

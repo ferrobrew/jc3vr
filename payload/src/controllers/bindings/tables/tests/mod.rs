@@ -4,9 +4,12 @@ use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
 
 use super::*;
-use crate::controllers::{
-    bindings::{controls::HandControls, grab::HolsterSite},
-    mode::{OnFootVariant, VehicleSeat},
+use crate::{
+    controllers::{
+        bindings::{controls::HandControls, grab::HolsterSite, intents::simulate::simulate},
+        mode::{OnFootVariant, VehicleSeat},
+    },
+    vr::input::semantic::{SemanticSet, defaults::default_binding},
 };
 
 const DT: f32 = 1.0 / 30.0;
@@ -44,6 +47,24 @@ fn controls(dominant: Hand, set: impl FnOnce(&mut HandControls, &mut HandControl
     c
 }
 
+impl Bindings {
+    /// Step the tables with the semantic input the shipped default bindings make of `controls`.
+    fn sim_step(
+        &mut self,
+        mode: Mode,
+        controls: &Controls,
+        dt: f32,
+        config: &BindingsConfig,
+    ) -> Step {
+        let input = simulate(
+            controls,
+            SemanticSet::of(mode.action_set()),
+            default_binding,
+        );
+        self.step(mode, controls, &input, dt, config)
+    }
+}
+
 fn wants(step: &Step, map: MapKind, action: Action) -> Option<Want> {
     step.desired
         .iter()
@@ -55,6 +76,9 @@ fn player(step: &Step, action: Action) -> Option<Want> {
     wants(step, MapKind::Player, action)
 }
 
+mod equivalence;
+mod layout;
+pub(crate) mod legacy;
 mod menus;
 mod on_foot;
 mod vehicles;

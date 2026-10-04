@@ -108,11 +108,11 @@ fn row_text(row: &Row, mode: Mode, hold: &str, resolve: &dyn Fn(Text) -> String)
         Effect::Actions(actions) => {
             for &action in actions {
                 if let Some(ActionLabel::Shown { tap, hold: held }) = action_label(action, mode) {
-                    if let Some(key) = tap {
-                        add(resolve(Text::Game(key)));
+                    if let Some(text) = tap {
+                        add(resolve(text));
                     }
-                    if let Some(key) = held {
-                        add(format!("{hold} {}", resolve(Text::Game(key))));
+                    if let Some(text) = held {
+                        add(format!("{hold} {}", resolve(text)));
                     }
                 }
             }

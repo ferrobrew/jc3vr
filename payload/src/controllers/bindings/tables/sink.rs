@@ -1,65 +1,45 @@
 //! The vocabulary the binding tables are declared in, and the evaluating reader.
 //!
-//! A table names its inputs symbolically ([`Press`], [`Axis`]) and hands them to a [`Sink`] with
-//! the actions they drive. Two sinks read the same declarations: [`EvalSink`] resolves each input
-//! against the tick's [`Controls`] and collects the wanted actions, and
+//! A table names its inputs as semantic actions ([`Press`], [`Axis`]) and hands them to a [`Sink`]
+//! with the game actions they drive. Two sinks read the same declarations: [`EvalSink`] resolves
+//! each input against the tick's [`Intents`] and collects the wanted actions, and
 //! [`DescribeSink`](crate::controllers::bindings::tables::describe::DescribeSink) records what each
 //! input drives, for the controls summary. One declaration feeding both is what keeps the summary
 //! from drifting from the bindings.
+//!
+//! A table never names a hand for a press: the player's binding decides which hand an action is
+//! on, and a press counts on either hand. The per-hand state the tables need besides (each hand's
+//! menu modifier and its pad press) is latched per hand and read on the hand of the press.
 
+use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
 
-use crate::controllers::{
-    bindings::{
-        controls::{ButtonControl, Controls, HandControls, rotate_stick},
-        hold::{Desired, MapKind, Target, Want},
+use crate::{
+    controllers::{
+        bindings::{
+            controls::rotate_stick,
+            hold::{Desired, MapKind, Target, Want},
+            intents::Intents,
+        },
+        frame::Hand,
     },
-    frame::Hand,
+    vr::input::semantic::{
+        SemanticSet,
+        vocabulary::{ActionId, MenuAction, OnFootAction},
+    },
 };
 
-/// Which hand an input is on: by its role in the layout, or by its physical side. The gameplay
-/// tables use the roles, so a left-handed layout mirrors them; the menu table uses the sides.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Role {
-    /// The hand in the layout's "right" role ([`Controls::dominant`]).
-    Dom,
-    /// The hand in the layout's "left" role.
-    Off,
-    Left,
-    Right,
-}
-
-impl Role {
-    /// The physical hand this role names under `dominant`.
-    pub const fn hand(self, dominant: Hand) -> Hand {
-        match self {
-            Role::Dom => dominant,
-            Role::Off => dominant.other(),
-            Role::Left => Hand::Left,
-            Role::Right => Hand::Right,
-        }
-    }
-}
-
-/// A digital input of one hand.
+/// A digital input of the tables.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Input {
-    /// The trigger pulled past its press threshold.
-    Trigger,
-    /// The grip squeezed with its press latched to the grip's default use rather than to a grab.
-    GripDefault,
-    A,
-    B,
-    StickClick,
-    /// The trackpad pressed on its left half.
-    TrackpadLeft,
-    /// The trackpad pressed on its right half.
-    TrackpadRight,
-    /// The yank gesture fired this tick (a one-tick press, which the game reads as a tap).
-    Yank,
-    /// The stick pushed one way for menu navigation: held while the push latched to that direction
-    /// lasts ([`MenuLatch::stick`]).
-    Stick(Direction),
+    /// A semantic action held: a boolean action, or a float action past its press thresholds.
+    Action(ActionId),
+    /// A pad press action ([`pad_of`]) held, with the zone of the pad it latched to at its press
+    /// edge ([`PadLatch`]).
+    Zone(ActionId, PadZone),
+    /// The menu stick pushed one way: held while the push latched to that direction lasts
+    /// ([`MenuLatch::stick`]).
+    MenuStick(Direction),
 }
 
 /// A menu stick push's direction.
@@ -71,6 +51,83 @@ pub enum Direction {
     Right,
 }
 
+/// A zone of a trackpad, as a pad press latches to it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum PadZone {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// How a pad press divides its pad.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum PadLayout {
+    /// The halves left and right of the vertical centre line.
+    Halves,
+    /// The four quadrants of a d-pad, by the position's larger axis.
+    Quadrants,
+}
+
+impl PadLayout {
+    /// The zone of the pad at `position` (+X right, +Y up), or `None` within
+    /// [`PAD_ZONE_MARGIN`] of the lines between the zones, where a press waits for the thumb to
+    /// move off.
+    pub fn zone(self, position: Vec2) -> Option<PadZone> {
+        if !position.is_finite() {
+            return None;
+        }
+        let (x, y) = (position.x, position.y);
+        match self {
+            PadLayout::Halves if x <= -PAD_ZONE_MARGIN => Some(PadZone::Left),
+            PadLayout::Halves if x >= PAD_ZONE_MARGIN => Some(PadZone::Right),
+            PadLayout::Halves => None,
+            PadLayout::Quadrants => {
+                if x.abs().max(y.abs()) < PAD_ZONE_MARGIN || (x.abs() - y.abs()).abs() < 1e-6 {
+                    None
+                } else if y.abs() > x.abs() {
+                    Some(if y > 0.0 { PadZone::Up } else { PadZone::Down })
+                } else {
+                    Some(if x > 0.0 {
+                        PadZone::Right
+                    } else {
+                        PadZone::Left
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// How far from the line between two pad zones, in the pad's `-1..=1` axes, a press must land to
+/// count for a zone.
+pub const PAD_ZONE_MARGIN: f32 = 0.2;
+
+/// The position action that goes with a pad press action, and how the press divides the pad, for
+/// the pad press actions.
+pub fn pad_of(press: ActionId) -> Option<(ActionId, PadLayout)> {
+    if press == MenuAction::MenuTabPress.id() {
+        Some((MenuAction::MenuTabPad.id(), PadLayout::Halves))
+    } else if press == OnFootAction::WeaponSelectPress.id() {
+        Some((OnFootAction::WeaponSelectPad.id(), PadLayout::Quadrants))
+    } else {
+        None
+    }
+}
+
+/// The pad press action of `set`, if it has one.
+pub fn pad_press_of(set: SemanticSet) -> Option<ActionId> {
+    match set {
+        SemanticSet::Menu => Some(MenuAction::MenuTabPress.id()),
+        SemanticSet::OnFoot => Some(OnFootAction::WeaponSelectPress.id()),
+        SemanticSet::Global
+        | SemanticSet::Wingsuit
+        | SemanticSet::LandVehicle
+        | SemanticSet::Helicopter
+        | SemanticSet::Plane => None,
+    }
+}
+
 /// A per-tick condition an input must also meet, beyond being held.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Gate {
@@ -79,28 +136,26 @@ pub enum Gate {
     UnlessChordArmed,
     /// Not while the dominant grip is held with the sight tuning chord armed.
     UnlessChordGrip,
-    /// Only when the wingsuit A press was latched as an evade flick.
+    /// Only when the wingsuit's parachute press was latched as an evade flick.
     EvadeFlick,
-    /// Only when the wingsuit A press was not latched as an evade flick.
+    /// Only when the wingsuit's parachute press was not latched as an evade flick.
     NoEvadeFlick,
-    /// Only when the press began with its own hand's grip held ([`MenuLatch`]).
+    /// Only when the press began with its own hand's menu modifier held ([`MenuLatch`]).
     Gripped,
-    /// Only when the press began without its own hand's grip held ([`MenuLatch`]).
+    /// Only when the press began without its own hand's menu modifier held ([`MenuLatch`]).
     Ungripped,
 }
 
-/// A digital input on a hand, with its gate.
+/// A digital input, with its gate.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Press {
-    pub role: Role,
     pub input: Input,
     pub gate: Gate,
 }
 
 impl Press {
-    pub const fn new(role: Role, input: Input) -> Self {
+    pub const fn new(input: Input) -> Self {
         Self {
-            role,
             input,
             gate: Gate::Always,
         }
@@ -109,28 +164,41 @@ impl Press {
     pub const fn gated(self, gate: Gate) -> Self {
         Self { gate, ..self }
     }
-
-    /// The yank gesture, on the grapple hand.
-    pub const YANK: Press = Press::new(Role::Off, Input::Yank);
 }
 
 /// An analog input.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Axis {
-    /// The move stick's horizontal axis, rotated by [`Controls::move_rotation`].
-    MoveX,
-    /// The move stick's vertical axis, rotated by [`Controls::move_rotation`].
-    MoveY,
-    /// The rotated move stick's deflection, capped at one.
-    MoveLength,
-    /// A stick's horizontal axis, +X right.
-    StickX(Role),
-    /// A stick's vertical axis, +Y forward.
-    StickY(Role),
-    /// A stick's deflection, capped at one.
-    StickLength(Role),
-    /// A trigger's pull, `0..=1`.
-    Trigger(Role),
+    /// A vector action's horizontal axis, +X right, rotated by the move rotation
+    /// ([`Controls::move_rotation`](crate::controllers::bindings::controls::Controls::move_rotation)).
+    MoveX(ActionId),
+    /// A vector action's vertical axis, +Y forward, rotated by the move rotation.
+    MoveY(ActionId),
+    /// A rotated vector action's deflection, capped at one.
+    MoveLength(ActionId),
+    /// A vector action's horizontal axis, +X right.
+    X(ActionId),
+    /// A vector action's vertical axis, +Y forward.
+    Y(ActionId),
+    /// A vector action's deflection, capped at one.
+    Length(ActionId),
+    /// A float action's value past its deadzone.
+    Value(ActionId),
+}
+
+impl Axis {
+    /// The action the axis reads.
+    pub const fn action(self) -> ActionId {
+        match self {
+            Axis::MoveX(a)
+            | Axis::MoveY(a)
+            | Axis::MoveLength(a)
+            | Axis::X(a)
+            | Axis::Y(a)
+            | Axis::Length(a)
+            | Axis::Value(a) => a,
+        }
+    }
 }
 
 /// What the tables report their declarations to.
@@ -145,129 +213,134 @@ pub trait Sink {
     fn axis(&mut self, axis: Axis, negative: Action, positive: Action);
 }
 
-/// The per-tick state the gates and the latched grips read, decided by
+/// The per-tick state the gates and the latched inputs read, decided by
 /// [`Bindings::step`](crate::controllers::bindings::tables::Bindings::step) before the tables run.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct Latches {
-    /// Whether each hand's grip press is latched to its default use, by [`Hand::index`].
-    pub grip_default: [bool; 2],
     /// The sight tuning chord's dominant grip is held.
     pub chord_grip: bool,
     /// Both of the sight tuning chord's grips are held.
     pub chord_armed: bool,
-    /// The wingsuit A press was latched as an evade flick.
+    /// The wingsuit's parachute press was latched as an evade flick.
     pub evade: bool,
     /// Each hand's menu presses, by [`Hand::index`].
     pub menu: [MenuLatch; 2],
+    /// Each hand's pad press, by [`Hand::index`].
+    pub pads: [PadLatch; 2],
 }
 
-/// One hand's menu presses, each latched at its press edge with whether that hand's grip was held
-/// then, so that squeezing or letting go of the grip mid-press never turns one action into another.
+/// One hand's menu presses, each latched at its press edge with whether that hand's menu modifier
+/// was held then, so that squeezing or letting go of the grip mid-press never turns one action
+/// into another.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct MenuLatch {
-    /// Whether the A press began with the grip held, while A is held.
-    pub a: Option<bool>,
-    /// Whether the B press began with the grip held, while B is held.
-    pub b: Option<bool>,
-    /// The direction the stick push latched to, and whether it began with the grip held.
+    /// Whether the confirm press began with the modifier held, while confirm is held.
+    pub confirm: Option<bool>,
+    /// Whether the back press began with the modifier held, while back is held.
+    pub back: Option<bool>,
+    /// The direction the stick push latched to, and whether it began with the modifier held.
     pub stick: Option<(Direction, bool)>,
 }
 
-impl MenuLatch {
-    /// Whether the press of `input` latched with the grip held, or `None` while it is not held (or
-    /// for an input that does not latch).
-    pub const fn gripped(&self, input: Input) -> Option<bool> {
-        match input {
-            Input::A => self.a,
-            Input::B => self.b,
-            Input::Stick(_) => match self.stick {
-                Some((_, gripped)) => Some(gripped),
-                None => None,
-            },
+/// One hand's pad press: the press action and the zone it latched to at its press edge, held
+/// until the press is released. A press on a line between zones waits for the thumb to move off.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct PadLatch {
+    pub press: Option<(ActionId, Option<PadZone>)>,
+}
+
+impl PadLatch {
+    /// The zone `press` latched to, while it is held.
+    pub fn zone(&self, press: ActionId) -> Option<PadZone> {
+        match self.press {
+            Some((latched, zone)) if latched == press => zone,
             _ => None,
         }
     }
 }
 
-/// The evaluating reader: resolves the tables' inputs against one tick's controls and collects the
+/// The evaluating reader: resolves the tables' inputs against one tick's intents and collects the
 /// wanted actions, all on one map.
 pub struct EvalSink<'a> {
-    controls: &'a Controls,
+    intents: &'a Intents,
     latches: Latches,
+    move_rotation: f32,
+    /// The menu actions whose presses latch the modifier, as `(confirm, back)`.
+    menu_presses: (ActionId, ActionId),
     pub map: MapKind,
     pub desired: Vec<Desired>,
 }
 
 impl<'a> EvalSink<'a> {
-    pub fn new(controls: &'a Controls, latches: Latches, map: MapKind) -> Self {
+    pub fn new(intents: &'a Intents, latches: Latches, move_rotation: f32, map: MapKind) -> Self {
         Self {
-            controls,
+            intents,
             latches,
+            move_rotation,
+            menu_presses: (MenuAction::MenuConfirm.id(), MenuAction::MenuBack.id()),
             map,
             desired: Vec::with_capacity(32),
         }
     }
 
-    fn hand(&self, role: Role) -> &HandControls {
-        self.controls.hand(role.hand(self.controls.dominant))
-    }
-
-    fn button(&self, role: Role, input: Input) -> Option<ButtonControl> {
-        let hand = self.hand(role);
+    /// Whether the press of `input` on `hand` latched with the modifier held, or `None` while it
+    /// is not held (or for an input that does not latch).
+    fn gripped(&self, input: Input, hand: Hand) -> Option<bool> {
+        let latch = &self.latches.menu[hand.index()];
         match input {
-            Input::Trigger => Some(hand.trigger_press),
-            Input::GripDefault => Some(hand.grip),
-            Input::A => Some(hand.a),
-            Input::B => Some(hand.b),
-            Input::StickClick => Some(hand.stick_click),
-            Input::TrackpadLeft => Some(hand.trackpad_left),
-            Input::TrackpadRight => Some(hand.trackpad_right),
-            Input::Yank | Input::Stick(_) => None,
+            Input::Action(a) if a == self.menu_presses.0 => latch.confirm,
+            Input::Action(a) if a == self.menu_presses.1 => latch.back,
+            Input::MenuStick(_) => latch.stick.map(|(_, gripped)| gripped),
+            _ => None,
         }
     }
 
-    fn menu(&self, role: Role) -> &MenuLatch {
-        &self.latches.menu[role.hand(self.controls.dominant).index()]
-    }
-
-    fn gate(&self, press: Press) -> bool {
+    fn gate(&self, press: Press, hand: Hand) -> bool {
         match press.gate {
             Gate::Always => true,
             Gate::UnlessChordArmed => !self.latches.chord_armed,
             Gate::UnlessChordGrip => !self.latches.chord_grip,
             Gate::EvadeFlick => self.latches.evade,
             Gate::NoEvadeFlick => !self.latches.evade,
-            Gate::Gripped => self.menu(press.role).gripped(press.input) == Some(true),
-            Gate::Ungripped => self.menu(press.role).gripped(press.input) == Some(false),
+            Gate::Gripped => self.gripped(press.input, hand) == Some(true),
+            Gate::Ungripped => self.gripped(press.input, hand) == Some(false),
         }
     }
 
-    fn held(&self, press: Press) -> bool {
-        let held = match press.input {
-            Input::GripDefault => {
-                self.latches.grip_default[press.role.hand(self.controls.dominant).index()]
+    fn held_on(&self, input: Input, hand: Hand) -> bool {
+        match input {
+            Input::Action(action) => self.intents.hand(action, hand).button.held(),
+            Input::Zone(action, zone) => {
+                self.latches.pads[hand.index()].zone(action) == Some(zone)
+                    && self.intents.hand(action, hand).button.held()
             }
-            Input::Yank => self.controls.yank,
-            Input::Stick(direction) => self
-                .menu(press.role)
+            Input::MenuStick(direction) => self.latches.menu[hand.index()]
                 .stick
                 .is_some_and(|(latched, _)| latched == direction),
-            input => self.button(press.role, input).is_some_and(|b| b.held()),
-        };
-        held && self.gate(press)
+        }
+    }
+
+    fn pressed_on(&self, input: Input, hand: Hand) -> bool {
+        match input {
+            Input::Action(action) => self.intents.hand(action, hand).button.pressed,
+            Input::Zone(action, zone) => {
+                self.latches.pads[hand.index()].zone(action) == Some(zone)
+                    && self.intents.hand(action, hand).button.pressed
+            }
+            Input::MenuStick(_) => false,
+        }
     }
 
     fn value(&self, axis: Axis) -> f32 {
-        let c = self.controls;
-        let moved = || rotate_stick(c.off().stick, c.move_rotation);
+        let moved = |a| rotate_stick(self.intents.vector(a), self.move_rotation);
         match axis {
-            Axis::MoveX => moved().x,
-            Axis::MoveY => moved().y,
-            Axis::MoveLength => moved().length().min(1.0),
-            Axis::StickX(role) => self.hand(role).stick.x,
-            Axis::StickY(role) => self.hand(role).stick.y,
-            Axis::StickLength(role) => self.hand(role).stick.length().min(1.0),
-            Axis::Trigger(role) => self.hand(role).trigger,
+            Axis::MoveX(a) => moved(a).x,
+            Axis::MoveY(a) => moved(a).y,
+            Axis::MoveLength(a) => moved(a).length().min(1.0),
+            Axis::X(a) => self.intents.vector(a).x,
+            Axis::Y(a) => self.intents.vector(a).y,
+            Axis::Length(a) => self.intents.vector(a).length().min(1.0),
+            Axis::Value(a) => self.intents.value(a),
         }
     }
 
@@ -290,7 +363,12 @@ impl<'a> EvalSink<'a> {
 
 impl Sink for EvalSink<'_> {
     fn hold(&mut self, presses: &[Press], actions: &[Action]) {
-        if presses.iter().any(|&p| self.held(p)) {
+        let held = presses.iter().any(|&p| {
+            Hand::BOTH
+                .into_iter()
+                .any(|h| self.held_on(p.input, h) && self.gate(p, h))
+        });
+        if held {
             for &action in actions {
                 self.push(action, Want::Hold(1.0));
             }
@@ -298,11 +376,10 @@ impl Sink for EvalSink<'_> {
     }
 
     fn click(&mut self, press: Press, action: Action) {
-        let pressed = match press.input {
-            Input::Yank => self.controls.yank,
-            input => self.button(press.role, input).is_some_and(|b| b.pressed),
-        };
-        if pressed && self.gate(press) {
+        let pressed = Hand::BOTH
+            .into_iter()
+            .any(|h| self.pressed_on(press.input, h) && self.gate(press, h));
+        if pressed {
             self.push(action, Want::Click);
         }
     }
