@@ -18,7 +18,7 @@ use crate::{
         page::{Button, ButtonOutcome, Page, PageDef, Readout},
         slider::{SliderFormat, SliderRange},
     },
-    vr::{is_running, recenter_count, request_recenter},
+    vr::{recenter_count, render_params, request_recenter},
 };
 
 /// The `VR: COMFORT` page.
@@ -115,9 +115,13 @@ fn recenter_now() -> ButtonOutcome {
 }
 
 /// The recenter row's status, refreshed every frame.
+///
+/// The menu updates on a UI worker while the frame thread holds the VR runtime lock and waits for
+/// that worker, so the session check reads the draw-safe render-parameter slot rather than the
+/// runtime state, as the body page does.
 fn recenter_status_text() -> SmolStr {
     recenter_status(
-        is_running(),
+        render_params(0).is_some(),
         *LAST_PRESS.lock(),
         Instant::now(),
         recenter_count(),
