@@ -1,17 +1,15 @@
-//! The movie side: adding the VR entry to the options menu and telling whether the player chose it,
-//! putting the VR tabs on the settings screen's tab bar, installing a page's rows, keeping each
-//! tab's scroll position, and, each frame, moving the highlight off section headers, styling the
-//! header rows, and writing live text into the visible rows. Everything here goes through
+//! The movie side of the settings screen: putting the VR tabs on the screen's tab bar, installing
+//! a page's rows, keeping each tab's scroll position, and, each frame, moving the highlight off
+//! section headers, styling the header rows, and writing live text into the visible rows. Everything here goes through
 //! [`GfxValue`] and starts from the pause screen's clip.
 
 use std::ffi::{CStr, CString};
 
-use jc3gi::ui::pause_ui::{PauseMenuType, PauseUI, SettingsUI};
+use jc3gi::ui::pause_ui::SettingsUI;
 
 use crate::pause_menu::{
     gfx::{CaptureThread, GfxValue, Param, Screen},
     model::{
-        entries::{MainButton, vr_entry_selected},
         headers::{HeaderStyles, Step},
         ids::RowId,
         live::LiveSlots,
@@ -52,75 +50,6 @@ impl std::fmt::Display for RenderError {
 }
 
 impl std::error::Error for RenderError {}
-
-/// Add the VR entry, labelled `label`, after the options menu's own entries, opening the settings
-/// screen like the graphics entry. Appending leaves the native entries where they were, so the
-/// menu still opens with its first native entry highlighted.
-pub(crate) fn add_entry(
-    thread: &CaptureThread,
-    screen: &Screen,
-    label: &str,
-) -> Result<(), RenderError> {
-    let clip = clip(thread, screen)?;
-    let label = cstring(label);
-    let entry = clip
-        .invoke(
-            c"AddOption",
-            &[
-                Param::Int(PauseMenuType::PAUSE_OPTIONS as i32),
-                Param::Str(c""),
-                Param::Str(&label),
-                Param::Bool(false),
-            ],
-        )
-        .filter(GfxValue::is_object)
-        .ok_or(RenderError::Refused("AddOption"))?;
-    if !entry.set(c"m_Type", Param::Int(PauseUI::OPTION_GRAPHICS)) {
-        return Err(RenderError::Refused("the entry's m_Type"));
-    }
-    Ok(())
-}
-
-/// Whether the VR entry, labelled `label`, is the one selected in the options menu. Reads every
-/// main button and leaves the decision to [`vr_entry_selected`].
-pub(crate) fn entry_selected(
-    thread: &CaptureThread,
-    screen: &Screen,
-    label: &str,
-) -> Result<bool, RenderError> {
-    let clip = clip(thread, screen)?;
-    let container = clip
-        .path("MCI_button_container.MCI_root")
-        .ok_or(RenderError::Missing("the main-button container"))?;
-    let buttons: Vec<MainButton> = (0..PauseUI::MAIN_BUTTON_COUNT as usize)
-        .map(|index| container.path(&format!("MCI_button_{index:02}.MCI_button")))
-        .map(|button| {
-            // A button that does not resolve keeps its place, so the positions stay the movie's.
-            let Some(button) = button else {
-                return MainButton {
-                    visible: false,
-                    selected: false,
-                    label: None,
-                };
-            };
-            MainButton {
-                visible: button
-                    .member(c"visible")
-                    .and_then(|visible| visible.as_bool())
-                    .unwrap_or(true),
-                selected: button
-                    .invoke(c"IsSelected", &[])
-                    .and_then(|result| result.as_bool())
-                    .unwrap_or(false),
-                label: button
-                    .path("MCI_button.MCI_name_text.TXT_name")
-                    .and_then(|field| field.member(c"text"))
-                    .and_then(|text| text.as_str().map(|s| s.to_string_lossy().into_owned())),
-            }
-        })
-        .collect();
-    Ok(vr_entry_selected(&buttons, label))
-}
 
 /// Install `page` (registered at `page_index`) as the page the settings screen is about to show,
 /// in place of the graphics page.

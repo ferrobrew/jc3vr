@@ -9,7 +9,7 @@ use jc3gi::ui::scaleform::{Value, ValueObjectInterface};
 
 use crate::pause_menu::{
     gfx::{CaptureThread, Screen},
-    model::command::Arg,
+    model::command::{Arg, Text},
 };
 
 /// An AS3 value the mod owns: a heap-pinned [`Value`] that is released through its movie's object
@@ -169,6 +169,16 @@ impl<'t> GfxValue<'t> {
         unsafe { (*interface).SetElement(data, index, value.value.as_ref()) }
     }
 
+    /// Set element `index` of this array to the unmanaged `param`.
+    pub(crate) fn set_element_param(&self, index: u32, param: Param<'_>) -> bool {
+        let Some((interface, data, _)) = self.object() else {
+            return false;
+        };
+        let value = param_value(param);
+        // SAFETY: as `member`; the movie copies `value`.
+        unsafe { (*interface).SetElement(data, index, &value) }
+    }
+
     /// Append the unmanaged `param` to this array.
     pub(crate) fn push(&self, param: Param<'_>) -> bool {
         let value = param_value(param);
@@ -190,21 +200,6 @@ impl<'t> GfxValue<'t> {
         self.value.as_bool()
     }
 
-    /// The value as a string, for either a managed or an unmanaged string.
-    pub(crate) fn as_str(&self) -> Option<&CStr> {
-        let pointer = self.value.as_string()?;
-        let pointer = if self.is_managed() {
-            // SAFETY: a managed string's payload points at the movie's string-data pointer, as
-            // the engine's own command handlers read it.
-            unsafe { *(pointer as *const *const c_char) }
-        } else {
-            pointer
-        };
-        // SAFETY: a string payload points at NUL-terminated character data that lives as long as
-        // this value holds its reference.
-        (!pointer.is_null()).then(|| unsafe { CStr::from_ptr(pointer) })
-    }
-
     fn wrap(value: Value) -> Self {
         Self {
             value: Box::new(value),
@@ -213,7 +208,7 @@ impl<'t> GfxValue<'t> {
     }
 
     fn is_managed(&self) -> bool {
-        self.value.Type & Value::VTC_MANAGED_BIT != 0 && !self.value.pObjectInterface.is_null()
+        is_managed(&self.value)
     }
 
     /// The object interface, payload, and display-object flag the interface calls take.
@@ -266,7 +261,32 @@ fn is_object_type(value_type: u32) -> bool {
     )
 }
 
-/// Decode a command argument from the movie.
+/// Whether `value` is managed: it holds a reference through its movie's object interface.
+fn is_managed(value: &Value) -> bool {
+    value.Type & Value::VTC_MANAGED_BIT != 0 && !value.pObjectInterface.is_null()
+}
+
+/// The string `value` holds, for either a managed or an unmanaged string.
+///
+/// # Safety
+/// `value` must be a live value whose string data outlives the borrow: a managed value must keep
+/// its reference, and an unmanaged one must point at data that lives that long.
+unsafe fn value_str(value: &Value) -> Option<&CStr> {
+    let pointer = value.as_string()?;
+    let pointer = if is_managed(value) {
+        // SAFETY: a managed string's payload points at the movie's string-data pointer, as the
+        // engine's own command handlers read it.
+        unsafe { *(pointer as *const *const c_char) }
+    } else {
+        pointer
+    };
+    // SAFETY: a string payload points at NUL-terminated character data that lives as long as the
+    // caller's contract says.
+    (!pointer.is_null()).then(|| unsafe { CStr::from_ptr(pointer) })
+}
+
+/// Decode a command argument from the movie. The movie passes the arguments for the length of
+/// the command call, which is how long this reads them.
 pub(crate) fn decode_arg(value: &Value) -> Arg {
     if let Some(int) = value.as_int() {
         Arg::Int(int)
@@ -274,6 +294,11 @@ pub(crate) fn decode_arg(value: &Value) -> Arg {
         Arg::Number(number)
     } else if let Some(boolean) = value.as_bool() {
         Arg::Bool(boolean)
+    } else if value.as_string().is_some() {
+        // SAFETY: a command argument lives for the call that decodes it; the text is classified
+        // before this returns.
+        let text = unsafe { value_str(value) };
+        Arg::Text(text.map_or(Text::Other, |text| Text::of(text.to_bytes())))
     } else {
         Arg::Other
     }

@@ -7,6 +7,7 @@
 //! lock, does its work, and writes back. [`Session::generation`] tells a write-back whether the
 //! session moved on in between.
 
+use jc3gi::ui::pause_ui::PauseMenuType;
 use parking_lot::Mutex;
 
 use crate::pause_menu::model::{
@@ -30,8 +31,18 @@ pub(crate) struct Session {
     /// its own handler there and redraws the selected row after the command returns.
     pub(crate) rebuild: bool,
     /// Raised by the command hook around the game's `populate_settings` handling, so the populate
-    /// hook knows the screen is opening from an options entry rather than being refreshed.
+    /// hook knows the screen is opening from an entry rather than being refreshed.
     pub(crate) opening: bool,
+    /// Raised by the command hook while the VR entry opens the settings screen, so the populate
+    /// hook installs a VR page; the populate hook lowers it, so a flag still raised after the
+    /// opening means the screen never populated.
+    pub(crate) opening_vr: bool,
+    /// Raised while the VR entry opens the settings screen: the pause document plays its selection
+    /// sound once for the root menu's selection and once more for the settings entry it then
+    /// selects, and the command hook drops the second.
+    pub(crate) mute_select_sound: bool,
+    /// The root menu the VR entry is in, which backing out of the VR screen returns to.
+    pub(crate) root: Option<PauseMenuType>,
     /// Bumped whenever the shown page is installed, replaced, or dropped.
     pub(crate) generation: u64,
     /// The VR tabs' memory for this pause: the last tab shown and each tab's position.
@@ -68,6 +79,9 @@ impl Session {
         self.state = next;
         if next == MenuState::Closed {
             self.opening = false;
+            self.opening_vr = false;
+            self.mute_select_sound = false;
+            self.root = None;
             self.tabs = TabMemory::new();
             self.styles.forget();
             self.screen = 0;
@@ -112,6 +126,9 @@ pub(crate) static SESSION: Mutex<Session> = Mutex::new(Session {
     live: LiveSlots::new(),
     rebuild: false,
     opening: false,
+    opening_vr: false,
+    mute_select_sound: false,
+    root: None,
     generation: 0,
     tabs: TabMemory::new(),
     setup_tabs: false,
@@ -140,9 +157,15 @@ mod tests {
     fn closing_from_any_path_leaves_the_page_once() {
         let mut session = shown_session();
         session.opening = true;
+        session.opening_vr = true;
+        session.mute_select_sound = true;
+        session.root = Some(PauseMenuType::PAUSE_SHIP);
         assert_eq!(session.transition(MenuState::Closed), Some(1));
         assert!(session.page.is_none());
         assert!(!session.opening);
+        assert!(!session.opening_vr);
+        assert!(!session.mute_select_sound);
+        assert_eq!(session.root, None);
         // The unload after the deactivation, or the next activation, finds nothing to leave.
         assert_eq!(session.transition(MenuState::Closed), None);
     }
@@ -150,8 +173,11 @@ mod tests {
     #[test]
     fn leaving_the_screen_keeps_the_entries() {
         let mut session = shown_session();
+        session.root = Some(PauseMenuType::PAUSE_SHIP);
         assert_eq!(session.transition(SHOWN.left_settings()), Some(1));
         assert_eq!(session.state, MenuState::EntryAdded { pages: 3 });
+        // The root menu stays known for the next opening.
+        assert_eq!(session.root, Some(PauseMenuType::PAUSE_SHIP));
         assert!(session.page.is_none());
         assert_eq!(session.transition(MenuState::Closed), None);
     }

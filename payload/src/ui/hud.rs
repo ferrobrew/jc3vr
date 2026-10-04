@@ -360,10 +360,10 @@ fn pause_menu_ui(ui: &mut egui::Ui) {
             let mut cfg = config::CONFIG.lock();
             ui.checkbox(
                 &mut cfg.pause_menu.enabled,
-                "VR pages in the pause menu's options",
+                "VR pages in the pause menu",
             )
             .on_hover_text(
-                "Adds a VR entry to the end of the options menu, opening the game's own settings \
+                "Adds a VR entry below Options in the pause menu, opening the game's own settings \
                  screen with a tab per VR page. Takes effect the next time the pause menu opens.",
             );
         }

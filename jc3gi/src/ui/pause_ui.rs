@@ -33,7 +33,8 @@ pub struct PauseUI {
     /// The menu the movie was last switched to on activation.
     pub m_CurrentMenuType: crate::ui::pause_ui::PauseMenuType,
     /// Which menus are available this activation, indexed by [`PauseMenuType`](crate::ui::pause_ui::PauseMenuType); passed to the
-    /// movie's `InitMenu`.
+    /// movie's `InitMenu` as an array of booleans. Set by [`SetPauseGameMenu`](crate::ui::pause_ui::PauseUI::SetPauseGameMenu)
+    /// or [`SetFrontEndMenu`](crate::ui::pause_ui::PauseUI::SetFrontEndMenu) before the menu activates.
     pub m_IsValidMenu: [bool; 7],
     /// Set when the settings changed outside the menu; the next [`UpdateImpl`](crate::ui::pause_ui::PauseUI::UpdateImpl)
     /// runs [`PopulateSettings`](crate::ui::pause_ui::PauseUI::PopulateSettings) and has the movie redraw the shown page
@@ -272,6 +273,101 @@ impl PauseUI {
             f(self as *mut Self as _)
         }
     }
+    pub const SetPauseGameMenu_ADDRESS: usize = 0x140DFB9D0;
+    /// Makes [`m_IsValidMenu`](crate::ui::pause_ui::PauseUI::m_IsValidMenu) the in-game set: the in-game, options, and
+    /// controller-mapping menus, and the main-menu submenu except on Boom Island; not the
+    /// developer, proctor, or front-end menus.
+    pub unsafe fn SetPauseGameMenu(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::SetPauseGameMenu_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetFrontEndMenu_ADDRESS: usize = 0x140DFB9B0;
+    /// Makes [`m_IsValidMenu`](crate::ui::pause_ui::PauseUI::m_IsValidMenu) the title-screen set: the front-end, options,
+    /// and controller-mapping menus only.
+    pub unsafe fn SetFrontEndMenu(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::SetFrontEndMenu_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const AddEventOption_ADDRESS: usize = 0x140E31E90;
+    /// Calls the movie's `AddEventOption`: adds an [`OPTION_EVENT`](crate::ui::pause_ui::PauseUI::OPTION_EVENT) entry
+    /// labelled `entry` to `menu`'s list (inside the folder `folder` when it is not empty), at
+    /// the top of the list when `add_to_top` is set and at the end otherwise, posting `event` when
+    /// selected, after the confirmation `confirm` when `need_confirm` is set, and closing the menu
+    /// afterwards when `close_menu` is set.
+    pub unsafe fn AddEventOption(
+        &mut self,
+        add_to_top: bool,
+        menu: crate::ui::pause_ui::PauseMenuType,
+        folder: *const u8,
+        entry: *const u8,
+        event: *const u8,
+        need_confirm: bool,
+        confirm: *const u8,
+        close_menu: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                add_to_top: bool,
+                menu: crate::ui::pause_ui::PauseMenuType,
+                folder: *const u8,
+                entry: *const u8,
+                event: *const u8,
+                need_confirm: bool,
+                confirm: *const u8,
+                close_menu: bool,
+            ) = ::std::mem::transmute(Self::AddEventOption_ADDRESS);
+            f(
+                self as *mut Self as _,
+                add_to_top,
+                menu,
+                folder,
+                entry,
+                event,
+                need_confirm,
+                confirm,
+                close_menu,
+            )
+        }
+    }
+    pub const InitShipMenu_ADDRESS: usize = 0x140E4F8C0;
+    /// Adds the engine's entries to the in-game menu's list, after the movie's `InitMenu` has
+    /// added its own (the options entry, then the main-menu entry). Each is added to the top of
+    /// the list, in this order, so the last added is the first shown: quit and restart the active
+    /// challenge, restart from the last checkpoint and quit the active mission (when the mission
+    /// allows them), skip the playing video or cutscene, and resume. The go-online entry is the
+    /// one added at the end, after the movie's entries, when reconnecting is not enabled. The
+    /// quit, restart, and go-online entries are left out while a cutscene or a full-screen video
+    /// plays.
+    pub unsafe fn InitShipMenu(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::InitShipMenu_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const InitFrontEndMenu_ADDRESS: usize = 0x140E4F410;
+    /// Adds the engine's entries to the front-end menu's list, after the movie's `InitMenu` has
+    /// added its own (the options entry, then the membership link for SKUs that show it): the
+    /// start or continue entry and the others above them, and the go-online and exit entries at
+    /// the end.
+    pub unsafe fn InitFrontEndMenu(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::InitFrontEndMenu_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     /// Runs the screen's per-frame input: reads the steering's UI actions and calls the
     /// matching AS3 handler on the clip through [`Invoke`](crate::ui::ui_base::UIBase::Invoke) (`OnUp`, `OnDown`,
     /// `OnLeft`, `OnRight`, the `OnDpad*` family, `OnSelect`, `OnCancel`, `OnSpecialButton`,
@@ -392,11 +488,23 @@ impl PauseUI {
     /// `stat_category_button` as `MCI_button`). The movie's `SetMainMenuOption` shows the first
     /// entries of a list on them and silently drops the rest.
     pub const MAIN_BUTTON_COUNT: i32 = 11;
+    /// The movie's `OptionClass.m_Type` for an event entry, the type a new `OptionClass` starts
+    /// with. Selecting one posts its `m_Event` string through [`COMMAND_EVENT`](crate::ui::ui_base::UIBase::COMMAND_EVENT)
+    /// (after a confirmation box when its `m_NeedConfirm` is set) and closes the menu when its
+    /// `m_CloseMenu` is set. The engine's `AddEventOption` entries are of this type. The value is a
+    /// constant of the movie's `pause` class.
+    pub const OPTION_EVENT: i32 = 0;
     /// The movie's `OptionClass.m_Type` for the options menu's graphics entry: selecting an entry
     /// of this type opens the settings screen on the
     /// [`PAGE_GRAPHICS`](crate::ui::pause_ui::SettingsUI::PAGE_GRAPHICS) page. The value is a constant of the movie's
     /// `pause` class.
     pub const OPTION_GRAPHICS: i32 = 11;
+    /// The movie's `OptionClass.m_Type` for the in-game menu's main-menu entry: selecting it
+    /// switches to the [`PAUSE_MAIN_MENU`](crate::ui::pause_ui::PauseMenuType::PAUSE_MAIN_MENU) list. The movie's
+    /// `InitMenuShip` adds the entry, labelled with the localisation key `&pause_main_menu`, after
+    /// the options entry, and only when that list was initialised first. The value is a constant
+    /// of the movie's `pause` class.
+    pub const OPTION_MAIN_MENU: i32 = 10;
     /// The `CPauseUI` vtable (the [`UIBase`](crate::ui::ui_base::UIBase) virtuals).
     pub const VFTABLE: u64 = 5407236856;
 }

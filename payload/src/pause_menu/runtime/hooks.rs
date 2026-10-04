@@ -1,19 +1,22 @@
-//! The pause-menu detours: H1 adds the VR entry when the movie loads, H2 installs a VR page when the
-//! settings screen reads its pages, H3 takes the VR rows' and tabs' commands, H4 puts the VR tabs
-//! on the tab bar, switches tabs, applies deferred rebuilds, keeps the highlight off section
-//! headers, and writes live values each frame, H5 ends the session when the menu deactivates, and
-//! H6 turns the shoulder buttons into tab steps. See `docs/mod/pause-menu.md`.
+//! The pause-menu detours: H1 and H6 add the VR entry to the root menu when the movie loads, H2
+//! installs a VR page when the settings screen reads its pages, H3 takes the VR entry's, rows', and
+//! tabs' commands, opens the VR screen from the root menu, and returns there when the player backs
+//! out, H4 puts the VR tabs on the tab bar, switches tabs, applies deferred rebuilds, keeps the
+//! highlight off section headers, and writes live values each frame, H5 ends the session when the
+//! menu deactivates, and H6 turns the shoulder buttons into tab steps. See
+//! `docs/mod/pause-menu.md`.
 //!
 //! Every path that ends a VR page's stay (a tab switch, the player backing out, the menu
 //! deactivating by any route, the movie unloading, a failed or off-thread reinstall) goes through
 //! [`transition`], which runs the page's `on_close` once, after the session lock is released.
 //!
-//! H1 is the only hook gated on [`PauseMenuConfig::enabled`](crate::pause_menu::PauseMenuConfig):
-//! without the entry the session stays closed, and H2, H4, and H6 do nothing in a closed session,
+//! Adding the entry (H1, and H6 for `InitMenu`) is the only work gated on
+//! [`PauseMenuConfig::enabled`](crate::pause_menu::PauseMenuConfig): without the entry the session
+//! stays closed, and H2, H4, and H6 do nothing in a closed session,
 //! so the toggle takes effect at the next activation of the menu and never pulls a page out from
 //! under the player. H3 routes every command regardless, which for a closed session passes
-//! everything through except a command carrying a VR row id or a tab command (only possible if a
-//! page was installed).
+//! everything through except a command carrying a VR row id, a tab command, or the VR entry's
+//! event (only possible if an entry was added or a page installed).
 
 use std::{
     ffi::CStr,
@@ -21,7 +24,7 @@ use std::{
     ptr::{addr_of, addr_of_mut},
     sync::{
         LazyLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicPtr, Ordering},
     },
 };
 
@@ -39,16 +42,17 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     pause_menu::{
-        gfx::{CaptureThread, Screen, decode_arg},
+        gfx::{CaptureThread, GfxValue, Screen, decode_arg},
         model::{
-            command::{Action, Arg, Route, parse, route},
+            command::{Action, Arg, Command, Route, parse, route},
             headers::skip_header,
             page::{Applied, ButtonOutcome, Item, PageDef},
+            root::RootPlan,
             state::{MenuState, PopulateSource},
             tabs::TabCommands,
         },
         pages::{ENTRY_LABEL, MAX_PAGES, PAGES},
-        runtime::{render, session::SESSION},
+        runtime::{render, root, session::SESSION},
     },
 };
 
@@ -69,30 +73,35 @@ const MAX_ARGS: usize = 4;
 static TAB_COMMANDS: LazyLock<TabCommands> =
     LazyLock::new(|| TabCommands::new(|name| hashlittle(name.as_bytes()) as u32));
 
+/// The pause screen whose [`PauseUI::OnActiveImpl`] is running, so H6 recognises that
+/// activation's `InitMenu` call. Null outside an activation.
+static ACTIVATING: AtomicPtr<PauseUI> = AtomicPtr::new(std::ptr::null_mut());
+
 /// The registered pages that have a tab.
 fn tabbed_pages() -> &'static [PageDef] {
     &PAGES[..PAGES.len().min(MAX_PAGES)]
 }
 
-/// H1: after the game has filled the freshly loaded movie, add the VR entry to the options menu.
+/// H1: around the game filling the freshly loaded movie. The VR entry is added from inside the
+/// fill, when the movie's `InitMenu` runs (H6); when that did not happen (the call was queued, or
+/// the plan's first steps failed), the entry is appended to the end of the root menu here.
 #[detour(address = PauseUI::OnActiveImpl_ADDRESS)]
 fn on_active(this: *mut PauseUI) {
-    ON_ACTIVE.get().unwrap().call(this);
-
     // A fresh movie: whatever the last session held is gone with the old one. H5 has normally
     // closed it already; this catches an unload that bypassed the deactivation.
     transition(MenuState::closed);
 
-    if !Config::lock_query(|c| c.pause_menu.enabled) || this.is_null() {
+    ACTIVATING.store(this, Ordering::Relaxed);
+    ON_ACTIVE.get().unwrap().call(this);
+    ACTIVATING.store(std::ptr::null_mut(), Ordering::Relaxed);
+
+    if SESSION.lock().state != MenuState::Closed || !Config::lock_query(|c| c.pause_menu.enabled) {
         return;
     }
-    // SAFETY: the detour's own non-null `this`, the live pause screen; the field is read through
-    // its place, without a reference to the screen.
-    let options_valid =
-        unsafe { addr_of!((*this).m_IsValidMenu).read() }[PauseMenuType::PAUSE_OPTIONS as usize];
-    if !options_valid {
+    // SAFETY: the detour's own `this`, the live pause screen, or null.
+    let Some(plan) = (unsafe { root_plan(this) }) else {
         return;
-    }
+    };
     // SAFETY: as above.
     let Some(screen) = (unsafe { pause_screen(this) }) else {
         return;
@@ -101,32 +110,26 @@ fn on_active(this: *mut PauseUI) {
         tracing::warn!("pause menu: the menu activated off the capture thread; no VR entry");
         return;
     };
-    if PAGES.len() > MAX_PAGES {
-        tracing::warn!(
-            "pause menu: {} pages registered, but only the first {MAX_PAGES} fit the tab bar",
-            PAGES.len()
-        );
-    }
-    match render::add_entry(&thread, &screen, ENTRY_LABEL) {
-        Ok(()) => {
-            let mut session = SESSION.lock();
-            session.state = MenuState::entry_added(tabbed_pages().len());
-            session.screen = this as usize;
-            tracing::debug!("pause menu: added the VR entry to the options menu");
-        }
+    tracing::warn!("pause menu: the VR entry was not added with the menu's entries; appending it");
+    match root::add_entry(&thread, &screen, plan.menu, ENTRY_LABEL) {
+        Ok(()) => record_entry(this, plan.menu),
         Err(error) => tracing::error!("pause menu: adding the VR entry: {error}"),
     }
 }
 
 /// H2: after the game has filled the settings pages, put the VR page in place of the page the
-/// screen shows, when the VR entry opened the screen or a VR page is being refreshed.
+/// screen shows, when the VR entry opened the screen (the opening raised the session's flag) or a
+/// VR page is being refreshed.
 #[detour(address = PauseUI::PopulateSettings_ADDRESS)]
 fn populate_settings(this: *mut PauseUI) {
     POPULATE_SETTINGS.get().unwrap().call(this);
 
-    let (state, opening, tab) = {
-        let session = SESSION.lock();
-        (session.state, session.opening, session.tabs.last())
+    let (state, opening, vr, tab) = {
+        let mut session = SESSION.lock();
+        let opening = session.opening;
+        // Lowered here, so the VR entry's opening can tell that the screen populated.
+        let vr = opening && take(&mut session.opening_vr);
+        (session.state, opening, vr, session.tabs.last())
     };
     if state == MenuState::Closed {
         return;
@@ -143,10 +146,6 @@ fn populate_settings(this: *mut PauseUI) {
     };
 
     let source = if opening {
-        let vr = render::entry_selected(&thread, &screen, ENTRY_LABEL).unwrap_or_else(|error| {
-            tracing::warn!("pause menu: finding the selected entry: {error}");
-            false
-        });
         PopulateSource::Opened { vr }
     } else {
         PopulateSource::Refresh
@@ -186,7 +185,7 @@ fn populate_settings(this: *mut PauseUI) {
     }
 }
 
-/// H3: take the commands of the VR rows and tabs; pass the rest to the game.
+/// H3: take the commands of the VR entry, rows, and tabs; pass the rest to the game.
 #[detour(address = PauseUI::HandleCommandImpl_ADDRESS)]
 fn handle_command(
     this: *mut PauseUI,
@@ -212,8 +211,15 @@ fn handle_command(
             .map(decode_arg)
             .collect()
     };
-    let state = SESSION.lock().state;
-    match route(parse(command, &decoded, &TAB_COMMANDS), state) {
+    let command = parse(command, &decoded, &TAB_COMMANDS);
+    let state = {
+        let mut session = SESSION.lock();
+        if command == Command::SelectSound && take(&mut session.mute_select_sound) {
+            return;
+        }
+        session.state
+    };
+    match route(command, state) {
         Route::Pass => original(),
         Route::Populate => {
             SESSION.lock().opening = true;
@@ -322,9 +328,11 @@ fn on_deactivate(this: *mut PauseUI) {
     transition(MenuState::closed);
 }
 
-/// H6: after a screen's AS3 call, when it was the pause screen's shoulder-button handler and the
-/// VR tabs are shown, step the tab bar. The pause document ignores those buttons on the settings
-/// screen; the tab bar's own step then reports the tab through its callback like a click.
+/// H6: around a screen's AS3 call. The pause screen's `InitMenu` during an activation (H1) adds
+/// the VR entry below the options entry ([`init_menu`]). After the call, when it was the pause
+/// screen's shoulder-button handler and the VR tabs are shown, step the tab bar: the pause document
+/// ignores those buttons on the settings screen, and the tab bar's own step reports the tab through
+/// its callback like a click.
 #[detour(address = UIBase::InvokeImpl_ADDRESS)]
 fn invoke(
     this: *mut UIBase,
@@ -334,15 +342,29 @@ fn invoke(
     result: *mut Value,
     delay: f32,
 ) -> bool {
-    let called = INVOKE
-        .get()
-        .unwrap()
-        .call(this, method, args, num_args, result, delay);
+    let original = || {
+        INVOKE
+            .get()
+            .unwrap()
+            .call(this, method, args, num_args, result, delay)
+    };
     if method.is_null() {
-        return called;
+        return original();
     }
     // SAFETY: the engine passes the method name as a NUL-terminated string for the call.
-    let forward = match unsafe { CStr::from_ptr(method.cast()) }.to_bytes() {
+    let name = unsafe { CStr::from_ptr(method.cast()) }.to_bytes();
+    let activating = ACTIVATING.load(Ordering::Relaxed);
+    if name == b"InitMenu"
+        && !activating.is_null()
+        // SAFETY: a non-null `ACTIVATING` is the pause screen whose activation is running; its
+        // base is reached through its place.
+        && unsafe { addr_of_mut!((*activating).base) } == this
+    {
+        return init_menu(activating, this, args, num_args, original);
+    }
+
+    let called = original();
+    let forward = match name {
         b"OnNextTabButton" => true,
         b"OnPrevTabButton" => false,
         _ => return called,
@@ -366,6 +388,112 @@ fn invoke(
         tracing::debug!("pause menu: stepping the tab bar: {error}");
     }
     called
+}
+
+/// Run the activation's `InitMenu` (`original`) on the pause screen `pause` (whose base is `this`)
+/// so that the VR entry lands directly below the root menu's options entry (see
+/// [`root`](crate::pause_menu::model::root)): with the main-menu list marked invalid in the
+/// valid-menus array `args[0]` when the in-game menu would add its main-menu entry, then the VR
+/// entry, then `InitMenu` again for the main-menu list and the main-menu entry. Anything that
+/// cannot be done that way calls through and leaves the entry to H1.
+fn init_menu(
+    pause: *mut PauseUI,
+    this: *mut UIBase,
+    args: *const Value,
+    num_args: u32,
+    original: impl Fn() -> bool,
+) -> bool {
+    if !Config::lock_query(|c| c.pause_menu.enabled) {
+        return original();
+    }
+    // SAFETY: `pause` is the live pause screen whose activation is running.
+    let Some(plan) = (unsafe { root_plan(pause) }) else {
+        return original();
+    };
+    // The engine runs the call at once only on the capture thread and with the screen active;
+    // otherwise it queues it, and the entry would precede the menu's own.
+    let Some(thread) = CaptureThread::current() else {
+        return original();
+    };
+    // SAFETY: the detour's own `this`, the live pause screen's base.
+    let Some(screen) = (unsafe { Screen::new(this) }) else {
+        return original();
+    };
+    if !screen.is_active() {
+        return original();
+    }
+
+    let valid = if plan.split_main_menu && !args.is_null() && num_args >= 1 {
+        // SAFETY: the engine passes `num_args` live values at `args` for the call, and the movie
+        // outlives it.
+        let valid = unsafe { GfxValue::copy_of(&thread, &*args) };
+        (valid.is_object() && root::set_menu_valid(&valid, PauseMenuType::PAUSE_MAIN_MENU, false))
+            .then_some(valid)
+    } else {
+        None
+    };
+    if plan.split_main_menu && valid.is_none() {
+        tracing::warn!(
+            "pause menu: could not hold the main-menu list back; the VR entry follows the \
+             main-menu entry"
+        );
+    }
+
+    let called = original();
+    if let Some(valid) = &valid
+        && !root::set_menu_valid(valid, PauseMenuType::PAUSE_MAIN_MENU, true)
+    {
+        tracing::warn!("pause menu: could not restore the main-menu list's valid flag");
+    }
+    if !called {
+        tracing::warn!("pause menu: the movie refused InitMenu; no VR entry");
+        return called;
+    }
+    match root::add_entry(&thread, &screen, plan.menu, ENTRY_LABEL) {
+        Ok(()) => {
+            record_entry(pause, plan.menu);
+            tracing::debug!("pause menu: added the VR entry below the options entry");
+        }
+        Err(error) => tracing::error!("pause menu: adding the VR entry: {error}"),
+    }
+    if valid.is_some() {
+        // Every other valid list is initialised by now, so the second call builds the main-menu
+        // list alone.
+        if !original() {
+            tracing::warn!("pause menu: the movie refused InitMenu for the main-menu list");
+        }
+        if let Err(error) = root::add_main_menu_entry(&thread, &screen) {
+            tracing::error!("pause menu: adding the main-menu entry back: {error}");
+        }
+    }
+    called
+}
+
+/// Record that the VR entry is in `menu` of the pause screen `this`.
+fn record_entry(this: *mut PauseUI, menu: PauseMenuType) {
+    if PAGES.len() > MAX_PAGES {
+        tracing::warn!(
+            "pause menu: {} pages registered, but only the first {MAX_PAGES} fit the tab bar",
+            PAGES.len()
+        );
+    }
+    let mut session = SESSION.lock();
+    session.state = MenuState::entry_added(tabbed_pages().len());
+    session.screen = this as usize;
+    session.root = Some(menu);
+}
+
+/// Where the VR entry goes in the pause screen `this`'s menus, from its valid menus.
+///
+/// # Safety
+/// `this` must be null or the live pause screen.
+unsafe fn root_plan(this: *mut PauseUI) -> Option<RootPlan> {
+    if this.is_null() {
+        return None;
+    }
+    // SAFETY: the caller's contract; the field is read through its place, without a reference to
+    // the screen.
+    RootPlan::new(unsafe { addr_of!((*this).m_IsValidMenu).read() })
 }
 
 /// Carry out a command's action. `this` is the pause screen the command came from.
@@ -406,6 +534,7 @@ fn act(action: Action, this: *mut PauseUI) {
         }
         // Deferred to the update: the tab bar is still inside its own handler.
         Action::SelectTab { tab } => SESSION.lock().pending_tab = Some(tab),
+        Action::OpenEntry => open_from_root(this),
         Action::LeavePage => {
             // The screen is closing; keep the tab's position for the next visit and give the
             // native pages their tab bar and row styles back.
@@ -418,9 +547,54 @@ fn act(action: Action, this: *mut PauseUI) {
             transition(MenuState::left_settings);
             if let (Some(screen), Some(thread)) = (&screen, &thread) {
                 leave_screen(thread, screen);
+                // The document has just put itself in the options menu's state over the root
+                // menu's list; the VR screen was opened from the root menu, so it returns there.
+                let root = SESSION.lock().root;
+                if let Some(menu) = root
+                    && let Err(error) = root::return_to_root(thread, screen, menu)
+                {
+                    tracing::warn!("pause menu: returning to the root menu: {error}");
+                }
             }
         }
         Action::Close => transition(MenuState::closed),
+    }
+}
+
+/// Open the settings screen on the VR tabs from the VR entry, which the player has just selected
+/// in the root menu of the pause screen `this`. The movie is inside its own selection handler; the
+/// opening runs the document's settings selection synchronously, which reaches H3 and H2 again.
+fn open_from_root(this: *mut PauseUI) {
+    // SAFETY: the detour's own `this`, the live pause screen.
+    let Some(screen) = (unsafe { pause_screen(this) }) else {
+        return;
+    };
+    let Some(thread) = CaptureThread::current() else {
+        tracing::warn!("pause menu: the VR entry was selected off the capture thread");
+        return;
+    };
+    let root = {
+        let mut session = SESSION.lock();
+        session.opening_vr = true;
+        session.mute_select_sound = true;
+        session.root
+    };
+    let opened = root::open_settings(&thread, &screen);
+    let populated = {
+        let mut session = SESSION.lock();
+        session.mute_select_sound = false;
+        !take(&mut session.opening_vr)
+    };
+    if let Err(error) = opened {
+        tracing::error!("pause menu: opening the VR screen: {error}");
+    }
+    // Without a populate the screen never opened, and the document may be left in the options
+    // menu's state over the root menu's list; put it back.
+    if !populated
+        && let Some(menu) = root
+        && let Err(error) = root::return_to_root(&thread, &screen, menu)
+    {
+        tracing::warn!("pause menu: returning to the root menu: {error}");
     }
 }
 

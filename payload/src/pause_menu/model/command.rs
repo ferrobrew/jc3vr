@@ -4,7 +4,8 @@
 //! The VR rows talk to native code through the game's own settings commands, so the command detour
 //! decides per command. A command carrying a VR row id is always swallowed: the settings manager
 //! would ignore it, but the key capture would start listening for a key binding. So is a tab
-//! command ([`TabCommands`]): the game does not know it.
+//! command ([`TabCommands`]): the game does not know it, and so is the VR entry's own event
+//! ([`ENTRY_EVENT`]), which the root menu's VR entry sends when the player selects it.
 
 use jc3gi::ui::{pause_ui::PauseUI, ui_base::UIBase};
 
@@ -16,8 +17,41 @@ pub(crate) enum Arg {
     Int(i32),
     Number(f64),
     Bool(bool),
-    /// Any other type (a string, an object, undefined).
+    /// A string, classified as one the menu knows or not.
+    Text(Text),
+    /// Any other type (an object, undefined).
     Other,
+}
+
+/// The event the VR entry in the root menu posts when the player selects it. The game has no
+/// handler for it; the command detour takes it and opens the VR screen.
+pub(crate) const ENTRY_EVENT: &str = "jc3vr.pause_menu.open";
+
+/// The sound the pause document plays after handling any main-menu selection.
+pub(crate) const SELECT_SOUND: &str = "jc3_gui_msg_box_show_hide";
+
+/// A string argument the menu recognises.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum Text {
+    /// [`ENTRY_EVENT`].
+    EntryEvent,
+    /// [`SELECT_SOUND`].
+    SelectSound,
+    /// Any other string.
+    Other,
+}
+
+impl Text {
+    /// Classify the string `bytes`.
+    pub(crate) fn of(bytes: &[u8]) -> Self {
+        if bytes == ENTRY_EVENT.as_bytes() {
+            Text::EntryEvent
+        } else if bytes == SELECT_SOUND.as_bytes() {
+            Text::SelectSound
+        } else {
+            Text::Other
+        }
+    }
 }
 
 impl Arg {
@@ -55,6 +89,10 @@ pub(crate) enum Command {
     Inactive,
     /// The tab bar's callback chose tab `tab`.
     SelectTab { tab: usize },
+    /// The `event` command with [`ENTRY_EVENT`]: the player selected the VR entry.
+    OpenEntry,
+    /// The `event` command with [`SELECT_SOUND`].
+    SelectSound,
     /// Anything else, including a known command with arguments of the wrong shape.
     Other,
 }
@@ -78,6 +116,11 @@ pub(crate) fn parse(hash: u32, args: &[Arg], tabs: &TabCommands) -> Command {
         PauseUI::COMMAND_RESTORE_DEFAULT_KEYMAP => Command::RestoreDefaultKeymap,
         PauseUI::COMMAND_PERSIST_CHANGES => Command::PersistChanges,
         UIBase::COMMAND_INACTIVE => Command::Inactive,
+        UIBase::COMMAND_EVENT => match args.first() {
+            Some(Arg::Text(Text::EntryEvent)) => Command::OpenEntry,
+            Some(Arg::Text(Text::SelectSound)) => Command::SelectSound,
+            _ => Command::Other,
+        },
         _ => Command::Other,
     }
 }
@@ -110,6 +153,8 @@ pub(crate) enum Action {
     ResetPage,
     /// The player chose tab `tab` while the VR tabs are shown.
     SelectTab { tab: usize },
+    /// The player selected the VR entry: open the settings screen on the VR tabs.
+    OpenEntry,
     /// The player left the shown page.
     LeavePage,
     /// The movie was unloaded.
@@ -147,7 +192,17 @@ pub(crate) fn route(command: Command, state: MenuState) -> Route {
             // see the command.
             None => Route::Swallow(Action::Drop),
         },
-        Command::RestoreDefaultKeymap | Command::PersistChanges | Command::Other => Route::Pass,
+        // The game has no handler for the entry's event, and the entry exists only while the
+        // session has one; anywhere else (a second selection while the screen opens) it is
+        // dropped.
+        Command::OpenEntry => match state {
+            MenuState::EntryAdded { .. } => Route::Swallow(Action::OpenEntry),
+            _ => Route::Swallow(Action::Drop),
+        },
+        Command::RestoreDefaultKeymap
+        | Command::PersistChanges
+        | Command::SelectSound
+        | Command::Other => Route::Pass,
     }
 }
 
@@ -200,6 +255,53 @@ mod tests {
         );
         assert_eq!(parse(UIBase::COMMAND_INACTIVE, &[]), Command::Inactive);
         assert_eq!(parse(UIBase::COMMAND_EVENT, &[Arg::Other]), Command::Other);
+        assert_eq!(
+            parse(UIBase::COMMAND_EVENT, &[Arg::Text(Text::Other)]),
+            Command::Other
+        );
+        assert_eq!(parse(UIBase::COMMAND_EVENT, &[]), Command::Other);
+        assert_eq!(
+            parse(UIBase::COMMAND_EVENT, &[Arg::Text(Text::EntryEvent)]),
+            Command::OpenEntry
+        );
+        assert_eq!(
+            parse(UIBase::COMMAND_EVENT, &[Arg::Text(Text::SelectSound)]),
+            Command::SelectSound
+        );
+        // Only the event command carries the entry's event.
+        assert_eq!(
+            parse(
+                PauseUI::COMMAND_PERSIST_CHANGES,
+                &[Arg::Text(Text::EntryEvent)]
+            ),
+            Command::PersistChanges
+        );
+    }
+
+    #[test]
+    fn strings_are_classified_exactly() {
+        assert_eq!(Text::of(ENTRY_EVENT.as_bytes()), Text::EntryEvent);
+        assert_eq!(Text::of(SELECT_SOUND.as_bytes()), Text::SelectSound);
+        assert_eq!(Text::of(b""), Text::Other);
+        assert_eq!(Text::of(b"pauseui.game.resume"), Text::Other);
+        assert_eq!(Text::of(ENTRY_EVENT.to_uppercase().as_bytes()), Text::Other);
+    }
+
+    #[test]
+    fn the_entry_event_opens_the_screen_only_from_the_root_menu() {
+        assert_eq!(
+            route(Command::OpenEntry, ENTRIES),
+            Route::Swallow(Action::OpenEntry)
+        );
+        for state in [MenuState::Closed, SHOWN_1] {
+            assert_eq!(
+                route(Command::OpenEntry, state),
+                Route::Swallow(Action::Drop)
+            );
+        }
+        for state in [MenuState::Closed, ENTRIES, SHOWN_1] {
+            assert_eq!(route(Command::SelectSound, state), Route::Pass);
+        }
     }
 
     #[test]

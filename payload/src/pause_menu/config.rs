@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PauseMenuConfig {
-    /// Add the VR entry, with a tab per VR page, to the pause menu's options menu. Read when the
+    /// Add the VR entry, with a tab per VR page, to the pause menu's root menu. Read when the
     /// menu opens, so a change takes effect the next time it does.
     pub enabled: bool,
 }

@@ -1,4 +1,4 @@
-//! The VR menu's state across one pause-menu session: whether the VR entry was added to the options
+//! The VR menu's state across one pause-menu session: whether the VR entry was added to the root
 //! menu, and which VR tab, if any, the settings screen shows.
 //!
 //! `Closed` → (the entry added on activation) `EntryAdded` → (the VR entry opens the settings
@@ -14,8 +14,8 @@ pub(crate) enum MenuState {
     /// failed).
     #[default]
     Closed,
-    /// The options menu ends with the VR entry, whose settings screen has `pages` tabs, one per
-    /// registered page in registry order.
+    /// The root menu has the VR entry, whose settings screen has `pages` tabs, one per registered
+    /// page in registry order.
     EntryAdded { pages: usize },
     /// The settings screen shows the VR tabs, with page `page` selected.
     Shown { pages: usize, page: usize },
@@ -24,8 +24,8 @@ pub(crate) enum MenuState {
 /// Why the settings pages are being populated.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum PopulateSource {
-    /// The movie is opening the settings screen from an options-menu entry: the VR entry when `vr`
-    /// is set, a native entry otherwise.
+    /// The movie is opening the settings screen from a menu entry: the VR entry when `vr` is set,
+    /// a native entry otherwise.
     Opened { vr: bool },
     /// The game repopulated the pages of a screen already shown (its refresh flag).
     Refresh,
