@@ -8,6 +8,7 @@
 //!   hands;
 //! - [`steering`]: how the held wheel turns and maps to the steering;
 //! - [`wheel`] and [`fit`]: the wheel and the handlebars placed where the driven vehicle's own are;
+//! - [`driving_view`]: the driver's view moved per vehicle to a standard place behind the wheel;
 //! - [`wheel_render`]: the vehicle's rendered steering wheel turned with the steering;
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
@@ -44,6 +45,7 @@
 pub mod arm_steering;
 pub mod config;
 pub mod driver_aim;
+pub mod driving_view;
 pub mod fit;
 mod highlights;
 pub mod look_steer;
@@ -83,7 +85,7 @@ use crate::{
         vehicles::{
             arm_steering::{self as arm, ArmPose},
             config::{ParachuteHandlesConfig, PhysicalControlsConfig},
-            fit::{FallbackLatch, FitReadout},
+            fit::{FitInputs, FitReadout, VehicleLatch},
             mounted::{MountedGun, MountedTarget, Reference},
             parachute::{HandleEvent, HandleHold, HandleState},
             physical::{ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement},
@@ -221,7 +223,17 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
         world_scale: active.world_scale,
     };
     let mut latch = STATE.lock().latch.take();
-    let fit = fit::fit(&physical_config, seat, &xf, &mut latch);
+    let fit = fit::fit(
+        &FitInputs {
+            physical: &physical_config,
+            view: &config.vehicles.driving_view,
+            seat,
+            xf: &xf,
+            anchor: headpose::anchor(),
+        },
+        &mut latch,
+    );
+    driving_view::publish(fit.view);
     let offered = offered(seat, &config, fit.fork);
     let placement = Placement {
         wheel: fit.wheel,
@@ -424,6 +436,7 @@ pub(crate) fn stand_down() {
     state.mounted_handles = None;
     state.placement = None;
     state.latch = None;
+    driving_view::publish(None);
     state.render = None;
     state.steering_turn = None;
     wheel_render::publish(None);
@@ -508,8 +521,8 @@ struct State {
     mounted_target: Option<MountedTarget>,
     /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
     mounted_handles: Option<[Option<Vec3>; 2]>,
-    /// The fallback wheel held in the driven vehicle's space.
-    latch: Option<FallbackLatch>,
+    /// What the fit keeps for the driven vehicle.
+    latch: Option<VehicleLatch>,
     /// The vehicle's wheel part the rendered wheel turns, while the animation is on.
     render: Option<RenderWheel>,
     /// The driven vehicle's own steering, as the last fit read it.

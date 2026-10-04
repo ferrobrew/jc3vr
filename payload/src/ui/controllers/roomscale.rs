@@ -251,6 +251,12 @@ fn camera_height_readout(ui: &mut Ui) {
         r.player_eye_height_m,
         r.character_eye_estimate_m,
     ));
+    if r.driving_view_m != glam::Vec3::ZERO {
+        ui.label(format!(
+            "Driving view correction ({:+.2}, {:+.2}, {:+.2}) m, body frame",
+            r.driving_view_m.x, r.driving_view_m.y, r.driving_view_m.z,
+        ));
+    }
     ui.label(format!(
         "{} · {} · crouched {} · seated crouch {} · visual crouch {} · capsule {}{}",
         r.place(),

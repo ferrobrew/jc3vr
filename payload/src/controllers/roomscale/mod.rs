@@ -70,6 +70,7 @@ use crate::{
             seat::{SeatEvent, SeatTracker},
             seated::{SeatedReference, SeatedReferenceStatus},
         },
+        vehicles::driving_view,
     },
     headpose,
     hooks::{self, animation::active_state_type_id},
@@ -101,11 +102,17 @@ pub struct ComposedCockpit {
 }
 
 /// The frame half: resolve the posture, remap the head height, fold the chase into the cockpit
-/// shift, track the seat phase, and advance the fade, returning the cockpit positions to compose
-/// with. Called once per rendered VR frame on the game thread, outside the world update.
+/// shift, track the seat phase, advance the fade, and add the driving view's correction, returning
+/// the cockpit positions to compose with. Called once per rendered VR frame on the game thread,
+/// outside the world update.
 pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
-    let (config, remap_head) =
-        Config::lock_query(|c| (c.controllers.roomscale, c.controllers.body.remap_head));
+    let (config, remap_head, driving_view_config) = Config::lock_query(|c| {
+        (
+            c.controllers.roomscale,
+            c.controllers.body.remap_head,
+            c.controllers.vehicles.driving_view,
+        )
+    });
     let stage = vr::stage::stage();
     let player = body::player();
     let now = Instant::now();
@@ -260,6 +267,20 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     }
 
     let seat = frame.seat.phase();
+    // Added last, so the posture, the seated reference, the crouch, and the chase never see it.
+    // A driving state missing from the seat tables reads as out, so only a transition holds the
+    // correction back.
+    let driving_view = driving_view::advance(
+        &driving_view_config,
+        driving_view::FrameInputs {
+            seated: !matches!(
+                seat,
+                SeatPhase::Entering | SeatPhase::Shuffle | SeatPhase::Exiting
+            ),
+            dt,
+        },
+        now,
+    );
     frame.shared = Some(FrameShared {
         posture,
         chase_offset,
@@ -287,7 +308,10 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         last_seat_event: frame.last_seat_event,
         probe,
     };
-    ComposedCockpit { prev, cur }
+    ComposedCockpit {
+        prev: prev + driving_view,
+        cur: cur + driving_view,
+    }
 }
 
 /// Re-base the cockpit shift after the recenter baseline was re-based: a full recenter makes the

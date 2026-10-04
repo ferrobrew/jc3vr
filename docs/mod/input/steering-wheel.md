@@ -33,9 +33,31 @@ Before this, the wheel was taken by a grip press and held until the next press (
 
 ## The driving position
 
-The cockpit frame's origin is the seated character's eyes as the driving animation places them, and the wheel is placed from the vehicle's part, so where the hub sits in that frame is a property of the seat: the driver animation and the wheel part between them decide it, and it differs from vehicle to vehicle. The player's tracked head adds their own posture on top. On entering a vehicle, once the driver has settled, the fit logs the hub from the character's eyes, the hub from the player's head, and how far the hub is from where the configured fallback wheel (`physical.wheel.centre_m`) sits from the eyes, which is the correction that would put every seat at one standard driving position; the vehicles section of the Controllers tab shows the same.
+Where the hub sits from the seated character's eyes is a property of the seat: the driver animation and the wheel part between them decide it, and it differs from vehicle to vehicle. In the shipped data the hub sits 0.34 to 0.55 m ahead of the authored driver point and 0.55 to 0.73 m above it in the typical car, so the seats differ by a tenth of a metre or more in each direction, more than the grab radius. The player's tracked head adds their own posture on top.
 
-The correction is not applied. Applying it means offsetting the view in the vehicle, which belongs to the head pose's composition rather than to the controls; the logged values per vehicle are what a per-seat offset there would use. A second source of difference is the height remap: the view sits below the character's eyes by however far the player's head sits below their calibrated seated eye height, in every vehicle alike.
+The driving view (`payload/src/controllers/vehicles/driving_view.rs`, `vehicles.driving_view`) moves the view per vehicle so that the eyes sit at one standard offset from the hub. The view rather than the wheel moves because the rendered wheel cannot: it is the vehicle's own part, drawn where the vehicle puts it, so a grab volume moved away from it would have the hands closing on air beside the drawn rim.
+
+### The standard
+
+`vehicles.driving_view.hub_from_eyes_m` is (0, -0.30, -0.45): the hub 0.30 m below the eyes and 0.45 m ahead of them. That is the middle of a road car's ergonomic range (the wheel's centre about a quarter to a third of a metre below the driver's eyes and about half a metre ahead), a little nearer than a road car's because a VR rim holds no weight and a long reach tires the arms. The median of the cars' own seats would be the other candidate, but the shipped data does not give the character's eyes in the seat (the authored driver point is a placeholder in many cars and not the eyes in any), so the median has to come from the logged measurements below. The 0.41 m median of the hub's distance ahead of the driver point, where that point is real, agrees with the standard's fore-aft offset once the eyes are taken to sit a little behind the seat point, as a reclined driver's do.
+
+### The correction
+
+On each input tick while the player drives, the fit measures the hub from the character's eyes: the hub's world position less the head pose's anchor (the animated head, before the head pose moves it), in the body frame and divided by the world scale. The anchor is used rather than the cockpit origin so that neither the player's posture, the height remap, nor a correction already applied enters the measurement. Only a wheel fitted from the part or the part's override is measured; the fallback wheel says nothing about the seat.
+
+Once the driver has settled (the same settle time as the fallback's latch), the fit averages the measurement over half a second and keeps the mean for the rest of the entry, so the driving animation's sway does not move the view. The correction is the mean's offset from the standard: moving the view by it puts the hub at the standard place. It is limited to `vehicles.driving_view.max_m` (0.25 m) in length, shortened along its direction. A seat that needs tuning gets an entry in `SEAT_OVERRIDES`, keyed by the wheel part's name like `WHEEL_OVERRIDES`, which either skips the seat or gives its correction outright (still limited). It holds only the transport boat's ship's wheel, skipped as a standing helm, until the headset says which seats need tuning.
+
+The correction applies in cars only by default. Some boats are driven standing at the helm, where a seated standard would drag the view down by the full limit; `vehicles.driving_view.boats` turns them on.
+
+### Applying it
+
+The input tick publishes the driven vehicle's correction, or nothing out of a measured driver's seat. The frame half of the pose composition (`roomscale::compose_cockpit`) eases toward it over `vehicles.driving_view.blend_s` (1 s, a smoothstep restarted from the current value whenever the goal changes, so a new goal never jumps the view), and back to nothing while the seat transition is entering, shuffling, or leaving, when the setting is off, or when the input tick has stopped publishing. It adds the result to the composed cockpit position after the posture, the height remap and the seated reference, the crouch, and the chase have been resolved, so the correction neither feeds them nor is undone by them: the seated reference still follows the player's measured head height, and the correction moves the view from wherever that puts it.
+
+The view, the hands, the grab volumes, and the head bone's target are all composed from the head pose, so they move together and the hands still meet the wheel where it is drawn. The correction is in the body frame, which rides the seat and so the vehicle.
+
+### What is logged and shown
+
+Once per entry, when the measurement is taken, the fit logs a `driving position` line: the vehicle type hash, the wheel part, where the wheel came from, the measured hub from the eyes, the hub from the player's head, the standard, the correction that would put the hub at the standard (`wanted`), the correction applied (`applied`, absent where the seat is not corrected), where it came from (derived, derived and limited, or an override), and whether the seat is corrected. The vehicles section of the Controllers tab shows the hub from the eyes and from the head live, the entry's measurement and correction, and the correction the view is composed with and easing toward, and has the settings under "Driving view". The camera height readout in the roomscale section lists the correction alongside the vertical offset, since it moves the camera off Rico's eyes.
 
 ## The fallback
 
@@ -57,7 +79,7 @@ The render update runs on worker threads, so the detour reads only its own slot:
 
 ## Debug UI and settings
 
-Under the vehicles section the readout shows the wheel's angle and the steering written, the driving position (above), the vehicle type hash, the wheel and fork parts found, where the wheel came from (the part, an override, or the fallback with its reason), the wheel in the part's space and as placed in the cockpit, whether the fallback is held in the vehicle's space, where the handlebars came from, and the rendered wheel's angle with a count of the render updates that turned it. The wheel's settings are `physical.wheel.lock_deg`, `response`, `deadzone_deg`, `tracking`, and `return_deg_per_s`; the placement adds `physical.from_vehicle`, `physical.animate_wheel`, and `physical.show_wheel`, which draws the wheel's rim, its axis toward the driver, and a spoke to the top of its rim in the overlay.
+Under the vehicles section the readout shows the wheel's angle and the steering written, the driving position and the driving view's correction (above), the vehicle type hash, the wheel and fork parts found, where the wheel came from (the part, an override, or the fallback with its reason), the wheel in the part's space and as placed in the cockpit, whether the fallback is held in the vehicle's space, where the handlebars came from, and the rendered wheel's angle with a count of the render updates that turned it. The wheel's settings are `physical.wheel.lock_deg`, `response`, `deadzone_deg`, `tracking`, and `return_deg_per_s`; the placement adds `physical.from_vehicle`, `physical.animate_wheel`, and `physical.show_wheel`, which draws the wheel's rim, its axis toward the driver, and a spoke to the top of its rim in the overlay.
 
 ## Unverified
 
@@ -70,15 +92,18 @@ Under the vehicles section the readout shows the wheel's angle and the steering 
 - That nothing else on the render worker reads the wheel part's root-space transform while the detour holds it turned.
 - That the head pose is composed against the end of the simulation step, so the vehicle's `m_WorldMatrixT1` matches it at speed.
 - That the settle time is long enough for the fallback to be taken with the driver seated.
+- The standard driving position, against the logged measurements across cars, and whether the lateral correction helps or a seat off the wheel's axis is better left there.
+- Which boats are driven seated, and whether the correction suits them.
 
 ## Headset checklist
 
 1. Steering: a press on the rim takes the wheel, an open hand resting on it does not, and opening the grip lets go. Turning both hands a quarter turn steers about two thirds; full lock is reachable without letting go; a hand-over (let go with one hand, take the wheel further round) carries on without a jump; letting go returns the wheel and the car to straight. Try `Position` tracking too, and say which feels right.
-2. Driving position: in several cars, note the logged "driving position" line and whether the view sits right behind the wheel; the ones that feel wrong tell whether a per-seat view correction is worth building.
-3. The modern SUV, the modern saloon, the racing supercar, and the sports muscle car: the rim ring sits on the drawn wheel, the hands grab it where the wheel is drawn, and the wheel stays put while the driving animation sways the head.
-4. The circuit racer, the ladbil, the old bus, and the old jeep: the overrides sit on the wheel; adjust `WHEEL_OVERRIDES` where they do not.
-5. The modern bus and the old truck: the configured wheel hangs from the head for the first moment, then rides the bus.
-6. A boat with a wheel (the racing boat, the small fishing boat) and the transport boat's ship's wheel.
-7. The ATV, the jetski, a motorcycle, and the duck: handlebars are offered, not a wheel, and the grips sit on the drawn bars.
-8. The rendered wheel turns with the held wheel, the right way, and with the stick when no hand holds it; it stops turning when it is shot off.
-9. A left-handed layout: the wheel and the handlebars stay where they are; the sticks and levers swap sides.
+2. Driving view: in several cars (the modern SUV, the racing supercar, the old mini, the armoured transport), the view eases to the same place behind the wheel within a second of settling, with no jump, and the hands meet the drawn rim. Compare with the setting off. Note the logged "driving position" lines; a seat that still feels wrong gets an entry in `SEAT_OVERRIDES`, and the spread of the measured hubs says whether the standard should move toward their median.
+3. Driving view and posture: sitting low or high and recentring in the seat leaves the correction alone; leaning toward the wheel still moves the view one to one; getting out eases the view back to Rico's eyes during the exit, with no jump on foot.
+4. The modern SUV, the modern saloon, the racing supercar, and the sports muscle car: the rim ring sits on the drawn wheel, the hands grab it where the wheel is drawn, and the wheel stays put while the driving animation sways the head.
+5. The circuit racer, the ladbil, the old bus, and the old jeep: the overrides sit on the wheel; adjust `WHEEL_OVERRIDES` where they do not.
+6. The modern bus and the old truck: the configured wheel hangs from the head for the first moment, then rides the bus.
+7. A boat with a wheel (the racing boat, the small fishing boat) and the transport boat's ship's wheel.
+8. The ATV, the jetski, a motorcycle, and the duck: handlebars are offered, not a wheel, and the grips sit on the drawn bars.
+9. The rendered wheel turns with the held wheel, the right way, and with the stick when no hand holds it; it stops turning when it is shot off.
+10. A left-handed layout: the wheel and the handlebars stay where they are; the sticks and levers swap sides.

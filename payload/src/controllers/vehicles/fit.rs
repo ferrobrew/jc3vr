@@ -12,6 +12,10 @@
 //! cockpit frame. So that it too rides the vehicle, the spec's wheel is carried into the vehicle's
 //! space once the driver has settled into the seat, and held there for as long as the driver stays
 //! in that vehicle.
+//!
+//! The fit also measures where the hub of a wheel fitted from the part sits from the character's
+//! eyes, for the driving view's per-vehicle correction
+//! ([`crate::controllers::vehicles::driving_view`]), and logs the driving position once per entry.
 
 use std::{
     ffi::CStr,
@@ -30,9 +34,10 @@ use jc3gi::{
 use smol_str::SmolStr;
 
 use crate::controllers::{
-    mode::VehicleSeat,
+    mode::{VehicleClass, VehicleSeat},
     vehicles::{
-        config::PhysicalControlsConfig,
+        config::{DrivingViewConfig, PhysicalControlsConfig},
+        driving_view::{self, Correction, Entry, Target},
         wheel::{
             self, BarsFrame, CockpitTransform, PartWheel, WheelFrame, WheelPartView, WheelSource,
         },
@@ -53,7 +58,21 @@ pub struct Fit {
     pub render: Option<RenderWheel>,
     /// The vehicle's own steering, `None` outside a vehicle.
     pub steering_turn: Option<f32>,
+    /// The driving view's correction for the seat, while the player drives a vehicle whose hub was
+    /// measured.
+    pub view: Option<Target>,
     pub readout: Option<FitReadout>,
+}
+
+/// What the fit reads besides the vehicle.
+#[derive(Debug, Copy, Clone)]
+pub struct FitInputs<'a> {
+    pub physical: &'a PhysicalControlsConfig,
+    pub view: &'a DrivingViewConfig,
+    pub seat: Option<VehicleSeat>,
+    pub xf: &'a CockpitTransform,
+    /// The head pose's anchor, the character's animated head, world space; `None` until published.
+    pub anchor: Option<Vec3>,
 }
 
 /// What the fit found, for the debug UI.
@@ -73,58 +92,48 @@ pub struct FitReadout {
     pub seat: SeatReadout,
 }
 
-/// Where the driving position puts the wheel's hub. The cockpit frame's origin is the seated
-/// character's eyes as the animation places them, so the hub's place in it is the seat's: it
-/// differs from vehicle to vehicle with the driver's animation and the wheel's part. The player's
-/// head, tracked about that origin, adds their own posture.
+/// Where the driving position puts the wheel's hub. Its place from the seated character's eyes is
+/// the seat's: it differs from vehicle to vehicle with the driver's animation and the wheel's part.
+/// The player's head, tracked about the cockpit origin, adds their own posture, and the driving
+/// view's correction moves that origin.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SeatReadout {
-    /// The hub from the character's eyes, cockpit frame (+X right, +Y up, +Z back), metres.
-    pub hub_from_eyes: Vec3,
-    /// The hub from the player's tracked head, cockpit frame, metres.
+    /// The hub from the character's eyes this tick, before the driving view's correction, cockpit
+    /// frame (+X right, +Y up, +Z back), metres. `None` until the head pose's anchor is published.
+    pub hub_from_eyes: Option<Vec3>,
+    /// The hub from the player's tracked head, with the driving view's correction, cockpit frame,
+    /// metres.
     pub hub_from_head: Vec3,
-    /// How far the character's eyes would move to put the hub where the configured wheel sits from
-    /// them, cockpit frame, metres: the seat's correction to a standard driving position.
-    pub correction: Vec3,
+    /// The seat's correction, once the entry's measurement is taken; `None` for a fallback wheel.
+    pub correction: Option<Correction>,
 }
 
-impl SeatReadout {
-    pub fn new(wheel: &WheelFrame, head: Vec3, standard: Vec3) -> Self {
-        Self {
-            hub_from_eyes: wheel.centre,
-            hub_from_head: wheel.centre - head,
-            correction: wheel.centre - standard,
-        }
-    }
-}
-
-/// The fallback wheel held in the vehicle's space, per vehicle.
+/// What the fit keeps for the vehicle the player drives, for as long as they drive it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FallbackLatch {
+pub struct VehicleLatch {
     vehicle: usize,
     since: Instant,
+    /// The fallback wheel, held in the vehicle's space.
     local: Option<WheelFrame>,
-    /// Whether the driving position has been logged for this vehicle.
-    logged: bool,
+    /// The hub's measurement from the character's eyes for the driving view.
+    view: Entry,
 }
 
-/// Fit the wheel and the handlebars for `seat`: to the vehicle where the local player drives one,
-/// otherwise to the specs. `latch` carries the fallback wheel between ticks.
-pub fn fit(
-    config: &PhysicalControlsConfig,
-    seat: Option<VehicleSeat>,
-    xf: &CockpitTransform,
-    latch: &mut Option<FallbackLatch>,
-) -> Fit {
+/// Fit the wheel and the handlebars for the seat: to the vehicle where the local player drives one,
+/// otherwise to the specs. `latch` carries the fallback wheel and the driving view's measurement
+/// between ticks.
+pub fn fit(inputs: &FitInputs, latch: &mut Option<VehicleLatch>) -> Fit {
+    let config = inputs.physical;
     let specs = Fit {
         wheel: WheelFrame::from_spec(&config.wheel),
         bars: BarsFrame::from_spec(&config.handlebars),
         fork: false,
         render: None,
         steering_turn: None,
+        view: None,
         readout: None,
     };
-    if !seat.is_some_and(|s| s.driver) {
+    if !inputs.seat.is_some_and(|s| s.driver) {
         *latch = None;
         return specs;
     }
@@ -140,32 +149,32 @@ pub fn fit(
     };
     let address = vehicle as *const Vehicle as usize;
     if latch.is_none_or(|l| l.vehicle != address) {
-        *latch = Some(FallbackLatch {
+        *latch = Some(VehicleLatch {
             vehicle: address,
             since: Instant::now(),
             local: None,
-            logged: false,
+            view: Entry::new(),
         });
     }
     // SAFETY: as above.
-    unsafe { fit_vehicle(config, vehicle, xf, latch, specs) }
+    unsafe { fit_vehicle(inputs, vehicle, latch, specs) }
 }
 
-/// How long after entering a vehicle the fallback wheel is carried into its space: by then the
-/// driver has settled into the seat.
-const SETTLE: Duration = Duration::from_millis(1500);
+/// How long after entering a vehicle the fallback wheel is carried into its space and the driving
+/// view begins measuring the hub: by then the driver has settled into the seat.
+pub(crate) const SETTLE: Duration = Duration::from_millis(1500);
 
 /// # Safety
 ///
 /// `vehicle` must be the live vehicle the local player drives, on the main thread outside the
 /// world update.
 unsafe fn fit_vehicle(
-    config: &PhysicalControlsConfig,
+    inputs: &FitInputs,
     vehicle: &Vehicle,
-    xf: &CockpitTransform,
-    latch: &mut Option<FallbackLatch>,
+    latch: &mut Option<VehicleLatch>,
     specs: Fit,
 ) -> Fit {
+    let (config, xf) = (inputs.physical, inputs.xf);
     let world = Mat4::from(vehicle.m_WorldMatrixT1);
     let parts = unsafe { vehicle.m_PfxVehicle.as_ref() }
         .map(|pfx| unsafe { find_parts(pfx) })
@@ -222,22 +231,51 @@ unsafe fn fit_vehicle(
             xf.bars(world * p.rest_root, centre, half_width)
         });
 
-    let seat = SeatReadout::new(&wheel, xf.head_cockpit, config.wheel.centre_m);
-    if let Some(l) = latch.as_mut()
-        && !l.logged
-        && l.since.elapsed() >= SETTLE
-    {
-        l.logged = true;
-        tracing::info!(
-            target: "controllers",
-            vehicle_type_hash = format_args!("{:08x}", vehicle.m_VehicleTypeNameHash),
-            wheel_part = parts.wheel.as_ref().map_or("none", |p| p.name.as_str()),
-            source = source.label(),
-            hub_from_eyes = ?seat.hub_from_eyes,
-            hub_from_head = ?seat.hub_from_head,
-            correction = ?seat.correction,
-            "driving position"
-        );
+    let hub_from_eyes = inputs
+        .anchor
+        .map(|anchor| xf.offset_to_cockpit(xf.point_to_world(wheel.centre) - anchor))
+        .filter(|h| h.is_finite());
+    let measured = matches!(source, WheelSource::Part | WheelSource::Override);
+    let class_corrected = inputs.seat.is_some_and(|s| match s.class {
+        VehicleClass::Car => true,
+        VehicleClass::Sea => inputs.view.boats,
+        _ => false,
+    });
+    let wheel_part = parts.wheel.as_ref().map(|p| p.name.as_str());
+    let mut closed = false;
+    let mut correction = None;
+    if let Some(l) = latch.as_mut() {
+        closed = l
+            .view
+            .observe(l.since.elapsed(), hub_from_eyes.filter(|_| measured));
+        correction = l.view.mean().filter(|_| measured).map(|mean| {
+            driving_view::derive(
+                mean,
+                inputs.view,
+                wheel_part.and_then(driving_view::find_override),
+            )
+        });
+    }
+    let seat = SeatReadout {
+        hub_from_eyes,
+        hub_from_head: wheel.centre - xf.head_cockpit,
+        correction,
+    };
+    let view = correction
+        .filter(|_| class_corrected)
+        .map(|correction| Target {
+            vehicle: vehicle as *const Vehicle as usize,
+            correction,
+        });
+    if closed {
+        log_driving_position(&DrivingPosition {
+            vehicle_type_hash: vehicle.m_VehicleTypeNameHash,
+            wheel_part,
+            source,
+            seat: &seat,
+            corrected: view.is_some() && inputs.view.enabled,
+            standard: inputs.view.hub_from_eyes_m,
+        });
     }
 
     Fit {
@@ -246,6 +284,7 @@ unsafe fn fit_vehicle(
         fork: parts.fork.is_some(),
         render,
         steering_turn: Some(vehicle.m_SteeringTurn).filter(|t| t.is_finite()),
+        view,
         readout: Some(FitReadout {
             vehicle_type_hash: vehicle.m_VehicleTypeNameHash,
             wheel_part: parts.wheel.as_ref().map(|p| p.name.clone()),
@@ -257,6 +296,35 @@ unsafe fn fit_vehicle(
             seat,
         }),
     }
+}
+
+/// What the driving position line logs, once per entry.
+struct DrivingPosition<'a> {
+    vehicle_type_hash: u32,
+    wheel_part: Option<&'a str>,
+    source: WheelSource,
+    seat: &'a SeatReadout,
+    /// Whether the view is corrected in this seat: the setting is on and the class is corrected.
+    corrected: bool,
+    standard: Vec3,
+}
+
+fn log_driving_position(p: &DrivingPosition) {
+    let c = p.seat.correction;
+    tracing::info!(
+        target: "controllers",
+        vehicle_type_hash = format_args!("{:08x}", p.vehicle_type_hash),
+        wheel_part = p.wheel_part.unwrap_or("none"),
+        source = p.source.label(),
+        hub_from_eyes = ?c.map(|c| c.hub_from_eyes),
+        hub_from_head = ?p.seat.hub_from_head,
+        standard = ?p.standard,
+        wanted = ?c.map(|c| c.wanted),
+        applied = ?c.filter(|_| p.corrected).map(|c| c.applied),
+        origin = c.map(|c| c.origin.label()),
+        corrected = p.corrected,
+        "driving position"
+    );
 }
 
 /// A vehicle part as read for the fit.

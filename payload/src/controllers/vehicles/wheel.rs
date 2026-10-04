@@ -346,6 +346,11 @@ impl CockpitTransform {
         self.head_world + self.body * ((cockpit - self.head_cockpit) * self.scale())
     }
 
+    /// A world-space displacement as a cockpit-frame one: turned into the body frame and scaled.
+    pub fn offset_to_cockpit(&self, world: Vec3) -> Vec3 {
+        self.body.inverse() * world / self.scale()
+    }
+
     pub fn direction_to_cockpit(&self, world: Vec3) -> Vec3 {
         self.body.inverse() * world
     }
@@ -565,6 +570,31 @@ mod tests {
         let moved = turn.transform_point3(top);
         assert!(close(moved, wheel.hub + Vec3::X * wheel.radius), "{moved}");
         assert_eq!(turn_about_hub(wheel.hub, Vec3::ZERO, 1.0), Mat4::IDENTITY);
+    }
+
+    /// The head pose sits the cockpit position, plus any view correction, from the anchor. The hub
+    /// measured from the anchor ignores both, and the correction moves the placed hub by its
+    /// negative, which is what the driving view relies on.
+    #[test]
+    fn a_view_correction_moves_the_placed_hub_and_not_its_measurement() {
+        let anchor = Vec3::new(10.0, 2.0, -3.0);
+        let body = Quat::from_rotation_y(-1.1);
+        let scale = 1.4;
+        let head_cockpit = Vec3::new(0.02, -0.05, 0.01);
+        let hub_world = anchor + body * (Vec3::new(0.03, -0.38, -0.52) * scale);
+        let xf_for = |correction: Vec3| CockpitTransform {
+            head_world: anchor + body * ((head_cockpit + correction) * scale),
+            head_cockpit,
+            body,
+            world_scale: scale,
+        };
+        let correction = Vec3::new(-0.03, -0.08, -0.07);
+        let (plain, corrected) = (xf_for(Vec3::ZERO), xf_for(correction));
+        let measured = |xf: &CockpitTransform| xf.offset_to_cockpit(hub_world - anchor);
+        assert!(close(measured(&plain), Vec3::new(0.03, -0.38, -0.52)));
+        assert!(close(measured(&corrected), measured(&plain)));
+        let placed = |xf: &CockpitTransform| xf.point_to_cockpit(hub_world);
+        assert!(close(placed(&corrected), placed(&plain) - correction));
     }
 
     #[test]

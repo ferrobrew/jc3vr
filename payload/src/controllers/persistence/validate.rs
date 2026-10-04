@@ -527,6 +527,17 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         10.0,
     )?;
     vec3(
+        "vehicles.driving_view.hub_from_eyes_m",
+        v.driving_view.hub_from_eyes_m,
+        2.0,
+    )?;
+    nonnegative("vehicles.driving_view.max_m", v.driving_view.max_m, 1.0)?;
+    nonnegative(
+        "vehicles.driving_view.blend_s",
+        v.driving_view.blend_s,
+        10.0,
+    )?;
+    vec3(
         "vehicles.parachute_handles.offset_m",
         v.parachute_handles.offset_m,
         10.0,

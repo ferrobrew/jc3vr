@@ -1,8 +1,8 @@
 //! Vehicles and flight: the seat and the physical controls it offers, what each hand holds, the
 //! values the controls write, where the wheel and handlebars were placed from and the rendered
-//! wheel's turn, the mounted gun's aim, the arm steering's pose and output, the
-//! parachute handles' pulls and output, and the vehicle, mounted-gun, arm-steering, and handle
-//! settings.
+//! wheel's turn, the driving view's correction, the mounted gun's aim, the arm steering's pose and
+//! output, the parachute handles' pulls and output, and the vehicle, driving-view, mounted-gun,
+//! arm-steering, and handle settings.
 
 use egui::Ui;
 
@@ -12,11 +12,12 @@ use crate::{
         vehicles::{
             self, VehiclesStatus,
             config::{
-                ArmSteeringConfig, HandlebarsSpec, LeverAxis, LeverSpec, MountedConfig,
-                ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec, VehiclesConfig,
-                WheelSpec, WheelTracking,
+                ArmSteeringConfig, DrivingViewConfig, HandlebarsSpec, LeverAxis, LeverSpec,
+                MountedConfig, ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec,
+                VehiclesConfig, WheelSpec, WheelTracking,
             },
             driver_aim,
+            driving_view::{self, DrivingViewStatus},
             fit::FitReadout,
             look_steer,
             physical::{ControlEvent, ControlKind},
@@ -30,6 +31,7 @@ use crate::{
 /// Everything the section shows, read before the config is locked for editing.
 pub(super) struct VehiclesReadout {
     status: VehiclesStatus,
+    driving_view: DrivingViewStatus,
     driver_substitutions: u64,
     look_steer_suppressions: u64,
     wheel_turns: u64,
@@ -39,6 +41,7 @@ impl VehiclesReadout {
     pub(super) fn read() -> Self {
         Self {
             status: vehicles::status(),
+            driving_view: driving_view::status(),
             driver_substitutions: driver_aim::substitutions(),
             look_steer_suppressions: look_steer::suppressions(),
             wheel_turns: wheel_render::turned(),
@@ -119,6 +122,7 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         axis(o.throttle),
     ));
     wheel_readout(ui, status, readout.wheel_turns);
+    driving_view_readout(ui, &readout.driving_view);
     for event in status.events.iter().rev() {
         ui.label(match event {
             ControlEvent::Grabbed(hand, kind) => {
@@ -262,13 +266,24 @@ fn fit_readout(ui: &mut Ui, fit: &FitReadout) {
     }
     let seat = &fit.seat;
     ui.label(format!(
-        "Driving position: hub from the character's eyes {} · from your head {} · {:.0} cm off the \
-         configured wheel's place {}",
-        vec3(seat.hub_from_eyes),
+        "Driving position: hub from the character's eyes {} · from your head {}",
+        seat.hub_from_eyes.map_or("unknown".to_owned(), vec3),
         vec3(seat.hub_from_head),
-        seat.correction.length() * 100.0,
-        vec3(seat.correction),
     ));
+    ui.label(match &seat.correction {
+        Some(c) => format!(
+            "Measured hub from the eyes {} · {:.0} cm off the standard place {} · correction {} \
+             ({})",
+            vec3(c.hub_from_eyes),
+            c.wanted.length() * 100.0,
+            vec3(c.wanted),
+            vec3(c.applied),
+            c.origin.label(),
+        ),
+        None => "Seat correction: not measured (the fallback wheel, or the driver has not \
+                 settled yet)"
+            .to_owned(),
+    });
     ui.label(format!(
         "Handlebars from {}",
         if fit.bars_from_vehicle {
@@ -276,6 +291,24 @@ fn fit_readout(ui: &mut Ui, fit: &FitReadout) {
         } else {
             "the configured handlebars"
         }
+    ));
+}
+
+/// The correction the view is composed with, and the one it eases toward.
+fn driving_view_readout(ui: &mut Ui, status: &DrivingViewStatus) {
+    if status.target.is_none() && status.offset == glam::Vec3::ZERO {
+        return;
+    }
+    ui.label(format!(
+        "Driving view: moved {} ({:.0} cm), easing to {}{}",
+        vec3(status.offset),
+        status.offset.length() * 100.0,
+        vec3(status.goal),
+        if status.target.is_some() {
+            ""
+        } else {
+            " · no seat correction published"
+        },
     ));
 }
 
@@ -292,6 +325,8 @@ fn placed_wheel(ui: &mut Ui, wheel: &WheelFrame) {
 pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
     ui.label("The wingsuit's head look-steer removal follows the parachute's movement setting.");
+    egui::CollapsingHeader::new("Driving view")
+        .show(ui, |ui| driving_view_settings(ui, &mut v.driving_view));
     egui::CollapsingHeader::new("Mounted guns").show(ui, |ui| mounted_settings(ui, &mut v.mounted));
     egui::CollapsingHeader::new("Physical controls")
         .show(ui, |ui| physical_settings(ui, &mut v.physical));
@@ -299,6 +334,25 @@ pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
         .show(ui, |ui| arm_settings(ui, &mut v.arm_steering));
     egui::CollapsingHeader::new("Parachute handles")
         .show(ui, |ui| handle_settings(ui, &mut v.parachute_handles));
+}
+
+fn driving_view_settings(ui: &mut Ui, d: &mut DrivingViewConfig) {
+    ui.checkbox(
+        &mut d.enabled,
+        "Move the view per vehicle to a standard place behind the wheel",
+    );
+    vec3_drag(ui, "hub from the eyes (m)", &mut d.hub_from_eyes_m, 0.005);
+    ui.add(
+        egui::Slider::new(&mut d.max_m, 0.0..=0.5)
+            .text("longest correction (m)")
+            .fixed_decimals(2),
+    );
+    ui.add(
+        egui::Slider::new(&mut d.blend_s, 0.0..=3.0)
+            .text("ease (s)")
+            .fixed_decimals(1),
+    );
+    ui.checkbox(&mut d.boats, "Boats too");
 }
 
 fn mounted_settings(ui: &mut Ui, m: &mut MountedConfig) {

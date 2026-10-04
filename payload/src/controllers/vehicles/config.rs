@@ -30,6 +30,8 @@ pub struct VehiclesConfig {
     pub arm_steering: ArmSteeringConfig,
     /// The parachute's handles, grabbed and pulled to steer and brake.
     pub parachute_handles: ParachuteHandlesConfig,
+    /// The driver's view moved per vehicle to a standard place behind the wheel.
+    pub driving_view: DrivingViewConfig,
 }
 
 impl VehiclesConfig {
@@ -40,11 +42,53 @@ impl VehiclesConfig {
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),
             parachute_handles: ParachuteHandlesConfig::new(),
+            driving_view: DrivingViewConfig::new(),
         }
     }
 }
 
 impl Default for VehiclesConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The driving view's settings, in
+/// [`VehiclesConfig::driving_view`] (see [`crate::controllers::vehicles::driving_view`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DrivingViewConfig {
+    /// Move the view per vehicle so the eyes sit at the standard offset from the wheel's hub.
+    pub enabled: bool,
+    /// Where the hub sits from the eyes in the standard driving position, cockpit frame (+X right,
+    /// +Y up, +Z back), metres.
+    pub hub_from_eyes_m: Vec3,
+    /// The longest correction applied, metres; a longer one is shortened to this along its
+    /// direction.
+    pub max_m: f32,
+    /// How long the view takes to ease to a new correction, seconds.
+    pub blend_s: f32,
+    /// Correct boats too. Off, only cars are corrected.
+    pub boats: bool,
+}
+
+impl DrivingViewConfig {
+    /// The standard is the middle of a road car's ergonomic range: the wheel's centre about a
+    /// quarter to a third of a metre below the driver's eyes and about half a metre ahead of them.
+    /// It is a little nearer than a road car's, because a VR rim holds no weight and a long reach
+    /// tires the arms.
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            hub_from_eyes_m: Vec3::new(0.0, -0.30, -0.45),
+            max_m: 0.25,
+            blend_s: 1.0,
+            boats: false,
+        }
+    }
+}
+
+impl Default for DrivingViewConfig {
     fn default() -> Self {
         Self::new()
     }

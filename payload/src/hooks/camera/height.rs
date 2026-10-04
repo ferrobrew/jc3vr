@@ -1,7 +1,7 @@
 //! The camera height readout: where the camera puts the eyes against where Rico's animated eyes
 //! are, both measured up from his root, with the head-height remap, the posture and what the
 //! automatic posture decided it from, the seated eye reference and its source, and the crouch
-//! state that account for the difference. Read-only: it observes the camera placement and changes
+//! state, and the driving view's correction that account for the difference. Read-only: it observes the camera placement and changes
 //! nothing.
 //!
 //! The camera hook records a sample each gameplay frame the headpose places the camera
@@ -20,6 +20,7 @@ use crate::{
     controllers::{
         body::{self, BodyDimensions},
         roomscale::{self, RoomscaleStatus, SeatPhase, posture::HeadHeight, probe},
+        vehicles::driving_view,
     },
     headpose::{anchor, eye_arm, neck_delta},
 };
@@ -42,6 +43,9 @@ pub struct HeightReadout {
     /// The vertical offset the cockpit composes the view with, world metres: the remap's offset
     /// scaled by the world scale.
     pub vertical_offset_m: f32,
+    /// The driving view's correction the cockpit composed the view with, body frame, world
+    /// metres: the correction scaled by the world scale.
+    pub driving_view_m: Vec3,
     /// The roomscale state the offset comes from.
     pub roomscale: RoomscaleStatus,
     /// When the camera sample was taken.
@@ -144,6 +148,7 @@ impl Sample {
             floor_head_height_m: frame.stage.head_height,
             remap: frame.head_height,
             vertical_offset_m: frame.cockpit_y * frame.world_scale,
+            driving_view_m: driving_view::status().offset * frame.world_scale,
             roomscale,
             at: self.at,
         }
@@ -167,6 +172,7 @@ fn log(r: &HeightReadout) {
         camera_eyes_m = r.camera_eyes_m,
         camera_minus_rico_m = r.camera_eyes_m - r.rico_eyes_m,
         vertical_offset_m = r.vertical_offset_m,
+        driving_view_m = ?r.driving_view_m,
         remap = r.remap.is_some(),
         remap_source = r.remap.map(|h| h.source.label()),
         floor_head_height_m = ?r.floor_head_height_m,
