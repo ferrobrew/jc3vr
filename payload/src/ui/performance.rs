@@ -5,7 +5,10 @@ use std::{collections::VecDeque, time::Instant};
 
 use parking_lot::Mutex;
 
-use crate::ui::util::patchbox;
+use crate::{
+    frame_timing::{self, Kind, ThreadClass, ns_to_ms},
+    ui::util::patchbox,
+};
 
 pub fn egui_debug_performance(ui: &mut egui::Ui) {
     unsafe {
@@ -33,12 +36,77 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
         patchbox(ui, "Force to FPS", &mut clock.m_ForceToFps);
     }
 
+    frame_breakdown(ui);
     far_field_summary(ui);
 
     // The profiler (issue #34): a collapsible with the live flame graph and trace capture, below
     // the frame-rate readout.
     #[cfg(feature = "profiler")]
     crate::profiler::ui::egui_profiler(ui);
+}
+
+/// The always-on frame breakdown (`crate::frame_timing`) over the last second: the game thread's
+/// time per frame by kind against the frame interval, the other threads' time, and every timed
+/// slot by its self time, largest first. The same numbers go to the log every ten seconds.
+fn frame_breakdown(ui: &mut egui::Ui) {
+    ui.separator();
+    egui::CollapsingHeader::new("Frame breakdown")
+        .default_open(true)
+        .show(ui, |ui| {
+            let Some(report) = frame_timing::latest() else {
+                ui.label("(collecting; the first window closes after a second)");
+                return;
+            };
+            let t = &report.totals;
+            ui.label(format!(
+                "{} frames over {:.1} s: {:.2} ms/frame, worst {:.2} ms",
+                t.frames,
+                report.window_s,
+                t.mean_frame_ms(),
+                ns_to_ms(t.frame_max_ns),
+            ));
+            for class in ThreadClass::ALL {
+                let mut line = format!("{}:", class.name());
+                for kind in Kind::ALL {
+                    line.push_str(&format!(
+                        " {} {:.2}",
+                        kind.name(),
+                        t.per_frame_ms(t.bucket(class, kind))
+                    ));
+                }
+                if class == ThreadClass::Game {
+                    line.push_str(&format!(
+                        ", untracked {:.2}",
+                        t.per_frame_ms(t.game_untracked_ns())
+                    ));
+                }
+                ui.label(format!("{line} ms/frame"));
+            }
+
+            let mut slots: Vec<_> = frame_timing::Slot::ALL
+                .into_iter()
+                .filter(|s| t.slot(*s).calls > 0)
+                .collect();
+            slots.sort_by_key(|s| std::cmp::Reverse(t.slot(*s).self_ns));
+            egui::Grid::new("frame_breakdown_slots")
+                .striped(true)
+                .num_columns(5)
+                .show(ui, |ui| {
+                    for heading in ["slot", "kind", "self ms/frame", "max ms", "calls/frame"] {
+                        ui.strong(heading);
+                    }
+                    ui.end_row();
+                    for slot in slots {
+                        let s = t.slot(slot);
+                        ui.label(slot.name());
+                        ui.label(slot.kind().name());
+                        ui.label(format!("{:.3}", t.per_frame_ms(s.self_ns)));
+                        ui.label(format!("{:.3}", ns_to_ms(s.max_ns)));
+                        ui.label(format!("{:.2}", s.calls as f64 / t.frames.max(1) as f64));
+                        ui.end_row();
+                    }
+                });
+        });
 }
 
 /// The far-field split totals (issue #32), mirrored here so they can be watched alongside the

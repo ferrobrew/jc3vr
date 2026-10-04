@@ -79,6 +79,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [performance.md](mod/performance/performance.md) — where the frame actually goes, measured: geometry bound by draw submission rather than fill, the post chain bound by pixels, and what single-pass stereo buys.
 - [profiler.md](mod/performance/profiler.md) — the in-game profiler (issue #34): puffin CPU scopes across the frame phases and render passes, the GPU timestamp lane, the flame graph, and the F9 trace capture.
+- [frame-timing.md](mod/performance/frame-timing.md) — the always-on frame breakdown: self time per frame region by kind (mod, OpenXR, engine, wait) and thread, logged every ten seconds and shown in the Performance tab.
 
 ### body/
 

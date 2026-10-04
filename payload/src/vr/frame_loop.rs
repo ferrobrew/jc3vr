@@ -12,6 +12,7 @@ use parking_lot::MutexGuard;
 use crate::{
     config::Config,
     controllers::frame as controller_frame,
+    frame_timing::{self, Slot},
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig, pose_control,
         recenter::mid_pose,
@@ -155,6 +156,7 @@ impl FrameContext {
             return Ok(());
         }
         let cfg = Config::lock_query(|c| c.vr.clone());
+        let _timing = frame_timing::scope(Slot::VrSwapchainWait);
         self.guard.acquire_swapchain_image(&cfg)?;
         self.image_acquired = true;
         self.frame.image_ever_acquired = true;
@@ -200,6 +202,7 @@ impl FrameContext {
             self.release()?;
         }
         let submit_world = self.frame.should_render && self.frame.image_ever_acquired;
+        let _timing = frame_timing::scope(Slot::VrEndFrame);
         self.guard.end_frame(&self.frame, submit_world)
     }
 }
@@ -226,6 +229,7 @@ impl VrState {
     /// Begin a frame and locate the per-eye views, re-based into the cockpit frame. Updates the
     /// latest head pose (for [`crate::vr::recenter`]) from the mid-eye pose.
     fn begin_frame(&mut self, cfg: &VrConfig) -> anyhow::Result<FrameData> {
+        let _timing = frame_timing::scope(Slot::VrBeginFrame);
         let session = self
             .session
             .as_mut()
@@ -237,6 +241,7 @@ impl VrState {
         let frame_state = {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("xrWaitFrame");
+            let _timing = frame_timing::scope(Slot::VrWaitFrame);
             session.frame_wait.wait().context("vr: wait_frame failed")?
         };
         session
@@ -326,6 +331,7 @@ impl VrState {
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.
         if let Some(input) = self.input.as_mut() {
             let controllers = Config::lock_query(|c| c.controllers);
+            let _timing = frame_timing::scope(Slot::VrInput);
             input.update(
                 &session.handle,
                 &session.local,

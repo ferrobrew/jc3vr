@@ -18,6 +18,7 @@ use windows::Win32::{
 use crate::{
     controllers::{overlay, weapons::scope},
     debug::trace::{TraceEvent, TraceState},
+    frame_timing::{self, Slot},
     hud,
     hud::egui_panel::draw_quad,
     screenshot::CaptureSource,
@@ -54,6 +55,11 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// `target: "thread_identity"` and the `hook`/`thread_id` field names are shared across all three call
 /// sites so the logs can be compared directly across a session.
+///
+/// The first call logs at info and later changes at debug (`RUST_LOG=thread_identity=debug`): the
+/// draw task runs on whichever CPU fragment worker picks it up, so `render_engine_post_draw` changes
+/// thread on most dispatches, and logging each change at info would write some eighty synchronous
+/// log lines a second for the whole session.
 pub(crate) fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
     // SAFETY: `GetCurrentThreadId` reads only the calling thread's own TEB entry; it has no
     // preconditions and cannot fail.
@@ -65,7 +71,7 @@ pub(crate) fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
     if previous == 0 {
         tracing::info!(target: "thread_identity", hook, thread_id, "hook entry thread (first call)");
     } else if previous != thread_id {
-        tracing::info!(
+        tracing::debug!(
             target: "thread_identity",
             hook,
             thread_id,
@@ -226,6 +232,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
         crate::profiler::gpu::end_dispatch(context.cast())
     };
     TraceState::record_eye(TraceEvent::PostDraw);
+    let _timing = frame_timing::scope(Slot::PostDraw);
 
     unsafe {
         let Some(context) = context.as_mut() else {

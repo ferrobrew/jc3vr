@@ -28,6 +28,7 @@ mod crash;
 mod debug;
 mod director;
 mod far_field;
+mod frame_timing;
 mod fsr;
 mod grapple;
 mod headpose;
@@ -245,6 +246,18 @@ fn shutdown() {
     std::thread::spawn(shutdown_startup);
 }
 
+/// Whether any surface will draw this frame's egui output: the VR floating panel, the desktop
+/// mirror's overlay, or, outside a VR frame, the flat overlay `graphics_flip` renders onto the
+/// back buffer under the same conditions it checks.
+fn debug_ui_visible(panel_active: bool) -> bool {
+    panel_active
+        || crate::hud::mirror_overlay::is_active()
+        || (crate::vr::render_params(0).is_none()
+            && !crate::capture::is_active()
+            && !crate::director::cinematic::active()
+            && config::Config::lock_query(|c| c.hud.flat_overlay_visible))
+}
+
 fn update() {
     if let Err(e) = initialize_from_game() {
         tracing::error!("Failed to initialize in game thread, shutting down: {e:?}");
@@ -300,6 +313,7 @@ fn update() {
                 None => crate::hud::pointer::reset_egui_pointer(),
             }
 
+            let visible = debug_ui_visible(panel_size.is_some());
             egui_state.run(|ctx, renderer| {
                 crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
                 // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
@@ -308,6 +322,11 @@ fn update() {
                 ui::render::EGUI_DEBUG_RENDER_STATE
                     .lock()
                     .prepare_if_necessary(renderer);
+                // Laying out and tessellating the debug window is the bulk of this pass, and
+                // nothing would draw its output while every surface that shows it is off.
+                if !visible {
+                    return;
+                }
                 ui::startup_banner(ctx);
                 // The dock area fills whatever space the window gives it, so the window carries an
                 // explicit default size instead of auto-sizing to content.

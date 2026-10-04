@@ -32,6 +32,7 @@ use jc3gi::{cpu_fragment::CpuPrimaryCount, graphics_engine::graphics_engine::Gra
 use windows::Win32::{Foundation::HANDLE, System::Threading::WaitForSingleObject};
 
 use crate::{
+    frame_timing::{self, Slot},
     thread_role::{self, ThreadRole},
     vr::{FrameContext, config::VrConfig},
 };
@@ -146,6 +147,7 @@ unsafe fn poll_signal(signal: *const u32, deadline: Instant, what: &str) {
 fn run_tail(job: TailJob) {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("Frame tail");
+    let _timing = frame_timing::scope(Slot::Tail);
 
     // Drain the draw thread (CPU submission completeness) so the blit records after the last
     // eye's commands on the immediate context.
@@ -161,6 +163,7 @@ fn run_tail(job: TailJob) {
         if let Some(ge) = GraphicsEngine::get() {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("WaitForCPUDraw + drain (tail)");
+            let _timing = frame_timing::scope(Slot::TailDrain);
             let deadline = Instant::now() + DRAIN_TIMEOUT;
 
             let fragment_signal = ge.m_DrawFragmentSignal;
@@ -197,6 +200,7 @@ fn run_tail(job: TailJob) {
     if job.mirror {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("Desktop mirror (tail)");
+        let _timing = frame_timing::scope(Slot::Mirror);
         crate::vr::present_mirror(usize::from(job.vr_cfg.mirror_eye));
     }
 
@@ -204,6 +208,7 @@ fn run_tail(job: TailJob) {
     {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("VR present + submit (tail)");
+        let _timing = frame_timing::scope(Slot::Submit);
         crate::vr::present_and_submit(job.frame, &job.vr_cfg);
     }
     crate::hooks::game::log_vr_frame_health(should_render);

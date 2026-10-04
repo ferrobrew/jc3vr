@@ -61,6 +61,7 @@ use crate::{
         physical_hands, scheme, vehicles,
         weapons::{c4, grenade, melee},
     },
+    frame_timing::{self, Slot},
     headpose, hooks,
 };
 
@@ -199,6 +200,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         }
         None => return original(),
     };
+    let _timing = frame_timing::scope(Slot::Aim);
     grenade::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
     c4::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
 
@@ -218,6 +220,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         return;
     };
     unsafe { finish(aim, owner, &tick, grapple_ray) };
+    let _timing = frame_timing::scope(Slot::PhysicalHands);
     // SAFETY: the owner is the live local player, after the original update.
     unsafe { physical_hands::after_aim(owner, dt) };
 }

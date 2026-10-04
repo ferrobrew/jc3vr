@@ -27,6 +27,7 @@ use crate::{
         camera::capture_render_camera,
         trace::{TraceEvent, TraceState, tracing_active},
     },
+    frame_timing::{self, Slot},
     hooks::{
         draw_count::DRAW_COUNTS,
         graphics_engine::{
@@ -62,11 +63,16 @@ fn game_update(game: *const Game) -> bool {
     thread_role::mark_thread(ThreadRole::Game);
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.
     crate::hooks::clock::UPDATED_THIS_FRAME.store(false, Ordering::Relaxed);
+    frame_timing::frame_tick();
     // `crate::update` advances the puffin frame (closing the previous one); the frame scope opens
     // after it so it belongs to the new frame and spans the whole original update.
-    crate::update();
+    {
+        let _timing = frame_timing::scope(Slot::DebugUi);
+        crate::update();
+    }
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("CGame::Update");
+    let _timing = frame_timing::scope(Slot::EngineUpdate);
     GAME_UPDATE.get().unwrap().call(game)
 }
 
@@ -74,6 +80,7 @@ fn game_update(game: *const Game) -> bool {
 fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
     log_hook_thread("game_update_render", &GAME_UPDATE_RENDER_THREAD);
     thread_role::mark_thread(ThreadRole::Game);
+    let _timing = frame_timing::scope(Slot::UpdateRenderHook);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("CGame::UpdateRender");
     unsafe {
@@ -124,7 +131,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // the per-eye render parameters flow through a separate slot (`vr::render_params`).
         #[cfg(feature = "profiler")]
         let vr_update_scope = puffin::profile_scope_custom!("vr::update");
-        let vr_running = crate::vr::update();
+        let vr_running = {
+            let _timing = frame_timing::scope(Slot::VrUpdate);
+            crate::vr::update()
+        };
         #[cfg(feature = "profiler")]
         drop(vr_update_scope);
         crate::headpose::set_source(if vr_running {
@@ -186,11 +196,14 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         mark(Phase::OriginalUpdateRender);
         #[cfg(feature = "profiler")]
         let engine_scope = puffin::profile_scope_custom!("UpdateRender (engine)");
-        GAME_UPDATE_RENDER
-            .get()
-            .unwrap()
-            .call(game, update_contexts);
-        GameState::PostUpdateRender(update_contexts);
+        {
+            let _timing = frame_timing::scope(Slot::EngineUpdateRender);
+            GAME_UPDATE_RENDER
+                .get()
+                .unwrap()
+                .call(game, update_contexts);
+            GameState::PostUpdateRender(update_contexts);
+        }
         #[cfg(feature = "profiler")]
         drop(engine_scope);
         // After the engine's render update, whose camera update stores this frame's `dtf`: the
@@ -383,7 +396,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 });
                 #[cfg(feature = "profiler")]
                 puffin::profile_scope!("Dispatch", format!("eye {eye}, ordinal {ordinal}"));
-                game.Draw(spf);
+                {
+                    let _timing = frame_timing::scope(Slot::Dispatch);
+                    game.Draw(spf);
+                }
                 mark(if eye == 0 {
                     Phase::Eye0Drain
                 } else {
@@ -398,6 +414,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 {
                     #[cfg(feature = "profiler")]
                     puffin::profile_scope!("WaitForCPUDraw + drain");
+                    let _timing = frame_timing::scope(Slot::Drain);
                     ge.WaitForCPUDrawToFinish();
                     drain_draw_thread_fragment(ge);
                 }
@@ -442,6 +459,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             {
                 #[cfg(feature = "profiler")]
                 puffin::profile_scope!("Dispatch", "mono");
+                let _timing = frame_timing::scope(Slot::Dispatch);
                 game.Draw(spf);
             }
             capture_render_camera(0);
@@ -464,6 +482,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 // The worker is shutting down: fall back to the inline tail (drain first -- the
                 // final dispatch's drain was skipped above).
                 if let Some(ge) = GraphicsEngine::get() {
+                    let _timing = frame_timing::scope(Slot::Drain);
                     ge.WaitForCPUDrawToFinish();
                     drain_draw_thread_fragment(ge);
                 }
@@ -476,7 +495,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("VR present + submit");
             let should_render = frame.should_render();
-            crate::vr::present_and_submit(frame, &vr_cfg);
+            {
+                let _timing = frame_timing::scope(Slot::Submit);
+                crate::vr::present_and_submit(frame, &vr_cfg);
+            }
             log_vr_frame_health(should_render);
         }
 
@@ -497,6 +519,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         if !tail_deferred && vr_running && vr_cfg.mirror {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("Desktop mirror");
+            let _timing = frame_timing::scope(Slot::Mirror);
             crate::vr::present_mirror(usize::from(vr_cfg.mirror_eye));
         }
         mark(Phase::FrameEnd);

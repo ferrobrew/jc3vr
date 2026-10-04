@@ -19,13 +19,14 @@ use jc3gi::graphics_engine::{
 };
 use re_utilities::hook_library::HookLibrary;
 
+#[cfg(feature = "profiler")]
+use crate::profiler::gpu::seam;
 use crate::{
     config::Config,
     debug::{
         stereo_diff::op_total,
         trace::{TraceEvent, TraceState, tracing_active},
     },
-    profiler::gpu::seam,
     stereo::{STEREO_STATE, draw_index, is_second_eye},
     vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
 };

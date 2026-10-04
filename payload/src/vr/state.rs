@@ -22,6 +22,7 @@ use windows::{
 use crate::{
     config::Config,
     controllers::frame as controller_frame,
+    frame_timing::{self, Slot},
     hooks::graphics_engine::graphics_engine,
     thread_role::{self, ThreadRole},
     vr::{
@@ -187,6 +188,7 @@ pub(super) fn lock_state() -> MutexGuard<'static, VrState> {
     if !role.may_block_on_vr_state() {
         report_forbidden_lock(role, Location::caller());
     }
+    let _timing = frame_timing::scope(Slot::VrLock);
     VR_STATE.lock()
 }
 

@@ -555,9 +555,6 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     let (Some(context), false) = (unsafe { context.as_ref() }, game_object.is_null()) else {
         return;
     };
-    let Some(frame) = *FRAME.lock() else {
-        return;
-    };
     let weapon = unsafe {
         &*(game_object
             .cast::<u8>()
@@ -565,10 +562,14 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
             .cast::<WeaponBase>())
     };
     let local = ik::local_character();
-    // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
+    // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character. Checked before the
+    // frame lock, since this runs for every weapon in the world.
     if local == 0 || weapon.m_User[0] as usize != local {
         return;
     }
+    let Some(frame) = *FRAME.lock() else {
+        return;
+    };
     let state = weapon.m_State;
     if !matches!(
         state,

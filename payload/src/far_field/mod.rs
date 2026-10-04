@@ -176,12 +176,20 @@ impl Drop for ListWindow {
 ///
 /// `pass` and `ctx` are the live pass and render context of a `DoDraw` call on the render thread.
 pub unsafe fn before_do_draw(pass: *mut RenderPass, ctx: *mut RenderContext) -> Option<ListWindow> {
-    let cfg = Config::lock_query(|c| c.far_field.clone());
+    // Copy out only the fields this needs: the whole config carries a `String`, and this runs for
+    // every pass of every dispatch.
+    let (enabled, threshold_m, mode) = Config::lock_query(|c| {
+        (
+            c.far_field.enabled,
+            c.far_field.threshold_m,
+            c.far_field.mode,
+        )
+    });
     let pass = unsafe { pass.as_mut() }?;
     let ctx = unsafe { ctx.as_ref() }?;
 
     let id = pass.m_Index;
-    if !cfg.enabled || !SPLIT_PASSES.contains(&id) {
+    if !enabled || !SPLIT_PASSES.contains(&id) {
         restore_buckets(pass);
         return None;
     }
@@ -189,7 +197,7 @@ pub unsafe fn before_do_draw(pass: *mut RenderPass, ctx: *mut RenderContext) -> 
     // back-to-front (raw distance keys), and `None`/`SortID` passes never compute depth keys.
     if pass.m_SortMethod != RenderPassSortMethod::RenderPassSortMethod_Auto
         || pass.m_RenderBackToFront != 0
-        || !apply_buckets(pass, cfg.threshold_m)
+        || !apply_buckets(pass, threshold_m)
     {
         if DUMP_BUDGET.load(Ordering::Relaxed) > 0 {
             DUMP_BUDGET.fetch_sub(1, Ordering::Relaxed);
@@ -248,7 +256,7 @@ pub unsafe fn before_do_draw(pass: *mut RenderPass, ctx: *mut RenderContext) -> 
         );
     }
 
-    let window = match cfg.mode {
+    let window = match mode {
         FarFieldMode::Collect => None,
         FarFieldMode::SkipFar => Some((0, split)),
         FarFieldMode::SkipNear => Some((split, count)),

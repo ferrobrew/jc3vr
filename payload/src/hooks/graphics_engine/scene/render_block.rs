@@ -311,7 +311,10 @@ unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Opt
 /// embedded `CRBIInfo`, matched against the body slot's published pointer. Fail-safe: any missing
 /// piece (config off, shadow pass, nothing published) means "draw normally".
 unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bool {
-    if !Config::lock_query(|c| c.camera.hide_head_draws) {
+    // The pointer identity first: it rules out every draw but the player's body without a lock,
+    // and this runs for every character draw.
+    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
+    if body == 0 || info as usize != body {
         return false;
     }
     let Some(rc_ref) = (unsafe { rc.as_ref() }) else {
@@ -324,8 +327,7 @@ unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bo
     {
         return false;
     }
-    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
-    body != 0 && info as usize == body
+    Config::lock_query(|c| c.camera.hide_head_draws)
 }
 
 const PALETTE_BUF_LEN: usize = 256;
