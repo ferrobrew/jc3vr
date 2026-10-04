@@ -384,6 +384,32 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         r.roomscale_min_extent_m,
         100.0,
     )?;
+    nonnegative(
+        "roomscale.auto_posture.stand_after_s",
+        r.auto_posture.stand_after_s,
+        600.0,
+    )?;
+    nonnegative(
+        "roomscale.auto_posture.sit_after_s",
+        r.auto_posture.sit_after_s,
+        3_600.0,
+    )?;
+    range(
+        "roomscale.seated_reference.window_s",
+        r.seated_reference.window_s,
+        10.0,
+        3_600.0,
+    )?;
+    nonnegative(
+        "roomscale.seated_reference.rate_mps",
+        r.seated_reference.rate_mps,
+        1.0,
+    )?;
+    nonnegative(
+        "roomscale.seated_reference.deadband_m",
+        r.seated_reference.deadband_m,
+        1.0,
+    )?;
     nonnegative("roomscale.chase.deadzone_m", r.chase.deadzone_m, 100.0)?;
     nonnegative(
         "roomscale.chase.max_speed_mps",

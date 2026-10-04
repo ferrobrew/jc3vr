@@ -14,6 +14,7 @@ use crate::controllers::{
     },
     config::Posture,
     frame::Hand,
+    roomscale::posture::DetectedPosture,
 };
 
 /// How long the flow waits after MEASURE is selected, so that the player can take the pose.
@@ -68,11 +69,12 @@ impl Stance {
     pub const ALL: [Stance; 2] = [Stance::Standing, Stance::Seated];
 
     /// The stance a calibration defaults to under the posture setting: seated in the seated
-    /// posture, standing otherwise (the automatic posture never resolves to seated).
-    pub fn for_posture(posture: Posture) -> Stance {
-        match posture {
-            Posture::Seated => Stance::Seated,
-            Posture::Auto | Posture::Standing | Posture::Roomscale => Stance::Standing,
+    /// posture, standing in the standing and roomscale postures, and in the automatic posture
+    /// whatever it currently `detected` (standing when it has not run).
+    pub fn for_posture(posture: Posture, detected: Option<DetectedPosture>) -> Stance {
+        match (posture, detected) {
+            (Posture::Seated, _) | (Posture::Auto, Some(DetectedPosture::Seated)) => Stance::Seated,
+            (Posture::Auto, _) | (Posture::Standing | Posture::Roomscale, _) => Stance::Standing,
         }
     }
 }
@@ -683,11 +685,22 @@ mod tests {
     }
 
     #[test]
-    fn the_stance_defaults_to_seated_only_in_the_seated_posture() {
-        assert_eq!(Stance::for_posture(Posture::Seated), Stance::Seated);
-        for posture in [Posture::Auto, Posture::Standing, Posture::Roomscale] {
-            assert_eq!(Stance::for_posture(posture), Stance::Standing);
+    fn the_stance_defaults_to_the_posture_and_the_automatic_detection() {
+        for detected in [None, Some(DetectedPosture::Standing)] {
+            assert_eq!(
+                Stance::for_posture(Posture::Seated, detected),
+                Stance::Seated
+            );
+            for posture in [Posture::Auto, Posture::Standing, Posture::Roomscale] {
+                assert_eq!(Stance::for_posture(posture, detected), Stance::Standing);
+            }
         }
+        let seated = Some(DetectedPosture::Seated);
+        assert_eq!(Stance::for_posture(Posture::Auto, seated), Stance::Seated);
+        assert_eq!(
+            Stance::for_posture(Posture::Standing, seated),
+            Stance::Standing
+        );
     }
 
     #[test]

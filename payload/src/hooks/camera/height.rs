@@ -1,5 +1,6 @@
 //! The camera height readout: where the camera puts the eyes against where Rico's animated eyes
-//! are, both measured up from his root, with the head-height remap, the posture, and the crouch
+//! are, both measured up from his root, with the head-height remap, the posture and what the
+//! automatic posture decided it from, the seated eye reference and its source, and the crouch
 //! state that account for the difference. Read-only: it observes the camera placement and changes
 //! nothing.
 //!
@@ -7,8 +8,8 @@
 //! ([`record`]). Rico's eye midpoint is rebuilt from the published anchors exactly as the camera
 //! hangs its eye point from them (the head anchor, the neck delta, and the eye arm in the body
 //! frame), so with a zero vertical offset and no configured head or body offset the two heights
-//! agree. The debug UI reads the latest sample through [`readout`], and while Rico is on foot the
-//! readout is logged at most every [`LOG_INTERVAL`].
+//! agree. The debug UI reads the latest sample through [`readout`], and while Rico is on foot or in
+//! a vehicle seat the readout is logged at most every [`LOG_INTERVAL`].
 
 use std::time::{Duration, Instant};
 
@@ -18,7 +19,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{self, BodyDimensions},
-        roomscale::{self, RoomscaleStatus, posture::HeadHeight, probe},
+        roomscale::{self, RoomscaleStatus, SeatPhase, posture::HeadHeight, probe},
     },
     headpose::{anchor, eye_arm, neck_delta},
 };
@@ -55,6 +56,25 @@ impl HeightReadout {
             .at
             .is_some_and(|at| self.at.saturating_duration_since(at) < probe::STALE_AFTER)
     }
+
+    /// Whether Rico was in a vehicle seat at the sample.
+    pub fn in_seat(&self) -> bool {
+        matches!(
+            self.roomscale.frame.seat,
+            SeatPhase::Locked | SeatPhase::Shuffle
+        )
+    }
+
+    /// Where Rico was at the sample, for the readouts.
+    pub fn place(&self) -> &'static str {
+        if self.on_foot() {
+            "on foot"
+        } else if self.in_seat() {
+            "in a vehicle seat"
+        } else {
+            "neither on foot nor seated"
+        }
+    }
 }
 
 /// The latest camera height sample, or `None` until the headpose has placed the camera.
@@ -63,7 +83,7 @@ pub fn readout() -> Option<HeightReadout> {
     Some(sample.readout(roomscale::status()))
 }
 
-/// How often the readout is logged while Rico is on foot.
+/// How often the readout is logged while Rico is on foot or in a vehicle seat.
 pub const LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Record the camera's eye point `camera` for the character world matrix `character` (the matrix
@@ -91,7 +111,7 @@ pub(super) fn record(character: Mat4, camera: Vec3) {
         return;
     }
     let readout = sample.readout(roomscale::status());
-    if !readout.on_foot() {
+    if !(readout.on_foot() || readout.in_seat()) {
         return;
     }
     *last_log = Some(now);
@@ -136,18 +156,36 @@ static LAST_LOG: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn log(r: &HeightReadout) {
     let frame = &r.roomscale.frame;
+    let classifier = frame.classifier;
+    let thresholds = classifier.map(|c| c.thresholds);
+    let reference = frame.seated_reference.reference;
     tracing::info!(
         target: "vr",
+        place = r.place(),
+        seat = frame.seat.label(),
         rico_eyes_m = r.rico_eyes_m,
         camera_eyes_m = r.camera_eyes_m,
         camera_minus_rico_m = r.camera_eyes_m - r.rico_eyes_m,
         vertical_offset_m = r.vertical_offset_m,
         remap = r.remap.is_some(),
+        remap_source = r.remap.map(|h| h.source.label()),
         floor_head_height_m = ?r.floor_head_height_m,
         player_eye_height_m = r.player_eye_height_m,
         character_eye_estimate_m = r.character_eye_estimate_m,
         world_scale = frame.world_scale,
+        posture_setting = ?frame.setting,
         posture = frame.posture.label(),
+        auto_detected = ?classifier.map(|c| c.detected),
+        auto_reason = classifier.map(|c| c.reason.label()),
+        auto_dwell_s = classifier.map(|c| c.dwell_s),
+        auto_seated_eye_m = thresholds.map(|t| t.seated_eye_m),
+        auto_seated_eye_estimated = thresholds.map(|t| t.seated_estimated),
+        auto_sit_below_m = thresholds.map(|t| t.sit_below_m),
+        auto_stand_above_m = thresholds.map(|t| t.stand_above_m),
+        seated_reference_m = reference.map(|r| r.height_m),
+        seated_reference_source = reference.map(|r| r.source.label()),
+        seated_median_m = frame.seated_reference.median_m,
+        seated_samples = frame.seated_reference.samples,
         crouched = frame.crouched,
         seated_crouch = frame.seated_crouch,
         visual_crouch = r.roomscale.visual_crouch,

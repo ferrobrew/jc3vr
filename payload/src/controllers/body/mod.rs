@@ -30,8 +30,9 @@
 //!
 //! `seated_eye_height` is the one field without a default: it is the head's height above the STAGE
 //! floor while the player sits upright in their chair, and only a seated calibration (or the
-//! player) can supply it. While it is set, the seated posture measures the head against it rather
-//! than against the recenter baseline ([`crate::controllers::roomscale::posture`]).
+//! player) can supply it. While it is set, the seated eye reference starts from it and the
+//! automatic posture's thresholds sit against it ([`crate::controllers::roomscale::seated`],
+//! [`crate::controllers::roomscale::posture`]).
 //!
 //! A missing file uses the defaults. A malformed file logs an error and uses the defaults; it
 //! never stops the mod.

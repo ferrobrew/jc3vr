@@ -1,8 +1,9 @@
 //! Posture and roomscale: the plan of record's "Posture", "Body scale", "Roomscale design", "The
 //! chase loop", "Crouch, in stages", and "Seat transitions" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`posture`]: the posture setting resolved against the play area, and the head height it
-//!   implies (the body remap onto the character's eye height);
+//! - [`posture`]: the posture setting resolved against the head height and the play area, and the
+//!   head height it implies (the body remap onto the character's eye height);
+//! - [`seated`]: the seated eye reference, which follows how the player actually sits;
 //! - [`rebase`]: the cockpit shift that keeps the camera on the physical head while the body
 //!   catches up;
 //! - [`chase`]: the chase loop's arithmetic;
@@ -36,6 +37,7 @@ pub mod posture;
 pub mod probe;
 pub mod rebase;
 pub mod seat;
+pub mod seated;
 pub mod sim;
 pub mod stance;
 pub mod teleport;
@@ -55,19 +57,23 @@ use crate::{
     config::Config,
     controllers::{
         body::{self, BodyDimensions},
-        config::RoomscaleConfig,
+        config::{Posture, RoomscaleConfig},
         roomscale::{
             crouch::CrouchTracker,
             fade::FadeSource,
-            posture::{EffectivePosture, HeadHeight, HeadHeightInput},
+            posture::{
+                ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture, HeadHeight,
+                HeadHeightInput, PostureClassifier,
+            },
             probe::ProbeResult,
             rebase::{CockpitBasis, CockpitShift},
             seat::{SeatEvent, SeatTracker},
+            seated::{SeatedReference, SeatedReferenceStatus},
         },
     },
     headpose,
     hooks::{self, animation::active_state_type_id},
-    vr::{self, RecenterKind, stage::StageInfo},
+    vr::{self, RecenterCause, RecenterKind, stage::StageInfo},
 };
 
 /// The roomscale hooks, aggregated by [`crate::controllers::hook_library`].
@@ -101,7 +107,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let (config, remap_head) =
         Config::lock_query(|c| (c.controllers.roomscale, c.controllers.body.remap_head));
     let stage = vr::stage::stage();
-    let posture = posture::resolve(config.posture, stage.bounds, config.roomscale_min_extent_m);
+    let player = body::player();
     let now = Instant::now();
     let in_gameplay = hooks::in_gameplay();
 
@@ -113,6 +119,37 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         fade::reset();
     }
     frame.last_at = Some(now);
+
+    let classifier = if config.posture == Posture::Auto {
+        Some(
+            frame
+                .classifier
+                .update(&classifier_input(&stage, &player), dt, &config.auto_posture),
+        )
+    } else {
+        frame.classifier.reset();
+        None
+    };
+    let detected = classifier.map_or(DetectedPosture::Seated, |c| c.detected);
+    let posture = posture::resolve(
+        config.posture,
+        detected,
+        stage.bounds,
+        config.roomscale_min_extent_m,
+    );
+    let seated_reference = if posture == EffectivePosture::Seated {
+        frame.seated_reference.update(
+            stage.head_height,
+            player.seated_eye_height,
+            dt,
+            &config.seated_reference,
+        )
+    } else {
+        frame.seated_reference.current()
+    };
+    // The seated crouch is Rico crouching on foot; in a vehicle seat it would drop the view into
+    // the footwell. The toggle keeps its state for when he is out.
+    let seated_crouch = frame.seated_crouch && frame.seat.phase() == SeatPhase::Out;
 
     let chase_on = config.chase.enabled && posture == EffectivePosture::Roomscale;
     let epoch = teleport::epoch();
@@ -147,10 +184,13 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
                 posture,
                 cockpit_y: inputs.cockpit.y,
                 stage_height: stage.head_height,
-                seated_crouch: frame.seated_crouch,
+                seated_reference: (posture == EffectivePosture::Seated)
+                    .then_some(seated_reference)
+                    .flatten(),
+                seated_crouch,
                 seated_drop_m: config.crouch.seated_drop_m,
             },
-            &body::player(),
+            &player,
             &BodyDimensions::CHARACTER_ESTIMATE,
         )
     });
@@ -158,11 +198,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let vertical = head_height.map_or_else(
         || {
             inputs.cockpit.y
-                - posture::seated_crouch_drop(
-                    posture,
-                    frame.seated_crouch,
-                    config.crouch.seated_drop_m,
-                )
+                - posture::seated_crouch_drop(posture, seated_crouch, config.crouch.seated_drop_m)
         },
         |h| h.cockpit_y,
     );
@@ -233,7 +269,10 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         at: now,
     });
     frame.status = FrameStatus {
+        setting: config.posture,
         posture,
+        classifier,
+        seated_reference: frame.seated_reference.status(),
         stage,
         head_height,
         cockpit_y: vertical,
@@ -255,13 +294,53 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 /// head the cockpit origin, so the shift is spent; a yaw-and-height recenter keeps the horizontal
 /// position and turns the cockpit frame by `turn` (new frame from old). Called by
 /// [`crate::vr::recenter`].
-pub fn on_recenter(kind: RecenterKind, turn: Quat) {
+///
+/// A manual recenter is also the player saying "this is how I am": in the automatic posture it
+/// classifies seated or standing at once from the head height, and while seated it captures the
+/// head height as the seated eye reference ([`SeatedReference::capture`]). A seat transition's
+/// re-base does neither, because it happens on the game's schedule rather than the player's.
+pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
+    let setting = Config::lock_query(|c| c.controllers.roomscale.posture);
+    let stage = vr::stage::stage();
+    let player = body::player();
     let mut frame = FRAME.lock();
     sim::reset_movement();
     frame.shift.synchronize(sim::completed_movement());
     match kind {
         RecenterKind::Full => frame.shift.clear(),
         RecenterKind::YawAndHeight => frame.shift.rotate(turn),
+    }
+    if cause != RecenterCause::Manual {
+        return;
+    }
+    let seated = match setting {
+        Posture::Seated => true,
+        Posture::Auto => {
+            frame
+                .classifier
+                .reclassify(&classifier_input(&stage, &player));
+            frame.classifier.detected() == DetectedPosture::Seated
+        }
+        Posture::Standing | Posture::Roomscale => false,
+    };
+    if seated
+        && let Some(head_height) = stage.head_height
+        && frame.seated_reference.capture(head_height)
+    {
+        tracing::info!(
+            target: "vr",
+            head_height_m = head_height,
+            "roomscale: captured the seated eye reference at the recenter"
+        );
+    }
+}
+
+/// The classifier's input from one frame's STAGE information and the player's body.
+fn classifier_input(stage: &StageInfo, player: &BodyDimensions) -> ClassifierInput {
+    ClassifierInput {
+        head_height: stage.head_height,
+        standing_eye_m: player.eye_height,
+        calibrated_seated_eye_m: player.seated_eye_height,
     }
 }
 
@@ -383,7 +462,13 @@ pub struct RoomscaleStatus {
 /// The frame half's readout.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct FrameStatus {
+    /// The posture setting, before the automatic setting is resolved.
+    pub setting: Posture,
     pub posture: EffectivePosture,
+    /// The automatic posture's detection, while the setting is automatic.
+    pub classifier: Option<ClassifierStatus>,
+    /// The seated eye reference and the adaptive baseline's state.
+    pub seated_reference: SeatedReferenceStatus,
     pub stage: StageInfo,
     /// The remapped head height, while the head remap is on.
     pub head_height: Option<HeadHeight>,
@@ -400,6 +485,7 @@ pub struct FrameStatus {
     /// Teleports that re-based the horizontal offset.
     pub teleport_rebases: u64,
     pub crouched: bool,
+    /// Whether the seated crouch toggle is down; it lowers the eyes only out of a vehicle seat.
     pub seated_crouch: bool,
     pub seat: SeatPhase,
     pub last_seat_event: Option<SeatEvent>,
@@ -440,6 +526,8 @@ struct FrameState {
     shift: CockpitShift,
     teleport_rebases: u64,
     seated_crouch: bool,
+    classifier: PostureClassifier,
+    seated_reference: SeatedReference,
     crouch: CrouchTracker,
     seat: SeatTracker,
     last_seat_event: Option<SeatEvent>,
@@ -458,6 +546,8 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     shift: CockpitShift::new(),
     teleport_rebases: 0,
     seated_crouch: false,
+    classifier: PostureClassifier::new(),
+    seated_reference: SeatedReference::new(),
     crouch: CrouchTracker::new(),
     seat: SeatTracker::new(),
     last_seat_event: None,
@@ -466,7 +556,14 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     visual_crouch: false,
     shared: None,
     status: FrameStatus {
-        posture: EffectivePosture::Standing,
+        setting: Posture::Auto,
+        posture: EffectivePosture::Seated,
+        classifier: None,
+        seated_reference: SeatedReferenceStatus {
+            reference: None,
+            median_m: None,
+            samples: 0,
+        },
         stage: StageInfo {
             available: false,
             bounds: None,
@@ -526,7 +623,7 @@ unsafe fn seat_tick(frame: &mut FrameState, config: &RoomscaleConfig, now: Insta
     tracing::debug!(target: "controllers", ?event, ?phase, "roomscale: seat transition");
     let action = seat::action(config.seat_transition, event, config.seat_fade_hold_s);
     if let Some(kind) = action.recenter {
-        vr::request_recenter(kind);
+        vr::request_seat_recenter(kind);
     }
     if let Some(target) = action.fade {
         if action.hold_s > 0.0 {

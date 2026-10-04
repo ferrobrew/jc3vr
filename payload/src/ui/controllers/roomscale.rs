@@ -7,9 +7,7 @@ use crate::{
     controllers::{
         config::{Posture, RoomscaleConfig, SeatTransition},
         roomscale::{
-            self, RoomscaleStatus,
-            posture::{EffectivePosture, HeadHeightSource},
-            probe::ProbeResult,
+            self, FrameStatus, RoomscaleStatus, posture::EffectivePosture, probe::ProbeResult,
         },
     },
     hooks::camera::height,
@@ -23,7 +21,12 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
     camera_height_readout(ui);
     ui.separator();
     let f = &status.frame;
-    ui.label(format!("Posture: {}", f.posture.label()));
+    ui.label(format!(
+        "Posture: {} (setting {:?})",
+        f.posture.label(),
+        f.setting
+    ));
+    posture_inputs(ui, f);
     ui.label(match (f.stage.available, f.stage.bounds) {
         (false, _) => "Stage: no STAGE space".to_owned(),
         (true, None) => "Stage: no play area bounds".to_owned(),
@@ -35,12 +38,9 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
     });
     ui.label(match f.head_height {
         Some(h) => format!(
-            "Head height remap: eyes {:+.2} m from the character's ({})",
+            "Head height remap: eyes {:+.2} m from the character's (from {})",
             h.cockpit_y,
-            match h.source {
-                HeadHeightSource::Floor => "from the floor",
-                HeadHeightSource::Baseline => "from the recenter baseline",
-            }
+            h.source.label()
         ),
         None => "Head height remap: off".to_owned(),
     });
@@ -100,11 +100,44 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
     }
 }
 
+/// What the automatic posture decided from, and the seated eye reference.
+fn posture_inputs(ui: &mut Ui, f: &FrameStatus) {
+    if let Some(c) = f.classifier {
+        let t = c.thresholds;
+        ui.label(format!(
+            "Auto: {:?} ({}) · seated eyes {:.2} m{} · standing eyes {:.2} m · sits below {:.2} m · stands above {:.2} m · dwell {:.1} s",
+            c.detected,
+            c.reason.label(),
+            t.seated_eye_m,
+            if t.seated_estimated { " (estimated)" } else { "" },
+            t.standing_eye_m,
+            t.sit_below_m,
+            t.stand_above_m,
+            c.dwell_s,
+        ));
+    }
+    let r = &f.seated_reference;
+    ui.label(match r.reference {
+        Some(reference) => format!(
+            "Seated eye reference: {:.2} m ({}) · median {} over {} samples",
+            reference.height_m,
+            reference.source.label(),
+            r.median_m
+                .map_or_else(|| "not yet".to_owned(), |m| format!("{m:.2} m")),
+            r.samples,
+        ),
+        None => "Seated eye reference: none yet".to_owned(),
+    });
+}
+
 pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
     ui.horizontal(|ui| {
         ui.label("Posture");
         ui.selectable_value(&mut r.posture, Posture::Auto, "Auto")
-            .on_hover_text("Standing or roomscale, by the play area's size.");
+            .on_hover_text(
+                "Seated or standing by the head's height above the floor; standing becomes \
+             roomscale with a large enough play area.",
+            );
         ui.selectable_value(&mut r.posture, Posture::Seated, "Seated");
         ui.selectable_value(&mut r.posture, Posture::Standing, "Standing");
         ui.selectable_value(&mut r.posture, Posture::Roomscale, "Roomscale");
@@ -113,6 +146,24 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
         egui::Slider::new(&mut r.roomscale_min_extent_m, 0.5..=3.0)
             .text("Auto roomscale play area (m)"),
     );
+    ui.add(
+        egui::Slider::new(&mut r.auto_posture.stand_after_s, 0.0..=5.0)
+            .text("Auto: standing after (s)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut r.auto_posture.sit_after_s, 1.0..=120.0)
+            .text("Auto: seated after (s)"),
+    );
+    let s = &mut r.seated_reference;
+    ui.checkbox(&mut s.adaptive, "Adaptive seated eye reference")
+        .on_hover_text("Move the seated eye reference slowly toward the median head height.");
+    ui.add_enabled_ui(s.adaptive, |ui| {
+        ui.indent("seated_reference", |ui| {
+            ui.add(egui::Slider::new(&mut s.window_s, 10.0..=600.0).text("Window (s)"));
+            ui.add(egui::Slider::new(&mut s.rate_mps, 0.001..=0.05).text("Rate (m/s)"));
+            ui.add(egui::Slider::new(&mut s.deadband_m, 0.0..=0.1).text("Deadband (m)"));
+        });
+    });
 
     ui.checkbox(&mut r.chase.enabled, "Roomscale chase")
         .on_hover_text("In the roomscale posture, walk the body toward the physical head.");
@@ -202,11 +253,7 @@ fn camera_height_readout(ui: &mut Ui) {
     ));
     ui.label(format!(
         "{} · {} · crouched {} · seated crouch {} · visual crouch {} · capsule {}{}",
-        if r.on_foot() {
-            "on foot"
-        } else {
-            "not on foot"
-        },
+        r.place(),
         frame.posture.label(),
         yes_no(frame.crouched),
         yes_no(frame.seated_crouch),

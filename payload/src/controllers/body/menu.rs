@@ -29,6 +29,10 @@ use crate::{
         },
         frame::{self, Hand, TrackedPose},
         menu::{config_toggle, read_config, save_if_changed},
+        roomscale::{
+            self,
+            posture::{DetectedPosture, EffectivePosture},
+        },
     },
     pause_menu::model::{
         page::{Button, ButtonOutcome, Choice, Page, PageDef, Readout, Slider},
@@ -361,9 +365,15 @@ fn chosen_stance() -> Stance {
     STANCE.lock().unwrap_or_else(posture_stance)
 }
 
-/// The stance the posture setting implies.
+/// The stance the posture setting implies, with the automatic posture's current detection.
 fn posture_stance() -> Stance {
-    Stance::for_posture(read_config(|c| c.controllers.roomscale.posture))
+    let detected = roomscale::frame_shared()
+        .filter(|f| f.fresh(Instant::now()))
+        .map(|f| match f.posture {
+            EffectivePosture::Seated => DetectedPosture::Seated,
+            EffectivePosture::Standing | EffectivePosture::Roomscale => DetectedPosture::Standing,
+        });
+    Stance::for_posture(read_config(|c| c.controllers.roomscale.posture), detected)
 }
 
 fn stance_index(stance: Stance) -> usize {

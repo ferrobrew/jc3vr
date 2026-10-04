@@ -762,6 +762,12 @@ pub struct RoomscaleConfig {
     /// room-scale setup. A runtime reports a standing-only setup as no bounds or a very small
     /// rectangle.
     pub roomscale_min_extent_m: f32,
+    /// In the automatic posture, how the head's height above the floor tells a seated player from
+    /// a standing one.
+    pub auto_posture: AutoPostureConfig,
+    /// In the seated posture, how the head height that maps to the character's eyes follows the
+    /// player.
+    pub seated_reference: SeatedReferenceConfig,
     /// The body chasing the physical head in the roomscale posture.
     pub chase: ChaseConfig,
     /// Crouching.
@@ -784,6 +790,8 @@ impl RoomscaleConfig {
         Self {
             posture: Posture::Auto,
             roomscale_min_extent_m: 1.0,
+            auto_posture: AutoPostureConfig::new(),
+            seated_reference: SeatedReferenceConfig::new(),
             chase: ChaseConfig::new(),
             crouch: CrouchConfig::new(),
             head_fade: HeadFadeConfig::new(),
@@ -804,17 +812,88 @@ impl Default for RoomscaleConfig {
 /// The player's posture.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Posture {
-    /// Standing or roomscale, chosen by whether the runtime reports a room-scale boundary. The
-    /// seated posture is never chosen automatically.
+    /// Seated or standing by the head's height above the floor ([`AutoPostureConfig`]), seated
+    /// until the head has been located; standing becomes roomscale when the runtime reports a
+    /// room-scale boundary.
     #[default]
     Auto,
-    /// LOCAL space: the seated eye height maps to the character's standing eye height, roomscale
-    /// translation is off, and a button toggles crouching.
+    /// The seated eye reference ([`SeatedReferenceConfig`]) maps to the character's standing eye
+    /// height, roomscale translation is off, and a button toggles crouching.
     Seated,
     /// STAGE space: the true floor height, roomscale translation off, physical crouching.
     Standing,
     /// STAGE space with the roomscale chase loop on.
     Roomscale,
+}
+
+/// The automatic posture's seated and standing detection
+/// ([`crate::controllers::roomscale::posture::PostureClassifier`]). The thresholds sit between the
+/// calibrated seated eye height (or an estimate from the standing eye height) and the standing eye
+/// height; the dwell times decide how long the head must stay past them.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutoPostureConfig {
+    /// How long a seated player's head must stay at standing height before the posture becomes
+    /// standing, seconds. Short: a seated player cannot raise the head that far without standing
+    /// up.
+    pub stand_after_s: f32,
+    /// How long a standing player's head must stay at seated height before the posture becomes
+    /// seated, seconds. Long, so that a standing player crouching behind cover keeps the physical
+    /// crouch.
+    pub sit_after_s: f32,
+}
+
+impl AutoPostureConfig {
+    pub const fn new() -> Self {
+        Self {
+            stand_after_s: 1.0,
+            sit_after_s: 20.0,
+        }
+    }
+}
+
+impl Default for AutoPostureConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The seated eye reference ([`crate::controllers::roomscale::seated`]): the head height above the
+/// floor that the seated posture puts at the character's eyes. It starts at the calibrated seated
+/// eye height, a manual recenter while seated captures the head's height, and the adaptive
+/// baseline moves it toward how the player actually sits.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SeatedReferenceConfig {
+    /// Move the reference toward the median head height over the window. On by default: without it
+    /// a reference that does not match how the player sits holds the view above or below the
+    /// character's eyes until the next manual recenter.
+    pub adaptive: bool,
+    /// The window the median is taken over, seconds. Head movement held for less than half of it
+    /// (a lean, a duck, a look around) does not move the median.
+    pub window_s: f32,
+    /// The fastest the adaptive baseline moves the reference, metres per second.
+    pub rate_mps: f32,
+    /// How far the median must be from the reference before the adaptive baseline moves it,
+    /// metres.
+    pub deadband_m: f32,
+}
+
+impl SeatedReferenceConfig {
+    pub const fn new() -> Self {
+        Self {
+            adaptive: true,
+            window_s: 120.0,
+            rate_mps: 0.01,
+            deadband_m: 0.02,
+        }
+    }
+}
+
+impl Default for SeatedReferenceConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// The roomscale chase loop: in the roomscale posture, the body walks toward the physical head.

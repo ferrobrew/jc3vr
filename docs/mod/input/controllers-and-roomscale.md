@@ -141,11 +141,11 @@ The player's dimensions come from `body.local.json`, which the calibration on th
 
 Three postures are supported.
 
-- Seated: LOCAL space. The seated eye height at the last recenter maps to Rico's standing eye height, roomscale translation is off, and a downward flick of the dominant stick toggles between standing and crouched eye height.
+- Seated: the seated eye reference, the head height the player actually sits at, maps to Rico's standing eye height, roomscale translation is off, and a downward flick of the dominant stick toggles between standing and crouched eye height.
 - Standing: STAGE space for the true floor height. The player stands in place, roomscale translation is off, and crouching is physical.
 - Roomscale: STAGE space, with the roomscale chase loop on.
 
-OpenXR has no signal for whether the user is seated, and SteamVR's OpenXR runtime exposes only a standing basis. The mod can read two things. `xrGetReferenceSpaceBoundsRect` on the STAGE space returns a rectangle for a room-scale boundary, and returns `XR_SPACE_BOUNDS_UNAVAILABLE` or a very small rectangle for a standing-only or stationary setup, which separates standing from roomscale. The head height above the STAGE floor, compared with the calibrated standing height, indicates a seated player. The posture setting is `auto | seated | standing | roomscale`. In `auto`, the stage bounds select between standing and roomscale without asking: a play area of at least a metre each way (`roomscale.roomscale_min_extent_m`) selects roomscale. A prompt suggesting the seated posture when the head is low is deferred with the rest of the mod UI; until then, the seated posture is set explicitly.
+OpenXR has no signal for whether the user is seated, and SteamVR's OpenXR runtime exposes only a standing basis. The mod can read two things. `xrGetReferenceSpaceBoundsRect` on the STAGE space returns a rectangle for a room-scale boundary, and returns `XR_SPACE_BOUNDS_UNAVAILABLE` or a very small rectangle for a standing-only or stationary setup, which separates standing from roomscale. The head height above the STAGE floor, compared with the calibrated standing and seated eye heights, indicates a seated player. The posture setting is `auto | seated | standing | roomscale`. In `auto`, the head height selects seated or standing, seated until the head is located, and the stage bounds select between standing and roomscale without asking: a play area of at least a metre each way (`roomscale.roomscale_min_extent_m`) selects roomscale. The detection is described in [controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale).
 
 ## Input
 
@@ -480,7 +480,7 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 
 | Part | Settings | State |
 |---|---|---|
-| Posture, STAGE space, and the stage-bounds check | `posture` (`Auto`, `Seated`, `Standing`, or `Roomscale`), `roomscale_min_extent_m` | Built. `Auto` never selects the seated posture. |
+| Posture, STAGE space, and the stage-bounds check | `posture` (`Auto`, `Seated`, `Standing`, or `Roomscale`), `roomscale_min_extent_m` | Built. `Auto` detects seated from the head height (`auto_posture`). |
 | Head height remap | `body.remap_head` (on) | Built. |
 | Seated crouch toggle | `bindings.crouch_flick`, `crouch.seated_drop_m` | Built. It works with or without the head remap. |
 | The chase loop and the teleport re-base | `chase.enabled` (on), `chase.deadzone_m`, `chase.max_speed_mps`, `chase.time_constant_s`, `chase.warp_min_m` | Built. |
@@ -616,7 +616,7 @@ The order puts the parts that everything else depends on first, then the parts w
 8. Hands. The hands are the right way up with the fingers forward; fit the grip offset. The arms reach the controllers, and the arm-span remap feels right with a `body.local.json`. The gun sits in the hand, fast hand motion shows no lag, the gun and the hand never separate, and the forearm stays attached at the elbow. Ledge grabs, climbs, vehicle entry, swimming, the wingsuit, and ragdoll yield the hands and return them smoothly. The off-hand is not pulled onto the weapon, and the grapple wire leaves the left forearm.
 9. Aiming. Shots land where the sights point; use the `Dot` and `Laser` readouts, and check the aiming readout's sight source for each weapon. Aim at a nearby wall. The grapple follows the off-hand ray, and its surface zips, object tethers, and highlight validity match where the hook attaches. Aim a hand ray from inside a vehicle.
 10. The overlay. The readouts appear in both eyes at the correct depth and fuse in stereo, with and without single-pass stereo, and are hidden where the scene is in front of them. Nothing is drawn in the far field or in cinematic mode. The ghost hands appear during yielded states, the gizmos match the controllers, and the readouts disappear when a menu opens.
-11. Posture. With `body.remap_head` on, each of the `Seated`, `Standing`, and `Auto` postures puts the eyes at Rico's eye height, and ducking lowers the view by the scaled amount. `Auto` selects roomscale only with a play area of at least `roomscale_min_extent_m` each way. In the seated posture the dominant stick flicked down toggles the crouched eye height.
+11. Posture. With `body.remap_head` on, each of the `Seated`, `Standing`, and `Auto` postures puts the eyes at Rico's eye height, and ducking lowers the view by the scaled amount. `Auto` starts seated when the player sits and standing when they stand, switches to standing within a second of standing up and to seated after 20 s of sitting down, and selects roomscale only with a play area of at least `roomscale_min_extent_m` each way. Seated, sitting normally puts the view on Rico's eyes on foot and in a vehicle seat after a recenter (F7, the pause menu's `RECENTER VIEW`, or the stick click chord) at once, or within about a minute without one; the readout's `camera_minus_rico_m` stays near zero and `seated_reference_source` names the source. In the seated posture the dominant stick flicked down toggles the crouched eye height, and the toggle does not lower the view in a vehicle seat.
 12. Sight lines. Each scoped weapon and pistol aims along its sights with the embedded table; the aiming readout names the source. With `aim.sight_tuning.enabled` on, tune an iron-sighted rifle: line up on the marker, capture with the tab's button and with the chord, adjust with the drag values, reset, and copy the entry as JSON. The chord does not get in the way of holding the foregrip.
 13. Holsters. Each hip, shoulder, and chest volume draws its slot, the held weapon holsters at its own holster, and a heavy weapon holsters without dropping. The overlay highlights the volume a hand is in. A grapple fired near the hip does not draw a weapon. The hands stay on the controllers through a reload, a draw, and a holster, and the weapon does not fire during them.
 14. The foregrip. The off-hand grabs a two-handed weapon's foregrip, the barrel follows the line between the hands, the off-hand stays on the grip in the rendered image and the sight line, and a second press or moving away releases it.
@@ -683,7 +683,6 @@ Two questions raised during milestone 1 are answered too. The secondary hand IK 
 
 These features wait for a VR-native redesign of the mod's in-VR interface.
 
-- The posture prompt that suggests the seated posture when the head is low.
 - The radial weapon menu, the seated and accessibility fallback for holsters.
 - The Ceremony seat-transition mode and its confirmation prompt.
 - The laser pointer for the floating panel and the game's menus.
