@@ -8,8 +8,16 @@
 //! first tick of a press writes a click with no time, every held tick writes a press with the time
 //! held so far, and the tick after the press ends writes a release with the final time, which the
 //! next device poll turns idle on its own.
+//!
+//! The tracker also remembers every effector it wrote on the last tick, so that a write never
+//! outlives the bindings' intent. A bare click the bindings no longer want is cleared on the next
+//! tick when the device poll did not move it on, since an effector left clicked reads as a fresh
+//! click on every frame. When injection stops ([`HoldTracker::release_all`]) every write is undone
+//! explicitly: while the poll runs, each hold is released with its time and each click cleared as
+//! above; while it is disabled, every written effector is returned to idle, because nothing else
+//! will.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use jc3gi::input::input_action_map::Action;
 
@@ -69,6 +77,27 @@ pub struct Desired {
     pub want: Want,
 }
 
+/// Whether the game's device poll runs on an input tick.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DevicePoll {
+    /// The poll ran before the bindings: it overwrote every bound effector with its device's
+    /// reading and moved its state on.
+    Running,
+    /// The device manager is disabled, so the poll leaves every effector as it is: a written value
+    /// and state persist until they are written again.
+    Disabled,
+}
+
+/// The identity of the effector a write landed on: its address, compared and never dereferenced.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct EffectorId(usize);
+
+impl EffectorId {
+    pub const fn from_address(address: usize) -> Self {
+        Self(address)
+    }
+}
+
 /// The state an effector write sets.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Phase {
@@ -80,6 +109,12 @@ pub enum Phase {
     Held { seconds: f32 },
     /// Released after being held this many seconds.
     Released { seconds: f32 },
+    /// Undo a bare click written on the last tick: when the effector it landed on is still
+    /// clicked, the device poll did not move it on, and it is released with no hold time.
+    Unclick { effector: EffectorId },
+    /// Return the effector to idle with no value, whatever it shows. Written only while the device
+    /// poll is disabled, when every pressed state is a stale write rather than a device's reading.
+    Neutral,
 }
 
 /// One effector write.
@@ -95,22 +130,31 @@ pub struct ActionWrite {
 /// at their own button threshold, which is not read; this stands in for it.
 pub const ANALOG_PRESS: f32 = 0.2;
 
-/// The hold timers of every action the bindings hold.
+/// The hold timers of every action the bindings hold, and the other effectors they wrote on the
+/// last tick.
 #[derive(Debug, Clone, Default)]
 pub struct HoldTracker {
     /// The actions held as of the last tick, and for how long.
     held: BTreeMap<Target, f32>,
+    /// The bare clicks written on the last tick, with the effector each landed on once
+    /// [`landed`](Self::landed) reports it.
+    clicked: BTreeMap<Target, Option<EffectorId>>,
+    /// The actions whose value alone was raised on the last tick.
+    valued: BTreeSet<Target>,
 }
 
 impl HoldTracker {
     pub const fn new() -> Self {
         Self {
             held: BTreeMap::new(),
+            clicked: BTreeMap::new(),
+            valued: BTreeSet::new(),
         }
     }
 
     /// Resolve this tick's wanted inputs into writes, advancing the hold timers by `dt`. Several
-    /// wants on one action merge: the largest value wins, and any hold holds it.
+    /// wants on one action merge: the largest value wins, and any hold holds it. The last tick's
+    /// bare clicks that are not written again come first, as [`Phase::Unclick`].
     pub fn resolve(&mut self, desired: &[Desired], dt: f32) -> Vec<ActionWrite> {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         let mut merged: BTreeMap<Target, Merged> = BTreeMap::new();
@@ -123,7 +167,15 @@ impl HoldTracker {
             }
         }
 
-        let mut writes = Vec::with_capacity(merged.len() + self.held.len());
+        let previous_clicks = std::mem::take(&mut self.clicked);
+        self.valued.clear();
+        let mut writes = Vec::with_capacity(merged.len() + self.held.len() + previous_clicks.len());
+        writes.extend(
+            previous_clicks
+                .into_iter()
+                .filter(|(target, _)| !merged.get(target).is_some_and(Merged::writes_a_press))
+                .filter_map(|(target, effector)| Some(unclick(target, effector?))),
+        );
         for (&target, m) in &merged {
             let analog = sanitize(m.analog);
             let pressed = m.hold.is_some() || analog > ANALOG_PRESS;
@@ -146,6 +198,7 @@ impl HoldTracker {
                     }
                 }
                 (false, None) if m.click => {
+                    self.clicked.insert(target, None);
                     writes.push(ActionWrite {
                         target,
                         value: 1.0,
@@ -153,7 +206,10 @@ impl HoldTracker {
                     });
                     continue;
                 }
-                (false, None) if value > 0.0 => Phase::Value,
+                (false, None) if value > 0.0 => {
+                    self.valued.insert(target);
+                    Phase::Value
+                }
                 (false, None) => continue,
             };
             let value = if matches!(phase, Phase::Released { .. }) {
@@ -188,10 +244,67 @@ impl HoldTracker {
         writes
     }
 
-    /// Forget every hold without writing its release. Used when injection stops: the device poll
-    /// releases each held effector on its own, keeping the last hold time written.
-    pub fn clear(&mut self) {
-        self.held.clear();
+    /// Record the effector each of this tick's bare clicks landed on, `landings` running parallel
+    /// to the `writes` [`resolve`](Self::resolve) returned. A click that landed nowhere is not
+    /// undone later.
+    pub fn landed(&mut self, writes: &[ActionWrite], landings: &[Option<EffectorId>]) {
+        for (write, &landing) in writes.iter().zip(landings) {
+            if write.phase == Phase::Clicked
+                && let Some(effector) = self.clicked.get_mut(&write.target)
+            {
+                *effector = landing;
+            }
+        }
+    }
+
+    /// Stop injecting while keeping the hold timers, for a tick on which the bindings are paused
+    /// rather than stood down: undo the last tick's bare clicks and forget its bare values. Called
+    /// only while the device poll runs, which releases the held effectors and overwrites the
+    /// values; the holds resume with their times when injection does.
+    pub fn pause(&mut self) -> Vec<ActionWrite> {
+        self.valued.clear();
+        std::mem::take(&mut self.clicked)
+            .into_iter()
+            .filter_map(|(target, effector)| Some(unclick(target, effector?)))
+            .collect()
+    }
+
+    /// Stop injecting: forget everything, returning the writes that undo what the last tick wrote.
+    /// While the poll runs, each hold is released with its time (a physical press in the same
+    /// effector is kept) and each bare click undone as [`Phase::Unclick`]; the poll has already
+    /// overwritten the bare values. While the poll is disabled nothing moves an effector on, so
+    /// every written effector is returned to idle as [`Phase::Neutral`].
+    pub fn release_all(&mut self, poll: DevicePoll) -> Vec<ActionWrite> {
+        let held = std::mem::take(&mut self.held);
+        let clicked = std::mem::take(&mut self.clicked);
+        let valued = std::mem::take(&mut self.valued);
+        match poll {
+            DevicePoll::Running => held
+                .into_iter()
+                .map(|(target, seconds)| ActionWrite {
+                    target,
+                    value: 0.0,
+                    phase: Phase::Released { seconds },
+                })
+                .chain(
+                    clicked
+                        .into_iter()
+                        .filter_map(|(target, effector)| Some(unclick(target, effector?))),
+                )
+                .collect(),
+            DevicePoll::Disabled => held
+                .into_keys()
+                .chain(clicked.into_keys())
+                .chain(valued)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .map(|target| ActionWrite {
+                    target,
+                    value: 0.0,
+                    phase: Phase::Neutral,
+                })
+                .collect(),
+        }
     }
 }
 
@@ -200,6 +313,22 @@ struct Merged {
     hold: Option<f32>,
     analog: f32,
     click: bool,
+}
+
+impl Merged {
+    /// Whether the merged want writes a pressed state this tick, overwriting a click left from the
+    /// last tick.
+    fn writes_a_press(&self) -> bool {
+        self.click || self.hold.is_some() || sanitize(self.analog) > ANALOG_PRESS
+    }
+}
+
+fn unclick(target: Target, effector: EffectorId) -> ActionWrite {
+    ActionWrite {
+        target,
+        value: 0.0,
+        phase: Phase::Unclick { effector },
+    }
 }
 
 fn sanitize(value: f32) -> f32 {
@@ -303,21 +432,156 @@ mod tests {
         assert!(t.resolve(&[analog(Action::ACCELERATE, 0.0)], DT).is_empty());
     }
 
-    #[test]
-    fn clicks_are_not_tracked() {
-        let mut t = HoldTracker::default();
-        let click = Desired {
+    fn pause_click() -> Desired {
+        Desired {
             target: Target {
                 map: MapKind::PlayerThroughBlockers,
                 action: Action::GUI_PAUSE,
             },
             want: Want::Click,
-        };
-        let w = t.resolve(&[click], DT);
+        }
+    }
+
+    const EFFECTOR: EffectorId = EffectorId::from_address(0x1000);
+
+    #[test]
+    fn a_click_is_undone_on_the_next_tick() {
+        let mut t = HoldTracker::default();
+        let w = t.resolve(&[pause_click()], DT);
         assert_eq!(w.len(), 1);
         assert_eq!(w[0].phase, Phase::Clicked);
         assert_eq!(w[0].value, 1.0);
+        t.landed(&w, &[Some(EFFECTOR)]);
+        let w = t.resolve(&[], DT);
+        assert_eq!(
+            phases(&w),
+            vec![(Action::GUI_PAUSE, Phase::Unclick { effector: EFFECTOR })]
+        );
+        assert_eq!(w[0].value, 0.0);
         assert!(t.resolve(&[], DT).is_empty());
+    }
+
+    #[test]
+    fn a_repeated_click_is_not_undone() {
+        let mut t = HoldTracker::default();
+        let w = t.resolve(&[pause_click()], DT);
+        t.landed(&w, &[Some(EFFECTOR)]);
+        let w = t.resolve(&[pause_click()], DT);
+        assert_eq!(phases(&w), vec![(Action::GUI_PAUSE, Phase::Clicked)]);
+    }
+
+    #[test]
+    fn a_click_that_landed_nowhere_is_not_undone() {
+        let mut t = HoldTracker::default();
+        let w = t.resolve(&[pause_click()], DT);
+        t.landed(&w, &[None]);
+        assert!(t.resolve(&[], DT).is_empty());
+    }
+
+    #[test]
+    fn landings_are_recorded_only_for_bare_clicks() {
+        let mut t = HoldTracker::default();
+        // The first tick of a hold is also a click, but the hold's own release undoes it.
+        let w = t.resolve(&[hold(Action::RELOAD), pause_click()], DT);
+        t.landed(&w, &[Some(EFFECTOR); 2]);
+        let w = t.resolve(&[], DT);
+        assert_eq!(w.len(), 2);
+        assert!(w.iter().any(
+            |w| w.target.action == Action::RELOAD && matches!(w.phase, Phase::Released { .. })
+        ));
+        assert!(w.iter().any(|w| w.target.action == Action::GUI_PAUSE
+            && w.phase == Phase::Unclick { effector: EFFECTOR }));
+    }
+
+    #[test]
+    fn releasing_while_the_poll_runs_releases_holds_and_undoes_clicks() {
+        let mut t = HoldTracker::default();
+        t.resolve(&[hold(Action::RELOAD)], DT);
+        let w = t.resolve(
+            &[
+                hold(Action::RELOAD),
+                pause_click(),
+                analog(Action::MOVE_FORWARD, 0.1),
+            ],
+            DT,
+        );
+        let landings: Vec<_> = w.iter().map(|_| Some(EFFECTOR)).collect();
+        t.landed(&w, &landings);
+        let w = t.release_all(DevicePoll::Running);
+        assert_eq!(
+            phases(&w),
+            vec![
+                (Action::RELOAD, Phase::Released { seconds: DT }),
+                (Action::GUI_PAUSE, Phase::Unclick { effector: EFFECTOR }),
+            ]
+        );
+        assert!(w.iter().all(|w| w.value == 0.0));
+        assert!(t.resolve(&[], DT).is_empty());
+    }
+
+    #[test]
+    fn releasing_while_the_poll_is_disabled_neutralises_every_write() {
+        let mut t = HoldTracker::default();
+        let w = t.resolve(
+            &[
+                hold(Action::FIRE_GRAPPLE),
+                analog(Action::MOVE_FORWARD, 0.7),
+                analog(Action::MOVE_LEFT, 0.1),
+                pause_click(),
+                Desired {
+                    target: Target::ui(Action::GUI_PAUSE),
+                    want: Want::Click,
+                },
+            ],
+            DT,
+        );
+        // A click that landed nowhere is neutralised too: the poll does not move anything on.
+        t.landed(&w, &[None; 5]);
+        let w = t.release_all(DevicePoll::Disabled);
+        let mut targets: Vec<_> = w.iter().map(|w| (w.target.map, w.target.action)).collect();
+        targets.sort();
+        assert_eq!(
+            targets,
+            vec![
+                (MapKind::Player, Action::MOVE_FORWARD),
+                (MapKind::Player, Action::MOVE_LEFT),
+                (MapKind::Player, Action::FIRE_GRAPPLE),
+                (MapKind::PlayerThroughBlockers, Action::GUI_PAUSE),
+                (MapKind::Ui, Action::GUI_PAUSE),
+            ]
+        );
+        assert!(
+            w.iter()
+                .all(|w| w.phase == Phase::Neutral && w.value == 0.0)
+        );
+        assert!(t.release_all(DevicePoll::Disabled).is_empty());
+        assert!(t.resolve(&[], DT).is_empty());
+    }
+
+    #[test]
+    fn a_release_after_a_finished_hold_writes_nothing() {
+        let mut t = HoldTracker::default();
+        t.resolve(&[hold(Action::RELOAD)], DT);
+        t.resolve(&[], DT);
+        assert!(t.release_all(DevicePoll::Running).is_empty());
+        assert!(t.release_all(DevicePoll::Disabled).is_empty());
+    }
+
+    #[test]
+    fn pausing_undoes_clicks_and_keeps_holds() {
+        let mut t = HoldTracker::default();
+        let w = t.resolve(&[hold(Action::RELOAD), pause_click()], DT);
+        t.landed(&w, &[Some(EFFECTOR); 2]);
+        let w = t.pause();
+        assert_eq!(
+            phases(&w),
+            vec![(Action::GUI_PAUSE, Phase::Unclick { effector: EFFECTOR })]
+        );
+        let w = t.resolve(&[hold(Action::RELOAD)], DT);
+        assert_eq!(
+            phases(&w),
+            vec![(Action::RELOAD, Phase::Held { seconds: DT })]
+        );
     }
 
     #[test]
@@ -331,14 +595,6 @@ mod tests {
             },
         ];
         assert_eq!(t.resolve(&desired, DT).len(), 2);
-    }
-
-    #[test]
-    fn clearing_forgets_without_writing() {
-        let mut t = HoldTracker::default();
-        t.resolve(&[hold(Action::RELOAD)], DT);
-        t.clear();
-        assert!(t.resolve(&[], DT).is_empty());
     }
 
     #[test]

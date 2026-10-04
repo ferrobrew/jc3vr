@@ -15,9 +15,13 @@
 //! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
 //! ([`crate::hooks::input::look`]), after the device poll and before the game reads its actions.
 //! It injects only while the bindings are enabled, the controller scheme is in effect, a controller
-//! is active, and the mod's panel is down; otherwise it writes nothing, so a real gamepad under the
-//! gamepad scheme is never fought. The right stick's body turn is not an action: it is returned to
-//! the look detour, which feeds it to the headpose's VR turn scheme.
+//! is active, the game's device poll runs, and the mod's panel is down; otherwise it writes nothing,
+//! so a real gamepad under the gamepad scheme is never fought. The right stick's body turn is not an
+//! action: it is returned to the look detour, which feeds it to the headpose's VR turn scheme.
+//!
+//! Whenever injection stops, the bindings undo what they wrote rather than leave it to the device
+//! poll ([`HoldTracker::release_all`]): the poll does not run while the device manager is disabled,
+//! and an effector left clicked there reads as a fresh click on every frame.
 
 pub mod controls;
 pub mod grab;
@@ -40,8 +44,8 @@ use crate::{
         bindings::{
             controls::{Controls, yaw_of},
             grab::GrabVolume,
-            hold::{HoldTracker, MapKind, Phase},
-            inject::Outcome,
+            hold::{ActionWrite, DevicePoll, HoldTracker, MapKind, Phase},
+            inject::{Landing, Outcome},
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             tables::Bindings,
             yank::{Yank, YankConfig, YankDetector},
@@ -78,6 +82,8 @@ pub enum Idle {
     GamepadScheme,
     /// No controller frame, or no active controller.
     NoControllers,
+    /// The game's device manager is disabled, so its device poll does not run.
+    PollDisabled,
     /// The mod's panel is up.
     ModPanel,
 }
@@ -103,8 +109,9 @@ pub struct TickReport {
 }
 
 /// Run the controllers' part of the input tick: detect the mode (which selects the action set),
-/// then evaluate and inject the bindings. `dt` is the engine's tick delta, seconds.
-pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
+/// then evaluate and inject the bindings. `dt` is the engine's tick delta, seconds, and `poll` is
+/// whether the device poll that preceded the tick ran.
+pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     let (config, neutral_policy) = Config::lock_query(|c| {
         (
             c.controllers,
@@ -119,7 +126,8 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     if !config.enabled {
         clear_controller();
         let mut state = STATE.lock();
-        state.reset();
+        state.observe_poll(poll);
+        state.stand_down(poll);
         state.recovery.suspend();
         state.publish_recovery();
         frame::take_edges();
@@ -141,6 +149,8 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         Some(Idle::GamepadScheme)
     } else if frame.is_none() {
         Some(Idle::NoControllers)
+    } else if poll == DevicePoll::Disabled {
+        Some(Idle::PollDisabled)
     } else if mode::last_snapshot().is_some_and(|s| s.ui.mod_panel) {
         Some(Idle::ModPanel)
     } else {
@@ -151,9 +161,10 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     let mut edges = frame::take_edges();
 
     let mut state = STATE.lock();
+    state.observe_poll(poll);
     let (Some(mut frame), None) = (frame, idle) else {
         clear_controller();
-        state.reset();
+        let writes = state.stand_down(poll);
         state.recovery.suspend();
         state.publish_recovery();
         weapons::stand_down();
@@ -161,25 +172,33 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
         state.report = TickReport {
             detection,
             idle,
+            writes,
             ..Default::default()
         };
         return InputTickOutput::default();
     };
 
     let tracking_lost = state.recovery.observe(&frame);
+    let mut reported = Vec::new();
     if tracking_lost {
         clear_controller();
-        state.reset();
+        reported = state.stand_down(poll);
         weapons::stand_down();
         vehicles::stand_down();
         edges = Default::default();
     }
-    // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it.
+    // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it;
+    // the poll runs here, so it releases their effectors, and only the clicks need undoing.
     if frame.action_set != detection.mode.action_set() {
         clear_controller();
+        let paused = state.tracker.pause();
+        // SAFETY: the input tick runs on the main thread after the device poll.
+        let landings = unsafe { inject::apply(&paused) };
+        reported.extend(report_writes(&paused, &landings));
         state.publish_recovery();
         state.report = TickReport {
             detection,
+            writes: reported,
             ..Default::default()
         };
         return InputTickOutput::default();
@@ -289,22 +308,15 @@ pub(crate) fn input_tick(dt: f32) -> InputTickOutput {
     }
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
-    let outcomes = unsafe { inject::apply(&writes) };
+    let landings = unsafe { inject::apply(&writes) };
+    let effectors: Vec<_> = landings.iter().map(|l| l.effector).collect();
+    state.tracker.landed(&writes, &effectors);
+    reported.extend(report_writes(&writes, &landings));
     state.report = TickReport {
         detection,
         idle: None,
         body_turn: step.body_turn,
-        writes: writes
-            .iter()
-            .zip(outcomes)
-            .map(|(w, outcome)| ReportedWrite {
-                map: w.target.map,
-                action: w.target.action,
-                value: w.value,
-                phase: w.phase,
-                outcome,
-            })
-            .collect(),
+        writes: reported,
     };
     InputTickOutput {
         body_turn: Some(step.body_turn),
@@ -331,6 +343,7 @@ pub fn yank_status() -> (u64, Option<Yank>) {
 static RECOVERY_STATUS: Mutex<[HandRecovery; 2]> = Mutex::new([HandRecovery::Unusable; 2]);
 
 static STATE: Mutex<State> = Mutex::new(State {
+    poll: DevicePoll::Running,
     recovery: Recovery::new(),
     mask_log: MaskLog::new(),
     bindings: Bindings::new(),
@@ -349,6 +362,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 struct State {
+    /// The device poll as of the last tick, to log its changes.
+    poll: DevicePoll,
     recovery: Recovery,
     mask_log: MaskLog,
     bindings: Bindings,
@@ -358,13 +373,40 @@ struct State {
 }
 
 impl State {
-    /// Stop injecting: forget every hold and latch without writing. The device poll releases the
-    /// held effectors on its own, keeping the last hold time written.
-    fn reset(&mut self) {
+    /// Stop injecting: forget every hold and latch, and return the writes that undo what the last
+    /// tick wrote ([`HoldTracker::release_all`]).
+    fn reset(&mut self, poll: DevicePoll) -> Vec<ActionWrite> {
         self.recovery.disarm();
         self.bindings = Bindings::new();
-        self.tracker.clear();
         self.yank = YankDetector::new();
+        self.tracker.release_all(poll)
+    }
+
+    /// [`reset`](Self::reset), applying the writes that undo the last tick's, which are returned
+    /// for the report.
+    fn stand_down(&mut self, poll: DevicePoll) -> Vec<ReportedWrite> {
+        let writes = self.reset(poll);
+        // SAFETY: the input tick runs on the main thread after the device poll.
+        let landings = unsafe { inject::apply(&writes) };
+        report_writes(&writes, &landings)
+    }
+
+    /// Log a change of the device poll: while it is disabled the bindings stand down, which
+    /// otherwise looks like broken bindings.
+    fn observe_poll(&mut self, poll: DevicePoll) {
+        if std::mem::replace(&mut self.poll, poll) == poll {
+            return;
+        }
+        match poll {
+            DevicePoll::Disabled => tracing::info!(
+                target: "controllers",
+                "the game's device poll is disabled; the bindings stand down and release their writes"
+            ),
+            DevicePoll::Running => tracing::info!(
+                target: "controllers",
+                "the game's device poll runs again; the bindings resume"
+            ),
+        }
     }
 
     /// Publish each hand's recovery for the debug UI, and log a hand that keeps waiting for its
@@ -393,6 +435,21 @@ impl State {
             }
         }
     }
+}
+
+/// Pair each write with what became of it, for the report.
+fn report_writes(writes: &[ActionWrite], landings: &[Landing]) -> Vec<ReportedWrite> {
+    writes
+        .iter()
+        .zip(landings)
+        .map(|(w, landing)| ReportedWrite {
+            map: w.target.map,
+            action: w.target.action,
+            value: w.value,
+            phase: w.phase,
+            outcome: landing.outcome,
+        })
+        .collect()
 }
 
 /// The angle from the head's heading to the off-hand controller's, both in the cockpit frame, for

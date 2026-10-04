@@ -72,10 +72,13 @@ pub(super) fn mode_readout(
                     Phase::Clicked => "clicked".to_owned(),
                     Phase::Held { seconds } => format!("held {seconds:.2} s"),
                     Phase::Released { seconds } => format!("released after {seconds:.2} s"),
+                    Phase::Unclick { .. } => "click undone".to_owned(),
+                    Phase::Neutral => "returned to idle".to_owned(),
                 });
                 ui.label(match w.outcome {
                     Outcome::Applied => "applied",
                     Outcome::KeptPhysicalPress => "kept a physical press",
+                    Outcome::AlreadyMovedOn => "already moved on by the poll",
                     Outcome::Unresolved => "unresolved",
                 });
                 ui.end_row();
@@ -88,6 +91,7 @@ fn idle_label(idle: Idle) -> &'static str {
         Idle::Disabled => "the bindings are off",
         Idle::GamepadScheme => "the gamepad scheme is in effect",
         Idle::NoControllers => "no active controller",
+        Idle::PollDisabled => "the game's device poll is disabled",
         Idle::ModPanel => "the mod panel is up",
     }
 }

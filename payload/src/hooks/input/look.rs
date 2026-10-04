@@ -12,7 +12,8 @@
 //! The same tick holds the game's active-input-device setting at the gamepad under the controller
 //! scheme ([`crate::controllers::gamepad_setting`]).
 //! The controllers' right stick turns the body through the same VR turn scheme as the look
-//! effectors.
+//! effectors, and the bindings are told whether this call polled the devices, since they stand down
+//! while it does not.
 
 use detours_macro::detour;
 use jc3gi::input::{
@@ -21,7 +22,10 @@ use jc3gi::input::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{controllers, headpose};
+use crate::{
+    controllers::{self, bindings::hold::DevicePoll},
+    headpose,
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&INPUT_DEVICE_MANAGER_UPDATE_BINDER)
@@ -29,9 +33,16 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::input::input_device_manager::InputDeviceManager::Update_ADDRESS)]
 fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
+    // Read before the call: `InputDeviceManager::m_Enabled` decides whether this call polls the
+    // devices, and egui's input capture may flip it from the window thread.
+    // SAFETY: the manager is the live singleton the game passes to its own update.
+    let poll = match unsafe { manager.as_ref() } {
+        Some(manager) if manager.m_Enabled => DevicePoll::Running,
+        _ => DevicePoll::Disabled,
+    };
     INPUT_DEVICE_MANAGER_UPDATE.get().unwrap().call(manager, dt);
 
-    let controllers = controllers::bindings::input_tick(dt);
+    let controllers = controllers::bindings::input_tick(dt, poll);
     controllers::gamepad_setting::input_tick();
 
     if !headpose::is_active() {

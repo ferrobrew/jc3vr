@@ -296,7 +296,7 @@ mod tests {
         bindings::{
             State, TickReport,
             controls::Controls,
-            hold::{Desired, HoldTracker, Phase, Target, Want},
+            hold::{Desired, DevicePoll, HoldTracker, Phase, Target, Want},
             tables::Bindings,
             yank::YankDetector,
         },
@@ -364,6 +364,7 @@ mod tests {
     #[test]
     fn other_hand_loss_cannot_turn_a_held_trigger_into_a_new_click() {
         let mut state = State {
+            poll: DevicePoll::Running,
             recovery: Recovery::new(),
             mask_log: MaskLog::new(),
             tracker: HoldTracker::new(),
@@ -381,7 +382,7 @@ mod tests {
         ];
         for (i, sample) in samples.iter().enumerate() {
             if state.recovery.observe(sample) {
-                state.reset();
+                state.reset(DevicePoll::Running);
             }
             let mut frame = sample.clone();
             let mut edges = Edges::default();

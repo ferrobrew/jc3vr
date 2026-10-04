@@ -93,6 +93,10 @@ impl std::convert::AsMut<InputDeviceId> for InputDeviceId {
 pub struct InputDeviceManager {
     vftable: *const crate::input::input_device_manager::InputDeviceManagerVftable,
     _field_8: [u8; 4],
+    /// Whether the device poll runs. [`Update`](crate::input::input_device_manager::InputDeviceManager::Update) reads every device and refreshes their
+    /// effectors only while it is set; while it is clear, `Update` only checks the XInput pads for
+    /// activity, and every effector keeps the value and state it last had. `SetEnabled` and
+    /// `IsEnabled` (virtual) write and read it.
     pub m_Enabled: bool,
     _field_d: [u8; 107],
 }
