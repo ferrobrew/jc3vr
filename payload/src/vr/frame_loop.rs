@@ -16,7 +16,7 @@ use crate::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig, pose_control,
         recenter::mid_pose,
         stage,
-        state::{VR_STATE, VrState},
+        state::{VrState, lock_state},
         swapchain::Swapchain,
     },
 };
@@ -35,7 +35,7 @@ pub fn frame_begin() -> Option<FrameContext> {
     // is scoped too.)
     #[cfg(feature = "profiler")]
     let lock_scope = puffin::profile_scope_custom!("VR runtime lock (tail block)");
-    let mut guard = VR_STATE.lock();
+    let mut guard = lock_state();
     #[cfg(feature = "profiler")]
     drop(lock_scope);
 

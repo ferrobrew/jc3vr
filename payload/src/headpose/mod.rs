@@ -227,7 +227,8 @@ pub fn eye_arm() -> Vec3 {
 /// Recenter the headpose. The sim is body-relative and recenters by zeroing its accumulated angles;
 /// the VR source re-bases the cockpit baseline against the HMD's latest located pose. Both are
 /// re-based so one action recenters whichever source is live (and the other stays consistent for a
-/// later switch).
+/// later switch). The sim recenters at once; the VR re-base runs at the start of the next frame
+/// ([`crate::vr::recenter`]), so this is safe from any thread.
 pub fn recenter() {
     sim::reset();
     crate::vr::recenter();

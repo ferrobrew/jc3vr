@@ -36,6 +36,7 @@ use crate::{
         },
     },
     stereo::STEREO_STATE,
+    thread_role::{self, ThreadRole},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -58,6 +59,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::game::Game::Update_ADDRESS)]
 fn game_update(game: *const Game) -> bool {
+    thread_role::mark_thread(ThreadRole::Game);
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.
     crate::hooks::clock::UPDATED_THIS_FRAME.store(false, Ordering::Relaxed);
     // `crate::update` advances the puffin frame (closing the previous one); the frame scope opens
@@ -71,6 +73,7 @@ fn game_update(game: *const Game) -> bool {
 #[detour(address = jc3gi::game::Game::UpdateRender_ADDRESS)]
 fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
     log_hook_thread("game_update_render", &GAME_UPDATE_RENDER_THREAD);
+    thread_role::mark_thread(ThreadRole::Game);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("CGame::UpdateRender");
     unsafe {
@@ -152,6 +155,11 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         let mut vr_frame = vr_running.then(crate::vr::frame_begin).flatten();
         #[cfg(feature = "profiler")]
         drop(frame_begin_scope);
+        // From here to the end of the render update this thread holds the VR runtime lock (in a
+        // frame that took one) and waits on the draw task and the CPU fragment workers, so nothing
+        // it runs may block on that lock. Scoped in flatscreen frames too, so a violation shows up
+        // without a headset.
+        let _frame_role = thread_role::enter(ThreadRole::GameFrame);
 
         // Publish the VR head pose and per-eye camera parameters *before* the original UpdateRender.
         // `CGame::Update` runs the sim tick (`UpdateGame`) -- which finalizes this frame's animation,

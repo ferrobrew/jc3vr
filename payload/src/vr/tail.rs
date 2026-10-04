@@ -31,7 +31,10 @@ use std::{
 use jc3gi::{cpu_fragment::CpuPrimaryCount, graphics_engine::graphics_engine::GraphicsEngine};
 use windows::Win32::{Foundation::HANDLE, System::Threading::WaitForSingleObject};
 
-use crate::vr::{FrameContext, config::VrConfig};
+use crate::{
+    thread_role::{self, ThreadRole},
+    vr::{FrameContext, config::VrConfig},
+};
 
 /// One deferred frame tail.
 pub struct TailJob {
@@ -109,6 +112,7 @@ const SHUTDOWN_POLLS: u32 = 500;
 static QUIT_ACKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn worker(rx: mpsc::Receiver<Message>) {
+    thread_role::mark_thread(ThreadRole::FrameTail);
     #[cfg(feature = "profiler")]
     crate::profiler::label_thread("tail");
     while let Ok(message) = rx.recv() {

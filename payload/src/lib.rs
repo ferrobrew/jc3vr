@@ -42,6 +42,7 @@ mod recorder;
 mod screenshot;
 mod session;
 mod stereo;
+mod thread_role;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
@@ -189,6 +190,10 @@ fn initialize_from_game() -> anyhow::Result<()> {
 
 /// Called to undo `initialize_from_game`; called once shutdown is triggered
 fn shutdown_from_game() {
+    // Let an in-flight frame tail submit before anything below takes the egui state lock: the VR
+    // teardown in the cleanups locks the runtime state under it, and the tail holds that lock while
+    // it waits on a draw task that takes the egui state lock. See `docs/mod/threading.md`.
+    vr::wait_for_frame_tail();
     hooks::ui::cancel_pointer_on_game_thread();
     // Re-create the original vertex shaders before anything is torn down: single-pass substitutes
     // patched (cb13-reading) shaders that the game holds, so without this the clean game would keep
@@ -272,6 +277,9 @@ fn update() {
             .ensure_eye_targets();
 
         if let Some(egui_state) = EguiState::get().as_mut() {
+            // The debug UI runs holding the egui state lock, which the draw task also takes, so
+            // nothing in it may block on the VR runtime lock (see `crate::thread_role`).
+            let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
             // While the F10 capture mode is active, keep input with the game rather than letting
             // this toggle hand it to egui. The overlay itself is hidden by skipping
             // `egui_state.render()` in `graphics_flip` while capture is active.

@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    vr::{is_running, state::VR_STATE},
+    vr::{is_running, state::lock_state},
 };
 
 /// Recenter the cockpit: re-base the stored baseline from the latest located VIEW-space pose, taking
@@ -20,11 +20,15 @@ use crate::{
 /// re-based ([`crate::controllers::roomscale::manual_recenter_kind`]): the chase already keeps the
 /// position converged, and a position re-base could put the body through a wall the chase could
 /// not cross. The seat transitions ask for their own re-base through [`request_seat_recenter`].
+///
+/// The re-base runs at the start of the next frame ([`auto_recenter_tick`]), like
+/// [`request_recenter`]. It needs the runtime lock, which a frame holds while it waits on other
+/// threads, and the callers are not all at a point where taking it is safe: the debug UI holds the
+/// egui state lock the draw task takes, and the Camera tab also holds the config lock, which choosing
+/// the kind takes. So the request is only an atomic store and the kind is chosen when the frame takes
+/// it, which makes this safe from any thread and under any lock. See `docs/mod/threading.md`.
 pub fn recenter() {
-    recenter_as(
-        crate::controllers::roomscale::manual_recenter_kind(),
-        RecenterCause::Manual,
-    );
+    PENDING_RECENTER.fetch_or(REQUEST_POSTURE | REQUEST_MANUAL, Ordering::Relaxed);
 }
 
 /// What a recenter re-bases.
@@ -48,9 +52,8 @@ pub enum RecenterCause {
     SeatTransition,
 }
 
-/// Ask for a manual recenter at the start of the next frame. For callers that run while the frame
-/// in flight holds the runtime lock (the frame's own pose composition, or anything inside the
-/// engine's render update), where [`recenter`] would deadlock. A full request outranks a
+/// Ask for a manual recenter of `kind` at the start of the next frame. [`recenter`] asks for the
+/// kind the posture calls for; this is for a caller that has chosen one. A full request outranks a
 /// yaw-and-height one.
 pub fn request_recenter(kind: RecenterKind) {
     request(kind, RecenterCause::Manual);
@@ -82,8 +85,10 @@ pub fn recenter_count() -> u32 {
     RECENTERS.load(Ordering::Relaxed)
 }
 
+/// Re-base the baseline now. Locks the runtime state, so it runs only at the top of the frame, from
+/// [`auto_recenter_tick`].
 fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
-    let mut state = VR_STATE.lock();
+    let mut state = lock_state();
     match state.latest_head_pose {
         Some(pose) => {
             let fresh = Baseline::from_pose(pose);
@@ -108,19 +113,25 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
 /// Service a recenter asked for through [`request_recenter`]. Called at the top of
 /// [`auto_recenter_tick`], before the frame takes the runtime lock.
 fn service_requested_recenter() {
-    if let Some((kind, cause)) =
-        decode_request(PENDING_RECENTER.swap(REQUEST_NONE, Ordering::Relaxed))
-    {
+    let bits = PENDING_RECENTER.swap(REQUEST_NONE, Ordering::Relaxed);
+    let posture_kind = if bits & REQUEST_POSTURE != 0 {
+        crate::controllers::roomscale::manual_recenter_kind()
+    } else {
+        RecenterKind::Full
+    };
+    if let Some((kind, cause)) = decode_request(bits, posture_kind) {
         recenter_as(kind, cause);
     }
 }
 
-/// The recenter a set of `REQUEST_*` bits asks for: full over yaw-and-height, and manual when any
-/// request was. Taken in one swap, so a request can never be split between two frames.
-fn decode_request(bits: u8) -> Option<(RecenterKind, RecenterCause)> {
-    let kind = if bits & REQUEST_FULL != 0 {
+/// The recenter a set of `REQUEST_*` bits asks for, with `posture_kind` standing for
+/// [`REQUEST_POSTURE`]: full over yaw-and-height, and manual when any request was. Taken in one
+/// swap, so a request can never be split between two frames.
+fn decode_request(bits: u8, posture_kind: RecenterKind) -> Option<(RecenterKind, RecenterCause)> {
+    let posture = bits & REQUEST_POSTURE != 0;
+    let kind = if bits & REQUEST_FULL != 0 || (posture && posture_kind == RecenterKind::Full) {
         RecenterKind::Full
-    } else if bits & REQUEST_YAW_HEIGHT != 0 {
+    } else if bits & REQUEST_YAW_HEIGHT != 0 || posture {
         RecenterKind::YawAndHeight
     } else {
         return None;
@@ -136,17 +147,21 @@ fn decode_request(bits: u8) -> Option<(RecenterKind, RecenterCause)> {
 /// The recenters done, for [`recenter_count`].
 static RECENTERS: AtomicU32 = AtomicU32::new(0);
 
-/// The pending [`request_recenter`] and [`request_seat_recenter`] calls, as a set of `REQUEST_*`
-/// bits ([`decode_request`]).
+/// The pending [`recenter`], [`request_recenter`], and [`request_seat_recenter`] calls, as a set of
+/// `REQUEST_*` bits ([`decode_request`]).
 static PENDING_RECENTER: AtomicU8 = AtomicU8::new(REQUEST_NONE);
 const REQUEST_NONE: u8 = 0;
 const REQUEST_YAW_HEIGHT: u8 = 1 << 0;
 const REQUEST_FULL: u8 = 1 << 1;
 const REQUEST_MANUAL: u8 = 1 << 2;
+/// The kind [`crate::controllers::roomscale::manual_recenter_kind`] picks, chosen when the request
+/// is serviced.
+const REQUEST_POSTURE: u8 = 1 << 3;
 
-/// Drive the gameplay-resume auto-recenter. Call once per frame on the game thread. Arms while the
+/// Drive the gameplay-resume auto-recenter and service the recenters asked for since the last frame.
+/// Call once per frame on the game thread, before `frame_begin` takes the runtime lock. Arms while the
 /// game is not in settled gameplay (frontend, loading, or no local player character), and fires a
-/// single [`recenter`] once gameplay is running and the player's head anchor has stopped moving (the
+/// single manual recenter once gameplay is running and the player's head anchor has stopped moving (the
 /// entry animation has finished), so the neutral snaps to the player's real pose. In-session
 /// transitions such as exiting a vehicle keep a live character, so they never re-arm and never fire.
 /// See [`crate::vr::VrConfig::auto_recenter_on_gameplay`].
@@ -189,7 +204,12 @@ pub fn auto_recenter_tick() {
             if s.settled_frames >= ANCHOR_SETTLE_FRAMES {
                 s.armed = false;
                 drop(s);
-                recenter();
+                // In place rather than requested: this is the top of the frame, before it takes
+                // the runtime lock.
+                recenter_as(
+                    crate::controllers::roomscale::manual_recenter_kind(),
+                    RecenterCause::Manual,
+                );
                 tracing::info!(target: "vr", "auto-recentered on gameplay resume");
             }
         }
@@ -339,22 +359,45 @@ mod tests {
 
     #[test]
     fn requests_merge_full_over_yaw_and_manual_over_seat() {
-        assert_eq!(decode_request(REQUEST_NONE), None);
-        assert_eq!(decode_request(REQUEST_MANUAL), None);
+        let decode = |bits| decode_request(bits, RecenterKind::Full);
+        assert_eq!(decode(REQUEST_NONE), None);
+        assert_eq!(decode(REQUEST_MANUAL), None);
         assert_eq!(
-            decode_request(REQUEST_YAW_HEIGHT),
+            decode(REQUEST_YAW_HEIGHT),
             Some((RecenterKind::YawAndHeight, RecenterCause::SeatTransition))
         );
         assert_eq!(
-            decode_request(REQUEST_YAW_HEIGHT | REQUEST_FULL),
+            decode(REQUEST_YAW_HEIGHT | REQUEST_FULL),
             Some((RecenterKind::Full, RecenterCause::SeatTransition))
         );
         assert_eq!(
-            decode_request(REQUEST_YAW_HEIGHT | REQUEST_MANUAL),
+            decode(REQUEST_YAW_HEIGHT | REQUEST_MANUAL),
             Some((RecenterKind::YawAndHeight, RecenterCause::Manual))
         );
         assert_eq!(
-            decode_request(REQUEST_FULL | REQUEST_MANUAL),
+            decode(REQUEST_FULL | REQUEST_MANUAL),
+            Some((RecenterKind::Full, RecenterCause::Manual))
+        );
+    }
+
+    #[test]
+    fn a_posture_request_takes_the_posture_kind_and_still_yields_to_full() {
+        let posture = REQUEST_POSTURE | REQUEST_MANUAL;
+        assert_eq!(
+            decode_request(posture, RecenterKind::YawAndHeight),
+            Some((RecenterKind::YawAndHeight, RecenterCause::Manual))
+        );
+        assert_eq!(
+            decode_request(posture, RecenterKind::Full),
+            Some((RecenterKind::Full, RecenterCause::Manual))
+        );
+        assert_eq!(
+            decode_request(posture | REQUEST_FULL, RecenterKind::YawAndHeight),
+            Some((RecenterKind::Full, RecenterCause::Manual))
+        );
+        // A seat transition's yaw-and-height re-base merges into a posture request that is full.
+        assert_eq!(
+            decode_request(posture | REQUEST_YAW_HEIGHT, RecenterKind::Full),
             Some((RecenterKind::Full, RecenterCause::Manual))
         );
     }

@@ -17,11 +17,14 @@
 //!
 //! ## Threading
 //!
-//! Everything runs on the game's main thread, the same model as [`crate::capture`]: a single
-//! `Mutex<VrState>` singleton, locked briefly on that thread. The game's `ID3D11Device` is fetched
-//! from the graphics engine singleton at session-create time under the same null-guarding
-//! [`crate::capture`] uses; the device is never stored (so the state carries no raw device pointer
-//! across threads). All OpenXR handles are `Send` (`Arc`-backed handles), so the state is a safe
+//! The runtime state is a single `Mutex<VrState>` singleton. The game thread locks it briefly at the
+//! top of the render update and holds it from [`frame_begin`] for the frame, and the deferred frame
+//! tail ([`tail`]) takes the frame's guard over until it submits; both wait on engine threads
+//! meanwhile, so every blocking lock goes through a thread-role check (see [`crate::thread_role`] and
+//! `docs/mod/threading.md`), and other threads read the published slots instead. The game's
+//! `ID3D11Device` is fetched from the graphics engine singleton at session-create time under the
+//! same null-guarding [`crate::capture`] uses; the device is never stored (so the state carries no
+//! raw device pointer across threads). All OpenXR handles are `Send` (`Arc`-backed handles), so the state is a safe
 //! singleton.
 //!
 //! ## Degradation and retry
@@ -78,7 +81,7 @@ pub use recenter::{
     request_seat_recenter,
 };
 pub use resolution::apply_native_resolution;
-pub use state::{VrStatus, install, is_running, status, uninstall, update};
+pub use state::{VrStatus, install, is_running, status, uninstall, update, wait_for_frame_tail};
 
 /// The OpenXR view configuration: standard stereo, two views (one per eye).
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;

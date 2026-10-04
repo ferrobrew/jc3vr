@@ -3,11 +3,15 @@
 //! state machine -- locating views, the swapchain acquire/release, and the frame submit -- lives in
 //! [`crate::vr::frame_loop`].
 
-use std::time::Instant;
+use std::{
+    panic::Location,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 use anyhow::Context as _;
 use openxr as xr;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use windows::{
     Win32::UI::WindowsAndMessaging::{
         MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
@@ -19,6 +23,7 @@ use crate::{
     config::Config,
     controllers::frame as controller_frame,
     hooks::graphics_engine::graphics_engine,
+    thread_role::{self, ThreadRole},
     vr::{
         VIEW_TYPE, VrConfig, blit,
         eye_resolution::scaled_eye_size,
@@ -69,7 +74,7 @@ pub fn update() -> bool {
     }
 
     let cfg = Config::lock_query(|c| c.vr.clone());
-    let mut state = VR_STATE.lock();
+    let mut state = lock_state();
 
     if !cfg.enabled {
         if state.instance.is_some() {
@@ -89,9 +94,20 @@ pub fn update() -> bool {
     state.is_running()
 }
 
-/// Whether an OpenXR session is currently running (READY..STOPPING). Cheap; locks the state briefly.
+/// Whether an OpenXR session is currently running (READY..STOPPING). Locks the state briefly, so it
+/// is for the game thread at the top of the frame only (see [`lock_state`]); everything else asks
+/// whether a VR frame is rendering through the draw-safe [`crate::vr::render_params`] slot.
 pub fn is_running() -> bool {
-    VR_STATE.lock().is_running()
+    lock_state().is_running()
+}
+
+/// Wait until no frame holds the runtime state: the deferred frame tail, if one is in flight, has
+/// submitted. Only the game thread hands frames to the tail, so once this returns nothing holds the
+/// lock until the game thread takes it again. The shutdown path calls it before it takes the egui
+/// state lock and tears the runtime down under it: with the tail done, the draw task it was waiting
+/// on is done too, and no longer needs that lock.
+pub fn wait_for_frame_tail() {
+    drop(lock_state());
 }
 
 /// A snapshot of the VR runtime state for the debug UI ([`crate::ui::vr`]).
@@ -115,10 +131,11 @@ pub struct VrStatus {
 /// Snapshot the VR runtime state for the debug UI. Locks the config and the runtime state briefly.
 pub fn status() -> VrStatus {
     let cfg = Config::lock_query(|c| c.vr.clone());
-    // `try_lock`, never `lock`. The deferred frame tail holds this lock across its drain and submit,
-    // and the debug UI runs on the game thread -- which is also what the tail waits on. Blocking here
-    // puts a diagnostic panel inside that cycle, and opening the VR tab at the wrong moment wedged
-    // the process outright. A stale readout for one frame is not worth a deadlock.
+    // `try_lock`, never `lock`. The debug UI runs on the game thread holding the egui state lock,
+    // and the deferred frame tail holds this lock while it waits on the draw task, which takes the
+    // egui state lock to draw the floating panel. Blocking here closes that cycle, and opening the VR
+    // tab at the wrong moment wedged the process outright. A stale readout for one frame is not
+    // worth a deadlock.
     let Some(state) = VR_STATE.try_lock() else {
         return VrStatus {
             enabled: cfg.enabled,
@@ -149,17 +166,82 @@ pub fn status() -> VrStatus {
 /// everything is destroyed.
 pub fn uninstall() {
     let persist = Config::lock_query(|c| c.vr.persist_instance);
-    let mut state = VR_STATE.lock();
+    let mut state = lock_state();
     if state.instance.is_some() {
         tracing::info!(target: "vr", persist, "uninstalling the OpenXR runtime");
     }
     state.teardown(persist);
 }
 
-/// The live VR runtime state, on the game's main thread. Locked briefly by [`update`] and held for a
-/// frame by [`crate::vr::FrameContext`]. A const-constructible [`Mutex`] singleton, the same pattern
-/// [`crate::capture`] uses.
-pub(super) static VR_STATE: Mutex<VrState> = Mutex::new(VrState::new());
+/// Lock the runtime state, blocking.
+///
+/// The state is held for a whole frame, first by the game thread ([`crate::vr::FrameContext`]) and
+/// then by the frame tail until it submits, and both wait on engine threads meanwhile, so a blocking
+/// lock is safe only on the game thread at the top of a frame, holding no other lock
+/// ([`ThreadRole::may_block_on_vr_state`]). A lock from any other role is reported: debug builds
+/// panic, and release builds log the first one at error level and go on to lock. The check is one
+/// thread-local read. See `docs/mod/threading.md`.
+#[track_caller]
+pub(super) fn lock_state() -> MutexGuard<'static, VrState> {
+    let role = thread_role::current();
+    if !role.may_block_on_vr_state() {
+        report_forbidden_lock(role, Location::caller());
+    }
+    VR_STATE.lock()
+}
+
+/// The live VR runtime state. Blocking locks go through [`lock_state`], which checks the caller's
+/// thread role; [`status`] alone uses `try_lock`, which cannot deadlock and so is not checked. A
+/// const-constructible [`Mutex`] singleton, the same pattern [`crate::capture`] uses.
+static VR_STATE: Mutex<VrState> = Mutex::new(VrState::new());
+
+/// Report a blocking lock of the runtime state from a role that must not take one.
+#[cold]
+#[inline(never)]
+fn report_forbidden_lock(role: ThreadRole, location: &'static Location<'static>) {
+    let verdict = forbidden_lock_verdict(
+        cfg!(debug_assertions),
+        FORBIDDEN_LOCK_REPORTED.swap(true, Ordering::Relaxed),
+    );
+    if verdict == ForbiddenLockVerdict::Silent {
+        return;
+    }
+    let message = format!(
+        "vr: a blocking lock of the VR runtime state from {} at {location}: a frame holds that lock \
+         while it waits on this thread, or this thread already holds it, so the lock can deadlock \
+         (read a published slot such as `vr::render_params`, or defer the work to the top of the \
+         frame; see docs/mod/threading.md)",
+        role.describe(),
+    );
+    tracing::error!(target: "vr", ?role, "{message}");
+    if verdict == ForbiddenLockVerdict::Panic {
+        panic!("{message}");
+    }
+}
+
+/// What [`report_forbidden_lock`] does about a forbidden lock.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ForbiddenLockVerdict {
+    /// Log it and panic: a debug build, where the panic names the site instead of a silent wedge.
+    Panic,
+    /// Log it and go on: the first one in a release build.
+    Log,
+    /// Go on: a release build that has already logged one.
+    Silent,
+}
+
+/// The verdict for a forbidden lock in a debug or release build, given whether one was reported
+/// before.
+fn forbidden_lock_verdict(debug_build: bool, reported_before: bool) -> ForbiddenLockVerdict {
+    match (debug_build, reported_before) {
+        (true, _) => ForbiddenLockVerdict::Panic,
+        (false, false) => ForbiddenLockVerdict::Log,
+        (false, true) => ForbiddenLockVerdict::Silent,
+    }
+}
+
+/// Whether a release build has logged a forbidden lock, so it logs only the first.
+static FORBIDDEN_LOCK_REPORTED: AtomicBool = AtomicBool::new(false);
 
 /// The maximum number of ~2 ms event polls to wait for a session to reach EXITING during the
 /// teardown exit handshake. A hard cap so teardown cannot hang if the runtime never advances the
@@ -570,5 +652,70 @@ fn fatal_message_box(message: &str) {
             &HSTRING::from("jc3vr: fatal error"),
             MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_debug_build_panics_on_every_forbidden_lock() {
+        assert_eq!(
+            forbidden_lock_verdict(true, false),
+            ForbiddenLockVerdict::Panic
+        );
+        assert_eq!(
+            forbidden_lock_verdict(true, true),
+            ForbiddenLockVerdict::Panic
+        );
+    }
+
+    #[test]
+    fn a_release_build_logs_only_the_first_forbidden_lock() {
+        assert_eq!(
+            forbidden_lock_verdict(false, false),
+            ForbiddenLockVerdict::Log
+        );
+        assert_eq!(
+            forbidden_lock_verdict(false, true),
+            ForbiddenLockVerdict::Silent
+        );
+    }
+
+    #[test]
+    fn the_game_thread_locks_without_a_report() {
+        std::thread::spawn(|| {
+            thread_role::mark_thread(ThreadRole::Game);
+            assert!(!lock_state().is_running());
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_lock_inside_the_frame_panics_before_it_blocks() {
+        let result = std::thread::spawn(|| {
+            thread_role::mark_thread(ThreadRole::Game);
+            // Held, as the frame holds it: the check has to fire before the lock would wait.
+            let held = lock_state();
+            let _frame = thread_role::enter(ThreadRole::GameFrame);
+            let outcome = std::panic::catch_unwind(|| drop(lock_state()));
+            drop(held);
+            outcome
+        })
+        .join()
+        .unwrap();
+        assert!(result.is_err());
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_lock_from_an_unmarked_thread_panics() {
+        let result = std::thread::spawn(|| std::panic::catch_unwind(|| drop(lock_state())))
+            .join()
+            .unwrap();
+        assert!(result.is_err());
     }
 }

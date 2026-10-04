@@ -49,6 +49,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 ## mod/
 
 - [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
+- [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime lock across a frame, the lock rules, and the thread-role guard that checks them.
 - [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, and cursor interaction.
 - [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one `VR` entry below the root menu's options entry, whose pages are tabs on the settings screen's own tab bar, section headers in the list title's style, the six hooks, command routing, the value wrappers, the page model and row encoding, step pages, live values, the `BODY`, `CONTROLS`, and `COMFORT` pages with the body calibration and saving, and the in-game status list.
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.

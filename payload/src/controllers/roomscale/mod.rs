@@ -292,8 +292,8 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
 
 /// Re-base the cockpit shift after the recenter baseline was re-based: a full recenter makes the
 /// head the cockpit origin, so the shift is spent; a yaw-and-height recenter keeps the horizontal
-/// position and turns the cockpit frame by `turn` (new frame from old). Called by
-/// [`crate::vr::recenter`].
+/// position and turns the cockpit frame by `turn` (new frame from old). Called by the recenter
+/// at the top of the frame ([`crate::vr::auto_recenter_tick`]).
 ///
 /// A manual recenter is also the player saying "this is how I am": in the automatic posture it
 /// classifies seated or standing at once from the head height, and while seated it captures the
