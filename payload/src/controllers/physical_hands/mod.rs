@@ -5,15 +5,18 @@
 //! - [`contact`]: whether each probe point has passed into a surface, and how deep;
 //! - [`push`]: the body's push away from what the palms press into;
 //! - [`strike`]: a palm's hit on a character as a punch or a slap, and what it deals;
+//! - [`shove`]: a palm's soft contact with a loose body, and how much the body gives;
 //! - [`pickup`]: taking hold of loose objects and picking up weapons with the grip, with the pure
-//!   hold logic in [`grasp`];
+//!   grip in [`grasp`] and the solver that carries what the hands hold in [`hold`];
+//! - [`rigid`]: a rigid body's response to impulses;
+//! - [`touch`]: what the contacts do to the world: strikes, knocks, shoves, and pressure pulses;
 //! - [`config`]: the settings.
 //!
 //! The palms are probed rather than simulated: no body is added to the physics world. Each tick,
 //! from the player aim control's post-simulation update ([`after_aim`], the simulation-phase update
 //! where the engine casts its own aim ray), each probe point of each acting palm is cast from where
 //! it last was in the open to where it is now, through the player aim's ray filter, which never
-//! hits the player. What the casts find drives four things:
+//! hits the player. What the casts find drives these:
 //!
 //! 1. A press into a solid surface pushes the body away from it ([`push`]), as movement added to
 //!    the on-foot locomotion task's own ([`push_body`], from the roomscale simulation half), so
@@ -22,17 +25,20 @@
 //! 3. A fast hit on a character strikes it ([`strike`]): the game's melee damage and hit reaction,
 //!    scaled by the hand's speed into the character, as a punch with a closed fist and as a slap
 //!    with an open hand.
-//! 4. A fast hit on a dynamic object pushes its body.
-//! 5. An object within reach of a palm can be taken with the grip ([`pickup`]).
+//! 4. A press into a dynamic object shoves it every tick, within the hand's strength ([`shove`]);
+//!    the share it does not give pushes the body away, as a wall does. A fast hit also knocks it.
+//! 5. An object within reach of a palm can be taken with the grip ([`pickup`]), held at the point
+//!    the hand touched ([`grasp`]) and carried within the hands' strength ([`hold`]); the rendered
+//!    hand stays on the grab point, and what the hand cannot move pushes the body.
 //!
 //! A palm acts only on foot on the ground, for a tracked hand the controller drives that holds
 //! nothing: not a gun, not the foregrip, not a grenade or a charge being thrown. While a palm acts
 //! and strikes are on, the physical-melee gesture does not start the game's melee attack for that
 //! hand ([`replaces_melee`]); the palm's own strike replaces it.
 //!
-//! The strikes and the object pushes change engine state that is the main thread's, so they are
-//! made only when the aim update runs on the thread the input tick runs on ([`input_tick`] notes
-//! it); otherwise the palms stand down and the readout says why.
+//! The strikes, the shoves, and the holds change engine state that is the main thread's, so they
+//! are made only when the aim update runs on the thread the input tick runs on ([`input_tick`]
+//! notes it); otherwise the palms stand down and the readout says why.
 
 mod bodies;
 pub mod config;
@@ -40,10 +46,14 @@ pub mod contact;
 mod draw;
 mod engine;
 pub mod grasp;
+pub mod hold;
 pub mod palm;
 pub mod pickup;
 pub mod push;
+pub mod rigid;
+pub mod shove;
 pub mod strike;
+mod touch;
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
@@ -51,7 +61,7 @@ use std::{
 };
 
 pub use config::PhysicalHandsConfig;
-use glam::{Quat, Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -70,10 +80,13 @@ use crate::{
         motion,
         physical_hands::{
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
-            grasp::Reach,
+            grasp::{AngularTracker, PalmMotion, Reach, VelocityTracker},
+            hold::BodySpace,
             palm::{PROBE_POINTS, PalmBox},
             pickup::{HeldReport, PickupState, PickupStatus},
-            strike::{StrikeGate, StrikeKind, StrikePlan, impact_speed, strength},
+            shove::{Give, ShoveTuning},
+            strike::{StrikeGate, StrikeKind, StrikePlan},
+            touch::{Event, ShoveInput, pressure_pulses},
         },
         roomscale::teleport,
         scheme,
@@ -131,6 +144,21 @@ pub struct HandStatus {
     pub reach: Option<Reach>,
     /// What the hand holds.
     pub held: Option<HeldReport>,
+    /// The palm's shove of the object it presses into.
+    pub shove: Option<ShoveReport>,
+}
+
+/// One palm's shove of a loose object on a tick, for the readout and the overlay.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ShoveReport {
+    /// Where the palm touches the object, world space.
+    pub at: Vec3,
+    /// The impulse applied, world space, newton seconds.
+    pub impulse: Vec3,
+    /// The share of the palm's strongest push used, `0..=1`.
+    pub load: f32,
+    /// The share of the push the object does not give, `0..=1`, which pushes the body.
+    pub resistance: f32,
 }
 
 /// One strike, for the readout.
@@ -156,8 +184,10 @@ pub struct PhysicalHandsStatus {
     pub casts: u32,
     pub strikes: u64,
     pub last_strike: Option<StrikeReport>,
-    /// Object pushes made.
+    /// Object knocks made by fast hits.
     pub object_pushes: u64,
+    /// Ticks a palm shoved an object.
+    pub shoves: u64,
     /// Ticks the aim update ran off the main thread.
     pub off_thread: u64,
     /// The last cast or engine failure.
@@ -298,6 +328,14 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     .map(at);
     let free = free_hands();
     let curls = finger_curls();
+    let player_at = Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate();
+    let space = (config.pickup.keep_out_radius_m > 0.0).then(|| BodySpace {
+        base: player_at,
+        height_m: body::player().height * active.world_scale,
+        radius_m: config.pickup.keep_out_radius_m * active.world_scale,
+        forward: body_rotation * Vec3::NEG_Z,
+    });
+    let shove_tuning = ShoveTuning::of(&config.shove);
     // SAFETY: forwarded from the caller.
     let melee = unsafe { engine::melee_tuning(owner) };
 
@@ -354,15 +392,30 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         let Some(cockpit) = active.hands[i].filter(|_| free[i]) else {
             state.probes[i].iter_mut().for_each(PointProbe::reset);
             state.pressed[i] = false;
-            state.pickup.forget_motion(hand);
+            state.gives[i].reset();
+            state.motion[i].0.reset();
+            state.motion[i].1.reset();
             continue;
         };
         let palm = PalmBox::from_wrist(compose(cockpit.wrist), active.world_scale, &config);
-        palms[i] = Some(palm);
+        let motion = PalmMotion {
+            pose: Pose {
+                position: palm.centre,
+                orientation: palm.orientation,
+            },
+            velocity: state.motion[i]
+                .0
+                .update(palm.centre, dt, VELOCITY_SMOOTHING_S),
+            angular_velocity: state.motion[i]
+                .1
+                .update(palm.orientation, dt, VELOCITY_SMOOTHING_S),
+        };
+        palms[i] = Some(motion);
         if state.pickup.holding(hand) {
             // A holding hand neither probes, pushes, nor strikes: its palm is around the object.
             state.probes[i].iter_mut().for_each(PointProbe::reset);
             state.pressed[i] = false;
+            state.gives[i].reset();
             hand_status[i] = HandStatus {
                 acting: true,
                 palm: Some(palm),
@@ -402,8 +455,32 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             });
         }
         state.pressed[i] = pressed;
+        let shove = match contact.press {
+            Some((hit, depth)) if config.shove.enabled => {
+                // SAFETY: the simulation phase outside the physics step; the hit was found by
+                // this tick's casts.
+                unsafe {
+                    state.shove(
+                        hand,
+                        ShoveInput {
+                            hit,
+                            depth,
+                            hand_velocity: motion.velocity,
+                            dt,
+                        },
+                        &shove_tuning,
+                        &config,
+                    )
+                }
+            }
+            _ => {
+                state.gives[i].reset();
+                None
+            }
+        };
+        let resistance = shove.map_or(1.0, |s| s.resistance);
         let hand_push = contact.press.map_or(Vec2::ZERO, |(hit, depth)| {
-            push::hand_push(hit.normal, depth, &config)
+            push::hand_push(hit.normal, depth, &config) * resistance
         });
         let offset = contact.clamp_offset();
         clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
@@ -414,6 +491,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                     &palm,
                     config.pickup.reach_m * active.world_scale,
                     contact.press.map(|(hit, _)| hit),
+                    &config.pickup,
                     &mut |from, to| cast(from, to, &reach_options),
                 )
             }
@@ -441,14 +519,30 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             armed: state.gates[i].armed(),
             reach,
             held: None,
+            shove,
         };
     }
 
     if pickup_on {
         // SAFETY: the simulation phase outside the physics step.
-        let outcome = unsafe { pickup::tick(&mut state.pickup, palms, dt, &config.pickup) };
+        let outcome = unsafe { pickup::tick(&mut state.pickup, palms, space, dt, &config.pickup) };
         state.record_pickup(outcome, &mut hand_status, &config);
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            let Some(held) = hand_status[i].held else {
+                continue;
+            };
+            // The rendered hand stays on the grab point, wherever the body is.
+            let offset =
+                (held.anchor - held.target).clamp_length_max(config.pickup.break_distance_m);
+            clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+            if config.push && config.pickup.resist {
+                hand_status[i].push =
+                    hold::resist_push(held.anchor, held.target, held.load, &config);
+            }
+        }
     }
+    pressure_pulses(&hand_status, &config);
     let push = push::combine(hand_status.map(|h| h.push), &config);
     for event in events {
         // SAFETY: forwarded from the caller; the events' objects were found by this tick's casts.
@@ -472,26 +566,12 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
 /// palms act, so an older result means they have stopped.
 const STALE_AFTER: Duration = Duration::from_millis(200);
 
+/// How long the palms' velocities are smoothed over, seconds: short, so that a throw keeps the
+/// flick.
+const VELOCITY_SMOOTHING_S: f32 = 0.03;
+
 /// The main thread's id, as the input tick last saw it; zero before the first.
 static MAIN_THREAD: AtomicU32 = AtomicU32::new(0);
-
-/// Something a tick's contacts do to the world.
-#[derive(Debug, Copy, Clone, PartialEq)]
-enum Event {
-    /// A palm hit a character.
-    Strike {
-        hand: Hand,
-        hit: SurfaceHit,
-        velocity: Vec3,
-        kind: StrikeKind,
-    },
-    /// A palm met a solid surface.
-    Touch {
-        hand: Hand,
-        hit: SurfaceHit,
-        velocity: Vec3,
-    },
-}
 
 struct State {
     status: PhysicalHandsStatus,
@@ -503,6 +583,10 @@ struct State {
     last_sample: [Option<f64>; 2],
     /// Each hand's clamp offset, cockpit frame.
     clamp: [Vec3; 2],
+    /// Each palm's motion across ticks, world space.
+    motion: [(VelocityTracker, AngularTracker); 2],
+    /// How much each palm's pressed object gives.
+    gives: [Give; 2],
     /// When the last tick ran.
     at: Option<Instant>,
     epoch: u64,
@@ -520,6 +604,8 @@ impl State {
             probes.iter_mut().for_each(PointProbe::reset);
         }
         self.pressed = [false; 2];
+        self.gives = [Give::new(); 2];
+        self.motion = [(VelocityTracker::new(), AngularTracker::new()); 2];
     }
 
     /// Fold a pickup tick into the readout, and pulse the hands that took hold or let go.
@@ -572,110 +658,6 @@ impl State {
             .and_then(|since| motion::peak_velocity(&samples, since))
             .map_or(Vec3::ZERO, |(_, v)| v)
     }
-
-    /// Act on one event.
-    ///
-    /// # Safety
-    ///
-    /// As [`after_aim`], with the event's objects found by this tick's casts.
-    unsafe fn act(
-        &mut self,
-        event: Event,
-        owner: &Character,
-        melee: Option<(i32, f32)>,
-        config: &PhysicalHandsConfig,
-    ) {
-        match event {
-            Event::Strike {
-                hand,
-                hit,
-                velocity,
-                kind,
-            } => {
-                let Surface::Character(victim) = hit.surface else {
-                    return;
-                };
-                let impact = impact_speed(velocity, hit.normal);
-                let Some(strength) = strength(
-                    impact,
-                    config.min_strike_speed_mps,
-                    config.full_strike_speed_mps,
-                ) else {
-                    return;
-                };
-                let Some((damage, impulse)) = melee else {
-                    return;
-                };
-                if !self.gates[hand.index()].take(config) {
-                    return;
-                }
-                let plan = strike::plan(kind, strength, damage, impulse, config);
-                let direction = velocity.try_normalize().unwrap_or(-hit.normal);
-                // SAFETY: forwarded from the caller.
-                let dealt = unsafe {
-                    engine::strike_character(owner, victim, hit.position, direction, &plan)
-                };
-                tracing::debug!(target: "controllers", ?hand, kind = kind.label(), strength, damage = plan.damage, dealt, "physical hands: strike");
-                self.status.strikes += 1;
-                self.status.last_strike = Some(StrikeReport {
-                    hand,
-                    plan,
-                    impact_mps: impact,
-                    dealt,
-                });
-                pulse(
-                    hand,
-                    config.strike_pulse,
-                    0.3 + 0.7 * strength,
-                    config,
-                    PulseSource::MeleeStrike,
-                );
-            }
-            Event::Touch {
-                hand,
-                hit,
-                velocity,
-            } => {
-                let impact = impact_speed(velocity, hit.normal);
-                let share = (impact / config.full_strike_speed_mps.max(1e-3)).clamp(0.0, 1.0);
-                pulse(
-                    hand,
-                    config.contact_pulse,
-                    0.25 + 0.75 * share,
-                    config,
-                    PulseSource::Collision,
-                );
-                let Surface::Solid {
-                    object: Some(_),
-                    body,
-                } = hit.surface
-                else {
-                    return;
-                };
-                if !config.object_impulses {
-                    return;
-                }
-                let (Some(strength), Some((_, melee_impulse))) = (
-                    strength(
-                        impact,
-                        config.min_object_speed_mps,
-                        config.full_strike_speed_mps,
-                    ),
-                    melee,
-                ) else {
-                    return;
-                };
-                let direction = velocity.try_normalize().unwrap_or(-hit.normal);
-                let impulse =
-                    direction * (melee_impulse * config.object_impulse * strength.max(0.1));
-                // SAFETY: forwarded from the caller.
-                match unsafe { engine::push_body(body, impulse, hit.position) } {
-                    Ok(()) => self.status.object_pushes += 1,
-                    Err(e) => self.status.last_error = Some(e.to_string()),
-                }
-            }
-        }
-    }
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -691,12 +673,14 @@ static STATE: Mutex<State> = Mutex::new(State {
             armed: true,
             reach: None,
             held: None,
+            shove: None,
         }; 2],
         push: Vec2::ZERO,
         casts: 0,
         strikes: 0,
         last_strike: None,
         object_pushes: 0,
+        shoves: 0,
         off_thread: 0,
         last_error: None,
         pickup: PickupStatus {
@@ -713,6 +697,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     pressed: [false; 2],
     last_sample: [None; 2],
     clamp: [Vec3::ZERO; 2],
+    motion: [(VelocityTracker::new(), AngularTracker::new()); 2],
+    gives: [Give::new(); 2],
     at: None,
     epoch: 0,
     pickup: PickupState::new(),

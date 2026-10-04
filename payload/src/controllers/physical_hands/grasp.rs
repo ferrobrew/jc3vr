@@ -1,16 +1,20 @@
-//! Holding a loose object, pure: which reachable object a hand would take, where a held body
-//! should be, the velocities that drive it there, whether the hands holding it can lift it, and
-//! the velocity it leaves the hand with.
+//! Holding a loose object, pure: which reachable object a hand would take, where on the object the
+//! hand holds it, whether the hands holding it can lift it, and the palm's motion.
 //!
-//! A held body stays dynamic and is driven by its velocity: each tick it is given the velocity that
-//! carries it toward where the hand holds it ([`drive`]), so that it still collides, is blocked by
-//! walls, and needs nothing restored when it is let go.
+//! A hand holds an object at the point it touched ([`Grip`]): the point is fixed in the body's
+//! frame and in the palm's, and so is the body's orientation in the palm's frame. The hold then
+//! asks the point to stay where the palm carries it and the body to turn with the palm
+//! ([`crate::controllers::physical_hands::hold`]), so that a plank held by one end hangs and swings
+//! from the hand rather than from its middle.
 
 use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::{frame::Pose, physical_hands::config::PickupConfig};
+use crate::controllers::{
+    frame::Pose,
+    physical_hands::{config::PickupConfig, rigid::BodyPose},
+};
 
 /// What a reachable object is to a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -43,154 +47,71 @@ pub fn nearest(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
         .min_by(|a, b| a.distance.total_cmp(&b.distance))
 }
 
-/// A body's place: its centre of mass and its orientation, world space.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct BodyPose {
-    pub centre: Vec3,
-    pub orientation: Quat,
-}
-
-/// Where a hand holds a body: the body's place in the palm's frame, fixed at the grab.
+/// Where a hand holds a body: the grab point in the body's frame and in the palm's, and the body's
+/// orientation in the palm's frame, all fixed at the grab.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Grip {
-    offset: Vec3,
+    /// The grab point in the body's frame, about its centre of mass.
+    on_body: Vec3,
+    /// The grab point in the palm's frame.
+    in_palm: Vec3,
+    /// The body's orientation in the palm's frame.
     rotation: Quat,
 }
 
+/// Where a grip would have its body: the grab point and the body's orientation, world space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GripTarget {
+    pub point: Vec3,
+    pub orientation: Quat,
+}
+
 impl Grip {
-    /// The grip of a palm at `palm` on a body at `body`.
-    pub fn of(palm: Pose, body: BodyPose) -> Self {
+    /// The grip of a palm at `palm` on a body at `body`, taken at the world point `point`.
+    pub fn of(palm: Pose, body: BodyPose, point: Vec3) -> Self {
         let inverse = palm.orientation.inverse();
         Self {
-            offset: inverse * (body.centre - palm.position),
+            on_body: body.local(point),
+            in_palm: inverse * (point - palm.position),
             rotation: (inverse * body.orientation).normalize(),
         }
     }
 
+    /// The grab point on the body at `body`, world space.
+    pub fn anchor(&self, body: BodyPose) -> Vec3 {
+        body.point(self.on_body)
+    }
+
     /// Where the body should be with the palm at `palm`.
-    pub fn target(&self, palm: Pose) -> BodyPose {
-        BodyPose {
-            centre: palm.position + palm.orientation * self.offset,
+    pub fn target(&self, palm: Pose) -> GripTarget {
+        GripTarget {
+            point: palm.position + palm.orientation * self.in_palm,
             orientation: (palm.orientation * self.rotation).normalize(),
         }
     }
-}
 
-/// The place between two hands' targets for one body: the midpoint, and the halfway rotation.
-pub fn between(a: BodyPose, b: BodyPose) -> BodyPose {
-    // The two quaternions may name one rotation with opposite signs; blend along the short way.
-    let b_orientation = if a.orientation.dot(b.orientation) < 0.0 {
-        -b.orientation
-    } else {
-        b.orientation
-    };
-    BodyPose {
-        centre: (a.centre + b.centre) * 0.5,
-        orientation: a.orientation.slerp(b_orientation, 0.5).normalize(),
+    /// The centre of mass of a body at `target`.
+    pub fn centre_at(&self, target: GripTarget) -> Vec3 {
+        target.point - target.orientation * self.on_body
     }
 }
 
-/// The follow's tuning for one tick.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Follow {
-    /// The speed per metre the body is off its target, per second.
-    pub stiffness_per_s: f32,
-    pub max_speed_mps: f32,
-    /// The turn rate per radian the body is off its target orientation, per second.
-    pub angular_stiffness_per_s: f32,
-    pub max_angular_speed_rps: f32,
-    /// The share of the way from the body's current velocities to the driven ones taken this tick,
-    /// `0..=1`.
-    pub response: f32,
-}
-
-impl Follow {
-    /// The follow for a body of `mass_kg`, over a tick of `dt` seconds: a heavier body takes
-    /// longer to come up to the driven velocities.
-    pub fn for_mass(mass_kg: f32, dt: f32, config: &PickupConfig) -> Self {
-        let share = if config.one_hand_mass_kg > 0.0 {
-            (mass_kg / config.one_hand_mass_kg).max(0.0)
-        } else {
-            1.0
-        };
-        let time_constant = config.heavy_response_s.max(0.0) * share;
-        let response = if time_constant > 0.0 && dt.is_finite() && dt > 0.0 {
-            1.0 - (-dt / time_constant).exp()
-        } else {
-            1.0
-        };
-        Self {
-            stiffness_per_s: config.stiffness_per_s.max(0.0),
-            max_speed_mps: config.max_speed_mps.max(0.0),
-            angular_stiffness_per_s: config.angular_stiffness_per_s.max(0.0),
-            max_angular_speed_rps: config.max_angular_speed_rps.max(0.0),
-            response: response.clamp(0.0, 1.0),
-        }
-    }
-}
-
-/// A body's velocities, world space: linear in metres per second, angular in radians per second.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Velocities {
-    pub linear: Vec3,
-    pub angular: Vec3,
-}
-
-/// The velocities that carry a body at `body`, moving at `current`, toward `target`, which moves
-/// at `target_velocity`.
-pub fn drive(
-    target: BodyPose,
-    target_velocity: Vec3,
-    body: BodyPose,
-    current: Velocities,
-    follow: &Follow,
-) -> Velocities {
-    let target_velocity = if target_velocity.is_finite() {
-        target_velocity
-    } else {
-        Vec3::ZERO
-    };
-    let linear = (target_velocity + (target.centre - body.centre) * follow.stiffness_per_s)
-        .clamp_length_max(follow.max_speed_mps);
-    let mut turn = (target.orientation * body.orientation.inverse()).normalize();
-    if turn.w < 0.0 {
-        turn = -turn;
-    }
-    let (axis, angle) = turn.to_axis_angle();
-    let angular = if angle.is_finite() && axis.is_finite() {
-        (axis * angle * follow.angular_stiffness_per_s)
-            .clamp_length_max(follow.max_angular_speed_rps)
-    } else {
-        Vec3::ZERO
-    };
-    let blend = |from: Vec3, to: Vec3| {
-        if from.is_finite() {
-            from.lerp(to, follow.response)
-        } else {
-            to
-        }
-    };
-    Velocities {
-        linear: blend(current.linear, linear),
-        angular: blend(current.angular, angular),
-    }
-}
-
-/// Whether the body has been torn from the hand: it lies farther than `break_distance_m` from its
-/// target, as when it is caught on something the hand moved past.
-pub fn torn_away(target: BodyPose, body: BodyPose, break_distance_m: f32) -> bool {
-    let distance = target.centre.distance(body.centre);
+/// Whether the grab point has been torn from the hand: it lies farther than `break_distance_m`
+/// from where the hand holds it, as when the body is caught on something the hand moved past.
+pub fn torn_away(anchor: Vec3, target: Vec3, break_distance_m: f32) -> bool {
+    let distance = anchor.distance(target);
     !distance.is_finite() || distance > break_distance_m.max(0.0)
 }
 
-/// Whether `hands` hands can lift a body of `mass_kg`.
+/// Whether `hands` hands can lift a body of `mass_kg` against gravity with their strength.
 pub fn can_lift(mass_kg: f32, hands: usize, config: &PickupConfig) -> bool {
-    let limit = match hands {
-        0 => return false,
-        1 => config.one_hand_mass_kg,
-        _ => config.two_hand_mass_kg.max(config.one_hand_mass_kg),
-    };
-    mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= limit
+    let strength = hands as f32 * config.hand_force_n.max(0.0);
+    mass_kg.is_finite() && mass_kg > 0.0 && mass_kg * config.gravity_mps2.max(0.0) <= strength
+}
+
+/// Whether a hand may take hold of a body of `mass_kg` at all.
+pub fn can_hold(mass_kg: f32, config: &PickupConfig) -> bool {
+    mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_mass_kg
 }
 
 /// The mass of a body whose inverse mass is `inverse_mass`, or `None` for an infinite mass.
@@ -198,12 +119,27 @@ pub fn mass_of(inverse_mass: f32) -> Option<f32> {
     (inverse_mass.is_finite() && inverse_mass > 0.0).then(|| 1.0 / inverse_mass)
 }
 
-/// The velocity a body leaves the hand with: the hand's own, scaled and capped.
+/// The velocity a body's grab point leaves the hand with: the hand's own, scaled and capped.
 pub fn throw_velocity(hand_velocity: Vec3, config: &PickupConfig) -> Vec3 {
     if !hand_velocity.is_finite() {
         return Vec3::ZERO;
     }
     (hand_velocity * config.throw_scale.max(0.0)).clamp_length_max(config.max_throw_speed_mps)
+}
+
+/// A palm's motion on a tick: its place, and its linear and angular velocity, world space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PalmMotion {
+    pub pose: Pose,
+    pub velocity: Vec3,
+    pub angular_velocity: Vec3,
+}
+
+impl PalmMotion {
+    /// The velocity of the point `at` carried rigidly with the palm.
+    pub fn point_velocity(&self, at: Vec3) -> Vec3 {
+        self.velocity + self.angular_velocity.cross(at - self.pose.position)
+    }
 }
 
 /// A position's velocity, smoothed across ticks.
@@ -237,17 +173,68 @@ impl VelocityTracker {
             && dt > 0.0
         {
             let raw = (at - last) / dt;
-            let share = if time_constant_s > 0.0 {
-                1.0 - (-dt / time_constant_s).exp()
-            } else {
-                1.0
-            };
             if raw.is_finite() {
-                self.velocity = self.velocity.lerp(raw, share);
+                self.velocity = self.velocity.lerp(raw, smoothing(dt, time_constant_s));
             }
         }
         self.last = Some(at);
         self.velocity
+    }
+}
+
+/// An orientation's angular velocity, world space, smoothed across ticks.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct AngularTracker {
+    last: Option<Quat>,
+    velocity: Vec3,
+}
+
+impl AngularTracker {
+    pub const fn new() -> Self {
+        Self {
+            last: None,
+            velocity: Vec3::ZERO,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Take the orientation `at` after `dt` seconds, smoothing over `time_constant_s`, and return
+    /// the angular velocity.
+    pub fn update(&mut self, at: Quat, dt: f32, time_constant_s: f32) -> Vec3 {
+        if !at.is_finite() {
+            return self.velocity;
+        }
+        let at = at.normalize();
+        if let Some(last) = self.last
+            && dt.is_finite()
+            && dt > 0.0
+        {
+            let raw = rotation_vector(at * last.inverse()) / dt;
+            if raw.is_finite() {
+                self.velocity = self.velocity.lerp(raw, smoothing(dt, time_constant_s));
+            }
+        }
+        self.last = Some(at);
+        self.velocity
+    }
+}
+
+/// The rotation `q` as an axis times its angle, radians, the short way round.
+pub fn rotation_vector(q: Quat) -> Vec3 {
+    let q = if q.w < 0.0 { -q } else { q }.normalize();
+    let (axis, angle) = q.to_axis_angle();
+    let v = axis * angle;
+    if v.is_finite() { v } else { Vec3::ZERO }
+}
+
+fn smoothing(dt: f32, time_constant_s: f32) -> f32 {
+    if time_constant_s > 0.0 {
+        1.0 - (-dt / time_constant_s).exp()
+    } else {
+        1.0
     }
 }
 
@@ -291,137 +278,55 @@ mod tests {
     }
 
     #[test]
-    fn a_grip_keeps_the_body_where_the_hand_took_it() {
+    fn a_grip_holds_the_touched_point_where_the_hand_took_it() {
         let palm = pose(Vec3::new(1.0, 1.0, 0.0), Quat::from_rotation_y(0.3));
-        let held = body(Vec3::new(1.1, 0.9, -0.2), Quat::from_rotation_x(0.5));
-        let grip = Grip::of(palm, held);
+        let held = body(Vec3::new(1.6, 0.9, -0.2), Quat::from_rotation_x(0.5));
+        let point = Vec3::new(1.05, 0.95, -0.02);
+        let grip = Grip::of(palm, held, point);
         let same = grip.target(palm);
-        assert!(same.centre.distance(held.centre) < 1e-5);
+        assert!(same.point.distance(point) < 1e-5);
+        assert!(grip.anchor(held).distance(point) < 1e-5);
         assert!(same.orientation.angle_between(held.orientation) < 1e-3);
+        assert!(grip.centre_at(same).distance(held.centre) < 1e-5);
+    }
 
-        // Turning the hand a quarter about +Y swings the body around with it.
-        let turned = pose(palm.position, Quat::from_rotation_y(0.3 + FRAC_PI_2));
-        let moved = grip.target(turned);
-        let before = held.centre - palm.position;
-        let after = moved.centre - palm.position;
-        assert!((before.length() - after.length()).abs() < 1e-5);
-        assert!((before.y - after.y).abs() < 1e-5);
-        assert!((before.x * after.x + before.z * after.z).abs() < 1e-4);
+    #[test]
+    fn turning_the_wrist_swings_the_far_end_like_a_lever() {
+        // A plank 1 m long held at its near end, its centre half a metre out along -Z.
+        let palm = pose(Vec3::ZERO, Quat::IDENTITY);
+        let plank = body(Vec3::new(0.0, 0.0, -0.5), Quat::IDENTITY);
+        let grip = Grip::of(palm, plank, Vec3::new(0.0, 0.0, -0.02));
+        let turned = grip.target(pose(Vec3::ZERO, Quat::from_rotation_y(FRAC_PI_2)));
+        // The grab point barely moves; the centre swings round to -X.
+        assert!(turned.point.length() < 0.03);
+        let centre = grip.centre_at(turned);
+        assert!((centre - Vec3::new(-0.5, 0.0, 0.0)).length() < 1e-4);
         assert!(
-            (moved.orientation.angle_between(held.orientation) - FRAC_PI_2).abs() < 1e-3,
+            (turned.orientation.angle_between(plank.orientation) - FRAC_PI_2).abs() < 1e-3,
             "the body turns with the hand"
         );
     }
 
     #[test]
-    fn two_hands_hold_the_body_between_them() {
-        let a = body(Vec3::new(-0.2, 1.0, 0.0), Quat::IDENTITY);
-        let b = body(Vec3::new(0.2, 1.2, 0.0), -Quat::from_rotation_z(0.4));
-        let mid = between(a, b);
-        assert!(mid.centre.distance(Vec3::new(0.0, 1.1, 0.0)) < 1e-5);
-        // The sign flip of `b` does not send the blend the long way round.
-        assert!((mid.orientation.angle_between(Quat::IDENTITY) - 0.2).abs() < 1e-3);
-    }
-
-    fn follow() -> Follow {
-        Follow {
-            stiffness_per_s: 10.0,
-            max_speed_mps: 5.0,
-            angular_stiffness_per_s: 8.0,
-            max_angular_speed_rps: 10.0,
-            response: 1.0,
-        }
-    }
-
-    #[test]
-    fn the_drive_closes_on_the_target_and_carries_its_motion() {
-        let target = body(Vec3::new(0.0, 1.0, 0.0), Quat::IDENTITY);
-        let at = body(Vec3::new(0.0, 0.9, 0.0), Quat::IDENTITY);
-        let v = drive(
-            target,
-            Vec3::new(1.0, 0.0, 0.0),
-            at,
-            Velocities::default(),
-            &follow(),
-        );
-        assert!((v.linear - Vec3::new(1.0, 1.0, 0.0)).length() < 1e-5);
-        assert!(v.angular.length() < 1e-5);
-        // On target and still, nothing moves.
-        let still = drive(target, Vec3::ZERO, target, Velocities::default(), &follow());
-        assert!(still.linear.length() < 1e-6 && still.angular.length() < 1e-6);
-    }
-
-    #[test]
-    fn the_drive_turns_the_short_way_and_is_capped() {
-        let target = body(Vec3::ZERO, Quat::from_rotation_y(0.5));
-        let at = body(Vec3::new(0.0, -10.0, 0.0), Quat::IDENTITY);
-        let v = drive(target, Vec3::ZERO, at, Velocities::default(), &follow());
-        assert!(
-            (v.linear.length() - 5.0).abs() < 1e-4,
-            "the speed is capped"
-        );
-        assert!((v.angular - Vec3::new(0.0, 4.0, 0.0)).length() < 1e-4);
-        // A target given with the opposite sign is the same rotation.
-        let flipped = body(Vec3::ZERO, -Quat::from_rotation_y(0.5));
-        let w = drive(flipped, Vec3::ZERO, at, Velocities::default(), &follow());
-        assert!((w.angular - v.angular).length() < 1e-4);
-    }
-
-    #[test]
-    fn a_slow_response_eases_from_the_current_velocities() {
-        let target = body(Vec3::new(1.0, 0.0, 0.0), Quat::IDENTITY);
-        let at = body(Vec3::ZERO, Quat::IDENTITY);
-        let half = Follow {
-            response: 0.5,
-            ..follow()
-        };
-        let v = drive(target, Vec3::ZERO, at, Velocities::default(), &half);
-        assert!((v.linear - Vec3::new(2.5, 0.0, 0.0)).length() < 1e-5);
-    }
-
-    #[test]
-    fn heavier_props_respond_more_slowly() {
+    fn the_lift_follows_the_hands_strength() {
         let config = PickupConfig::new();
-        let light = Follow::for_mass(1.0, 1.0 / 60.0, &config);
-        let heavy = Follow::for_mass(config.one_hand_mass_kg, 1.0 / 60.0, &config);
-        assert!(light.response > heavy.response);
-        assert!(heavy.response > 0.0 && light.response <= 1.0);
-        let instant = PickupConfig {
-            heavy_response_s: 0.0,
-            ..config
-        };
-        assert_eq!(Follow::for_mass(10.0, 1.0 / 60.0, &instant).response, 1.0);
-    }
-
-    #[test]
-    fn the_mass_limits_need_two_hands_for_heavy_props() {
-        let config = PickupConfig::new();
-        let light = config.one_hand_mass_kg * 0.5;
-        let heavy = (config.one_hand_mass_kg + config.two_hand_mass_kg) * 0.5;
-        assert!(can_lift(light, 1, &config));
-        assert!(!can_lift(heavy, 1, &config));
-        assert!(can_lift(heavy, 2, &config));
-        assert!(!can_lift(config.two_hand_mass_kg * 2.0, 2, &config));
-        assert!(!can_lift(light, 0, &config));
+        let one = config.hand_force_n / config.gravity_mps2;
+        assert!(can_lift(one * 0.9, 1, &config));
+        assert!(!can_lift(one * 1.1, 1, &config));
+        assert!(can_lift(one * 1.1, 2, &config));
+        assert!(!can_lift(one, 0, &config));
         assert!(!can_lift(f32::INFINITY, 2, &config));
+        assert!(can_hold(config.max_mass_kg, &config));
+        assert!(!can_hold(config.max_mass_kg * 1.01, &config));
         assert_eq!(mass_of(0.5), Some(2.0));
         assert_eq!(mass_of(0.0), None);
     }
 
     #[test]
-    fn a_body_far_from_its_target_is_torn_away() {
-        let target = body(Vec3::ZERO, Quat::IDENTITY);
-        assert!(!torn_away(
-            target,
-            body(Vec3::new(0.2, 0.0, 0.0), Quat::IDENTITY),
-            0.5
-        ));
-        assert!(torn_away(
-            target,
-            body(Vec3::new(0.8, 0.0, 0.0), Quat::IDENTITY),
-            0.5
-        ));
-        assert!(torn_away(target, body(Vec3::NAN, Quat::IDENTITY), 0.5));
+    fn a_grab_point_far_from_the_hand_is_torn_away() {
+        assert!(!torn_away(Vec3::ZERO, Vec3::new(0.2, 0.0, 0.0), 0.5));
+        assert!(torn_away(Vec3::ZERO, Vec3::new(0.8, 0.0, 0.0), 0.5));
+        assert!(torn_away(Vec3::NAN, Vec3::ZERO, 0.5));
     }
 
     #[test]
@@ -440,17 +345,37 @@ mod tests {
     }
 
     #[test]
-    fn the_tracker_follows_a_steady_motion() {
+    fn the_trackers_follow_a_steady_motion() {
         let mut tracker = VelocityTracker::new();
+        let mut spin = AngularTracker::new();
         let dt = 1.0 / 60.0;
         let mut velocity = Vec3::ZERO;
+        let mut angular = Vec3::ZERO;
         for i in 0..120 {
-            velocity = tracker.update(Vec3::new(2.0 * dt * i as f32, 0.0, 0.0), dt, 0.03);
+            let t = dt * i as f32;
+            velocity = tracker.update(Vec3::new(2.0 * t, 0.0, 0.0), dt, 0.03);
+            angular = spin.update(Quat::from_rotation_y(1.5 * t), dt, 0.03);
         }
         assert!((velocity - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-3);
+        assert!((angular - Vec3::new(0.0, 1.5, 0.0)).length() < 1e-3);
         tracker.reset();
         assert_eq!(tracker, VelocityTracker::new());
         // The first sample after a reset has nothing to difference against.
         assert_eq!(tracker.update(Vec3::splat(5.0), dt, 0.03), Vec3::ZERO);
+    }
+
+    #[test]
+    fn a_palm_carries_its_points_round() {
+        let palm = PalmMotion {
+            pose: pose(Vec3::ZERO, Quat::IDENTITY),
+            velocity: Vec3::X,
+            angular_velocity: Vec3::new(0.0, 2.0, 0.0),
+        };
+        // A point 0.5 m along -Z is swung toward -X by the turn, cancelling the palm's own +X.
+        let v = palm.point_velocity(Vec3::new(0.0, 0.0, -0.5));
+        assert!(v.length() < 1e-5);
+        let short = rotation_vector(Quat::from_rotation_x(0.2));
+        assert!((rotation_vector(-Quat::from_rotation_x(0.2)) - short).length() < 1e-6);
+        assert!((short - Vec3::new(0.2, 0.0, 0.0)).length() < 1e-5);
     }
 }

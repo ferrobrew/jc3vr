@@ -1,6 +1,8 @@
 //! The palm boxes in the world-space overlay: each acting palm's edges, coloured by whether it
-//! presses into a surface or an object, and a ring at a pressing palm. With the pickup targets
-//! shown, a ring marks what each hand would take with its grip, and a disc what it holds.
+//! presses into a surface or an object, a ring at a pressing palm, and a line along the shove a
+//! palm gives an object, longer the harder it pushes. With the pickup targets shown, a ring marks
+//! what each hand would take with its grip, a disc the grab point of what it holds, and a line
+//! from the grab point to where the hand would have it, redder the harder the hand pulls.
 
 use std::time::Duration;
 
@@ -58,6 +60,18 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
                 },
             });
         }
+        if let Some(shove) = status.shove
+            && shove.load > 0.0
+        {
+            let direction = shove.impulse.normalize_or_zero();
+            prims.push(Primitive::Line {
+                from: Anchor::World(shove.at),
+                to: Anchor::World(shove.at + direction * (SHOVE_LINE_M * shove.load.max(0.1))),
+                width: EDGE_WIDTH_M,
+                color: blend(PRESSED_OBJECT, TOO_HEAVY, shove.resistance),
+                depth: DepthMode::Always,
+            });
+        }
         if status.press.is_some() {
             prims.push(Primitive::Sprite {
                 at: Anchor::World(palm.centre),
@@ -72,8 +86,9 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
     store::submit(Source::PhysicalHands, &mut prims, TTL);
 }
 
-/// A ring at what the hand would take, coloured by what it is and whether one hand lifts it, and a
-/// disc at what it holds, coloured by whether it is lifted.
+/// A ring at what the hand would take, coloured by what it is and whether one hand lifts it; a
+/// disc at the grab point of what it holds, coloured by whether the hands holding it lift it; and a
+/// line from the grab point to where the hand would have it, coloured by how hard the hand pulls.
 fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut Vec<Primitive>) {
     let size = |status: &HandStatus| {
         status
@@ -82,15 +97,24 @@ fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut
     };
     if let Some(held) = status.held {
         prims.push(Primitive::Sprite {
-            at: Anchor::World(held.centre),
+            at: Anchor::World(held.anchor),
             size: SpriteSize::World(size(status) * 0.5),
             facing: Facing::Billboard,
             shape: Shape::Disc,
-            color: if held.lifted { HELD } else { TOO_HEAVY },
+            color: if held.liftable { HELD } else { TOO_HEAVY },
             depth: DepthMode::XRay {
                 occluded_alpha: 0.5,
             },
         });
+        if held.lag_m > MIN_LINE_M {
+            prims.push(Primitive::Line {
+                from: Anchor::World(held.anchor),
+                to: Anchor::World(held.target),
+                width: EDGE_WIDTH_M,
+                color: blend(HELD, TOO_HEAVY, held.load),
+                depth: DepthMode::Always,
+            });
+        }
     } else if let Some(reach) = status.reach {
         let color = match reach.kind {
             TargetKind::Weapon => WEAPON,
@@ -108,6 +132,16 @@ fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut
     }
 }
 
+/// The colour `share` (`0..=1`) of the way from `a` to `b`.
+fn blend(a: Rgba, b: Rgba, share: f32) -> Rgba {
+    let t = if share.is_finite() {
+        share.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    [0, 1, 2, 3].map(|k| a[k] + (b[k] - a[k]) * t)
+}
+
 pub(super) fn clear() {
     store::clear(Source::PhysicalHands);
 }
@@ -115,6 +149,10 @@ pub(super) fn clear() {
 /// The boxes are submitted every simulation tick, so they live a little past one.
 const TTL: Duration = Duration::from_millis(150);
 const EDGE_WIDTH_M: f32 = 0.003;
+/// The length of a full-strength shove's line, metres.
+const SHOVE_LINE_M: f32 = 0.15;
+/// The shortest hold line drawn, metres.
+const MIN_LINE_M: f32 = 0.005;
 const CLEAR: Rgba = [0.85, 0.95, 1.0, 0.8];
 const PRESSED: Rgba = [1.0, 0.6, 0.15, 0.95];
 const PRESSED_OBJECT: Rgba = [0.4, 1.0, 0.4, 0.95];

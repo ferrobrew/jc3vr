@@ -12,13 +12,14 @@
 //! action, so that the game picks the weapon up its own way ([`finish_tick`]). A pickup grab of an
 //! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
 //!
-//! A held object is driven, not attached ([`crate::controllers::physical_hands::grasp`]): each
-//! tick its body is given the velocities that carry it to where the hand holds it, and it is let go
-//! with the hand's velocity, so that it is thrown. One hand lifts an object up to
-//! [`PickupConfig::one_hand_mass_kg`], and both hands on one object lift up to
-//! [`PickupConfig::two_hand_mass_kg`]; a hand that holds what it cannot lift keeps hold but moves
-//! nothing until the other hand takes hold too. A hand that holds something does not probe, push,
-//! or strike.
+//! A held object is held at the point the hand touched, and driven, not attached: each tick its
+//! body is given the velocities that carry the grab point to where the hand holds it and turn the
+//! body as the hand turns, within the hands' strength
+//! ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's velocity, so
+//! that it is thrown. One hand lifts what weighs less than [`PickupConfig::hand_force_n`], and two
+//! hands twice that; a hand that holds what it cannot lift drags it, and a body hinged to the world
+//! swings about its hinge. A hand that holds something does not probe, push off surfaces, or
+//! strike.
 
 use std::{num::NonZeroUsize, time::Instant};
 
@@ -32,14 +33,16 @@ use crate::{
             grab::GrabVolume,
             hold::{Desired, MapKind, Target, Want},
         },
-        frame::{Hand, Pose},
+        frame::Hand,
         physical_hands::{
             STALE_AFTER, STATE, bodies,
             config::PickupConfig,
             contact::{Surface, SurfaceHit},
-            grasp::{self, Follow, Grip, Reach, TargetKind, Velocities, VelocityTracker},
+            grasp::{self, Grip, PalmMotion, Reach, TargetKind},
+            hold::{self, BodySpace, HandHold, HoldTuning},
             palm::PalmBox,
             pulse,
+            rigid::Velocities,
         },
         weapons::{FinishInputs, haptics::PulseSource},
     },
@@ -50,13 +53,21 @@ use crate::{
 pub struct HeldReport {
     pub mass_kg: f32,
     /// Whether the hands holding the object can lift it.
-    pub lifted: bool,
+    pub liftable: bool,
     /// Whether the other hand holds the same object.
     pub shared: bool,
     /// The held body's centre of mass, world space.
     pub centre: Vec3,
-    /// How far the body is from where the hand holds it, metres.
+    /// The grab point on the body, world space.
+    pub anchor: Vec3,
+    /// Where the hand would have the grab point, world space.
+    pub target: Vec3,
+    /// How far the grab point is from where the hand would have it, metres.
     pub lag_m: f32,
+    /// The share of the hand's strongest pull used, `0..=1`.
+    pub load: f32,
+    /// The share of the hand's strongest twist used, `0..=1`.
+    pub twist: f32,
 }
 
 /// The pickups' readout.
@@ -158,7 +169,6 @@ pub(crate) fn pause() {
 pub(super) struct PickupState {
     held: [Option<Held>; 2],
     requests: [Option<Request>; 2],
-    trackers: [VelocityTracker; 2],
     /// When the input tick last acted on the grips.
     input_at: Option<Instant>,
 }
@@ -168,7 +178,6 @@ impl PickupState {
         Self {
             held: [None; 2],
             requests: [None; 2],
-            trackers: [VelocityTracker::new(); 2],
             input_at: None,
         }
     }
@@ -182,22 +191,17 @@ impl PickupState {
         self.held.map(|h| h.map_or(0, |h| h.object.get()))
     }
 
-    /// Let go of everything without throwing, and forget the requests and the hands' motion.
+    /// Let go of everything without throwing, and forget the requests.
     pub(super) fn drop_all(&mut self) {
         self.held = [None; 2];
         self.requests = [None; 2];
-        self.trackers.iter_mut().for_each(VelocityTracker::reset);
-    }
-
-    /// Forget one hand's motion, when it is not tracked.
-    pub(super) fn forget_motion(&mut self, hand: Hand) {
-        self.trackers[hand.index()].reset();
     }
 }
 
 /// What a hand could take: the nearest grabbable object hit by short rays out of the palm (from the
-/// back of the hand, through the palm, out to `reach_m`), or the object the palm presses into.
-/// `cast` returns the first hit between two points.
+/// back of the hand, through the palm, out to `reach_m`), or the object the palm presses into. An
+/// object heavier than [`PickupConfig::max_mass_kg`] is not one. `cast` returns the first hit
+/// between two points.
 ///
 /// # Safety
 ///
@@ -206,6 +210,7 @@ pub(super) unsafe fn reach(
     palm: &PalmBox,
     reach_m: f32,
     press: Option<SurfaceHit>,
+    config: &PickupConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<Reach> {
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
@@ -228,6 +233,11 @@ pub(super) unsafe fn reach(
             };
             // SAFETY: forwarded from the caller; the hit was found this tick.
             let kind = unsafe { bodies::classify(object, body) }?;
+            if let TargetKind::Prop { mass_kg } = kind
+                && !grasp::can_hold(mass_kg, config)
+            {
+                return None;
+            }
             Some(Reach {
                 object,
                 body,
@@ -241,14 +251,16 @@ pub(super) unsafe fn reach(
 }
 
 /// The pickups' simulation tick: take hold and let go as the input tick asked, and drive what the
-/// hands hold. `palms` are the acting hands' palms; a hand without one lets go.
+/// hands hold. `palms` are the acting hands' palms; a hand without one lets go. `space` is the
+/// player's body, which a held object is kept out of.
 ///
 /// # Safety
 ///
 /// Main thread, outside the physics step.
 pub(super) unsafe fn tick(
     state: &mut PickupState,
-    palms: [Option<PalmBox>; 2],
+    palms: [Option<PalmMotion>; 2],
+    space: Option<BodySpace>,
     dt: f32,
     config: &PickupConfig,
 ) -> TickOutcome {
@@ -259,26 +271,8 @@ pub(super) unsafe fn tick(
         .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
     if !input_fresh {
         // The bindings stopped reading the grips: no release will come.
-        state.held = [None; 2];
-        state.requests = [None; 2];
+        state.drop_all();
     }
-
-    let poses = palms.map(|p| {
-        p.map(|p| Pose {
-            position: p.centre,
-            orientation: p.orientation,
-        })
-    });
-    let velocities = Hand::BOTH.map(|hand| {
-        let i = hand.index();
-        match poses[i] {
-            Some(pose) => state.trackers[i].update(pose.position, dt, VELOCITY_SMOOTHING_S),
-            None => {
-                state.trackers[i].reset();
-                Vec3::ZERO
-            }
-        }
-    });
 
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -288,8 +282,7 @@ pub(super) unsafe fn tick(
                     let shared = state.held[hand.other().index()].is_some_and(|o| o.same(&held));
                     if !shared {
                         // SAFETY: forwarded from the caller.
-                        let thrown = unsafe { throw(&held, velocities[i], config) };
-                        match thrown {
+                        match unsafe { throw(&held, palms[i], config) } {
                             Ok(speed) => outcome.throw = Some(speed),
                             Err(e) => outcome.error = Some(e.to_string()),
                         }
@@ -298,24 +291,25 @@ pub(super) unsafe fn tick(
                 }
             }
             Some(Request::Grab(reach)) => {
-                let Some(palm) = poses[i] else {
+                let Some(palm) = palms[i] else {
                     continue;
                 };
                 // SAFETY: forwarded from the caller.
                 match unsafe { bodies::read(reach.body, reach.object) } {
-                    Ok(body) => match body.mass_kg {
+                    Ok(body) => match body.mass_kg.filter(|&m| grasp::can_hold(m, config)) {
                         Some(mass_kg) => {
                             state.held[i] = Some(Held {
                                 object: reach.object,
                                 body: reach.body,
-                                grip: Grip::of(palm, body.pose),
+                                grip: Grip::of(palm.pose, body.pose, reach.point),
                                 mass_kg,
                             });
                             outcome.taken[i] = true;
                         }
                         None => {
-                            outcome.error =
-                                Some("physical hands: pickup: the body is fixed".to_owned());
+                            outcome.error = Some(
+                                "physical hands: pickup: the body is fixed or too heavy".to_owned(),
+                            );
                         }
                     },
                     Err(e) => outcome.error = Some(e.to_string()),
@@ -323,35 +317,23 @@ pub(super) unsafe fn tick(
             }
             None => {}
         }
-        if state.held[i].is_some() && poses[i].is_none() {
+        if state.held[i].is_some() && palms[i].is_none() {
             state.held[i] = None;
             outcome.lost += 1;
         }
     }
 
-    // Drive each held body once: from one hand, or from between both when they share it.
+    // Drive each held body once, from every hand that holds it.
+    let mut driven = [false; 2];
     for hand in Hand::BOTH {
         let i = hand.index();
-        let Some(held) = state.held[i] else {
+        let Some(held) = state.held[i].filter(|_| !driven[i]) else {
             continue;
         };
-        let other = hand.other().index();
-        let shared = state.held[other].filter(|o| o.same(&held));
-        if shared.is_some() && hand == Hand::Right {
-            continue;
+        let holders = [0, 1].map(|k| state.held[k].filter(|h| h.same(&held)));
+        for (k, holder) in holders.iter().enumerate() {
+            driven[k] |= holder.is_some();
         }
-        let Some(palm) = poses[i] else {
-            continue;
-        };
-        let (target, target_velocity, hands) = match (shared, poses[other]) {
-            (Some(o), Some(other_palm)) => (
-                grasp::between(held.grip.target(palm), o.grip.target(other_palm)),
-                (velocities[i] + velocities[other]) * 0.5,
-                2,
-            ),
-            _ => (held.grip.target(palm), velocities[i], 1),
-        };
-        let lifted = grasp::can_lift(held.mass_kg, hands, config);
         // SAFETY: forwarded from the caller.
         let body = match unsafe { bodies::read(held.body, held.object) } {
             Ok(body) => body,
@@ -360,35 +342,55 @@ pub(super) unsafe fn tick(
                 continue;
             }
         };
-        let lag_m = target.centre.distance(body.pose.centre);
-        if lifted {
-            if grasp::torn_away(target, body.pose, config.break_distance_m) {
-                lose(
-                    state,
-                    &held,
-                    &mut outcome,
-                    "physical hands: pickup: the object was torn away".to_owned(),
-                );
+        let mut holds = [None; 2];
+        for k in 0..2 {
+            let (Some(holder), Some(palm)) = (holders[k], palms[k]) else {
+                continue;
+            };
+            let anchor = holder.grip.anchor(body.pose);
+            let mut target = holder.grip.target(palm.pose);
+            if let Some(space) = &space {
+                target.point += hold::keep_out(holder.grip.centre_at(target), space);
+            }
+            if grasp::torn_away(anchor, target.point, config.break_distance_m) {
+                state.held[k] = None;
+                outcome.released[k] = true;
+                outcome.lost += 1;
+                outcome.error = Some("physical hands: pickup: the object was torn away".to_owned());
                 continue;
             }
-            let follow = Follow::for_mass(held.mass_kg, dt, config);
-            let drive = grasp::drive(target, target_velocity, body.pose, body.velocities, &follow);
-            // SAFETY: forwarded from the caller.
-            if let Err(e) = unsafe { bodies::drive(held.body, held.object, drive) } {
-                lose(state, &held, &mut outcome, e.to_string());
-                continue;
-            }
+            holds[k] = Some(HandHold {
+                anchor,
+                target,
+                velocity: palm.point_velocity(target.point),
+                angular_velocity: palm.angular_velocity,
+            });
         }
-        let report = HeldReport {
-            mass_kg: held.mass_kg,
-            lifted,
-            shared: shared.is_some(),
-            centre: body.pose.centre,
-            lag_m,
-        };
-        outcome.reports[i] = Some(report);
-        if shared.is_some() {
-            outcome.reports[other] = Some(report);
+        let hands = holds.iter().flatten().count();
+        if hands == 0 {
+            continue;
+        }
+        let solution = hold::solve(&body.rigid(), holds, dt, &HoldTuning::of(config));
+        // SAFETY: forwarded from the caller.
+        if let Err(e) = unsafe { bodies::drive(held.body, held.object, solution.velocities) } {
+            lose(state, &held, &mut outcome, e.to_string());
+            continue;
+        }
+        for (k, hold) in holds.iter().enumerate() {
+            let Some(hold) = hold else {
+                continue;
+            };
+            outcome.reports[k] = Some(HeldReport {
+                mass_kg: held.mass_kg,
+                liftable: grasp::can_lift(held.mass_kg, hands, config),
+                shared: hands > 1,
+                centre: body.pose.centre,
+                anchor: hold.anchor,
+                target: hold.target.point,
+                lag_m: hold.anchor.distance(hold.target.point),
+                load: solution.loads[k],
+                twist: solution.torque_loads[k],
+            });
         }
     }
     outcome
@@ -409,9 +411,6 @@ pub(super) struct TickOutcome {
     pub lost: u64,
     pub error: Option<String>,
 }
-
-/// How long the hands' velocity is smoothed over, seconds: short, so that a throw keeps the flick.
-const VELOCITY_SMOOTHING_S: f32 = 0.03;
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
 /// (-Z), between the two, and out of either edge of the hand.
@@ -445,27 +444,38 @@ enum Request {
     Release,
 }
 
-/// Let go of `held` with the hand's velocity, and return the throw's speed.
+/// Let go of `held` from the palm `palm`, and return the throw's speed: the grab point leaves with
+/// the palm's velocity at it, scaled and capped, and the body keeps its spin. An object one hand
+/// cannot lift, or one let go by an untracked hand, keeps the velocity it has.
 ///
 /// # Safety
 ///
 /// Main thread, outside the physics step.
 unsafe fn throw(
     held: &Held,
-    hand_velocity: Vec3,
+    palm: Option<PalmMotion>,
     config: &PickupConfig,
 ) -> Result<f32, bodies::BodyError> {
     let body = unsafe { bodies::read(held.body, held.object) }?;
-    if !grasp::can_lift(held.mass_kg, 1, config) {
+    let Some(palm) = palm.filter(|_| grasp::can_lift(held.mass_kg, 1, config)) else {
         return Ok(0.0);
-    }
-    let linear = grasp::throw_velocity(hand_velocity, config);
-    let velocities = Velocities {
-        linear,
-        angular: body.velocities.angular,
     };
-    unsafe { bodies::drive(held.body, held.object, velocities) }?;
-    Ok(linear.length())
+    let anchor = held.grip.anchor(body.pose);
+    let point = grasp::throw_velocity(palm.point_velocity(anchor), config);
+    let spin = body.velocities.angular;
+    let linear = (point - spin.cross(anchor - body.pose.centre))
+        .clamp_length_max(config.max_throw_speed_mps);
+    unsafe {
+        bodies::drive(
+            held.body,
+            held.object,
+            Velocities {
+                linear,
+                angular: spin,
+            },
+        )
+    }?;
+    Ok(point.length())
 }
 
 /// Let go of `held` in every hand that holds it, as a lost hold.

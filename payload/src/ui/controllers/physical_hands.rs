@@ -8,7 +8,7 @@ use crate::{
         frame::Hand,
         physical_hands::{
             PhysicalHandsConfig, PhysicalHandsStatus,
-            config::{PickupConfig, StrikeTuning},
+            config::{PickupConfig, ShoveConfig, StrikeTuning},
             grasp::TargetKind,
         },
     },
@@ -37,8 +37,19 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                     "holding {:.1} kg{}{} · {:.0} mm off",
                     held.mass_kg,
                     if held.shared { " with both hands" } else { "" },
-                    if held.lifted { "" } else { " (too heavy)" },
+                    if held.liftable {
+                        ""
+                    } else {
+                        " (too heavy to lift)"
+                    },
                     held.lag_m * 1000.0
+                ));
+                ui.label(format!(
+                    "pull {:.0}% · twist {:.0}% · push ({:+.2}, {:+.2}) m/s",
+                    held.load * 100.0,
+                    held.twist * 100.0,
+                    s.push.x,
+                    s.push.y
                 ));
                 continue;
             }
@@ -69,11 +80,19 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                 yes_no(s.armed)
             ));
             ui.label(format!("push ({:+.2}, {:+.2}) m/s", s.push.x, s.push.y));
+            if let Some(shove) = s.shove {
+                ui.label(format!(
+                    "shoving {:.2} N·s · load {:.0}% · resists {:.0}%",
+                    shove.impulse.length(),
+                    shove.load * 100.0,
+                    shove.resistance * 100.0
+                ));
+            }
         }
     });
     ui.label(format!(
-        "Strikes {} · object pushes {} · off-thread ticks {}",
-        status.strikes, status.object_pushes, status.off_thread
+        "Strikes {} · object knocks {} · shove ticks {} · off-thread ticks {}",
+        status.strikes, status.object_pushes, status.shoves, status.off_thread
     ));
     let p = &status.pickup;
     ui.label(format!(
@@ -147,7 +166,8 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         strike_settings(ui, "Punch", &mut p.punch);
         strike_settings(ui, "Slap", &mut p.slap);
         ui.separator();
-        ui.checkbox(&mut p.object_impulses, "Push objects");
+        shove_settings(ui, &mut p.shove);
+        ui.checkbox(&mut p.object_impulses, "Knock objects on fast hits");
         ui.add(
             egui::Slider::new(&mut p.min_object_speed_mps, 0.0..=6.0)
                 .text("Slowest object push (m/s)"),
@@ -159,6 +179,7 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         ui.checkbox(&mut p.haptics, "Contact pulses");
         pulse_settings(ui, "Contact pulse", &mut p.contact_pulse);
         pulse_settings(ui, "Strike pulse", &mut p.strike_pulse);
+        pulse_settings(ui, "Pressure pulse (full load)", &mut p.pressure_pulse);
         ui.separator();
         pickup_settings(ui, &mut p.pickup);
     });
@@ -170,8 +191,9 @@ fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
         ui.checkbox(&mut p.weapons, "Grab weapons to pick them up");
         ui.checkbox(&mut p.show_targets, "Mark what each hand reaches");
         ui.add(egui::Slider::new(&mut p.reach_m, 0.0..=0.4).text("Reach (m)"));
-        ui.add(egui::Slider::new(&mut p.one_hand_mass_kg, 0.0..=200.0).text("One hand lifts (kg)"));
-        ui.add(egui::Slider::new(&mut p.two_hand_mass_kg, 0.0..=400.0).text("Two hands lift (kg)"));
+        ui.add(egui::Slider::new(&mut p.max_mass_kg, 0.0..=5000.0).text("Heaviest held (kg)"));
+        ui.add(egui::Slider::new(&mut p.hand_force_n, 0.0..=2000.0).text("Hand pull (N)"));
+        ui.add(egui::Slider::new(&mut p.hand_torque_nm, 0.0..=200.0).text("Hand twist (N·m)"));
         ui.add(
             egui::Slider::new(&mut p.stiffness_per_s, 0.0..=60.0).text("Follow stiffness (1/s)"),
         );
@@ -185,8 +207,14 @@ fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
                 .text("Fastest turn (rad/s)"),
         );
         ui.add(
-            egui::Slider::new(&mut p.heavy_response_s, 0.0..=1.0)
-                .text("Response at the one-hand limit (s)"),
+            egui::Slider::new(&mut p.two_hand_angular_share, 0.0..=1.0)
+                .text("Twist share with two hands"),
+        );
+        ui.add(egui::Slider::new(&mut p.gravity_mps2, 0.0..=20.0).text("Gravity (m/s²)"));
+        ui.checkbox(&mut p.resist, "Push the body off what the hand cannot move");
+        ui.add(
+            egui::Slider::new(&mut p.keep_out_radius_m, 0.0..=1.0)
+                .text("Keep held objects out of the body (m)"),
         );
         ui.add(egui::Slider::new(&mut p.break_distance_m, 0.05..=3.0).text("Let go past (m)"));
         ui.add(egui::Slider::new(&mut p.throw_scale, 0.0..=4.0).text("Throw (× hand)"));
@@ -195,6 +223,18 @@ fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
         );
         pulse_settings(ui, "Grab pulse", &mut p.grab_pulse);
         pulse_settings(ui, "Release pulse", &mut p.release_pulse);
+    });
+}
+
+fn shove_settings(ui: &mut Ui, s: &mut ShoveConfig) {
+    ui.checkbox(&mut s.enabled, "Shove objects the palm presses into");
+    ui.add_enabled_ui(s.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut s.stiffness_per_s, 0.0..=40.0).text("Shove stiffness (1/s)"));
+        ui.add(egui::Slider::new(&mut s.deadband_m, 0.0..=0.05).text("Shove deadband (m)"));
+        ui.add(egui::Slider::new(&mut s.max_speed_mps, 0.0..=10.0).text("Fastest shove (m/s)"));
+        ui.add(egui::Slider::new(&mut s.max_force_n, 0.0..=3000.0).text("Palm push (N)"));
+        ui.add(egui::Slider::new(&mut s.friction, 0.0..=2.0).text("Palm friction"));
+        ui.add(egui::Slider::new(&mut s.give_smoothing_s, 0.0..=0.5).text("Give smoothing (s)"));
     });
 }
 

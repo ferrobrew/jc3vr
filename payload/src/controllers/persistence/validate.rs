@@ -6,7 +6,10 @@ use crate::controllers::{
     config::SightTable,
     frame::PressThresholds,
     persistence::{ControllerFile, Error, FILE_VERSION},
-    physical_hands::{PhysicalHandsConfig, config::PickupConfig},
+    physical_hands::{
+        PhysicalHandsConfig,
+        config::{PickupConfig, ShoveConfig},
+    },
     vehicles::config::WheelSpec,
     weapons::config::{HeftConfig, PulseSpec, VolumeSpec},
 };
@@ -761,28 +764,57 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Error> {
     nonnegative("physical_hands.object_impulse", p.object_impulse, 100.0)?;
     pulse("physical_hands.contact_pulse", &p.contact_pulse)?;
     pulse("physical_hands.strike_pulse", &p.strike_pulse)?;
+    pulse("physical_hands.pressure_pulse", &p.pressure_pulse)?;
+    shove(&p.shove)?;
     pickup(&p.pickup)
+}
+
+fn shove(s: &ShoveConfig) -> Result<(), Error> {
+    nonnegative(
+        "physical_hands.shove.stiffness_per_s",
+        s.stiffness_per_s,
+        1000.0,
+    )?;
+    nonnegative("physical_hands.shove.deadband_m", s.deadband_m, 1.0)?;
+    nonnegative("physical_hands.shove.max_speed_mps", s.max_speed_mps, 50.0)?;
+    nonnegative("physical_hands.shove.max_force_n", s.max_force_n, 100_000.0)?;
+    nonnegative("physical_hands.shove.friction", s.friction, 10.0)?;
+    nonnegative(
+        "physical_hands.shove.give_smoothing_s",
+        s.give_smoothing_s,
+        10.0,
+    )
 }
 
 fn pickup(p: &PickupConfig) -> Result<(), Error> {
     nonnegative("physical_hands.pickup.reach_m", p.reach_m, 1.0)?;
     nonnegative(
-        "physical_hands.pickup.one_hand_mass_kg",
-        p.one_hand_mass_kg,
-        10_000.0,
+        "physical_hands.pickup.max_mass_kg",
+        p.max_mass_kg,
+        100_000.0,
     )?;
     nonnegative(
-        "physical_hands.pickup.two_hand_mass_kg",
-        p.two_hand_mass_kg,
+        "physical_hands.pickup.hand_force_n",
+        p.hand_force_n,
+        100_000.0,
+    )?;
+    nonnegative(
+        "physical_hands.pickup.hand_torque_nm",
+        p.hand_torque_nm,
         10_000.0,
     )?;
-    if p.two_hand_mass_kg < p.one_hand_mass_kg {
-        return Err(Error::Invalid(format!(
-            "physical_hands.pickup.two_hand_mass_kg ({}) must not be below \
-             physical_hands.pickup.one_hand_mass_kg ({})",
-            p.two_hand_mass_kg, p.one_hand_mass_kg
-        )));
-    }
+    range(
+        "physical_hands.pickup.two_hand_angular_share",
+        p.two_hand_angular_share,
+        0.0,
+        1.0,
+    )?;
+    nonnegative("physical_hands.pickup.gravity_mps2", p.gravity_mps2, 100.0)?;
+    nonnegative(
+        "physical_hands.pickup.keep_out_radius_m",
+        p.keep_out_radius_m,
+        5.0,
+    )?;
     nonnegative(
         "physical_hands.pickup.stiffness_per_s",
         p.stiffness_per_s,
@@ -802,11 +834,6 @@ fn pickup(p: &PickupConfig) -> Result<(), Error> {
         "physical_hands.pickup.max_angular_speed_rps",
         p.max_angular_speed_rps,
         200.0,
-    )?;
-    nonnegative(
-        "physical_hands.pickup.heavy_response_s",
-        p.heavy_response_s,
-        10.0,
     )?;
     positive(
         "physical_hands.pickup.break_distance_m",

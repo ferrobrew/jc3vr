@@ -1,5 +1,5 @@
-//! The engine side of holding objects: what a reached object is, a body's place and motion, and the
-//! velocities that drive it.
+//! The engine side of holding and shoving objects: what a reached object is, a body's place,
+//! motion, and mass properties, the velocities that drive it, and the impulses that shove it.
 //!
 //! A body is named by its Havok id, which is reused once the body is freed, so every read checks
 //! that the id still belongs to the object it was taken from: the id has a slot, the slot has a
@@ -21,7 +21,10 @@ use jc3gi::{
     types::vector_math::AlignedVector3,
 };
 
-use crate::controllers::physical_hands::grasp::{BodyPose, TargetKind, Velocities, mass_of};
+use crate::controllers::physical_hands::{
+    grasp::{TargetKind, mass_of},
+    rigid::{BodyPose, RigidBody, Velocities},
+};
 
 /// Why a body could not be read or driven.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -60,6 +63,19 @@ pub struct BodyState {
     pub velocities: Velocities,
     /// The body's mass, or `None` for an infinite one.
     pub mass_kg: Option<f32>,
+    /// The inverse inertia about the axes of the motion's frame.
+    pub inverse_inertia: Vec3,
+}
+
+impl BodyState {
+    pub fn rigid(&self) -> RigidBody {
+        RigidBody {
+            pose: self.pose,
+            velocities: self.velocities,
+            inverse_mass: self.mass_kg.map_or(0.0, |m| 1.0 / m),
+            inverse_inertia: self.inverse_inertia,
+        }
+    }
 }
 
 /// What the object at `object`, reached on its body `body`, is to a hand: a weapon lying in the
@@ -105,7 +121,11 @@ pub(super) unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, B
         return Err(BodyError::BadMotion);
     }
     let orientation = orientation.normalize();
-    let inverse_mass = half_to_f32(motion.m_inverseInertia[3]);
+    let [ix, iy, iz, inverse_mass] = motion.m_inverseInertia.map(half_to_f32);
+    let inverse_inertia = Vec3::new(ix, iy, iz);
+    if !inverse_inertia.is_finite() {
+        return Err(BodyError::BadMotion);
+    }
     Ok(BodyState {
         pose: BodyPose {
             centre,
@@ -116,6 +136,7 @@ pub(super) unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, B
             angular: orientation * local_angular,
         },
         mass_kg: mass_of(inverse_mass),
+        inverse_inertia,
     })
 }
 
@@ -137,6 +158,29 @@ pub(super) unsafe fn drive(
     let linear = aligned(velocities.linear);
     let angular = aligned(velocities.angular);
     unsafe { world.setBodyVelocity(body, &linear, &angular) };
+    Ok(())
+}
+
+/// Apply the linear impulse `impulse` to the body `body` at the game-space point `at`, after
+/// checking it still belongs to `owner`.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn shove(
+    body: u32,
+    owner: NonZeroUsize,
+    impulse: Vec3,
+    at: Vec3,
+) -> Result<(), BodyError> {
+    if !(impulse.is_finite() && at.is_finite()) {
+        return Err(BodyError::BadMotion);
+    }
+    let (world, shift) = unsafe { world() }?;
+    unsafe { owned_motion(world, body, owner) }?;
+    let impulse = aligned(impulse);
+    let position = aligned(at - shift);
+    unsafe { world.applyBodyImpulseAt(body, &impulse, &position) };
     Ok(())
 }
 
