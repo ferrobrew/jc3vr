@@ -8,12 +8,14 @@
 //! localized names ask the player not to rebind them.
 //!
 //! The order of the items here is the order of the persisted handle stash (see
-//! [`crate::vr::input::stash`]), and [`fingerprint`] hashes it with each action's type, so that a
-//! payload with a different layout never re-wraps another layout's handles.
+//! [`crate::vr::input::stash`]), and [`fingerprint`] hashes it with each action's type and every
+//! suggested binding, so that a payload with a different layout or different suggestions never
+//! re-wraps another payload's handles: a runtime takes suggestions only before the sets are
+//! attached, so re-wrapping would keep the old suggestions without a sign.
 
 use crate::{
     controllers::frame::{Hand, InteractionProfile},
-    vr::input::semantic::SemanticSet,
+    vr::input::semantic::{SemanticSet, defaults},
 };
 
 /// Append the note that marks a raw input's localized name.
@@ -290,10 +292,52 @@ pub(crate) fn stash_len() -> usize {
     stash_order().count()
 }
 
-/// An FNV-1a hash of [`stash_order`], names and types, identifying this layout.
-pub(crate) fn fingerprint() -> u64 {
-    fingerprint_of(stash_order())
+/// An FNV-1a hash identifying this layout and its suggested bindings for a player whose dominant
+/// hand is `dominant`: [`stash_order`], names and types, then [`suggested_bindings`].
+pub(crate) fn fingerprint(dominant: Hand) -> u64 {
+    fingerprint_of(stash_order().chain(suggested_bindings(dominant)))
 }
+
+/// Every binding the payload suggests for a player whose dominant hand is `dominant`, as name and
+/// path pairs: per shipped profile, a marker naming it, then the raw inputs' bindings per hand,
+/// then the semantic actions' suggestions.
+fn suggested_bindings(dominant: Hand) -> impl Iterator<Item = (&'static str, &'static str)> {
+    Profile::ALL.into_iter().flat_map(move |profile| {
+        let raw = Hand::BOTH.into_iter().flat_map(move |hand| {
+            std::iter::once((hand.label(), HAND_TAG)).chain(raw_inputs().filter_map(
+                move |(name, input)| binding(profile, hand, input).map(|path| (name, path)),
+            ))
+        });
+        let semantic = defaults::suggestions(profile, dominant)
+            .into_iter()
+            .flat_map(|suggestion| {
+                [
+                    (suggestion.set.name(), suggestion.hand.label()),
+                    (
+                        suggestion.set.actions()[suggestion.index].name,
+                        suggestion.path,
+                    ),
+                ]
+            });
+        std::iter::once((profile.path(), PROFILE_TAG))
+            .chain(raw)
+            .chain(semantic)
+    })
+}
+
+/// Every raw input with its action name, in stash order.
+fn raw_inputs() -> impl Iterator<Item = (&'static str, Input)> {
+    HandsAction::ALL
+        .iter()
+        .map(|&a| (a.name(), Input::Hands(a)))
+        .chain(BoolInput::ALL.iter().map(|&i| (i.name(), Input::Bool(i))))
+        .chain(FloatInput::ALL.iter().map(|&i| (i.name(), Input::Float(i))))
+        .chain(Vec2Input::ALL.iter().map(|&i| (i.name(), Input::Vec2(i))))
+}
+
+/// The tags [`suggested_bindings`] gives a profile and a hand.
+const PROFILE_TAG: &str = "profile";
+const HAND_TAG: &str = "hand";
 
 /// The tag [`stash_order`] gives an action set.
 const SET_TAG: &str = "set";
@@ -515,7 +559,20 @@ mod tests {
     fn the_stash_holds_every_set_and_action() {
         let semantic: usize = SemanticSet::ALL.iter().map(|s| 1 + s.actions().len()).sum();
         assert_eq!(stash_len(), 1 + 3 + 11 + 4 + 2 + semantic);
-        assert_eq!(fingerprint(), fingerprint());
+        assert_eq!(fingerprint(Hand::Right), fingerprint(Hand::Right));
+    }
+
+    #[test]
+    fn the_fingerprint_covers_the_suggested_bindings() {
+        // The left-handed table moves the dominant-hand rows, so the two hands' suggestions differ.
+        assert_ne!(fingerprint(Hand::Left), fingerprint(Hand::Right));
+        let moved = stash_order()
+            .chain(suggested_bindings(Hand::Right))
+            .map(|(name, tag)| match (name, tag) {
+                ("jump", "input/a/click") => (name, "input/b/click"),
+                _ => (name, tag),
+            });
+        assert_ne!(fingerprint_of(moved), fingerprint(Hand::Right));
     }
 
     #[test]
@@ -524,11 +581,11 @@ mod tests {
             "jump" => (name, "float"),
             _ => (name, tag),
         });
-        assert_ne!(fingerprint_of(retyped), fingerprint());
+        assert_ne!(fingerprint_of(retyped), fingerprint_of(stash_order()));
         let renamed = stash_order().map(|(name, tag)| match name {
             "jump" => ("hop", tag),
             _ => (name, tag),
         });
-        assert_ne!(fingerprint_of(renamed), fingerprint());
+        assert_ne!(fingerprint_of(renamed), fingerprint_of(stash_order()));
     }
 }

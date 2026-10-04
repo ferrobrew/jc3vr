@@ -46,8 +46,9 @@ pub(crate) struct InputState {
     pub(super) profiles: [InteractionProfile; 2],
     /// The buttons of the previous frame, for the derived presses' hysteresis.
     pub(super) previous_buttons: [ButtonSet; 2],
-    /// The dominant hand the semantic bindings were suggested for, when this payload created the
-    /// actions; otherwise the configured one, since a reinject keeps the earlier suggestions.
+    /// The dominant hand the semantic bindings were suggested for. A reinject re-wraps the
+    /// earlier actions only when the layout fingerprint, which covers the suggestions for this
+    /// hand, matches, so it is also the configured hand.
     pub(super) dominant: Hand,
     pub(super) self_check: SelfCheck,
     pub(super) sources: SourcesRefresh,
@@ -98,7 +99,7 @@ impl InputState {
         let stash = InputStash {
             instance: instance.as_raw().into_raw(),
             session: session.as_raw().into_raw(),
-            layout: layout::fingerprint(),
+            layout: layout::fingerprint(self.dominant),
             handles: self.actions.raw_handles(),
         };
         let InputState {
@@ -196,7 +197,7 @@ impl InputState {
         let instance_raw = instance.as_raw().into_raw();
         let session_raw = session.as_raw().into_raw();
         let (actions, origin) = match stash::take() {
-            Some(s) if s.layout == layout::fingerprint() && s.instance == instance_raw => {
+            Some(s) if s.layout == layout::fingerprint(dominant) && s.instance == instance_raw => {
                 // SAFETY: the stash names this instance and this layout, and was written by the
                 // previous payload's `persist`, which destroyed nothing.
                 let actions = unsafe { Actions::rewrap(instance, &s.handles) }
@@ -218,8 +219,8 @@ impl InputState {
                 stash::store(&s);
                 anyhow::bail!(
                     "input: controller input is unavailable: a payload with a different action \
-                     layout created the action sets on the persisted OpenXR instance; restart the \
-                     game"
+                     layout, suggested bindings, or dominant hand created the action sets on the \
+                     persisted OpenXR instance; restart the game"
                 );
             }
             stale => {
@@ -227,7 +228,7 @@ impl InputState {
                     tracing::warn!(
                         target: "vr",
                         same_instance = s.instance == instance_raw,
-                        same_layout = s.layout == layout::fingerprint(),
+                        same_layout = s.layout == layout::fingerprint(dominant),
                         "input: discarding an action-handle stash that does not match; creating fresh actions",
                     );
                 }
@@ -265,7 +266,7 @@ impl InputState {
                 stash::store(&InputStash {
                     instance: instance_raw,
                     session: session_raw,
-                    layout: layout::fingerprint(),
+                    layout: layout::fingerprint(dominant),
                     handles: actions.raw_handles(),
                 });
                 drop(actions);
