@@ -498,7 +498,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.15 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.10 m), `holsters.pouch` (0.10 m, at the belt front on the off-hand side, either hand), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `holsters.detect_seated` (on), `holsters.seated_eye_fraction` (0.8), `holsters.seated_after_s` (4 s), `overlay.grab_volumes` | Built, with a seated placement. The volume offsets and radii are untuned. |
+| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.15 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.10 m), `holsters.pouch` (0.10 m, at the belt front on the off-hand side, either hand), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `overlay.grab_volumes` | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
 | The two-handed foregrip | `foregrip.enabled`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |

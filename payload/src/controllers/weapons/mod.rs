@@ -94,15 +94,16 @@ use crate::{
             primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
             store,
         },
+        roomscale::{self, posture::EffectivePosture},
         weapons::{
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             holster::HolsterAction,
             magazine::{GestureEvent, GestureInputs, MagazineGesture},
-            volumes::{NearMiss, SeatedDetector, Stance, StanceInputs},
+            volumes::{NearMiss, Stance},
         },
     },
-    headpose, vr,
+    headpose,
 };
 
 /// The weapon handling's hooks, aggregated by [`crate::controllers::hook_library`].
@@ -257,7 +258,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
 
     let mut candidates = Vec::new();
-    let stance = state.step_stance(&config, active.head.position.y);
+    let stance = state.step_stance();
     let body_frame = volumes::body_frame(
         active.head.position,
         stance,
@@ -535,7 +536,6 @@ pub(crate) fn stand_down() {
     state.status.stance = None;
     state.placed.clear();
     state.grab_points = [None; 2];
-    state.last_stance_tick = None;
     store::clear(Source::GrabVolumes);
 }
 
@@ -569,33 +569,26 @@ struct State {
     /// The tick's placed volumes and each hand's grab point, for the near-miss log.
     placed: Vec<Candidate>,
     grab_points: [Option<Vec3>; 2],
-    seated: SeatedDetector,
-    last_stance_tick: Option<Instant>,
     last_miss_log: Option<Instant>,
 }
 
 impl State {
-    /// Step the seated detector for a head at the cockpit frame height `head_y`, logging a change
-    /// of stance.
-    fn step_stance(&mut self, config: &ControllersConfig, head_y: f32) -> Stance {
+    /// The stance for this tick, from the roomscale posture (the single source of truth for
+    /// seated versus standing): seated for the seated posture, standing for the standing and
+    /// roomscale postures, and standing without a recent roomscale frame (the roomscale
+    /// subsystems off, or not yet run). Logs a change of stance.
+    fn step_stance(&mut self) -> Stance {
         let now = Instant::now();
-        let dt = self
-            .last_stance_tick
-            .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
-        self.last_stance_tick = Some(now);
+        let posture = roomscale::frame_shared()
+            .filter(|f| f.fresh(now))
+            .map(|f| f.posture);
+        let stance = match posture {
+            Some(EffectivePosture::Seated) => Stance::Seated,
+            _ => Stance::Standing,
+        };
         let previous = self.status.stance;
-        let stance = self.seated.step(
-            &StanceInputs {
-                setting: config.roomscale.posture,
-                head_y,
-                floor_eye_height: vr::stage::stage().head_height,
-                standing_eye_height: body::player().eye_height,
-                dt,
-            },
-            &config.weapons.holsters,
-        );
         if previous.map(Stance::label) != Some(stance.label()) {
-            tracing::debug!(target: "controllers", stance = stance.label(), ?stance, "holsters: placed for a new stance");
+            tracing::debug!(target: "controllers", stance = stance.label(), "holsters: placed for a new stance");
         }
         stance
     }
@@ -652,8 +645,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     well: None,
     placed: Vec::new(),
     grab_points: [None; 2],
-    seated: SeatedDetector::new(),
-    last_stance_tick: None,
     last_miss_log: None,
 });
 

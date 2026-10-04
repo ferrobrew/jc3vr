@@ -35,7 +35,6 @@ use crate::{
             melee::{self, MeleeStatus},
             recoil::{self, RecoilStatus},
             unarmed_fire::{self, UnarmedFireStatus},
-            volumes::Stance,
         },
     },
     ui::controllers::{
@@ -106,9 +105,8 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     ui.label(format!(
         "Body volumes placed for: {}",
         match status.stance {
-            Some(Stance::Seated { eye_y }) => format!("seated (eyes at {eye_y:+.2} m)"),
-            Some(stance) => stance.label().to_owned(),
-            None => "nothing".to_owned(),
+            Some(stance) => stance.label(),
+            None => "nothing",
         }
     ));
     if let Some((hand, miss)) = status.last_miss {
@@ -652,21 +650,6 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
         .on_hover_text("The fallback for drawing without reaching a holster.");
     ui.add(egui::Slider::new(&mut h.crouch_deadband_m, 0.0..=0.5).text("Crouch deadband (m)"));
-    ui.checkbox(
-        &mut h.detect_seated,
-        "Detect seating in the automatic posture",
-    )
-    .on_hover_text(
-        "Place the volumes for a seated body once the head stays low. The seated posture \
-             always does.",
-    );
-    ui.add_enabled_ui(h.detect_seated, |ui| {
-        ui.add(
-            egui::Slider::new(&mut h.seated_eye_fraction, 0.5..=0.95)
-                .text("Seated below this fraction of the standing eye height"),
-        );
-        ui.add(egui::Slider::new(&mut h.seated_after_s, 0.0..=15.0).text("Seated after (s)"));
-    });
     ui.label("Offsets from the landmark, right side (+X right, +Y up, +Z back)");
     volume_settings(ui, "Hip", &mut h.hip);
     volume_settings(ui, "Shoulder", &mut h.shoulder);

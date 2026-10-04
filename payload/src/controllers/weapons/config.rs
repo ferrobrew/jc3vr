@@ -37,16 +37,6 @@ pub struct HolstersConfig {
     /// Draw every body volume through the world-space overlay at all times, not only the one a
     /// hand is in, so that their placement can be seen and tuned. Needs the overlay on.
     pub show_volumes: bool,
-    /// In the automatic posture, place the volumes for a seated body once the head has stayed
-    /// below `seated_eye_fraction` of the player's standing eye height for `seated_after_s`. The
-    /// seated posture always places them for a seated body.
-    pub detect_seated: bool,
-    /// The fraction of the player's standing eye height (measured from the STAGE floor) below
-    /// which the head counts as low enough to be seated.
-    pub seated_eye_fraction: f32,
-    /// How long the head must stay that low before the body counts as seated, seconds. A crouch
-    /// shorter than this keeps the standing placement.
-    pub seated_after_s: f32,
 }
 
 impl HolstersConfig {
@@ -72,9 +62,6 @@ impl HolstersConfig {
             },
             crouch_deadband_m: 0.15,
             show_volumes: false,
-            detect_seated: true,
-            seated_eye_fraction: 0.8,
-            seated_after_s: 4.0,
         }
     }
 }
