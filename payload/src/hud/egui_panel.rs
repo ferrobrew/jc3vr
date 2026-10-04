@@ -4,7 +4,9 @@
 //! lands in neither eye and the overlay is suppressed by `BLOCK_FLIP` -- so the debug UI is redirected
 //! into an offscreen texture and drawn back into the scene as a head-following floating quad, exactly
 //! like the gameplay HUD panel (see [`crate::hud::quad`]), and driven by the desktop mouse re-sourced onto
-//! the panel surface (see [`crate::hud::pointer`]).
+//! the panel surface or by either controller's aim ray (see [`crate::hud::pointer`]). Each frame's
+//! corners are published with the camera basis that placed them, for the controller pointer to
+//! intersect, and the cursor dot follows whichever source owns the pointer.
 //!
 //! This is a wholly independent panel: its own render target, its own lazy-follow damping, and its own
 //! eye-0-cached corners, so it never touches [`crate::hud::state::HUD_STATE`] and cannot perturb the
@@ -30,6 +32,7 @@ use crate::{
     hud::{
         config::EguiPanelConfig,
         cursor::CursorFrame,
+        pointer::{self, RenderedPanel},
         quad::{HudQuad, PanelParams, compute_cursor_corners, compute_world_corners},
         target::HudTarget,
     },
@@ -109,6 +112,7 @@ pub(crate) fn draw_quad(
         // On the dismissal edge, drop the world-lock latch so the next open re-anchors at the head.
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
             EGUI_PANEL.lock().latched_pose = None;
+            pointer::publish_egui_panel(None);
         }
         return;
     }
@@ -148,7 +152,8 @@ impl EguiPanelState {
     }
 
     /// Eye-0 setup: (re)create the panel target at the configured resolution, render this frame's egui
-    /// output into it, choose the pose, and compute + cache the panel and cursor corners.
+    /// output into it, choose the pose, compute + cache the panel and cursor corners, and publish the
+    /// corners for the controller pointer.
     fn prepare(
         &mut self,
         context: &ID3D11DeviceContext,
@@ -158,6 +163,7 @@ impl EguiPanelState {
     ) {
         self.cached_corners = None;
         self.cursor_corners = None;
+        pointer::publish_egui_panel(None);
 
         let (width, height) = (cfg.resolution.0.max(1), cfg.resolution.1.max(1));
         if self.target.as_ref().map(HudTarget::size) != Some((width, height)) {
@@ -180,7 +186,13 @@ impl EguiPanelState {
             egui_state.render_to(context, target.color_rtv());
         }
 
-        let Some((head_pos, head_rotation)) = crate::hud::render_camera_pose() else {
+        // The pointer's captured camera, with its tracking sample, is preferred over the render
+        // camera, as for the gameplay HUD, so the panel and the controller ray share one basis.
+        let pointer_camera = pointer::rendered_camera();
+        let Some((head_pos, head_rotation)) = pointer_camera
+            .map(|camera| (camera.head.position, camera.head.orientation))
+            .or_else(crate::hud::render_camera_pose)
+        else {
             return;
         };
         // World-lock: latch the pose the first frame the panel is shown and hold it, so it stays put
@@ -195,7 +207,15 @@ impl EguiPanelState {
             panel_height: crate::hud::panel_height(cfg.scale, cfg.distance, aspect),
         };
         self.cached_corners = compute_world_corners(&params);
-        self.cursor_corners = crate::hud::pointer::window_uv()
+        pointer::publish_egui_panel(pointer_camera.zip(self.cached_corners).map(
+            |(camera, corners)| RenderedPanel {
+                head: camera.head,
+                cockpit_head: camera.cockpit_head,
+                scale: camera.scale,
+                corners,
+            },
+        ));
+        self.cursor_corners = pointer::egui_cursor_uv()
             .and_then(|(u, v)| compute_cursor_corners(&params, CursorFrame { u, v }, cursor_cfg));
     }
 

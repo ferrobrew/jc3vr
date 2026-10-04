@@ -108,18 +108,18 @@ pub fn owns_menu_trigger() -> Option<Hand> {
 }
 
 /// The trigger as one input tick sees it: the level, and the edges latched since the last tick.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct TriggerSample {
-    level: bool,
-    pressed: bool,
-    released: bool,
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(super) struct TriggerSample {
+    pub(super) level: bool,
+    pub(super) pressed: bool,
+    pub(super) released: bool,
 }
 
 impl TriggerSample {
     /// Whether the pointer treats the trigger as down this tick, given whether it did last tick. A
     /// tap that starts and ends between two ticks reads as down for one tick, and a release followed
     /// by a new press between two ticks reads as up for one tick, so neither is lost.
-    fn down(self, was_down: bool) -> bool {
+    pub(super) fn down(self, was_down: bool) -> bool {
         if was_down && self.released {
             false
         } else {
@@ -132,7 +132,9 @@ fn native_pointer_enabled() -> bool {
     Config::lock_query(|c| c.hud.redirect && c.hud.quad && c.hud.cursor.enabled)
 }
 
-struct ControllerState {
+/// One pointing hand's press state against a panel. The game-UI pointer keeps one in
+/// [`CONTROLLER_STATE`]; the egui panel's pointer keeps its own.
+pub(super) struct ControllerState {
     armed: bool,
     captured: bool,
     output: Option<ControllerPointer>,
@@ -147,7 +149,7 @@ struct ControllerState {
 static CONTROLLER_STATE: Mutex<ControllerState> = Mutex::new(ControllerState::new());
 
 impl ControllerState {
-    const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             armed: false,
             captured: false,
@@ -157,6 +159,19 @@ impl ControllerState {
             trigger_claimed: false,
             hand: None,
         }
+    }
+
+    /// A fresh state for a hand whose trigger is `trigger_down` now. A held trigger must be released
+    /// before it can click.
+    pub(super) const fn after(trigger_down: bool) -> Self {
+        let mut state = Self::new();
+        state.trigger_down = trigger_down;
+        state
+    }
+
+    /// Whether a press that began on the panel is held.
+    pub(super) const fn captured(&self) -> bool {
+        self.captured
     }
 
     fn disarm(&mut self, now: Instant) {
@@ -187,7 +202,7 @@ impl ControllerState {
         }
     }
 
-    fn step(
+    pub(super) fn step(
         &mut self,
         hit: Option<PanelHit>,
         trigger_down: bool,
@@ -265,11 +280,13 @@ mod tests {
     const INSIDE: Option<PanelHit> = Some(PanelHit {
         uv: (0.5, 0.5),
         inside: true,
+        distance: 1.0,
     });
 
     const OUTSIDE: Option<PanelHit> = Some(PanelHit {
         uv: (1.0, 0.5),
         inside: false,
+        distance: 1.0,
     });
 
     fn buttons(
@@ -290,12 +307,14 @@ mod tests {
         let inside = Some(PanelHit {
             uv: (0.2, 0.3),
             inside: true,
+            distance: 1.0,
         });
         state.step(inside, false, Hand::Right, now);
         state.step(inside, true, Hand::Right, now);
         let outside = Some(PanelHit {
             uv: (1.0, 0.8),
             inside: false,
+            distance: 1.0,
         });
         let release = state.step(outside, false, Hand::Right, now).unwrap();
         assert_eq!(

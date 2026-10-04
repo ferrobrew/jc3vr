@@ -8,9 +8,10 @@
 //!
 //! The chord's presses belong to it alone. The system button's press is consumed: its short press
 //! does not pause and its long press does not open the commlink, from the chord until the button is
-//! released. The trigger press is masked from the bindings and the native UI pointer until the
-//! trigger is released, so it neither fires a weapon nor clicks a menu. While the system button is
-//! held, a right trigger press is always the chord's.
+//! released. The trigger press is masked from the bindings, the native UI pointer, and the debug
+//! panel's own pointer until the trigger is released, so it neither fires a weapon, nor clicks a
+//! menu, nor clicks on the panel it opens or closes. While the system button is held, a right
+//! trigger press is always the chord's.
 //!
 //! The system button is read from either hand, as the bindings read it, since runtimes report it on
 //! one hand or both.
@@ -61,7 +62,8 @@ pub struct ChordTick {
     pub cancel_system: bool,
     /// Mask the system button from the bindings.
     pub mask_system: bool,
-    /// Mask the chord trigger from the bindings and the native UI pointer.
+    /// Mask the chord trigger from the bindings, the native UI pointer, and the debug panel's
+    /// pointer.
     pub mask_trigger: bool,
 }
 
@@ -106,8 +108,8 @@ impl PanelChord {
     }
 }
 
-/// Mask what `tick` masks from `frame` and `edges`, so that neither the bindings nor the native UI
-/// pointer sees it.
+/// Mask what `tick` masks from `frame` and `edges`, so that neither the bindings, the native UI
+/// pointer, nor the debug panel's pointer sees it.
 pub fn mask(frame: &mut ControllerFrame, edges: &mut Edges, tick: ChordTick) {
     if tick.mask_system {
         for hand in Hand::BOTH {

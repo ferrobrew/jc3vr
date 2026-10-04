@@ -281,12 +281,15 @@ fn update() {
 
             // Drive the egui UI as the VR floating panel when a session is running and the panel is
             // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
-            // the desktop mouse onto the panel surface. Off, this is `None` and the flat overlay path
-            // is unchanged.
+            // the desktop mouse or a controller onto the panel surface. Off, this is `None` and the
+            // flat overlay path is unchanged.
             let panel_size = crate::hud::egui_panel::active_size();
             egui_state.set_panel_mode(panel_size);
-            if let Some(size) = panel_size {
-                egui_state.push_events(crate::hud::pointer::window_mouse_events(size));
+            match panel_size {
+                Some(size) => {
+                    egui_state.push_events(crate::hud::pointer::egui_panel_events(size));
+                }
+                None => crate::hud::pointer::reset_egui_pointer(),
             }
 
             egui_state.run(|ctx, renderer| {

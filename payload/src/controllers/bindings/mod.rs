@@ -68,7 +68,7 @@ use crate::{
     headpose,
     hud::{
         egui_panel,
-        pointer::{clear_controller, owns_menu_trigger, update_controller},
+        pointer::{clear_controller, owns_menu_trigger, update_controller, update_egui_controller},
     },
     vr,
 };
@@ -133,6 +133,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     });
     if !config.enabled {
         clear_controller();
+        update_egui_controller(None, config.dominant_hand);
         let mut state = STATE.lock();
         state.observe_poll(poll);
         state.stand_down(poll);
@@ -173,6 +174,18 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .filter(|_| config.bindings.enabled)
             .map(|frame| ChordInput::of(frame, &edges))
             .unwrap_or_default(),
+    );
+    // The debug panel's pointer reads the controllers while the bindings stand down for the
+    // panel, so it is stepped here, with the chord's presses masked so that the trigger pull that
+    // opens or closes the panel never clicks on it.
+    let panel_input = frame.clone().map(|mut frame| {
+        let mut edges = edges;
+        panel_chord::mask(&mut frame, &mut edges, chord);
+        (frame, edges)
+    });
+    update_egui_controller(
+        panel_input.as_ref().map(|(frame, edges)| (frame, edges)),
+        config.dominant_hand,
     );
 
     let mut state = STATE.lock();

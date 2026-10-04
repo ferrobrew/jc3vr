@@ -1,6 +1,6 @@
-//! The rendered game-UI panel as the controller pointer sees it: the center camera captured with
-//! its tracking sample, the panel corners published with that basis, and the ray intersection
-//! against them.
+//! The rendered panels as the controller pointers see them: the center camera captured with its
+//! tracking sample, the game-UI panel's and the egui debug panel's corners published with that
+//! basis, and the ray intersection against them.
 
 use std::time::Instant;
 
@@ -23,11 +23,13 @@ pub(crate) struct PanelRay {
 }
 
 /// A ray's intersection with the panel plane. `uv` is clamped for an active drag, while `inside`
-/// records whether the original intersection was inside the displayed panel.
+/// records whether the original intersection was inside the displayed panel. `distance` is how far
+/// along the ray the plane lies, in the ray's world units.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct PanelHit {
     pub(crate) uv: (f32, f32),
     pub(crate) inside: bool,
+    pub(crate) distance: f32,
 }
 
 /// The center camera and tracking sample captured together before per-eye offsets.
@@ -83,11 +85,22 @@ pub fn publish_panel(panel: Option<RenderedPanel>) {
     *RENDERED_PANEL.lock() = panel.map(|panel| (panel, Instant::now()));
 }
 
+/// Publish the egui debug panel drawn this frame, or `None` when it was not drawn with a pointer
+/// basis, as [`publish_panel`] does for the game-UI panel.
+pub fn publish_egui_panel(panel: Option<RenderedPanel>) {
+    *RENDERED_EGUI_PANEL.lock() = panel.map(|panel| (panel, Instant::now()));
+}
+
 /// The world-space aim ray of a cockpit-frame `aim` pose against the latest fresh panel, with the
 /// panel's corners.
 pub(crate) fn aim_at_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
-    let (panel, published) = (*RENDERED_PANEL.lock())?;
-    (published.elapsed() <= MAX_FRAME_AGE).then(|| (panel.ray(aim), panel.corners))
+    aim_at(&RENDERED_PANEL, aim)
+}
+
+/// The world-space aim ray of a cockpit-frame `aim` pose against the latest fresh egui debug
+/// panel, with the panel's corners.
+pub(crate) fn aim_at_egui_panel(aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
+    aim_at(&RENDERED_EGUI_PANEL, aim)
 }
 
 /// Intersect `ray` with the flat panel represented by top-left, top-right, bottom-left, and
@@ -135,12 +148,22 @@ pub(crate) fn intersect_panel(ray: PanelRay, corners: &[Vec4; 4]) -> Option<Pane
     Some(PanelHit {
         uv: (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
         inside,
+        distance,
     })
 }
 
+type PanelSlot = Mutex<Option<(RenderedPanel, Instant)>>;
+
 static RENDERED_CAMERA: Mutex<Option<(RenderedCamera, Instant)>> = Mutex::new(None);
 
-static RENDERED_PANEL: Mutex<Option<(RenderedPanel, Instant)>> = Mutex::new(None);
+static RENDERED_PANEL: PanelSlot = Mutex::new(None);
+
+static RENDERED_EGUI_PANEL: PanelSlot = Mutex::new(None);
+
+fn aim_at(slot: &PanelSlot, aim: Pose) -> Option<(PanelRay, [Vec4; 4])> {
+    let (panel, published) = (*slot.lock())?;
+    (published.elapsed() <= MAX_FRAME_AGE).then(|| (panel.ray(aim), panel.corners))
+}
 
 impl RenderedPanel {
     /// The world-space ray of a cockpit-frame aim pose, composed through the same basis that

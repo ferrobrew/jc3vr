@@ -292,6 +292,11 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
                     &mut cfg.hud.egui_panel.show_on_mirror,
                     "Show panel on desktop mirror (off = headset only)",
                 );
+                ui.checkbox(
+                    &mut cfg.hud.egui_panel.controller_pointer,
+                    "Point at the panel with the controllers",
+                )
+                .on_hover_text("The trigger clicks, B right-clicks, and the stick scrolls.");
             });
         }
 

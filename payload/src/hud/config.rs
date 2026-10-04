@@ -202,6 +202,10 @@ pub struct EguiPanelConfig {
     /// default: the panel is already visible in the headset, so the desktop mirror shows the
     /// unobstructed scene. Turn it on for a legible desktop copy of the panel.
     pub show_on_mirror: bool,
+    /// Whether the controllers point at the panel: either hand's aim ray moves the pointer, its
+    /// trigger clicks, its upper face button right-clicks, and its thumbstick scrolls. The desktop
+    /// mouse keeps working alongside; whichever was used last owns the pointer. On by default.
+    pub controller_pointer: bool,
 }
 
 impl EguiPanelConfig {
@@ -214,6 +218,7 @@ impl EguiPanelConfig {
             resolution: (1280, 960),
             follow: FollowConfig::new(),
             show_on_mirror: false,
+            controller_pointer: true,
         }
     }
 }
