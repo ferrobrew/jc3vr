@@ -1,6 +1,6 @@
 //! The native map's controller-side state machine: which hand owns the map, the button edges the
-//! map sees, and the zoom steps from the off-hand stick. Pure; the hooks in the parent module feed
-//! it one sample per map input dispatch.
+//! map sees, where the map's cursor sits during a press, and the zoom steps from the off-hand
+//! stick. Pure; the hooks in the parent module feed it one sample per map input dispatch.
 
 use std::time::{Duration, Instant};
 
@@ -38,8 +38,13 @@ pub(crate) enum ZoomStep {
 /// The values to deliver to the native map for one dispatch.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct MapDelivery {
-    /// Absolute panel UV for the map cursor. On cancellation this is the last delivered UV.
+    /// Absolute panel UV for the map cursor. On cancellation this is the last delivered UV. While a
+    /// press is held at its press point (see [`held_at_press`](Self::held_at_press)), this is the
+    /// press point rather than the ray.
     pub(crate) uv: Vec2,
+    /// Whether the cursor is held at the primary press point: the press has not wandered past
+    /// [`CLICK_SLOP`], or this is the release of such a press.
+    pub(crate) held_at_press: bool,
     /// The primary button level for this dispatch.
     pub(crate) primary: bool,
     /// The secondary button level for this dispatch.
@@ -82,6 +87,7 @@ impl MapDelivery {
     ) -> Self {
         Self {
             uv,
+            held_at_press: false,
             primary: false,
             secondary: false,
             zoom: ZoomStep::None,
@@ -107,6 +113,8 @@ pub(crate) struct MapController {
     secondary_held: bool,
     /// The last delivered cursor, once there has been one.
     last_uv: Option<Vec2>,
+    /// Where the held primary press began, while the ray has stayed within [`CLICK_SLOP`] of it.
+    press_anchor: Option<Vec2>,
     zoom: ZoomRepeat,
     /// When the map last received a delivery or a cancellation.
     updated: Option<Instant>,
@@ -121,6 +129,7 @@ impl MapController {
             primary_held: false,
             secondary_held: false,
             last_uv: None,
+            press_anchor: None,
             zoom: ZoomRepeat::new(),
             updated: None,
         }
@@ -160,15 +169,27 @@ impl MapController {
             ));
         }
 
-        self.last_uv = Some(uv);
         if !sample.primary && !sample.secondary {
             self.armed = true;
         }
         let accepted = self.armed;
         let primary = accepted && sample.primary;
         let secondary = accepted && sample.secondary;
+        let primary_pressed = primary && !self.primary_held;
+        let primary_released = !primary && self.primary_held;
+        let anchor = press_anchor(
+            self.press_anchor,
+            uv,
+            primary,
+            primary_pressed,
+            primary_released,
+        );
+        self.press_anchor = anchor.filter(|_| primary);
+        let uv = anchor.unwrap_or(uv);
+        self.last_uv = Some(uv);
         let delivery = MapDelivery {
             uv,
+            held_at_press: anchor.is_some(),
             primary,
             secondary,
             zoom: if accepted {
@@ -178,8 +199,8 @@ impl MapController {
                 ZoomStep::None
             },
             cancelled: false,
-            primary_pressed: primary && !self.primary_held,
-            primary_released: !primary && self.primary_held,
+            primary_pressed,
+            primary_released,
             secondary_pressed: secondary && !self.secondary_held,
             secondary_released: !secondary && self.secondary_held,
         };
@@ -234,6 +255,36 @@ pub(crate) fn prepare_delivery(
     } else {
         controller.expire(now);
         controller.cancel()
+    }
+}
+
+/// How far, in panel UV, the ray may wander from a primary press before the map sees the cursor
+/// move. The map turns a held press into a drag once its cursor leaves the press point by a few
+/// stage pixels, and a hand-held ray moves further than that from tremor and from the trigger pull
+/// itself, so without the slop nearly every trigger pull would start a drag, and its release would
+/// end the drag instead of selecting.
+pub(crate) const CLICK_SLOP: f32 = 0.025;
+
+/// The press point to hold the cursor at for one delivery, if any. A press anchors at its own UV;
+/// a held press keeps the anchor while the ray stays within [`CLICK_SLOP`] of it and loses it for
+/// good once the ray leaves, which hands the map the live ray and lets it start a drag; a release
+/// is delivered at the anchor it still has, so a click selects where it was pressed even when
+/// letting go of the trigger jerks the ray.
+fn press_anchor(
+    anchor: Option<Vec2>,
+    uv: Vec2,
+    primary: bool,
+    primary_pressed: bool,
+    primary_released: bool,
+) -> Option<Vec2> {
+    if primary_pressed {
+        Some(uv)
+    } else if primary {
+        anchor.filter(|anchor| anchor.distance(uv) <= CLICK_SLOP)
+    } else if primary_released {
+        anchor
+    } else {
+        None
     }
 }
 
@@ -431,6 +482,97 @@ mod tests {
         map2.step(sample(Hand::Right, UV, false, 0.0), now);
         map2.step(sample(Hand::Right, UV, true, 0.0), now);
         assert_eq!(prepare_delivery(&mut map2, None, None, later), None);
+    }
+
+    /// An armed owner with the ray at `UV` and nothing held.
+    fn armed() -> (MapController, Instant) {
+        let now = Instant::now();
+        let mut map = MapController::new();
+        map.step(sample(Hand::Right, UV, false, 0.0), now);
+        (map, now)
+    }
+
+    #[test]
+    fn a_jittery_click_selects_at_its_press_point() {
+        let (mut map, now) = armed();
+        let pressed = map.step(sample(Hand::Right, UV, true, 0.0), now).unwrap();
+        assert!(pressed.primary_pressed);
+        assert!(pressed.held_at_press);
+        assert_eq!(pressed.uv, UV);
+        for jitter in [
+            Vec2::new(0.01, 0.0),
+            Vec2::new(-0.012, 0.015),
+            Vec2::new(0.0, -0.02),
+        ] {
+            let held = map
+                .step(sample(Hand::Right, UV + jitter, true, 0.0), now)
+                .unwrap();
+            assert_eq!(held.uv, UV, "a press within the slop does not move");
+            assert!(held.held_at_press);
+        }
+        let jerked = UV + Vec2::new(0.2, 0.1);
+        let released = map
+            .step(sample(Hand::Right, jerked, false, 0.0), now)
+            .unwrap();
+        assert!(released.primary_released);
+        assert_eq!(released.uv, UV, "the release selects where the press began");
+        let after = map
+            .step(sample(Hand::Right, jerked, false, 0.0), now)
+            .unwrap();
+        assert_eq!(after.uv, jerked);
+        assert!(!after.held_at_press);
+    }
+
+    #[test]
+    fn a_press_that_leaves_the_slop_drags_with_the_live_ray() {
+        let (mut map, now) = armed();
+        map.step(sample(Hand::Right, UV, true, 0.0), now);
+        let far = UV + Vec2::new(CLICK_SLOP * 2.0, 0.0);
+        let dragging = map.step(sample(Hand::Right, far, true, 0.0), now).unwrap();
+        assert_eq!(dragging.uv, far);
+        assert!(!dragging.held_at_press);
+        let back = map.step(sample(Hand::Right, UV, true, 0.0), now).unwrap();
+        assert_eq!(back.uv, UV);
+        assert!(!back.held_at_press, "the anchor does not return once lost");
+        let end = UV + Vec2::new(0.0, 0.3);
+        let released = map.step(sample(Hand::Right, end, false, 0.0), now).unwrap();
+        assert!(released.primary_released);
+        assert_eq!(released.uv, end, "a drag ends at the live ray");
+    }
+
+    #[test]
+    fn the_slop_holds_inside_and_lets_go_outside() {
+        assert_eq!(
+            press_anchor(
+                Some(UV),
+                UV + Vec2::new(CLICK_SLOP * 0.99, 0.0),
+                true,
+                false,
+                false
+            ),
+            Some(UV)
+        );
+        assert_eq!(
+            press_anchor(
+                Some(UV),
+                UV + Vec2::new(CLICK_SLOP * 1.01, 0.0),
+                true,
+                false,
+                false
+            ),
+            None
+        );
+        assert_eq!(press_anchor(Some(UV), UV, false, false, false), None);
+    }
+
+    #[test]
+    fn a_cancelled_press_releases_at_its_press_point() {
+        let (mut map, now) = armed();
+        map.step(sample(Hand::Right, UV, true, 0.0), now);
+        map.step(sample(Hand::Right, UV + Vec2::splat(0.01), true, 0.0), now);
+        let cancel = map.cancel().unwrap();
+        assert_eq!(cancel.uv, UV);
+        assert!(!cancel.held_at_press);
     }
 
     #[test]

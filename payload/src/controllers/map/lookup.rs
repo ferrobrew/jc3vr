@@ -1,8 +1,18 @@
 //! The scoped action-lookup shim for the native map: while the map handles a controller dispatch,
 //! the effector lookups it makes on its steering's action map return effectors owned here, so the
 //! map reads the controller's buttons and zoom without any physical action-map slot being written.
+//!
+//! The shim also watches the map's own read of the confirm action. The map's mouse branch opens
+//! the context menu for a clicked confirm at the last selection point, which only a mouse release
+//! moves, so a confirm alone would open the menu wherever the last click was (at first, the top
+//! left of the stage). When the map reads a clicked confirm, the shim reports the secondary mouse
+//! button released in the same dispatch, which is the mouse's own context action: it selects at the
+//! cursor and opens the menu there, as the gamepad's confirm does at its own cursor.
 
-use std::cell::{RefCell, UnsafeCell};
+use std::{
+    cell::{Cell, RefCell, UnsafeCell},
+    ptr,
+};
 
 use jc3gi::input::{
     input_action_map::{Action, EffectorState, InputActionMap, InputDeviceEffector},
@@ -40,6 +50,17 @@ impl SyntheticLookupScope {
         )))
     }
 
+    /// Whether the map read a clicked confirm under this scope, which the shim answered with the
+    /// context action at the cursor.
+    pub(crate) fn context_from_confirm(&self) -> bool {
+        SYNTHETIC_LOOKUP.with(|scope| {
+            scope
+                .borrow()
+                .as_ref()
+                .is_some_and(|lookup| lookup.context_from_confirm.get())
+        })
+    }
+
     fn install(lookup: SyntheticLookup) -> Self {
         let previous = SYNTHETIC_LOOKUP.with(|scope| scope.borrow_mut().replace(Box::new(lookup)));
         Self { previous }
@@ -68,6 +89,39 @@ pub(crate) fn synthetic_effector(
             .then(|| lookup.slot(action_id, device_index))
             .flatten()
     })
+}
+
+/// Watch an effector the engine's lookup returned for `action_id` on `device_index` of
+/// `action_map`. A clicked confirm read by the map through its steering, under a scope that
+/// continues the controller's ownership, turns the shim's secondary button into a release (see the
+/// module documentation).
+///
+/// # Safety
+///
+/// `effector` must be null or the engine's live effector for this lookup.
+pub(crate) unsafe fn observe_effector(
+    action_map: *mut InputActionMap,
+    action_id: i32,
+    device_index: i32,
+    effector: *const InputDeviceEffector,
+) {
+    // Every input read in the game passes through here; most return before the thread-local.
+    if effector.is_null() || action_id != Action::GUI_OK as i32 {
+        return;
+    }
+    SYNTHETIC_LOOKUP.with(|scope| {
+        let scope = scope.borrow();
+        let Some(lookup) = scope
+            .as_ref()
+            .filter(|lookup| lookup.action_map == action_map)
+        else {
+            return;
+        };
+        // SAFETY: the caller guarantees a live effector. The state is read as its raw integer so
+        // that a value outside the enum is not a Rust enum read.
+        let state = unsafe { ptr::addr_of!((*effector).m_State).cast::<i32>().read() };
+        lookup.observe(action_id, device_index, state);
+    });
 }
 
 /// The device selectors the shim answers for.
@@ -99,6 +153,11 @@ struct SyntheticLookup {
     action_map: *mut InputActionMap,
     devices: DeviceSelectors,
     slots: Box<[UnsafeCell<InputDeviceEffector>; SLOT_COUNT]>,
+    /// Whether a clicked confirm may become the context action: the delivery continues the
+    /// controller's ownership rather than cancelling it.
+    confirm_selects: bool,
+    /// Whether it did, in this scope.
+    context_from_confirm: Cell<bool>,
 }
 
 impl SyntheticLookup {
@@ -141,7 +200,30 @@ impl SyntheticLookup {
             action_map,
             devices,
             slots: Box::new(slots),
+            confirm_selects: !delivery.cancelled,
+            context_from_confirm: Cell::new(false),
         }
+    }
+
+    /// See [`observe_effector`]. Returns whether the secondary button became a release.
+    fn observe(&self, action_id: i32, device_index: i32, state: i32) -> bool {
+        if !self.confirm_selects
+            || action_id != Action::GUI_OK as i32
+            || device_index != self.devices.steering
+            || state != EffectorState::Clicked as i32
+        {
+            return false;
+        }
+        let slot = self.slots[secondary_slot()].get();
+        // SAFETY: the slot lives in this lookup; the map holds no reference into it, only the raw
+        // pointer an earlier lookup returned, and it runs on this thread.
+        let idle = unsafe { matches!((*slot).m_State, EffectorState::Idle) };
+        if idle {
+            // SAFETY: as above.
+            unsafe { (*slot).m_State = EffectorState::Released };
+            self.context_from_confirm.set(true);
+        }
+        idle
     }
 
     fn slot(&self, action_id: i32, device_index: i32) -> Option<*mut InputDeviceEffector> {
@@ -157,6 +239,13 @@ impl SyntheticLookup {
             })?;
         (device_index == selector).then(|| self.slots[index].get())
     }
+}
+
+fn secondary_slot() -> usize {
+    MOUSE_ACTIONS
+        .iter()
+        .position(|action| *action == Action::MOUSE2)
+        .expect("the secondary button is a mouse action")
 }
 
 fn slot_action(index: usize) -> Action {
@@ -211,6 +300,7 @@ mod tests {
     fn delivery(zoom: ZoomStep) -> MapDelivery {
         MapDelivery {
             uv: Vec2::new(0.25, 0.5),
+            held_at_press: true,
             primary: true,
             secondary: false,
             zoom,
@@ -286,6 +376,109 @@ mod tests {
             read(&lookup, Action::GUI_ZOOM_IN, DEVICES.steering),
             Some((0.0, EffectorState::Idle))
         );
+    }
+
+    const CLICKED: i32 = EffectorState::Clicked as i32;
+
+    #[test]
+    fn a_clicked_confirm_releases_the_secondary_button_once() {
+        let lookup = SyntheticLookup::new(ptr::dangling_mut(), DEVICES, delivery(ZoomStep::None));
+        assert_eq!(
+            read(&lookup, Action::MOUSE2, DEVICES.mouse),
+            Some((0.0, EffectorState::Idle))
+        );
+        assert!(lookup.observe(Action::GUI_OK as i32, DEVICES.steering, CLICKED));
+        assert!(lookup.context_from_confirm.get());
+        assert_eq!(
+            read(&lookup, Action::MOUSE2, DEVICES.mouse),
+            Some((0.0, EffectorState::Released))
+        );
+        assert!(!lookup.observe(Action::GUI_OK as i32, DEVICES.steering, CLICKED));
+        assert_eq!(
+            read(&lookup, Action::MOUSE1, DEVICES.mouse),
+            Some((1.0, EffectorState::Clicked)),
+            "the primary button is untouched"
+        );
+    }
+
+    #[test]
+    fn only_a_clicked_confirm_on_the_steering_device_is_observed() {
+        let lookup = SyntheticLookup::new(ptr::dangling_mut(), DEVICES, delivery(ZoomStep::None));
+        for state in [
+            EffectorState::Idle,
+            EffectorState::Pressed,
+            EffectorState::Released,
+            EffectorState::Frozen,
+        ] {
+            assert!(!lookup.observe(Action::GUI_OK as i32, DEVICES.steering, state as i32));
+        }
+        assert!(!lookup.observe(Action::GUI_OK as i32, DEVICES.mouse, CLICKED));
+        assert!(!lookup.observe(Action::GUI_CANCEL as i32, DEVICES.steering, CLICKED));
+        assert!(!lookup.observe(Action::GUI_OK as i32, DEVICES.steering, -1));
+        assert!(!lookup.context_from_confirm.get());
+    }
+
+    #[test]
+    fn a_cancelling_dispatch_never_turns_a_confirm_into_a_selection() {
+        let cancelled = MapDelivery {
+            cancelled: true,
+            ..delivery(ZoomStep::None)
+        };
+        let lookup = SyntheticLookup::new(ptr::dangling_mut(), DEVICES, cancelled);
+        assert!(!lookup.observe(Action::GUI_OK as i32, DEVICES.steering, CLICKED));
+        assert_eq!(
+            read(&lookup, Action::MOUSE2, DEVICES.mouse),
+            Some((0.0, EffectorState::Idle))
+        );
+    }
+
+    #[test]
+    fn observing_an_engine_effector_reaches_the_installed_scope() {
+        let action_map = ptr::dangling_mut();
+        let confirm = InputDeviceEffector {
+            m_Value: 1.0,
+            m_PrevValue: 0.0,
+            m_State: EffectorState::Clicked,
+            m_IsAnalogue: false,
+            m_IsDeltaBased: false,
+            m_IsUpdated: true,
+            m_ForceClick: false,
+            m_StateTime: 0.0,
+        };
+        let scope = SyntheticLookupScope::install(SyntheticLookup::new(
+            action_map,
+            DEVICES,
+            delivery(ZoomStep::None),
+        ));
+        // SAFETY: the effector is a live local.
+        unsafe {
+            observe_effector(
+                ptr::without_provenance_mut(0x1000),
+                Action::GUI_OK as i32,
+                DEVICES.steering,
+                &confirm,
+            );
+            observe_effector(
+                action_map,
+                Action::GUI_OK as i32,
+                DEVICES.steering,
+                ptr::null(),
+            );
+        }
+        assert!(
+            !scope.context_from_confirm(),
+            "another action map is ignored"
+        );
+        // SAFETY: as above.
+        unsafe {
+            observe_effector(
+                action_map,
+                Action::GUI_OK as i32,
+                DEVICES.steering,
+                &confirm,
+            );
+        }
+        assert!(scope.context_from_confirm());
     }
 
     #[test]

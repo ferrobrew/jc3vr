@@ -8,11 +8,17 @@
 //! slot untouched. The map's cursor comes from [`cursor_uv`] through the UI manager's coordinate
 //! hook.
 //!
-//! - [`controller`] is the pure owner, button-edge, and zoom-step state machine;
-//! - [`lookup`] is the scoped effector shim.
+//! The trigger is the map's primary button and selects where it was pressed (see
+//! [`controller::CLICK_SLOP`]), and the confirm the map reads becomes the mouse's context action at
+//! the cursor (see [`lookup`]), so both act at the controller's cursor.
+//!
+//! - [`controller`] is the pure owner, button-edge, press-point, and zoom-step state machine;
+//! - [`lookup`] is the scoped effector shim;
+//! - [`report`] is the debug readout.
 
 mod controller;
 mod lookup;
+mod report;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -31,12 +37,17 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+pub(crate) use crate::controllers::map::{
+    controller::{CLICK_SLOP, MapDelivery},
+    report::{MapReport, report, zoom_label},
+};
 use crate::{
     controllers::{
         frame::{self, MAX_FRAME_AGE},
         map::{
-            controller::{ControllerSample, MapController, MapDelivery, prepare_delivery},
-            lookup::{SyntheticLookupScope, synthetic_effector},
+            controller::{ControllerSample, MapController, prepare_delivery},
+            lookup::{SyntheticLookupScope, observe_effector, synthetic_effector},
+            report::{DispatchOutcome, DispatchReport, MapFields, record},
         },
     },
     hud::pointer::{ControllerPointer, RoutedPointer},
@@ -72,6 +83,7 @@ pub(crate) fn prepare_dispatch(
         delivery,
         next,
         cursor,
+        routed,
     });
     CONTROLLER_DRIVEN.store(false, Ordering::Relaxed);
 }
@@ -105,6 +117,8 @@ struct Prepared {
     /// The controller state after `delivery`, committed when the map consumes it.
     next: MapController,
     cursor: Option<Vec2>,
+    /// The route the delivery was prepared from, for the readout.
+    routed: Option<RoutedPointer>,
 }
 
 struct MapState {
@@ -140,12 +154,12 @@ fn controller_sample(pointer: ControllerPointer) -> ControllerSample {
     }
 }
 
-/// Commit this frame's prepared map state and return its delivery.
-fn take_delivery() -> Option<MapDelivery> {
+/// Commit this frame's prepared map state and return it.
+fn take_prepared() -> Option<Prepared> {
     let mut state = MAP_STATE.lock();
     let prepared = state.prepared?;
     state.controller = prepared.next;
-    prepared.delivery
+    Some(prepared)
 }
 
 #[detour(address = InputActionMap::GetActionEffector_ADDRESS)]
@@ -157,17 +171,23 @@ fn get_action_effector(
     if let Some(slot) = synthetic_effector(this, action_id, device_index) {
         return slot;
     }
-    GET_ACTION_EFFECTOR
+    let effector = GET_ACTION_EFFECTOR
         .get()
         .unwrap()
-        .call(this, action_id, device_index)
+        .call(this, action_id, device_index);
+    // SAFETY: the engine's lookup returned this effector for this call.
+    unsafe { observe_effector(this, action_id, device_index, effector) };
+    effector
 }
 
 #[detour(address = CommMapUI::OnManageInput_ADDRESS)]
 fn on_manage_input(this: *mut CommMapUI, steering: *mut Steering, dt: f32, check_for_freeze: bool) {
     // SAFETY: the engine passes its live map and steering for the duration of the call.
     let (map, steering_ref) = unsafe { (this.as_ref(), steering.as_ref()) };
-    let delivery = take_delivery()
+    let prepared = take_prepared();
+    let dragging_before = map.is_some_and(|map| map.m_MouseDragging);
+    let delivery = prepared
+        .and_then(|prepared| prepared.delivery)
         .zip(map)
         .map(|(delivery, map)| delivery.for_map(map.m_MouseDragging));
     let lookup = delivery
@@ -182,6 +202,48 @@ fn on_manage_input(this: *mut CommMapUI, steering: *mut Steering, dt: f32, check
         .get()
         .unwrap()
         .call(this, steering, dt, check_for_freeze);
+    let context_from_confirm = lookup
+        .as_ref()
+        .is_some_and(SyntheticLookupScope::context_from_confirm);
+    let outcome = match (prepared, delivery, &lookup, &mode) {
+        (None, ..) => DispatchOutcome::NotPrepared,
+        (Some(_), None, ..) => DispatchOutcome::NotRouted,
+        (Some(_), Some(_), None, _) => DispatchOutcome::NoMouseDevice,
+        (Some(_), Some(_), Some(_), None) => DispatchOutcome::NoUiManager,
+        (Some(_), Some(delivery), Some(_), Some(_)) if delivery.cancelled => {
+            DispatchOutcome::Cancelled
+        }
+        _ => DispatchOutcome::Driven,
+    };
+    drop(mode);
+    drop(lookup);
+    // SAFETY: as above; the map is still live after its own input handler returns.
+    let map = unsafe { this.as_ref() }.map(|map| MapFields {
+        dragging: map.m_MouseDragging,
+        selected: map.m_MouseCursorPositionUpdated,
+        context_menu: map.m_ActivateCtxMenu,
+        selection: Vec2::from_array(map.m_MouseCursorUiPosition.data),
+    });
+    record(
+        DispatchReport {
+            at: Instant::now(),
+            outcome,
+            route: prepared.and_then(|prepared| prepared.routed),
+            delivery,
+            cursor_stage: delivery.and_then(|delivery| stage_point(delivery.uv)),
+            context_from_confirm,
+            map,
+        },
+        dragging_before,
+    );
+}
+
+/// A panel UV in the UI movie's stage coordinates, the space the map's cursor and selection live in.
+fn stage_point(uv: Vec2) -> Option<Vec2> {
+    // SAFETY: reads two fields of the live UI manager singleton.
+    let manager = unsafe { UIManager::get()? };
+    let stage = Vec2::new(manager.m_CachedStageWidth, manager.m_CachedStageHeight);
+    (stage.x > 0.0 && stage.y > 0.0).then_some(uv * stage)
 }
 
 #[detour(address = CommMapUI::Update_ADDRESS)]

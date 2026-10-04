@@ -1,7 +1,7 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
-//! controller frame and of each controller subsystem (finger curls, weapon handling, scopes,
-//! vehicles and flight, the controls summary, posture, and roomscale included), the player's body
-//! dimensions, and every controller setting. Each subsystem's section is in its own file.
+//! controller frame and of each controller subsystem (the native map, finger curls, weapon
+//! handling, scopes, vehicles and flight, the controls summary, posture, and roomscale included),
+//! the player's body dimensions, and every controller setting. Each subsystem's section is in its own file.
 
 mod aim;
 mod aim_state;
@@ -10,6 +10,7 @@ mod diagnostics;
 mod fingers;
 mod frame;
 mod hands;
+mod map;
 mod mode;
 mod overlay;
 mod persistence;
@@ -33,11 +34,11 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        mode as controller_mode, overlay as controller_overlay,
+        map as controller_map, mode as controller_mode, overlay as controller_overlay,
         persistence as controller_persistence, roomscale as controller_roomscale, scheme,
         summary as controller_summary,
     },
-    hud::summary_panel,
+    hud::{pointer, summary_panel},
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
@@ -52,6 +53,9 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let detection = controller_mode::current();
     let snapshot = controller_mode::last_snapshot();
     let report = bindings::last_report();
+    let map_report = controller_map::report();
+    let map_pointer = pointer::selected_controller();
+    let map_menu_trigger = pointer::owns_menu_trigger();
     let aim_state_status = controller_aim_state::status();
     let aim_status = controller_aim::status();
     let gun_counters = controller_aim::gun::counters();
@@ -100,6 +104,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .default_open(true)
             .show(ui, |ui| {
                 mode::mode_readout(ui, detection, snapshot.as_ref(), &report)
+            });
+
+        egui::CollapsingHeader::new("Native map")
+            .default_open(true)
+            .show(ui, |ui| {
+                map::map_readout(ui, &map_report, map_pointer, map_menu_trigger)
             });
 
         egui::CollapsingHeader::new("Aim state and mental state")
