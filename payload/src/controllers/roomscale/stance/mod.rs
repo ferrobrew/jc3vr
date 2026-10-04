@@ -1,5 +1,9 @@
 //! The standing stance: keeping the character's stance square with a player who stands normally.
 //!
+//! On foot under the controllers, the body first goes weapon-agnostic ([`unarmed`]): whatever is
+//! held, it plays what it plays unarmed. The two stages below predate it and act only while the
+//! character stands still.
+//!
 //! On foot the character's base idle plays a clip chosen by the animation modifiers the engine
 //! sets each tick ([`Character::SetCharacterModifiers`]): the unarmed relaxed idle with no weapon,
 //! the wielded weapon's held stance, or its aimed stance while the trigger is pulled (see
@@ -18,6 +22,7 @@
 
 pub mod config;
 pub mod logic;
+pub mod unarmed;
 
 use std::{
     sync::LazyLock,
@@ -116,8 +121,11 @@ pub struct Queued {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ModifierStatus {
     pub at: Option<Instant>,
-    /// Whether the weapon's modifiers were kept off the body's rule system.
+    /// Whether the relaxed idle kept the weapon's modifiers off the body's rule system.
     pub relaxed_applied: bool,
+    /// Whether the unarmed body kept the weapon's modifiers off every rule system but the
+    /// upper-body actions'.
+    pub unarmed_applied: bool,
     /// Which idle variant the modifiers select.
     pub variant: IdleVariant,
 }
@@ -296,10 +304,11 @@ pub fn relaxed_idle_applies() -> bool {
 }
 
 /// Record the modifier half's decision for the readout.
-pub fn record_modifiers(relaxed_applied: bool, variant: IdleVariant) {
+pub fn record_modifiers(relaxed_applied: bool, unarmed_applied: bool, variant: IdleVariant) {
     STATE.lock().status.modifiers = ModifierStatus {
         at: Some(Instant::now()),
         relaxed_applied,
+        unarmed_applied,
         variant,
     };
 }

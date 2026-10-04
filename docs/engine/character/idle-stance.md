@@ -1,6 +1,6 @@
 # The on-foot idle and how its stance is chosen
 
-Rico's on-foot idle is one rule state in the base graph, `S_IDLE`, whose clip is chosen by animation modifiers rather than by separate states. This doc covers which clip plays, what sets the modifiers that choose it, and how the aim state and the aim-focus states relate to it. Animation names come from Rico's shipped base graph and its animation set (`animations/jc_statemachine/main_characters/rico/rico_base.afsmb` and `rico_base.asb`, from `patch_win64/game1`). Related: [aim-state.md](../gameplay/aim-state.md) ("Relaxed and aimed holds") and [humanik.md](humanik.md).
+Rico's on-foot idle is one rule state in the base graph, `S_IDLE`, whose clip is chosen by animation modifiers rather than by separate states. This doc covers which clip plays, what sets the modifiers that choose it, and how the aim state and the aim-focus states relate to it. Animation names come from Rico's shipped base graph and its animation set (`animations/jc_statemachine/main_characters/rico/rico_base.afsmb` and `rico_base.asb`, from `patch_win64/game1`). Related: [aim-state.md](../gameplay/aim-state.md) ("Relaxed and aimed holds"), [animation-layers.md](animation-layers.md) (the layers the modifiers reach), and [humanik.md](humanik.md).
 
 ## The idle's clip variants
 

@@ -344,3 +344,32 @@ pub unsafe fn NLocoIKTask_Update(
         f(ctx, p1, p2)
     }
 }
+pub const NWeaponOffhandIKTask_Update_ADDRESS: usize = 0x1408516B0;
+/// The per-frame update of the weapon off-hand IK task (`NWeaponOffhandIKTask::Update`). Registered
+/// in [`Character::FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE), so
+/// it runs inside [`Character::UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) after the pass's entry and before
+/// the IK solve. Unless
+/// [`StateBitFlag::SB_DISABLE_WEAPON_OFFHAND_IK`](crate::state::StateBitFlag::SB_DISABLE_WEAPON_OFFHAND_IK)
+/// is set, the task's segment (when it names one) is not playing on the base layer, or the
+/// character's flags rule it out, it sets
+/// [`StateBitFlag::SB_WEAPON_OFFHAND_IK_LEFT`](crate::state::StateBitFlag::SB_WEAPON_OFFHAND_IK_LEFT) or
+/// [`StateBitFlag::SB_WEAPON_OFFHAND_IK_RIGHT`](crate::state::StateBitFlag::SB_WEAPON_OFFHAND_IK_RIGHT)
+/// by the task's hand property and writes the one-frame
+/// [`OFFHAND_IK_HAND_ID`](crate::blackboard::ObjectBlackboard::OFFHAND_IK_HAND_ID) and
+/// [`OFFHAND_IK_WEIGHT_ID`](crate::blackboard::ObjectBlackboard::OFFHAND_IK_WEIGHT_ID) keys, the weight
+/// ramping up from the state's entry when the task asks for it. Otherwise it clears both hand bits.
+/// [`Character::UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass) reads the keys.
+pub unsafe fn NWeaponOffhandIKTask_Update(
+    ctx: *mut crate::state::StateContext,
+    p1: *mut ::std::ffi::c_void,
+    p2: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::state::StateContext,
+            p1: *mut ::std::ffi::c_void,
+            p2: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(NWeaponOffhandIKTask_Update_ADDRESS);
+        f(ctx, p1, p2)
+    }
+}

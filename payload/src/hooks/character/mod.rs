@@ -1,13 +1,17 @@
-//! The character hooks: the pose-finalization pass (headset-driven body IK, the controller hands'
-//! wrist targets, the roomscale crouch's hips and feet, and the squared standing stance before the
-//! HumanIK solve, the head override, the hands' post-solve publish, and the finger curls after it),
-//! the act filter, and the animation modifiers.
+//! The character hooks: the pose-finalization pass (the weapon-agnostic body's decision, headset-driven
+//! body IK, the controller hands' wrist targets, the roomscale crouch's hips and feet, and the
+//! squared standing stance before the HumanIK solve, the secondary hand targets switched off before
+//! the `SECONDARY` pass, the head override, the hands' post-solve publish, and the finger curls
+//! after it), the act filter, the animation modifiers, and the animation-layer mask.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
 //! - [`acts`]: the local player's act filter;
-//! - [`modifiers`]: the standing stance's relaxed idle, which keeps the weapon's modifiers off the
-//!   body's rule system.
+//! - [`modifiers`]: the weapon-agnostic body and the standing stance's relaxed idle, which keep the
+//!   weapon's animation modifiers off the body's rule systems;
+//! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose;
+//! - the `SECONDARY` hand pass's entry, where the game's secondary hand targets are switched off
+//!   ([`hands::ik::before_secondary`]).
 
 use detours_macro::detour;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext};
@@ -23,6 +27,7 @@ pub(crate) mod acts;
 pub(crate) mod body_ik;
 pub(crate) mod config;
 pub(crate) mod head;
+pub(crate) mod layers;
 pub(crate) mod modifiers;
 
 pub(crate) use acts::resolve_act_id;
@@ -32,8 +37,10 @@ pub(crate) use config::BodyIkConfig;
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CHARACTER_UPDATE_PASS_FINALIZE_POSE_PARALLEL_BINDER)
+        .with_static_binder(&CHARACTER_UPDATE_SECONDARY_HAND_IK_PASS_BINDER)
         .with_static_binder(&CHARACTER_UPDATE_PROP_EFFECTS_BINDER)
         .with_hook_library(acts::hook_library())
+        .with_hook_library(layers::hook_library())
         .with_hook_library(modifiers::hook_library())
 }
 
@@ -60,10 +67,14 @@ fn character_update_pass_finalize_pose_parallel(
     //
     // The stance is planned before the body IK, which takes its chest turn into the torso
     // rotation, and queued after the crouch, so that its squared ankles replace the crouch's pins.
+    //
+    // The weapon-agnostic body's decision only publishes, for the next tick's modifier pass and
+    // pose job, so its place here is free.
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
     let plan = local.then(hands::ik::plan);
     // SAFETY: the engine passes the pass's update context, whose first field is the step.
     let dt = unsafe { context.cast::<GameObjectUpdateContext>().as_ref() }.map_or(0.0, |c| c.m_Dt);
+    unsafe { stance::unarmed::tick(character) };
     let stance_plan = unsafe { stance::plan(character, dt) };
     unsafe {
         controllers::roomscale::sim::complete_movement(character);
@@ -85,6 +96,24 @@ fn character_update_pass_finalize_pose_parallel(
         .get()
         .unwrap()
         .call(character, context);
+    hands::ik::end_finalize();
+}
+
+/// Pre-call seam for the `SECONDARY` hand pass: every writer of its blackboard keys has run by now,
+/// including the state tasks the pose-finalization pass runs after its entry, so the hands the
+/// controllers drive (and, under the weapon-agnostic body, the off-hand weapon grip) are switched
+/// off here rather than at the pass's entry.
+#[detour(address = jc3gi::character::character::Character::UpdateSecondaryHandIKPass_ADDRESS)]
+fn character_update_secondary_hand_ik_pass(
+    character: *mut Character,
+    dt: f32,
+    ik_has_run: *mut bool,
+) {
+    unsafe { hands::ik::before_secondary(character) };
+    CHARACTER_UPDATE_SECONDARY_HAND_IK_PASS
+        .get()
+        .unwrap()
+        .call(character, dt, ik_has_run);
 }
 
 #[detour(address = jc3gi::character::character::Character::UpdatePropEffects_ADDRESS)]

@@ -143,7 +143,8 @@ impl ObjectBlackboard {
     /// hand, zero the left.
     pub const OFFHAND_IK_HAND_ID: u32 = 2602427023;
     /// The id of the float weight of the weapon off-hand grip, written by the weapon off-hand IK
-    /// task (ramping up while its segment is active) and read by
+    /// task ([`NWeaponOffhandIKTask_Update`](crate::animation::arm_aim_ik::NWeaponOffhandIKTask_Update),
+    /// inside the pose-finalization pass, ramping up while its segment is active) and read by
     /// [`Character::UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass),
     /// which places the off-hand on the weapon's grip only while it is positive.
     pub const OFFHAND_IK_WEIGHT_ID: u32 = 4135506754;

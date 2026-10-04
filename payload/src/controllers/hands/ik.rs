@@ -17,7 +17,8 @@
 //!   measured arm ([`reach::pull_ramp`]), so reach propagates into the shoulder and chest only when
 //!   the arm alone cannot get there, and the body IK's pin on that shoulder yields by the same ramp
 //!   so it does not hold the girdle back;
-//! - the `SECONDARY` pass is switched off for the hand ([`crate::controllers::hands::secondary`]).
+//! - the `SECONDARY` pass is switched off for the hand ([`crate::controllers::hands::secondary`])
+//!   at that pass's own entry ([`before_secondary`]), after the state tasks that write its keys.
 //!
 //! The wielded weapon rides the hand's attach bone, a child of the wrist, and the engine refreshes
 //! the weapon's cached transform from that bone right after the `MAIN` solve, so the gun follows
@@ -29,7 +30,10 @@
 //! solve, each driven hand's shortfall (the target less the solved wrist) is published with the
 //! solved joints for the late update's detach.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -50,9 +54,10 @@ use crate::{
         hands::{
             self, ActiveHands, late, pose as hand_pose, reach,
             rig::{self, TickArm},
-            secondary::{self, SecondaryParts},
+            secondary::{self, SecondaryParts, Switched},
             tiers,
         },
+        roomscale::stance::unarmed,
     },
     headpose,
     hooks::{self, character::body_ik},
@@ -232,24 +237,65 @@ pub(crate) unsafe fn queue(character: *mut Character, plan: &HandPlan) {
 
     // The switch acts for every driven hand, whether or not its target could be queued: the
     // controllers own the arm either way, and the game's secondary targets would otherwise move a
-    // hand the player is holding elsewhere.
-    if let Some(active) = &plan.active
-        && active.config.hands.suppress_secondary_ik
-    {
-        for hand in Hand::BOTH.into_iter().filter(|&h| plan.drives(h)) {
-            let switched = unsafe {
-                secondary::switch_off(&mut character.m_Blackboard, hand, SecondaryParts::ALL)
-            };
-            status[hand.index()].secondary_wrist_off = switched.wrist_target;
-            status[hand.index()].secondary_grip_off = switched.weapon_grip;
-        }
-    }
+    // hand the player is holding elsewhere. It acts at the `SECONDARY` pass's entry, after the
+    // state tasks that write the keys inside this pass.
+    let suppress = plan
+        .active
+        .as_ref()
+        .is_some_and(|active| active.config.hands.suppress_secondary_ik);
+    SECONDARY_PLAN.set(Some(SecondaryPlan {
+        character: character as *mut Character as usize,
+        driven: if suppress { plan.driven() } else { [false; 2] },
+    }));
 
     let mut ticks = TICKS.lock();
     ticks.previous = ticks.current;
     ticks.current = targets;
     drop(ticks);
     *STATUS.lock() = status;
+}
+
+/// Switch the `SECONDARY` pass off for the hands [`queue`] recorded as driven this tick, and switch
+/// the off-hand weapon grip off for both hands while the weapon-agnostic body releases it
+/// ([`unarmed::release_grip`]). Called at the entry of the `SECONDARY` pass, after every writer of
+/// its keys, including the state tasks the pose-finalization pass runs after its entry.
+///
+/// # Safety
+///
+/// `character` must be null or a live character; called from the pre-call `SECONDARY` pass detour.
+pub(crate) unsafe fn before_secondary(character: *mut Character) {
+    let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
+        return;
+    };
+    let address = character as *mut Character as usize;
+    let driven = SECONDARY_PLAN
+        .take()
+        .filter(|plan| plan.character == address)
+        .map_or([false; 2], |plan| plan.driven);
+    let release_grip = unarmed::release_grip();
+    let mut switched = [Switched::default(); 2];
+    for hand in Hand::BOTH {
+        let parts = SecondaryParts {
+            wrist_target: driven[hand.index()],
+            weapon_grip: driven[hand.index()] || release_grip,
+        };
+        if parts.wrist_target || parts.weapon_grip {
+            switched[hand.index()] =
+                unsafe { secondary::switch_off(&mut character.m_Blackboard, hand, parts) };
+        }
+    }
+    let mut status = STATUS.lock();
+    for hand in Hand::BOTH {
+        let s = &mut status[hand.index()];
+        s.secondary_wrist_off = switched[hand.index()].wrist_target;
+        s.secondary_grip_off = switched[hand.index()].weapon_grip;
+    }
+}
+
+/// Forget this thread's `SECONDARY` plan at the end of a pose-finalization pass, so that a pass
+/// whose `SECONDARY` pass did not run (HumanIK switched off) leaves nothing for a later one.
+pub(crate) fn end_finalize() {
+    SECONDARY_PLAN.set(None);
 }
 
 /// Publish the post-solve pose the late update swings the forearm about, and the bone indices it
@@ -514,6 +560,19 @@ static TICKS: Mutex<TickRecords> = Mutex::new(TickRecords {
     current: [None; 2],
 });
 static LOCAL_CHARACTER: AtomicUsize = AtomicUsize::new(0);
+
+/// The hands whose `SECONDARY` targets [`before_secondary`] switches off, recorded by [`queue`] for
+/// the same pose-finalization pass, which runs on one thread.
+#[derive(Copy, Clone)]
+struct SecondaryPlan {
+    /// The character the plan was made for.
+    character: usize,
+    driven: [bool; 2],
+}
+
+thread_local! {
+    static SECONDARY_PLAN: Cell<Option<SecondaryPlan>> = const { Cell::new(None) };
+}
 static UNMAPPED_LOGGED: AtomicBool = AtomicBool::new(false);
 static KNUCKLES_LOGGED: AtomicBool = AtomicBool::new(false);
 static LIVE_TARGET_LOGGED: AtomicBool = AtomicBool::new(false);

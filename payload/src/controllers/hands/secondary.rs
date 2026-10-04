@@ -2,16 +2,17 @@
 //!
 //! [`Character::UpdateSecondaryHandIKPass`](jc3gi::character::character::Character::UpdateSecondaryHandIKPass)
 //! runs after the `MAIN` solve and can move the wrists again. It is driven entirely by one-frame
-//! blackboard keys that the animation tasks write during graph evaluation, before the
-//! pose-finalization pass reads them, so zeroing a key at the finalize entry switches that part off
-//! for the frame:
+//! blackboard keys that animation state tasks write, some of them (the weapon off-hand IK and the
+//! grapple fire-arm IK among them) inside the pose-finalization pass itself, after its entry. So
+//! the keys are zeroed at the `SECONDARY` pass's own entry, which switches that part off for the
+//! frame:
 //!
 //! - each wrist's weight key, which the grapple fire-arm IK and the parachute handle IK write;
 //! - the weapon off-hand grip's weight key, which targets only the hand its hand key names.
 //!
 //! Only keys that are present and positive are overwritten, so the switch never creates a key the
-//! game did not write this frame. The foregrip (a later task) reuses [`SecondaryParts`] to switch
-//! the wrist keys off while leaving the weapon grip on.
+//! game did not write this frame. The weapon-agnostic body switches the weapon grip off for a hand
+//! the controllers do not drive, leaving its wrist key alone.
 
 use jc3gi::blackboard::{ObjectBlackboard, PersistenceType};
 
@@ -26,14 +27,6 @@ pub struct SecondaryParts {
     pub weapon_grip: bool,
 }
 
-impl SecondaryParts {
-    /// Every part: the hand belongs to its controller alone.
-    pub const ALL: SecondaryParts = SecondaryParts {
-        wrist_target: true,
-        weapon_grip: true,
-    };
-}
-
 /// What the switch did for a hand this frame.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct Switched {
@@ -45,8 +38,8 @@ pub struct Switched {
 ///
 /// # Safety
 ///
-/// `blackboard` must be the character's live blackboard, called from the pose-finalization pass's
-/// entry, after the graph evaluation wrote this frame's keys.
+/// `blackboard` must be the character's live blackboard, called from the `SECONDARY` pass's entry,
+/// after this frame's keys were written.
 pub unsafe fn switch_off(
     blackboard: &mut ObjectBlackboard,
     hand: Hand,

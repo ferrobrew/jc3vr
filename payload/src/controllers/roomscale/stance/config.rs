@@ -2,16 +2,21 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Squaring the character's standing stance with the player's. Both parts act only under the
-/// controller scheme with the headset driving the view, on foot, while the character stands still in
-/// the base idle state and is not aiming, holding a grapple tether, or crouched.
+/// Keeping the character's body in step with the player's. The unarmed body acts on foot whenever
+/// the controllers drive the hands; the relaxed idle and the squaring act only while the character
+/// stands still in the base idle state and is not aiming, holding a grapple tether, or crouched. All
+/// of them act only under the controller scheme with the headset driving the view.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StanceConfig {
+    /// The weapon-agnostic body: which of the game's weapon animations reach the body on foot.
+    pub unarmed: UnarmedBodyConfig,
     /// Stage one: while standing still, keep the wielded weapon's animation modifiers off the body's
     /// rule system, so the idle plays its unarmed relaxed clip instead of the weapon's held stance.
     /// The upper-body graphs keep the modifiers. Off by default: the relaxed clip's arms and hand
-    /// pose take no account of the weapon, which the controller hands cover only while tracked.
+    /// pose take no account of the weapon, which the controller hands cover only while tracked. The
+    /// unarmed body ([`UnarmedBodyConfig`]) does the same on every on-foot tick, so this only
+    /// matters with the weapon animations set to [`WeaponAnimations::Native`].
     pub relaxed_idle: bool,
     /// Stage two: while standing still, square the stance with HumanIK: the ankles placed side by
     /// side across the body's forward, the pelvis and chest turned to face it, and the feet turned
@@ -47,6 +52,7 @@ pub struct StanceConfig {
 impl StanceConfig {
     pub const fn new() -> Self {
         Self {
+            unarmed: UnarmedBodyConfig::new(),
             relaxed_idle: false,
             square: false,
             settle_s: 0.4,
@@ -63,6 +69,69 @@ impl StanceConfig {
 }
 
 impl Default for StanceConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Which of the game's weapon animations reach the character's body on foot.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum WeaponAnimations {
+    /// The game's own: the weapon's stances, the upper-body actions, and the additive layers.
+    Native,
+    /// The body plays what it plays unarmed, whatever is held: the weapon's animation modifiers stay
+    /// off every layer but the upper-body actions, and the layers set in [`UnarmedBodyConfig`] are
+    /// left out of the pose while still running, so reloads, draws, and holsters keep their timing
+    /// and their animation events.
+    #[default]
+    Unarmed,
+}
+
+impl WeaponAnimations {
+    pub const ALL: [WeaponAnimations; 2] = [WeaponAnimations::Native, WeaponAnimations::Unarmed];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            WeaponAnimations::Native => "native",
+            WeaponAnimations::Unarmed => "unarmed",
+        }
+    }
+}
+
+/// The weapon-agnostic body (see [`crate::controllers::roomscale::stance::unarmed`]). Acts only
+/// under the controller scheme with the headset driving the view, in gameplay, while the hand tiers
+/// classify the character as on foot (including a reload, draw, or holster), so it defaults on.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UnarmedBodyConfig {
+    pub weapon_animations: WeaponAnimations,
+    /// Leave the upper-body action layer (draw, holster, switch, reload, pump, bolt, pickup, and
+    /// throws) out of the pose.
+    pub mask_actions: bool,
+    /// Leave the synchronised upper-body layer (the turns toward the aim target, and the locomotion
+    /// partials) out of the pose.
+    pub mask_synced_partial: bool,
+    /// Leave the synchronised additive layer (leans, landings, and the grapple, grenade, and launcher
+    /// fire additives) out of the pose.
+    pub mask_additive: bool,
+    /// Switch the game's off-hand weapon grip off for both hands, driven or not, so that only the
+    /// foregrip grab puts a hand on a two-handed weapon.
+    pub release_weapon_grip: bool,
+}
+
+impl UnarmedBodyConfig {
+    pub const fn new() -> Self {
+        Self {
+            weapon_animations: WeaponAnimations::Unarmed,
+            mask_actions: true,
+            mask_synced_partial: true,
+            mask_additive: true,
+            release_weapon_grip: true,
+        }
+    }
+}
+
+impl Default for UnarmedBodyConfig {
     fn default() -> Self {
         Self::new()
     }

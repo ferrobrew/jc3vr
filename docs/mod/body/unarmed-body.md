@@ -1,0 +1,43 @@
+# The weapon-agnostic body
+
+On foot under the controllers, Rico's body plays what it plays unarmed, whatever he holds. The controllers alone place the arms and the guns. The game's weapon body animation broke the match between the player's body and Rico's in the headset: dual SMGs put him in a foot-forward stance, so his legs and shoulders were not where the player's were and the arms ended in different places, and a two-handed gun kept his left hand on the weapon, away from the tracked hand. Rather than tuning each weapon's animation, every weapon's body animation is left out by default, to be layered back as it is tested.
+
+The engine side is in [animation-layers.md](../../engine/character/animation-layers.md) and [idle-stance.md](../../engine/character/idle-stance.md). The code is `controllers::roomscale::stance::unarmed`, with the detours in `hooks::character::modifiers`, `hooks::character::layers`, and the `SECONDARY` pass seam in `hooks::character` and `controllers::hands::ik`.
+
+## When it applies
+
+The settings are `controllers.roomscale.stance.unarmed`. With `weapon_animations` set to `Unarmed` (the default; `Native` restores the game's), the unarmed body applies under the controller scheme, with the headset driving the view, in gameplay, while the hand tiers classify the character as on foot or in a reload, draw, or holster. Vehicles, the parachute, the wingsuit, swimming, the grapple hang and reel, cutscenes, and ragdoll keep the game's animation.
+
+The decision is made once per tick at the entry of the local player's pose-finalization pass. The next tick's modifier pass and pose job use it, so it takes effect one tick late, and a decision older than a quarter of a second counts as not applying.
+
+## What it does
+
+Three routes carry the weapon into the body, and each is cut separately.
+
+- **The base layer's clip variants.** The detour on [`Character::SetCharacterModifiers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-SetCharacterModifiers) filters the [`Character::SetModifier`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-SetModifier) calls made inside it, which for the player are the weapon's held or aimed modifier and its equipped modifier. They reach only the upper-body action layer ([`AnimationLayer::GLOBAL_PARTIAL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationLayer##variant-GLOBAL_PARTIAL)). Every other layer plays its unarmed clips: the square idle, unarmed walk, run, starts, stops, and jumps, and unarmed arms. The action layer keeps the weapon's clips so that a reload or a draw lasts as long as it does natively.
+- **The partial and additive layers.** A detour on [`Blender::UpdatePose`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::Blender##func-UpdatePose) leaves the masked layers out of the pose by copying the reference pose and floats through, which is what the pose job does for a layer with no clips. The layers keep running, so the reload still refills from its clip's event, the holster still unequips, and the actions' fire blocks and timings hold. `mask_actions` covers the upper-body actions (draw, holster, switch, reload, pump, bolt, pickup, throws), `mask_synced_partial` the turns toward the aim target, and `mask_additive` the leans, landings, and fire additives. All three default on. The finalize pass publishes the masked layers' blenders, read from [`AnimationController::m_BodyParts`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##field-m_BodyParts), as atomics, because the pose job runs on worker threads. A publication expires after a quarter of a second, which bounds how long a freed blender's address could be honoured.
+- **The game's off-hand weapon grip.** With `release_weapon_grip` set (the default), the off-hand grip's weight key is zeroed for both hands at the entry of [`Character::UpdateSecondaryHandIKPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdateSecondaryHandIKPass), whether or not the controllers drive the hand. The mod's foregrip grab, which places the off-hand on the `MAIN` pass ([controllers.md](../input/controllers.md)), is then the only thing that puts a hand on a two-handed weapon.
+
+The off-hand fix also needed a timing fix that applies with or without the unarmed body. The weapon off-hand IK task runs inside the pose-finalization pass, after its entry ([animation-layers.md, "State tasks inside the pose-finalization pass"](../../engine/character/animation-layers.md#state-tasks-inside-the-pose-finalization-pass)), so the `suppress_secondary_ik` switch that zeroed the keys at the finalize entry was overwritten the same frame and the `SECONDARY` pass pulled the left hand onto the rifle after the controller target. The switch now acts at the `SECONDARY` pass's entry. The hands the controllers drive are recorded per thread when their targets are queued and consumed there, and the record is dropped at the end of the finalize pass.
+
+The aim families are already held off by the aim-state pin, and the aim and arm IK tasks by its IK skips ([controllers-and-roomscale.md, "The aim-state pin"](../input/controllers-and-roomscale.md#the-aim-state-pin)).
+
+## The standing stance's toggles
+
+The relaxed idle (`stance.relaxed_idle`) kept the weapon's modifiers off the base layer while standing still. The unarmed body does that on every on-foot tick and more, so the relaxed idle only matters with `weapon_animations` set to `Native`, and the settings grey it out otherwise. The squared stance (`stance.square`) stays independent: it squares whatever idle plays with HumanIK, which should have little left to do on the unarmed idle.
+
+## Debug UI
+
+The Controllers tab's "Standing stance" section starts with the unarmed body: whether it applies or why not, whether the weapon's modifiers were kept off the body on the last modifier pass, how many layers the character has, each maskable layer's state with a running count of skipped blends, and whether the game's weapon grip was switched off for each hand on the last `SECONDARY` pass. The settings are at the top of the stance settings, at the end of the "Posture and roomscale" settings.
+
+## Unverified
+
+None of this has been seen in the headset. It rests on these:
+
+- that Rico's base layer has an unarmed clip for every node a weapon variant replaces, and that the unarmed locomotion's root motion suits play with a weapon out;
+- that the body-part index is the layer index for Rico, as the engine's level-of-detail code assumes;
+- that leaving a layer out by copying its reference is indistinguishable from the pose job's own skip for a layer without clips;
+- that the reload, draw, holster, and switch still play out and end with the action layer masked (their events come from the clips, which still play), and that the inventory permission segments still block firing during them;
+- that the dual pistols stay in both hands: the base layer's clear-left-hand segments live in the weapon clips, so the unarmed clips have none;
+- that an untracked hand hanging in the unarmed pose with its gun reads acceptably;
+- heavy weapons: the minigun's idle state has no unarmed variant, and the heavy-weapon on-spot acts still queue.

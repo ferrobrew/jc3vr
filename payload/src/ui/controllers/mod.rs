@@ -67,6 +67,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
     let stance_status = controller_roomscale::stance::status();
+    let unarmed_status = controller_roomscale::stance::unarmed::status();
     let weapons_readout = weapons::WeaponsReadout::read();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
@@ -166,7 +167,9 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
 
         egui::CollapsingHeader::new("Standing stance")
             .default_open(true)
-            .show(ui, |ui| stance::stance_readout(ui, &stance_status));
+            .show(ui, |ui| {
+                stance::stance_readout(ui, &stance_status, &unarmed_status, &hand_ik)
+            });
 
         egui::CollapsingHeader::new("Live controller frame")
             .default_open(true)

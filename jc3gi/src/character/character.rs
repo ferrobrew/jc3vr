@@ -110,7 +110,25 @@ impl std::convert::AsMut<AnimatedModel> for AnimatedModel {
     }
 }
 #[repr(C, align(8))]
-pub struct AnimationController {}
+/// A character's animation controller (`NCharacterSystem::CAnimationControl`): the skeleton, the
+/// pose producer, and one body part per animation layer.
+pub struct AnimationController {
+    _field_0: [u8; 200],
+    /// The animation layers' body parts, in layer order: index *i* belongs to the layer named by
+    /// [`AnimationLayer`](crate::character::character::AnimationLayer) *i*, alongside the rule system at the same index of
+    /// [`AnimatedModel::m_RuleSystems`](crate::character::character::AnimatedModel::m_RuleSystems).
+    pub m_BodyParts: crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<
+            crate::animation::pose_producer::AnimatedBodyPart,
+        >,
+    >,
+}
+fn _AnimationController_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xE8], AnimationController>([0u8; 0xE8]);
+    }
+    unreachable!()
+}
 impl AnimationController {
     pub const GetBoneIndex_ADDRESS: usize = 0x140434E30;
     pub unsafe fn GetBoneIndex(&self, hash: u32) -> u32 {
@@ -239,6 +257,27 @@ impl std::convert::AsMut<AnimationController> for AnimationController {
     fn as_mut(&mut self) -> &mut AnimationController {
         self
     }
+}
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A character's animation layers (`CCharacter::s_LayerNames`). `CCharacter::InitAnimationModel`
+/// creates layer *i* from the *i*-th state-machine file of the character's construction info, named
+/// by this enum, and stops at the first missing file; the layer's rule system, body part, and
+/// blender all sit at index *i*. The engine's level of detail (`CCharacter::UpdateLOD`) switches
+/// the partial and additive layers' body parts off by these indices for distant characters.
+pub enum AnimationLayer {
+    MAINBODY = 0isize as _,
+    SYNCED_PARTIAL = 1isize as _,
+    GLOBAL_PARTIAL = 2isize as _,
+    SYNCED_ADDITIVE = 3isize as _,
+    GLOBAL_ADDITIVE = 4isize as _,
+    VOCALS = 5isize as _,
+}
+fn _AnimationLayer_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], AnimationLayer>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 pub struct Character {
@@ -483,11 +522,16 @@ impl Character {
     }
     pub const UpdatePassFinalizePose_Parallel_ADDRESS: usize = 0x1407F9B10;
     /// The character's SIM-phase pose-finalization pass. After the animation graph has finalized the
-    /// local pose, this drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve (the `MAIN` body pass, gated
-    /// on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets), followed by the `SECONDARY` hand pass), then computes the
+    /// local pose, this first runs the current states' tasks registered in the
+    /// [`FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE) through
+    /// [`UpdateStateTasksInRange`](crate::character::character::Character::UpdateStateTasksInRange) (the aim, look-at, grapple-fire
+    /// arm, and weapon off-hand IK tasks among them), then drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve
+    /// (the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets), followed by
+    /// [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass)), then computes the
     /// model-space pose (`CalculateModelSpacePose`), and finally calls
     /// [`UpdatePropEffects`](crate::character::character::Character::UpdatePropEffects). Effector targets queued before this runs
-    /// are solved into the pose the same frame.
+    /// are solved into the pose the same frame; blackboard keys those tasks write are written after
+    /// its entry.
     pub unsafe fn UpdatePassFinalizePose_Parallel(
         &mut self,
         context: *mut ::std::ffi::c_void,
@@ -498,6 +542,18 @@ impl Character {
                 context: *mut ::std::ffi::c_void,
             ) = ::std::mem::transmute(Self::UpdatePassFinalizePose_Parallel_ADDRESS);
             f(self as *mut Self as _, context)
+        }
+    }
+    pub const UpdateStateTasksInRange_ADDRESS: usize = 0x14075E710;
+    /// Runs the update of every task of each rule system's current state that is registered in the
+    /// state-task range `range_id` (`CAnimatedModel::StateTaskUpdate`), with `dt` as the step. Each
+    /// update pass of the character runs its own range.
+    pub unsafe fn UpdateStateTasksInRange(&mut self, dt: f32, range_id: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32, range_id: u32) = ::std::mem::transmute(
+                Self::UpdateStateTasksInRange_ADDRESS,
+            );
+            f(self as *mut Self as _, dt, range_id)
         }
     }
     pub const UpdatePropEffects_ADDRESS: usize = 0x1407C2380;
@@ -1350,6 +1406,11 @@ impl Character {
     }
 }
 impl Character {
+    /// The state-task range that
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) runs at its start,
+    /// before the IK solve: the range the aim IK, look-at IK, grapple-fire arm IK, and weapon
+    /// off-hand IK tasks are registered in.
+    pub const FINALIZE_POSE_STATE_TASK_RANGE: u32 = 2608925927;
     /// The offset of the character's `CGameObject` base subobject. RTTI tests (`IsType`) and the
     /// `CGameObject` virtuals go through the vtable at this offset rather than the primary one,
     /// and state tasks recover the character from that subobject by subtracting this offset.

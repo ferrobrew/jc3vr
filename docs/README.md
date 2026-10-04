@@ -29,6 +29,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [humanik.md](engine/character/humanik.md) — the HumanIK solver: layout, per-frame lifecycle, effector ids, and the external-target injection recipe.
 - [hands-locomotion-and-state.md](engine/character/hands-locomotion-and-state.md) — the weapon-to-hand attach chain, the per-arm aim IK, root motion and the collision proxy, scene queries, teleport signals, the vehicle seat attach, the proxy capsule and pause, and the per-tick character state signals.
 - [idle-stance.md](engine/character/idle-stance.md) — the on-foot idle's clip variants, the animation modifiers that choose them, and why every armed idle is a combat stance.
+- [animation-layers.md](engine/character/animation-layers.md) — the animation layers and their names, how the pose job stacks them, what keeps running when a layer's pose is left out (reload, holster, and draw events), and the state tasks inside the pose-finalization pass, the weapon off-hand grip among them.
 
 ### gameplay/
 
@@ -80,6 +81,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [grapple-comfort.md](mod/body/grapple-comfort.md) — the grapple body-frame filter (issue #36): the hold from fire to landing, the yaw handoff, the landing-snap absorber, and the telemetry capture.
 - [swim-yaw.md](mod/body/swim-yaw.md) — the right stick owns the swim heading: the `DoRotate` target override, the forward/back-only move direction, the accumulator seeding, and the turn-act suppression.
 - [parachute-yaw.md](mod/body/parachute-yaw.md) — parachute head-yaw suppression (issue #48): removing the camera-relative look-steer from the chute's steering so the head does not turn it.
+- [unarmed-body.md](mod/body/unarmed-body.md) — the weapon-agnostic body: on foot under the controllers, the weapon's modifiers kept off all but the action layer, the partial and additive layers left out of the pose while they run, and the game's off-hand weapon grip released.
 
 ### input/
 
