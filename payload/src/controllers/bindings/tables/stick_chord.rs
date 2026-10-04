@@ -7,6 +7,10 @@
 //! a chord and neither click reaches the tables until both are released; if it does not, the click
 //! passes through from then on, as pressed at the window's end. A click released within the window
 //! passes through as a tap.
+//!
+//! The left click's window also covers the debug panel chord's
+//! ([`crate::controllers::bindings::panel_chord`]), which claims the withheld click through
+//! [`StickChord::cancel`].
 
 use crate::controllers::{bindings::controls::ButtonControl, frame::Hand};
 
@@ -30,14 +34,20 @@ impl StickChord {
         Self { phase: Phase::Idle }
     }
 
-    /// Arbitrate one tick of the raw stick `clicks` (by [`Hand::index`]). `window_s` is how long a
-    /// lone click waits for the other, and `hold_s` how long the chord must be held to recenter,
-    /// both seconds. The recenter fires once per chord.
+    /// Forget the clicks' current presses: they belong to a chord the mod handles outside the
+    /// tables. Both clicks are withheld until both are released.
+    pub fn cancel(&mut self) {
+        self.phase = Phase::Release;
+    }
+
+    /// Arbitrate one tick of the raw stick `clicks` (by [`Hand::index`]). `windows_s` is how long a
+    /// lone click of each hand waits for the other, and `hold_s` how long the chord must be held to
+    /// recenter, all seconds. The recenter fires once per chord.
     pub fn step(
         &mut self,
         clicks: [ButtonControl; 2],
         dt: f32,
-        window_s: f32,
+        windows_s: [f32; 2],
         hold_s: f32,
     ) -> Arbitrated {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
@@ -52,11 +62,11 @@ impl StickChord {
                 }
             }
             Phase::Idle => match Hand::BOTH.into_iter().find(|h| held[h.index()]) {
-                Some(hand) => pending(&mut out, clicks, hand, 0.0, window_s),
+                Some(hand) => pending(&mut out, clicks, hand, 0.0, windows_s[hand.index()]),
                 None => Phase::Idle,
             },
             Phase::Pending { hand, held_s } => {
-                pending(&mut out, clicks, hand, held_s + dt, window_s)
+                pending(&mut out, clicks, hand, held_s + dt, windows_s[hand.index()])
             }
             Phase::Single => {
                 out.clicks = clicks;
@@ -163,7 +173,7 @@ mod tests {
     fn run(chord: &mut StickChord, ticks: &[[ButtonControl; 2]]) -> Vec<Arbitrated> {
         ticks
             .iter()
-            .map(|&clicks| chord.step(clicks, DT, WINDOW, HOLD))
+            .map(|&clicks| chord.step(clicks, DT, [WINDOW; 2], HOLD))
             .collect()
     }
 
@@ -228,6 +238,43 @@ mod tests {
         );
         assert!(out.iter().all(|o| !o.recenter));
         assert!(out.iter().all(|o| o.clicks.iter().all(|c| !c.held())));
+    }
+
+    #[test]
+    fn each_hand_waits_its_own_window() {
+        let mut chord = StickChord::new();
+        let out: Vec<_> = (0..4)
+            .map(|i| {
+                let click = if i == 0 { PRESS } else { HELD };
+                chord.step([click, click], DT, [WINDOW, WINDOW], HOLD)
+            })
+            .collect();
+        assert!(out.iter().all(|o| !o.clicks[0].held()));
+        let mut chord = StickChord::new();
+        let left: Vec<_> = (0..6)
+            .map(|i| {
+                let click = if i == 0 { PRESS } else { HELD };
+                chord
+                    .step([click, UP], DT, [WINDOW * 3.0, WINDOW], HOLD)
+                    .clicks[0]
+                    .held()
+            })
+            .collect();
+        assert_eq!(left, [false, false, false, false, false, true]);
+    }
+
+    #[test]
+    fn a_cancelled_click_is_withheld_until_released() {
+        let mut chord = StickChord::new();
+        let mut out = run(&mut chord, &[[PRESS, UP]]);
+        chord.cancel();
+        out.extend(run(
+            &mut chord,
+            &[[HELD, UP], [HELD, UP], [HELD, UP], [RELEASE, UP]],
+        ));
+        assert!(out.iter().all(|o| o.clicks.iter().all(|c| !c.held())));
+        let after = run(&mut chord, &[[PRESS, UP], [RELEASE, UP]]);
+        assert!(after[1].clicks[0].held(), "a later tap passes");
     }
 
     #[test]

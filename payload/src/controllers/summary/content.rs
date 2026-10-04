@@ -1,5 +1,5 @@
-//! The summary's content and layout model: the described rows labelled, grouped by hand, and
-//! sized to the panel. Pure.
+//! The summary's content and layout model: the described rows labelled, grouped by hand, and the
+//! sizes the panel lays them out at. Pure.
 
 use crate::controllers::{
     bindings::tables::describe::{Control, Effect, Row},
@@ -121,7 +121,7 @@ fn row_text(row: &Row, mode: Mode, hold: &str, resolve: &dyn Fn(Text) -> String)
     (!parts.is_empty()).then(|| parts.join(" / "))
 }
 
-/// The panel's type and row sizes for a summary, pixels.
+/// The panel's type and row sizes, pixels.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Metrics {
     /// The margin around the content.
@@ -135,19 +135,15 @@ pub struct Metrics {
     pub font_px: f32,
 }
 
-/// Size the rows so that `summary` fills a panel `height` pixels tall, within readable bounds:
-/// a short summary keeps large rows, and a long one shrinks them down to the smallest readable
-/// size, below which it would rather run off the bottom.
-pub fn metrics(summary: &Summary, height: f32) -> Metrics {
-    let margin = (height * 0.03).max(4.0);
-    let rows = summary.groups.iter().map(|g| g.lines.len()).sum::<usize>() as f32;
-    let groups = summary.groups.len() as f32;
-    // In row heights: the heading takes one and a half, each group header three quarters.
-    let units = 1.5 + groups * 0.75 + rows;
-    let available = (height - 2.0 * margin).max(0.0);
-    let row_px = (available / units.max(1.0)).clamp(MIN_ROW_PX, MAX_ROW_PX);
+/// The sizes for rows `row_px` tall, within readable bounds.
+pub fn metrics(row_px: f32) -> Metrics {
+    let row_px = if row_px.is_finite() {
+        row_px.clamp(MIN_ROW_PX, MAX_ROW_PX)
+    } else {
+        MIN_ROW_PX
+    };
     Metrics {
-        margin,
+        margin: row_px * 0.4,
         heading_px: row_px * 1.5,
         group_px: row_px * 0.75,
         row_px,
@@ -156,10 +152,21 @@ pub fn metrics(summary: &Summary, height: f32) -> Metrics {
     }
 }
 
+/// The row height that fits a summary measured `height` pixels tall at rows `row_px` tall into
+/// `max_height` pixels: `row_px` when it already fits, and otherwise shrunk in proportion, down to
+/// the smallest readable row, below which the summary would rather run off the bottom.
+pub fn fit_row_px(height: f32, row_px: f32, max_height: f32) -> f32 {
+    let row_px = metrics(row_px).row_px;
+    if !(height.is_finite() && max_height.is_finite()) || height <= max_height || height <= 0.0 {
+        return row_px;
+    }
+    (row_px * max_height / height).clamp(MIN_ROW_PX, row_px)
+}
+
 /// The smallest row the panel stays readable at, pixels.
-const MIN_ROW_PX: f32 = 24.0;
+pub const MIN_ROW_PX: f32 = 20.0;
 /// The largest row worth drawing, pixels.
-const MAX_ROW_PX: f32 = 56.0;
+pub const MAX_ROW_PX: f32 = 64.0;
 
 #[cfg(test)]
 mod tests {
@@ -290,28 +297,20 @@ mod tests {
     }
 
     #[test]
-    fn rows_shrink_to_fit_within_readable_bounds() {
-        let summary = |rows: usize| Summary {
-            heading: String::new(),
-            groups: vec![Group {
-                side: Side::Either,
-                lines: vec![
-                    Line {
-                        control: Control::System,
-                        prefix: None,
-                        text: String::new(),
-                    };
-                    rows
-                ],
-            }],
-        };
-        let few = metrics(&summary(2), 640.0);
-        let many = metrics(&summary(14), 640.0);
-        let too_many = metrics(&summary(100), 640.0);
-        assert_eq!(few.row_px, MAX_ROW_PX);
-        assert!(many.row_px < few.row_px && many.row_px > MIN_ROW_PX);
-        assert_eq!(too_many.row_px, MIN_ROW_PX);
-        let used = 2.0 * many.margin + many.heading_px + many.group_px + 14.0 * many.row_px;
-        assert!((used - 640.0).abs() < 1.0, "{used}");
+    fn metrics_scale_with_the_row_within_readable_bounds() {
+        let m = metrics(32.0);
+        assert_eq!((m.row_px, m.font_px, m.heading_px), (32.0, 16.0, 48.0));
+        assert_eq!(metrics(1.0).row_px, MIN_ROW_PX);
+        assert_eq!(metrics(1000.0).row_px, MAX_ROW_PX);
+        assert_eq!(metrics(f32::NAN).row_px, MIN_ROW_PX);
+    }
+
+    #[test]
+    fn rows_shrink_only_to_fit_the_tallest_panel() {
+        assert_eq!(fit_row_px(800.0, 32.0, 1280.0), 32.0);
+        assert_eq!(fit_row_px(2560.0, 32.0, 1280.0), 16.0f32.max(MIN_ROW_PX));
+        assert_eq!(fit_row_px(1600.0, 32.0, 1280.0), 32.0 * 0.8);
+        assert_eq!(fit_row_px(100_000.0, 32.0, 1280.0), MIN_ROW_PX);
+        assert_eq!(fit_row_px(f32::NAN, 32.0, 1280.0), 32.0);
     }
 }

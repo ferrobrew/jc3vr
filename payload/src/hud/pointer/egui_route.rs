@@ -14,11 +14,14 @@
 use glam::Vec2;
 use parking_lot::Mutex;
 
-use crate::hud::{
-    cursor,
-    pointer::{
-        egui_controller::{ControllerUpdate, reset_egui_controller, take_updates},
-        window_uv,
+use crate::{
+    config::Config,
+    hud::{
+        cursor,
+        pointer::{
+            egui_controller::{ControllerUpdate, reset_egui_controller, take_updates},
+            window_uv,
+        },
     },
 };
 
@@ -55,6 +58,24 @@ pub fn reset_egui_pointer() {
 /// off the panel.
 pub fn egui_cursor_uv() -> Option<(f32, f32)> {
     *CURSOR_UV.lock()
+}
+
+/// Set egui's click options for the panel: while the panel is shown, a press held up to
+/// [`EguiPanelConfig::click_duration_s`](crate::hud::config::EguiPanelConfig::click_duration_s)
+/// still clicks; otherwise egui's own default applies. Call from the egui frame on the game thread.
+pub fn apply_panel_input_options(ctx: &egui::Context, panel: bool) {
+    let default = egui::InputOptions::default().max_click_duration;
+    let duration = if panel {
+        let configured = Config::lock_query(|c| c.hud.egui_panel.click_duration_s);
+        if configured.is_finite() && configured > 0.0 {
+            f64::from(configured)
+        } else {
+            default
+        }
+    } else {
+        default
+    };
+    ctx.options_mut(|options| options.input_options.max_click_duration = duration);
 }
 
 /// How far, in panel UV, the controller's ray must move from where it rested while the desktop

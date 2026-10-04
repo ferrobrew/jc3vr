@@ -11,10 +11,11 @@ use crate::controllers::{
 
 const DT: f32 = 1.0 / 30.0;
 /// The default configuration, except that a lone stick click acts on the tick it is pressed rather
-/// than after the chord window, so the per-mode tests read it at once. The chord tests use
+/// than after the chord windows, so the per-mode tests read it at once. The chord tests use
 /// [`CHORD_CONFIG`].
 const CONFIG: BindingsConfig = BindingsConfig {
     stick_chord_window_s: 0.0,
+    panel_chord_window_s: 0.0,
     ..BindingsConfig::new()
 };
 /// The default configuration, with its stick click chord window.

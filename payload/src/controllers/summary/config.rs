@@ -24,8 +24,15 @@ pub struct SummaryConfig {
     pub show_on_trackpad_touch: bool,
     /// The panel's place on the wrist.
     pub placement: WristPlacement,
-    /// The panel texture's size, pixels. Its aspect sets the panel's height from its width.
-    pub resolution: (u32, u32),
+    /// The panel texture's width, pixels. The texture's height follows the summary's content, and
+    /// the panel's height in metres follows the texture's aspect.
+    pub width_px: u32,
+    /// A row's height on the panel texture before its text wraps, pixels, which sets the text's
+    /// size against the panel's width.
+    pub row_px: f32,
+    /// The tallest the panel texture grows, pixels. A summary taller than this at `row_px` has its
+    /// rows shrunk to fit, down to the smallest readable row.
+    pub max_height_px: u32,
     /// The fade in and out, seconds.
     pub fade_s: f32,
 }
@@ -40,7 +47,9 @@ impl SummaryConfig {
             show_on_mode_change_s: 3.0,
             show_on_trackpad_touch: true,
             placement: WristPlacement::new(),
-            resolution: (480, 640),
+            width_px: 480,
+            row_px: 32.0,
+            max_height_px: 1280,
             fade_s: 0.15,
         }
     }

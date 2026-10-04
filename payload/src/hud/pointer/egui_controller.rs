@@ -18,8 +18,16 @@
 //! the game-UI pointer's ([`ControllerState`]): a press clicks only after a released sample and only
 //! when it begins with the ray on the panel, and a press held across the ray leaving the panel
 //! drags along the panel's edge.
+//!
+//! A held press stays a click however long it is held, until the hit moves past the click slop
+//! ([`ClickSlop`]): until then the pointer stays where the press began, so a hand's tremor never
+//! turns a press into a drag. Once the hit leaves the slop, the pointer jumps to it and follows it
+//! for the rest of the press, which drags a slider or a scroll area. egui also stops counting a
+//! press as a click once it has been held for its click duration, which the panel raises
+//! ([`crate::hud::pointer::apply_panel_input_options`]).
 
 use std::{
+    cmp::Ordering,
     collections::VecDeque,
     time::{Duration, Instant},
 };
@@ -70,7 +78,16 @@ impl ControllerUpdate {
 /// tick, which owns the controller edges.
 pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, dominant: Hand) {
     let now = Instant::now();
-    let enabled = Config::lock_query(|c| c.hud.egui_panel.controller_pointer);
+    let (enabled, slop) = Config::lock_query(|c| {
+        let panel = &c.hud.egui_panel;
+        (
+            panel.controller_pointer,
+            ClickSlop {
+                radius: panel.click_slop,
+                aspect: panel.aspect,
+            },
+        )
+    });
     let samples = input
         .filter(|(frame, _)| enabled && frame.is_fresh_at(now) && egui_panel::is_active())
         .map(|(frame, edges)| Hand::BOTH.map(|hand| sample(frame, edges, hand)));
@@ -88,7 +105,7 @@ pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, 
         now.saturating_duration_since(last).as_secs_f32()
     });
     state.last_tick = Some(now);
-    let (hand, update, laser) = state.step(&samples, dominant, dt, now);
+    let (hand, update, laser) = state.step(&samples, dominant, slop, dt, now);
     drop(state);
     push(update);
     draw_laser(hand, laser);
@@ -124,6 +141,32 @@ pub(crate) fn scroll_delta(stick: Vec2, dt: f32) -> Vec2 {
     }
     let dt = dt.min(MAX_SCROLL_DT);
     Vec2::new(-axis_rate(stick.x), axis_rate(stick.y)) * SCROLL_SPEED * dt
+}
+
+/// How far a held press's hit may wander from where the press began and still click.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct ClickSlop {
+    /// The radius, as a fraction of the panel's height.
+    pub(crate) radius: f32,
+    /// The panel's aspect ratio (width / height), which turns a UV distance into panel heights.
+    pub(crate) aspect: f32,
+}
+
+impl ClickSlop {
+    /// Whether `uv` lies outside the slop around `origin`.
+    fn exceeded(self, origin: (f32, f32), uv: (f32, f32)) -> bool {
+        let aspect = if self.aspect.is_finite() && self.aspect > 0.0 {
+            self.aspect
+        } else {
+            1.0
+        };
+        let offset = Vec2::new((uv.0 - origin.0) * aspect, uv.1 - origin.1);
+        // A slop that is not a positive number never holds the pointer.
+        !matches!(
+            offset.length().partial_cmp(&self.radius),
+            Some(Ordering::Less | Ordering::Equal)
+        )
+    }
 }
 
 /// What one hand offers the pointer on one tick.
@@ -245,9 +288,19 @@ struct EguiControllerState {
     hand: Option<Hand>,
     press: ControllerState,
     secondary: SecondaryButton,
+    /// Where the held primary press began, and whether its hit has left the slop since.
+    press_origin: Option<PressOrigin>,
     /// Each hand's trigger as the pointer saw it on the previous tick, in [`Hand::index`] order.
     triggers: [bool; 2],
     last_tick: Option<Instant>,
+}
+
+/// Where a held primary press began.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct PressOrigin {
+    uv: (f32, f32),
+    /// The hit has left the slop: the pointer follows it.
+    dragging: bool,
 }
 
 impl EguiControllerState {
@@ -256,6 +309,7 @@ impl EguiControllerState {
             hand: None,
             press: ControllerState::new(),
             secondary: SecondaryButton::after(false),
+            press_origin: None,
             triggers: [false; 2],
             last_tick: None,
         }
@@ -267,6 +321,7 @@ impl EguiControllerState {
         &mut self,
         samples: &[HandSample; 2],
         dominant: Hand,
+        slop: ClickSlop,
         dt: f32,
         now: Instant,
     ) -> (Hand, ControllerUpdate, Option<f32>) {
@@ -278,6 +333,7 @@ impl EguiControllerState {
         if self.hand != Some(hand) {
             self.press = ControllerState::after(self.triggers[hand.index()]);
             self.secondary = SecondaryButton::after(samples[hand.index()].secondary.level);
+            self.press_origin = None;
             self.hand = Some(hand);
         }
         self.triggers = downs;
@@ -291,7 +347,13 @@ impl EguiControllerState {
         let secondary = self
             .secondary
             .step(sample.secondary, sample.on_panel() && primary == 0);
-        let uv = pointer.map(|pointer| pointer.uv);
+        let uv = match pointer {
+            Some(pointer) => Some(self.hold_click(pointer.uv, primary != 0, slop)),
+            None => {
+                self.press_origin = None;
+                None
+            }
+        };
         let update = ControllerUpdate {
             uv,
             buttons: primary | (u32::from(secondary && uv.is_some()) << 1),
@@ -303,6 +365,26 @@ impl EguiControllerState {
         };
         let laser = sample.hit.filter(|_| uv.is_some()).map(|hit| hit.distance);
         (hand, update, laser)
+    }
+}
+
+impl EguiControllerState {
+    /// The pointer position for a hit at `uv` with the primary button `held`: where the press
+    /// began, until the hit leaves the slop around it, and the hit itself otherwise. The release
+    /// is still reported where the press began, so egui sees no motion between press and release.
+    fn hold_click(&mut self, uv: (f32, f32), held: bool, slop: ClickSlop) -> (f32, f32) {
+        if !held {
+            return match self.press_origin.take() {
+                Some(origin) if !origin.dragging => origin.uv,
+                _ => uv,
+            };
+        }
+        let origin = self.press_origin.get_or_insert(PressOrigin {
+            uv,
+            dragging: false,
+        });
+        origin.dragging |= slop.exceeded(origin.uv, uv);
+        if origin.dragging { uv } else { origin.uv }
     }
 }
 
@@ -361,6 +443,11 @@ mod tests {
         distance: 2.0,
     });
 
+    const SLOP: ClickSlop = ClickSlop {
+        radius: 0.03,
+        aspect: 4.0 / 3.0,
+    };
+
     const OTHER_INSIDE: Option<PanelHit> = Some(PanelHit {
         uv: (0.8, 0.1),
         inside: true,
@@ -388,7 +475,7 @@ mod tests {
         left: HandSample,
         right: HandSample,
     ) -> (Hand, ControllerUpdate) {
-        let (hand, update, _) = state.step(&[left, right], Hand::Right, 0.0, Instant::now());
+        let (hand, update, _) = state.step(&[left, right], Hand::Right, SLOP, 0.0, Instant::now());
         (hand, update)
     }
 
@@ -445,6 +532,67 @@ mod tests {
         assert_eq!((h, u.buttons), (Hand::Right, 1));
     }
 
+    fn at(u: f32, v: f32, trigger: bool) -> HandSample {
+        hand(
+            Some(PanelHit {
+                uv: (u, v),
+                inside: true,
+                distance: 2.0,
+            }),
+            trigger,
+        )
+    }
+
+    #[test]
+    fn a_held_press_stays_at_its_origin_within_the_slop() {
+        let mut state = EguiControllerState::new();
+        step(&mut state, hand(None, false), at(0.5, 0.5, false));
+        let (_, u) = step(&mut state, hand(None, false), at(0.5, 0.5, true));
+        assert_eq!((u.uv, u.buttons), (Some((0.5, 0.5)), 1));
+        // A tremor within the slop: the pointer stays put, however long the press is held.
+        for (du, dv) in [(0.01, 0.0), (-0.015, 0.02), (0.02, -0.01), (0.0, 0.025)] {
+            let (_, u) = step(&mut state, hand(None, false), at(0.5 + du, 0.5 + dv, true));
+            assert_eq!((u.uv, u.buttons), (Some((0.5, 0.5)), 1));
+        }
+        // The release lands where the press began, so egui sees a click, and the pointer follows
+        // the hit again from the next tick.
+        let (_, u) = step(&mut state, hand(None, false), at(0.51, 0.5, false));
+        assert_eq!((u.uv, u.buttons), (Some((0.5, 0.5)), 0));
+        let (_, u) = step(&mut state, hand(None, false), at(0.51, 0.5, false));
+        assert_eq!(u.uv, Some((0.51, 0.5)));
+    }
+
+    #[test]
+    fn a_press_that_leaves_the_slop_drags_from_the_live_hit() {
+        let mut state = EguiControllerState::new();
+        step(&mut state, hand(None, false), at(0.5, 0.5, false));
+        step(&mut state, hand(None, false), at(0.5, 0.5, true));
+        let (_, u) = step(&mut state, hand(None, false), at(0.5, 0.52, true));
+        assert_eq!(u.uv, Some((0.5, 0.5)));
+        // Horizontal UV counts by the panel's aspect: 0.025 of the width is 0.033 heights.
+        let (_, u) = step(&mut state, hand(None, false), at(0.525, 0.5, true));
+        assert_eq!(u.uv, Some((0.525, 0.5)));
+        // Having left the slop, the pointer follows every small move, back toward the origin too.
+        let (_, u) = step(&mut state, hand(None, false), at(0.51, 0.5, true));
+        assert_eq!((u.uv, u.buttons), (Some((0.51, 0.5)), 1));
+        step(&mut state, hand(None, false), at(0.51, 0.5, false));
+        // The next press starts a fresh slop.
+        step(&mut state, hand(None, false), at(0.2, 0.2, true));
+        let (_, u) = step(&mut state, hand(None, false), at(0.21, 0.2, true));
+        assert_eq!(u.uv, Some((0.2, 0.2)));
+    }
+
+    #[test]
+    fn a_bad_slop_never_holds_the_pointer() {
+        for radius in [0.0, -1.0, f32::NAN] {
+            let slop = ClickSlop {
+                radius,
+                aspect: f32::NAN,
+            };
+            assert!(slop.exceeded((0.5, 0.5), (0.501, 0.5)), "{radius}");
+        }
+    }
+
     #[test]
     fn a_tap_between_ticks_clicks_once() {
         let mut state = EguiControllerState::new();
@@ -497,12 +645,14 @@ mod tests {
         let (_, _, _) = state.step(
             &[hand(None, false), stick(INSIDE)],
             Hand::Right,
+            SLOP,
             0.05,
             Instant::now(),
         );
         let (_, u, _) = state.step(
             &[hand(None, false), stick(INSIDE)],
             Hand::Right,
+            SLOP,
             0.05,
             Instant::now(),
         );
@@ -510,6 +660,7 @@ mod tests {
         let (_, u, _) = state.step(
             &[hand(None, false), stick(None)],
             Hand::Right,
+            SLOP,
             0.05,
             Instant::now(),
         );
@@ -522,6 +673,7 @@ mod tests {
         let (_, _, laser) = state.step(
             &[hand(None, false), hand(INSIDE, false)],
             Hand::Right,
+            SLOP,
             0.0,
             Instant::now(),
         );
@@ -529,6 +681,7 @@ mod tests {
         let (_, _, laser) = state.step(
             &[hand(None, false), hand(None, false)],
             Hand::Right,
+            SLOP,
             0.0,
             Instant::now(),
         );
@@ -557,23 +710,23 @@ mod tests {
         );
     }
 
-    /// The system button held and the right trigger pulled, held, and let go, with both rays on
-    /// the panel throughout, and then a plain pull of the right trigger.
-    fn chord_then_click(system_held: bool) -> Vec<u32> {
+    /// The left stick click held and the right B pressed, held, and let go, with both rays on the
+    /// panel throughout, and then a plain press of the right B.
+    fn chord_then_right_click(click_held: bool) -> Vec<u32> {
         let mut chord = PanelChord::new();
         let mut state = EguiControllerState::new();
         let mut previous = (false, false);
         let ticks = [
-            (system_held, false),
-            (system_held, true),
-            (system_held, true),
-            (system_held, false),
+            (click_held, false),
+            (click_held, true),
+            (click_held, true),
+            (click_held, false),
             (false, false),
             (false, true),
             (false, false),
         ];
         let mut buttons = Vec::new();
-        for (system, trigger) in ticks {
+        for (click, b) in ticks {
             let mut frame = ControllerFrame {
                 sequence: 0,
                 display_time_ns: 0,
@@ -583,30 +736,30 @@ mod tests {
                 hands: Default::default(),
             };
             let mut edges = Edges::default();
-            let right = panel_chord::TRIGGER_HAND.index();
-            frame.hands[0].buttons.set(Button::SystemClick, system);
-            frame.hands[right]
+            let (left, right) = (panel_chord::CLICK_HAND.index(), panel_chord::B_HAND.index());
+            frame.hands[left]
                 .buttons
-                .set(Button::TriggerPress, trigger);
-            edges.pressed[0].set(Button::SystemClick, system && !previous.0);
-            edges.released[0].set(Button::SystemClick, !system && previous.0);
-            edges.pressed[right].set(Button::TriggerPress, trigger && !previous.1);
-            edges.released[right].set(Button::TriggerPress, !trigger && previous.1);
-            previous = (system, trigger);
+                .set(Button::ThumbstickClick, click);
+            frame.hands[right].buttons.set(Button::BClick, b);
+            edges.pressed[left].set(Button::ThumbstickClick, click && !previous.0);
+            edges.released[left].set(Button::ThumbstickClick, !click && previous.0);
+            edges.pressed[right].set(Button::BClick, b && !previous.1);
+            edges.released[right].set(Button::BClick, !b && previous.1);
+            previous = (click, b);
 
-            let tick = chord.step(ChordInput::of(&frame, &edges));
+            let tick = chord.step(ChordInput::of(&frame, &edges), 0.05, 0.35);
             panel_chord::mask(&mut frame, &mut edges, tick);
             let samples = Hand::BOTH.map(|hand| read_hand(&frame, &edges, hand, INSIDE));
-            let (_, update, _) = state.step(&samples, Hand::Right, 0.0, Instant::now());
+            let (_, update, _) = state.step(&samples, Hand::Right, SLOP, 0.0, Instant::now());
             buttons.push(update.buttons);
         }
         buttons
     }
 
     #[test]
-    fn the_chord_trigger_never_clicks_on_the_panel() {
-        assert_eq!(chord_then_click(true), [0, 0, 0, 0, 0, 1, 0]);
-        // Without the system button the same pull clicks, so the mask is what withholds it.
-        assert_eq!(chord_then_click(false), [0, 1, 1, 0, 0, 1, 0]);
+    fn the_chord_b_never_right_clicks_on_the_panel() {
+        assert_eq!(chord_then_right_click(true), [0, 0, 0, 0, 0, 2, 0]);
+        // Without the stick click the same press right-clicks, so the mask is what withholds it.
+        assert_eq!(chord_then_right_click(false), [0, 2, 2, 0, 0, 2, 0]);
     }
 }

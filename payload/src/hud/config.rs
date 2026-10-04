@@ -206,6 +206,15 @@ pub struct EguiPanelConfig {
     /// trigger clicks, its upper face button right-clicks, and its thumbstick scrolls. The desktop
     /// mouse keeps working alongside; whichever was used last owns the pointer. On by default.
     pub controller_pointer: bool,
+    /// How far a controller's held trigger press may wander from where it began, as a fraction of
+    /// the panel's height, and still click: until the hit leaves this radius the pointer stays at
+    /// the press, so a hand's tremor never turns a press into a drag. Past it the press drags from
+    /// the live hit.
+    pub click_slop: f32,
+    /// How long a press may be held and still click, seconds (egui's
+    /// [`max_click_duration`](egui::InputOptions::max_click_duration)), while the panel is shown.
+    /// egui's own default is under a second, which a deliberate press in the headset outlasts.
+    pub click_duration_s: f32,
 }
 
 impl EguiPanelConfig {
@@ -219,6 +228,8 @@ impl EguiPanelConfig {
             follow: FollowConfig::new(),
             show_on_mirror: false,
             controller_pointer: true,
+            click_slop: 0.03,
+            click_duration_s: 2.0,
         }
     }
 }

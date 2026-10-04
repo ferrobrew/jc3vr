@@ -8,6 +8,11 @@
 //! world corners are cached; both eyes then draw the same corners through the shared quad pass
 //! ([`crate::hud::quad`]), as the other panels do. Nothing is drawn, and the panel's resources are
 //! not created, until it is first shown.
+//!
+//! The panel is as tall as its content: each time the summary changes, it is laid out once at the
+//! configured width and row height to measure it, and the panel's texture, and so its height on the
+//! wrist, takes the measured height. A summary too tall for the tallest panel has its rows shrunk
+//! to fit, down to the smallest readable row.
 
 use std::{
     sync::Arc,
@@ -16,7 +21,7 @@ use std::{
 
 use anyhow::Context as _;
 use egui::{
-    Color32, FontFamily, FontId, Pos2, Rect, TextureHandle, TextureOptions, Vec2,
+    Color32, FontFamily, FontId, Pos2, Rect, TextureHandle, TextureOptions, TexturesDelta, Vec2,
     text::{LayoutJob, TextFormat},
 };
 use glam::Vec4;
@@ -31,8 +36,8 @@ use crate::{
         hands::late,
         scheme,
         summary::{
-            self, SummaryConfig,
-            content::{Side, Summary, metrics},
+            self, Published, SummaryConfig,
+            content::{Metrics, Side, Summary, fit_row_px, metrics},
             glance::{Glance, TrackpadPin, fade, looking, wrist_pose},
             glyphs::{Glyph, glyphs},
         },
@@ -69,6 +74,18 @@ pub struct PanelStatus {
     pub glance: bool,
     pub pinned: bool,
     pub mode_recent: bool,
+    /// The panel texture's size, pixels, and its row height, as last laid out.
+    pub layout: Option<PanelLayout>,
+}
+
+/// The panel's size for the current summary.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PanelLayout {
+    /// The texture's size, pixels.
+    pub size: (u32, u32),
+    /// The rows' height, pixels: the configured row height, or less where the summary is shrunk to
+    /// fit the tallest panel.
+    pub row_px: f32,
 }
 
 pub fn status() -> PanelStatus {
@@ -101,6 +118,7 @@ impl Panel {
                 glance: false,
                 pinned: false,
                 mode_recent: false,
+                layout: None,
             },
             gpu: None,
         }
@@ -166,6 +184,7 @@ impl Panel {
             glance,
             pinned,
             mode_recent,
+            layout: self.status.layout,
         };
         let (Some(pose), Some(published)) = (pose, published) else {
             return;
@@ -174,7 +193,6 @@ impl Panel {
             return;
         }
 
-        let (width, height) = (config.resolution.0.max(64), config.resolution.1.max(64));
         if self.gpu.is_none() {
             match Gpu::new(device) {
                 Ok(gpu) => self.gpu = Some(gpu),
@@ -187,16 +205,15 @@ impl Panel {
         let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
-        if let Err(e) = gpu.paint(
-            context,
-            device,
-            &published.summary,
-            (width, height),
-            self.alpha,
-        ) {
-            tracing::error!("controls summary panel: {e:#}");
-            return;
-        }
+        let layout = match gpu.paint(context, device, &published, config, self.alpha) {
+            Ok(layout) => layout,
+            Err(e) => {
+                tracing::error!("controls summary panel: {e:#}");
+                return;
+            }
+        };
+        self.status.layout = Some(layout);
+        let (width, height) = layout.size;
         let panel_width = config.placement.width_m.max(0.01);
         let panel_height = panel_width * height as f32 / width as f32;
         self.corners = Some(
@@ -225,6 +242,19 @@ struct Gpu {
     target: Option<HudTarget>,
     glyphs: Vec<(Glyph, TextureHandle)>,
     started: Instant,
+    /// The layout of the summary last measured, and what it was measured for.
+    measured: Option<(LayoutKey, Metrics, PanelLayout)>,
+    /// The texture updates of a measuring pass, which the next painted frame uploads.
+    pending_textures: Option<TexturesDelta>,
+}
+
+/// What a measured layout depends on.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct LayoutKey {
+    revision: u64,
+    width: u32,
+    row_px_bits: u32,
+    max_height: u32,
 }
 
 impl Gpu {
@@ -254,27 +284,114 @@ impl Gpu {
             target: None,
             glyphs,
             started: Instant::now(),
+            measured: None,
+            pending_textures: None,
         })
     }
 
-    /// Paint `summary` at `alpha` into the panel target, (re)creating it at `size`.
+    /// Paint the published summary at `alpha` into the panel target, (re)creating it at the
+    /// summary's measured size, which is returned.
     fn paint(
         &mut self,
         context: &ID3D11DeviceContext,
         device: &Device,
-        summary: &Arc<Summary>,
-        size: (u32, u32),
+        published: &Published,
+        config: &SummaryConfig,
         alpha: f32,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<PanelLayout> {
+        let width = config.width_px.max(64);
+        let key = LayoutKey {
+            revision: published.revision,
+            width,
+            row_px_bits: config.row_px.to_bits(),
+            max_height: config.max_height_px.max(64),
+        };
+        let (metrics, layout) = match self.measured {
+            Some((measured, metrics, layout)) if measured == key => (metrics, layout),
+            _ => {
+                let (metrics, layout) = self.measure(&published.summary, key, config.row_px);
+                self.measured = Some((key, metrics, layout));
+                (metrics, layout)
+            }
+        };
+        let size = layout.size;
         if self.target.as_ref().map(HudTarget::size) != Some(size) {
             self.target = None;
             self.target =
                 Some(HudTarget::new(device, size.0, size.1).context("creating the panel target")?);
         }
         let Some(target) = self.target.as_ref() else {
-            return Ok(());
+            return Ok(layout);
         };
         let screen = Vec2::new(size.0 as f32, size.1 as f32);
+        let glyphs = &self.glyphs;
+        let summary = &published.summary;
+        let output = self.egui.run_ui(self.input(screen), |ui| {
+            let mut painter = ui.painter().clone();
+            painter.set_opacity(alpha);
+            paint_summary(&painter, summary, screen, glyphs, metrics);
+        });
+        let (mut output, _, _) = egui_directx11::split_output(output);
+        // The measuring pass's texture updates (the font atlas, laid out there first) must reach
+        // the renderer, or the text samples a texture that was never uploaded.
+        if let Some(mut pending) = self.pending_textures.take() {
+            pending.append(output.textures_delta);
+            output.textures_delta = pending;
+        }
+        // SAFETY: the target's view is live, and the caller holds the engine context mutex.
+        unsafe { context.ClearRenderTargetView(target.color_rtv(), &[0.0; 4]) };
+        self.renderer
+            .render(context, target.color_rtv(), &self.egui, output)
+            .context("rendering the summary")?;
+        Ok(layout)
+    }
+
+    /// Lay `summary` out without drawing it, at `key`'s width and `row_px` rows, shrinking the rows
+    /// once if the summary is taller than `key`'s tallest panel, and return the sizes and the
+    /// texture size that holds it.
+    fn measure(
+        &mut self,
+        summary: &Summary,
+        key: LayoutKey,
+        row_px: f32,
+    ) -> (Metrics, PanelLayout) {
+        let max_height = key.max_height as f32;
+        let screen = Vec2::new(key.width as f32, max_height);
+        let glyphs = &self.glyphs;
+        let mut measured = (metrics(row_px), 0.0);
+        let output = self.egui.run_ui(self.input(screen), |ui| {
+            let mut painter = ui.painter().clone();
+            painter.set_invisible();
+            let wanted = metrics(row_px);
+            let height = paint_summary(&painter, summary, screen, glyphs, wanted);
+            let fitted = fit_row_px(height, wanted.row_px, max_height);
+            measured = if fitted < wanted.row_px {
+                let shrunk = metrics(fitted);
+                (
+                    shrunk,
+                    paint_summary(&painter, summary, screen, glyphs, shrunk),
+                )
+            } else {
+                (wanted, height)
+            };
+        });
+        let (output, _, _) = egui_directx11::split_output(output);
+        match self.pending_textures.as_mut() {
+            Some(pending) => pending.append(output.textures_delta),
+            None => self.pending_textures = Some(output.textures_delta),
+        }
+        let (metrics, height) = measured;
+        let height = (height.ceil() as u32).clamp(64, key.max_height);
+        (
+            metrics,
+            PanelLayout {
+                size: (key.width, height),
+                row_px: metrics.row_px,
+            },
+        )
+    }
+
+    fn input(&self, screen: Vec2) -> egui::RawInput {
         let mut input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)),
             time: Some(self.started.elapsed().as_secs_f64()),
@@ -285,30 +402,20 @@ impl Gpu {
             .entry(egui::ViewportId::ROOT)
             .or_default()
             .native_pixels_per_point = Some(1.0);
-        let glyphs = &self.glyphs;
-        let output = self.egui.run_ui(input, |ui| {
-            let mut painter = ui.painter().clone();
-            painter.set_opacity(alpha);
-            paint_summary(&painter, summary, screen, glyphs);
-        });
-        let (output, _, _) = egui_directx11::split_output(output);
-        // SAFETY: the target's view is live, and the caller holds the engine context mutex.
-        unsafe { context.ClearRenderTargetView(target.color_rtv(), &[0.0; 4]) };
-        self.renderer
-            .render(context, target.color_rtv(), &self.egui, output)
-            .context("rendering the summary")
+        input
     }
 }
 
-/// Paint the summary over a `size` panel: the heading, then each group under its controller's
-/// glyph, each row's glyphs in a fixed column and its label beside them.
+/// Paint the summary over a `size` panel at the sizes `m`: the heading, then each group under its
+/// controller's glyph, each row's glyphs in a fixed column and its label beside them. Returns the
+/// height the content takes, margins included, which an invisible `painter` measures.
 fn paint_summary(
     painter: &egui::Painter,
     summary: &Summary,
     size: Vec2,
     textures: &[(Glyph, TextureHandle)],
-) {
-    let m = metrics(summary, size.y);
+    m: Metrics,
+) -> f32 {
     let panel = Rect::from_min_size(Pos2::ZERO, size);
     painter.rect_filled(panel, m.margin * 1.5, BACKGROUND);
     let texture = |glyph: Glyph| {
@@ -406,6 +513,7 @@ fn paint_summary(
             y += row;
         }
     }
+    y + m.margin
 }
 
 /// The fonts: Libre Franklin (SIL OFL, `payload/assets/fonts/libre-franklin`), a revival of the

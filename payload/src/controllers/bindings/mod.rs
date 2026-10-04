@@ -174,10 +174,12 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .filter(|_| config.bindings.enabled)
             .map(|frame| ChordInput::of(frame, &edges))
             .unwrap_or_default(),
+        dt,
+        config.bindings.panel_chord_window_s,
     );
     // The debug panel's pointer reads the controllers while the bindings stand down for the
-    // panel, so it is stepped here, with the chord's presses masked so that the trigger pull that
-    // opens or closes the panel never clicks on it.
+    // panel, so it is stepped here, with the chord's presses masked so that the B press that
+    // opens or closes the panel never right-clicks on it.
     let panel_input = frame.clone().map(|mut frame| {
         let mut edges = edges;
         panel_chord::mask(&mut frame, &mut edges, chord);
@@ -190,8 +192,8 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
 
     let mut state = STATE.lock();
     state.observe_poll(poll);
-    if chord.cancel_system {
-        state.bindings.cancel_system();
+    if chord.toggle {
+        state.bindings.cancel_stick_clicks();
     }
     let (Some(mut frame), None) = (frame, idle) else {
         clear_controller();
@@ -382,8 +384,8 @@ pub fn yank_status() -> (u64, Option<Yank>) {
 /// Step the debug panel chord ([`panel_chord`]) and act on it. Runs on every input tick that has
 /// the controllers enabled, whether or not the bindings inject, and takes no lock the bindings
 /// hold.
-fn panel_chord_tick(input: ChordInput) -> ChordTick {
-    let tick = PANEL_CHORD.lock().step(input);
+fn panel_chord_tick(input: ChordInput, dt: f32, window_s: f32) -> ChordTick {
+    let tick = PANEL_CHORD.lock().step(input, dt, window_s);
     if tick.toggle {
         let enabled = egui_panel::toggle();
         tracing::info!(
@@ -391,7 +393,7 @@ fn panel_chord_tick(input: ChordInput) -> ChordTick {
             enabled,
             "debug panel chord: toggled the debug panel"
         );
-        chord_pulse([panel_chord::TRIGGER_HAND]);
+        chord_pulse([panel_chord::B_HAND]);
     }
     tick
 }

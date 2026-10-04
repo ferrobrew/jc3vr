@@ -32,7 +32,9 @@ It shows while any of these holds, and fades in and out over `fade_s`:
 - the off-hand's trackpad is touched (Index controllers only) for a fifth of a second without a press; a press during the touch, which pages the menu tabs, cancels the pin until the thumb lifts, and the delay keeps a touch that is about to press from flashing the panel;
 - the mode changed within `show_on_mode_change_s`.
 
-The rows are grouped under a controller glyph: the off-hand, then the dominant hand, then the inputs of either hand. A face button, stick, or trackpad row that both hands share (in the menus, the confirm and back buttons, the stick's navigation and its grip-held tab steps, and the trackpad's tab paging on the Index, prefixed with the half pressed) is folded into one row of either hand, drawn with the hand-less glyph where there is one (the face buttons and the trackpad) and with both hands' glyphs otherwise. The two chords are rows of either hand too: both stick clicks, held, and the system button with the right trigger. Each row shows the input's glyph, the gesture's prefix in grey, and the label; the row height shrinks to fit a long summary, down to a readable minimum.
+The rows are grouped under a controller glyph: the off-hand, then the dominant hand, then the inputs of either hand. A face button, stick, or trackpad row that both hands share (in the menus, the confirm and back buttons, the stick's navigation and its grip-held tab steps, and the trackpad's tab paging on the Index, prefixed with the half pressed) is folded into one row of either hand, drawn with the hand-less glyph where there is one (the face buttons and the trackpad) and with both hands' glyphs otherwise. The two chords are rows of either hand too: both stick clicks, held, and the left stick click with the right B. Each row shows the input's glyph, the gesture's prefix in grey, and the label.
+
+The panel is as tall as its content. Its texture is `width_px` wide, and each time the summary changes it is laid out once, unseen, at rows `row_px` tall with every wrapped label measured, and the texture takes the measured height; the panel's height on the wrist follows from the texture's aspect and `placement.width_m`. A summary taller than `max_height_px` at that row height is laid out again with its rows shrunk in proportion to fit, down to a readable minimum, below which it runs off the bottom. The Controllers tab shows the texture's size and the row height in use.
 
 ## Assets
 
@@ -42,7 +44,7 @@ Japanese and Arabic are not drawn: egui has no CJK font here and does not shape 
 
 ## Settings
 
-`controllers.summary`: `enabled` and `hide_game_hints` (both on, both acting only under the controller scheme, and both on the pause menu's `VR: CONTROLS` page), `show_on_glance`, `glance`, `show_on_trackpad_touch`, `show_on_mode_change_s`, `placement`, `resolution`, and `fade_s`, all on the Controllers debug tab, which also shows the current heading, the row count, the language, and why the panel is up.
+`controllers.summary`: `enabled` and `hide_game_hints` (both on, both acting only under the controller scheme, and both on the pause menu's `VR: CONTROLS` page), `show_on_glance`, `glance`, `show_on_trackpad_touch`, `show_on_mode_change_s`, `placement`, `width_px`, `row_px`, `max_height_px`, and `fade_s`, all on the Controllers debug tab, which also shows the current heading, the row count, the language, and why the panel is up.
 
 ## Status
 
@@ -52,6 +54,6 @@ Built and unit-tested (the describer, the labels, the layout model, the glance, 
 2. Whether the prompts that keep their gamepad glyphs (use-item, skip cutscene, notifications, tutorials) need hiding too.
 3. Whether the localisation lookup is sound from the input tick, and whether a language change in the options menu reaches the summary (it should, through the language field).
 4. Whether any game string reads wrong for the controllers in its context (the gunner seat's key reads "Turret Position"; `TOGGLE_MAGNET_1` is labelled in every vehicle, as the game's generic vehicle section has it).
-5. Whether the glance angles and the wrist offset are comfortable on both the Index and Touch controllers, and whether the panel's text is sharp enough at its size and resolution.
+5. Whether the glance angles and the wrist offset are comfortable on both the Index and Touch controllers, and whether the panel's text is sharp enough at its size and resolution, and whether a long summary's panel is comfortable to read at its height on the wrist.
 6. Whether the panel's placement and text direction are right for a left-handed player (off-hand on the right).
 7. Whether the parachute heading's A row is right: the summary hides the open-parachute label under the parachute.

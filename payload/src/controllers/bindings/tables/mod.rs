@@ -26,7 +26,8 @@
 //!
 //! Holding both stick clicks together recenters the VR view, in every mode ([`stick_chord`]). A lone
 //! stick click waits a short window for the other before it reaches the tables, so that the chord
-//! never also fires either click's own binding.
+//! never also fires either click's own binding. The left click waits longer, for the debug panel
+//! chord too ([`crate::controllers::bindings::panel_chord`]).
 //!
 //! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
 //! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
@@ -120,10 +121,10 @@ impl Bindings {
         }
     }
 
-    /// Forget the system button's current press, so that neither its release nor its long press
-    /// acts: the press belongs to a chord the mod handles outside the tables.
-    pub fn cancel_system(&mut self) {
-        self.system = SystemButton { held: None };
+    /// Forget the stick clicks' current presses, withholding both until both are released: the
+    /// press belongs to the debug panel chord ([`crate::controllers::bindings::panel_chord`]).
+    pub fn cancel_stick_clicks(&mut self) {
+        self.stick_chord.cancel();
     }
 
     /// Evaluate the tables for `mode`.
@@ -137,7 +138,7 @@ impl Bindings {
         let arbitrated = self.stick_chord.step(
             controls.hands.map(|h| h.stick_click),
             dt,
-            config.stick_chord_window_s,
+            config.stick_click_windows(),
             config.recenter_hold_s,
         );
         let mut controls = *controls;

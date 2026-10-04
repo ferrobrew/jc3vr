@@ -147,7 +147,7 @@ pub fn glyphs(control: Control) -> &'static [Glyph] {
         Control::EitherMotion => &[Glyph::ControllerLeft, Glyph::ControllerRight],
         Control::BothStickClicks => &[Glyph::StickLeftPress, Glyph::StickRightPress],
         Control::System => &[Glyph::System],
-        Control::SystemAndRightTrigger => &[Glyph::System, Glyph::TriggerRight],
+        Control::LeftStickClickAndRightB => &[Glyph::StickLeftPress, Glyph::ButtonB],
     }
 }
 

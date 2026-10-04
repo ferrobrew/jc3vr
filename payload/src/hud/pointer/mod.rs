@@ -28,7 +28,9 @@ pub use crate::hud::pointer::{
         ControllerPointer, clear_controller, owns_menu_trigger, selected_controller,
         update_controller,
     },
-    egui_route::{egui_cursor_uv, egui_panel_events, reset_egui_pointer},
+    egui_route::{
+        apply_panel_input_options, egui_cursor_uv, egui_panel_events, reset_egui_pointer,
+    },
     panel::{RenderedPanel, publish_camera, publish_egui_panel, publish_panel, rendered_camera},
     route::{PendingRoute, RoutedPointer, peek_route, reset_route, route_game_pointer},
 };

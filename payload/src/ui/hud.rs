@@ -297,6 +297,19 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
                     "Point at the panel with the controllers",
                 )
                 .on_hover_text("The trigger clicks, B right-clicks, and the stick scrolls.");
+                ui.add(
+                    egui::Slider::new(&mut cfg.hud.egui_panel.click_slop, 0.0..=0.15)
+                        .text("Controller click slop (panel heights)"),
+                )
+                .on_hover_text(
+                    "How far a held trigger press may wander and still click. Past it, the press \
+                     drags from where the ray points.",
+                );
+                ui.add(
+                    egui::Slider::new(&mut cfg.hud.egui_panel.click_duration_s, 0.3..=5.0)
+                        .text("Panel click duration (s)"),
+                )
+                .on_hover_text("How long a press may be held on the panel and still click.");
             });
         }
 

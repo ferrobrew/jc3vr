@@ -293,6 +293,7 @@ fn update() {
             }
 
             egui_state.run(|ctx, renderer| {
+                crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
                 // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
                 // registrations for surfaces the render thread created without a renderer. The eye
                 // captures themselves are prepared above, off this path.

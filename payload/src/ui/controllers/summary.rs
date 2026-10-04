@@ -27,6 +27,13 @@ pub(super) fn summary_readout(ui: &mut Ui, status: &SummaryStatus, panel: &Panel
         yes_no(panel.pinned),
         yes_no(panel.mode_recent)
     ));
+    match panel.layout {
+        Some(layout) => ui.label(format!(
+            "Panel texture {} × {} px, rows {:.0} px",
+            layout.size.0, layout.size.1, layout.row_px
+        )),
+        None => ui.label("Panel texture: not laid out yet"),
+    };
 }
 
 pub(super) fn summary_settings(ui: &mut Ui, s: &mut SummaryConfig) {
@@ -57,5 +64,15 @@ pub(super) fn summary_settings(ui: &mut Ui, s: &mut SummaryConfig) {
         ui.add(egui::Slider::new(&mut s.fade_s, 0.0..=1.0).text("Fade (s)"));
         vec3_drag(ui, "Wrist offset (m)", &mut s.placement.offset_m, 0.005);
         ui.add(egui::Slider::new(&mut s.placement.width_m, 0.05..=0.4).text("Panel width (m)"));
+        ui.add(egui::Slider::new(&mut s.width_px, 240..=1024).text("Panel texture width (px)"));
+        ui.add(egui::Slider::new(&mut s.row_px, 20.0..=64.0).text("Row height (px)"))
+            .on_hover_text(
+                "The text's size against the panel's width. The panel grows as tall as its rows \
+                 need.",
+            );
+        ui.add(
+            egui::Slider::new(&mut s.max_height_px, 320..=2560).text("Tallest panel texture (px)"),
+        )
+        .on_hover_text("A summary taller than this has its rows shrunk to fit.");
     });
 }

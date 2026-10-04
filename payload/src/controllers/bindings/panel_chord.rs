@@ -1,4 +1,4 @@
-//! The debug panel chord: pulling the right trigger while the system button is held shows or hides
+//! The debug panel chord: pressing the right B while the left stick click is held shows or hides
 //! the mod's debug panel, as the F8 key does ([`crate::hud::egui_panel::toggle`]).
 //!
 //! The panel captures egui's input, which disables the game's device poll, and the bindings stand
@@ -6,49 +6,54 @@
 //! every input tick, before the bindings decide whether to inject, and writes no game action: the
 //! panel can be closed the way it was opened.
 //!
-//! The chord's presses belong to it alone. The system button's press is consumed: its short press
-//! does not pause and its long press does not open the commlink, from the chord until the button is
-//! released. The trigger press is masked from the bindings, the native UI pointer, and the debug
-//! panel's own pointer until the trigger is released, so it neither fires a weapon, nor clicks a
-//! menu, nor clicks on the panel it opens or closes. While the system button is held, a right
-//! trigger press is always the chord's.
+//! The chord's presses belong to it alone. A lone left stick click is withheld from the tables for
+//! [`BindingsConfig::panel_chord_window_s`](crate::controllers::config::BindingsConfig::panel_chord_window_s)
+//! ([`BindingsConfig::stick_click_windows`](crate::controllers::config::BindingsConfig::stick_click_windows)),
+//! and the chord counts only a B pressed within that window, so the stick click never reaches the
+//! game before the chord claims it. Once the chord fires, the left stick click and the right B are
+//! masked from the bindings, the native UI pointer, and the debug panel's own pointer until each is
+//! released, so neither acts in the game nor right-clicks on the panel. The caller also tells the
+//! tables to forget the withheld stick click ([`crate::controllers::bindings::tables::Bindings::cancel_stick_clicks`]),
+//! which would otherwise pass through as a tap when the mask hides it.
 //!
-//! The system button is read from either hand, as the bindings read it, since runtimes report it on
-//! one hand or both.
+//! The chord stands aside for the recenter chord: once the right stick click is held too, the left
+//! stick click belongs to the recenter chord until it is released. A B pressed after the window is
+//! the B's own binding (a horn with nitrous, a tether retract with a reload), not the chord.
 
-use crate::controllers::frame::{Button, ControllerFrame, Edges, Hand};
+use crate::controllers::{
+    bindings::controls::ButtonControl,
+    frame::{Button, ControllerFrame, Edges, Hand},
+};
 
-/// The hand whose trigger completes the chord.
-pub const TRIGGER_HAND: Hand = Hand::Right;
+/// The hand whose stick click starts the chord.
+pub const CLICK_HAND: Hand = Hand::Left;
+
+/// The hand whose B completes the chord.
+pub const B_HAND: Hand = Hand::Right;
 
 /// One tick of the chord's inputs.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ChordInput {
-    /// Either hand's system button is down at the latest frame.
-    pub system_down: bool,
-    /// Either hand's system button was pressed since the last tick.
-    pub system_pressed: bool,
-    /// The chord trigger is down at the latest frame.
-    pub trigger_down: bool,
-    /// The chord trigger was pressed since the last tick.
-    pub trigger_pressed: bool,
+    /// The chord's stick click, on [`CLICK_HAND`].
+    pub click: ButtonControl,
+    /// The other hand's stick click, which makes the recenter chord instead.
+    pub other_click: ButtonControl,
+    /// The chord's B, on [`B_HAND`].
+    pub b: ButtonControl,
 }
 
 impl ChordInput {
     /// Read the chord's inputs from a frame and the edges since the last tick.
     pub fn of(frame: &ControllerFrame, edges: &Edges) -> Self {
+        let read = |hand: Hand, button: Button| ButtonControl {
+            down: frame.hand(hand).buttons.contains(button),
+            pressed: edges.pressed(hand, button),
+            released: edges.released(hand, button),
+        };
         Self {
-            system_down: Hand::BOTH
-                .into_iter()
-                .any(|hand| frame.hand(hand).buttons.contains(Button::SystemClick)),
-            system_pressed: Hand::BOTH
-                .into_iter()
-                .any(|hand| edges.pressed(hand, Button::SystemClick)),
-            trigger_down: frame
-                .hand(TRIGGER_HAND)
-                .buttons
-                .contains(Button::TriggerPress),
-            trigger_pressed: edges.pressed(TRIGGER_HAND, Button::TriggerPress),
+            click: read(CLICK_HAND, Button::ThumbstickClick),
+            other_click: read(CLICK_HAND.other(), Button::ThumbstickClick),
+            b: read(B_HAND, Button::BClick),
         }
     }
 }
@@ -56,53 +61,68 @@ impl ChordInput {
 /// What the chord does on one tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ChordTick {
-    /// Show or hide the debug panel.
+    /// Show or hide the debug panel. The tables must forget the stick click they withhold.
     pub toggle: bool,
-    /// The system button's press was consumed this tick: forget the press the bindings were timing.
-    pub cancel_system: bool,
-    /// Mask the system button from the bindings.
-    pub mask_system: bool,
-    /// Mask the chord trigger from the bindings, the native UI pointer, and the debug panel's
-    /// pointer.
-    pub mask_trigger: bool,
+    /// Mask the chord's stick click.
+    pub mask_click: bool,
+    /// Mask the chord's B.
+    pub mask_b: bool,
 }
 
-/// The chord's latches.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+/// The chord's state across ticks.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct PanelChord {
-    /// The system button's press is consumed until it is released.
-    consume_system: bool,
-    /// The trigger's press is masked until it is released.
-    mask_trigger: bool,
+    phase: Phase,
+    /// The stick click is masked until it is released.
+    mask_click: bool,
+    /// The B is masked until it is released.
+    mask_b: bool,
 }
 
 impl PanelChord {
     pub const fn new() -> Self {
         Self {
-            consume_system: false,
-            mask_trigger: false,
+            phase: Phase::Idle,
+            mask_click: false,
+            mask_b: false,
         }
     }
 
-    /// Advance the chord by one tick. A press that starts and ends between two ticks is masked for
-    /// that tick, so its tap never reaches the bindings either.
-    pub fn step(&mut self, input: ChordInput) -> ChordTick {
-        let system_held = input.system_down || input.system_pressed;
-        let toggle = !self.mask_trigger && system_held && input.trigger_pressed;
-        let cancel_system = toggle && !self.consume_system;
-        self.mask_trigger |= system_held && (input.trigger_down || input.trigger_pressed);
-        self.consume_system |= toggle;
+    /// Advance the chord by one tick of `dt` seconds. `window_s` is how long after the stick click
+    /// the B counts, seconds. A press that starts and ends between two ticks is masked for that
+    /// tick, so its tap never reaches the bindings either.
+    pub fn step(&mut self, input: ChordInput, dt: f32, window_s: f32) -> ChordTick {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        let mut phase = match self.phase {
+            _ if !input.click.held() => Phase::Idle,
+            Phase::Idle => Phase::Armed { held_s: 0.0 },
+            Phase::Armed { held_s } => Phase::Armed {
+                held_s: held_s + dt,
+            },
+            Phase::Spent => Phase::Spent,
+        };
+        if let Phase::Armed { held_s } = phase
+            && (input.other_click.held() || held_s >= window_s)
+        {
+            phase = Phase::Spent;
+        }
+        let toggle = matches!(phase, Phase::Armed { .. }) && input.b.pressed;
+        if toggle {
+            phase = Phase::Spent;
+            self.mask_click = true;
+            self.mask_b = true;
+        }
+        self.phase = phase;
         let tick = ChordTick {
             toggle,
-            cancel_system,
-            mask_system: self.consume_system,
-            mask_trigger: self.mask_trigger,
+            mask_click: self.mask_click,
+            mask_b: self.mask_b,
         };
-        if !input.trigger_down {
-            self.mask_trigger = false;
+        if !input.click.down {
+            self.mask_click = false;
         }
-        if !input.system_down {
-            self.consume_system = false;
+        if !input.b.down {
+            self.mask_b = false;
         }
         tick
     }
@@ -111,18 +131,28 @@ impl PanelChord {
 /// Mask what `tick` masks from `frame` and `edges`, so that neither the bindings, the native UI
 /// pointer, nor the debug panel's pointer sees it.
 pub fn mask(frame: &mut ControllerFrame, edges: &mut Edges, tick: ChordTick) {
-    if tick.mask_system {
-        for hand in Hand::BOTH {
-            clear(frame, edges, hand, Button::SystemClick);
-            frame.hands[hand.index()].inputs.system_click = false;
-        }
+    if tick.mask_click {
+        clear(frame, edges, CLICK_HAND, Button::ThumbstickClick);
+        frame.hands[CLICK_HAND.index()].inputs.thumbstick_click = false;
     }
-    if tick.mask_trigger {
-        clear(frame, edges, TRIGGER_HAND, Button::TriggerPress);
-        let inputs = &mut frame.hands[TRIGGER_HAND.index()].inputs;
-        inputs.trigger = 0.0;
-        inputs.trigger_click = false;
+    if tick.mask_b {
+        clear(frame, edges, B_HAND, Button::BClick);
+        frame.hands[B_HAND.index()].inputs.b_click = false;
     }
+}
+
+/// Where the chord stands on the current stick click.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+enum Phase {
+    /// The stick click is not held.
+    #[default]
+    Idle,
+    /// The stick click has been held `held_s` seconds, within the window: a B press now is the
+    /// chord.
+    Armed { held_s: f32 },
+    /// The stick click is held, but no longer the chord's: it fired, the window passed, or the
+    /// other stick click joined.
+    Spent,
 }
 
 fn clear(frame: &mut ControllerFrame, edges: &mut Edges, hand: Hand, button: Button) {
@@ -133,178 +163,4 @@ fn clear(frame: &mut ControllerFrame, edges: &mut Edges, hand: Hand, button: But
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Instant;
-
-    use jc3gi::input::input_action_map::Action;
-
-    use super::*;
-    use crate::controllers::{
-        bindings::{controls::Controls, tables::Bindings},
-        config::BindingsConfig,
-        frame::ActionSetKind,
-        mode::{Mode, OnFootVariant},
-    };
-
-    fn frame() -> ControllerFrame {
-        ControllerFrame {
-            sequence: 0,
-            display_time_ns: 0,
-            published_at: Instant::now(),
-            focused: true,
-            action_set: ActionSetKind::OnFoot,
-            hands: Default::default(),
-        }
-    }
-
-    fn input(system: bool, trigger: bool, trigger_pressed: bool) -> ChordInput {
-        ChordInput {
-            system_down: system,
-            system_pressed: false,
-            trigger_down: trigger,
-            trigger_pressed,
-        }
-    }
-
-    #[test]
-    fn the_chord_toggles_once_per_trigger_press() {
-        let mut chord = PanelChord::new();
-        assert_eq!(chord.step(input(true, false, false)), ChordTick::default());
-        let fired = chord.step(input(true, true, true));
-        assert_eq!(
-            fired,
-            ChordTick {
-                toggle: true,
-                cancel_system: true,
-                mask_system: true,
-                mask_trigger: true,
-            }
-        );
-        let held = chord.step(input(true, true, false));
-        assert!(!held.toggle && held.mask_system && held.mask_trigger);
-        // The release tick is masked too, so the bindings never see the trigger's release edge.
-        let released = chord.step(input(true, false, false));
-        assert!(!released.toggle && released.mask_system && released.mask_trigger);
-        let rest = chord.step(input(true, false, false));
-        assert!(rest.mask_system && !rest.mask_trigger);
-        // Pulled again with the system button still held: a second toggle, and the system press is
-        // already consumed.
-        let again = chord.step(input(true, true, true));
-        assert!(again.toggle && !again.cancel_system);
-    }
-
-    #[test]
-    fn the_system_press_stays_consumed_until_released() {
-        let mut chord = PanelChord::new();
-        chord.step(input(true, true, true));
-        chord.step(input(true, false, false));
-        let trigger_up = chord.step(input(true, false, false));
-        assert!(trigger_up.mask_system && !trigger_up.mask_trigger);
-        // The release tick is masked too, so the bindings never see a short press end.
-        let system_up = chord.step(input(false, false, false));
-        assert!(system_up.mask_system);
-        assert_eq!(chord.step(input(false, false, false)), ChordTick::default());
-    }
-
-    #[test]
-    fn the_trigger_alone_or_first_is_not_the_chord() {
-        let mut chord = PanelChord::new();
-        assert_eq!(chord.step(input(false, true, true)), ChordTick::default());
-        // The system button pressed while the trigger is held: no toggle, but the held trigger is
-        // masked from then on, since the system button is held.
-        let late = chord.step(input(true, true, false));
-        assert!(!late.toggle && late.mask_trigger && !late.mask_system);
-    }
-
-    #[test]
-    fn masking_clears_the_buttons_and_their_edges() {
-        let mut frame = frame();
-        let mut edges = Edges::default();
-        for hand in Hand::BOTH {
-            frame.hands[hand.index()]
-                .buttons
-                .set(Button::SystemClick, true);
-            edges.pressed[hand.index()].set(Button::SystemClick, true);
-        }
-        let right = TRIGGER_HAND.index();
-        frame.hands[right].buttons.set(Button::TriggerPress, true);
-        frame.hands[right].inputs.trigger = 1.0;
-        edges.pressed[right].set(Button::TriggerPress, true);
-        let left = TRIGGER_HAND.other().index();
-        frame.hands[left].buttons.set(Button::TriggerPress, true);
-        mask(
-            &mut frame,
-            &mut edges,
-            ChordTick {
-                mask_system: true,
-                mask_trigger: true,
-                ..Default::default()
-            },
-        );
-        for hand in Hand::BOTH {
-            assert!(!frame.hand(hand).buttons.contains(Button::SystemClick));
-            assert!(!edges.pressed(hand, Button::SystemClick));
-        }
-        assert!(!frame.hands[right].buttons.contains(Button::TriggerPress));
-        assert!(!edges.pressed(TRIGGER_HAND, Button::TriggerPress));
-        assert_eq!(frame.hands[right].inputs.trigger, 0.0);
-        // The other hand's trigger is not the chord's.
-        assert!(frame.hands[left].buttons.contains(Button::TriggerPress));
-    }
-
-    #[test]
-    fn the_masked_chord_neither_fires_nor_pauses_nor_opens_the_commlink() {
-        let config = BindingsConfig::new();
-        let mut chord = PanelChord::new();
-        let mut bindings = Bindings::new();
-        let mut toggles = 0;
-        let mut previous = (false, false);
-        // The system button pressed, the trigger pulled and held, the trigger let go, and the
-        // system button let go, each over a few ticks.
-        let ticks = [
-            (true, false),
-            (true, true),
-            (true, true),
-            (true, false),
-            (false, false),
-            (false, false),
-        ];
-        for (system, trigger) in ticks {
-            let mut frame = frame();
-            let mut edges = Edges::default();
-            let right = TRIGGER_HAND.index();
-            frame.hands[0].buttons.set(Button::SystemClick, system);
-            frame.hands[right]
-                .buttons
-                .set(Button::TriggerPress, trigger);
-            frame.hands[right].inputs.trigger = if trigger { 1.0 } else { 0.0 };
-            edges.pressed[0].set(Button::SystemClick, system && !previous.0);
-            edges.released[0].set(Button::SystemClick, !system && previous.0);
-            edges.pressed[right].set(Button::TriggerPress, trigger && !previous.1);
-            edges.released[right].set(Button::TriggerPress, !trigger && previous.1);
-            previous = (system, trigger);
-
-            let tick = chord.step(ChordInput::of(&frame, &edges));
-            toggles += usize::from(tick.toggle);
-            if tick.cancel_system {
-                bindings.cancel_system();
-            }
-            mask(&mut frame, &mut edges, tick);
-            let controls =
-                Controls::from_frame(&frame, &edges, &config, Hand::Right, 0.0, [None; 2]);
-            let step = bindings.step(
-                Mode::OnFoot(OnFootVariant::Ground),
-                &controls,
-                1.0 / 30.0,
-                &config,
-            );
-            for action in [Action::FIRE_RIGHT, Action::GUI_PAUSE, Action::GUI_PDA] {
-                assert!(
-                    step.desired.iter().all(|d| d.target.action != action),
-                    "{action:?}"
-                );
-            }
-        }
-        assert_eq!(toggles, 1);
-    }
-}
+mod tests;

@@ -289,7 +289,7 @@ fn the_chords_are_listed_in_every_mode() {
             && r.effect == Effect::Mod(ModAction::Recenter)));
         assert!(
             rows.iter()
-                .any(|r| r.control == Control::SystemAndRightTrigger
+                .any(|r| r.control == Control::LeftStickClickAndRightB
                     && r.effect == Effect::Mod(ModAction::DebugPanel))
         );
     }

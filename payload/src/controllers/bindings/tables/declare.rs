@@ -101,8 +101,8 @@ fn on_foot<S: Sink>(s: &mut S, ctx: &TableCtx) {
     }
 }
 
-/// The hand-weapon fire inputs: the dominant trigger, or with a pistol in each hand either trigger.
-/// The one fire action reaches the weapon, and the dual-wield split
+/// The hand-weapon fire inputs: the dominant trigger, and with a pistol in the off-hand its
+/// trigger too. The one fire action reaches the weapon, and the dual-wield split
 /// ([`crate::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
 fn fire_trigger(ctx: &TableCtx) -> &'static [Press] {
     const ONE: &[Press] = &[press(Dom, Trigger)];
@@ -171,8 +171,8 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
         }
     }
     // Out of the driver's seat the triggers drive nothing, so the dominant one fires the weapon in
-    // the hands or on the mount, aimed by the hands, and with a pistol in each hand either trigger
-    // fires.
+    // the hands or on the mount, aimed by the hands, and with a pistol in the off-hand its trigger
+    // fires too.
     if !seat.driver {
         s.hold(fire_trigger(ctx), &[FIRE_RIGHT, R2]);
     }
@@ -193,7 +193,7 @@ fn airborne<S: Sink>(s: &mut S, ctx: &TableCtx, variant: AirborneVariant) {
         // `RETRACT_GRAPPLE` is left off, since it also keeps a stalling wingsuit from closing.
         s.hold(&[press(Off, Trigger)], &[CANCEL, WINGSUIT_AIRBRAKE]);
     } else {
-        // As on foot, a pistol in each hand moves the tethers to the off-hand's stick click.
+        // As on foot, a pistol in the off-hand moves the tethers to the off-hand's stick click.
         s.hold(&[retract(ctx)], &[RETRACT_GRAPPLE, WINGSUIT_AIRBRAKE, L2]);
     }
     if wingsuit {

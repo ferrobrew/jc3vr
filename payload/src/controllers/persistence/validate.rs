@@ -46,6 +46,11 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         1.0,
     )?;
     positive("bindings.recenter_hold_s", c.bindings.recenter_hold_s, 60.0)?;
+    nonnegative(
+        "bindings.panel_chord_window_s",
+        c.bindings.panel_chord_window_s,
+        1.0,
+    )?;
     positive(
         "bindings.yank.min_distance_m",
         c.bindings.yank.min_distance_m,

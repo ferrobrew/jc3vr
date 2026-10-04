@@ -110,6 +110,14 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
                 .text("Recenter chord hold (s)"),
         )
         .on_hover_text("Hold both stick clicks this long to recenter the VR view.");
+        ui.add(
+            egui::Slider::new(&mut b.panel_chord_window_s, 0.0..=1.0)
+                .text("Debug panel chord window (s)"),
+        )
+        .on_hover_text(
+            "How soon after the left stick click the right B must be pressed to show or hide the \
+             debug panel. A lone left stick click waits this long before it acts.",
+        );
         let y = &mut b.yank;
         ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(
             "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",

@@ -56,8 +56,8 @@ pub enum Control {
     BothStickClicks,
     /// The system (menu) button, whichever hand reports it.
     System,
-    /// The right trigger pulled while the system button is held.
-    SystemAndRightTrigger,
+    /// The right B pressed while the left stick click is held.
+    LeftStickClickAndRightB,
 }
 
 impl Control {
@@ -80,7 +80,7 @@ impl Control {
             | Control::EitherMotion
             | Control::BothStickClicks
             | Control::System
-            | Control::SystemAndRightTrigger => None,
+            | Control::LeftStickClickAndRightB => None,
         }
     }
 
@@ -97,10 +97,12 @@ impl Control {
             Control::Stick(_, StickDir::Horizontal)
             | Control::EitherStick(StickDir::Horizontal) => 6,
             Control::Stick(_, StickDir::Down) | Control::EitherStick(StickDir::Down) => 7,
-            Control::StickClick(_) | Control::BothStickClicks => 8,
+            Control::StickClick(_)
+            | Control::BothStickClicks
+            | Control::LeftStickClickAndRightB => 8,
             Control::Trackpad(_) | Control::EitherTrackpad => 9,
             Control::Motion(_) | Control::EitherMotion => 10,
-            Control::System | Control::SystemAndRightTrigger => 11,
+            Control::System => 11,
         }
     }
 }
@@ -415,7 +417,7 @@ fn outside_rows(ctx: &DescribeCtx) -> Vec<Row> {
         modded(ModAction::Recenter),
     );
     add(
-        Control::SystemAndRightTrigger,
+        Control::LeftStickClickAndRightB,
         Gesture::Press,
         modded(ModAction::DebugPanel),
     );

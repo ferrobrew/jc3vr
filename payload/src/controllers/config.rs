@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};
 use crate::{
     controllers::{
-        bindings::yank::YankConfig,
+        bindings::{panel_chord, yank::YankConfig},
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
@@ -299,6 +299,10 @@ pub struct BindingsConfig {
     pub stick_chord_window_s: f32,
     /// How long both stick clicks must be held together to recenter the VR view, seconds.
     pub recenter_hold_s: f32,
+    /// How soon after the left stick click the right B must be pressed to show or hide the debug
+    /// panel, seconds ([`crate::controllers::bindings::panel_chord`]). A lone left stick click
+    /// waits this long, or the stick click chord window if that is longer, before it acts.
+    pub panel_chord_window_s: f32,
     /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
     /// line.
     pub yank: YankConfig,
@@ -317,8 +321,21 @@ impl BindingsConfig {
             menu_stick_push: 0.5,
             stick_chord_window_s: 0.1,
             recenter_hold_s: 1.0,
+            panel_chord_window_s: 0.35,
             yank: YankConfig::new(),
         }
+    }
+
+    /// How long a lone stick click waits before it acts, seconds, by [`Hand::index`]: the stick
+    /// click chord window, and on the left also the debug panel chord's window.
+    pub fn stick_click_windows(&self) -> [f32; 2] {
+        Hand::BOTH.map(|hand| {
+            if hand == panel_chord::CLICK_HAND {
+                self.stick_chord_window_s.max(self.panel_chord_window_s)
+            } else {
+                self.stick_chord_window_s
+            }
+        })
     }
 }
 
