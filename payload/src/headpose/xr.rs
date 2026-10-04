@@ -13,9 +13,10 @@
 //! - **orientation** = body-frame rotation × cockpit orientation, so the body's pitch and roll (a
 //!   banking wingsuit) carry the head with them.
 //! - **position** = the animated head-bone anchor + body rotation × (cockpit position × world
-//!   scale), so the HMD's room-scale translation rides the body frame. The neck/eye anatomical arm
-//!   is added downstream by the camera hook (`camera_position`), reusing the anchor machinery the
-//!   headpose already exposes rather than a parallel one.
+//!   scale), so the HMD's room-scale translation rides the body frame. The camera hook
+//!   (`camera_position`) adds the rest-pose head-to-eyes offset in the body frame downstream. It
+//!   does not swing that offset with the head orientation: the tracked translation already
+//!   contains the player's real neck pivot.
 //!
 //! The pose is published as a tick-spaced pair ([`crate::headpose::set_pose_pair`], via [`publish_pair`]): the
 //! sim-driven part (the body frame and the animated head-bone anchor) advances at the engine's sim

@@ -30,7 +30,9 @@ pub(crate) use config::CameraConfig;
 
 use crate::{
     fsr::apply_jitter_to_projection,
-    headpose::{anchor, is_active, query, query_prev},
+    headpose::{
+        HeadPose, Source, anchor, eye_arm, is_active, neck_delta, query, query_prev, source,
+    },
     hooks::in_gameplay,
 };
 
@@ -419,30 +421,87 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
     CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
 }
 
-/// The camera position for a headpose: a head-frame eye arm pivoted about the *neck* (the pose
-/// position shifted by the head-to-neck delta), plus the body-frame offset. Pivoting at the neck
-/// makes pitching the head swing the eyes forward over the chest — looking down clears the body
-/// instead of rotating in place at the skull base and staring into the neck.
+/// The camera position for a headpose: the eye point hung off the published head position through
+/// the [`EyeRig`], plus the body-frame offset. The arm's base is the *measured* neck-to-eye-midpoint
+/// arm from the animated eye bones with `use_eye_matrices` on, with `head_offset` a correction on top
+/// of it; with it off, `head_offset` is the whole arm. Both the arm and the body-frame offset use the
+/// character matrix matching the pose's side of the T0/T1 pair.
 ///
-/// With `use_eye_matrices` on, the arm's base is the *measured* neck-to-eye-midpoint arm from the
-/// animated eye bones, and `head_offset` is a correction on top of it; with it off, `head_offset`
-/// is the whole arm. The body-frame offset uses the character matrix matching the pose's side of
-/// the T0/T1 pair.
+/// How the arm turns with the head depends on the source (see [`NeckModel`]): the sim pivots it
+/// about the neck by the head orientation, while the VR source holds it at rest in the body frame
+/// because the HMD's tracked translation already carries the player's own neck pivot.
 fn camera_position(
-    pose: &crate::headpose::HeadPose,
+    pose: &HeadPose,
     character_matrix: glam::Mat4,
     camera_settings: &config::CameraConfig,
 ) -> glam::Vec3 {
     let (_, character_rotation, _) = character_matrix.to_scale_rotation_translation();
-    let neck_pivot = pose.position + crate::headpose::neck_delta();
-    let eye_arm = if camera_settings.use_eye_matrices {
-        crate::headpose::eye_arm()
+    let measured_arm = if camera_settings.use_eye_matrices {
+        eye_arm()
     } else {
         glam::Vec3::ZERO
     };
-    neck_pivot
-        + pose.orientation * (eye_arm + camera_settings.head_offset)
-        + character_rotation * camera_settings.body_offset
+    let rig = EyeRig {
+        neck_delta: neck_delta(),
+        arm: measured_arm + camera_settings.head_offset,
+        body_offset: camera_settings.body_offset,
+    };
+    eye_position(
+        pose,
+        character_rotation,
+        &rig,
+        NeckModel::for_source(source()),
+    )
+}
+
+/// The geometry the camera's eye point hangs from the published head position by.
+#[derive(Copy, Clone, Debug)]
+struct EyeRig {
+    /// The world-space vector from the head anchor to the animated neck bone, the arm's pivot.
+    neck_delta: glam::Vec3,
+    /// The neck-to-eyes arm in the body frame.
+    arm: glam::Vec3,
+    /// A further offset in the body frame, applied after the arm.
+    body_offset: glam::Vec3,
+}
+
+/// How the neck-to-eyes arm follows the head's orientation.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum NeckModel {
+    /// The arm swings about the neck by the head orientation, so pitching the head carries the
+    /// eyes forward over the chest. The sim source's published position is the head anchor alone
+    /// and has no neck kinematics of its own, so this supplies them.
+    Synthetic,
+    /// The arm stays at its rest pose in the body frame whatever the head orientation. The VR
+    /// source's published position already moves with the HMD's tracked translation, which
+    /// includes the player's real neck pivot; swinging the arm as well would apply the pivot twice
+    /// (looking down would drop the view into the chest).
+    Tracked,
+}
+
+impl NeckModel {
+    fn for_source(source: Source) -> Self {
+        match source {
+            Source::Sim => NeckModel::Synthetic,
+            Source::Vr => NeckModel::Tracked,
+        }
+    }
+}
+
+/// The eye point for `pose`: the head position, plus the neck delta, plus the arm rotated per
+/// `neck`, plus the body-frame offset. Under [`NeckModel::Tracked`] the head anchor to eye offset
+/// is a pure function of the body frame, so the eye point moves exactly as the pose position does.
+fn eye_position(
+    pose: &HeadPose,
+    character_rotation: glam::Quat,
+    rig: &EyeRig,
+    neck: NeckModel,
+) -> glam::Vec3 {
+    let arm_rotation = match neck {
+        NeckModel::Synthetic => pose.orientation,
+        NeckModel::Tracked => character_rotation,
+    };
+    pose.position + rig.neck_delta + arm_rotation * rig.arm + character_rotation * rig.body_offset
 }
 
 /// Write a full world transform (rotation + translation) into a camera transform slot.
@@ -462,9 +521,7 @@ fn write_camera_transform(target: &mut Matrix4, orientation: glam::Quat, positio
 /// `setup_render_camera`) and the floating panel's world-lock in `crate::hud`, so the render camera and
 /// the panel always agree on when it is active and hand off together.
 pub fn vr_loading_view_active() -> bool {
-    !in_gameplay()
-        && crate::headpose::source() == crate::headpose::Source::Vr
-        && LOADING_BASE.lock().is_some()
+    !in_gameplay() && source() == Source::Vr && LOADING_BASE.lock().is_some()
 }
 
 /// Head-track the *render* camera around the [`LOADING_BASE`] (the last gameplay viewpoint, upright)
@@ -851,5 +908,113 @@ mod tests {
         let (_, orientation, position) = composed.to_scale_rotation_translation();
         assert!((position - glam::Vec3::new(0.0, 0.0, -1.0)).length() < 1e-6);
         assert!(orientation.abs_diff_eq(glam::Quat::IDENTITY, 1e-6));
+    }
+
+    /// A rig shaped like a standing character: the neck a little below and behind the head anchor,
+    /// the eyes forward of and above the neck.
+    fn standing_rig() -> EyeRig {
+        EyeRig {
+            neck_delta: glam::Vec3::new(0.0, -0.08, 0.02),
+            arm: glam::Vec3::new(0.0, 0.12, -0.1),
+            body_offset: glam::Vec3::ZERO,
+        }
+    }
+
+    fn pose(position: glam::Vec3, orientation: glam::Quat) -> HeadPose {
+        HeadPose {
+            position,
+            orientation,
+        }
+    }
+
+    /// Under the VR source, looking down must not move the eye point: the tracked translation already
+    /// carries the player's neck pivot, so the orientation alone contributes nothing.
+    #[test]
+    fn tracked_pitch_does_not_move_the_eye() {
+        let body = glam::Quat::from_rotation_y(0.9);
+        let rig = standing_rig();
+        let position = glam::Vec3::new(5.0, 1.7, -2.0);
+        let level = eye_position(&pose(position, body), body, &rig, NeckModel::Tracked);
+        for pitch in [
+            -std::f32::consts::FRAC_PI_4,
+            -std::f32::consts::FRAC_PI_2,
+            0.6,
+        ] {
+            let pitched = eye_position(
+                &pose(position, body * glam::Quat::from_rotation_x(pitch)),
+                body,
+                &rig,
+                NeckModel::Tracked,
+            );
+            assert!(
+                pitched.distance(level) < 1e-6,
+                "a pitch of {pitch} rad moved the tracked eye by {:?}",
+                pitched - level
+            );
+        }
+    }
+
+    /// Under the VR source the eye point follows the tracked translation one to one: a pose that
+    /// dropped and moved forward (as a real head does when looking down) moves the eye by exactly
+    /// that much and no further.
+    #[test]
+    fn tracked_eye_follows_the_pose_translation_exactly() {
+        let body = glam::Quat::from_rotation_y(-0.4);
+        let rig = standing_rig();
+        let rest = glam::Vec3::new(1.0, 1.7, 3.0);
+        let tracked_delta = body * glam::Vec3::new(0.0, -0.06, -0.08);
+        let looking_down = body * glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_4);
+        let neutral_eye = eye_position(&pose(rest, body), body, &rig, NeckModel::Tracked);
+        let down_eye = eye_position(
+            &pose(rest + tracked_delta, looking_down),
+            body,
+            &rig,
+            NeckModel::Tracked,
+        );
+        assert!((down_eye - neutral_eye - tracked_delta).length() < 1e-6);
+    }
+
+    /// The tracked arm is the rest-pose anchor-to-eyes offset carried by the body frame, so it turns
+    /// with the character's facing.
+    #[test]
+    fn tracked_arm_rides_the_body_frame() {
+        let body = glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let rig = standing_rig();
+        let eye = eye_position(
+            &pose(glam::Vec3::ZERO, glam::Quat::IDENTITY),
+            body,
+            &rig,
+            NeckModel::Tracked,
+        );
+        assert!((eye - (rig.neck_delta + body * rig.arm)).length() < 1e-6);
+    }
+
+    /// The flatscreen sim keeps its synthetic neck: pitching the head down swings the eyes forward
+    /// and down about the neck, which its anchor-only position cannot otherwise express.
+    #[test]
+    fn synthetic_pitch_swings_the_eye_about_the_neck() {
+        let rig = standing_rig();
+        let position = glam::Vec3::new(0.0, 1.7, 0.0);
+        let level = eye_position(
+            &pose(position, glam::Quat::IDENTITY),
+            glam::Quat::IDENTITY,
+            &rig,
+            NeckModel::Synthetic,
+        );
+        let down = eye_position(
+            &pose(
+                position,
+                glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_4),
+            ),
+            glam::Quat::IDENTITY,
+            &rig,
+            NeckModel::Synthetic,
+        );
+        assert!(down.y < level.y, "the eye drops when looking down");
+        let neck = position + rig.neck_delta;
+        assert!(
+            (down.distance(neck) - level.distance(neck)).abs() < 1e-6,
+            "the eye stays on the arm's sphere about the neck"
+        );
     }
 }

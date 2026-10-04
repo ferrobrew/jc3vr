@@ -147,8 +147,9 @@ pub struct Anchors {
     pub head_prev: Vec3,
     /// The neck bone world position (the camera's pitch pivot).
     pub neck: Vec3,
-    /// The neck-to-eye-midpoint arm in the body frame: rotated by the published head orientation,
-    /// it places the eyes anatomically about the neck pivot.
+    /// The neck-to-eye-midpoint arm in the body frame. The camera hangs the eye point from the neck
+    /// by it: swung by the head orientation under the sim source, held at rest in the body frame
+    /// under the VR source (whose tracked translation already carries the neck pivot).
     pub eye_arm: Vec3,
 }
 
@@ -208,9 +209,9 @@ pub fn anchor_prev() -> Option<Vec3> {
     state().lock().anchor_prev
 }
 
-/// The world-space vector from the head bone anchor to the neck bone: the camera pivots the
-/// configured eye offset about the neck rather than the head bone, so pitching the head swings
-/// the eyes forward over the chest instead of rotating in place at the skull base. Zero until the
+/// The world-space vector from the head bone anchor to the neck bone: the camera hangs the eye arm
+/// from the neck rather than the head bone, so under the sim source pitching the head swings the
+/// eyes forward over the chest instead of rotating in place at the skull base. Zero until the
 /// character hook has published anchors. Body-local and effectively constant between ticks, so
 /// consumers may apply the current value to both sides of the pose pair.
 pub fn neck_delta() -> Vec3 {
