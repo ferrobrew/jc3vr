@@ -316,7 +316,7 @@ impl ModText {
             ModText::Grenade => "At the Pouch: Grab, Let Go to Throw",
             ModText::C4 => "At the Chest Pouch: Grab C4, Let Go to Throw",
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
-            ModText::ParachuteHandles => "At a Handle: Grab, Pull Down to Steer, Both to Brake",
+            ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
             ModText::ShowSummary => "Show Controls",
             ModText::Recenter => "Recenter View",
             ModText::DebugPanel => "Mod Debug Panel",

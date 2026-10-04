@@ -69,6 +69,33 @@ pub struct FitReadout {
     pub fallback_latched: bool,
     /// Whether the handlebars came from the steering fork.
     pub bars_from_vehicle: bool,
+    /// Where the driving position puts the wheel's hub, for comparing seats.
+    pub seat: SeatReadout,
+}
+
+/// Where the driving position puts the wheel's hub. The cockpit frame's origin is the seated
+/// character's eyes as the animation places them, so the hub's place in it is the seat's: it
+/// differs from vehicle to vehicle with the driver's animation and the wheel's part. The player's
+/// head, tracked about that origin, adds their own posture.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct SeatReadout {
+    /// The hub from the character's eyes, cockpit frame (+X right, +Y up, +Z back), metres.
+    pub hub_from_eyes: Vec3,
+    /// The hub from the player's tracked head, cockpit frame, metres.
+    pub hub_from_head: Vec3,
+    /// How far the character's eyes would move to put the hub where the configured wheel sits from
+    /// them, cockpit frame, metres: the seat's correction to a standard driving position.
+    pub correction: Vec3,
+}
+
+impl SeatReadout {
+    pub fn new(wheel: &WheelFrame, head: Vec3, standard: Vec3) -> Self {
+        Self {
+            hub_from_eyes: wheel.centre,
+            hub_from_head: wheel.centre - head,
+            correction: wheel.centre - standard,
+        }
+    }
 }
 
 /// The fallback wheel held in the vehicle's space, per vehicle.
@@ -77,6 +104,8 @@ pub struct FallbackLatch {
     vehicle: usize,
     since: Instant,
     local: Option<WheelFrame>,
+    /// Whether the driving position has been logged for this vehicle.
+    logged: bool,
 }
 
 /// Fit the wheel and the handlebars for `seat`: to the vehicle where the local player drives one,
@@ -115,6 +144,7 @@ pub fn fit(
             vehicle: address,
             since: Instant::now(),
             local: None,
+            logged: false,
         });
     }
     // SAFETY: as above.
@@ -192,6 +222,24 @@ unsafe fn fit_vehicle(
             xf.bars(world * p.rest_root, centre, half_width)
         });
 
+    let seat = SeatReadout::new(&wheel, xf.head_cockpit, config.wheel.centre_m);
+    if let Some(l) = latch.as_mut()
+        && !l.logged
+        && l.since.elapsed() >= SETTLE
+    {
+        l.logged = true;
+        tracing::info!(
+            target: "controllers",
+            vehicle_type_hash = format_args!("{:08x}", vehicle.m_VehicleTypeNameHash),
+            wheel_part = parts.wheel.as_ref().map_or("none", |p| p.name.as_str()),
+            source = source.label(),
+            hub_from_eyes = ?seat.hub_from_eyes,
+            hub_from_head = ?seat.hub_from_head,
+            correction = ?seat.correction,
+            "driving position"
+        );
+    }
+
     Fit {
         wheel,
         bars: fork_bars.unwrap_or(specs.bars),
@@ -206,6 +254,7 @@ unsafe fn fit_vehicle(
             part_wheel: fitted.map(|(_, w, _)| w),
             fallback_latched,
             bars_from_vehicle: fork_bars.is_some(),
+            seat,
         }),
     }
 }

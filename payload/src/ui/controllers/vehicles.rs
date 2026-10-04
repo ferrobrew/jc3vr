@@ -14,7 +14,7 @@ use crate::{
             config::{
                 ArmSteeringConfig, HandlebarsSpec, LeverAxis, LeverSpec, MountedConfig,
                 ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec, VehiclesConfig,
-                WheelSpec,
+                WheelSpec, WheelTracking,
             },
             driver_aim,
             fit::FitReadout,
@@ -162,11 +162,18 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     match &status.arms {
         Some(a) => {
             ui.label(format!(
-                "Arms: bank {:+.2} m · height {:+.2} m · spread {:.0}%",
+                "Arms: spread {:.0}% of the arm span (steers from {:.0}%) · bank {:+.2} m (left \
+                 above right) · height {:+.2} m above the shoulders at {:+.2} m",
+                a.pose.spread * 100.0,
+                a.needed_spread * 100.0,
                 a.pose.bank_m,
                 a.pose.height_m,
-                a.pose.spread * 100.0
+                a.shoulder_y,
             ));
+            ui.label(
+                "Spread both arms out to the sides to fly by them: lower one hand to bank \
+                 toward it, lower both to dive, raise both to climb. The stick still adds.",
+            );
             ui.label(format!(
                 "Arm steer {} · written ({:+.2}, {:+.2})",
                 a.arms.map_or("not spread".to_owned(), |v| format!(
@@ -253,6 +260,15 @@ fn fit_readout(ui: &mut Ui, fit: &FitReadout) {
             w.tilt.to_degrees()
         ));
     }
+    let seat = &fit.seat;
+    ui.label(format!(
+        "Driving position: hub from the character's eyes {} · from your head {} · {:.0} cm off the \
+         configured wheel's place {}",
+        vec3(seat.hub_from_eyes),
+        vec3(seat.hub_from_head),
+        seat.correction.length() * 100.0,
+        vec3(seat.correction),
+    ));
     ui.label(format!(
         "Handlebars from {}",
         if fit.bars_from_vehicle {
@@ -331,7 +347,19 @@ fn wheel(ui: &mut Ui, w: &mut WheelSpec) {
     vec3_drag(ui, "hub (m)", &mut w.centre_m, 0.005);
     ui.add(egui::Slider::new(&mut w.radius_m, 0.1..=0.3).text("radius (m)"));
     ui.add(egui::Slider::new(&mut w.tilt_deg, 0.0..=80.0).text("tilt (°)"));
-    ui.add(egui::Slider::new(&mut w.max_angle_deg, 30.0..=540.0).text("full steer (°)"));
+    ui.add(egui::Slider::new(&mut w.lock_deg, 45.0..=540.0).text("full lock, either way (°)"));
+    ui.add(
+        egui::Slider::new(&mut w.response, 0.5..=3.0)
+            .text("response (1 is linear, higher is gentler at centre)")
+            .fixed_decimals(2),
+    );
+    ui.add(egui::Slider::new(&mut w.deadzone_deg, 0.0..=15.0).text("deadzone (°)"));
+    ui.horizontal(|ui| {
+        ui.label("turned by");
+        for tracking in [WheelTracking::Twist, WheelTracking::Position] {
+            ui.radio_value(&mut w.tracking, tracking, tracking.label());
+        }
+    });
     ui.add(egui::Slider::new(&mut w.return_deg_per_s, 0.0..=1080.0).text("return (°/s)"));
 }
 
@@ -389,6 +417,10 @@ fn arm_settings(ui: &mut Ui, a: &mut ArmSteeringConfig) {
             .fixed_decimals(2),
     );
     ui.checkbox(&mut a.invert_pitch, "Raised hands dive");
+    ui.checkbox(
+        &mut a.show_guide,
+        "Ring the hands, lit while the arms steer, with a line between them",
+    );
 }
 
 fn handle_settings(ui: &mut Ui, h: &mut ParachuteHandlesConfig) {

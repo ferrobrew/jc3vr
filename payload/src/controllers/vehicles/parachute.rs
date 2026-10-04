@@ -2,9 +2,9 @@
 //!
 //! One handle hangs above and outside each shoulder ([`handle_centres`]), and only that side's hand
 //! takes it. The hands are not on the handles until the player takes them: like the other grab
-//! volumes, a grip press with the hand inside a handle's volume takes it, and the next grip press,
-//! or moving further than the release distance from it, lets go ([`step`]), as a physical vehicle
-//! control does ([`crate::controllers::vehicles::physical`]).
+//! volumes, a grip press with the hand inside a handle's volume takes it, and it is held only while
+//! the grip is: releasing the grip, or moving further than the release distance from it, lets go
+//! ([`step`]), as a physical vehicle control does ([`crate::controllers::vehicles::physical`]).
 //!
 //! A held handle is pulled by how far its hand has come down from where it took the handle, over a
 //! deadzone, reaching a full pull at the full-pull distance ([`pull`]). The two pulls steer
@@ -63,6 +63,8 @@ pub enum HandleEvent {
 pub struct StepInputs {
     /// Each hand's grip in the cockpit frame, `None` while untracked.
     pub grips: [Option<Vec3>; 2],
+    /// Whether each hand's grip is held this tick.
+    pub held: [bool; 2],
     /// Whether each hand's grip press latched its handle's volume this tick.
     pub grabs: [bool; 2],
 }
@@ -110,12 +112,14 @@ pub fn step(
             continue;
         };
         if inputs.grabs[i] {
-            if state.holds[i].is_some() {
-                release(state, hand, Release::GripPress, events);
-            } else {
+            // A grab while holding is a release and a fresh press between two ticks: the handle
+            // stays taken from where it was.
+            if state.holds[i].is_none() {
                 state.holds[i] = Some(HandleHold { rest: grip });
                 events.push(HandleEvent::Taken(hand));
             }
+        } else if !inputs.held[i] {
+            release(state, hand, Release::GripReleased, events);
         }
         if let Some(hold) = state.holds[i]
             && anchor_point(config, hold, grip).distance(grip) > config.release_distance_m
@@ -191,13 +195,24 @@ mod tests {
     const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
     const SHOULDERS: [Vec3; 2] = [Vec3::new(-0.2, -0.2, 0.1), Vec3::new(0.2, -0.2, 0.1)];
 
+    /// A tick with every tracked hand's grip held.
     fn tick(
         state: &mut HandleState,
         grips: [Option<Vec3>; 2],
         grabs: [bool; 2],
     ) -> ([f32; 2], Vec<HandleEvent>) {
+        tick_held(state, grips, grabs, grips.map(|g| g.is_some()))
+    }
+
+    fn tick_held(
+        state: &mut HandleState,
+        grips: [Option<Vec3>; 2],
+        grabs: [bool; 2],
+        held: [bool; 2],
+    ) -> ([f32; 2], Vec<HandleEvent>) {
         let mut events = Vec::new();
-        let pulls = step(state, &CONFIG, &StepInputs { grips, grabs }, &mut events);
+        let inputs = StepInputs { grips, held, grabs };
+        let pulls = step(state, &CONFIG, &inputs, &mut events);
         (pulls, events)
     }
 
@@ -222,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn a_handle_is_held_only_once_taken_and_lets_go_on_the_next_press() {
+    fn a_handle_is_held_only_once_taken_and_only_while_the_grip_is() {
         let centres = handle_centres(&CONFIG, SHOULDERS);
         let mut state = HandleState::new();
         let down = centres[1] - Vec3::Y * CONFIG.full_pull_m;
@@ -234,10 +249,13 @@ mod tests {
         let (pulls, _) = tick(&mut state, [None, Some(down)], [false; 2]);
         assert!((pulls[1] - 1.0).abs() < 1e-5, "{pulls:?}");
 
-        let (pulls, events) = tick(&mut state, [None, Some(down)], [false, true]);
+        // A release and a press between two ticks keeps the handle where it was taken.
+        let (_, events) = tick(&mut state, [None, Some(down)], [false, true]);
+        assert!(events.is_empty());
+        let (pulls, events) = tick_held(&mut state, [None, Some(down)], [false; 2], [false; 2]);
         assert_eq!(
             events,
-            vec![HandleEvent::Released(Hand::Right, Release::GripPress)]
+            vec![HandleEvent::Released(Hand::Right, Release::GripReleased)]
         );
         assert_eq!(pulls, [0.0; 2], "a released handle is neutral");
     }

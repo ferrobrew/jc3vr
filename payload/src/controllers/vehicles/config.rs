@@ -121,7 +121,10 @@ impl PhysicalControlsConfig {
                 centre_m: Vec3::new(0.0, -0.42, -0.40),
                 radius_m: 0.19,
                 tilt_deg: 25.0,
-                max_angle_deg: 180.0,
+                lock_deg: 135.0,
+                response: 1.0,
+                deadzone_deg: 2.0,
+                tracking: WheelTracking::Twist,
                 return_deg_per_s: 360.0,
             },
             handlebars: HandlebarsSpec {
@@ -183,9 +186,11 @@ impl Default for PhysicalControlsConfig {
 }
 
 /// A steering wheel: a rim in a plane facing the driver, tilted back with its column. The hub,
-/// radius, and tilt place the wheel where the vehicle's own is not found; the full-steer angle and
-/// the return apply to every wheel.
+/// radius, and tilt place the wheel where the vehicle's own is not found; the lock, the response,
+/// the tracking, and the return apply to every wheel (see
+/// [`crate::controllers::vehicles::steering`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WheelSpec {
     pub enabled: bool,
     /// The wheel's hub.
@@ -193,10 +198,44 @@ pub struct WheelSpec {
     pub radius_m: f32,
     /// How far the wheel's face tilts up from vertical toward the driver, degrees.
     pub tilt_deg: f32,
-    /// The wheel angle that steers fully, degrees either way; the wheel stops there.
-    pub max_angle_deg: f32,
+    /// The wheel angle that steers fully, degrees either way: half the lock-to-lock turn. The wheel
+    /// stops there. A road car's is several times this; a game's arcade steering wants full lock in
+    /// reach without letting go.
+    pub lock_deg: f32,
+    /// The exponent the share of the lock is raised to: one is linear, above one steers more gently
+    /// around centre and as fully at the lock.
+    pub response: f32,
+    /// Wheel angles within this of centre steer nothing, degrees.
+    pub deadzone_deg: f32,
+    /// What a holding hand turns the wheel by.
+    pub tracking: WheelTracking,
     /// How fast the released wheel returns to centre, degrees per second.
     pub return_deg_per_s: f32,
+}
+
+impl Default for WheelSpec {
+    fn default() -> Self {
+        PhysicalControlsConfig::new().wheel
+    }
+}
+
+/// What a hand holding the wheel turns it by.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WheelTracking {
+    /// The hand's twist about the wheel's axis, as a hand clamped to the rim turns. Independent of
+    /// where the hand is, so a wheel fitted slightly off still turns truly.
+    Twist,
+    /// The hand's travel around the hub in the wheel's plane.
+    Position,
+}
+
+impl WheelTracking {
+    pub const fn label(self) -> &'static str {
+        match self {
+            WheelTracking::Twist => "the hand's twist",
+            WheelTracking::Position => "the hand's travel around the hub",
+        }
+    }
 }
 
 /// Handlebars, pivoting about their centre. The middle and half width place them where the
@@ -276,17 +315,20 @@ pub struct ArmSteeringConfig {
     pub full_pitch_m: f32,
     /// Lowered hands pitch down (a dive) by default; this reverses it.
     pub invert_pitch: bool,
+    /// Ring each hand in the wingsuit, lit while the arms steer, with a line between them.
+    pub show_guide: bool,
 }
 
 impl ArmSteeringConfig {
     pub const fn new() -> Self {
         Self {
             wingsuit: true,
-            min_spread: 0.6,
+            min_spread: 0.5,
             deadzone_m: 0.04,
             full_bank_m: 0.45,
             full_pitch_m: 0.30,
             invert_pitch: false,
+            show_guide: true,
         }
     }
 }

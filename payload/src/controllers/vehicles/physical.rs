@@ -4,12 +4,13 @@
 //! Every control lives in the cockpit frame, placed relative to the seated character's eyes (see
 //! [`crate::controllers::vehicles::config`]); the wheel and the handlebars are placed where the
 //! vehicle's own are where they are found ([`crate::controllers::vehicles::wheel`]), so they arrive
-//! here as frames already in the cockpit frame. Each control is grabbed like any other grab volume:
-//! a grip press with the hand's grip near the control grabs it, and the next grip press, or moving
-//! the hand further than the release distance from where it holds the control, lets go. While held:
+//! here as frames already in the cockpit frame. A control is held only while the grip is: a grip
+//! press with the hand's grip near the control takes it, and releasing the grip, or moving the hand
+//! further than the release distance from where it holds the control, lets go. A hand that merely
+//! passes through a control, or rests there with the grip open, takes nothing. While held:
 //!
-//! - the wheel turns by the holding hands' angular travel around its hub, in the wheel's plane, and
-//!   its angle over the full-steer angle is the steering; let go, it returns to centre;
+//! - the wheel turns by the holding hands' turns ([`crate::controllers::vehicles::steering`]), and
+//!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes;
 //! - the handlebars pivot about their middle: their turn in the horizontal plane steers and their
 //!   roll leans. With one hand on them, the other end mirrors it through the middle;
 //! - a stick's top follows the hand across the horizontal plane, and its deflection over the full
@@ -21,8 +22,6 @@
 //! grip sits on the control for the hand's current position, which the hands compose at every rate
 //! from the latest controller pose.
 
-use std::f32::consts::{PI, TAU};
-
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
@@ -31,6 +30,7 @@ use crate::controllers::{
     mode::VehicleClass,
     vehicles::{
         config::{HandlebarsSpec, LeverSpec, PhysicalControlsConfig, StickSpec},
+        steering::{self, WheelGrip},
         wheel::{BarsFrame, WheelFrame},
     },
 };
@@ -103,8 +103,8 @@ pub struct Hold {
 /// Why a hand let go of a control.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Release {
-    /// The hand pressed its grip again.
-    GripPress,
+    /// The hand released its grip.
+    GripReleased,
     /// The hand moved away from the control.
     MovedAway,
     /// The other hand took a control only one hand holds.
@@ -116,7 +116,7 @@ pub enum Release {
 impl Release {
     pub const fn label(self) -> &'static str {
         match self {
-            Release::GripPress => "grip press",
+            Release::GripReleased => "grip released",
             Release::MovedAway => "moved away",
             Release::TakenOver => "taken by the other hand",
             Release::Gone => "gone",
@@ -138,8 +138,8 @@ pub struct ControlState {
     pub holds: [Option<Hold>; 2],
     /// The wheel's angle, radians, positive clockwise as the driver sees it.
     pub wheel_angle: f32,
-    /// Each holding hand's angle around the hub on the last tick.
-    wheel_last: [Option<f32>; 2],
+    /// Each holding hand's place on the wheel on the last tick.
+    wheel_grips: [Option<WheelGrip>; 2],
     /// The handlebars' turn and roll, radians.
     pub bars: Vec2,
     /// The stick's deflection in the horizontal plane (+X right, +Y back), metres.
@@ -153,7 +153,7 @@ impl ControlState {
         Self {
             holds: [None; 2],
             wheel_angle: 0.0,
-            wheel_last: [None; 2],
+            wheel_grips: [None; 2],
             bars: Vec2::ZERO,
             stick: Vec2::ZERO,
             levers: [0.0; 2],
@@ -301,6 +301,10 @@ pub struct StepInputs<'a> {
     pub kinds: &'a [ControlKind],
     /// Each hand's grip position in the cockpit frame, `None` while untracked.
     pub grips: [Option<Vec3>; 2],
+    /// Each hand's grip orientation in the cockpit frame, `None` while untracked.
+    pub orientations: [Option<Quat>; 2],
+    /// Whether each hand's grip is held this tick. A control is let go when its hand's grip is not.
+    pub held: [bool; 2],
     /// The control each hand's grip press latched as a grab this tick.
     pub grabs: [Option<ControlKind>; 2],
     pub dt: f32,
@@ -329,14 +333,26 @@ pub fn step(
             continue;
         }
         let Some(kind) = inputs.grabs[i] else {
+            if held.is_some() && !inputs.held[i] {
+                release(state, hand, Release::GripReleased, events);
+            }
             continue;
         };
+        // A grab while holding is a release and a fresh press between two ticks.
         if held.is_some() {
-            release(state, hand, Release::GripPress, events);
-        } else if let Some(point) = inputs.grips[i]
+            release(state, hand, Release::GripReleased, events);
+        }
+        if let Some(point) = inputs.grips[i]
             && inputs.kinds.contains(&kind)
         {
-            grab(state, placement, hand, kind, point, events);
+            grab(
+                state,
+                placement,
+                hand,
+                kind,
+                (point, inputs.orientations[i]),
+                events,
+            );
         }
     }
 
@@ -351,7 +367,9 @@ pub fn step(
     for &kind in inputs.kinds {
         let holding = held_by(state, kind);
         match kind {
-            ControlKind::Wheel => out.steer = step_wheel(state, placement, holding, dt),
+            ControlKind::Wheel => {
+                out.steer = step_wheel(state, placement, holding, inputs.orientations, dt);
+            }
             ControlKind::Handlebars => {
                 if let Some((steer, lean)) = step_bars(state, placement, holding) {
                     out.steer = Some(steer);
@@ -439,7 +457,7 @@ fn grab(
     placement: &Placement,
     hand: Hand,
     kind: ControlKind,
-    point: Vec3,
+    (point, orientation): (Vec3, Option<Quat>),
     events: &mut Vec<ControlEvent>,
 ) {
     let other = hand.other();
@@ -453,7 +471,8 @@ fn grab(
             .map_or(Vec3::ZERO, |handle| point - handle),
     };
     if kind == ControlKind::Wheel {
-        state.wheel_last[hand.index()] = placement.wheel.hand_angle(point);
+        state.wheel_grips[hand.index()] =
+            Some(WheelGrip::new(&placement.wheel, point, orientation));
     }
     state.holds[hand.index()] = Some(Hold { kind, offset });
     events.push(ControlEvent::Grabbed(hand, kind));
@@ -463,7 +482,7 @@ fn release(state: &mut ControlState, hand: Hand, why: Release, events: &mut Vec<
     let Some(hold) = state.holds[hand.index()].take() else {
         return;
     };
-    state.wheel_last[hand.index()] = None;
+    state.wheel_grips[hand.index()] = None;
     events.push(ControlEvent::Released(hand, hold.kind, why));
 }
 
@@ -483,36 +502,30 @@ fn step_wheel(
     state: &mut ControlState,
     placement: &Placement,
     holding: Holding,
+    orientations: [Option<Quat>; 2],
     dt: f32,
 ) -> Option<f32> {
     let spec = &placement.config.wheel;
-    let max = spec.max_angle_deg.to_radians().max(1e-3);
-    let mut turn = 0.0;
-    let mut count = 0;
-    for hand in Hand::BOTH {
-        let i = hand.index();
-        let Some((_, point)) = holding[i] else {
-            state.wheel_last[i] = None;
-            continue;
-        };
-        let Some(now) = placement.wheel.hand_angle(point) else {
-            continue;
-        };
-        if let Some(last) = state.wheel_last[i] {
-            turn += wrap_angle(now - last);
-            count += 1;
-        }
-        state.wheel_last[i] = Some(now);
-    }
     if holding.iter().all(Option::is_none) {
-        let step = spec.return_deg_per_s.to_radians().max(0.0) * dt;
-        state.wheel_angle -= state.wheel_angle.clamp(-step, step);
-        return None;
+        state.wheel_grips = [None; 2];
+        if state.wheel_angle == 0.0 {
+            return None;
+        }
+        // The returning wheel steers on its way back, so the vehicle straightens with it.
+        state.wheel_angle = steering::return_step(state.wheel_angle, spec, dt);
+        return Some(steering::steer_for_angle(state.wheel_angle, spec));
     }
-    if count > 0 {
-        state.wheel_angle = (state.wheel_angle + turn / count as f32).clamp(-max, max);
+    let turns = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let (_, point) = holding[i]?;
+        let grip = state.wheel_grips[i]
+            .get_or_insert_with(|| WheelGrip::new(&placement.wheel, point, orientations[i]));
+        grip.turn(&placement.wheel, spec.tracking, point, orientations[i])
+    });
+    if let Some(turn) = steering::combine(turns.into_iter().flatten()) {
+        state.wheel_angle = steering::advance(state.wheel_angle, turn, spec);
     }
-    Some(state.wheel_angle / max)
+    Some(steering::steer_for_angle(state.wheel_angle, spec))
 }
 
 fn step_bars(
@@ -569,11 +582,6 @@ fn step_lever(
         None => {}
     }
     Some(detent(state.levers[index], spec.detent))
-}
-
-/// Wrap an angle difference into `-π..=π`.
-fn wrap_angle(a: f32) -> f32 {
-    (a + PI).rem_euclid(TAU) - PI
 }
 
 /// The handlebars' turn (positive with the right grip pulled back) and roll (positive with the
@@ -661,12 +669,31 @@ mod tests {
         Placement::new(config, Hand::Right)
     }
 
+    /// A tick with every tracked hand's grip held.
     fn step_with(
         state: &mut ControlState,
         placement: &Placement,
         kinds: &[ControlKind],
         grips: [Option<Vec3>; 2],
         grabs: [Option<ControlKind>; 2],
+    ) -> (Outputs, Vec<ControlEvent>) {
+        step_held(
+            state,
+            placement,
+            kinds,
+            grips,
+            grabs,
+            grips.map(|g| g.is_some()),
+        )
+    }
+
+    fn step_held(
+        state: &mut ControlState,
+        placement: &Placement,
+        kinds: &[ControlKind],
+        grips: [Option<Vec3>; 2],
+        grabs: [Option<ControlKind>; 2],
+        held: [bool; 2],
     ) -> (Outputs, Vec<ControlEvent>) {
         let mut events = Vec::new();
         let out = step(
@@ -675,6 +702,8 @@ mod tests {
             &StepInputs {
                 kinds,
                 grips,
+                orientations: [None; 2],
+                held,
                 grabs,
                 dt: DT,
             },
@@ -700,15 +729,123 @@ mod tests {
         let left = wheel.rim_point(-FRAC_PI_2 + turn);
         let right = wheel.rim_point(FRAC_PI_2 + turn);
         let (out, _) = step_with(&mut state, &p, &kinds, [Some(left), Some(right)], [None; 2]);
-        let expected = turn / spec.max_angle_deg.to_radians();
+        let expected = steering::steer_for_angle(turn, &spec);
+        assert!(expected > 0.0);
         assert!((out.steer.unwrap() - expected).abs() < 1e-4, "{out:?}");
 
-        let (out, events) = step_with(&mut state, &p, &kinds, [Some(left), Some(right)], grabs);
+        let grips = [Some(left), Some(right)];
+        let (out, events) = step_held(&mut state, &p, &kinds, grips, [None; 2], [false; 2]);
         assert_eq!(events.len(), 2);
+        assert!(state.holds.iter().all(Option::is_none));
+        let returning = out.steer.unwrap();
+        assert!(returning > 0.0 && returning < expected, "{out:?}");
+        for _ in 0..60 {
+            step_held(&mut state, &p, &kinds, grips, [None; 2], [false; 2]);
+        }
+        assert_eq!(state.wheel_angle, 0.0);
+        let (out, _) = step_held(&mut state, &p, &kinds, grips, [None; 2], [false; 2]);
         assert_eq!(out.steer, None);
-        let before = state.wheel_angle;
-        step_with(&mut state, &p, &kinds, [Some(left), Some(right)], [None; 2]);
-        assert!(state.wheel_angle.abs() < before.abs());
+    }
+
+    #[test]
+    fn a_hand_in_the_wheel_with_its_grip_open_takes_nothing() {
+        let p = placement(|c| c.wheel.enabled = true);
+        let kinds = [ControlKind::Wheel];
+        let mut state = ControlState::default();
+        let on = p.wheel.rim_point(0.3);
+        // No press edge: the hand rests on the rim, held or not, and takes nothing.
+        let (out, events) = step_held(
+            &mut state,
+            &p,
+            &kinds,
+            [None, Some(on)],
+            [None; 2],
+            [false, true],
+        );
+        assert!(events.is_empty() && state.holds[1].is_none());
+        assert_eq!(out.steer, None);
+        // A press takes it, and it stays taken only while the grip is held.
+        step_with(
+            &mut state,
+            &p,
+            &kinds,
+            [None, Some(on)],
+            [None, Some(ControlKind::Wheel)],
+        );
+        step_with(&mut state, &p, &kinds, [None, Some(on)], [None; 2]);
+        assert!(state.holds[1].is_some());
+        let (_, events) = step_held(
+            &mut state,
+            &p,
+            &kinds,
+            [None, Some(on)],
+            [None; 2],
+            [false; 2],
+        );
+        assert_eq!(
+            events,
+            vec![ControlEvent::Released(
+                Hand::Right,
+                ControlKind::Wheel,
+                Release::GripReleased
+            )]
+        );
+    }
+
+    #[test]
+    fn grabbing_the_wheel_does_not_jump_it_and_a_hand_over_carries_on() {
+        let p = placement(|c| c.wheel.enabled = true);
+        let wheel = p.wheel;
+        let kinds = [ControlKind::Wheel];
+        let mut state = ControlState::default();
+        let take = |state: &mut ControlState, hand: Hand, at: Vec3| {
+            let mut grips = [None; 2];
+            grips[hand.index()] = Some(at);
+            let mut grabs = [None; 2];
+            grabs[hand.index()] = Some(ControlKind::Wheel);
+            step_with(state, &p, &kinds, grips, grabs)
+        };
+        // The right hand takes the wheel off its top and turns it a third of a turn.
+        take(&mut state, Hand::Right, wheel.rim_point(0.3));
+        assert_eq!(state.wheel_angle, 0.0);
+        step_with(
+            &mut state,
+            &p,
+            &kinds,
+            [None, Some(wheel.rim_point(0.3 + 2.0))],
+            [None; 2],
+        );
+        let turned = state.wheel_angle;
+        assert!((turned - 2.0).abs() < 1e-4, "{turned}");
+        // The left hand takes it at the top, and the right lets go: the wheel stays put.
+        let top = wheel.rim_point(0.0);
+        let (_, _) = step_with(
+            &mut state,
+            &p,
+            &kinds,
+            [Some(top), Some(wheel.rim_point(2.3))],
+            [Some(ControlKind::Wheel), None],
+        );
+        step_held(
+            &mut state,
+            &p,
+            &kinds,
+            [Some(top), Some(wheel.rim_point(2.3))],
+            [None; 2],
+            [true, false],
+        );
+        assert!((state.wheel_angle - turned).abs() < 1e-4);
+        // The left hand carries on turning, up to the lock.
+        step_held(
+            &mut state,
+            &p,
+            &kinds,
+            [Some(wheel.rim_point(0.2)), None],
+            [None; 2],
+            [true, false],
+        );
+        let lock = p.config.wheel.lock_deg.to_radians();
+        assert!((state.wheel_angle - (turned + 0.2).min(lock)).abs() < 1e-4);
     }
 
     #[test]
@@ -796,14 +933,14 @@ mod tests {
         )
         .unwrap();
         assert!((anchor.x - grip.x - p.config.cyclic.max_deflection_m).abs() < 1e-4);
-        step_with(
+        let (out, _) = step_held(
             &mut state,
             &p,
             &kinds,
             [None, Some(pushed)],
-            [None, Some(ControlKind::Cyclic)],
+            [None; 2],
+            [false; 2],
         );
-        let (out, _) = step_with(&mut state, &p, &kinds, [None, Some(pushed)], [None; 2]);
         assert_eq!(out.cyclic, None);
         assert_eq!(state.stick, Vec2::ZERO);
     }
@@ -838,14 +975,14 @@ mod tests {
                 _ => out.collective,
             };
             assert!(value.unwrap() > 0.5, "{kind:?} {out:?}");
-            step_with(
+            let (out, _) = step_held(
                 &mut state,
                 &p,
                 &kinds,
                 [Some(moved), None],
-                [Some(kind), None],
+                [None; 2],
+                [false; 2],
             );
-            let (out, _) = step_with(&mut state, &p, &kinds, [Some(moved), None], [None; 2]);
             let value = match kind {
                 ControlKind::Throttle => out.throttle,
                 _ => out.collective,

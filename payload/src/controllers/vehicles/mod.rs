@@ -6,6 +6,7 @@
 //! - [`physical`]: the opt-in wheel, handlebars, cyclic, collective, flight stick, and throttle of
 //!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
 //!   hands;
+//! - [`steering`]: how the held wheel turns and maps to the steering;
 //! - [`wheel`] and [`fit`]: the wheel and the handlebars placed where the driven vehicle's own are;
 //! - [`wheel_render`]: the vehicle's rendered steering wheel turned with the steering;
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
@@ -19,8 +20,11 @@
 //!
 //! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
 //!    places the physical controls' and the parachute handles' grab volumes, and returns the volume
-//!    each hand is in. A hand holding a control or a handle is always in it, so that its next grip
-//!    press lets go rather than firing a weapon or the grapple.
+//!    each hand is in. A hand holding a control or a handle is always in it, so that a press made
+//!    while it still holds (a release and a press between two ticks) takes the control again
+//!    rather than firing a weapon or the grapple.
+//!
+//! A control or a handle is held only while its hand's grip is: releasing the grip lets go.
 //! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, replaces the tables'
 //!    analog writes for each axis a control drives, and publishes the wheel angle for the rendered
 //!    wheel; in the wingsuit it adds the arm pose to the move stick, and under the parachute the
@@ -46,6 +50,7 @@ pub mod look_steer;
 pub mod mounted;
 pub mod parachute;
 pub mod physical;
+pub mod steering;
 pub mod wheel;
 pub mod wheel_render;
 
@@ -111,6 +116,11 @@ pub struct MountedReadout {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmReadout {
     pub pose: ArmPose,
+    /// The spread, as a share of the arm span, the arms need this tick to steer: the engaging
+    /// spread, or the narrower one while they already steer.
+    pub needed_spread: f32,
+    /// The shoulders' height in the cockpit frame, which the pose's height is measured from.
+    pub shoulder_y: f32,
     /// The arms' own stick vector, `None` while they are not spread.
     pub arms: Option<Vec2>,
     /// The stick vector written to the move half-axes: the stick and the arms together.
@@ -271,6 +281,7 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     state.status.offered = offered;
     state.status.volumes = volumes;
     state.status.mounted = mounted.readout;
+    let arms_engaged = state.status.arms.is_some_and(|a| a.arms.is_some());
     if !handles_on {
         state.status.handles = None;
     }
@@ -279,7 +290,9 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     log_handle_events(&handle_events);
 
     let shown = (physical_config.show_wheel && seat.is_some_and(|s| s.driver)).then_some(fit.wheel);
-    highlights::submit(&config, &candidates, volumes, shown, &xf);
+    let wings = (arms_act(mode, &config) && config.vehicles.arm_steering.show_guide)
+        .then_some(arms_engaged);
+    highlights::submit(&config, &candidates, volumes, wings, shown, &xf);
     volumes
 }
 
@@ -298,6 +311,8 @@ pub(crate) fn finish_tick(
     };
     let config = active.config;
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
+    let orientations = active.hands.map(|h| h.map(|h| h.grip.orientation));
+    let held = Hand::BOTH.map(|hand| controls.hand(hand).grip.held());
     let handle_grabs = grabs.map(|g| matches!(g, Some(GrabVolume::ParachuteHandle(_))));
     let grabs = grabs.map(|g| match g {
         Some(GrabVolume::VehicleControl(kind)) => Some(kind),
@@ -317,6 +332,8 @@ pub(crate) fn finish_tick(
         &physical::StepInputs {
             kinds: offered,
             grips,
+            orientations,
+            held,
             grabs,
             dt,
         },
@@ -336,6 +353,7 @@ pub(crate) fn finish_tick(
             &handles_config,
             &parachute::StepInputs {
                 grips,
+                held,
                 grabs: handle_grabs,
             },
             &mut handle_events,
@@ -365,7 +383,16 @@ pub(crate) fn finish_tick(
             state.last_handles[i] = None;
         }
     }
-    let arms = arm_tick(mode, controls, &active, desired);
+    let engaged = state.status.arms.is_some_and(|a| a.arms.is_some());
+    let arms = arm_tick(mode, controls, &active, desired, engaged);
+    if arms.is_some_and(|a| a.arms.is_some()) != engaged {
+        tracing::debug!(
+            target: "controllers",
+            engaged = !engaged,
+            pose = ?arms.map(|a| a.pose),
+            "wingsuit arm steering"
+        );
+    }
     let handles =
         pulls.map(|pulls| handles_tick(&state.handles, pulls, controls, desired, &handles_config));
     state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
@@ -630,15 +657,22 @@ fn mounted_tick(active: &ActiveHands) -> MountedTick {
     }
 }
 
-/// Add the arm pose to the move stick in the wingsuit, when its arm steering is on.
+/// Whether the arm steering acts in `mode`: in the wingsuit, with it switched on.
+fn arms_act(mode: Mode, config: &ControllersConfig) -> bool {
+    config.vehicles.arm_steering.wingsuit && mode == Mode::Airborne(AirborneVariant::Wingsuit)
+}
+
+/// Add the arm pose to the move stick in the wingsuit, when its arm steering is on. `engaged` is
+/// whether the arms steered on the last tick.
 fn arm_tick(
     mode: Mode,
     controls: &Controls,
     active: &ActiveHands,
     desired: &mut Vec<Desired>,
+    engaged: bool,
 ) -> Option<ArmReadout> {
     let config = &active.config.vehicles.arm_steering;
-    if !(config.wingsuit && mode == Mode::Airborne(AirborneVariant::Wingsuit)) {
+    if !arms_act(mode, &active.config) {
         return None;
     }
     let left = active.hands[Hand::Left.index()]?.grip.position;
@@ -646,11 +680,13 @@ fn arm_tick(
     let dims = body_dimensions(&active.config);
     let shoulder_y = active.head.position.y - (dims.eye_height - dims.shoulder_height);
     let pose = arm_steering::arm_pose(left, right, shoulder_y, dims.arm_span);
-    let arms = arm::steer(&pose, config);
+    let arms = arm::steer(&pose, config, engaged);
     let written = arm::combine(controls.off().stick, arms);
     write_move(desired, written);
     Some(ArmReadout {
         pose,
+        needed_spread: arm::needed_spread(config, engaged),
+        shoulder_y,
         arms,
         written,
     })
@@ -782,8 +818,8 @@ fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>) {
     status.events.drain(..excess);
 }
 
-/// The angle to turn the rendered wheel to, radians clockwise: the held wheel's, or otherwise the
-/// vehicle's own steering over the full-steer angle, so the stick turns it too.
+/// The angle to turn the rendered wheel to, radians clockwise: the held or returning wheel's, or
+/// otherwise the wheel angle that would give the vehicle's own steering, so the stick turns it too.
 fn rendered_angle(
     controls: &ControlState,
     config: &PhysicalControlsConfig,
@@ -794,11 +830,12 @@ fn rendered_angle(
         .iter()
         .flatten()
         .any(|h| h.kind == ControlKind::Wheel);
-    if held {
+    if held || controls.wheel_angle != 0.0 {
         return controls.wheel_angle;
     }
-    let max = config.wheel.max_angle_deg.to_radians();
-    steering_turn.map_or(0.0, |turn| turn.clamp(-1.0, 1.0) * max)
+    steering_turn.map_or(0.0, |turn| {
+        steering::angle_for_steer(turn.clamp(-1.0, 1.0), &config.wheel)
+    })
 }
 
 #[cfg(test)]
@@ -888,12 +925,15 @@ mod tests {
     #[test]
     fn the_rendered_wheel_follows_the_held_wheel_and_otherwise_the_steering() {
         let config = PhysicalControlsConfig::new();
-        let max = config.wheel.max_angle_deg.to_radians();
+        let lock = config.wheel.lock_deg.to_radians();
         let mut controls = ControlState::new();
-        controls.wheel_angle = 0.4;
-        assert!((rendered_angle(&controls, &config, Some(0.5)) - 0.5 * max).abs() < 1e-5);
-        assert!((rendered_angle(&controls, &config, Some(3.0)) - max).abs() < 1e-5);
+        let half = rendered_angle(&controls, &config, Some(0.5));
+        assert!((steering::steer_for_angle(half, &config.wheel) - 0.5).abs() < 1e-4);
+        assert!((rendered_angle(&controls, &config, Some(3.0)) - lock).abs() < 1e-5);
         assert_eq!(rendered_angle(&controls, &config, None), 0.0);
+        // A released wheel still on its way back is drawn where it is.
+        controls.wheel_angle = 0.4;
+        assert_eq!(rendered_angle(&controls, &config, Some(0.0)), 0.4);
         controls.holds[1] = Some(Hold {
             kind: ControlKind::Wheel,
             offset: Vec3::ZERO,

@@ -135,7 +135,7 @@ fn zero_cooldown_and_instant_blends_are_valid() {
     file.controllers.roomscale.fade.out_s = 0.0;
     file.controllers.roomscale.fade.in_s = 0.0;
     file.controllers.vehicles.physical.wheel.return_deg_per_s = 0.0;
-    file.controllers.vehicles.physical.wheel.max_angle_deg = 540.0;
+    file.controllers.vehicles.physical.wheel.lock_deg = 540.0;
     validate::validate(&file).unwrap();
     parse(&serde_json::to_string(&file).unwrap()).unwrap();
 }

@@ -664,10 +664,17 @@ fn physical_wheel(value: &WheelSpec) -> Result<(), Error> {
         180.0,
     )?;
     range(
-        "vehicles.physical.wheel.max_angle_deg",
-        value.max_angle_deg,
-        0.0,
+        "vehicles.physical.wheel.lock_deg",
+        value.lock_deg,
+        1.0,
         1080.0,
+    )?;
+    range("vehicles.physical.wheel.response", value.response, 0.2, 5.0)?;
+    range(
+        "vehicles.physical.wheel.deadzone_deg",
+        value.deadzone_deg,
+        0.0,
+        90.0,
     )?;
     nonnegative(
         "vehicles.physical.wheel.return_deg_per_s",
