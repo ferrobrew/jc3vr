@@ -12,6 +12,7 @@ use crate::{
             probe::ProbeResult,
         },
     },
+    hooks::camera::height,
     ui::controllers::{stance, vec3, yes_no},
 };
 
@@ -19,6 +20,8 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
     if !status.active {
         ui.label("Inactive: no VR frame is rendering.");
     }
+    camera_height_readout(ui);
+    ui.separator();
     let f = &status.frame;
     ui.label(format!("Posture: {}", f.posture.label()));
     ui.label(match (f.stage.available, f.stage.bounds) {
@@ -171,4 +174,48 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
 
     ui.separator();
     stance::stance_settings(ui, &mut r.stance);
+}
+
+/// The camera's height against Rico's animated eyes, both above his root, and what sets the
+/// difference ([`crate::hooks::camera::height`]).
+fn camera_height_readout(ui: &mut Ui) {
+    let Some(r) = height::readout() else {
+        ui.label("Camera height: the headpose has not placed the camera yet");
+        return;
+    };
+    let frame = &r.roomscale.frame;
+    ui.label(format!(
+        "Camera height above Rico's root: {:.2} m · Rico's animated eyes {:.2} m · difference {:+.2} m",
+        r.camera_eyes_m,
+        r.rico_eyes_m,
+        r.camera_eyes_m - r.rico_eyes_m
+    ));
+    ui.label(format!(
+        "Vertical offset {:+.2} m ({}, world scale {:.2}) · head above the floor {} · player eyes {:.2} m · character eyes assumed {:.2} m",
+        r.vertical_offset_m,
+        if r.remap.is_some() { "remapped" } else { "not remapped" },
+        frame.world_scale,
+        r.floor_head_height_m
+            .map_or_else(|| "unknown".to_owned(), |h| format!("{h:.2} m")),
+        r.player_eye_height_m,
+        r.character_eye_estimate_m,
+    ));
+    ui.label(format!(
+        "{} · {} · crouched {} · seated crouch {} · visual crouch {} · capsule {}{}",
+        if r.on_foot() {
+            "on foot"
+        } else {
+            "not on foot"
+        },
+        frame.posture.label(),
+        yes_no(frame.crouched),
+        yes_no(frame.seated_crouch),
+        yes_no(r.roomscale.visual_crouch),
+        yes_no(r.roomscale.sim.capsule_owned),
+        if r.roomscale.sim.capsule_blocked {
+            " (no headroom)"
+        } else {
+            ""
+        },
+    ));
 }

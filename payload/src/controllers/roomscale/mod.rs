@@ -236,6 +236,8 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         posture,
         stage,
         head_height,
+        cockpit_y: vertical,
+        world_scale: inputs.world_scale,
         eye_drop_m,
         chase_offset,
         cockpit_shift: frame.shift.current(),
@@ -385,6 +387,12 @@ pub struct FrameStatus {
     pub stage: StageInfo,
     /// The remapped head height, while the head remap is on.
     pub head_height: Option<HeadHeight>,
+    /// The composed cockpit position's vertical component, metres before the world scale: the
+    /// remapped head height's offset while the remap is on, and the head's own height from the
+    /// recenter baseline (less the seated crouch) otherwise.
+    pub cockpit_y: f32,
+    /// The world scale the cockpit composed with.
+    pub world_scale: f32,
     pub eye_drop_m: f32,
     pub chase_offset: Vec2,
     /// The cockpit shift, cockpit frame, metres.
@@ -465,6 +473,8 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
             head_height: None,
         },
         head_height: None,
+        cockpit_y: 0.0,
+        world_scale: 1.0,
         eye_drop_m: 0.0,
         chase_offset: Vec2::ZERO,
         cockpit_shift: Vec3::ZERO,

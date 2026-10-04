@@ -26,6 +26,7 @@ use crate::{
 };
 
 pub(crate) mod config;
+pub mod height;
 pub(crate) use config::CameraConfig;
 
 use crate::{
@@ -354,11 +355,9 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 let cur = query();
                 let prev = query_prev();
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                write_camera_transform(
-                    &mut camera.m_TransformT1,
-                    cur.orientation,
-                    camera_position(&cur, character_t1_matrix, &camera_settings),
-                );
+                let position = camera_position(&cur, character_t1_matrix, &camera_settings);
+                write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
+                height::record(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
                 // hook below).
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
