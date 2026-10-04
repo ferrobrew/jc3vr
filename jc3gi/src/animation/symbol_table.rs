@@ -28,6 +28,25 @@ impl EventIdSymbolTable {
     }
 }
 impl EventIdSymbolTable {
+    /// The left melee stumble, for a character struck from the front. The
+    /// player's melee input task
+    /// ([`NStateTask_InputMeleeTask::Update`](crate::input::locomotion::NStateTask_InputMeleeTask::Update))
+    /// queues one of the four melee stumbles (or its `_DEATH` variant, for a blow that will kill)
+    /// on the target character, after testing it with
+    /// [`AnimatedModel::TryAct`](crate::character::character::AnimatedModel::TryAct). The `_0` acts are
+    /// for a target that faces the attacker (its yaw within a quarter turn of the yaw that points
+    /// back along the attack direction), the `_180` acts for one struck from behind, and the side
+    /// (`LEFT` or `RIGHT`) follows the angle of the attacker's swing.
+    pub const ACT_HITREACT_MELEE_STUMBLE_LEFT_0: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_LEFT_0";
+    /// The left melee stumble, for a character struck from behind; see
+    /// [`ACT_HITREACT_MELEE_STUMBLE_LEFT_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_MELEE_STUMBLE_LEFT_0).
+    pub const ACT_HITREACT_MELEE_STUMBLE_LEFT_180: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_LEFT_180";
+    /// The right melee stumble, for a character struck from the front; see
+    /// [`ACT_HITREACT_MELEE_STUMBLE_LEFT_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_MELEE_STUMBLE_LEFT_0).
+    pub const ACT_HITREACT_MELEE_STUMBLE_RIGHT_0: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_RIGHT_0";
+    /// The right melee stumble, for a character struck from behind; see
+    /// [`ACT_HITREACT_MELEE_STUMBLE_LEFT_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_MELEE_STUMBLE_LEFT_0).
+    pub const ACT_HITREACT_MELEE_STUMBLE_RIGHT_180: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_RIGHT_180";
     /// The automatic holster queued by `CPlayer::UpdateMentalState`
     /// ([`Player_UpdateMentalState`](crate::character::player::Player_UpdateMentalState)) when the
     /// player's mental state decays to relaxed with a weapon wielded. It drives a state chain in

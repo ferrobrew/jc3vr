@@ -31,7 +31,7 @@ use crate::{
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
-        scheme, vehicles,
+        physical_hands, scheme, vehicles,
         weapons::{foregrip, heft, recoil},
     },
     headpose, hooks,
@@ -74,8 +74,9 @@ pub struct ActiveHands {
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
 /// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
 /// ([`foregrip::apply`]); a long gun held in one hand sags, trails, and sways ([`heft::apply`]); a
-/// gun hand carries its recoil offset ([`recoil::apply`]); an anchored grapple hand holds the
-/// line ([`anchor::apply`]); and a hand on a physical vehicle control or a
+/// gun hand carries its recoil offset ([`recoil::apply`]); a palm pressed into a surface is held
+/// at it ([`physical_hands::apply`]); an anchored
+/// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
 /// mounted gun's handle holds it ([`vehicles::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
@@ -87,6 +88,7 @@ pub fn active_hands() -> Option<ActiveHands> {
         &active.config.weapons.heft,
     );
     recoil::apply(&mut active.hands, &active.config.weapons.recoil);
+    physical_hands::apply(&mut active.hands);
     anchor::apply(&mut active.hands, active.head, active.world_scale);
     Some(active)
 }

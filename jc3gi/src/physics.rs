@@ -5,8 +5,8 @@
 /// [`VFTABLE`](crate::physics::CastRayInfo::VFTABLE) and clear [`m_GameObject`](crate::physics::CastRayInfo::m_GameObject).
 pub struct CastRayInfo {
     pub base: crate::physics::CastRayInfoBase,
-    /// The hit object: the game object that owns the hit physics instance (for a character, the
-    /// `CCharacter`), written by the virtual hit-object setter [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay) calls. Null
+    /// The hit object: the [`PhysicsGameObject`](crate::physics::PhysicsGameObject) that owns the hit physics instance (for a
+    /// character, the `CCharacter`), written by the virtual hit-object setter [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay) calls. Null
     /// for world geometry and on a miss.
     pub m_GameObject: *mut ::std::ffi::c_void,
     _field_40: [u8; 8],
@@ -417,6 +417,99 @@ impl std::convert::AsMut<PfxRigidBody> for PfxRigidBody {
     }
 }
 #[repr(C, align(8))]
+/// A physics game object (`CPhysicsGameObject`): a game object with a physics instance, the owner a
+/// physics query reports for a hit body ([`CastRayInfo::m_GameObject`](crate::physics::CastRayInfo::m_GameObject)). Characters, vehicles,
+/// and rigid props are physics game objects. Its `CGameObject` subobject sits at
+/// [`GAME_OBJECT_BASE_OFFSET`](crate::physics::PhysicsGameObject::GAME_OBJECT_BASE_OFFSET), and its run-time type test goes
+/// through that subobject ([`GameObject::IsType`](crate::game::GameObject::IsType)). Only one virtual is
+/// bound.
+pub struct PhysicsGameObject {
+    vftable: *const crate::physics::PhysicsGameObjectVftable,
+}
+fn _PhysicsGameObject_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], PhysicsGameObject>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl PhysicsGameObject {
+    pub fn vftable(&self) -> *const crate::physics::PhysicsGameObjectVftable {
+        self.vftable as *const crate::physics::PhysicsGameObjectVftable
+    }
+    /// Takes the damage in `msg` and returns the damage dealt. Each kind of object overrides
+    /// it: a character (`CCharacter::OnDamage`) takes the health, sends the hit effects, and
+    /// runs its hit reaction from the message's impulse, position, and direction; a rigid
+    /// object (`CRigidObject::OnDamage`) takes the health of its damage controller.
+    pub unsafe fn OnDamage(&mut self, msg: *mut crate::damage::DamageMsg) -> i16 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnDamage).read();
+            f(self as *mut Self as _, msg)
+        }
+    }
+}
+impl PhysicsGameObject {
+    /// The offset of the `CGameObject` subobject.
+    pub const GAME_OBJECT_BASE_OFFSET: u64 = 8;
+}
+impl std::convert::AsRef<PhysicsGameObject> for PhysicsGameObject {
+    fn as_ref(&self) -> &PhysicsGameObject {
+        self
+    }
+}
+impl std::convert::AsMut<PhysicsGameObject> for PhysicsGameObject {
+    fn as_mut(&mut self) -> &mut PhysicsGameObject {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct PhysicsGameObjectVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_2: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_3: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_4: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_5: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_6: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_7: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_8: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_9: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_10: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_11: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_12: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_13: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_14: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_15: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_16: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_17: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_18: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    _vfunc_19: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    /// Takes the damage in `msg` and returns the damage dealt. Each kind of object overrides
+    /// it: a character (`CCharacter::OnDamage`) takes the health, sends the hit effects, and
+    /// runs its hit reaction from the message's impulse, position, and direction; a rigid
+    /// object (`CRigidObject::OnDamage`) takes the health of its damage controller.
+    pub OnDamage: unsafe extern "system" fn(
+        this: *mut crate::physics::PhysicsGameObject,
+        msg: *mut crate::damage::DamageMsg,
+    ) -> i16,
+}
+fn _PhysicsGameObjectVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xA8], PhysicsGameObjectVftable>([0u8; 0xA8]);
+    }
+    unreachable!()
+}
+impl PhysicsGameObjectVftable {}
+impl std::convert::AsRef<PhysicsGameObjectVftable> for PhysicsGameObjectVftable {
+    fn as_ref(&self) -> &PhysicsGameObjectVftable {
+        self
+    }
+}
+impl std::convert::AsMut<PhysicsGameObjectVftable> for PhysicsGameObjectVftable {
+    fn as_mut(&mut self) -> &mut PhysicsGameObjectVftable {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The physics system (`CPhysicsSystem`), a `Base::CSingle` singleton that owns the Havok world and
 /// serves the engine's scene queries. The queries are sim-phase calls against the live Havok world.
 /// Only some members are bound.
@@ -424,10 +517,16 @@ pub struct PhysicsSystem {
     _field_0: [u8; 48],
     /// The Havok world.
     pub m_World: *mut crate::physics::hknpWorld,
+    _field_38: [u8; 1278348],
+    /// The world-origin shift: the Havok world is simulated about a moving origin, and a Havok-space
+    /// position plus this offset is the game-space position. [`CastRay`](crate::physics::PhysicsSystem::CastRay) subtracts it
+    /// from its game-space ray before the Havok query, and the engine adds it back to the positions
+    /// a query reports. [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt) takes a Havok-space position.
+    pub m_AccumulatedShift: crate::types::math::Vector3,
 }
 fn _PhysicsSystem_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x38], PhysicsSystem>([0u8; 0x38]);
+        ::std::mem::transmute::<[u8; 0x1381D0], PhysicsSystem>([0u8; 0x1381D0]);
     }
     unreachable!()
 }
@@ -536,6 +635,42 @@ impl PhysicsSystem {
                 hit: *mut crate::types::math::Vector3,
             ) -> bool = ::std::mem::transmute(Self::CastRayWaterSurface_ADDRESS);
             f(self as *mut Self as _, start, end, hit)
+        }
+    }
+    pub const CollideBox_ADDRESS: usize = 0x14029A120;
+    /// Collects every body overlapping a box of half extents `half_extents` placed by `transform`
+    /// (game space), on collision `layer`, ignoring the bodies of collision system group
+    /// `system_group`, into `collector` (an `hknpCollisionQueryCollector`); returns whether any
+    /// overlapped. Each collected `hknpCollisionResult` carries the Havok-space position and the
+    /// body id of one overlapping body. The player's melee hit message
+    /// ([`Character::HandleTrackMessage`](crate::character::character::Character::HandleTrackMessage))
+    /// runs it with an `hknpAllHitsCollector` to find the objects in front of the character when no
+    /// character is the target, then damages each hit object and pushes its body.
+    pub unsafe fn CollideBox(
+        &mut self,
+        half_extents: *const crate::types::math::Vector3,
+        transform: *const crate::types::math::Matrix4,
+        system_group: u32,
+        layer: u32,
+        collector: *mut ::std::ffi::c_void,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                half_extents: *const crate::types::math::Vector3,
+                transform: *const crate::types::math::Matrix4,
+                system_group: u32,
+                layer: u32,
+                collector: *mut ::std::ffi::c_void,
+            ) -> bool = ::std::mem::transmute(Self::CollideBox_ADDRESS);
+            f(
+                self as *mut Self as _,
+                half_extents,
+                transform,
+                system_group,
+                layer,
+                collector,
+            )
         }
     }
     pub const CastSphere_ADDRESS: usize = 0x140202C90;
@@ -851,6 +986,27 @@ impl hknpWorld {
                 collector: *mut ::std::ffi::c_void,
             ) = ::std::mem::transmute(Self::castRay_ADDRESS);
             f(self as *const Self as _, query, collector)
+        }
+    }
+    pub const applyBodyImpulseAt_ADDRESS: usize = 0x1414CCB30;
+    /// Applies the linear impulse `impulse` to the body `body_id` at the Havok-space point
+    /// `position` (the game-space point less [`PhysicsSystem::m_AccumulatedShift`](crate::physics::PhysicsSystem::m_AccumulatedShift)), changing both
+    /// its linear and angular velocity, and wakes the body if it sleeps. It acts only on a dynamic
+    /// body: a static or keyframed body is left alone.
+    pub unsafe fn applyBodyImpulseAt(
+        &mut self,
+        body_id: u32,
+        impulse: *const crate::types::vector_math::AlignedVector3,
+        position: *const crate::types::vector_math::AlignedVector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_id: u32,
+                impulse: *const crate::types::vector_math::AlignedVector3,
+                position: *const crate::types::vector_math::AlignedVector3,
+            ) = ::std::mem::transmute(Self::applyBodyImpulseAt_ADDRESS);
+            f(self as *mut Self as _, body_id, impulse, position)
         }
     }
     pub const setBodyShape_ADDRESS: usize = 0x1414CF370;

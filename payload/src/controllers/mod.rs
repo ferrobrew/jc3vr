@@ -28,6 +28,8 @@
 //! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
 //!   foregrip, the weapon actions that run with the hands on the controllers, recoil, haptics, and
 //!   the dual-wield split;
+//! - [`physical_hands`]: each empty hand's palm colliding with the world: pushing the body off
+//!   surfaces, holding the hand at them, and striking characters and objects;
 //! - [`vehicles`]: vehicles, mounted guns, the wingsuit, and the parachute: the opt-in physical
 //!   controls, hand-aimed mounted guns and driver weapons, arm steering, and the wingsuit's head
 //!   look-steer removed;
@@ -62,6 +64,7 @@ pub mod mode;
 pub mod motion;
 pub mod overlay;
 pub mod persistence;
+pub mod physical_hands;
 pub mod presets;
 pub mod roomscale;
 pub mod scheme;

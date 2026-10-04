@@ -35,10 +35,12 @@ pub enum Source {
     PanelPointer,
     /// The detonator button on the off-hand's wrist.
     WristDetonator,
+    /// The physical hands' palm boxes and contacts.
+    PhysicalHands,
 }
 
 impl Source {
-    pub const COUNT: usize = 11;
+    pub const COUNT: usize = 12;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -53,6 +55,7 @@ impl Source {
         Source::SightTuning,
         Source::PanelPointer,
         Source::WristDetonator,
+        Source::PhysicalHands,
     ];
 
     pub const fn index(self) -> usize {
@@ -68,6 +71,7 @@ impl Source {
             Source::SightTuning => 8,
             Source::PanelPointer => 9,
             Source::WristDetonator => 10,
+            Source::PhysicalHands => 11,
         }
     }
 
@@ -84,6 +88,7 @@ impl Source {
             Source::SightTuning => "sight tuning marker",
             Source::PanelPointer => "debug panel pointer",
             Source::WristDetonator => "wrist detonator",
+            Source::PhysicalHands => "physical hands",
         }
     }
 }

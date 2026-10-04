@@ -58,7 +58,7 @@ use crate::{
         config::ControllersConfig,
         frame::{Hand, Pose},
         hands::{self, ik, late, pose as hand_pose},
-        scheme, vehicles,
+        physical_hands, scheme, vehicles,
         weapons::{c4, grenade, melee},
     },
     headpose, hooks,
@@ -218,6 +218,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         return;
     };
     unsafe { finish(aim, owner, &tick, grapple_ray) };
+    // SAFETY: the owner is the live local player, after the original update.
+    unsafe { physical_hands::after_aim(owner, dt) };
 }
 
 /// Decide whether the aim acts this update and compose the hands into the world.

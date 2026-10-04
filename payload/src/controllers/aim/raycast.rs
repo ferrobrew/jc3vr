@@ -41,6 +41,8 @@ pub struct RayHit {
     pub distance: f32,
     /// The hit game object's address, or `None` for world geometry.
     pub object: Option<NonZeroUsize>,
+    /// The Havok body id of the hit body.
+    pub body: u32,
 }
 
 /// Why a cast could not run.
@@ -136,6 +138,7 @@ pub unsafe fn cast(
         normal: Vec3::from_array(info.base.m_Normal.data),
         distance,
         object: NonZeroUsize::new(info.m_GameObject as usize),
+        body: info.base.m_BodyId,
     }))
 }
 

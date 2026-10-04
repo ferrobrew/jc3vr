@@ -3,6 +3,8 @@
 //! velocity every on-foot tick, idle included:
 //!
 //! - the teleport and warp bookkeeping (a teleport stops the chase and forgets the probe);
+//! - the physical hands' push off surfaces ([`physical_hands::push_body`]), added as the task's
+//!   own movement;
 //! - the chase: the task's velocity with the chase velocity added, through the engine's own
 //!   world-velocity accessors, because the proxy's wanted velocity is character-local;
 //! - the head-through-geometry probe, since scene queries run against the live physics world;
@@ -33,6 +35,7 @@ use crate::{
     controllers::{
         body::BodyDimensions,
         config::RoomscaleConfig,
+        physical_hands,
         roomscale::{
             self, SeatPhase,
             chase::{self, Chaser},
@@ -290,6 +293,10 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         }
         return;
     };
+
+    // The palms' push off what they press into counts as the task's own movement, so it is added
+    // before the chase reads the task's velocity.
+    unsafe { physical_hands::push_body(character) };
 
     let seated_out = frame.seat == SeatPhase::Out;
     if config.chase.enabled && frame.posture == EffectivePosture::Roomscale && seated_out {

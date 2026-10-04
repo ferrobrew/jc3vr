@@ -147,6 +147,44 @@ impl std::convert::AsMut<Game> for Game {
         self
     }
 }
+#[repr(C, align(8))]
+/// A game object's `CGameObject` subobject, through which the engine's run-time type tests go. A
+/// [`PhysicsGameObject`](crate::physics::PhysicsGameObject) carries it at
+/// [`GAME_OBJECT_BASE_OFFSET`](crate::physics::PhysicsGameObject::GAME_OBJECT_BASE_OFFSET). Only one
+/// virtual is bound.
+pub struct GameObject {
+    vftable: *const crate::game::GameObjectVftable,
+}
+fn _GameObject_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], GameObject>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl GameObject {
+    pub fn vftable(&self) -> *const crate::game::GameObjectVftable {
+        self.vftable as *const crate::game::GameObjectVftable
+    }
+    /// `CRtti::IsType`: whether the object is of the class `type_id` names or derives from it.
+    /// `type_id` points at the class's run-time type id, as a class's `TYPE_ID` function
+    /// returns it (such as [`Character::TYPE_ID`](crate::character::character::Character::TYPE_ID)).
+    pub unsafe fn IsType(&self, type_id: *const u32) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsType).read();
+            f(self as *const Self as _, type_id)
+        }
+    }
+}
+impl std::convert::AsRef<GameObject> for GameObject {
+    fn as_ref(&self) -> &GameObject {
+        self
+    }
+}
+impl std::convert::AsMut<GameObject> for GameObject {
+    fn as_mut(&mut self) -> &mut GameObject {
+        self
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C, align(8))]
 pub struct GameObjectInitContext {
@@ -228,6 +266,35 @@ impl std::convert::AsRef<GameObjectUpdateContext> for GameObjectUpdateContext {
 }
 impl std::convert::AsMut<GameObjectUpdateContext> for GameObjectUpdateContext {
     fn as_mut(&mut self) -> &mut GameObjectUpdateContext {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct GameObjectVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// `CRtti::IsType`: whether the object is of the class `type_id` names or derives from it.
+    /// `type_id` points at the class's run-time type id, as a class's `TYPE_ID` function
+    /// returns it (such as [`Character::TYPE_ID`](crate::character::character::Character::TYPE_ID)).
+    pub IsType: unsafe extern "system" fn(
+        this: *const crate::game::GameObject,
+        type_id: *const u32,
+    ) -> bool,
+}
+fn _GameObjectVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], GameObjectVftable>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl GameObjectVftable {}
+impl std::convert::AsRef<GameObjectVftable> for GameObjectVftable {
+    fn as_ref(&self) -> &GameObjectVftable {
+        self
+    }
+}
+impl std::convert::AsMut<GameObjectVftable> for GameObjectVftable {
+    fn as_mut(&mut self) -> &mut GameObjectVftable {
         self
     }
 }

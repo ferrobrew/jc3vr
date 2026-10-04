@@ -10,7 +10,9 @@ use crate::{
         frame::{self, Button, GripPress, Hand},
     },
     headpose::config::VrTurnMode,
-    ui::controllers::{aim, fingers, hands, overlay, roomscale, scope, summary, vehicles, weapons},
+    ui::controllers::{
+        aim, fingers, hands, overlay, physical_hands, roomscale, scope, summary, vehicles, weapons,
+    },
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -204,6 +206,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Finger curls")
         .show(ui, |ui| fingers::fingers_settings(ui, &mut c.fingers));
+
+    egui::CollapsingHeader::new("Physical hands").show(ui, |ui| {
+        physical_hands::physical_hands_settings(ui, &mut c.physical_hands)
+    });
 
     egui::CollapsingHeader::new("Overlay")
         .show(ui, |ui| overlay::overlay_settings(ui, &mut c.overlay));

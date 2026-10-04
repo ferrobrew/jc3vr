@@ -6,6 +6,7 @@ use crate::controllers::{
     config::SightTable,
     frame::PressThresholds,
     persistence::{ControllerFile, Error, FILE_VERSION},
+    physical_hands::PhysicalHandsConfig,
     vehicles::config::WheelSpec,
     weapons::config::{HeftConfig, PulseSpec, VolumeSpec},
 };
@@ -603,6 +604,7 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
     nonnegative("fingers.splay_scale", c.fingers.splay_scale, 10.0)?;
     range("fingers.max_splay_deg", c.fingers.max_splay_deg, 0.0, 180.0)?;
     nonnegative("fingers.smoothing_s", c.fingers.smoothing_s, 60.0)?;
+    physical_hands(&c.physical_hands)?;
 
     let turn = &file.headpose.vr_turn;
     range(
@@ -688,6 +690,77 @@ fn heft(h: &HeftConfig) -> Result<(), Error> {
         nonnegative(&format!("{name}.spread_scale"), t.spread_scale, 100.0)?;
     }
     Ok(())
+}
+
+fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Error> {
+    for (axis, value) in ["x", "y", "z"]
+        .into_iter()
+        .zip(p.palm_half_extents_m.to_array())
+    {
+        positive(
+            &format!("physical_hands.palm_half_extents_m.{axis}"),
+            value,
+            0.5,
+        )?;
+    }
+    vec3("physical_hands.palm_offset_m", p.palm_offset_m, 0.5)?;
+    nonnegative("physical_hands.push_deadband_m", p.push_deadband_m, 1.0)?;
+    nonnegative(
+        "physical_hands.push_stiffness_per_s",
+        p.push_stiffness_per_s,
+        1000.0,
+    )?;
+    nonnegative(
+        "physical_hands.max_push_speed_mps",
+        p.max_push_speed_mps,
+        20.0,
+    )?;
+    range(
+        "physical_hands.min_push_horizontal",
+        p.min_push_horizontal,
+        0.0,
+        1.0,
+    )?;
+    nonnegative(
+        "physical_hands.min_strike_speed_mps",
+        p.min_strike_speed_mps,
+        50.0,
+    )?;
+    positive(
+        "physical_hands.full_strike_speed_mps",
+        p.full_strike_speed_mps,
+        50.0,
+    )?;
+    if p.full_strike_speed_mps < p.min_strike_speed_mps {
+        return Err(Error::Invalid(format!(
+            "physical_hands.full_strike_speed_mps ({}) must not be below \
+             physical_hands.min_strike_speed_mps ({})",
+            p.full_strike_speed_mps, p.min_strike_speed_mps
+        )));
+    }
+    nonnegative("physical_hands.rearm_speed_mps", p.rearm_speed_mps, 50.0)?;
+    nonnegative(
+        "physical_hands.strike_cooldown_s",
+        p.strike_cooldown_s,
+        60.0,
+    )?;
+    range("physical_hands.fist_curl", p.fist_curl, 0.0, 1.0)?;
+    for (name, t) in [
+        ("physical_hands.punch", &p.punch),
+        ("physical_hands.slap", &p.slap),
+    ] {
+        nonnegative(&format!("{name}.damage"), t.damage, 100.0)?;
+        nonnegative(&format!("{name}.impulse"), t.impulse, 100.0)?;
+        nonnegative(&format!("{name}.stumble_strength"), t.stumble_strength, 2.0)?;
+    }
+    nonnegative(
+        "physical_hands.min_object_speed_mps",
+        p.min_object_speed_mps,
+        50.0,
+    )?;
+    nonnegative("physical_hands.object_impulse", p.object_impulse, 100.0)?;
+    pulse("physical_hands.contact_pulse", &p.contact_pulse)?;
+    pulse("physical_hands.strike_pulse", &p.strike_pulse)
 }
 
 fn positive(name: &str, value: f32, max: f32) -> Result<(), Error> {

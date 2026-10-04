@@ -1,6 +1,6 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
-//! controller frame and of each controller subsystem (the native map, finger curls, weapon
-//! handling, scopes, vehicles and flight, the controls summary, posture, roomscale, and the semantic
+//! controller frame and of each controller subsystem (the native map, finger curls, the physical
+//! hands, weapon handling, scopes, vehicles and flight, the controls summary, posture, roomscale, and the semantic
 //! actions with the input self-check included),
 //! the player's body dimensions, and every controller setting. Each subsystem's section is in its own file.
 
@@ -16,6 +16,7 @@ mod map;
 mod mode;
 mod overlay;
 mod persistence;
+mod physical_hands;
 mod roomscale;
 mod scope;
 mod semantic;
@@ -38,8 +39,8 @@ use crate::{
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
         map as controller_map, mode as controller_mode, overlay as controller_overlay,
-        persistence as controller_persistence, roomscale as controller_roomscale, scheme,
-        summary as controller_summary,
+        persistence as controller_persistence, physical_hands as controller_physical_hands,
+        roomscale as controller_roomscale, scheme, summary as controller_summary,
     },
     hud::{pointer, summary_panel},
     vr::input::{self as vr_input, ActionsOrigin},
@@ -67,6 +68,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let hand_tiers = tiers::status();
     let late_status = late::status();
     let fingers_status = controller_fingers::status();
+    let physical_hands_status = controller_physical_hands::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
     let stance_status = controller_roomscale::stance::status();
@@ -140,6 +142,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
                     &fingers_status,
                     status.hand_tracking.conforming_motion_range,
                 )
+            });
+
+        egui::CollapsingHeader::new("Physical hands")
+            .default_open(true)
+            .show(ui, |ui| {
+                physical_hands::physical_hands_readout(ui, &physical_hands_status)
             });
 
         egui::CollapsingHeader::new("Weapon handling")

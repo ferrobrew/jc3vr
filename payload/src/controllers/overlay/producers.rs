@@ -434,6 +434,7 @@ mod tests {
             normal: Vec3::Z,
             distance: position.length(),
             object: None,
+            body: 0,
         }
     }
 

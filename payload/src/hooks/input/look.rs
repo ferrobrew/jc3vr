@@ -44,6 +44,7 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
 
     let controllers = controllers::bindings::input_tick(dt, poll);
     controllers::gamepad_setting::input_tick();
+    controllers::physical_hands::input_tick();
 
     if !headpose::is_active() {
         return;

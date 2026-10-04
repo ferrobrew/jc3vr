@@ -282,7 +282,12 @@ fn _AnimationLayer_size_check() {
 #[repr(C, align(8))]
 pub struct Character {
     vftable: *const crate::character::character::CharacterVftable,
-    _field_8: [u8; 2352],
+    _field_8: [u8; 96],
+    /// A weak reference to the character itself (`m_WeakThis`), from which the engine takes the
+    /// references it hands out to the character, such as a damage message's
+    /// [`m_Damager`](crate::damage::DamageMsg::m_Damager).
+    pub m_WeakThis: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_78: [u8; 2240],
     /// The character's aiming-settings resource (`TResourceCachePtr<SCharacterAimingSettings>`, a
     /// resource handle resolved through the resource cache). Both aim-input updates read the
     /// aim-timer refill value from the resolved settings.
@@ -429,6 +434,62 @@ impl Character {
                 Self::GetLocalPlayerCharacter_ADDRESS,
             );
             f()
+        }
+    }
+    pub const TYPE_ID_ADDRESS: usize = 0x14060F370;
+    /// `CCharacter::TYPE_ID`: the run-time type id of `CCharacter`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const GetFaction_ADDRESS: usize = 0x14075FBF0;
+    /// The character's faction: its avatar's when it has one ([`m_Avatar`](crate::character::character::Character::m_Avatar)),
+    /// otherwise the character's own.
+    pub unsafe fn GetFaction(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetFaction_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetCurrentDamageSourceStateInfo_ADDRESS: usize = 0x1407F57D0;
+    /// What the character is doing, as a damage message's
+    /// [`m_DamagerSourceStateInfo`](crate::damage::DamageMsg::m_DamagerSourceStateInfo) records it: in a
+    /// stunt, under the parachute, flying, aiming down the sights, near death, in a vehicle of each
+    /// class, reeled in, swimming, or hanging from the grapple.
+    pub unsafe fn GetCurrentDamageSourceStateInfo(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetCurrentDamageSourceStateInfo_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const HandleTrackMessage_ADDRESS: usize = 0x1407FADD0;
+    /// Handles a message from the character's animation tracks (`data`, an
+    /// `NAnimationSystem::SAnimationMessageData`), dispatching on its id. The melee hit message
+    /// deals the player's melee: with a character as the link target, it sends that character a
+    /// [`DMG_TYPE_MELEE`](crate::damage::DamageFlags::DMG_TYPE_MELEE) [`DamageMsg`](crate::damage::DamageMsg) of
+    /// [`Player::m_MeleeDamage`](crate::character::player::Player::m_MeleeDamage) and no impulse, and
+    /// clears the link target; with none, it finds the objects in a box in front of the chest
+    /// ([`PhysicsSystem::CollideBox`](crate::physics::PhysicsSystem::CollideBox)), damages each (a
+    /// vehicle once), and pushes each body forward by
+    /// [`Player::m_MeleeImpulse`](crate::character::player::Player::m_MeleeImpulse)
+    /// ([`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt)). Both paths
+    /// spawn a rumble and the hit effect.
+    pub unsafe fn HandleTrackMessage(&mut self, data: *mut ::std::ffi::c_void) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::HandleTrackMessage_ADDRESS);
+            f(self as *mut Self as _, data)
         }
     }
     pub const IsInVehicleAttachState_ADDRESS: usize = 0x14077F080;

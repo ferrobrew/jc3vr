@@ -22,6 +22,7 @@ use crate::{
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+        physical_hands::PhysicalHandsConfig,
         roomscale::stance::StanceConfig,
         summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
@@ -78,6 +79,8 @@ pub struct ControllersConfig {
     pub vehicles: VehiclesConfig,
     /// Finger curls on the rendered hands.
     pub fingers: FingersConfig,
+    /// The palms' collision with the world.
+    pub physical_hands: PhysicalHandsConfig,
     /// The controls summary, and the game's own button hints.
     pub summary: SummaryConfig,
 }
@@ -102,6 +105,7 @@ impl ControllersConfig {
             roomscale: RoomscaleConfig::new(),
             vehicles: VehiclesConfig::new(),
             fingers: FingersConfig::new(),
+            physical_hands: PhysicalHandsConfig::new(),
             summary: SummaryConfig::new(),
         }
     }

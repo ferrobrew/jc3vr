@@ -58,7 +58,16 @@ pub struct Player {
     /// [`m_AimPos`](crate::aim::aim::PlayerAimControl::m_AimPos)) is the target the arm aim IK tasks steer
     /// toward.
     pub m_AimControl: *mut crate::aim::aim::PlayerAimControl,
-    _field_160: [u8; 4780],
+    _field_160: [u8; 4760],
+    /// The damage of the player's melee hit, in health points, from the player's settings. The
+    /// melee input task tests it against the target's health to choose a killing act, and the melee
+    /// hit message ([`Character::HandleTrackMessage`](crate::character::character::Character::HandleTrackMessage))
+    /// deals it.
+    pub m_MeleeDamage: i32,
+    _field_13fc: [u8; 12],
+    /// The impulse the player's melee hit gives each object body it strikes, along the
+    /// character's forward, from the player's settings.
+    pub m_MeleeImpulse: f32,
     /// The player's aim mode: [`AIM_PRECISION`](crate::character::player::AimMode::AIM_PRECISION) while in precision
     /// (down-sights) aim, [`AIM_NORMAL`](crate::character::player::AimMode::AIM_NORMAL) otherwise. Written by
     /// [`SetAimMode`](crate::character::player::Player::SetAimMode).

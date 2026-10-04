@@ -19,7 +19,8 @@
 //!    scheme holds, it acts on the input's release one tick later, which the strike still covers.
 //!
 //! The strike detector is pure ([`StrikeDetector`]). A hand holding a grenade does not strike, so
-//! that a throw is not a punch.
+//! that a throw is not a punch, and neither does a hand whose physical palm strikes in its place
+//! ([`physical_hands::replaces_melee`]).
 
 use glam::{Quat, Vec3};
 use jc3gi::{
@@ -46,7 +47,7 @@ use crate::{
         frame::Hand,
         hands::ActiveHands,
         mode::{Detection, Mode, OnFootVariant},
-        motion,
+        motion, physical_hands,
         weapons::{
             config::MeleeStrikeConfig,
             haptics::{self, PulseSource},
@@ -240,7 +241,8 @@ pub(super) fn input_tick(
             velocity,
         ))
     });
-    let suppressed = Hand::BOTH.map(|hand| inputs.excluded == Some(hand));
+    let suppressed = Hand::BOTH
+        .map(|hand| inputs.excluded == Some(hand) || physical_hands::replaces_melee(hand));
     let struck = state.detector.step(
         inputs.dt,
         motions.map(|m| m.map(|(m, _)| m)),
