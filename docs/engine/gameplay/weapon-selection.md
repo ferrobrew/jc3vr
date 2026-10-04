@@ -2,7 +2,7 @@
 
 How the player picks a weapon: the slot-select and cycle actions, how the inventory turns them into a selection and a switch, and the selection cross the HUD shows while a select action is held. The game has no radial wheel steered by a stick and no slowdown while selecting: the cross is four arms that appear while a slot-select button is held, highlight the held slot, and commit on release. The default buttons are in [input.md](input.md#the-default-gamepad-keymap).
 
-None of the native functions below except [`Inventory::UpdateWeaponHandling`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-UpdateWeaponHandling) is bound in pyxis yet; they are verified in the IDB and named here without numbers. The movie side was read from `ui/hud.gfx`'s ActionScript.
+The native functions below that are not linked are not bound in pyxis yet; they are verified in the IDB and named here without numbers. The movie side was read from `ui/hud.gfx`'s ActionScript.
 
 ## The actions
 
@@ -29,6 +29,17 @@ The `NInventorySelect` state tasks read no input. Each queues its configured act
 - `NEXT_WEAPON` and `PREV_WEAPON` step through dual-wield, two-handed, and special (not explosives), skipping empty slots, queue the result, show the cross with it highlighted, and commit a short fixed delay after the last step. Pressing both cancels the step.
 - A holster press sets a latch that hides the cross and drops the pending slot until every select input is released; it also starts a holster.
 - The cross is not shown in a vehicle seat, except on a motorcycle.
+
+## The switch away from an empty weapon
+
+The game switches weapons on its own in one case: the player pulls the trigger of a weapon that is empty and cannot reload. It happens in the per-gun ammunition check, [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-CheckIfReloadShouldBeTriggeredBase), which [`UpdateWeapon_Parallel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-UpdateWeapon_Parallel) calls every tick for the gun it updates (the virtual is [`CheckIfReloadShouldBeTriggered`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-CheckIfReloadShouldBeTriggered); the rocket launcher and the sniper rifle override it and call the base).
+
+- With the magazine ([`m_MagazineAmmo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_MagazineAmmo)) empty and no reload running, a weapon that [`CanReload`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-CanReload) starts a reload, trigger or not. That is the automatic reload, and it needs ammunition in the inventory.
+- A weapon that cannot reload, with a shot requested, calls [`Inventory::TryToSwitchToValidWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-TryToSwitchToValidWeapon) (except the hand grenade and the planted explosive). That tries the two-handed weapon, then the dual-wield weapon, then the special weapon, and selects the first whose magazine or inventory stock is not empty through `CCharacter::SelectWeapon`, the same call a committed manual selection ends in (`CCharacter::SwitchWeapon`). It waits on the animation's switch permission ([`m_DoesAnimationAllowSwitchingWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_DoesAnimationAllowSwitchingWeapons)) and is blocked by [`SB_DISABLE_SWITCH_WEAPONS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_DISABLE_SWITCH_WEAPONS); while blocked, it is tried again on the next tick that requests a shot.
+- At the pull's press edge only, when no switch happened, the local player's HUD gets [`HUDUI::OnOutOfAmmoFire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##func-OnOutOfAmmoFire) (the grenade counterpart for the hand grenade), and the gun's `OutOfAmmoFire` attached-effect usage is activated whether or not a switch happened. What the movie's `OnOutOfAmmoFire` shows, and whether every weapon's data defines an `OutOfAmmoFire` effect (a dry click), is unverified.
+- The shot is cancelled either way, so an empty weapon never fires.
+
+`TryToSwitchToValidWeapon` has one other caller, the `NWeaponEquipTask` state task, which calls it on entry when the character wields nothing. Manual selection, scripted switches, and the removal of a weapon do not go through it. Nothing else reacts to an empty weapon: it stays wielded and can be holstered, and the reload input does nothing, because `CCharacter::StartReloadingWieldingWeapon` queues the reload act only while `CanReload` holds. The dual-wield weapon is one weapon with one magazine for both guns, so the pistols run dry together.
 
 ## The selection cross
 

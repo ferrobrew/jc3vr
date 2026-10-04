@@ -292,7 +292,9 @@ The yank gesture is a sharp pull of the left hand back toward the body while a l
 
 The dual-wield slot is one `CWeaponBase` with a `CWeaponData` component per gun. Each gun has its own attach bone, so gun 0 rides the dominant hand and gun 1 rides the other hand. On foot the game exposes one fire input and alternates the barrels internally, at the tail of `Fire_Projectile` (the component index [`WeaponBase::m_NextWeaponToFire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_NextWeaponToFire) and each component's fire-position cursor [`WeaponData::m_InternalFirePositionCurrentIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_InternalFirePositionCurrentIndex)). Each trigger fires its own component: the mod pins both the cursor and the dispatched `CWeaponData` to that component, so that the muzzle origin and the flash stay consistent, and writes that hand's ray into `m_AimTargetPosition` before the shot is built. Ammunition, recoil, heat, and effects are counted per fire call, never per barrel, so nothing is counted twice.
 
-While both pistols are in the hands (on foot, swimming, falling, under the parachute, or in a passenger seat), the left trigger fires the left pistol, so retracting the tethers (and the reel boost, which is the same action) moves to the left stick click. The stick click's weapon-cycle fallback, when it is enabled, yields to it while dual-wielding; the holsters draw the other slots. The stick click is the one off-hand input that is otherwise idle on foot while the holsters draw the weapons, and it keeps retraction on the grapple hand.
+While the off-hand holds a pistol (on foot, swimming, falling, under the parachute, or in a passenger seat), the off-hand's trigger fires it, so retracting the tethers (and the reel boost, which is the same action) moves to the left stick click. The stick click's weapon-cycle fallback, when it is enabled, yields to it while dual-wielding; the holsters draw the other slots. The stick click is the one off-hand input that is otherwise idle on foot while the holsters draw the weapons, and it keeps retraction on the grapple hand.
+
+Each hand draws its own pistol at a hip holster and holsters it there; an undrawn pistol waits on the hip on its hand's side, and an empty hand's trigger fires nothing ([controllers.md, "Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand)).
 
 The two guns share one weapon state, so a reload is one animation for both. Under the action-runs tier the hands stay on the controllers, and both guns stop firing for the reload's duration.
 
@@ -490,7 +492,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.game_rumble`, `haptics.grapple` | Built. |
-| The dual-wield split | `dual_wield.split`, `dual_wield.place_by_handedness` | Built. |
+| The dual-wield split | `dual_wield.split`, `dual_wield.place_by_handedness`, `dual_wield.independent_draw` | Built. Independent draws are untested in the headset. |
 | The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. A grapple hand that holds a gun stays free. |
 | The yank gesture | `bindings.yank.enabled` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 during the chase | none | Re-bases yaw and height only while the chase is active ([controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale)). |

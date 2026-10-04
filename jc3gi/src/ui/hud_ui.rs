@@ -138,6 +138,19 @@ impl HUDUI {
             f(self as *mut Self as _)
         }
     }
+    pub const OnOutOfAmmoFire_ADDRESS: usize = 0x140DFA520;
+    /// Invokes the movie's `OnOutOfAmmoFire`, the out-of-ammunition notice. Its only caller is
+    /// [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase),
+    /// at a trigger pull of the local player's weapon that is empty, cannot reload, and found no
+    /// weapon to switch to.
+    pub unsafe fn OnOutOfAmmoFire(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::OnOutOfAmmoFire_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl HUDUI {
     /// The value `OnOmniDamage` writes into [`UIManager::m_GrabScreenTimer`](crate::ui::ui_manager::UIManager::m_GrabScreenTimer) (seconds) when

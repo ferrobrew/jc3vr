@@ -1,0 +1,194 @@
+//! The empty weapon: the game's automatic switch away from it suppressed, and its dry fire felt in
+//! the hand. The engine side is in `docs/engine/gameplay/weapon-selection.md`, "The switch away
+//! from an empty weapon".
+//!
+//! When the player pulls the trigger of a weapon whose magazine is empty and which cannot reload,
+//! the per-gun ammunition check ([`WeaponBase::CheckIfReloadShouldBeTriggeredBase`]) calls
+//! [`Inventory::TryToSwitchToValidWeapon`], which switches to another weapon with ammunition.
+//! Under the controller scheme the weapons are drawn and holstered by hand, so a gun that leaves
+//! the hand on its own breaks that. Two detours scope the suppression to that one caller:
+//!
+//! - a detour on the ammunition check marks the check of the local player's weapon on its thread
+//!   ([`CHECK`]) for the length of the call;
+//! - a detour on the switch, inside a marked check and with `weapons.auto_switch_when_empty` off,
+//!   reports that no weapon qualified without switching. The game then treats the pull as it does
+//!   with no other weapon to switch to: the HUD's out-of-ammunition notice and the gun's
+//!   `OutOfAmmoFire` effect at the pull's press edge, and no shot. The switch's other caller, the
+//!   `NWeaponEquipTask` state task, runs outside a check and is left alone, as are manual
+//!   selection, scripted switches, and the removal of a weapon, which never call it.
+//!
+//! The empty gun stays wielded, so it can be holstered at its holster as usual, and the reload
+//! input does nothing until ammunition is picked up, since the game queues a reload only when the
+//! weapon can reload. Both dual-wielded pistols share one magazine, so they run dry together and
+//! both stay in the hands.
+//!
+//! A pull at the press edge that the check found empty (it tried the switch) pulses the hand
+//! whose gun was pulled with `weapons.haptics.dry_fire`, whether or not the switch is suppressed,
+//! since the gun gives no recoil to feel.
+
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+use detours_macro::detour;
+use jc3gi::{
+    character::inventory::Inventory,
+    equipment::weapon::{WeaponBase, WeaponData},
+};
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    config::Config,
+    controllers::{
+        scheme,
+        weapons::{fire, haptics},
+    },
+};
+
+pub(super) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_static_binder(&CHECK_IF_RELOAD_SHOULD_BE_TRIGGERED_BASE_BINDER)
+        .with_static_binder(&TRY_TO_SWITCH_TO_VALID_WEAPON_BINDER)
+}
+
+/// The empty-weapon readout.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct EmptyStatus {
+    /// Automatic switches the game tried and the mod suppressed.
+    pub suppressed: u64,
+    /// Automatic switches the game tried and the mod let through.
+    pub allowed: u64,
+    /// Pulls of an empty gun at their press edge.
+    pub dry_fires: u64,
+}
+
+pub fn status() -> EmptyStatus {
+    EmptyStatus {
+        suppressed: SUPPRESSED.load(Ordering::Relaxed),
+        allowed: ALLOWED.load(Ordering::Relaxed),
+        dry_fires: DRY_FIRES.load(Ordering::Relaxed),
+    }
+}
+
+/// What the switch detour does with a call.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SwitchDecision {
+    /// Let the game switch: the call is not the empty-weapon switch of the player's weapon, or the
+    /// setting allows it.
+    Pass,
+    /// Report that no weapon qualified, without switching.
+    Suppress,
+}
+
+/// Decide a call of the switch: `in_check` is whether it comes from a marked ammunition check of
+/// the local player's weapon on this thread, and `auto_switch` the setting.
+pub fn decide(in_check: bool, auto_switch: bool) -> SwitchDecision {
+    if in_check && !auto_switch {
+        SwitchDecision::Suppress
+    } else {
+        SwitchDecision::Pass
+    }
+}
+
+/// Whether a marked check was a dry fire to pulse: the check tried the switch, which it does only
+/// for a requested shot of an empty weapon that cannot reload, at the pull's press edge.
+pub fn is_dry_fire(tried_switch: bool, was_trigger_pulled: bool) -> bool {
+    tried_switch && !was_trigger_pulled
+}
+
+static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
+static ALLOWED: AtomicU64 = AtomicU64::new(0);
+static DRY_FIRES: AtomicU64 = AtomicU64::new(0);
+
+/// A marked ammunition check in progress on this thread.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct Check {
+    /// Whether the check called the switch.
+    tried_switch: bool,
+}
+
+thread_local! {
+    static CHECK: Cell<Option<Check>> = const { Cell::new(None) };
+}
+
+/// The check runs on the thread that updates the weapon, a worker thread in the parallel pass, so
+/// the mark is per thread and nothing here touches the VR state.
+#[detour(address = jc3gi::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase_ADDRESS)]
+fn check_if_reload_should_be_triggered_base(
+    weapon: *mut WeaponBase,
+    gun_data: *mut WeaponData,
+    should_try_to_fire: *mut bool,
+    was_trigger_pulled: bool,
+) {
+    let original = || {
+        CHECK_IF_RELOAD_SHOULD_BE_TRIGGERED_BASE
+            .get()
+            .unwrap()
+            .call(weapon, gun_data, should_try_to_fire, was_trigger_pulled)
+    };
+    let acting = Config::lock_query(|c| c.controllers.enabled) && scheme::is_controllers();
+    let local = unsafe { weapon.as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
+    if !(acting && local) {
+        return original();
+    }
+    let outer = CHECK.replace(Some(Check {
+        tried_switch: false,
+    }));
+    original();
+    let check = CHECK.replace(outer);
+
+    if !check.is_some_and(|c| is_dry_fire(c.tried_switch, was_trigger_pulled)) {
+        return;
+    }
+    DRY_FIRES.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: the weapon is live for the length of its update, on this thread, and `gun_data` is
+    // one of its guns.
+    let hand = unsafe { weapon.as_ref() }.and_then(|w| unsafe { fire::gun_hand(w, gun_data) });
+    if let Some(hand) = hand {
+        let spec = Config::lock_query(|c| c.controllers.weapons.haptics.dry_fire);
+        haptics::pulse(hand, spec, haptics::PulseSource::DryFire);
+    }
+}
+
+#[detour(address = jc3gi::character::inventory::Inventory::TryToSwitchToValidWeapon_ADDRESS)]
+fn try_to_switch_to_valid_weapon(inventory: *mut Inventory) -> bool {
+    let check = CHECK.get();
+    if check.is_some() {
+        CHECK.set(Some(Check { tried_switch: true }));
+    }
+    let auto_switch = Config::lock_query(|c| c.controllers.weapons.auto_switch_when_empty);
+    match decide(check.is_some(), auto_switch) {
+        SwitchDecision::Suppress => {
+            SUPPRESSED.fetch_add(1, Ordering::Relaxed);
+            false
+        }
+        SwitchDecision::Pass => {
+            if check.is_some() {
+                ALLOWED.fetch_add(1, Ordering::Relaxed);
+            }
+            TRY_TO_SWITCH_TO_VALID_WEAPON.get().unwrap().call(inventory)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_checks_switch_is_suppressed_and_only_when_the_setting_is_off() {
+        assert_eq!(decide(true, false), SwitchDecision::Suppress);
+        assert_eq!(decide(true, true), SwitchDecision::Pass);
+        assert_eq!(decide(false, false), SwitchDecision::Pass);
+        assert_eq!(decide(false, true), SwitchDecision::Pass);
+    }
+
+    #[test]
+    fn a_dry_fire_pulses_once_per_pull() {
+        assert!(is_dry_fire(true, false));
+        assert!(!is_dry_fire(true, true));
+        assert!(!is_dry_fire(false, false));
+        assert!(!is_dry_fire(false, true));
+    }
+}

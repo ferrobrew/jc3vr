@@ -33,7 +33,13 @@ pub struct Inventory {
     /// [`UpdateWeapons_Parallel`](crate::character::inventory::Inventory::UpdateWeapons_Parallel) zeroes the grenade input while it
     /// is clear.
     pub m_DoesAnimationAllowGrenades: bool,
-    _field_187: [u8; 601],
+    _field_187: [u8; 2],
+    /// Whether the current animation permits switching weapons: recomputed by
+    /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions). A deferred switch, a
+    /// committed slot selection (`CCharacter::SwitchWeapon`), and
+    /// [`TryToSwitchToValidWeapon`](crate::character::inventory::Inventory::TryToSwitchToValidWeapon) all wait on it.
+    pub m_DoesAnimationAllowSwitchingWeapons: bool,
+    _field_18a: [u8; 598],
     /// The character that owns the inventory.
     pub m_Character: *mut crate::character::character::Character,
 }
@@ -158,6 +164,80 @@ impl Inventory {
                 Self::UpdateWeaponHandling_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const TryToSwitchToValidWeapon_ADDRESS: usize = 0x1408D61F0;
+    /// Switches to the first weapon that still has ammunition, in a fixed order: the
+    /// [`E_SLOT_TWO_HANDED`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED) weapon, then the
+    /// [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) weapon, then the
+    /// [`E_SLOT_TWO_HANDED_SPECIAL`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL) weapon. A weapon
+    /// qualifies when its magazine is not empty or the inventory holds ammunition of its type; the
+    /// order does not depend on the wielded slot, which is skipped only because it is empty. The
+    /// first that qualifies is switched to through `CCharacter::SelectWeapon`, and the function
+    /// returns true. It does nothing and returns false while
+    /// [`m_DoesAnimationAllowSwitchingWeapons`](crate::character::inventory::Inventory::m_DoesAnimationAllowSwitchingWeapons) is
+    /// clear, while the owner's
+    /// [`SB_DISABLE_SWITCH_WEAPONS`](crate::state::StateBitFlag::SB_DISABLE_SWITCH_WEAPONS) state bit is
+    /// set, or when no weapon qualifies.
+    ///
+    /// It has two callers. [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase)
+    /// calls it when the player pulls the trigger of a weapon that is empty and cannot reload,
+    /// which is the game's automatic switch away from an empty weapon. The `NWeaponEquipTask`
+    /// state task calls it on entry when its character wields nothing and the task is not
+    /// configured to equip a fixed slot.
+    pub unsafe fn TryToSwitchToValidWeapon(&mut self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
+                Self::TryToSwitchToValidWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x1408E46A0;
+    /// Places the inventory's weapons on the character
+    /// (`CInventory::UpdateAttachmentTransforms`): calls each slot weapon's attachment-transform
+    /// virtual, which sets every gun's current world matrix
+    /// ([`WeaponData::m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1)) from the
+    /// bone its attach-bone table
+    /// ([`WeaponData::m_lBoneAttachementPerWeaponState`](crate::equipment::weapon::WeaponData::m_lBoneAttachementPerWeaponState))
+    /// names for the weapon's state, then places the hand-held hijacking props, the boost
+    /// wingsuit's guns while wingsuiting, and the hijacking explosive. The character's pose-finalization pass
+    /// ([`Character::UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel))
+    /// calls it after its state tasks and again after the `MAIN` IK solve;
+    /// [`Character::UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass)
+    /// and the character's prop-transform update call it too. The `p3` and `p4` floats are
+    /// passed through to the weapons unchanged.
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        character: *const crate::character::character::Character,
+        p3: f32,
+        p4: f32,
+        transform_type: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *const crate::character::character::Character,
+                p3: f32,
+                p4: f32,
+                transform_type: u32,
+            ) = ::std::mem::transmute(Self::UpdateAttachmentTransforms_ADDRESS);
+            f(self as *mut Self as _, character, p3, p4, transform_type)
+        }
+    }
+    pub const UpdateInventoryPostFinalizePose_ADDRESS: usize = 0x1408C6960;
+    /// Runs each slot weapon's
+    /// [`UpdatePostFinalizePose`](crate::equipment::weapon::WeaponBase::UpdatePostFinalizePose), which
+    /// rewrites every gun's attach-bone table from the weapon's slot. The character's
+    /// pose-finalization pass calls it after the attachment placement and the IK passes, so a
+    /// table entry written by the character's state tasks or by any other writer lasts until this
+    /// call.
+    pub unsafe fn UpdateInventoryPostFinalizePose(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateInventoryPostFinalizePose_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
     pub const UpdateAttachmentEffects_ADDRESS: usize = 0x1408C6D30;

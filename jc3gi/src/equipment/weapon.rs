@@ -493,7 +493,11 @@ pub struct WeaponBase {
     _field_1a8: [u8; 4],
     /// Shots remaining that use the spread ring; decremented once per shot.
     pub m_ProjectileOffsetFireCount: i32,
-    _field_1b0: [u8; 164],
+    _field_1b0: [u8; 120],
+    /// The rounds in the magazine. A shot consumes from it; a reload refills it from the holder's
+    /// inventory stock of the weapon's ammunition type. The guns of a multi-gun weapon share it.
+    pub m_MagazineAmmo: i32,
+    _field_22c: [u8; 40],
     /// The animation modifier id (`ava::idstring<NAnimationSystem::SModifierIdTag>`) for holding
     /// this weapon without aiming.
     /// [`Character::SetCharacterModifiers`](crate::character::character::Character::SetCharacterModifiers)
@@ -716,6 +720,52 @@ impl WeaponBase {
             f(self as *mut Self as _)
         }
     }
+    pub const CheckIfReloadShouldBeTriggeredBase_ADDRESS: usize = 0x140965CF0;
+    /// The base implementation of the
+    /// [`CheckIfReloadShouldBeTriggered`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggered) virtual; the
+    /// rocket launcher's and the sniper rifle's overrides call it. It clears `should_try_to_fire`
+    /// while the holder reloads, draws, or holsters. For a player's weapon with limited
+    /// ammunition and an empty magazine ([`m_MagazineAmmo`](crate::equipment::weapon::WeaponBase::m_MagazineAmmo); a weapon whose
+    /// tuning sets no magazine size counts as empty only while the holder has no stock of its
+    /// ammunition), while no reload is running, it starts a reload when
+    /// [`CanReload`](crate::equipment::weapon::WeaponBase::CanReload) holds and the animation allows one, whether or not the
+    /// trigger is pulled. When the weapon cannot reload and the shot was requested, it:
+    ///
+    /// - except for the hand grenade and the planted explosive, calls
+    ///   [`Inventory::TryToSwitchToValidWeapon`](crate::character::inventory::Inventory::TryToSwitchToValidWeapon),
+    ///   the automatic switch to a weapon with ammunition;
+    /// - at the pull's press edge (`was_trigger_pulled` clear) only, for the local player's weapon
+    ///   and when no switch happened, calls
+    ///   [`HUDUI::OnOutOfAmmoFire`](crate::ui::hud_ui::HUDUI::OnOutOfAmmoFire) (or the grenade
+    ///   counterpart for the hand grenade), and, whether or not a switch happened, activates the
+    ///   gun's `OutOfAmmoFire` attached-effect usage on `weapon_data`;
+    ///
+    /// and in either case it clears `should_try_to_fire`, so an empty weapon never fires. The
+    /// switch is tried on every tick the shot is requested, while the out-of-ammo feedback plays
+    /// once per pull. It goes on to cancel a reload that should not continue, clear
+    /// `should_try_to_fire` while the holder may not fire, and start a predicted reload of a
+    /// partly empty magazine.
+    pub unsafe fn CheckIfReloadShouldBeTriggeredBase(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        should_try_to_fire: *mut bool,
+        was_trigger_pulled: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+                should_try_to_fire: *mut bool,
+                was_trigger_pulled: bool,
+            ) = ::std::mem::transmute(Self::CheckIfReloadShouldBeTriggeredBase_ADDRESS);
+            f(
+                self as *mut Self as _,
+                weapon_data,
+                should_try_to_fire,
+                was_trigger_pulled,
+            )
+        }
+    }
     pub const IsWeaponAimingBase_ADDRESS: usize = 0x140950F90;
     /// The base implementation of the [`IsWeaponAiming`](crate::equipment::weapon::WeaponBase::IsWeaponAiming) virtual.
     pub unsafe fn IsWeaponAimingBase(&self) -> bool {
@@ -919,6 +969,51 @@ impl WeaponBase {
             f(self as *mut Self as _, bone, weapon_index)
         }
     }
+    pub const SkipRenderInterpolationForOneFrame_ADDRESS: usize = 0x140982240;
+    /// Sets [`WeaponData::m_SkipRenderInterpolation`](crate::equipment::weapon::WeaponData::m_SkipRenderInterpolation) on gun `weapon_data_index`, and makes the
+    /// weapon's model-attachment components for that gun skip theirs, so the gun's next
+    /// attachment placement is drawn without interpolation. `-1` does so for every gun and every
+    /// model-attachment component. The flag lasts until
+    /// [`UpdatePostFinalizePose`](crate::equipment::weapon::WeaponBase::UpdatePostFinalizePose), so it acts on placements made
+    /// before the end of the holder's pose-finalization pass. The holster and predefined-bone
+    /// state tasks call it when they move a gun between bones.
+    pub unsafe fn SkipRenderInterpolationForOneFrame(&mut self, weapon_data_index: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, weapon_data_index: i32) = ::std::mem::transmute(
+                Self::SkipRenderInterpolationForOneFrame_ADDRESS,
+            );
+            f(self as *mut Self as _, weapon_data_index)
+        }
+    }
+    pub const UpdatePostFinalizePose_ADDRESS: usize = 0x1409A5010;
+    /// The weapon's post-pose-finalization update, run for every inventory weapon by
+    /// [`Inventory::UpdateInventoryPostFinalizePose`](crate::character::inventory::Inventory::UpdateInventoryPostFinalizePose)
+    /// at the end of the holder's pose-finalization pass. It clears every gun's
+    /// [`WeaponData::m_SkipRenderInterpolation`](crate::equipment::weapon::WeaponData::m_SkipRenderInterpolation), rewrites every gun's
+    /// [`WeaponData::m_lBoneAttachementPerWeaponState`](crate::equipment::weapon::WeaponData::m_lBoneAttachementPerWeaponState) entries for the
+    /// [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING) to
+    /// [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) states from
+    /// [`m_EquipSlot`](crate::equipment::weapon::WeaponBase::m_EquipSlot) (the `SetupWeaponAttachementBones` table, inlined), and
+    /// runs the enabled weapon components' post-finalization hook. For the
+    /// [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) slot the table puts the first gun on
+    /// [`ATTACH_HAND_RIGHT`](crate::character::character::SafeBoneIndex::ATTACH_HAND_RIGHT) when wielding
+    /// or dual-wielding and on
+    /// [`RIGHT_HOLSTER`](crate::character::character::SafeBoneIndex::RIGHT_HOLSTER) when holstered, and
+    /// the second gun on
+    /// [`LEFT_HOLSTER`](crate::character::character::SafeBoneIndex::LEFT_HOLSTER) except when
+    /// dual-wielding, where it rides
+    /// [`ATTACH_HAND_LEFT`](crate::character::character::SafeBoneIndex::ATTACH_HAND_LEFT); with a single
+    /// gun wielded the second waits on its holster. A bone a state task moves a gun to lasts only
+    /// until the end of the pass it was written in. The
+    /// disassembler mislabels it `CWeaponBase::CalculateAttachOffsets`.
+    pub unsafe fn UpdatePostFinalizePose(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdatePostFinalizePose_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const GetCurrentBoneAttachement_ADDRESS: usize = 0x140958B30;
     /// Returns the attach bone of gun `weapon_index` for the weapon's current
     /// [`m_State`](crate::equipment::weapon::WeaponBase::m_State), or an invalid-bone value when the index is out of range.
@@ -1019,6 +1114,37 @@ impl WeaponBase {
         unsafe {
             let f = (&raw const (*self.vftable()).GetTotalAmmo).read();
             f(self as *const Self as _)
+        }
+    }
+    /// Whether the weapon can start a reload: it has a magazine limit, the magazine is below
+    /// it, and the weapon has unlimited ammunition or its living holder's inventory holds
+    /// ammunition of its type. A weapon whose magazine and stock are both empty cannot.
+    /// `CCharacter::StartReloadingWieldingWeapon` queues the reload act only when it holds.
+    pub unsafe fn CanReload(&self) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).CanReload).read();
+            f(self as *const Self as _)
+        }
+    }
+    /// The per-gun ammunition check, called by
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) for `weapon_data` with the
+    /// tick's fire decision in `should_try_to_fire` and whether the trigger was already pulled
+    /// before this tick. The base implementation is
+    /// [`CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase).
+    pub unsafe fn CheckIfReloadShouldBeTriggered(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        should_try_to_fire: *mut bool,
+        was_trigger_pulled: bool,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).CheckIfReloadShouldBeTriggered).read();
+            f(
+                self as *mut Self as _,
+                weapon_data,
+                should_try_to_fire,
+                was_trigger_pulled,
+            )
         }
     }
     /// Deducts `count` rounds of ammunition for `weapon_data`.
@@ -1233,14 +1359,26 @@ pub struct WeaponBaseVftable {
     _vfunc_40: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_41: unsafe extern "system" fn(
-        this: *mut crate::equipment::weapon::WeaponBase,
-    ),
+    /// Whether the weapon can start a reload: it has a magazine limit, the magazine is below
+    /// it, and the weapon has unlimited ammunition or its living holder's inventory holds
+    /// ammunition of its type. A weapon whose magazine and stock are both empty cannot.
+    /// `CCharacter::StartReloadingWieldingWeapon` queues the reload act only when it holds.
+    pub CanReload: unsafe extern "system" fn(
+        this: *const crate::equipment::weapon::WeaponBase,
+    ) -> bool,
     _vfunc_42: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_43: unsafe extern "system" fn(
+    /// The per-gun ammunition check, called by
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) for `weapon_data` with the
+    /// tick's fire decision in `should_try_to_fire` and whether the trigger was already pulled
+    /// before this tick. The base implementation is
+    /// [`CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase).
+    pub CheckIfReloadShouldBeTriggered: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        should_try_to_fire: *mut bool,
+        was_trigger_pulled: bool,
     ),
     _vfunc_44: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
@@ -1414,7 +1552,14 @@ pub struct WeaponData {
     _field_2b4: [u8; 40],
     /// The uniform scale applied to the gun's world matrix while holstered.
     pub m_HolsteredScaleValue: f32,
-    _field_2e0: [u8; 6],
+    _field_2e0: [u8; 5],
+    /// Whether the gun's next placement skips the render interpolation: when set, the gun's
+    /// attachment placement copies the new world matrix into
+    /// [`m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0) as well, so the render update draws the gun
+    /// at its new place without blending from the old. Set by
+    /// [`WeaponBase::SkipRenderInterpolationForOneFrame`](crate::equipment::weapon::WeaponBase::SkipRenderInterpolationForOneFrame) and cleared by
+    /// [`WeaponBase::UpdatePostFinalizePose`](crate::equipment::weapon::WeaponBase::UpdatePostFinalizePose).
+    pub m_SkipRenderInterpolation: bool,
     /// Whether this gun leads a multi-gun first shot: [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) clears it on
     /// every gun and sets it on the firing one.
     pub m_IsLeadingWeaponFire: bool,

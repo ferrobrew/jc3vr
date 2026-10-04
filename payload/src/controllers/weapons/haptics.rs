@@ -78,6 +78,8 @@ pub enum PulseSource {
     Magazine,
     /// A controller chord the mod acts on: the recenter or the debug panel.
     Chord,
+    /// A trigger pull of an empty gun that cannot reload.
+    DryFire,
 }
 
 impl PulseSource {
@@ -96,6 +98,7 @@ impl PulseSource {
             PulseSource::MeleeStrike => "melee strike",
             PulseSource::Magazine => "magazine",
             PulseSource::Chord => "chord",
+            PulseSource::DryFire => "dry fire",
         }
     }
 

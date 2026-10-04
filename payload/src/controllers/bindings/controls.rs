@@ -82,9 +82,9 @@ pub struct Controls {
     /// Whether the move stick's click cycles to the next weapon on foot: the fallback for drawing
     /// weapons, on whenever the holsters are off.
     pub weapon_cycle: bool,
-    /// Whether a pistol is in each hand with the dual-wield split acting, in a mode whose triggers
-    /// fire the hand weapons: the off-hand's trigger fires its pistol, and where it would retract
-    /// the tethers the off-hand's stick click does instead.
+    /// Whether a pistol is in the off-hand with the dual-wield split acting, in a mode whose
+    /// triggers fire the hand weapons: the off-hand's trigger fires its pistol, and where it would
+    /// retract the tethers the off-hand's stick click does instead.
     pub dual_wield: bool,
     /// Whether the yank gesture fired this tick: a grapple tap.
     pub yank: bool,

@@ -205,6 +205,8 @@ pub struct HapticsConfig {
     pub grapple_attach: PulseSpec,
     /// Pulse the grapple hand when a yank is detected.
     pub yank: PulseSpec,
+    /// Pulse the hand whose gun is pulled while it is empty and cannot reload, once per pull.
+    pub dry_fire: PulseSpec,
 }
 
 impl HapticsConfig {
@@ -227,6 +229,10 @@ impl HapticsConfig {
             yank: PulseSpec {
                 amplitude: 0.5,
                 duration_s: 0.05,
+            },
+            dry_fire: PulseSpec {
+                amplitude: 0.3,
+                duration_s: 0.015,
             },
         }
     }
@@ -256,8 +262,12 @@ pub struct DualWieldConfig {
     /// retracts the tethers instead.
     pub split: bool,
     /// Put the first pistol in the dominant hand and the second in the other, moving the pistols'
-    /// attach bones when the game's layout has them the other way round.
+    /// attach bones when the game's layout has them the other way round. Needs `split`.
     pub place_by_handedness: bool,
+    /// Draw each pistol with its own hand: a hand grabbing a hip holster draws or holsters only its
+    /// own pistol, and a pistol not drawn waits on the hip on its hand's side. Needs `split`, which
+    /// keeps an undrawn pistol from firing.
+    pub independent_draw: bool,
 }
 
 impl DualWieldConfig {
@@ -265,6 +275,7 @@ impl DualWieldConfig {
         Self {
             split: true,
             place_by_handedness: true,
+            independent_draw: true,
         }
     }
 }

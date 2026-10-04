@@ -1,7 +1,7 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
-//! line and yank, the grenade throw, physical melee, the magazine gesture, per-hand aim assist, and
-//! the weapon-handling settings.
+//! line and yank, the grenade throw, physical melee, the magazine gesture, the empty weapon,
+//! per-hand aim assist, and the weapon-handling settings.
 
 use egui::Ui;
 
@@ -22,6 +22,7 @@ use crate::{
                 MagazineConfig, MeleeStrikeConfig, PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
+            empty::{self, EmptyStatus},
             foregrip::{self, ForegripStatus},
             grenade::{self, GrenadeStatus},
             haptics::{self, HapticsStatus},
@@ -48,6 +49,7 @@ pub(super) struct WeaponsReadout {
     grenade: GrenadeStatus,
     melee: MeleeStatus,
     aim: AimStatus,
+    empty: EmptyStatus,
 }
 
 impl WeaponsReadout {
@@ -64,6 +66,7 @@ impl WeaponsReadout {
             grenade: grenade::status(),
             melee: melee::status(),
             aim: controller_aim::status(),
+            empty: empty::status(),
         }
     }
 }
@@ -141,6 +144,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     grenade_readout(ui, &readout.grenade);
     melee_readout(ui, &readout.melee);
     magazine_readout(ui, &status.magazine);
+    empty_readout(ui, &readout.empty);
     assist_readout(ui, &readout.aim);
     haptics_readout(ui, &readout.haptics);
     match &status.wielded {
@@ -206,11 +210,29 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
 
 fn dual_wield_readout(ui: &mut Ui, d: &DualWieldStatus) {
     ui.label(format!(
-        "Dual wield: split {} · last update handed {} · pinned gun {} · pistols swapped from the game's layout {}",
+        "Dual wield: split {} · last update handed {} · pinned gun {}",
         if d.active { "acting" } else { "idle" },
         d.chosen.map_or("no hand", Hand::label),
         d.pinned.map_or("none".to_owned(), |g| g.to_string()),
-        yes_no(d.swapped)
+    ));
+    let a = &d.attach;
+    let drawn = |hand: Hand| {
+        if a.drawn[hand.index()] {
+            "drawn"
+        } else {
+            "holstered"
+        }
+    };
+    ui.label(format!(
+        "Pistol bones: owned {} · wielded {} · left {} · right {} · first pistol in {} · waiting draw {} · writes {} · snaps {}",
+        yes_no(a.owned),
+        yes_no(a.wielded),
+        drawn(Hand::Left),
+        drawn(Hand::Right),
+        a.gun_hands.map_or("the game's layout", |h| h[0].label()),
+        a.pending.map_or("none", Hand::label),
+        a.writes,
+        a.snaps
     ));
 }
 
@@ -312,6 +334,13 @@ fn magazine_readout(ui: &mut Ui, g: &MagazineGesture) {
     ));
 }
 
+fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
+    ui.label(format!(
+        "Empty weapon: dry fires {} · automatic switches suppressed {}, allowed {}",
+        e.dry_fires, e.suppressed, e.allowed
+    ));
+}
+
 fn assist_readout(ui: &mut Ui, a: &AimStatus) {
     let per_hand = Hand::BOTH
         .iter()
@@ -396,6 +425,14 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.add_enabled_ui(w.reload_gesture, |ui| {
         ui.indent("magazine", |ui| magazine_settings(ui, &mut w.magazine));
     });
+    ui.checkbox(
+        &mut w.auto_switch_when_empty,
+        "Switch weapons automatically when empty",
+    )
+    .on_hover_text(
+        "Let the game switch to another weapon when the trigger of an empty weapon that cannot \
+         reload is pulled. Off, the empty weapon stays in the hand and the pull only dry-fires.",
+    );
 }
 
 fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
@@ -481,6 +518,7 @@ fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
     pulse_settings(ui, "Grapple fire", &mut h.grapple_fire);
     pulse_settings(ui, "Grapple attach", &mut h.grapple_attach);
     pulse_settings(ui, "Yank", &mut h.yank);
+    pulse_settings(ui, "Dry fire", &mut h.dry_fire);
 }
 
 fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
@@ -494,7 +532,15 @@ fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
 fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
     ui.checkbox(&mut d.split, "Dual-wield split").on_hover_text(
         "Each pistol fires from its own hand's trigger; the off-hand's stick click retracts \
-         tethers while both pistols are out.",
+         tethers while the off-hand holds a pistol.",
+    );
+    ui.add_enabled(
+        d.split,
+        egui::Checkbox::new(&mut d.independent_draw, "Draw each pistol by hand"),
+    )
+    .on_hover_text(
+        "A hip holster grab draws or holsters only the grabbing hand's pistol; an undrawn \
+         pistol waits on the hip.",
     );
     ui.add_enabled(
         d.split,

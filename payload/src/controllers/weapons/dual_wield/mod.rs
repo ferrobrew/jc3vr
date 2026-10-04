@@ -7,18 +7,22 @@
 //! corrects each by its own hand. On foot the game has one fire input and alternates the guns after
 //! every shot. The split gives each hand's trigger its own gun:
 //!
-//! - **Placement.** Gun 0 rides the dominant hand and gun 1 the other: when the game's layout has
-//!   them the other way round (a left-handed layout), the two guns' attach bones for the
-//!   dual-wielding state are swapped, and swapped back when the split stops acting ([`place`]).
-//! - **Acting.** The split acts whenever the bindings inject and both pistols are in the hands, in
-//!   every mode. The mode governs only which triggers fire them ([`triggers_fire_pistols`]): on
-//!   foot, swimming, falling, under the parachute, and in a passenger seat each trigger fires its
-//!   own pistol; elsewhere (the wingsuit, the driver's seat) neither does.
-//! - **Input.** The bindings hold the game's fire action while either trigger is pulled, so the
-//!   game's own permission to shoot still reaches the weapon. The off-hand's trigger then fires
-//!   the off-hand gun rather than retracting the tethers; the tethers retract with the off-hand's
-//!   stick click instead ([`crate::controllers::bindings::tables`]). The triggers' press edges are
-//!   latched per hand at the input tick ([`observe_triggers`]).
+//! - **Placement and draws.** The mod owns the pistols' attach bones while the pair is wielded
+//!   ([`attach`]): gun 0 rides the dominant hand and gun 1 the other (with
+//!   `place_by_handedness`), and with independent draws each hand draws and holsters its own
+//!   pistol at a hip holster ([`draw`]), an undrawn pistol waiting on the hip on its hand's side.
+//!   The game keeps the pair as one dual-wielded weapon throughout.
+//! - **Acting.** The split acts whenever the bindings inject and a pistol of the pair is in a
+//!   hand, in every mode. The mode governs only which triggers fire them
+//!   ([`triggers_fire_pistols`]): on foot, swimming, falling, under the parachute, and in a
+//!   passenger seat each hand's trigger fires its own pistol; elsewhere (the wingsuit, the driver's
+//!   seat) neither does. A hand without a drawn pistol fires nothing.
+//! - **Input.** The bindings hold the game's fire action while a pistol's trigger is pulled, so
+//!   the game's own permission to shoot still reaches the weapon. While the off-hand holds a
+//!   pistol, its trigger fires that pistol rather than retracting the tethers; the tethers retract
+//!   with the off-hand's stick click instead ([`crate::controllers::bindings::tables`]). The
+//!   triggers' press edges are latched per hand at the input tick ([`observe_triggers`]), and only
+//!   for the hands that hold a pistol.
 //! - **Firing.** The game updates one gun per tick, the one at the weapon's next gun
 //!   ([`WeaponBase::m_NextWeaponToFire`]), and points the index at the other gun after every shot,
 //!   so left alone a held fire action fires both pistols in turn. At the weapon's per-tick update
@@ -40,14 +44,21 @@
 //!   trigger state, and magazine, so a second gun fired in the same tick would bypass the fire
 //!   rate and the semi-automatic rule. A pull inside the interval fires when the interval ends, and
 //!   a reload stops both.
+//! - **Reload and ammunition.** The pair keeps one magazine, so a pistol drawn alone fires from it
+//!   and a reload refills it for both. The reload plays the pair's reload; the undrawn pistol stays
+//!   on the hip through it.
+
+pub mod attach;
+pub mod draw;
 
 use std::time::{Duration, Instant};
 
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
+    character::inventory::WeaponSlot,
     equipment::weapon::{WeaponBase, WeaponInputs, WeaponState},
 };
 use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
@@ -55,6 +66,11 @@ use crate::controllers::{
     hands::late,
     mode::{AirborneVariant, Mode},
 };
+
+/// The dual-wield hooks, aggregated by [`crate::controllers::weapons::hook_library`].
+pub(crate) fn hook_library() -> HookLibrary {
+    attach::hook_library()
+}
 
 /// One hand's trigger at an input tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -275,16 +291,20 @@ pub struct DualWieldStatus {
     pub chosen: Option<Hand>,
     /// The gun the last update pinned as the weapon's next gun.
     pub pinned: Option<usize>,
-    /// Whether the guns' attach bones are swapped from the game's layout.
-    pub swapped: bool,
+    /// The pistols' attach bones and draws.
+    pub attach: attach::AttachStatus,
 }
 
 pub fn status() -> DualWieldStatus {
-    STATE.lock().status
+    let status = STATE.lock().status;
+    DualWieldStatus {
+        attach: attach::status(),
+        ..status
+    }
 }
 
-/// Whether the hands' triggers fire the hand weapons in `mode`, so that with a pistol in each hand
-/// each trigger fires its own. In the wingsuit and the driver's seat the triggers drive the suit
+/// Whether the hands' triggers fire the hand weapons in `mode`, so that each hand holding a pistol
+/// fires its own with its trigger. In the wingsuit and the driver's seat the triggers drive the suit
 /// or the vehicle.
 pub const fn triggers_fire_pistols(mode: Mode) -> bool {
     match mode {
@@ -305,8 +325,7 @@ pub struct TriggerTick {
 }
 
 /// Fold in the input tick's triggers, or `None` when the split does not act this tick: the toggle
-/// is off, the bindings do not inject, or the hands do not both hold a pistol of the dual-wield
-/// slot.
+/// is off, the bindings do not inject, or no hand holds a pistol of the dual-wield slot.
 pub(crate) fn observe_triggers(tick: Option<TriggerTick>) {
     let mut state = STATE.lock();
     state.status.active = tick.is_some();
@@ -337,13 +356,19 @@ pub(crate) unsafe fn before_update(
 ) -> Option<WeaponInputs> {
     if !(weapon.m_IsUserLocalPlayer
         && weapon.m_EquipSlot == WeaponSlot::E_SLOT_DUAL_WIELD
-        && weapon.m_State == WeaponState::E_WS_DUAL_WIELDING)
+        && matches!(
+            weapon.m_State,
+            WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
+        ))
     {
         return None;
     }
+    // The shot's hand and the gun aim read the attach bones, which a state task may have moved
+    // since the last write.
+    unsafe { attach::apply(weapon, false) };
+    let guns = attach::guns_by_hand(weapon).unwrap_or_else(|| unsafe { gun_by_hand(weapon) });
     let mut state = STATE.lock();
     let at = state.active_at?;
-    let guns = unsafe { gun_by_hand(weapon) };
     let fully_automatic =
         unsafe { weapon.m_Tuning.as_ref() }.is_some_and(|tuning| tuning.m_fully_automatic);
     // The game's own fire action is held while either trigger is pulled, and it reaches the weapon
@@ -390,43 +415,6 @@ pub(crate) fn on_shot(hand: Hand) {
     state.status.shots[hand.index()] += 1;
 }
 
-/// Put gun 0 of the player's dual-wield slot in `dominant`'s hand and gun 1 in the other while
-/// `active`; otherwise put back the game's layout if the split changed it.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn place(owner: &Character, dominant: Hand, active: bool) {
-    let weapon = owner
-        .m_Inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)
-        .map_or(std::ptr::null_mut(), |w| w.px);
-    let mut state = STATE.lock();
-    let Some(weapon) = (unsafe { weapon.as_mut() }) else {
-        state.swapped = None;
-        state.status.swapped = false;
-        return;
-    };
-    let address = weapon as *mut WeaponBase as usize;
-    if state.swapped.is_some_and(|a| a != address) {
-        // The slot holds another weapon now; the one swapped before is no longer the player's.
-        state.swapped = None;
-    }
-    let swapped = state.swapped.is_some();
-    let needs_swap = if active {
-        let first = unsafe { dual_bones(weapon) }.and_then(|[b0, _]| late::attach_hand(b0));
-        first.is_some_and(|hand| hand != dominant)
-    } else {
-        swapped
-    };
-    if needs_swap && unsafe { swap_dual_bones(weapon) } {
-        state.swapped = if swapped { None } else { Some(address) };
-        tracing::debug!(target: "controllers", restored = swapped, "dual wield: swapped the pistols' hands");
-    }
-    state.status.swapped = state.swapped.is_some();
-}
-
 /// How long the input tick's triggers stay current for the weapon update.
 const MAX_INPUT_AGE: Duration = Duration::from_millis(250);
 
@@ -434,8 +422,6 @@ struct State {
     split: Split,
     active_at: Option<Instant>,
     dominant: Hand,
-    /// The weapon whose attach bones are swapped from the game's layout.
-    swapped: Option<usize>,
     status: DualWieldStatus,
 }
 
@@ -443,7 +429,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     split: Split::new(),
     active_at: None,
     dominant: Hand::Right,
-    swapped: None,
     status: DualWieldStatus {
         active: false,
         triggers: [TriggerInput {
@@ -454,17 +439,26 @@ static STATE: Mutex<State> = Mutex::new(State {
         shots: [0; 2],
         chosen: None,
         pinned: None,
-        swapped: false,
+        attach: attach::AttachStatus {
+            owned: false,
+            wielded: false,
+            drawn: [false; 2],
+            gun_hands: None,
+            pending: None,
+            writes: 0,
+            snaps: 0,
+        },
     },
 });
 
-/// The gun each hand holds in the dual-wielding state, indexed by [`Hand::index`].
+/// The gun each hand holds in the weapon's state, from the game's attach bones, indexed by
+/// [`Hand::index`].
 unsafe fn gun_by_hand(weapon: &WeaponBase) -> [Option<usize>; 2] {
     let mut guns = [None; 2];
     for (index, gun) in unsafe { gun::guns(weapon) }.enumerate() {
         let hand = gun.and_then(|g| {
             g.m_lBoneAttachementPerWeaponState
-                .get(WeaponState::E_WS_DUAL_WIELDING as usize)
+                .get(weapon.m_State as usize)
                 .and_then(|&bone| late::attach_hand(bone))
         });
         if let Some(hand) = hand {
@@ -472,43 +466,6 @@ unsafe fn gun_by_hand(weapon: &WeaponBase) -> [Option<usize>; 2] {
         }
     }
     guns
-}
-
-/// The first two guns' attach bones for the dual-wielding state.
-unsafe fn dual_bones(weapon: &WeaponBase) -> Option<[u32; 2]> {
-    let mut guns = unsafe { gun::guns(weapon) };
-    let bone = |gun: Option<Option<&jc3gi::equipment::weapon::WeaponData>>| {
-        gun.flatten().and_then(|g| {
-            g.m_lBoneAttachementPerWeaponState
-                .get(WeaponState::E_WS_DUAL_WIELDING as usize)
-                .copied()
-        })
-    };
-    Some([bone(guns.next())?, bone(guns.next())?])
-}
-
-/// Swap the first two guns' dual-wielding attach bones, when both are hand bones on different
-/// hands. Returns whether they were swapped.
-unsafe fn swap_dual_bones(weapon: &mut WeaponBase) -> bool {
-    let Some([a, b]) = (unsafe { dual_bones(weapon) }) else {
-        return false;
-    };
-    let (Some(ha), Some(hb)) = (late::attach_hand(a), late::attach_hand(b)) else {
-        return false;
-    };
-    if ha == hb {
-        return false;
-    }
-    let list = &weapon.m_lWeaponData;
-    let slot = WeaponState::E_WS_DUAL_WIELDING as usize;
-    for (index, bone) in [(0, b), (1, a)] {
-        // SAFETY: `dual_bones` found both guns, so the list holds at least two live entries.
-        let gun = unsafe { (*list.m_Begin.add(index)).as_mut() };
-        if let Some(entry) = gun.and_then(|g| g.m_lBoneAttachementPerWeaponState.get_mut(slot)) {
-            *entry = bone;
-        }
-    }
-    true
 }
 
 #[cfg(test)]

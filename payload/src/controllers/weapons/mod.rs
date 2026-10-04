@@ -8,11 +8,14 @@
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
 //! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
 //! - [`haptics`]: the game's rumbles and the grapple's pulses routed to the hands;
-//! - [`dual_wield`]: each dual-wielded pistol fired by its own hand's trigger;
+//! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
+//!   trigger;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
 //! - [`grenade`]: the physical grenade throw;
 //! - [`melee`]: melee attacks from physical strikes;
 //! - [`magazine`]: the magazine reload gesture;
+//! - [`empty`]: the game's automatic switch away from an empty weapon suppressed, and the dry fire
+//!   pulsed;
 //! - [`scope`]: scoped weapons: the game's precision aim suppressed, and the lens on the scope;
 //! - [`config`]: the weapon-handling settings.
 //!
@@ -38,6 +41,7 @@
 mod camera_kick;
 pub mod config;
 pub mod dual_wield;
+pub mod empty;
 mod engine;
 mod fire;
 pub mod foregrip;
@@ -96,6 +100,8 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(camera_kick::hook_library())
         .with_hook_library(grenade::hook_library())
         .with_hook_library(scope::hook_library())
+        .with_hook_library(dual_wield::hook_library())
+        .with_hook_library(empty::hook_library())
 }
 
 /// What the first half of the weapon handling's input tick hands the bindings.
@@ -103,9 +109,9 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub struct TickStart {
     /// The grab volume each hand is in, indexed by [`Hand::index`].
     pub volumes: [Option<GrabVolume>; 2],
-    /// Whether the dual-wield split acts: a pistol of the dual-wield slot in each hand, with the
-    /// split on, in any mode.
-    pub dual_wield: bool,
+    /// The hands holding a pistol of the dual-wield slot while the dual-wield split acts (with the
+    /// split on, a pistol in at least one hand, in any mode), indexed by [`Hand::index`].
+    pub dual_wield: Option<[bool; 2]>,
 }
 
 /// What a grab did, for the debug UI.
@@ -193,22 +199,28 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     };
     let gameplay = gameplay(mode);
     let dual = config.weapons.dual_wield;
+    let settings = (dual.split && (dual.independent_draw || dual.place_by_handedness)).then_some(
+        dual_wield::attach::Settings {
+            dominant: config.dominant_hand,
+            independent: dual.independent_draw,
+            by_handedness: dual.place_by_handedness,
+        },
+    );
     // SAFETY: the input tick runs on the main thread outside the world update.
     let weapon = unsafe {
         engine::local_player().and_then(|owner| {
-            dual_wield::place(
-                owner,
-                config.dominant_hand,
-                dual.split && dual.place_by_handedness,
-            );
-            engine::held_weapon(owner)
+            let pair = dual_wield::attach::input_tick(owner, settings);
+            engine::held_weapon(owner).map(|w| with_pair(w, pair))
         })
     };
     scope::input_tick(weapon.map(|w| w.address));
-    let dual_wield = dual.split
-        && weapon.is_some_and(|w| {
-            w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD && w.wielded.hands == [true; 2]
-        });
+    let dual_wield = weapon
+        .filter(|w| {
+            dual.split
+                && w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
+                && w.wielded.hands.contains(&true)
+        })
+        .map(|w| w.wielded.hands);
 
     let mut state = STATE.lock();
     let geometry = weapon
@@ -366,8 +378,10 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         let outcome = match volume {
             GrabVolume::Holster(site) => {
                 let wielded = weapon.map(|(w, _)| w.wielded);
-                match holster::decide(site, hand, config.dominant_hand, wielded) {
-                    Some(action) => act(action, desired),
+                let independent =
+                    config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
+                match holster::decide(site, hand, config.dominant_hand, wielded, independent) {
+                    Some(action) => act(action, hand, independent, desired),
                     None => continue,
                 }
             }
@@ -450,10 +464,7 @@ pub(crate) fn stand_down() {
     grenade::stand_down();
     melee::stand_down();
     dual_wield::observe_triggers(None);
-    // SAFETY: the bindings stand down on the main thread outside the world update.
-    if let Some(owner) = unsafe { engine::local_player() } {
-        unsafe { dual_wield::place(owner, Hand::Right, false) };
-    }
+    dual_wield::attach::clear();
     let mut state = STATE.lock();
     state.weapon = None;
     state.well = None;
@@ -680,10 +691,37 @@ fn log_near_misses(grabs: &[Option<GrabVolume>; 2], grips: &[ButtonControl; 2]) 
     }
 }
 
-/// Carry out a holster decision.
-fn act(action: HolsterAction, desired: &mut Vec<Desired>) -> GrabOutcome {
+/// The wielded weapon as the dual-wield pair's owned layout has it: a pistol is in a hand only
+/// while that hand has it drawn, and the first drawn pistol's hand holds the weapon.
+fn with_pair(mut weapon: HeldWeapon, pair: Option<dual_wield::attach::Pair>) -> HeldWeapon {
+    if let Some(pair) = pair.filter(|p| p.wielded)
+        && weapon.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
+    {
+        weapon.wielded.hands = pair.drawn;
+        weapon.holder = pair
+            .gun_hands
+            .into_iter()
+            .find(|hand| pair.drawn[hand.index()]);
+    }
+    weapon
+}
+
+/// Carry out `hand`'s holster decision. With `independent` pistol draws, a draw of the dual-wield
+/// slot brings out only `hand`'s pistol.
+fn act(
+    action: HolsterAction,
+    hand: Hand,
+    independent: bool,
+    desired: &mut Vec<Desired>,
+) -> GrabOutcome {
     match action {
-        HolsterAction::Draw { action: select, .. } => {
+        HolsterAction::Draw {
+            slot,
+            action: select,
+        } => {
+            if independent && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+                dual_wield::attach::begin_draw(hand);
+            }
             // The game acts on a slot select when its input is released, so a one-tick click
             // selects.
             desired.push(Desired {
@@ -700,6 +738,12 @@ fn act(action: HolsterAction, desired: &mut Vec<Desired>) -> GrabOutcome {
                 Some(owner) => unsafe { engine::holster(owner) },
                 None => return GrabOutcome::NoCharacter,
             }
+        }
+        HolsterAction::DrawPistol { hand } => {
+            dual_wield::attach::draw(hand);
+        }
+        HolsterAction::HolsterPistol { hand } => {
+            dual_wield::attach::holster(hand);
         }
         HolsterAction::AlreadyDrawn { .. } => {}
     }

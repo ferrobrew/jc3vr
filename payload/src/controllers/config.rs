@@ -662,6 +662,10 @@ pub struct WeaponsConfig {
     pub scopes: bool,
     /// The scopes' precision-aim suppression and the lens's tuning.
     pub scope: ScopeConfig,
+    /// Let the game switch to another weapon when the trigger of an empty weapon that cannot
+    /// reload is pulled. Off, the empty weapon stays in the hand until it is holstered or another
+    /// is drawn, and the pull only dry-fires.
+    pub auto_switch_when_empty: bool,
 }
 
 impl WeaponsConfig {
@@ -681,6 +685,7 @@ impl WeaponsConfig {
             melee_strike: MeleeStrikeConfig::new(),
             scopes: true,
             scope: ScopeConfig::new(),
+            auto_switch_when_empty: false,
         }
     }
 }

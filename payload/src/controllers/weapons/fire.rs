@@ -112,7 +112,7 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
 /// # Safety
 ///
 /// `weapon` must be live, and `gun_data` null or one of its guns.
-unsafe fn gun_hand(weapon: &WeaponBase, gun_data: *const WeaponData) -> Option<Hand> {
+pub(super) unsafe fn gun_hand(weapon: &WeaponBase, gun_data: *const WeaponData) -> Option<Hand> {
     if !matches!(
         weapon.m_State,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING

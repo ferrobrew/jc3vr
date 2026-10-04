@@ -91,6 +91,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.haptics.grapple = weapons;
     c.weapons.dual_wield.split = weapons;
     c.weapons.dual_wield.place_by_handedness = weapons;
+    c.weapons.dual_wield.independent_draw = weapons;
     c.weapons.reload_gesture = weapons;
     c.weapons.grenade_throw = weapons;
     c.weapons.grenade.warning_overlay = weapons;
@@ -100,6 +101,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.scopes = weapons;
     c.weapons.scope.suppress_precision_aim = weapons;
     c.weapons.scope.reticle = weapons;
+    c.weapons.auto_switch_when_empty = !weapons;
     c.body.remap_head = room;
     c.body.remap_hands = hands;
     c.roomscale.posture = if room { Posture::Auto } else { Posture::Seated };

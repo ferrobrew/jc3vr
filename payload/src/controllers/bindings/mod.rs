@@ -290,14 +290,22 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
-    let pistols = start.dual_wield && dual_wield::triggers_fire_pistols(detection.mode);
-    controls.dual_wield = pistols;
+    // The hands whose triggers fire a pistol: those holding one, in a mode whose triggers fire.
+    let pistols = start
+        .dual_wield
+        .filter(|_| dual_wield::triggers_fire_pistols(detection.mode))
+        .unwrap_or([false; 2]);
+    controls.dual_wield = pistols[dominant.other().index()];
     controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
-    dual_wield::observe_triggers(start.dual_wield.then(|| TriggerTick {
+    dual_wield::observe_triggers(start.dual_wield.map(|_| TriggerTick {
         dominant,
-        triggers: controls.hands.map(|h| TriggerInput {
-            held: pistols && h.trigger_press.held(),
-            pressed: pistols && h.trigger_press.pressed,
+        triggers: Hand::BOTH.map(|hand| {
+            let fires = pistols[hand.index()];
+            let trigger = &controls.hands[hand.index()].trigger_press;
+            TriggerInput {
+                held: fires && trigger.held(),
+                pressed: fires && trigger.pressed,
+            }
         }),
     }));
     let grapple_hand = dominant.other();

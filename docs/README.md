@@ -39,7 +39,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [swim-locomotion.md](engine/gameplay/swim-locomotion.md) — the swim state-task family: act-quantized turn dispatch (fixed-angle turn clips past a threshold angle), the two heading paths (animated-turn slerp vs continuous `DoRotate`), the swimming capsule offsets that make `SetOrientation` receive a pitched frame, and why none of the on-foot orientation machinery applies in water.
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md) — the parachute state task and steering core, and how the camera input matrix is mixed into the chute's steering through the look-steer block.
 - [weapon-data.md](engine/gameplay/weapon-data.md) — where a weapon entity's files live, the weapon object and its fire points in the entity property file, the model parts, and the name hash; tooling in `tools/sights/`.
-- [weapon-selection.md](engine/gameplay/weapon-selection.md) — the slot-select and cycle actions, the inventory's selection and commit logic, the HUD's selection cross, and its placement.
+- [weapon-selection.md](engine/gameplay/weapon-selection.md) — the slot-select and cycle actions, the inventory's selection and commit logic, the automatic switch away from an empty weapon, the HUD's selection cross, and its placement.
 
 ## mod/
 

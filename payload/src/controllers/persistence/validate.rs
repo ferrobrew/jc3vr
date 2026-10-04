@@ -227,6 +227,7 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
     pulse("weapons.haptics.grapple_fire", &w.haptics.grapple_fire)?;
     pulse("weapons.haptics.grapple_attach", &w.haptics.grapple_attach)?;
     pulse("weapons.haptics.yank", &w.haptics.yank)?;
+    pulse("weapons.haptics.dry_fire", &w.haptics.dry_fire)?;
     range("weapons.haptics.intensity", w.haptics.intensity, 0.0, 1.0)?;
     nonnegative(
         "weapons.haptics.kick_amplitude_per_rad",
