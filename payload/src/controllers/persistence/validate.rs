@@ -6,7 +6,7 @@ use crate::controllers::{
     config::SightTable,
     frame::PressThresholds,
     persistence::{ControllerFile, Error, FILE_VERSION},
-    physical_hands::PhysicalHandsConfig,
+    physical_hands::{PhysicalHandsConfig, config::PickupConfig},
     vehicles::config::WheelSpec,
     weapons::config::{HeftConfig, PulseSpec, VolumeSpec},
 };
@@ -760,7 +760,67 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Error> {
     )?;
     nonnegative("physical_hands.object_impulse", p.object_impulse, 100.0)?;
     pulse("physical_hands.contact_pulse", &p.contact_pulse)?;
-    pulse("physical_hands.strike_pulse", &p.strike_pulse)
+    pulse("physical_hands.strike_pulse", &p.strike_pulse)?;
+    pickup(&p.pickup)
+}
+
+fn pickup(p: &PickupConfig) -> Result<(), Error> {
+    nonnegative("physical_hands.pickup.reach_m", p.reach_m, 1.0)?;
+    nonnegative(
+        "physical_hands.pickup.one_hand_mass_kg",
+        p.one_hand_mass_kg,
+        10_000.0,
+    )?;
+    nonnegative(
+        "physical_hands.pickup.two_hand_mass_kg",
+        p.two_hand_mass_kg,
+        10_000.0,
+    )?;
+    if p.two_hand_mass_kg < p.one_hand_mass_kg {
+        return Err(Error::Invalid(format!(
+            "physical_hands.pickup.two_hand_mass_kg ({}) must not be below \
+             physical_hands.pickup.one_hand_mass_kg ({})",
+            p.two_hand_mass_kg, p.one_hand_mass_kg
+        )));
+    }
+    nonnegative(
+        "physical_hands.pickup.stiffness_per_s",
+        p.stiffness_per_s,
+        1000.0,
+    )?;
+    nonnegative(
+        "physical_hands.pickup.max_speed_mps",
+        p.max_speed_mps,
+        200.0,
+    )?;
+    nonnegative(
+        "physical_hands.pickup.angular_stiffness_per_s",
+        p.angular_stiffness_per_s,
+        1000.0,
+    )?;
+    nonnegative(
+        "physical_hands.pickup.max_angular_speed_rps",
+        p.max_angular_speed_rps,
+        200.0,
+    )?;
+    nonnegative(
+        "physical_hands.pickup.heavy_response_s",
+        p.heavy_response_s,
+        10.0,
+    )?;
+    positive(
+        "physical_hands.pickup.break_distance_m",
+        p.break_distance_m,
+        100.0,
+    )?;
+    nonnegative("physical_hands.pickup.throw_scale", p.throw_scale, 20.0)?;
+    nonnegative(
+        "physical_hands.pickup.max_throw_speed_mps",
+        p.max_throw_speed_mps,
+        500.0,
+    )?;
+    pulse("physical_hands.pickup.grab_pulse", &p.grab_pulse)?;
+    pulse("physical_hands.pickup.release_pulse", &p.release_pulse)
 }
 
 fn positive(name: &str, value: f32, max: f32) -> Result<(), Error> {

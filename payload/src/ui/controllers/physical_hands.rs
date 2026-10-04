@@ -1,11 +1,16 @@
-//! Physical hands: each palm's contacts and push, the last strike, and the palm settings.
+//! Physical hands: each palm's contacts and push, what each hand reaches and holds, the last
+//! strike, and the palm and pickup settings.
 
 use egui::Ui;
 
 use crate::{
     controllers::{
         frame::Hand,
-        physical_hands::{PhysicalHandsConfig, PhysicalHandsStatus, config::StrikeTuning},
+        physical_hands::{
+            PhysicalHandsConfig, PhysicalHandsStatus,
+            config::{PickupConfig, StrikeTuning},
+            grasp::TargetKind,
+        },
     },
     ui::controllers::{vec3_drag, weapons::pulse_settings, yes_no},
 };
@@ -27,6 +32,28 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                 ui.label("not acting (holding something, yielded, or untracked)");
                 continue;
             }
+            if let Some(held) = s.held {
+                ui.label(format!(
+                    "holding {:.1} kg{}{} · {:.0} mm off",
+                    held.mass_kg,
+                    if held.shared { " with both hands" } else { "" },
+                    if held.lifted { "" } else { " (too heavy)" },
+                    held.lag_m * 1000.0
+                ));
+                continue;
+            }
+            ui.label(match s.reach {
+                None => "reaches nothing".to_owned(),
+                Some(reach) => match reach.kind {
+                    TargetKind::Weapon => {
+                        format!("reaches a weapon {:.0} mm away", reach.distance * 1000.0)
+                    }
+                    TargetKind::Prop { mass_kg } => format!(
+                        "reaches a {mass_kg:.1} kg object {:.0} mm away",
+                        reach.distance * 1000.0
+                    ),
+                },
+            });
             ui.label(match s.press {
                 None => "in the open".to_owned(),
                 Some((depth, object)) => format!(
@@ -48,6 +75,19 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
         "Strikes {} · object pushes {} · off-thread ticks {}",
         status.strikes, status.object_pushes, status.off_thread
     ));
+    let p = &status.pickup;
+    ui.label(format!(
+        "Pickups: {} holds · {} weapons · {} let go · {} lost{}",
+        p.holds,
+        p.weapons,
+        p.releases,
+        p.lost,
+        p.last_throw_mps
+            .map_or(String::new(), |v| format!(" · last throw {v:.1} m/s"))
+    ));
+    if let Some(error) = &p.last_error {
+        ui.label(format!("Last pickup error: {error}"));
+    }
     if let Some(strike) = status.last_strike {
         ui.label(format!(
             "Last strike: {} {} at {:.1} m/s, strength {:.2}, damage {} (took {}), impulse {:.1}{}",
@@ -119,6 +159,42 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         ui.checkbox(&mut p.haptics, "Contact pulses");
         pulse_settings(ui, "Contact pulse", &mut p.contact_pulse);
         pulse_settings(ui, "Strike pulse", &mut p.strike_pulse);
+        ui.separator();
+        pickup_settings(ui, &mut p.pickup);
+    });
+}
+
+fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
+    ui.checkbox(&mut p.enabled, "Pick up objects with the grip");
+    ui.add_enabled_ui(p.enabled, |ui| {
+        ui.checkbox(&mut p.weapons, "Grab weapons to pick them up");
+        ui.checkbox(&mut p.show_targets, "Mark what each hand reaches");
+        ui.add(egui::Slider::new(&mut p.reach_m, 0.0..=0.4).text("Reach (m)"));
+        ui.add(egui::Slider::new(&mut p.one_hand_mass_kg, 0.0..=200.0).text("One hand lifts (kg)"));
+        ui.add(egui::Slider::new(&mut p.two_hand_mass_kg, 0.0..=400.0).text("Two hands lift (kg)"));
+        ui.add(
+            egui::Slider::new(&mut p.stiffness_per_s, 0.0..=60.0).text("Follow stiffness (1/s)"),
+        );
+        ui.add(egui::Slider::new(&mut p.max_speed_mps, 0.0..=60.0).text("Fastest follow (m/s)"));
+        ui.add(
+            egui::Slider::new(&mut p.angular_stiffness_per_s, 0.0..=60.0)
+                .text("Turn stiffness (1/s)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut p.max_angular_speed_rps, 0.0..=60.0)
+                .text("Fastest turn (rad/s)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut p.heavy_response_s, 0.0..=1.0)
+                .text("Response at the one-hand limit (s)"),
+        );
+        ui.add(egui::Slider::new(&mut p.break_distance_m, 0.05..=3.0).text("Let go past (m)"));
+        ui.add(egui::Slider::new(&mut p.throw_scale, 0.0..=4.0).text("Throw (× hand)"));
+        ui.add(
+            egui::Slider::new(&mut p.max_throw_speed_mps, 0.0..=80.0).text("Fastest throw (m/s)"),
+        );
+        pulse_settings(ui, "Grab pulse", &mut p.grab_pulse);
+        pulse_settings(ui, "Release pulse", &mut p.release_pulse);
     });
 }
 

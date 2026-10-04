@@ -994,6 +994,53 @@ impl WeaponBase {
     pub fn vftable(&self) -> *const crate::equipment::weapon::WeaponBaseVftable {
         self.vftable as *const crate::equipment::weapon::WeaponBaseVftable
     }
+    pub const TYPE_ID_ADDRESS: usize = 0x14060F2F0;
+    /// `CWeaponBase::TYPE_ID`: the run-time type id of `CWeaponBase`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use. A weapon is a
+    /// physics game object of its own (not a rigid object): a weapon lying in the world has its own
+    /// body, and a physics query that hits it reports the weapon.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const PickupStart_ADDRESS: usize = 0x1409912B0;
+    /// Starts picking the weapon up for `activator` (a character's `CGameObject` subobject; any
+    /// other object is ignored). A hand grenade is taken at once: its stored ammunition goes to the
+    /// inventory, the HUD shows the grenade pickup, and the weapon despawns. Another weapon enters
+    /// [`E_WS_PICKING_UP`](crate::equipment::weapon::WeaponState::E_WS_PICKING_UP) and leaves the physics world; the weapon's
+    /// pickup track message then completes the pickup through [`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem).
+    /// A weapon with infinite pickups gives the character a copy instead. The weapon's pickup
+    /// interaction calls it when it executes, and on activation for a weapon that
+    /// `ShouldAutoPickup` takes without input.
+    pub unsafe fn PickupStart(&mut self, activator: *mut crate::game::GameObject) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                activator: *mut crate::game::GameObject,
+            ) = ::std::mem::transmute(Self::PickupStart_ADDRESS);
+            f(self as *mut Self as _, activator)
+        }
+    }
+    pub const PickupItem_ADDRESS: usize = 0x1409798C0;
+    /// Completes a pickup for `activator` (a character's `CGameObject` subobject): unequips the
+    /// wielded weapon, puts this one into the inventory and equips it, selects its slot, adds its
+    /// stored ammunition to the inventory, and plays the pickup vocal. A hand grenade is left to
+    /// [`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart). Called by the weapon's pickup track message, and
+    /// directly by [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)
+    /// for a swimming character.
+    pub unsafe fn PickupItem(&mut self, activator: *mut crate::game::GameObject) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                activator: *mut crate::game::GameObject,
+            ) = ::std::mem::transmute(Self::PickupItem_ADDRESS);
+            f(self as *mut Self as _, activator)
+        }
+    }
     pub const GetGripPosition_ADDRESS: usize = 0x140966840;
     /// Writes the world transform of the weapon's grip point for `hand` into `matrix`: the
     /// weapon's grip-table entry for that hand (the entry for the mounted state while

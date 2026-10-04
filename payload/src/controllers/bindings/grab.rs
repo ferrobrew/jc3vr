@@ -2,12 +2,13 @@
 //! performing the grip's default action (the off-hand's grapple). Pure.
 //!
 //! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, the
-//! magazine pouch, the C4 pouch, the vehicle controls, and the parachute's handles. The subsystem
-//! that owns a volume places it each input tick as a [`Candidate`] (the weapons in
-//! [`crate::controllers::weapons`], the vehicle controls and the parachute's handles in
-//! [`crate::controllers::vehicles`]), and
-//! [`grab_volume`] picks the one a hand's grab point is in. The tables latch the answer at the
-//! grip's press edge.
+//! magazine pouch, the C4 pouch, the vehicle controls, the parachute's handles, and an object in
+//! the physical hands' reach. The subsystem that owns a volume places it each input tick as a
+//! [`Candidate`] (the weapons in [`crate::controllers::weapons`], the vehicle controls and the
+//! parachute's handles in [`crate::controllers::vehicles`]), and [`grab_volume`] picks the one a
+//! hand's grab point is in. The pickup volume is not placed: the physical hands report it for a
+//! hand that reaches a loose object or a weapon ([`crate::controllers::physical_hands::pickup`]),
+//! and every placed volume wins over it. The tables latch the answer at the grip's press edge.
 
 use glam::Vec3;
 
@@ -31,6 +32,9 @@ pub enum GrabVolume {
     VehicleControl(ControlKind),
     /// The parachute's handle on that side (see [`crate::controllers::vehicles::parachute`]).
     ParachuteHandle(Hand),
+    /// An object within the empty hand's reach (see
+    /// [`crate::controllers::physical_hands::pickup`]).
+    Pickup,
 }
 
 impl GrabVolume {
@@ -44,6 +48,7 @@ impl GrabVolume {
             GrabVolume::VehicleControl(kind) => kind.label(),
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
             GrabVolume::ParachuteHandle(Hand::Right) => "right parachute handle",
+            GrabVolume::Pickup => "object in reach",
         }
     }
 }

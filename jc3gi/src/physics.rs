@@ -381,6 +381,33 @@ impl std::convert::AsMut<PfxCharacterInstance> for PfxCharacterInstance {
     }
 }
 #[repr(C, align(8))]
+/// An engine physics instance (`IPfxInstance`), the object behind a body's
+/// [`BODY_PROPERTY_PFX_INSTANCE`](crate::physics::hknpWorld::BODY_PROPERTY_PFX_INSTANCE) property. Only one member
+/// is bound.
+pub struct PfxInstance {
+    _field_0: [u8; 40],
+    /// The instance's owner (`IPfxGameObject*`): the [`PhysicsGameObject`](crate::physics::PhysicsGameObject) a physics query reports
+    /// for a hit on the instance's bodies ([`CastRayInfo::m_GameObject`](crate::physics::CastRayInfo::m_GameObject)).
+    pub m_GameObject: *mut ::std::ffi::c_void,
+}
+fn _PfxInstance_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], PfxInstance>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl PfxInstance {}
+impl std::convert::AsRef<PfxInstance> for PfxInstance {
+    fn as_ref(&self) -> &PfxInstance {
+        self
+    }
+}
+impl std::convert::AsMut<PfxInstance> for PfxInstance {
+    fn as_mut(&mut self) -> &mut PfxInstance {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// `CPfxRigidBody`: the engine's wrapper around a Havok rigid body in the physics system's world.
 /// Only some members are bound.
 pub struct PfxRigidBody {}
@@ -908,6 +935,34 @@ impl std::convert::AsMut<RaycastFilter> for RaycastFilter {
     }
 }
 #[repr(C, align(8))]
+/// A rigid object (`CRigidObject`): a [`PhysicsGameObject`](crate::physics::PhysicsGameObject) with one rigid body, such as a crate,
+/// a barrel, a gas canister, or a piece of debris. Its body may be static, fixed, keyframed, or
+/// dynamic. Characters, vehicles, and weapons are not rigid objects. Only its type id is bound.
+pub struct RigidObject {}
+impl RigidObject {
+    pub const TYPE_ID_ADDRESS: usize = 0x14060F1F0;
+    /// `CRigidObject::TYPE_ID`: the run-time type id of `CRigidObject`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<RigidObject> for RigidObject {
+    fn as_ref(&self) -> &RigidObject {
+        self
+    }
+}
+impl std::convert::AsMut<RigidObject> for RigidObject {
+    fn as_mut(&mut self) -> &mut RigidObject {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The water query interface (`CPhysicsSystem::IWaterProxy`) through which physics code reads
 /// water heights, reached through [`PhysicsSystem_s_WaterQueryProxy`](get_PhysicsSystem_s_WaterQueryProxy). Only the first slot is bound.
 pub struct WaterProxy {
@@ -967,9 +1022,182 @@ impl std::convert::AsMut<WaterProxyVftable> for WaterProxyVftable {
         self
     }
 }
+#[repr(C, align(16))]
+/// A Havok body (`hknpBody`): its transform, collision data, and the motion that moves it. Only
+/// some members are bound.
+pub struct hknpBody {
+    _field_0: [u8; 64],
+    /// The body's flags; see [`IS_DYNAMIC`](crate::physics::hknpBody::IS_DYNAMIC).
+    pub m_flags: u32,
+    _field_44: [u8; 36],
+    /// The body's motion in [`hknpWorld::m_motions`](crate::physics::hknpWorld::m_motions); bodies attached to one another share it.
+    pub m_motionId: u32,
+    _field_6c: [u8; 36],
+}
+fn _hknpBody_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x90], hknpBody>([0u8; 0x90]);
+    }
+    unreachable!()
+}
+impl hknpBody {}
+impl hknpBody {
+    /// The [`m_motionId`](crate::physics::hknpBody::m_motionId) of a freed body slot.
+    pub const INVALID_MOTION_ID: u32 = 2147483647;
+    /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a dynamic body, the only kind the velocity and impulse
+    /// setters ([`hknpWorld::setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity), [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt)) act on.
+    pub const IS_DYNAMIC: u32 = 2;
+}
+impl std::convert::AsRef<hknpBody> for hknpBody {
+    fn as_ref(&self) -> &hknpBody {
+        self
+    }
+}
+impl std::convert::AsMut<hknpBody> for hknpBody {
+    fn as_mut(&mut self) -> &mut hknpBody {
+        self
+    }
+}
 #[repr(C, align(8))]
-/// The Havok physics world (`hknpWorld`). Only some members are bound.
-pub struct hknpWorld {}
+/// One body property's values (`hknpBodyManager::PropertyBuffer`), indexed by body id: a body has
+/// the property when its bit is set in [`m_occupancy`](crate::physics::hknpBodyPropertyBuffer::m_occupancy), and its value is at
+/// that index of [`m_data`](crate::physics::hknpBodyPropertyBuffer::m_data), whose element size is the property's. Only some members
+/// are bound.
+pub struct hknpBodyPropertyBuffer {
+    _field_0: [u8; 8],
+    /// One bit per body id, 32 to a word.
+    pub m_occupancy: *const u32,
+    _field_10: [u8; 8],
+    /// The number of body ids the buffer covers.
+    pub m_capacity: u32,
+    _field_1c: [u8; 4],
+    /// The values.
+    pub m_data: *mut u8,
+}
+fn _hknpBodyPropertyBuffer_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x28], hknpBodyPropertyBuffer>([0u8; 0x28]);
+    }
+    unreachable!()
+}
+impl hknpBodyPropertyBuffer {}
+impl std::convert::AsRef<hknpBodyPropertyBuffer> for hknpBodyPropertyBuffer {
+    fn as_ref(&self) -> &hknpBodyPropertyBuffer {
+        self
+    }
+}
+impl std::convert::AsMut<hknpBodyPropertyBuffer> for hknpBodyPropertyBuffer {
+    fn as_mut(&mut self) -> &mut hknpBodyPropertyBuffer {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The body manager's map from body property key to [`hknpBodyPropertyBuffer`](crate::physics::hknpBodyPropertyBuffer)
+/// (`hkMap<hkUint16, hknpBodyManager::PropertyBuffer*>`), an open-addressed hash map. Only its
+/// lookup is bound.
+pub struct hknpBodyPropertyMap {
+    _field_0: [u8; 16],
+}
+fn _hknpBodyPropertyMap_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], hknpBodyPropertyMap>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl hknpBodyPropertyMap {
+    pub const getWithDefault_ADDRESS: usize = 0x1401E87D0;
+    /// The property buffer for property `key`, or `default` when there is none.
+    pub unsafe fn getWithDefault(
+        &self,
+        key: u16,
+        default: *mut crate::physics::hknpBodyPropertyBuffer,
+    ) -> *mut crate::physics::hknpBodyPropertyBuffer {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                key: u16,
+                default: *mut crate::physics::hknpBodyPropertyBuffer,
+            ) -> *mut crate::physics::hknpBodyPropertyBuffer = ::std::mem::transmute(
+                Self::getWithDefault_ADDRESS,
+            );
+            f(self as *const Self as _, key, default)
+        }
+    }
+}
+impl std::convert::AsRef<hknpBodyPropertyMap> for hknpBodyPropertyMap {
+    fn as_ref(&self) -> &hknpBodyPropertyMap {
+        self
+    }
+}
+impl std::convert::AsMut<hknpBodyPropertyMap> for hknpBodyPropertyMap {
+    fn as_mut(&mut self) -> &mut hknpBodyPropertyMap {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// A Havok motion (`hknpMotion`): the mass properties and velocities that move one body or a set
+/// of attached bodies. Positions are Havok space: the game-space position less
+/// [`PhysicsSystem::m_AccumulatedShift`](crate::physics::PhysicsSystem::m_AccumulatedShift). Only some members are bound.
+pub struct hknpMotion {
+    /// The centre of mass.
+    pub m_centerOfMass: crate::types::vector_math::AlignedVector3,
+    /// The orientation of the motion's frame, a unit quaternion `(x, y, z, w)`.
+    pub m_orientation: crate::types::vector_math::AlignedQuat,
+    /// The inverse inertia about the motion frame's axes and the inverse mass, as four `hkHalf`s
+    /// (each the upper 16 bits of an `f32`): `x`, `y`, `z`, then the inverse mass. A zero inverse
+    /// mass is infinite mass.
+    pub m_inverseInertia: [u16; 4],
+    _field_28: [u8; 24],
+    /// The linear velocity, world space.
+    pub m_linearVelocity: crate::types::vector_math::AlignedVector3,
+    /// The angular velocity, in the motion's frame.
+    pub m_angularVelocity: crate::types::vector_math::AlignedVector3,
+    _field_60: [u8; 32],
+}
+fn _hknpMotion_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x80], hknpMotion>([0u8; 0x80]);
+    }
+    unreachable!()
+}
+impl hknpMotion {}
+impl std::convert::AsRef<hknpMotion> for hknpMotion {
+    fn as_ref(&self) -> &hknpMotion {
+        self
+    }
+}
+impl std::convert::AsMut<hknpMotion> for hknpMotion {
+    fn as_mut(&mut self) -> &mut hknpMotion {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The Havok physics world (`hknpWorld`, Havok Physics 2014.1). Its body manager is embedded at
+/// the start; bodies and motions live in arrays indexed by body id and motion id. Only some members
+/// are bound.
+pub struct hknpWorld {
+    _field_0: [u8; 32],
+    /// The body manager's body array, indexed by body id. A body id below or at
+    /// [`m_peakBodyIndex`](crate::physics::hknpWorld::m_peakBodyIndex) has a slot; a freed slot's
+    /// [`hknpBody::m_motionId`](crate::physics::hknpBody::m_motionId) is [`hknpBody::INVALID_MOTION_ID`](crate::physics::hknpBody::INVALID_MOTION_ID).
+    pub m_bodies: *mut crate::physics::hknpBody,
+    _field_28: [u8; 48],
+    /// The body manager's property buffers: per-property arrays indexed by body id, looked up by
+    /// property key ([`hknpBodyPropertyMap::getWithDefault`](crate::physics::hknpBodyPropertyMap::getWithDefault)).
+    pub m_bodyProperties: crate::physics::hknpBodyPropertyMap,
+    _field_68: [u8; 8],
+    /// The highest body id the body manager has allocated.
+    pub m_peakBodyIndex: u32,
+    _field_74: [u8; 108],
+    /// The motion manager's motion array, indexed by [`hknpBody::m_motionId`](crate::physics::hknpBody::m_motionId).
+    pub m_motions: *mut crate::physics::hknpMotion,
+}
+fn _hknpWorld_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xE8], hknpWorld>([0u8; 0xE8]);
+    }
+    unreachable!()
+}
 impl hknpWorld {
     pub const castRay_ADDRESS: usize = 0x141500BE0;
     /// Casts a ray query (`hknpRayCastQuery`) and reports hits to `collector`
@@ -1009,6 +1237,61 @@ impl hknpWorld {
             f(self as *mut Self as _, body_id, impulse, position)
         }
     }
+    pub const setBodyVelocity_ADDRESS: usize = 0x1414CC540;
+    /// Sets the linear and angular velocity (world space, the angular one rotated into the
+    /// motion's frame) of the dynamic body `body_id`'s motion, waking the body if it sleeps. A body
+    /// that is not dynamic is left alone, and so is a call that changes neither velocity. The
+    /// disassembler mislabels it `hknpWorld::getBodyVelocity`.
+    pub unsafe fn setBodyVelocity(
+        &mut self,
+        body_id: u32,
+        linear: *const crate::types::vector_math::AlignedVector3,
+        angular: *const crate::types::vector_math::AlignedVector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_id: u32,
+                linear: *const crate::types::vector_math::AlignedVector3,
+                angular: *const crate::types::vector_math::AlignedVector3,
+            ) = ::std::mem::transmute(Self::setBodyVelocity_ADDRESS);
+            f(self as *mut Self as _, body_id, linear, angular)
+        }
+    }
+    pub const setBodyLinearVelocity_ADDRESS: usize = 0x1414CC710;
+    /// Sets the linear velocity (world space) of the dynamic body `body_id`'s motion, waking the
+    /// body if it sleeps; as [`setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity) for the linear part.
+    pub unsafe fn setBodyLinearVelocity(
+        &mut self,
+        body_id: u32,
+        linear: *const crate::types::vector_math::AlignedVector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_id: u32,
+                linear: *const crate::types::vector_math::AlignedVector3,
+            ) = ::std::mem::transmute(Self::setBodyLinearVelocity_ADDRESS);
+            f(self as *mut Self as _, body_id, linear)
+        }
+    }
+    pub const setBodyAngularVelocity_ADDRESS: usize = 0x1414CC7D0;
+    /// Sets the angular velocity (world space) of the dynamic body `body_id`'s motion, waking the
+    /// body if it sleeps; as [`setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity) for the angular part.
+    pub unsafe fn setBodyAngularVelocity(
+        &mut self,
+        body_id: u32,
+        angular: *const crate::types::vector_math::AlignedVector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_id: u32,
+                angular: *const crate::types::vector_math::AlignedVector3,
+            ) = ::std::mem::transmute(Self::setBodyAngularVelocity_ADDRESS);
+            f(self as *mut Self as _, body_id, angular)
+        }
+    }
     pub const setBodyShape_ADDRESS: usize = 0x1414CF370;
     /// Replaces the shape (`hknpShape*`) of the body `body_id` on the live world.
     pub unsafe fn setBodyShape(
@@ -1025,6 +1308,11 @@ impl hknpWorld {
             f(self as *mut Self as _, body_id, shape)
         }
     }
+}
+impl hknpWorld {
+    /// The body property that holds a body's engine instance ([`PfxInstance`](crate::physics::PfxInstance)), as the physics
+    /// queries read it to report the body's owner.
+    pub const BODY_PROPERTY_PFX_INSTANCE: u16 = 1;
 }
 impl std::convert::AsRef<hknpWorld> for hknpWorld {
     fn as_ref(&self) -> &hknpWorld {

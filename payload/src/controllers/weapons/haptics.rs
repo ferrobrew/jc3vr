@@ -82,6 +82,8 @@ pub enum PulseSource {
     DryFire,
     /// A C4 charge primed in the hand, and a press of the wrist detonator.
     C4,
+    /// An object taken hold of, a weapon picked up, or an object let go of by a physical hand.
+    Pickup,
 }
 
 impl PulseSource {
@@ -102,6 +104,7 @@ impl PulseSource {
             PulseSource::Chord => "chord",
             PulseSource::DryFire => "dry fire",
             PulseSource::C4 => "C4",
+            PulseSource::Pickup => "pickup",
         }
     }
 

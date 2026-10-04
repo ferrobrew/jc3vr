@@ -5,6 +5,8 @@
 //! - [`contact`]: whether each probe point has passed into a surface, and how deep;
 //! - [`push`]: the body's push away from what the palms press into;
 //! - [`strike`]: a palm's hit on a character as a punch or a slap, and what it deals;
+//! - [`pickup`]: taking hold of loose objects and picking up weapons with the grip, with the pure
+//!   hold logic in [`grasp`];
 //! - [`config`]: the settings.
 //!
 //! The palms are probed rather than simulated: no body is added to the physics world. Each tick,
@@ -21,6 +23,7 @@
 //!    scaled by the hand's speed into the character, as a punch with a closed fist and as a slap
 //!    with an open hand.
 //! 4. A fast hit on a dynamic object pushes its body.
+//! 5. An object within reach of a palm can be taken with the grip ([`pickup`]).
 //!
 //! A palm acts only on foot on the ground, for a tracked hand the controller drives that holds
 //! nothing: not a gun, not the foregrip, not a grenade or a charge being thrown. While a palm acts
@@ -31,11 +34,14 @@
 //! made only when the aim update runs on the thread the input tick runs on ([`input_tick`] notes
 //! it); otherwise the palms stand down and the readout says why.
 
+mod bodies;
 pub mod config;
 pub mod contact;
 mod draw;
 mod engine;
+pub mod grasp;
 pub mod palm;
+pub mod pickup;
 pub mod push;
 pub mod strike;
 
@@ -64,7 +70,9 @@ use crate::{
         motion,
         physical_hands::{
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
+            grasp::Reach,
             palm::{PROBE_POINTS, PalmBox},
+            pickup::{HeldReport, PickupState, PickupStatus},
             strike::{StrikeGate, StrikeKind, StrikePlan, impact_speed, strength},
         },
         roomscale::teleport,
@@ -119,6 +127,10 @@ pub struct HandStatus {
     pub kind: Option<StrikeKind>,
     /// Whether the strike gate is armed.
     pub armed: bool,
+    /// What the hand could take with its grip.
+    pub reach: Option<Reach>,
+    /// What the hand holds.
+    pub held: Option<HeldReport>,
 }
 
 /// One strike, for the readout.
@@ -150,6 +162,7 @@ pub struct PhysicalHandsStatus {
     pub off_thread: u64,
     /// The last cast or engine failure.
     pub last_error: Option<String>,
+    pub pickup: PickupStatus,
 }
 
 pub fn status() -> PhysicalHandsStatus {
@@ -287,25 +300,40 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     let curls = finger_curls();
     // SAFETY: forwarded from the caller.
     let melee = unsafe { engine::melee_tuning(owner) };
-    let options = CastOptions {
-        ignore: [owner as *const Character as usize, 0],
-        see_through: false,
-    };
 
     let mut state = STATE.lock();
     let now = Instant::now();
     if teleport::epoch() != state.epoch {
         state.epoch = teleport::epoch();
         state.reset_probes();
+        state.pickup.drop_all();
     }
+    let pickup_on = config.pickup.enabled;
+    if !pickup_on {
+        state.pickup.drop_all();
+    }
+    // The palms pass through what a hand holds, so that a free palm never pushes off it; the reach
+    // rays do not, so that the other hand can take hold of it too.
+    let held_objects = state.pickup.held_objects();
+    let probe_options = CastOptions {
+        ignore: [
+            owner as *const Character as usize,
+            held_objects.into_iter().find(|&o| o != 0).unwrap_or(0),
+        ],
+        see_through: false,
+    };
+    let reach_options = CastOptions {
+        ignore: [owner as *const Character as usize, 0],
+        see_through: false,
+    };
     let mut casts = 0;
     let mut error = None;
-    let mut cast = |from: Vec3, to: Vec3| -> Option<SurfaceHit> {
+    let mut cast = |from: Vec3, to: Vec3, options: &CastOptions| -> Option<SurfaceHit> {
         casts += 1;
         let ray = Ray::new(from, to - from)?;
-        // SAFETY: the simulation phase outside the physics step; the ignored object is the live
-        // local character.
-        match unsafe { raycast::cast(&ray, (to - from).length(), &options) } {
+        // SAFETY: the simulation phase outside the physics step; the ignored objects are the live
+        // local character and the objects the hands hold, which this tick's pickup checks.
+        match unsafe { raycast::cast(&ray, (to - from).length(), options) } {
             Ok(hit) => hit.map(|hit| unsafe { engine::surface(&hit) }),
             Err(e) => {
                 error = Some(e.to_string());
@@ -317,6 +345,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     let mut events = Vec::new();
     let mut hand_status = [HandStatus::default(); 2];
     let mut clamp = [Vec3::ZERO; 2];
+    let mut palms = [None; 2];
     for hand in Hand::BOTH {
         let i = hand.index();
         let velocity = state.hand_velocity(hand);
@@ -325,13 +354,30 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         let Some(cockpit) = active.hands[i].filter(|_| free[i]) else {
             state.probes[i].iter_mut().for_each(PointProbe::reset);
             state.pressed[i] = false;
+            state.pickup.forget_motion(hand);
             continue;
         };
         let palm = PalmBox::from_wrist(compose(cockpit.wrist), active.world_scale, &config);
+        palms[i] = Some(palm);
+        if state.pickup.holding(hand) {
+            // A holding hand neither probes, pushes, nor strikes: its palm is around the object.
+            state.probes[i].iter_mut().for_each(PointProbe::reset);
+            state.pressed[i] = false;
+            hand_status[i] = HandStatus {
+                acting: true,
+                palm: Some(palm),
+                speed,
+                armed: state.gates[i].armed(),
+                ..HandStatus::default()
+            };
+            continue;
+        }
         let points = palm.probe_points();
         let mut contacts = [PointContact::Clear; PROBE_POINTS];
         for (k, point) in points.into_iter().enumerate() {
-            contacts[k] = state.probes[i][k].step(point, shoulders[i], &mut cast);
+            contacts[k] = state.probes[i][k].step(point, shoulders[i], &mut |from, to| {
+                cast(from, to, &probe_options)
+            });
         }
         let contact = HandContact::fold(&contacts);
         let world_velocity = body_rotation * velocity;
@@ -361,6 +407,19 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         });
         let offset = contact.clamp_offset();
         clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+        let reach = if pickup_on {
+            // SAFETY: the simulation phase outside the physics step.
+            unsafe {
+                pickup::reach(
+                    &palm,
+                    config.pickup.reach_m * active.world_scale,
+                    contact.press.map(|(hit, _)| hit),
+                    &mut |from, to| cast(from, to, &reach_options),
+                )
+            }
+        } else {
+            None
+        };
         hand_status[i] = HandStatus {
             acting: true,
             palm: Some(palm),
@@ -380,9 +439,16 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             speed,
             kind,
             armed: state.gates[i].armed(),
+            reach,
+            held: None,
         };
     }
 
+    if pickup_on {
+        // SAFETY: the simulation phase outside the physics step.
+        let outcome = unsafe { pickup::tick(&mut state.pickup, palms, dt, &config.pickup) };
+        state.record_pickup(outcome, &mut hand_status, &config);
+    }
     let push = push::combine(hand_status.map(|h| h.push), &config);
     for event in events {
         // SAFETY: forwarded from the caller; the events' objects were found by this tick's casts.
@@ -440,6 +506,7 @@ struct State {
     /// When the last tick ran.
     at: Option<Instant>,
     epoch: u64,
+    pickup: PickupState,
 }
 
 impl State {
@@ -453,6 +520,47 @@ impl State {
             probes.iter_mut().for_each(PointProbe::reset);
         }
         self.pressed = [false; 2];
+    }
+
+    /// Fold a pickup tick into the readout, and pulse the hands that took hold or let go.
+    fn record_pickup(
+        &mut self,
+        outcome: pickup::TickOutcome,
+        hand_status: &mut [HandStatus; 2],
+        config: &PhysicalHandsConfig,
+    ) {
+        let status = &mut self.status.pickup;
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            hand_status[i].held = outcome.reports[i];
+            if outcome.taken[i] {
+                status.holds += 1;
+                pulse(
+                    hand,
+                    config.pickup.grab_pulse,
+                    1.0,
+                    config,
+                    PulseSource::Pickup,
+                );
+            }
+            if outcome.released[i] {
+                status.releases += 1;
+                pulse(
+                    hand,
+                    config.pickup.release_pulse,
+                    1.0,
+                    config,
+                    PulseSource::Pickup,
+                );
+            }
+        }
+        if let Some(speed) = outcome.throw {
+            status.last_throw_mps = Some(speed);
+        }
+        status.lost += outcome.lost;
+        if let Some(error) = outcome.error {
+            status.last_error = Some(error);
+        }
     }
 
     /// The hand's fastest velocity since the last tick, cockpit frame, metres per second.
@@ -581,6 +689,8 @@ static STATE: Mutex<State> = Mutex::new(State {
             speed: 0.0,
             kind: None,
             armed: true,
+            reach: None,
+            held: None,
         }; 2],
         push: Vec2::ZERO,
         casts: 0,
@@ -589,6 +699,14 @@ static STATE: Mutex<State> = Mutex::new(State {
         object_pushes: 0,
         off_thread: 0,
         last_error: None,
+        pickup: PickupStatus {
+            holds: 0,
+            weapons: 0,
+            releases: 0,
+            last_throw_mps: None,
+            lost: 0,
+            last_error: None,
+        },
     },
     probes: [[PointProbe::new(); PROBE_POINTS]; 2],
     gates: [StrikeGate::new(); 2],
@@ -597,6 +715,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     clamp: [Vec3::ZERO; 2],
     at: None,
     epoch: 0,
+    pickup: PickupState::new(),
 });
 
 /// Stop: forget the probes and the push, and say why.
@@ -606,6 +725,7 @@ fn stand_down(idle: Idle) {
         state.status.off_thread += 1;
     }
     state.reset_probes();
+    state.pickup.drop_all();
     state.last_sample = [None; 2];
     state.clamp = [Vec3::ZERO; 2];
     state.at = None;

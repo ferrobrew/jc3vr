@@ -67,6 +67,8 @@ pub struct PhysicalHandsConfig {
     pub strike_pulse: PulseSpec,
     /// Draw the palm boxes and their contacts in the world-space overlay.
     pub show_boxes: bool,
+    /// Picking up and holding loose objects with an empty hand's grip.
+    pub pickup: PickupConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -111,6 +113,7 @@ impl PhysicalHandsConfig {
                 duration_s: 0.06,
             },
             show_boxes: false,
+            pickup: PickupConfig::new(),
         }
     }
 }
@@ -130,4 +133,79 @@ pub struct StrikeTuning {
     pub impulse: f32,
     /// The least strength at which the struck character stumbles, `0..=1`; above one, never.
     pub stumble_strength: f32,
+}
+
+/// Picking up with the physical hands (see [`crate::controllers::physical_hands::pickup`]). A grip
+/// press with an empty hand near a loose object takes hold of it; near a weapon lying in the world
+/// it picks the weapon up the game's own way.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PickupConfig {
+    pub enabled: bool,
+    /// How far from the palm an object can be taken, metres of the player's hand.
+    pub reach_m: f32,
+    /// Collect weapons lying in the world by grabbing them.
+    pub weapons: bool,
+    /// The heaviest object one hand lifts, kilograms.
+    pub one_hand_mass_kg: f32,
+    /// The heaviest object two hands lift together, kilograms.
+    pub two_hand_mass_kg: f32,
+    /// The held object's speed toward the hand per metre it is off, per second.
+    pub stiffness_per_s: f32,
+    /// The fastest the held object is driven, metres per second.
+    pub max_speed_mps: f32,
+    /// The held object's turn rate toward the hand's orientation per radian it is off, per second.
+    pub angular_stiffness_per_s: f32,
+    /// The fastest the held object is turned, radians per second.
+    pub max_angular_speed_rps: f32,
+    /// The time an object at the one-hand mass limit takes to come up to the driven velocity,
+    /// seconds; lighter objects in proportion. Zero follows at once.
+    pub heavy_response_s: f32,
+    /// How far the held object can lag behind the hand before it is let go, metres.
+    pub break_distance_m: f32,
+    /// The released object's velocity as a share of the hand's.
+    pub throw_scale: f32,
+    /// The fastest throw, metres per second.
+    pub max_throw_speed_mps: f32,
+    /// Mark the object each hand would take, and the held ones, in the world-space overlay.
+    pub show_targets: bool,
+    /// The pulse of taking hold of an object or picking up a weapon.
+    pub grab_pulse: PulseSpec,
+    /// The pulse of letting go.
+    pub release_pulse: PulseSpec,
+}
+
+impl PickupConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            reach_m: 0.1,
+            weapons: true,
+            one_hand_mass_kg: 25.0,
+            two_hand_mass_kg: 60.0,
+            stiffness_per_s: 18.0,
+            max_speed_mps: 20.0,
+            angular_stiffness_per_s: 14.0,
+            max_angular_speed_rps: 20.0,
+            heavy_response_s: 0.12,
+            break_distance_m: 0.6,
+            throw_scale: 1.0,
+            max_throw_speed_mps: 25.0,
+            show_targets: true,
+            grab_pulse: PulseSpec {
+                amplitude: 0.5,
+                duration_s: 0.04,
+            },
+            release_pulse: PulseSpec {
+                amplitude: 0.25,
+                duration_s: 0.02,
+            },
+        }
+    }
+}
+
+impl Default for PickupConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }

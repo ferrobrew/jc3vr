@@ -1,0 +1,482 @@
+//! Picking things up with an empty hand. The design is in `docs/mod/input/physical-hands.md`, the
+//! engine side in `docs/engine/gameplay/item-pickup.md`.
+//!
+//! Each simulation tick, from the palms' tick ([`super::after_aim`]), every empty hand that holds
+//! nothing looks for what it could take: short rays out of the palm, and the surface the palm
+//! presses into ([`reach`]). The nearest object it reaches that a hand takes is the hand's target:
+//! a loose rigid object light enough to move, or a weapon lying in the world.
+//!
+//! The grip decides, on the input tick: a hand with a target and no other grab volume reports the
+//! [`GrabVolume::Pickup`] volume to the bindings, which latch the grip press to it, so the press
+//! neither grapples nor reaches the game. A pickup grab of a weapon clicks the game's use-item
+//! action, so that the game picks the weapon up its own way ([`finish_tick`]). A pickup grab of an
+//! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
+//!
+//! A held object is driven, not attached ([`crate::controllers::physical_hands::grasp`]): each
+//! tick its body is given the velocities that carry it to where the hand holds it, and it is let go
+//! with the hand's velocity, so that it is thrown. One hand lifts an object up to
+//! [`PickupConfig::one_hand_mass_kg`], and both hands on one object lift up to
+//! [`PickupConfig::two_hand_mass_kg`]; a hand that holds what it cannot lift keeps hold but moves
+//! nothing until the other hand takes hold too. A hand that holds something does not probe, push,
+//! or strike.
+
+use std::{num::NonZeroUsize, time::Instant};
+
+use glam::Vec3;
+use jc3gi::input::input_action_map::Action;
+
+use crate::{
+    config::Config,
+    controllers::{
+        bindings::{
+            grab::GrabVolume,
+            hold::{Desired, MapKind, Target, Want},
+        },
+        frame::{Hand, Pose},
+        physical_hands::{
+            STALE_AFTER, STATE, bodies,
+            config::PickupConfig,
+            contact::{Surface, SurfaceHit},
+            grasp::{self, Follow, Grip, Reach, TargetKind, Velocities, VelocityTracker},
+            palm::PalmBox,
+            pulse,
+        },
+        weapons::{FinishInputs, haptics::PulseSource},
+    },
+};
+
+/// A hand's hold, for the readout.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HeldReport {
+    pub mass_kg: f32,
+    /// Whether the hands holding the object can lift it.
+    pub lifted: bool,
+    /// Whether the other hand holds the same object.
+    pub shared: bool,
+    /// The held body's centre of mass, world space.
+    pub centre: Vec3,
+    /// How far the body is from where the hand holds it, metres.
+    pub lag_m: f32,
+}
+
+/// The pickups' readout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PickupStatus {
+    /// Objects taken hold of.
+    pub holds: u64,
+    /// Weapons picked up through the game's use-item action.
+    pub weapons: u64,
+    /// Objects let go of.
+    pub releases: u64,
+    /// The speed of the last object let go of, metres per second.
+    pub last_throw_mps: Option<f32>,
+    /// Holds lost: the body was freed, changed hands, or was torn away.
+    pub lost: u64,
+    pub last_error: Option<String>,
+}
+
+/// The pickup volume `hand` is in: [`GrabVolume::Pickup`] when the hand has a target and holds
+/// nothing. Called from the input tick.
+pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    if !(config.enabled && config.pickup.enabled) {
+        return None;
+    }
+    let state = STATE.lock();
+    let i = hand.index();
+    let available = state.fresh(Instant::now())
+        && state.pickup.held[i].is_none()
+        && state.status.hands[i]
+            .reach
+            .is_some_and(|r| config.pickup.weapons || r.kind != TargetKind::Weapon);
+    available.then_some(GrabVolume::Pickup)
+}
+
+/// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
+/// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
+/// of it, and a released grip asks it to let go. Called from the input tick after the tables.
+pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let mut state = STATE.lock();
+    state.pickup.input_at = Some(Instant::now());
+    let fresh = state.fresh(Instant::now());
+    let mut pulses = Vec::new();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if !inputs.grips[i].held() {
+            if state.pickup.held[i].is_some()
+                || matches!(state.pickup.requests[i], Some(Request::Grab(_)))
+            {
+                state.pickup.requests[i] = Some(Request::Release);
+            }
+            continue;
+        }
+        if inputs.grabs[i] != Some(GrabVolume::Pickup) {
+            continue;
+        }
+        let Some(reach) = state.status.hands[i].reach.filter(|_| fresh) else {
+            continue;
+        };
+        match reach.kind {
+            TargetKind::Weapon => {
+                desired.push(Desired {
+                    target: Target {
+                        map: MapKind::Player,
+                        action: Action::USE_ITEM,
+                    },
+                    want: Want::Click,
+                });
+                state.status.pickup.weapons += 1;
+                tracing::debug!(target: "controllers", ?hand, "physical hands: weapon pickup");
+                pulses.push(hand);
+            }
+            TargetKind::Prop { .. } => {
+                state.pickup.requests[i] = Some(Request::Grab(reach));
+            }
+        }
+    }
+    drop(state);
+    for hand in pulses {
+        pulse(
+            hand,
+            config.pickup.grab_pulse,
+            1.0,
+            &config,
+            PulseSource::Pickup,
+        );
+    }
+}
+
+/// Keep what the hands hold through a game menu: the grips are not read there, and a release is
+/// acted on when gameplay resumes. Called from the input tick in place of [`finish_tick`].
+pub(crate) fn pause() {
+    STATE.lock().pickup.input_at = Some(Instant::now());
+}
+
+/// The pickups' state across ticks.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PickupState {
+    held: [Option<Held>; 2],
+    requests: [Option<Request>; 2],
+    trackers: [VelocityTracker; 2],
+    /// When the input tick last acted on the grips.
+    input_at: Option<Instant>,
+}
+
+impl PickupState {
+    pub(super) const fn new() -> Self {
+        Self {
+            held: [None; 2],
+            requests: [None; 2],
+            trackers: [VelocityTracker::new(); 2],
+            input_at: None,
+        }
+    }
+
+    pub(super) fn holding(&self, hand: Hand) -> bool {
+        self.held[hand.index()].is_some()
+    }
+
+    /// The objects the hands hold, as addresses, zero for none.
+    pub(super) fn held_objects(&self) -> [usize; 2] {
+        self.held.map(|h| h.map_or(0, |h| h.object.get()))
+    }
+
+    /// Let go of everything without throwing, and forget the requests and the hands' motion.
+    pub(super) fn drop_all(&mut self) {
+        self.held = [None; 2];
+        self.requests = [None; 2];
+        self.trackers.iter_mut().for_each(VelocityTracker::reset);
+    }
+
+    /// Forget one hand's motion, when it is not tracked.
+    pub(super) fn forget_motion(&mut self, hand: Hand) {
+        self.trackers[hand.index()].reset();
+    }
+}
+
+/// What a hand could take: the nearest grabbable object hit by short rays out of the palm (from the
+/// back of the hand, through the palm, out to `reach_m`), or the object the palm presses into.
+/// `cast` returns the first hit between two points.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn reach(
+    palm: &PalmBox,
+    reach_m: f32,
+    press: Option<SurfaceHit>,
+    cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+) -> Option<Reach> {
+    let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
+    let length = reach_m.max(0.0) + 2.0 * palm.half_extents.y;
+    let hits = REACH_DIRECTIONS
+        .iter()
+        .filter_map(|&local| {
+            let direction = (palm.orientation * local).normalize_or_zero();
+            cast(origin, origin + direction * length)
+        })
+        .chain(press);
+    let reaches: Vec<Reach> = hits
+        .filter_map(|hit| {
+            let Surface::Solid {
+                object: Some(object),
+                body,
+            } = hit.surface
+            else {
+                return None;
+            };
+            // SAFETY: forwarded from the caller; the hit was found this tick.
+            let kind = unsafe { bodies::classify(object, body) }?;
+            Some(Reach {
+                object,
+                body,
+                point: hit.position,
+                distance: hit.position.distance(palm.centre),
+                kind,
+            })
+        })
+        .collect();
+    grasp::nearest(reaches)
+}
+
+/// The pickups' simulation tick: take hold and let go as the input tick asked, and drive what the
+/// hands hold. `palms` are the acting hands' palms; a hand without one lets go.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn tick(
+    state: &mut PickupState,
+    palms: [Option<PalmBox>; 2],
+    dt: f32,
+    config: &PickupConfig,
+) -> TickOutcome {
+    let mut outcome = TickOutcome::default();
+    let now = Instant::now();
+    let input_fresh = state
+        .input_at
+        .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
+    if !input_fresh {
+        // The bindings stopped reading the grips: no release will come.
+        state.held = [None; 2];
+        state.requests = [None; 2];
+    }
+
+    let poses = palms.map(|p| {
+        p.map(|p| Pose {
+            position: p.centre,
+            orientation: p.orientation,
+        })
+    });
+    let velocities = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        match poses[i] {
+            Some(pose) => state.trackers[i].update(pose.position, dt, VELOCITY_SMOOTHING_S),
+            None => {
+                state.trackers[i].reset();
+                Vec3::ZERO
+            }
+        }
+    });
+
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        match state.requests[i].take() {
+            Some(Request::Release) => {
+                if let Some(held) = state.held[i].take() {
+                    let shared = state.held[hand.other().index()].is_some_and(|o| o.same(&held));
+                    if !shared {
+                        // SAFETY: forwarded from the caller.
+                        let thrown = unsafe { throw(&held, velocities[i], config) };
+                        match thrown {
+                            Ok(speed) => outcome.throw = Some(speed),
+                            Err(e) => outcome.error = Some(e.to_string()),
+                        }
+                    }
+                    outcome.released[i] = true;
+                }
+            }
+            Some(Request::Grab(reach)) => {
+                let Some(palm) = poses[i] else {
+                    continue;
+                };
+                // SAFETY: forwarded from the caller.
+                match unsafe { bodies::read(reach.body, reach.object) } {
+                    Ok(body) => match body.mass_kg {
+                        Some(mass_kg) => {
+                            state.held[i] = Some(Held {
+                                object: reach.object,
+                                body: reach.body,
+                                grip: Grip::of(palm, body.pose),
+                                mass_kg,
+                            });
+                            outcome.taken[i] = true;
+                        }
+                        None => {
+                            outcome.error =
+                                Some("physical hands: pickup: the body is fixed".to_owned());
+                        }
+                    },
+                    Err(e) => outcome.error = Some(e.to_string()),
+                }
+            }
+            None => {}
+        }
+        if state.held[i].is_some() && poses[i].is_none() {
+            state.held[i] = None;
+            outcome.lost += 1;
+        }
+    }
+
+    // Drive each held body once: from one hand, or from between both when they share it.
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let Some(held) = state.held[i] else {
+            continue;
+        };
+        let other = hand.other().index();
+        let shared = state.held[other].filter(|o| o.same(&held));
+        if shared.is_some() && hand == Hand::Right {
+            continue;
+        }
+        let Some(palm) = poses[i] else {
+            continue;
+        };
+        let (target, target_velocity, hands) = match (shared, poses[other]) {
+            (Some(o), Some(other_palm)) => (
+                grasp::between(held.grip.target(palm), o.grip.target(other_palm)),
+                (velocities[i] + velocities[other]) * 0.5,
+                2,
+            ),
+            _ => (held.grip.target(palm), velocities[i], 1),
+        };
+        let lifted = grasp::can_lift(held.mass_kg, hands, config);
+        // SAFETY: forwarded from the caller.
+        let body = match unsafe { bodies::read(held.body, held.object) } {
+            Ok(body) => body,
+            Err(e) => {
+                lose(state, &held, &mut outcome, e.to_string());
+                continue;
+            }
+        };
+        let lag_m = target.centre.distance(body.pose.centre);
+        if lifted {
+            if grasp::torn_away(target, body.pose, config.break_distance_m) {
+                lose(
+                    state,
+                    &held,
+                    &mut outcome,
+                    "physical hands: pickup: the object was torn away".to_owned(),
+                );
+                continue;
+            }
+            let follow = Follow::for_mass(held.mass_kg, dt, config);
+            let drive = grasp::drive(target, target_velocity, body.pose, body.velocities, &follow);
+            // SAFETY: forwarded from the caller.
+            if let Err(e) = unsafe { bodies::drive(held.body, held.object, drive) } {
+                lose(state, &held, &mut outcome, e.to_string());
+                continue;
+            }
+        }
+        let report = HeldReport {
+            mass_kg: held.mass_kg,
+            lifted,
+            shared: shared.is_some(),
+            centre: body.pose.centre,
+            lag_m,
+        };
+        outcome.reports[i] = Some(report);
+        if shared.is_some() {
+            outcome.reports[other] = Some(report);
+        }
+    }
+    outcome
+}
+
+/// What a pickup tick did, for the readout, the haptics, and the overlay.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(super) struct TickOutcome {
+    /// Each hand's hold after the tick.
+    pub reports: [Option<HeldReport>; 2],
+    /// The hands that took hold this tick.
+    pub taken: [bool; 2],
+    /// The hands that let go this tick.
+    pub released: [bool; 2],
+    /// The speed of an object thrown this tick.
+    pub throw: Option<f32>,
+    /// Holds lost this tick.
+    pub lost: u64,
+    pub error: Option<String>,
+}
+
+/// How long the hands' velocity is smoothed over, seconds: short, so that a throw keeps the flick.
+const VELOCITY_SMOOTHING_S: f32 = 0.03;
+
+/// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
+/// (-Z), between the two, and out of either edge of the hand.
+const REACH_DIRECTIONS: [Vec3; 5] = [
+    Vec3::new(0.0, -1.0, 0.0),
+    Vec3::new(0.0, 0.0, -1.0),
+    Vec3::new(0.0, -1.0, -1.0),
+    Vec3::new(1.0, -0.5, 0.0),
+    Vec3::new(-1.0, -0.5, 0.0),
+];
+
+/// One hand's hold.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Held {
+    object: NonZeroUsize,
+    body: u32,
+    grip: Grip,
+    mass_kg: f32,
+}
+
+impl Held {
+    fn same(&self, other: &Held) -> bool {
+        self.object == other.object && self.body == other.body
+    }
+}
+
+/// What the input tick asked of a hand.
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum Request {
+    Grab(Reach),
+    Release,
+}
+
+/// Let go of `held` with the hand's velocity, and return the throw's speed.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+unsafe fn throw(
+    held: &Held,
+    hand_velocity: Vec3,
+    config: &PickupConfig,
+) -> Result<f32, bodies::BodyError> {
+    let body = unsafe { bodies::read(held.body, held.object) }?;
+    if !grasp::can_lift(held.mass_kg, 1, config) {
+        return Ok(0.0);
+    }
+    let linear = grasp::throw_velocity(hand_velocity, config);
+    let velocities = Velocities {
+        linear,
+        angular: body.velocities.angular,
+    };
+    unsafe { bodies::drive(held.body, held.object, velocities) }?;
+    Ok(linear.length())
+}
+
+/// Let go of `held` in every hand that holds it, as a lost hold.
+fn lose(state: &mut PickupState, held: &Held, outcome: &mut TickOutcome, why: String) {
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if state.held[i].is_some_and(|h| h.same(held)) {
+            state.held[i] = None;
+            outcome.released[i] = true;
+        }
+    }
+    outcome.lost += 1;
+    outcome.error = Some(why);
+}

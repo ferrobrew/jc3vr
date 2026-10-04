@@ -6,7 +6,8 @@
 //! - [`tables`] maps the semantic actions to the wanted game actions per mode;
 //! - [`hold`] turns the wanted actions into effector writes with the game's hold timing;
 //! - [`grab`] is the grab-volume query the grip bindings consult, over the volumes the weapon
-//!   handling places ([`crate::controllers::weapons`]);
+//!   handling places ([`crate::controllers::weapons`]), and the physical hands' pickup volume
+//!   ([`crate::controllers::physical_hands::pickup`]);
 //! - [`yank`] detects the yank gesture on the grapple hand, which the tables turn into a grapple
 //!   tap;
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
@@ -60,7 +61,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand},
         hands::{self, tiers},
         mode::{self, Detection, Mode},
-        roomscale, scheme, summary, vehicles,
+        physical_hands, roomscale, scheme, summary, vehicles,
         weapons::{
             self,
             config::PulseSpec,
@@ -284,13 +285,20 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         )
     };
     // A parachute handle wins over the body's volumes: a hand up by the risers reaches for its
-    // toggle, and a hand holding one must keep it rather than draw from a shoulder holster.
+    // toggle, and a hand holding one must keep it rather than draw from a shoulder holster. Every
+    // placed volume wins over an object in the physical hands' reach: the body's volumes are where
+    // the hand goes on purpose, and a loose object near a holster must not block the draw.
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        match vehicle_volumes[i] {
+        let placed = match vehicle_volumes[i] {
             handle @ Some(GrabVolume::ParachuteHandle(_)) => handle,
             vehicle => start.volumes[i].or(vehicle),
-        }
+        };
+        placed.or_else(|| {
+            (!in_menu)
+                .then(|| physical_hands::pickup::volume(hand))
+                .flatten()
+        })
     });
     let mut controls = Controls::from_frame(
         &frame,
@@ -378,16 +386,17 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         chord_pulse(Hand::BOTH);
     }
     if !in_menu {
-        weapons::finish_tick(
-            &weapons::FinishInputs {
-                grabs: step.grabs,
-                grips: controls.hands.map(|h| h.grip),
-                detection,
-                dt,
-            },
-            &mut step.desired,
-        );
+        let finish = weapons::FinishInputs {
+            grabs: step.grabs,
+            grips: controls.hands.map(|h| h.grip),
+            detection,
+            dt,
+        };
+        weapons::finish_tick(&finish, &mut step.desired);
         vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
+        physical_hands::pickup::finish_tick(&finish, &mut step.desired);
+    } else {
+        physical_hands::pickup::pause();
     }
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.

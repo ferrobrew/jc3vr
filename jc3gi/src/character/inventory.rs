@@ -33,7 +33,12 @@ pub struct Inventory {
     /// [`UpdateWeapons_Parallel`](crate::character::inventory::Inventory::UpdateWeapons_Parallel) zeroes the grenade input while it
     /// is clear.
     pub m_DoesAnimationAllowGrenades: bool,
-    _field_187: [u8; 2],
+    _field_187: [u8; 1],
+    /// Whether the current animation permits picking up a weapon; one half of
+    /// [`GetAnimationAllowsPickup`](crate::character::inventory::Inventory::GetAnimationAllowsPickup).
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) acts on the use-item input only while
+    /// it is set.
+    pub m_DoesAnimationAllowPickup: bool,
     /// Whether the current animation permits switching weapons: recomputed by
     /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions). A deferred switch, a
     /// committed slot selection (`CCharacter::SwitchWeapon`), and
@@ -205,12 +210,37 @@ impl Inventory {
     /// [`Character::QueueAct`](crate::character::character::Character::QueueAct). The relaxed branch
     /// fires every tick its conditions hold, and it is how the player's holster input takes
     /// effect, since the player's `HolsterWeapon` only forces the relaxed state.
+    ///
+    /// It is also where a weapon in the world is picked up. While
+    /// [`GetAnimationAllowsPickup`](crate::character::inventory::Inventory::GetAnimationAllowsPickup) holds and the use-item input
+    /// ([`E_INPUT_USE_ITEM`](crate::character::character::WeaponInput::E_INPUT_USE_ITEM)) is positive, a
+    /// character on land queues `ACT_PICKUP_WEAPON`, the full-body pickup animation. The weapon's
+    /// pickup interaction starts the pickup when it executes
+    /// ([`WeaponBase::PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart)), and the weapon's
+    /// pickup track message completes it
+    /// ([`WeaponBase::PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem)).
+    /// A swimming character instead takes the first weapon among its interaction user proxy's
+    /// valid entries (or the weapon of a weapon placement rule among them), picks it up at once
+    /// with `PickupItem`, and queues `ACT_PICKUP_WEAPON_PARTIAL`.
     pub unsafe fn UpdateWeaponHandling(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
                 Self::UpdateWeaponHandling_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const GetAnimationAllowsPickup_ADDRESS: usize = 0x1408BB6F0;
+    /// Whether the character may pick up a weapon now:
+    /// [`m_DoesAnimationAllowPickup`](crate::character::inventory::Inventory::m_DoesAnimationAllowPickup) is set and the owner's
+    /// [`SB_DISABLE_PICKUP`](crate::state::StateBitFlag::SB_DISABLE_PICKUP) state bit is clear. The weapon
+    /// pickup interaction tests it before it starts a pickup.
+    pub unsafe fn GetAnimationAllowsPickup(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsPickup_ADDRESS,
+            );
+            f(self as *const Self as _)
         }
     }
     pub const TryToSwitchToValidWeapon_ADDRESS: usize = 0x1408D61F0;
