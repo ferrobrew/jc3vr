@@ -1,12 +1,27 @@
-//! The action layout: every raw input the mod reads, its OpenXR action name, and its suggested
-//! binding on each interaction profile. Pure data; [`crate::vr::input::actions`] creates the OpenXR
-//! objects from it.
+//! The action layout: the `hands` set's poses, haptic output, and raw inputs, each input's OpenXR
+//! action name and suggested binding on each interaction profile, and the order every set and
+//! action takes in the persisted handle stash. Pure data; [`crate::vr::input::actions`] creates
+//! the OpenXR objects from it. The semantic sets' vocabulary is in [`crate::vr::input::semantic`].
+//!
+//! The raw inputs serve what has no game meaning of its own: the hand poses and finger curls, the
+//! grab volumes, the chords, input recovery, scheme detection, and the debug panel's pointer. Their
+//! localized names ask the player not to rebind them.
 //!
 //! The order of the items here is the order of the persisted handle stash (see
-//! [`crate::vr::input::stash`]), and [`fingerprint`] hashes it, so that a payload with a different
-//! layout never re-wraps another layout's handles.
+//! [`crate::vr::input::stash`]), and [`fingerprint`] hashes it with each action's type, so that a
+//! payload with a different layout never re-wraps another layout's handles.
 
-use crate::controllers::frame::{ActionSetKind, Hand, InteractionProfile};
+use crate::{
+    controllers::frame::{Hand, InteractionProfile},
+    vr::input::semantic::SemanticSet,
+};
+
+/// Append the note that marks a raw input's localized name.
+macro_rules! raw_name {
+    ($name:literal) => {
+        concat!($name, " (raw: hand poses, grabs, chords; do not rebind)")
+    };
+}
 
 /// A boolean input.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -21,10 +36,14 @@ pub(crate) enum BoolInput {
     BClick,
     BTouch,
     SystemClick,
+    /// The grip as a boolean the runtime thresholds: the squeeze force on the Index, the squeeze
+    /// value on Touch. Read only by the input self-check, which compares the runtime's threshold
+    /// with the mod's own.
+    SqueezeClick,
 }
 
 impl BoolInput {
-    pub(crate) const ALL: [BoolInput; 10] = [
+    pub(crate) const ALL: [BoolInput; 11] = [
         BoolInput::TriggerClick,
         BoolInput::TriggerTouch,
         BoolInput::ThumbstickClick,
@@ -35,6 +54,7 @@ impl BoolInput {
         BoolInput::BClick,
         BoolInput::BTouch,
         BoolInput::SystemClick,
+        BoolInput::SqueezeClick,
     ];
 
     pub(crate) const fn name(self) -> &'static str {
@@ -49,21 +69,23 @@ impl BoolInput {
             BoolInput::BClick => "b_click",
             BoolInput::BTouch => "b_touch",
             BoolInput::SystemClick => "system_click",
+            BoolInput::SqueezeClick => "squeeze_click",
         }
     }
 
     pub(crate) const fn localized_name(self) -> &'static str {
         match self {
-            BoolInput::TriggerClick => "Trigger click",
-            BoolInput::TriggerTouch => "Trigger touch",
-            BoolInput::ThumbstickClick => "Thumbstick click",
-            BoolInput::ThumbstickTouch => "Thumbstick touch",
-            BoolInput::TrackpadTouch => "Trackpad touch",
-            BoolInput::AClick => "A (lower face button)",
-            BoolInput::ATouch => "A touch",
-            BoolInput::BClick => "B (upper face button)",
-            BoolInput::BTouch => "B touch",
-            BoolInput::SystemClick => "System or menu button",
+            BoolInput::TriggerClick => raw_name!("Trigger click"),
+            BoolInput::TriggerTouch => raw_name!("Trigger touch"),
+            BoolInput::ThumbstickClick => raw_name!("Thumbstick click"),
+            BoolInput::ThumbstickTouch => raw_name!("Thumbstick touch"),
+            BoolInput::TrackpadTouch => raw_name!("Trackpad touch"),
+            BoolInput::AClick => raw_name!("A (lower face button)"),
+            BoolInput::ATouch => raw_name!("A touch"),
+            BoolInput::BClick => raw_name!("B (upper face button)"),
+            BoolInput::BTouch => raw_name!("B touch"),
+            BoolInput::SystemClick => raw_name!("System or menu button"),
+            BoolInput::SqueezeClick => raw_name!("Grip press"),
         }
     }
 }
@@ -96,10 +118,10 @@ impl FloatInput {
 
     pub(crate) const fn localized_name(self) -> &'static str {
         match self {
-            FloatInput::Trigger => "Trigger pull",
-            FloatInput::Squeeze => "Grip squeeze",
-            FloatInput::SqueezeForce => "Grip force",
-            FloatInput::TrackpadForce => "Trackpad force",
+            FloatInput::Trigger => raw_name!("Trigger pull"),
+            FloatInput::Squeeze => raw_name!("Grip squeeze"),
+            FloatInput::SqueezeForce => raw_name!("Grip force"),
+            FloatInput::TrackpadForce => raw_name!("Trackpad force"),
         }
     }
 }
@@ -123,15 +145,16 @@ impl Vec2Input {
 
     pub(crate) const fn localized_name(self) -> &'static str {
         match self {
-            Vec2Input::Thumbstick => "Thumbstick",
-            Vec2Input::Trackpad => "Trackpad",
+            Vec2Input::Thumbstick => raw_name!("Thumbstick"),
+            Vec2Input::Trackpad => raw_name!("Trackpad"),
         }
     }
 }
 
-/// The name of the always-active action set holding the poses and the haptic output.
+/// The name of the always-active action set holding the poses, the haptic output, and the raw
+/// inputs.
 pub(crate) const HANDS_SET_NAME: &str = "hands";
-pub(crate) const HANDS_SET_LOCALIZED_NAME: &str = "Hands";
+pub(crate) const HANDS_SET_LOCALIZED_NAME: &str = "Hands and raw input";
 
 /// The pose and output actions of the hands set, in stash order.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -161,6 +184,14 @@ impl HandsAction {
             HandsAction::GripPose => "Grip pose",
             HandsAction::AimPose => "Aim pose",
             HandsAction::Haptic => "Vibration",
+        }
+    }
+
+    /// The type tag [`stash_order`] gives the action.
+    const fn tag(self) -> &'static str {
+        match self {
+            HandsAction::GripPose | HandsAction::AimPose => "pose",
+            HandsAction::Haptic => "haptic",
         }
     }
 }
@@ -236,16 +267,21 @@ pub(crate) const fn provides(profile: InteractionProfile, hand: Hand, input: Inp
     }
 }
 
-/// Every action's name in stash order, for [`fingerprint`] and the stash's handle count: the hands
-/// set and its actions, then each mode set and its actions.
-pub(crate) fn stash_order() -> impl Iterator<Item = &'static str> {
-    std::iter::once(HANDS_SET_NAME)
-        .chain(HandsAction::ALL.iter().map(|a| a.name()))
-        .chain(ActionSetKind::ALL.iter().flat_map(|&kind| {
-            std::iter::once(kind.name())
-                .chain(BoolInput::ALL.iter().map(|i| i.name()))
-                .chain(FloatInput::ALL.iter().map(|i| i.name()))
-                .chain(Vec2Input::ALL.iter().map(|i| i.name()))
+/// Every set and action in stash order, each with a tag naming its type, for [`fingerprint`] and
+/// the stash's handle count: the hands set, its pose and output actions, and its raw inputs, then
+/// each semantic set and its actions.
+pub(crate) fn stash_order() -> impl Iterator<Item = (&'static str, &'static str)> {
+    std::iter::once((HANDS_SET_NAME, SET_TAG))
+        .chain(HandsAction::ALL.iter().map(|a| (a.name(), a.tag())))
+        .chain(BoolInput::ALL.iter().map(|i| (i.name(), "bool")))
+        .chain(FloatInput::ALL.iter().map(|i| (i.name(), "float")))
+        .chain(Vec2Input::ALL.iter().map(|i| (i.name(), "vec2")))
+        .chain(SemanticSet::ALL.iter().flat_map(|&set| {
+            std::iter::once((set.name(), SET_TAG)).chain(
+                set.actions()
+                    .iter()
+                    .map(|action| (action.name, action.kind.label())),
+            )
         }))
 }
 
@@ -254,11 +290,23 @@ pub(crate) fn stash_len() -> usize {
     stash_order().count()
 }
 
-/// An FNV-1a hash of [`stash_order`], identifying this layout.
+/// An FNV-1a hash of [`stash_order`], names and types, identifying this layout.
 pub(crate) fn fingerprint() -> u64 {
+    fingerprint_of(stash_order())
+}
+
+/// The tag [`stash_order`] gives an action set.
+const SET_TAG: &str = "set";
+
+fn fingerprint_of(items: impl Iterator<Item = (&'static str, &'static str)>) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for name in stash_order() {
-        for byte in name.bytes().chain(std::iter::once(0)) {
+    for (name, tag) in items {
+        for byte in name
+            .bytes()
+            .chain(std::iter::once(0))
+            .chain(tag.bytes())
+            .chain(std::iter::once(0))
+        {
             hash ^= u64::from(byte);
             hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
         }
@@ -279,6 +327,7 @@ const fn index_binding(input: Input) -> &'static str {
             BoolInput::BClick => "input/b/click",
             BoolInput::BTouch => "input/b/touch",
             BoolInput::SystemClick => "input/system/click",
+            BoolInput::SqueezeClick => "input/squeeze/force",
         },
         Input::Float(f) => match f {
             FloatInput::Trigger => "input/trigger/value",
@@ -313,6 +362,7 @@ const fn touch_binding(hand: Hand, input: Input) -> Option<&'static str> {
             BoolInput::BTouch => Some("input/b/touch"),
             BoolInput::SystemClick if left => Some("input/menu/click"),
             BoolInput::SystemClick => None,
+            BoolInput::SqueezeClick => Some("input/squeeze/value"),
         },
         Input::Float(f) => match f {
             FloatInput::Trigger => Some("input/trigger/value"),
@@ -421,22 +471,21 @@ mod tests {
                     .bytes()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
         };
-        let mode: Vec<&str> = BoolInput::ALL
+        let names: Vec<&str> = HandsAction::ALL
             .iter()
-            .map(|i| i.name())
+            .map(|a| a.name())
+            .chain(BoolInput::ALL.iter().map(|i| i.name()))
             .chain(FloatInput::ALL.iter().map(|i| i.name()))
             .chain(Vec2Input::ALL.iter().map(|i| i.name()))
             .collect();
-        assert_eq!(mode.iter().collect::<HashSet<_>>().len(), mode.len());
-        assert!(mode.iter().all(|n| valid(n)));
-        let hands: Vec<&str> = HandsAction::ALL.iter().map(|a| a.name()).collect();
-        assert!(hands.iter().all(|n| valid(n)));
-        let sets: HashSet<&str> = ActionSetKind::ALL
+        assert_eq!(names.iter().collect::<HashSet<_>>().len(), names.len());
+        assert!(names.iter().all(|n| valid(n)));
+        let sets: HashSet<&str> = SemanticSet::ALL
             .iter()
-            .map(|k| k.name())
+            .map(|s| s.name())
             .chain(std::iter::once(HANDS_SET_NAME))
             .collect();
-        assert_eq!(sets.len(), ActionSetKind::ALL.len() + 1);
+        assert_eq!(sets.len(), SemanticSet::ALL.len() + 1);
     }
 
     #[test]
@@ -464,7 +513,22 @@ mod tests {
 
     #[test]
     fn the_stash_holds_every_set_and_action() {
-        assert_eq!(stash_len(), 1 + 3 + 4 * (1 + 10 + 4 + 2));
+        let semantic: usize = SemanticSet::ALL.iter().map(|s| 1 + s.actions().len()).sum();
+        assert_eq!(stash_len(), 1 + 3 + 11 + 4 + 2 + semantic);
         assert_eq!(fingerprint(), fingerprint());
+    }
+
+    #[test]
+    fn the_fingerprint_covers_the_action_types() {
+        let retyped = stash_order().map(|(name, tag)| match name {
+            "jump" => (name, "float"),
+            _ => (name, tag),
+        });
+        assert_ne!(fingerprint_of(retyped), fingerprint());
+        let renamed = stash_order().map(|(name, tag)| match name {
+            "jump" => ("hop", tag),
+            _ => (name, tag),
+        });
+        assert_ne!(fingerprint_of(renamed), fingerprint());
     }
 }

@@ -13,6 +13,9 @@ use crate::{
         ActionsOrigin, HandTrackingStatus, InputStatus, PROFILES_DIRTY, STATUS,
         actions::Actions,
         layout::{self, HandsAction, Profile},
+        self_check::SelfCheck,
+        semantic,
+        sources::{self, SourcesRefresh},
         stash::{self, InputStash},
     },
 };
@@ -43,6 +46,11 @@ pub(crate) struct InputState {
     pub(super) profiles: [InteractionProfile; 2],
     /// The buttons of the previous frame, for the derived presses' hysteresis.
     pub(super) previous_buttons: [ButtonSet; 2],
+    /// The dominant hand the semantic bindings were suggested for, when this payload created the
+    /// actions; otherwise the configured one, since a reinject keeps the earlier suggestions.
+    pub(super) dominant: Hand,
+    pub(super) self_check: SelfCheck,
+    pub(super) sources: SourcesRefresh,
     /// Whether the per-frame update is in a failure streak, and its length, for rate-limited
     /// logging.
     pub(super) failing: bool,
@@ -52,15 +60,17 @@ pub(crate) struct InputState {
 impl InputState {
     /// Obtain the actions for `session`: re-wrap the stashed ones when they belong to `instance`
     /// and match this layout, attaching them if `session` is not the one they were attached to;
-    /// otherwise create, suggest, and attach fresh ones. Then create the action spaces and, when
+    /// otherwise create fresh ones, suggest their bindings with the semantic table for a player
+    /// whose dominant hand is `dominant`, and attach them. Then create the action spaces and, when
     /// wanted, the hand trackers. Records the outcome for [`crate::vr::input::status`].
     pub(crate) fn acquire(
         instance: &xr::Instance,
         system: xr::SystemId,
         session: &xr::Session<xr::D3D11>,
         want_hand_tracking: bool,
+        dominant: Hand,
     ) -> anyhow::Result<InputState> {
-        let result = Self::acquire_inner(instance, system, session, want_hand_tracking);
+        let result = Self::acquire_inner(instance, system, session, want_hand_tracking, dominant);
         let mut status = STATUS.lock();
         match &result {
             Ok((state, origin)) => {
@@ -128,6 +138,8 @@ impl InputState {
 
     fn clear_published() {
         frame::clear();
+        semantic::frame::clear();
+        sources::clear();
         let _ = crate::vr::input::haptics::take();
         let mut status = STATUS.lock();
         status.attached = false;
@@ -179,6 +191,7 @@ impl InputState {
         system: xr::SystemId,
         session: &xr::Session<xr::D3D11>,
         want_hand_tracking: bool,
+        dominant: Hand,
     ) -> anyhow::Result<(InputState, ActionsOrigin)> {
         let instance_raw = instance.as_raw().into_raw();
         let session_raw = session.as_raw().into_raw();
@@ -219,7 +232,7 @@ impl InputState {
                     );
                 }
                 let actions = Actions::create(instance).context("input: creating the actions")?;
-                actions.suggest_bindings(instance);
+                actions.suggest_bindings(instance, dominant);
                 (actions, ActionsOrigin::Created)
             }
         };
@@ -288,6 +301,9 @@ impl InputState {
             profile_paths,
             profiles: [InteractionProfile::None; 2],
             previous_buttons: [ButtonSet::EMPTY; 2],
+            dominant,
+            self_check: SelfCheck::new(),
+            sources: SourcesRefresh::new(),
             failing: false,
             failure_count: 0,
         };

@@ -309,15 +309,25 @@ impl VrState {
 
         // Controller input is optional: without it the headset still renders, and the mod stays on
         // the gamepad scheme.
-        let want_hand_tracking = Config::lock_query(|c| c.controllers.input.hand_tracking);
-        let input =
-            match InputState::acquire(&instance, system, &session.handle, want_hand_tracking) {
-                Ok(input) => Some(input),
-                Err(e) => {
-                    tracing::warn!(target: "vr", "{e:#}");
-                    None
-                }
-            };
+        let (want_hand_tracking, dominant) = Config::lock_query(|c| {
+            (
+                c.controllers.input.hand_tracking,
+                c.controllers.dominant_hand,
+            )
+        });
+        let input = match InputState::acquire(
+            &instance,
+            system,
+            &session.handle,
+            want_hand_tracking,
+            dominant,
+        ) {
+            Ok(input) => Some(input),
+            Err(e) => {
+                tracing::warn!(target: "vr", "{e:#}");
+                None
+            }
+        };
 
         let runtime_name = instance.properties().ok().map(|props| {
             tracing::info!(

@@ -1,6 +1,8 @@
-//! The per-frame input update: sync the actions, read every input, locate the controller spaces
-//! and hand joints at the predicted display time, re-base them into the cockpit frame, publish the
-//! [`ControllerFrame`], and flush the haptics queue.
+//! The per-frame input update: sync the actions, read every raw input, locate the controller
+//! spaces and hand joints at the predicted display time, re-base them into the cockpit frame,
+//! publish the [`ControllerFrame`], read and publish the active semantic actions
+//! ([`SemanticFrame`]), run the self-check and the bound-source refresh, and flush the haptics
+//! queue.
 
 use std::{ptr, sync::atomic::Ordering, time::Instant};
 
@@ -12,16 +14,25 @@ use crate::{
     controllers::{
         config::ControllersConfig,
         frame::{
-            self, ActionSetKind, ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame,
-            HandInputs, HandJoint, InteractionProfile, Pose, TrackedPose, derive_buttons,
+            self, ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs,
+            HandJoint, InteractionProfile, Pose, TrackedPose, derive_buttons,
         },
         scheme,
     },
     vr::{
         input::{
-            PROFILES_DIRTY, STATUS, active_action_set,
+            PROFILES_DIRTY, STATUS,
+            actions::SetId,
+            active_action_set,
             haptics::{self, HapticPulse},
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
+            self_check::CheckFrame,
+            semantic::{
+                SemanticSet,
+                frame::{
+                    self as semantic_frame, ActionState, ActionValue, SemanticFrame, SetState,
+                },
+            },
             state::InputState,
         },
         recenter::Baseline,
@@ -42,6 +53,7 @@ impl InputState {
     ) {
         if !cfg.enabled {
             frame::clear();
+            semantic_frame::clear();
             let _ = haptics::take();
             self.previous_buttons = [ButtonSet::EMPTY; 2];
             return;
@@ -54,17 +66,19 @@ impl InputState {
             Err(e) => {
                 self.note_failure(&e);
                 frame::clear();
+                semantic_frame::clear();
                 return;
             }
         };
-        self.refresh_profiles(session);
+        if self.refresh_profiles(session) {
+            self.sources.mark_stale();
+        }
 
         let sampling = Sampling {
             session,
             local,
             time,
             baseline,
-            mode,
             cfg,
         };
         let mut hands: [HandFrame; 2] = Default::default();
@@ -93,7 +107,37 @@ impl InputState {
             hands,
         };
         scheme::tick(&frame, cfg);
+
+        let semantic = SemanticFrame {
+            published_at: Instant::now(),
+            action_set: mode,
+            global: self.read_set(session, SemanticSet::Global, &mut first_error),
+            mode: self.read_set(session, SemanticSet::of(mode), &mut first_error),
+        };
+        if cfg.input.self_check {
+            self.self_check.update(&CheckFrame {
+                session,
+                actions: &self.actions,
+                profiles: self.profiles,
+                mode,
+                focused,
+                dominant: self.dominant,
+                hands: &frame.hands,
+                semantic: &semantic,
+                config: &cfg.input,
+            });
+        }
+        self.sources.update(
+            session,
+            &self.actions,
+            &[
+                SetId::Hands,
+                SetId::Semantic(SemanticSet::Global),
+                SetId::Semantic(SemanticSet::of(mode)),
+            ],
+        );
         frame::publish(frame);
+        semantic_frame::publish(semantic);
 
         if let Err(e) = self.flush_haptics(session, cfg) {
             first_error.get_or_insert(e);
@@ -104,10 +148,40 @@ impl InputState {
         }
     }
 
-    /// Re-query each hand's interaction profile after the runtime reported a change.
-    fn refresh_profiles(&mut self, session: &xr::Session<xr::D3D11>) {
+    /// Read every action of the semantic `set`, both hands. An action that cannot be read reads
+    /// at rest and inactive, and the first error rides alongside.
+    fn read_set(
+        &self,
+        session: &xr::Session<xr::D3D11>,
+        set: SemanticSet,
+        first_error: &mut Option<anyhow::Error>,
+    ) -> SetState {
+        let actions = set
+            .actions()
+            .iter()
+            .enumerate()
+            .map(|(index, def)| {
+                Hand::BOTH.map(|hand| {
+                    self.actions
+                        .semantic_state(session, set, index, hand)
+                        .unwrap_or_else(|e| {
+                            first_error.get_or_insert(e);
+                            ActionState {
+                                value: ActionValue::rest(def.kind),
+                                active: false,
+                            }
+                        })
+                })
+            })
+            .collect();
+        SetState { set, actions }
+    }
+
+    /// Re-query each hand's interaction profile after the runtime reported a change. Returns
+    /// whether it re-queried.
+    fn refresh_profiles(&mut self, session: &xr::Session<xr::D3D11>) -> bool {
         if !PROFILES_DIRTY.swap(false, Ordering::Relaxed) {
-            return;
+            return false;
         }
         for hand in Hand::BOTH {
             let path = session.current_interaction_profile(self.actions.hand_path(hand));
@@ -126,6 +200,7 @@ impl InputState {
         }
         tracing::info!(target: "vr", profiles = ?self.profiles, "input: interaction profiles");
         STATUS.lock().profiles = self.profiles;
+        true
     }
 
     /// Sample `hand`. A failure to locate the hand joints does not fail the hand, since the joints
@@ -140,13 +215,12 @@ impl InputState {
             local,
             time,
             baseline,
-            mode,
             cfg,
         } = *sampling;
         let actions = &self.actions;
         let mut active = false;
         let mut read_bool = |input| -> anyhow::Result<bool> {
-            let state = actions.bool_state(session, mode, input, hand)?;
+            let state = actions.bool_state(session, input, hand)?;
             active |= state.active;
             Ok(state.value)
         };
@@ -162,7 +236,7 @@ impl InputState {
         let system_click = read_bool(BoolInput::SystemClick)?;
 
         let mut read_float = |input| -> anyhow::Result<f32> {
-            let state = actions.float_state(session, mode, input, hand)?;
+            let state = actions.float_state(session, input, hand)?;
             active |= state.active;
             Ok(state.value)
         };
@@ -172,7 +246,7 @@ impl InputState {
         let trackpad_force = read_float(FloatInput::TrackpadForce)?;
 
         let mut read_vec2 = |input| -> anyhow::Result<glam::Vec2> {
-            let state = actions.vec2_state(session, mode, input, hand)?;
+            let state = actions.vec2_state(session, input, hand)?;
             active |= state.active;
             Ok(state.value)
         };
@@ -300,8 +374,6 @@ struct Sampling<'a> {
     time: xr::Time,
     /// The recenter baseline, re-basing LOCAL into the cockpit frame.
     baseline: Option<Baseline>,
-    /// The active mode action set.
-    mode: ActionSetKind,
     cfg: &'a ControllersConfig,
 }
 

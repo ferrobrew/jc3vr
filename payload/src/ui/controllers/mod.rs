@@ -1,6 +1,7 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
 //! controller frame and of each controller subsystem (the native map, finger curls, weapon
-//! handling, scopes, vehicles and flight, the controls summary, posture, and roomscale included),
+//! handling, scopes, vehicles and flight, the controls summary, posture, roomscale, and the semantic
+//! actions with the input self-check included),
 //! the player's body dimensions, and every controller setting. Each subsystem's section is in its own file.
 
 mod aim;
@@ -16,6 +17,7 @@ mod overlay;
 mod persistence;
 mod roomscale;
 mod scope;
+mod semantic;
 mod settings;
 mod sights;
 mod stance;
@@ -170,6 +172,8 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 stance::stance_readout(ui, &stance_status, &unarmed_status, &hand_ik)
             });
+
+        egui::CollapsingHeader::new("Semantic actions").show(ui, semantic::semantic_readout);
 
         egui::CollapsingHeader::new("Live controller frame")
             .default_open(true)

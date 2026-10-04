@@ -84,6 +84,11 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.add(egui::Slider::new(&mut c.input.stick_deadzone, 0.0..=0.9).text("Stick deadzone"));
         ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
             .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
+        ui.checkbox(&mut c.input.self_check, "Input self-check")
+            .on_hover_text(
+                "Once per session, log how the runtime treats the action layout (see the \
+             \"Semantic actions\" section).",
+            );
     });
 
     egui::CollapsingHeader::new("Bindings").show(ui, |ui| {

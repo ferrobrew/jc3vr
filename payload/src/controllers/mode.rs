@@ -62,12 +62,24 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// The OpenXR action set this mode selects.
+    /// The OpenXR mode set this mode selects. Falling and the parachute share `on_foot`, whose
+    /// actions they read alike, so a grapple jump does not switch sets; the wingsuit has its own.
+    /// A seat selects its class's set, driver or passenger.
     pub const fn action_set(self) -> ActionSetKind {
         match self {
-            Mode::OnFoot(_) => ActionSetKind::OnFoot,
-            Mode::Vehicle(_) => ActionSetKind::Vehicle,
-            Mode::Airborne(_) => ActionSetKind::Airborne,
+            Mode::OnFoot(_)
+            | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
+                ActionSetKind::OnFoot
+            }
+            Mode::Airborne(AirborneVariant::Wingsuit) => ActionSetKind::Wingsuit,
+            Mode::Vehicle(seat) => match seat.class {
+                VehicleClass::Helicopter => ActionSetKind::Helicopter,
+                VehicleClass::Plane => ActionSetKind::Plane,
+                VehicleClass::Motorcycle
+                | VehicleClass::Car
+                | VehicleClass::Sea
+                | VehicleClass::Unknown => ActionSetKind::LandVehicle,
+            },
             Mode::Ui => ActionSetKind::Ui,
         }
     }
@@ -672,22 +684,41 @@ mod tests {
 
     #[test]
     fn modes_select_their_action_sets() {
-        assert_eq!(
-            Mode::OnFoot(OnFootVariant::Swimming).action_set(),
-            ActionSetKind::OnFoot
-        );
-        assert_eq!(
-            Mode::Vehicle(VehicleSeat {
-                class: VehicleClass::Sea,
-                driver: false
-            })
-            .action_set(),
-            ActionSetKind::Vehicle
-        );
-        assert_eq!(
-            Mode::Airborne(AirborneVariant::Parachute).action_set(),
-            ActionSetKind::Airborne
-        );
-        assert_eq!(Mode::Ui.action_set(), ActionSetKind::Ui);
+        let seat = |class, driver| Mode::Vehicle(VehicleSeat { class, driver });
+        let cases = [
+            (Mode::OnFoot(OnFootVariant::Ground), ActionSetKind::OnFoot),
+            (Mode::OnFoot(OnFootVariant::Swimming), ActionSetKind::OnFoot),
+            (
+                Mode::Airborne(AirborneVariant::Falling),
+                ActionSetKind::OnFoot,
+            ),
+            (
+                Mode::Airborne(AirborneVariant::Parachute),
+                ActionSetKind::OnFoot,
+            ),
+            (
+                Mode::Airborne(AirborneVariant::Wingsuit),
+                ActionSetKind::Wingsuit,
+            ),
+            (seat(VehicleClass::Car, true), ActionSetKind::LandVehicle),
+            (
+                seat(VehicleClass::Motorcycle, false),
+                ActionSetKind::LandVehicle,
+            ),
+            (seat(VehicleClass::Sea, false), ActionSetKind::LandVehicle),
+            (
+                seat(VehicleClass::Unknown, true),
+                ActionSetKind::LandVehicle,
+            ),
+            (
+                seat(VehicleClass::Helicopter, false),
+                ActionSetKind::Helicopter,
+            ),
+            (seat(VehicleClass::Plane, true), ActionSetKind::Plane),
+            (Mode::Ui, ActionSetKind::Ui),
+        ];
+        for (mode, set) in cases {
+            assert_eq!(mode.action_set(), set, "{mode:?}");
+        }
     }
 }

@@ -1,6 +1,6 @@
-//! The OpenXR action sets and actions: creating them from the [`layout`], suggesting their
-//! bindings, attaching them to a session, reading their states, and releasing, re-wrapping, and
-//! destroying their handles.
+//! The OpenXR action sets and actions: creating them from the [`layout`] and the semantic
+//! vocabulary ([`crate::vr::input::semantic`]), suggesting their bindings, attaching them to a
+//! session, reading their states, and releasing, re-wrapping, and destroying their handles.
 //!
 //! The actions are held as raw handles and driven through the instance's function table rather
 //! than through the `openxr` crate's `ActionSet` and `Action` wrappers. The wrappers destroy their
@@ -21,8 +21,14 @@ use openxr::sys::{self, Handle as _};
 
 use crate::{
     controllers::frame::{ActionSetKind, Hand},
-    vr::input::layout::{
-        self, BoolInput, FloatInput, HandsAction, Input, Profile, Vec2Input, binding, hand_path,
+    vr::input::{
+        layout::{
+            self, BoolInput, FloatInput, HandsAction, Input, Profile, Vec2Input, binding, hand_path,
+        },
+        semantic::{
+            ActionKind, SemanticSet, defaults,
+            frame::{ActionState, ActionValue},
+        },
     },
 };
 
@@ -31,19 +37,47 @@ pub(crate) struct Actions {
     hands_set: sys::ActionSet,
     /// Indexed like [`HandsAction::ALL`].
     hands: [sys::Action; 3],
-    /// Indexed by [`ActionSetKind::index`].
-    modes: Vec<ModeActions>,
+    /// The raw inputs, in the hands set.
+    raw: RawActions,
+    /// Indexed by [`SemanticSet::index`].
+    semantic: Vec<SetActions>,
     /// The subaction path of each hand, indexed by [`Hand::index`].
     hand_paths: [xr::Path; 2],
 }
 
-/// One mode's set: every raw input, indexed like [`BoolInput::ALL`], [`FloatInput::ALL`], and
-/// [`Vec2Input::ALL`].
-struct ModeActions {
-    set: sys::ActionSet,
+/// An action set, for the bound-source queries and the debug UI.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum SetId {
+    /// The always-active set of the poses, the haptic output, and the raw inputs.
+    Hands,
+    Semantic(SemanticSet),
+}
+
+impl SetId {
+    /// Every set, in stash order.
+    pub(crate) fn all() -> impl Iterator<Item = SetId> {
+        std::iter::once(SetId::Hands).chain(SemanticSet::ALL.into_iter().map(SetId::Semantic))
+    }
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            SetId::Hands => layout::HANDS_SET_NAME,
+            SetId::Semantic(set) => set.name(),
+        }
+    }
+}
+
+/// The raw inputs, indexed like [`BoolInput::ALL`], [`FloatInput::ALL`], and [`Vec2Input::ALL`].
+struct RawActions {
     bools: Vec<sys::Action>,
     floats: Vec<sys::Action>,
     vec2s: Vec<sys::Action>,
+}
+
+/// One semantic set and its actions, indexed like [`SemanticSet::actions`].
+struct SetActions {
+    set: sys::ActionSet,
+    actions: Vec<sys::Action>,
 }
 
 /// An input's value and whether the runtime bound it to an active source this sync.
@@ -90,43 +124,39 @@ impl Actions {
             action_from(&mut rest),
             action_from(&mut rest),
         ];
-        let mut modes = Vec::with_capacity(ActionSetKind::ALL.len());
-        for _ in ActionSetKind::ALL {
-            let set = sys::ActionSet::from_raw(rest.next().unwrap_or(0));
-            let bools = BoolInput::ALL
-                .iter()
-                .map(|_| action_from(&mut rest))
-                .collect();
-            let floats = FloatInput::ALL
-                .iter()
-                .map(|_| action_from(&mut rest))
-                .collect();
-            let vec2s = Vec2Input::ALL
-                .iter()
-                .map(|_| action_from(&mut rest))
-                .collect();
-            modes.push(ModeActions {
-                set,
-                bools,
-                floats,
-                vec2s,
-            });
-        }
+        let raw = RawActions {
+            bools: BoolInput::ALL.map(|_| action_from(&mut rest)).to_vec(),
+            floats: FloatInput::ALL.map(|_| action_from(&mut rest)).to_vec(),
+            vec2s: Vec2Input::ALL.map(|_| action_from(&mut rest)).to_vec(),
+        };
+        let semantic = SemanticSet::ALL
+            .iter()
+            .map(|set| SetActions {
+                set: sys::ActionSet::from_raw(rest.next().unwrap_or(0)),
+                actions: set
+                    .actions()
+                    .iter()
+                    .map(|_| action_from(&mut rest))
+                    .collect(),
+            })
+            .collect();
         Ok(Actions {
             hands_set,
             hands,
-            modes,
+            raw,
+            semantic,
             hand_paths,
         })
     }
 
-    /// Suggest the bindings for every profile in [`Profile::ALL`]. A profile the runtime rejects is
+    /// Suggest the bindings for every profile in [`Profile::ALL`], the semantic actions' table
+    /// chosen for a player whose dominant hand is `dominant`. A profile the runtime rejects is
     /// logged and skipped, so that one unsupported profile does not cost the others.
-    pub(crate) fn suggest_bindings(&self, instance: &xr::Instance) {
+    pub(crate) fn suggest_bindings(&self, instance: &xr::Instance, dominant: Hand) {
         for profile in Profile::ALL {
-            match self.suggest_profile(instance, profile) {
+            match self.suggest_profile(instance, profile, dominant) {
                 Ok(count) => {
-                    tracing::info!(target: "vr", profile = profile.path(), count, "input: suggested bindings");
+                    tracing::info!(target: "vr", profile = profile.path(), count, dominant = dominant.label(), "input: suggested bindings");
                 }
                 Err(e) => {
                     tracing::warn!(target: "vr", "input: {} bindings not suggested: {e:#}", profile.path());
@@ -138,7 +168,7 @@ impl Actions {
     /// Attach every set to `session`. Possible once per session.
     pub(crate) fn attach(&self, session: &xr::Session<xr::D3D11>) -> anyhow::Result<()> {
         let mut sets = vec![self.hands_set];
-        sets.extend(self.modes.iter().map(|m| m.set));
+        sets.extend(self.semantic.iter().map(|s| s.set));
         let info = sys::SessionActionSetsAttachInfo {
             ty: sys::SessionActionSetsAttachInfo::TYPE,
             next: ptr::null(),
@@ -153,23 +183,22 @@ impl Actions {
         Ok(())
     }
 
-    /// Sync the hands set and the `mode` set. Returns whether the session has input focus; an
-    /// unfocused session reports every action inactive.
+    /// Sync the hands set, the global set, and the `mode` set, all at the same priority. Returns
+    /// whether the session has input focus; an unfocused session reports every action inactive.
     pub(crate) fn sync(
         &self,
         session: &xr::Session<xr::D3D11>,
         mode: ActionSetKind,
     ) -> anyhow::Result<bool> {
         let active = [
-            sys::ActiveActionSet {
-                action_set: self.hands_set,
-                subaction_path: xr::Path::NULL,
-            },
-            sys::ActiveActionSet {
-                action_set: self.modes[mode.index()].set,
-                subaction_path: xr::Path::NULL,
-            },
-        ];
+            self.hands_set,
+            self.semantic[SemanticSet::Global.index()].set,
+            self.semantic[SemanticSet::of(mode).index()].set,
+        ]
+        .map(|action_set| sys::ActiveActionSet {
+            action_set,
+            subaction_path: xr::Path::NULL,
+        });
         let info = sys::ActionsSyncInfo {
             ty: sys::ActionsSyncInfo::TYPE,
             next: ptr::null(),
@@ -182,88 +211,101 @@ impl Actions {
         Ok(code != sys::Result::SESSION_NOT_FOCUSED)
     }
 
+    /// The state of a raw boolean input on `hand`.
     pub(crate) fn bool_state(
         &self,
         session: &xr::Session<xr::D3D11>,
-        mode: ActionSetKind,
         input: BoolInput,
         hand: Hand,
     ) -> anyhow::Result<State<bool>> {
-        let action = self.modes[mode.index()].bools[position(&BoolInput::ALL, input)];
-        let info = self.state_info(action, hand);
-        let mut out = sys::ActionStateBoolean {
-            ty: sys::ActionStateBoolean::TYPE,
-            next: ptr::null_mut(),
-            current_state: false.into(),
-            changed_since_last_sync: false.into(),
-            last_change_time: xr::Time::from_nanos(0),
-            is_active: false.into(),
-        };
-        // SAFETY: `info` and `out` are valid for the duration of the call.
-        let result = unsafe {
-            (session.instance().fp().get_action_state_boolean)(session.as_raw(), &info, &mut out)
-        };
-        check(result).with_context(|| format!("reading {}", input.name()))?;
-        Ok(State {
-            value: out.current_state.into(),
-            active: out.is_active.into(),
-        })
+        let action = self.raw.bools[position(&BoolInput::ALL, input)];
+        self.read_bool(session, action, hand)
+            .with_context(|| format!("reading {}", input.name()))
     }
 
+    /// The state of a raw scalar input on `hand`.
     pub(crate) fn float_state(
         &self,
         session: &xr::Session<xr::D3D11>,
-        mode: ActionSetKind,
         input: FloatInput,
         hand: Hand,
     ) -> anyhow::Result<State<f32>> {
-        let action = self.modes[mode.index()].floats[position(&FloatInput::ALL, input)];
-        let info = self.state_info(action, hand);
-        let mut out = sys::ActionStateFloat {
-            ty: sys::ActionStateFloat::TYPE,
-            next: ptr::null_mut(),
-            current_state: 0.0,
-            changed_since_last_sync: false.into(),
-            last_change_time: xr::Time::from_nanos(0),
-            is_active: false.into(),
-        };
-        // SAFETY: `info` and `out` are valid for the duration of the call.
-        let result = unsafe {
-            (session.instance().fp().get_action_state_float)(session.as_raw(), &info, &mut out)
-        };
-        check(result).with_context(|| format!("reading {}", input.name()))?;
-        Ok(State {
-            value: out.current_state,
-            active: out.is_active.into(),
-        })
+        let action = self.raw.floats[position(&FloatInput::ALL, input)];
+        self.read_float(session, action, hand)
+            .with_context(|| format!("reading {}", input.name()))
     }
 
+    /// The state of a raw two-axis input on `hand`.
     pub(crate) fn vec2_state(
         &self,
         session: &xr::Session<xr::D3D11>,
-        mode: ActionSetKind,
         input: Vec2Input,
         hand: Hand,
     ) -> anyhow::Result<State<Vec2>> {
-        let action = self.modes[mode.index()].vec2s[position(&Vec2Input::ALL, input)];
-        let info = self.state_info(action, hand);
-        let mut out = sys::ActionStateVector2f {
-            ty: sys::ActionStateVector2f::TYPE,
-            next: ptr::null_mut(),
-            current_state: xr::Vector2f::default(),
-            changed_since_last_sync: false.into(),
-            last_change_time: xr::Time::from_nanos(0),
-            is_active: false.into(),
+        let action = self.raw.vec2s[position(&Vec2Input::ALL, input)];
+        self.read_vec2(session, action, hand)
+            .with_context(|| format!("reading {}", input.name()))
+    }
+
+    /// The state of action `index` of the semantic `set` on `hand`.
+    pub(crate) fn semantic_state(
+        &self,
+        session: &xr::Session<xr::D3D11>,
+        set: SemanticSet,
+        index: usize,
+        hand: Hand,
+    ) -> anyhow::Result<ActionState> {
+        let def = set.actions()[index];
+        let action = self.semantic[set.index()].actions[index];
+        let read = match def.kind {
+            ActionKind::Bool => self
+                .read_bool(session, action, hand)
+                .map(|s| (ActionValue::Bool(s.value), s.active)),
+            ActionKind::Float => self
+                .read_float(session, action, hand)
+                .map(|s| (ActionValue::Float(s.value), s.active)),
+            ActionKind::Vec2 => self
+                .read_vec2(session, action, hand)
+                .map(|s| (ActionValue::Vec2(s.value), s.active)),
         };
-        // SAFETY: `info` and `out` are valid for the duration of the call.
-        let result = unsafe {
-            (session.instance().fp().get_action_state_vector2f)(session.as_raw(), &info, &mut out)
-        };
-        check(result).with_context(|| format!("reading {}", input.name()))?;
-        Ok(State {
-            value: Vec2::new(out.current_state.x, out.current_state.y),
-            active: out.is_active.into(),
-        })
+        let (value, active) =
+            read.with_context(|| format!("reading {}.{}", set.name(), def.name))?;
+        Ok(ActionState { value, active })
+    }
+
+    /// Every action of `set` with its name, in stash order.
+    pub(crate) fn set_actions(&self, set: SetId) -> Vec<(&'static str, sys::Action)> {
+        match set {
+            SetId::Hands => HandsAction::ALL
+                .iter()
+                .map(|a| a.name())
+                .zip(self.hands)
+                .chain(
+                    BoolInput::ALL
+                        .iter()
+                        .map(|i| i.name())
+                        .zip(self.raw.bools.iter().copied()),
+                )
+                .chain(
+                    FloatInput::ALL
+                        .iter()
+                        .map(|i| i.name())
+                        .zip(self.raw.floats.iter().copied()),
+                )
+                .chain(
+                    Vec2Input::ALL
+                        .iter()
+                        .map(|i| i.name())
+                        .zip(self.raw.vec2s.iter().copied()),
+                )
+                .collect(),
+            SetId::Semantic(set) => set
+                .actions()
+                .iter()
+                .map(|def| def.name)
+                .zip(self.semantic[set.index()].actions.iter().copied())
+                .collect(),
+        }
     }
 
     /// Whether a pose action of `hand` is bound to an active source.
@@ -348,11 +390,12 @@ impl Actions {
     pub(crate) fn raw_handles(&self) -> Vec<u64> {
         let mut handles = vec![self.hands_set.into_raw()];
         handles.extend(self.hands.iter().map(|a| a.into_raw()));
-        for mode in &self.modes {
-            handles.push(mode.set.into_raw());
-            handles.extend(mode.bools.iter().map(|a| a.into_raw()));
-            handles.extend(mode.floats.iter().map(|a| a.into_raw()));
-            handles.extend(mode.vec2s.iter().map(|a| a.into_raw()));
+        handles.extend(self.raw.bools.iter().map(|a| a.into_raw()));
+        handles.extend(self.raw.floats.iter().map(|a| a.into_raw()));
+        handles.extend(self.raw.vec2s.iter().map(|a| a.into_raw()));
+        for set in &self.semantic {
+            handles.push(set.set.into_raw());
+            handles.extend(set.actions.iter().map(|a| a.into_raw()));
         }
         handles
     }
@@ -360,8 +403,8 @@ impl Actions {
     /// Destroy every set, and with it its actions. Every action space must be dropped first.
     pub(crate) fn destroy(self, instance: &xr::Instance) {
         destroy_set(instance, self.hands_set);
-        for mode in self.modes {
-            destroy_set(instance, mode.set);
+        for set in self.semantic {
+            destroy_set(instance, set.set);
         }
     }
 
@@ -376,39 +419,26 @@ impl Actions {
             layout::HANDS_SET_LOCALIZED_NAME,
         )?;
         created.push(hands_set);
-        let pose = |action: HandsAction, ty| {
-            create_action(
-                instance,
-                hands_set,
-                action.name(),
-                action.localized_name(),
-                ty,
-                &hand_paths,
-            )
+        let make = |name: &str, localized: &str, ty| {
+            create_action(instance, hands_set, name, localized, ty, &hand_paths)
+                .with_context(|| format!("in the {} set", layout::HANDS_SET_NAME))
         };
+        let pose = |action: HandsAction, ty| make(action.name(), action.localized_name(), ty);
         let hands = [
             pose(HandsAction::GripPose, sys::ActionType::POSE_INPUT)?,
             pose(HandsAction::AimPose, sys::ActionType::POSE_INPUT)?,
             pose(HandsAction::Haptic, sys::ActionType::VIBRATION_OUTPUT)?,
         ];
-
-        let mut modes = Vec::with_capacity(ActionSetKind::ALL.len());
-        for kind in ActionSetKind::ALL {
-            let set = create_set(instance, kind.name(), kind.localized_name())?;
-            created.push(set);
-            let make = |name: &str, localized: &str, ty| {
-                create_action(instance, set, name, localized, ty, &hand_paths)
-                    .with_context(|| format!("in the {} set", kind.name()))
-            };
-            let bools = BoolInput::ALL
+        let raw = RawActions {
+            bools: BoolInput::ALL
                 .iter()
                 .map(|i| make(i.name(), i.localized_name(), sys::ActionType::BOOLEAN_INPUT))
-                .collect::<anyhow::Result<_>>()?;
-            let floats = FloatInput::ALL
+                .collect::<anyhow::Result<_>>()?,
+            floats: FloatInput::ALL
                 .iter()
                 .map(|i| make(i.name(), i.localized_name(), sys::ActionType::FLOAT_INPUT))
-                .collect::<anyhow::Result<_>>()?;
-            let vec2s = Vec2Input::ALL
+                .collect::<anyhow::Result<_>>()?,
+            vec2s: Vec2Input::ALL
                 .iter()
                 .map(|i| {
                     make(
@@ -417,19 +447,39 @@ impl Actions {
                         sys::ActionType::VECTOR2F_INPUT,
                     )
                 })
+                .collect::<anyhow::Result<_>>()?,
+        };
+
+        let mut semantic = Vec::with_capacity(SemanticSet::ALL.len());
+        for set in SemanticSet::ALL {
+            let handle = create_set(instance, set.name(), set.localized_name())?;
+            created.push(handle);
+            let actions = set
+                .actions()
+                .iter()
+                .map(|def| {
+                    create_action(
+                        instance,
+                        handle,
+                        def.name,
+                        def.localized_name,
+                        action_type(def.kind),
+                        &hand_paths,
+                    )
+                    .with_context(|| format!("in the {} set", set.name()))
+                })
                 .collect::<anyhow::Result<_>>()?;
-            modes.push(ModeActions {
-                set,
-                bools,
-                floats,
-                vec2s,
+            semantic.push(SetActions {
+                set: handle,
+                actions,
             });
         }
 
         Ok(Actions {
             hands_set,
             hands,
-            modes,
+            raw,
+            semantic,
             hand_paths,
         })
     }
@@ -443,52 +493,130 @@ impl Actions {
         }
     }
 
+    fn read_bool(
+        &self,
+        session: &xr::Session<xr::D3D11>,
+        action: sys::Action,
+        hand: Hand,
+    ) -> anyhow::Result<State<bool>> {
+        let info = self.state_info(action, hand);
+        let mut out = sys::ActionStateBoolean {
+            ty: sys::ActionStateBoolean::TYPE,
+            next: ptr::null_mut(),
+            current_state: false.into(),
+            changed_since_last_sync: false.into(),
+            last_change_time: xr::Time::from_nanos(0),
+            is_active: false.into(),
+        };
+        // SAFETY: `info` and `out` are valid for the duration of the call.
+        let result = unsafe {
+            (session.instance().fp().get_action_state_boolean)(session.as_raw(), &info, &mut out)
+        };
+        check(result)?;
+        Ok(State {
+            value: out.current_state.into(),
+            active: out.is_active.into(),
+        })
+    }
+
+    fn read_float(
+        &self,
+        session: &xr::Session<xr::D3D11>,
+        action: sys::Action,
+        hand: Hand,
+    ) -> anyhow::Result<State<f32>> {
+        let info = self.state_info(action, hand);
+        let mut out = sys::ActionStateFloat {
+            ty: sys::ActionStateFloat::TYPE,
+            next: ptr::null_mut(),
+            current_state: 0.0,
+            changed_since_last_sync: false.into(),
+            last_change_time: xr::Time::from_nanos(0),
+            is_active: false.into(),
+        };
+        // SAFETY: `info` and `out` are valid for the duration of the call.
+        let result = unsafe {
+            (session.instance().fp().get_action_state_float)(session.as_raw(), &info, &mut out)
+        };
+        check(result)?;
+        Ok(State {
+            value: out.current_state,
+            active: out.is_active.into(),
+        })
+    }
+
+    fn read_vec2(
+        &self,
+        session: &xr::Session<xr::D3D11>,
+        action: sys::Action,
+        hand: Hand,
+    ) -> anyhow::Result<State<Vec2>> {
+        let info = self.state_info(action, hand);
+        let mut out = sys::ActionStateVector2f {
+            ty: sys::ActionStateVector2f::TYPE,
+            next: ptr::null_mut(),
+            current_state: xr::Vector2f::default(),
+            changed_since_last_sync: false.into(),
+            last_change_time: xr::Time::from_nanos(0),
+            is_active: false.into(),
+        };
+        // SAFETY: `info` and `out` are valid for the duration of the call.
+        let result = unsafe {
+            (session.instance().fp().get_action_state_vector2f)(session.as_raw(), &info, &mut out)
+        };
+        check(result)?;
+        Ok(State {
+            value: Vec2::new(out.current_state.x, out.current_state.y),
+            active: out.is_active.into(),
+        })
+    }
+
     /// Suggest one profile's bindings; returns how many were suggested.
-    fn suggest_profile(&self, instance: &xr::Instance, profile: Profile) -> anyhow::Result<usize> {
+    fn suggest_profile(
+        &self,
+        instance: &xr::Instance,
+        profile: Profile,
+        dominant: Hand,
+    ) -> anyhow::Result<usize> {
         let mut bindings = Vec::new();
         for hand in Hand::BOTH {
-            for (i, &action) in HandsAction::ALL.iter().enumerate() {
-                push(
-                    &mut bindings,
-                    instance,
-                    profile,
-                    hand,
-                    Input::Hands(action),
-                    self.hands[i],
-                )?;
-            }
-            for mode in &self.modes {
-                for (i, &input) in BoolInput::ALL.iter().enumerate() {
-                    push(
-                        &mut bindings,
-                        instance,
-                        profile,
-                        hand,
-                        Input::Bool(input),
-                        mode.bools[i],
-                    )?;
-                }
-                for (i, &input) in FloatInput::ALL.iter().enumerate() {
-                    push(
-                        &mut bindings,
-                        instance,
-                        profile,
-                        hand,
-                        Input::Float(input),
-                        mode.floats[i],
-                    )?;
-                }
-                for (i, &input) in Vec2Input::ALL.iter().enumerate() {
-                    push(
-                        &mut bindings,
-                        instance,
-                        profile,
-                        hand,
-                        Input::Vec2(input),
-                        mode.vec2s[i],
-                    )?;
+            let raw = HandsAction::ALL
+                .iter()
+                .map(|&a| Input::Hands(a))
+                .zip(self.hands)
+                .chain(
+                    BoolInput::ALL
+                        .iter()
+                        .map(|&i| Input::Bool(i))
+                        .zip(self.raw.bools.iter().copied()),
+                )
+                .chain(
+                    FloatInput::ALL
+                        .iter()
+                        .map(|&i| Input::Float(i))
+                        .zip(self.raw.floats.iter().copied()),
+                )
+                .chain(
+                    Vec2Input::ALL
+                        .iter()
+                        .map(|&i| Input::Vec2(i))
+                        .zip(self.raw.vec2s.iter().copied()),
+                );
+            for (input, action) in raw {
+                if let Some(component) = binding(profile, hand, input) {
+                    push(&mut bindings, instance, hand, component, action)?;
                 }
             }
+        }
+        for suggestion in defaults::suggestions(profile, dominant) {
+            let action = self.semantic[suggestion.set.index()].actions[suggestion.index];
+            push(
+                &mut bindings,
+                instance,
+                suggestion.hand,
+                suggestion.path,
+                action,
+            )?;
         }
         let info = sys::InteractionProfileSuggestedBinding {
             ty: sys::InteractionProfileSuggestedBinding::TYPE,
@@ -505,6 +633,15 @@ impl Actions {
         };
         check(result).context("suggesting the bindings")?;
         Ok(bindings.len())
+    }
+}
+
+/// The OpenXR type of an action of `kind`.
+fn action_type(kind: ActionKind) -> sys::ActionType {
+    match kind {
+        ActionKind::Bool => sys::ActionType::BOOLEAN_INPUT,
+        ActionKind::Float => sys::ActionType::FLOAT_INPUT,
+        ActionKind::Vec2 => sys::ActionType::VECTOR2F_INPUT,
     }
 }
 
@@ -541,14 +678,10 @@ fn hand_paths(instance: &xr::Instance) -> anyhow::Result<[xr::Path; 2]> {
 fn push(
     bindings: &mut Vec<sys::ActionSuggestedBinding>,
     instance: &xr::Instance,
-    profile: Profile,
     hand: Hand,
-    input: Input,
+    component: &str,
     action: sys::Action,
 ) -> anyhow::Result<()> {
-    let Some(component) = binding(profile, hand, input) else {
-        return Ok(());
-    };
     let full = format!("{}/{component}", hand_path(hand));
     let path = instance
         .string_to_path(&full)
@@ -655,8 +788,18 @@ mod tests {
             fill_cstr(&mut localized, a.localized_name()).unwrap();
         }
         let mut set = [0 as c_char; sys::MAX_ACTION_SET_NAME_SIZE];
-        for k in ActionSetKind::ALL {
-            fill_cstr(&mut set, k.name()).unwrap();
+        let mut set_localized = [0 as c_char; sys::MAX_LOCALIZED_ACTION_SET_NAME_SIZE];
+        fill_cstr(&mut set, layout::HANDS_SET_NAME).unwrap();
+        fill_cstr(&mut set_localized, layout::HANDS_SET_LOCALIZED_NAME).unwrap();
+        for s in SemanticSet::ALL {
+            fill_cstr(&mut set, s.name()).unwrap();
+            fill_cstr(&mut set_localized, s.localized_name()).unwrap();
+            for def in s.actions() {
+                fill_cstr(&mut name, def.name)
+                    .unwrap_or_else(|e| panic!("{}.{}: {e}", s.name(), def.name));
+                fill_cstr(&mut localized, def.localized_name)
+                    .unwrap_or_else(|e| panic!("{}.{}: {e}", s.name(), def.name));
+            }
         }
     }
 

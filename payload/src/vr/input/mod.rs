@@ -7,24 +7,30 @@
 //!
 //! # Action sets
 //!
-//! The actions carry raw inputs only, named for the physical inputs of the Valve Index controller
-//! (see [`layout`]); mapping them to game actions happens in the controllers' bindings layer, per
-//! mode. OpenXR gives every action exactly one owning set, so an action cannot be shared between
-//! sets. The layout is therefore:
+//! OpenXR gives every action exactly one owning set. The layout is:
 //!
-//! - `hands`, always active: the grip and aim poses and the haptic output. The poses must track in
-//!   every mode, and one set of action spaces serves them all.
-//! - `onfoot`, `vehicle`, `airborne`, and `ui`, one active at a time: each holds the same raw input
-//!   actions (triggers, grips, sticks, trackpads, face buttons, and the system button).
+//! - `hands`, always active: the grip and aim poses, the haptic output, and the raw inputs, named
+//!   for the physical inputs of the Valve Index controller (see [`layout`]): triggers, grips,
+//!   sticks, trackpads, face buttons, the system button, and their touches. The raw inputs feed
+//!   the published [`ControllerFrame`](crate::controllers::frame::ControllerFrame), whatever the
+//!   mode, and everything that reads it: the binding tables, the gestures, the finger curls, the
+//!   chords, input recovery, scheme detection, and the pointers.
+//! - `global`, always active, and one mode set at a time (`on_foot`, `wingsuit`, `land_vehicle`,
+//!   `helicopter`, `plane`, or `menu`): the semantic actions, named for what they do in the game
+//!   ([`semantic`]). The mode detector picks the mode set through [`set_active_action_set`]. Their
+//!   per-hand states are published each frame as a
+//!   [`SemanticFrame`](semantic::frame::SemanticFrame), which only the debug UI reads so far.
 //!
-//! The mode sets are identical rather than folded into one because the runtime's binding interface
-//! (SteamVR's, or xrizer's) is the plan's per-user remapping story, and it remaps per set: a player
-//! can move a button in vehicles without moving it on foot. Whichever mode set is active, the
-//! published frame names the inputs the same way, so no consumer depends on the active set. Every
-//! action is created with both hands as subaction paths and is read per hand.
+//! Every set has priority 0, so an input bound in `hands` and in a semantic set reaches both. Every
+//! action is created with both hands as subaction paths and is read per hand. Suggested bindings
+//! are shipped for `/interaction_profiles/valve/index_controller` and
+//! `/interaction_profiles/oculus/touch_controller`; the raw inputs bind by position (the left Touch
+//! controller's X, Y, and menu button stand for A, B, and the system button), and the semantic
+//! actions follow [`semantic::defaults`], whose table is chosen from the dominant hand when the
+//! actions are created.
 //!
-//! Suggested bindings are shipped for `/interaction_profiles/valve/index_controller` (every input)
-//! and `/interaction_profiles/oculus/touch_controller` (the inputs it has, mapped by position).
+//! [`self_check`] probes, once per session, how the runtime treats this layout, and [`sources`]
+//! caches the runtime's bound sources for the debug UI.
 //!
 //! # Persistence
 //!
@@ -41,10 +47,13 @@
 //! attachment is possible only once per session; the master toggle gates the per-frame sync and the
 //! publication.
 
-mod actions;
+pub(crate) mod actions;
 mod haptics;
 pub(crate) mod layout;
 mod sample;
+pub(crate) mod self_check;
+pub(crate) mod semantic;
+pub(crate) mod sources;
 mod stash;
 mod state;
 

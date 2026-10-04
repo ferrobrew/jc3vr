@@ -160,6 +160,9 @@ pub struct InputConfig {
     /// joints feed the finger curls; with this off, or without runtime support, the curls are
     /// estimated from the inputs.
     pub hand_tracking: bool,
+    /// Run the input self-check once per session, logging how the runtime treats the action
+    /// layout (see `crate::vr::input::self_check`).
+    pub self_check: bool,
 }
 
 impl InputConfig {
@@ -183,6 +186,7 @@ impl InputConfig {
             },
             stick_deadzone: 0.3,
             hand_tracking: true,
+            self_check: true,
         }
     }
 

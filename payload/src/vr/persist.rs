@@ -6,7 +6,7 @@ use anyhow::Context as _;
 use openxr as xr;
 use openxr::sys::Handle as _;
 
-use crate::vr::{VrConfig, session::Session, stage};
+use crate::vr::{VrConfig, input::semantic::SCHEMA_VERSION, session::Session, stage};
 
 /// Acquire an OpenXR instance: reuse a persisted handle if `persist` is set and one is stashed and
 /// still live, otherwise create a fresh one. A stashed handle that fails to re-wrap or validate (the
@@ -35,17 +35,7 @@ pub(super) fn acquire_instance(
         }
     }
     entry
-        .create_instance(
-            &xr::ApplicationInfo {
-                application_name: "jc3vr",
-                application_version: 0,
-                engine_name: "jc3vr",
-                engine_version: 0,
-                api_version: xr::Version::new(1, 0, 0),
-            },
-            extensions,
-            &[],
-        )
+        .create_instance(&application_info(), extensions, &[])
         .context("vr: creating the OpenXR instance")
 }
 
@@ -141,6 +131,18 @@ const HAND_TRACKING_STASH_VAR: windows::core::PCWSTR =
 const MOTION_RANGE_STASH_VAR: windows::core::PCWSTR =
     windows::core::w!("jc3vr_xr_instance_hand_joints_motion_range");
 
+/// The application the instance is created for. The version is the semantic action schema's, so a
+/// runtime that keys saved bindings on it can tell the schemas apart.
+fn application_info() -> xr::ApplicationInfo<'static> {
+    xr::ApplicationInfo {
+        application_name: "jc3vr",
+        application_version: SCHEMA_VERSION,
+        engine_name: "jc3vr",
+        engine_version: 0,
+        api_version: xr::Version::new(1, 0, 0),
+    }
+}
+
 /// Store a handle value in the game process's environment under `var`, as hex.
 fn stash_handle(var: windows::core::PCWSTR, raw: u64) {
     let value: Vec<u16> = format!("{raw:#x}")
@@ -229,4 +231,14 @@ unsafe fn reuse_session(instance: &xr::Instance, raw: u64) -> anyhow::Result<Ses
         swapchain: None,
         running: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_application_version_is_the_action_schema_version() {
+        assert_eq!(application_info().application_version, SCHEMA_VERSION);
+    }
 }

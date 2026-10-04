@@ -20,8 +20,10 @@
 //! views' `pose` uses, so a controller pose composes into the world through the same transform as
 //! the head (`headpose::xr::compose`).
 //!
-//! The values are raw: the OpenXR actions are named for the physical inputs (trigger, squeeze, A,
-//! B, ...), and mapping them to game actions happens in the bindings layer. The only derived states
+//! The values are raw: they are read from the always-active `hands` set's actions, which are named
+//! for the physical inputs (trigger, squeeze, A, B, ...), so they do not depend on the active mode
+//! set, and mapping them to game actions happens in the bindings layer. The semantic actions are
+//! published beside the frame ([`crate::vr::input::semantic::frame`]). The only derived states
 //! are the digital presses ([`Button::TriggerPress`], [`Button::SqueezePress`],
 //! [`Button::TrackpadPressLeft`], and [`Button::TrackpadPressRight`]), thresholded here with
 //! hysteresis ([`PressRules`]) so that their edges are latched at frame rate like every other
@@ -33,7 +35,7 @@ use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::motion;
+use crate::{controllers::motion, vr::input::semantic::SemanticSet};
 
 /// A hand, and the index of its entry in the per-hand arrays ([`ControllerFrame::hands`],
 /// [`Edges`]). The left hand is index 0.
@@ -73,60 +75,47 @@ impl Hand {
     }
 }
 
-/// The OpenXR action set that was active when a frame was sampled. The mode detector selects one
-/// per sim tick through [`crate::vr::input::set_active_action_set`]; each set carries the same raw
-/// inputs, so the choice changes only which of the runtime's per-set bindings (and the user's
-/// remaps of them) apply.
+/// The mode action set that was active when a frame was sampled. The mode detector selects one per
+/// sim tick through [`crate::vr::input::set_active_action_set`]. Each is one of the semantic sets
+/// ([`crate::vr::input::semantic`]), active beside the always-active `hands` and `global` sets.
+/// The raw inputs come from `hands` whichever is active, so the choice changes only which semantic
+/// actions are read.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum ActionSetKind {
-    /// On foot, swimming, and grapple traversal from the ground.
+    /// On foot, swimming, falling, and the parachute, including grapple traversal.
     #[default]
     OnFoot,
-    /// Seated in a vehicle, including the entry and exit animations.
-    Vehicle,
-    /// Freefall, the wingsuit, and the parachute.
-    Airborne,
-    /// A game menu is up.
+    /// The wingsuit.
+    Wingsuit,
+    /// Seated in a car, a motorcycle, a boat, or a vehicle of no resolved class.
+    LandVehicle,
+    /// Seated in a helicopter.
+    Helicopter,
+    /// Seated in a plane.
+    Plane,
+    /// A game menu or the native map is up: the `menu` set.
     Ui,
 }
 
 impl ActionSetKind {
-    /// Every kind, in the order the action sets are created.
-    pub const ALL: [ActionSetKind; 4] = [
+    /// Every kind, in index order.
+    pub const ALL: [ActionSetKind; 6] = [
         ActionSetKind::OnFoot,
-        ActionSetKind::Vehicle,
-        ActionSetKind::Airborne,
+        ActionSetKind::Wingsuit,
+        ActionSetKind::LandVehicle,
+        ActionSetKind::Helicopter,
+        ActionSetKind::Plane,
         ActionSetKind::Ui,
     ];
 
     /// The OpenXR action set name.
     pub const fn name(self) -> &'static str {
-        match self {
-            ActionSetKind::OnFoot => "onfoot",
-            ActionSetKind::Vehicle => "vehicle",
-            ActionSetKind::Airborne => "airborne",
-            ActionSetKind::Ui => "ui",
-        }
-    }
-
-    /// The localized action set name the runtime's binding interface shows.
-    pub const fn localized_name(self) -> &'static str {
-        match self {
-            ActionSetKind::OnFoot => "On foot",
-            ActionSetKind::Vehicle => "Vehicle",
-            ActionSetKind::Airborne => "Airborne",
-            ActionSetKind::Ui => "Menus",
-        }
+        SemanticSet::of(self).name()
     }
 
     /// The index of this kind in [`ALL`](Self::ALL).
     pub const fn index(self) -> usize {
-        match self {
-            ActionSetKind::OnFoot => 0,
-            ActionSetKind::Vehicle => 1,
-            ActionSetKind::Airborne => 2,
-            ActionSetKind::Ui => 3,
-        }
+        self as usize
     }
 }
 
@@ -542,7 +531,8 @@ pub struct ControllerFrame {
     /// Whether the session had input focus. An unfocused session (the runtime's dashboard is up)
     /// reports every action inactive.
     pub focused: bool,
-    /// The action set the inputs were read through.
+    /// The mode set that was active when the frame was sampled. The raw inputs come from the
+    /// `hands` set whichever it is.
     pub action_set: ActionSetKind,
     /// Indexed by [`Hand::index`].
     pub hands: [HandFrame; 2],
@@ -667,21 +657,17 @@ impl Slot {
 
     /// Stamp `frame`, fold its transitions from the previous frame into the edges, and store it.
     /// Without a previous frame (the first publish, or the first after a clear) there is no
-    /// transition to fold. A change of action set starts a new input stream: the same physical
-    /// button can be down in both sets, but those states are not comparable, and their difference
-    /// must not manufacture an edge for the new set.
+    /// transition to fold. A change of mode set does not interrupt the stream: the raw inputs are
+    /// read from the always-active `hands` set, so consecutive frames compare whichever mode set
+    /// was active.
     fn publish(&mut self, mut frame: ControllerFrame, now: Instant) -> &ControllerFrame {
         self.sequence += 1;
         frame.sequence = self.sequence;
         frame.published_at = now;
         let current = [frame.hands[0].buttons, frame.hands[1].buttons];
-        match &self.frame {
-            Some(previous) if previous.action_set == frame.action_set => {
-                let previous = [previous.hands[0].buttons, previous.hands[1].buttons];
-                self.edges.accumulate(previous, current);
-            }
-            Some(_) => self.edges = Edges::default(),
-            None => {}
+        if let Some(previous) = &self.frame {
+            let previous = [previous.hands[0].buttons, previous.hands[1].buttons];
+            self.edges.accumulate(previous, current);
         }
         self.frame.insert(frame)
     }
@@ -936,19 +922,32 @@ mod tests {
     }
 
     #[test]
-    fn changing_action_sets_does_not_create_or_retain_edges() {
+    fn changing_action_sets_keeps_the_raw_edge_stream() {
         let mut slot = empty_slot();
         let t0 = Instant::now();
         let held = set(&[Button::TriggerPress]);
         slot.publish(frame_with(ButtonSet::EMPTY), t0);
         slot.publish(frame_with(held), t0);
-        assert!(slot.edges.pressed(Hand::Right, Button::TriggerPress));
+        slot.edges = Edges::default();
 
-        slot.publish(frame_with_set(held, ActionSetKind::Vehicle), t0);
-        assert_eq!(slot.edges, Edges::default());
-        slot.publish(frame_with_set(ButtonSet::EMPTY, ActionSetKind::Vehicle), t0);
+        slot.publish(frame_with_set(held, ActionSetKind::LandVehicle), t0);
+        assert_eq!(
+            slot.edges,
+            Edges::default(),
+            "a held button is not pressed anew"
+        );
+        slot.publish(
+            frame_with_set(ButtonSet::EMPTY, ActionSetKind::LandVehicle),
+            t0,
+        );
         assert!(slot.edges.released(Hand::Right, Button::TriggerPress));
-        assert!(!slot.edges.pressed(Hand::Right, Button::TriggerPress));
+
+        slot.edges = Edges::default();
+        slot.publish(frame_with_set(held, ActionSetKind::Ui), t0);
+        assert!(
+            slot.edges.pressed(Hand::Right, Button::TriggerPress),
+            "a press across a set change is kept"
+        );
     }
 
     #[test]
