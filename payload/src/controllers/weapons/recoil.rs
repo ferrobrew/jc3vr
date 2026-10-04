@@ -13,7 +13,8 @@
 //!
 //! While the off-hand holds a two-handed weapon's foregrip
 //! ([`foregrip::two_hand_grip`]), the kick is reduced, the spring stiffens, and the off-hand moves
-//! with the gun.
+//! with the gun. Held in one hand, a long gun's kick is raised by its class's one-handed scale
+//! ([`crate::controllers::weapons::heft`]).
 //!
 //! The spring runs on wall-clock time and is advanced lazily by whichever thread reads it: the
 //! kicks arrive on the simulation thread, and the hands are read on the simulation, input, and
@@ -75,8 +76,18 @@ impl Spring {
 }
 
 /// The kick of one shot as an offset: `(pitch, yaw, back)`, radians, radians, and metres.
-pub fn kick_offset(pitch: f32, yaw: f32, config: &RecoilConfig, two_hand_weight: f32) -> Vec3 {
-    let scale = config.kick_scale * lerp(1.0, config.two_hand_kick_scale, two_hand_weight);
+/// `one_hand_scale` multiplies the kick of a gun held in one hand
+/// ([`heft::one_hand_kick`](crate::controllers::weapons::heft::one_hand_kick)); the two-hand kick
+/// scale takes over from it as the foregrip's `two_hand_weight` rises.
+pub fn kick_offset(
+    pitch: f32,
+    yaw: f32,
+    config: &RecoilConfig,
+    two_hand_weight: f32,
+    one_hand_scale: f32,
+) -> Vec3 {
+    let scale =
+        config.kick_scale * lerp(one_hand_scale, config.two_hand_kick_scale, two_hand_weight);
     let (pitch, yaw) = (pitch * scale, yaw * scale);
     let kick = Vec3::new(pitch, yaw, pitch.abs() * config.kick_back_m_per_rad);
     if kick.is_finite() { kick } else { Vec3::ZERO }
@@ -171,8 +182,9 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &RecoilConfig) {
     }
 }
 
-/// Kick `hand`'s offset by a shot's recoil, `pitch` and `yaw` radians. Returns the kick applied.
-pub fn kick(hand: Hand, pitch: f32, yaw: f32, config: &RecoilConfig) -> Vec3 {
+/// Kick `hand`'s offset by a shot's recoil, `pitch` and `yaw` radians, with `one_hand_scale` the
+/// one-handed multiplier ([`kick_offset`]). Returns the kick applied.
+pub fn kick(hand: Hand, pitch: f32, yaw: f32, config: &RecoilConfig, one_hand_scale: f32) -> Vec3 {
     if !config.enabled {
         return Vec3::ZERO;
     }
@@ -180,7 +192,7 @@ pub fn kick(hand: Hand, pitch: f32, yaw: f32, config: &RecoilConfig) -> Vec3 {
     let now = Instant::now();
     advance(now, config, grip);
     let weight = grip_weight(grip, hand);
-    let kick = kick_offset(pitch, yaw, config, weight);
+    let kick = kick_offset(pitch, yaw, config, weight, one_hand_scale);
     let mut state = STATE.lock();
     let h = &mut state.hands[hand.index()];
     h.spring.kick(kick, stiffness(config, weight));
@@ -340,10 +352,15 @@ mod tests {
     #[test]
     fn the_two_hand_grip_reduces_the_kick_and_stiffens_the_spring() {
         let c = config();
-        let one = kick_offset(0.04, 0.01, &c, 0.0);
-        let two = kick_offset(0.04, 0.01, &c, 1.0);
+        let one = kick_offset(0.04, 0.01, &c, 0.0, 1.0);
+        let two = kick_offset(0.04, 0.01, &c, 1.0, 1.0);
         assert!((two.x - one.x * c.two_hand_kick_scale).abs() < 1e-6);
         assert!(one.z > 0.0 && two.z < one.z);
+        // A heavy gun kicks harder in one hand, and braced it kicks as any braced gun does.
+        let heavy = kick_offset(0.04, 0.01, &c, 0.0, 1.8);
+        assert!((heavy.x - one.x * 1.8).abs() < 1e-6);
+        let braced = kick_offset(0.04, 0.01, &c, 1.0, 1.8);
+        assert!((braced.x - two.x).abs() < 1e-6);
         assert_eq!(
             stiffness(&c, 1.0),
             c.spring_stiffness * c.two_hand_stiffness_scale

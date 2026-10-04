@@ -6,7 +6,10 @@
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
+//! - [`heft`]: the one-handed weight of a long gun: sag, lag, sway, a stronger kick, and a wider
+//!   spread, gone while it is braced on the foregrip;
 //! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
+//! - [`grip_watch`]: a diagnostic watch on how each held gun sits in its hand;
 //! - [`haptics`]: the game's rumbles and the grapple's pulses routed to the hands;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
@@ -17,6 +20,7 @@
 //! - [`magazine`]: the magazine reload gesture;
 //! - [`empty`]: the game's automatic switch away from an empty weapon suppressed, and the dry fire
 //!   pulsed;
+//! - [`unarmed_fire`]: the fire input with nothing in the hands kept from drawing a weapon;
 //! - [`scope`]: scoped weapons: the game's precision aim suppressed, and the lens on the scope;
 //! - [`config`]: the weapon-handling settings.
 //!
@@ -49,18 +53,24 @@ mod engine;
 mod fire;
 pub mod foregrip;
 pub mod grenade;
+pub mod grip_watch;
 pub mod haptics;
+pub mod heft;
 pub mod holster;
 pub mod magazine;
 pub mod melee;
 pub mod recoil;
 pub mod scope;
+pub mod unarmed_fire;
 pub mod volumes;
 
 use std::time::{Duration, Instant};
 
 use glam::{Quat, Vec3};
-use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
+use jc3gi::{
+    character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
+    input::input_action_map::Action,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -106,6 +116,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(scope::hook_library())
         .with_hook_library(dual_wield::hook_library())
         .with_hook_library(empty::hook_library())
+        .with_hook_library(heft::hook_library())
 }
 
 /// What the first half of the weapon handling's input tick hands the bindings.
@@ -221,6 +232,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
     };
     scope::input_tick(weapon.map(|w| w.address));
+    // SAFETY: the weapon was read this tick, on the main thread outside the world update.
+    if let Some(base) = weapon.and_then(|w| unsafe { (w.address as *const WeaponBase).as_ref() }) {
+        unsafe { grip_watch::observe(base) };
+    }
+    heft::observe(weapon.filter(|_| gameplay).and_then(|w| {
+        Some(heft::HeftTarget {
+            hand: w.holder?,
+            class: w.class,
+            weapon: w.address,
+        })
+    }));
     let dual_wield = weapon
         .filter(|w| {
             dual.split
@@ -494,6 +516,8 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 /// do not inject.
 pub(crate) fn stand_down() {
     foregrip::clear();
+    heft::observe(None);
+    grip_watch::clear();
     recoil::clear();
     grenade::stand_down();
     c4::stand_down();

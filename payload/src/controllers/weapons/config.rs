@@ -1,6 +1,7 @@
-//! The weapon-handling settings (the holsters, the foregrip, the recoil, the haptics, the
-//! dual-wield split, the grenade throw, melee strikes, and the magazine gesture, and the scopes), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside
-//! the other weapon-handling subsystems' toggles.
+//! The weapon-handling settings (the holsters, the foregrip, the recoil, the one-handed weight, the
+//! haptics, the dual-wield split, the grenade throw, melee strikes, the magazine gesture, and the
+//! scopes), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other
+//! weapon-handling subsystems' toggles.
 
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -112,8 +113,15 @@ pub struct ForegripConfig {
     /// no grip point of its own for the off-hand.
     pub fallback_distance_m: f32,
     /// The shortest distance between the hands that still sets a direction, metres. Closer, the
-    /// line between them is too short to aim along, and the weapon stays on the dominant hand.
+    /// line between them is too short to aim along, and the weapon stays on the dominant hand; the
+    /// two-handed pose fades out over the next `min_span_m` as the hands close in, so the weapon
+    /// does not jump between the two.
     pub min_span_m: f32,
+    /// The furthest the line between the hands may turn the weapon away from where the holding
+    /// hand points it, degrees. Past it the weapon stops turning, the off-hand falls away from
+    /// the foregrip, and the hold lets go once that passes the release distance, so an off-hand
+    /// that crosses behind the holding hand cannot spin the weapon round.
+    pub max_turn_deg: f32,
 }
 
 impl ForegripConfig {
@@ -125,6 +133,7 @@ impl ForegripConfig {
             blend_s: 0.12,
             fallback_distance_m: 0.32,
             min_span_m: 0.08,
+            max_turn_deg: 70.0,
         }
     }
 }
@@ -180,6 +189,110 @@ impl RecoilConfig {
 impl Default for RecoilConfig {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The one-handed weight of a heavy weapon (see [`crate::controllers::weapons::heft`]): held in
+/// one hand, a long gun sags, trails the hand on a spring, and sways, its kick grows, and its
+/// spread widens, all scaled by the weapon's class. Bracing it on the foregrip takes all of it
+/// away. Acts only under the controller scheme, so it defaults on.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HeftConfig {
+    pub enabled: bool,
+    /// Widen the game's own shot scatter while the weapon is held in one hand.
+    pub spread: bool,
+    /// The hand's distance from the head at which the reach sag starts, metres.
+    pub reach_near_m: f32,
+    /// The hand's distance from the head at which the reach sag is full, metres.
+    pub reach_far_m: f32,
+    /// The sway's frequency, hertz; the two axes run at incommensurate multiples of it.
+    pub sway_hz: f32,
+    /// The furthest the weapon may trail or sag away from the controller, degrees.
+    pub max_angle_deg: f32,
+    /// Pistols, revolvers, and SMGs.
+    pub sidearm: HeftTuning,
+    /// Assault rifles, shotguns, and sniper rifles.
+    pub rifle: HeftTuning,
+    /// Rocket and grenade launchers, miniguns, and the other heavy and special weapons.
+    pub heavy: HeftTuning,
+}
+
+impl HeftConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            spread: true,
+            reach_near_m: 0.3,
+            reach_far_m: 0.65,
+            sway_hz: 0.35,
+            max_angle_deg: 35.0,
+            sidearm: HeftTuning::NONE,
+            rifle: HeftTuning {
+                sag_deg: 5.0,
+                reach_sag_deg: 7.0,
+                lag_stiffness: 260.0,
+                lag_damping_ratio: 0.75,
+                sway_deg: 0.6,
+                kick_scale: 1.3,
+                spread_scale: 1.6,
+            },
+            heavy: HeftTuning {
+                sag_deg: 14.0,
+                reach_sag_deg: 14.0,
+                lag_stiffness: 70.0,
+                lag_damping_ratio: 0.65,
+                sway_deg: 1.5,
+                kick_scale: 1.8,
+                spread_scale: 2.5,
+            },
+        }
+    }
+}
+
+impl Default for HeftConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One weapon class's one-handed weight.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HeftTuning {
+    /// How far the weapon pitches down with the hand close to the body, degrees.
+    pub sag_deg: f32,
+    /// How much further it pitches down with the arm extended, degrees.
+    pub reach_sag_deg: f32,
+    /// The stiffness of the spring the weapon follows the hand's rotation on, per second squared.
+    /// Zero follows the hand rigidly.
+    pub lag_stiffness: f32,
+    /// The spring's damping ratio: `1` is critically damped, below `1` overshoots.
+    pub lag_damping_ratio: f32,
+    /// The sway's amplitude, degrees.
+    pub sway_deg: f32,
+    /// Multiplies the recoil kick while the weapon is held in one hand.
+    pub kick_scale: f32,
+    /// Multiplies the game's shot scatter while the weapon is held in one hand.
+    pub spread_scale: f32,
+}
+
+impl HeftTuning {
+    /// No weight at all: the weapon follows the hand as it is.
+    pub const NONE: Self = Self {
+        sag_deg: 0.0,
+        reach_sag_deg: 0.0,
+        lag_stiffness: 0.0,
+        lag_damping_ratio: 1.0,
+        sway_deg: 0.0,
+        kick_scale: 1.0,
+        spread_scale: 1.0,
+    };
+}
+
+impl Default for HeftTuning {
+    fn default() -> Self {
+        Self::NONE
     }
 }
 

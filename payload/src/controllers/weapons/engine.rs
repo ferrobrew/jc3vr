@@ -14,7 +14,7 @@ use crate::controllers::{
     config::AimConfig,
     frame::{Hand, Pose},
     hands::{ik::TickTarget, late, pose as hand_pose},
-    weapons::{config::ForegripConfig, foregrip::GripGeometry, holster::Wielded},
+    weapons::{config::ForegripConfig, foregrip::GripGeometry, heft::HeftClass, holster::Wielded},
 };
 
 /// The local player's wielded weapon.
@@ -27,6 +27,8 @@ pub struct HeldWeapon {
     /// Whether it is held in both hands' reach: a two-handed, special, or heavy weapon, wielded
     /// rather than mounted.
     pub two_handed: bool,
+    /// The weight class its one-handed tuning comes from.
+    pub class: HeftClass,
 }
 
 /// The local player character.
@@ -67,11 +69,14 @@ pub unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
                 | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
                 | WeaponSlot::E_SLOT_HEAVY
         );
+    // Read as the raw value: an unset or unknown class is out of the enum's range.
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
     Some(HeldWeapon {
         address: weapon as *const WeaponBase as usize,
         wielded: Wielded { slot, hands },
         holder,
         two_handed,
+        class: HeftClass::of(class, two_handed),
     })
 }
 

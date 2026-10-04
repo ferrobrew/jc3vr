@@ -66,7 +66,7 @@ use crate::{
         config::AimStateConfig,
         hands,
         mode::{self, Mode},
-        scheme,
+        scheme, weapons,
     },
     headpose,
     hooks::{character::resolve_act_id, input::locomotion::character_from_context},
@@ -623,6 +623,9 @@ fn wall_penetration_update(
 /// permission bit is set for the call (the permission update clears it every tick, so it is set
 /// every tick), a lapsed deliberate holster is dropped, and the call is marked so that the
 /// `QueueAct` filter can tell the relaxed branch's holster apart.
+///
+/// Around all of it, the fire and precision-aim inputs that would draw a weapon with nothing in the
+/// hands are held back ([`weapons::unarmed_fire`]).
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateWeaponHandling_ADDRESS)]
 fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
     let original = || UPDATE_WEAPON_HANDLING.get().unwrap().call(inventory, dt);
@@ -631,6 +634,16 @@ fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
         return original();
     };
     let words = unsafe { StateWords::of(c) };
+    let holstering = words.is_some_and(|w| unsafe { w.has(StateBitFlag::SB_IS_HOLSTERING_WEAPON) });
+    let held = unsafe { weapons::unarmed_fire::hold_back(c, holstering) };
+    update_local_weapon_handling(c, words, original);
+    if let Some(held) = held {
+        unsafe { held.restore(c) };
+    }
+}
+
+/// The mental-state cuts around the local player's weapon handling, `original`.
+fn update_local_weapon_handling(c: &mut Character, words: Option<StateWords>, original: impl Fn()) {
     let Some(words) = words.filter(|_| active(|cfg| cfg.mental_state_cuts)) else {
         STATUS.lock().mental.draw_blocked = false;
         return original();

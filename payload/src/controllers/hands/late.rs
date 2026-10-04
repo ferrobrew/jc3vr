@@ -29,7 +29,9 @@
 //!   the engine's own interpolated matrix, for a gun the local player wields in a hand attach bone;
 //! - the character render-block hooks pre-multiply the hand bones' palette entries by `D` (in model
 //!   space), and the forearm bones' by a swing about the elbow that follows the corrected wrist
-//!   ([`palette_edit`]).
+//!   ([`palette_edit`]);
+//! - the gun's separate model parts (a magazine, a slide, a spinning barrel) are re-pushed by
+//!   [`crate::controllers::hands::parts`] with the correction of the hand they ride.
 //!
 //! The muzzle flash, attached effects, and shot origin stay on the sim-rate transform.
 
@@ -348,6 +350,13 @@ pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
     })
 }
 
+/// The world-space correction of `hand` at the interpolation fraction `dtf`, as a matrix, for a
+/// render seam that re-pushes a model riding that hand; `None` when the hand is not corrected.
+pub(crate) fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
+    let frame = (*FRAME.lock())?;
+    frame.hand_delta(hand, dtf).map(pose_matrix)
+}
+
 /// The engine's weapon render update, then the gun's model matrix re-pushed with the hand's
 /// correction.
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::UpdateRender_ADDRESS)]
@@ -614,13 +623,13 @@ pub(crate) fn attach_hand(bone: u32) -> Option<Hand> {
 
 /// The engine's transform interpolation (`CTransform::Lerp`): the translation and scale lerped and
 /// the rotation slerped.
-fn lerp_transform(a: Mat4, b: Mat4, t: f32) -> Mat4 {
+pub(crate) fn lerp_transform(a: Mat4, b: Mat4, t: f32) -> Mat4 {
     let (sa, ra, ta) = a.to_scale_rotation_translation();
     let (sb, rb, tb) = b.to_scale_rotation_translation();
     Mat4::from_scale_rotation_translation(sa.lerp(sb, t), ra.slerp(rb, t), ta.lerp(tb, t))
 }
 
-fn pose_matrix(p: Pose) -> Mat4 {
+pub(crate) fn pose_matrix(p: Pose) -> Mat4 {
     Mat4::from_rotation_translation(p.orientation, p.position)
 }
 

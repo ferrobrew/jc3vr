@@ -6,8 +6,8 @@
 //! for that hand (`WeaponBase::GetGripPosition`), or, for a weapon without one, a point along the
 //! barrel. While the off-hand holds it:
 //!
-//! - the holding hand's poses turn about its grip so that the barrel lies along the line from the
-//!   holding hand to the off-hand;
+//! - the holding hand's poses turn about its grip so that the foregrip lies on the line from the
+//!   holding hand to the off-hand, up to a limit, and less as the hands close in;
 //! - the off-hand's poses move so that its grip lands on the foregrip, keeping the controller's
 //!   rotation;
 //! - [`two_hand_grip`] reports the grip, for the recoil spring to stiffen under.
@@ -94,6 +94,20 @@ pub struct ForegripStatus {
     pub last_release: Option<Release>,
     pub grabs: u64,
     pub releases: u64,
+    /// The turn the last two-handed pose asked of the weapon, before the limit and the blend.
+    pub turn: Option<Turn>,
+}
+
+/// The turn of one two-handed pose.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Turn {
+    /// The angle between where the holding hand points the foregrip and the line to the off-hand,
+    /// degrees.
+    pub wanted_deg: f32,
+    /// Whether the limit ([`ForegripConfig::max_turn_deg`]) held the weapon back.
+    pub limited: bool,
+    /// The share of the pose the span between the hands lets through, `0..=1`.
+    pub span_fade: f32,
 }
 
 /// An engaged two-hand grip, for the recoil spring.
@@ -132,11 +146,11 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
     ) else {
         return;
     };
-    if let Some((holder, off)) =
-        two_hand(holder, off, &hold.geometry, hold.weight, config.min_span_m)
-    {
-        hands[hold.holder.index()] = Some(holder);
-        hands[hold.holder.other().index()] = Some(off);
+    let pose = two_hand(holder, off, &hold.geometry, hold.weight, config);
+    STATE.lock().turn = pose.map(|p| p.turn);
+    if let Some(pose) = pose {
+        hands[hold.holder.index()] = Some(pose.holder);
+        hands[hold.holder.other().index()] = Some(pose.off);
     }
 }
 
@@ -152,25 +166,51 @@ pub fn foregrip_point(holder: &CockpitHand, geometry: &GripGeometry) -> Vec3 {
     .position
 }
 
-/// The two-handed pose at `weight`: the holding hand turned about its grip so its barrel lies along
-/// the line from its grip to the off-hand's, and the off-hand moved onto the foregrip. `None` when
-/// the hands are closer than `min_span` or the geometry is degenerate, leaving the hands as they
-/// are.
+/// The hands in a two-handed pose.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct TwoHandPose {
+    pub holder: CockpitHand,
+    pub off: CockpitHand,
+    pub turn: Turn,
+}
+
+/// The two-handed pose at `weight`: the holding hand turned about its grip so that the foregrip
+/// lies on the line from its grip to the off-hand's, and the off-hand moved onto the foregrip.
+///
+/// The weapon turns by the rotation that carries the direction from the holding grip to the
+/// foregrip onto that line, the shorter way round, so the weapon sits between the hands as the
+/// weapon's own geometry has it (a foregrip below or beside the barrel leaves the barrel off the
+/// line by as much) and keeps the roll the holding hand gives it. The turn stops at
+/// `config.max_turn_deg`, and it fades out as the hands close in from twice `config.min_span_m` to
+/// `config.min_span_m`. `None` when nothing of the pose is left or the geometry is degenerate,
+/// leaving the hands as they are.
 pub fn two_hand(
     holder: CockpitHand,
     off: CockpitHand,
     geometry: &GripGeometry,
     weight: f32,
-    min_span: f32,
-) -> Option<(CockpitHand, CockpitHand)> {
-    let weight = weight.clamp(0.0, 1.0);
+    config: &ForegripConfig,
+) -> Option<TwoHandPose> {
     let pivot = holder.grip.position;
-    let line = (off.grip.position - pivot).try_normalize()?;
-    if off.grip.position.distance(pivot) < min_span {
+    let to_off = off.grip.position - pivot;
+    let line = to_off.try_normalize()?;
+    let pivot_in_wrist = hand_pose::mul(hand_pose::inverse(holder.wrist), holder.grip).position;
+    let toward_foregrip =
+        (holder.wrist.orientation * (geometry.foregrip - pivot_in_wrist)).try_normalize()?;
+    let span_fade = span_fade(to_off.length(), config.min_span_m);
+    let weight = weight.clamp(0.0, 1.0) * span_fade;
+    let full = Quat::from_rotation_arc(toward_foregrip, line);
+    let (axis, wanted) = full.to_axis_angle();
+    let max = config.max_turn_deg.to_radians().max(0.0);
+    let turn_info = Turn {
+        wanted_deg: wanted.to_degrees(),
+        limited: wanted > max,
+        span_fade,
+    };
+    if weight <= 0.0 || !axis.is_finite() {
         return None;
     }
-    let barrel = (holder.wrist.orientation * geometry.barrel).try_normalize()?;
-    let turn = Quat::IDENTITY.slerp(Quat::from_rotation_arc(barrel, line), weight);
+    let turn = Quat::from_axis_angle(axis, wanted.min(max) * weight);
     let rotate = |p: Pose| Pose {
         position: pivot + turn * (p.position - pivot),
         orientation: (turn * p.orientation).normalize(),
@@ -190,7 +230,21 @@ pub fn two_hand(
         grip: moved(off.grip),
         aim: moved(off.aim),
     };
-    Some((holder, off))
+    Some(TwoHandPose {
+        holder,
+        off,
+        turn: turn_info,
+    })
+}
+
+/// The share of the two-handed pose a span of `span` metres between the grips lets through: none
+/// below `min_span`, all of it from twice `min_span`, and a smooth ramp between.
+pub fn span_fade(span: f32, min_span: f32) -> f32 {
+    if min_span <= 0.0 {
+        return if span > 0.0 { 1.0 } else { 0.0 };
+    }
+    let t = ((span - min_span) / min_span).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// What the input tick knows about the hands and the weapon for the foregrip.
@@ -290,8 +344,7 @@ fn moved_away(
     off: CockpitHand,
     config: &ForegripConfig,
 ) -> Option<Release> {
-    let holder = two_hand(holder, off, &hold.geometry, 1.0, config.min_span_m)
-        .map_or(holder, |(holder, _)| holder);
+    let holder = two_hand(holder, off, &hold.geometry, 1.0, config).map_or(holder, |p| p.holder);
     let distance = foregrip_point(&holder, &hold.geometry).distance(off.grip.position);
     (distance > config.release_distance_m).then_some(Release::MovedAway)
 }
@@ -311,7 +364,19 @@ pub(super) fn tick(inputs: &Inputs, dt: f32, config: &ForegripConfig) -> Option<
     let (hold, transition) = step(state.hold, inputs, dt, config);
     state.hold = hold;
     match transition {
-        Some(Transition::Grabbed) => state.grabs += 1,
+        Some(Transition::Grabbed) => {
+            state.grabs += 1;
+            if let Some(h) = hold {
+                tracing::debug!(
+                    target: "controllers",
+                    holder = ?h.holder,
+                    foregrip = ?h.geometry.foregrip,
+                    barrel = ?h.geometry.barrel,
+                    native = h.geometry.native,
+                    "foregrip grabbed"
+                );
+            }
+        }
         Some(Transition::Released(release)) => {
             state.releases += 1;
             state.last_release = Some(release);
@@ -323,7 +388,9 @@ pub(super) fn tick(inputs: &Inputs, dt: f32, config: &ForegripConfig) -> Option<
 
 /// Drop any hold at once, for when the controllers stop acting.
 pub(super) fn clear() {
-    STATE.lock().hold = None;
+    let mut state = STATE.lock();
+    state.hold = None;
+    state.turn = None;
 }
 
 static STATE: Mutex<ForegripStatus> = Mutex::new(ForegripStatus {
@@ -331,6 +398,7 @@ static STATE: Mutex<ForegripStatus> = Mutex::new(ForegripStatus {
     last_release: None,
     grabs: 0,
     releases: 0,
+    turn: None,
 });
 
 #[cfg(test)]
@@ -391,32 +459,104 @@ mod tests {
     #[test]
     fn the_barrel_turns_onto_the_line_between_the_hands() {
         let off = Vec3::new(0.3, 0.0, -0.3);
-        let (holder, moved) = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, 0.05).unwrap();
-        let barrel = holder.wrist.orientation * RIFLE.barrel;
+        let pose = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, &config()).unwrap();
+        let barrel = pose.holder.wrist.orientation * RIFLE.barrel;
         assert!(close(barrel, off.normalize()));
         // The holding hand turns about its grip, which stays put.
-        assert!(close(holder.grip.position, Vec3::ZERO));
+        assert!(close(pose.holder.grip.position, Vec3::ZERO));
         // The off-hand lands on the foregrip, along the line, keeping its rotation.
-        assert!(close(moved.grip.position, off.normalize() * 0.4));
-        assert_eq!(moved.grip.orientation, Quat::IDENTITY);
+        assert!(close(pose.off.grip.position, off.normalize() * 0.4));
+        assert_eq!(pose.off.grip.orientation, Quat::IDENTITY);
     }
 
     #[test]
     fn half_weight_turns_half_way() {
-        let off = Vec3::new(0.4, 0.0, 0.0);
-        let (holder, _) = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 0.5, 0.05).unwrap();
-        let barrel = holder.wrist.orientation * RIFLE.barrel;
-        let angle = barrel.angle_between(Vec3::NEG_Z).to_degrees();
-        assert!((angle - 45.0).abs() < 0.1, "{angle}");
+        let angle = 60f32.to_radians();
+        let off = Vec3::new(angle.sin(), 0.0, -angle.cos()) * 0.4;
+        let pose = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 0.5, &config()).unwrap();
+        let barrel = pose.holder.wrist.orientation * RIFLE.barrel;
+        let turned = barrel.angle_between(Vec3::NEG_Z).to_degrees();
+        assert!((turned - 30.0).abs() < 0.1, "{turned}");
     }
 
     #[test]
     fn hands_too_close_keep_their_poses() {
         let off = Vec3::new(0.01, 0.0, -0.01);
         assert_eq!(
-            two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, 0.05),
+            two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, &config()),
             None
         );
+    }
+
+    #[test]
+    fn the_pose_fades_out_as_the_hands_close_in() {
+        let c = config();
+        let span = c.min_span_m * 1.5;
+        let off = Vec3::new(span, 0.0, 0.0);
+        let pose = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, &c).unwrap();
+        assert!((pose.turn.span_fade - 0.5).abs() < 1e-5);
+        let barrel = pose.holder.wrist.orientation * RIFLE.barrel;
+        let turned = barrel.angle_between(Vec3::NEG_Z).to_degrees();
+        assert!((turned - c.max_turn_deg * 0.5).abs() < 0.1, "{turned}");
+        assert_eq!(span_fade(c.min_span_m * 0.9, c.min_span_m), 0.0);
+        assert_eq!(span_fade(c.min_span_m * 2.0, c.min_span_m), 1.0);
+    }
+
+    #[test]
+    fn an_off_hand_behind_the_holding_hand_cannot_spin_the_weapon_round() {
+        let c = config();
+        let off = Vec3::new(0.02, 0.0, 0.25);
+        let pose = two_hand(hand(Vec3::ZERO), hand(off), &RIFLE, 1.0, &c).unwrap();
+        assert!(pose.turn.limited);
+        let barrel = pose.holder.wrist.orientation * RIFLE.barrel;
+        let turned = barrel.angle_between(Vec3::NEG_Z).to_degrees();
+        assert!(turned <= c.max_turn_deg + 0.01, "{turned}");
+        // The weapon still points away from the player, and the hold lets go.
+        assert!(barrel.z < 0.0);
+        let (hold, _) = step(None, &inputs(Vec3::new(0.0, 0.0, -0.4), true), DT, &c);
+        let (_, t) = step(hold, &inputs(off, false), DT, &c);
+        assert_eq!(t, Some(Transition::Released(Release::MovedAway)));
+    }
+
+    #[test]
+    fn an_off_axis_foregrip_keeps_the_barrel_where_the_hands_hold_it() {
+        // A foregrip below the barrel: an off-hand on it turns nothing, though the line between
+        // the hands runs below the barrel.
+        let geometry = GripGeometry {
+            foregrip: Vec3::new(0.0, -0.06, -0.35),
+            barrel: Vec3::NEG_Z,
+            native: true,
+        };
+        let pose = two_hand(
+            hand(Vec3::ZERO),
+            hand(geometry.foregrip),
+            &geometry,
+            1.0,
+            &config(),
+        )
+        .unwrap();
+        let barrel = pose.holder.wrist.orientation * geometry.barrel;
+        assert!(close(barrel, Vec3::NEG_Z));
+        assert!(close(pose.off.grip.position, geometry.foregrip));
+    }
+
+    #[test]
+    fn the_turn_keeps_the_holding_hand_roll() {
+        // A hand rolled onto its side keeps the roll: the turn has no component about the line.
+        let rolled = CockpitHand {
+            wrist: Pose {
+                position: Vec3::ZERO,
+                orientation: Quat::from_rotation_z(0.7),
+            },
+            ..hand(Vec3::ZERO)
+        };
+        let off = Vec3::new(0.0, 0.2, -0.35);
+        let pose = two_hand(rolled, hand(off), &RIFLE, 1.0, &config()).unwrap();
+        let line = off.normalize();
+        let turn = pose.holder.wrist.orientation * rolled.wrist.orientation.inverse();
+        let (axis, angle) = turn.to_axis_angle();
+        assert!(angle > 0.1);
+        assert!(axis.dot(line).abs() < 1e-4);
     }
 
     #[test]

@@ -26,7 +26,7 @@ use crate::{
         summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
         weapons::config::{
-            C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
+            C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
             HolstersConfig, MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
         },
     },
@@ -640,6 +640,9 @@ pub struct WeaponsConfig {
     pub block_fire_during_actions: bool,
     /// The recoil offset between the controller and the rendered weapon.
     pub recoil: RecoilConfig,
+    /// The one-handed weight of long guns: sag, lag, sway, a stronger kick, and a wider spread,
+    /// all gone while the off-hand braces the weapon on its foregrip.
+    pub heft: HeftConfig,
     /// Controller vibration.
     pub haptics: HapticsConfig,
     /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
@@ -679,6 +682,10 @@ pub struct WeaponsConfig {
     /// reload is pulled. Off, the empty weapon stays in the hand until it is holstered or another
     /// is drawn, and the pull only dry-fires.
     pub auto_switch_when_empty: bool,
+    /// Let the fire input draw the selected weapon with nothing in the hands, as the game does.
+    /// Off, a weapon comes out only from a holster, the weapon wheel, or a slot select, and the
+    /// precision-aim input does not draw either.
+    pub fire_draws_weapon: bool,
 }
 
 impl WeaponsConfig {
@@ -688,6 +695,7 @@ impl WeaponsConfig {
             foregrip: ForegripConfig::new(),
             block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
+            heft: HeftConfig::new(),
             haptics: HapticsConfig::new(),
             dual_wield: DualWieldConfig::new(),
             reload_gesture: true,
@@ -702,6 +710,7 @@ impl WeaponsConfig {
             scopes: true,
             scope: ScopeConfig::new(),
             auto_switch_when_empty: false,
+            fire_draws_weapon: false,
         }
     }
 }

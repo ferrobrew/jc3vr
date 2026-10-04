@@ -10,6 +10,7 @@ use crate::{
         hands::{
             ik::HandIkStatus,
             late::{HandLateStatus, LateStatus},
+            parts,
             reach::{self, ReachConfig},
             rig,
             tiers::{HandTier, HandTierTable, TierState, TierStatus},
@@ -75,8 +76,10 @@ pub(super) fn hands_readout(
         }
     });
     ui.label(format!(
-        "Late-updated gun matrices {} · palette uploads edited {}",
-        late.weapons_updated, late.palettes_edited
+        "Late-updated gun matrices {} · gun parts {} · palette uploads edited {}",
+        late.weapons_updated,
+        parts::parts_updated(),
+        late.palettes_edited
     ));
 }
 

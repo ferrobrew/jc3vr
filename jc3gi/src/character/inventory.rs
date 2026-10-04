@@ -185,7 +185,16 @@ impl Inventory {
     /// input ([`Character::HolsterWeapon`](crate::character::character::Character::HolsterWeapon), or a
     /// deferred holster while the animation does not allow one), draws a weapon when weapon input
     /// arrives with nothing wielded, the precision-aim and grenade inputs, and the weapon-selection
-    /// HUD. For the player, with no weapon input and no draw or holster playing, it acts on the
+    /// HUD. The input draws are two: with nothing wielded
+    /// ([`Character::GetWieldingWeapon`](crate::character::character::Character::GetWieldingWeapon)) or a
+    /// holster playing, a positive fire input
+    /// ([`E_INPUT_MAIN_WEAPON`](crate::character::character::WeaponInput::E_INPUT_MAIN_WEAPON)) calls
+    /// [`Character::DrawWeapon`](crate::character::character::Character::DrawWeapon); and for the player,
+    /// with nothing wielded, a positive precision-aim input
+    /// ([`E_INPUT_PRECISION_AIM`](crate::character::character::WeaponInput::E_INPUT_PRECISION_AIM)) that
+    /// precision aim is possible for draws the selected weapon too, entering precision aim when
+    /// that weapon supports it. Both read the inputs from
+    /// [`Character::m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs). For the player, with no weapon input and no draw or holster playing, it acts on the
     /// avatar's mental state: in [`E_COMBAT`](crate::character::avatar::MentalState::E_COMBAT) with
     /// nothing wielded it draws the selected weapon when the animation allows it (the latched
     /// permission and a clear

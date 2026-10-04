@@ -1,7 +1,8 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
 //! line and yank, the grenade throw, the C4 throw and the wrist detonator, physical melee, the
-//! magazine gesture, the empty weapon, per-hand aim assist, and the weapon-handling settings.
+//! magazine gesture, the empty weapon, the one-handed weight, the gun-in-hand watch, the fire
+//! input with empty hands, per-hand aim assist, and the weapon-handling settings.
 
 use egui::Ui;
 
@@ -18,18 +19,22 @@ use crate::{
         weapons::{
             self, WeaponsStatus,
             config::{
-                DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HolstersConfig,
-                MagazineConfig, MeleeStrikeConfig, PulseSpec, RecoilConfig, VolumeSpec,
+                DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
+                HeftTuning, HolstersConfig, MagazineConfig, MeleeStrikeConfig, PulseSpec,
+                RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
             foregrip::{self, ForegripStatus},
             grenade::{self, GrenadeStatus},
+            grip_watch::{self, GripWatchStatus},
             haptics::{self, HapticsStatus},
+            heft::{self, HeftStatus},
             holster::slot_label,
             magazine::{MagazineGesture, MagazineStage},
             melee::{self, MeleeStatus},
             recoil::{self, RecoilStatus},
+            unarmed_fire::{self, UnarmedFireStatus},
             volumes::Stance,
         },
     },
@@ -54,6 +59,9 @@ pub(super) struct WeaponsReadout {
     melee: MeleeStatus,
     aim: AimStatus,
     empty: EmptyStatus,
+    heft: HeftStatus,
+    grip_watch: GripWatchStatus,
+    unarmed_fire: UnarmedFireStatus,
 }
 
 impl WeaponsReadout {
@@ -72,6 +80,9 @@ impl WeaponsReadout {
             melee: melee::status(),
             aim: controller_aim::status(),
             empty: empty::status(),
+            heft: heft::status(),
+            grip_watch: grip_watch::status(),
+            unarmed_fire: unarmed_fire::status(),
         }
     }
 }
@@ -151,6 +162,12 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     melee_readout(ui, &readout.melee);
     magazine_readout(ui, &status.magazine);
     empty_readout(ui, &readout.empty);
+    heft_readout(ui, &readout.heft);
+    grip_watch_readout(ui, &readout.grip_watch);
+    ui.label(format!(
+        "Fire with empty hands: draws held back {}",
+        readout.unarmed_fire.held_back
+    ));
     assist_readout(ui, &readout.aim);
     haptics_readout(ui, &readout.haptics);
     match &status.wielded {
@@ -195,6 +212,18 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         Some(h) => format!("Foregrip: letting go · weight {:.2}", h.weight),
         None => "Foregrip: not held".to_owned(),
     });
+    if let Some(t) = foregrip.turn {
+        ui.label(format!(
+            "Foregrip turn: {:.1}° wanted{} · span share {:.2}",
+            t.wanted_deg,
+            if t.limited {
+                " (held at the limit)"
+            } else {
+                ""
+            },
+            t.span_fade
+        ));
+    }
     ui.label(format!(
         "Foregrip grabs {} · releases {}{}",
         foregrip.grabs,
@@ -347,6 +376,49 @@ fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
     ));
 }
 
+fn heft_readout(ui: &mut Ui, h: &HeftStatus) {
+    let Some(target) = h.target else {
+        ui.label(format!(
+            "One-handed weight: no weapon · scatter widened {} times",
+            h.widened_shots
+        ));
+        return;
+    };
+    ui.label(format!(
+        "One-handed weight: {} in the {} hand · unbraced {:.2} · reach {:.2}",
+        target.class.label(),
+        target.hand.label(),
+        h.share,
+        h.reach
+    ));
+    ui.label(format!(
+        "  sag {:.1}° · sway pitch {:+.2}° yaw {:+.2}° · lag {:.1}° · total {:.1}° · scatter widened {} times",
+        h.sag_deg, h.sway_deg.x, h.sway_deg.y, h.lag_deg, h.offset_deg, h.widened_shots
+    ));
+}
+
+fn grip_watch_readout(ui: &mut Ui, g: &GripWatchStatus) {
+    let per_hand = Hand::BOTH
+        .iter()
+        .map(|h| {
+            format!(
+                "{} {} (flips {})",
+                h.label(),
+                g.change_deg[h.index()].map_or("-".to_owned(), |c| format!("{c:.1}°")),
+                g.flips[h.index()]
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    ui.label(format!(
+        "Gun in hand, change over the last tick: {per_hand}{}",
+        g.last_flip.map_or(String::new(), |(hand, c)| format!(
+            " · last flip {} hand {c:.0}°",
+            hand.label()
+        ))
+    ));
+}
+
 fn assist_readout(ui: &mut Ui, a: &AimStatus) {
     let per_hand = Hand::BOTH
         .iter()
@@ -402,6 +474,14 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         &mut w.recoil.suppress_camera_kick,
         "Suppress the camera recoil while aiming by hand",
     );
+    ui.checkbox(&mut w.heft.enabled, "One-handed weight")
+        .on_hover_text(
+            "Held in one hand, a long gun sags, trails the hand, sways, kicks harder, and shoots \
+         wider, by its class. Bracing it on the foregrip takes it all away.",
+        );
+    ui.add_enabled_ui(w.heft.enabled, |ui| {
+        ui.indent("heft", |ui| heft_settings(ui, &mut w.heft));
+    });
     ui.checkbox(&mut w.haptics.enabled, "Haptics");
     ui.add_enabled_ui(w.haptics.enabled, |ui| {
         ui.indent("haptics", |ui| haptics_settings(ui, &mut w.haptics));
@@ -441,6 +521,11 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         "Let the game switch to another weapon when the trigger of an empty weapon that cannot \
          reload is pulled. Off, the empty weapon stays in the hand and the pull only dry-fires.",
     );
+    ui.checkbox(&mut w.fire_draws_weapon, "Fire draws a weapon")
+        .on_hover_text(
+            "Let the trigger draw the selected weapon with nothing in the hands, as the game does. \
+             Off, weapons come out of the holsters.",
+        );
 }
 
 fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
@@ -615,4 +700,40 @@ fn foregrip_settings(ui: &mut Ui, f: &mut ForegripConfig) {
             .text("Fallback foregrip distance (m)"),
     );
     ui.add(egui::Slider::new(&mut f.min_span_m, 0.0..=0.3).text("Shortest span (m)"));
+    ui.add(egui::Slider::new(&mut f.max_turn_deg, 10.0..=180.0).text("Largest turn (°)"));
+}
+
+fn heft_settings(ui: &mut Ui, h: &mut HeftConfig) {
+    ui.checkbox(&mut h.spread, "Wider spread in one hand");
+    ui.add(egui::Slider::new(&mut h.reach_near_m, 0.0..=1.0).text("Reach sag starts at (m)"));
+    ui.add(egui::Slider::new(&mut h.reach_far_m, 0.0..=1.2).text("Reach sag full at (m)"));
+    ui.add(egui::Slider::new(&mut h.sway_hz, 0.0..=2.0).text("Sway frequency (Hz)"));
+    ui.add(egui::Slider::new(&mut h.max_angle_deg, 0.0..=90.0).text("Largest angle (°)"));
+    for (label, tuning) in [
+        ("Sidearms", &mut h.sidearm),
+        ("Rifles", &mut h.rifle),
+        ("Heavy", &mut h.heavy),
+    ] {
+        ui.collapsing(label, |ui| heft_tuning_settings(ui, tuning));
+    }
+    if ui.button("Reset the weight").clicked() {
+        *h = HeftConfig {
+            enabled: h.enabled,
+            ..HeftConfig::new()
+        };
+    }
+}
+
+fn heft_tuning_settings(ui: &mut Ui, t: &mut HeftTuning) {
+    ui.add(egui::Slider::new(&mut t.sag_deg, 0.0..=40.0).text("Sag (°)"));
+    ui.add(egui::Slider::new(&mut t.reach_sag_deg, 0.0..=40.0).text("Reach sag (°)"));
+    ui.add(
+        egui::Slider::new(&mut t.lag_stiffness, 0.0..=2000.0)
+            .logarithmic(true)
+            .text("Lag stiffness (0 follows rigidly)"),
+    );
+    ui.add(egui::Slider::new(&mut t.lag_damping_ratio, 0.1..=2.0).text("Lag damping ratio"));
+    ui.add(egui::Slider::new(&mut t.sway_deg, 0.0..=5.0).text("Sway (°)"));
+    ui.add(egui::Slider::new(&mut t.kick_scale, 0.0..=4.0).text("One-handed kick"));
+    ui.add(egui::Slider::new(&mut t.spread_scale, 0.0..=5.0).text("One-handed spread"));
 }

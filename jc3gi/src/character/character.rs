@@ -1235,6 +1235,32 @@ impl Character {
             f(self as *const Self as _, ignore_animation)
         }
     }
+    pub const GetWieldingWeapon_ADDRESS: usize = 0x1407D8520;
+    /// The weapon the character wields: the selected slot's weapon while it is
+    /// [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING),
+    /// [`E_WS_DUAL_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_DUAL_WIELDING), or
+    /// [`E_WS_MOUNTED`](crate::equipment::weapon::WeaponState::E_WS_MOUNTED), and otherwise a shared
+    /// empty pointer. While the character plants an explosive it is the planted explosive slot's
+    /// weapon, or the empty pointer with `ignore_planting`. The result points into the inventory or
+    /// at a static, so it outlives the call.
+    /// [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)
+    /// reads it to decide whether a weapon input draws a weapon.
+    pub unsafe fn GetWieldingWeapon(
+        &self,
+        ignore_planting: bool,
+    ) -> *const crate::types::shared_ptr::SharedPtr<
+        crate::equipment::weapon::WeaponBase,
+    > {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                ignore_planting: bool,
+            ) -> *const crate::types::shared_ptr::SharedPtr<
+                crate::equipment::weapon::WeaponBase,
+            > = ::std::mem::transmute(Self::GetWieldingWeapon_ADDRESS);
+            f(self as *const Self as _, ignore_planting)
+        }
+    }
     pub const HasAnyWeaponInput_ADDRESS: usize = 0x1407F2D10;
     /// Whether any weapon input is active this frame.
     pub unsafe fn HasAnyWeaponInput(&self) -> bool {

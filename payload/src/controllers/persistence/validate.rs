@@ -7,7 +7,7 @@ use crate::controllers::{
     frame::PressThresholds,
     persistence::{ControllerFile, Error, FILE_VERSION},
     vehicles::config::WheelSpec,
-    weapons::config::{PulseSpec, VolumeSpec},
+    weapons::config::{HeftConfig, PulseSpec, VolumeSpec},
 };
 
 /// Check every value the file carries, returning the first that is out of range or inconsistent.
@@ -224,6 +224,13 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         w.recoil.two_hand_kick_scale,
         100.0,
     )?;
+    range(
+        "weapons.foregrip.max_turn_deg",
+        w.foregrip.max_turn_deg,
+        0.0,
+        180.0,
+    )?;
+    heft(&w.heft)?;
     pulse("weapons.haptics.grapple_fire", &w.haptics.grapple_fire)?;
     pulse("weapons.haptics.grapple_attach", &w.haptics.grapple_attach)?;
     pulse("weapons.haptics.yank", &w.haptics.yank)?;
@@ -621,6 +628,38 @@ fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Error
     range(&format!("{name}.release"), thresholds.release, 0.0, 1.0)?;
     if thresholds.release > thresholds.press {
         return Err(Error::Invalid(format!("{name}.release exceeds press")));
+    }
+    Ok(())
+}
+
+fn heft(h: &HeftConfig) -> Result<(), Error> {
+    nonnegative("weapons.heft.reach_near_m", h.reach_near_m, 10.0)?;
+    nonnegative("weapons.heft.reach_far_m", h.reach_far_m, 10.0)?;
+    if h.reach_far_m < h.reach_near_m {
+        return Err(Error::Invalid(format!(
+            "weapons.heft.reach_far_m ({}) must not be below weapons.heft.reach_near_m ({})",
+            h.reach_far_m, h.reach_near_m
+        )));
+    }
+    nonnegative("weapons.heft.sway_hz", h.sway_hz, 10.0)?;
+    range("weapons.heft.max_angle_deg", h.max_angle_deg, 0.0, 180.0)?;
+    for (name, t) in [
+        ("weapons.heft.sidearm", &h.sidearm),
+        ("weapons.heft.rifle", &h.rifle),
+        ("weapons.heft.heavy", &h.heavy),
+    ] {
+        range(&format!("{name}.sag_deg"), t.sag_deg, 0.0, 90.0)?;
+        range(&format!("{name}.reach_sag_deg"), t.reach_sag_deg, 0.0, 90.0)?;
+        nonnegative(&format!("{name}.lag_stiffness"), t.lag_stiffness, 100_000.0)?;
+        range(
+            &format!("{name}.lag_damping_ratio"),
+            t.lag_damping_ratio,
+            0.0,
+            10.0,
+        )?;
+        range(&format!("{name}.sway_deg"), t.sway_deg, 0.0, 45.0)?;
+        nonnegative(&format!("{name}.kick_scale"), t.kick_scale, 100.0)?;
+        nonnegative(&format!("{name}.spread_scale"), t.spread_scale, 100.0)?;
     }
     Ok(())
 }

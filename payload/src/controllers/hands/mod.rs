@@ -15,6 +15,8 @@
 //! - [`secondary`]: the per-hand switch for the game's `SECONDARY` hand IK pass;
 //! - [`late`]: the render-time late update of the held weapon's model and of the hand and forearm
 //!   bones in the skinning palette, and the render-time hand poses for the overlay;
+//! - [`parts`]: the render-time late update of a held gun's separate model parts (its magazine,
+//!   slide, or spinning barrel);
 //! - [`palette`]: the pure palette-entry math of the late update.
 //!
 //! Everything here is inert unless the controller scheme is in effect and the hand's controller is
@@ -30,7 +32,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
         scheme, vehicles,
-        weapons::{foregrip, recoil},
+        weapons::{foregrip, heft, recoil},
     },
     headpose, hooks,
 };
@@ -39,6 +41,7 @@ pub mod anchor;
 pub mod ik;
 pub mod late;
 pub mod palette;
+pub mod parts;
 pub mod pose;
 pub mod reach;
 pub mod rig;
@@ -49,7 +52,9 @@ pub use pose::CockpitHand;
 
 /// The hands' hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    late::hook_library().with_hook_library(anchor::hook_library())
+    late::hook_library()
+        .with_hook_library(parts::hook_library())
+        .with_hook_library(anchor::hook_library())
 }
 
 /// The inputs every hand subsystem starts from: the controllers' configuration, the head's cockpit
@@ -68,13 +73,19 @@ pub struct ActiveHands {
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
 /// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
-/// ([`foregrip::apply`]); a gun hand carries its recoil offset ([`recoil::apply`]); an anchored
-/// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
+/// ([`foregrip::apply`]); a long gun held in one hand sags, trails, and sways ([`heft::apply`]); a
+/// gun hand carries its recoil offset ([`recoil::apply`]); an anchored grapple hand holds the
+/// line ([`anchor::apply`]); and a hand on a physical vehicle control or a
 /// mounted gun's handle holds it ([`vehicles::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
     vehicles::apply(&mut active.hands);
     foregrip::apply(&mut active.hands, &active.config.weapons.foregrip);
+    heft::apply(
+        &mut active.hands,
+        active.head.position,
+        &active.config.weapons.heft,
+    );
     recoil::apply(&mut active.hands, &active.config.weapons.recoil);
     anchor::apply(&mut active.hands, active.head, active.world_scale);
     Some(active)

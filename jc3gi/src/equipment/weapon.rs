@@ -75,6 +75,167 @@ impl std::convert::AsMut<InternalFireInformation> for InternalFireInformation {
     }
 }
 #[repr(C, align(8))]
+/// `CModelAttachementWeaponComponent`: a weapon component that draws a separate model part of a
+/// gun, such as a magazine, at a fixed offset from the gun or on one of the holder's bones. The
+/// barrel recoil and barrel spin components (`CBarrelRecoilWeaponComponent`,
+/// `CBarrelSpinWeaponComponent`) derive from it: their attachment placement runs this one's and
+/// then moves the part, and their vtables share its render update.
+///
+/// The part keeps its own pair of cached world matrices, like a gun's
+/// ([`WeaponData::m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0) and [`WeaponData::m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1)):
+/// [`UpdateAttachmentTransforms`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdateAttachmentTransforms) places it in the simulation,
+/// and [`UpdateRender`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdateRender) interpolates between the two and pushes the result to
+/// its own model instance. Only some members are mapped, at their offsets from the start of the
+/// component.
+pub struct ModelAttachementWeaponComponent {
+    _field_0: [u8; 208],
+    /// The weapon the component belongs to (`CWeaponComponentBase::m_Owner`).
+    pub m_Owner: *mut crate::equipment::weapon::WeaponBase,
+    _field_d8: [u8; 32],
+    /// The index into the owner's [`m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData) of the gun the part
+    /// belongs to.
+    pub m_WeaponDataIndex: u32,
+    _field_fc: [u8; 4],
+    /// Whether the next placement skips the render interpolation: when set,
+    /// [`UpdateAttachmentTransforms`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdateAttachmentTransforms) copies
+    /// [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix) into
+    /// [`m_WorldMatrixSaved`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrixSaved) as well. Set through
+    /// [`WeaponBase::SkipRenderInterpolationForOneFrame`](crate::equipment::weapon::WeaponBase::SkipRenderInterpolationForOneFrame) and cleared by
+    /// [`UpdatePostFinalizePose`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdatePostFinalizePose).
+    pub m_SkipRenderInterpolation: bool,
+    _field_101: [u8; 3],
+    /// The snow cover written by the attachment placement, which the render update hands the
+    /// model's environmental metadata.
+    pub m_SnowFactor: f32,
+    /// The wetness written by the attachment placement, which the render update hands the model's
+    /// environmental metadata while the snow cover is zero.
+    pub m_WaterFactor: f32,
+    /// The holder's bone (an `NBone::ESafeBoneIndex`) the part rides instead of its gun, or
+    /// [`NO_CHARACTER_BONE`](crate::equipment::weapon::ModelAttachementWeaponComponent::NO_CHARACTER_BONE). Set by
+    /// [`AttachToCharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::AttachToCharacterBone), which the animation's
+    /// model-attachment bone task (`NWeaponModelAttachementSetBoneTask`) calls inside the holder's
+    /// pose-finalization pass, and reset by
+    /// [`UpdatePostFinalizePose`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdatePostFinalizePose) at the end of that pass, so it is
+    /// set only between the task and the end of the pass that placed the part.
+    pub m_CharacterBone: u32,
+    /// The part's transform relative to its gun.
+    pub m_Offset: crate::types::math::Matrix4,
+    /// The part's world matrix as of the current placement:
+    /// [`m_Offset`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Offset) composed with the gun's
+    /// [`GetWorldMatrixT1`](crate::equipment::weapon::WeaponData::GetWorldMatrixT1) and orthonormalized, or the holder's bone
+    /// while [`m_CharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_CharacterBone) names one.
+    pub m_WorldMatrix: crate::types::math::Matrix4,
+    /// The part's world matrix as of the previous placement, which the render update interpolates
+    /// from toward [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix).
+    pub m_WorldMatrixSaved: crate::types::math::Matrix4,
+    /// The part's model instance (an `NModelSystem::CModelInstance`), or null.
+    pub m_BaseModelInstance: *mut ::std::ffi::c_void,
+}
+fn _ModelAttachementWeaponComponent_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x1D8],
+            ModelAttachementWeaponComponent,
+        >([0u8; 0x1D8]);
+    }
+    unreachable!()
+}
+impl ModelAttachementWeaponComponent {
+    pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x14092EB80;
+    /// Places the part (the component's override of the `UpdateAttachmentTransforms` weapon
+    /// component virtual, which the weapon's attachment placement calls for each component). It
+    /// stores `snow_factor` and `water_factor`; for the advancing placement (`transform_type` 2)
+    /// it first copies [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix) into
+    /// [`m_WorldMatrixSaved`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrixSaved). It then writes
+    /// [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix) from the gun's world matrix and
+    /// [`m_Offset`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Offset), or from the holder's bone while
+    /// [`m_CharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_CharacterBone) names one. While
+    /// [`m_SkipRenderInterpolation`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_SkipRenderInterpolation) is set, and for the initial
+    /// placement (`transform_type` 0), it copies the new matrix into
+    /// [`m_WorldMatrixSaved`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrixSaved) as well.
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        snow_factor: f32,
+        water_factor: f32,
+        transform_type: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                snow_factor: f32,
+                water_factor: f32,
+                transform_type: u32,
+            ) = ::std::mem::transmute(Self::UpdateAttachmentTransforms_ADDRESS);
+            f(self as *mut Self as _, snow_factor, water_factor, transform_type)
+        }
+    }
+    pub const UpdateRender_ADDRESS: usize = 0x1408E09F0;
+    /// The render-phase update (the `CGameObject::UpdateRender` virtual), called for each of a
+    /// weapon's components from the weapon's render update ([`WeaponBase::UpdateRender`](crate::equipment::weapon::WeaponBase::UpdateRender)). It
+    /// interpolates [`m_WorldMatrixSaved`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrixSaved) toward
+    /// [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix) by the render context's interpolation factor (the
+    /// engine's `CTransform::Lerp`), scales the result by the gun's holstered scale while the
+    /// owner is [`E_WS_HOLSTERED`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED), pushes it to
+    /// [`m_BaseModelInstance`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_BaseModelInstance) with
+    /// [`ModelInstance::UpdateMatrix`](crate::graphics_engine::model_instance::ModelInstance::UpdateMatrix),
+    /// and hands the model the snow and wetness. The disassembler mislabels it
+    /// `NInteractionGraphExitTasks::NAnimationDrivenOnlyMotion::Update`, and puts this function's
+    /// name on a function that reads a gun's ([`WeaponData`](crate::equipment::weapon::WeaponData)) fields instead.
+    pub unsafe fn UpdateRender(
+        &mut self,
+        context: *const crate::game::GameObjectRenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *const crate::game::GameObjectRenderContext,
+            ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
+            f(self as *mut Self as _, context)
+        }
+    }
+    pub const AttachToCharacterBone_ADDRESS: usize = 0x1408BFDA0;
+    /// Rides the part on the holder's bone `bone` (an `NBone::ESafeBoneIndex`) for the rest of the
+    /// pose-finalization pass: sets [`m_CharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_CharacterBone).
+    pub unsafe fn AttachToCharacterBone(&mut self, bone: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, bone: u32) = ::std::mem::transmute(
+                Self::AttachToCharacterBone_ADDRESS,
+            );
+            f(self as *mut Self as _, bone)
+        }
+    }
+    pub const UpdatePostFinalizePose_ADDRESS: usize = 0x1408BFD80;
+    /// The component's post-pose-finalization hook, run from [`WeaponBase::UpdatePostFinalizePose`](crate::equipment::weapon::WeaponBase::UpdatePostFinalizePose)
+    /// for an enabled component: clears [`m_SkipRenderInterpolation`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_SkipRenderInterpolation)
+    /// and resets [`m_CharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_CharacterBone) to
+    /// [`NO_CHARACTER_BONE`](crate::equipment::weapon::ModelAttachementWeaponComponent::NO_CHARACTER_BONE). The disassembler leaves it unnamed.
+    pub unsafe fn UpdatePostFinalizePose(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdatePostFinalizePose_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl ModelAttachementWeaponComponent {
+    /// The value of [`m_CharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_CharacterBone) while the part rides its gun rather
+    /// than a bone of the holder.
+    pub const NO_CHARACTER_BONE: u32 = 4294967295;
+}
+impl std::convert::AsRef<ModelAttachementWeaponComponent>
+for ModelAttachementWeaponComponent {
+    fn as_ref(&self) -> &ModelAttachementWeaponComponent {
+        self
+    }
+}
+impl std::convert::AsMut<ModelAttachementWeaponComponent>
+for ModelAttachementWeaponComponent {
+    fn as_mut(&mut self) -> &mut ModelAttachementWeaponComponent {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The weapon ballistics helpers (`NWeaponUtil`).
 pub struct NWeaponUtil {}
 impl NWeaponUtil {
@@ -1154,6 +1315,20 @@ impl WeaponBase {
             f(self as *const Self as _, result, weapon_data)
         }
     }
+    pub const GetCurrentScatterValue_ADDRESS: usize = 0x140981EC0;
+    /// The scatter a shot is given: [`m_CurrentScatterValue`](crate::equipment::weapon::WeaponBase::m_CurrentScatterValue),
+    /// multiplied by a tuning factor while the player holding the weapon is in precision aim and
+    /// by another while the holder moves faster than a metre per second; zero without a holder.
+    /// [`GetShotMatrix`](crate::equipment::weapon::WeaponBase::GetShotMatrix) multiplies the tuning's yaw and pitch scatter ranges
+    /// by it, unless asked to ignore the scatter.
+    pub unsafe fn GetCurrentScatterValue(&self) -> f32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> f32 = ::std::mem::transmute(
+                Self::GetCurrentScatterValue_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const GetAimTimerOverride_ADDRESS: usize = 0x140958F70;
     /// Returns the tuning's aim-timer override
     /// ([`WeaponTuning::m_aim_timer_override`](crate::equipment::weapon::WeaponTuning::m_aim_timer_override)), or zero without tuning.
@@ -1267,8 +1442,10 @@ impl WeaponBase {
     /// [`WeaponData::m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0) toward [`WeaponData::m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1) by the render
     /// context's interpolation factor, applies the holstered scale when holstered, pushes the
     /// result to [`WeaponData::m_BaseModelInstance`](crate::equipment::weapon::WeaponData::m_BaseModelInstance), and updates the gun's animated-model
-    /// skinning; it then renders the weapon's components. `game_object` is the weapon's
-    /// `CGameObject` subobject, not the start of the weapon.
+    /// skinning; it then renders the weapon's components, among them the separate model parts of
+    /// its guns ([`ModelAttachementWeaponComponent::UpdateRender`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdateRender)), which interpolate their own
+    /// cached matrices. `game_object` is the weapon's `CGameObject` subobject, not the start of
+    /// the weapon.
     pub unsafe fn UpdateRender(
         game_object: *mut ::std::ffi::c_void,
         context: *const crate::game::GameObjectRenderContext,
