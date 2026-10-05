@@ -42,8 +42,10 @@
 //! headset and derives the other dimensions from them ([`calibration`]) before saving them with
 //! [`save`].
 
+pub mod alignment;
 pub mod calibration;
 pub(crate) mod menu;
+pub mod torso;
 
 use std::path::{Path, PathBuf};
 

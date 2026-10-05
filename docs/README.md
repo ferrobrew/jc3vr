@@ -88,6 +88,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [grapple-comfort.md](mod/body/grapple-comfort.md) — the grapple body-frame filter (issue #36): the hold from fire to landing, the yaw handoff, the landing-snap absorber, and the telemetry capture.
 - [swim-yaw.md](mod/body/swim-yaw.md) — the right stick owns the swim heading: the `DoRotate` target override, the forward/back-only move direction, the accumulator seeding, and the turn-act suppression.
 - [parachute-yaw.md](mod/body/parachute-yaw.md) — parachute head-yaw suppression (issue #48): removing the camera-relative look-steer from the chute's steering so the head does not turn it.
+- [alignment.md](mod/body/alignment.md) — keeping Rico's body aligned with the player's: the torso estimate from the head and hands, the body turning under the view to face the torso, the chest and pelvis turn, the holsters on Rico's skeleton, and the divergence readout.
 - [unarmed-body.md](mod/body/unarmed-body.md) — the weapon-agnostic body: on foot under the controllers, the weapon's modifiers kept off all but the action layer, the partial and additive layers left out of the pose while they run, and the game's off-hand weapon grip released.
 
 ### input/

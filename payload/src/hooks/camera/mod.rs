@@ -33,6 +33,7 @@ use crate::{
     fsr::apply_jitter_to_projection,
     headpose::{
         HeadPose, Source, anchor, eye_arm, is_active, neck_delta, query, query_prev, source,
+        xr::follow_turn,
     },
     hooks::in_gameplay,
 };
@@ -355,7 +356,12 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 let cur = query();
                 let prev = query_prev();
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                let position = camera_position(&cur, character_t1_matrix, &camera_settings);
+                let position = camera_position(
+                    &cur,
+                    character_t1_matrix,
+                    follow_turn(true),
+                    &camera_settings,
+                );
                 write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
                 height::record(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
@@ -369,7 +375,12 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                     write_camera_transform(
                         &mut camera.m_TransformT0,
                         prev.orientation,
-                        camera_position(&prev, character_t0_matrix, &camera_settings),
+                        camera_position(
+                            &prev,
+                            character_t0_matrix,
+                            follow_turn(false),
+                            &camera_settings,
+                        ),
                     );
                 }
             } else {
@@ -429,9 +440,14 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
 /// How the arm turns with the head depends on the source (see [`NeckModel`]): the sim pivots it
 /// about the neck by the head orientation, while the VR source holds it at rest in the body frame
 /// because the HMD's tracked translation already carries the player's own neck pivot.
+///
+/// `view_turn` is the turn from the character's body frame to the view frame on the pose's side of
+/// the pair ([`crate::headpose::xr::follow_turn`]): the identity unless the body has turned under
+/// the view.
 fn camera_position(
     pose: &HeadPose,
     character_matrix: glam::Mat4,
+    view_turn: glam::Quat,
     camera_settings: &config::CameraConfig,
 ) -> glam::Vec3 {
     let (_, character_rotation, _) = character_matrix.to_scale_rotation_translation();
@@ -444,6 +460,7 @@ fn camera_position(
         neck_delta: neck_delta(),
         arm: measured_arm + camera_settings.head_offset,
         body_offset: camera_settings.body_offset,
+        view_turn,
     };
     eye_position(
         pose,
@@ -462,6 +479,11 @@ struct EyeRig {
     arm: glam::Vec3,
     /// A further offset in the body frame, applied after the arm.
     body_offset: glam::Vec3,
+    /// The turn from the body frame to the view frame. The tracked neck model holds the arm at rest
+    /// in the view frame: the HMD's translation already carries the player's eyes round with a
+    /// turn of their torso, so the arm must not turn again with a body that turns under the view
+    /// to follow it.
+    view_turn: glam::Quat,
 }
 
 /// How the neck-to-eyes arm follows the head's orientation.
@@ -498,7 +520,7 @@ fn eye_position(
 ) -> glam::Vec3 {
     let arm_rotation = match neck {
         NeckModel::Synthetic => pose.orientation,
-        NeckModel::Tracked => character_rotation,
+        NeckModel::Tracked => character_rotation * rig.view_turn,
     };
     pose.position + rig.neck_delta + arm_rotation * rig.arm + character_rotation * rig.body_offset
 }
@@ -709,8 +731,18 @@ fn camera_tree_update_render_contexts(
                 let cur = query();
                 let prev = query_prev();
                 (
-                    camera_position(&prev, character_t0_matrix, &camera_settings),
-                    camera_position(&cur, character_t1_matrix, &camera_settings),
+                    camera_position(
+                        &prev,
+                        character_t0_matrix,
+                        follow_turn(false),
+                        &camera_settings,
+                    ),
+                    camera_position(
+                        &cur,
+                        character_t1_matrix,
+                        follow_turn(true),
+                        &camera_settings,
+                    ),
                     Some(prev.orientation),
                     Some(cur.orientation),
                 )
@@ -916,6 +948,7 @@ mod tests {
             neck_delta: glam::Vec3::new(0.0, -0.08, 0.02),
             arm: glam::Vec3::new(0.0, 0.12, -0.1),
             body_offset: glam::Vec3::ZERO,
+            view_turn: glam::Quat::IDENTITY,
         }
     }
 
@@ -986,6 +1019,25 @@ mod tests {
             NeckModel::Tracked,
         );
         assert!((eye - (rig.neck_delta + body * rig.arm)).length() < 1e-6);
+    }
+
+    /// A body turned under the view leaves the tracked arm where the view has it: the headset's
+    /// translation already carries the player's eyes round with a torso turn.
+    #[test]
+    fn tracked_arm_stays_in_the_view_frame_when_the_body_turns_under_it() {
+        let view = glam::Quat::from_rotation_y(0.3);
+        let body = glam::Quat::from_rotation_y(1.4);
+        let rig = EyeRig {
+            view_turn: body.inverse() * view,
+            ..standing_rig()
+        };
+        let eye = eye_position(
+            &pose(glam::Vec3::ZERO, glam::Quat::IDENTITY),
+            body,
+            &rig,
+            NeckModel::Tracked,
+        );
+        assert!((eye - (rig.neck_delta + view * rig.arm)).length() < 1e-5);
     }
 
     /// The flatscreen sim keeps its synthetic neck: pitching the head down swings the eyes forward

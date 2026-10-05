@@ -11,7 +11,8 @@ use crate::{
     },
     headpose::config::VrTurnMode,
     ui::controllers::{
-        aim, fingers, hands, overlay, physical_hands, roomscale, scope, summary, vehicles, weapons,
+        aim, alignment, fingers, hands, overlay, physical_hands, roomscale, scope, summary,
+        vehicles, weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -210,6 +211,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut c.body.remap_head, "Remap head height")
             .on_hover_text("Moves the view for every player, controllers or not.");
         ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
+    });
+
+    egui::CollapsingHeader::new("Body alignment").show(ui, |ui| {
+        alignment::alignment_settings(ui, &mut c.body.alignment)
     });
 
     egui::CollapsingHeader::new("Aiming").show(ui, |ui| aim::aim_settings(ui, c));

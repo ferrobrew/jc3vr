@@ -19,6 +19,7 @@ pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, Sig
 use crate::{
     controllers::{
         bindings::{panel_chord, yank::YankConfig},
+        body::alignment::AlignmentConfig,
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
@@ -741,6 +742,9 @@ pub struct BodyRemapConfig {
     /// Scale the hands' offsets from the shoulders by the ratio of the arm spans. Acts only under
     /// the controller scheme.
     pub remap_hands: bool,
+    /// Keeping the character's body aligned with the player's: the torso estimate, the body
+    /// turning under the view, and the chest turn.
+    pub alignment: AlignmentConfig,
 }
 
 impl BodyRemapConfig {
@@ -748,6 +752,7 @@ impl BodyRemapConfig {
         Self {
             remap_head: true,
             remap_hands: true,
+            alignment: AlignmentConfig::new(),
         }
     }
 }

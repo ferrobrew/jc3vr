@@ -28,17 +28,29 @@
 //! The dimensions are the character's while the hands are remapped onto the character's proportions
 //! (a hand the player puts on their own hip lands on the character's), and the player's otherwise.
 //!
+//! The body the volumes ride is one of two ([`BodyFrame`]):
+//!
+//! - **The player's body**, estimated from the dimensions above, turned to the player's estimated
+//!   torso heading ([`crate::controllers::body::torso`]) so that the holsters stay at the player's
+//!   hips and shoulders when the player turns in the room.
+//! - **The character's skeleton** ([`HolsterAnchor::Rico`]): the same landmarks taken from his hip
+//!   and shoulder joints carried into the cockpit frame, so the volumes sit on the body the player
+//!   sees. The hip and belt volumes ride the pelvis (the line through the hip joints) and the
+//!   shoulder, chest, and C4 volumes ride the chest (the line through the shoulder joints). For a
+//!   skeleton built to the dimensions the two coincide. Where the skeleton is unavailable or not
+//!   upright (a vehicle, a ragdoll, a skydive) the caller falls back to the player's body.
+//!
 //! The stance ([`Stance`]) comes from the roomscale posture
 //! (`crate::controllers::roomscale::posture::EffectivePosture`), the single source of truth for
 //! seated versus standing that the head height and the chase also key off: the seated posture is
 //! seated, and the standing and roomscale postures are standing. That mapping is the caller's job
 //! ([`crate::controllers::weapons`]), so that this module stays pure.
 
-use glam::{Quat, Vec3};
+use glam::{Mat3, Quat, Vec3};
 
 use crate::controllers::{
     bindings::grab::{Candidate, GrabVolume, HolsterSite},
-    body::{self, BodyDimensions},
+    body::{self, BodyDimensions, alignment::measure::SkeletonLandmarks},
     frame::Hand,
     weapons::config::{HolstersConfig, VolumeSpec},
 };
@@ -64,18 +76,40 @@ impl Stance {
     }
 }
 
-/// What the volumes are placed from: where the body frame's eyes are, and how the body is posed.
+/// What the volumes are placed from: where the body frame's eyes are, how the body is posed, and
+/// which body the volumes ride.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BodyFrame {
     /// The body frame's origin in the cockpit frame: the eyes at their upright height, dropped with
     /// a head that has dropped further than the deadband below it.
     pub origin: Vec3,
     pub seated: bool,
+    /// The body the volumes ride.
+    pub anchor: Anchor,
 }
 
-/// The body frame for a head at `head` in `stance`: the eyes at the cockpit frame's origin, until
-/// the head drops more than `crouch_deadband` below it.
-pub fn body_frame(head: Vec3, stance: Stance, crouch_deadband: f32) -> BodyFrame {
+/// The body the volumes ride, in the cockpit frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Anchor {
+    /// The player's body, estimated from the dimensions, facing this heading (radians about +Y,
+    /// positive turning -Z toward -X).
+    Body { yaw: f32 },
+    /// The character's skeleton.
+    Skeleton(SkeletonLandmarks),
+}
+
+impl Anchor {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Anchor::Body { .. } => "the player's body",
+            Anchor::Skeleton(_) => "the character's skeleton",
+        }
+    }
+}
+
+/// The body frame for a head at `head` in `stance`, riding `anchor`: the eyes at the cockpit
+/// frame's origin, until the head drops more than `crouch_deadband` below it.
+pub fn body_frame(head: Vec3, stance: Stance, crouch_deadband: f32, anchor: Anchor) -> BodyFrame {
     let deadband = if crouch_deadband.is_finite() {
         crouch_deadband.max(0.0)
     } else {
@@ -86,9 +120,14 @@ pub fn body_frame(head: Vec3, stance: Stance, crouch_deadband: f32) -> BodyFrame
     } else {
         0.0
     };
+    let anchor = match anchor {
+        Anchor::Body { yaw } if !yaw.is_finite() => Anchor::Body { yaw: 0.0 },
+        anchor => anchor,
+    };
     BodyFrame {
         origin: Vec3::new(0.0, y, 0.0),
         seated: stance == Stance::Seated,
+        anchor,
     }
 }
 
@@ -104,25 +143,28 @@ pub fn holster_candidates(
     grenade_pouch: bool,
 ) -> Vec<Candidate> {
     let mut out = Vec::with_capacity(6);
+    let pelvis = pelvis_girdle(frame);
     for side in Hand::BOTH {
         out.push(place(
             GrabVolume::Holster(HolsterSite::Hip(side)),
             hip(frame, dims, side),
+            pelvis,
             &config.hip,
             side,
             None,
         ));
     }
-    let shoulders = body::shoulder_positions(frame.origin, Quat::IDENTITY, dims);
+    let chest = chest_girdle(frame, dims);
     let over_shoulder = if frame.seated {
-        Vec3::NEG_Z * SEATED_SHOULDER_FORWARD_M
+        chest.basis * (Vec3::NEG_Z * SEATED_SHOULDER_FORWARD_M)
     } else {
         Vec3::ZERO
     };
     for side in Hand::BOTH {
         out.push(place(
             GrabVolume::Holster(HolsterSite::Shoulder(side)),
-            shoulders[side.index()] + over_shoulder,
+            chest.shoulders[side.index()] + over_shoulder,
+            chest.basis,
             &config.shoulder,
             side,
             None,
@@ -130,7 +172,8 @@ pub fn holster_candidates(
     }
     out.push(place(
         GrabVolume::Holster(HolsterSite::Chest),
-        (shoulders[0] + shoulders[1]) * 0.5,
+        chest.centre(),
+        chest.basis,
         &config.chest,
         Hand::Right,
         None,
@@ -140,6 +183,7 @@ pub fn holster_candidates(
         out.push(place(
             GrabVolume::GrenadePouch,
             belt(frame, dims, off),
+            pelvis,
             &config.pouch,
             off,
             None,
@@ -162,6 +206,7 @@ pub fn magazine_pouch(
     place(
         GrabVolume::MagazinePouch,
         belt(frame, dims, dominant),
+        pelvis_girdle(frame),
         spec,
         dominant,
         grabber,
@@ -177,10 +222,11 @@ pub fn c4_pouch(
     spec: &VolumeSpec,
     dominant: Hand,
 ) -> Candidate {
-    let shoulders = body::shoulder_positions(frame.origin, Quat::IDENTITY, dims);
+    let chest = chest_girdle(frame, dims);
     place(
         GrabVolume::C4Pouch,
-        (shoulders[0] + shoulders[1]) * 0.5,
+        chest.centre(),
+        chest.basis,
         spec,
         dominant,
         None,
@@ -261,16 +307,10 @@ const BELT_OUT_FRACTION: f32 = 0.3;
 const BELT_FORWARD_M: f32 = 0.18;
 
 /// The hip landmark on `side`: as far out as the shoulder joint; standing, at the hip joints' height
-/// and the shoulders' depth; seated, higher up the torso and forward over the thighs.
+/// and depth; seated, higher up the torso and forward over the thighs.
 fn hip(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
-    let out = dims.shoulder_width * 0.5 * side_sign(side);
-    let hip_height = dims.height * HIP_HEIGHT_FRACTION;
-    let standing = Vec3::new(
-        out,
-        hip_height - dims.eye_height,
-        body::EYES_FORWARD_OF_SHOULDERS,
-    );
-    frame.origin + seated_waist_adjust(frame, dims, hip_height, standing)
+    let out = shoulder_width(frame, dims) * 0.5 * side_sign(side);
+    waist(frame, dims, Vec3::new(out, 0.0, 0.0))
 }
 
 /// The belt-front landmark on `side`: higher up the torso than the hips, in front of the eye plane
@@ -278,32 +318,103 @@ fn hip(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
 /// clear of the hip holster beside it and of its own mirror on the opposite side. Standing and
 /// seated as [`hip`].
 fn belt(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
-    let out = dims.shoulder_width * BELT_OUT_FRACTION * side_sign(side);
-    let belt_height = dims.height * BELT_HEIGHT_FRACTION;
-    let standing = Vec3::new(out, belt_height - dims.eye_height, -BELT_FORWARD_M);
-    frame.origin + seated_waist_adjust(frame, dims, belt_height, standing)
+    let out = shoulder_width(frame, dims) * BELT_OUT_FRACTION * side_sign(side);
+    let rise = dims.height * (BELT_HEIGHT_FRACTION - HIP_HEIGHT_FRACTION);
+    let forward = BELT_FORWARD_M + body::EYES_FORWARD_OF_SHOULDERS;
+    waist(frame, dims, Vec3::new(out, rise, -forward))
 }
 
-/// Adjust a standing waist-level landmark for a seated body: higher up the torso and forward over
-/// the thighs, because the seat is where a standing body's hip joints are. `base_height` is the
-/// landmark's standing height above the floor, used to find how much torso remains above it.
-fn seated_waist_adjust(
-    frame: &BodyFrame,
-    dims: &BodyDimensions,
-    base_height: f32,
-    standing: Vec3,
-) -> Vec3 {
+/// A waist-level landmark at `offset` from the middle of the hip joints in the pelvis's frame,
+/// adjusted for a seated body: higher up the torso and forward over the thighs, because the seat is
+/// where a standing body's hip joints are.
+fn waist(frame: &BodyFrame, dims: &BodyDimensions, offset: Vec3) -> Vec3 {
+    let pelvis = pelvis_girdle(frame);
+    let (hips, shoulders_up) = match &frame.anchor {
+        Anchor::Body { .. } => (
+            frame.origin
+                + pelvis
+                    * Vec3::new(
+                        0.0,
+                        dims.height * HIP_HEIGHT_FRACTION - dims.eye_height,
+                        body::EYES_FORWARD_OF_SHOULDERS,
+                    ),
+            dims.shoulder_height - dims.height * HIP_HEIGHT_FRACTION,
+        ),
+        Anchor::Skeleton(skeleton) => {
+            let hips = skeleton.hip_centre();
+            (hips, skeleton.chest().y - hips.y)
+        }
+    };
+    let standing = hips + pelvis * offset;
     if !frame.seated {
         return standing;
     }
-    let torso = (dims.shoulder_height - base_height).max(0.0);
-    standing + Vec3::new(0.0, torso * SEATED_HIP_RISE_FRACTION, -SEATED_HIP_FORWARD_M)
+    let torso = (shoulders_up - offset.y).max(0.0);
+    standing + pelvis * Vec3::new(0.0, torso * SEATED_HIP_RISE_FRACTION, -SEATED_HIP_FORWARD_M)
 }
 
-/// A volume at `spec`'s offset from `landmark`, mirrored for the left side.
+/// The distance between the shoulder joints of the body the volumes ride.
+fn shoulder_width(frame: &BodyFrame, dims: &BodyDimensions) -> f32 {
+    match &frame.anchor {
+        Anchor::Body { .. } => dims.shoulder_width,
+        Anchor::Skeleton(skeleton) => skeleton.shoulders[0].distance(skeleton.shoulders[1]),
+    }
+}
+
+/// The pelvis's orientation: the body's heading, or the line through the skeleton's hip joints.
+fn pelvis_girdle(frame: &BodyFrame) -> Quat {
+    match &frame.anchor {
+        Anchor::Body { yaw } => Quat::from_rotation_y(*yaw),
+        Anchor::Skeleton(skeleton) => girdle_basis(skeleton.hips),
+    }
+}
+
+/// The shoulder joints and the chest's orientation.
+struct Chest {
+    shoulders: [Vec3; 2],
+    basis: Quat,
+}
+
+impl Chest {
+    fn centre(&self) -> Vec3 {
+        (self.shoulders[0] + self.shoulders[1]) * 0.5
+    }
+}
+
+/// The chest of the body the volumes ride: the shoulder joints estimated from the dimensions at
+/// the body's heading, or the skeleton's, oriented by the line through them.
+fn chest_girdle(frame: &BodyFrame, dims: &BodyDimensions) -> Chest {
+    match &frame.anchor {
+        Anchor::Body { yaw } => {
+            let basis = Quat::from_rotation_y(*yaw);
+            Chest {
+                shoulders: body::shoulder_positions(frame.origin, basis, dims),
+                basis,
+            }
+        }
+        Anchor::Skeleton(skeleton) => Chest {
+            shoulders: skeleton.shoulders,
+            basis: girdle_basis(skeleton.shoulders),
+        },
+    }
+}
+
+/// The orientation of a girdle through `[left, right]`: +X along the line from left to right on
+/// the ground, +Y up, and -Z forward. A degenerate line keeps the cockpit frame's axes.
+fn girdle_basis([left, right]: [Vec3; 2]) -> Quat {
+    let line = right - left;
+    let Some(right_axis) = Vec3::new(line.x, 0.0, line.z).try_normalize() else {
+        return Quat::IDENTITY;
+    };
+    let back = right_axis.cross(Vec3::Y);
+    Quat::from_mat3(&Mat3::from_cols(right_axis, Vec3::Y, back)).normalize()
+}
+
+/// A volume at `spec`'s offset from `landmark` in the frame `basis`, mirrored for the left side.
 fn place(
     volume: GrabVolume,
     landmark: Vec3,
+    basis: Quat,
     spec: &VolumeSpec,
     side: Hand,
     hand: Option<Hand>,
@@ -315,7 +426,7 @@ fn place(
     );
     Candidate {
         volume,
-        centre: landmark + offset,
+        centre: landmark + basis * offset,
         radius: spec.radius_m.max(0.0),
         hand,
     }
@@ -340,10 +451,12 @@ mod tests {
     const STANDING: BodyFrame = BodyFrame {
         origin: Vec3::ZERO,
         seated: false,
+        anchor: Anchor::Body { yaw: 0.0 },
     };
     const SEATED: BodyFrame = BodyFrame {
         origin: Vec3::ZERO,
         seated: true,
+        anchor: Anchor::Body { yaw: 0.0 },
     };
 
     fn candidates(config: &HolstersConfig) -> Vec<Candidate> {
@@ -592,7 +705,8 @@ mod tests {
 
     #[test]
     fn the_body_drops_only_past_the_deadband() {
-        let origin = |head, stance| body_frame(head, stance, 0.15).origin;
+        let upright = Anchor::Body { yaw: 0.0 };
+        let origin = |head, stance| body_frame(head, stance, 0.15, upright).origin;
         for stance in [Stance::Standing, Stance::Seated] {
             assert_eq!(origin(Vec3::new(0.3, -0.1, 0.2), stance), Vec3::ZERO);
             assert_eq!(origin(Vec3::new(0.0, 0.2, 0.0), stance), Vec3::ZERO);
@@ -600,8 +714,175 @@ mod tests {
             assert!((crouched.y + 0.35).abs() < 1e-6);
             assert_eq!(origin(Vec3::NAN, stance), Vec3::ZERO);
         }
-        assert!(body_frame(Vec3::ZERO, Stance::Seated, 0.15).seated);
-        assert!(!body_frame(Vec3::ZERO, Stance::Standing, 0.15).seated);
+        assert!(body_frame(Vec3::ZERO, Stance::Seated, 0.15, upright).seated);
+        assert!(!body_frame(Vec3::ZERO, Stance::Standing, 0.15, upright).seated);
+        assert_eq!(
+            body_frame(
+                Vec3::ZERO,
+                Stance::Standing,
+                0.15,
+                Anchor::Body { yaw: f32::NAN }
+            )
+            .anchor,
+            upright
+        );
+    }
+
+    /// A skeleton built to the dimensions, with its eyes at the origin, turned by `yaw`.
+    fn ideal_skeleton(dims: &BodyDimensions, yaw: f32) -> SkeletonLandmarks {
+        let turn = Quat::from_rotation_y(yaw);
+        let shoulders = body::shoulder_positions(Vec3::ZERO, turn, dims);
+        let pelvis = turn
+            * Vec3::new(
+                0.0,
+                dims.height * HIP_HEIGHT_FRACTION - dims.eye_height,
+                body::EYES_FORWARD_OF_SHOULDERS,
+            );
+        let half = turn * Vec3::new(dims.shoulder_width * 0.22, 0.0, 0.0);
+        SkeletonLandmarks {
+            head: Vec3::ZERO,
+            pelvis,
+            hips: [pelvis - half, pelvis + half],
+            shoulders,
+        }
+    }
+
+    /// Every volume, holsters and pouches, for `frame`.
+    fn every_volume(frame: &BodyFrame, dims: &BodyDimensions) -> Vec<Candidate> {
+        let mut c = holster_candidates(frame, dims, &HolstersConfig::new(), Hand::Right, true);
+        c.push(magazine_pouch(
+            frame,
+            dims,
+            &ReloadConfig::new().pouch,
+            Hand::Right,
+            Some(Hand::Left),
+        ));
+        c.push(c4_pouch(frame, dims, &C4Config::new().pouch, Hand::Right));
+        c
+    }
+
+    #[test]
+    fn a_skeleton_built_to_the_dimensions_places_the_volumes_as_the_body_does() {
+        for dims in [
+            BodyDimensions::GENERIC_ADULT,
+            BodyDimensions::CHARACTER_ESTIMATE,
+        ] {
+            for seated in [false, true] {
+                let body = BodyFrame { seated, ..STANDING };
+                let rico = BodyFrame {
+                    anchor: Anchor::Skeleton(ideal_skeleton(&dims, 0.0)),
+                    ..body
+                };
+                for (a, b) in every_volume(&body, &dims)
+                    .iter()
+                    .zip(every_volume(&rico, &dims))
+                {
+                    assert_eq!(a.volume, b.volume);
+                    assert!(
+                        a.centre.distance(b.centre) < 1e-4,
+                        "{:?}: {} vs {} (seated {seated})",
+                        a.volume,
+                        a.centre,
+                        b.centre
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_volumes_turn_with_the_torso_about_the_eyes() {
+        let yaw = 1.2;
+        let turn = Quat::from_rotation_y(yaw);
+        for seated in [false, true] {
+            let ahead = every_volume(&BodyFrame { seated, ..STANDING }, &DIMS);
+            let turned_body = BodyFrame {
+                seated,
+                anchor: Anchor::Body { yaw },
+                ..STANDING
+            };
+            let turned_rico = BodyFrame {
+                seated,
+                anchor: Anchor::Skeleton(ideal_skeleton(&DIMS, yaw)),
+                ..STANDING
+            };
+            for frame in [turned_body, turned_rico] {
+                for (a, b) in ahead.iter().zip(every_volume(&frame, &DIMS)) {
+                    assert!(
+                        (turn * a.centre).distance(b.centre) < 1e-4,
+                        "{:?} under {}",
+                        a.volume,
+                        frame.anchor.label()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_hip_volumes_ride_the_pelvis_and_the_shoulder_volumes_ride_the_chest() {
+        let mut skeleton = ideal_skeleton(&DIMS, 0.0);
+        let before = every_volume(
+            &BodyFrame {
+                anchor: Anchor::Skeleton(skeleton),
+                ..STANDING
+            },
+            &DIMS,
+        );
+        // The chest turns 30 degrees over a still pelvis.
+        let chest = skeleton.chest();
+        let twist = Quat::from_rotation_y(0.5);
+        skeleton.shoulders = skeleton.shoulders.map(|s| chest + twist * (s - chest));
+        let after = every_volume(
+            &BodyFrame {
+                anchor: Anchor::Skeleton(skeleton),
+                ..STANDING
+            },
+            &DIMS,
+        );
+        for (a, b) in before.iter().zip(&after) {
+            let moved = a.centre.distance(b.centre) > 1e-3;
+            let on_chest = matches!(
+                a.volume,
+                GrabVolume::Holster(HolsterSite::Shoulder(_) | HolsterSite::Chest)
+                    | GrabVolume::C4Pouch
+            );
+            assert_eq!(moved, on_chest, "{:?}", a.volume);
+        }
+    }
+
+    #[test]
+    fn the_volumes_on_the_skeleton_do_not_overlap() {
+        for dims in [
+            BodyDimensions::GENERIC_ADULT,
+            BodyDimensions::CHARACTER_ESTIMATE,
+        ] {
+            for seated in [false, true] {
+                let frame = BodyFrame {
+                    seated,
+                    anchor: Anchor::Skeleton(ideal_skeleton(&dims, -0.6)),
+                    ..STANDING
+                };
+                let c = every_volume(&frame, &dims);
+                for (i, a) in c.iter().enumerate() {
+                    for b in &c[i + 1..] {
+                        assert!(
+                            a.centre.distance(b.centre) > a.radius + b.radius,
+                            "{:?} and {:?} overlap",
+                            a.volume,
+                            b.volume
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_degenerate_girdle_keeps_the_cockpit_axes() {
+        assert_eq!(girdle_basis([Vec3::ZERO, Vec3::Y]), Quat::IDENTITY);
+        let basis = girdle_basis([Vec3::new(-0.2, 0.0, 0.0), Vec3::new(0.2, 0.1, 0.0)]);
+        assert!((basis * Vec3::NEG_Z).distance(Vec3::NEG_Z) < 1e-5);
     }
 
     #[test]

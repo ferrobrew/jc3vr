@@ -6,6 +6,7 @@
 
 mod aim;
 mod aim_state;
+mod alignment;
 mod body;
 mod diagnostics;
 mod explosives;
@@ -35,7 +36,8 @@ use crate::{
     config,
     controllers::{
         aim as controller_aim, aim_state as controller_aim_state, bindings,
-        body as controller_body, fingers as controller_fingers,
+        body::{self as controller_body, alignment as controller_alignment},
+        fingers as controller_fingers,
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
@@ -74,6 +76,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let roomscale_status = controller_roomscale::status();
     let stance_status = controller_roomscale::stance::status();
     let unarmed_status = controller_roomscale::stance::unarmed::status();
+    let alignment_status = controller_alignment::status();
     let weapons_readout = weapons::WeaponsReadout::read();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
@@ -182,6 +185,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 stance::stance_readout(ui, &stance_status, &unarmed_status, &hand_ik)
             });
+
+        egui::CollapsingHeader::new("Body alignment")
+            .default_open(true)
+            .show(ui, |ui| alignment::alignment_readout(ui, &alignment_status));
 
         egui::CollapsingHeader::new("Semantic actions").show(ui, semantic::semantic_readout);
 

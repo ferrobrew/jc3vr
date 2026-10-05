@@ -35,6 +35,10 @@
 //! the locomotion hook as the body's face-dir target ([`body_yaw_target`]), so the character's whole
 //! frame — body and, composed onto it, the head — rotates with the input, and the native
 //! turn-toward-movement never fights it (backpedaling no longer tank-turns the body).
+//!
+//! On foot the body may also turn under the view toward the player's torso
+//! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
+//! heading relative to the view ([`follow_turn`]), so only the turn input turns the view.
 
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
@@ -45,6 +49,7 @@ use crate::{
     headpose::{
         HeadPose,
         config::{HeadPoseConfig, VrTurnMode},
+        follow::{BodyFollow, FollowTick},
         sim,
     },
     hooks::input::swim::swimming,
@@ -127,15 +132,29 @@ pub fn cockpit_pose() -> Option<CockpitPose> {
 /// the moment the player entered water and the right stick would stop steering the body. The lead
 /// clamp below applies identically in both, since in water the body now turns because of the target
 /// too (see [`crate::hooks::input::swim`]).
+///
+/// `follow` lets the body turn under the view toward the player's torso ([`BodyFollow`]); its
+/// offset also seeds the accumulator, so that the view does not jump when the body was turned
+/// under it before.
 pub fn advance_body_yaw(
     look_x: f32,
     delta_based: bool,
     on_foot: bool,
     swimming: bool,
     config: &HeadPoseConfig,
+    follow: &FollowSettings,
 ) {
     let mut s = BODY_YAW.lock();
+    let body = sim::body_yaw_of(body_rotation_raw());
     if !on_foot && !swimming {
+        let heading = s.yaw.unwrap_or(body);
+        s.follow.tick(FollowTick {
+            follow: false,
+            heading,
+            body,
+            torso: None,
+            deadband: 0.0,
+        });
         s.yaw = None;
         s.snap_armed = true;
         // Any pending grapple retarget is left unconsumed: it is aimed at the next on-foot tick.
@@ -156,9 +175,10 @@ pub fn advance_body_yaw(
     } else {
         1.0
     };
+    // Seeded at the view's heading: the body's, less however far it was turned under the view.
     let mut yaw = s
         .yaw
-        .unwrap_or_else(|| sim::body_yaw_of(body_rotation_raw()));
+        .unwrap_or_else(|| sim::wrap_angle(body - s.follow.frozen()));
 
     match turn.mode {
         VrTurnMode::Smooth => {
@@ -190,28 +210,130 @@ pub fn advance_body_yaw(
         }
     }
 
+    let following = follow.enabled && on_foot && !swimming;
+    s.follow.tick(FollowTick {
+        follow: following,
+        heading: yaw,
+        body,
+        torso: follow.torso,
+        deadband: follow.deadband_deg.max(0.0).to_radians(),
+    });
+
     // Clamp how far the target may lead the body, re-anchoring it each tick: the body chases at a
     // rate limit, so a big input jump otherwise keeps it turning after the input stops, and past a
-    // 180° lead the shortest-arc catch-up reverses.
-    let body = sim::body_yaw_of(body_rotation_raw());
-    let max_lead = turn.max_body_lead_deg.max(0.0).to_radians();
-    let lead = sim::wrap_angle(yaw - body).clamp(-max_lead, max_lead);
-    yaw = sim::wrap_angle(body + lead);
+    // 180° lead the shortest-arc catch-up reverses. While the body follows the torso the view no
+    // longer rides the body, so a lagging body leaves the view alone and there is nothing to clamp.
+    if !s.follow.following() {
+        let offset = s.follow.target();
+        let max_lead = turn.max_body_lead_deg.max(0.0).to_radians();
+        let lead = sim::wrap_angle(yaw + offset - body).clamp(-max_lead, max_lead);
+        yaw = sim::wrap_angle(body - offset + lead);
+    }
 
     s.yaw = Some(yaw);
+}
+
+/// How the body follows the player's torso on this input tick, for [`advance_body_yaw`].
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FollowSettings {
+    /// Whether the body follows the torso on foot.
+    pub enabled: bool,
+    /// The torso's heading in the cockpit frame, radians, when estimated.
+    pub torso: Option<f32>,
+    /// How far the torso may turn from the body before the body turns, degrees.
+    pub deadband_deg: f32,
+}
+
+impl FollowSettings {
+    /// No following: the body turns with the turn input alone.
+    pub const OFF: FollowSettings = FollowSettings {
+        enabled: false,
+        torso: None,
+        deadband_deg: 0.0,
+    };
+}
+
+/// The body's heading relative to the view, radians about the body's up axis, at the current tick
+/// (`current`) or the previous one: zero unless the body turned under the view
+/// ([`BodyFollow`]).
+pub fn follow_offset(current: bool) -> f32 {
+    let body = if current {
+        body_rotation_raw()
+    } else {
+        body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0))
+    };
+    BODY_YAW
+        .lock()
+        .follow
+        .offset(sim::body_yaw_of(body), current)
+}
+
+/// The turn from the body frame to the view frame at the current tick (`current`) or the previous
+/// one: `view = body × follow_turn`.
+pub fn follow_turn(current: bool) -> Quat {
+    Quat::from_rotation_y(-follow_offset(current))
+}
+
+/// Whether the body is following the torso, and the body's target heading relative to the view,
+/// for the debug UI.
+pub fn follow_status() -> (bool, f32) {
+    let s = BODY_YAW.lock();
+    (s.follow.following(), s.follow.target())
+}
+
+/// The frozen turn of the body under the view, radians, when the body has stopped following and
+/// the turn is still to be folded into the cockpit baseline ([`bank`]). Held back while the grapple
+/// filter holds the view or the swim levelling drops the body's tilt: both compose with the turned
+/// body frame, so folding the turn out of it then would turn the view.
+pub fn pending_bank() -> Option<f32> {
+    if grapple::blend_factor() > 0.0 || swimming() {
+        return None;
+    }
+    let s = BODY_YAW.lock();
+    let frozen = s.follow.frozen();
+    (!s.follow.following() && frozen.abs() > BANK_MIN_RAD).then_some(frozen)
+}
+
+/// Take `yaw` of the frozen turn out of the composition, for the cockpit baseline that turned by
+/// it in the same frame. The turn accumulator keeps the body's target where it was.
+pub fn bank(yaw: f32) {
+    let mut s = BODY_YAW.lock();
+    s.follow.bank(yaw);
+    s.yaw = s.yaw.map(|heading| sim::wrap_angle(heading + yaw));
+}
+
+/// A frozen turn smaller than this is left in the composition rather than folded into the
+/// baseline, radians.
+const BANK_MIN_RAD: f32 = 1.0e-4;
+
+/// Clear the body's turn under the view, for a recenter: the recenter makes the head's forward the
+/// body's, so the view takes the body's heading from here, and the turn accumulator with it.
+pub fn on_recenter() {
+    let body = sim::body_yaw_of(body_rotation_raw());
+    let mut s = BODY_YAW.lock();
+    if s.follow.following() || s.follow.frozen() != 0.0 {
+        s.yaw = s.yaw.map(|_| body);
+    }
+    s.follow.clear(body);
 }
 
 /// The desired body forward on the ground plane from the VR body-yaw accumulator, or `None` before
 /// the accumulator has seeded (off foot, or the first on-foot tick has not run yet). Read by the
 /// locomotion hook via [`crate::headpose::body_yaw_target`], exactly as the flatscreen latch target is.
+///
+/// The accumulator is the view's heading; the body is steered to it plus its target heading
+/// relative to the view, which is zero unless the body follows the torso ([`BodyFollow`]).
 pub fn body_yaw_target() -> Option<Vec3> {
-    BODY_YAW.lock().yaw.map(sim::yaw_forward)
+    let s = BODY_YAW.lock();
+    s.yaw
+        .map(|yaw| sim::yaw_forward(sim::wrap_angle(yaw + s.follow.target())))
 }
 
 /// The VR body-yaw accumulator state (see [`advance_body_yaw`]).
 static BODY_YAW: Mutex<VrBodyYaw> = Mutex::new(VrBodyYaw {
     yaw: None,
     snap_armed: true,
+    follow: BodyFollow::new(),
 });
 
 struct VrBodyYaw {
@@ -219,6 +341,8 @@ struct VrBodyYaw {
     yaw: Option<f32>,
     /// Whether a snap-turn step is armed (edge detection for [`VrTurnMode::Snap`]).
     snap_armed: bool,
+    /// The body's turn under the view.
+    follow: BodyFollow,
 }
 
 /// The local player character's world rotation, the body frame the cockpit pose composes onto.
@@ -227,8 +351,18 @@ struct VrBodyYaw {
 /// reeling in, the rotation the reel adds is cancelled from the composed view -- the HMD keeps
 /// full rotational authority (see [`crate::grapple`]). Consumers that steer the actual character
 /// rather than the view must use [`body_rotation_raw`] instead.
+///
+/// The body's turn under the view ([`follow_turn`]) is taken out first, so the view keeps its
+/// heading while the body follows the torso.
 pub fn body_rotation() -> Quat {
-    level_while_swimming(grapple::filter_body_rotation(body_rotation_raw()))
+    level_while_swimming(grapple::filter_body_rotation(body_rotation_followed()))
+}
+
+/// The view frame before the grapple filter and the swim levelling: the local player character's
+/// world rotation with its turn under the view ([`follow_turn`]) taken out. The grapple filter
+/// advances against this, so the frame it holds is the one the view composes with.
+pub fn body_rotation_followed() -> Quat {
+    body_rotation_raw() * follow_turn(true)
 }
 
 /// The local player character's world rotation as the engine holds it, unfiltered. The body-yaw
@@ -243,9 +377,10 @@ pub fn body_rotation_raw() -> Quat {
 /// engine's sub-frame interpolation smooths body rotation (vehicles, parachuting) rather than
 /// stepping it at the tick rate.
 pub fn body_rotation_prev() -> Quat {
-    level_while_swimming(grapple::filter_body_rotation(body_rotation_from(
-        |character| glam::Mat4::from(character.m_WorldMatrixT0),
-    )))
+    level_while_swimming(grapple::filter_body_rotation(
+        body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0))
+            * follow_turn(false),
+    ))
 }
 
 /// Drop the body's pitch and roll from the view frame while swimming, leaving its yaw, so the camera

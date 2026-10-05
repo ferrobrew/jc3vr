@@ -45,7 +45,7 @@ The egui state lock is the other long one. The game thread holds it across the d
 | Call site | Lock | Threads that reach it | Why it is safe |
 | --- | --- | --- | --- |
 | `vr::update` (`hooks::game::game_update_render`) | Blocking, brief | Game thread, top of the render update | Rule 1 |
-| `vr::auto_recenter_tick`, through `vr::is_running` and the recenter it services | Blocking, brief | Game thread, top of the render update | Rule 1 |
+| `vr::auto_recenter_tick`, through `vr::is_running`, the recenter it services, and the fold of the body's frozen turn into the baseline | Blocking, brief | Game thread, top of the render update | Rule 1 |
 | `vr::apply_native_resolution`, through `vr::native_eye_resolution` | Blocking, brief | Game thread, top of the render update | Rule 1 |
 | `vr::frame_begin` | Blocking, held for the frame | Game thread, top of the render update | It is the holder |
 | The frame tail | Owns the frame's guard | Frame tail | It is the holder, and takes no lock of its own |

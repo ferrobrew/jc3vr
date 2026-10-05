@@ -20,7 +20,8 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
-                HeftTuning, HolstersConfig, MeleeStrikeConfig, PulseSpec, RecoilConfig, VolumeSpec,
+                HeftTuning, HolsterAnchor, HolstersConfig, MeleeStrikeConfig, PulseSpec,
+                RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -617,6 +618,18 @@ fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
 }
 
 fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
+    ui.horizontal(|ui| {
+        ui.label("Holsters ride:");
+        for anchor in HolsterAnchor::ALL {
+            ui.selectable_value(&mut h.anchor, anchor, anchor.label());
+        }
+    })
+    .response
+    .on_hover_text(
+        "Rico's skeleton puts the volumes on his hip and shoulder joints, falling back to the \
+         player's body in vehicles, ragdolls, and skydives. The player's body turns with the \
+         estimated torso.",
+    );
     ui.checkbox(&mut h.show_volumes, "Show every holster volume")
         .on_hover_text(
             "Draw all the body volumes through the overlay, the one a hand is in highlighted.",

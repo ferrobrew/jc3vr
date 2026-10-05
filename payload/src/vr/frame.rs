@@ -156,7 +156,7 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
     let anchor_raw = frozen.map_or_else(|| headpose::anchor().unwrap_or(Vec3::ZERO), |f| f.anchor);
     let headpose_config = config::Config::lock_query(|c| c.headpose);
     grapple::advance(
-        headpose::xr::body_rotation_raw(),
+        headpose::xr::body_rotation_followed(),
         anchor_raw,
         headpose::sim::mode() == headpose::sim::HeadMode::OnFoot,
         &headpose_config.grapple,
@@ -195,6 +195,11 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
     // camera outside gameplay (loading screens, teleports) — keeping head-tracking through the
     // transition without pinning the camera to the body (issue #27).
     headpose::xr::set_cockpit_pose(center_position, center_orientation);
+    // The player's torso, estimated from this cockpit pose and the controllers sampled with it.
+    crate::controllers::body::alignment::frame_tick(crate::controllers::frame::Pose {
+        position: center_position,
+        orientation: center_orientation,
+    });
 
     // The posture's head height and the roomscale cockpit shift. The per-eye offsets below stay
     // relative to the located centre, so they are untouched by either.

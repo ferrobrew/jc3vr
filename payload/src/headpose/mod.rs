@@ -31,6 +31,7 @@ use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 pub mod config;
+pub mod follow;
 pub mod sim;
 pub mod xr;
 
@@ -105,7 +106,12 @@ pub fn body_relative_rotation() -> Quat {
             let (yaw, pitch, roll) = sim::euler_angles();
             Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll)
         }
-        Source::Vr => xr::cockpit_pose().map_or(Quat::IDENTITY, |pose| pose.orientation),
+        // The view frame is the body frame turned by `xr::follow_turn` while the body follows
+        // the torso, so the cockpit orientation is relative to the view, and the turn carries it
+        // onto the body.
+        Source::Vr => xr::cockpit_pose().map_or(Quat::IDENTITY, |pose| {
+            xr::follow_turn(true) * pose.orientation
+        }),
     }
 }
 

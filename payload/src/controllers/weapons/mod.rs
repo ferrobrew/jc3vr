@@ -85,7 +85,7 @@ use crate::{
             grab::{self, Candidate, GrabVolume},
             hold::{Desired, MapKind, Target, Want},
         },
-        body::{self, BodyDimensions},
+        body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
         frame::{Hand, Pose},
         hands::{
@@ -99,6 +99,7 @@ use crate::{
         },
         roomscale::{self, posture::EffectivePosture},
         weapons::{
+            config::HolsterAnchor,
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             holster::HolsterAction,
@@ -268,6 +269,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         active.head.position,
         stance,
         config.weapons.holsters.crouch_deadband_m,
+        volume_anchor(&config, &active),
     );
     let dims = body_dimensions(&config);
     if gameplay && (config.weapons.holsters.enabled || config.weapons.grenade_throw) {
@@ -652,6 +654,23 @@ fn gameplay(mode: Mode) -> bool {
         Mode::OnFoot(OnFootVariant::Ground)
             | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute)
     )
+}
+
+/// The body the volumes ride: the character's skeleton when the setting asks for it and the
+/// skeleton is fresh and upright, and the player's body turned to the estimated torso otherwise
+/// (facing the cockpit frame's forward without an estimate).
+fn volume_anchor(config: &ControllersConfig, active: &ActiveHands) -> volumes::Anchor {
+    let skeleton = (config.weapons.holsters.anchor == HolsterAnchor::Rico)
+        .then(|| alignment::skeleton_in_cockpit(active.head.position, active.world_scale))
+        .flatten();
+    let anchor = match skeleton {
+        Some(skeleton) => volumes::Anchor::Skeleton(skeleton),
+        None => volumes::Anchor::Body {
+            yaw: alignment::estimate().map_or(0.0, |e| e.yaw),
+        },
+    };
+    alignment::record_volume_anchor(anchor.label());
+    anchor
 }
 
 /// The dimensions the volumes are placed with: the character's while the hands are remapped onto

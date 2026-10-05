@@ -37,6 +37,32 @@ pub struct HolstersConfig {
     /// Draw every body volume through the world-space overlay at all times, not only the one a
     /// hand is in, so that their placement can be seen and tuned. Needs the overlay on.
     pub show_volumes: bool,
+    /// Which body the holsters and pouches ride.
+    pub anchor: HolsterAnchor,
+}
+
+/// Which body the holsters and pouches ride (see [`crate::controllers::weapons::volumes`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum HolsterAnchor {
+    /// The player's own body, estimated from the body dimensions and turned to the player's
+    /// estimated torso.
+    #[default]
+    Body,
+    /// The character's skeleton: his hip and shoulder joints, so that the volumes sit on the body
+    /// the player sees. Falls back to the player's body where the skeleton is unavailable or not
+    /// upright: in a vehicle, in a ragdoll, or in a skydive.
+    Rico,
+}
+
+impl HolsterAnchor {
+    pub const ALL: [HolsterAnchor; 2] = [HolsterAnchor::Body, HolsterAnchor::Rico];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            HolsterAnchor::Body => "the player's body",
+            HolsterAnchor::Rico => "Rico's skeleton",
+        }
+    }
 }
 
 impl HolstersConfig {
@@ -62,6 +88,7 @@ impl HolstersConfig {
             },
             crouch_deadband_m: 0.15,
             show_volumes: false,
+            anchor: HolsterAnchor::Body,
         }
     }
 }

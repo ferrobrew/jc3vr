@@ -18,6 +18,10 @@
 //!    and the body IK's torso rotation turns the chest to face it ([`plan`] before the body IK,
 //!    [`queue`] after the crouch).
 //!
+//! With the body alignment turning the chest toward the player's estimated torso, the squaring
+//! also turns the pelvis and feet by a share of the same turn
+//! ([`crate::controllers::body::alignment::stance_turn`]).
+//!
 //! The pure logic is in [`logic`]; this module reads the engine and queues the targets.
 
 pub mod config;
@@ -43,11 +47,13 @@ pub use crate::controllers::roomscale::stance::config::StanceConfig;
 use crate::{
     config::Config,
     controllers::{
+        body::alignment,
         roomscale::{
             frame_shared,
             stance::logic::{
-                BlendTiming, FeetLayout, IdleVariant, StanceBlend, StillInputs, Verdict, classify,
-                correction, feet_layout, forward_yaw, horizontal_speed, lateral_twist, square_feet,
+                BlendTiming, FeetLayout, IdleVariant, MAX_CORRECTION_RAD, StanceBlend, StillInputs,
+                Verdict, classify, correction, feet_layout, forward_yaw, horizontal_speed,
+                lateral_twist, square_feet,
             },
             visual_crouch_queued,
         },
@@ -142,6 +148,9 @@ pub struct StancePlan {
     /// The turn about the model's up axis the body IK adds to its torso rotation, radians.
     pub chest_yaw: f32,
     pelvis_yaw: Option<f32>,
+    /// The turn of the pelvis and feet toward the player's estimated torso, radians, already
+    /// weighted by the blend ([`alignment::stance_turn`]).
+    torso_turn: f32,
     joints: Joints,
 }
 
@@ -196,8 +205,15 @@ pub unsafe fn plan(character: *mut Character, dt: f32) -> Option<StancePlan> {
     let to_rad = |deg: Option<f32>| deg.map(f32::to_radians);
     let chest_yaw =
         to_rad(measured.chest_deg).map_or(0.0, |turn| correction(turn, config.chest_share, weight));
-    let pelvis_yaw =
-        to_rad(measured.pelvis_deg).map(|turn| correction(turn, config.pelvis_share, weight));
+    // The body alignment's turn toward the player's torso joins the squaring, so the pelvis and
+    // feet face the torso rather than the character's own facing. The chest's share is the body
+    // IK's own ([`alignment::chest_turn`]).
+    let rotation = glam::Mat4::from(character.m_WorldMatrixT1)
+        .to_scale_rotation_translation()
+        .1;
+    let torso_turn = alignment::stance_turn(rotation) * weight;
+    let pelvis_yaw = to_rad(measured.pelvis_deg)
+        .map(|turn| combine(correction(turn, config.pelvis_share, weight), torso_turn));
     state.status = StanceStatus {
         at: Some(Instant::now()),
         state: state_name(state_id),
@@ -213,6 +229,7 @@ pub unsafe fn plan(character: *mut Character, dt: f32) -> Option<StancePlan> {
         weight,
         chest_yaw,
         pelvis_yaw,
+        torso_turn,
         joints,
     })
 }
@@ -278,7 +295,12 @@ pub unsafe fn queue(character: *mut Character, plan: &StancePlan) {
                 let turn = j.ankles[side]
                     .zip(j.toes[side])
                     .and_then(|(ankle, toe)| forward_yaw(ankle, toe))
-                    .map(|turn| correction(turn, config.feet_yaw_share, plan.weight));
+                    .map(|turn| {
+                        combine(
+                            correction(turn, config.feet_yaw_share, plan.weight),
+                            plan.torso_turn,
+                        )
+                    });
                 if let Some(turn) = turn.filter(|t| t.abs() > MIN_TURN_RAD) {
                     let resist = if config.ankle_resist.is_finite() {
                         config.ankle_resist.clamp(0.0, 1.0)
@@ -437,6 +459,16 @@ impl Joints {
             }),
         }
     }
+}
+
+/// A squaring correction with the body alignment's turn added, bounded as the correction is.
+fn combine(correction: f32, torso_turn: f32) -> f32 {
+    let torso_turn = if torso_turn.is_finite() {
+        torso_turn
+    } else {
+        0.0
+    };
+    (correction + torso_turn).clamp(-MAX_CORRECTION_RAD, MAX_CORRECTION_RAD)
 }
 
 /// Queue a full-reach positional target with no pull on `effector`, at the full-body step, without

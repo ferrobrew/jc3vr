@@ -66,6 +66,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     if !config.enabled {
         return;
     }
+    // Read before the SIM lock: it takes the config lock and the torso estimate's slot.
+    let follow = crate::controllers::body::alignment::follow_settings();
 
     let mut s = SIM.lock();
 
@@ -97,7 +99,10 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // loop advances it per rendered frame as well, so under VR this tick advance is the flatscreen
     // fallback and the state read that keeps `sim` coverage.
     {
-        let body = read_body_rotation().unwrap_or(Quat::IDENTITY);
+        // The view frame, with any turn of the body under the view taken out, so the frame the
+        // filter holds is the one the view composes with.
+        let body =
+            read_body_rotation().unwrap_or(Quat::IDENTITY) * crate::headpose::xr::follow_turn(true);
         let anchor = crate::headpose::anchor().unwrap_or(Vec3::ZERO);
         // `on_foot` is passed in rather than read back via `sim::mode()`: the SIM lock is held
         // here, and re-locking it inside `advance` deadlocks the input tick.
@@ -120,6 +125,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             s.mode == HeadMode::OnFoot,
             swimming,
             &config,
+            &follow,
         );
         return;
     }

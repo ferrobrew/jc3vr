@@ -27,7 +27,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        body::{self, BodyDimensions},
+        body::{self, BodyDimensions, alignment},
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
@@ -157,12 +157,19 @@ fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Opti
         return [None; 2];
     }
     let player = body::player();
+    let torso = reach::torso_heading(head, alignment::shoulder_heading());
     Hand::BOTH.map(|hand| {
         measured[hand.index()]
-            .and_then(|arm| ArmRemap::measured(hand, head, &player, &arm, world_scale))
+            .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))
             .or_else(|| {
                 config.body.remap_hands.then(|| {
-                    ArmRemap::estimated(hand, head, &player, &BodyDimensions::CHARACTER_ESTIMATE)
+                    ArmRemap::estimated(
+                        hand,
+                        head,
+                        torso,
+                        &player,
+                        &BodyDimensions::CHARACTER_ESTIMATE,
+                    )
                 })
             })
     })

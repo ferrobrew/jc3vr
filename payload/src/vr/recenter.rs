@@ -101,6 +101,10 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
             // The cockpit frame turns by the yaw change: new frame from old.
             let turn = previous.map_or(glam::Quat::IDENTITY, |p| fresh.yaw.conjugate() * p.yaw);
             crate::controllers::roomscale::on_recenter(kind, turn, cause);
+            // The head's forward becomes the body's: any turn of the body under the view is spent,
+            // and the torso estimate turns with the frame.
+            crate::headpose::xr::on_recenter();
+            crate::controllers::body::alignment::on_recenter(turn);
             RECENTERS.fetch_add(1, Ordering::Relaxed);
             tracing::info!(target: "vr", ?kind, ?cause, "recentered the cockpit baseline");
         }
@@ -144,6 +148,41 @@ fn decode_request(bits: u8, posture_kind: RecenterKind) -> Option<(RecenterKind,
     Some((kind, cause))
 }
 
+/// Fold a frozen turn of the body under the view into the baseline ([`crate::headpose::follow`]):
+/// once the body stops following the torso, the cockpit frame turns with the body so that its
+/// forward is the body's again, as every consumer off foot expects. The view is unchanged, because
+/// the composition's turn is taken out in the same frame. Called at the top of the frame, after
+/// the recenters, before the frame takes the runtime lock.
+fn service_follow_bank() {
+    let Some(yaw) = crate::headpose::xr::pending_bank() else {
+        return;
+    };
+    let rotation = glam::Quat::from_rotation_y(yaw);
+    {
+        let mut state = lock_state();
+        // No baseline is the identity baseline at the origin.
+        let baseline = state.baseline.get_or_insert(Baseline {
+            position: glam::Vec3::ZERO,
+            yaw: glam::Quat::IDENTITY,
+        });
+        baseline.yaw = (baseline.yaw * rotation).normalize();
+    }
+    // The cockpit frame turns by the inverse: new frame from old.
+    let turn = rotation.conjugate();
+    crate::controllers::roomscale::on_recenter(
+        RecenterKind::YawAndHeight,
+        turn,
+        RecenterCause::SeatTransition,
+    );
+    crate::headpose::xr::bank(yaw);
+    crate::controllers::body::alignment::on_recenter(turn);
+    tracing::debug!(
+        target: "vr",
+        yaw_deg = yaw.to_degrees(),
+        "folded the body's turn under the view into the cockpit baseline"
+    );
+}
+
 /// The recenters done, for [`recenter_count`].
 static RECENTERS: AtomicU32 = AtomicU32::new(0);
 
@@ -171,6 +210,7 @@ pub fn auto_recenter_tick() {
         return;
     }
     service_requested_recenter();
+    service_follow_bank();
     if !Config::lock_query(|c| c.vr.auto_recenter_on_gameplay) {
         return;
     }

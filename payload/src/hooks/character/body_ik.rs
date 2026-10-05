@@ -19,7 +19,7 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::frame::Hand,
+    controllers::{body::alignment, frame::Hand},
     headpose,
     hooks::{self, animation::active_state_type_id},
 };
@@ -456,8 +456,13 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // animated head *bone*, whose rest orientation need not match the model axes: that
         // difference carries a constant bias that would twist the torso even with the head neutral.
         // The body-relative rotation is the identity at neutral by construction.
-        let torso_yaw =
-            headpose::sim::body_yaw_of(headpose::body_relative_rotation()) * cfg.yaw_share;
+        //
+        // With the body alignment driving the chest, the chest turns to the player's estimated
+        // torso instead: the head's turn is a poor stand-in for the chest's once the player looks
+        // over a shoulder, and the estimate already holds the head's share through its deadzone.
+        let torso_yaw = alignment::chest_turn(character_rotation).unwrap_or_else(|| {
+            headpose::sim::body_yaw_of(headpose::body_relative_rotation()) * cfg.yaw_share
+        });
         // The stance's chest turn squares a bladed idle's chest with the body's forward. It joins
         // the yaw rather than queuing its own chest target, because a second target for the chest
         // would replace this one.

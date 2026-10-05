@@ -89,15 +89,16 @@ pub struct ArmRemap {
 
 impl ArmRemap {
     /// The remap from the estimated shoulders of both bodies at the same eye point, scaled by the
-    /// arm-span ratio. The shoulders are estimated from the head (the eye midpoint) and its yaw,
-    /// because the view puts the character's eyes where the player's are.
+    /// arm-span ratio. The shoulders are estimated from the head (the eye midpoint) and the torso's
+    /// heading `torso` ([`torso_heading`]), because the view puts the character's eyes where the
+    /// player's are.
     pub fn estimated(
         hand: Hand,
         head: Pose,
+        torso: Quat,
         player: &BodyDimensions,
         character: &BodyDimensions,
     ) -> Self {
-        let torso = yaw_only(head.orientation);
         Self {
             player_shoulder: body::shoulder_positions(head.position, torso, player)[hand.index()],
             character_shoulder: body::shoulder_positions(head.position, torso, character)
@@ -108,10 +109,12 @@ impl ArmRemap {
 
     /// The remap about the character's measured shoulder, by the ratio of the measured arm length to
     /// the player's. `arm` is the character's arm as measured; `world_scale` is the VR world scale
-    /// the cockpit frame composes with. `None` when either arm length is not a usable length.
+    /// the cockpit frame composes with; the player's shoulder is estimated at the torso's heading
+    /// `torso` ([`torso_heading`]). `None` when either arm length is not a usable length.
     pub fn measured(
         hand: Hand,
         head: Pose,
+        torso: Quat,
         player: &BodyDimensions,
         arm: &MeasuredArm,
         world_scale: f32,
@@ -126,7 +129,6 @@ impl ArmRemap {
         {
             return None;
         }
-        let torso = yaw_only(head.orientation);
         Some(Self {
             player_shoulder: body::shoulder_positions(head.position, torso, player)[hand.index()],
             character_shoulder: head.position + arm.eye_to_shoulder / world_scale,
@@ -283,6 +285,12 @@ pub fn detach_offset(miss: Vec3, threshold: f32, cap: f32) -> Vec3 {
     miss * (applied / length)
 }
 
+/// The torso's heading the player's shoulders are estimated at: the estimated torso's `torso` when
+/// there is one, and the head's heading otherwise.
+pub fn torso_heading(head: Pose, torso: Option<Quat>) -> Quat {
+    torso.unwrap_or_else(|| yaw_only(head.orientation))
+}
+
 /// `rotation` with its pitch and roll removed, keeping the heading of its -Z axis.
 pub(crate) fn yaw_only(rotation: Quat) -> Quat {
     let forward = rotation * Vec3::NEG_Z;
@@ -354,7 +362,15 @@ mod tests {
     #[test]
     fn full_player_extension_maps_to_full_character_extension_about_his_shoulder() {
         let head = head();
-        let remap = ArmRemap::measured(Hand::Right, head, &PLAYER, &rico(), 1.0).unwrap();
+        let remap = ArmRemap::measured(
+            Hand::Right,
+            head,
+            torso_heading(head, None),
+            &PLAYER,
+            &rico(),
+            1.0,
+        )
+        .unwrap();
         for direction in [Vec3::NEG_Z, Vec3::X, Vec3::new(0.3, -0.5, -0.8).normalize()] {
             let wrist = remap.player_shoulder + direction * player_arm_length(&PLAYER);
             let remapped = remap.apply(wrist);
@@ -373,7 +389,15 @@ mod tests {
     #[test]
     fn the_measured_remap_divides_out_the_world_scale() {
         let head = head();
-        let scaled = ArmRemap::measured(Hand::Left, head, &PLAYER, &rico(), 2.0).unwrap();
+        let scaled = ArmRemap::measured(
+            Hand::Left,
+            head,
+            torso_heading(head, None),
+            &PLAYER,
+            &rico(),
+            2.0,
+        )
+        .unwrap();
         let wrist = scaled.player_shoulder + Vec3::NEG_Z * player_arm_length(&PLAYER);
         // Composed into the world, cockpit offsets scale by the world scale; Rico's arm does not.
         let world_reach = (scaled.apply(wrist) - scaled.character_shoulder) * 2.0;
@@ -387,15 +411,39 @@ mod tests {
             forearm: 0.05,
             ..rico()
         };
-        assert!(ArmRemap::measured(Hand::Right, head(), &PLAYER, &short, 1.0).is_none());
-        assert!(ArmRemap::measured(Hand::Right, head(), &PLAYER, &rico(), 0.0).is_none());
+        assert!(
+            ArmRemap::measured(Hand::Right, head(), Quat::IDENTITY, &PLAYER, &short, 1.0).is_none()
+        );
+        assert!(
+            ArmRemap::measured(Hand::Right, head(), Quat::IDENTITY, &PLAYER, &rico(), 0.0)
+                .is_none()
+        );
     }
 
     #[test]
     fn the_estimated_remap_is_the_identity_for_the_same_body() {
         let wrist = Vec3::new(0.4, 1.1, -0.3);
-        let remap = ArmRemap::estimated(Hand::Right, head(), &PLAYER, &PLAYER);
+        let remap = ArmRemap::estimated(
+            Hand::Right,
+            head(),
+            torso_heading(head(), None),
+            &PLAYER,
+            &PLAYER,
+        );
         assert!(remap.apply(wrist).distance(wrist) < EPS);
+    }
+
+    #[test]
+    fn the_shoulders_follow_the_torso_rather_than_the_head_when_it_is_estimated() {
+        let head = head();
+        let torso = Quat::from_rotation_y(-0.4);
+        assert_eq!(torso_heading(head, Some(torso)), torso);
+        assert!(torso_heading(head, None).angle_between(head.orientation) < EPS);
+        let remap = ArmRemap::estimated(Hand::Right, head, torso, &PLAYER, &PLAYER);
+        let expected = body::shoulder_positions(head.position, torso, &PLAYER)[Hand::Right.index()];
+        assert!(remap.player_shoulder.distance(expected) < EPS);
+        let measured = ArmRemap::measured(Hand::Right, head, torso, &PLAYER, &rico(), 1.0).unwrap();
+        assert!(measured.player_shoulder.distance(expected) < EPS);
     }
 
     #[test]
@@ -409,7 +457,7 @@ mod tests {
             position: Vec3::new(0.0, player.eye_height, 0.0),
             orientation: Quat::IDENTITY,
         };
-        let remap = ArmRemap::estimated(Hand::Right, head, &player, &character);
+        let remap = ArmRemap::estimated(Hand::Right, head, Quat::IDENTITY, &player, &character);
         let wrist = remap.player_shoulder + Vec3::NEG_Z * 0.5;
         let reach = (remap.apply(wrist) - remap.character_shoulder).length();
         assert!((reach - 0.5 * character.arm_span / player.arm_span).abs() < EPS);

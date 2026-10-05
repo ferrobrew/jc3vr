@@ -1,8 +1,9 @@
 //! The character hooks: the pose-finalization pass (the weapon-agnostic body's decision, headset-driven
 //! body IK, the controller hands' wrist targets, the roomscale crouch's hips and feet, and the
 //! squared standing stance before the HumanIK solve, the secondary hand targets switched off before
-//! the `SECONDARY` pass, the head override, the hands' post-solve publish, and the finger curls
-//! after it), the act filter, the animation modifiers, and the animation-layer mask.
+//! the `SECONDARY` pass, the head override, the hands' post-solve publish, the finger curls, and the
+//! body alignment's skeleton read after it), the act filter, the animation modifiers, and the
+//! animation-layer mask.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
@@ -127,5 +128,6 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         head::override_head(character);
         hands::ik::after_solve(character);
         controllers::fingers::after_solve(character);
+        controllers::body::alignment::after_solve(character);
     }
 }
