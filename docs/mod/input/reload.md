@@ -29,7 +29,7 @@ The eject is the game's own magazine drop, run on the input tick: [`WeaponData::
 
 ## Load
 
-The pouch (`pouch`) is one universal pouch at the belt front on the dominant side, mirrored from the grenade pouch. It hands out whatever the held weapon takes, and it is a grab volume for the hand without a gun while a reloaded weapon is held. A grab with no ammunition left (and no unlimited ammunition) gives nothing and a faint pulse.
+The pouch (`weapons.pouches.magazine`) is one universal pouch at the front of the belt on the off-hand side, so the hand without the gun reaches it without crossing the body ([controllers.md](controllers.md#holsters-grab-volumes-the-foregrip-and-the-action-runs-tier) places it). It hands out whatever the held weapon takes, and it is a grab volume for the hand without a gun while a reloaded weapon is held. A grab with no ammunition left (and no unlimited ammunition) gives nothing and a faint pulse.
 
 The hand holds the round with its top `held_top_m` ahead of the closed fist, pointing the way the fist points (`insert.rs`). The top catches the well when it comes within `capture_radius_m` of the well's mouth, turned no more than `capture_angle_deg` from the well's axis, and moving into the gun. A caught round slides only along the axis and seats `seat_depth_m` past the mouth; pulled back out it is held again. Letting go drops it, unless it is more than half seated, which seats it, and a round not seated within `timeout_s` is dropped. A magazine is taken only by a gun whose magazine is out; a shell or a rocket by a gun that is not full.
 

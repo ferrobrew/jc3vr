@@ -20,7 +20,7 @@ use crate::{
             reset_live_to_defaults, settings_state,
         },
         vehicles::config::{ArmPitch, WheelTracking},
-        weapons::reload::config::ReloadButton,
+        weapons::{config::PouchSide, reload::config::ReloadButton},
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
@@ -210,10 +210,21 @@ fn build() -> Page {
             .weapons
             .reload
             .manual_action))
+        .item(config_toggle!("SHOW POUCHES", |c| c
+            .controllers
+            .weapons
+            .pouches
+            .show))
         .item(config_toggle!("THROWN GRENADES", |c| c
             .controllers
             .weapons
             .grenade_throw))
+        .item(config_choice!(
+            "GRENADE POUCH",
+            &PouchSide::ALL,
+            &POUCH_SIDE_LABELS,
+            |c| c.controllers.weapons.pouches.grenade_side
+        ))
         .item(config_toggle!("THROWN C4", |c| c
             .controllers
             .weapons
@@ -419,6 +430,7 @@ const SCHEME_LABELS: [&str; 3] = ["AUTOMATIC", "CONTROLLERS", "GAMEPAD"];
 const HANDS: [Hand; 2] = [Hand::Left, Hand::Right];
 /// By [`ReloadButton::ALL`].
 const RELOAD_BUTTON_LABELS: [&str; 2] = ["EJECT", "GAME RELOAD"];
+const POUCH_SIDE_LABELS: [&str; 2] = ["DOMINANT SIDE", "OFF-HAND SIDE"];
 const HAND_LABELS: [&str; 2] = ["LEFT", "RIGHT"];
 
 const DIRECTIONS: [LocomotionDirection; 2] =

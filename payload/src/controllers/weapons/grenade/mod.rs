@@ -355,9 +355,18 @@ fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
     std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
-/// Record a step's outcome.
-fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome) {
-    tracing::debug!(target: "controllers", ?hand, outcome = %outcome.label(), "grenade");
+/// Record a step's outcome. A refused grab buzzes the hand that reached into the pouch, so that the
+/// player knows the pouch is empty or closed rather than missed.
+fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome, tuning: &GrenadeConfig) {
+    match outcome {
+        Outcome::Refused(_) | Outcome::PoolFull => {
+            tracing::info!(target: "controllers", ?hand, outcome = %outcome.label(), "grenade pouch");
+            if let Some(hand) = hand {
+                haptics::pulse(hand, tuning.refused_pulse, PulseSource::PouchRefused);
+            }
+        }
+        _ => tracing::debug!(target: "controllers", ?hand, outcome = %outcome.label(), "grenade"),
+    }
     match outcome {
         Outcome::Primed => state.status.primed += 1,
         Outcome::Thrown(_) => state.status.thrown += 1,
@@ -404,7 +413,7 @@ fn update_from_user(
     let (next, action, outcome) = stage::before_update(state.stage, view);
     state.stage = next;
     if let Some(outcome) = outcome {
-        report(&mut state, hand, outcome);
+        report(&mut state, hand, outcome, &tuning);
     }
     match action {
         WeaponAction::None => {}
@@ -441,7 +450,7 @@ fn update_from_user(
     state.stage = next;
     state.status.stage = next;
     if let Some(outcome) = outcome {
-        report(&mut state, hand, outcome);
+        report(&mut state, hand, outcome, &tuning);
         if outcome == Outcome::Primed
             && let Some(hand) = hand
         {

@@ -179,7 +179,7 @@ A switch between gameplay modes is debounced by a configurable number of ticks (
 
 ### Grip semantics
 
-Guns are sticky, so the grip is an edge, never a hold. A grab volume is a region where a grip press grabs instead of performing its default action. The grab volumes are the holsters on the body, a two-handed weapon's foregrip, the grenade pouch, the reload pouch and a gun's action under the true reload, and, under the opt-in physical controls, the wheel, the handlebars, the flight sticks, and the turret handles. An empty hand near a loose object or a weapon lying in the world is in the physical hands' pickup volume, which every other volume wins over ([physical-hands.md](physical-hands.md#the-grip)). With `overlay.grab_volumes` (off by default), the world-space overlay highlights the volume the hand is in. The holster volumes are small and close to the body, so that a grapple fired in a hurry near the hip does not draw a weapon instead.
+Guns are sticky, so the grip is an edge, never a hold. A grab volume is a region where a grip press grabs instead of performing its default action. The grab volumes are the holsters on the body, a two-handed weapon's foregrip, the grenade and C4 pouches on the chest, the reload pouch on the belt and a gun's action under the true reload, and, under the opt-in physical controls, the wheel, the handlebars, the flight sticks, and the turret handles. An empty hand near a loose object or a weapon lying in the world is in the physical hands' pickup volume, which every other volume wins over ([physical-hands.md](physical-hands.md#the-grip)). With `overlay.grab_volumes` (off by default), the world-space overlay highlights the volume the hand is in, and draws each pouch faintly at all times, so that the player learns where they are. The holster volumes are small and close to the body, so that a grapple fired in a hurry near the hip does not draw a weapon instead.
 
 Holding a grenade is the exception to sticky grips: the grenade is held while the grip is held, and thrown when the grip is released. The physical vehicle controls and the parachute handles are held the same way, only while the grip is, so that a hand on the wheel lets go as a hand on a real one does.
 
@@ -495,7 +495,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 | Part | Settings | State |
 |---|---|---|
-| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.15 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.10 m), `holsters.pouch` (0.10 m, at the belt front on the off-hand side, either hand), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `overlay.grab_volumes` | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
+| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.12 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.10 m), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `overlay.grab_volumes`; the pouches under `pouches`: `grenade` and `c4` (0.075 m, on either side of the chest, either hand; `grenade_side` picks the grenades' side), `magazine` (0.075 m, at the front of the off-hand's hip, for the free hand), `reach_margin_m` (0.05 m), and `show` (on) | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
 | The two-handed foregrip | `foregrip.enabled`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
@@ -531,7 +531,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Precision aim suppression | `scope.suppress_precision_aim` | Built. |
 | Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off), `aim.assist_max_distance_m`, `aim.assist_occlusion_tolerance_m` | Built. |
-| The true reload | `reload` (on): the button, the flick, the pouch (0.09 m, at the belt front on the dominant side, for the free hand), the well, the belt reload, the chamber, the manual action, and the dual split | Built, not run in the headset. See [reload.md](reload.md). |
+| The true reload | `reload` (on): the button, the flick, the pouch (`pouches.magazine`), the well, the belt reload, the chamber, the manual action, and the dual split | Built, not run in the headset. See [reload.md](reload.md). |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |
 | The sight tuning tool | `aim.sight_tuning.enabled` (off), `aim.sight_tuning.marker_distance_m` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
 | Hand-tier promotions | none | Not built beyond the anchored grapple and mounted-gun rows. |

@@ -14,11 +14,7 @@ use crate::{
             config::{C4Config, WristDetonatorConfig},
         },
     },
-    ui::controllers::{
-        vec3, vec3_drag,
-        weapons::{pulse_settings, volume_settings},
-        yes_no,
-    },
+    ui::controllers::{vec3, vec3_drag, weapons::pulse_settings, yes_no},
 };
 
 /// Everything the C4 readout shows, read before the config is locked for editing.
@@ -136,7 +132,6 @@ pub(super) fn explosives_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
 }
 
 fn c4_settings(ui: &mut Ui, c: &mut C4Config) {
-    volume_settings(ui, "C4 pouch", &mut c.pouch);
     vec3_drag(
         ui,
         "Hold offset (grip frame, m)",

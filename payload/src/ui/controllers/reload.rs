@@ -15,10 +15,7 @@ use crate::{
             wells,
         },
     },
-    ui::controllers::{
-        vec3_drag,
-        weapons::{pulse_settings, volume_settings},
-    },
+    ui::controllers::{vec3_drag, weapons::pulse_settings},
 };
 
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
@@ -148,7 +145,6 @@ fn settings(ui: &mut Ui, r: &mut ReloadConfig) {
         ui.add(egui::Slider::new(&mut r.flick_speed_dps, 300.0..=2000.0).text("Flick speed (°/s)"));
         ui.add(egui::Slider::new(&mut r.flick_cooldown_s, 0.1..=2.0).text("Flick cooldown (s)"));
     });
-    volume_settings(ui, "Pouch", &mut r.pouch);
     vec3_drag(
         ui,
         "Fallback well (wrist frame, m)",

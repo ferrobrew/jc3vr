@@ -106,10 +106,21 @@ impl Candidate {
 /// contain it and that the hand may grab, the one it is deepest in, so that overlapping volumes
 /// resolve to the one the hand is nearest the middle of.
 pub fn grab_volume(point: Vec3, hand: Hand, candidates: &[Candidate]) -> Option<GrabVolume> {
+    grab_volume_by(hand, candidates, |_| point)
+}
+
+/// [`grab_volume`] with each candidate tested against its own point of the hand, `point_for`:
+/// the volumes on the body are reached by the player's own hand, before the body-scale remap,
+/// while the volumes on a held weapon are reached by the hand the player sees on it.
+pub fn grab_volume_by(
+    hand: Hand,
+    candidates: &[Candidate],
+    point_for: impl Fn(&Candidate) -> Vec3,
+) -> Option<GrabVolume> {
     candidates
         .iter()
         .filter(|c| c.hand.is_none_or(|h| h == hand))
-        .filter_map(|c| c.depth(point).map(|depth| (depth, c.volume)))
+        .filter_map(|c| c.depth(point_for(c)).map(|depth| (depth, c.volume)))
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, volume)| volume)
 }
@@ -158,6 +169,37 @@ mod tests {
         assert_eq!(
             grab_volume(Vec3::ZERO, Hand::Left, &c),
             Some(GrabVolume::Foregrip)
+        );
+    }
+
+    #[test]
+    fn each_volume_may_be_tested_against_its_own_point() {
+        let hip = GrabVolume::Holster(HolsterSite::Hip(Hand::Right));
+        let c = [
+            sphere(hip, 0.0, 0.1, None),
+            sphere(GrabVolume::Foregrip, 1.0, 0.1, None),
+        ];
+        // The body volumes see one point and the weapon's volumes another.
+        let point_for = |body: Vec3, held: Vec3| {
+            move |c: &Candidate| {
+                if matches!(c.volume, GrabVolume::Holster(_)) {
+                    body
+                } else {
+                    held
+                }
+            }
+        };
+        assert_eq!(
+            grab_volume_by(Hand::Right, &c, point_for(Vec3::ZERO, Vec3::splat(5.0))),
+            Some(hip)
+        );
+        assert_eq!(
+            grab_volume_by(Hand::Right, &c, point_for(Vec3::splat(5.0), Vec3::X)),
+            Some(GrabVolume::Foregrip)
+        );
+        assert_eq!(
+            grab_volume_by(Hand::Right, &c, point_for(Vec3::X, Vec3::ZERO)),
+            None
         );
     }
 

@@ -2,7 +2,7 @@
 //! "Grenades", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
 //! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, the reload pouch, and
-//!   the C4 pouch), placed from the body dimensions;
+//!   the C4 pouch), placed from the player's body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
@@ -30,8 +30,12 @@
 //!
 //! 1. [`begin_tick`] reads the wielded weapon, places the grab volumes, and answers which volume
 //!    each hand's grab point (the controller's grip, in the cockpit frame) is in, which the tables
-//!    latch at the grip's press edge. A hand holding the foregrip is always in it, so that its next
-//!    grip press lets go rather than firing the grapple.
+//!    latch at the grip's press edge. The body's volumes are tested against the player's own grip,
+//!    before the body-scale remap, while they ride the player's body, and the weapon's volumes
+//!    against the grip of the hand on the weapon. A hand just outside a pouch reaches it
+//!    ([`volumes::pouch_in_reach`]), so a press there takes from the pouch rather than firing the
+//!    grapple. A hand holding the foregrip is always in it, so that its next grip press lets go
+//!    rather than firing the grapple.
 //! 2. [`finish_tick`] acts on the grabs the tables report: a holster grab draws or holsters, a
 //!    foregrip grab engages or releases the two-handed grip, a grenade-pouch grab primes a grenade
 //!    for the throw, a C4-pouch grab primes a charge, and a reload-pouch grab takes a round for the
@@ -39,9 +43,10 @@
 //!    holds the fire inputs back while a reload, a draw, or a holster plays (the action-runs hand
 //!    tier) and while the reload holds the gun from firing.
 //!
-//! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights (and,
-//! with `holsters.show_volumes`, every body volume) are submitted to the overlay's
-//! [`Source::GrabVolumes`] slot. A grip press that grabs nothing near a holster is logged with its
+//! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights, each
+//! placed pouch (faint, and brighter while a hand is within reach, with `pouches.show`), and, with
+//! `holsters.show_volumes`, every body volume are submitted to the overlay's [`Source::GrabVolumes`]
+//! slot. A grip press that grabs nothing near a holster is logged with its
 //! distance from the nearest one. Everything acts only while the bindings inject, which is only
 //! under the controller scheme with a controller active.
 
@@ -269,26 +274,28 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         config.weapons.holsters.crouch_deadband_m,
         volume_anchor(&config, &active),
     );
-    let dims = body_dimensions(&config);
-    if gameplay && (config.weapons.holsters.enabled || config.weapons.grenade_throw) {
-        candidates = volumes::holster_candidates(
-            &body_frame,
-            &dims,
-            &config.weapons.holsters,
-            config.dominant_hand,
-            config.weapons.grenade_throw,
-        );
-        if !config.weapons.holsters.enabled {
-            candidates.retain(|c| c.volume == GrabVolume::GrenadePouch);
+    let dims = body_dimensions(&config, &body_frame.anchor);
+    let pouches = &config.weapons.pouches;
+    if gameplay {
+        if config.weapons.holsters.enabled {
+            candidates = volumes::holster_candidates(&body_frame, &dims, &config.weapons.holsters);
         }
-    }
-    if gameplay && config.weapons.c4_throw {
-        candidates.push(volumes::c4_pouch(
-            &body_frame,
-            &dims,
-            &config.weapons.c4.pouch,
-            config.dominant_hand,
-        ));
+        if config.weapons.grenade_throw {
+            candidates.push(volumes::grenade_pouch(
+                &body_frame,
+                &dims,
+                pouches,
+                config.dominant_hand,
+            ));
+        }
+        if config.weapons.c4_throw {
+            candidates.push(volumes::c4_pouch(
+                &body_frame,
+                &dims,
+                pouches,
+                config.dominant_hand,
+            ));
+        }
     }
     candidates.extend(reload::begin_tick(&reload::BeginInputs {
         weapon: weapon.as_ref(),
@@ -313,12 +320,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         });
     }
 
+    let body_points = body_points(&active, &body_frame.anchor);
     let volumes = Hand::BOTH.map(|hand| {
         if hold.is_some_and(|h| h.holder.other() == hand) {
             return Some(GrabVolume::Foregrip);
         }
-        let point = active.hands[hand.index()]?.grip.position;
-        grab::grab_volume(point, hand, &candidates)
+        let held = active.hands[hand.index()]?.grip.position;
+        let body = body_points[hand.index()].unwrap_or(held);
+        grab::grab_volume_by(hand, &candidates, |c| {
+            if is_body_volume(c.volume) { body } else { held }
+        })
+        .or_else(|| volumes::pouch_in_reach(body, hand, &candidates, pouches.reach_margin_m))
     });
 
     state.status.active = true;
@@ -326,13 +338,21 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.status.candidates = candidates.len();
     state.status.stance = Some(stance);
     state.placed.clone_from(&candidates);
-    state.grab_points = active.hands.map(|h| h.map(|h| h.grip.position));
+    state.grab_points = body_points;
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
     state.gameplay = gameplay;
     drop(state);
 
-    submit_highlights(&config, &active, &candidates, volumes);
+    submit_highlights(
+        &config,
+        &active,
+        &Reach {
+            candidates: &candidates,
+            volumes,
+            body_points,
+        },
+    );
     TickStart {
         volumes,
         dual_wield,
@@ -545,7 +565,8 @@ struct State {
     /// The last geometry measured, and the weapon it belongs to: a measurement needs the wrist at
     /// full weight, so a tick without one keeps the last.
     measured: Option<(usize, GripGeometry)>,
-    /// The tick's placed volumes and each hand's grab point, for the near-miss log.
+    /// The tick's placed volumes and each hand's grab point for the body's volumes, for the
+    /// near-miss log.
     placed: Vec<Candidate>,
     grab_points: [Option<Vec3>; 2],
     last_miss_log: Option<Instant>,
@@ -653,13 +674,25 @@ fn volume_anchor(config: &ControllersConfig, active: &ActiveHands) -> volumes::A
     anchor
 }
 
-/// The dimensions the volumes are placed with: the character's while the hands are remapped onto
-/// them, the player's otherwise.
-fn body_dimensions(config: &ControllersConfig) -> BodyDimensions {
-    if config.body.remap_hands {
-        BodyDimensions::CHARACTER_ESTIMATE
-    } else {
-        body::player()
+/// The dimensions the volumes are placed with: the player's on the player's body; on the
+/// character's skeleton, the character's while the hands are remapped onto them, and the player's
+/// otherwise.
+fn body_dimensions(config: &ControllersConfig, anchor: &volumes::Anchor) -> BodyDimensions {
+    match anchor {
+        volumes::Anchor::Skeleton(_) if config.body.remap_hands => {
+            BodyDimensions::CHARACTER_ESTIMATE
+        }
+        _ => body::player(),
+    }
+}
+
+/// Each hand's point for the body's volumes: the player's own grip, before the body-scale remap,
+/// on the player's body, so that a hand on the player's own belt finds the pouch there; the grip
+/// of the hand the player sees on the character's skeleton, whose landmarks are the character's.
+fn body_points(active: &ActiveHands, anchor: &volumes::Anchor) -> [Option<Vec3>; 2] {
+    match anchor {
+        volumes::Anchor::Body { .. } => active.player_grips,
+        volumes::Anchor::Skeleton(_) => active.hands.map(|h| h.map(|h| h.grip.position)),
     }
 }
 
@@ -773,15 +806,38 @@ fn weapon_action_running(dominant: Hand) -> bool {
         && status.effective[dominant.index()] == HandTier::ActionRuns
 }
 
-/// Submit a highlight for the volume each hand is in, and a marker on a held foregrip.
-fn submit_highlights(
-    config: &ControllersConfig,
-    active: &ActiveHands,
-    candidates: &[Candidate],
+/// The tick's volumes and where the hands are among them, for the highlights.
+struct Reach<'a> {
+    candidates: &'a [Candidate],
+    /// The volume each hand is in, by [`Hand::index`].
     volumes: [Option<GrabVolume>; 2],
-) {
+    /// Each hand's point for the body's volumes, by [`Hand::index`].
+    body_points: [Option<Vec3>; 2],
+}
+
+impl Reach<'_> {
+    /// Whether a hand that may grab `c` is within reach of it: inside it, or within the pouches'
+    /// reach margin of its surface.
+    fn within(&self, c: &Candidate, margin: f32) -> bool {
+        Hand::BOTH.into_iter().any(|hand| {
+            c.hand.is_none_or(|h| h == hand)
+                && self.body_points[hand.index()]
+                    .is_some_and(|p| p.distance(c.centre) <= c.radius + margin.max(0.0))
+        })
+    }
+}
+
+/// Submit a highlight for the volume each hand is in, every placed pouch (faint, and brighter
+/// while a hand is within reach of it), and a marker on a held foregrip.
+fn submit_highlights(config: &ControllersConfig, active: &ActiveHands, reach: &Reach) {
+    let Reach {
+        candidates,
+        volumes,
+        ..
+    } = *reach;
     let show_all = config.weapons.holsters.show_volumes;
-    if !(config.overlay.enabled && (config.overlay.grab_volumes || show_all)) {
+    let pouches = &config.weapons.pouches;
+    if !(config.overlay.enabled && (config.overlay.grab_volumes || show_all || pouches.show)) {
         store::clear(Source::GrabVolumes);
         return;
     }
@@ -801,20 +857,29 @@ fn submit_highlights(
         .position
     };
     let mut prims = Vec::new();
-    if show_all {
-        for c in candidates
-            .iter()
-            .filter(|c| is_body_volume(c.volume) && !volumes.contains(&Some(c.volume)))
-        {
-            let [r, g, b, _] = colour(c.volume);
-            prims.push(ring(
-                to_world(c.centre),
-                c.radius * active.world_scale,
-                [r, g, b, SHOWN_ALPHA],
-            ));
-        }
+    for c in candidates
+        .iter()
+        .filter(|c| is_body_volume(c.volume) && !volumes.contains(&Some(c.volume)))
+    {
+        let pouch = volumes::is_pouch(c.volume) && pouches.show;
+        let alpha = if pouch && reach.within(c, pouches.reach_margin_m) {
+            REACH_ALPHA
+        } else if pouch || show_all {
+            SHOWN_ALPHA
+        } else {
+            continue;
+        };
+        let [r, g, b, _] = colour(c.volume);
+        prims.push(ring(
+            to_world(c.centre),
+            c.radius * active.world_scale,
+            [r, g, b, alpha],
+        ));
     }
-    for volume in volumes.iter().flatten() {
+    let highlight = |volume: GrabVolume| {
+        config.overlay.grab_volumes || show_all || (pouches.show && volumes::is_pouch(volume))
+    };
+    for volume in volumes.iter().flatten().filter(|v| highlight(**v)) {
         if let Some(c) = candidates.iter().find(|c| c.volume == *volume) {
             prims.push(ring(
                 to_world(c.centre),
@@ -908,9 +973,11 @@ const FOREGRIP: Rgba = [0.35, 0.85, 1.0, 0.8];
 const POUCH: Rgba = [0.5, 1.0, 0.45, 0.8];
 const MAGAZINE: Rgba = [0.85, 0.55, 1.0, 0.8];
 const C4: Rgba = [1.0, 0.4, 0.3, 0.8];
-/// The opacity of a body volume drawn with `show_volumes` that no hand is in, fainter than a
-/// highlighted one.
-const SHOWN_ALPHA: f32 = 0.3;
+/// The opacity of a body volume drawn with `show_volumes`, or of a pouch, that no hand is in or
+/// near: faint, so that it shows where the pouch is without drawing the eye.
+const SHOWN_ALPHA: f32 = 0.2;
+/// The opacity of a pouch a hand is within reach of but not in.
+const REACH_ALPHA: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {

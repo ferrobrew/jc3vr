@@ -76,6 +76,8 @@ pub enum PulseSource {
     Yank,
     /// A grenade primed in the hand, and the warning as its fuse runs down.
     GrenadeFuse,
+    /// A grab at a pouch that gave nothing: the game refused a grenade or a charge.
+    PouchRefused,
     /// A step of the true reload: an eject, a round taken from the pouch, caught by the well, or
     /// seated, a belt reload, or the action worked.
     Reload,
@@ -102,6 +104,7 @@ impl PulseSource {
             PulseSource::GrappleAttach => "grapple attach",
             PulseSource::Yank => "yank",
             PulseSource::GrenadeFuse => "grenade fuse",
+            PulseSource::PouchRefused => "pouch refused",
             PulseSource::Reload => "reload",
             PulseSource::Chord => "chord",
             PulseSource::DryFire => "dry fire",

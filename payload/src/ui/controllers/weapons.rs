@@ -19,7 +19,8 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
-                HeftTuning, HolsterAnchor, HolstersConfig, PulseSpec, RecoilConfig, VolumeSpec,
+                HeftTuning, HolsterAnchor, HolstersConfig, PouchSide, PouchesConfig, PulseSpec,
+                RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -420,6 +421,8 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.add_enabled_ui(w.holsters.enabled, |ui| {
         ui.indent("holsters", |ui| holster_settings(ui, &mut w.holsters));
     });
+    ui.label("Pouches");
+    ui.indent("pouches", |ui| pouch_settings(ui, &mut w.pouches));
     ui.checkbox(&mut w.foregrip.enabled, "Foregrip")
         .on_hover_text("Let the off-hand grab a two-handed weapon's foregrip.");
     ui.add_enabled_ui(w.foregrip.enabled, |ui| {
@@ -505,6 +508,7 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
         egui::Slider::new(&mut g.warning_interval_s[1], 0.02..=1.0).text("Fastest pulse gap (s)"),
     );
     pulse_settings(ui, "Prime pulse", &mut g.prime_pulse);
+    pulse_settings(ui, "Refused pulse", &mut g.refused_pulse);
 }
 
 fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
@@ -600,11 +604,35 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
     volume_settings(ui, "Hip", &mut h.hip);
     volume_settings(ui, "Shoulder", &mut h.shoulder);
     volume_settings(ui, "Chest", &mut h.chest);
-    volume_settings(ui, "Grenade pouch", &mut h.pouch);
     if ui.button("Reset holsters").clicked() {
         *h = HolstersConfig {
             enabled: h.enabled,
             ..HolstersConfig::new()
+        };
+    }
+}
+
+fn pouch_settings(ui: &mut Ui, p: &mut PouchesConfig) {
+    ui.checkbox(&mut p.show, "Show the pouches")
+        .on_hover_text("Draw each pouch faintly, brighter while a hand is within reach of it.");
+    ui.horizontal(|ui| {
+        ui.label("Grenade pouch on the");
+        for side in PouchSide::ALL {
+            ui.selectable_value(&mut p.grenade_side, side, side.label());
+        }
+    })
+    .response
+    .on_hover_text("The C4 pouch takes the other side of the chest.");
+    ui.add(egui::Slider::new(&mut p.reach_margin_m, 0.0..=0.15).text("Reach margin (m)"));
+    ui.label("Offsets from the body's surface, right side (+X right, +Y up, +Z back)");
+    volume_settings(ui, "Grenade pouch", &mut p.grenade);
+    volume_settings(ui, "C4 pouch", &mut p.c4);
+    volume_settings(ui, "Magazine pouch", &mut p.magazine);
+    if ui.button("Reset pouches").clicked() {
+        *p = PouchesConfig {
+            show: p.show,
+            grenade_side: p.grenade_side,
+            ..PouchesConfig::new()
         };
     }
 }

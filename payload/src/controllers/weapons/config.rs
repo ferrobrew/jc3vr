@@ -1,13 +1,13 @@
-//! The weapon-handling settings (the holsters, the foregrip, the recoil, the one-handed weight, the
-//! haptics, the dual-wield split, the grenade throw, the C4 throw, and the scopes), held in
+//! The weapon-handling settings (the holsters, the pouches, the foregrip, the recoil, the weight,
+//! the haptics, the dual-wield split, the grenade throw, the C4 throw, and the scopes), held in
 //! [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other weapon-handling
 //! subsystems' toggles. The reload's are in [`crate::controllers::weapons::reload::config`].
 
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-/// The body holsters and the grenade pouch (see [`crate::controllers::weapons`]). They act only
-/// under the controller scheme, so they default on.
+/// The body holsters (see [`crate::controllers::weapons`]). They act only under the controller
+/// scheme, so they default on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HolstersConfig {
@@ -25,17 +25,12 @@ pub struct HolstersConfig {
     pub shoulder: VolumeSpec,
     /// The explosives holster on the chest.
     pub chest: VolumeSpec,
-    /// The grenade pouch at the front of the belt on the off-hand side, a grab volume for either
-    /// hand (whichever grabs it throws) while the physical grenade throw
-    /// ([`WeaponsConfig::grenade_throw`](crate::controllers::config::WeaponsConfig::grenade_throw))
-    /// is on.
-    pub pouch: VolumeSpec,
     /// How far the head may drop below its standing height before the holsters drop with it, metres.
     /// Looking down at a holster lowers the head a little without the body crouching, so a small
     /// drop leaves the volumes where they are; a crouch carries them down.
     pub crouch_deadband_m: f32,
-    /// Draw every body volume through the world-space overlay at all times, not only the one a
-    /// hand is in, so that their placement can be seen and tuned. Needs the overlay on.
+    /// Draw every body volume, the holsters as well as the pouches, through the world-space overlay
+    /// at all times, so that their placement can be seen and tuned. Needs the overlay on.
     pub show_volumes: bool,
     /// Which body the holsters and pouches ride.
     pub anchor: HolsterAnchor,
@@ -44,8 +39,8 @@ pub struct HolstersConfig {
 /// Which body the holsters and pouches ride (see [`crate::controllers::weapons::volumes`]).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum HolsterAnchor {
-    /// The player's own body, estimated from the body dimensions and turned to the player's
-    /// estimated torso.
+    /// The player's own body, estimated from the player's body dimensions and turned to the player's
+    /// estimated torso, and reached by the player's own hands, before the body-scale remap.
     #[default]
     Body,
     /// The character's skeleton: his hip and shoulder joints, so that the volumes sit on the body
@@ -72,7 +67,7 @@ impl HolstersConfig {
             stick_click_cycles: true,
             hip: VolumeSpec {
                 offset_m: Vec3::new(0.04, 0.04, 0.0),
-                radius_m: 0.15,
+                radius_m: 0.12,
             },
             shoulder: VolumeSpec {
                 offset_m: Vec3::new(0.0, 0.10, 0.10),
@@ -80,10 +75,6 @@ impl HolstersConfig {
             },
             chest: VolumeSpec {
                 offset_m: Vec3::new(0.0, -0.14, -0.14),
-                radius_m: 0.10,
-            },
-            pouch: VolumeSpec {
-                offset_m: Vec3::ZERO,
                 radius_m: 0.10,
             },
             crouch_deadband_m: 0.15,
@@ -94,6 +85,79 @@ impl HolstersConfig {
 }
 
 impl Default for HolstersConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The pouches on the front of the body (see [`crate::controllers::weapons::volumes`]): the
+/// magazine pouch at the front of the belt on the off-hand side, and the grenade and C4 pouches on
+/// either side of the chest. Each is placed only while its feature is on: the grenade pouch with
+/// the grenade throw, the C4 pouch with the C4 throw, and the magazine pouch while the true reload
+/// reloads the held weapon. Offsets are given for the right side and mirrored for the left.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PouchesConfig {
+    /// Draw each placed pouch faintly through the world-space overlay at all times, and brighter
+    /// while a hand is within reach of it, so that their places can be learned. Needs the overlay
+    /// on.
+    pub show: bool,
+    /// Which side of the chest the grenade pouch sits on. The C4 pouch takes the other side.
+    pub grenade_side: PouchSide,
+    /// The grenade pouch, offset from the chest's front on its side.
+    pub grenade: VolumeSpec,
+    /// The C4 pouch, offset from the chest's front on its side.
+    pub c4: VolumeSpec,
+    /// The universal reload pouch, offset from the belt's front on the off-hand side. It hands out
+    /// what the held weapon takes: a magazine, a shell, a rocket, or a pod.
+    pub magazine: VolumeSpec,
+    /// How far outside a pouch's surface a grip press still takes from it, metres, when the hand
+    /// is in no other volume: a hand feeling for a pouch lands a little off it, and a press there
+    /// must not fire the grapple instead.
+    pub reach_margin_m: f32,
+}
+
+/// Which side of the chest a pouch sits on, by the player's hands.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum PouchSide {
+    /// The dominant hand's side.
+    #[default]
+    Dominant,
+    /// The off-hand's side.
+    OffHand,
+}
+
+impl PouchSide {
+    pub const ALL: [PouchSide; 2] = [PouchSide::Dominant, PouchSide::OffHand];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            PouchSide::Dominant => "dominant hand's side",
+            PouchSide::OffHand => "off-hand's side",
+        }
+    }
+}
+
+impl PouchesConfig {
+    pub const fn new() -> Self {
+        // Each pouch's centre is a few centimetres out from the body's surface, where a hand laid
+        // flat on the body closes.
+        let pouch = VolumeSpec {
+            offset_m: Vec3::new(0.0, 0.0, -0.04),
+            radius_m: 0.075,
+        };
+        Self {
+            show: true,
+            grenade_side: PouchSide::Dominant,
+            grenade: pouch,
+            c4: pouch,
+            magazine: pouch,
+            reach_margin_m: 0.05,
+        }
+    }
+}
+
+impl Default for PouchesConfig {
     fn default() -> Self {
         Self::new()
     }
@@ -457,6 +521,9 @@ pub struct GrenadeConfig {
     pub warning_interval_s: [f32; 2],
     /// A pulse on the throwing hand when the grenade is primed in it.
     pub prime_pulse: PulseSpec,
+    /// A buzz on the hand that grabbed the pouch when the game refuses it a grenade: none are
+    /// left, grenades are not allowed now, or the game's own throw holds one.
+    pub refused_pulse: PulseSpec,
 }
 
 impl GrenadeConfig {
@@ -480,6 +547,10 @@ impl GrenadeConfig {
                 amplitude: 0.3,
                 duration_s: 0.04,
             },
+            refused_pulse: PulseSpec {
+                amplitude: 0.5,
+                duration_s: 0.15,
+            },
         }
     }
 }
@@ -490,15 +561,11 @@ impl Default for GrenadeConfig {
     }
 }
 
-/// The C4 pouch and the throw of a charge (see [`crate::controllers::weapons::c4`]).
+/// The throw of a charge from the C4 pouch (see [`crate::controllers::weapons::c4`]); the pouch
+/// itself is placed with the others ([`PouchesConfig`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct C4Config {
-    /// The C4 pouch on the chest at the dominant side, a grab volume for either hand while the C4
-    /// throw ([`WeaponsConfig::c4_throw`](crate::controllers::config::WeaponsConfig::c4_throw)) is
-    /// on. Its offset is from the middle of the shoulder joints, given for the right side and
-    /// mirrored for the left.
-    pub pouch: VolumeSpec,
     /// Where the held charge sits in the throwing controller's grip frame, metres, given for the
     /// right hand and mirrored for the left.
     pub hold_offset_m: Vec3,
@@ -520,10 +587,6 @@ pub struct C4Config {
 impl C4Config {
     pub const fn new() -> Self {
         Self {
-            pouch: VolumeSpec {
-                offset_m: Vec3::new(0.17, -0.08, -0.19),
-                radius_m: 0.07,
-            },
             hold_offset_m: Vec3::ZERO,
             release_window_s: 0.1,
             release_peak_span_s: 0.015,

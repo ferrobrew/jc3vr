@@ -178,8 +178,13 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let free = Hand::BOTH
         .into_iter()
         .find(|h| !gun_hands[h.index()] && active.hands[h.index()].is_some());
-    let pouch =
-        volumes::magazine_pouch(body_frame, dims, &reload.pouch, config.dominant_hand, free);
+    let pouch = volumes::magazine_pouch(
+        body_frame,
+        dims,
+        &config.weapons.pouches,
+        config.dominant_hand,
+        free,
+    );
     if free.is_some() {
         candidates.push(pouch);
     }

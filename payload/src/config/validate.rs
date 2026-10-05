@@ -184,7 +184,14 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     volume("weapons.holsters.hip", &w.holsters.hip)?;
     volume("weapons.holsters.shoulder", &w.holsters.shoulder)?;
     volume("weapons.holsters.chest", &w.holsters.chest)?;
-    volume("weapons.holsters.pouch", &w.holsters.pouch)?;
+    volume("weapons.pouches.grenade", &w.pouches.grenade)?;
+    volume("weapons.pouches.c4", &w.pouches.c4)?;
+    volume("weapons.pouches.magazine", &w.pouches.magazine)?;
+    nonnegative(
+        "weapons.pouches.reach_margin_m",
+        w.pouches.reach_margin_m,
+        1.0,
+    )?;
     nonnegative(
         "weapons.holsters.crouch_deadband_m",
         w.holsters.crouch_deadband_m,
@@ -289,8 +296,8 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
         )?;
     }
     pulse("weapons.grenade.prime_pulse", &w.grenade.prime_pulse)?;
+    pulse("weapons.grenade.refused_pulse", &w.grenade.refused_pulse)?;
     let c4 = &w.c4;
-    volume("weapons.c4.pouch", &c4.pouch)?;
     vec3("weapons.c4.hold_offset_m", c4.hold_offset_m, 5.0)?;
     positive("weapons.c4.release_window_s", c4.release_window_s, 60.0)?;
     nonnegative(
@@ -836,7 +843,6 @@ fn reload(r: &ReloadConfig) -> Result<(), Invalid> {
         10_000.0,
     )?;
     nonnegative("weapons.reload.flick_cooldown_s", r.flick_cooldown_s, 60.0)?;
-    volume("weapons.reload.pouch", &r.pouch)?;
     vec3("weapons.reload.well_offset_m", r.well_offset_m, 5.0)?;
     nonnegative("weapons.reload.held_top_m", r.held_top_m, 1.0)?;
     positive("weapons.reload.capture_radius_m", r.capture_radius_m, 1.0)?;

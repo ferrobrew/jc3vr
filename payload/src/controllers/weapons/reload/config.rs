@@ -4,7 +4,7 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::{PulseSpec, VolumeSpec};
+use crate::controllers::weapons::config::PulseSpec;
 
 /// The true reload. Acts only under the controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -25,10 +25,6 @@ pub struct ReloadConfig {
     pub flick_speed_dps: f32,
     /// The shortest time between two flick ejects, seconds.
     pub flick_cooldown_s: f32,
-    /// The universal pouch at the front of the belt on the dominant side. It hands out what the
-    /// held weapon takes: a magazine, a shell, a rocket, or a pod. Given for the right side and
-    /// mirrored for the left.
-    pub pouch: VolumeSpec,
     /// The magazine well of a weapon the wells table has no entry for, in the holding hand's wrist
     /// frame (-Z toward the fingers, +Y out of the back of the hand), metres: under the gun, just
     /// ahead of the grip. Given for the right hand and mirrored for the left.
@@ -72,10 +68,6 @@ impl ReloadConfig {
             flick_eject: false,
             flick_speed_dps: 900.0,
             flick_cooldown_s: 0.6,
-            pouch: VolumeSpec {
-                offset_m: Vec3::ZERO,
-                radius_m: 0.09,
-            },
             well_offset_m: Vec3::new(0.0, -0.08, -0.06),
             held_top_m: 0.07,
             capture_radius_m: 0.05,

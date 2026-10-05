@@ -30,7 +30,7 @@ use crate::{
         weapons::{
             config::{
                 C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HolstersConfig, RecoilConfig, ScopeConfig,
+                HeftConfig, HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
             },
             reload::config::ReloadConfig,
             wheel::config::WheelConfig,
@@ -646,6 +646,8 @@ pub enum GunReadout {
 pub struct WeaponsConfig {
     /// Draw and holster weapons with a grip press at the body holsters.
     pub holsters: HolstersConfig,
+    /// The pouches on the front of the body: the magazines, the grenades, and the C4.
+    pub pouches: PouchesConfig,
     /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's
     /// direction.
     pub foregrip: ForegripConfig,
@@ -665,8 +667,8 @@ pub struct WeaponsConfig {
     /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
     /// game's timed reload.
     pub reload: ReloadConfig,
-    /// Throw grenades physically: grab from the pouch, release the grip to throw with the hand's
-    /// velocity. The grenade pouch exists only while this is on.
+    /// Throw grenades physically: grab from the chest pouch, release the grip to throw with the
+    /// hand's velocity. The grenade pouch exists only while this is on.
     pub grenade_throw: bool,
     /// The physical throw's release, warning, and fallback settings.
     pub grenade: GrenadeConfig,
@@ -702,6 +704,7 @@ impl WeaponsConfig {
     pub const fn new() -> Self {
         Self {
             holsters: HolstersConfig::new(),
+            pouches: PouchesConfig::new(),
             foregrip: ForegripConfig::new(),
             block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
