@@ -63,6 +63,12 @@ pub fn handles_hud_fresh() -> bool {
     DISCOVERED_IN_HUD.load(std::sync::atomic::Ordering::Relaxed) && CLIP_HANDLES.lock().is_some()
 }
 
+/// Whether the live handle registry was resolved during gameplay, without taking the registry's
+/// lock (for a caller that holds it).
+pub(crate) fn discovered_in_hud() -> bool {
+    DISCOVERED_IN_HUD.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The number of HUD layers the registry groups containers into (see
 /// [`HudLayer`](crate::hud::split::HudLayer)).
 pub const LAYER_COUNT: usize = 3;
@@ -119,6 +125,23 @@ pub(crate) const HINT_CLIPS: [&str; 2] = [
     "MCI_safe_area_center.MCI_button_hints_stage",
 ];
 
+/// The HUD parts the atlas moves into cells, and the container the moved ones sit in, in
+/// [`AtlasClip`] order (see [`crate::hud::atlas`]). Both moved parts are children of the
+/// bottom-right safe-area container, whose placement converts a cell's stage position into theirs.
+pub(crate) const ATLAS_CLIPS: [&str; 3] = [
+    "MCI_safe_area_bottom_right",
+    "MCI_safe_area_bottom_right.MCI_weapons_parent",
+    "MCI_safe_area_bottom_right.MCI_heat_container",
+];
+
+/// The index of each clip in [`ATLAS_CLIPS`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum AtlasClip {
+    BottomRight = 0,
+    Weapons = 1,
+    Heat = 2,
+}
+
 /// A heap-pinned managed [`Value`] handle to a clip, plus the game-intent tracking the mask needs.
 /// The `Value` is an intrusive list node on the movie's external-references list, so it must never
 /// move after `GetVariable` fills it -- hence the box. Release (on the capture thread) before
@@ -173,6 +196,8 @@ pub(crate) struct ClipHandles {
     pub reticles: Vec<ClipHandle>,
     /// The button-hint stages, in [`HINT_CLIPS`] order.
     pub hints: Vec<ClipHandle>,
+    /// The atlas's clips, in [`ATLAS_CLIPS`] order.
+    pub atlas: Vec<ClipHandle>,
     /// The anonymous POI pool (markers layer).
     pub dynamic: Vec<ClipHandle>,
 }
@@ -335,6 +360,22 @@ pub(crate) unsafe fn set_visible(handle: &mut ClipHandle, visible: bool) {
     }
 }
 
+/// Read a clip's display info through its cached handle, or `None` for an unresolved handle or a
+/// failed read.
+///
+/// # Safety
+/// The caller must be on the capture (game update) thread (see [`ClipHandle`]).
+pub(crate) unsafe fn display_info(handle: &mut ClipHandle) -> Option<DisplayInfo> {
+    // SAFETY: the handle's value is pinned and managed; the interface pointer comes from it.
+    unsafe {
+        let value = handle.value.as_mut()?;
+        let interface = value.pObjectInterface.as_mut()?;
+        let mut info = DisplayInfo::default();
+        let data = value.mValue as *mut std::ffi::c_void;
+        interface.GetDisplayInfo(data, &mut info).then_some(info)
+    }
+}
+
 /// Request the clip-handle registry's release (from the shutdown path; executed on the game
 /// thread by [`process_requests`]).
 pub fn request_release_handles() {
@@ -360,6 +401,7 @@ fn release_clip_handles() {
                 .chain(handles.overlays.iter_mut())
                 .chain(handles.reticles.iter_mut())
                 .chain(handles.hints.iter_mut())
+                .chain(handles.atlas.iter_mut())
                 .chain(handles.dynamic.iter_mut())
             {
                 unforce_visible(handle);
@@ -396,6 +438,7 @@ pub fn process_requests() {
     let handles_needed = Config::lock_query(|c| {
         c.hud.split
             || c.hud.suppress_overlays
+            || c.hud.atlas.enabled
             || (c.controllers.enabled
                 && (c.controllers.overlay.hide_game_reticle
                     || c.controllers.summary.hide_game_hints))
@@ -506,6 +549,7 @@ fn dump_tree(movie_impl: &MovieImpl, movie_root: &Movie) {
             .chain(OVERLAY_CLIPS.iter())
             .chain(RETICLE_CLIPS.iter())
             .chain(HINT_CLIPS.iter())
+            .chain(ATLAS_CLIPS.iter())
         {
             let full = format!("{prefix}{path}.visible\0");
             let mut value = Value::new_boolean(true);
@@ -629,6 +673,7 @@ fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
             overlays: OVERLAY_CLIPS.iter().map(|path| resolve(path)).collect(),
             reticles: RETICLE_CLIPS.iter().map(|path| resolve(path)).collect(),
             hints: HINT_CLIPS.iter().map(|path| resolve(path)).collect(),
+            atlas: ATLAS_CLIPS.iter().map(|path| resolve(path)).collect(),
             dynamic: anonymous.iter().map(|name| resolve(name)).collect(),
         };
         tracing::debug!(

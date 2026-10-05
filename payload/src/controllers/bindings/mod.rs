@@ -398,9 +398,21 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             dt,
         };
         weapons::finish_tick(&finish, &mut step.desired);
+        let wheel = weapons::wheel::input_tick(
+            &weapons::wheel::TickInputs {
+                mode: detection.mode,
+                presses: step.wheel,
+            },
+            &mut step.desired,
+        );
+        // The stick that holds the wheel open is the turn stick: its sideways drift must not turn.
+        if wheel.by_stick {
+            step.body_turn = 0.0;
+        }
         vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
         physical_hands::pickup::finish_tick(&finish, &mut step.desired);
     } else {
+        weapons::wheel::pause();
         physical_hands::pickup::pause();
     }
     let writes = state.tracker.resolve(&step.desired, dt);

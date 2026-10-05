@@ -248,6 +248,7 @@ fn on_foot(action: OnFootAction) -> Option<DefaultBinding> {
         ThrowGrenade => None,
         WeaponSelectPad => on(Off, Trackpad),
         WeaponSelectPress => on(Off, TrackpadForce),
+        WeaponWheel => on(Dom, ThumbstickY),
     }
 }
 

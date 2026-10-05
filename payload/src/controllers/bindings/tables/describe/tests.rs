@@ -337,6 +337,41 @@ fn the_trackpad_touch_row_stays_on_the_off_hand_beside_the_paging() {
 }
 
 #[test]
+fn the_weapon_wheel_is_described_on_its_openers_where_the_weapons_are_handled() {
+    let features = Features {
+        wheel_trackpad: true,
+        wheel_stick: true,
+        ..Features::default()
+    };
+    let wheel_rows = |mode| -> Vec<(Control, Gesture)> {
+        describe(&DescribeCtx {
+            features,
+            ..ctx(mode, Hand::Right, TableCtx::default())
+        })
+        .into_iter()
+        .filter(|r| r.effect == Effect::Mod(ModAction::WeaponWheel))
+        .map(|r| (r.control, r.gesture))
+        .collect()
+    };
+    assert_eq!(
+        wheel_rows(ON_FOOT),
+        vec![
+            (Control::Trackpad(Hand::Left), Gesture::Hold),
+            (
+                Control::Stick(Hand::Right, StickDir::Vertical),
+                Gesture::HoldUp
+            ),
+        ]
+    );
+    assert_eq!(
+        wheel_rows(Mode::Airborne(AirborneVariant::Parachute)).len(),
+        2
+    );
+    assert!(wheel_rows(Mode::OnFoot(OnFootVariant::Swimming)).is_empty());
+    assert!(wheel_rows(Mode::Airborne(AirborneVariant::Wingsuit)).is_empty());
+}
+
+#[test]
 fn the_parachute_handles_are_described_only_under_the_parachute() {
     let features = Features {
         parachute_handles: true,

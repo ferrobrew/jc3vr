@@ -1,5 +1,6 @@
 //! UI manager detours: world-to-screen compensation for the floating HUD panel, the render-root
-//! partition's capture and render seams, the world markers' classification and capture snapshot,
+//! partition's capture and render seams, the HUD atlas's moves and the world markers'
+//! classification and capture snapshot,
 //! (in [`hud`]) the HUD's point-of-interest update, and (in [`mouse`]) the game UI's mouse input.
 //!
 //! [`get_2d_info`](UIManager::Get2DInfo) is the gameplay marker placement function. When the HUD
@@ -117,8 +118,10 @@ fn convert_3d_coords_default(
 /// where every display-tree writer is quiescent. The render-root partition maintains itself here
 /// (build, per-frame reconcile against pool churn, teardown), and the issue #8 overlay suppression
 /// and the controller scheme's reticle and button-hint hiding write here, so the engine's own
-/// capture carries everything; the original then runs unchanged. Movies other than the main UI movie (the render-to-texture instances) pass
-/// through untouched. See [`crate::hud::split::roots`] and [`crate::hud::scaleform`].
+/// capture carries everything; the original then runs unchanged. The HUD atlas and the world
+/// markers move their clips into atlas cells for this capture only and move them back after it.
+/// Movies other than the main UI movie (the render-to-texture instances) pass through untouched.
+/// See [`crate::hud::split::roots`], [`crate::hud::scaleform`], and [`crate::hud::atlas`].
 #[detour(address = MovieImpl::CaptureImpl_ADDRESS)]
 fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     // SAFETY: the UI manager is a live singleton past startup; the pointer comparison does not
@@ -126,11 +129,11 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     let is_main_movie =
         unsafe { UIManager::get().is_some_and(|manager| std::ptr::eq(manager.m_Movie, this)) };
     if is_main_movie {
-        let (split_enabled, suppress_overlays, world_markers) = Config::lock_query(|c| {
+        let (split_enabled, suppress_overlays, hud) = Config::lock_query(|c| {
             (
                 c.hud.redirect && c.hud.quad && c.hud.split,
                 c.hud.suppress_overlays,
-                c.hud.world_markers,
+                c.hud,
             )
         });
         // The partition persists across menus and pauses: the render detour only composites
@@ -149,14 +152,22 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
                 roots::on_capture(movie, split_active);
                 log_pipeline_lag(movie, split_active);
             }
-            crate::hud::world_markers::on_capture(&world_markers);
+            // The atlas moves its parts into their cells for this capture only, and the world
+            // markers move into the atlas's marker cells.
+            let atlas = crate::hud::atlas::begin_capture(&hud);
+            crate::hud::world_markers::on_capture(&hud.world_markers, atlas.as_ref());
+            crate::hud::anchored::sample_status(&hud);
         }
     }
     let result = MOVIE_CAPTURE.get().unwrap().call(this, if_changed);
-    // The world-marker snapshot is keyed by the snapshot this capture produced.
-    // SAFETY: `this` is the live movie the capture ran on.
+    // Everything moved for the capture moves back before the next advance, and the world-marker
+    // and atlas layouts are keyed by the snapshot this capture produced.
+    // SAFETY: `this` is the live movie the capture ran on, at the capture seam.
     if is_main_movie && let Some(movie) = unsafe { this.as_ref() } {
-        crate::hud::world_markers::after_capture(movie);
+        unsafe {
+            crate::hud::world_markers::after_capture(movie);
+            crate::hud::atlas::after_capture(movie);
+        }
     }
     result
 }

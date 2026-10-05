@@ -137,6 +137,8 @@ pub(crate) fn refresh(
             sight_chord: controls.sight_chord,
             trackpad_shows_summary: config.summary.show_on_trackpad_touch
                 && frame.hand(off).profile == InteractionProfile::ValveIndex,
+            wheel_trackpad: weapons.wheel.enabled && weapons.wheel.trackpad,
+            wheel_stick: weapons.wheel.enabled && weapons.wheel.stick,
             parachute_handles: config.vehicles.parachute_handles.enabled,
             arm_steering: config.vehicles.arm_steering.wingsuit,
             physical: PhysicalFeatures {

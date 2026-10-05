@@ -28,11 +28,15 @@
 //!
 //! The module is split into the GPU resources ([`target`]), the game-side UI rebind operations
 //! ([`binding`]), the quad draw pass ([`quad`]), the [`state`] machine that drives them, and the
-//! [`config`] types for tuning parameters.
+//! [`config`] types for tuning parameters. Parts of the gameplay HUD leave the panel through the
+//! [`atlas`]: the [`world_markers`] at their world points, and the [`anchored`] readouts at the
+//! gun hand and the off-hand's wrist.
 
 pub mod aim;
+pub(crate) mod anchored;
+pub(crate) mod atlas;
 mod binding;
-mod config;
+pub(crate) mod config;
 pub mod cursor;
 pub mod depth;
 pub(crate) mod egui_panel;
@@ -170,10 +174,11 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
             eye_width,
             eye_height,
         );
-        // The atlas viewport probe lays the gameplay HUD out inside the stage only; menus keep
-        // the full layout, and a mode change re-applies the redirect with the right one.
-        let stage_safe_area =
-            cfg.world_markers.probe_stage_safe_area && current_mode() == HudMode::Hud;
+        // The atlas (and its viewport probe) lays the gameplay HUD out inside the stage only, so
+        // the bands above and below it are free for cells; menus keep the full layout, and a mode
+        // change re-applies the redirect with the right one.
+        let stage_safe_area = (cfg.atlas.enabled || cfg.world_markers.probe_stage_safe_area)
+            && current_mode() == HudMode::Hud;
         hud.ensure_redirected(device, width, height, render.0, render.1, stage_safe_area);
         hud.ensure_layers(device, cfg.split);
     } else {
@@ -289,6 +294,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         // SAFETY: the graphics engine is the live singleton on the render thread.
         let graphics_engine =
             unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() };
+        atlas::prepare_frame(device, hud.redirected_target(), mode == HudMode::Hud);
         world_markers::prepare_frame(
             context,
             device,
@@ -390,15 +396,21 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         // No panel pose this frame: the previous corners are not what the player sees.
         pointer::publish_panel(None);
         world_markers::clear_frame();
+        atlas::clear_frame();
     }
 
-    // The world markers are cropped out of this eye's HUD render (and cut out of the panel) before
-    // the panel draws, and drawn behind it: they are anchored in the world, beyond the panel.
+    // The world markers are cropped out of this eye's HUD render (from their atlas cells, or cut
+    // out of the panel) and the atlas's parts copied out of their cells before the panel draws;
+    // the bands that held the cells are then cleared, so the panel shows the stage alone. The
+    // markers draw behind the panel (they are anchored in the world, beyond it), and the hand and
+    // wrist readouts in front of it.
     world_markers::prepare_eye(context, hud.redirected_target());
+    atlas::prepare_eye(context, hud.redirected_target());
     if !crate::director::cinematic::active() {
         world_markers::draw_billboards(context, device, target);
     }
     hud.draw_quad(context, device, target, eye);
+    anchored::draw(context, device, target, eye);
     hud.clear(context);
 }
 

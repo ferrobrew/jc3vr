@@ -32,6 +32,7 @@ use crate::{
                 HeftConfig, HolstersConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
             },
             reload::config::ReloadConfig,
+            wheel::config::WheelConfig,
         },
     },
     vr::input::layout::{FloatInput, Input, provides},
@@ -690,6 +691,9 @@ pub struct WeaponsConfig {
     /// Off, a weapon comes out only from a holster, the weapon wheel, or a slot select, and the
     /// precision-aim input does not draw either.
     pub fire_draws_weapon: bool,
+    /// The weapon wheel: the game's selection cross, opened with a held input and steered by the
+    /// hand.
+    pub wheel: WheelConfig,
 }
 
 impl WeaponsConfig {
@@ -714,6 +718,7 @@ impl WeaponsConfig {
             scope: ScopeConfig::new(),
             auto_switch_when_empty: false,
             fire_draws_weapon: false,
+            wheel: WheelConfig::new(),
         }
     }
 }

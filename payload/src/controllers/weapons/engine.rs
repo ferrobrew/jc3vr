@@ -147,7 +147,8 @@ pub unsafe fn holster(owner: &mut Character) {
     unsafe { owner.HolsterWeapon() };
 }
 
-fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
+/// The inventory slot of a raw slot value, or `None` for one out of the enum's range.
+pub(super) fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
     const SLOTS: [WeaponSlot; 8] = [
         WeaponSlot::E_SLOT_DUAL_WIELD,
         WeaponSlot::E_SLOT_TWO_HANDED,

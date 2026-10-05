@@ -65,6 +65,7 @@ on_foot.next_weapon: bool
 on_foot.throw_grenade: bool
 on_foot.weapon_select_pad: vec2
 on_foot.weapon_select_press: float
+on_foot.weapon_wheel: float
 wingsuit: set
 wingsuit.steer: vec2
 wingsuit.turn: float
@@ -437,6 +438,35 @@ fn reads(set: SemanticSet, index: usize, hand: Hand, ctx: ReadCtx) -> bool {
     }
 }
 
+/// Which part of its input an action reads: a signed axis can carry one action on each half.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+enum Half {
+    Whole,
+    Negative,
+    Positive,
+}
+
+impl Half {
+    const ALL: [Half; 3] = [Half::Whole, Half::Negative, Half::Positive];
+
+    fn overlaps(self, other: Half) -> bool {
+        self == other || self == Half::Whole || other == Half::Whole
+    }
+}
+
+/// The half of its input action `index` of `set` reads: the crouch flick only pushes down the
+/// dominant stick's vertical axis, and the weapon wheel only up.
+fn half_read(set: SemanticSet, index: usize) -> Half {
+    match set {
+        SemanticSet::OnFoot => match F::ALL[index] {
+            F::CrouchFlick => Half::Negative,
+            F::WeaponWheel => Half::Positive,
+            _ => Half::Whole,
+        },
+        _ => Half::Whole,
+    }
+}
+
 #[test]
 fn actions_sharing_a_default_input_are_never_read_together() {
     for mode in ActionSetKind::ALL {
@@ -445,7 +475,7 @@ fn actions_sharing_a_default_input_are_never_read_together() {
             for dominant in Hand::BOTH {
                 for hand in Hand::BOTH {
                     for ctx in contexts() {
-                        let mut seen: HashMap<&str, String> = HashMap::new();
+                        let mut seen: HashMap<(&str, Half), String> = HashMap::new();
                         for set in sets {
                             for (index, def) in set.actions().iter().enumerate() {
                                 let Some(path) = default_path(set, index, profile, hand, dominant)
@@ -456,12 +486,18 @@ fn actions_sharing_a_default_input_are_never_read_together() {
                                     continue;
                                 }
                                 let name = format!("{}.{}", set.name(), def.name);
-                                if let Some(other) = seen.insert(path, name.clone()) {
+                                let half = half_read(set, index);
+                                let other = Half::ALL
+                                    .into_iter()
+                                    .filter(|h| h.overlaps(half))
+                                    .find_map(|h| seen.get(&(path, h)));
+                                if let Some(other) = other {
                                     panic!(
                                         "{other} and {name} both read {path} on {hand:?} of \
                                          {profile:?} ({dominant:?}-handed) in {ctx:?}"
                                     );
                                 }
+                                seen.insert((path, half), name);
                             }
                         }
                     }
@@ -501,6 +537,18 @@ fn the_defaults_mirror_the_gamepad_by_side() {
         on_foot(F::WeaponSelectPad, Hand::Left),
         Some("input/trackpad")
     );
+    for profile in Profile::ALL {
+        assert_eq!(
+            default_path(
+                SemanticSet::OnFoot,
+                F::WeaponWheel as usize,
+                profile,
+                Hand::Right,
+                Hand::Right
+            ),
+            Some("input/thumbstick/y")
+        );
+    }
     assert_eq!(
         default_path(
             SemanticSet::OnFoot,

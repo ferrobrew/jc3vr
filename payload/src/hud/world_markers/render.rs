@@ -295,6 +295,7 @@ impl Renderer {
                 true_distance,
                 drawn_distance: drawn,
                 source: if moved { source } else { DistanceSource::Point },
+                in_cell: marker.in_cell,
             });
             self.plan.push(Planned {
                 slot,

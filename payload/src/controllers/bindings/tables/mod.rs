@@ -63,6 +63,7 @@ use crate::{
         config::BindingsConfig,
         frame::Hand,
         mode::{AirborneVariant, Mode, VehicleClass},
+        weapons::wheel::select::WheelPress,
     },
     vr::input::semantic::{
         SemanticSet,
@@ -93,6 +94,11 @@ pub struct Step {
     /// Both stick clicks were held together for the recenter hold time this tick
     /// ([`stick_chord`]).
     pub recenter: bool,
+    /// Each hand's weapon wheel inputs, by [`Hand::index`]: the weapon-select trackpad press with
+    /// the quadrant it latched to, and the `weapon_wheel` action's value. The wheel
+    /// ([`crate::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
+    /// `weapon_wheel` action.
+    pub wheel: [WheelPress; 2],
 }
 
 /// The tables and their cross-tick state.
@@ -257,6 +263,12 @@ impl Bindings {
                 intents.raw(OnFootAction::CrouchFlick.id()),
                 config.crouch_flick,
             );
+        let select = OnFootAction::WeaponSelectPress.id();
+        let wheel = Hand::BOTH.map(|hand| WheelPress {
+            pad: intents.hand(select, hand).button,
+            zone: self.pads[hand.index()].zone(select),
+            stick: intents.hand(OnFootAction::WeaponWheel.id(), hand).value,
+        });
         Step {
             desired: out.desired,
             body_turn,
@@ -264,6 +276,7 @@ impl Bindings {
             grabs,
             sight_capture: chord.capture,
             recenter: arbitrated.recenter,
+            wheel,
         }
     }
 }

@@ -300,7 +300,7 @@ pub struct Character {
     _field_940: [u8; 64],
     /// The character's embedded equipment inventory.
     pub m_Inventory: crate::character::inventory::Inventory,
-    _field_d68: [u8; 888],
+    _field_df8: [u8; 744],
     /// The character's embedded HumanIK solver. Driven each frame in
     /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel), after the
     /// animation graph finalizes the local pose and before the model-space pose is computed. See

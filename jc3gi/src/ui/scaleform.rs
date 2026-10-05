@@ -95,13 +95,21 @@ impl std::convert::AsMut<DisplayHandle> for DisplayHandle {
 #[repr(C, align(16))]
 /// A display object's presentation state, read and written through
 /// [`ValueObjectInterface::GetDisplayInfo`](crate::ui::scaleform::ValueObjectInterface::GetDisplayInfo) / [`SetDisplayInfo`](crate::ui::scaleform::ValueObjectInterface::SetDisplayInfo).
-/// [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) selects which fields a write applies.
+/// [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) selects which fields a write applies; a read sets every bit it filled.
+/// A write converts [`X`](crate::ui::scaleform::DisplayInfo::X) and [`Y`](crate::ui::scaleform::DisplayInfo::Y) to whole twips (rounding down), and moves a
+/// text field's text rectangle rather than the field itself.
 pub struct DisplayInfo {
+    /// The position in the parent's space, in pixels.
     pub X: f64,
+    /// The position in the parent's space, in pixels.
     pub Y: f64,
+    /// The rotation, in degrees.
     pub Rotation: f64,
+    /// The horizontal scale, in percent (100 is unscaled).
     pub XScale: f64,
+    /// The vertical scale, in percent (100 is unscaled).
     pub YScale: f64,
+    /// The opacity, in percent (100 is opaque).
     pub Alpha: f64,
     pub Z: f64,
     pub XRotation: f64,
@@ -129,8 +137,20 @@ fn _DisplayInfo_size_check() {
 }
 impl DisplayInfo {}
 impl DisplayInfo {
+    /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`Alpha`](crate::ui::scaleform::DisplayInfo::Alpha).
+    pub const V_ALPHA: u32 = 32;
+    /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`Rotation`](crate::ui::scaleform::DisplayInfo::Rotation).
+    pub const V_ROTATION: u32 = 4;
     /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`Visible`](crate::ui::scaleform::DisplayInfo::Visible).
     pub const V_VISIBLE: u32 = 64;
+    /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`X`](crate::ui::scaleform::DisplayInfo::X).
+    pub const V_X: u32 = 1;
+    /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`XScale`](crate::ui::scaleform::DisplayInfo::XScale).
+    pub const V_XSCALE: u32 = 8;
+    /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`Y`](crate::ui::scaleform::DisplayInfo::Y).
+    pub const V_Y: u32 = 2;
+    /// The [`VarsSet`](crate::ui::scaleform::DisplayInfo::VarsSet) bit selecting [`YScale`](crate::ui::scaleform::DisplayInfo::YScale).
+    pub const V_YSCALE: u32 = 16;
 }
 impl std::convert::AsRef<DisplayInfo> for DisplayInfo {
     fn as_ref(&self) -> &DisplayInfo {

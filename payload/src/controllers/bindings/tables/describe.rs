@@ -26,7 +26,7 @@ use crate::{
             },
         },
         frame::Hand,
-        mode::{AirborneVariant, Mode, VehicleClass},
+        mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
     },
     vr::input::semantic::{
         bound::{Layout, PhysicalSet, SourceName, SourceTable},
@@ -142,6 +142,8 @@ pub enum Gesture {
     Press,
     /// Held down past the long-press time.
     Hold,
+    /// Pushed up and held.
+    HoldUp,
     /// Pressed right after a flick of the move stick.
     AfterFlick,
     /// Flicked and let go.
@@ -209,6 +211,8 @@ pub enum ModAction {
     HelicopterControls,
     /// Hold the plane's flight stick and throttle to fly.
     PlaneControls,
+    /// Open the weapon wheel, point the hand to choose, and let go to equip.
+    WeaponWheel,
     /// Show the controls summary.
     ShowSummary,
     /// Recenter the VR view.
@@ -261,6 +265,10 @@ pub struct Features {
     pub sight_chord: bool,
     /// The trackpad touch shows the summary.
     pub trackpad_shows_summary: bool,
+    /// The weapon-select trackpad press opens the weapon wheel.
+    pub wheel_trackpad: bool,
+    /// The `weapon_wheel` action opens the weapon wheel.
+    pub wheel_stick: bool,
     /// The parachute's handles.
     pub parachute_handles: bool,
     /// The wingsuit's arm steering.
@@ -716,6 +724,27 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 Gesture::Strike,
                 Effect::Actions(vec![Action::PUSH_GRAPPLE]),
             );
+        }
+    }
+    // The weapon wheel acts where the weapon handling does: not while swimming.
+    let wheel = matches!(
+        ctx.mode,
+        Mode::OnFoot(OnFootVariant::Ground)
+            | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute)
+    );
+    if wheel && features.wheel_trackpad {
+        for (control, _) in controls(OnFootAction::WeaponSelectPress.id()) {
+            add(control, Gesture::Hold, modded(ModAction::WeaponWheel));
+        }
+    }
+    if wheel && features.wheel_stick {
+        for (control, _) in controls(OnFootAction::WeaponWheel.id()) {
+            let gesture = match control {
+                Control::Stick(..) | Control::EitherStick(_) => Gesture::HoldUp,
+                Control::Unbound => Gesture::Press,
+                _ => Gesture::Hold,
+            };
+            add(control, gesture, modded(ModAction::WeaponWheel));
         }
     }
     if features.wrist_detonator && ctx.mode != Mode::Ui {

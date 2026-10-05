@@ -71,6 +71,8 @@ pub(crate) struct MarkerStatus {
     pub true_distance: f32,
     pub drawn_distance: f32,
     pub source: DistanceSource,
+    /// Whether the marker was cropped from an atlas cell rather than from the panel.
+    pub in_cell: bool,
 }
 
 /// What set a marker's drawn distance.
@@ -100,6 +102,9 @@ pub(crate) struct MarkerRecord {
     pub origin: Vec2,
     /// The POI's 2D offset, in stage units, which the clip origin includes.
     pub offset: Vec2,
+    /// Whether the clip was moved into an atlas cell for the capture ([`crate::hud::atlas`]), so
+    /// [`origin`](Self::origin) is the cell's.
+    pub in_cell: bool,
 }
 
 /// The visible markers of one capture.

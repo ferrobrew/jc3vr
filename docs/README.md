@@ -56,7 +56,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
 - [capture.md](mod/capture.md) — the in-process recorder: the GPU pack and readback ring, the y4m stream to the host encoder, the pose sidecar, and the reframe tool.
 - [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the in-process eye capture for the trailer: decisions and the working todo list.
-- [weapon-selector.md](mod/weapon-selector.md) — the planned hand-steered weapon selector on the game's cross (not built): the two phases, the fallback, the bindings and the dual-wield conflict, and the in-game unknowns.
+- [weapon-selector.md](mod/weapon-selector.md) — the weapon wheel: the game's selection cross opened with the trackpad or the stick held up, steered by pointing the hand, its commit and cancel, its placement on the panel behind the hand, and the in-game unknowns.
 - [scaleform-movie.md](mod/scaleform-movie.md) — a mod-owned Scaleform movie (not built): why the VR settings use the pause menu instead, the hosting routes, binding and input, and the risks.
 
 ### stereo/
@@ -74,7 +74,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [fsr.md](mod/rendering/fsr.md) — FSR anti-aliasing and upscaling in the stereo pipeline.
 - [shader-patching.md](mod/rendering/shader-patching.md) — patching the game's shaders in memory at creation: the create hooks, the DXBC checksum refresh, the forced reload through `LoadShaderBundle`, the restore on eject, the sun-shadow PCF hash patch (issue #10), and the LOD dissolve patch.
 - [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md) — Intel XeSS assessed against the shipped FSR2 as anti-aliasing and as a VR upscaler: the Arc-only D3D11 backend, the D3D11on12 route that does work and what it costs, XeSS's sub-rectangle API against the eye seam, and why the recommendation is still to finish FSR2 and validate foveation.
-- [ui-decoupling.md](mod/rendering/ui-decoupling.md) — splitting HUD parts out of the one texture (proposal): why the issue #14 attempts failed, the premultiplied-alpha bug in the composite, the techniques, the atlas proposal, and the pending experiments.
+- [ui-decoupling.md](mod/rendering/ui-decoupling.md) — splitting HUD parts out of the one texture: why the issue #14 attempts failed, the premultiplied-alpha bug in the composite, the techniques, the world markers' crop prototype, and the atlas as built (marker cells, the weapon readout at the gun hand, health and heat on the wrist).
 
 ### performance/
 

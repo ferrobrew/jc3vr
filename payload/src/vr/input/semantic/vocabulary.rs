@@ -114,7 +114,12 @@ semantic_actions! {
         /// The fallback for the throw gesture; unbound by default.
         ThrowGrenade => ("throw_grenade", Bool, "Throw a grenade"),
         WeaponSelectPad => ("weapon_select_pad", Vec2, "Weapon select direction"),
-        WeaponSelectPress => ("weapon_select_press", Float, "Weapon select press"),
+        /// Opens the weapon wheel too, by default; a tap in a quadrant selects that slot.
+        WeaponSelectPress => ("weapon_select_press", Float, "Weapon select press (hold: weapon wheel)"),
+        /// Held past its open threshold, opens the weapon wheel; the hand that holds it chooses.
+        /// By default the dominant stick pushed up, the half of its vertical axis that
+        /// `crouch_flick` leaves unread.
+        WeaponWheel => ("weapon_wheel", Float, "Weapon wheel (hold, point to choose)"),
     }
 }
 

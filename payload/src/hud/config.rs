@@ -1,6 +1,9 @@
 //! Floating-HUD configuration types. See `docs/mod/hud.md`.
 
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
+
+use crate::controllers::summary::config::GlanceConfig;
 
 /// Floating-HUD settings. See `docs/mod/hud.md`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -126,6 +129,11 @@ pub struct HudConfig {
     /// [`crate::hud::world_markers`].
     #[serde(default)]
     pub world_markers: WorldMarkersConfig,
+    /// The HUD atlas: parts of the gameplay HUD moved into their own cells of the HUD texture for
+    /// the capture and drawn on their own quads (the world markers, the ammunition readout at the
+    /// gun hand, and the heat readout on the wrist). See [`crate::hud::atlas`].
+    #[serde(default)]
+    pub atlas: AtlasConfig,
 }
 impl HudConfig {
     pub const fn new() -> Self {
@@ -156,6 +164,7 @@ impl HudConfig {
             egui_panel: EguiPanelConfig::new(),
             flat_overlay_visible: true,
             world_markers: WorldMarkersConfig::new(),
+            atlas: AtlasConfig::new(),
         }
     }
 }
@@ -245,6 +254,210 @@ impl WorldMarkersConfig {
 }
 
 impl Default for WorldMarkersConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The HUD atlas ([`crate::hud::atlas`]): while it is on, the gameplay HUD lays out inside the
+/// stage (as [`WorldMarkersConfig::probe_stage_safe_area`] does), and at each capture the parts below
+/// are moved into cells in the bands above and below the stage, then moved back.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AtlasConfig {
+    /// Master toggle. Off by default until the atlas is checked in the headset.
+    pub enabled: bool,
+    /// The empty margin around every cell, in stage pixels, wider than the glows and shadows the
+    /// moved parts draw past their bounds.
+    pub gutter_px: f32,
+    /// Move the world-placed markers into cells instead of cropping them from the panel (with
+    /// [`WorldMarkersConfig::enabled`]). Markers that find no cell are cropped as before.
+    pub markers: bool,
+    /// The ammunition readout above the gun hand.
+    pub ammo: AmmoConfig,
+    /// The health and heat readout on the off-hand's wrist.
+    pub wrist: WristStatusConfig,
+    /// The weapon selection cross at the hand steering the weapon wheel.
+    pub cross: CrossConfig,
+}
+
+impl AtlasConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            gutter_px: 6.0,
+            markers: true,
+            ammo: AmmoConfig::new(),
+            wrist: WristStatusConfig::new(),
+            cross: CrossConfig::new(),
+        }
+    }
+}
+
+impl Default for AtlasConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The weapon readout (`MCI_weapons_parent`: the weapon's name and icon, the magazine bar, and the
+/// reserve) drawn above the hand that holds the gun, under the controller scheme. The game shows
+/// it while a gun is out and fades it when holstered; the quad carries that fade.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AmmoConfig {
+    pub enabled: bool,
+    /// The readout's extents around its clip's origin, in the clip's own pixels.
+    pub extents: CropExtents,
+    /// The largest scale the readout is captured at; it is scaled down further to fit a band.
+    pub max_scale: f32,
+    /// The quad's centre in the right hand's grip frame, metres (+Y up from the fist, +Z back
+    /// along the forearm, +X out of the back of the right hand). Mirrored on X for the left hand.
+    pub offset_m: Vec3,
+    /// The quad's width, metres; its height follows the cell's aspect.
+    pub width_m: f32,
+    /// The halflife of the quad's follow of the hand, seconds.
+    pub follow_halflife_s: f32,
+    /// How long the quad stays on the last gun hand after no hand holds a gun, seconds, so the
+    /// game's fade-out plays where the gun was.
+    pub linger_s: f32,
+}
+
+impl AmmoConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            extents: CropExtents {
+                left: 25.0,
+                right: 285.0,
+                up: 90.0,
+                down: 175.0,
+            },
+            max_scale: 1.0,
+            offset_m: Vec3::new(0.03, 0.09, 0.04),
+            width_m: 0.10,
+            follow_halflife_s: 0.05,
+            linger_s: 1.5,
+        }
+    }
+}
+
+impl Default for AmmoConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The game's weapon selection cross (`MCI_weapon_selection_wheel`) drawn where the hand steering
+/// the weapon wheel was when the wheel opened, under the controller scheme, while the wheel shows
+/// it and for its hide animation after. Without the atlas, the wheel places the cross on the panel
+/// instead.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CrossConfig {
+    pub enabled: bool,
+    /// Room added around the cross's own extent (which the game reports), in its own pixels, for
+    /// its glows and its arms' highlight animations.
+    pub margin_px: f32,
+    /// The largest scale the cross is captured at; it is scaled down further to fit a band.
+    pub max_scale: f32,
+    /// The quad's width, metres; its height follows the cell's aspect.
+    pub width_m: f32,
+    /// How far the quad is pulled from the hand toward the head, metres, so the hand does not
+    /// cover it.
+    pub pull_m: f32,
+}
+
+impl CrossConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            margin_px: 12.0,
+            max_scale: 1.0,
+            width_m: 0.18,
+            pull_m: 0.08,
+        }
+    }
+}
+
+impl Default for CrossConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// When the wrist readout shows.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WristVisibility {
+    /// Always, while the wrist is tracked.
+    Always,
+    /// While the player glances at the inside of the wrist.
+    Glance,
+    /// On a glance, and also on its own while health is low, for a while after damage, and while
+    /// the player has heat.
+    Auto,
+}
+
+/// The health bar (drawn by the mod from the player character's health) and the heat readout
+/// (`MCI_heat_container`, moved into a cell) on the inside of the off-hand's wrist, under the
+/// controller scheme. The controls summary sits on the back of the same wrist.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WristStatusConfig {
+    pub enabled: bool,
+    pub visibility: WristVisibility,
+    /// Show the health bar.
+    pub health: bool,
+    /// Show the heat readout.
+    pub heat: bool,
+    /// The heat readout's extents around its clip's origin, in the clip's own pixels.
+    pub heat_extents: CropExtents,
+    /// The largest scale the heat readout is captured at; it is scaled down further to fit a band.
+    pub heat_max_scale: f32,
+    /// The panel's centre in the grip frame, metres: +X out of the palm, +Z back along the forearm
+    /// (mirrored on X between the hands, so +X is the palm side of either). The default sits
+    /// toward the elbow from the C4 detonator button on the same side of the wrist.
+    pub offset_m: Vec3,
+    /// The panel's width, metres.
+    pub width_m: f32,
+    /// The health bar's width over its height.
+    pub bar_aspect: f32,
+    /// The glance that shows it.
+    pub glance: GlanceConfig,
+    /// The fade in and out, seconds.
+    pub fade_s: f32,
+    /// How long it shows after damage under [`WristVisibility::Auto`], seconds.
+    pub after_damage_s: f32,
+    /// The health fraction at and below which it shows under [`WristVisibility::Auto`].
+    pub low_health: f32,
+}
+
+impl WristStatusConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            visibility: WristVisibility::Auto,
+            health: true,
+            heat: true,
+            heat_extents: CropExtents {
+                left: 140.0,
+                right: 170.0,
+                up: 110.0,
+                down: 30.0,
+            },
+            heat_max_scale: 1.0,
+            offset_m: Vec3::new(0.04, 0.0, 0.16),
+            width_m: 0.08,
+            bar_aspect: 10.0,
+            glance: GlanceConfig::new(),
+            fade_s: 0.15,
+            after_damage_s: 4.0,
+            low_health: 0.35,
+        }
+    }
+}
+
+impl Default for WristStatusConfig {
     fn default() -> Self {
         Self::new()
     }

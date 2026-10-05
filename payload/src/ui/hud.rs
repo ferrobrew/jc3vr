@@ -5,7 +5,11 @@ use parking_lot::Mutex;
 
 use crate::{
     config,
-    hud::{HUD_STATE, scaleform::request_set_clip_visible},
+    hud::{
+        HUD_STATE,
+        config::{CropExtents, WristVisibility},
+        scaleform::request_set_clip_visible,
+    },
 };
 
 /// Preview size (px) for the redirected HUD texture, independent of the Render tab's preview size.
@@ -368,6 +372,7 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
     }
 
     world_markers_ui(ui);
+    atlas_ui(ui);
     scaleform_debug_ui(ui);
     pause_menu_ui(ui);
 }
@@ -463,7 +468,9 @@ fn world_markers_ui(ui: &mut egui::Ui) {
                 egui::Grid::new("world_markers_grid")
                     .striped(true)
                     .show(ui, |ui| {
-                        for header in ["id", "world", "origin", "texels", "true", "drawn", "by"] {
+                        for header in [
+                            "id", "world", "origin", "texels", "true", "drawn", "by", "from",
+                        ] {
                             ui.label(header);
                         }
                         ui.end_row();
@@ -481,6 +488,7 @@ fn world_markers_ui(ui: &mut egui::Ui) {
                             ui.label(format!("{:.1} m", m.true_distance));
                             ui.label(format!("{:.1} m", m.drawn_distance));
                             ui.label(format!("{:?}", m.source));
+                            ui.label(if m.in_cell { "cell" } else { "panel" });
                             ui.end_row();
                         }
                     });
@@ -522,6 +530,237 @@ fn world_markers_ui(ui: &mut egui::Ui) {
                     (-safe.y1).max(0.0),
                 ));
             }
+        }
+    });
+}
+
+/// The HUD atlas's settings (the hand and wrist readouts with it), and its live readout.
+fn atlas_ui(ui: &mut egui::Ui) {
+    ui.collapsing(
+        "HUD atlas: hand ammunition, wrist status, marker cells",
+        |ui| {
+            {
+                let mut cfg = config::CONFIG.lock();
+                let a = &mut cfg.hud.atlas;
+                ui.checkbox(
+                &mut a.enabled,
+                "Move HUD parts into cells above and below the stage, and draw them on their own \
+                 quads",
+            );
+                ui.add(
+                    egui::Slider::new(&mut a.gutter_px, 0.0..=24.0).text("Cell gutter (stage px)"),
+                );
+                ui.checkbox(
+                    &mut a.markers,
+                    "Move the world markers into cells (otherwise they are cropped from the panel)",
+                );
+                ui.separator();
+                ui.checkbox(&mut a.ammo.enabled, "Weapon readout above the gun hand");
+                ui.indent("atlas_ammo", |ui| {
+                    extents_ui(ui, &mut a.ammo.extents, "atlas_ammo_extents");
+                    ui.add(
+                        egui::Slider::new(&mut a.ammo.max_scale, 0.1..=1.0).text("Largest scale"),
+                    );
+                    vec3_ui(
+                        ui,
+                        &mut a.ammo.offset_m,
+                        "Offset in the right grip (m)",
+                        0.3,
+                    );
+                    ui.add(egui::Slider::new(&mut a.ammo.width_m, 0.03..=0.3).text("Width (m)"));
+                    ui.add(
+                        egui::Slider::new(&mut a.ammo.follow_halflife_s, 0.0..=0.3)
+                            .text("Follow halflife (s)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut a.ammo.linger_s, 0.0..=5.0)
+                            .text("Linger after the gun leaves the hand (s)"),
+                    );
+                });
+                ui.separator();
+                ui.checkbox(
+                    &mut a.cross.enabled,
+                    "Weapon selection cross at the hand steering the weapon wheel",
+                );
+                ui.indent("atlas_cross", |ui| {
+                    ui.add(
+                        egui::Slider::new(&mut a.cross.margin_px, 0.0..=60.0)
+                            .text("Margin around its extent (clip px)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut a.cross.max_scale, 0.1..=1.0).text("Largest scale"),
+                    );
+                    ui.add(egui::Slider::new(&mut a.cross.width_m, 0.05..=0.5).text("Width (m)"));
+                    ui.add(
+                        egui::Slider::new(&mut a.cross.pull_m, 0.0..=0.3)
+                            .text("Pull from the hand toward the head (m)"),
+                    );
+                });
+                ui.separator();
+                let w = &mut a.wrist;
+                ui.checkbox(
+                    &mut w.enabled,
+                    "Health and heat on the inside of the off-hand's wrist",
+                );
+                ui.indent("atlas_wrist", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Shows");
+                        for (value, label) in [
+                            (
+                                WristVisibility::Auto,
+                                "on a glance, low health, damage, or heat",
+                            ),
+                            (WristVisibility::Glance, "on a glance"),
+                            (WristVisibility::Always, "always"),
+                        ] {
+                            ui.radio_value(&mut w.visibility, value, label);
+                        }
+                    });
+                    ui.checkbox(&mut w.health, "Health bar");
+                    ui.checkbox(&mut w.heat, "Heat readout");
+                    extents_ui(ui, &mut w.heat_extents, "atlas_heat_extents");
+                    ui.add(
+                        egui::Slider::new(&mut w.heat_max_scale, 0.1..=1.0)
+                            .text("Largest heat scale"),
+                    );
+                    vec3_ui(
+                        ui,
+                        &mut w.offset_m,
+                        "Offset in the grip, +X out of the palm (m)",
+                        0.3,
+                    );
+                    ui.add(egui::Slider::new(&mut w.width_m, 0.03..=0.2).text("Width (m)"));
+                    ui.add(
+                        egui::Slider::new(&mut w.bar_aspect, 2.0..=20.0).text("Health bar aspect"),
+                    );
+                    ui.add(egui::Slider::new(&mut w.low_health, 0.0..=1.0).text("Low health"));
+                    ui.add(
+                        egui::Slider::new(&mut w.after_damage_s, 0.0..=15.0)
+                            .text("Show after damage (s)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut w.glance.view_cone_deg, 5.0..=60.0)
+                            .text("Glance view cone (deg)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut w.glance.facing_deg, 5.0..=90.0)
+                            .text("Glance facing (deg)"),
+                    );
+                    ui.add(egui::Slider::new(&mut w.fade_s, 0.0..=1.0).text("Fade (s)"));
+                });
+            }
+
+            ui.separator();
+            let status = crate::hud::atlas::status();
+            ui.label(format!(
+                "Moves {}, restores {}, move failures {}, restore failures {}, drift {}",
+                status.moves,
+                status.restores,
+                status.move_failures,
+                status.restore_failures,
+                status.drift,
+            ));
+            match &status.frame {
+                None => {
+                    ui.label(
+                        "Not drawing (off, outside gameplay, or the stage layout is not applied).",
+                    );
+                }
+                Some(frame) => {
+                    ui.label(format!(
+                        "Layout snapshot {}, displayed {} ({}); HUD texture {}x{}",
+                        frame.snapshot,
+                        frame.displayed_snapshot,
+                        if frame.matched {
+                            "matched"
+                        } else {
+                            "newest layout"
+                        },
+                        frame.texture.0,
+                        frame.texture.1,
+                    ));
+                    let band = frame.layout.bands[0];
+                    ui.label(format!(
+                        "Bands {:.0}x{:.0} stage px above and below the stage; {} marker cells, \
+                     label cell {}",
+                        band.size.x,
+                        band.size.y,
+                        frame.layout.markers.len(),
+                        if frame.layout.label.is_some() {
+                            "placed"
+                        } else {
+                            "none"
+                        },
+                    ));
+                    for (name, cell) in [
+                        ("Weapon readout", frame.ammo),
+                        ("Heat readout", frame.heat),
+                        ("Selection cross", frame.cross),
+                    ] {
+                        ui.label(match cell {
+                            Some(cell) => format!(
+                                "{name}: cell ({:.0}, {:.0}) {:.0}x{:.0} at scale {:.2}",
+                                cell.rect.min.x,
+                                cell.rect.min.y,
+                                cell.rect.size.x,
+                                cell.rect.size.y,
+                                cell.scale,
+                            ),
+                            None => format!("{name}: not moved"),
+                        });
+                    }
+                }
+            }
+            let anchored = crate::hud::anchored::status();
+            ui.label(format!(
+            "Weapon readout on {}; health {}; heat level {}; wrist {:.0}% (glance {}, attention \
+             {}, heat {})",
+            anchored
+                .ammo_hand
+                .map_or("no hand".to_owned(), |hand| format!("{hand:?}")),
+            anchored.health.map_or("not sampled".to_owned(), |(health, trail)| format!(
+                "{:.0}% (trail {:.0}%)",
+                health * 100.0,
+                trail * 100.0
+            )),
+            anchored.heat_level,
+            anchored.wrist_alpha * 100.0,
+            anchored.glance,
+            anchored.attention,
+            if anchored.heat_drawn { "drawn" } else { "not drawn" },
+        ));
+            ui.label(match anchored.cross_alpha {
+                Some(alpha) => format!(
+                    "Selection cross at the steering hand, {:.0}%",
+                    alpha * 100.0
+                ),
+                None => "Selection cross not drawn at a hand".to_owned(),
+            });
+        },
+    );
+}
+
+/// Sliders for a part's extents around its clip's origin.
+fn extents_ui(ui: &mut egui::Ui, extents: &mut CropExtents, id: &str) {
+    ui.label("Extents around the clip origin (clip px)");
+    ui.indent(id, |ui| {
+        ui.add(egui::Slider::new(&mut extents.left, 0.0..=600.0).text("Left"));
+        ui.add(egui::Slider::new(&mut extents.right, 0.0..=600.0).text("Right"));
+        ui.add(egui::Slider::new(&mut extents.up, 0.0..=400.0).text("Up"));
+        ui.add(egui::Slider::new(&mut extents.down, 0.0..=400.0).text("Down"));
+    });
+}
+
+/// Sliders for a small offset, each axis within `range` metres.
+fn vec3_ui(ui: &mut egui::Ui, value: &mut glam::Vec3, label: &str, range: f32) {
+    ui.label(label);
+    ui.horizontal(|ui| {
+        for (axis, name) in [
+            (&mut value.x, "X"),
+            (&mut value.y, "Y"),
+            (&mut value.z, "Z"),
+        ] {
+            ui.add(egui::Slider::new(axis, -range..=range).text(name));
         }
     });
 }

@@ -54,7 +54,39 @@ pub struct Inventory {
     /// without the planted-explosives ability. One half of
     /// [`GetAnimationAllowsTriggeringExplosives`](crate::character::inventory::Inventory::GetAnimationAllowsTriggeringExplosives).
     pub m_DoesAnimationAllowTriggeringExplosives: bool,
-    _field_18c: [u8; 36],
+    _field_18c: [u8; 6],
+    /// Whether the current animation permits the weapon-selection input; one half of
+    /// [`GetAnimationAllowsSwitchWeaponGUI`](crate::character::inventory::Inventory::GetAnimationAllowsSwitchWeaponGUI).
+    pub m_DoesAnimationAllowSwitchWeaponGUI: bool,
+    /// Whether the current animation permits selecting the planted explosive.
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) offers the
+    /// [`E_SLOT_PLANTED_EXPLOSIVE`](crate::character::inventory::WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE) slot to the selection only
+    /// while it is set, the slot holds a weapon, the player has the planted-explosives ability, and
+    /// the owner's
+    /// [`SB_DISABLE_SWITCH_TO_PLANTED_EXPLOSIVE`](crate::state::StateBitFlag::SB_DISABLE_SWITCH_TO_PLANTED_EXPLOSIVE)
+    /// state bit is clear.
+    pub m_DoesAnimationAllowSwitchToPlantedExplosive: bool,
+    _field_194: [u8; 8],
+    /// Set by a holster click in [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling): while set,
+    /// the weapon selection is hidden and records no slot
+    /// ([`m_SlotToSelectOnRelease`](crate::character::inventory::Inventory::m_SlotToSelectOnRelease) stays
+    /// [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE)). It clears once every slot-select input is zero.
+    pub m_WeaponSwitchInputConsumed: bool,
+    _field_19d: [u8; 3],
+    /// Seconds a pending selection has waited: while
+    /// [`m_SlotToSelectOnRelease`](crate::character::inventory::Inventory::m_SlotToSelectOnRelease) is set with no select input held,
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) counts it up and shows the pending slot
+    /// alone on the HUD until it passes two seconds. Zero otherwise.
+    pub m_WeaponSwitchQueuedTimer: f32,
+    /// The slot the last weapon cycle step (`PREV_WEAPON` / `NEXT_WEAPON`) chose.
+    pub m_LastCycleSelectedWeaponSlot: crate::character::inventory::WeaponSlot,
+    /// The slot a weapon cycle step queued, or [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE). Once
+    /// [`m_CycleSelectedWeaponTimer`](crate::character::inventory::Inventory::m_CycleSelectedWeaponTimer) reaches half a second with
+    /// no further step, it becomes [`m_SlotToSelectOnRelease`](crate::character::inventory::Inventory::m_SlotToSelectOnRelease)
+    /// (or is dropped when it is the selected slot), and a held slot-select input clears it.
+    pub m_QueuedCycleSelectedWeaponSlot: crate::character::inventory::WeaponSlot,
+    /// Seconds since the last weapon cycle step.
+    pub m_CycleSelectedWeaponTimer: f32,
     /// The character's reserve of each kind of ammunition, indexed by [`AmmunitionType`](crate::equipment::weapon::AmmunitionType) (up to
     /// [`NOF_AMMO_TYPES`](crate::equipment::weapon::AmmunitionType::NOF_AMMO_TYPES)). A weapon's magazine
     /// ([`WeaponBase::m_MagazineAmmo`](crate::equipment::weapon::WeaponBase::m_MagazineAmmo)) is separate;
@@ -68,10 +100,27 @@ pub struct Inventory {
     _field_238: [u8; 424],
     /// The character that owns the inventory.
     pub m_Character: *mut crate::character::character::Character,
+    _field_3e8: [u8; 12],
+    /// The slot the weapon selection commits when every slot-select input is released, or
+    /// [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE). While a slot-select input is held,
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) rewrites it every frame with the winning
+    /// slot, or with [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE) when the winner is the wielded weapon's slot or
+    /// holds no weapon. On a frame with every slot-select input zero and this set, it switches to
+    /// the slot (`CCharacter::SwitchWeapon`) when the animation allows switching, or selects and
+    /// draws it with nothing wielded, and resets it to [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE); otherwise it
+    /// stays set and the commit is retried every frame. Entering a vehicle seat other than a
+    /// motorcycle's resets it.
+    pub m_SlotToSelectOnRelease: crate::character::inventory::WeaponSlot,
+    _field_3f8: [u8; 120],
+    /// Under keyboard semantics, whether the planted explosive is offered to the weapon selection.
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) sets it on any frame the explosives
+    /// select input reads zero; under gamepad semantics it is not consulted.
+    pub m_CanSelectExplosiveOnRelease: bool,
+    _field_471: [u8; 7],
 }
 fn _Inventory_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x3E8], Inventory>([0u8; 0x3E8]);
+        ::std::mem::transmute::<[u8; 0x478], Inventory>([0u8; 0x478]);
     }
     unreachable!()
 }
@@ -323,6 +372,22 @@ impl Inventory {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
                 Self::GetAnimationAllowsPickup_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetAnimationAllowsSwitchWeaponGUI_ADDRESS: usize = 0x1408BB750;
+    /// Whether the weapon-selection input is read:
+    /// [`m_DoesAnimationAllowSwitchWeaponGUI`](crate::character::inventory::Inventory::m_DoesAnimationAllowSwitchWeaponGUI) is set
+    /// and the owner's
+    /// [`SB_DISABLE_SWITCH_WEAPON_GUI`](crate::state::StateBitFlag::SB_DISABLE_SWITCH_WEAPON_GUI) state bit
+    /// is clear. Its one caller, the player's global input update, folds the slot-select and cycle
+    /// actions into [`Character::m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs)
+    /// only while it holds, so while it is false those inputs read zero.
+    pub unsafe fn GetAnimationAllowsSwitchWeaponGUI(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsSwitchWeaponGUI_ADDRESS,
             );
             f(self as *const Self as _)
         }

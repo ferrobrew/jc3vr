@@ -150,6 +150,7 @@ impl Bindings {
             grabs,
             sight_capture: chord.capture,
             recenter: arbitrated.recenter,
+            wheel: Default::default(),
         }
     }
 }

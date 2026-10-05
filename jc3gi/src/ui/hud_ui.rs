@@ -64,7 +64,24 @@ pub struct HUDUI {
     /// Whether the sniper-scope overlay is shown, set by [`ShowSniperOverlay`](crate::ui::hud_ui::HUDUI::ShowSniperOverlay)
     /// and cleared by [`HideSniperOverlay`](crate::ui::hud_ui::HUDUI::HideSniperOverlay).
     pub m_ShowingSniperOverlay: bool,
-    _field_219: [u8; 617],
+    _field_219: [u8; 3],
+    /// The selection state last pushed to the movie by
+    /// [`UpdateWeaponSelection`](crate::ui::hud_ui::HUDUI::UpdateWeaponSelection).
+    pub m_LastWeaponSelectionParams: crate::ui::hud_ui::WeaponSelectionParams,
+    /// The movie's weapon selection clip, `MCI_weapon_selection_wheel`: a managed display-object
+    /// value. [`UpdateWeaponSelectionPlacement`](crate::ui::hud_ui::HUDUI::UpdateWeaponSelectionPlacement) writes its
+    /// position each frame.
+    pub m_SelectionWheelUi: crate::ui::scaleform::Value,
+    _field_258: [u8; 24],
+    /// The selection clip's extent around its position for the current layout, in stage pixels, as
+    /// the movie's `GetWeaponSelectionWheelBB{Bottom,Top,Left,Right}` report it, in that order (`x`
+    /// to `w`). [`RecalculateWheelBB`](crate::ui::hud_ui::HUDUI::RecalculateWheelBB) refreshes it.
+    /// [`UpdateWeaponSelectionPlacement`](crate::ui::hud_ui::HUDUI::UpdateWeaponSelectionPlacement) keeps the clip's x
+    /// between the safe area's left minus `z` and its right minus `w`, and its y between the safe
+    /// area's top minus `y` and its bottom minus `x`, so each component is an edge's signed offset
+    /// from the clip's position.
+    pub m_SelectionWheelBB: crate::types::math::Vector4,
+    _field_280: [u8; 514],
     /// The health last pushed to the movie by [`UpdateHealth`](crate::ui::hud_ui::HUDUI::UpdateHealth);
     /// [`InitHealth`](crate::ui::hud_ui::HUDUI::InitHealth) resets it to -1 so the next update pushes again.
     pub m_LastHealth: i16,
@@ -279,6 +296,61 @@ impl HUDUI {
             f(self as *mut Self as _)
         }
     }
+    pub const UpdateWeaponSelection_ADDRESS: usize = 0x140E2BCA0;
+    /// Pushes the weapon selection to the movie's `UpdateWeaponSelection` (the selected slot, the
+    /// shown flag, and the four valid flags) when any field differs from
+    /// [`m_LastWeaponSelectionParams`](crate::ui::hud_ui::HUDUI::m_LastWeaponSelectionParams), and stores it there. Its
+    /// only caller is [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling),
+    /// which calls it every frame for the player, so it runs in the characters' parallel update. In
+    /// the movie, a show edge tweens the arms out, the shown selection highlights the selected arm
+    /// and dims the others, and a hide edge fades the selected arm out while scaling it up.
+    pub unsafe fn UpdateWeaponSelection(
+        &mut self,
+        params: *const crate::ui::hud_ui::WeaponSelectionParams,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                params: *const crate::ui::hud_ui::WeaponSelectionParams,
+            ) = ::std::mem::transmute(Self::UpdateWeaponSelection_ADDRESS);
+            f(self as *mut Self as _, params)
+        }
+    }
+    pub const UpdateWeaponSelectionPlacement_ADDRESS: usize = 0x140E2BF20;
+    /// Places the weapon selection clip ([`m_SelectionWheelUi`](crate::ui::hud_ui::HUDUI::m_SelectionWheelUi)) over
+    /// `character`'s hips. It takes the hips bone's world position, projects it through the render
+    /// camera's view-projection with [`UIManager::Convert3DCoords`](crate::ui::ui_manager::UIManager::Convert3DCoords),
+    /// clamps it so that [`m_SelectionWheelBB`](crate::ui::hud_ui::HUDUI::m_SelectionWheelBB) stays inside
+    /// [`UIManager::m_SafeArea`](crate::ui::ui_manager::UIManager::m_SafeArea) (or, when the point does not
+    /// project, centres it horizontally at the bottom of the safe area), averages it with the last
+    /// three positions, and writes the clip's x and y through
+    /// [`SetDisplayInfo`](crate::ui::scaleform::ValueObjectInterface::SetDisplayInfo). Called every frame
+    /// from [`Update`](crate::ui::hud_ui::HUDUI::Update); it does not read `dt`.
+    pub unsafe fn UpdateWeaponSelectionPlacement(
+        &mut self,
+        character: *mut crate::character::character::Character,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateWeaponSelectionPlacement_ADDRESS);
+            f(self as *mut Self as _, character, dt)
+        }
+    }
+    pub const RecalculateWheelBB_ADDRESS: usize = 0x140E117E0;
+    /// Refreshes [`m_SelectionWheelBB`](crate::ui::hud_ui::HUDUI::m_SelectionWheelBB) from the movie. Called when the
+    /// weapons are initialised and when gamepad use changes, which changes the clip's layout.
+    pub unsafe fn RecalculateWheelBB(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RecalculateWheelBB_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl HUDUI {
     /// The value `OnOmniDamage` writes into [`UIManager::m_GrabScreenTimer`](crate::ui::ui_manager::UIManager::m_GrabScreenTimer) (seconds) when
@@ -358,6 +430,51 @@ impl std::convert::AsRef<POIRecord> for POIRecord {
 }
 impl std::convert::AsMut<POIRecord> for POIRecord {
     fn as_mut(&mut self) -> &mut POIRecord {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// The weapon selection's state as [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)
+/// computes it each frame for the player (`CHUDUI::SWeaponSelectionParams`), passed to
+/// [`HUDUI::UpdateWeaponSelection`](crate::ui::hud_ui::HUDUI::UpdateWeaponSelection).
+pub struct WeaponSelectionParams {
+    /// Whether the selection is shown: while a slot-select input is held (always under gamepad
+    /// semantics; under keyboard semantics not for the planted explosive), and for a short while
+    /// after a release whose commit is still pending or a weapon cycle step.
+    pub m_Show: bool,
+    _field_1: [u8; 3],
+    /// The highlighted slot: the winning slot-select input's slot, the pending or cycled slot, or
+    /// [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE) when the winner holds no weapon.
+    pub m_SelectedSlot: crate::character::inventory::WeaponSlot,
+    /// Whether the [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) slot is offered: it holds a
+    /// weapon.
+    pub m_DualWieldIsValid: bool,
+    /// Whether the [`E_SLOT_TWO_HANDED`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED) slot is offered: it holds a
+    /// weapon.
+    pub m_TwoHandedIsValid: bool,
+    /// Whether the [`E_SLOT_TWO_HANDED_SPECIAL`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL) slot is
+    /// offered: it holds a weapon, other than a mortar whose mortar mode is unavailable.
+    pub m_TwoHandedSpecialIsValid: bool,
+    /// Whether the [`E_SLOT_PLANTED_EXPLOSIVE`](crate::character::inventory::WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE) slot is
+    /// offered (see
+    /// [`Inventory::m_DoesAnimationAllowSwitchToPlantedExplosive`](crate::character::inventory::Inventory::m_DoesAnimationAllowSwitchToPlantedExplosive)).
+    pub m_PlantedExplosiveIsValid: bool,
+}
+fn _WeaponSelectionParams_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC], WeaponSelectionParams>([0u8; 0xC]);
+    }
+    unreachable!()
+}
+impl WeaponSelectionParams {}
+impl std::convert::AsRef<WeaponSelectionParams> for WeaponSelectionParams {
+    fn as_ref(&self) -> &WeaponSelectionParams {
+        self
+    }
+}
+impl std::convert::AsMut<WeaponSelectionParams> for WeaponSelectionParams {
+    fn as_mut(&mut self) -> &mut WeaponSelectionParams {
         self
     }
 }

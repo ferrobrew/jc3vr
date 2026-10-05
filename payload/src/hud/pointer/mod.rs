@@ -22,7 +22,6 @@ mod panel;
 mod route;
 
 use crate::hud::cursor;
-pub(crate) use crate::hud::pointer::egui_controller::update_egui_controller;
 pub use crate::hud::pointer::{
     controller::{
         ControllerPointer, clear_controller, owns_menu_trigger, selected_controller,
@@ -33,6 +32,10 @@ pub use crate::hud::pointer::{
     },
     panel::{RenderedPanel, publish_camera, publish_egui_panel, publish_panel, rendered_camera},
     route::{PendingRoute, RoutedPointer, peek_route, reset_route, route_game_pointer},
+};
+pub(crate) use crate::hud::pointer::{
+    egui_controller::update_egui_controller,
+    panel::{aim_at_panel, intersect_panel},
 };
 
 /// The panel-texture UV of the desktop mouse this frame, or `None` when no mouse position or window

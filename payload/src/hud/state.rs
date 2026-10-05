@@ -35,6 +35,19 @@ pub struct WarpFrame {
 /// Global HUD state. Locked briefly on the render thread.
 pub static HUD_STATE: Mutex<HudState> = Mutex::new(HudState::new());
 
+/// What the applied redirect laid the HUD out for: the texture's size and whether the safe area
+/// hugs the stage. Read by the capture seam, which must not take [`HUD_STATE`] for it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct AppliedRedirect {
+    pub texture: (u32, u32),
+    pub stage_safe_area: bool,
+}
+
+/// The applied redirect, or `None` while the HUD is not redirected.
+pub(crate) fn applied_redirect() -> Option<AppliedRedirect> {
+    *APPLIED_REDIRECT.lock()
+}
+
 /// The live HUD-redirect state (render thread only, apart from the preview registration on the UI
 /// thread).
 pub struct HudState {
@@ -219,6 +232,10 @@ impl HudState {
         {
             self.redirected = true;
         }
+        *APPLIED_REDIRECT.lock() = self.redirected.then_some(AppliedRedirect {
+            texture: (texture_width, texture_height),
+            stage_safe_area,
+        });
     }
 
     /// Ensure the extra layer targets exist at the main target's size while the split is enabled,
@@ -278,6 +295,7 @@ impl HudState {
             self.redirected = false;
         }
         self.target = None;
+        *APPLIED_REDIRECT.lock() = None;
     }
 
     /// The frame's dynamic panel distance: dispatch the depth-histogram pass, pick up the async
@@ -659,3 +677,6 @@ impl HudState {
         }
     }
 }
+
+/// The applied redirect, written by [`HudState`] on the render thread (a leaf lock).
+static APPLIED_REDIRECT: Mutex<Option<AppliedRedirect>> = Mutex::new(None);

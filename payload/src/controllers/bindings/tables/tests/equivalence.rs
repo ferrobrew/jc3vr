@@ -449,7 +449,7 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
                 Reload => on(Dom, UpperFace),
                 ReleaseTethers => on(Off, UpperFace),
                 Detonate => on(Dom, ThumbstickClick),
-                ThrowGrenade | WeaponSelectPad | WeaponSelectPress => None,
+                ThrowGrenade | WeaponSelectPad | WeaponSelectPress | WeaponWheel => None,
             }
         }
         SemanticSet::Wingsuit => {

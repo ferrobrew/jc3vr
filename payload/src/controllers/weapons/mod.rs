@@ -22,6 +22,8 @@
 //!   pulsed;
 //! - [`unarmed_fire`]: the fire input with nothing in the hands kept from drawing a weapon;
 //! - [`scope`]: scoped weapons: the game's precision aim suppressed, and the lens on the scope;
+//! - [`wheel`]: the game's weapon selection cross, opened with a held input and steered by the
+//!   hand;
 //! - [`config`]: the weapon-handling settings.
 //!
 //! The weapon handling runs on the input tick, in two halves around the bindings' tables
@@ -63,6 +65,7 @@ pub mod reload;
 pub mod scope;
 pub mod unarmed_fire;
 pub mod volumes;
+pub mod wheel;
 
 use std::time::{Duration, Instant};
 
@@ -118,6 +121,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(empty::hook_library())
         .with_hook_library(heft::hook_library())
         .with_hook_library(reload::hook_library())
+        .with_hook_library(wheel::hook_library())
 }
 
 /// What the first half of the weapon handling's input tick hands the bindings.
@@ -523,6 +527,7 @@ pub(crate) fn stand_down() {
     dual_wield::observe_triggers(None);
     dual_wield::attach::clear();
     reload::stand_down();
+    wheel::stand_down();
     let mut state = STATE.lock();
     state.weapon = None;
     state.status.active = false;

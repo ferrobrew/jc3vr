@@ -89,6 +89,8 @@ pub enum PulseSource {
     C4,
     /// An object taken hold of, a weapon picked up, or an object let go of by a physical hand.
     Pickup,
+    /// The weapon wheel opened, its choice changed, or its release committed a weapon.
+    WeaponWheel,
 }
 
 impl PulseSource {
@@ -108,6 +110,7 @@ impl PulseSource {
             PulseSource::DryFire => "dry fire",
             PulseSource::C4 => "C4",
             PulseSource::Pickup => "pickup",
+            PulseSource::WeaponWheel => "weapon wheel",
         }
     }
 }
