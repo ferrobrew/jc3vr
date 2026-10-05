@@ -148,21 +148,23 @@ pub fn holster_candidates(
     out
 }
 
-/// The magazine pouch on the belt at the dominant side, mirrored from the grenade pouch so the two
-/// do not share a site, but a volume only the off-hand may grab: the reload gesture's first step
-/// (the dominant hand holds the weapon being reloaded).
+/// The universal reload pouch on the belt at the dominant side, mirrored from the grenade pouch so
+/// the two do not share a site, a volume for `grabber`, the hand without a gun (see
+/// [`crate::controllers::weapons::reload`]). A gun's well pushed onto it reloads in one hand, so
+/// it is placed whether or not a hand is free.
 pub fn magazine_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     spec: &VolumeSpec,
     dominant: Hand,
+    grabber: Option<Hand>,
 ) -> Candidate {
     place(
         GrabVolume::MagazinePouch,
         belt(frame, dims, dominant),
         spec,
         dominant,
-        Some(dominant.other()),
+        grabber,
     )
 }
 
@@ -331,7 +333,7 @@ mod tests {
     use super::*;
     use crate::controllers::{
         bindings::grab::grab_volume,
-        weapons::config::{C4Config, MagazineConfig},
+        weapons::{config::C4Config, reload::config::ReloadConfig},
     };
 
     const DIMS: BodyDimensions = BodyDimensions::GENERIC_ADULT;
@@ -405,14 +407,20 @@ mod tests {
     #[test]
     fn the_default_holsters_do_not_overlap() {
         let config = HolstersConfig::new();
-        let magazine = MagazineConfig::new().pouch;
+        let magazine = ReloadConfig::new().pouch;
         for frame in [STANDING, SEATED] {
             for dims in [
                 BodyDimensions::GENERIC_ADULT,
                 BodyDimensions::CHARACTER_ESTIMATE,
             ] {
                 let mut c = holster_candidates(&frame, &dims, &config, Hand::Right, true);
-                c.push(magazine_pouch(&frame, &dims, &magazine, Hand::Right));
+                c.push(magazine_pouch(
+                    &frame,
+                    &dims,
+                    &magazine,
+                    Hand::Right,
+                    Some(Hand::Left),
+                ));
                 c.push(c4_pouch(&frame, &dims, &C4Config::new().pouch, Hand::Right));
                 for (i, a) in c.iter().enumerate() {
                     for b in &c[i + 1..] {
@@ -469,10 +477,10 @@ mod tests {
     }
 
     #[test]
-    fn the_magazine_pouch_is_on_the_dominant_side_for_the_off_hand_only() {
-        let spec = MagazineConfig::new().pouch;
+    fn the_reload_pouch_is_on_the_dominant_side_for_the_free_hand_only() {
+        let spec = ReloadConfig::new().pouch;
         for frame in [STANDING, SEATED] {
-            let pouch = magazine_pouch(&frame, &DIMS, &spec, Hand::Right);
+            let pouch = magazine_pouch(&frame, &DIMS, &spec, Hand::Right, Some(Hand::Left));
             // Mirrored from the grenade pouch, on the dominant side, so neither pouch shares a site.
             assert!(pouch.centre.x > 0.0);
             assert_eq!(pouch.hand, Some(Hand::Left));
@@ -491,6 +499,35 @@ mod tests {
     }
 
     #[test]
+    fn the_reload_pouch_keeps_clear_of_the_hip_holsters() {
+        // A belt reload pushes a gun into the pouch with its grip held, and a hip holster acts on
+        // a grip press; a gap of half the pouch's radius keeps a hand at one from brushing the
+        // other.
+        let spec = ReloadConfig::new().pouch;
+        for dims in [
+            BodyDimensions::GENERIC_ADULT,
+            BodyDimensions::CHARACTER_ESTIMATE,
+        ] {
+            for frame in [STANDING, SEATED] {
+                for dominant in Hand::BOTH {
+                    let c =
+                        holster_candidates(&frame, &dims, &HolstersConfig::new(), dominant, false);
+                    let pouch = magazine_pouch(&frame, &dims, &spec, dominant, None);
+                    for hip in Hand::BOTH {
+                        let hip = centre(&c, GrabVolume::Holster(HolsterSite::Hip(hip)));
+                        let radius = HolstersConfig::new().hip.radius_m;
+                        assert!(
+                            pouch.centre.distance(hip) >= radius + 1.5 * pouch.radius,
+                            "the pouch at {:?} is too close to the hip holster at {hip:?}",
+                            pouch.centre
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_c4_pouch_is_on_the_dominant_side_of_the_chest_for_either_hand() {
         let spec = C4Config::new().pouch;
         for dominant in Hand::BOTH {
@@ -501,8 +538,9 @@ mod tests {
                 c.push(magazine_pouch(
                     &frame,
                     &DIMS,
-                    &MagazineConfig::new().pouch,
+                    &ReloadConfig::new().pouch,
                     dominant,
+                    Some(dominant.other()),
                 ));
                 c.push(pouch);
                 // On the dominant side, between the shoulders' height and the belt's, in front of

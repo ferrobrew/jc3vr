@@ -13,6 +13,7 @@ use crate::{
     ui::controllers::{
         aim, fingers, hands, overlay, physical_hands, roomscale, scope, summary, vehicles, weapons,
     },
+    vr::input::{self as vr_input, restart},
 };
 
 pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
@@ -32,7 +33,18 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.label("Dominant hand");
         ui.selectable_value(&mut c.dominant_hand, Hand::Right, "Right");
         ui.selectable_value(&mut c.dominant_hand, Hand::Left, "Left");
-    });
+    })
+    .response
+    .on_hover_text(
+        "The button layout follows the dominant hand from the next game start: OpenXR fixes the \
+         suggested bindings once the session takes them.",
+    );
+    // The config lock is held here, so the reason is decided from the hand being edited rather
+    // than through `restart::current`, which would take the lock again.
+    if let Some(reason) = restart::reason(&vr_input::status(), c.dominant_hand) {
+        ui.colored_label(ui.visuals().warn_fg_color, reason.headline())
+            .on_hover_text(reason.detail());
+    }
     let recovery = bindings::recovery_status();
     for hand in Hand::BOTH {
         ui.label(format!(

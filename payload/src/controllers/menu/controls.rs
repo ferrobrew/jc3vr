@@ -7,6 +7,8 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use smol_str::SmolStr;
+
 use crate::{
     config::Config,
     controllers::{
@@ -16,11 +18,16 @@ use crate::{
             config_choice, config_slider, config_toggle, edit_config, file_state, nearest_index,
             on_frame, read_config, reload_saved, reset_live_to_defaults, save_if_changed,
         },
+        weapons::reload::config::ReloadButton,
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
         page::{Button, ButtonOutcome, Choice, Page, PageDef, Readout, Toggle},
         slider::{SliderFormat, SliderRange},
+    },
+    vr::input::{
+        self as vr_input, InputStatus,
+        restart::{self, RestartReason},
     },
 };
 
@@ -50,6 +57,12 @@ fn build() -> Page {
         .item(config_choice!("DOMINANT HAND", &HANDS, &HAND_LABELS, |c| c
             .controllers
             .dominant_hand))
+        .item(Readout {
+            label: "BUTTON LAYOUT".into(),
+            read: button_layout,
+        })
+        .text("A CHANGE OF HAND TAKES EFFECT")
+        .text("WHEN THE GAME RESTARTS.")
         .item(config_choice!(
             "MOVE DIRECTION",
             &DIRECTIONS,
@@ -158,10 +171,27 @@ fn build() -> Page {
             |c| c.controllers.weapons.recoil.kick_scale
         ))
         .item(config_toggle!("SCOPES", |c| c.controllers.weapons.scopes))
-        .item(config_toggle!("MAGAZINE RELOAD", |c| c
+        .item(config_toggle!("TRUE RELOAD", |c| c
             .controllers
             .weapons
-            .reload_gesture))
+            .reload
+            .enabled))
+        .item(config_choice!(
+            "RELOAD BUTTON",
+            &ReloadButton::ALL,
+            &RELOAD_BUTTON_LABELS,
+            |c| c.controllers.weapons.reload.button
+        ))
+        .item(config_toggle!("FLICK TO EJECT", |c| c
+            .controllers
+            .weapons
+            .reload
+            .flick_eject))
+        .item(config_toggle!("MANUAL BOLT AND PUMP", |c| c
+            .controllers
+            .weapons
+            .reload
+            .manual_action))
         .item(config_toggle!("THROWN GRENADES", |c| c
             .controllers
             .weapons
@@ -289,6 +319,29 @@ fn on_close() {
     save_if_changed();
 }
 
+/// The button layout the controllers have, for a readout.
+fn button_layout() -> SmolStr {
+    let status = vr_input::status();
+    let configured = read_config(|c| c.controllers.dominant_hand);
+    layout_label(&status, configured).into()
+}
+
+/// The button layout `status` reports for a player whose configured hand is `configured`.
+fn layout_label(status: &InputStatus, configured: Hand) -> &'static str {
+    match restart::reason(status, configured) {
+        Some(reason) if reason.blocks_input() => "RESTART THE GAME",
+        Some(RestartReason::HandChanged { suggested }) => match suggested {
+            Hand::Left => "LEFT-HANDED UNTIL RESTART",
+            Hand::Right => "RIGHT-HANDED UNTIL RESTART",
+        },
+        _ => match status.suggested_for {
+            Some(Hand::Left) => "LEFT-HANDED",
+            Some(Hand::Right) => "RIGHT-HANDED",
+            None => "NOT STARTED",
+        },
+    }
+}
+
 /// Whether the page shows the reset confirmation.
 static CONFIRMING_RESET: AtomicBool = AtomicBool::new(false);
 
@@ -300,6 +353,8 @@ const SCHEMES: [SchemeSetting; 3] = [
 const SCHEME_LABELS: [&str; 3] = ["AUTOMATIC", "CONTROLLERS", "GAMEPAD"];
 
 const HANDS: [Hand; 2] = [Hand::Left, Hand::Right];
+/// By [`ReloadButton::ALL`].
+const RELOAD_BUTTON_LABELS: [&str; 2] = ["EJECT", "GAME RELOAD"];
 const HAND_LABELS: [&str; 2] = ["LEFT", "RIGHT"];
 
 const DIRECTIONS: [LocomotionDirection; 2] =
@@ -403,6 +458,32 @@ mod tests {
         };
         edit_config(|c| c.headpose.vr_turn.snap_angle_deg = 40.0);
         assert_eq!((snap.get)(), 2);
+    }
+
+    #[test]
+    fn the_button_layout_says_when_a_restart_is_due() {
+        let attached = |suggested| InputStatus {
+            attached: true,
+            suggested_for: Some(suggested),
+            ..InputStatus::default()
+        };
+        assert_eq!(
+            layout_label(&InputStatus::default(), Hand::Right),
+            "NOT STARTED"
+        );
+        assert_eq!(
+            layout_label(&attached(Hand::Left), Hand::Left),
+            "LEFT-HANDED"
+        );
+        assert_eq!(
+            layout_label(&attached(Hand::Right), Hand::Left),
+            "RIGHT-HANDED UNTIL RESTART"
+        );
+        let failed = InputStatus {
+            restart: Some(RestartReason::StashedForOtherHand),
+            ..InputStatus::default()
+        };
+        assert_eq!(layout_label(&failed, Hand::Left), "RESTART THE GAME");
     }
 
     #[test]

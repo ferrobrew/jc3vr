@@ -192,6 +192,7 @@ impl Panel {
         if self.alpha <= 0.0 {
             return;
         }
+        summary::note_shown();
 
         if self.gpu.is_none() {
             match Gpu::new(device) {
@@ -474,10 +475,26 @@ fn paint_summary(
             let mut job = LayoutJob::default();
             job.wrap.max_width = (size.x - text_x - left).max(1.0);
             let font = FontId::proportional(m.font_px);
+            // A control no glyph shows is named in the glyph's stead.
+            if let Some(source) = &line.source {
+                job.append(
+                    source,
+                    0.0,
+                    TextFormat {
+                        font_id: font.clone(),
+                        color: SOURCE,
+                        ..Default::default()
+                    },
+                );
+            }
             if let Some(prefix) = &line.prefix {
                 job.append(
                     prefix,
-                    0.0,
+                    if line.source.is_some() {
+                        m.font_px * 0.3
+                    } else {
+                        0.0
+                    },
                     TextFormat {
                         font_id: font.clone(),
                         color: DIM,
@@ -487,7 +504,7 @@ fn paint_summary(
             }
             job.append(
                 &line.text,
-                if line.prefix.is_some() {
+                if line.prefix.is_some() || line.source.is_some() {
                     m.font_px * 0.3
                 } else {
                     0.0
@@ -553,3 +570,5 @@ const TEXT: Color32 = Color32::WHITE;
 const DIM: Color32 = Color32::from_rgb(160, 160, 160);
 const BACKGROUND: Color32 = Color32::from_rgba_premultiplied(10, 12, 15, 215);
 const ACCENT: Color32 = Color32::from_rgb(200, 40, 30);
+/// The name of a control no glyph shows, in place of its glyph.
+const SOURCE: Color32 = Color32::from_rgb(235, 200, 120);

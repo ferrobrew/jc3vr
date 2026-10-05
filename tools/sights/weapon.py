@@ -45,7 +45,17 @@ class FirePoint:
 class Part:
     name: str
     model: str
+    # The vertex positions in weapon space: the model's positions transformed by ``matrix``.
     positions: list[Vec3]
+    # The component's class (``CModelAttachementWeaponComponent``, ...), or the weapon's own class
+    # for the weapon's model.
+    class_name: str = ""
+    # The component's ``world`` matrix (row-major, translation in the last row), or ``None`` for
+    # the weapon's model, which sits at the weapon's origin.
+    matrix: Matrix | None = None
+    # The model's triangles, as index triples into ``positions``. A model whose index buffer the
+    # reader cannot locate has none.
+    triangles: list[tuple[int, int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -58,7 +68,9 @@ class Weapon:
     parts: list[Part] = field(default_factory=list)
 
 
-def load(entity_path: str, archives: GameArchives) -> Weapon:
+def load(entity_path: str, archives: GameArchives, skipped_part_names: tuple[str, ...] = SKIPPED_PART_NAMES) -> Weapon:
+    """The weapon's fire points and model parts. A component whose name contains one of
+    ``skipped_part_names`` is left out; pass ``()`` to load every part."""
     entity = archives.read(entity_path)
     if entity is None:
         raise LookupError(f"{entity_path}: not in the archives")
@@ -79,27 +91,27 @@ def load(entity_path: str, archives: GameArchives) -> Weapon:
         stored_name_hash=top.get("name_hash", 0) & 0xFFFFFFFF,
         epe_source=epe_source,
     )
-    models = [(weapon.name, top.get(MODEL_KEY), None)]
+    models = [(weapon.name, top.get(MODEL_KEY), None, weapon.class_name)]
     for child in top.children:
         name = child.get("name", "")
         if child.get("_class") == "SWeaponPoint":
             if child.get("type") == FIRE_POSITION:
                 weapon.fire_points.append(FirePoint(name, child.get("world"), child.get(WEAPON_DATA_INDEX_KEY, -1)))
-        elif child.get(MODEL_KEY) and not any(s in name for s in SKIPPED_PART_NAMES):
-            models.append((name, child.get(MODEL_KEY), child.get("world")))
+        elif child.get(MODEL_KEY) and not any(s in name for s in skipped_part_names):
+            models.append((name, child.get(MODEL_KEY), child.get("world"), child.get("_class", "")))
 
     seen = set()
-    for part, model, matrix in models:
+    for part, model, matrix, class_name in models:
         if not model or (model, matrix) in seen:
             continue
         seen.add((model, matrix))
         lod_path = model.removesuffix(".model_xml") + ".lod"
         lod = _resolve(lod_path, files, archives)
         closest = lod.decode().split()[0]
-        points = rbm.positions(_resolve(closest, files, archives), closest)
+        points, triangles = rbm.mesh(_resolve(closest, files, archives), closest)
         if matrix is not None:
             points = [_transform(matrix, p) for p in points]
-        weapon.parts.append(Part(part, closest, points))
+        weapon.parts.append(Part(part, closest, points, class_name, matrix, triangles))
     return weapon
 
 

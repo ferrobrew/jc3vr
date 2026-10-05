@@ -1,7 +1,7 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
 //! line and yank, the grenade throw, the C4 throw and the wrist detonator, physical melee, the
-//! magazine gesture, the empty weapon, the one-handed weight, the gun-in-hand watch, the fire
+//! true reload, the empty weapon, the one-handed weight, the gun-in-hand watch, the fire
 //! input with empty hands, per-hand aim assist, and the weapon-handling settings.
 
 use egui::Ui;
@@ -20,8 +20,7 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
-                HeftTuning, HolstersConfig, MagazineConfig, MeleeStrikeConfig, PulseSpec,
-                RecoilConfig, VolumeSpec,
+                HeftTuning, HolstersConfig, MeleeStrikeConfig, PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -31,14 +30,15 @@ use crate::{
             haptics::{self, HapticsStatus},
             heft::{self, HeftStatus},
             holster::slot_label,
-            magazine::{MagazineGesture, MagazineStage},
             melee::{self, MeleeStatus},
             recoil::{self, RecoilStatus},
+            reload::{self, ReloadStatus},
             unarmed_fire::{self, UnarmedFireStatus},
         },
     },
     ui::controllers::{
         explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
+        reload::{reload_readout, reload_settings},
         vec3, vec3_drag, yes_no,
     },
 };
@@ -61,6 +61,7 @@ pub(super) struct WeaponsReadout {
     heft: HeftStatus,
     grip_watch: GripWatchStatus,
     unarmed_fire: UnarmedFireStatus,
+    reload: ReloadStatus,
 }
 
 impl WeaponsReadout {
@@ -82,6 +83,7 @@ impl WeaponsReadout {
             heft: heft::status(),
             grip_watch: grip_watch::status(),
             unarmed_fire: unarmed_fire::status(),
+            reload: reload::status(),
         }
     }
 }
@@ -158,7 +160,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     grenade_readout(ui, &readout.grenade);
     explosives_readout(ui, &readout.explosives);
     melee_readout(ui, &readout.melee);
-    magazine_readout(ui, &status.magazine);
+    reload_readout(ui, &readout.reload);
     empty_readout(ui, &readout.empty);
     heft_readout(ui, &readout.heft);
     grip_watch_readout(ui, &readout.grip_watch);
@@ -352,21 +354,6 @@ fn melee_readout(ui: &mut Ui, m: &MeleeStatus) {
     }
 }
 
-fn magazine_readout(ui: &mut Ui, g: &MagazineGesture) {
-    let stage = match g.stage {
-        MagazineStage::Idle => "no magazine in hand".to_owned(),
-        MagazineStage::Holding { elapsed_s } => format!(
-            "magazine in hand for {elapsed_s:.1} s{}",
-            g.distance_m
-                .map_or(String::new(), |d| format!(", {d:.2} m from the well"))
-        ),
-    };
-    ui.label(format!(
-        "Magazine gesture: {stage} · taken {} · inserted {} · dropped {}",
-        g.taken, g.inserted, g.dropped
-    ));
-}
-
 fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
     ui.label(format!(
         "Empty weapon: dry fires {} · automatic switches suppressed {}, allowed {}",
@@ -488,7 +475,7 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
 }
 
 /// The settings of the grenade throw, the C4 throw and the wrist detonator, physical melee, and
-/// the magazine gesture.
+/// the true reload.
 pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
         "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \
@@ -503,14 +490,7 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.add_enabled_ui(w.melee, |ui| {
         ui.indent("melee", |ui| melee_settings(ui, &mut w.melee_strike));
     });
-    ui.checkbox(&mut w.reload_gesture, "Magazine reload gesture")
-        .on_hover_text(
-            "Take a magazine from the off-hand's belt pouch and bring it to the weapon's magazine \
-         well. The reload button still reloads.",
-        );
-    ui.add_enabled_ui(w.reload_gesture, |ui| {
-        ui.indent("magazine", |ui| magazine_settings(ui, &mut w.magazine));
-    });
+    reload_settings(ui, &mut w.reload);
     ui.checkbox(
         &mut w.auto_switch_when_empty,
         "Switch weapons automatically when empty",
@@ -565,19 +545,6 @@ fn melee_settings(ui: &mut Ui, m: &mut MeleeStrikeConfig) {
         "Also target what the hand points at",
     );
     pulse_settings(ui, "Strike pulse", &mut m.pulse);
-}
-
-fn magazine_settings(ui: &mut Ui, m: &mut MagazineConfig) {
-    volume_settings(ui, "Magazine pouch", &mut m.pouch);
-    vec3_drag(
-        ui,
-        "Well offset (wrist frame, m)",
-        &mut m.well_offset_m,
-        0.005,
-    );
-    ui.add(egui::Slider::new(&mut m.well_radius_m, 0.02..=0.2).text("Well radius (m)"));
-    ui.add(egui::Slider::new(&mut m.timeout_s, 0.5..=10.0).text("Magazine timeout (s)"));
-    pulse_settings(ui, "Magazine pulse", &mut m.pulse);
 }
 
 fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {

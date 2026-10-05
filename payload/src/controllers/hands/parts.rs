@@ -13,6 +13,11 @@
 //! during a reload). That bone is reset at the end of the pass that placed the part, before the
 //! render update can see it, so a post-call detour on the part's placement records it for the
 //! local player's weapons.
+//!
+//! The true reload moves two kinds of part on top of the correction
+//! ([`crate::controllers::weapons::reload`]): a pistol's slide, held back while its chamber is
+//! empty and following the hand while it is worked, and a magazine part carried in the hand that
+//! took it from the pouch.
 
 use std::{
     collections::HashMap,
@@ -35,6 +40,7 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::{ik, late},
+    weapons::reload,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -151,9 +157,8 @@ unsafe fn late_update_part(
         return;
     };
     let dtf = context.m_Dtf;
-    let (Some(d), Some(instance)) = (late::hand_correction(hand, dtf), unsafe {
-        part.m_BaseModelInstance.cast::<ModelInstance>().as_mut()
-    }) else {
+    let Some(instance) = (unsafe { part.m_BaseModelInstance.cast::<ModelInstance>().as_mut() })
+    else {
         return;
     };
     let interpolated = late::lerp_transform(
@@ -162,7 +167,13 @@ unsafe fn late_update_part(
         dtf,
     );
     // The wielding states carry no holstered scale, so the engine pushed the interpolation as is.
-    let matrix = Matrix4::from(d * interpolated);
+    let correction = late::hand_correction(hand, dtf);
+    let corrected = correction.map_or(interpolated, |d| d * interpolated);
+    let adjusted = reload::adjust_part(part, weapon as *const WeaponBase as usize, corrected, dtf);
+    if correction.is_none() && adjusted.is_none() {
+        return;
+    }
+    let matrix = Matrix4::from(adjusted.unwrap_or(corrected));
     unsafe { instance.UpdateMatrix(&matrix) };
     PARTS_UPDATED.fetch_add(1, Ordering::Relaxed);
 }

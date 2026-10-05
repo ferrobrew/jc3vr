@@ -26,9 +26,12 @@ use crate::{
         roomscale::stance::StanceConfig,
         summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
-        weapons::config::{
-            C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
-            HolstersConfig, MagazineConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
+        weapons::{
+            config::{
+                C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
+                HeftConfig, HolstersConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
+            },
+            reload::config::ReloadConfig,
         },
     },
     vr::input::layout::{FloatInput, Input, provides},
@@ -652,12 +655,9 @@ pub struct WeaponsConfig {
     /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
     /// own hand.
     pub dual_wield: DualWieldConfig,
-    /// Offer the magazine gesture: the off-hand takes a magazine from its belt pouch and puts it
-    /// in the held weapon's magazine well, which starts the reload. The reload button still
-    /// reloads.
-    pub reload_gesture: bool,
-    /// The magazine gesture's pouch, well, and timing.
-    pub magazine: MagazineConfig,
+    /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
+    /// game's timed reload.
+    pub reload: ReloadConfig,
     /// Throw grenades physically: grab from the pouch, release the grip to throw with the hand's
     /// velocity. The grenade pouch exists only while this is on.
     pub grenade_throw: bool,
@@ -702,8 +702,7 @@ impl WeaponsConfig {
             heft: HeftConfig::new(),
             haptics: HapticsConfig::new(),
             dual_wield: DualWieldConfig::new(),
-            reload_gesture: true,
-            magazine: MagazineConfig::new(),
+            reload: ReloadConfig::new(),
             grenade_throw: true,
             grenade: GrenadeConfig::new(),
             c4_throw: true,

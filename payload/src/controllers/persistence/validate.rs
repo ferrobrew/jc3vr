@@ -11,7 +11,10 @@ use crate::controllers::{
         config::{PickupConfig, ShoveConfig},
     },
     vehicles::config::WheelSpec,
-    weapons::config::{HeftConfig, PulseSpec, VolumeSpec},
+    weapons::{
+        config::{HeftConfig, PulseSpec, VolumeSpec},
+        reload::config::ReloadConfig,
+    },
 };
 
 /// Check every value the file carries, returning the first that is out of range or inconsistent.
@@ -349,19 +352,7 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         60.0,
     )?;
     pulse("weapons.melee_strike.pulse", &w.melee_strike.pulse)?;
-    volume("weapons.magazine.pouch", &w.magazine.pouch)?;
-    vec3(
-        "weapons.magazine.well_offset_m",
-        w.magazine.well_offset_m,
-        5.0,
-    )?;
-    positive(
-        "weapons.magazine.well_radius_m",
-        w.magazine.well_radius_m,
-        10.0,
-    )?;
-    positive("weapons.magazine.timeout_s", w.magazine.timeout_s, 60.0)?;
-    pulse("weapons.magazine.pulse", &w.magazine.pulse)?;
+    reload(&w.reload)?;
     positive("weapons.scope.zoom", w.scope.zoom, 100.0)?;
     positive("weapons.scope.lens_radius_m", w.scope.lens_radius_m, 10.0)?;
     range(
@@ -859,6 +850,86 @@ fn pickup(p: &PickupConfig) -> Result<(), Error> {
     )?;
     pulse("physical_hands.pickup.grab_pulse", &p.grab_pulse)?;
     pulse("physical_hands.pickup.release_pulse", &p.release_pulse)
+}
+
+fn reload(r: &ReloadConfig) -> Result<(), Error> {
+    range("weapons.reload.tap_s", r.tap_s, 0.0, 5.0)?;
+    positive(
+        "weapons.reload.flick_speed_dps",
+        r.flick_speed_dps,
+        10_000.0,
+    )?;
+    nonnegative("weapons.reload.flick_cooldown_s", r.flick_cooldown_s, 60.0)?;
+    volume("weapons.reload.pouch", &r.pouch)?;
+    vec3("weapons.reload.well_offset_m", r.well_offset_m, 5.0)?;
+    nonnegative("weapons.reload.held_top_m", r.held_top_m, 1.0)?;
+    positive("weapons.reload.capture_radius_m", r.capture_radius_m, 1.0)?;
+    range(
+        "weapons.reload.capture_angle_deg",
+        r.capture_angle_deg,
+        0.0,
+        180.0,
+    )?;
+    positive("weapons.reload.seat_depth_m", r.seat_depth_m, 1.0)?;
+    positive("weapons.reload.timeout_s", r.timeout_s, 600.0)?;
+    range(
+        "weapons.reload.belt.max_tilt_deg",
+        r.belt.max_tilt_deg,
+        0.0,
+        180.0,
+    )?;
+    nonnegative(
+        "weapons.reload.belt.min_push_speed_mps",
+        r.belt.min_push_speed_mps,
+        20.0,
+    )?;
+    nonnegative("weapons.reload.belt.depth_m", r.belt.depth_m, 1.0)?;
+    nonnegative(
+        "weapons.reload.belt.after_draw_s",
+        r.belt.after_draw_s,
+        60.0,
+    )?;
+    positive(
+        "weapons.reload.action.grab_radius_m",
+        r.action.grab_radius_m,
+        1.0,
+    )?;
+    range(
+        "weapons.reload.action.pull_fraction",
+        r.action.pull_fraction,
+        0.0,
+        1.0,
+    )?;
+    range(
+        "weapons.reload.action.return_fraction",
+        r.action.return_fraction,
+        0.0,
+        r.action.pull_fraction,
+    )?;
+    positive(
+        "weapons.reload.action.release_distance_m",
+        r.action.release_distance_m,
+        5.0,
+    )?;
+    positive(
+        "weapons.reload.action.default_travel_m",
+        r.action.default_travel_m,
+        1.0,
+    )?;
+    let h = &r.haptics;
+    for (name, spec) in [
+        ("weapons.reload.haptics.eject", &h.eject),
+        ("weapons.reload.haptics.pouch_take", &h.pouch_take),
+        ("weapons.reload.haptics.pouch_empty", &h.pouch_empty),
+        ("weapons.reload.haptics.capture", &h.capture),
+        ("weapons.reload.haptics.seat", &h.seat),
+        ("weapons.reload.haptics.belt_seat", &h.belt_seat),
+        ("weapons.reload.haptics.rack", &h.rack),
+        ("weapons.reload.haptics.chambered", &h.chambered),
+    ] {
+        pulse(name, spec)?;
+    }
+    Ok(())
 }
 
 fn positive(name: &str, value: f32, max: f32) -> Result<(), Error> {

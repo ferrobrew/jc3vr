@@ -74,8 +74,9 @@ pub enum PulseSource {
     GrenadeFuse,
     /// A physical strike that started a melee attack.
     MeleeStrike,
-    /// A magazine taken from the pouch or inserted.
-    Magazine,
+    /// A step of the true reload: an eject, a round taken from the pouch, caught by the well, or
+    /// seated, a belt reload, or the action worked.
+    Reload,
     /// A controller chord the mod acts on: the recenter or the debug panel.
     Chord,
     /// A trigger pull of an empty gun that cannot reload.
@@ -100,7 +101,7 @@ impl PulseSource {
             PulseSource::Yank => "yank",
             PulseSource::GrenadeFuse => "grenade fuse",
             PulseSource::MeleeStrike => "melee strike",
-            PulseSource::Magazine => "magazine",
+            PulseSource::Reload => "reload",
             PulseSource::Chord => "chord",
             PulseSource::DryFire => "dry fire",
             PulseSource::C4 => "C4",

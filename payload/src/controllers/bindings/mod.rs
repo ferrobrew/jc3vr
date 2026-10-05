@@ -47,7 +47,7 @@ use crate::{
     controllers::{
         aim::sights,
         bindings::{
-            controls::{Controls, yaw_of},
+            controls::{ButtonControl, Controls, yaw_of},
             grab::GrabVolume,
             hold::{ActionWrite, DevicePoll, HoldTracker, MapKind, Phase},
             inject::{Landing, Outcome},
@@ -76,7 +76,7 @@ use crate::{
     },
     vr::{
         self,
-        input::semantic::{SemanticSet, frame as semantic_frame},
+        input::semantic::{SemanticSet, frame as semantic_frame, vocabulary::OnFootAction},
     },
 };
 
@@ -334,11 +334,14 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         .filter(|_| dual_wield::triggers_fire_pistols(detection.mode))
         .unwrap_or([false; 2]);
     controls.dual_wield = pistols[dominant.other().index()];
+    // A pistol the reload holds (its chamber or its magazine empty) fires nothing, so the split
+    // never picks it; its trigger only clicks.
+    let reload_held = weapons::reload::fire_held();
     controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
     dual_wield::observe_triggers(start.dual_wield.map(|_| TriggerTick {
         dominant,
         triggers: Hand::BOTH.map(|hand| {
-            let fires = pistols[hand.index()];
+            let fires = pistols[hand.index()] && !reload_held[hand.index()];
             let trigger = &controls.hands[hand.index()].trigger_press;
             TriggerInput {
                 held: fires && trigger.held(),
@@ -389,6 +392,8 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         let finish = weapons::FinishInputs {
             grabs: step.grabs,
             grips: controls.hands.map(|h| h.grip),
+            triggers: controls.hands.map(|h| h.trigger_press),
+            reload_button: reload_button(&semantic_input),
             detection,
             dt,
         };
@@ -589,6 +594,24 @@ fn off_hand_rotation(frame: &ControllerFrame, off: Hand) -> f32 {
         (Some(hand), Some(head)) => hand - head,
         _ => 0.0,
     }
+}
+
+/// The reload action's press over the tick, on either hand, for the reload's eject tap. The
+/// tables drive the game's reload action from the same press, which the game reads as a holster
+/// when it is held.
+fn reload_button(semantic: &SemanticInput) -> ButtonControl {
+    semantic
+        .get(OnFootAction::Reload.id())
+        .map_or_else(ButtonControl::default, |input| {
+            input
+                .hands
+                .iter()
+                .fold(ButtonControl::default(), |acc, intent| ButtonControl {
+                    down: acc.down || intent.button.down,
+                    pressed: acc.pressed || intent.button.pressed,
+                    released: acc.released || intent.button.released,
+                })
+        })
 }
 
 /// The grapple hand's distance from the body point a yank pulls toward, in the cockpit frame, or

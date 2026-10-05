@@ -1,22 +1,29 @@
 //! Bound sources: the physical inputs the runtime bound each action to, with the runtime's
-//! localized names for them, cached for the debug UI, and reduced for each semantic action to the
+//! localized names for them, cached for the debug UI, reduced for each semantic action to the
 //! physical inputs it reads on each hand ([`enumerated`]), which the binding tables' masks act on
-//! ([`crate::vr::input::semantic::bound`]).
+//! ([`crate::vr::input::semantic::bound`]), and matched to the known components for the controls
+//! summary's glyphs ([`table`]).
 //!
-//! The queries need the session, so they run on the VR thread inside the frame's input update,
-//! which publishes the cache; the UI only reads it. The source paths are opaque to OpenXR and are
-//! shown, not interpreted, except that a source under a hand's user path is attributed to that
-//! hand.
+//! The queries need the session, so they run on the game thread inside the frame's input update,
+//! under the runtime lock, which publishes the results; every other reader only reads them (see
+//! `docs/mod/threading.md`). The source paths are opaque to OpenXR, and the mod only matches them
+//! as text against the inputs it knows on the shipped profiles.
 //!
 //! The runtime raises no event when the player rebinds within the same interaction profile, so the
 //! cache is refreshed:
 //!
 //! - in full after the interaction profiles change,
 //! - per set, the first time the set is active,
-//! - in full once a second while the debug UI's page is showing ([`note_viewed`]).
+//! - in full on the next frame after the controls summary is rebuilt ([`request_refresh`]),
+//! - in full once a second while the debug UI's page is showing ([`note_viewed`]),
+//! - the active sets once a second while the controls summary is showing ([`note_shown`]).
 
 use std::{
     ptr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -31,7 +38,7 @@ use crate::{
         layout::hand_path,
         semantic::{
             SemanticSet,
-            bound::{self, PhysicalSet},
+            bound::{self, EnumeratedSource, PhysicalSet, SourceTable},
         },
     },
 };
@@ -76,16 +83,39 @@ pub(crate) fn enumerated(set: SemanticSet) -> Option<Enumerated> {
     ENUMERATED.lock()[set.index()].clone()
 }
 
-/// Note that the debug UI or the controls summary is showing the sources, so the VR thread keeps
-/// them fresh.
+/// The semantic actions' sources as the controls summary shows them, and a generation that
+/// changes whenever they do.
+pub(crate) fn table() -> (u64, Arc<SourceTable>) {
+    let table = TABLE.lock();
+    (table.generation, table.table.clone().unwrap_or_default())
+}
+
+/// The generation of [`table`], to tell whether it changed without cloning it.
+pub(crate) fn table_generation() -> u64 {
+    TABLE.lock().generation
+}
+
+/// Note that the debug UI is showing the sources, so the frame keeps them all fresh.
 pub(crate) fn note_viewed() {
     *VIEWED_AT.lock() = Some(Instant::now());
+}
+
+/// Note that the controls summary is showing, so the frame keeps the active sets' sources fresh.
+pub(crate) fn note_shown() {
+    *SHOWN_AT.lock() = Some(Instant::now());
+}
+
+/// Query every set on the next frame: the controls summary was rebuilt, and the player may have
+/// rebound since the sources were last read.
+pub(crate) fn request_refresh() {
+    REFRESH_REQUESTED.store(true, Ordering::Relaxed);
 }
 
 /// Drop the cache: the session's actions are gone.
 pub(crate) fn clear() {
     CACHE.lock().clear();
     *ENUMERATED.lock() = [const { None }; SemanticSet::ALL.len()];
+    publish_table(SourceTable::default());
 }
 
 /// The sources `action` is bound to, enumerated and named by the runtime.
@@ -124,6 +154,8 @@ pub(crate) struct SourcesRefresh {
     /// Whether every set must be queried on the next update.
     stale: bool,
     last_full: Option<Instant>,
+    /// When the active sets were last queried for the showing controls summary.
+    last_shown: Option<Instant>,
 }
 
 impl SourcesRefresh {
@@ -132,6 +164,7 @@ impl SourcesRefresh {
             seen_active: vec![false; SetId::all().count()],
             stale: true,
             last_full: None,
+            last_shown: None,
         }
     }
 
@@ -148,19 +181,22 @@ impl SourcesRefresh {
         active: &[SetId],
     ) {
         let now = Instant::now();
-        let viewed = VIEWED_AT
-            .lock()
-            .is_some_and(|t| now.saturating_duration_since(t) < VIEW_LINGER);
-        let due = viewed
-            && self
-                .last_full
-                .is_none_or(|t| now.saturating_duration_since(t) >= VIEWED_INTERVAL);
-        let full = self.stale || due;
+        let recent = |at: &Mutex<Option<Instant>>| {
+            at.lock()
+                .is_some_and(|t| now.saturating_duration_since(t) < VIEW_LINGER)
+        };
+        let elapsed = |last: Option<Instant>| {
+            last.is_none_or(|t| now.saturating_duration_since(t) >= VIEWED_INTERVAL)
+        };
+        let due = recent(&VIEWED_AT) && elapsed(self.last_full);
+        let requested = REFRESH_REQUESTED.swap(false, Ordering::Relaxed);
+        let full = self.stale || due || requested;
+        let shown = !full && recent(&SHOWN_AT) && elapsed(self.last_shown);
         let mut fresh = Vec::new();
         for (i, set) in SetId::all().enumerate() {
             let is_active = active.contains(&set);
             let first_active = is_active && !self.seen_active[i];
-            if !full && !first_active {
+            if !full && !first_active && !(shown && is_active) {
                 continue;
             }
             if is_active {
@@ -184,6 +220,9 @@ impl SourcesRefresh {
             self.stale = false;
             self.last_full = Some(now);
         }
+        if full || shown {
+            self.last_shown = Some(now);
+        }
         if fresh.is_empty() {
             return;
         }
@@ -203,6 +242,9 @@ impl SourcesRefresh {
             }
         }
         cache.sort_by_key(|c| SetId::all().position(|s| s == c.set));
+        let table = source_table(&cache);
+        drop(cache);
+        publish_table(table);
     }
 }
 
@@ -237,6 +279,57 @@ fn physical_inputs(entry: &SetSources) -> Enumerated {
 }
 
 static VIEWED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+static SHOWN_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+static REFRESH_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// The published [`SourceTable`] and its generation.
+struct PublishedTable {
+    generation: u64,
+    /// `None` before the first publication, which reads as an empty table.
+    table: Option<Arc<SourceTable>>,
+}
+
+static TABLE: Mutex<PublishedTable> = Mutex::new(PublishedTable {
+    generation: 0,
+    table: None,
+});
+
+/// The summary's view of the cached semantic sets.
+fn source_table(cache: &[SetSources]) -> SourceTable {
+    let mut table = SourceTable::default();
+    for entry in cache {
+        let SetId::Semantic(set) = entry.set else {
+            continue;
+        };
+        table.insert(
+            set,
+            entry.actions.iter().map(|action| {
+                action.sources.as_ref().ok().map(|sources| {
+                    sources
+                        .iter()
+                        .map(|s| EnumeratedSource {
+                            path: &s.path,
+                            localized: s.localized.as_deref().ok(),
+                        })
+                        .collect()
+                })
+            }),
+        );
+    }
+    table
+}
+
+/// Publish `table`, moving the generation on only when it differs from the published one, so a
+/// refresh that finds the same bindings rebuilds nothing.
+fn publish_table(table: SourceTable) {
+    let mut published = TABLE.lock();
+    if published.table.as_deref() != Some(&table) {
+        published.generation += 1;
+        published.table = Some(Arc::new(table));
+    }
+}
 
 /// `xrEnumerateBoundSourcesForAction`, with the two-call idiom.
 fn enumerate(session: &xr::Session<xr::D3D11>, action: sys::Action) -> xr::Result<Vec<xr::Path>> {

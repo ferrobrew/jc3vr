@@ -17,6 +17,7 @@ mod mode;
 mod overlay;
 mod persistence;
 mod physical_hands;
+mod reload;
 mod roomscale;
 mod scope;
 mod semantic;

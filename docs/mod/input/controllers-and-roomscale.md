@@ -38,7 +38,7 @@ The following decisions are settled and the rest of the plan assumes them.
 - The wingsuit and parachute use stick steering by default. Arm-pose steering for the wingsuit and grabbed handles for the parachute add to it.
 - Grenades are thrown physically.
 - Weapons are drawn from body holsters. A radial menu is the seated and accessibility fallback, deferred with the rest of the mod UI.
-- Reloads start from a button. A magazine gesture is an opt-in alternative, and the button remains.
+- Reloads are done by hand: eject, load from a belt pouch into the gun's well, and chamber. The game's timed reload stays as a setting of the reload button.
 - Scoped weapons render a magnified image into a lens on the scope.
 - Locomotion is head-relative by default, with an off-hand-relative option. Seated play has a crouch toggle.
 - The player maps onto Rico's proportions by remapping, in the Bonelab style (see "Body scale").
@@ -115,7 +115,7 @@ The starting assignments are as follows.
 | State | Starting tier | Promotion |
 |---|---|---|
 | On foot, empty-handed or holding weapons | Free | none needed |
-| Reload, pump, bolt, weapon draw from a holster | Action runs | none needed; the opt-in magazine gesture starts the reload by hand |
+| Weapon draw from a holster | Action runs | none needed |
 | Grapple fire | Free: the game's fire arm IK is skipped and the hook leaves the gauntlet | none needed |
 | Reel-in flight (`GHS_REELING_IN`) | Anchored: the grapple hand holds the line where the controller is | none needed |
 | Grapple hang, upside-down, and stunt positions (`GHS_REELED_*`) | Anchored: the grapple hand holds the line, and its displacement pushes the hanging body, because the game's own stick swing is disabled | none needed |
@@ -179,7 +179,7 @@ A switch between gameplay modes is debounced by a configurable number of ticks (
 
 ### Grip semantics
 
-Guns are sticky, so the grip is an edge, never a hold. A grab volume is a region where a grip press grabs instead of performing its default action. The grab volumes are the holsters on the body, a two-handed weapon's foregrip, the grenade pouch, the magazine pouch under the opt-in magazine gesture, and, under the opt-in physical controls, the wheel, the handlebars, the flight sticks, and the turret handles. An empty hand near a loose object or a weapon lying in the world is in the physical hands' pickup volume, which every other volume wins over ([physical-hands.md](physical-hands.md#the-grip)). The world-space overlay highlights the volume the hand is in. The holster volumes are small and close to the body, so that a grapple fired in a hurry near the hip does not draw a weapon instead.
+Guns are sticky, so the grip is an edge, never a hold. A grab volume is a region where a grip press grabs instead of performing its default action. The grab volumes are the holsters on the body, a two-handed weapon's foregrip, the grenade pouch, the reload pouch and a gun's action under the true reload, and, under the opt-in physical controls, the wheel, the handlebars, the flight sticks, and the turret handles. An empty hand near a loose object or a weapon lying in the world is in the physical hands' pickup volume, which every other volume wins over ([physical-hands.md](physical-hands.md#the-grip)). The world-space overlay highlights the volume the hand is in. The holster volumes are small and close to the body, so that a grapple fired in a hurry near the hip does not draw a weapon instead.
 
 Holding a grenade is the exception to sticky grips: the grenade is held while the grip is held, and thrown when the grip is released. The physical vehicle controls and the parachute handles are held the same way, only while the grip is, so that a hand on the wheel lets go as a hand on a real one does.
 
@@ -200,7 +200,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | Y |
 | Jump, stunt, open parachute | A |
 | Use item, enter vehicle (hold: gunner seat), open wingsuit | B |
-| Reload | X; the opt-in magazine gesture also reloads |
+| Reload | X ejects the magazine (the game's reload as a setting); the belt pouch loads |
 | Holster | grip press with the weapon hand at the held weapon's holster; a short hold of X also holsters, as on the gamepad |
 | Weapon slot select | draw from a holster; press the L trackpad up, right, left, or down for the pistols, the two-handed, the special, or the explosives slot (Index); the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
 | Throw grenade | grab from the grenade pouch and throw; `throw_grenade` is an action with no default binding |
@@ -331,7 +331,7 @@ A two-handed weapon rides the dominant hand's attach bone and aims by that hand 
 
 ### Reloads
 
-The reload button starts the native reload. The weapon cannot fire until the reload finishes, and the weapon model plays its own magazine and bolt animation while the hands stay on the controllers. The opt-in magazine gesture moves the off-hand to a belt pouch and then to the weapon's magazine well, which starts the same reload. The button remains.
+The game's reloads of the hand weapons are stopped, and the player reloads by hand: the reload button or a flick of the gun ejects the magazine, the free hand takes a round from a universal belt pouch and pushes it into the gun's real well, and a gun that ran dry is chambered by working its slide, charging handle, bolt, or pump; the bolt and the pump are worked after every shot. Pushing the gun's well onto the pouch reloads it in one hand. As an accessibility fallback the reload button can be left to the game's timed reload. The design is in [reload.md](reload.md).
 
 ### Grenades
 
@@ -452,7 +452,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - Physical melee.
 - Scope lenses.
 - Per-hand aim assist.
-- The magazine gesture for reloads.
+- The true reload.
 - The model-extraction pass for sight offsets (`tools/sights/`), and the sight-tuning tool in the Controllers tab.
 - Promotions in the hand-tier table, in order of how often the states occur in play. None beyond the anchored grapple and mounted-gun rows is built.
 
@@ -535,7 +535,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Precision aim suppression | `scope.suppress_precision_aim` | Built. |
 | Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off), `aim.assist_max_distance_m`, `aim.assist_occlusion_tolerance_m` | Built. |
-| The magazine gesture | `reload_gesture` (on), and the pouch (0.09 m, at the belt front on the dominant side, off-hand only), well, and timing under `magazine` | Built. The reload button remains. |
+| The true reload | `reload` (on): the button, the flick, the pouch (0.09 m, at the belt front on the dominant side, for the free hand), the well, the belt reload, the chamber, the manual action, and the dual split | Built, not run in the headset. See [reload.md](reload.md). |
 | The embedded sight table | `aim.sights` entries override it | Built. Only the `scoped`, `pistol`, and `tuned` grades are used. |
 | The sight tuning tool | `aim.sight_tuning.enabled` (off), `aim.sight_tuning.marker_distance_m` | Built. A tuned entry lasts until the payload unloads unless it is copied into the table. |
 | Hand-tier promotions | none | Not built beyond the anchored grapple and mounted-gun rows. |
@@ -639,7 +639,7 @@ The order puts the parts that everything else depends on first, then the parts w
 27. Grenades. A grip at the pouch primes a grenade into the hand, the fuse ring counts down, a release throws with the hand's speed and direction, and a grenade held too long explodes in the hand.
 28. Melee. A strike away from the shoulder hits the target struck at, a pull toward the body does not strike, and a strike in the air, while reeling, or without the hammer ability does nothing.
 29. Aim assist (`aim.assist_strength` above 0). Each hand's aim point pulls toward a hostile target near its sight line, and never toward a target behind cover.
-30. The magazine gesture (`weapons.reload_gesture`). Taking a magazine from the off-hand pouch and bringing it to the well starts the reload, a one-tick reload click does not holster, and the button still reloads.
+30. The true reload (`weapons.reload`). For each weapon class (see [reload.md](reload.md)): a tap of the reload button ejects and a hold still holsters; a flick ejects; the pouch gives a round to the free hand and nothing with an empty reserve; the round catches and seats in the gun's real well; a belt push reloads in one hand; a run-dry gun clicks until its action is worked; the sniper bolt and the shotgun pump need working after each shot; dual-wielded pistols run dry and reload separately; the HUD counts follow; unlimited ammunition and pickups still work.
 31. C4 (`weapons.c4_throw`, `weapons.wrist_detonator`). A grip at the chest pouch primes a charge into either hand, a release throws it with the hand's speed and direction, and it sticks to the ground, a wall, and a vehicle where it lands. A grab is refused at the cap of placed charges. A deliberate push of the right fingertip into the left wrist button detonates the charges, with a click on both hands and the button lit while charges are placed; brushing the wrist, sliding a finger along the forearm, and a hand passing through the wrist do not. Holding the R stick click detonates too, a tap does not, and it never throws a grenade.
 
 ## Reverse-engineering work

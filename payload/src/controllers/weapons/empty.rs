@@ -22,9 +22,12 @@
 //! weapon can reload. Both dual-wielded pistols share one magazine, so they run dry together and
 //! both stay in the hands.
 //!
-//! A pull at the press edge that the check found empty (it tried the switch) pulses the hand
-//! whose gun was pulled with `weapons.haptics.dry_fire`, whether or not the switch is suppressed,
-//! since the gun gives no recoil to feel.
+//! A pull at the press edge that the check found empty pulses the hand whose gun was pulled with
+//! `weapons.haptics.dry_fire`, since the gun gives no recoil to feel: one that tried the switch,
+//! whether or not the switch is suppressed, and one of an empty magazine with ammunition left,
+//! whose reload the true reload stops ([`crate::controllers::weapons::reload`]). A gun the true
+//! reload holds from firing (its chamber empty or its magazine out) has its shot cleared here as
+//! well; its trigger already clicks at the input tick.
 
 use std::{
     cell::Cell,
@@ -42,7 +45,7 @@ use crate::{
     config::Config,
     controllers::{
         scheme,
-        weapons::{fire, haptics},
+        weapons::{fire, haptics, reload},
     },
 };
 
@@ -97,6 +100,19 @@ pub fn is_dry_fire(tried_switch: bool, was_trigger_pulled: bool) -> bool {
     tried_switch && !was_trigger_pulled
 }
 
+/// Whether a marked check was a dry fire of an empty gun that can still reload: a requested shot
+/// of an empty magazine at the pull's press edge, which the check cleared. The check asks for a
+/// reload rather than a switch, which the true reload stops
+/// ([`crate::controllers::weapons::reload`]), so the pull only clicks.
+pub fn is_reloadable_dry_fire(
+    requested: bool,
+    empty: bool,
+    cleared: bool,
+    was_trigger_pulled: bool,
+) -> bool {
+    requested && empty && cleared && !was_trigger_pulled
+}
+
 static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
 static ALLOWED: AtomicU64 = AtomicU64::new(0);
 static DRY_FIRES: AtomicU64 = AtomicU64::new(0);
@@ -132,19 +148,34 @@ fn check_if_reload_should_be_triggered_base(
     if !(acting && local) {
         return original();
     }
+    let requested = unsafe { should_try_to_fire.as_ref() }.is_some_and(|s| *s);
     let outer = CHECK.replace(Some(Check {
         tried_switch: false,
     }));
     original();
     let check = CHECK.replace(outer);
 
-    if !check.is_some_and(|c| is_dry_fire(c.tried_switch, was_trigger_pulled)) {
-        return;
-    }
-    DRY_FIRES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: the weapon is live for the length of its update, on this thread, and `gun_data` is
     // one of its guns.
     let hand = unsafe { weapon.as_ref() }.and_then(|w| unsafe { fire::gun_hand(w, gun_data) });
+    // The reload holds the gun: its trigger is kept from the game and clicks at the input tick, so
+    // the shot is only cleared here, against a buffered one.
+    if hand.is_some_and(|hand| reload::holds_fire(weapon as usize, hand)) {
+        if let Some(should) = unsafe { should_try_to_fire.as_mut() } {
+            *should = false;
+        }
+        return;
+    }
+    let empty = unsafe { weapon.as_ref() }.is_some_and(|w| w.m_MagazineAmmo <= 0);
+    let cleared = unsafe { should_try_to_fire.as_ref() }.is_some_and(|s| !*s);
+    let dry = check.is_some_and(|c| {
+        is_dry_fire(c.tried_switch, was_trigger_pulled)
+            || is_reloadable_dry_fire(requested, empty, cleared, was_trigger_pulled)
+    });
+    if !dry {
+        return;
+    }
+    DRY_FIRES.fetch_add(1, Ordering::Relaxed);
     if let Some(hand) = hand {
         let spec = Config::lock_query(|c| c.controllers.weapons.haptics.dry_fire);
         haptics::pulse(hand, spec, haptics::PulseSource::DryFire);
@@ -182,6 +213,15 @@ mod tests {
         assert_eq!(decide(true, true), SwitchDecision::Pass);
         assert_eq!(decide(false, false), SwitchDecision::Pass);
         assert_eq!(decide(false, true), SwitchDecision::Pass);
+    }
+
+    #[test]
+    fn an_empty_magazine_with_reserve_clicks_once_per_pull() {
+        assert!(is_reloadable_dry_fire(true, true, true, false));
+        assert!(!is_reloadable_dry_fire(true, true, true, true));
+        assert!(!is_reloadable_dry_fire(false, true, true, false));
+        assert!(!is_reloadable_dry_fire(true, false, true, false));
+        assert!(!is_reloadable_dry_fire(true, true, false, false));
     }
 
     #[test]

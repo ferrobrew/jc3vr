@@ -1,7 +1,7 @@
 //! The weapon-handling settings (the holsters, the foregrip, the recoil, the one-handed weight, the
-//! haptics, the dual-wield split, the grenade throw, melee strikes, the magazine gesture, and the
-//! scopes), held in [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other
-//! weapon-handling subsystems' toggles.
+//! haptics, the dual-wield split, the grenade throw, melee strikes, and the scopes), held in
+//! [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other weapon-handling
+//! subsystems' toggles. The reload's are in [`crate::controllers::weapons::reload::config`].
 
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -616,51 +616,6 @@ impl MeleeStrikeConfig {
 }
 
 impl Default for MeleeStrikeConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The magazine reload gesture (see [`crate::controllers::weapons::magazine`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MagazineConfig {
-    /// The magazine pouch at the front of the belt on the dominant side, placed like the grenade
-    /// pouch but mirrored across the midline so the two pouches do not share a site. A grab volume
-    /// for the off-hand only: the dominant hand holds the weapon being reloaded. Given for the
-    /// right side and mirrored for the left.
-    pub pouch: VolumeSpec,
-    /// The magazine well's centre in the holding hand's wrist frame (-Z toward the fingers, +Y out
-    /// of the back of the hand), metres: under the gun, just ahead of the grip. Given for the right
-    /// hand and mirrored for the left.
-    pub well_offset_m: Vec3,
-    /// How close the off-hand's grip must come to the well to insert the magazine, metres.
-    pub well_radius_m: f32,
-    /// How long a magazine taken from the pouch stays in the hand before it is dropped, seconds.
-    pub timeout_s: f32,
-    /// A pulse on the off-hand when it takes a magazine and when it inserts one.
-    pub pulse: PulseSpec,
-}
-
-impl MagazineConfig {
-    pub const fn new() -> Self {
-        Self {
-            pouch: VolumeSpec {
-                offset_m: Vec3::ZERO,
-                radius_m: 0.09,
-            },
-            well_offset_m: Vec3::new(0.0, -0.08, -0.06),
-            well_radius_m: 0.08,
-            timeout_s: 4.0,
-            pulse: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.04,
-            },
-        }
-    }
-}
-
-impl Default for MagazineConfig {
     fn default() -> Self {
         Self::new()
     }

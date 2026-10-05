@@ -9,6 +9,10 @@
 //! an unknown source is masked only with its whole hand. Until a set's sources have been
 //! enumerated, or for an action whose enumeration failed, the default bindings stand in
 //! ([`BoundSet::defaults`]).
+//!
+//! The same matching, at the finer grain of a [`Component`], gives the controls summary its glyphs
+//! ([`SourceTable`]): a recognised source is drawn with its glyph, and any other with the
+//! runtime's localized name for it.
 
 use crate::{
     controllers::frame::{Hand, InteractionProfile},
@@ -93,6 +97,14 @@ impl Component {
 /// The hand a bound source path is under, and the physical input it names, or `None` for one the
 /// mod does not recognise. A path under no hand is `None` altogether.
 pub(crate) fn classify(path: &str) -> Option<(Hand, Option<Physical>)> {
+    classify_component(path).map(|(hand, component)| (hand, component.map(Component::physical)))
+}
+
+/// The hand a bound source path is under, and the [`Component`] it names, or `None` for one the
+/// mod does not recognise. A path under no hand is `None` altogether. The component is as fine as
+/// the summary's glyphs need: a stick's axis apart from the stick, and a trackpad's touch and
+/// press apart from its surface.
+pub(crate) fn classify_component(path: &str) -> Option<(Hand, Option<Component>)> {
     let (hand, rest) = Hand::BOTH.into_iter().find_map(|hand| {
         path.strip_prefix(hand_path(hand))
             .and_then(|rest| rest.strip_prefix('/'))
@@ -101,18 +113,22 @@ pub(crate) fn classify(path: &str) -> Option<(Hand, Option<Physical>)> {
     let mut segments = rest.strip_prefix("input/")?.split('/');
     let identifier = segments.next().unwrap_or("");
     let component = segments.next();
-    let physical = match identifier {
-        "trigger" => Some(Physical::Trigger),
-        "squeeze" => Some(Physical::Grip),
-        "thumbstick" if component == Some("click") => Some(Physical::ThumbstickClick),
-        "thumbstick" => Some(Physical::Thumbstick),
-        "trackpad" => Some(Physical::Trackpad),
-        "a" | "x" => Some(Physical::LowerFace),
-        "b" | "y" => Some(Physical::UpperFace),
-        "system" | "menu" => Some(Physical::System),
+    let known = match (identifier, component) {
+        ("trigger", _) => Some(Component::TriggerValue),
+        ("squeeze", _) => Some(Component::GripPress),
+        ("thumbstick", Some("click")) => Some(Component::ThumbstickClick),
+        ("thumbstick", Some("x")) => Some(Component::ThumbstickX),
+        ("thumbstick", Some("y")) => Some(Component::ThumbstickY),
+        ("thumbstick", _) => Some(Component::Thumbstick),
+        ("trackpad", Some("touch")) => Some(Component::TrackpadTouch),
+        ("trackpad", Some("force" | "click")) => Some(Component::TrackpadForce),
+        ("trackpad", _) => Some(Component::Trackpad),
+        ("a" | "x", _) => Some(Component::LowerFace),
+        ("b" | "y", _) => Some(Component::UpperFace),
+        ("system" | "menu", _) => Some(Component::System),
         _ => None,
     };
-    Some((hand, physical))
+    Some((hand, known))
 }
 
 /// The physical inputs of the sources of one action, by [`Hand::index`].
@@ -132,6 +148,110 @@ pub(crate) fn of_sources<'a>(paths: impl IntoIterator<Item = &'a str>) -> [Physi
         }
     }
     out
+}
+
+/// A source's name in a [`SourceTable`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct SourceName(u16);
+
+/// One bound source of an action, as the controls summary shows it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct ShownSource {
+    /// The hand whose user path the source is under.
+    pub(crate) hand: Option<Hand>,
+    /// The component the source names, where the mod recognises it.
+    pub(crate) component: Option<Component>,
+    /// The runtime's name for the source, for one no glyph shows.
+    pub(crate) name: SourceName,
+}
+
+/// One source as the runtime enumerated it: its path, and its localized name where it could be
+/// read.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EnumeratedSource<'a> {
+    pub(crate) path: &'a str,
+    pub(crate) localized: Option<&'a str>,
+}
+
+/// The runtime's bound sources of the semantic actions, as the controls summary shows them: per
+/// set that has been enumerated, each action's sources, matched to the components the mod knows
+/// and named by the runtime.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct SourceTable {
+    /// By [`SemanticSet::index`], then action index; `None` for a set not enumerated yet, or for an
+    /// action whose enumeration failed.
+    sets: [Option<Vec<Option<Vec<ShownSource>>>>; SemanticSet::ALL.len()],
+    names: Vec<String>,
+}
+
+impl SourceTable {
+    /// Record the sources of every action of `set`, by action index, `None` for an action whose
+    /// enumeration failed. A source's name is the runtime's localized name, or its path where the
+    /// runtime gave none.
+    pub(crate) fn insert<'a>(
+        &mut self,
+        set: SemanticSet,
+        actions: impl IntoIterator<Item = Option<Vec<EnumeratedSource<'a>>>>,
+    ) {
+        let actions = actions
+            .into_iter()
+            .map(|sources| {
+                sources.map(|sources| {
+                    let mut shown: Vec<ShownSource> = Vec::with_capacity(sources.len());
+                    for source in sources {
+                        let (hand, component) = match classify_component(source.path) {
+                            Some((hand, component)) => (Some(hand), component),
+                            None => (None, None),
+                        };
+                        let name = self.intern(source.localized.unwrap_or(source.path));
+                        let entry = ShownSource {
+                            hand,
+                            component,
+                            name,
+                        };
+                        // A runtime may report one input under several paths; a recognised one is
+                        // shown once.
+                        let duplicate = shown.iter().any(|s| {
+                            s.hand == entry.hand
+                                && match (s.component, entry.component) {
+                                    (Some(a), Some(b)) => a == b,
+                                    _ => s.name == entry.name,
+                                }
+                        });
+                        if !duplicate {
+                            shown.push(entry);
+                        }
+                    }
+                    shown
+                })
+            })
+            .collect();
+        self.sets[set.index()] = Some(actions);
+    }
+
+    /// The sources of action `index` of `set`, or `None` where they are not known: the set has not
+    /// been enumerated, or the action's enumeration failed. An empty slice is an unbound action.
+    pub(crate) fn sources(&self, set: SemanticSet, index: usize) -> Option<&[ShownSource]> {
+        self.sets[set.index()].as_ref()?.get(index)?.as_deref()
+    }
+
+    /// The text of a source's name.
+    pub(crate) fn name(&self, name: SourceName) -> &str {
+        self.names
+            .get(usize::from(name.0))
+            .map_or("", String::as_str)
+    }
+
+    fn intern(&mut self, text: &str) -> SourceName {
+        let index = match self.names.iter().position(|n| n == text) {
+            Some(index) => index,
+            None => {
+                self.names.push(text.to_owned());
+                self.names.len() - 1
+            }
+        };
+        SourceName(u16::try_from(index).unwrap_or(u16::MAX))
+    }
 }
 
 /// A table of default bindings: action `index` of a set's default binding, or `None` when it ships
@@ -286,5 +406,103 @@ mod tests {
         assert_eq!(sets[0], PhysicalSet::of(Physical::LowerFace).with_unknown());
         assert_eq!(sets[1], PhysicalSet::EMPTY.with_unknown());
         assert_eq!(of_sources([]), [PhysicalSet::EMPTY; 2]);
+    }
+
+    #[test]
+    fn components_classify_as_finely_as_the_glyphs() {
+        let right = |rest: &str| classify_component(&format!("{}/{rest}", hand_path(Hand::Right)));
+        let known = |component| Some((Hand::Right, Some(component)));
+        assert_eq!(right("input/thumbstick/x"), known(Component::ThumbstickX));
+        assert_eq!(right("input/thumbstick/y"), known(Component::ThumbstickY));
+        assert_eq!(right("input/thumbstick"), known(Component::Thumbstick));
+        assert_eq!(
+            right("input/thumbstick/click"),
+            known(Component::ThumbstickClick)
+        );
+        assert_eq!(
+            right("input/trackpad/touch"),
+            known(Component::TrackpadTouch)
+        );
+        assert_eq!(
+            right("input/trackpad/force"),
+            known(Component::TrackpadForce)
+        );
+        assert_eq!(
+            right("input/trackpad/click"),
+            known(Component::TrackpadForce)
+        );
+        assert_eq!(right("input/trackpad"), known(Component::Trackpad));
+        assert_eq!(right("input/squeeze/value"), known(Component::GripPress));
+        assert_eq!(right("input/b/click"), known(Component::UpperFace));
+        assert_eq!(right("input/system/click"), known(Component::System));
+        assert_eq!(right("input/pinch_ext/value"), Some((Hand::Right, None)));
+        assert_eq!(classify_component("/user/gamepad/input/a/click"), None);
+    }
+
+    #[test]
+    fn the_coarse_classification_follows_the_components() {
+        for path in [
+            "input/trigger/value",
+            "input/squeeze/force",
+            "input/thumbstick/click",
+            "input/thumbstick/y",
+            "input/trackpad/touch",
+            "input/x/click",
+            "input/y/click",
+            "input/menu/click",
+            "input/pinch_ext/value",
+        ] {
+            let path = format!("{}/{path}", hand_path(Hand::Left));
+            assert_eq!(
+                classify(&path),
+                classify_component(&path).map(|(h, c)| (h, c.map(Component::physical))),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_source_table_names_and_matches_each_source() {
+        let source = |path, localized| EnumeratedSource { path, localized };
+        let mut table = SourceTable::default();
+        assert_eq!(table.sources(SemanticSet::OnFoot, 0), None);
+        table.insert(
+            SemanticSet::OnFoot,
+            [
+                Some(vec![
+                    source("/user/hand/left/input/trigger/value", Some("Left Trigger")),
+                    // The same input under another path is shown once.
+                    source(
+                        "/user/hand/left/input/trigger/click",
+                        Some("Left Trigger Click"),
+                    ),
+                    source("/user/hand/right/input/pinch_ext/value", None),
+                    source("/user/gamepad/input/a/click", Some("Gamepad A")),
+                ]),
+                None,
+                Some(Vec::new()),
+            ],
+        );
+        let first = table.sources(SemanticSet::OnFoot, 0).unwrap();
+        assert_eq!(first.len(), 3);
+        assert_eq!(
+            (first[0].hand, first[0].component),
+            (Some(Hand::Left), Some(Component::TriggerValue))
+        );
+        assert_eq!(table.name(first[0].name), "Left Trigger");
+        assert_eq!(
+            (first[1].hand, first[1].component),
+            (Some(Hand::Right), None)
+        );
+        assert_eq!(
+            table.name(first[1].name),
+            "/user/hand/right/input/pinch_ext/value"
+        );
+        assert_eq!((first[2].hand, first[2].component), (None, None));
+        assert_eq!(table.name(first[2].name), "Gamepad A");
+        assert_eq!(table.sources(SemanticSet::OnFoot, 1), None);
+        assert_eq!(table.sources(SemanticSet::OnFoot, 2), Some(&[][..]));
+        assert_eq!(table.sources(SemanticSet::OnFoot, 3), None);
+        assert_eq!(table.sources(SemanticSet::Menu, 0), None);
     }
 }

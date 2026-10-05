@@ -103,7 +103,8 @@ impl Glyph {
     }
 }
 
-/// The glyphs drawn for `control`: one, or one per hand for a control of either hand.
+/// The glyphs drawn for `control`: one, or one per hand for a control of either hand, and none for
+/// a source the mod has no glyph for or an unbound action.
 pub fn glyphs(control: Control) -> &'static [Glyph] {
     let sided = |left: &'static [Glyph], right: &'static [Glyph], hand: Hand| match hand {
         Hand::Left => left,
@@ -148,6 +149,8 @@ pub fn glyphs(control: Control) -> &'static [Glyph] {
         Control::BothStickClicks => &[Glyph::StickLeftPress, Glyph::StickRightPress],
         Control::System => &[Glyph::System],
         Control::LeftStickClickAndRightB => &[Glyph::StickLeftPress, Glyph::ButtonB],
+        // Shown as text instead ([`crate::controllers::summary::content::Line::source`]).
+        Control::Named(..) | Control::Unbound => &[],
     }
 }
 

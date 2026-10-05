@@ -9,8 +9,11 @@ vertex buffers: ``u32 n`` and ``n`` ``i16x4`` positions (a component divided by 
 by the scale), then ``u32 n`` and ``n`` 20-byte records of packed UVs, normal, and tangent. Indices
 and optional extra data follow, and their layout varies by model.
 
-Only positions are read. The reader locates the position buffer by its ``n``, ``8n`` bytes, ``n``
-chain, and validates the result against the header's bounding box.
+The reader locates the position buffer by its ``n``, ``8n`` bytes, ``n`` chain, and validates the
+result against the header's bounding box. ``mesh`` also reads the triangles: the index buffer is a
+``u32 m`` and ``m`` ``u16`` vertex indices, three per triangle, and the reader takes the one that
+ends at the block's footer and whose indices all fall inside the block's vertices. A block with
+extra data after its indices has no such buffer and contributes no triangles.
 """
 
 import struct
@@ -26,6 +29,11 @@ class UnsupportedBlock(ValueError):
 
 
 def positions(data: bytes, name: str) -> list[tuple[float, float, float]]:
+    return mesh(data, name)[0]
+
+
+def mesh(data: bytes, name: str) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
+    """The model's vertex positions and its triangles, as index triples into the positions."""
     if struct.unpack_from("<I5s", data, 0) != (5, b"RBMDL"):
         raise ValueError(f"render model {name}: not an RBMDL file")
     major, minor, _revision = struct.unpack_from("<3I", data, 9)
@@ -35,23 +43,26 @@ def positions(data: bytes, name: str) -> list[tuple[float, float, float]]:
     (count,) = struct.unpack_from("<I", data, 0x2D)
     start = 0x35
     out = []
+    triangles = []
     for _ in range(count):
         end = data.index(FOOTER, start)
         # The footer value can occur inside vertex data, so take the first end at which the block
         # parses.
         while True:
             try:
-                out += _block(data, start, end, name)
+                block, buffer_end = _block(data, start, end, name)
                 break
             except _NoPositionBuffer:
                 end = data.index(FOOTER, end + 1)
+        triangles += [(a + len(out), b + len(out), c + len(out)) for a, b, c in _triangles(data, buffer_end, end, len(block))]
+        out += block
         start = end + 4
     for axis in range(3):
         lo = min(p[axis] for p in out)
         hi = max(p[axis] for p in out)
         if abs(lo - bbox[axis]) > BBOX_TOLERANCE or abs(hi - bbox[axis + 3]) > BBOX_TOLERANCE:
             raise ValueError(f"render model {name}: positions span {lo:.4f}..{hi:.4f} on axis {axis}, outside the header's bounding box")
-    return out
+    return out, triangles
 
 
 class _NoPositionBuffer(ValueError):
@@ -71,5 +82,22 @@ def _block(data: bytes, start: int, end: int, name: str):
         if struct.unpack_from("<I", data, offset + 4 + 8 * n)[0] != n:
             continue
         raw = data[offset + 4 : offset + 4 + 8 * n]
-        return [(x * k, y * k, z * k) for x, y, z, _ in struct.iter_unpack("<4h", raw)]
+        return [(x * k, y * k, z * k) for x, y, z, _ in struct.iter_unpack("<4h", raw)], offset + 4 + 8 * n
     raise _NoPositionBuffer(f"render model {name}: no position buffer in the block at {start:#x}")
+
+
+def _triangles(data: bytes, start: int, end: int, n: int) -> list[tuple[int, int, int]]:
+    # The index buffer ends at the footer, possibly padded to 4 bytes, so its count sits at
+    # ``end - 4 - 2m`` (less up to 2 bytes of padding) for some m.
+    for padding in (0, 2):
+        for offset in range(end - 4 - padding - 6, start - 1, -2):
+            (m,) = struct.unpack_from("<I", data, offset)
+            if 2 * m != end - padding - offset - 4:
+                continue
+            if m % 3:
+                break
+            indices = struct.unpack_from(f"<{m}H", data, offset + 4)
+            if max(indices, default=0) >= n:
+                break
+            return list(zip(indices[0::3], indices[1::3], indices[2::3]))
+    return []

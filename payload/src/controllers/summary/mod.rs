@@ -14,9 +14,14 @@
 //!
 //! The rows come from the binding tables themselves
 //! ([`crate::controllers::bindings::tables::describe`]), so the summary cannot drift from what the
-//! controllers inject. The input tick rebuilds the summary when the mode, the table context, the
-//! enabled gestures, or the game's language change ([`refresh`]), resolving the strings on the
-//! game thread; the render thread draws the latest one ([`crate::hud::summary_panel`]).
+//! controllers inject, and each row's control from the sources the runtime bound its actions to
+//! ([`crate::vr::input::sources::table`]): a glyph where the source is an input the mod knows, the
+//! runtime's name for it otherwise, and "unbound" for an action bound to nothing. The input tick
+//! rebuilds the summary when the mode, the table context, the enabled gestures, the game's
+//! language, or the bound sources change ([`refresh`]), resolving the strings on the game thread;
+//! the render thread draws the latest one ([`crate::hud::summary_panel`]). A rebuild asks for the
+//! sources to be read again, and the panel keeps the active sets' sources fresh while it shows
+//! ([`note_shown`]), since a rebind within a profile raises no event.
 
 pub mod config;
 pub mod content;
@@ -35,18 +40,21 @@ use jc3gi::ui::locator::Locale;
 use parking_lot::Mutex;
 
 pub use crate::controllers::summary::config::SummaryConfig;
-use crate::controllers::{
-    bindings::{
-        controls::Controls,
-        tables::{
-            declare::TableCtx,
-            describe::{DescribeCtx, Features, PhysicalFeatures, describe},
+use crate::{
+    controllers::{
+        bindings::{
+            controls::Controls,
+            tables::{
+                declare::TableCtx,
+                describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound},
+            },
         },
+        config::ControllersConfig,
+        frame::{ControllerFrame, InteractionProfile},
+        mode::Mode,
+        summary::content::{Summary, build},
     },
-    config::ControllersConfig,
-    frame::{ControllerFrame, InteractionProfile},
-    mode::Mode,
-    summary::content::{Summary, build},
+    vr::input::sources,
 };
 
 /// The latest summary, for the panel.
@@ -90,6 +98,12 @@ pub fn status() -> SummaryStatus {
     }
 }
 
+/// Note that the panel is showing, so the bound sources it labels are kept fresh. A leaf slot:
+/// safe from the draw task.
+pub fn note_shown() {
+    sources::note_shown();
+}
+
 /// Rebuild the summary if what it depends on changed. Runs on the input tick, after the bindings
 /// are evaluated for `mode` with `controls`.
 pub(crate) fn refresh(
@@ -112,7 +126,10 @@ pub(crate) fn refresh(
             yank: config.bindings.yank.enabled,
             holsters: weapons.holsters.enabled,
             foregrip: weapons.foregrip.enabled,
-            magazine: weapons.reload_gesture,
+            magazine: weapons.reload.enabled,
+            belt_reload: weapons.reload.enabled && weapons.reload.belt.enabled,
+            flick_eject: weapons.reload.enabled && weapons.reload.flick_eject,
+            work_action: weapons.reload.enabled && weapons.reload.chamber,
             grenade_throw: weapons.grenade_throw,
             c4_throw: weapons.c4_throw,
             wrist_detonator: weapons.wrist_detonator,
@@ -132,17 +149,31 @@ pub(crate) fn refresh(
     };
     // SAFETY: the input tick runs on the main thread past startup.
     let locale = unsafe { localise::current_locale() };
-    let key = Key { ctx, locale };
+    let key = Key {
+        ctx,
+        locale,
+        sources: sources::table_generation(),
+    };
     let previous = STATE.lock().key;
     if previous == Some(key) {
         return;
     }
+    let (generation, table) = sources::table();
     // Built outside the state lock: the render thread reads the published summary under it, and
     // the lookups take the localisation store's own lock.
     // SAFETY: as above.
     let resolve =
         |text| localise::resolve(text, locale, |key| unsafe { localise::game_string(key) });
-    let summary = build(&describe(&ctx), mode, controls.dominant, &resolve);
+    let summary = build(
+        &describe_bound(&ctx, &table),
+        mode,
+        controls.dominant,
+        &resolve,
+        &|name| table.name(name).to_owned(),
+    );
+    // A rebind within a profile raises no event, so read the sources again; the summary rebuilds
+    // only if they changed.
+    sources::request_refresh();
     tracing::debug!(
         target: "controllers",
         heading = %summary.heading,
@@ -153,7 +184,10 @@ pub(crate) fn refresh(
     let mode_changed =
         previous.is_none_or(|k| labels::heading(k.ctx.mode) != labels::heading(mode));
     let mut state = STATE.lock();
-    state.key = Some(key);
+    state.key = Some(Key {
+        sources: generation,
+        ..key
+    });
     let revision = state.published.as_ref().map_or(1, |p| p.revision + 1);
     let mode_changed_at = match &state.published {
         Some(p) if !mode_changed => p.mode_changed_at,
@@ -176,6 +210,8 @@ pub fn mode_changed_within(published: &Published, now: Instant, window: Duration
 struct Key {
     ctx: DescribeCtx,
     locale: Option<Locale>,
+    /// The generation of the bound sources ([`sources::table`]).
+    sources: u64,
 }
 
 struct State {

@@ -31,7 +31,17 @@
 //! actions are created.
 //!
 //! [`self_check`] probes, once per session, how the runtime treats this layout, and [`sources`]
-//! caches the runtime's bound sources for the debug UI and the bindings' masks.
+//! caches the runtime's bound sources for the debug UI, the bindings' masks, and the controls
+//! summary's glyphs.
+//!
+//! # Handedness
+//!
+//! OpenXR has no per-user binding presets: suggestions are per interaction profile and per
+//! application. The left-handed layout is the right-handed suggestion table mirrored
+//! ([`semantic::defaults::suggestions`]), chosen from `controllers.dominant_hand` when the actions
+//! are created. Monado follows it; SteamVR follows it while the player has no custom binding for
+//! the game. Since suggestions are fixed once the sets are attached, and the instance persists, a
+//! change of hand takes effect when the game restarts; until then [`restart`] tells the player so.
 //!
 //! # Persistence
 //!
@@ -51,6 +61,7 @@
 pub(crate) mod actions;
 mod haptics;
 pub(crate) mod layout;
+pub mod restart;
 mod sample;
 pub(crate) mod self_check;
 pub(crate) mod semantic;
@@ -65,7 +76,10 @@ use parking_lot::Mutex;
 pub(crate) use stash::clear as clear_stash;
 pub(crate) use state::InputState;
 
-use crate::controllers::frame::{ActionSetKind, InteractionProfile};
+use crate::{
+    controllers::frame::{ActionSetKind, Hand, InteractionProfile},
+    vr::input::restart::RestartReason,
+};
 
 /// Select the mode action set read from the next frame on. The mode detector calls this once per
 /// sim tick.
@@ -91,6 +105,11 @@ pub struct InputStatus {
     pub origin: Option<ActionsOrigin>,
     /// Why the input could not be set up, when it could not.
     pub error: Option<String>,
+    /// Why the game must restart for the input to work, when bring-up failed for a reason a
+    /// restart fixes.
+    pub restart: Option<RestartReason>,
+    /// The dominant hand the attached actions' bindings were suggested for.
+    pub suggested_for: Option<Hand>,
     /// The interaction profile of each hand.
     pub profiles: [InteractionProfile; 2],
     pub hand_tracking: HandTrackingStatus,
@@ -141,6 +160,8 @@ static STATUS: Mutex<InputStatus> = Mutex::new(InputStatus {
     attached: false,
     origin: None,
     error: None,
+    restart: None,
+    suggested_for: None,
     profiles: [InteractionProfile::None; 2],
     hand_tracking: HandTrackingStatus {
         extension_enabled: false,

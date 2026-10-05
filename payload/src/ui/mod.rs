@@ -201,6 +201,32 @@ pub fn startup_banner(ctx: &egui::Context) {
 /// How long (seconds) the startup banner stays up.
 const BANNER_SECONDS: f32 = 15.0;
 
+/// The restart notice ([`crate::vr::input::restart`]) on whatever surface the egui overlay renders
+/// to, for as long as it holds. The headset has its own panel for it
+/// ([`crate::hud::restart_notice`]); this is the desktop window's copy.
+pub fn restart_banner(ctx: &egui::Context) {
+    let Some(reason) = crate::vr::input::restart::current() else {
+        return;
+    };
+    egui::Area::new(egui::Id::new("jc3vr_restart_banner"))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -48.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style())
+                .fill(egui::Color32::from_rgba_unmultiplied(120, 20, 15, 235))
+                .show(ui, |ui| {
+                    ui.set_max_width(640.0);
+                    ui.label(
+                        egui::RichText::new(reason.headline())
+                            .size(24.0)
+                            .strong()
+                            .color(egui::Color32::WHITE),
+                    );
+                    ui.label(egui::RichText::new(reason.detail()).color(egui::Color32::WHITE));
+                });
+        });
+}
+
 pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     ui.label(
         egui::RichText::new(format!("Build {}", crate::BUILD_STAMP))

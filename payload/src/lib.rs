@@ -328,6 +328,7 @@ fn update() {
                     return;
                 }
                 ui::startup_banner(ctx);
+                ui::restart_banner(ctx);
                 // The dock area fills whatever space the window gives it, so the window carries an
                 // explicit default size instead of auto-sizing to content.
                 egui::Window::new("Debug")

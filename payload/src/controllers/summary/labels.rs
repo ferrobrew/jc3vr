@@ -265,6 +265,9 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::Holster => ModText::Holster,
         ModAction::Foregrip => ModText::Foregrip,
         ModAction::Magazine => ModText::Magazine,
+        ModAction::BeltReload => ModText::BeltReload,
+        ModAction::FlickEject => ModText::FlickEject,
+        ModAction::WorkAction => ModText::WorkAction,
         ModAction::Grenade => ModText::Grenade,
         ModAction::C4 => ModText::C4,
         ModAction::WristDetonator => ModText::WristDetonator,
@@ -301,6 +304,9 @@ pub enum ModText {
     Holster,
     Foregrip,
     Magazine,
+    BeltReload,
+    FlickEject,
+    WorkAction,
     Grenade,
     C4,
     WristDetonator,
@@ -321,6 +327,8 @@ pub enum ModText {
     ShowSummary,
     Recenter,
     DebugPanel,
+    /// The control of an action bound to no input.
+    Unbound,
 }
 
 impl ModText {
@@ -342,7 +350,10 @@ impl ModText {
             ModText::SightCapture => "Capture Sight Offset",
             ModText::Holster => "At a Holster: Draw or Holster",
             ModText::Foregrip => "At the Foregrip: Steady the Weapon",
-            ModText::Magazine => "Belt Pouch to Weapon: Reload",
+            ModText::Magazine => "At the Belt Pouch: Take a Round, Push It into the Gun",
+            ModText::BeltReload => "Push the Gun onto the Belt Pouch: Reload",
+            ModText::FlickEject => "Eject Magazine",
+            ModText::WorkAction => "At the Slide or Bolt: Pull Back to Chamber",
             ModText::Grenade => "At the Pouch: Grab, Let Go to Throw",
             ModText::C4 => "At the Chest Pouch: Grab C4, Let Go to Throw",
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
@@ -363,6 +374,7 @@ impl ModText {
             ModText::ShowSummary => "Show Controls",
             ModText::Recenter => "Recenter View",
             ModText::DebugPanel => "Mod Debug Panel",
+            ModText::Unbound => "UNBOUND",
         }
     }
 }
@@ -396,6 +408,9 @@ mod tests {
             holsters: true,
             foregrip: true,
             magazine: true,
+            belt_reload: true,
+            flick_eject: true,
+            work_action: true,
             grenade_throw: true,
             c4_throw: true,
             wrist_detonator: true,

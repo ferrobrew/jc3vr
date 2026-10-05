@@ -1,13 +1,16 @@
 //! The summary's content and layout model: the described rows labelled, grouped by hand, and the
 //! sizes the panel lays them out at. Pure.
 
-use crate::controllers::{
-    bindings::tables::describe::{Control, Effect, Row},
-    frame::Hand,
-    mode::Mode,
-    summary::labels::{
-        ActionLabel, HOLD_KEY, Text, action_label, gesture_prefix, heading, mod_action,
+use crate::{
+    controllers::{
+        bindings::tables::describe::{Control, Effect, Row},
+        frame::Hand,
+        mode::Mode,
+        summary::labels::{
+            ActionLabel, HOLD_KEY, ModText, Text, action_label, gesture_prefix, heading, mod_action,
+        },
     },
+    vr::input::semantic::bound::SourceName,
 };
 
 /// The labelled summary of one mode.
@@ -36,6 +39,9 @@ pub struct Group {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
     pub control: Control,
+    /// The control's name, for a control no glyph shows: the runtime's name for a source the mod
+    /// does not recognise, or "unbound".
+    pub source: Option<String>,
     /// The gesture's prefix ("HOLD", "FLICK", ...).
     pub prefix: Option<String>,
     pub text: String,
@@ -44,11 +50,13 @@ pub struct Line {
 /// Label `rows` for `mode` and group them: the off-hand first (the panel is on its wrist), then
 /// the dominant hand, then the inputs of either hand. Within a group, the rows are ordered by
 /// control ([`Control::order`]). A row whose actions all go unlabelled in this mode is left out.
+/// `name` gives the text of a source the mod has no glyph for.
 pub fn build(
     rows: &[Row],
     mode: Mode,
     dominant: Hand,
     resolve: &dyn Fn(Text) -> String,
+    name: &dyn Fn(SourceName) -> String,
 ) -> Summary {
     let hold = resolve(Text::Game(HOLD_KEY));
     let mut groups: Vec<Group> = [
@@ -72,6 +80,11 @@ pub fn build(
             index,
             Line {
                 control: row.control,
+                source: match row.control {
+                    Control::Named(_, source) => Some(name(source)),
+                    Control::Unbound => Some(resolve(Text::Mod(ModText::Unbound))),
+                    _ => None,
+                },
                 prefix: gesture_prefix(row.gesture).map(resolve),
                 text,
             },
@@ -173,10 +186,16 @@ mod tests {
     use jc3gi::input::input_action_map::Action::*;
 
     use super::*;
-    use crate::controllers::{
-        bindings::tables::describe::{Gesture, ModAction, StickDir},
-        mode::OnFootVariant,
-        summary::localise::humanise,
+    use crate::{
+        controllers::{
+            bindings::tables::describe::{Gesture, ModAction, StickDir},
+            mode::OnFootVariant,
+            summary::localise::humanise,
+        },
+        vr::input::semantic::{
+            SemanticSet,
+            bound::{EnumeratedSource, SourceTable},
+        },
     };
 
     const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
@@ -186,6 +205,10 @@ mod tests {
             Text::Game(key) => humanise(key),
             Text::Mod(text) => text.english().to_owned(),
         }
+    }
+
+    fn no_name(_: SourceName) -> String {
+        unreachable!("no row names a source")
     }
 
     fn row(control: Control, gesture: Gesture, effect: Effect) -> Row {
@@ -220,7 +243,7 @@ mod tests {
                 Effect::Actions(vec![FIRE_GRAPPLE, L1]),
             ),
         ];
-        let summary = build(&rows, ON_FOOT, Hand::Right, &english);
+        let summary = build(&rows, ON_FOOT, Hand::Right, &english, &no_name);
         let sides: Vec<_> = summary.groups.iter().map(|g| g.side).collect();
         assert_eq!(
             sides,
@@ -258,7 +281,7 @@ mod tests {
                 Effect::Actions(vec![GUI_PDA]),
             ),
         ];
-        let summary = build(&rows, ON_FOOT, Hand::Right, &english);
+        let summary = build(&rows, ON_FOOT, Hand::Right, &english, &no_name);
         let lines: Vec<_> = summary.groups.iter().flat_map(|g| &g.lines).collect();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].text, "Reload / Hold Holster weapon");
@@ -279,7 +302,7 @@ mod tests {
             Gesture::Press,
             Effect::Actions(vec![CANCEL, WINGSUIT_AIRBRAKE]),
         )];
-        let summary = build(&rows, wingsuit, Hand::Right, &same);
+        let summary = build(&rows, wingsuit, Hand::Right, &same, &no_name);
         assert_eq!(summary.groups[0].lines[0].text, "Air Brake");
     }
 
@@ -290,10 +313,60 @@ mod tests {
             Gesture::Flick,
             Effect::Mod(ModAction::SeatedCrouch),
         )];
-        let summary = build(&rows, ON_FOOT, Hand::Right, &english);
+        let summary = build(&rows, ON_FOOT, Hand::Right, &english, &no_name);
         let line = &summary.groups[0].lines[0];
         assert_eq!(line.prefix.as_deref(), Some("FLICK"));
         assert_eq!(line.text, "Crouch (seated)");
+    }
+
+    #[test]
+    fn controls_without_a_glyph_are_named() {
+        let mut table = SourceTable::default();
+        table.insert(
+            SemanticSet::OnFoot,
+            [Some(vec![EnumeratedSource {
+                path: "/user/hand/right/input/pinch_ext/value",
+                localized: Some("Right Pinch"),
+            }])],
+        );
+        let pinch = table.sources(SemanticSet::OnFoot, 0).unwrap()[0].name;
+        let rows = [
+            row(
+                Control::Named(Some(Hand::Right), pinch),
+                Gesture::Press,
+                Effect::Actions(vec![JUMP]),
+            ),
+            row(
+                Control::Unbound,
+                Gesture::Press,
+                Effect::Actions(vec![RELOAD]),
+            ),
+            row(
+                Control::A(Hand::Right),
+                Gesture::Press,
+                Effect::Actions(vec![USE_ITEM]),
+            ),
+        ];
+        let name = |name| table.name(name).to_owned();
+        let summary = build(&rows, ON_FOOT, Hand::Right, &english, &name);
+        let lines: Vec<_> = summary.groups.iter().flat_map(|g| &g.lines).collect();
+        let source = |control| {
+            lines
+                .iter()
+                .find(|l| l.control == control)
+                .map(|l| l.source.clone())
+        };
+        assert_eq!(
+            source(Control::Named(Some(Hand::Right), pinch)),
+            Some(Some("Right Pinch".to_owned()))
+        );
+        assert_eq!(source(Control::Unbound), Some(Some("UNBOUND".to_owned())));
+        assert_eq!(source(Control::A(Hand::Right)), Some(None));
+        // The named source stays with its hand, and the unbound row goes with either hand's, last.
+        assert_eq!(summary.groups[0].side, Side::Hand(Hand::Right));
+        let either = summary.groups.last().unwrap();
+        assert_eq!(either.side, Side::Either);
+        assert_eq!(either.lines.last().unwrap().control, Control::Unbound);
     }
 
     #[test]

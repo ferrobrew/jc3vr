@@ -1,9 +1,12 @@
 use jc3gi::input::input_action_map::Action::*;
 
 use super::*;
-use crate::controllers::{
-    bindings::tables::coverage::{all_contexts, all_modes, injected},
-    mode::{OnFootVariant, VehicleClass, VehicleSeat},
+use crate::{
+    controllers::{
+        bindings::tables::coverage::{all_contexts, all_modes, injected},
+        mode::{OnFootVariant, VehicleClass, VehicleSeat},
+    },
+    vr::input::semantic::{SemanticSet, bound::EnumeratedSource},
 };
 
 const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
@@ -352,4 +355,118 @@ fn the_parachute_handles_are_described_only_under_the_parachute() {
     assert!(handles(Mode::Airborne(AirborneVariant::Parachute)));
     assert!(!handles(Mode::Airborne(AirborneVariant::Wingsuit)));
     assert!(!handles(ON_FOOT));
+}
+
+/// A source table for the on-foot set where each action in `sources` has those sources (path and
+/// localized name) and every other action is not known.
+fn on_foot_sources(sources: &[(OnFootAction, &[(&str, &str)])]) -> SourceTable {
+    let mut table = SourceTable::default();
+    table.insert(
+        SemanticSet::OnFoot,
+        OnFootAction::ALL.iter().map(|action| {
+            sources.iter().find(|(a, _)| a == action).map(|(_, paths)| {
+                paths
+                    .iter()
+                    .map(|&(path, localized)| EnumeratedSource {
+                        path,
+                        localized: Some(localized),
+                    })
+                    .collect()
+            })
+        }),
+    );
+    table
+}
+
+#[test]
+fn the_runtime_sources_move_the_rows_and_name_what_has_no_glyph() {
+    let table = on_foot_sources(&[
+        (
+            OnFootAction::Fire,
+            &[("/user/hand/left/input/trigger/value", "Left Trigger")],
+        ),
+        (
+            OnFootAction::Jump,
+            &[("/user/hand/right/input/pinch_ext/value", "Right Pinch")],
+        ),
+    ]);
+    let rows = describe_bound(&ctx(ON_FOOT, Hand::Right, TableCtx::default()), &table);
+    assert!(actions_of(&rows, Control::Trigger(Hand::Left), Gesture::Press).contains(&FIRE_RIGHT));
+    assert!(
+        !actions_of(&rows, Control::Trigger(Hand::Right), Gesture::Press).contains(&FIRE_RIGHT)
+    );
+    let named: Vec<_> = rows
+        .iter()
+        .filter_map(|r| match r.control {
+            Control::Named(hand, name) => Some((hand, table.name(name), &r.effect)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(named.len(), 1, "{named:?}");
+    let (hand, name, effect) = named[0];
+    assert_eq!((hand, name), (Some(Hand::Right), "Right Pinch"));
+    assert!(matches!(effect, Effect::Actions(actions) if actions.contains(&JUMP)));
+    assert!(!actions_of(&rows, Control::A(Hand::Right), Gesture::Press).contains(&JUMP));
+    // The actions the runtime did not report keep their default inputs.
+    assert!(actions_of(&rows, Control::B(Hand::Right), Gesture::Press).contains(&USE_ITEM));
+}
+
+#[test]
+fn actions_bound_to_nothing_share_one_unbound_row() {
+    let table = on_foot_sources(&[(OnFootAction::Jump, &[]), (OnFootAction::ThrowGrenade, &[])]);
+    let rows = describe_bound(&ctx(ON_FOOT, Hand::Right, TableCtx::default()), &table);
+    let unbound: Vec<_> = rows
+        .iter()
+        .filter(|r| r.control == Control::Unbound)
+        .collect();
+    assert_eq!(unbound.len(), 1, "{unbound:?}");
+    let unbound = actions_of(&rows, Control::Unbound, Gesture::Press);
+    assert!(
+        unbound.contains(&JUMP) && unbound.contains(&THROW_GRENADE),
+        "{unbound:?}"
+    );
+    // On the defaults, the actions that ship unbound are listed as such too.
+    let defaults = describe(&ctx(ON_FOOT, Hand::Right, TableCtx::default()));
+    let unbound = actions_of(&defaults, Control::Unbound, Gesture::Press);
+    assert_eq!(unbound, vec![THROW_GRENADE]);
+}
+
+#[test]
+fn a_named_source_is_masked_only_with_its_whole_hand() {
+    // The pointer hand's trigger is masked in the menus by input; a source the mod does not
+    // recognise on that hand escapes the input mask.
+    let rows = |sources: &[(&str, &str)]| {
+        let mut table = SourceTable::default();
+        table.insert(
+            SemanticSet::Menu,
+            MenuAction::ALL.iter().map(|action| {
+                (*action == MenuAction::MenuPageNext).then(|| {
+                    sources
+                        .iter()
+                        .map(|&(path, localized)| EnumeratedSource {
+                            path,
+                            localized: Some(localized),
+                        })
+                        .collect()
+                })
+            }),
+        );
+        let menu = TableCtx {
+            pointer_hand: Some(Hand::Right),
+            ..TableCtx::default()
+        };
+        let rows = describe_bound(&ctx(Mode::Ui, Hand::Right, menu), &table);
+        (rows, table)
+    };
+    let (known, _) = rows(&[("/user/hand/right/input/trigger/value", "Right Trigger")]);
+    assert!(
+        known
+            .iter()
+            .all(|r| r.control != Control::Trigger(Hand::Right))
+    );
+    let (named, table) = rows(&[("/user/hand/right/input/pinch_ext/value", "Right Pinch")]);
+    assert!(named.iter().any(|r| matches!(
+        r.control,
+        Control::Named(Some(Hand::Right), name) if table.name(name) == "Right Pinch"
+    )));
 }

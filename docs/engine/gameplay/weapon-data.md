@@ -33,7 +33,7 @@ Every hand weapon's fire position has an identity rotation, so the barrel is the
 The weapon object's model property (named `MODEL_KEY` in [`tools/sights/weapon.py`](../../../tools/sights/weapon.py)) is `models/.../<model>_body.model_xml`. The path resolves to the `.lod` file of the same stem in the `.ee`, whose first entry is the closest LOD's `.rbm`. Child components add parts, each with its own `world` matrix and model path:
 
 - `CBarrelRecoilWeaponComponent` adds pistol slides at identity, one per dual-wielded gun.
-- `CModelAttachementWeaponComponent` named `model.magazine` or `model.ammo_belt` adds magazines and ammo belts at an offset.
+- `CModelAttachementWeaponComponent` named `model.magazine` or `model.ammo_belt` adds magazines and ammo belts at an offset. The reload hides and shows the magazine part and drops a separate magazine prop; see [weapon-ammo-and-reload.md](weapon-ammo-and-reload.md#the-magazine-drop-and-the-spare-prop).
 - Other components add parts such as `ejection_port`.
 
 The model directory is not always the entity's own. `w013` uses `w011`'s models, `w014` uses `w021_revolver_peacekeeper_diravello`, `w132` and `w173` use `w131`'s body, `w146` uses `w141`'s, `w178` and `w179` use `w112`'s, and `w703` uses `w701`'s. The model path in the `.epe` is the only reliable mapping.

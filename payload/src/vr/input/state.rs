@@ -13,6 +13,7 @@ use crate::{
         ActionsOrigin, HandTrackingStatus, InputStatus, PROFILES_DIRTY, STATUS,
         actions::Actions,
         layout::{self, HandsAction, Profile},
+        restart::{self, NeedsRestart, RestartReason},
         self_check::SelfCheck,
         semantic,
         sources::{self, SourcesRefresh},
@@ -79,13 +80,20 @@ impl InputState {
                     attached: true,
                     origin: Some(*origin),
                     error: None,
+                    restart: None,
+                    suggested_for: Some(state.dominant),
                     profiles: [InteractionProfile::None; 2],
                     hand_tracking: state.hand_tracking_status(instance),
                 };
             }
             Err(e) => {
+                let restart = restart::of_error(e);
+                if let Some(reason) = restart {
+                    tracing::error!(target: "vr", "input: {}", reason.headline());
+                }
                 *status = InputStatus {
                     error: Some(format!("{e:#}")),
+                    restart,
                     ..InputStatus::default()
                 };
             }
@@ -217,11 +225,12 @@ impl InputState {
                 // layout's names, and a set it attached to this session blocks attaching another.
                 // Put the stash back so a payload with the matching layout can still use it.
                 stash::store(&s);
-                anyhow::bail!(
-                    "input: controller input is unavailable: a payload with a different action \
-                     layout, suggested bindings, or dominant hand created the action sets on the \
-                     persisted OpenXR instance; restart the game"
-                );
+                let reason = if s.layout == layout::fingerprint(dominant.other()) {
+                    RestartReason::StashedForOtherHand
+                } else {
+                    RestartReason::LayoutChanged
+                };
+                return Err(NeedsRestart(reason).into());
             }
             stale => {
                 if let Some(s) = stale {
@@ -243,11 +252,14 @@ impl InputState {
             && let Err(e) = actions.attach(session)
         {
             actions.destroy(instance);
-            return Err(e.context(
-                "input: controller input is unavailable for this session (a session accepts \
-                 action sets once; if a previous payload attached different ones, restart the \
-                 game)",
-            ));
+            // A session accepts action sets once: a previous payload attached its own.
+            let already_attached = e
+                .downcast_ref::<xr::sys::Result>()
+                .is_some_and(|&r| r == xr::sys::Result::ERROR_ACTIONSETS_ALREADY_ATTACHED);
+            if already_attached {
+                return Err(e.context(NeedsRestart(RestartReason::SessionAttached)));
+            }
+            return Err(e.context("input: controller input is unavailable for this session"));
         }
 
         let spaces = Hand::BOTH.map(|hand| {

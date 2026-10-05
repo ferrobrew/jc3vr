@@ -40,6 +40,7 @@ pub mod markers;
 pub(crate) mod mirror_overlay;
 pub(crate) mod pointer;
 mod quad;
+pub(crate) mod restart_notice;
 pub mod scaleform;
 pub mod split;
 mod state;

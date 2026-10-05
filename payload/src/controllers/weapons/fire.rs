@@ -10,8 +10,9 @@
 //!   ([`crate::controllers::weapons::haptics`]);
 //! - after the shot, the change in the recoil is the shot's kick, which kicks the hand's recoil
 //!   offset ([`crate::controllers::weapons::recoil`]), by the class's one-handed kick scale for a
-//!   long gun in one hand ([`crate::controllers::weapons::heft`]), and the dual-wield split learns which hand
-//!   fired ([`crate::controllers::weapons::dual_wield`]). A weapon without a fire rumble of its own
+//!   long gun in one hand ([`crate::controllers::weapons::heft`]), the dual-wield split learns which
+//!   hand fired ([`crate::controllers::weapons::dual_wield`]), and the reload learns the shot's hand
+//!   and the rounds left ([`crate::controllers::weapons::reload`]). A weapon without a fire rumble of its own
 //!   still pulses the hand with the kick alone.
 
 use std::cell::Cell;
@@ -27,7 +28,7 @@ use crate::{
         frame::Hand,
         hands::late,
         scheme,
-        weapons::{dual_wield, haptics, heft, recoil},
+        weapons::{dual_wield, haptics, heft, recoil, reload},
     },
 };
 
@@ -109,6 +110,7 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
         heft::one_hand_kick(hand),
     );
     dual_wield::on_shot(hand);
+    reload::on_shot(weapon as usize, hand, w.m_MagazineAmmo);
     if !shot.rumbled {
         haptics::kick_pulse(hand, pitch.hypot(yaw));
     }
