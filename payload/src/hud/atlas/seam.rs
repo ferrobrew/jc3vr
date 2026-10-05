@@ -1,5 +1,5 @@
-//! The game side of the atlas: at the capture seam, lay out the cells, move the weapon and heat
-//! readouts into theirs, and after the capture move them back and publish the layout keyed by the
+//! The game side of the atlas: at the capture seam, lay out the cells, move the weapon, heat, and
+//! tether readouts into theirs, and after the capture move them back and publish the layout keyed by the
 //! snapshot the capture produced.
 //!
 //! Both halves run in the `MovieImpl::Capture` detour, on the thread that runs
@@ -60,6 +60,7 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
             for (clip, cell) in [
                 (AtlasClip::Weapons, layout.ammo),
                 (AtlasClip::Heat, layout.heat),
+                (AtlasClip::Tether, layout.tether),
             ] {
                 let (Some(parent), Some(cell)) = (parent, cell) else {
                     continue;
@@ -75,6 +76,7 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
                         match clip {
                             AtlasClip::Weapons => moved.ammo = Some(cell),
                             AtlasClip::Heat => moved.heat = Some(cell),
+                            AtlasClip::Tether => moved.tether = Some(cell),
                             AtlasClip::BottomRight => {}
                         }
                     }
@@ -161,6 +163,7 @@ pub(crate) unsafe fn after_capture(movie: &MovieImpl) {
         ammo: pending.moved.ammo,
         heat: pending.moved.heat,
         cross: pending.moved.cross,
+        tether: pending.moved.tether,
         layout: pending.layout,
     }));
 }
@@ -171,6 +174,7 @@ struct MovedParts {
     ammo: Option<Cell>,
     heat: Option<Cell>,
     cross: Option<Cell>,
+    tether: Option<Cell>,
 }
 
 /// A clip the atlas moves.
@@ -225,12 +229,13 @@ static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 
 /// The position each moved readout was last restored to, to notice a restore something else
 /// overrode. The cross is left out: the HUD places it every update.
-static LAST_RESTORED: Mutex<[Option<Vec2>; 2]> = Mutex::new([None, None]);
+static LAST_RESTORED: Mutex<[Option<Vec2>; 3]> = Mutex::new([None, None, None]);
 
 fn clip_index(clip: AtlasClip) -> usize {
     match clip {
         AtlasClip::Heat => 1,
-        _ => 0,
+        AtlasClip::Tether => 2,
+        AtlasClip::Weapons | AtlasClip::BottomRight => 0,
     }
 }
 
@@ -278,6 +283,10 @@ fn active_layout(cfg: &HudConfig) -> Option<(AtlasLayout, StageFrame)> {
                 extents,
                 max_scale: atlas.cross.max_scale,
             }),
+        tether: (atlas.tether.enabled && controllers).then_some(PartRequest {
+            extents: atlas.tether.extents,
+            max_scale: atlas.tether.max_scale,
+        }),
         label: (markers.enabled && atlas.markers).then_some(CropExtents {
             left: markers.crop.left + markers.label_extra_left.max(0.0),
             ..markers.crop

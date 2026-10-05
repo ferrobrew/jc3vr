@@ -54,10 +54,21 @@ impl AmmoHand {
     }
 }
 
-/// The weapon readout's centre: `offset` in the grip frame, given for the right hand and mirrored
-/// on X for the left (the grip frames of the two hands mirror each other across the body).
-pub(crate) fn ammo_anchor(grip: Pose, hand: Hand, offset: Vec3) -> Vec3 {
-    grip.position + grip.orientation * mirror(offset, hand == Hand::Left)
+/// The weapon readout's centre for a quad `height` metres tall: straight up in the world from the
+/// gun hand's `grip` until the quad's lower edge is `clearance` metres above it, then `pull`
+/// metres toward the `eye`. The hand's tilt does not move it, so the quad stays clear of the hand
+/// and the gun however the gun is held.
+pub(crate) fn ammo_anchor(grip: Vec3, eye: Vec3, clearance: f32, height: f32, pull: f32) -> Vec3 {
+    pull_toward(grip + WORLD_UP * (clearance + height * 0.5), eye, pull)
+}
+
+/// The tether readout's centre for a quad `height` metres tall: `back` metres along the forearm
+/// from the `wrist` (whose +Z points toward the elbow), then straight up in the world until the
+/// quad's lower edge is `clearance` metres above the forearm.
+pub(crate) fn forearm_anchor(wrist: Pose, back: f32, clearance: f32, height: f32) -> Vec3 {
+    wrist.position
+        + wrist.orientation * Vec3::new(0.0, 0.0, back)
+        + WORLD_UP * (clearance + height * 0.5)
 }
 
 /// Ease `current` toward `target` with a critically damped exponential of `halflife` seconds over
@@ -99,6 +110,23 @@ pub(crate) fn facing_corners(
         center - r - u,
         center + r - u,
     ])
+}
+
+/// The corners of a `width` by `height` quad centred on `center`, facing `eye` and upright: its top
+/// edge stays level in the world, so it reads like a sign held up rather than rolling with the
+/// head. Seen from nearly straight above or below, where the world's up leaves no level to keep,
+/// its up blends to `head_up`. `None` when the eye is at the centre.
+pub(crate) fn upright_corners(
+    center: Vec3,
+    eye: Vec3,
+    head_up: Vec3,
+    width: f32,
+    height: f32,
+) -> Option<[Vec3; 4]> {
+    let back = (eye - center).try_normalize()?;
+    let (level, vertical) = UPRIGHT_BLEND;
+    let steep = ((back.y.abs() - level) / (vertical - level)).clamp(0.0, 1.0);
+    facing_corners(center, eye, WORLD_UP.lerp(head_up, steep), width, height)
 }
 
 /// The wrist readout's pose on the inside of `hand`'s wrist: `offset` in the grip frame with +X
@@ -183,6 +211,13 @@ pub(crate) fn fade_out(closed_s: f32, linger_s: f32) -> f32 {
     (1.0 - closed_s / linger_s).clamp(0.0, 1.0)
 }
 
+/// The world's up.
+const WORLD_UP: Vec3 = Vec3::Y;
+
+/// The range of the vertical component of the direction to the eye over which an upright quad's up
+/// blends from the world's up to the head's: from about 18 degrees off vertical to about 6.
+const UPRIGHT_BLEND: (f32, f32) = (0.95, 0.995);
+
 /// `v` with its X negated when `flip`.
 fn mirror(v: Vec3, flip: bool) -> Vec3 {
     if flip { Vec3::new(-v.x, v.y, v.z) } else { v }
@@ -224,20 +259,52 @@ mod tests {
         assert_eq!(hand.step(Some(Hand::Right), 0.01, 1.0), Some(Hand::Right));
     }
 
-    /// The offset mirrors across the body: the same offset out of the back of either hand.
+    /// The readout rises straight up from the grip until its lower edge clears it, then leans
+    /// toward the eye.
     #[test]
-    fn the_ammo_anchor_mirrors_for_the_left_hand() {
-        let offset = Vec3::new(0.03, 0.09, 0.04);
-        let right = ammo_anchor(Pose::IDENTITY, Hand::Right, offset);
-        let left = ammo_anchor(Pose::IDENTITY, Hand::Left, offset);
-        assert_eq!(right, offset);
-        assert_eq!(left, Vec3::new(-0.03, 0.09, 0.04));
-        let turned = Pose {
-            position: Vec3::new(1.0, 0.0, 0.0),
-            orientation: Quat::from_rotation_y(FRAC_PI_2),
+    fn the_ammo_anchor_sits_above_the_grip() {
+        let grip = Vec3::new(0.2, 1.2, -0.4);
+        let eye = Vec3::new(0.0, 1.7, 0.0);
+        let placed = ammo_anchor(grip, eye, 0.1, 0.08, 0.0);
+        assert!(placed.abs_diff_eq(grip + Vec3::Y * 0.14, 1e-6), "{placed}");
+        let pulled = ammo_anchor(grip, eye, 0.1, 0.08, 0.05);
+        assert!((pulled.distance(placed) - 0.05).abs() < 1e-5);
+        assert!(pulled.distance(eye) < placed.distance(eye));
+    }
+
+    /// The tether readout follows the forearm back from the wrist, and rises straight up however
+    /// the forearm is turned.
+    #[test]
+    fn the_forearm_anchor_sits_above_the_forearm() {
+        let wrist = Pose {
+            position: Vec3::new(-0.2, 1.2, -0.3),
+            orientation: Quat::from_rotation_z(FRAC_PI_2) * Quat::from_rotation_y(FRAC_PI_2),
         };
-        let placed = ammo_anchor(turned, Hand::Right, offset);
-        assert!(placed.abs_diff_eq(turned.position + turned.orientation * offset, 1e-6));
+        let placed = forearm_anchor(wrist, 0.12, 0.06, 0.04);
+        let expected = wrist.position + wrist.orientation * Vec3::Z * 0.12 + Vec3::Y * 0.08;
+        assert!(placed.abs_diff_eq(expected, 1e-6), "{placed} {expected}");
+    }
+
+    /// An upright quad keeps its top edge level while the head rolls and faces the eye, and takes
+    /// the head's up when seen from straight above.
+    #[test]
+    fn upright_corners_stay_level() {
+        let center = Vec3::new(0.0, 0.0, -0.5);
+        let rolled = Quat::from_rotation_z(0.4) * Vec3::Y;
+        let [tl, tr, bl, br] = upright_corners(center, Vec3::ZERO, rolled, 0.1, 0.05).unwrap();
+        assert!((tl.y - tr.y).abs() < 1e-6, "the top edge is level");
+        assert!(tl.y > bl.y, "top is up");
+        let normal = (tr - tl).cross(tl - bl).normalize();
+        assert!(normal.abs_diff_eq(Vec3::Z, 1e-5), "{normal}");
+        assert!(((tl + br) * 0.5).abs_diff_eq(center, 1e-6));
+        let below = Vec3::new(0.0, -0.5, 0.0);
+        let [tl, tr, bl, _] = upright_corners(below, Vec3::ZERO, Vec3::NEG_Z, 0.1, 0.05).unwrap();
+        assert!(tr.x > tl.x, "right is to the right");
+        assert!(tl.z < bl.z, "the top points along the head's up");
+        assert_eq!(
+            upright_corners(Vec3::ZERO, Vec3::ZERO, Vec3::Y, 1.0, 1.0),
+            None
+        );
     }
 
     #[test]

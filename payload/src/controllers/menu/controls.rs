@@ -1,5 +1,6 @@
 //! The `VR: CONTROLS` page: the hand, the scheme, turning, the controller subsystems a player turns
-//! on and off, their few tunings worth changing in the headset, and the saved settings (their state,
+//! on and off, the HUD parts drawn at the hands and in the world, their few tunings worth changing
+//! in the headset, and the saved settings (their state,
 //! and a reset to defaults behind a confirmation). The rest of [`ControllersConfig`] stays in the debug
 //! UI.
 //!
@@ -134,6 +135,22 @@ fn build() -> Page {
             .overlay
             .hide_game_reticle))
         .item(config_toggle!("FINGERS", |c| c.controllers.fingers.enabled))
+        .header("HUD")
+        .item(config_toggle!("HUD ON THE HANDS", |c| c.hud.atlas.enabled))
+        .item(config_toggle!("AMMO ABOVE GUN HAND", |c| c
+            .hud
+            .atlas
+            .ammo
+            .enabled))
+        .item(config_toggle!("TETHERS ABOVE FOREARM", |c| c
+            .hud
+            .atlas
+            .tether
+            .enabled))
+        .item(config_toggle!("MARKERS IN THE WORLD", |c| c
+            .hud
+            .world_markers
+            .enabled))
         .header("CONTROLS SUMMARY")
         .item(config_toggle!("CONTROLS ON WRIST", |c| c
             .controllers

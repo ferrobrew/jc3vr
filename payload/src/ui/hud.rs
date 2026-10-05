@@ -561,11 +561,13 @@ fn atlas_ui(ui: &mut egui::Ui) {
                     ui.add(
                         egui::Slider::new(&mut a.ammo.max_scale, 0.1..=1.0).text("Largest scale"),
                     );
-                    vec3_ui(
-                        ui,
-                        &mut a.ammo.offset_m,
-                        "Offset in the right grip (m)",
-                        0.3,
+                    ui.add(
+                        egui::Slider::new(&mut a.ammo.clearance_m, 0.0..=0.3)
+                            .text("Lower edge above the grip (m)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut a.ammo.pull_m, 0.0..=0.2)
+                            .text("Pull toward the head (m)"),
                     );
                     ui.add(egui::Slider::new(&mut a.ammo.width_m, 0.03..=0.3).text("Width (m)"));
                     ui.add(
@@ -594,6 +596,30 @@ fn atlas_ui(ui: &mut egui::Ui) {
                     ui.add(
                         egui::Slider::new(&mut a.cross.pull_m, 0.0..=0.3)
                             .text("Pull from the hand toward the head (m)"),
+                    );
+                });
+                ui.separator();
+                ui.checkbox(
+                    &mut a.tether.enabled,
+                    "Tether readout above the off-hand's forearm",
+                );
+                ui.indent("atlas_tether", |ui| {
+                    extents_ui(ui, &mut a.tether.extents, "atlas_tether_extents");
+                    ui.add(
+                        egui::Slider::new(&mut a.tether.max_scale, 0.1..=1.0).text("Largest scale"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut a.tether.back_m, 0.0..=0.3)
+                            .text("Back along the forearm from the wrist (m)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut a.tether.clearance_m, 0.0..=0.2)
+                            .text("Lower edge above the forearm (m)"),
+                    );
+                    ui.add(egui::Slider::new(&mut a.tether.width_m, 0.03..=0.3).text("Width (m)"));
+                    ui.add(
+                        egui::Slider::new(&mut a.tether.follow_halflife_s, 0.0..=0.3)
+                            .text("Follow halflife (s)"),
                     );
                 });
                 ui.separator();
@@ -696,6 +722,7 @@ fn atlas_ui(ui: &mut egui::Ui) {
                         ("Weapon readout", frame.ammo),
                         ("Heat readout", frame.heat),
                         ("Selection cross", frame.cross),
+                        ("Tether readout", frame.tether),
                     ] {
                         ui.label(match cell {
                             Some(cell) => format!(
@@ -735,6 +762,11 @@ fn atlas_ui(ui: &mut egui::Ui) {
                     alpha * 100.0
                 ),
                 None => "Selection cross not drawn at a hand".to_owned(),
+            });
+            ui.label(if anchored.tether_drawn {
+                "Tether readout above the forearm"
+            } else {
+                "Tether readout not drawn"
             });
         },
     );

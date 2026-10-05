@@ -126,12 +126,16 @@ pub(crate) const HINT_CLIPS: [&str; 2] = [
 ];
 
 /// The HUD parts the atlas moves into cells, and the container the moved ones sit in, in
-/// [`AtlasClip`] order (see [`crate::hud::atlas`]). Both moved parts are children of the
+/// [`AtlasClip`] order (see [`crate::hud::atlas`]). Every moved part is a child of the
 /// bottom-right safe-area container, whose placement converts a cell's stage position into theirs.
-pub(crate) const ATLAS_CLIPS: [&str; 3] = [
+/// `MCI_dual_tether` is the tether readout: the count of tethers in use and the retract state. The
+/// movie also builds a per-tether list in `MCI_dualtether_stage` beside it, but holds that stage
+/// invisible, so it is left alone.
+pub(crate) const ATLAS_CLIPS: [&str; 4] = [
     "MCI_safe_area_bottom_right",
     "MCI_safe_area_bottom_right.MCI_weapons_parent",
     "MCI_safe_area_bottom_right.MCI_heat_container",
+    "MCI_safe_area_bottom_right.MCI_dual_tether",
 ];
 
 /// The index of each clip in [`ATLAS_CLIPS`].
@@ -140,6 +144,7 @@ pub(crate) enum AtlasClip {
     BottomRight = 0,
     Weapons = 1,
     Heat = 2,
+    Tether = 3,
 }
 
 /// A heap-pinned managed [`Value`] handle to a clip, plus the game-intent tracking the mask needs.

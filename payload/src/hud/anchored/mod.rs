@@ -1,8 +1,14 @@
 //! The body-anchored HUD readouts, under the controller scheme: the weapon readout above the gun
-//! hand, the health bar and heat readout on the inside of the off-hand's wrist, and the weapon
-//! selection cross where the hand steering the weapon wheel was when it opened.
+//! hand, the tether readout above the off-hand's forearm, the health bar and heat readout on the
+//! inside of the off-hand's wrist, and the weapon selection cross where the hand steering the
+//! weapon wheel was when it opened.
 //!
-//! The weapon and heat readouts are the game's own clips, moved into atlas cells for the capture
+//! The readouts above the hand and the forearm stand upright and face the eye. They are drawn
+//! without a depth test, like every HUD quad, so they are placed clear of the hand and the gun
+//! rather than tested against them: a readout near the hand that the scene's depth could hide
+//! would vanish into the gun or a wall the gun is pushed against.
+//!
+//! The weapon, tether, and heat readouts are the game's own clips, moved into atlas cells for the capture
 //! ([`crate::hud::atlas`]) and drawn here from their cells' copies, so they keep the game's values,
 //! icons, and fades: the game shows the weapon readout while a gun is out and fades it out when it
 //! is holstered, and the quad carries that fade. The health bar is the mod's own
@@ -45,8 +51,9 @@ use crate::{
         anchored::{
             health::{BAR_TEXELS, Bar, BarKey, HealthTrail},
             place::{
-                AmmoHand, Attention, ammo_anchor, facing_corners, fade_out, follow, gun_hand,
-                inner_wrist_pose, pull_toward, stacked_corners, wants_attention, wrist_wanted,
+                AmmoHand, Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
+                gun_hand, inner_wrist_pose, pull_toward, stacked_corners, upright_corners,
+                wants_attention, wrist_wanted,
             },
         },
         atlas::{self, Part},
@@ -113,6 +120,8 @@ pub(crate) struct AnchoredStatus {
     pub heat_drawn: bool,
     /// The selection cross's opacity, while it is drawn at the steering hand.
     pub cross_alpha: Option<f32>,
+    /// Whether the tether readout's quad was placed above the forearm.
+    pub tether_drawn: bool,
 }
 
 pub(crate) fn status() -> AnchoredStatus {
@@ -154,6 +163,8 @@ struct State {
     cross_open: bool,
     cross_corners: Option<[Vec4; 4]>,
     cross_alpha: f32,
+    tether_position: Option<Vec3>,
+    tether_corners: Option<[Vec4; 4]>,
     status: AnchoredStatus,
     gpu: Option<Gpu>,
 }
@@ -182,6 +193,8 @@ impl State {
             cross_open: false,
             cross_corners: None,
             cross_alpha: 0.0,
+            tether_position: None,
+            tether_corners: None,
             status: AnchoredStatus {
                 ammo_hand: None,
                 health: None,
@@ -191,6 +204,7 @@ impl State {
                 attention: false,
                 heat_drawn: false,
                 cross_alpha: None,
+                tether_drawn: false,
             },
             gpu: None,
         }
@@ -215,11 +229,13 @@ impl State {
         self.bar_corners = None;
         self.heat_corners = None;
         self.cross_corners = None;
+        self.tether_corners = None;
         let sample = *SAMPLE.lock();
         if !active {
             self.ammo_position = None;
             self.cross_offset = None;
             self.cross_open = false;
+            self.tether_position = None;
             self.wrist_alpha = 0.0;
             self.status = AnchoredStatus::default();
             return;
@@ -258,7 +274,15 @@ impl State {
             && let Some(grip) = grip(hand)
             && let Some(cell) = atlas::part_texture(Part::Ammo, |part| part.cell)
         {
-            let target = ammo_anchor(grip, hand, cfg.ammo.offset_m);
+            let width = cfg.ammo.width_m.max(0.01);
+            let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
+            let target = ammo_anchor(
+                grip.position,
+                head.position,
+                cfg.ammo.clearance_m,
+                height,
+                cfg.ammo.pull_m,
+            );
             let position = follow(
                 self.ammo_position,
                 target,
@@ -267,9 +291,7 @@ impl State {
                 SNAP_M,
             );
             self.ammo_position = Some(position);
-            let width = cfg.ammo.width_m.max(0.01);
-            let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
-            self.ammo_corners = facing_corners(
+            self.ammo_corners = upright_corners(
                 position,
                 head.position,
                 head.orientation * Vec3::Y,
@@ -280,6 +302,38 @@ impl State {
             self.status.ammo_hand = Some(hand);
         } else {
             self.ammo_position = None;
+        }
+
+        // The tether readout, above the off-hand's forearm, where the grapple fires from.
+        self.status.tether_drawn = false;
+        let off = dominant.other();
+        if cfg.tether.enabled
+            && let Some(head) = head
+            && let Some(wrist) = hands[off.index()].map(|h| h.wrist.at(dtf))
+            && let Some(cell) = atlas::part_texture(Part::Tether, |part| part.cell)
+        {
+            let width = cfg.tether.width_m.max(0.01);
+            let height = width * cell.rect.size.y / cell.rect.size.x.max(1.0);
+            let target = forearm_anchor(wrist, cfg.tether.back_m, cfg.tether.clearance_m, height);
+            let position = follow(
+                self.tether_position,
+                target,
+                dt,
+                cfg.tether.follow_halflife_s,
+                SNAP_M,
+            );
+            self.tether_position = Some(position);
+            self.tether_corners = upright_corners(
+                position,
+                head.position,
+                head.orientation * Vec3::Y,
+                width,
+                height,
+            )
+            .map(|corners| corners.map(|c| c.extend(1.0)));
+            self.status.tether_drawn = self.tether_corners.is_some();
+        } else {
+            self.tether_position = None;
         }
 
         // The selection cross, where the steering hand was when the wheel opened, relative to the
@@ -322,7 +376,6 @@ impl State {
 
         // The wrist: the health bar and the heat readout.
         let wrist = &cfg.wrist;
-        let off = dominant.other();
         let pose = grip(off).map(|grip| inner_wrist_pose(grip, off, wrist.offset_m));
         let fraction = sample
             .filter(|s| s.max_health > 0)
@@ -406,6 +459,12 @@ impl State {
         }
         if let Some(corners) = self.ammo_corners {
             atlas::part_texture(Part::Ammo, |part| {
+                gpu.quad
+                    .draw(context, device, target, part.target.color_srv(), &corners)
+            });
+        }
+        if let Some(corners) = self.tether_corners {
+            atlas::part_texture(Part::Tether, |part| {
                 gpu.quad
                     .draw(context, device, target, part.target.color_srv(), &corners)
             });

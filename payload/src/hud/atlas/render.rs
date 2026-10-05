@@ -27,22 +27,24 @@ pub(crate) enum Part {
     Ammo,
     Heat,
     Cross,
+    Tether,
 }
 
 impl Part {
-    const ALL: [Part; PARTS] = [Part::Ammo, Part::Heat, Part::Cross];
+    const ALL: [Part; PARTS] = [Part::Ammo, Part::Heat, Part::Cross, Part::Tether];
 
     const fn index(self) -> usize {
         match self {
             Part::Ammo => 0,
             Part::Heat => 1,
             Part::Cross => 2,
+            Part::Tether => 3,
         }
     }
 }
 
 /// How many parts there are.
-const PARTS: usize = 3;
+const PARTS: usize = 4;
 
 /// Choose the frame's capture (eye 0). `active` is false while the HUD texture is not the gameplay
 /// HUD's (not redirected, or full-screen UI), which drops the frame.
@@ -70,9 +72,10 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         return;
     };
     let mut parts = [None; PARTS];
-    for (part, cell) in Part::ALL
-        .iter()
-        .zip([capture.ammo, capture.heat, capture.cross])
+    for (part, cell) in
+        Part::ALL
+            .iter()
+            .zip([capture.ammo, capture.heat, capture.cross, capture.tether])
     {
         let Some(cell) = cell else {
             continue;
@@ -101,6 +104,7 @@ pub(crate) fn prepare_frame(device: &Device, hud: Option<&HudTarget>, active: bo
         ammo: capture.ammo,
         heat: capture.heat,
         cross: capture.cross,
+        tether: capture.tether,
         texture,
     });
 }
@@ -187,7 +191,7 @@ pub(crate) fn part_texture<R>(part: Part, f: impl FnOnce(PartTexture<'_>) -> R) 
 
 /// The render-side state.
 static RENDERER: Mutex<Renderer> = Mutex::new(Renderer {
-    slots: [None, None, None],
+    slots: [None, None, None, None],
     blank: None,
     blank_dirty: AtomicBool::new(false),
     frame: None,

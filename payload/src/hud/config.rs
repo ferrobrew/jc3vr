@@ -132,7 +132,8 @@ pub struct HudConfig {
     pub world_markers: WorldMarkersConfig,
     /// The HUD atlas: parts of the gameplay HUD moved into their own cells of the HUD texture for
     /// the capture and drawn on their own quads (the world markers, the ammunition readout at the
-    /// gun hand, and the heat readout on the wrist). See [`crate::hud::atlas`].
+    /// gun hand, the tether readout on the forearm, and the heat readout on the wrist). See
+    /// [`crate::hud::atlas`].
     #[serde(default)]
     pub atlas: AtlasConfig,
 }
@@ -169,7 +170,6 @@ impl HudConfig {
         }
     }
 }
-
 
 /// How the aim reticle is projected onto the floating panel (issue #6). An A/B knob for the
 /// crosshair-vs-shot alignment; only the reticle projection is affected, not the world markers.
@@ -277,6 +277,8 @@ pub struct AtlasConfig {
     pub wrist: WristStatusConfig,
     /// The weapon selection cross at the hand steering the weapon wheel.
     pub cross: CrossConfig,
+    /// The tether readout above the off-hand's forearm.
+    pub tether: TetherConfig,
 }
 
 impl AtlasConfig {
@@ -288,6 +290,7 @@ impl AtlasConfig {
             ammo: AmmoConfig::new(),
             wrist: WristStatusConfig::new(),
             cross: CrossConfig::new(),
+            tether: TetherConfig::new(),
         }
     }
 }
@@ -299,8 +302,9 @@ impl Default for AtlasConfig {
 }
 
 /// The weapon readout (`MCI_weapons_parent`: the weapon's name and icon, the magazine bar, and the
-/// reserve) drawn above the hand that holds the gun, under the controller scheme. The game shows
-/// it while a gun is out and fades it when holstered; the quad carries that fade.
+/// reserve) drawn above the hand that holds the gun, under the controller scheme, upright and
+/// facing the eye. The game shows it while a gun is out and fades it when holstered; the quad
+/// carries that fade.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AmmoConfig {
@@ -309,9 +313,11 @@ pub struct AmmoConfig {
     pub extents: CropExtents,
     /// The largest scale the readout is captured at; it is scaled down further to fit a band.
     pub max_scale: f32,
-    /// The quad's centre in the right hand's grip frame, metres (+Y up from the fist, +Z back
-    /// along the forearm, +X out of the back of the right hand). Mirrored on X for the left hand.
-    pub offset_m: Vec3,
+    /// How far above the gun hand's grip the quad's lower edge sits, metres, straight up in the
+    /// world whatever the hand's tilt, so the quad clears the hand and the gun in it.
+    pub clearance_m: f32,
+    /// How far the quad is pulled from above the hand toward the head, metres.
+    pub pull_m: f32,
     /// The quad's width, metres; its height follows the cell's aspect.
     pub width_m: f32,
     /// The halflife of the quad's follow of the hand, seconds.
@@ -332,7 +338,8 @@ impl AmmoConfig {
                 down: 175.0,
             },
             max_scale: 1.0,
-            offset_m: Vec3::new(0.03, 0.09, 0.04),
+            clearance_m: 0.10,
+            pull_m: 0.02,
             width_m: 0.10,
             follow_halflife_s: 0.05,
             linger_s: 1.5,
@@ -379,6 +386,53 @@ impl CrossConfig {
 }
 
 impl Default for CrossConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The game's tether readout (`MCI_dual_tether`: the count of tethers in use out of the most the
+/// grapple holds, and the retract state) drawn above the off-hand's forearm, where the grapple
+/// fires from, under the controller scheme, upright and facing the eye. The game shows it while
+/// tethers are attached and fades it out after; the quad carries that fade.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TetherConfig {
+    pub enabled: bool,
+    /// The readout's extents around its clip's origin, in the clip's own pixels.
+    pub extents: CropExtents,
+    /// The largest scale the readout is captured at; it is scaled down further to fit a band.
+    pub max_scale: f32,
+    /// How far back along the forearm from the wrist the quad sits, metres.
+    pub back_m: f32,
+    /// How far above the forearm the quad's lower edge sits, metres, straight up in the world.
+    pub clearance_m: f32,
+    /// The quad's width, metres; its height follows the cell's aspect.
+    pub width_m: f32,
+    /// The halflife of the quad's follow of the forearm, seconds.
+    pub follow_halflife_s: f32,
+}
+
+impl TetherConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            extents: CropExtents {
+                left: 60.0,
+                right: 60.0,
+                up: 25.0,
+                down: 30.0,
+            },
+            max_scale: 1.0,
+            back_m: 0.12,
+            clearance_m: 0.06,
+            width_m: 0.08,
+            follow_halflife_s: 0.05,
+        }
+    }
+}
+
+impl Default for TetherConfig {
     fn default() -> Self {
         Self::new()
     }

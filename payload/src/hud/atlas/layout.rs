@@ -51,6 +51,8 @@ pub(crate) struct LayoutRequest {
     pub heat: Option<PartRequest>,
     /// The weapon selection cross.
     pub cross: Option<PartRequest>,
+    /// The tether readout.
+    pub tether: Option<PartRequest>,
     /// The labelled marker's extents (its label sits to the left of its icon).
     pub label: Option<CropExtents>,
     /// Every other marker's extents.
@@ -69,6 +71,7 @@ pub(crate) struct AtlasLayout {
     pub ammo: Option<Cell>,
     pub heat: Option<Cell>,
     pub cross: Option<Cell>,
+    pub tether: Option<Cell>,
     pub label: Option<Cell>,
     pub markers: Vec<Cell>,
 }
@@ -94,9 +97,9 @@ pub(crate) fn bands(stage: Vec2, frame: &StageFrame) -> Option<[StageRect; 2]> {
     ])
 }
 
-/// Pack the request's parts into the bands: the ammunition and heat readouts and the selection
-/// cross first, then the label cell, then as many marker cells as fit, up to the request's cap. A part that fits nowhere
-/// gets no cell. `None` without bands.
+/// Pack the request's parts into the bands: the ammunition and heat readouts, the selection cross,
+/// and the tether readout first, then the label cell, then as many marker cells as fit, up to the
+/// request's cap. A part that fits nowhere gets no cell. `None` without bands.
 pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
     let bands = bands(request.stage, &request.frame)?;
     let gutter = request.gutter.max(0.0);
@@ -105,6 +108,9 @@ pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
     let heat = request.heat.and_then(|part| place_part(&mut packer, &part));
     let cross = request
         .cross
+        .and_then(|part| place_part(&mut packer, &part));
+    let tether = request
+        .tether
         .and_then(|part| place_part(&mut packer, &part));
     let label = request
         .label
@@ -124,6 +130,7 @@ pub(crate) fn layout(request: &LayoutRequest) -> Option<AtlasLayout> {
         ammo,
         heat,
         cross,
+        tether,
         label,
         markers,
     })
@@ -425,6 +432,15 @@ mod tests {
                 },
                 max_scale: 1.0,
             }),
+            tether: Some(PartRequest {
+                extents: CropExtents {
+                    left: 60.0,
+                    right: 60.0,
+                    up: 25.0,
+                    down: 30.0,
+                },
+                max_scale: 1.0,
+            }),
             label: Some(CropExtents {
                 left: 360.0,
                 ..marker()
@@ -451,6 +467,7 @@ mod tests {
             .iter()
             .chain(layout.heat.iter())
             .chain(layout.cross.iter())
+            .chain(layout.tether.iter())
             .chain(layout.label.iter())
             .chain(layout.markers.iter())
             .copied()
@@ -475,7 +492,7 @@ mod tests {
         let layout = layout(&request(1.3)).unwrap();
         let cells = all_cells(&layout);
         assert!(layout.ammo.is_some() && layout.heat.is_some() && layout.label.is_some());
-        assert!(layout.cross.is_some());
+        assert!(layout.cross.is_some() && layout.tether.is_some());
         assert!(!layout.markers.is_empty());
         for (i, a) in cells.iter().enumerate() {
             assert!(
