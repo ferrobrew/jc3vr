@@ -18,7 +18,9 @@
 //!   the arm alone cannot get there, and the body IK's pin on that shoulder yields by the same ramp
 //!   so it does not hold the girdle back;
 //! - the `SECONDARY` pass is switched off for the hand ([`crate::controllers::hands::secondary`])
-//!   at that pass's own entry ([`before_secondary`]), after the state tasks that write its keys.
+//!   at that pass's own entry ([`before_secondary`]), after the state tasks that write its keys,
+//!   and the wrist's current reach is zeroed there so that a stale `SECONDARY` target cannot pull
+//!   it back.
 //!
 //! The wielded weapon rides the hand's attach bone, a child of the wrist, and the engine refreshes
 //! the weapon's cached transform from that bone right after the `MAIN` solve, so the gun follows
@@ -282,6 +284,9 @@ pub(crate) unsafe fn before_secondary(character: *mut Character) {
         if parts.wrist_target || parts.weapon_grip {
             switched[hand.index()] =
                 unsafe { secondary::switch_off(&mut character.m_Blackboard, hand, parts) };
+        }
+        if parts.wrist_target {
+            secondary::release_wrist(&mut character.m_HIK, hand);
         }
     }
     let mut status = STATUS.lock();
