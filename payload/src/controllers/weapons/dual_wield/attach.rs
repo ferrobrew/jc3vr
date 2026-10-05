@@ -25,6 +25,9 @@
 //! weapon between the two keeps the mod's layout. Nothing changes the weapon's state: the game
 //! still has the pair dual-wielded, so its body animation, magazine, and reload are the pair's.
 //!
+//! The placement detour also runs the rigid grip around the original
+//! ([`crate::controllers::hands::grip`]), for every weapon the local player holds.
+//!
 //! The detours run on the simulation's worker threads for every character, so they compare the
 //! inventory's weapon against the owned weapon's address before taking any lock, and they never
 //! touch the VR state.
@@ -48,6 +51,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     aim::gun,
     frame::Hand,
+    hands::grip,
     weapons::dual_wield::draw::{self, Holding},
 };
 
@@ -345,10 +349,15 @@ fn update_attachment_transforms(
     if let Some(weapon) = unsafe { owned_in(inventory) } {
         unsafe { apply(weapon, true) };
     }
+    // The rigid grip pins the attach bones after the layout above has chosen them.
+    let placement = unsafe { grip::before_placement(inventory, character) };
     UPDATE_ATTACHMENT_TRANSFORMS
         .get()
         .unwrap()
         .call(inventory, character, p3, p4, transform_type);
+    if let Some(placement) = placement {
+        unsafe { grip::after_placement(character, placement) };
+    }
 }
 
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateInventoryPostFinalizePose_ADDRESS)]

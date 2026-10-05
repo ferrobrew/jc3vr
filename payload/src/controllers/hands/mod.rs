@@ -13,6 +13,8 @@
 //! - [`ik`]: the wrist targets queued on HumanIK's `MAIN` pass at the pre-solve seam, and the
 //!   record of each tick's targets that the late update corrects from;
 //! - [`secondary`]: the per-hand switch for the game's `SECONDARY` hand IK pass;
+//! - [`grip`]: the rigid grip: a gun held in a driven hand pinned to the wrist at the hand's
+//!   canonical grip before each placement of the weapons;
 //! - [`late`]: the render-time late update of the held weapon's model and of the hand and forearm
 //!   bones in the skinning palette, and the render-time hand poses for the overlay;
 //! - [`parts`]: the render-time late update of a held gun's separate model parts (its magazine,
@@ -38,6 +40,7 @@ use crate::{
 };
 
 pub mod anchor;
+pub mod grip;
 pub mod ik;
 pub mod late;
 pub mod palette;

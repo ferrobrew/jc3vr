@@ -3519,6 +3519,56 @@ impl WeaponData {
             f(self as *const Self as _, result)
         }
     }
+    pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x140986F80;
+    /// Places the gun for `state` (`CWeaponData::UpdateAttachmentTransforms`), writing
+    /// [`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1). With `update_type` 2 (advance) it first copies
+    /// the current matrix into [`m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0). Held by a vehicle, the
+    /// gun follows its anchor or part; while wingsuiting it is built from the holder's reference
+    /// and head bones and its flight direction; dropped, mounted, or on a turret it follows its own
+    /// rigid body when that is in the world; on a weapon rack it follows its placement rule.
+    /// Otherwise, held by a character, it takes the world matrix of the bone its attach-bone table
+    /// ([`m_lBoneAttachementPerWeaponState`](crate::equipment::weapon::WeaponData::m_lBoneAttachementPerWeaponState)) names for
+    /// `state`
+    /// ([`Character::GetWorldMatrixForBone`](crate::character::character::Character::GetWorldMatrixForBone)):
+    /// a hand attach bone's matrix as it is, and a holster or back bone's composed with the gun's
+    /// attach offset when the weapon's attach tuning asks for it. So a hand-held gun's pose in the
+    /// hand is the attach bone's pose relative to the wrist, which the animation sets. While
+    /// [`m_SkipRenderInterpolation`](crate::equipment::weapon::WeaponData::m_SkipRenderInterpolation) or
+    /// `skip_render_interpolation` is set, and for the initial placement (`update_type` 0), it
+    /// copies the new matrix into [`m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0) too. Each weapon's
+    /// placement calls it for every gun; the character's pose-finalization pass places the weapons
+    /// through
+    /// [`Inventory::UpdateAttachmentTransforms`](crate::character::inventory::Inventory::UpdateAttachmentTransforms).
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        holder: *mut crate::game::GameObject,
+        snow_factor: f32,
+        water_factor: f32,
+        state: crate::equipment::weapon::WeaponState,
+        skip_render_interpolation: bool,
+        update_type: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *mut crate::game::GameObject,
+                snow_factor: f32,
+                water_factor: f32,
+                state: crate::equipment::weapon::WeaponState,
+                skip_render_interpolation: bool,
+                update_type: u32,
+            ) = ::std::mem::transmute(Self::UpdateAttachmentTransforms_ADDRESS);
+            f(
+                self as *mut Self as _,
+                holder,
+                snow_factor,
+                water_factor,
+                state,
+                skip_render_interpolation,
+                update_type,
+            )
+        }
+    }
     pub const ThrowAwayMagazineObject_ADDRESS: usize = 0x140986B60;
     /// Drops the gun's spare magazine ([`m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject)) as a physics
     /// prop, for `character` holding the gun. `model_name_hash` picks where the magazine leaves

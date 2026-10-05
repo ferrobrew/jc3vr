@@ -199,6 +199,25 @@ impl AnimationController {
             f(self as *mut Self as _, index, joint)
         }
     }
+    pub const GetBindPoseBoneMatrix_ADDRESS: usize = 0x140440000;
+    /// Writes the model-space matrix of bone `index` in the skeleton's bind pose through `matrix`
+    /// (`CAnimationControl::GetBindPoseBoneMatrix`, through `CSkeleton::GetJoint`). The bind pose
+    /// belongs to the skeleton resource and does not change with the animation, so two bones' bind
+    /// matrices give their rest-pose relation.
+    pub unsafe fn GetBindPoseBoneMatrix(
+        &self,
+        index: u32,
+        matrix: *mut crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                index: u32,
+                matrix: *mut crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::GetBindPoseBoneMatrix_ADDRESS);
+            f(self as *const Self as _, index, matrix)
+        }
+    }
     pub const UpdateAnimationsTime_ADDRESS: usize = 0x1404794D0;
     /// Advances the playback clocks of the controller's time-updatable blenders by `dt` (via
     /// `CPoseProducer::UpdateBlendersTimeInRange`) without recomputing the pose. Runs each SIM frame
@@ -589,6 +608,27 @@ impl Character {
                 safe_index: crate::character::character::SafeBoneIndex,
                 matrix: *mut crate::types::math::Matrix4,
             ) = ::std::mem::transmute(Self::GetSafeBoneMatrix_ADDRESS);
+            f(self as *const Self as _, safe_index, matrix)
+        }
+    }
+    pub const GetWorldMatrixForBone_ADDRESS: usize = 0x14079AEB0;
+    /// Writes the world matrix of the safe bone `safe_index` through `matrix`: the bone's
+    /// model-space matrix from the animation controller's current pose
+    /// ([`AnimationController::GetBoneMatrix`](crate::character::character::AnimationController::GetBoneMatrix)) composed with the character's
+    /// [`m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1). A gun's attachment placement
+    /// ([`WeaponData::UpdateAttachmentTransforms`](crate::equipment::weapon::WeaponData::UpdateAttachmentTransforms))
+    /// takes a hand-held gun's world matrix from it.
+    pub unsafe fn GetWorldMatrixForBone(
+        &self,
+        safe_index: crate::character::character::SafeBoneIndex,
+        matrix: *mut crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                safe_index: crate::character::character::SafeBoneIndex,
+                matrix: *mut crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::GetWorldMatrixForBone_ADDRESS);
             f(self as *const Self as _, safe_index, matrix)
         }
     }
@@ -1862,7 +1902,7 @@ impl std::convert::AsMut<Joint> for Joint {
     }
 }
 #[repr(u32)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 pub enum SafeBoneIndex {
     REFERENCE = 2394094972isize as _,
     OFFSET = 1252689883isize as _,

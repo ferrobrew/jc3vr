@@ -70,6 +70,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.hands.ik = hands;
     c.hands.late_update = hands;
     c.hands.suppress_secondary_ik = hands;
+    c.hands.rigid_grip = hands;
     c.aim.gun = hands;
     c.aim.grapple = hands;
     c.aim.sight_tuning.enabled = false;

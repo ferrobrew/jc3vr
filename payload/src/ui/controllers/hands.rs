@@ -185,6 +185,9 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
         "Switch off the game's secondary hand IK",
     )
     .on_hover_text("The weapon off-hand grip, the grapple fire arm, and the parachute handles.");
+    ui.checkbox(&mut h.rigid_grip, "Rigid grip").on_hover_text(
+        "Hold a gun fixed in a controller-driven hand, whatever the animation does.",
+    );
     ui.add(egui::Slider::new(&mut h.reach_t, 0.0..=1.0).text("Position reach"));
     ui.add(egui::Slider::new(&mut h.reach_r, 0.0..=1.0).text("Rotation reach"));
     ui.add(egui::Slider::new(&mut h.pull, 0.0..=1.0).text("Pull"));
