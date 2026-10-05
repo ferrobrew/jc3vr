@@ -121,6 +121,11 @@ pub struct HudConfig {
     /// overlays are unaffected.
     #[serde(default = "default_true")]
     pub flat_overlay_visible: bool,
+    /// The world-marker prototype: the game's on-screen point-of-interest markers drawn as
+    /// billboards at their world points instead of on the floating panel. See
+    /// [`crate::hud::world_markers`].
+    #[serde(default)]
+    pub world_markers: WorldMarkersConfig,
 }
 impl HudConfig {
     pub const fn new() -> Self {
@@ -150,6 +155,7 @@ impl HudConfig {
             split_path_prefix: SplitPathPrefix::new(),
             egui_panel: EguiPanelConfig::new(),
             flat_overlay_visible: true,
+            world_markers: WorldMarkersConfig::new(),
         }
     }
 }
@@ -169,6 +175,106 @@ pub enum ReticleAlign {
     /// The game camera's own projection (off-center shear and game FOV kept) applied at the panel
     /// pose -- the reticle follows the game's native screen-space aim mapping instead.
     GameProjection,
+}
+
+/// The world-marker prototype ([`crate::hud::world_markers`]): each on-screen point-of-interest
+/// marker is cropped out of the HUD texture and drawn as a billboard at its world point, keeping
+/// the angular size it has on the panel, and its rectangle is cut out of the panel.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorldMarkersConfig {
+    /// Master toggle. Off by default while the prototype is evaluated.
+    pub enabled: bool,
+    /// Decide whether a marker is on screen with the headset's field of view rather than the
+    /// panel's narrower subtense, so a marker the player can see in the world is not demoted to an
+    /// edge arrow. Markers outside the headset's view stay edge arrows on the panel.
+    pub classify_with_headset_fov: bool,
+    /// The half-angle of the classification field of view, in degrees, used when no headset frame
+    /// supplies one (the flat desktop).
+    pub fallback_half_fov_deg: f32,
+    /// How far inside the headset's field of view a marker must be to count as on screen, in
+    /// degrees, so a marker at the very edge of the lenses keeps its arrow.
+    pub fov_inset_deg: f32,
+    /// Cut each world-placed marker's rectangle out of the panel.
+    pub hide_from_panel: bool,
+    /// The cropped rectangle around a marker clip's origin, in stage pixels.
+    pub crop: CropExtents,
+    /// The extra width to the left of the labelled marker's crop, in stage pixels: the label sits
+    /// to the left of the icon.
+    pub label_extra_left: f32,
+    /// The farthest a billboard is placed, in metres. A farther marker is drawn at this distance
+    /// along its direction, where its stereo disparity is already indistinguishable from infinity.
+    pub max_distance_m: f32,
+    /// Place each marker on the closest visible surface along the line of sight to its point (the
+    /// scene depth at its pixel, or a raycast where no depth sample is available), so it never
+    /// reads as farther than a wall it shows through. Off places markers at their true points.
+    pub surface_placement: bool,
+    /// Fall back to a physics raycast for markers without a recent depth sample.
+    pub ray_fallback: bool,
+    /// How far a surface-placed marker is pulled toward the eye from the surface, in metres, so it
+    /// is not coplanar with it.
+    pub surface_pull_m: f32,
+    /// The halflife of the placement distance's smoothing, in seconds, so a flickering occluder
+    /// does not make the marker pop.
+    pub depth_halflife_s: f32,
+    /// EXPERIMENT (the atlas viewport probe): compute the gameplay HUD's safe area against the
+    /// stage's own aspect instead of the panel texture's, so the HUD lays out inside the stage and
+    /// the bands the show-all scaling exposes above and below it stay empty. Applies only in
+    /// gameplay; menus keep the full layout.
+    pub probe_stage_safe_area: bool,
+}
+
+impl WorldMarkersConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            classify_with_headset_fov: true,
+            fallback_half_fov_deg: 50.0,
+            fov_inset_deg: 2.0,
+            hide_from_panel: true,
+            crop: CropExtents::new(),
+            label_extra_left: 320.0,
+            max_distance_m: 300.0,
+            surface_placement: true,
+            ray_fallback: true,
+            surface_pull_m: 0.3,
+            depth_halflife_s: 0.15,
+            probe_stage_safe_area: false,
+        }
+    }
+}
+
+impl Default for WorldMarkersConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A rectangle around a point, as its extents on each side, in stage pixels.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CropExtents {
+    pub left: f32,
+    pub right: f32,
+    pub up: f32,
+    pub down: f32,
+}
+
+impl CropExtents {
+    pub const fn new() -> Self {
+        Self {
+            left: 40.0,
+            right: 90.0,
+            up: 44.0,
+            down: 44.0,
+        }
+    }
+}
+
+impl Default for CropExtents {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// The interactive egui debug panel rendered as a 2D surface floating in 3D space in VR (issue #24).

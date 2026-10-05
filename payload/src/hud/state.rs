@@ -46,6 +46,9 @@ pub struct HudState {
     /// and discarding our rebind -- so the redirect must be re-applied even though our target texture
     /// is independent of the engine's own targets.
     render_size: Option<(u32, u32)>,
+    /// Whether the applied redirect computed the safe area against the stage's aspect (the atlas
+    /// viewport probe). A change re-applies the redirect.
+    stage_safe_area: bool,
     /// The egui texture id for the HUD preview, registered lazily on the UI thread.
     preview_id: Option<egui::TextureId>,
     /// The egui texture ids for the marker/center layer previews, registered lazily.
@@ -128,6 +131,7 @@ impl HudState {
             target: None,
             redirected: false,
             render_size: None,
+            stage_safe_area: false,
             preview_id: None,
             layer_preview_ids: [None, None],
             quad: None,
@@ -150,6 +154,8 @@ impl HudState {
     /// (`render_width`/`render_height`) forces a re-apply without recreating the target,
     /// because the engine re-runs `InitPlatformRT` on a device/reset and discards our rebind. A failed
     /// target build or a not-yet-live UI leaves the state unredirected, so the next tick retries.
+    /// `stage_safe_area` selects the atlas viewport probe's safe area (see
+    /// [`binding::redirect_to`]); a change re-applies the redirect.
     pub(super) fn ensure_redirected(
         &mut self,
         device: &Device,
@@ -157,6 +163,7 @@ impl HudState {
         texture_height: u32,
         render_width: u32,
         render_height: u32,
+        stage_safe_area: bool,
     ) {
         if texture_width == 0 || texture_height == 0 {
             return;
@@ -199,10 +206,17 @@ impl HudState {
             self.redirected = false;
         }
 
+        if self.stage_safe_area != stage_safe_area {
+            self.stage_safe_area = stage_safe_area;
+            self.redirected = false;
+        }
+
         let Some(target) = self.target.as_ref() else {
             return;
         };
-        if !self.redirected && binding::redirect_to(target, texture_width, texture_height) {
+        if !self.redirected
+            && binding::redirect_to(target, texture_width, texture_height, stage_safe_area)
+        {
             self.redirected = true;
         }
     }
@@ -393,6 +407,11 @@ impl HudState {
     /// make the ray hit a different surface than the player sees.
     pub fn panel_corners(&self) -> Option<[Vec4; 4]> {
         self.cached_corners
+    }
+
+    /// The redirected HUD target, or `None` while the redirect is not applied.
+    pub(super) fn redirected_target(&self) -> Option<&HudTarget> {
+        self.target.as_ref().filter(|_| self.redirected)
     }
 
     /// The redirected texture's size, or `None` while the redirect is not applied. The mouse

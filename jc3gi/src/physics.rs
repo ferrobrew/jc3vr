@@ -169,6 +169,37 @@ impl std::convert::AsMut<CharacterInput> for CharacterInput {
         self
     }
 }
+#[repr(C, align(8))]
+/// A physics constraint placed in the world (`CConstraint`): a game object that joins two objects'
+/// bodies with a Havok constraint, made from its data's kind (fixed, deformable fixed, ball and
+/// socket, stiff spring, hinge, limited hinge, ragdoll, wheel, or prismatic), optionally motored
+/// (position, spring-damper, or velocity motors) and breakable. It names the two objects by object
+/// id and connects them once both exist; the physics step then resolves the constraint with the
+/// bodies' other contacts. Only its type id is bound.
+pub struct Constraint {}
+impl Constraint {
+    pub const TYPE_ID_ADDRESS: usize = 0x140977BC0;
+    /// `CConstraint::TYPE_ID`: the run-time type id of `CConstraint`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<Constraint> for Constraint {
+    fn as_ref(&self) -> &Constraint {
+        self
+    }
+}
+impl std::convert::AsMut<Constraint> for Constraint {
+    fn as_mut(&mut self) -> &mut Constraint {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
 pub struct IgnoreMaterialFlagFilter {
@@ -1145,7 +1176,9 @@ pub struct hknpMotion {
     pub m_orientation: crate::types::vector_math::AlignedQuat,
     /// The inverse inertia about the motion frame's axes and the inverse mass, as four `hkHalf`s
     /// (each the upper 16 bits of an `f32`): `x`, `y`, `z`, then the inverse mass. A zero inverse
-    /// mass is infinite mass.
+    /// mass is infinite mass. The motion's frame is the body's principal frame, so the inertia is
+    /// diagonal in it: the world-space inverse inertia is this diagonal turned by
+    /// [`m_orientation`](crate::physics::hknpMotion::m_orientation).
     pub m_inverseInertia: [u16; 4],
     _field_28: [u8; 24],
     /// The linear velocity, world space.
@@ -1220,7 +1253,10 @@ impl hknpWorld {
     /// Applies the linear impulse `impulse` to the body `body_id` at the Havok-space point
     /// `position` (the game-space point less [`PhysicsSystem::m_AccumulatedShift`](crate::physics::PhysicsSystem::m_AccumulatedShift)), changing both
     /// its linear and angular velocity, and wakes the body if it sleeps. It acts only on a dynamic
-    /// body: a static or keyframed body is left alone.
+    /// body: a static or keyframed body is left alone. The linear velocity gains the impulse times
+    /// the inverse mass; the angular velocity gains the impulse's moment about the centre of mass,
+    /// turned into the motion's frame and scaled axis by axis by the inverse inertia
+    /// ([`hknpMotion::m_inverseInertia`](crate::physics::hknpMotion::m_inverseInertia)).
     pub unsafe fn applyBodyImpulseAt(
         &mut self,
         body_id: u32,

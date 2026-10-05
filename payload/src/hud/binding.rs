@@ -29,7 +29,18 @@ use crate::hud::target::HudTarget;
 /// The cached viewport size is refreshed from the device every frame (in `PreRender`), but the safe
 /// area, movie rectangle, and movie viewport are not recomputed per frame, so this rebind persists
 /// until the next device/resolution reset (handled by re-applying on a render-size change).
-pub(super) fn redirect_to(target: &HudTarget, width: u32, height: u32) -> bool {
+///
+/// With `stage_safe_area` (the atlas viewport probe), step 2 feeds `ComputeSafeArea` the stage's
+/// own aspect at the texture's width instead of the texture's size. The safe area then hugs the
+/// stage, so the HUD's edge containers lay out inside it and the bands the show-all scaling
+/// exposes above and below the stage stay empty: room for cells the HUD never draws into. The
+/// render viewport (step 3) is unchanged, so the panel and the pointer mapping are too.
+pub(super) fn redirect_to(
+    target: &HudTarget,
+    width: u32,
+    height: u32,
+    stage_safe_area: bool,
+) -> bool {
     // SAFETY: GetIUIManager returns the live UI singleton. The sequence below touches only UIManager
     // fields and calls only UIManager methods, all of which the engine itself drives from this same
     // render thread.
@@ -47,9 +58,18 @@ pub(super) fn redirect_to(target: &HudTarget, width: u32, height: u32) -> bool {
         manager.m_MovieScaleWidth = w;
         manager.m_MovieScaleHeight = h;
 
-        // 2. Reflow the UI safe area to our aspect instead of the window's.
-        manager.m_CachedViewportWidth = w;
-        manager.m_CachedViewportHeight = h;
+        // 2. Reflow the UI safe area to our aspect instead of the window's (or, for the probe, to
+        //    the stage's own aspect, leaving the bands outside the stage empty).
+        let (safe_w, safe_h) = if stage_safe_area {
+            stage_aspect_fit(
+                (width, height),
+                (manager.m_CachedStageWidth, manager.m_CachedStageHeight),
+            )
+        } else {
+            (w, h)
+        };
+        manager.m_CachedViewportWidth = safe_w;
+        manager.m_CachedViewportHeight = safe_h;
         manager.ComputeSafeArea();
         manager.ComputeGameViewArea();
 
@@ -73,9 +93,38 @@ pub(super) fn redirect_to(target: &HudTarget, width: u32, height: u32) -> bool {
             target.depth_dsv().as_raw(),
         );
 
-        tracing::debug!(target: "hud", width, height, "redirect applied");
+        let safe = manager.m_SafeArea;
+        tracing::debug!(
+            target: "hud",
+            width,
+            height,
+            stage_safe_area,
+            "redirect applied; safe area ({:.0}, {:.0})-({:.0}, {:.0}) of stage {:.0}x{:.0}",
+            safe.x1,
+            safe.y1,
+            safe.x2,
+            safe.y2,
+            manager.m_CachedStageWidth,
+            manager.m_CachedStageHeight,
+        );
     }
     true
+}
+
+/// The largest rectangle of the stage's aspect inside `texture`, in whole pixels: the safe-area input
+/// that makes `ComputeSafeArea` hug the stage. The texture itself for a degenerate stage.
+fn stage_aspect_fit(texture: (u32, u32), stage: (f32, f32)) -> (i32, i32) {
+    let (w, h) = (texture.0 as f32, texture.1 as f32);
+    if !(stage.0 > 0.0 && stage.1 > 0.0 && w > 0.0 && h > 0.0) {
+        return (texture.0 as i32, texture.1 as i32);
+    }
+    let stage_aspect = stage.0 / stage.1;
+    let (fit_w, fit_h) = if w / h <= stage_aspect {
+        (w, w / stage_aspect)
+    } else {
+        (h * stage_aspect, h)
+    };
+    (fit_w.round().max(1.0) as i32, fit_h.round().max(1.0) as i32)
 }
 
 /// Whether the movie's live viewport still matches the redirect: `SetMovieViewport` fills the
@@ -135,5 +184,33 @@ pub(super) fn restore_engine_binding(render_width: u32, render_height: u32) {
         manager.ComputeSafeArea();
         manager.ComputeGameViewArea();
         manager.InitPlatformRT(w);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A texture taller than the stage's aspect fits the stage at its full width.
+    #[test]
+    fn stage_fit_in_a_tall_texture() {
+        assert_eq!(
+            stage_aspect_fit((1300, 1000), (1920.0, 1080.0)),
+            (1300, 731)
+        );
+    }
+
+    /// A texture wider than the stage's aspect fits the stage at its full height.
+    #[test]
+    fn stage_fit_in_a_wide_texture() {
+        assert_eq!(
+            stage_aspect_fit((2500, 1000), (1920.0, 1080.0)),
+            (1778, 1000)
+        );
+    }
+
+    #[test]
+    fn stage_fit_with_a_degenerate_stage() {
+        assert_eq!(stage_aspect_fit((1300, 1000), (0.0, 1080.0)), (1300, 1000));
     }
 }

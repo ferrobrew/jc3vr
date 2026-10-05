@@ -1,4 +1,157 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A kind of ammunition (`CAmmunition::EAmmunitionType`). A weapon's kind is
+/// [`WeaponBase::m_AmmunitionType`](crate::equipment::weapon::WeaponBase::m_AmmunitionType), set from the weapon's properties, and the holder's reserve of
+/// each kind is an entry of
+/// [`Inventory::m_Ammunition`](crate::character::inventory::Inventory::m_Ammunition), so every weapon of
+/// a kind draws on the same reserve.
+pub enum AmmunitionType {
+    AMMO_PISTOL = 0isize as _,
+    AMMO_SHOTGUN = 1isize as _,
+    AMMO_SMG = 2isize as _,
+    AMMO_ASSAULT_RIFLE = 3isize as _,
+    AMMO_SNIPER = 4isize as _,
+    AMMO_ROCKETS = 5isize as _,
+    AMMO_EXPLOSIVES = 6isize as _,
+    AMMO_HAND_GRENADE = 7isize as _,
+    AMMO_GRENADE_LAUNCHER = 8isize as _,
+    AMMO_SUNGUN = 9isize as _,
+    AMMO_MISSILE_STRIKE = 10isize as _,
+    AMMO_UNLIMITED = 11isize as _,
+    AMMO_BEACON = 12isize as _,
+    AMMO_NO_AMMO = 13isize as _,
+    AMMO_FLARE = 14isize as _,
+    AMMO_EMP = 15isize as _,
+    AMMO_POWERCORE = 16isize as _,
+    NOF_AMMO_TYPES = 17isize as _,
+    AMMO_INVALID = 18isize as _,
+}
+fn _AmmunitionType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], AmmunitionType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(C, align(8))]
+/// `CBarrelRecoilWeaponComponent`: a model part that recoils with each shot, such as a pistol's
+/// slide or a rifle's ejection port. It is a [`ModelAttachementWeaponComponent`](crate::equipment::weapon::ModelAttachementWeaponComponent) (its kind is
+/// [`E_WEAPON_COMPONENT_BARREL_RECOIL`](crate::equipment::weapon::WeaponComponentType::E_WEAPON_COMPONENT_BARREL_RECOIL)
+/// and it passes the model-attachment type test), so the same pointer reads as one; only the
+/// members it adds are mapped here, at their offsets from the start of the component.
+pub struct BarrelRecoilWeaponComponent {
+    _field_0: [u8; 472],
+    /// The fire point of the gun ([`WeaponData::m_InternalFirePositions`](crate::equipment::weapon::WeaponData::m_InternalFirePositions)) whose time since its
+    /// last shot drives the recoil.
+    pub m_InternalFirePositionIndex: i32,
+    /// The recoil travel, in metres, along the part's own forward axis.
+    pub m_RecoilMaxLength: f32,
+    /// The seconds the part takes to travel back after a shot.
+    pub m_RecoilFireTime: f32,
+    /// The seconds the part takes to return after travelling back.
+    pub m_RecoilRecoverTime: f32,
+    /// Whether the part stays fully back while the magazine is empty (a slide that locks back),
+    /// for a player's wielded or dual-wielded weapon.
+    pub m_MaxRecoilOnEmptyAmmo: bool,
+    _field_1e9: [u8; 7],
+}
+fn _BarrelRecoilWeaponComponent_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1F0], BarrelRecoilWeaponComponent>([0u8; 0x1F0]);
+    }
+    unreachable!()
+}
+impl BarrelRecoilWeaponComponent {
+    pub const TYPE_ID_ADDRESS: usize = 0x140913270;
+    /// `CBarrelRecoilWeaponComponent::TYPE_ID`: the run-time type id of the class, for
+    /// [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x14093E060;
+    /// Places the part (its override of the weapon component's attachment placement): runs
+    /// [`ModelAttachementWeaponComponent::UpdateAttachmentTransforms`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdateAttachmentTransforms), then moves
+    /// [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix) along the part's own
+    /// forward axis by a fraction of [`m_RecoilMaxLength`](crate::equipment::weapon::BarrelRecoilWeaponComponent::m_RecoilMaxLength). The fraction
+    /// comes from the time since the fire point
+    /// [`m_InternalFirePositionIndex`](crate::equipment::weapon::BarrelRecoilWeaponComponent::m_InternalFirePositionIndex) last fired: it rises to
+    /// full over [`m_RecoilFireTime`](crate::equipment::weapon::BarrelRecoilWeaponComponent::m_RecoilFireTime) and falls back over
+    /// [`m_RecoilRecoverTime`](crate::equipment::weapon::BarrelRecoilWeaponComponent::m_RecoilRecoverTime). With
+    /// [`m_MaxRecoilOnEmptyAmmo`](crate::equipment::weapon::BarrelRecoilWeaponComponent::m_MaxRecoilOnEmptyAmmo), for a player's wielded or
+    /// dual-wielded weapon, it is full while the magazine is empty, and on a multi-gun weapon also
+    /// on the gun that will not fire the last round. It refreshes the saved matrix as the base
+    /// does.
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        snow_factor: f32,
+        water_factor: f32,
+        transform_type: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                snow_factor: f32,
+                water_factor: f32,
+                transform_type: u32,
+            ) = ::std::mem::transmute(Self::UpdateAttachmentTransforms_ADDRESS);
+            f(self as *mut Self as _, snow_factor, water_factor, transform_type)
+        }
+    }
+}
+impl BarrelRecoilWeaponComponent {
+    /// The class's vtable, the value of the vtable pointer of a barrel recoil part. A consumer
+    /// holding a model part can tell a barrel recoil part by it, or by
+    /// [`m_Type`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Type).
+    pub const VFTABLE: u64 = 5406350344;
+}
+impl std::convert::AsRef<BarrelRecoilWeaponComponent> for BarrelRecoilWeaponComponent {
+    fn as_ref(&self) -> &BarrelRecoilWeaponComponent {
+        self
+    }
+}
+impl std::convert::AsMut<BarrelRecoilWeaponComponent> for BarrelRecoilWeaponComponent {
+    fn as_mut(&mut self) -> &mut BarrelRecoilWeaponComponent {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// `CBarrelSpinWeaponComponent`: a model part that spins while the weapon fires, such as a
+/// machine gun's barrel or ammunition belt. It is a [`ModelAttachementWeaponComponent`](crate::equipment::weapon::ModelAttachementWeaponComponent) (its
+/// kind is [`E_WEAPON_COMPONENT_BARREL_SPIN`](crate::equipment::weapon::WeaponComponentType::E_WEAPON_COMPONENT_BARREL_SPIN)
+/// and it passes the model-attachment type test). Its own members are unmapped.
+pub struct BarrelSpinWeaponComponent {}
+impl BarrelSpinWeaponComponent {
+    pub const TYPE_ID_ADDRESS: usize = 0x140913350;
+    /// `CBarrelSpinWeaponComponent::TYPE_ID`: the run-time type id of the class, for
+    /// [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl BarrelSpinWeaponComponent {
+    /// The class's vtable, the value of the vtable pointer of a barrel spin part.
+    pub const VFTABLE: u64 = 5406350904;
+}
+impl std::convert::AsRef<BarrelSpinWeaponComponent> for BarrelSpinWeaponComponent {
+    fn as_ref(&self) -> &BarrelSpinWeaponComponent {
+        self
+    }
+}
+impl std::convert::AsMut<BarrelSpinWeaponComponent> for BarrelSpinWeaponComponent {
+    fn as_mut(&mut self) -> &mut BarrelSpinWeaponComponent {
+        self
+    }
+}
 #[repr(C, align(8))]
 /// `CBulletWeaponBase`: the base of the fast-projectile weapons. Its layout is unmapped.
 pub struct BulletWeaponBase {}
@@ -40,6 +193,158 @@ impl std::convert::AsRef<BulletWeaponBase> for BulletWeaponBase {
 }
 impl std::convert::AsMut<BulletWeaponBase> for BulletWeaponBase {
     fn as_mut(&mut self) -> &mut BulletWeaponBase {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// `CDoActWeaponComponent`: a weapon component that plays an act when its weapon starts or stops
+/// firing or is equipped, such as the pump shotgun's pump. Each act goes to the component's
+/// skeletal object when it has one; otherwise, with
+/// [`m_SendActToWeapon`](crate::equipment::weapon::DoActWeaponComponent::m_SendActToWeapon), to every gun's own animated model
+/// ([`WeaponData::DoAct`](crate::equipment::weapon::WeaponData::DoAct)); otherwise to the holder
+/// ([`Character::QueueAct`](crate::character::character::Character::QueueAct)). The acts are queued and
+/// gate nothing: no state of the act blocks the weapon's next shot. Only some members are mapped,
+/// at their offsets from the start of the component.
+pub struct DoActWeaponComponent {
+    _field_0: [u8; 208],
+    /// The weapon the component belongs to (`CWeaponComponentBase::m_Owner`).
+    pub m_Owner: *mut crate::equipment::weapon::WeaponBase,
+    _field_d8: [u8; 24],
+    /// Whether the component is enabled (`CWeaponComponentBase::m_Enabled`). The weapon calls the
+    /// fire hooks of enabled components only.
+    pub m_Enabled: bool,
+    _field_f1: [u8; 7],
+    /// The act (an event id) played at fire start, from the component's properties.
+    pub m_FireStartAct: u32,
+    /// The act played at fire stop.
+    pub m_FireStopAct: u32,
+    /// The act played when the weapon is equipped.
+    pub m_EquipAct: u32,
+    /// The gun whose fire plays the acts, or
+    /// [`ANY_WEAPON_DATA_INDEX`](crate::equipment::weapon::DoActWeaponComponent::ANY_WEAPON_DATA_INDEX).
+    pub m_WeaponDataIndex: i32,
+    /// Whether the fire acts play only when the gun's fire-point cursor
+    /// ([`WeaponData::m_InternalFirePositionCurrentIndex`](crate::equipment::weapon::WeaponData::m_InternalFirePositionCurrentIndex)) is even.
+    pub m_ActivateOnEvenInternalFirePoint: bool,
+    /// Whether the fire acts play only when the gun's fire-point cursor is odd.
+    pub m_ActivateOnOddInternalFirePoint: bool,
+    /// Whether the acts go to the guns' own animated models rather than the holder.
+    pub m_SendActToWeapon: bool,
+    /// Whether the fire acts play only while the owner's magazine holds more than the round being
+    /// fired.
+    pub m_OnlyIfAmmoLeft: bool,
+    _field_10c: [u8; 4],
+}
+fn _DoActWeaponComponent_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x110], DoActWeaponComponent>([0u8; 0x110]);
+    }
+    unreachable!()
+}
+impl DoActWeaponComponent {
+    pub const TYPE_ID_ADDRESS: usize = 0x140913620;
+    /// `CDoActWeaponComponent::TYPE_ID`: the run-time type id of the class, for
+    /// [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const Fire_Start_ADDRESS: usize = 0x140928A30;
+    /// Plays [`m_FireStartAct`](crate::equipment::weapon::DoActWeaponComponent::m_FireStartAct) when
+    /// [`ShouldActActivate`](crate::equipment::weapon::DoActWeaponComponent::ShouldActActivate) allows it for `weapon_data` (the component's
+    /// fire-start virtual, which [`WeaponBase::Fire_StartBase`](crate::equipment::weapon::WeaponBase::Fire_StartBase) calls for each shot).
+    pub unsafe fn Fire_Start(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Start_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const Fire_Stop_ADDRESS: usize = 0x140928BF0;
+    /// Plays [`m_FireStopAct`](crate::equipment::weapon::DoActWeaponComponent::m_FireStopAct) when
+    /// [`ShouldActActivate`](crate::equipment::weapon::DoActWeaponComponent::ShouldActActivate) allows it for `weapon_data` (the component's
+    /// fire-stop virtual).
+    pub unsafe fn Fire_Stop(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Stop_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const OnEquip_ADDRESS: usize = 0x140928DB0;
+    /// Plays [`m_EquipAct`](crate::equipment::weapon::DoActWeaponComponent::m_EquipAct) when the weapon is equipped by `character`.
+    pub unsafe fn OnEquip(
+        &mut self,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::OnEquip_ADDRESS);
+            f(self as *mut Self as _, character)
+        }
+    }
+    pub const ShouldActActivate_ADDRESS: usize = 0x1408BF200;
+    /// Whether a fire act plays for `weapon_data`: false under
+    /// [`m_OnlyIfAmmoLeft`](crate::equipment::weapon::DoActWeaponComponent::m_OnlyIfAmmoLeft) with the owner's magazine at one round or
+    /// fewer; otherwise, with a [`m_WeaponDataIndex`](crate::equipment::weapon::DoActWeaponComponent::m_WeaponDataIndex), whether the gun is
+    /// that one; otherwise the fire-point parity filters, and true without them.
+    pub unsafe fn ShouldActActivate(
+        &self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) -> bool = ::std::mem::transmute(Self::ShouldActActivate_ADDRESS);
+            f(self as *const Self as _, weapon_data)
+        }
+    }
+    pub const SetProperties_ADDRESS: usize = 0x140913700;
+    /// Reads the component's properties: the three acts (resolved through the event-id symbol
+    /// table), the gun index, the parity and routing flags, and the skeletal object.
+    pub unsafe fn SetProperties(
+        &mut self,
+        properties: *const ::std::ffi::c_void,
+        context: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                properties: *const ::std::ffi::c_void,
+                context: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::SetProperties_ADDRESS);
+            f(self as *mut Self as _, properties, context)
+        }
+    }
+}
+impl DoActWeaponComponent {
+    /// The [`m_WeaponDataIndex`](crate::equipment::weapon::DoActWeaponComponent::m_WeaponDataIndex) that matches every gun.
+    pub const ANY_WEAPON_DATA_INDEX: i32 = -1;
+}
+impl std::convert::AsRef<DoActWeaponComponent> for DoActWeaponComponent {
+    fn as_ref(&self) -> &DoActWeaponComponent {
+        self
+    }
+}
+impl std::convert::AsMut<DoActWeaponComponent> for DoActWeaponComponent {
+    fn as_mut(&mut self) -> &mut DoActWeaponComponent {
         self
     }
 }
@@ -88,14 +393,26 @@ impl std::convert::AsMut<InternalFireInformation> for InternalFireInformation {
 /// its own model instance. Only some members are mapped, at their offsets from the start of the
 /// component.
 pub struct ModelAttachementWeaponComponent {
-    _field_0: [u8; 208],
+    vftable: *const crate::equipment::weapon::ModelAttachementWeaponComponentVftable,
+    _field_8: [u8; 200],
     /// The weapon the component belongs to (`CWeaponComponentBase::m_Owner`).
     pub m_Owner: *mut crate::equipment::weapon::WeaponBase,
-    _field_d8: [u8; 32],
+    /// The component's kind (`CWeaponComponentBase::m_Type`):
+    /// [`E_WEAPON_COMPONENT_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponComponentType::E_WEAPON_COMPONENT_MODEL_ATTACHEMENT)
+    /// for this class, and the derived kind for the barrel recoil and barrel spin parts.
+    pub m_Type: crate::equipment::weapon::WeaponComponentType,
+    _field_dc: [u8; 20],
+    /// Whether the part is enabled (`CWeaponComponentBase::m_Enabled`), and so shown; written by
+    /// [`Enable`](crate::equipment::weapon::ModelAttachementWeaponComponent::Enable).
+    pub m_Enabled: bool,
+    _field_f1: [u8; 7],
     /// The index into the owner's [`m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData) of the gun the part
     /// belongs to.
     pub m_WeaponDataIndex: u32,
-    _field_fc: [u8; 4],
+    /// The hash of the part's name (such as [`MAGAZINE_NAME_HASH`](crate::equipment::weapon::ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH)),
+    /// from the component's properties. The magazine drop and the enable-model message find a
+    /// part by it.
+    pub m_NameHash: u32,
     /// Whether the next placement skips the render interpolation: when set,
     /// [`UpdateAttachmentTransforms`](crate::equipment::weapon::ModelAttachementWeaponComponent::UpdateAttachmentTransforms) copies
     /// [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix) into
@@ -141,6 +458,23 @@ fn _ModelAttachementWeaponComponent_size_check() {
     unreachable!()
 }
 impl ModelAttachementWeaponComponent {
+    pub fn vftable(
+        &self,
+    ) -> *const crate::equipment::weapon::ModelAttachementWeaponComponentVftable {
+        self.vftable
+            as *const crate::equipment::weapon::ModelAttachementWeaponComponentVftable
+    }
+    pub const TYPE_ID_ADDRESS: usize = 0x140851310;
+    /// `CModelAttachementWeaponComponent::TYPE_ID`: the run-time type id of the class, for
+    /// [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
     pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x14092EB80;
     /// Places the part (the component's override of the `UpdateAttachmentTransforms` weapon
     /// component virtual, which the weapon's attachment placement calls for each component). It
@@ -217,11 +551,57 @@ impl ModelAttachementWeaponComponent {
             f(self as *mut Self as _)
         }
     }
+    /// The component base's [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType).
+    pub unsafe fn IsType(&self, type_id: *const u32) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsType).read();
+            f(self as *const Self as _, type_id)
+        }
+    }
+    /// Enables or disables the part: stores [`m_Enabled`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Enabled) and, when the
+    /// value changes, shows or hides the part's model through
+    /// [`SetVisible`](crate::equipment::weapon::ModelAttachementWeaponComponent::SetVisible). [`WeaponData::ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) hides the
+    /// magazine part with it, and the
+    /// [`TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT)
+    /// message shows it again.
+    pub unsafe fn Enable(&mut self, enable: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Enable).read();
+            f(self as *mut Self as _, enable)
+        }
+    }
+    /// Shows or hides the part's model.
+    pub unsafe fn SetVisible(&mut self, visible: bool, p2: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SetVisible).read();
+            f(self as *mut Self as _, visible, p2)
+        }
+    }
 }
 impl ModelAttachementWeaponComponent {
+    /// The [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) of the UPU-210's `model.cartridge_empty` part: the
+    /// hash of the name.
+    pub const CARTRIDGE_EMPTY_NAME_HASH: u32 = 854643837;
+    /// The [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) of the UPU-210's `model.cartridge_full` part: the
+    /// hash of the name.
+    pub const CARTRIDGE_FULL_NAME_HASH: u32 = 3065889217;
+    /// The [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) of the `model.magazine` part, a gun's separate
+    /// magazine model: the hash of the name. The reload clips' throw-away-magazine and
+    /// enable-model messages carry it; the weapon code does not.
+    pub const MAGAZINE_NAME_HASH: u32 = 2122392104;
     /// The value of [`m_CharacterBone`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_CharacterBone) while the part rides its gun rather
     /// than a bone of the holder.
     pub const NO_CHARACTER_BONE: u32 = 4294967295;
+    /// The [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) of the `model.rocket_pod` part, the Hydra's rocket
+    /// pod: the hash of the name.
+    pub const ROCKET_POD_NAME_HASH: u32 = 3997502386;
+    /// The [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) of the `model.rpg` part, the rocket model of a rocket
+    /// launcher and the shell of the mortar: the hash of the name.
+    pub const RPG_NAME_HASH: u32 = 3475302103;
+    /// The class's vtable, the value of the vtable pointer of a component of exactly this class.
+    /// A barrel recoil part carries [`BarrelRecoilWeaponComponent::VFTABLE`](crate::equipment::weapon::BarrelRecoilWeaponComponent::VFTABLE) and a barrel spin
+    /// part [`BarrelSpinWeaponComponent::VFTABLE`](crate::equipment::weapon::BarrelSpinWeaponComponent::VFTABLE) instead.
+    pub const VFTABLE: u64 = 5406335208;
 }
 impl std::convert::AsRef<ModelAttachementWeaponComponent>
 for ModelAttachementWeaponComponent {
@@ -232,6 +612,211 @@ for ModelAttachementWeaponComponent {
 impl std::convert::AsMut<ModelAttachementWeaponComponent>
 for ModelAttachementWeaponComponent {
     fn as_mut(&mut self) -> &mut ModelAttachementWeaponComponent {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct ModelAttachementWeaponComponentVftable {
+    _vfunc_0: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_1: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    /// The component base's [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType).
+    pub IsType: unsafe extern "system" fn(
+        this: *const crate::equipment::weapon::ModelAttachementWeaponComponent,
+        type_id: *const u32,
+    ) -> bool,
+    _vfunc_3: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_4: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_5: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_6: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_7: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_8: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_9: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_10: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_11: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_12: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_13: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_14: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_15: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_16: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_17: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_18: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_19: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_20: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_21: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_22: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_23: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_24: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_25: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_26: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_27: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_28: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_29: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_30: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_31: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_32: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_33: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_34: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_35: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_36: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_37: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    /// Enables or disables the part: stores [`m_Enabled`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Enabled) and, when the
+    /// value changes, shows or hides the part's model through
+    /// [`SetVisible`](crate::equipment::weapon::ModelAttachementWeaponComponent::SetVisible). [`WeaponData::ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) hides the
+    /// magazine part with it, and the
+    /// [`TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT)
+    /// message shows it again.
+    pub Enable: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+        enable: bool,
+    ),
+    _vfunc_39: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_40: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_41: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_42: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_43: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_44: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_45: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_46: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_47: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_48: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_49: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_50: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_51: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_52: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_53: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    _vfunc_54: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    ),
+    /// Shows or hides the part's model.
+    pub SetVisible: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+        visible: bool,
+        p2: bool,
+    ),
+}
+fn _ModelAttachementWeaponComponentVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x1C0],
+            ModelAttachementWeaponComponentVftable,
+        >([0u8; 0x1C0]);
+    }
+    unreachable!()
+}
+impl ModelAttachementWeaponComponentVftable {}
+impl std::convert::AsRef<ModelAttachementWeaponComponentVftable>
+for ModelAttachementWeaponComponentVftable {
+    fn as_ref(&self) -> &ModelAttachementWeaponComponentVftable {
+        self
+    }
+}
+impl std::convert::AsMut<ModelAttachementWeaponComponentVftable>
+for ModelAttachementWeaponComponentVftable {
+    fn as_mut(&mut self) -> &mut ModelAttachementWeaponComponentVftable {
         self
     }
 }
@@ -536,9 +1121,310 @@ fn _ProjectileFireDirectionMode_size_check() {
     unreachable!()
 }
 #[repr(C, align(8))]
-/// `CSniperWeapon`: a precision-aim rifle. Its layout is unmapped.
-pub struct SniperWeapon {}
+/// `CRPGWeapon`: a rocket launcher, also the base of the mortar. Its loaded rocket is a model part
+/// ([`m_RPGModel`](crate::equipment::weapon::RPGWeapon::m_RPGModel)) that the reload and the per-tick update show and hide by
+/// [`m_AttachedState`](crate::equipment::weapon::RPGWeapon::m_AttachedState). Only some members are mapped, at their offsets
+/// from the start of the weapon.
+pub struct RPGWeapon {
+    _field_0: [u8; 1872],
+    /// The rocket model part, or null.
+    pub m_RPGModel: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
+    _field_758: [u8; 5],
+    /// Whether the rocket model hides once the launcher is empty: the per-tick update hides a
+    /// loaded rocket while the magazine is empty.
+    pub m_RPGHideModelWhenOutOfAmmo: bool,
+    _field_75e: [u8; 2],
+    /// Where the rocket model is.
+    pub m_AttachedState: crate::equipment::weapon::RocketAttachState,
+    _field_764: [u8; 4],
+}
+fn _RPGWeapon_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x768], RPGWeapon>([0u8; 0x768]);
+    }
+    unreachable!()
+}
+impl RPGWeapon {
+    pub const Reload_ADDRESS: usize = 0x140976AB0;
+    /// The [`WeaponBase::Reload`](crate::equipment::weapon::WeaponBase::Reload) override: runs [`WeaponBase::ReloadBase`](crate::equipment::weapon::WeaponBase::ReloadBase) and, when it reloaded,
+    /// puts the rocket in the launcher
+    /// ([`E_ATTACHED_TO_WEAPON`](crate::equipment::weapon::RocketAttachState::E_ATTACHED_TO_WEAPON)) when the magazine is
+    /// not empty, or otherwise hides and disables the rocket model and leaves it
+    /// [`E_ATTACHED_TO_NONE`](crate::equipment::weapon::RocketAttachState::E_ATTACHED_TO_NONE).
+    pub unsafe fn Reload(&mut self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
+                Self::Reload_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const Fire_Start_ADDRESS: usize = 0x14099CB20;
+    /// The [`WeaponBase::Fire_Start`](crate::equipment::weapon::WeaponBase::Fire_Start) override: fires through the missile weapon's fire start
+    /// while the rocket is loaded, and otherwise asks the holder to reload
+    /// ([`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)).
+    pub unsafe fn Fire_Start(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Start_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const CheckIfReloadShouldBeTriggered_ADDRESS: usize = 0x14096D3F0;
+    /// The [`WeaponBase::CheckIfReloadShouldBeTriggered`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggered) override: for a holder that is not a
+    /// player, with the launcher wielded or dual-wielded and the rocket not loaded, it asks the
+    /// holder to reload; otherwise it runs
+    /// [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase).
+    pub unsafe fn CheckIfReloadShouldBeTriggered(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        should_try_to_fire: *mut bool,
+        was_trigger_pulled: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+                should_try_to_fire: *mut bool,
+                was_trigger_pulled: bool,
+            ) = ::std::mem::transmute(Self::CheckIfReloadShouldBeTriggered_ADDRESS);
+            f(
+                self as *mut Self as _,
+                weapon_data,
+                should_try_to_fire,
+                was_trigger_pulled,
+            )
+        }
+    }
+    pub const UpdateFromUserPostSim_Parallel_ADDRESS: usize = 0x1409A8410;
+    /// The [`WeaponBase::UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel) override. After the missile weapon's
+    /// update, a launcher with rounds in the magazine and the rocket not loaded shows and enables
+    /// the rocket model and marks it loaded, so the rocket reappears on any refill; an empty
+    /// launcher with [`m_RPGHideModelWhenOutOfAmmo`](crate::equipment::weapon::RPGWeapon::m_RPGHideModelWhenOutOfAmmo) hides
+    /// its loaded rocket. A player's power-core launcher (`w210_powercore`) that runs out of
+    /// ammunition without unlimited ammunition is dropped from the inventory.
+    pub unsafe fn UpdateFromUserPostSim_Parallel(
+        &mut self,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const crate::equipment::weapon::WeaponInputs,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                aim_position: *const crate::types::math::Vector3,
+                input: *const crate::equipment::weapon::WeaponInputs,
+            ) = ::std::mem::transmute(Self::UpdateFromUserPostSim_Parallel_ADDRESS);
+            f(self as *mut Self as _, dt, aim_position, input)
+        }
+    }
+}
+impl std::convert::AsRef<RPGWeapon> for RPGWeapon {
+    fn as_ref(&self) -> &RPGWeapon {
+        self
+    }
+}
+impl std::convert::AsMut<RPGWeapon> for RPGWeapon {
+    fn as_mut(&mut self) -> &mut RPGWeapon {
+        self
+    }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// How a weapon reloads (`CWeaponBase::EReloadType`), stored on the weapon as
+/// [`WeaponBase::m_ReloadType`](crate::equipment::weapon::WeaponBase::m_ReloadType) and set from the weapon's `reload_type` property.
+pub enum ReloadType {
+    E_RELOAD_MAGAZINE = 0isize as _,
+    E_RELOAD_BULLET = 1isize as _,
+    E_RELOAD_NO_ANIMATION = 2isize as _,
+}
+fn _ReloadType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], ReloadType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// Where a rocket launcher's rocket model is (`CRPGWeapon::ERocketAttachState`), stored as
+/// [`RPGWeapon::m_AttachedState`](crate::equipment::weapon::RPGWeapon::m_AttachedState).
+pub enum RocketAttachState {
+    E_ATTACHED_TO_NONE = 0isize as _,
+    E_ATTACHED_TO_HAND = 1isize as _,
+    E_ATTACHED_TO_WEAPON = 2isize as _,
+}
+fn _RocketAttachState_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], RocketAttachState>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(C, align(8))]
+/// `CSniperWeapon`: a precision-aim rifle, a bullet weapon. A bolt-action rifle
+/// ([`m_BoltAction`](crate::equipment::weapon::SniperWeapon::m_BoltAction)) locks after each shot
+/// ([`m_HasFiredThisInput`](crate::equipment::weapon::SniperWeapon::m_HasFiredThisInput)) until the holder has cycled the bolt: the
+/// rifle's per-tick update ([`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel))
+/// queues the bolt act once the trigger is released, the bolt state of the animation graph raises
+/// [`SB_IS_RELOADING`](crate::state::StateBitFlag::SB_IS_RELOADING), and the update clears the lock while
+/// the holder reloads. Only some members are mapped, at their offsets from the start of the
+/// weapon.
+pub struct SniperWeapon {
+    _field_0: [u8; 1640],
+    /// Whether the rifle is a bolt action, from the weapon's `BoltAction` property.
+    pub m_BoltAction: bool,
+    /// Whether the bolt cycle takes the local player out of precision aim and back, from the
+    /// weapon's properties.
+    pub m_BoltActionAutoZoomOut: bool,
+    /// The bolt lock: set by [`Fire_Projectile`](crate::equipment::weapon::SniperWeapon::Fire_Projectile) after each shot of a bolt
+    /// action for a player user ([`WeaponBase::m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer)), and cleared only by
+    /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel) while the holder
+    /// reloads ([`Character::IsReloading`](crate::character::character::Character::IsReloading)) or has
+    /// no ammunition left at all. While it is set, [`Fire_Start`](crate::equipment::weapon::SniperWeapon::Fire_Start) and
+    /// [`CheckIfReloadShouldBeTriggered`](crate::equipment::weapon::SniperWeapon::CheckIfReloadShouldBeTriggered) do nothing, so
+    /// the rifle neither fires nor reloads on its own.
+    pub m_HasFiredThisInput: bool,
+    /// Whether the bolt cycle or a reload took the local player out of precision aim, to be
+    /// restored once it ends.
+    pub m_ShouldgoBackToPrecisionAim: bool,
+    /// The delay before the bolt cycle while the holder stays in precision aim: loaded by
+    /// [`Fire_Projectile`](crate::equipment::weapon::SniperWeapon::Fire_Projectile) at each shot and counted down by the per-tick
+    /// update.
+    pub m_BoltActionDelayer: f32,
+}
+fn _SniperWeapon_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x670], SniperWeapon>([0u8; 0x670]);
+    }
+    unreachable!()
+}
 impl SniperWeapon {
+    pub const Fire_Projectile_ADDRESS: usize = 0x140950950;
+    /// The [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) override: fires the bullet
+    /// ([`BulletWeaponBase::Fire_Projectile`](crate::equipment::weapon::BulletWeaponBase::Fire_Projectile)) and then, for a bolt action with a player user,
+    /// sets the bolt lock ([`m_HasFiredThisInput`](crate::equipment::weapon::SniperWeapon::m_HasFiredThisInput)) and loads
+    /// [`m_BoltActionDelayer`](crate::equipment::weapon::SniperWeapon::m_BoltActionDelayer).
+    pub unsafe fn Fire_Projectile(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Projectile_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const Fire_Start_ADDRESS: usize = 0x14096D490;
+    /// The [`WeaponBase::Fire_Start`](crate::equipment::weapon::WeaponBase::Fire_Start) override: does nothing while the bolt lock
+    /// ([`m_HasFiredThisInput`](crate::equipment::weapon::SniperWeapon::m_HasFiredThisInput)) is set, and otherwise runs the base
+    /// fire start.
+    pub unsafe fn Fire_Start(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Start_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const CheckIfReloadShouldBeTriggered_ADDRESS: usize = 0x14096D4B0;
+    /// The [`WeaponBase::CheckIfReloadShouldBeTriggered`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggered) override: does nothing while the bolt
+    /// lock ([`m_HasFiredThisInput`](crate::equipment::weapon::SniperWeapon::m_HasFiredThisInput)) is set, and otherwise runs
+    /// [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase).
+    pub unsafe fn CheckIfReloadShouldBeTriggered(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+        should_try_to_fire: *mut bool,
+        was_trigger_pulled: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+                should_try_to_fire: *mut bool,
+                was_trigger_pulled: bool,
+            ) = ::std::mem::transmute(Self::CheckIfReloadShouldBeTriggered_ADDRESS);
+            f(
+                self as *mut Self as _,
+                weapon_data,
+                should_try_to_fire,
+                was_trigger_pulled,
+            )
+        }
+    }
+    pub const StartReloadSequence_ADDRESS: usize = 0x14097F030;
+    /// The [`WeaponBase::StartReloadSequence`](crate::equipment::weapon::WeaponBase::StartReloadSequence) override: runs the base, and for the local player
+    /// in precision aim leaves precision aim and sets
+    /// [`m_ShouldgoBackToPrecisionAim`](crate::equipment::weapon::SniperWeapon::m_ShouldgoBackToPrecisionAim).
+    pub unsafe fn StartReloadSequence(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::StartReloadSequence_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateFromUserPostSim_Parallel_ADDRESS: usize = 0x1409A6F20;
+    /// The rifle's per-tick update from its user (its override of
+    /// [`WeaponBase::UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel)). After the base update, while the holder is
+    /// not reloading and has rounds in the magazine or the reserve, a set bolt lock on a bolt
+    /// action waits for the trigger to be released and, in precision aim, for
+    /// [`m_BoltActionDelayer`](crate::equipment::weapon::SniperWeapon::m_BoltActionDelayer) to run out. Then, with rounds left in the
+    /// magazine, it optionally leaves precision aim
+    /// ([`m_BoltActionAutoZoomOut`](crate::equipment::weapon::SniperWeapon::m_BoltActionAutoZoomOut)), plays each gun's bolt-action
+    /// effect, and queues the bolt act (`UB_ACT_SNIPER_BOLT_ACTION`) through
+    /// [`Character::QueueAct`](crate::character::character::Character::QueueAct), on every tick until the
+    /// bolt state's [`SB_IS_RELOADING`](crate::state::StateBitFlag::SB_IS_RELOADING) rises; with an empty
+    /// magazine it calls
+    /// [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)
+    /// instead. With no lock it returns the player to precision aim when
+    /// [`m_ShouldgoBackToPrecisionAim`](crate::equipment::weapon::SniperWeapon::m_ShouldgoBackToPrecisionAim) asks. While the holder
+    /// reloads or has no ammunition at all it clears the lock.
+    pub unsafe fn UpdateFromUserPostSim_Parallel(
+        &mut self,
+        dt: f32,
+        aim_position: *const crate::types::math::Vector3,
+        input: *const crate::equipment::weapon::WeaponInputs,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                aim_position: *const crate::types::math::Vector3,
+                input: *const crate::equipment::weapon::WeaponInputs,
+            ) = ::std::mem::transmute(Self::UpdateFromUserPostSim_Parallel_ADDRESS);
+            f(self as *mut Self as _, dt, aim_position, input)
+        }
+    }
+    pub const SetProperties_ADDRESS: usize = 0x140957650;
+    /// Reads the rifle's properties after the bullet weapon's: the bolt-action and auto-zoom-out
+    /// flags. `game_object` is the weapon's `CGameObject` subobject
+    /// ([`WeaponBase::GAME_OBJECT_BASE_OFFSET`](crate::equipment::weapon::WeaponBase::GAME_OBJECT_BASE_OFFSET)), not the start of the weapon. The disassembler
+    /// mislabels it `CAntiAirWeapon::SetProperties`.
+    pub unsafe fn SetProperties(
+        game_object: *mut ::std::ffi::c_void,
+        properties: *const ::std::ffi::c_void,
+        context: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                properties: *const ::std::ffi::c_void,
+                context: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::SetProperties_ADDRESS);
+            f(game_object, properties, context)
+        }
+    }
     pub const SetAimMode_ADDRESS: usize = 0x14097F120;
     /// The [`WeaponBase::SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode) override: in [`AIM_PRECISION`](crate::aim::aim::AimMode::AIM_PRECISION) it
     /// shows the HUD sniper overlay and hides the holder, and in
@@ -874,11 +1760,54 @@ pub struct WeaponBase {
     _field_1a8: [u8; 4],
     /// Shots remaining that use the spread ring; decremented once per shot.
     pub m_ProjectileOffsetFireCount: i32,
-    _field_1b0: [u8; 120],
+    _field_1b0: [u8; 113],
+    /// Whether the magazine is out of the weapon. Only the throw-away-magazine track message
+    /// ([`TRACK_MESSAGE_THROW_AWAY_MAGAZINE`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_THROW_AWAY_MAGAZINE)) sets it,
+    /// and only [`Reload`](crate::equipment::weapon::WeaponBase::Reload) clears it. While it is set the ammunition check
+    /// ([`CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase)) clears
+    /// the shot and calls
+    /// [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)
+    /// on every tick, the throw message does nothing, and the animation condition
+    /// `CWeaponHasMagazineInsertedCondition` (through `CWeaponBase::WeaponHasMagazineInserted`)
+    /// reads false.
+    pub m_WeaponIsWithoutMagazine: bool,
+    _field_222: [u8; 2],
+    /// The weapon's kind of ammunition, set from the weapon's properties; it selects the reserve
+    /// in the holder's [`Inventory::m_Ammunition`](crate::character::inventory::Inventory::m_Ammunition).
+    pub m_AmmunitionType: crate::equipment::weapon::AmmunitionType,
     /// The rounds in the magazine. A shot consumes from it; a reload refills it from the holder's
     /// inventory stock of the weapon's ammunition type. The guns of a multi-gun weapon share it.
+    /// Write it through [`SetMagazineAmmo`](crate::equipment::weapon::WeaponBase::SetMagazineAmmo), which also updates the HUD.
     pub m_MagazineAmmo: i32,
-    _field_22c: [u8; 40],
+    /// The weapon's stored rounds outside the magazine (`CWeaponBase::GetStoredNonMagazineAmmo`).
+    pub m_StoredNonMagazineAmmo: i32,
+    /// How the weapon reloads, set from the weapon's `reload_type` property.
+    pub m_ReloadType: crate::equipment::weapon::ReloadType,
+    /// Whether an [`E_RELOAD_BULLET`](crate::equipment::weapon::ReloadType::E_RELOAD_BULLET) reload is to insert another
+    /// round. [`StartReloadSequence`](crate::equipment::weapon::WeaponBase::StartReloadSequence) and each
+    /// [`Reload`](crate::equipment::weapon::WeaponBase::Reload) that leaves the magazine short of full set it; `Reload` clears it
+    /// once the magazine is full or the reserve is empty, and
+    /// [`ReloadAnimationFinished`](crate::equipment::weapon::WeaponBase::ReloadAnimationFinished) clears it. While it is clear,
+    /// the ammunition check cancels the holder's reload act for a weapon that does not reload by
+    /// magazine.
+    pub m_KeepReloading: bool,
+    /// Whether an [`E_RELOAD_NO_ANIMATION`](crate::equipment::weapon::ReloadType::E_RELOAD_NO_ANIMATION) reload is timing:
+    /// set by the ammunition check when it starts one, and cleared by [`Reload`](crate::equipment::weapon::WeaponBase::Reload) and
+    /// [`ReloadAnimationFinished`](crate::equipment::weapon::WeaponBase::ReloadAnimationFinished). The ammunition check treats it
+    /// like the holder's reloading state.
+    pub m_IsReloading: bool,
+    _field_236: [u8; 2],
+    /// The magazine count below which the local player's idle weapon reloads on its own (the
+    /// predicted reload of the ammunition check), set from the weapon's properties.
+    pub m_PredictedReloadAmmunitionLimit: i32,
+    /// The seconds without fire input after which the predicted reload may start; a negative
+    /// value lets it start even where the holder does not allow predicted reloads.
+    pub m_PredictedReloadTime: f32,
+    /// The seconds left of an [`E_RELOAD_NO_ANIMATION`](crate::equipment::weapon::ReloadType::E_RELOAD_NO_ANIMATION)
+    /// reload, counted down by [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) while
+    /// [`m_IsReloading`](crate::equipment::weapon::WeaponBase::m_IsReloading) is set.
+    pub m_ReloadTimeLeft: f32,
+    _field_244: [u8; 16],
     /// The animation modifier id (`ava::idstring<NAnimationSystem::SModifierIdTag>`) for holding
     /// this weapon without aiming.
     /// [`Character::SetCharacterModifiers`](crate::character::character::Character::SetCharacterModifiers)
@@ -971,7 +1900,22 @@ pub struct WeaponBase {
     /// rumble ([`RumbleFire`](crate::equipment::weapon::WeaponBase::RumbleFire)), and the fire camera shake apply only while it is
     /// set.
     pub m_IsUserLocalPlayer: bool,
-    _field_51a: [u8; 70],
+    /// Whether the weapon's user is a player, local or remote. The sniper rifle's bolt lock
+    /// ([`SniperWeapon::m_HasFiredThisInput`](crate::equipment::weapon::SniperWeapon::m_HasFiredThisInput)) and the barrel recoil's empty-magazine lock-back
+    /// apply only while it is set, and the rocket launcher's own reload request only while it is
+    /// clear.
+    pub m_IsUserPlayer: bool,
+    _field_51b: [u8; 37],
+    /// The weapon's components ([`WeaponComponentBase`](crate::equipment::weapon::WeaponComponentBase)): its model parts
+    /// ([`ModelAttachementWeaponComponent`](crate::equipment::weapon::ModelAttachementWeaponComponent) and the barrel recoil and spin parts derived from it),
+    /// wall penetration, turret, and the rest. An entry's
+    /// [`m_Type`](crate::equipment::weapon::WeaponComponentBase::m_Type) names its class, and
+    /// [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType) tests its class or a base of it.
+    pub m_WeaponComponents: crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<
+            crate::equipment::weapon::WeaponComponentBase,
+        >,
+    >,
     /// Whether the weapon blocks firing while its barrel penetrates a wall in aim.
     pub m_IsWeaponPenetratingWallIfInAim: bool,
     /// Whether the weapon's barrel penetrates a character in aim;
@@ -1005,6 +1949,72 @@ impl WeaponBase {
                 Self::TYPE_ID_ADDRESS,
             );
             f()
+        }
+    }
+    pub const HasUnlimitedAmmo_ADDRESS: usize = 0x140964F90;
+    /// Whether the weapon's rounds come without limit: true when the holder has
+    /// [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo), the holder is not a
+    /// player, or the challenge-island game mode is running; otherwise the tuning's
+    /// [`m_unlimited_ammo`](crate::equipment::weapon::WeaponTuning::m_unlimited_ammo). False without a holder.
+    /// [`Reload`](crate::equipment::weapon::WeaponBase::Reload) then fills the magazine without drawing on the reserve, and
+    /// [`CanReload`](crate::equipment::weapon::WeaponBase::CanReload) allows a reload with an empty reserve.
+    pub unsafe fn HasUnlimitedAmmo(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::HasUnlimitedAmmo_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const SetMagazineAmmoBase_ADDRESS: usize = 0x14096E520;
+    /// The base implementation of the [`SetMagazineAmmo`](crate::equipment::weapon::WeaponBase::SetMagazineAmmo) virtual.
+    pub unsafe fn SetMagazineAmmoBase(&mut self, ammo: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, ammo: i32) = ::std::mem::transmute(
+                Self::SetMagazineAmmoBase_ADDRESS,
+            );
+            f(self as *mut Self as _, ammo)
+        }
+    }
+    pub const ReloadBase_ADDRESS: usize = 0x140976480;
+    /// The base implementation of the [`Reload`](crate::equipment::weapon::WeaponBase::Reload) virtual, which the rocket
+    /// launcher's and the mortar's overrides call.
+    pub unsafe fn ReloadBase(&mut self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
+                Self::ReloadBase_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const HandleTrackMessage_ADDRESS: usize = 0x1409918B0;
+    /// Handles a weapon message from an animation track, `data`, for `character` (the weapon's
+    /// override of the weapon track-message virtual, which the rocket launcher, the mortar, the
+    /// thrown grenade, the planted explosive, and the guitar case extend and then call). The
+    /// holder's track-message handling
+    /// ([`Character::HandleTrackMessage`](crate::character::character::Character::HandleTrackMessage))
+    /// forwards the message, so it runs in the holder's serial post-physics pass on the game
+    /// update thread. It dispatches on the message's name hash. The reload messages are
+    /// [`TRACK_MESSAGE_THROW_AWAY_MAGAZINE`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_THROW_AWAY_MAGAZINE),
+    /// [`TRACK_MESSAGE_RELOAD`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_RELOAD),
+    /// [`TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT),
+    /// [`TRACK_MESSAGE_START_RELOAD`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_START_RELOAD), and
+    /// [`TRACK_MESSAGE_START_RELOAD_IF_EMPTY`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_START_RELOAD_IF_EMPTY). The
+    /// others raise [`m_ForceFireProjectile`](crate::equipment::weapon::WeaponBase::m_ForceFireProjectile), complete a pickup
+    /// ([`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem)), play an attached effect on a gun, show or hide the
+    /// weapon, equip, unequip, drop, or stop using it, and detach a mounted gun.
+    pub unsafe fn HandleTrackMessage(
+        &mut self,
+        data: *mut crate::animation::message::AnimationMessageData,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                data: *mut crate::animation::message::AnimationMessageData,
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::HandleTrackMessage_ADDRESS);
+            f(self as *mut Self as _, data, character)
         }
     }
     pub const PickupStart_ADDRESS: usize = 0x1409912B0;
@@ -1560,14 +2570,83 @@ impl WeaponBase {
             f(self as *const Self as _)
         }
     }
-    /// Whether the weapon can start a reload: it has a magazine limit, the magazine is below
-    /// it, and the weapon has unlimited ammunition or its living holder's inventory holds
-    /// ammunition of its type. A weapon whose magazine and stock are both empty cannot.
-    /// `CCharacter::StartReloadingWieldingWeapon` queues the reload act only when it holds.
+    /// Sets [`m_MagazineAmmo`](crate::equipment::weapon::WeaponBase::m_MagazineAmmo) to `ammo`. For the local player's
+    /// selected weapon outside the planted-explosive slot it also pushes the count to the HUD
+    /// (`CHUDUI::OnSetSelectedMagazineAmmo`), flagging an empty magazine; the HUD keeps no
+    /// other view of the count, so a write that bypasses this leaves the HUD stale. The base
+    /// implementation is [`SetMagazineAmmoBase`](crate::equipment::weapon::WeaponBase::SetMagazineAmmoBase).
+    pub unsafe fn SetMagazineAmmo(&mut self, ammo: i32) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SetMagazineAmmo).read();
+            f(self as *mut Self as _, ammo)
+        }
+    }
+    /// Starts the weapon side of a reload once the holder's reload act is accepted (the act's
+    /// callback calls it): resets the fire-input timers, plays each gun's reload effect,
+    /// clears the guns' bursts, sets [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) for an
+    /// [`E_RELOAD_BULLET`](crate::equipment::weapon::ReloadType::E_RELOAD_BULLET) weapon, and registers the weapon for
+    /// pre-simulation updates. It moves no ammunition.
+    pub unsafe fn StartReloadSequence(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).StartReloadSequence).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Whether the weapon can start a reload: its ammunition type is not
+    /// [`AMMO_UNLIMITED`](crate::equipment::weapon::AmmunitionType::AMMO_UNLIMITED), it has a magazine limit, the
+    /// magazine is below it, and either [`HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo) holds or
+    /// its living holder has a reserve of its type (a holder in god mode,
+    /// [`GOD_MODE`](crate::character::character::DamageStateFlags::GOD_MODE), always counts as
+    /// having one). A weapon whose magazine and reserve are both empty cannot.
+    /// [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)
+    /// queues the reload act only when it holds.
     pub unsafe fn CanReload(&self) -> bool {
         unsafe {
             let f = (&raw const (*self.vftable()).CanReload).read();
             f(self as *const Self as _)
+        }
+    }
+    /// Refills the magazine from the holder's reserve and returns whether it did. The base
+    /// implementation ([`ReloadBase`](crate::equipment::weapon::WeaponBase::ReloadBase)) does nothing and returns false
+    /// without a holder, for an [`AMMO_UNLIMITED`](crate::equipment::weapon::AmmunitionType::AMMO_UNLIMITED) weapon, or
+    /// for one without a magazine limit. Otherwise it first clears
+    /// [`m_WeaponIsWithoutMagazine`](crate::equipment::weapon::WeaponBase::m_WeaponIsWithoutMagazine), even when it then
+    /// refills nothing. With the magazine already full, or with no reserve
+    /// ([`Inventory::GetAmmoCount`](crate::character::inventory::Inventory::GetAmmoCount)) and no
+    /// [`HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo), it clears
+    /// [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) and returns false. Otherwise:
+    ///
+    /// - the new count is the magazine size, or the old count plus the reserve when that is
+    ///   less; with unlimited ammunition the reserve counts as a full magazine;
+    /// - for an [`E_RELOAD_BULLET`](crate::equipment::weapon::ReloadType::E_RELOAD_BULLET) weapon the new count is the
+    ///   old count plus one instead, and [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) is set
+    ///   while that is still short of full;
+    /// - it writes the count through [`SetMagazineAmmo`](crate::equipment::weapon::WeaponBase::SetMagazineAmmo) (which pushes
+    ///   the HUD), records the reload statistic for the local player, resets the scatter
+    ///   balancer, and tells the HUD (`CHUDUI::OnReloadSelectedWeapon`) for the local player's
+    ///   selected weapon;
+    /// - it clears [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) once the magazine is full;
+    /// - without unlimited ammunition it writes the reserve back as the old count plus the
+    ///   reserve minus the new count
+    ///   ([`Inventory::SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount), allowing
+    ///   an autosave), so the rounds left in the old magazine return to the reserve and nothing
+    ///   is lost;
+    /// - it clears [`m_IsReloading`](crate::equipment::weapon::WeaponBase::m_IsReloading) and returns true.
+    ///
+    /// It never touches the weapon's model parts: a part hidden by the throw-away-magazine
+    /// message stays hidden until the
+    /// [`TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT)
+    /// message shows it. The rocket launcher's override ([`RPGWeapon::Reload`](crate::equipment::weapon::RPGWeapon::Reload)) handles its
+    /// rocket model. It runs from the reload track message
+    /// ([`TRACK_MESSAGE_RELOAD`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_RELOAD)), in the holder's serial
+    /// post-physics pass, and for an
+    /// [`E_RELOAD_NO_ANIMATION`](crate::equipment::weapon::ReloadType::E_RELOAD_NO_ANIMATION) weapon from the ammunition
+    /// check in the weapon's parallel update; a refill of the hand-grenade reserve from empty
+    /// also calls it on the hand-grenade weapon.
+    pub unsafe fn Reload(&mut self) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Reload).read();
+            f(self as *mut Self as _)
         }
     }
     /// The per-gun ammunition check, called by
@@ -1589,6 +2668,15 @@ impl WeaponBase {
                 should_try_to_fire,
                 was_trigger_pulled,
             )
+        }
+    }
+    /// Ends a reload: clears [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) and
+    /// [`m_IsReloading`](crate::equipment::weapon::WeaponBase::m_IsReloading). The reload state machine's
+    /// `NWeaponReloadFinishedTask` calls it on the wielded weapon when its state exits.
+    pub unsafe fn ReloadAnimationFinished(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).ReloadAnimationFinished).read();
+            f(self as *mut Self as _)
         }
     }
     /// Deducts `count` rounds of ammunition for `weapon_data`.
@@ -1670,6 +2758,30 @@ impl WeaponBase {
     /// The seconds a blocked trigger pull stays buffered in
     /// [`m_InputBufferTimer`](crate::equipment::weapon::WeaponBase::m_InputBufferTimer).
     pub const INPUT_BUFFER_TIME: f32 = 0.5;
+    /// The track message that shows or hides a model part: for every one of
+    /// [`m_WeaponComponents`](crate::equipment::weapon::WeaponBase::m_WeaponComponents) that passes
+    /// [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType) for [`ModelAttachementWeaponComponent::TYPE_ID`](crate::equipment::weapon::ModelAttachementWeaponComponent::TYPE_ID)
+    /// and whose [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) is the message's
+    /// first argument, it calls [`Enable`](crate::equipment::weapon::WeaponComponentBase::Enable) with whether the second
+    /// argument is non-zero. Reload clips use it to show the magazine part again.
+    pub const TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT: u32 = 2840635779;
+    /// The track message that refills the magazine: calls the [`Reload`](crate::equipment::weapon::WeaponBase::Reload) virtual.
+    pub const TRACK_MESSAGE_RELOAD: u32 = 3817934976;
+    /// The track message that asks the holder to start a reload
+    /// ([`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)).
+    pub const TRACK_MESSAGE_START_RELOAD: u32 = 3327133307;
+    /// The track message that asks the holder to start a reload only while the magazine
+    /// ([`m_MagazineAmmo`](crate::equipment::weapon::WeaponBase::m_MagazineAmmo)) is empty.
+    pub const TRACK_MESSAGE_START_RELOAD_IF_EMPTY: u32 = 3370731902;
+    /// The track message ([`HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage)) that drops the
+    /// magazine. Its arguments are the part name hash for
+    /// [`WeaponData::ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject), the index of the gun in
+    /// [`m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData), and a flag that, when set, leaves
+    /// [`m_WeaponIsWithoutMagazine`](crate::equipment::weapon::WeaponBase::m_WeaponIsWithoutMagazine) clear. It does nothing for a
+    /// gun index out of range or while the magazine is already out. When the throw succeeds it
+    /// requests the gun's next spare ([`WeaponData::SpawnMagazineObject`](crate::equipment::weapon::WeaponData::SpawnMagazineObject)) and, unless the flag is
+    /// set, sets [`m_WeaponIsWithoutMagazine`](crate::equipment::weapon::WeaponBase::m_WeaponIsWithoutMagazine).
+    pub const TRACK_MESSAGE_THROW_AWAY_MAGAZINE: u32 = 175000704;
 }
 impl std::convert::AsRef<WeaponBase> for WeaponBase {
     fn as_ref(&self) -> &WeaponBase {
@@ -1797,22 +2909,74 @@ pub struct WeaponBaseVftable {
     pub GetTotalAmmo: unsafe extern "system" fn(
         this: *const crate::equipment::weapon::WeaponBase,
     ) -> i32,
-    _vfunc_39: unsafe extern "system" fn(
+    /// Sets [`m_MagazineAmmo`](crate::equipment::weapon::WeaponBase::m_MagazineAmmo) to `ammo`. For the local player's
+    /// selected weapon outside the planted-explosive slot it also pushes the count to the HUD
+    /// (`CHUDUI::OnSetSelectedMagazineAmmo`), flagging an empty magazine; the HUD keeps no
+    /// other view of the count, so a write that bypasses this leaves the HUD stale. The base
+    /// implementation is [`SetMagazineAmmoBase`](crate::equipment::weapon::WeaponBase::SetMagazineAmmoBase).
+    pub SetMagazineAmmo: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+        ammo: i32,
+    ),
+    /// Starts the weapon side of a reload once the holder's reload act is accepted (the act's
+    /// callback calls it): resets the fire-input timers, plays each gun's reload effect,
+    /// clears the guns' bursts, sets [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) for an
+    /// [`E_RELOAD_BULLET`](crate::equipment::weapon::ReloadType::E_RELOAD_BULLET) weapon, and registers the weapon for
+    /// pre-simulation updates. It moves no ammunition.
+    pub StartReloadSequence: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_40: unsafe extern "system" fn(
-        this: *mut crate::equipment::weapon::WeaponBase,
-    ),
-    /// Whether the weapon can start a reload: it has a magazine limit, the magazine is below
-    /// it, and the weapon has unlimited ammunition or its living holder's inventory holds
-    /// ammunition of its type. A weapon whose magazine and stock are both empty cannot.
-    /// `CCharacter::StartReloadingWieldingWeapon` queues the reload act only when it holds.
+    /// Whether the weapon can start a reload: its ammunition type is not
+    /// [`AMMO_UNLIMITED`](crate::equipment::weapon::AmmunitionType::AMMO_UNLIMITED), it has a magazine limit, the
+    /// magazine is below it, and either [`HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo) holds or
+    /// its living holder has a reserve of its type (a holder in god mode,
+    /// [`GOD_MODE`](crate::character::character::DamageStateFlags::GOD_MODE), always counts as
+    /// having one). A weapon whose magazine and reserve are both empty cannot.
+    /// [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)
+    /// queues the reload act only when it holds.
     pub CanReload: unsafe extern "system" fn(
         this: *const crate::equipment::weapon::WeaponBase,
     ) -> bool,
-    _vfunc_42: unsafe extern "system" fn(
+    /// Refills the magazine from the holder's reserve and returns whether it did. The base
+    /// implementation ([`ReloadBase`](crate::equipment::weapon::WeaponBase::ReloadBase)) does nothing and returns false
+    /// without a holder, for an [`AMMO_UNLIMITED`](crate::equipment::weapon::AmmunitionType::AMMO_UNLIMITED) weapon, or
+    /// for one without a magazine limit. Otherwise it first clears
+    /// [`m_WeaponIsWithoutMagazine`](crate::equipment::weapon::WeaponBase::m_WeaponIsWithoutMagazine), even when it then
+    /// refills nothing. With the magazine already full, or with no reserve
+    /// ([`Inventory::GetAmmoCount`](crate::character::inventory::Inventory::GetAmmoCount)) and no
+    /// [`HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo), it clears
+    /// [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) and returns false. Otherwise:
+    ///
+    /// - the new count is the magazine size, or the old count plus the reserve when that is
+    ///   less; with unlimited ammunition the reserve counts as a full magazine;
+    /// - for an [`E_RELOAD_BULLET`](crate::equipment::weapon::ReloadType::E_RELOAD_BULLET) weapon the new count is the
+    ///   old count plus one instead, and [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) is set
+    ///   while that is still short of full;
+    /// - it writes the count through [`SetMagazineAmmo`](crate::equipment::weapon::WeaponBase::SetMagazineAmmo) (which pushes
+    ///   the HUD), records the reload statistic for the local player, resets the scatter
+    ///   balancer, and tells the HUD (`CHUDUI::OnReloadSelectedWeapon`) for the local player's
+    ///   selected weapon;
+    /// - it clears [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) once the magazine is full;
+    /// - without unlimited ammunition it writes the reserve back as the old count plus the
+    ///   reserve minus the new count
+    ///   ([`Inventory::SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount), allowing
+    ///   an autosave), so the rounds left in the old magazine return to the reserve and nothing
+    ///   is lost;
+    /// - it clears [`m_IsReloading`](crate::equipment::weapon::WeaponBase::m_IsReloading) and returns true.
+    ///
+    /// It never touches the weapon's model parts: a part hidden by the throw-away-magazine
+    /// message stays hidden until the
+    /// [`TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_ENABLE_MODEL_ATTACHEMENT)
+    /// message shows it. The rocket launcher's override ([`RPGWeapon::Reload`](crate::equipment::weapon::RPGWeapon::Reload)) handles its
+    /// rocket model. It runs from the reload track message
+    /// ([`TRACK_MESSAGE_RELOAD`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_RELOAD)), in the holder's serial
+    /// post-physics pass, and for an
+    /// [`E_RELOAD_NO_ANIMATION`](crate::equipment::weapon::ReloadType::E_RELOAD_NO_ANIMATION) weapon from the ammunition
+    /// check in the weapon's parallel update; a refill of the hand-grenade reserve from empty
+    /// also calls it on the hand-grenade weapon.
+    pub Reload: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
-    ),
+    ) -> bool,
     /// The per-gun ammunition check, called by
     /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) for `weapon_data` with the
     /// tick's fire decision in `should_try_to_fire` and whether the trigger was already pulled
@@ -1824,7 +2988,10 @@ pub struct WeaponBaseVftable {
         should_try_to_fire: *mut bool,
         was_trigger_pulled: bool,
     ),
-    _vfunc_44: unsafe extern "system" fn(
+    /// Ends a reload: clears [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) and
+    /// [`m_IsReloading`](crate::equipment::weapon::WeaponBase::m_IsReloading). The reload state machine's
+    /// `NWeaponReloadFinishedTask` calls it on the wielded weapon when its state exits.
+    pub ReloadAnimationFinished: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
     /// Deducts `count` rounds of ammunition for `weapon_data`.
@@ -1941,6 +3108,304 @@ fn _WeaponClass_size_check() {
     unreachable!()
 }
 #[repr(C, align(8))]
+/// `CWeaponComponentBase`: the base of a weapon's components, the entries of
+/// [`WeaponBase::m_WeaponComponents`](crate::equipment::weapon::WeaponBase::m_WeaponComponents). A component is a `CGameObject` of its own, so its run-time
+/// type test is the game object's. Only some members are mapped, at their offsets from the start
+/// of the component; the derived component types repeat the ones they use.
+pub struct WeaponComponentBase {
+    vftable: *const crate::equipment::weapon::WeaponComponentBaseVftable,
+    _field_8: [u8; 200],
+    /// The weapon the component belongs to.
+    pub m_Owner: *mut crate::equipment::weapon::WeaponBase,
+    /// The component's kind.
+    pub m_Type: crate::equipment::weapon::WeaponComponentType,
+    _field_dc: [u8; 20],
+    /// Whether the component is enabled, written by [`Enable`](crate::equipment::weapon::WeaponComponentBase::Enable). The weapon runs the
+    /// per-shot, per-update, and post-finalization hooks of enabled components only.
+    pub m_Enabled: bool,
+    _field_f1: [u8; 7],
+}
+fn _WeaponComponentBase_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xF8], WeaponComponentBase>([0u8; 0xF8]);
+    }
+    unreachable!()
+}
+impl WeaponComponentBase {
+    pub fn vftable(
+        &self,
+    ) -> *const crate::equipment::weapon::WeaponComponentBaseVftable {
+        self.vftable as *const crate::equipment::weapon::WeaponComponentBaseVftable
+    }
+    /// `CRtti::IsType`: whether the component is of the class `type_id` names or derives from
+    /// it, as for [`GameObject::IsType`](crate::game::GameObject::IsType). The weapon code tests a
+    /// component against [`ModelAttachementWeaponComponent::TYPE_ID`](crate::equipment::weapon::ModelAttachementWeaponComponent::TYPE_ID) before treating it as a
+    /// model part, and that test also accepts the barrel recoil and barrel spin parts.
+    pub unsafe fn IsType(&self, type_id: *const u32) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsType).read();
+            f(self as *const Self as _, type_id)
+        }
+    }
+    /// Enables or disables the component, storing [`m_Enabled`](crate::equipment::weapon::WeaponComponentBase::m_Enabled). The
+    /// model-attachment component's override also shows or hides its model part through
+    /// [`SetVisible`](crate::equipment::weapon::WeaponComponentBase::SetVisible) when the value changes, so on a model part it is the
+    /// show and hide.
+    pub unsafe fn Enable(&mut self, enable: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Enable).read();
+            f(self as *mut Self as _, enable)
+        }
+    }
+    /// Shows or hides the component's models.
+    pub unsafe fn SetVisible(&mut self, visible: bool, p2: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SetVisible).read();
+            f(self as *mut Self as _, visible, p2)
+        }
+    }
+}
+impl std::convert::AsRef<WeaponComponentBase> for WeaponComponentBase {
+    fn as_ref(&self) -> &WeaponComponentBase {
+        self
+    }
+}
+impl std::convert::AsMut<WeaponComponentBase> for WeaponComponentBase {
+    fn as_mut(&mut self) -> &mut WeaponComponentBase {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct WeaponComponentBaseVftable {
+    _vfunc_0: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_1: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    /// `CRtti::IsType`: whether the component is of the class `type_id` names or derives from
+    /// it, as for [`GameObject::IsType`](crate::game::GameObject::IsType). The weapon code tests a
+    /// component against [`ModelAttachementWeaponComponent::TYPE_ID`](crate::equipment::weapon::ModelAttachementWeaponComponent::TYPE_ID) before treating it as a
+    /// model part, and that test also accepts the barrel recoil and barrel spin parts.
+    pub IsType: unsafe extern "system" fn(
+        this: *const crate::equipment::weapon::WeaponComponentBase,
+        type_id: *const u32,
+    ) -> bool,
+    _vfunc_3: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_4: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_5: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_6: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_7: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_8: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_9: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_10: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_11: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_12: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_13: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_14: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_15: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_16: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_17: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_18: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_19: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_20: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_21: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_22: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_23: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_24: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_25: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_26: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_27: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_28: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_29: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_30: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_31: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_32: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_33: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_34: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_35: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_36: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_37: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    /// Enables or disables the component, storing [`m_Enabled`](crate::equipment::weapon::WeaponComponentBase::m_Enabled). The
+    /// model-attachment component's override also shows or hides its model part through
+    /// [`SetVisible`](crate::equipment::weapon::WeaponComponentBase::SetVisible) when the value changes, so on a model part it is the
+    /// show and hide.
+    pub Enable: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+        enable: bool,
+    ),
+    _vfunc_39: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_40: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_41: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_42: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_43: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_44: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_45: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_46: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_47: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_48: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_49: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_50: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_51: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_52: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_53: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    _vfunc_54: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+    ),
+    /// Shows or hides the component's models.
+    pub SetVisible: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponComponentBase,
+        visible: bool,
+        p2: bool,
+    ),
+}
+fn _WeaponComponentBaseVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1C0], WeaponComponentBaseVftable>([0u8; 0x1C0]);
+    }
+    unreachable!()
+}
+impl WeaponComponentBaseVftable {}
+impl std::convert::AsRef<WeaponComponentBaseVftable> for WeaponComponentBaseVftable {
+    fn as_ref(&self) -> &WeaponComponentBaseVftable {
+        self
+    }
+}
+impl std::convert::AsMut<WeaponComponentBaseVftable> for WeaponComponentBaseVftable {
+    fn as_mut(&mut self) -> &mut WeaponComponentBaseVftable {
+        self
+    }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The kind of a weapon component (`CWeaponBase::EWeaponComponentType`), stored on the component
+/// as [`WeaponComponentBase::m_Type`](crate::equipment::weapon::WeaponComponentBase::m_Type). A component of a derived class carries the derived kind:
+/// the barrel recoil and barrel spin components derive from the model-attachment component but
+/// carry their own kinds.
+pub enum WeaponComponentType {
+    E_WEAPON_COMPONENT_LASER_BEAM = 0isize as _,
+    E_WEAPON_COMPONENT_TURRET = 1isize as _,
+    E_WEAPON_COMPONENT_BARREL_SPIN = 2isize as _,
+    E_WEAPON_COMPONENT_BARREL_RECOIL = 3isize as _,
+    E_WEAPON_COMPONENT_DO_ACT = 4isize as _,
+    E_WEAPON_COMPONENT_MODEL_ATTACHEMENT = 5isize as _,
+    E_WEAPON_COMPONENT_FOW_CONTROLLER = 6isize as _,
+    E_WEAPON_COMPONENT_MAGNET = 7isize as _,
+    E_WEAPON_COMPONENT_WALL_PENETRATION = 8isize as _,
+    E_WEAPON_COMPONENT_SPOTLIGHT = 9isize as _,
+    E_WEAPON_COMPONENT_LIGHT = 10isize as _,
+    E_WEAPON_COMPONENT_VEHICLE_PART_REMOVER = 11isize as _,
+    E_WEAPON_COMPONENT_AIM_POI = 12isize as _,
+    E_WEAPON_COMPONENT_AIRPLANE_FLYBY = 13isize as _,
+    E_WEAPON_COMPONENT_INVALID = 14isize as _,
+}
+fn _WeaponComponentType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], WeaponComponentType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(C, align(8))]
 /// One physical gun of a weapon (`CWeaponData`, a `CCombinedAttachedEffectContainer`): its model,
 /// attach bones, muzzle fire points, cached world matrices, and fire effects. A weapon holds one per
 /// gun in [`WeaponBase::m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData); a dual-wield weapon holds two.
@@ -1968,7 +3433,15 @@ pub struct WeaponData {
     /// The gun's base model instance (an `NModelSystem::CModelInstance`). The render update pushes
     /// the interpolated world matrix to it.
     pub m_BaseModelInstance: *mut ::std::ffi::c_void,
-    _field_138: [u8; 32],
+    _field_138: [u8; 16],
+    /// The gun's spare magazine: a disabled [`RigidObject`](crate::physics::RigidObject) that
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) turns into the dropped magazine,
+    /// or null. [`SpawnMagazineObject`](crate::equipment::weapon::WeaponData::SpawnMagazineObject) requests it from the spawn
+    /// system, which fills it in asynchronously and disables it on arrival, so it stays null for a
+    /// while after each request and for good on a gun without a magazine prop.
+    pub m_MagazineObject: crate::types::shared_ptr::SharedPtr<
+        crate::physics::RigidObject,
+    >,
     /// The gun's world matrix as of the previous simulation tick.
     pub m_WorldMatrixT0: crate::types::math::Matrix4,
     /// The gun's world matrix as of the current simulation tick, refreshed from the attach bone by
@@ -1976,7 +3449,18 @@ pub struct WeaponData {
     /// through [`GetWorldMatrixT1`](crate::equipment::weapon::WeaponData::GetWorldMatrixT1); the render update interpolates from
     /// [`m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0) toward it.
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
-    _field_1d8: [u8; 208],
+    _field_1d8: [u8; 152],
+    /// The gun's measured world velocity, metres per second.
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) gives it to the dropped magazine.
+    pub m_MeasuredWorldVelocity: crate::types::math::Vector3,
+    /// The gun's measured angular velocity, which
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) gives to the dropped magazine.
+    pub m_MeasuredAngularVelocity: crate::types::math::Vector3,
+    _field_288: [u8; 28],
+    /// The spawn tag of the gun's magazine prop, from the weapon's properties, or
+    /// [`NO_MAGAZINE_UNIQUE_TAG`](crate::equipment::weapon::WeaponData::NO_MAGAZINE_UNIQUE_TAG) for a gun without one, for which
+    /// [`SpawnMagazineObject`](crate::equipment::weapon::WeaponData::SpawnMagazineObject) does nothing.
+    pub m_MagazineUniqueTag: i32,
     /// Seconds since this gun last fired; reset by [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile).
     pub m_TimeSinceLastFire: f32,
     /// The gun's shot counter for tracers: the bullet weapons' shot
@@ -2035,6 +3519,90 @@ impl WeaponData {
             f(self as *const Self as _, result)
         }
     }
+    pub const ThrowAwayMagazineObject_ADDRESS: usize = 0x140986B60;
+    /// Drops the gun's spare magazine ([`m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject)) as a physics
+    /// prop, for `character` holding the gun. `model_name_hash` picks where the magazine leaves
+    /// from:
+    ///
+    /// - zero, or [`NO_MAGAZINE_MODEL_NAME_HASH`](crate::equipment::weapon::WeaponData::NO_MAGAZINE_MODEL_NAME_HASH): from the gun's
+    ///   own [`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1), touching no model part;
+    /// - any other hash: from the world matrix
+    ///   ([`ModelAttachementWeaponComponent::m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix)) of the owner's model-attachment
+    ///   component whose [`m_NameHash`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_NameHash) matches. It
+    ///   walks a copy of the owner's [`m_WeaponComponents`](crate::equipment::weapon::WeaponBase::m_WeaponComponents),
+    ///   taking only a component whose [`m_Type`](crate::equipment::weapon::WeaponComponentBase::m_Type) is
+    ///   [`E_WEAPON_COMPONENT_MODEL_ATTACHEMENT`](crate::equipment::weapon::WeaponComponentType::E_WEAPON_COMPONENT_MODEL_ATTACHEMENT)
+    ///   and that passes [`IsType`](crate::equipment::weapon::WeaponComponentBase::IsType) for
+    ///   [`ModelAttachementWeaponComponent::TYPE_ID`](crate::equipment::weapon::ModelAttachementWeaponComponent::TYPE_ID), and hides that part with
+    ///   [`Enable`](crate::equipment::weapon::WeaponComponentBase::Enable)`(false)`. With no matching part nothing is
+    ///   dropped or hidden, and it returns false.
+    ///
+    /// When there is a spare magazine and a place to drop it from, it makes the prop dynamic,
+    /// places it there, gives its body the character's collision system group (so it does not
+    /// collide with the character), the gun's
+    /// [`m_MeasuredWorldVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredWorldVelocity) with any upward component
+    /// removed, and the gun's [`m_MeasuredAngularVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredAngularVelocity), and
+    /// a body material, then enables it, adds it to the update, and releases the gun's reference,
+    /// so [`m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject) is null afterwards. It returns true when it
+    /// found a place to drop from, whether or not a spare magazine was there to drop.
+    ///
+    /// It writes physics-body state (velocities and the body material through the world), which
+    /// the physics system allows only on the thread holding the physics world's write mark. Its
+    /// only caller is the throw-away-magazine track message
+    /// ([`TRACK_MESSAGE_THROW_AWAY_MAGAZINE`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_THROW_AWAY_MAGAZINE)), which
+    /// runs in the holder's serial post-physics pass on the game update thread.
+    pub unsafe fn ThrowAwayMagazineObject(
+        &mut self,
+        character: *mut crate::character::character::Character,
+        model_name_hash: u32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+                model_name_hash: u32,
+            ) -> bool = ::std::mem::transmute(Self::ThrowAwayMagazineObject_ADDRESS);
+            f(self as *mut Self as _, character, model_name_hash)
+        }
+    }
+    pub const SpawnMagazineObject_ADDRESS: usize = 0x14097B1D0;
+    /// Requests the gun's next spare magazine: releases [`m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject)
+    /// and asks the spawn system to spawn the prop tagged
+    /// [`m_MagazineUniqueTag`](crate::equipment::weapon::WeaponData::m_MagazineUniqueTag) at the gun's
+    /// [`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1). The spawn completes later; its callback stores
+    /// the prop in `m_MagazineObject` and disables it until it is thrown. Does nothing for a gun
+    /// without a magazine prop. The weapon's post-initialization calls it for the first spare, and
+    /// the throw-away-magazine track message after each throw.
+    pub unsafe fn SpawnMagazineObject(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::SpawnMagazineObject_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const DoAct_ADDRESS: usize = 0x1409512F0;
+    /// Runs `act` (an event id, as [`Character::QueueAct`](crate::character::character::Character::QueueAct)
+    /// takes) on the gun's own animated model ([`m_AnimatedModel`](crate::equipment::weapon::WeaponData::m_AnimatedModel)), on
+    /// its first layer, and returns whether the model took it; false for a gun without an
+    /// animated model. The do-act component ([`DoActWeaponComponent`](crate::equipment::weapon::DoActWeaponComponent)) plays a gun's own clips,
+    /// such as a pump, through it.
+    pub unsafe fn DoAct(&mut self, act: *const u32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, act: *const u32) -> bool = ::std::mem::transmute(
+                Self::DoAct_ADDRESS,
+            );
+            f(self as *mut Self as _, act)
+        }
+    }
+}
+impl WeaponData {
+    /// The `model_name_hash` (the hash of `no_magazine_model`) that makes
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) drop the spare magazine from the
+    /// gun's own transform without looking for a model part.
+    pub const NO_MAGAZINE_MODEL_NAME_HASH: u32 = 423049129;
+    /// The [`m_MagazineUniqueTag`](crate::equipment::weapon::WeaponData::m_MagazineUniqueTag) of a gun without a magazine prop.
+    pub const NO_MAGAZINE_UNIQUE_TAG: i32 = -1;
 }
 impl std::convert::AsRef<WeaponData> for WeaponData {
     fn as_ref(&self) -> &WeaponData {
@@ -2150,13 +3718,18 @@ fn _WeaponState_size_check() {
 /// are bound.
 pub struct WeaponTuning {
     _field_0: [u8; 64],
-    /// The magazine capacity. Negative means the weapon has no magazine limit.
+    /// The magazine capacity. Negative means the weapon has no magazine limit: it never reloads,
+    /// and [`WeaponBase::Reload`](crate::equipment::weapon::WeaponBase::Reload) and [`WeaponBase::CanReload`](crate::equipment::weapon::WeaponBase::CanReload) refuse it.
     pub m_magazine_size: i32,
     /// The weapon's maximum aim range in metres. The player's aim control takes the largest of
     /// these over the wielded, wingsuit, and vehicle weapons as the weapon slot's maximum aim
     /// distance.
     pub m_max_range: f32,
-    _field_48: [u8; 8],
+    /// The reload timing. For an
+    /// [`E_RELOAD_NO_ANIMATION`](crate::equipment::weapon::ReloadType::E_RELOAD_NO_ANIMATION) weapon the ammunition check
+    /// loads it into [`WeaponBase::m_ReloadTimeLeft`](crate::equipment::weapon::WeaponBase::m_ReloadTimeLeft) as the reload's duration in seconds.
+    pub m_reload_time_scale: f32,
+    _field_4c: [u8; 4],
     /// The seconds between shots: [`WeaponBase::UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) starts a shot only once
     /// [`WeaponBase::m_TimeSinceLastFire`](crate::equipment::weapon::WeaponBase::m_TimeSinceLastFire) has reached it. The interval is weapon-wide, so the guns
     /// of a multi-gun weapon share it.
@@ -2175,10 +3748,15 @@ pub struct WeaponTuning {
     /// A per-weapon replacement for the character's aim-timer refill value; non-negative values
     /// override the character's aim settings (see [`WeaponBase::GetAimTimerOverride`](crate::equipment::weapon::WeaponBase::GetAimTimerOverride)).
     pub m_aim_timer_override: f32,
+    _field_70: [u8; 20],
+    /// Whether the weapon type has unlimited ammunition: one of the conditions of
+    /// [`WeaponBase::HasUnlimitedAmmo`](crate::equipment::weapon::WeaponBase::HasUnlimitedAmmo).
+    pub m_unlimited_ammo: bool,
+    _field_85: [u8; 3],
 }
 fn _WeaponTuning_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x70], WeaponTuning>([0u8; 0x70]);
+        ::std::mem::transmute::<[u8; 0x88], WeaponTuning>([0u8; 0x88]);
     }
     unreachable!()
 }

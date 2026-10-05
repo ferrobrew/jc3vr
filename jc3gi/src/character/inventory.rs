@@ -54,7 +54,18 @@ pub struct Inventory {
     /// without the planted-explosives ability. One half of
     /// [`GetAnimationAllowsTriggeringExplosives`](crate::character::inventory::Inventory::GetAnimationAllowsTriggeringExplosives).
     pub m_DoesAnimationAllowTriggeringExplosives: bool,
-    _field_18c: [u8; 596],
+    _field_18c: [u8; 36],
+    /// The character's reserve of each kind of ammunition, indexed by [`AmmunitionType`](crate::equipment::weapon::AmmunitionType) (up to
+    /// [`NOF_AMMO_TYPES`](crate::equipment::weapon::AmmunitionType::NOF_AMMO_TYPES)). A weapon's magazine
+    /// ([`WeaponBase::m_MagazineAmmo`](crate::equipment::weapon::WeaponBase::m_MagazineAmmo)) is separate;
+    /// a reload moves rounds from here into it. Read it through
+    /// [`GetAmmoCount`](crate::character::inventory::Inventory::GetAmmoCount) and write it through
+    /// [`SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount), which keeps the HUD current.
+    pub m_Ammunition: [i32; 17],
+    /// The cap on each entry of [`m_Ammunition`](crate::character::inventory::Inventory::m_Ammunition), indexed the same way; the
+    /// ammunition upgrades raise it.
+    pub m_MaxAmmunition: [i32; 17],
+    _field_238: [u8; 424],
     /// The character that owns the inventory.
     pub m_Character: *mut crate::character::character::Character,
 }
@@ -65,6 +76,79 @@ fn _Inventory_size_check() {
     unreachable!()
 }
 impl Inventory {
+    pub const GetAmmoCount_ADDRESS: usize = 0x1408BB460;
+    /// The reserve of `ammo_type`: its entry of [`m_Ammunition`](crate::character::inventory::Inventory::m_Ammunition).
+    pub unsafe fn GetAmmoCount(
+        &self,
+        ammo_type: crate::equipment::weapon::AmmunitionType,
+    ) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                ammo_type: crate::equipment::weapon::AmmunitionType,
+            ) -> i32 = ::std::mem::transmute(Self::GetAmmoCount_ADDRESS);
+            f(self as *const Self as _, ammo_type)
+        }
+    }
+    pub const SetAmmoCount_ADDRESS: usize = 0x1408C6670;
+    /// Sets the reserve of `ammo_type` to `count`, capped at its
+    /// [`m_MaxAmmunition`](crate::character::inventory::Inventory::m_MaxAmmunition) entry. For the locally controlled owner it pushes
+    /// the new reserve to the HUD (`CHUDUI::OnSetSelectedInventoryAmmo`) when it is the selected
+    /// weapon's kind, or refreshes the grenade count for
+    /// [`AMMO_HAND_GRENADE`](crate::equipment::weapon::AmmunitionType::AMMO_HAND_GRENADE); for
+    /// [`AMMO_BEACON`](crate::equipment::weapon::AmmunitionType::AMMO_BEACON) and [`AMMO_FLARE`](crate::equipment::weapon::AmmunitionType::AMMO_FLARE)
+    /// it sends the resupply-point refresh event and, when the count changed and `save_game` is
+    /// set, autosaves.
+    ///
+    /// A refill from empty (the old reserve zero, `count` positive) reloads: when the wielded
+    /// weapon uses `ammo_type` and its magazine is empty it calls
+    /// [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon),
+    /// and for [`AMMO_HAND_GRENADE`](crate::equipment::weapon::AmmunitionType::AMMO_HAND_GRENADE) it calls the hand-grenade
+    /// weapon's [`Reload`](crate::equipment::weapon::WeaponBase::Reload) directly when that weapon's
+    /// magazine is empty. [`WeaponBase::Reload`](crate::equipment::weapon::WeaponBase::Reload) writes the
+    /// reserve back through it.
+    pub unsafe fn SetAmmoCount(
+        &mut self,
+        ammo_type: crate::equipment::weapon::AmmunitionType,
+        count: i32,
+        save_game: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ammo_type: crate::equipment::weapon::AmmunitionType,
+                count: i32,
+                save_game: bool,
+            ) = ::std::mem::transmute(Self::SetAmmoCount_ADDRESS);
+            f(self as *mut Self as _, ammo_type, count, save_game)
+        }
+    }
+    pub const GiveMaxAmmo_ADDRESS: usize = 0x1408D5ED0;
+    /// Fills every reserve to its [`m_MaxAmmunition`](crate::character::inventory::Inventory::m_MaxAmmunition) entry, with the same
+    /// HUD updates, events, autosave, and refill-from-empty reloads as
+    /// [`SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount) for each kind.
+    pub unsafe fn GiveMaxAmmo(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::GiveMaxAmmo_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const GetAnimationAllowsReloading_ADDRESS: usize = 0x1408BB660;
+    /// Whether the character may reload:
+    /// [`m_DoesAnimationAllowReloading`](crate::character::inventory::Inventory::m_DoesAnimationAllowReloading) is set and the
+    /// owner's [`SB_DISABLE_RELOAD`](crate::state::StateBitFlag::SB_DISABLE_RELOAD) state bit is clear.
+    /// [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon)
+    /// and the ammunition check require it.
+    pub unsafe fn GetAnimationAllowsReloading(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsReloading_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const Update_Parallel_ADDRESS: usize = 0x140942920;
     /// The inventory's parallel per-frame update. `muzzle_target` and `grenade_target` point at
     /// by-value `CVector3f` copies of the owner's weapon and grenade aim targets.

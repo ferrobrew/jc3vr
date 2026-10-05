@@ -5,6 +5,7 @@ pub mod hud_ui;
 pub mod locator;
 pub mod overlay_ui;
 pub mod pause_ui;
+pub mod poi;
 pub mod scaleform;
 pub mod ui_base;
 pub mod ui_manager;

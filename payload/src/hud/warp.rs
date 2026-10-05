@@ -1,6 +1,7 @@
 //! The marker-layer warp pass: draw the marker texture as a depth-warped grid mesh.
 //!
-//! Same overlay pipeline as [`crate::hud::quad::HudQuad`] (alpha blend, no depth test, no culling),
+//! Same overlay pipeline as [`crate::hud::quad::HudQuad`] (premultiplied-alpha blend, no depth test,
+//! no culling),
 //! but the vertex shader tessellates the panel into a grid and displaces each vertex along its
 //! panel-anchor ray by a marker-blended depth field
 //! ([`hud_layer_vs`](../shaders/hud_layer_vs.hlsl)); the pixel shader is shared with the plain
@@ -13,7 +14,7 @@ use windows::Win32::Graphics::{
     Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
     Direct3D11::{
         D3D11_BIND_CONSTANT_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE,
-        D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+        D3D11_BLEND_OP_ADD, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
         D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID,
         D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
         D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
@@ -104,11 +105,12 @@ impl HudWarp {
             let sampler = sampler.context("the HUD warp sampler was not created")?;
 
             // Straight alpha, like the quad pass: transparent regions show the scene.
+            // Premultiplied alpha, as the plain quad (see `HudQuad::new`).
             let mut blend: Option<ID3D11BlendState> = None;
             let mut blend_desc = D3D11_BLEND_DESC::default();
             blend_desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
                 BlendEnable: true.into(),
-                SrcBlend: D3D11_BLEND_SRC_ALPHA,
+                SrcBlend: D3D11_BLEND_ONE,
                 DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                 BlendOp: D3D11_BLEND_OP_ADD,
                 SrcBlendAlpha: D3D11_BLEND_ONE,

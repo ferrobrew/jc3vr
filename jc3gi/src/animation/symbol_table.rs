@@ -57,6 +57,17 @@ impl EventIdSymbolTable {
     pub const ACT_REVERSE: &::std::ffi::CStr = c"ACT_REVERSE";
     /// The motorbike variant of [`ACT_REVERSE`](crate::animation::symbol_table::EventIdSymbolTable::ACT_REVERSE).
     pub const ACT_REVERSE_MOTORBIKE: &::std::ffi::CStr = c"ACT_REVERSE_MOTORBIKE";
+    /// The gun-side pump act: the pump shotgun's (`w151`) own state machine plays the pump on
+    /// the gun's model for it. The shotgun's gun-facing do-act component
+    /// ([`DoActWeaponComponent`](crate::equipment::weapon::DoActWeaponComponent)) sends it to the gun
+    /// ([`WeaponData::DoAct`](crate::equipment::weapon::WeaponData::DoAct)) at each shot, alongside the
+    /// holder's `UB_ACT_SHOTGUN_PUMP`.
+    pub const ACT_SHOTGUN_PUMP: &::std::ffi::CStr = c"ACT_SHOTGUN_PUMP";
+    /// The gun-side bolt act, handled by the state machines of the bolt-action rifles that cycle a
+    /// bolt on the gun's own model (`w162` and `w163`). The holder's counterpart is
+    /// `UB_ACT_SNIPER_BOLT_ACTION`, which the rifle's per-tick update queues
+    /// ([`SniperWeapon::UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel)).
+    pub const ACT_SNIPER_BOLT_ACTION: &::std::ffi::CStr = c"ACT_SNIPER_BOLT_ACTION";
     /// The one-off idle-variation act: transitions the on-foot idle from `S_IDLE` to
     /// `S_IDLE_ONE_OFF` in `rico_base.afsmb`, playing a single idle-break animation (a weight shift,
     /// a look-around, a fidget) before returning to `S_IDLE`. `NStateTask_InputLocoIdleTask::Update`

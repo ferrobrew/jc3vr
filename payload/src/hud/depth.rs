@@ -530,7 +530,7 @@ fn bin_edges(index: usize) -> (f32, f32) {
 /// The render camera projection's z-row `(A, B)` with `device_depth = A + B / view_z`. The
 /// embedded render camera is used (not the nullable active-camera pointer), matching the camera
 /// the depth buffer was rendered with.
-fn projection_z_row() -> Option<(f32, f32)> {
+pub(crate) fn projection_z_row() -> Option<(f32, f32)> {
     // SAFETY: reads the live camera manager singleton, like render_camera_pose.
     let projection = unsafe {
         let cm = jc3gi::camera::camera_manager::CameraManager::get()?;

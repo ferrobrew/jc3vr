@@ -46,6 +46,7 @@ mod state;
 pub(crate) mod summary_panel;
 mod target;
 mod warp;
+pub(crate) mod world_markers;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -168,7 +169,11 @@ pub fn tick(device: &Device, window_width: u32, window_height: u32) {
             eye_width,
             eye_height,
         );
-        hud.ensure_redirected(device, width, height, render.0, render.1);
+        // The atlas viewport probe lays the gameplay HUD out inside the stage only; menus keep
+        // the full layout, and a mode change re-applies the redirect with the right one.
+        let stage_safe_area =
+            cfg.world_markers.probe_stage_safe_area && current_mode() == HudMode::Hud;
+        hud.ensure_redirected(device, width, height, render.0, render.1, stage_safe_area);
         hud.ensure_layers(device, cfg.split);
     } else {
         hud.restore(render.0, render.1);
@@ -278,6 +283,22 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
             panel_height: panel_height(cfg.panel_scale, distance, aspect),
         };
         hud.compute_world_corners(&params_at(panel_distance));
+        // The world markers keep the angular size they have on the panel, so they are placed from
+        // the panel's angular height (its height over its distance, independent of the distance).
+        // SAFETY: the graphics engine is the live singleton on the render thread.
+        let graphics_engine =
+            unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() };
+        world_markers::prepare_frame(
+            context,
+            device,
+            &world_markers::FrameInputs {
+                head: head_pos,
+                head_rotation,
+                panel_height_over_distance: panel_height(cfg.panel_scale, 1.0, aspect),
+                hud: hud.redirected_target(),
+                graphics_engine: graphics_engine.as_deref(),
+            },
+        );
         pointer::publish_panel(pointer_camera.and_then(|camera| {
             Some(pointer::RenderedPanel {
                 head: camera.head,
@@ -367,8 +388,15 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     } else if eye == 0 {
         // No panel pose this frame: the previous corners are not what the player sees.
         pointer::publish_panel(None);
+        world_markers::clear_frame();
     }
 
+    // The world markers are cropped out of this eye's HUD render (and cut out of the panel) before
+    // the panel draws, and drawn behind it: they are anchored in the world, beyond the panel.
+    world_markers::prepare_eye(context, hud.redirected_target());
+    if !crate::director::cinematic::active() {
+        world_markers::draw_billboards(context, device, target);
+    }
     hud.draw_quad(context, device, target, eye);
     hud.clear(context);
 }

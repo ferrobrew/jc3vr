@@ -5,8 +5,9 @@
 //! quaternion slerp. The panel sits at its own world-space orientation (the damped follow rotation),
 //! positioned at the camera position + panel_forward * distance. Corners are uploaded alongside the
 //! camera's per-eye view-projection matrix; the vertex shader projects each corner
-//! ([`hud_quad_vs`](../shaders/hud_quad_vs.hlsl) / `hud_quad_ps`). The panel is an alpha-blended overlay
-//! with the depth test disabled, drawn onto the linear back buffer at the end of the eye's draw.
+//! ([`hud_quad_vs`](../shaders/hud_quad_vs.hlsl) / `hud_quad_ps`). The panel is a premultiplied-alpha
+//! overlay with the depth test disabled, drawn onto the linear back buffer at the end of the eye's
+//! draw.
 //!
 //! World-space corners are computed once per frame (eye 0) via [`compute_world_corners`] and cached
 //! by [`crate::hud::state::HudState`]; both eyes then project the same world-space quad through their own
@@ -25,15 +26,14 @@ use windows::{
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
         Direct3D11::{
             D3D11_BIND_CONSTANT_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BUFFER_DESC,
-            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE,
-            D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-            D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP,
-            D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState, ID3D11Buffer,
-            ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader, ID3D11RasterizerState,
-            ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-            ID3D11VertexShader,
+            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+            D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID,
+            D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
+            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
+            D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState,
+            ID3D11Buffer, ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader,
+            ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
+            ID3D11ShaderResourceView, ID3D11VertexShader,
         },
     },
     core::Interface as _,
@@ -105,12 +105,17 @@ impl HudQuad {
             .context("creating the HUD quad sampler")?;
             let sampler = sampler.context("the HUD quad sampler was not created")?;
 
-            // Straight (non-premultiplied) alpha so the HUD's transparent regions show the scene.
+            // Premultiplied alpha: every texture this pass draws holds premultiplied colour. The
+            // Scaleform HAL's normal blend writes `rgb * a` with coverage alpha into the HUD
+            // target's transparent-black clear, and egui renders premultiplied. Blending the
+            // colour by its alpha again would darken every partially covered pixel (antialiased
+            // text, glows, shadows, and fades). Shaders that compute their own colour (the
+            // cursor) premultiply it.
             let mut blend: Option<ID3D11BlendState> = None;
             let mut blend_desc = D3D11_BLEND_DESC::default();
             blend_desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
                 BlendEnable: true.into(),
-                SrcBlend: D3D11_BLEND_SRC_ALPHA,
+                SrcBlend: D3D11_BLEND_ONE,
                 DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                 BlendOp: D3D11_BLEND_OP_ADD,
                 SrcBlendAlpha: D3D11_BLEND_ONE,

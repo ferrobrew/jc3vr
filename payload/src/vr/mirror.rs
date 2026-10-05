@@ -62,13 +62,12 @@ use windows::{
             Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             Direct3D11::{
                 D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD,
-                D3D11_BLEND_SRC_ALPHA, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER,
-                D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
-                D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT,
-                ID3D11BlendState, ID3D11DeviceContext, ID3D11PixelShader, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11Texture2D, ID3D11VertexShader,
+                D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CULL_NONE,
+                D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_RASTERIZER_DESC,
+                D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP,
+                D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11BlendState, ID3D11DeviceContext,
+                ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
+                ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
             },
         },
         System::Threading::{EnterCriticalSection, LeaveCriticalSection},
@@ -387,7 +386,7 @@ struct Mirror {
     pixel_shader: ID3D11PixelShader,
     sampler: ID3D11SamplerState,
     rasterizer: ID3D11RasterizerState,
-    /// Straight-alpha blend for the egui panel overlay composite (issue #24). The letterboxed eye
+    /// Premultiplied-alpha blend for the egui panel overlay composite (issue #24). The letterboxed eye
     /// draw is opaque and uses no blend state; only the overlay needs one.
     overlay_blend: ID3D11BlendState,
     /// The RTV over the game back buffer, keyed on the back-buffer texture pointer.
@@ -445,13 +444,14 @@ impl Mirror {
             let rasterizer =
                 rasterizer.context("vr: the mirror rasterizer state was not created")?;
 
-            // Straight (non-premultiplied) alpha, matching the HUD quad, so the panel's transparent
-            // regions show the eye image behind it.
+            // Premultiplied alpha, matching the HUD quad: the egui panel texture holds
+            // premultiplied colour (egui renders premultiplied), so its transparent regions show
+            // the eye image behind it and its partially covered pixels are not darkened twice.
             let mut overlay_blend: Option<ID3D11BlendState> = None;
             let mut blend_desc = D3D11_BLEND_DESC::default();
             blend_desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
                 BlendEnable: true.into(),
-                SrcBlend: D3D11_BLEND_SRC_ALPHA,
+                SrcBlend: D3D11_BLEND_ONE,
                 DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                 BlendOp: D3D11_BLEND_OP_ADD,
                 SrcBlendAlpha: D3D11_BLEND_ONE,

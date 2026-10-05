@@ -14,8 +14,8 @@ use windows::Win32::Graphics::{
 /// Our offscreen HUD render target: a color texture (with an RTV to render into and an SRV to preview)
 /// and a matching depth-stencil for the UI's depth clears, plus the size they were built for.
 pub(crate) struct HudTarget {
-    /// Held for lifetime ownership; the views below are what we use.
-    _color: ID3D11Texture2D,
+    /// The colour texture; region copies (the world markers' crops) address it directly.
+    color: ID3D11Texture2D,
     color_srv: ID3D11ShaderResourceView,
     color_rtv: ID3D11RenderTargetView,
     _depth: ID3D11Texture2D,
@@ -91,7 +91,7 @@ impl HudTarget {
             let depth_dsv = depth_dsv.context("the HUD depth-stencil view was not created")?;
 
             Ok(HudTarget {
-                _color: color,
+                color,
                 color_srv,
                 color_rtv,
                 _depth: depth,
@@ -103,6 +103,10 @@ impl HudTarget {
 
     pub(crate) fn size(&self) -> (u32, u32) {
         self.size
+    }
+
+    pub(crate) fn color_texture(&self) -> &ID3D11Texture2D {
+        &self.color
     }
 
     pub(crate) fn color_srv(&self) -> &ID3D11ShaderResourceView {

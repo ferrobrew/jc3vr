@@ -43,6 +43,12 @@ The engine makes this directly doable because its world-to-screen takes the VP a
 
 One consumer bypasses `Get2DInfo` entirely: the grapple reticle projects through a default-VP wrapper (`CUIManager::Convert3DCoordsDefault`, whose only callers are in `CHUDUI::UpdateGrappleReticle`). That wrapper is hooked separately (`payload/src/hooks/ui.rs`) to route it through the same panel reprojection, and doubles as the source of the aim depth below.
 
+## World markers in the world (prototype)
+
+`hud.world_markers` (off by default, the HUD tab's "World markers (prototype)" section) takes the on-screen point-of-interest markers off the panel and draws each as a billboard at its world point, keeping the angular size it had on the panel. Whether a marker is on screen is decided with the headset's field of view rather than the panel's narrower subtense, so a marker visible in the world does not become an edge arrow; markers outside the headset's view stay arrows on the panel. Each marker is cropped out of the HUD texture and cut out of the panel, and placed on the nearest visible surface along its line of sight (the scene depth at its pixel, with a raycast fallback), so it never reads as farther than a wall it shows through. The design, the depth placement, its limits, and the atlas it leads to are in [ui-decoupling.md](rendering/ui-decoupling.md#world-markers-the-crop-prototype). The section's readout lists the drawn markers (id, world point, clip origin, crop texels, true and drawn distance, and what set the distance), the layout's snapshot match, and the atlas viewport probe's safe-area numbers.
+
+Every panel composite blends premultiplied alpha, because the HUD texture and the egui panels hold premultiplied colour ([ui-decoupling.md](rendering/ui-decoupling.md#the-alpha-of-the-hud-texture)).
+
 ## Depth layers: the render-root partition (parked)
 
 **Parked, off by default**: gameplay works at full rate, but the first pause permanently stops the UI update pump — see the post-mortem in `docs/issues/08-14-hud-overlays-and-depth.md`. The code lives in `payload/src/hud/split/`, kept compiling behind the disabled `hud.split` flag. The shipped depth mechanism is the single-panel warp (previous section); dynamic panel distance from the depth distribution is the planned complement.

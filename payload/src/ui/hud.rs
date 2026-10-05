@@ -367,8 +367,163 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
         }
     }
 
+    world_markers_ui(ui);
     scaleform_debug_ui(ui);
     pause_menu_ui(ui);
+}
+
+/// The world-marker prototype's settings, its live readout, and the atlas viewport probe.
+fn world_markers_ui(ui: &mut egui::Ui) {
+    ui.collapsing("World markers (prototype)", |ui| {
+        {
+            let mut cfg = config::CONFIG.lock();
+            let m = &mut cfg.hud.world_markers;
+            ui.checkbox(
+                &mut m.enabled,
+                "Draw on-screen markers at their world points instead of on the panel",
+            );
+            ui.checkbox(
+                &mut m.classify_with_headset_fov,
+                "Classify on-screen markers with the headset's field of view",
+            );
+            ui.add(
+                egui::Slider::new(&mut m.fov_inset_deg, 0.0..=15.0)
+                    .text("Field-of-view inset (deg)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut m.fallback_half_fov_deg, 20.0..=80.0)
+                    .text("Fallback half field of view, no headset (deg)"),
+            );
+            ui.checkbox(&mut m.hide_from_panel, "Cut the markers out of the panel");
+            ui.checkbox(
+                &mut m.surface_placement,
+                "Place markers on the nearest visible surface along the line of sight",
+            );
+            if m.surface_placement {
+                ui.indent("world_markers_surface", |ui| {
+                    ui.checkbox(
+                        &mut m.ray_fallback,
+                        "Raycast where no depth sample is available",
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut m.surface_pull_m, 0.0..=2.0)
+                            .text("Pull toward the eye (m)"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut m.depth_halflife_s, 0.0..=1.0)
+                            .text("Distance smoothing halflife (s)"),
+                    );
+                });
+            }
+            ui.add(
+                egui::Slider::new(&mut m.max_distance_m, 10.0..=2000.0)
+                    .logarithmic(true)
+                    .text("Farthest placement (m)"),
+            );
+            ui.label("Crop around the clip origin (stage px)");
+            ui.indent("world_markers_crop", |ui| {
+                ui.add(egui::Slider::new(&mut m.crop.left, 0.0..=400.0).text("Left"));
+                ui.add(egui::Slider::new(&mut m.crop.right, 0.0..=400.0).text("Right"));
+                ui.add(egui::Slider::new(&mut m.crop.up, 0.0..=200.0).text("Up"));
+                ui.add(egui::Slider::new(&mut m.crop.down, 0.0..=200.0).text("Down"));
+                ui.add(
+                    egui::Slider::new(&mut m.label_extra_left, 0.0..=800.0)
+                        .text("Extra left for the labelled marker"),
+                );
+            });
+            ui.checkbox(
+                &mut m.probe_stage_safe_area,
+                "EXPERIMENT: lay the gameplay HUD out inside the stage (atlas probe)",
+            );
+        }
+
+        ui.separator();
+        match crate::hud::world_markers::status() {
+            None => {
+                ui.label("Not drawing (off, outside gameplay, or the panel is off).");
+            }
+            Some(status) => {
+                ui.label(format!(
+                    "Layout snapshot {:?}, displayed {} ({}); {} markers, {} past the cap;                      labelled POI {}",
+                    status.layout_snapshot,
+                    status.displayed_snapshot,
+                    if status.layout_matched {
+                        "matched"
+                    } else {
+                        "newest layout"
+                    },
+                    status.markers.len(),
+                    status.skipped,
+                    status.labelled_id,
+                ));
+                ui.label(format!(
+                    "Stage {:.0}x{:.0}, HUD texture {}x{}",
+                    status.stage.x, status.stage.y, status.texture.0, status.texture.1
+                ));
+                egui::Grid::new("world_markers_grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for header in ["id", "world", "origin", "texels", "true", "drawn", "by"] {
+                            ui.label(header);
+                        }
+                        ui.end_row();
+                        for m in &status.markers {
+                            ui.label(m.id.to_string());
+                            ui.label(format!(
+                                "{:.1}, {:.1}, {:.1}",
+                                m.world.x, m.world.y, m.world.z
+                            ));
+                            ui.label(format!("{:.0}, {:.0}", m.origin.x, m.origin.y));
+                            ui.label(format!(
+                                "{}..{} x {}..{}",
+                                m.rect.0, m.rect.2, m.rect.1, m.rect.3
+                            ));
+                            ui.label(format!("{:.1} m", m.true_distance));
+                            ui.label(format!("{:.1} m", m.drawn_distance));
+                            ui.label(format!("{:?}", m.source));
+                            ui.end_row();
+                        }
+                    });
+            }
+        }
+
+        ui.separator();
+        // SAFETY: plain reads of the live UI manager's fields for display.
+        let probe = unsafe {
+            jc3gi::ui::ui_manager::UIManager::get().map(|m| {
+                (
+                    m.m_SafeArea,
+                    m.m_SafeAreaPercentage,
+                    glam::Vec2::new(m.m_CachedStageWidth, m.m_CachedStageHeight),
+                )
+            })
+        };
+        if let Some((safe, percentage, stage)) = probe {
+            let aspect = crate::hud::current_aspect();
+            ui.label(format!(
+                "Safe area ({:.0}, {:.0})-({:.0}, {:.0}), {:.0}% inset, stage {:.0}x{:.0}",
+                safe.x1,
+                safe.y1,
+                safe.x2,
+                safe.y2,
+                percentage * 100.0,
+                stage.x,
+                stage.y,
+            ));
+            if let Some(frame) = crate::hud::world_markers::layout::StageFrame::new(stage, aspect)
+            {
+                ui.label(format!(
+                    "Visible frame ({:.0}, {:.0}) {:.0}x{:.0} at aspect {aspect:.2}: band {:.0}                      stage px above and below the stage; the safe area reaches {:.0} px into the                      top band",
+                    frame.origin.x,
+                    frame.origin.y,
+                    frame.size.x,
+                    frame.size.y,
+                    frame.vertical_band(),
+                    (-safe.y1).max(0.0),
+                ));
+            }
+        }
+    });
 }
 
 /// The VR menu's toggle and its current state.

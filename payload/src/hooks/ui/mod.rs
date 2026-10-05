@@ -1,11 +1,13 @@
 //! UI manager detours: world-to-screen compensation for the floating HUD panel, the render-root
-//! partition's capture and render seams, and (in [`mouse`]) the game UI's mouse input.
+//! partition's capture and render seams, the world markers' classification and capture snapshot,
+//! (in [`hud`]) the HUD's point-of-interest update, and (in [`mouse`]) the game UI's mouse input.
 //!
 //! [`get_2d_info`](UIManager::Get2DInfo) is the gameplay marker placement function. When the HUD
 //! is redirected and drawn as a floating quad, the VP and camera matrix are replaced with the
 //! panel's orientation so that markers project onto the panel's surface rather than the screen
 //! plane. See `docs/mod/hud.md`.
 
+mod hud;
 mod mouse;
 
 use std::{
@@ -40,6 +42,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&UI_RENDER_BINDER)
         .with_static_binder(&CONVERT_3D_COORDS_DEFAULT_BINDER)
         .with_static_binder(&MOVIE_CAPTURE_BINDER)
+        .with_hook_library(hud::hook_library())
         .with_hook_library(mouse::hook_library())
 }
 
@@ -123,10 +126,11 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     let is_main_movie =
         unsafe { UIManager::get().is_some_and(|manager| std::ptr::eq(manager.m_Movie, this)) };
     if is_main_movie {
-        let (split_enabled, suppress_overlays) = Config::lock_query(|c| {
+        let (split_enabled, suppress_overlays, world_markers) = Config::lock_query(|c| {
             (
                 c.hud.redirect && c.hud.quad && c.hud.split,
                 c.hud.suppress_overlays,
+                c.hud.world_markers,
             )
         });
         // The partition persists across menus and pauses: the render detour only composites
@@ -145,9 +149,16 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
                 roots::on_capture(movie, split_active);
                 log_pipeline_lag(movie, split_active);
             }
+            crate::hud::world_markers::on_capture(&world_markers);
         }
     }
-    MOVIE_CAPTURE.get().unwrap().call(this, if_changed)
+    let result = MOVIE_CAPTURE.get().unwrap().call(this, if_changed);
+    // The world-marker snapshot is keyed by the snapshot this capture produced.
+    // SAFETY: `this` is the live movie the capture ran on.
+    if is_main_movie && let Some(movie) = unsafe { this.as_ref() } {
+        crate::hud::world_markers::after_capture(movie);
+    }
+    result
 }
 
 /// Log the snapshot pipeline's produced-vs-displayed gap every few seconds: the displayed UI
@@ -218,14 +229,16 @@ fn get_2d_info(
     a10: bool,
     offset: Vector2,
 ) {
-    let (panel_enabled, record_depths, max_depth, marker_radius) = Config::lock_query(|c| {
-        (
-            c.hud.redirect && c.hud.quad,
-            c.hud.redirect && c.hud.quad && c.hud.marker_warp,
-            c.hud.marker_max_depth,
-            c.hud.marker_radius,
-        )
-    });
+    let (panel_enabled, record_depths, max_depth, marker_radius, world_markers) =
+        Config::lock_query(|c| {
+            (
+                c.hud.redirect && c.hud.quad,
+                c.hud.redirect && c.hud.quad && c.hud.marker_warp,
+                c.hud.marker_max_depth,
+                c.hud.marker_radius,
+                c.hud.world_markers,
+            )
+        });
     let aspect = current_aspect();
     // Markers always use the panel subtense; only the reticle exposes the game-projection A/B.
     let panel = panel_enabled.then(|| compute_panel_vp(true)).flatten();
@@ -259,6 +272,33 @@ fn get_2d_info(
             if let Some(manager) = this.as_mut() {
                 manager.m_CachedViewportRatio = previous;
             }
+        }
+    }
+
+    // The world markers classify the points of interest's projections (and may move one the
+    // panel put off screen but the headset can see back on screen) before anything records them.
+    // SAFETY: the original call populated the out pointers; the camera is the caller's own.
+    unsafe {
+        if let (Some(manager), Some(world), Some(camera), Some(out_x), Some(out_y), Some(out_pos)) = (
+            this.as_ref(),
+            world.as_ref(),
+            camera_orig.as_ref(),
+            out_x.as_mut(),
+            out_y.as_mut(),
+            out_pos.as_mut(),
+        ) {
+            crate::hud::world_markers::classify(
+                crate::hud::world_markers::Projection {
+                    manager,
+                    world: glam::Vec3::from(world.data),
+                    camera,
+                    margin,
+                    out_x,
+                    out_y,
+                    out_pos,
+                },
+                &world_markers,
+            );
         }
     }
 

@@ -287,7 +287,12 @@ pub struct Character {
     /// references it hands out to the character, such as a damage message's
     /// [`m_Damager`](crate::damage::DamageMsg::m_Damager).
     pub m_WeakThis: crate::types::shared_ptr::WeakPtrGameObject,
-    _field_78: [u8; 2240],
+    _field_78: [u8; 312],
+    /// The character's maximum health (`CDamageable::m_MaxHealth`), the scale of
+    /// [`GetHealth`](crate::character::character::Character::GetHealth). [`HUDUI::InitHealth`](crate::ui::hud_ui::HUDUI::InitHealth) passes
+    /// the local player character's to the movie.
+    pub m_MaxHealth: i16,
+    _field_1b2: [u8; 1926],
     /// The character's aiming-settings resource (`TResourceCachePtr<SCharacterAimingSettings>`, a
     /// resource handle resolved through the resource cache). Both aim-input updates read the
     /// aim-timer refill value from the resolved settings.
@@ -1379,6 +1384,80 @@ impl Character {
             f(self as *mut Self as _)
         }
     }
+    pub const StartReloadingWieldingWeapon_ADDRESS: usize = 0x1407D8F50;
+    /// Starts a reload of the wielded weapon: queues the upper-body reload act (`UB_ACT_RELOAD`)
+    /// and blocks grenades, when the inventory allows reloading
+    /// ([`Inventory::GetAnimationAllowsReloading`](crate::character::inventory::Inventory::GetAnimationAllowsReloading)),
+    /// the detonate input
+    /// ([`E_INPUT_DETONATE_EXPLOSIVES`](crate::character::character::WeaponInput::E_INPUT_DETONATE_EXPLOSIVES)) is zero, a
+    /// weapon is wielded ([`GetWieldingWeapon`](crate::character::character::Character::GetWieldingWeapon)), and that weapon
+    /// [`CanReload`](crate::equipment::weapon::WeaponBase::CanReload). Otherwise it does nothing. The
+    /// act's callback runs the weapon's
+    /// [`StartReloadSequence`](crate::equipment::weapon::WeaponBase::StartReloadSequence) once the act
+    /// is accepted; the ammunition itself moves later, when the reload clip's track message calls
+    /// [`Reload`](crate::equipment::weapon::WeaponBase::Reload). The reload state raises
+    /// [`SB_IS_RELOADING`](crate::state::StateBitFlag::SB_IS_RELOADING).
+    ///
+    /// Every animated reload starts here. Its callers are:
+    ///
+    /// - [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling),
+    ///   on a positive reload input ([`E_INPUT_RELOAD`](crate::character::character::WeaponInput::E_INPUT_RELOAD)) while the
+    ///   inventory allows reloading;
+    /// - [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase),
+    ///   for the automatic reload of a player's empty magazine, on every tick while the magazine
+    ///   is out ([`m_WeaponIsWithoutMagazine`](crate::equipment::weapon::WeaponBase::m_WeaponIsWithoutMagazine)),
+    ///   and for the predicted reload of the local player's idle weapon;
+    /// - [`Inventory::SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount),
+    ///   [`Inventory::GiveMaxAmmo`](crate::character::inventory::Inventory::GiveMaxAmmo),
+    ///   `CInventory::GiveMaxAmmoToAllWeaponInInventory`, `CInventory::SetMaxBeaconsByLevel`, and
+    ///   `CInventory::SetMaxFlaresByLevel`, when a reserve is refilled from empty while the
+    ///   wielded weapon of that kind has an empty magazine;
+    /// - [`WeaponBase::HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage),
+    ///   for the [`TRACK_MESSAGE_START_RELOAD`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_START_RELOAD)
+    ///   and [`TRACK_MESSAGE_START_RELOAD_IF_EMPTY`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_START_RELOAD_IF_EMPTY)
+    ///   messages;
+    /// - the rocket launcher's [`Fire_Start`](crate::equipment::weapon::RPGWeapon::Fire_Start), firing an
+    ///   unloaded launcher, and its
+    ///   [`CheckIfReloadShouldBeTriggered`](crate::equipment::weapon::RPGWeapon::CheckIfReloadShouldBeTriggered),
+    ///   for a holder that is not a player;
+    /// - the sniper rifle's per-tick update, after a shot that emptied the magazine with a
+    ///   reserve left.
+    pub unsafe fn StartReloadingWieldingWeapon(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::StartReloadingWieldingWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const CancelReload_ADDRESS: usize = 0x140760850;
+    /// Cancels a running reload: while
+    /// [`SB_IS_RELOADING`](crate::state::StateBitFlag::SB_IS_RELOADING) is set, queues the cancel act
+    /// (`UB_ACT_CANCEL_RELOAD`) and clears the inventory's reload permission
+    /// ([`Inventory::m_DoesAnimationAllowReloading`](crate::character::inventory::Inventory::m_DoesAnimationAllowReloading)).
+    /// The ammunition check calls it for a weapon that does not reload by magazine once
+    /// [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) is clear, and the
+    /// planted explosive's detonation calls it when the detonate act cannot be taken.
+    pub unsafe fn CancelReload(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::CancelReload_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const IsReloading_ADDRESS: usize = 0x14075F3A0;
+    /// Whether the character is reloading: the
+    /// [`SB_IS_RELOADING`](crate::state::StateBitFlag::SB_IS_RELOADING) state bit, which the reload
+    /// state of the animation graph raises.
+    pub unsafe fn IsReloading(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsReloading_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const CanUseMelee_ADDRESS: usize = 0x1407FAD40;
     /// Whether the character may start a melee attack: the melee block bit that dropping a heavy
     /// weapon sets is clear, the inventory's animation permission allows melee, the character is not
@@ -1488,6 +1567,14 @@ impl Character {
                 Self::SetStuntAutoExitEnabled_ADDRESS,
             );
             f(self as *mut Self as _, enabled)
+        }
+    }
+    /// The character's current health (`CDamageable::GetHealth`, returning `m_CurHealth`).
+    /// [`HUDUI::UpdateHealth`](crate::ui::hud_ui::HUDUI::UpdateHealth) reads it every frame.
+    pub unsafe fn GetHealth(&self) -> i16 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetHealth).read();
+            f(self as *const Self as _)
         }
     }
     /// Attaches the character to a parent (`CCharacter::AttachTo`): `target` is the parent's
@@ -1641,9 +1728,11 @@ pub struct CharacterVftable {
     _vfunc_26: unsafe extern "system" fn(
         this: *mut crate::character::character::Character,
     ),
-    _vfunc_27: unsafe extern "system" fn(
-        this: *mut crate::character::character::Character,
-    ),
+    /// The character's current health (`CDamageable::GetHealth`, returning `m_CurHealth`).
+    /// [`HUDUI::UpdateHealth`](crate::ui::hud_ui::HUDUI::UpdateHealth) reads it every frame.
+    pub GetHealth: unsafe extern "system" fn(
+        this: *const crate::character::character::Character,
+    ) -> i16,
     _vfunc_28: unsafe extern "system" fn(
         this: *mut crate::character::character::Character,
     ),

@@ -190,6 +190,12 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     let owner = unsafe { aim.as_ref() }
         .and_then(|a| unsafe { a.m_Owner.as_ref() })
         .filter(|c| c.m_IsLocalCharacter);
+    // The world markers' fallback raycasts run here whatever the control scheme: this is the
+    // simulation update, outside the physics step, where the game casts its own aim ray.
+    if let Some(owner) = owner {
+        // SAFETY: the owner is the live local player character, on the simulation thread.
+        unsafe { crate::hud::world_markers::resolve_rays(owner) };
+    }
     let tick = match owner.map(|_| begin()) {
         Some(Ok(tick)) => tick,
         Some(Err(idle)) => {

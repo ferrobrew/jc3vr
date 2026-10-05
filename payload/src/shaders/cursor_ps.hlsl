@@ -1,7 +1,8 @@
 // Virtual mouse cursor pixel shader: an analytic circle dot with a stroke, drawn on a small quad
 // floating just off the HUD panel (shares hud_quad_vs). The dot is a light fill ringed by a dark
 // stroke so it reads against both bright and dark UI, antialiased against the quad's UV-space
-// pixel footprint.
+// pixel footprint. The quad pass blends premultiplied alpha, so the colour is premultiplied by the
+// coverage.
 
 static const float OuterRadius = 0.42;   // stroke's outer edge, in UV units from the center
 static const float StrokeWidth = 0.10;   // stroke thickness, in UV units
@@ -19,5 +20,6 @@ float4 main(float4 position : SV_Position, float2 uv : TEXCOORD0) : SV_Target
     float fill_mask = 1.0 - smoothstep(inner_radius - aa, inner_radius + aa, r);
 
     float3 color = lerp(StrokeColor, FillColor, fill_mask);
-    return float4(color, coverage * Opacity);
+    float alpha = coverage * Opacity;
+    return float4(color * alpha, alpha);
 }
