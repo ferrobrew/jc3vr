@@ -224,7 +224,12 @@ fn build() -> Page {
             .controllers
             .weapons
             .haptics
-            .game_rumble));
+            .game_rumble))
+        .item(config_toggle!("ALSO RUMBLE GAMEPAD", |c| c
+            .controllers
+            .weapons
+            .haptics
+            .gamepad_rumble));
     page.header("VEHICLES")
         .item(config_toggle!("VEHICLE WEAPONS BY HAND", |c| c
             .controllers

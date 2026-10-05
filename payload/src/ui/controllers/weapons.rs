@@ -566,12 +566,19 @@ fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
 fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
     ui.add(egui::Slider::new(&mut h.intensity, 0.0..=1.0).text("Intensity"));
     ui.checkbox(&mut h.game_rumble, "Game rumbles")
-        .on_hover_text("Weapon fire, damage, impacts, and the game's other rumbles.");
+        .on_hover_text(
+            "Weapon fire, damage, impacts, landings, vehicles, and the game's other rumbles.",
+        );
+    ui.checkbox(&mut h.gamepad_rumble, "Also rumble the gamepad")
+        .on_hover_text("Let the physical gamepad rumble too, instead of staying silent.");
     ui.add(
         egui::Slider::new(&mut h.kick_amplitude_per_rad, 0.0..=20.0)
             .text("Kick amplitude (per rad)"),
     );
-    ui.add(egui::Slider::new(&mut h.max_pulse_s, 0.02..=2.0).text("Longest pulse (s)"));
+    ui.add(egui::Slider::new(&mut h.max_pulse_s, 0.02..=2.0).text("Longest one-off pulse (s)"));
+    ui.add(
+        egui::Slider::new(&mut h.continuous_pulse_s, 0.02..=0.5).text("Continuous pulse hold (s)"),
+    );
     ui.checkbox(&mut h.grapple, "Grapple pulses");
     pulse_settings(ui, "Grapple fire", &mut h.grapple_fire);
     pulse_settings(ui, "Grapple attach", &mut h.grapple_attach);

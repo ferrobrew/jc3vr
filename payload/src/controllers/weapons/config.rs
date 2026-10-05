@@ -291,14 +291,22 @@ pub struct HapticsConfig {
     pub enabled: bool,
     /// Scales every pulse's amplitude, `0..=1`.
     pub intensity: f32,
-    /// Play the game's own rumbles (weapon fire, damage, impacts, and the rest) on the
-    /// controllers, each on the hand that caused it.
+    /// Forward every game rumble (weapon fire, damage, impacts, landings, vehicles, and the rest)
+    /// to the controllers: a weapon's own fire rumble goes to the hand holding that gun, and the
+    /// game's continuous left and right motor strength otherwise goes to the hands by side.
     pub game_rumble: bool,
+    /// Also let the physical gamepad rumble under the controller scheme, instead of silencing it
+    /// so only the controllers vibrate.
+    pub gamepad_rumble: bool,
     /// How much a shot's recoil kick adds to its pulse's amplitude, per radian of kick.
     pub kick_amplitude_per_rad: f32,
-    /// The longest pulse a game rumble plays for, seconds: the game's rumbles can last long enough
-    /// to blur into one another on a controller.
+    /// The longest pulse a one-off game rumble plays for, seconds: the game's rumbles can last long
+    /// enough to blur into one another on a controller.
     pub max_pulse_s: f32,
+    /// How long each continuous rumble's forwarded pulse plays before the next frame refreshes it,
+    /// seconds: long enough to bridge a frame hitch without a gap, short enough to stop quickly once
+    /// the game's rumble does.
+    pub continuous_pulse_s: f32,
     /// Pulse the grapple hand when the grapple fires and when its hook attaches.
     pub grapple: bool,
     pub grapple_fire: PulseSpec,
@@ -315,8 +323,10 @@ impl HapticsConfig {
             enabled: true,
             intensity: 1.0,
             game_rumble: true,
+            gamepad_rumble: false,
             kick_amplitude_per_rad: 6.0,
             max_pulse_s: 0.4,
+            continuous_pulse_s: 0.1,
             grapple: true,
             grapple_fire: PulseSpec {
                 amplitude: 0.35,
