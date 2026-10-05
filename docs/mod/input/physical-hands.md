@@ -46,7 +46,7 @@ A palm meeting an object at `min_object_speed_mps` or faster also knocks it on t
 
 ## Picking things up
 
-An acting palm that holds nothing looks, every tick, for what its grip would take: five short rays from the back of the hand through the palm, out of the palm, along the fingers, between the two, and out of either edge, reaching `pickup.reach_m` past the palm, and the surface the palm presses into. The nearest hit that a hand takes is the hand's target, shown with `pickup.show_targets` as a ring in the world-space overlay: blue for an object one hand lifts, red for one it does not, gold for a weapon. A hand takes two kinds of thing, told apart by the engine's run-time type test:
+An acting palm that holds nothing looks, every tick, for what its grip would take: five short rays from the back of the hand through the palm, out of the palm, along the fingers, between the two, and out of either edge, reaching `pickup.reach_m` past the palm, and the surface the palm presses into. The nearest hit that a hand takes is the hand's target, shown with `pickup.show_targets` (a debugging aid, off by default) as a ring in the world-space overlay: blue for an object one hand lifts, red for one it does not, gold for a weapon. A hand takes two kinds of thing, told apart by the engine's run-time type test:
 
 - a weapon lying loose in the world ([`WeaponBase::TYPE_ID`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-TYPE_ID), in the [`E_WS_DROPPED`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponState##variant-E_WS_DROPPED) state);
 - a rigid object ([`RigidObject::TYPE_ID`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::RigidObject##func-TYPE_ID)) whose body is dynamic and of finite mass: a crate, a barrel, a gas canister, debris.
@@ -141,7 +141,7 @@ The settings are `physical_hands` in the controller settings, under "Physical ha
 9. Draw a gun: that hand's palm stops (the readout says not acting) and the melee gesture works with it again; the other, empty hand still collides.
 10. In a vehicle, swimming, and under the parachute: no palm acts.
 11. With `show_boxes`, the boxes sit over the palms, turn orange against walls and green against objects, and a shove line grows with the push.
-12. Reach toward a small crate's corner: a blue ring marks it. Grip: the crate stays where it was in the hand, held by that corner; turn the wrist and it turns about the corner. Carry it into a wall: it stops, and the hand stays on it. Release it while swinging: it flies along the swing, spinning with the flick.
+12. With `pickup.show_targets` on, reach toward a small crate's corner: a blue ring marks it. Grip: the crate stays where it was in the hand, held by that corner; turn the wrist and it turns about the corner. Carry it into a wall: it stops, and the hand stays on it. Release it while swinging: it flies along the swing, spinning with the flick.
 13. Grip a long plank by one end: it droops and swings from the hand. Grip the other end with the other hand: it comes level between the hands; raise one hand and it tilts.
 14. Grip a heavy object with one hand: a red ring before the grab; it does not lift but drags along the ground. Grip it with both: it lifts if both hands are strong enough. Push it toward a wall: the body is pushed back.
 15. Grip a hinged gate or door if one exists: it swings about its hinge as the hand moves.

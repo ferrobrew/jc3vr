@@ -120,10 +120,10 @@ pub struct HudConfig {
     /// Whether the flat egui debug overlay draws onto the desktop window: both the direct
     /// back-buffer path (`EguiState::render`, no VR session or the panel path inactive) and the
     /// deferred mirror-overlay texture (`crate::hud::mirror_overlay`, a VR session with the mirror
-    /// on and [`egui_panel`](HudConfig::egui_panel) off). On by default. Off hides the overlay from
-    /// the desktop image only -- the VR floating panel, the headset image, and the in-world
+    /// on and [`egui_panel`](HudConfig::egui_panel) off). Off by default; F4 toggles it. Off hides the
+    /// overlay from the desktop image only -- the VR floating panel, the headset image, and the in-world
     /// overlays are unaffected.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub flat_overlay_visible: bool,
     /// The world-marker prototype: the game's on-screen point-of-interest markers drawn as
     /// billboards at their world points instead of on the floating panel. See
@@ -163,16 +163,13 @@ impl HudConfig {
             reticle_align: ReticleAlign::PanelSubtense,
             split_path_prefix: SplitPathPrefix::new(),
             egui_panel: EguiPanelConfig::new(),
-            flat_overlay_visible: true,
+            flat_overlay_visible: false,
             world_markers: WorldMarkersConfig::new(),
             atlas: AtlasConfig::new(),
         }
     }
 }
 
-const fn default_true() -> bool {
-    true
-}
 
 /// How the aim reticle is projected onto the floating panel (issue #6). An A/B knob for the
 /// crosshair-vs-shot alignment; only the reticle projection is affected, not the world markers.
@@ -193,7 +190,7 @@ pub enum ReticleAlign {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorldMarkersConfig {
-    /// Master toggle. Off by default while the prototype is evaluated.
+    /// Master toggle.
     pub enabled: bool,
     /// Decide whether a marker is on screen with the headset's field of view rather than the
     /// panel's narrower subtense, so a marker the player can see in the world is not demoted to an
@@ -237,7 +234,7 @@ pub struct WorldMarkersConfig {
 impl WorldMarkersConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             classify_with_headset_fov: true,
             fallback_half_fov_deg: 50.0,
             fov_inset_deg: 2.0,
@@ -266,7 +263,7 @@ impl Default for WorldMarkersConfig {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AtlasConfig {
-    /// Master toggle. Off by default until the atlas is checked in the headset.
+    /// Master toggle.
     pub enabled: bool,
     /// The empty margin around every cell, in stage pixels, wider than the glows and shadows the
     /// moved parts draw past their bounds.
@@ -285,7 +282,7 @@ pub struct AtlasConfig {
 impl AtlasConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             gutter_px: 6.0,
             markers: true,
             ammo: AmmoConfig::new(),

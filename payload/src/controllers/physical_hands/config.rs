@@ -261,7 +261,7 @@ impl PickupConfig {
             break_distance_m: 0.6,
             throw_scale: 1.0,
             max_throw_speed_mps: 25.0,
-            show_targets: true,
+            show_targets: false,
             grab_pulse: PulseSpec {
                 amplitude: 0.5,
                 duration_s: 0.04,

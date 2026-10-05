@@ -69,7 +69,7 @@ impl ReloadConfig {
             enabled: true,
             button: ReloadButton::Eject,
             tap_s: 0.3,
-            flick_eject: true,
+            flick_eject: false,
             flick_speed_dps: 900.0,
             flick_cooldown_s: 0.6,
             pouch: VolumeSpec {
@@ -82,7 +82,7 @@ impl ReloadConfig {
             capture_angle_deg: 50.0,
             seat_depth_m: 0.025,
             timeout_s: 8.0,
-            show_well: true,
+            show_well: false,
             belt: BeltConfig::new(),
             chamber: true,
             manual_action: true,
