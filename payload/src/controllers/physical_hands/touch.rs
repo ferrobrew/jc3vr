@@ -1,40 +1,29 @@
-//! What the palms' contacts do to the world: a strike on a character, a knock and a shove of a
-//! loose object, and the pulses of a hand that presses or pulls hard.
+//! What the palms' contacts do to the world: a knock and a shove of a loose object, and the pulses
+//! of a hand that presses or pulls hard.
 //!
 //! Every function here changes engine state that is the main thread's, and runs from the palms'
 //! tick ([`crate::controllers::physical_hands::after_aim`]) only on that thread.
 
 use glam::Vec3;
-use jc3gi::character::character::Character;
 
 use crate::controllers::{
     frame::Hand,
     physical_hands::{
-        HandStatus, PhysicalHandsConfig, ShoveReport, State, StrikeReport, bodies,
+        HandStatus, PhysicalHandsConfig, ShoveReport, State, bodies,
         contact::{Surface, SurfaceHit},
         engine, pulse,
         shove::{self, ShoveTuning},
-        strike::{self, StrikeKind, impact_speed, strength},
     },
     weapons::haptics::PulseSource,
 };
 
-/// Something a tick's contacts do to the world.
+/// A palm meeting a solid surface on a tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(super) enum Event {
-    /// A palm hit a character.
-    Strike {
-        hand: Hand,
-        hit: SurfaceHit,
-        velocity: Vec3,
-        kind: StrikeKind,
-    },
-    /// A palm met a solid surface.
-    Touch {
-        hand: Hand,
-        hit: SurfaceHit,
-        velocity: Vec3,
-    },
+pub(super) struct Touch {
+    pub(super) hand: Hand,
+    pub(super) hit: SurfaceHit,
+    /// The hand's velocity, world space.
+    pub(super) velocity: Vec3,
 }
 
 /// A palm's press into an object, for its shove.
@@ -48,108 +37,59 @@ pub(super) struct ShoveInput {
 }
 
 impl State {
-    /// Act on one event.
+    /// Pulse the hand of a palm that met a surface, and knock the object it met when the hand was
+    /// fast enough.
     ///
     /// # Safety
     ///
-    /// As [`crate::controllers::physical_hands::after_aim`], with the event's objects found by
-    /// this tick's casts.
-    pub(super) unsafe fn act(
+    /// As [`crate::controllers::physical_hands::after_aim`], with the touch's object found by this
+    /// tick's casts.
+    pub(super) unsafe fn touch(
         &mut self,
-        event: Event,
-        owner: &Character,
-        melee: Option<(i32, f32)>,
+        touch: Touch,
+        melee_impulse: Option<f32>,
         config: &PhysicalHandsConfig,
     ) {
-        match event {
-            Event::Strike {
-                hand,
-                hit,
-                velocity,
-                kind,
-            } => {
-                let Surface::Character(victim) = hit.surface else {
-                    return;
-                };
-                let impact = impact_speed(velocity, hit.normal);
-                let Some(strength) = strength(
-                    impact,
-                    config.min_strike_speed_mps,
-                    config.full_strike_speed_mps,
-                ) else {
-                    return;
-                };
-                let Some((damage, impulse)) = melee else {
-                    return;
-                };
-                if !self.gates[hand.index()].take(config) {
-                    return;
-                }
-                let plan = strike::plan(kind, strength, damage, impulse, config);
-                let direction = velocity.try_normalize().unwrap_or(-hit.normal);
-                // SAFETY: forwarded from the caller.
-                let dealt = unsafe {
-                    engine::strike_character(owner, victim, hit.position, direction, &plan)
-                };
-                tracing::debug!(target: "controllers", ?hand, kind = kind.label(), strength, damage = plan.damage, dealt, "physical hands: strike");
-                self.status.strikes += 1;
-                self.status.last_strike = Some(StrikeReport {
-                    hand,
-                    plan,
-                    impact_mps: impact,
-                    dealt,
-                });
-                pulse(
-                    hand,
-                    config.strike_pulse,
-                    0.3 + 0.7 * strength,
-                    config,
-                    PulseSource::MeleeStrike,
-                );
-            }
-            Event::Touch {
-                hand,
-                hit,
-                velocity,
-            } => {
-                let impact = impact_speed(velocity, hit.normal);
-                let share = (impact / config.full_strike_speed_mps.max(1e-3)).clamp(0.0, 1.0);
-                pulse(
-                    hand,
-                    config.contact_pulse,
-                    0.25 + 0.75 * share,
-                    config,
-                    PulseSource::Collision,
-                );
-                let Surface::Solid {
-                    object: Some(_),
-                    body,
-                } = hit.surface
-                else {
-                    return;
-                };
-                if !config.object_impulses {
-                    return;
-                }
-                let (Some(strength), Some((_, melee_impulse))) = (
-                    strength(
-                        impact,
-                        config.min_object_speed_mps,
-                        config.full_strike_speed_mps,
-                    ),
-                    melee,
-                ) else {
-                    return;
-                };
-                let direction = velocity.try_normalize().unwrap_or(-hit.normal);
-                let impulse =
-                    direction * (melee_impulse * config.object_impulse * strength.max(0.1));
-                // SAFETY: forwarded from the caller.
-                match unsafe { engine::push_body(body, impulse, hit.position) } {
-                    Ok(()) => self.status.object_pushes += 1,
-                    Err(e) => self.status.last_error = Some(e.to_string()),
-                }
-            }
+        let Touch {
+            hand,
+            hit,
+            velocity,
+        } = touch;
+        let impact = impact_speed(velocity, hit.normal);
+        let share = (impact / config.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
+        pulse(
+            hand,
+            config.contact_pulse,
+            0.25 + 0.75 * share,
+            config,
+            PulseSource::Collision,
+        );
+        let Surface::Solid {
+            object: Some(_),
+            body,
+        } = hit.surface
+        else {
+            return;
+        };
+        if !config.object_impulses {
+            return;
+        }
+        let (Some(strength), Some(melee_impulse)) = (
+            strength(
+                impact,
+                config.min_object_speed_mps,
+                config.full_hit_speed_mps,
+            ),
+            melee_impulse,
+        ) else {
+            return;
+        };
+        let direction = velocity.try_normalize().unwrap_or(-hit.normal);
+        let impulse = direction * (melee_impulse * config.object_impulse * strength.max(0.1));
+        // SAFETY: forwarded from the caller.
+        match unsafe { engine::push_body(body, impulse, hit.position) } {
+            Ok(()) => self.status.object_pushes += 1,
+            Err(e) => self.status.last_error = Some(e.to_string()),
         }
     }
 
@@ -235,5 +175,55 @@ pub(super) fn pressure_pulses(hands: &[HandStatus; 2], config: &PhysicalHandsCon
     }
 }
 
+/// The strength of a hit at `speed` metres per second, `0..=1`: zero at `min_mps`, one from
+/// `full_mps`. `None` below `min_mps`.
+pub fn strength(speed: f32, min_mps: f32, full_mps: f32) -> Option<f32> {
+    if !speed.is_finite() || speed < min_mps {
+        return None;
+    }
+    let span = full_mps - min_mps;
+    if span <= f32::EPSILON {
+        return Some(1.0);
+    }
+    Some(((speed - min_mps) / span).clamp(0.0, 1.0))
+}
+
+/// The speed of a hand moving at `velocity` into a surface whose normal is `normal` (pointing back
+/// toward the hand): the share of the velocity that drives into the surface, never negative.
+pub fn impact_speed(velocity: Vec3, normal: Vec3) -> f32 {
+    let into = velocity.dot(-normal.normalize_or_zero());
+    if into.is_finite() { into.max(0.0) } else { 0.0 }
+}
+
 /// The least load that pulses a hand: a tenth of its strength.
 const MIN_PRESSURE_LOAD: f32 = 0.1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strength_ramps_between_the_speeds() {
+        let cases = [
+            (0.5, None),
+            (1.0, Some(0.0)),
+            (4.0, Some(0.5)),
+            (9.0, Some(1.0)),
+            (f32::NAN, None),
+        ];
+        for (speed, expected) in cases {
+            match (strength(speed, 1.0, 7.0), expected) {
+                (Some(a), Some(b)) => assert!((a - b).abs() < 1e-5, "{speed}: {a} != {b}"),
+                (a, b) => assert_eq!(a, b, "{speed}"),
+            }
+        }
+    }
+
+    #[test]
+    fn only_the_share_into_the_surface_is_impact() {
+        let normal = Vec3::NEG_Z;
+        assert!((impact_speed(Vec3::new(0.0, 0.0, 4.0), normal) - 4.0).abs() < 1e-6);
+        assert!((impact_speed(Vec3::new(3.0, 0.0, 4.0), normal) - 4.0).abs() < 1e-6);
+        assert_eq!(impact_speed(Vec3::new(0.0, 0.0, -4.0), normal), 0.0);
+    }
+}

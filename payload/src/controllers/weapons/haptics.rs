@@ -76,8 +76,6 @@ pub enum PulseSource {
     Yank,
     /// A grenade primed in the hand, and the warning as its fuse runs down.
     GrenadeFuse,
-    /// A physical strike that started a melee attack.
-    MeleeStrike,
     /// A step of the true reload: an eject, a round taken from the pouch, caught by the well, or
     /// seated, a belt reload, or the action worked.
     Reload,
@@ -104,7 +102,6 @@ impl PulseSource {
             PulseSource::GrappleAttach => "grapple attach",
             PulseSource::Yank => "yank",
             PulseSource::GrenadeFuse => "grenade fuse",
-            PulseSource::MeleeStrike => "melee strike",
             PulseSource::Reload => "reload",
             PulseSource::Chord => "chord",
             PulseSource::DryFire => "dry fire",

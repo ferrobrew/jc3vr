@@ -335,28 +335,6 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
         5.0,
     )?;
     pulse("weapons.c4.detonator.pulse", &d.pulse)?;
-    positive(
-        "weapons.melee_strike.strike_speed_mps",
-        w.melee_strike.strike_speed_mps,
-        100.0,
-    )?;
-    positive(
-        "weapons.melee_strike.rearm_speed_mps",
-        w.melee_strike.rearm_speed_mps,
-        100.0,
-    )?;
-    range(
-        "weapons.melee_strike.min_outward",
-        w.melee_strike.min_outward,
-        -1.0,
-        1.0,
-    )?;
-    nonnegative(
-        "weapons.melee_strike.cooldown_s",
-        w.melee_strike.cooldown_s,
-        60.0,
-    )?;
-    pulse("weapons.melee_strike.pulse", &w.melee_strike.pulse)?;
     reload(&w.reload)?;
     positive("weapons.scope.zoom", w.scope.zoom, 100.0)?;
     positive("weapons.scope.lens_radius_m", w.scope.lens_radius_m, 10.0)?;
@@ -752,38 +730,11 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
         0.0,
         1.0,
     )?;
-    nonnegative(
-        "physical_hands.min_strike_speed_mps",
-        p.min_strike_speed_mps,
-        50.0,
-    )?;
     positive(
-        "physical_hands.full_strike_speed_mps",
-        p.full_strike_speed_mps,
+        "physical_hands.full_hit_speed_mps",
+        p.full_hit_speed_mps,
         50.0,
     )?;
-    if p.full_strike_speed_mps < p.min_strike_speed_mps {
-        return Err(Invalid(format!(
-            "physical_hands.full_strike_speed_mps ({}) must not be below \
-             physical_hands.min_strike_speed_mps ({})",
-            p.full_strike_speed_mps, p.min_strike_speed_mps
-        )));
-    }
-    nonnegative("physical_hands.rearm_speed_mps", p.rearm_speed_mps, 50.0)?;
-    nonnegative(
-        "physical_hands.strike_cooldown_s",
-        p.strike_cooldown_s,
-        60.0,
-    )?;
-    range("physical_hands.fist_curl", p.fist_curl, 0.0, 1.0)?;
-    for (name, t) in [
-        ("physical_hands.punch", &p.punch),
-        ("physical_hands.slap", &p.slap),
-    ] {
-        nonnegative(&format!("{name}.damage"), t.damage, 100.0)?;
-        nonnegative(&format!("{name}.impulse"), t.impulse, 100.0)?;
-        nonnegative(&format!("{name}.stumble_strength"), t.stumble_strength, 2.0)?;
-    }
     nonnegative(
         "physical_hands.min_object_speed_mps",
         p.min_object_speed_mps,
@@ -791,7 +742,6 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
     )?;
     nonnegative("physical_hands.object_impulse", p.object_impulse, 100.0)?;
     pulse("physical_hands.contact_pulse", &p.contact_pulse)?;
-    pulse("physical_hands.strike_pulse", &p.strike_pulse)?;
     pulse("physical_hands.pressure_pulse", &p.pressure_pulse)?;
     shove(&p.shove)?;
     pickup(&p.pickup)

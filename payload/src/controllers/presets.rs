@@ -97,8 +97,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.c4_throw = weapons;
     c.weapons.wrist_detonator = weapons;
     c.weapons.c4.detonator.overlay = weapons;
-    c.weapons.melee = weapons;
-    c.weapons.melee_strike.pointing_targets = weapons;
     c.weapons.scopes = weapons;
     c.weapons.scope.suppress_precision_aim = weapons;
     c.weapons.scope.reticle = weapons;

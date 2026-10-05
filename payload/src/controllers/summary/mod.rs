@@ -133,7 +133,6 @@ pub(crate) fn refresh(
             grenade_throw: weapons.grenade_throw,
             c4_throw: weapons.c4_throw,
             wrist_detonator: weapons.wrist_detonator,
-            melee: weapons.melee,
             sight_chord: controls.sight_chord,
             trackpad_shows_summary: config.summary.show_on_trackpad_touch
                 && frame.hand(off).profile == InteractionProfile::ValveIndex,

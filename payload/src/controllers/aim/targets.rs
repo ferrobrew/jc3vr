@@ -1,8 +1,8 @@
 //! The game's own aim candidates: the [`TargetSystem`]'s sets of [`Target`]s, which the player aim
 //! control scores for every purpose in
 //! [`PlayerAimControl::UpdateAllTargets`](jc3gi::aim::aim::PlayerAimControl::UpdateAllTargets).
-//! Per-hand aim assist ([`crate::controllers::aim::assist`]) and physical melee
-//! ([`crate::controllers::weapons::melee`]) choose among the same candidates the game does.
+//! Per-hand aim assist ([`crate::controllers::aim::assist`]) chooses among the same candidates the
+//! game does.
 //!
 //! Read them only on the thread that runs the player's aim update, where the game walks them too.
 

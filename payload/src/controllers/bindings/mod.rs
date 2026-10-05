@@ -399,7 +399,6 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             grips: controls.hands.map(|h| h.grip),
             triggers: controls.hands.map(|h| h.trigger_press),
             reload_button: reload_button(&semantic_input),
-            detection,
             dt,
         };
         weapons::finish_tick(&finish, &mut step.desired);

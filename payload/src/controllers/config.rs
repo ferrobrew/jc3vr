@@ -30,7 +30,7 @@ use crate::{
         weapons::{
             config::{
                 C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HolstersConfig, MeleeStrikeConfig, RecoilConfig, ScopeConfig,
+                HeftConfig, HolstersConfig, RecoilConfig, ScopeConfig,
             },
             reload::config::ReloadConfig,
             wheel::config::WheelConfig,
@@ -679,10 +679,6 @@ pub struct WeaponsConfig {
     pub wrist_detonator: bool,
     /// The C4 pouch, the throw's release, and the wrist detonator's placement and press tuning.
     pub c4: C4Config,
-    /// Trigger melee attacks with physical strikes.
-    pub melee: bool,
-    /// The strike detector and the melee target's hold.
-    pub melee_strike: MeleeStrikeConfig,
     /// Draw a magnified image on a scoped weapon's lens while the scope is at an eye, in place of
     /// the game's precision-aim zoom, which is suppressed separately
     /// ([`ScopeConfig::suppress_precision_aim`]).
@@ -718,8 +714,6 @@ impl WeaponsConfig {
             c4_throw: true,
             wrist_detonator: true,
             c4: C4Config::new(),
-            melee: true,
-            melee_strike: MeleeStrikeConfig::new(),
             scopes: true,
             scope: ScopeConfig::new(),
             auto_switch_when_empty: false,

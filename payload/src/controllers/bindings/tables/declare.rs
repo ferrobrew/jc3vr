@@ -61,8 +61,8 @@ pub fn declare<S: Sink>(sink: &mut S, mode: Mode, ctx: &TableCtx) {
 }
 
 /// The virtual gamepad buttons: the gameplay actions the default gamepad keymap puts on each.
-/// `PUSH_GRAPPLE` is left off B: under the hammer ability it is melee, which the controllers
-/// trigger with a strike, and on B it would melee on every tether release.
+/// `PUSH_GRAPPLE` is left off B: under the hammer ability it is melee, and on B it would melee on
+/// every tether release.
 pub const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
 pub const PAD_B: &[Action] = &[RELEASE_GRAPPLE, CANCEL, BYPASS_FALL_PREVENTION, BTN_B];
 pub const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];

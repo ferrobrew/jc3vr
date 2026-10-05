@@ -6,10 +6,9 @@
 //! surface. Against a solid surface (world geometry or an object), the point is pressed in by its
 //! depth behind the surface, and its last open position stays where it was until the hand comes
 //! back out. A second cast from an anchor the body keeps in the open (the shoulder) forgives a stale
-//! open position, so that a hand carried around an obstacle counts as clear again. Against a
-//! character the point strikes: the character is never pressed against, so the point counts as in
-//! the open again at once, and the next tick's cast starts from inside the character, which it
-//! does not hit.
+//! open position, so that a hand carried around an obstacle counts as clear again. A character is
+//! passed through: it is never pressed against, so the point counts as in the open at once, and the
+//! next tick's cast starts from inside the character, which it does not hit.
 
 use std::num::NonZeroUsize;
 
@@ -24,8 +23,8 @@ pub enum Surface {
         object: Option<NonZeroUsize>,
         body: u32,
     },
-    /// A character, by its address.
-    Character(NonZeroUsize),
+    /// A character, which the palm passes through.
+    Character,
 }
 
 /// A cast's hit.
@@ -46,8 +45,6 @@ pub enum PointContact {
         hit: SurfaceHit,
         depth: f32,
     },
-    /// The point crossed into a character this tick.
-    Struck(SurfaceHit),
 }
 
 /// One probe point's memory across ticks.
@@ -79,9 +76,9 @@ impl PointProbe {
             self.last_clear = Some(point);
             return PointContact::Clear;
         };
-        if let Surface::Character(_) = hit.surface {
+        if hit.surface == Surface::Character {
             self.last_clear = Some(point);
-            return PointContact::Struck(hit);
+            return PointContact::Clear;
         }
         if from != anchor && segment(anchor, point, cast).is_none() {
             self.last_clear = Some(point);
@@ -109,8 +106,6 @@ pub fn depth_behind(hit: SurfaceHit, point: Vec3) -> f32 {
 pub struct HandContact {
     /// The deepest press into a solid surface, and its depth.
     pub press: Option<(SurfaceHit, f32)>,
-    /// The first character struck.
-    pub strike: Option<SurfaceHit>,
 }
 
 impl HandContact {
@@ -123,9 +118,6 @@ impl HandContact {
                     if out.press.is_none_or(|(_, d)| depth > d) {
                         out.press = Some((hit, depth));
                     }
-                }
-                PointContact::Struck(hit) => {
-                    out.strike.get_or_insert(hit);
                 }
             }
         }
@@ -183,7 +175,7 @@ mod tests {
             return Some(SurfaceHit {
                 position,
                 normal: Vec3::NEG_X,
-                surface: Surface::Character(NonZeroUsize::new(0x1000).unwrap()),
+                surface: Surface::Character,
             });
         }
         None
@@ -232,14 +224,14 @@ mod tests {
     }
 
     #[test]
-    fn a_character_is_struck_once_and_never_pressed() {
+    fn a_character_is_passed_through_and_never_pressed() {
         let mut probe = PointProbe::new();
         let anchor = Vec3::new(4.0, 0.0, 0.0);
         probe.step(Vec3::new(4.8, 0.0, 0.0), anchor, &mut scene);
-        assert!(matches!(
+        assert_eq!(
             probe.step(Vec3::new(5.2, 0.0, 0.0), anchor, &mut scene),
-            PointContact::Struck(_)
-        ));
+            PointContact::Clear
+        );
         // The next tick starts inside the character and hits nothing.
         assert_eq!(
             probe.step(Vec3::new(5.3, 0.0, 0.0), anchor, &mut scene),
@@ -248,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fold_keeps_the_deepest_press_and_the_first_strike() {
+    fn the_fold_keeps_the_deepest_press() {
         let hit = |x: f32| SurfaceHit {
             position: Vec3::new(x, 0.0, 0.0),
             normal: Vec3::NEG_X,
@@ -267,7 +259,6 @@ mod tests {
         ];
         let fold = HandContact::fold(&contacts);
         assert_eq!(fold.press.map(|(_, d)| d), Some(0.12));
-        assert!(fold.strike.is_none());
         let offset = fold.clamp_offset();
         assert!((offset - Vec3::new(-0.12, 0.0, 0.0)).length() < 1e-6);
         assert_eq!(HandContact::default().clamp_offset(), Vec3::ZERO);

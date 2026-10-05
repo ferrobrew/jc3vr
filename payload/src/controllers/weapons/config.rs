@@ -1,5 +1,5 @@
 //! The weapon-handling settings (the holsters, the foregrip, the recoil, the one-handed weight, the
-//! haptics, the dual-wield split, the grenade throw, melee strikes, and the scopes), held in
+//! haptics, the dual-wield split, the grenade throw, the C4 throw, and the scopes), held in
 //! [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other weapon-handling
 //! subsystems' toggles. The reload's are in [`crate::controllers::weapons::reload::config`].
 
@@ -608,51 +608,6 @@ impl WristDetonatorConfig {
 }
 
 impl Default for WristDetonatorConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The strike detector for physical melee (see [`crate::controllers::weapons::melee`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MeleeStrikeConfig {
-    /// How fast a hand must move to strike, metres per second.
-    pub strike_speed_mps: f32,
-    /// How slow the hand must get before it can strike again, metres per second.
-    pub rearm_speed_mps: f32,
-    /// The least share of a strike's speed that must point away from the shoulder, `-1..=1`, so
-    /// that pulling a hand back toward the body (a yank) is not a strike.
-    pub min_outward: f32,
-    /// The shortest time between two strikes of one hand, seconds.
-    pub cooldown_s: f32,
-    /// For how many input ticks after a strike the melee target the strike chose is held in the
-    /// aim control's melee slot, so that the game's melee reads it whichever tick it runs on.
-    pub target_hold_ticks: u32,
-    /// Also consider the target the striking hand points at, not only the one it moves toward.
-    pub pointing_targets: bool,
-    /// A pulse on the striking hand when a strike starts a melee attack.
-    pub pulse: PulseSpec,
-}
-
-impl MeleeStrikeConfig {
-    pub const fn new() -> Self {
-        Self {
-            strike_speed_mps: 3.0,
-            rearm_speed_mps: 1.2,
-            min_outward: 0.3,
-            cooldown_s: 0.6,
-            target_hold_ticks: 4,
-            pointing_targets: true,
-            pulse: PulseSpec {
-                amplitude: 0.6,
-                duration_s: 0.05,
-            },
-        }
-    }
-}
-
-impl Default for MeleeStrikeConfig {
     fn default() -> Self {
         Self::new()
     }

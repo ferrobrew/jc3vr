@@ -148,7 +148,6 @@ fn features_add_their_gestures_where_the_hand_weapons_are_used() {
     let features = Features {
         yank: true,
         holsters: true,
-        melee: true,
         trackpad_shows_summary: true,
         ..Features::default()
     };
@@ -168,7 +167,6 @@ fn features_add_their_gestures_where_the_hand_weapons_are_used() {
             .iter()
             .any(|r| r.effect == Effect::Mod(ModAction::Holster))
     );
-    assert!(on_foot.iter().any(|r| r.control == Control::EitherMotion));
     let wingsuit = describe(&DescribeCtx {
         features,
         ..ctx(

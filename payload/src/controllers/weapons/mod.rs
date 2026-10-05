@@ -1,5 +1,5 @@
 //! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads",
-//! "Grenades", "Melee", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
+//! "Grenades", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
 //! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, the reload pouch, and
 //!   the C4 pouch), placed from the body dimensions;
@@ -16,7 +16,6 @@
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
 //! - [`grenade`]: the physical grenade throw;
 //! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
-//! - [`melee`]: melee attacks from physical strikes;
 //! - [`reload`]: the true reload: eject, load from the belt pouch, and chamber by hand;
 //! - [`empty`]: the game's automatic switch away from an empty weapon suppressed, and the dry fire
 //!   pulsed;
@@ -36,7 +35,7 @@
 //! 2. [`finish_tick`] acts on the grabs the tables report: a holster grab draws or holsters, a
 //!    foregrip grab engages or releases the two-handed grip, a grenade-pouch grab primes a grenade
 //!    for the throw, a C4-pouch grab primes a charge, and a reload-pouch grab takes a round for the
-//!    reload. It runs the throws, the wrist detonator, the strike detector, and the reload, and
+//!    reload. It runs the throws, the wrist detonator, and the reload, and
 //!    holds the fire inputs back while a reload, a draw, or a holster plays (the action-runs hand
 //!    tier) and while the reload holds the gun from firing.
 //!
@@ -59,7 +58,6 @@ pub mod grip_watch;
 pub mod haptics;
 pub mod heft;
 pub mod holster;
-pub mod melee;
 pub mod recoil;
 pub mod reload;
 pub mod scope;
@@ -92,7 +90,7 @@ use crate::{
             self, ActiveHands, ik, pose as hand_pose,
             tiers::{self, HandTier, TierState},
         },
-        mode::{AirborneVariant, Detection, Mode, OnFootVariant},
+        mode::{AirborneVariant, Mode, OnFootVariant},
         overlay::{
             primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
             store,
@@ -351,22 +349,19 @@ pub(crate) struct FinishInputs {
     pub triggers: [ButtonControl; 2],
     /// The reload action's press over the tick.
     pub reload_button: ButtonControl,
-    pub detection: Detection,
     /// The engine's tick delta, seconds.
     pub dt: f32,
 }
 
 /// The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
-/// throw, the strike detector, and the reload, and hold the fire inputs back during a weapon
-/// action. `desired` is the tables' output, which a draw adds its slot-select click to and a strike
-/// its melee click.
+/// throw and the reload, and hold the fire inputs back during a weapon action. `desired` is the
+/// tables' output, which a draw adds its slot-select click to.
 pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let FinishInputs {
         grabs,
         grips,
         triggers,
         reload_button,
-        detection,
         dt,
     } = *inputs;
     let config = Config::lock_query(|c| c.controllers);
@@ -468,20 +463,6 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         },
         &config,
     );
-    match &active {
-        Some(active) if config.weapons.melee => melee::input_tick(
-            &melee::TickInputs {
-                acting: true,
-                excluded: grenade::throwing_hand().or_else(c4::throwing_hand),
-                active,
-                detection,
-                dt,
-            },
-            &config,
-            desired,
-        ),
-        _ => melee::stand_down(),
-    }
     let reload_held = reload::finish_tick(
         &reload::FinishInputs {
             grabs,
@@ -525,7 +506,6 @@ pub(crate) fn stand_down() {
     grenade::stand_down();
     c4::stand_down();
     c4::wrist::stand_down();
-    melee::stand_down();
     dual_wield::observe_triggers(None);
     dual_wield::attach::clear();
     reload::stand_down();

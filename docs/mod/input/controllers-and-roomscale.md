@@ -33,7 +33,7 @@ The following decisions are settled and the rest of the plan assumes them.
 - Aim assist is re-derived per hand ray, softened, and defaults to off.
 - Driver-seat vehicle weapons aim along the gaze by default, with an option for the right-hand ray. Passenger seats, gunner seats, and mounted guns aim by hand.
 - Recoil is an offset between the controller pose and the rendered weapon, driven by the game's per-weapon recoil state, with a spring return, a stiffer spring under a two-hand grip, and matching haptics.
-- Haptics, physical melee, and the head-through-geometry fade are in scope.
+- Haptics and the head-through-geometry fade are in scope. Physical melee is not: the game's melee attack takes the body from the player.
 - Vehicles use stick bindings by default. Physical controls (a wheel, handlebars, a helicopter cyclic and collective, a flight stick) are opt-in.
 - The wingsuit and parachute use stick steering by default. Arm-pose steering for the wingsuit and grabbed handles for the parachute add to it.
 - Grenades are thrown physically.
@@ -206,7 +206,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Throw grenade | grab from the grenade pouch and throw; `throw_grenade` is an action with no default binding |
 | Throw C4 | grab from the C4 pouch on the chest and throw; it sticks where it lands; no button |
 | Detonate C4 | push the right index fingertip into the button on the inside of the left wrist; or hold the R stick click (`DETONATE_EXPLOSIVE` alone) |
-| Melee (`PUSH_GRAPPLE` under the hammer ability) | a physical strike with either hand; no button |
+| Melee (`PUSH_GRAPPLE` under the hammer ability) | none |
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
 | Reel-in context: cancel, boost, hang jump, slingshot | Y, hold L trigger (hold L stick click while dual-wielding), A, A |
 | Pause, commlink | System button tap, System button hold (either hand) |
@@ -343,9 +343,7 @@ A grip press on the C4 pouch on the chest puts a charge in the hand; releasing t
 
 ### Melee
 
-A strike with either hand above a speed threshold, moving away from the shoulder, triggers the melee attack. The game's own melee scoring ([`PlayerAimControl::SetTargetMeleeFitness`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##func-SetTargetMeleeFitness)) rates the targets along the strike direction and along the hand's pointing, and the best visible one is written into the melee target slot (the [`TargetType::TARGET_MELEE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::target::TargetType##variant-TARGET_MELEE) entry of [`PlayerAimControl::m_Target`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/aim::aim::PlayerAimControl##field-m_Target)). A strike acts only on the ground and only when the game allows melee: [`Character::CanUseMelee`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-CanUseMelee) holds and the hammer ability is unlocked.
-
-An empty hand's palm also strikes by contact ([physical-hands.md](physical-hands.md)): a punch or a slap that lands deals the game's melee damage directly, without the attack animation, and with the palms on it replaces the strike gesture for that hand.
+There is no melee gesture. The game's melee attack lunges the body toward its target and plays its own attack, which takes the body from the player and runs counter to hands that act on the world physically. The game's melee input is on no controller binding, and an empty hand's palm passes through characters ([physical-hands.md](physical-hands.md)). A physically simulated hand may bring hitting back later.
 
 ### Scopes
 
@@ -449,7 +447,6 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 ### 5. Breadth
 
 - The physical grenade throw.
-- Physical melee.
 - Scope lenses.
 - Per-hand aim assist.
 - The true reload.
@@ -525,13 +522,12 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 
 ### Milestone 5: breadth
 
-The settings are under `weapons` unless named otherwise. The description is in [controllers.md, "Grenades, melee, aim assist, and reloads"](controllers.md#grenades-melee-aim-assist-and-reloads), ["Scopes"](controllers.md#scopes), and ["Sight lines"](controllers.md#sight-lines).
+The settings are under `weapons` unless named otherwise. The description is in [controllers.md, "Grenades, aim assist, and reloads"](controllers.md#grenades-aim-assist-and-reloads), ["Scopes"](controllers.md#scopes), and ["Sight lines"](controllers.md#sight-lines).
 
 | Part | Settings | State |
 |---|---|---|
 | The physical grenade throw | `grenade_throw`, and the release, warning, and fallback tuning under `grenade` | Built. No button throws a grenade. |
 | The C4 throw and the wrist detonator | `c4_throw` and `wrist_detonator` (both on), and the pouch, release, and button tuning under `c4` | Built. The R stick click detonates. |
-| Physical melee | `melee`, and the strike tuning under `melee_strike` | Built. |
 | Precision aim suppression | `scope.suppress_precision_aim` | Built. |
 | Scope lenses | `scopes`, `scope.source` (`OtherEye` by default, or `OwnEye`), `scope.path` (`Resample`; `SceneRender` falls back to it), and the lens tuning under `scope` | The resampled lens is built. The narrow-field scene render is not. |
 | Per-hand aim assist | `aim.assist_strength` (0, which is off), `aim.assist_max_distance_m`, `aim.assist_occlusion_tolerance_m` | Built. |
@@ -637,10 +633,9 @@ The order puts the parts that everything else depends on first, then the parts w
 25. Arm steering and the parachute handles (`vehicles.arm_steering.wingsuit`, `vehicles.parachute_handles`). In the wingsuit, seated or standing, spreading the arms lights the rings on the hands, lowering the right hand banks right and lowering both hands dives; the head no longer steers the wingsuit. Under the parachute, the hands steer nothing until they take the handles above the shoulders with the grip, and let go when the grip opens; pulling the right handle down banks right, pulling both down slows the canopy, and letting go or raising them flies level.
 26. Scopes. Precision aim does not engage from the input, the sniper's bolt cycle, or the guided rocket launcher, and the launcher's missile still guides. The lens appears when the eye is behind the scope, magnifies the target the right way round, and is not blocked by the gun or the hands.
 27. Grenades. A grip at the pouch primes a grenade into the hand, the fuse ring counts down, a release throws with the hand's speed and direction, and a grenade held too long explodes in the hand.
-28. Melee. A strike away from the shoulder hits the target struck at, a pull toward the body does not strike, and a strike in the air, while reeling, or without the hammer ability does nothing.
-29. Aim assist (`aim.assist_strength` above 0). Each hand's aim point pulls toward a hostile target near its sight line, and never toward a target behind cover.
-30. The true reload (`weapons.reload`). For each weapon class (see [reload.md](reload.md)): a tap of the reload button ejects and a hold still holsters; a flick ejects; the pouch gives a round to the free hand and nothing with an empty reserve; the round catches and seats in the gun's real well; a belt push reloads in one hand; a run-dry gun clicks until its action is worked; the sniper bolt and the shotgun pump need working after each shot; dual-wielded pistols run dry and reload separately; the HUD counts follow; unlimited ammunition and pickups still work.
-31. C4 (`weapons.c4_throw`, `weapons.wrist_detonator`). A grip at the chest pouch primes a charge into either hand, a release throws it with the hand's speed and direction, and it sticks to the ground, a wall, and a vehicle where it lands. A grab is refused at the cap of placed charges. A deliberate push of the right fingertip into the left wrist button detonates the charges, with a click on both hands and the button lit while charges are placed; brushing the wrist, sliding a finger along the forearm, and a hand passing through the wrist do not. Holding the R stick click detonates too, a tap does not, and it never throws a grenade.
+28. Aim assist (`aim.assist_strength` above 0). Each hand's aim point pulls toward a hostile target near its sight line, and never toward a target behind cover.
+29. The true reload (`weapons.reload`). For each weapon class (see [reload.md](reload.md)): a tap of the reload button ejects and a hold still holsters; a flick ejects; the pouch gives a round to the free hand and nothing with an empty reserve; the round catches and seats in the gun's real well; a belt push reloads in one hand; a run-dry gun clicks until its action is worked; the sniper bolt and the shotgun pump need working after each shot; dual-wielded pistols run dry and reload separately; the HUD counts follow; unlimited ammunition and pickups still work.
+30. C4 (`weapons.c4_throw`, `weapons.wrist_detonator`). A grip at the chest pouch primes a charge into either hand, a release throws it with the hand's speed and direction, and it sticks to the ground, a wall, and a vehicle where it lands. A grab is refused at the cap of placed charges. A deliberate push of the right fingertip into the left wrist button detonates the charges, with a click on both hands and the button lit while charges are placed; brushing the wrist, sliding a finger along the forearm, and a hand passing through the wrist do not. Holding the R stick click detonates too, a tap does not, and it never throws a grenade.
 
 ## Reverse-engineering work
 

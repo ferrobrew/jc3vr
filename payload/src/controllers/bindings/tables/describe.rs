@@ -164,8 +164,6 @@ pub enum Gesture {
     PressRight,
     /// A sharp pull of the hand back toward the body.
     Yank,
-    /// A fast strike of the hand.
-    Strike,
     /// Pressed while both grips are held.
     WithBothGrips,
     /// Pressed while the same hand's grip is held.
@@ -259,8 +257,6 @@ pub struct Features {
     pub c4_throw: bool,
     /// The wrist detonator.
     pub wrist_detonator: bool,
-    /// Physical melee strikes.
-    pub melee: bool,
     /// The sight tuning capture chord is armed.
     pub sight_chord: bool,
     /// The trackpad touch shows the summary.
@@ -717,13 +713,6 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         }
         if features.c4_throw {
             add(Control::EitherGrip, Gesture::Press, modded(ModAction::C4));
-        }
-        if features.melee {
-            add(
-                Control::EitherMotion,
-                Gesture::Strike,
-                Effect::Actions(vec![Action::PUSH_GRAPPLE]),
-            );
         }
     }
     // The weapon wheel acts where the weapon handling does: not while swimming.

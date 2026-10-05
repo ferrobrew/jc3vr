@@ -222,10 +222,6 @@ fn build() -> Page {
             .controllers
             .weapons
             .wrist_detonator))
-        .item(config_toggle!("MELEE STRIKES", |c| c
-            .controllers
-            .weapons
-            .melee))
         .header("HAPTICS")
         .item(config_toggle!("HAPTICS", |c| c
             .controllers

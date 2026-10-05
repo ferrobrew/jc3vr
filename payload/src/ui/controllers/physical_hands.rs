@@ -1,5 +1,5 @@
-//! Physical hands: each palm's contacts and push, what each hand reaches and holds, the last
-//! strike, and the palm and pickup settings.
+//! Physical hands: each palm's contacts and push, what each hand reaches and holds, and the palm
+//! and pickup settings.
 
 use egui::Ui;
 
@@ -8,11 +8,11 @@ use crate::{
         frame::Hand,
         physical_hands::{
             PhysicalHandsConfig, PhysicalHandsStatus,
-            config::{PickupConfig, ShoveConfig, StrikeTuning},
+            config::{PickupConfig, ShoveConfig},
             grasp::TargetKind,
         },
     },
-    ui::controllers::{vec3_drag, weapons::pulse_settings, yes_no},
+    ui::controllers::{vec3_drag, weapons::pulse_settings},
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
@@ -73,12 +73,7 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                     if object { "an object" } else { "the world" }
                 ),
             });
-            ui.label(format!(
-                "speed {:.1} m/s · {} · gate armed {}",
-                s.speed,
-                s.kind.map_or("no curl", |k| k.label()),
-                yes_no(s.armed)
-            ));
+            ui.label(format!("speed {:.1} m/s", s.speed));
             ui.label(format!("push ({:+.2}, {:+.2}) m/s", s.push.x, s.push.y));
             if let Some(shove) = s.shove {
                 ui.label(format!(
@@ -91,8 +86,8 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
         }
     });
     ui.label(format!(
-        "Strikes {} · object knocks {} · shove ticks {} · off-thread ticks {}",
-        status.strikes, status.object_pushes, status.shoves, status.off_thread
+        "Object knocks {} · shove ticks {} · off-thread ticks {}",
+        status.object_pushes, status.shoves, status.off_thread
     ));
     let p = &status.pickup;
     ui.label(format!(
@@ -106,19 +101,6 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
     ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
-    }
-    if let Some(strike) = status.last_strike {
-        ui.label(format!(
-            "Last strike: {} {} at {:.1} m/s, strength {:.2}, damage {} (took {}), impulse {:.1}{}",
-            strike.hand.label(),
-            strike.plan.kind.label(),
-            strike.impact_mps,
-            strike.plan.strength,
-            strike.plan.damage,
-            strike.dealt,
-            strike.plan.impulse,
-            if strike.plan.stumble { ", stumble" } else { "" }
-        ));
     }
     if let Some(error) = &status.last_error {
         ui.label(format!("Last error: {error}"));
@@ -148,23 +130,10 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
                 .text("Least horizontal normal"),
         );
         ui.separator();
-        ui.checkbox(&mut p.strikes, "Strike characters");
-        ui.checkbox(
-            &mut p.replace_melee_gesture,
-            "Replace the melee gesture for acting palms",
-        );
         ui.add(
-            egui::Slider::new(&mut p.min_strike_speed_mps, 0.5..=8.0).text("Slowest strike (m/s)"),
+            egui::Slider::new(&mut p.full_hit_speed_mps, 1.0..=12.0)
+                .text("Full-strength hit (m/s)"),
         );
-        ui.add(
-            egui::Slider::new(&mut p.full_strike_speed_mps, 1.0..=12.0)
-                .text("Full-strength strike (m/s)"),
-        );
-        ui.add(egui::Slider::new(&mut p.rearm_speed_mps, 0.1..=4.0).text("Rearm speed (m/s)"));
-        ui.add(egui::Slider::new(&mut p.strike_cooldown_s, 0.0..=2.0).text("Strike cooldown (s)"));
-        ui.add(egui::Slider::new(&mut p.fist_curl, 0.0..=1.0).text("Fist from curl"));
-        strike_settings(ui, "Punch", &mut p.punch);
-        strike_settings(ui, "Slap", &mut p.slap);
         ui.separator();
         shove_settings(ui, &mut p.shove);
         ui.checkbox(&mut p.object_impulses, "Knock objects on fast hits");
@@ -178,7 +147,6 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         ui.separator();
         ui.checkbox(&mut p.haptics, "Contact pulses");
         pulse_settings(ui, "Contact pulse", &mut p.contact_pulse);
-        pulse_settings(ui, "Strike pulse", &mut p.strike_pulse);
         pulse_settings(ui, "Pressure pulse (full load)", &mut p.pressure_pulse);
         ui.separator();
         pickup_settings(ui, &mut p.pickup);
@@ -235,14 +203,5 @@ fn shove_settings(ui: &mut Ui, s: &mut ShoveConfig) {
         ui.add(egui::Slider::new(&mut s.max_force_n, 0.0..=3000.0).text("Palm push (N)"));
         ui.add(egui::Slider::new(&mut s.friction, 0.0..=2.0).text("Palm friction"));
         ui.add(egui::Slider::new(&mut s.give_smoothing_s, 0.0..=0.5).text("Give smoothing (s)"));
-    });
-}
-
-fn strike_settings(ui: &mut Ui, label: &str, s: &mut StrikeTuning) {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        ui.add(egui::Slider::new(&mut s.damage, 0.0..=3.0).text("damage (× melee)"));
-        ui.add(egui::Slider::new(&mut s.impulse, 0.0..=4.0).text("impulse (× melee)"));
-        ui.add(egui::Slider::new(&mut s.stumble_strength, 0.0..=1.01).text("stumble from"));
     });
 }

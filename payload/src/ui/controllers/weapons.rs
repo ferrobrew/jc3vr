@@ -1,7 +1,6 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
-//! line and yank, the grenade throw, the C4 throw and the wrist detonator, physical melee, the
-//! true reload, the empty weapon, the one-handed weight, the gun-in-hand watch, the fire
+//! line and yank, the grenade throw, the C4 throw and the wrist detonator, the true reload, the empty weapon, the one-handed weight, the gun-in-hand watch, the fire
 //! input with empty hands, per-hand aim assist, and the weapon-handling settings.
 
 use egui::Ui;
@@ -20,8 +19,7 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
-                HeftTuning, HolsterAnchor, HolstersConfig, MeleeStrikeConfig, PulseSpec,
-                RecoilConfig, VolumeSpec,
+                HeftTuning, HolsterAnchor, HolstersConfig, PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -31,7 +29,6 @@ use crate::{
             haptics::{self, HapticsStatus},
             heft::{self, HeftStatus},
             holster::slot_label,
-            melee::{self, MeleeStatus},
             recoil::{self, RecoilStatus},
             reload::{self, ReloadStatus},
             unarmed_fire::{self, UnarmedFireStatus},
@@ -56,7 +53,6 @@ pub(super) struct WeaponsReadout {
     yanks: (u64, Option<Yank>),
     grenade: GrenadeStatus,
     explosives: ExplosivesReadout,
-    melee: MeleeStatus,
     aim: AimStatus,
     empty: EmptyStatus,
     heft: HeftStatus,
@@ -78,7 +74,6 @@ impl WeaponsReadout {
             yanks: bindings::yank_status(),
             grenade: grenade::status(),
             explosives: ExplosivesReadout::read(),
-            melee: melee::status(),
             aim: controller_aim::status(),
             empty: empty::status(),
             heft: heft::status(),
@@ -160,7 +155,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
     explosives_readout(ui, &readout.explosives);
-    melee_readout(ui, &readout.melee);
     reload_readout(ui, &readout.reload);
     empty_readout(ui, &readout.empty);
     heft_readout(ui, &readout.heft);
@@ -336,25 +330,6 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
     }
 }
 
-fn melee_readout(ui: &mut Ui, m: &MeleeStatus) {
-    ui.label(format!(
-        "Melee strikes: {} · attacks {} · at a chosen target {}{}",
-        m.strikes,
-        m.attacks,
-        m.targeted,
-        if m.live { " · live" } else { "" }
-    ));
-    if let Some(last) = m.last {
-        ui.label(format!(
-            "  last: {} hand at {:.1} m/s{}",
-            last.hand.label(),
-            last.speed,
-            last.blocked
-                .map_or(String::new(), |b| format!(", dropped: {}", b.label()))
-        ));
-    }
-}
-
 fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
     ui.label(format!(
         "Empty weapon: dry fires {} · automatic switches suppressed {}, allowed {}",
@@ -478,8 +453,7 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     dual_wield_settings(ui, &mut w.dual_wield);
 }
 
-/// The settings of the grenade throw, the C4 throw and the wrist detonator, physical melee, and
-/// the true reload.
+/// The settings of the grenade throw, the C4 throw and the wrist detonator, and the true reload.
 pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
         "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \
@@ -489,11 +463,6 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         ui.indent("grenade", |ui| grenade_settings(ui, &mut w.grenade));
     });
     explosives_settings(ui, w);
-    ui.checkbox(&mut w.melee, "Physical melee")
-        .on_hover_text("A fast strike of either hand starts a melee attack.");
-    ui.add_enabled_ui(w.melee, |ui| {
-        ui.indent("melee", |ui| melee_settings(ui, &mut w.melee_strike));
-    });
     reload_settings(ui, &mut w.reload);
     ui.checkbox(
         &mut w.auto_switch_when_empty,
@@ -536,19 +505,6 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
         egui::Slider::new(&mut g.warning_interval_s[1], 0.02..=1.0).text("Fastest pulse gap (s)"),
     );
     pulse_settings(ui, "Prime pulse", &mut g.prime_pulse);
-}
-
-fn melee_settings(ui: &mut Ui, m: &mut MeleeStrikeConfig) {
-    ui.add(egui::Slider::new(&mut m.strike_speed_mps, 1.0..=8.0).text("Strike speed (m/s)"));
-    ui.add(egui::Slider::new(&mut m.rearm_speed_mps, 0.1..=4.0).text("Rearm speed (m/s)"));
-    ui.add(egui::Slider::new(&mut m.min_outward, -1.0..=1.0).text("Least outward share"));
-    ui.add(egui::Slider::new(&mut m.cooldown_s, 0.0..=2.0).text("Cooldown (s)"));
-    ui.add(egui::Slider::new(&mut m.target_hold_ticks, 2..=10).text("Target hold (ticks)"));
-    ui.checkbox(
-        &mut m.pointing_targets,
-        "Also target what the hand points at",
-    );
-    pulse_settings(ui, "Strike pulse", &mut m.pulse);
 }
 
 fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
