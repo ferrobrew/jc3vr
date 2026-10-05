@@ -246,8 +246,8 @@ pub struct VrConfig {
     /// Whichever pose the mode holds is captured on the first frame it is on and reused every frame
     /// after, and is hand-editable while held -- so a motion-dependent artifact can be driven by an
     /// exact, repeatable step instead of an eyeballed head movement. Not for gameplay: the view locks
-    /// in place. **Default off.**
-    #[serde(default)]
+    /// in place. **Default off**, and not saved, so a launch never starts with the view locked.
+    #[serde(skip)]
     pub freeze_mode: FreezeMode,
     /// The translation step, in metres, of one nudge of the frozen pose's position (see
     /// [`crate::vr::pose_control`]). Nudges snap to this grid, so a step is exactly repeatable.

@@ -28,7 +28,7 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
 
     // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
     // same pattern the other tabs use.
-    let mut cfg = config::CONFIG.lock();
+    let mut cfg = config::edit();
     ui.checkbox(&mut cfg.vr.enabled, "Enabled (bring up the OpenXR session)")
         .on_hover_text("Off leaves the mod in flatscreen stereo and tears any live runtime down.");
     ui.checkbox(&mut cfg.vr.native_resolution, "Native per-eye resolution")

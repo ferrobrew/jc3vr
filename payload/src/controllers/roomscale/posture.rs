@@ -77,7 +77,7 @@ pub struct ClassifierInput {
     pub head_height: Option<f32>,
     /// The player's standing eye height, metres.
     pub standing_eye_m: f32,
-    /// The player's calibrated seated eye height, metres, when the body file has one.
+    /// The player's calibrated seated eye height, metres, when one is saved.
     pub calibrated_seated_eye_m: Option<f32>,
 }
 

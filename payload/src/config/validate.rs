@@ -1,28 +1,44 @@
-//! Range and consistency checks for a controller settings file, run before any of it is applied.
+//! Range and consistency checks for the settings whose types admit values the subsystems cannot
+//! use: the controller tuning, the per-weapon sight corrections, and the VR turn settings. The
+//! tolerant load ([`crate::config::load`]) runs them on a loaded configuration and resets a subtree
+//! that fails to its defaults.
+
+use std::fmt;
 
 use glam::{Vec2, Vec3};
 
-use crate::controllers::{
-    config::SightTable,
-    frame::PressThresholds,
-    persistence::{ControllerFile, Error, FILE_VERSION},
-    physical_hands::{
-        PhysicalHandsConfig,
-        config::{PickupConfig, ShoveConfig},
+use crate::{
+    controllers::{
+        config::{ControllersConfig, SightTable},
+        frame::PressThresholds,
+        physical_hands::{
+            PhysicalHandsConfig,
+            config::{PickupConfig, ShoveConfig},
+        },
+        vehicles::config::WheelSpec,
+        weapons::{
+            config::{HeftConfig, PulseSpec, VolumeSpec},
+            reload::config::ReloadConfig,
+        },
     },
-    vehicles::config::WheelSpec,
-    weapons::{
-        config::{HeftConfig, PulseSpec, VolumeSpec},
-        reload::config::ReloadConfig,
-    },
+    headpose::config::VrTurnConfig,
 };
 
-/// Check every value the file carries, returning the first that is out of range or inconsistent.
-pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
-    if file.version != FILE_VERSION {
-        return Err(Error::UnknownVersion(u64::from(file.version)));
+/// A setting that is well-typed but out of range or inconsistent with another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Invalid(pub String);
+
+impl fmt::Display for Invalid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid setting: {}", self.0)
     }
-    let c = &file.controllers;
+}
+
+impl std::error::Error for Invalid {}
+
+/// Check every controller setting except the sight corrections ([`sights`]), returning the first
+/// that is out of range or inconsistent. Paths are relative to `controllers`.
+pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     let input = &c.input;
     press_thresholds("input.trigger_press", input.trigger_press)?;
     press_thresholds("input.squeeze_press", input.squeeze_press)?;
@@ -76,7 +92,7 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         10.0,
     )?;
     if c.mode.debounce_ticks == 0 || c.mode.debounce_ticks > 60 {
-        return Err(Error::Invalid(
+        return Err(Invalid(
             "mode.debounce_ticks must be between 1 and 60".into(),
         ));
     }
@@ -145,17 +161,6 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
         100.0,
     )?;
     vec3("aim.grapple_origin_m", c.aim.grapple_origin_m, 5.0)?;
-    let mut hashes = [0; SightTable::CAPACITY];
-    for (hash_count, sight) in c.aim.sights.entries.iter().flatten().enumerate() {
-        vec3("aim.sights.offset_m", sight.offset_m, 5.0)?;
-        vec2("aim.sights.angles_deg", sight.angles_deg, 360.0)?;
-        if hashes[..hash_count].contains(&sight.weapon_hash) {
-            return Err(Error::Invalid(
-                "aim.sights contains a duplicate weapon hash".into(),
-            ));
-        }
-        hashes[hash_count] = sight.weapon_hash;
-    }
     nonnegative(
         "aim.sight_tuning.marker_distance_m",
         c.aim.sight_tuning.marker_distance_m,
@@ -609,67 +614,60 @@ pub(super) fn validate(file: &ControllerFile) -> Result<(), Error> {
     nonnegative("fingers.splay_scale", c.fingers.splay_scale, 10.0)?;
     range("fingers.max_splay_deg", c.fingers.max_splay_deg, 0.0, 180.0)?;
     nonnegative("fingers.smoothing_s", c.fingers.smoothing_s, 60.0)?;
-    physical_hands(&c.physical_hands)?;
+    physical_hands(&c.physical_hands)
+}
 
-    let turn = &file.headpose.vr_turn;
-    range(
-        "headpose.vr_turn.smooth_scale",
-        turn.smooth_scale,
-        0.0,
-        10.0,
-    )?;
-    range(
-        "headpose.vr_turn.snap_angle_deg",
-        turn.snap_angle_deg,
-        0.0,
-        180.0,
-    )?;
-    range(
-        "headpose.vr_turn.snap_threshold",
-        turn.snap_threshold,
-        0.0,
-        1.0,
-    )?;
-    range("headpose.vr_turn.deadzone", turn.deadzone, 0.0, 1.0)?;
-    range(
-        "headpose.vr_turn.mouse_turn_scale",
-        turn.mouse_turn_scale,
-        0.0,
-        100.0,
-    )?;
-    range(
-        "headpose.vr_turn.max_body_lead_deg",
-        turn.max_body_lead_deg,
-        0.0,
-        180.0,
-    )?;
-    range("headpose.vr_turn.swim_scale", turn.swim_scale, 0.0, 10.0)?;
+/// Check the per-weapon sight corrections: finite, in range, and at most one per weapon.
+pub(crate) fn sights(sights: &SightTable) -> Result<(), Invalid> {
+    let mut hashes = [0; SightTable::CAPACITY];
+    for (hash_count, sight) in sights.entries.iter().flatten().enumerate() {
+        vec3("aim.sights.offset_m", sight.offset_m, 5.0)?;
+        vec2("aim.sights.angles_deg", sight.angles_deg, 360.0)?;
+        if hashes[..hash_count].contains(&sight.weapon_hash) {
+            return Err(Invalid(
+                "aim.sights contains a duplicate weapon hash".into(),
+            ));
+        }
+        hashes[hash_count] = sight.weapon_hash;
+    }
     Ok(())
 }
 
-fn range(name: &str, value: f32, min: f32, max: f32) -> Result<(), Error> {
+/// Check the VR turn settings. Paths are relative to `headpose.vr_turn`.
+pub(crate) fn vr_turn(turn: &VrTurnConfig) -> Result<(), Invalid> {
+    range("smooth_scale", turn.smooth_scale, 0.0, 10.0)?;
+    range("snap_angle_deg", turn.snap_angle_deg, 0.0, 180.0)?;
+    range("snap_threshold", turn.snap_threshold, 0.0, 1.0)?;
+    range("deadzone", turn.deadzone, 0.0, 1.0)?;
+    range("mouse_turn_scale", turn.mouse_turn_scale, 0.0, 100.0)?;
+    range("max_body_lead_deg", turn.max_body_lead_deg, 0.0, 180.0)?;
+    range("swim_scale", turn.swim_scale, 0.0, 10.0)?;
+    Ok(())
+}
+
+fn range(name: &str, value: f32, min: f32, max: f32) -> Result<(), Invalid> {
     if !value.is_finite() || value < min || value > max {
-        return Err(Error::Invalid(format!(
+        return Err(Invalid(format!(
             "{name} must be finite and in [{min}, {max}], got {value}"
         )));
     }
     Ok(())
 }
 
-fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Error> {
+fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {
     range(&format!("{name}.press"), thresholds.press, 0.0, 1.0)?;
     range(&format!("{name}.release"), thresholds.release, 0.0, 1.0)?;
     if thresholds.release > thresholds.press {
-        return Err(Error::Invalid(format!("{name}.release exceeds press")));
+        return Err(Invalid(format!("{name}.release exceeds press")));
     }
     Ok(())
 }
 
-fn heft(h: &HeftConfig) -> Result<(), Error> {
+fn heft(h: &HeftConfig) -> Result<(), Invalid> {
     nonnegative("weapons.heft.reach_near_m", h.reach_near_m, 10.0)?;
     nonnegative("weapons.heft.reach_far_m", h.reach_far_m, 10.0)?;
     if h.reach_far_m < h.reach_near_m {
-        return Err(Error::Invalid(format!(
+        return Err(Invalid(format!(
             "weapons.heft.reach_far_m ({}) must not be below weapons.heft.reach_near_m ({})",
             h.reach_far_m, h.reach_near_m
         )));
@@ -697,7 +695,7 @@ fn heft(h: &HeftConfig) -> Result<(), Error> {
     Ok(())
 }
 
-fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Error> {
+fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
     for (axis, value) in ["x", "y", "z"]
         .into_iter()
         .zip(p.palm_half_extents_m.to_array())
@@ -737,7 +735,7 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Error> {
         50.0,
     )?;
     if p.full_strike_speed_mps < p.min_strike_speed_mps {
-        return Err(Error::Invalid(format!(
+        return Err(Invalid(format!(
             "physical_hands.full_strike_speed_mps ({}) must not be below \
              physical_hands.min_strike_speed_mps ({})",
             p.full_strike_speed_mps, p.min_strike_speed_mps
@@ -771,7 +769,7 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Error> {
     pickup(&p.pickup)
 }
 
-fn shove(s: &ShoveConfig) -> Result<(), Error> {
+fn shove(s: &ShoveConfig) -> Result<(), Invalid> {
     nonnegative(
         "physical_hands.shove.stiffness_per_s",
         s.stiffness_per_s,
@@ -788,7 +786,7 @@ fn shove(s: &ShoveConfig) -> Result<(), Error> {
     )
 }
 
-fn pickup(p: &PickupConfig) -> Result<(), Error> {
+fn pickup(p: &PickupConfig) -> Result<(), Invalid> {
     nonnegative("physical_hands.pickup.reach_m", p.reach_m, 1.0)?;
     nonnegative(
         "physical_hands.pickup.max_mass_kg",
@@ -852,7 +850,7 @@ fn pickup(p: &PickupConfig) -> Result<(), Error> {
     pulse("physical_hands.pickup.release_pulse", &p.release_pulse)
 }
 
-fn reload(r: &ReloadConfig) -> Result<(), Error> {
+fn reload(r: &ReloadConfig) -> Result<(), Invalid> {
     range("weapons.reload.tap_s", r.tap_s, 0.0, 5.0)?;
     positive(
         "weapons.reload.flick_speed_dps",
@@ -932,36 +930,36 @@ fn reload(r: &ReloadConfig) -> Result<(), Error> {
     Ok(())
 }
 
-fn positive(name: &str, value: f32, max: f32) -> Result<(), Error> {
+fn positive(name: &str, value: f32, max: f32) -> Result<(), Invalid> {
     range(name, value, f32::EPSILON, max)
 }
 
-fn nonnegative(name: &str, value: f32, max: f32) -> Result<(), Error> {
+fn nonnegative(name: &str, value: f32, max: f32) -> Result<(), Invalid> {
     range(name, value, 0.0, max)
 }
 
-fn vec2(name: &str, value: Vec2, max: f32) -> Result<(), Error> {
+fn vec2(name: &str, value: Vec2, max: f32) -> Result<(), Invalid> {
     range(&format!("{name}.x"), value.x, -max, max)?;
     range(&format!("{name}.y"), value.y, -max, max)
 }
 
-fn vec3(name: &str, value: Vec3, max: f32) -> Result<(), Error> {
+fn vec3(name: &str, value: Vec3, max: f32) -> Result<(), Invalid> {
     range(&format!("{name}.x"), value.x, -max, max)?;
     range(&format!("{name}.y"), value.y, -max, max)?;
     range(&format!("{name}.z"), value.z, -max, max)
 }
 
-fn volume(name: &str, value: &VolumeSpec) -> Result<(), Error> {
+fn volume(name: &str, value: &VolumeSpec) -> Result<(), Invalid> {
     vec3(&format!("{name}.offset_m"), value.offset_m, 10.0)?;
     positive(&format!("{name}.radius_m"), value.radius_m, 10.0)
 }
 
-fn pulse(name: &str, value: &PulseSpec) -> Result<(), Error> {
+fn pulse(name: &str, value: &PulseSpec) -> Result<(), Invalid> {
     range(&format!("{name}.amplitude"), value.amplitude, 0.0, 1.0)?;
     nonnegative(&format!("{name}.duration_s"), value.duration_s, 60.0)
 }
 
-fn physical_wheel(value: &WheelSpec) -> Result<(), Error> {
+fn physical_wheel(value: &WheelSpec) -> Result<(), Invalid> {
     vec3("vehicles.physical.wheel.centre_m", value.centre_m, 10.0)?;
     positive("vehicles.physical.wheel.radius_m", value.radius_m, 10.0)?;
     range(
@@ -990,12 +988,12 @@ fn physical_wheel(value: &WheelSpec) -> Result<(), Error> {
     )
 }
 
-fn stick(name: &str, position: Vec3, deflection: f32) -> Result<(), Error> {
+fn stick(name: &str, position: Vec3, deflection: f32) -> Result<(), Invalid> {
     vec3(name, position, 10.0)?;
     positive(&format!("{name}.max_deflection_m"), deflection, 10.0)
 }
 
-fn lever(name: &str, position: Vec3, travel: f32, detent: f32) -> Result<(), Error> {
+fn lever(name: &str, position: Vec3, travel: f32, detent: f32) -> Result<(), Invalid> {
     vec3(name, position, 10.0)?;
     positive(&format!("{name}.travel_m"), travel, 10.0)?;
     range(&format!("{name}.detent"), detent, 0.0, 1.0)

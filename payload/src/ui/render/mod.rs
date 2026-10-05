@@ -27,7 +27,7 @@ pub(crate) static STEREO_CROSS_EYED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
 pub fn egui_debug_render(ui: &mut egui::Ui) {
-    let mut cfg = config::CONFIG.lock();
+    let mut cfg = config::edit();
     let cfg = &mut *cfg;
 
     stereo::section(ui, cfg);

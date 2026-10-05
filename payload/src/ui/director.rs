@@ -6,7 +6,7 @@ use jc3gi::heat_manager::HeatManager;
 use parking_lot::Mutex;
 
 use crate::{
-    config::CONFIG,
+    config,
     director::{
         heat, keymap, markers, safety, spawn,
         teleport::{self, TeleportMode},
@@ -47,7 +47,7 @@ pub(crate) fn render(ui: &mut egui::Ui) {
 }
 
 fn cinematic_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     ui.checkbox(
         &mut cfg.director.cinematic,
         "Cinematic mode (hide the HUD, the panel, and the overlay)",
@@ -60,7 +60,7 @@ fn cinematic_ui(ui: &mut egui::Ui) {
 }
 
 fn time_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let d = &mut cfg.director;
     ui.add(
         Slider::new(
@@ -91,7 +91,7 @@ fn time_ui(ui: &mut egui::Ui) {
 }
 
 fn safety_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let d = &mut cfg.director;
     ui.checkbox(&mut d.god_mode, "God mode (re-asserted every frame)")
         .on_hover_text(
@@ -117,7 +117,7 @@ fn safety_ui(ui: &mut egui::Ui) {
 }
 
 fn heat_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let d = &mut cfg.director;
     ui.checkbox(&mut d.heat_lock, "Lock heat (no rise, no decay)")
         .on_hover_text(
@@ -268,7 +268,7 @@ struct SpawnPicker {
 }
 
 fn spawn_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let s = &mut cfg.director.spawn;
     ui.horizontal(|ui| {
         ui.label("Tags:");
@@ -377,7 +377,7 @@ fn recording_ui(ui: &mut egui::Ui) {
         ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
     }
     {
-        let mut cfg = CONFIG.lock();
+        let mut cfg = config::edit();
         let r = &mut cfg.recorder;
         ui.add_enabled_ui(!status.recording, |ui| {
             ui.horizontal(|ui| {
@@ -437,7 +437,7 @@ fn markers_ui(ui: &mut egui::Ui) {
 fn keymap_ui(ui: &mut egui::Ui) {
     let map = keymap::current();
     egui::Grid::new("director_keymap").show(ui, |ui| {
-        for binding in &map.bindings {
+        for binding in map.bindings.iter() {
             ui.label(binding.chord.describe());
             if ui.button(binding.action.label()).clicked() {
                 keymap::run(binding.action);
@@ -445,7 +445,7 @@ fn keymap_ui(ui: &mut egui::Ui) {
             ui.end_row();
         }
     });
-    ui.label("Edit director_keymap.json beside the DLL to rebind (virtual-key codes).");
+    ui.label("Edit director.keymap in the settings file to rebind (virtual-key codes).");
     if ui.button("Reset to defaults").clicked() {
         keymap::reset_to_defaults();
     }

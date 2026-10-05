@@ -6,7 +6,7 @@
 //! 15 cm below the character's eyes for the whole session, in a vehicle seat as much as on foot.
 //! The reference therefore follows the player:
 //!
-//! - it starts at the body file's calibrated seated eye height, or, without one, at the head's
+//! - it starts at the player's calibrated seated eye height, or, without one, at the head's
 //!   height on the first seated frame, and a new calibration starts it again;
 //! - a manual recenter while seated captures the head's height at that moment ([`capture`]);
 //! - the adaptive baseline moves it toward the median head height over a long window, at a rate
@@ -33,7 +33,7 @@ pub struct SeatedEyeReference {
 /// Where the seated eye reference came from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SeatedReferenceSource {
-    /// The body file's calibrated seated eye height.
+    /// The player's calibrated seated eye height.
     Calibrated,
     /// The head's height on the first seated frame, without a calibration.
     FirstSample,
@@ -93,7 +93,7 @@ impl SeatedReference {
 
     /// Advance by one seated frame: seed the reference if it has none, sample `head_height` (the
     /// head above the STAGE floor, when located), and let the adaptive baseline move it. `calibrated`
-    /// is the body file's seated eye height; a change to it restarts the reference from it. `dt` is
+    /// is the player's calibrated seated eye height; a change to it restarts the reference from it. `dt` is
     /// the time since the last frame, seconds.
     pub fn update(
         &mut self,

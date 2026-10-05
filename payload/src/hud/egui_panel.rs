@@ -27,7 +27,7 @@ use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
 use crate::{
-    config::{CONFIG, Config},
+    config::{self, Config},
     egui_impl::EguiState,
     hud::{
         config::EguiPanelConfig,
@@ -69,7 +69,7 @@ pub(crate) fn is_active() -> bool {
 /// it, from the game thread.
 pub(crate) fn toggle() -> bool {
     let enabled = {
-        let mut cfg = CONFIG.lock();
+        let mut cfg = config::edit();
         cfg.hud.egui_panel.enabled = !cfg.hud.egui_panel.enabled;
         cfg.hud.egui_panel.enabled
     };

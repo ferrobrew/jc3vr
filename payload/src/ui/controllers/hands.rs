@@ -32,7 +32,7 @@ pub(super) fn hands_readout(
     let arms = rig::status();
     let player_arm = reach::player_arm_length(&body::player());
     ui.label(format!(
-        "Player arm (shoulder to wrist, from the body file): {:.0} mm",
+        "Player arm (shoulder to wrist, from the body dimensions): {:.0} mm",
         player_arm * 1000.0
     ));
     ui.columns(2, |columns| {

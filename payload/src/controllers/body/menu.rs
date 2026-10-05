@@ -1,6 +1,6 @@
 //! The `VR: BODY` page: the saved body dimensions, the body-scaling switches, and the guided
-//! calibration that measures the player in the headset ([`Calibration`]) and saves the result to
-//! the body file.
+//! calibration that measures the player in the headset ([`Calibration`]) and saves the result with
+//! the rest of the settings.
 //!
 //! The calibration runs standing or seated ([`Stance`]), as the summary's `STANCE` choice says; it
 //! defaults from the posture setting each time the page opens. A seated calibration measures the
@@ -21,14 +21,14 @@ use smol_str::{SmolStr, format_smolstr};
 use crate::{
     controllers::{
         body::{
-            self, BodyDimensions, BodySource,
+            self, BodyDimensions,
             calibration::{
                 Calibration, CalibrationError, CaptureStatus, Notice, Stance, Step, Unavailable,
                 height_from_eye_height, span_out_of_proportion,
             },
         },
         frame::{self, Hand, TrackedPose},
-        menu::{config_toggle, read_config, save_if_changed},
+        menu::{config_toggle, read_config},
         roomscale::{
             self,
             posture::{DetectedPosture, EffectivePosture},
@@ -69,7 +69,7 @@ fn summary(page: Page) -> Page {
     page.header("YOUR BODY")
         .item(Readout {
             label: "SOURCE".into(),
-            read: || source_label(&body::player_body().source).into(),
+            read: || source_label(body::is_generic()).into(),
         })
         .item(Readout {
             label: "HEIGHT".into(),
@@ -102,14 +102,6 @@ fn summary(page: Page) -> Page {
         })
         .text("STANDING: HEIGHT AND ARM SPAN.")
         .text("SEATED: SEATED EYES AND ARM SPAN.")
-        .item(Button {
-            label: "RELOAD BODY FILE".into(),
-            caption: "RELOAD".into(),
-            action: || {
-                body::reload();
-                ButtonOutcome::Stay
-            },
-        })
         .header("SCALING")
         .item(config_toggle!("MATCH CHARACTER HEIGHT", |c| c
             .controllers
@@ -232,7 +224,7 @@ fn review_standing(page: Page) -> Page {
         });
     let page = estimated_segments(page.header("ESTIMATED"));
     let page = if CALIBRATION.lock().kept_seated_eye_height().is_some() {
-        page.header("KEPT FROM THE BODY FILE").item(Readout {
+        page.header("KEPT FROM THE SAVED BODY").item(Readout {
             label: "SEATED EYE HEIGHT".into(),
             read: || optional_metres(CALIBRATION.lock().kept_seated_eye_height()),
         })
@@ -281,7 +273,7 @@ fn review_top(page: Page) -> Page {
     page.header("STEP 3 OF 3: REVIEW")
         .text("CHECK THE VALUES, THEN SAVE.")
         .item(Button {
-            label: "SAVE TO BODY FILE".into(),
+            label: "SAVE DIMENSIONS".into(),
             caption: "SAVE".into(),
             action: save,
         })
@@ -343,7 +335,7 @@ fn back() -> ButtonOutcome {
     rebuild_if(CALIBRATION.lock().back())
 }
 
-/// Start the calibration in the chosen stance, keeping the body file's seated eye height for a
+/// Start the calibration in the chosen stance, keeping the saved seated eye height for a
 /// standing one.
 fn start() -> ButtonOutcome {
     let stance = chosen_stance();
@@ -422,20 +414,20 @@ fn measure(live: Result<f32, Unavailable>) -> ButtonOutcome {
     ButtonOutcome::Stay
 }
 
-/// Save the reviewed dimensions to the body file.
+/// Save the reviewed dimensions.
 fn save() -> ButtonOutcome {
     let result = CALIBRATION.lock().result();
     let Some(Ok(dimensions)) = result else {
         return ButtonOutcome::Stay;
     };
     match body::save(dimensions) {
-        Ok(_) => {
+        Ok(()) => {
             CALIBRATION.lock().saved();
             ButtonOutcome::Rebuild
         }
         Err(error) => {
             let mut calibration = CALIBRATION.lock();
-            calibration.save_failed(error.to_string());
+            calibration.save_failed(format!("body dimensions: {error}"));
             log_notice(&calibration);
             ButtonOutcome::Stay
         }
@@ -456,12 +448,11 @@ fn on_frame() -> ButtonOutcome {
     rebuild_if(changed)
 }
 
-/// Leaving the page abandons a calibration in progress, returns the stance choice to the
-/// posture's, and saves the scaling switches.
+/// Leaving the page abandons a calibration in progress and returns the stance choice to the
+/// posture's.
 fn on_close() {
     CALIBRATION.lock().cancel();
     *STANCE.lock() = None;
-    save_if_changed();
 }
 
 /// The calibration flow's state, shared by the page's rows.
@@ -664,12 +655,8 @@ fn unavailable_text(unavailable: Unavailable) -> &'static str {
     }
 }
 
-fn source_label(source: &BodySource) -> &'static str {
-    match source {
-        BodySource::File { .. } => "BODY FILE",
-        BodySource::Defaults { .. } => "DEFAULT, NO FILE",
-        BodySource::Invalid { .. } => "DEFAULT, FILE INVALID",
-    }
+fn source_label(generic: bool) -> &'static str {
+    if generic { "GENERIC DEFAULT" } else { "SAVED" }
 }
 
 /// A length that may be missing, as [`metres`] reads it.
@@ -937,8 +924,8 @@ mod tests {
             "MEASURE HEIGHT",
             "MEASURE SEATED EYES",
             "MEASURE ARM SPAN",
-            "SAVE TO BODY FILE",
-            "SAVE TO BODY FILE",
+            "SAVE DIMENSIONS",
+            "SAVE DIMENSIONS",
         ];
         for (build_step, label) in pages.into_iter().zip(first_labels) {
             let page = build_step(Page::new("VR: BODY"));

@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub fn egui_debug_camera(ui: &mut egui::Ui) {
-    let mut cfg = config::CONFIG.lock();
+    let mut cfg = config::edit();
     let cs = &mut cfg.camera;
     ui.checkbox(&mut cs.enabled, "Enabled");
     ui.checkbox(&mut cs.always_use_t1, "Always use T1");

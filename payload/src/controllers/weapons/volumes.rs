@@ -275,7 +275,7 @@ pub fn near_miss(
 }
 
 /// The standing height of the hip joints as a fraction of the standing height: a generic
-/// anthropometric figure, which the body file does not carry because it varies little between
+/// anthropometric figure, which the body dimensions do not carry because it varies little between
 /// adults.
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 

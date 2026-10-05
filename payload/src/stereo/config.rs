@@ -55,7 +55,9 @@ pub struct SinglePassConfig {
     /// `docs/mod/stereo/single-pass-stereo.md`, so this is off by default. It earns a runtime flag rather
     /// than a rebuild because a census only sees the shaders created while it runs: an area that
     /// never loaded a family leaves that family out, and re-censusing is the way to catch one --
-    /// which is a thing to do in a session, not a thing to recompile for.
+    /// which is a thing to do in a session, not a thing to recompile for. For the same reason it is
+    /// not saved.
+    #[serde(skip)]
     pub dump_vs_name_census: bool,
     /// Reproject the no-`cb0` scene-geometry families (skinned characters/NPCs, props, buildings,
     /// roads, ...) for single-pass, instead of leaving them double-drawn. When on, a vertex shader
@@ -446,7 +448,9 @@ pub struct StereoConfig {
     /// Automatically start a render trace when the raw-brightness histogram mid-point (the
     /// auto-exposure divisor) jumps against its recent median -- the CPU-visible signature of the
     /// latched global-brightness step, which lags the visual flip by only a few frames. Saves
-    /// having to time a manual capture to a spontaneous flip.
+    /// having to time a manual capture to a spontaneous flip. An arm flag the capture clears when
+    /// it fires, so it is not saved.
+    #[serde(skip)]
     pub auto_trace_brightness_step: bool,
     /// Diagnostic: skip the SSAO pass on both eyes in stereo, to confirm whether SSAO drives the
     /// "stronger in one eye" darkening. (Equivalent to lowering the in-game AO setting, but toggleable
@@ -480,7 +484,8 @@ pub struct StereoConfig {
     /// Diagnostic: skip the [`skip_pass_range`](Self::skip_pass_range) passes on both eyes. A
     /// separate flag (rather than an `Option` around the range) so the range can be preset while
     /// disarmed -- dragging the bounds live sweeps through intermediate ranges, some of which are
-    /// unsafe to skip.
+    /// unsafe to skip. Armed for one session at a time, so it is not saved.
+    #[serde(skip)]
     pub skip_pass_range_enabled: bool,
     /// Diagnostic: the inclusive render-pass index range `[start, end]` to skip while
     /// [`skip_pass_range_enabled`](Self::skip_pass_range_enabled), for bisecting which pass an

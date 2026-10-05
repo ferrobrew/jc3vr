@@ -27,11 +27,14 @@ pub mod time;
 pub struct DirectorConfig {
     /// The game-clock rate: `1.0` is real time, below it is slow motion. Written into the
     /// slow-motion manager's normal game speed, so the game's own scripted slow-motion effects
-    /// still blend against it.
+    /// still blend against it. The live clock state, so it is not saved.
+    #[serde(skip, default = "real_time")]
     pub time_scale: f32,
     /// The rate the slow-motion hotkey toggles [`time_scale`](Self::time_scale) to and from `1.0`.
     pub slow_motion_scale: f32,
-    /// Hold the game clock. The clock's own pause: the world freezes but the render loop runs.
+    /// Hold the game clock. The clock's own pause: the world freezes but the render loop runs. The
+    /// live clock state, so it is not saved.
+    #[serde(skip)]
     pub paused: bool,
     /// Keep the player's character in god mode (no damage), re-asserted every frame so a respawn
     /// or a sequence cannot clear it.
@@ -43,10 +46,13 @@ pub struct DirectorConfig {
     /// Cap the heat level at this value (`0..=5`), or `None` to leave the game's own cap alone.
     pub heat_cap: Option<i32>,
     /// Hide the floating HUD, the debug panel, and the desktop overlay together; see
-    /// [`cinematic`].
+    /// [`cinematic`]. A mode for the shot at hand, so it is not saved.
+    #[serde(skip)]
     pub cinematic: bool,
     /// The spawner's request: what to spawn and where relative to the view.
     pub spawn: spawn::SpawnConfig,
+    /// The key bindings that drive the directing tools; see [`keymap`].
+    pub keymap: keymap::Keymap,
 }
 impl DirectorConfig {
     pub const fn new() -> Self {
@@ -60,6 +66,7 @@ impl DirectorConfig {
             heat_cap: None,
             cinematic: false,
             spawn: spawn::SpawnConfig::new(),
+            keymap: keymap::Keymap::new(),
         }
     }
 }
@@ -74,4 +81,9 @@ pub fn update() {
     heat::apply(&cfg);
     teleport::service_pending();
     spawn::service_pending(&cfg.spawn);
+}
+
+/// The default of [`DirectorConfig::time_scale`] when it is not loaded: real time.
+fn real_time() -> f32 {
+    1.0
 }

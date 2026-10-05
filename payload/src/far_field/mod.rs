@@ -44,7 +44,7 @@ use parking_lot::Mutex;
 use crate::config::Config;
 
 mod config;
-pub use config::{DEFAULT_FAR_FIELD_GATED_TYPES, FarFieldConfig, FarFieldMode};
+pub use config::{FarFieldConfig, FarFieldMode};
 
 use crate::{
     hooks,

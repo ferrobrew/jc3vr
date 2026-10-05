@@ -144,7 +144,7 @@ impl ArmRemap {
 
 /// The player's shoulder-to-wrist length from the body dimensions: half of the arm span less the
 /// shoulder width, less the hand. This is the figure the calibration splits into the upper arm and
-/// forearm; the body file's own segment lengths are not used, because a hand-written file need not
+/// forearm; the saved segment lengths are not used, because hand-written dimensions need not
 /// agree with its span.
 pub fn player_arm_length(player: &BodyDimensions) -> f32 {
     (player.arm_span - player.shoulder_width) * 0.5 - player.hand

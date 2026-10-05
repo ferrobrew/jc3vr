@@ -1,6 +1,8 @@
 //! The sight-line settings: the per-weapon sight corrections and the in-headset tuning tool,
 //! re-exported from [`crate::controllers::config`].
 
+use std::fmt;
+
 use glam::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -60,8 +62,10 @@ impl SightOverride {
 }
 
 /// The per-weapon sight corrections: a small fixed table, so that the configuration stays `Copy`.
+/// It serializes as a list of the corrections it holds, since a settings file has no way to write
+/// an empty slot.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(into = "Vec<SightOverride>", try_from = "Vec<SightOverride>")]
 pub struct SightTable {
     pub entries: [Option<SightOverride>; SightTable::CAPACITY],
 }
@@ -69,7 +73,7 @@ pub struct SightTable {
 impl SightTable {
     /// How many weapons can carry a correction. The embedded sight table covers the weapons it
     /// trusts, so this holds only the weapons tuned or corrected by hand: room for every weapon the
-    /// embedded table does not trust, in one session. Serde derives arrays up to this length.
+    /// embedded table does not trust, in one session.
     pub const CAPACITY: usize = 32;
 
     pub const EMPTY: SightTable = SightTable {
@@ -120,3 +124,45 @@ impl Default for SightTable {
         Self::EMPTY
     }
 }
+
+impl From<SightTable> for Vec<SightOverride> {
+    fn from(table: SightTable) -> Self {
+        table.entries.into_iter().flatten().collect()
+    }
+}
+
+impl TryFrom<Vec<SightOverride>> for SightTable {
+    type Error = TooManySights;
+
+    fn try_from(sights: Vec<SightOverride>) -> Result<Self, Self::Error> {
+        if sights.len() > SightTable::CAPACITY {
+            return Err(TooManySights {
+                count: sights.len(),
+            });
+        }
+        let mut table = SightTable::EMPTY;
+        for (slot, sight) in table.entries.iter_mut().zip(sights) {
+            *slot = Some(sight);
+        }
+        Ok(table)
+    }
+}
+
+/// A list of sight corrections longer than [`SightTable::CAPACITY`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TooManySights {
+    pub count: usize,
+}
+
+impl fmt::Display for TooManySights {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "sight table: {} corrections exceed the capacity of {}",
+            self.count,
+            SightTable::CAPACITY
+        )
+    }
+}
+
+impl std::error::Error for TooManySights {}

@@ -31,7 +31,7 @@ use crate::{
 pub(crate) static TRACE_FRAME_COUNT: AtomicI32 = AtomicI32::new(60);
 
 pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
-    let mut cfg = config::CONFIG.lock();
+    let mut cfg = config::edit();
     // Deferred so the trace button's start() doesn't re-lock CONFIG (it snapshots the config for the
     // manifest) while this guard is held -- parking_lot is not reentrant, so that self-deadlocks.
     let mut start_trace: Option<i32> = None;

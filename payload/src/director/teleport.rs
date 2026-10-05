@@ -8,8 +8,8 @@
 //! the load state so the destination streams in first. [`TeleportMode::Auto`] picks by distance
 //! against the engine's own "too far without load state" threshold.
 //!
-//! Bookmarks persist in `director_bookmarks.json` beside the DLL, so a shot's framing survives a
-//! relaunch. The stored transform is the character's full world matrix, so the facing comes back
+//! Bookmarks persist in `teleports.toml` in the configuration directory
+//! ([`crate::config::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
 //! too and no axis convention is assumed.
 
 use std::path::PathBuf;
@@ -195,6 +195,7 @@ static PENDING: Mutex<Option<Request>> = Mutex::new(None);
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 struct State {
     bookmarks: Vec<Bookmark>,
 }
@@ -204,7 +205,7 @@ impl State {
             return Self::default();
         };
         match std::fs::read_to_string(&path) {
-            Ok(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
+            Ok(text) => toml::from_str(&text).unwrap_or_else(|e| {
                 tracing::warn!(
                     "director: could not parse the bookmarks at {}: {e}",
                     path.display()
@@ -219,9 +220,9 @@ impl State {
         let Some(path) = path() else {
             return;
         };
-        match serde_json::to_string_pretty(self) {
-            Ok(json) => {
-                if let Err(e) = std::fs::write(&path, json) {
+        match toml::to_string(self) {
+            Ok(text) => {
+                if let Err(e) = std::fs::write(&path, text) {
                     tracing::warn!(
                         "director: could not write the bookmarks to {}: {e}",
                         path.display()
@@ -233,13 +234,9 @@ impl State {
     }
 }
 
-/// The bookmarks file, beside the DLL like the UI layout.
+/// The bookmarks file, in the configuration directory beside the settings.
 fn path() -> Option<PathBuf> {
-    Some(
-        crate::module::get_path()?
-            .parent()?
-            .join("director_bookmarks.json"),
-    )
+    crate::config::paths::file("teleports.toml")
 }
 
 /// The player's current world matrix (`m_WorldMatrixT1`, what `GetTransform` returns).

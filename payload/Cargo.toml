@@ -58,6 +58,13 @@ jiff = "0.2.29"
 image = { version = "0.25", default-features = false, features = ["png"] }
 egui_dock = { version = "0.20", features = ["serde"] }
 smol_str = "0.3.6"
+directories = "6.0.0"
+toml = "1.1.6"
+serde_path_to_error = "0.1.20"
+serde_ignored = "0.1.14"
 
 [build-dependencies]
 jiff = "0.2.29"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

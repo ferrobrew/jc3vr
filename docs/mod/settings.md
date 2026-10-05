@@ -1,0 +1,55 @@
+# Settings file
+
+The runtime configuration (`Config` in `payload/src/config/`, behind the `CONFIG` mutex) is saved to one TOML file and loaded from it at startup. Every setting the debug UI, the pause menu's VR pages, and the hotkeys change lives there, along with the player's body dimensions and the director's key bindings.
+
+## Where the files live
+
+The payload keeps its files in the per-user configuration directory that the `directories` crate names for jc3vr (`ProjectDirs::from("me", "philpax", "jc3vr")`, see `config::paths`). On Windows that is `%APPDATA%\philpax\jc3vr\config`. Under Proton it is inside the game's prefix, `steamapps/compatdata/<app id>/pfx/drive_c/users/steamuser/AppData/Roaming/philpax/jc3vr/config/`. The directory is created on first use. The startup log names the settings file's path, and the debug window shows it under the build stamp as selectable text, with whether the file is up to date.
+
+| File | Holds | Written |
+| --- | --- | --- |
+| `settings.toml` | The whole runtime configuration | When a setting changes, as described below |
+| `ui_layout.json` | The debug UI's dock layout | When the layout changes, checked every 60 UI frames |
+| `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed |
+
+The dock layout and the bookmarks stay in files of their own: neither is a setting, and both are rewritten on their own schedule. The per-session output (logs, traces, screenshots, recordings) goes to the session folder, not here.
+
+The body dimensions are the `[body]` section of `settings.toml` and the director's key bindings are `director.keymap`. The `body.local.json`, `controllers.local.json`, `director_keymap.json`, and `director_bookmarks.json` files earlier builds kept beside the payload DLL are no longer read; copy any values worth keeping into the new files by hand.
+
+## Loading
+
+`config::init` loads the file once, from `initialize_startup` before the hooks are installed, so the first frame's VR initialization (the dominant hand and the controller layout among the settings it reads) sees the saved values. A missing file is the first run: the defaults are used and nothing is written until a setting changes. A file that cannot be read or is not TOML logs a warning, the defaults are used, and the file is left alone until a setting changes, at which point it is replaced.
+
+The load is tolerant, so a file written by an older or newer build, or edited by hand, costs at most the settings it gets wrong (`config::load`):
+
+1. The file is parsed into a TOML value tree and merged over the defaults serialized the same way. A setting the file lacks takes its default. A key the defaults lack is kept for the next step, since it is either an optional setting or one this build does not know.
+2. The tree is deserialized. Keys this build does not know are skipped. When a value cannot be read (the wrong type, an unknown enum variant, a list of the wrong length), the error's path names it; that one value is replaced by its default, or removed when it has none, and the deserialization is tried again, up to 64 times before the whole file gives way to the defaults.
+3. The settings whose types admit values the subsystems cannot use are validated (`config::validate`): the controller settings, the per-weapon sight corrections, the VR turn settings, and the body dimensions. A group that fails is reset to its defaults. The sight corrections are measured rather than chosen, so a failure elsewhere in the controller settings keeps them.
+
+The log lists what the load defaulted (info), skipped, and reset with the reason (warnings), against the file's path. There is no version field and no migration: renaming a setting loses its saved value once, which the log reports.
+
+Lists merge element by element when the file's list has the default's length, and otherwise replace the default whole, so a list that can grow or shrink, such as the key bindings, loads as written.
+
+## Saving
+
+A change the user meant goes through `config::edit()`, a guard that derefs to the `Config` and marks the configuration changed when it drops. Every debug UI tab that binds controls to the configuration, the pause menu's VR pages, the hotkeys (F4, F8, F11, and the director's key bindings), the body calibration's save, the sight tuning tool's capture, and the director tab's key binding reset use it. Reads, and changes the payload makes on its own, take the plain `CONFIG` lock and are never a reason to save: a value discovered at runtime, a diagnostic that disarms itself, or a fallback.
+
+A fallback that switches off a setting the user chose (the mirror after a removed device, native resolution after a resize fault, the mod-owned back buffer after a failed substitution, and the HUD redirect at teardown) goes through `config::disable_automatically`. The live setting turns off at once, but a save writes the user's value until the user changes that setting through `edit()`; otherwise a later save for an unrelated change would make the fallback permanent.
+
+The save runs from `config::tick`, called once per frame on the game thread at the end of `crate::update`, after the debug UI. It saves once the changes have been quiet for a second, or five seconds after the first unsaved change, whichever comes first; an open debug UI tab edits every frame, so the second bound is what saves while one is open. A save serializes a snapshot and compares it with the text the file last received or was loaded as, and writes only a difference, so an open tab costs a serialization every few seconds and no disk traffic. The write itself runs on a short-lived writer thread, which writes a temporary file beside the settings file and moves it over the original, so a failed write never truncates the file. The writes are serialized and numbered, and a writer that finds a newer save already written skips its own. A failed save is logged and retried at the next change.
+
+On shutdown (`shutdown_startup`), `config::shutdown` stops new saves, waits for the writers (keeping the payload mapped if one does not finish), and writes a change still waiting to settle from the shutdown thread.
+
+The pause menu's `VR: CONTROLS` page shows the file's state (`UP TO DATE`, `SAVING`, `FAILED, SEE LOG`, or `NOT SAVED` without a configuration directory).
+
+## What is not saved
+
+Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and cinematic mode; the HUD split's discovered clip-path prefix (`hud.split_path_prefix`); the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
+
+## TOML and the configuration types
+
+TOML has no null, so a `None` is left out of the file. An optional setting therefore defaults to `None`: its key is absent from the defaults, so a missing key loads as `None` and a present one as `Some`. A setting that is on by default with a value is a switch beside the value instead of an `Option` (`fsr.sharpen` and `fsr.sharpness`), since a saved `None` would otherwise load as the default `Some`.
+
+A list cannot hold an empty slot either, so the per-weapon sight table, a fixed array of optional entries in memory, is saved as a list of the corrections it holds. A constant default that needs owned data (the far field's gated type list, the key bindings) is a `Cow` that borrows a constant until it is edited, which keeps `Config::new` a `const fn`.
+
+Floats keep their non-finite values (`nan`, `inf`) through the file, and integers are TOML's signed 64-bit; no setting comes near that range.

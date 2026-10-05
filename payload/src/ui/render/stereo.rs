@@ -48,16 +48,11 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 .text("Jitter scale (diagnostic)"),
         );
         ui.horizontal(|ui| {
-            let mut sharpen = cfg.fsr.sharpness.is_some();
-            ui.checkbox(&mut sharpen, "Sharpening");
-            match (sharpen, cfg.fsr.sharpness) {
-                (true, None) => cfg.fsr.sharpness = Some(0.5),
-                (false, Some(_)) => cfg.fsr.sharpness = None,
-                _ => {}
-            }
-            if let Some(s) = cfg.fsr.sharpness.as_mut() {
-                ui.add(egui::Slider::new(s, 0.0..=1.0).text("strength"));
-            }
+            ui.checkbox(&mut cfg.fsr.sharpen, "Sharpening");
+            ui.add_enabled(
+                cfg.fsr.sharpen,
+                egui::Slider::new(&mut cfg.fsr.sharpness, 0.0..=1.0).text("strength"),
+            );
         });
         ui.checkbox(
             &mut cfg.fsr.motion_vectors,

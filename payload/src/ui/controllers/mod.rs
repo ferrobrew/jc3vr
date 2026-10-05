@@ -16,8 +16,8 @@ mod hands;
 mod map;
 mod mode;
 mod overlay;
-mod persistence;
 mod physical_hands;
+mod presets;
 mod reload;
 mod roomscale;
 mod scope;
@@ -42,21 +42,20 @@ use crate::{
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
         map as controller_map, mode as controller_mode, overlay as controller_overlay,
-        persistence as controller_persistence, physical_hands as controller_physical_hands,
-        roomscale as controller_roomscale, scheme, summary as controller_summary,
+        physical_hands as controller_physical_hands, roomscale as controller_roomscale, scheme,
+        summary as controller_summary,
     },
     hud::{pointer, summary_panel},
     vr::input::{self as vr_input, ActionsOrigin},
 };
 
 pub fn egui_debug_controllers(ui: &mut Ui) {
-    controller_persistence::start_pending();
     // Everything that locks the config is read before the config is locked for editing below.
     let current = scheme::current();
     let selected = scheme::selected();
     let status = vr_input::status();
     let frame = controller_frame::latest();
-    let body = controller_body::player_body();
+    let body = controller_body::player();
     let detection = controller_mode::current();
     let snapshot = controller_mode::last_snapshot();
     let report = bindings::last_report();
@@ -202,9 +201,9 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
 
         ui.separator();
         ui.heading("Settings");
-        let mut cfg = config::CONFIG.lock();
+        let mut cfg = config::edit();
         settings::settings(ui, &mut cfg);
-        persistence::settings(ui, &mut cfg);
+        presets::presets(ui, &mut cfg);
     });
 }
 

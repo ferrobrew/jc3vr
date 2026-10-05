@@ -19,11 +19,11 @@ Tools for directing and capturing a first-person trailer from inside the headset
 - [x] Spawn definition picker: the shipped `settings/spawn_*_defs.bin` tables, extracted with `tools/spawn_defs/extract_spawn_defs.py` and embedded, listed by pool with a text filter. A definition's full tag set selects it outright.
 - [x] Cinematic mode: one toggle that hides the HUD quad, the floating panel, and the overlays together, with a hotkey. With the HUD redirect off (flatscreen) the game's own HUD stays.
 - [x] Take markers: a hotkey and a labelled button that append a line with the wallclock and the game-run time to `markers.jsonl` in the session folder. The capture path is to fold these into its sidecar.
-- [x] Bindable keymap: `director_keymap.json` beside the DLL, defaulting to the numeric keypad, fed from the window procedure. Controller chords are not bound yet; the in-headset panel covers that case.
+- [x] Bindable keymap: `director.keymap` in the settings file ([settings.md](settings.md)), defaulting to the numeric keypad, fed from the window procedure. Controller chords are not bound yet; the in-headset panel covers that case.
 
 ### Directing tools that need RE
 
-- [x] Teleport with bookmarks: the full world matrix saved under a name to `director_bookmarks.json`, jumped to through the game world's instant teleport ([`GameWorld::TeleportPlayerInstant`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-TeleportPlayerInstant)) within 400 m (the mod's `INSTANT_RANGE_M`) and its streamed teleport ([`GameWorld::TeleportPlayer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-TeleportPlayer)) beyond, plus a coordinate entry.
+- [x] Teleport with bookmarks: the full world matrix saved under a name to `teleports.toml` in the configuration directory ([settings.md](settings.md)), jumped to through the game world's instant teleport ([`GameWorld::TeleportPlayerInstant`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-TeleportPlayerInstant)) within 400 m (the mod's `INSTANT_RANGE_M`) and its streamed teleport ([`GameWorld::TeleportPlayer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-TeleportPlayer)) beyond, plus a coordinate entry.
 - [x] Heat: set, clear, lock, and cap through the heat manager, with the lock and cap re-asserted every frame.
 - [x] Actor safety: god mode and unlimited ammo through the character's own setters, re-asserted every frame. Unlimited tethers and vehicle damage are not covered; the tether count is an upgrade-system value and vehicle invulnerability lives on the vehicle's damageable, both still to map.
 

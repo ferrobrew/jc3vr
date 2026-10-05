@@ -38,7 +38,6 @@
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme;
 //! - [`summary`]: the controls summary on the off-hand wrist, and hiding the game's own button
 //!   hints;
-//! - [`persistence`]: saving and loading `controllers.local.json`;
 //! - [`menu`]: the pause menu's `VR: CONTROLS` and `VR: COMFORT` pages over these settings (the
 //!   `VR: BODY` page is [`body::menu`]).
 //!
@@ -63,7 +62,6 @@ pub(crate) mod menu;
 pub mod mode;
 pub mod motion;
 pub mod overlay;
-pub mod persistence;
 pub mod physical_hands;
 pub mod presets;
 pub mod roomscale;

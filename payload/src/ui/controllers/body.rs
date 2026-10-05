@@ -1,19 +1,16 @@
-//! The player's body dimensions and where they came from.
+//! The player's body dimensions and whether they are still the generic ones.
 
 use egui::Ui;
 
-use crate::controllers::body::{self, BodySource};
+use crate::controllers::body::BodyDimensions;
 
-pub(super) fn body_readout(ui: &mut Ui, body: &body::PlayerBody) {
-    ui.label(match &body.source {
-        BodySource::File { path } => format!("From {}", path.display()),
-        BodySource::Defaults { path: Some(path) } => {
-            format!("Generic adult defaults (no {})", path.display())
-        }
-        BodySource::Defaults { path: None } => "Generic adult defaults".to_owned(),
-        BodySource::Invalid { error } => format!("Generic adult defaults ({error})"),
+pub(super) fn body_readout(ui: &mut Ui, d: &BodyDimensions) {
+    ui.label(if *d == BodyDimensions::GENERIC_ADULT {
+        "Generic adult defaults; calibrate on the pause menu's VR: BODY page, or edit the [body] \
+         section of the settings file."
+    } else {
+        "Saved in the [body] section of the settings file."
     });
-    let d = body.dimensions;
     egui::Grid::new("body_dimensions").show(ui, |ui| {
         for (name, value) in [
             ("Height", d.height),
@@ -29,12 +26,11 @@ pub(super) fn body_readout(ui: &mut Ui, body: &body::PlayerBody) {
             ui.label(format!("{value:.2} m"));
             ui.end_row();
         }
+        ui.label("Seated eye height");
+        ui.label(
+            d.seated_eye_height
+                .map_or_else(|| "not calibrated".to_owned(), |h| format!("{h:.2} m")),
+        );
+        ui.end_row();
     });
-    if ui
-        .button("Reload body file")
-        .on_hover_text("Re-read body.local.json beside the payload DLL.")
-        .clicked()
-    {
-        body::reload();
-    }
 }

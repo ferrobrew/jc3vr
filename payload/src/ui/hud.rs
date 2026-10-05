@@ -27,7 +27,7 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
     // Redirect toggle and the quad placement/follow parameters. The CONFIG lock is scoped to this
     // block and dropped before HUD_STATE is locked for the preview.
     let redirect = {
-        let mut cfg = config::CONFIG.lock();
+        let mut cfg = config::edit();
         ui.checkbox(
             &mut cfg.hud.redirect,
             "Redirect HUD into our texture (drops it from the scene composite)",
@@ -381,7 +381,7 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
 fn world_markers_ui(ui: &mut egui::Ui) {
     ui.collapsing("World markers (prototype)", |ui| {
         {
-            let mut cfg = config::CONFIG.lock();
+            let mut cfg = config::edit();
             let m = &mut cfg.hud.world_markers;
             ui.checkbox(
                 &mut m.enabled,
@@ -540,7 +540,7 @@ fn atlas_ui(ui: &mut egui::Ui) {
         "HUD atlas: hand ammunition, wrist status, marker cells",
         |ui| {
             {
-                let mut cfg = config::CONFIG.lock();
+                let mut cfg = config::edit();
                 let a = &mut cfg.hud.atlas;
                 ui.checkbox(
                 &mut a.enabled,
@@ -769,7 +769,7 @@ fn vec3_ui(ui: &mut egui::Ui, value: &mut glam::Vec3, label: &str, range: f32) {
 fn pause_menu_ui(ui: &mut egui::Ui) {
     ui.collapsing("Pause menu", |ui| {
         {
-            let mut cfg = config::CONFIG.lock();
+            let mut cfg = config::edit();
             ui.checkbox(
                 &mut cfg.pause_menu.enabled,
                 "VR pages in the pause menu",

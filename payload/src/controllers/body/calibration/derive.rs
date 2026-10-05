@@ -187,7 +187,7 @@ pub fn check_seated_eye_height(seated_eye_height: f32) -> Result<(), Calibration
     Ok(())
 }
 
-/// Derive the body file's dimensions from a standing player's measurements, rounded to the
+/// Derive the body dimensions from a standing player's measurements, rounded to the
 /// millimetre. The height comes from the eye height and the arm span from the grip span; the
 /// shoulders and the hand scale with the height, and the arm segments split what the arm span
 /// leaves once the shoulders and the hands are taken out of it. The result has no seated eye
@@ -202,7 +202,7 @@ pub fn derive(measurements: Measurements) -> Result<BodyDimensions, CalibrationE
     proportions(height, eye_height, grip_span)
 }
 
-/// Derive the body file's dimensions from a seated player's measurements, rounded to the
+/// Derive the body dimensions from a seated player's measurements, rounded to the
 /// millimetre. The height is the one the player set, else the estimate from the span
 /// ([`height_from_grip_span`]); the standing eye height follows from it, and everything else is
 /// derived as [`derive`] does. The seated eye height is kept as measured.
@@ -228,7 +228,7 @@ pub fn derive_seated(measurements: SeatedMeasurements) -> Result<BodyDimensions,
     Ok(body)
 }
 
-/// A standing calibration's result with the seated eye height from the body file it replaces,
+/// A standing calibration's result with the seated eye height from the saved dimensions it replaces,
 /// when that is still below the new standing eye height: a standing calibration does not measure
 /// it, and saving would otherwise drop it.
 pub fn keeping_seated_eye_height(body: BodyDimensions, kept: Option<f32>) -> BodyDimensions {

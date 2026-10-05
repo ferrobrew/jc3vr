@@ -110,7 +110,8 @@ pub struct HudConfig {
     /// The clip-path prefix from the root movie's timeline to the HUD movie's clips, ending in a
     /// dot when non-empty (e.g. `"hud."`). The HUD movie is attached by `root.gfx`'s ActionScript
     /// under a runtime name the display-tree dump reveals; until confirmed in-game, the authored
-    /// clip names are tried bare.
+    /// clip names are tried bare. Discovered at runtime, so it is not saved.
+    #[serde(skip)]
     pub split_path_prefix: SplitPathPrefix,
     /// The interactive egui debug panel floating in 3D space in VR (issue #24). Off by default;
     /// only takes effect while an OpenXR session is running.
@@ -672,6 +673,12 @@ impl Default for CursorConfig {
 pub struct SplitPathPrefix {
     bytes: [u8; Self::CAPACITY],
     len: u8,
+}
+
+impl Default for SplitPathPrefix {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SplitPathPrefix {

@@ -51,7 +51,10 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::{config::Config, vr::back_buffer};
+use crate::{
+    config::{Config, Switch, disable_automatically},
+    vr::back_buffer,
+};
 
 /// How many frames to wait for a requested deferred resize to be serviced before treating it as a
 /// fault. A resize is serviced in the very next `Draw` prologue, so this is a generous ceiling that
@@ -378,9 +381,12 @@ fn issue_resize(
 }
 
 /// Disable native resolution at runtime after a fault, so the next tick restores the original size and
-/// the mod continues at desktop resolution.
+/// the mod continues at desktop resolution. The saved setting keeps the user's choice.
 fn disable_native_resolution() {
-    crate::config::CONFIG.lock().vr.native_resolution = false;
+    disable_automatically(Switch {
+        path: "vr.native_resolution",
+        place: |c| &mut c.vr.native_resolution,
+    });
 }
 
 /// The engine camera manager's aspect ratio, for the serviced-resize log (set by `ApplyResize`).

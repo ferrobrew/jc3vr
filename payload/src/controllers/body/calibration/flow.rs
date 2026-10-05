@@ -102,7 +102,7 @@ pub enum Notice {
     TooFewSamples { cause: Option<Unavailable> },
     /// The measurement cannot describe a body.
     Rejected(CalibrationError),
-    /// Saving the body file failed.
+    /// Saving the dimensions failed.
     SaveFailed(String),
 }
 
@@ -144,7 +144,7 @@ pub enum CaptureStatus {
 pub struct Calibration {
     step: Step,
     stance: Stance,
-    /// The seated eye height of the body file being replaced, which a standing calibration keeps.
+    /// The seated eye height of the saved dimensions being replaced, which a standing calibration keeps.
     kept_seated_eye_height: Option<f32>,
     /// The eye height measured in the stance.
     eye_height: Option<f32>,
@@ -199,7 +199,7 @@ impl Calibration {
         self.eye_height
     }
 
-    /// The seated eye height a standing calibration keeps from the body file it replaces.
+    /// The seated eye height a standing calibration keeps from the saved dimensions it replaces.
     pub fn kept_seated_eye_height(&self) -> Option<f32> {
         match self.stance {
             Stance::Standing => self.kept_seated_eye_height,
@@ -283,7 +283,7 @@ impl Calibration {
         })
     }
 
-    /// Begin calibrating in `stance`, from the summary. `kept_seated_eye_height` is the body file's
+    /// Begin calibrating in `stance`, from the summary. `kept_seated_eye_height` is the saved
     /// seated eye height, which a standing calibration keeps. Returns whether the step changed.
     pub fn start(&mut self, stance: Stance, kept_seated_eye_height: Option<f32>) -> bool {
         if self.step != Step::Summary {

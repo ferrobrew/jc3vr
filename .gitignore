@@ -43,9 +43,8 @@ __pycache__/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# A player's body measurements for the controller remap (see payload/src/controllers/body.rs). Read
-# from beside the payload DLL; personal, so never committed.
+# Personal settings files that earlier builds read from beside the payload DLL or the workspace
+# root. Settings now live in the per-user configuration directory (see docs/mod/settings.md); the
+# patterns stay so that copies left in a checkout are never committed.
 body.local.json
-
-# Local controller tuning, saved to the workspace root (see payload/src/controllers/persistence).
 controllers.local.json

@@ -1,6 +1,6 @@
 //! The `VR: CONTROLS` page: the hand, the scheme, turning, the controller subsystems a player turns
-//! on and off, their few tunings worth changing in the headset, and the saved settings (reload, and
-//! reset to defaults behind a confirmation). The rest of [`ControllersConfig`] stays in the debug
+//! on and off, their few tunings worth changing in the headset, and the saved settings (their state,
+//! and a reset to defaults behind a confirmation). The rest of [`ControllersConfig`] stays in the debug
 //! UI.
 //!
 //! [`ControllersConfig`]: crate::controllers::config::ControllersConfig
@@ -15,8 +15,8 @@ use crate::{
         config::{GunReadout, LocomotionDirection, SchemeSetting},
         frame::Hand,
         menu::{
-            config_choice, config_slider, config_toggle, edit_config, file_state, nearest_index,
-            on_frame, read_config, reload_saved, reset_live_to_defaults, save_if_changed,
+            config_choice, config_slider, config_toggle, edit_config, nearest_index, read_config,
+            reset_live_to_defaults, settings_state,
         },
         weapons::reload::config::ReloadButton,
     },
@@ -36,7 +36,7 @@ pub(crate) const PAGE: PageDef = PageDef {
     tab: "CONTROLS",
     build,
     on_close: Some(on_close),
-    on_frame: Some(on_frame),
+    on_frame: None,
 };
 
 fn build() -> Page {
@@ -271,16 +271,11 @@ fn build() -> Page {
             |c| c.controllers.vehicles.parachute_handles.brake_threshold
         ))
         .header("SAVED SETTINGS")
-        .text("CHANGES APPLY AT ONCE AND ARE SAVED")
-        .text("WHEN YOU LEAVE A VR PAGE.")
+        .text("CHANGES APPLY AT ONCE AND ARE")
+        .text("SAVED AUTOMATICALLY.")
         .item(Readout {
             label: "SETTINGS FILE".into(),
-            read: file_state,
-        })
-        .item(Button {
-            label: "RELOAD SAVED SETTINGS".into(),
-            caption: "RELOAD".into(),
-            action: reload_saved,
+            read: settings_state,
         })
         .item(Button {
             label: "RESET TO DEFAULTS".into(),
@@ -321,7 +316,6 @@ fn confirm_reset() -> Page {
 
 fn on_close() {
     CONFIRMING_RESET.store(false, Ordering::Relaxed);
-    save_if_changed();
 }
 
 /// The button layout the controllers have, for a readout.

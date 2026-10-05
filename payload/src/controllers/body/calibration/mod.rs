@@ -1,4 +1,4 @@
-//! Body calibration: the dimensions the body file holds, derived from the two things the headset can
+//! Body calibration: the player's saved body dimensions, derived from the two things the headset can
 //! measure, and the guided flow that measures them.
 //!
 //! The headset measures the eye height (the head above the STAGE floor, see [`crate::vr::stage`])

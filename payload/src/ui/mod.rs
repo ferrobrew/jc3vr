@@ -2,12 +2,15 @@
 //!
 //! The tabs live in an `egui_dock` tree so any tab can be dragged out into its own floating window
 //! (e.g. Performance parked beside the game view while tuning Render features). The layout is
-//! persisted next to the DLL so a customized arrangement survives relaunches.
+//! persisted to `ui_layout.json` in the configuration directory ([`crate::config::paths`]), apart
+//! from the settings, so a customized arrangement survives relaunches.
 
 use std::{sync::OnceLock, time::Instant};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+
+use crate::config::{self, SaveStatus};
 
 pub mod camera;
 pub mod controllers;
@@ -96,6 +99,32 @@ impl egui_dock::TabViewer for TabBodies<'_> {
     }
 }
 
+/// The settings file's path, selectable so it can be copied, and whether it is up to date.
+fn settings_line(ui: &mut egui::Ui) {
+    let state = match config::status() {
+        SaveStatus::UpToDate => "saved",
+        SaveStatus::Pending => "saving",
+        SaveStatus::Failed => "save failed, see the log",
+        SaveStatus::Unavailable => "not saved: no configuration directory",
+    };
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("Settings ({state}):"))
+                .weak()
+                .small(),
+        );
+        if let Some(path) = config::paths::settings_file() {
+            let text = path.display().to_string();
+            let mut shown = text.as_str();
+            ui.add(
+                egui::TextEdit::singleline(&mut shown)
+                    .font(egui::TextStyle::Small)
+                    .desired_width(ui.available_width()),
+            );
+        }
+    });
+}
+
 /// The dock tree, created (from disk or the default) on first UI frame.
 static DOCK_STATE: Mutex<Option<egui_dock::DockState<Tab>>> = Mutex::new(None);
 
@@ -108,9 +137,9 @@ static FRAMES_SINCE_SAVE_CHECK: Mutex<u32> = Mutex::new(0);
 /// How often (in UI frames) to check whether the layout changed and save it.
 const SAVE_CHECK_INTERVAL_FRAMES: u32 = 60;
 
-/// The dock-layout file, next to the DLL like the trace output.
+/// The dock-layout file, in the configuration directory beside the settings.
 fn layout_path() -> Option<std::path::PathBuf> {
-    Some(crate::module::get_path()?.parent()?.join("ui_layout.json"))
+    config::paths::file("ui_layout.json")
 }
 
 /// Load the persisted layout, falling back to the default single-group layout. Tabs missing from
@@ -233,6 +262,7 @@ pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rende
             .weak()
             .small(),
     );
+    settings_line(ui);
 
     let mut state_slot = DOCK_STATE.lock();
     let state = state_slot.get_or_insert_with(load_or_default_dock_state);

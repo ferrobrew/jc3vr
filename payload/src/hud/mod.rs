@@ -66,7 +66,10 @@ use jc3gi::{
 pub use state::HUD_STATE;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::{config::Config, hooks::in_gameplay};
+use crate::{
+    config::{Config, Switch, disable_automatically},
+    hooks::in_gameplay,
+};
 
 /// Which presentation the HUD is in this frame. Drives the panel's aspect (gameplay vs full-screen
 /// UI). Placement (head-following vs world-locked) is chosen separately by
@@ -527,7 +530,11 @@ pub fn compute_panel_vp(symmetric: bool) -> Option<(Matrix4, Matrix4)> {
 /// few frames to tick the restore through before the hooks come down.
 pub fn install() {
     crate::lifecycle::on_cleanup(|renderer| {
-        crate::config::CONFIG.lock().hud.redirect = false;
+        // Automatically, so that a save during the teardown keeps the redirect the user chose.
+        disable_automatically(Switch {
+            path: "hud.redirect",
+            place: |c| &mut c.hud.redirect,
+        });
         if let Some(renderer) = renderer {
             HUD_STATE.lock().release_preview(renderer);
         }

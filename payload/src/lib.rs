@@ -105,6 +105,9 @@ fn initialize_startup() {
     logging::install();
     tracing::info!(build = BUILD_STAMP, "jc3vr startup");
     crash::install();
+    // Before the hooks: VR initialization, on the game thread's first frame, reads the configuration
+    // (the dominant hand and the input layout among it), so it must already hold the saved settings.
+    config::init();
     hooks::install();
 }
 
@@ -142,7 +145,8 @@ fn shutdown_startup() {
         module::pin();
     }
 
-    if !controllers::persistence::shutdown() {
+    // And for the settings writers, after which a change still waiting to settle is written here.
+    if !config::shutdown() {
         module::pin();
     }
     if !controllers::diagnostics::shutdown() {
@@ -179,8 +183,6 @@ fn initialize_from_game() -> anyhow::Result<()> {
 
     EguiState::install()?;
     ui::render::install();
-    config::CONFIG.lock().far_field.gated_types =
-        crate::far_field::DEFAULT_FAR_FIELD_GATED_TYPES.to_owned();
     hud::install();
     capture::install();
     vr::install();
@@ -338,6 +340,9 @@ fn update() {
                     .show(ctx, |ui| ui::egui_debug_window(ui, renderer));
             });
         }
+
+        // After the debug UI, whose controls are the most frequent edits, and outside its lock.
+        config::tick();
     });
     if let Err(e) = panic {
         let panic_msg = e

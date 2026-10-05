@@ -75,7 +75,11 @@ use windows::{
     core::Interface as _,
 };
 
-use crate::{config::Config, ui::render::EGUI_DEBUG_RENDER_STATE, vr::config::MirrorFraming};
+use crate::{
+    config::{Config, Switch, disable_automatically},
+    ui::render::EGUI_DEBUG_RENDER_STATE,
+    vr::config::MirrorFraming,
+};
 
 /// The committed, precompiled shaders shared with the capture composite: the fullscreen-triangle
 /// vertex shader and the plain-sample (no gamma) pixel shader. See the module gamma note.
@@ -123,7 +127,10 @@ pub fn present_mirror(eye: usize) {
             })
         {
             tracing::error!(target: "vr", "mirror present failed with device-removed error {win_err}; disabling vr.mirror");
-            crate::config::CONFIG.lock().vr.mirror = false;
+            disable_automatically(Switch {
+                path: "vr.mirror",
+                place: |c| &mut c.vr.mirror,
+            });
             *MIRROR.lock() = None;
         } else {
             let count = MIRROR_FAIL_COUNT.fetch_add(1, Ordering::Relaxed) + 1;

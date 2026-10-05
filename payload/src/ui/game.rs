@@ -35,7 +35,7 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
         };
         ui.collapsing("Movement", |ui| {
             {
-                let mut cfg = config::CONFIG.lock();
+                let mut cfg = config::edit();
                 ui.checkbox(
                 &mut cfg.movement.force_fps_movement,
                 "FPS movement (force aim-relative locomotion on foot)",

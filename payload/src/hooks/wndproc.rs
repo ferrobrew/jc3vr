@@ -14,7 +14,7 @@ use windows::Win32::{
 };
 
 use crate::{
-    config::CONFIG,
+    config,
     egui_impl::EguiState,
     hooks::graphics_engine::shader,
     hud::{cursor, egui_panel},
@@ -41,7 +41,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             let visible = {
-                let mut cfg = CONFIG.lock();
+                let mut cfg = config::edit();
                 cfg.hud.flat_overlay_visible = !cfg.hud.flat_overlay_visible;
                 cfg.hud.flat_overlay_visible
             };
@@ -129,7 +129,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             let now_on = {
-                let mut cfg = CONFIG.lock();
+                let mut cfg = config::edit();
                 cfg.stereo.patch_shadow_pcf_hash = !cfg.stereo.patch_shadow_pcf_hash;
                 cfg.stereo.patch_shadow_pcf_hash
             };

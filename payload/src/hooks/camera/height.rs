@@ -34,7 +34,7 @@ pub struct HeightReadout {
     pub camera_eyes_m: f32,
     /// The standing eye height the head remap assumes Rico's animated eyes are at, metres.
     pub character_eye_estimate_m: f32,
-    /// The player's standing eye height from the body file, metres.
+    /// The player's standing eye height from the body dimensions, metres.
     pub player_eye_height_m: f32,
     /// The player's head above the stage floor, metres, when the runtime reports a floor.
     pub floor_head_height_m: Option<f32>,

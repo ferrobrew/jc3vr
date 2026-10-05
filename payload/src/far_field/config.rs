@@ -1,5 +1,7 @@
 //! Far-field configuration (issue #32).
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 /// The monoscopic far field (issue #32): partition each scene pass's sorted draw list into near
@@ -26,7 +28,7 @@ pub struct FarFieldConfig {
     /// Under `Share`, gated types render only in the far dispatch's G-buffer range, so only
     /// opaque G-buffer types belong here — a transparent type (e.g. `Window`, the car/building
     /// glass) would vanish entirely, since its passes never run in the far dispatch.
-    pub gated_types: String,
+    pub gated_types: Cow<'static, str>,
     /// What to do with the partition.
     pub mode: FarFieldMode,
 }
@@ -35,7 +37,7 @@ impl FarFieldConfig {
         Self {
             enabled: false,
             threshold_m: 250.0,
-            gated_types: String::new(),
+            gated_types: Cow::Borrowed(DEFAULT_FAR_FIELD_GATED_TYPES),
             mode: FarFieldMode::Share,
         }
     }
@@ -47,9 +49,9 @@ impl Default for FarFieldConfig {
 }
 
 /// The default far-regime gated type list (validated by registry bisect: the volumetric terrain
-/// patches and tree impostors/forest draw only the distant scene). Applied to
-/// [`FarFieldConfig::gated_types`] at startup, since the const constructor cannot own a string.
-pub const DEFAULT_FAR_FIELD_GATED_TYPES: &str =
+/// patches and tree impostors/forest draw only the distant scene), which
+/// [`FarFieldConfig::gated_types`] borrows until it is edited.
+const DEFAULT_FAR_FIELD_GATED_TYPES: &str =
     "VolumetricTerrainPatch, TreeImpostor, TerrainForest, Occluder";
 
 /// What the far-field split does with the partition each draw.

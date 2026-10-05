@@ -1,7 +1,6 @@
 //! The `VR: COMFORT` page: recentering the view, the posture and the roomscale chase, crouching,
-//! the comfort fades, and how the view behaves getting into a vehicle. Only settings
-//! `controllers.local.json` holds are here, so everything the page changes is saved when the
-//! player leaves it; the recenter is an action, not a setting.
+//! the comfort fades, and how the view behaves getting into a vehicle. The recenter is an action,
+//! not a setting.
 
 use std::time::{Duration, Instant};
 
@@ -11,7 +10,7 @@ use smol_str::SmolStr;
 use crate::{
     controllers::{
         config::{Posture, SeatTransition},
-        menu::{config_choice, config_slider, config_toggle, on_frame, save_if_changed},
+        menu::{config_choice, config_slider, config_toggle},
         roomscale::manual_recenter_kind,
     },
     pause_menu::model::{
@@ -25,8 +24,8 @@ use crate::{
 pub(crate) const PAGE: PageDef = PageDef {
     tab: "COMFORT",
     build,
-    on_close: Some(save_if_changed),
-    on_frame: Some(on_frame),
+    on_close: None,
+    on_frame: None,
 };
 
 fn build() -> Page {

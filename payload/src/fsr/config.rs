@@ -26,8 +26,12 @@ pub struct FsrConfig {
     /// diagnostic lever: if no [`jitter_sign`](Self::jitter_sign) fixes the pulse but halving the
     /// amplitude softens it, the cause is FSR's own lock dynamics rather than a convention mismatch.
     pub jitter_scale: f32,
-    /// Optional RCAS sharpening strength (0..1); `None` disables the sharpening pass.
-    pub sharpness: Option<f32>,
+    /// Run the RCAS sharpening pass after the upscale, at [`sharpness`](Self::sharpness).
+    pub sharpen: bool,
+    /// The RCAS sharpening strength (0..1) while [`sharpen`](Self::sharpen) is on. A separate
+    /// switch rather than an `Option`, so turning sharpening off keeps the strength, and the
+    /// settings file (which cannot write a missing value) can save either state.
+    pub sharpness: f32,
     /// Feed motion vectors to FSR. Off makes FSR reproject with zero motion (ghosts moving objects) --
     /// a debug A/B to confirm the decode is helping.
     pub motion_vectors: bool,
@@ -58,7 +62,8 @@ impl FsrConfig {
             jitter: false,
             jitter_sign: (1.0, 1.0),
             jitter_scale: 1.0,
-            sharpness: Some(0.2),
+            sharpen: true,
+            sharpness: 0.2,
             motion_vectors: true,
             mv_sign: (1.0, -1.0),
             mv_stereo_correction: true,

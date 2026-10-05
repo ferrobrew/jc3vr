@@ -175,7 +175,9 @@ fn anti_aliasing_apply(
     let (force_smaa_1x, fsr) = Config::lock_query(|c| {
         (
             stereo::active() && c.stereo.force_smaa_1x,
-            c.fsr.enabled.then_some(c.fsr.sharpness),
+            c.fsr
+                .enabled
+                .then_some(c.fsr.sharpen.then_some(c.fsr.sharpness)),
         )
     });
 

@@ -26,7 +26,7 @@ use glam::{Mat4, Vec2, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    config::CONFIG,
+    config,
     controllers::{
         aim::{gun::HeldWeapon, ray, sights},
         config::{SightOverride, SightTuningConfig},
@@ -161,10 +161,9 @@ pub(crate) fn service(
         return;
     }
     // The config is locked with the tuning state released: the Controllers tab reads the state
-    // while it holds the config.
+    // while it holds the config. A capture is the player's own choice, so it is saved.
     let result = solve_capture(marker, held, dominant).and_then(|sight| {
-        CONFIG
-            .lock()
+        config::edit()
             .controllers
             .aim
             .sights

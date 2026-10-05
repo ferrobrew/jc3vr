@@ -2,15 +2,16 @@
 //! the window procedure so the bindings respect window focus and key repeat like the built-in
 //! function keys do.
 //!
-//! The map lives in `director_keymap.json` beside the DLL and is written out with the defaults
-//! the first time it is missing, so rebinding is an edit to that file (or the debug tab's reset).
-//! The defaults sit on the numeric keypad: nothing else in the game or the mod uses it, and it is
-//! findable by touch under a headset. Controller chords are not bound here yet; the in-headset
-//! debug panel covers the controller-only case for now.
+//! The map is part of the runtime configuration ([`DirectorConfig::keymap`]), so it is saved in
+//! the settings file with everything else, and rebinding is an edit to the `director.keymap`
+//! section there (or the debug tab's reset). The defaults sit on the numeric keypad: nothing else
+//! in the game or the mod uses it, and it is findable by touch under a headset. Controller chords
+//! are not bound here yet; the in-headset debug panel covers the controller-only case for now.
+//!
+//! [`DirectorConfig::keymap`]: crate::director::DirectorConfig::keymap
 
-use std::path::PathBuf;
+use std::borrow::Cow;
 
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_DIVIDE, VK_MENU, VK_MULTIPLY, VK_NUMPAD0,
@@ -19,7 +20,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 use crate::{
-    config::CONFIG,
+    config::{self, Config},
     director::{heat, markers, spawn, teleport, teleport::TeleportMode, time},
 };
 
@@ -110,77 +111,17 @@ pub struct Binding {
     pub chord: Chord,
 }
 
-/// The whole map, as persisted.
+/// The whole map, as saved. The bindings borrow the stock layout until they are changed, so the
+/// default map is a constant.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Keymap {
-    pub bindings: Vec<Binding>,
+    pub bindings: Cow<'static, [Binding]>,
 }
 impl Keymap {
     /// The stock numeric-keypad layout.
-    pub fn defaults() -> Self {
+    pub const fn new() -> Self {
         Self {
-            bindings: vec![
-                Binding {
-                    action: Action::ToggleCinematic,
-                    chord: Chord::plain(VK_NUMPAD0.0),
-                },
-                Binding {
-                    action: Action::ToggleSlowMotion,
-                    chord: Chord::plain(VK_NUMPAD1.0),
-                },
-                Binding {
-                    action: Action::TogglePause,
-                    chord: Chord::plain(VK_NUMPAD2.0),
-                },
-                Binding {
-                    action: Action::TakeMarker,
-                    chord: Chord::plain(VK_NUMPAD3.0),
-                },
-                Binding {
-                    action: Action::TeleportBookmark1,
-                    chord: Chord::plain(VK_NUMPAD4.0),
-                },
-                Binding {
-                    action: Action::TeleportBookmark2,
-                    chord: Chord::plain(VK_NUMPAD5.0),
-                },
-                Binding {
-                    action: Action::TeleportBookmark3,
-                    chord: Chord::plain(VK_NUMPAD6.0),
-                },
-                Binding {
-                    action: Action::ToggleGodMode,
-                    chord: Chord::plain(VK_NUMPAD7.0),
-                },
-                Binding {
-                    action: Action::ClearHeat,
-                    chord: Chord::plain(VK_NUMPAD8.0),
-                },
-                Binding {
-                    action: Action::Spawn,
-                    chord: Chord::plain(VK_NUMPAD9.0),
-                },
-                Binding {
-                    action: Action::TimeScaleUp,
-                    chord: Chord::plain(VK_ADD.0),
-                },
-                Binding {
-                    action: Action::TimeScaleDown,
-                    chord: Chord::plain(VK_SUBTRACT.0),
-                },
-                Binding {
-                    action: Action::ToggleHeatLock,
-                    chord: Chord::plain(VK_MULTIPLY.0),
-                },
-                Binding {
-                    action: Action::SaveBookmark,
-                    chord: Chord::plain(VK_DECIMAL.0),
-                },
-                Binding {
-                    action: Action::ToggleRecording,
-                    chord: Chord::plain(VK_DIVIDE.0),
-                },
-            ],
+            bindings: Cow::Borrowed(&DEFAULT_BINDINGS),
         }
     }
 
@@ -204,24 +145,19 @@ impl Keymap {
 
 /// The active map, for the debug tab.
 pub fn current() -> Keymap {
-    MAP.lock().get_or_insert_with(load).clone()
+    Config::lock_query(|c| c.director.keymap.clone())
 }
 
-/// Replace the map with the defaults and write them out.
+/// Replace the map with the defaults.
 pub fn reset_to_defaults() {
-    let map = Keymap::defaults();
-    save(&map);
-    *MAP.lock() = Some(map);
+    config::edit().director.keymap = Keymap::new();
 }
 
 /// Handle a key-down from the window procedure. `first_press` is false on auto-repeat. Returns
 /// whether a binding consumed the key. Runs on the window thread, which is the game's main thread.
 pub fn on_key_down(key: u16, first_press: bool) -> bool {
     let (ctrl, shift, alt) = modifiers();
-    let action = MAP
-        .lock()
-        .get_or_insert_with(load)
-        .resolve(key, ctrl, shift, alt);
+    let action = Config::lock_query(|c| c.director.keymap.resolve(key, ctrl, shift, alt));
     let Some(action) = action else {
         return false;
     };
@@ -236,16 +172,16 @@ pub fn run(action: Action) {
     tracing::info!("director: {}", action.label());
     match action {
         Action::ToggleCinematic => {
-            let mut cfg = CONFIG.lock();
+            let mut cfg = config::edit();
             cfg.director.cinematic = !cfg.director.cinematic;
         }
-        Action::ToggleSlowMotion => time::toggle_slow_motion(&mut CONFIG.lock().director),
+        Action::ToggleSlowMotion => time::toggle_slow_motion(&mut config::edit().director),
         Action::TogglePause => {
-            let mut cfg = CONFIG.lock();
+            let mut cfg = config::edit();
             cfg.director.paused = !cfg.director.paused;
         }
-        Action::TimeScaleUp => time::step_time_scale(&mut CONFIG.lock().director, 2.0),
-        Action::TimeScaleDown => time::step_time_scale(&mut CONFIG.lock().director, 0.5),
+        Action::TimeScaleUp => time::step_time_scale(&mut config::edit().director, 2.0),
+        Action::TimeScaleDown => time::step_time_scale(&mut config::edit().director, 0.5),
         Action::TakeMarker => markers::mark(""),
         Action::SaveBookmark => {
             teleport::save_current("");
@@ -254,11 +190,11 @@ pub fn run(action: Action) {
         Action::TeleportBookmark2 => teleport::request_bookmark(1, TeleportMode::Auto),
         Action::TeleportBookmark3 => teleport::request_bookmark(2, TeleportMode::Auto),
         Action::ToggleGodMode => {
-            let mut cfg = CONFIG.lock();
+            let mut cfg = config::edit();
             cfg.director.god_mode = !cfg.director.god_mode;
         }
         Action::ToggleHeatLock => {
-            let mut cfg = CONFIG.lock();
+            let mut cfg = config::edit();
             cfg.director.heat_lock = !cfg.director.heat_lock;
         }
         Action::ClearHeat => heat::clear(),
@@ -267,56 +203,69 @@ pub fn run(action: Action) {
     }
 }
 
-static MAP: Mutex<Option<Keymap>> = Mutex::new(None);
-
-fn load() -> Keymap {
-    let Some(path) = path() else {
-        return Keymap::defaults();
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(json) => match serde_json::from_str::<Keymap>(&json) {
-            Ok(map) => map,
-            Err(e) => {
-                tracing::warn!(
-                    "director: could not parse the keymap at {}: {e}; using the defaults",
-                    path.display()
-                );
-                Keymap::defaults()
-            }
-        },
-        Err(_) => {
-            let map = Keymap::defaults();
-            save(&map);
-            map
-        }
-    }
-}
-
-fn save(map: &Keymap) {
-    let Some(path) = path() else {
-        return;
-    };
-    match serde_json::to_string_pretty(map) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&path, json) {
-                tracing::warn!(
-                    "director: could not write the keymap to {}: {e}",
-                    path.display()
-                );
-            }
-        }
-        Err(e) => tracing::warn!("director: could not serialize the keymap: {e}"),
-    }
-}
-
-/// The keymap file, beside the DLL like the UI layout.
-fn path() -> Option<PathBuf> {
-    Some(
-        crate::module::get_path()?
-            .parent()?
-            .join("director_keymap.json"),
-    )
-}
+/// The stock layout [`Keymap::new`] borrows.
+const DEFAULT_BINDINGS: [Binding; 15] = [
+    Binding {
+        action: Action::ToggleCinematic,
+        chord: Chord::plain(VK_NUMPAD0.0),
+    },
+    Binding {
+        action: Action::ToggleSlowMotion,
+        chord: Chord::plain(VK_NUMPAD1.0),
+    },
+    Binding {
+        action: Action::TogglePause,
+        chord: Chord::plain(VK_NUMPAD2.0),
+    },
+    Binding {
+        action: Action::TakeMarker,
+        chord: Chord::plain(VK_NUMPAD3.0),
+    },
+    Binding {
+        action: Action::TeleportBookmark1,
+        chord: Chord::plain(VK_NUMPAD4.0),
+    },
+    Binding {
+        action: Action::TeleportBookmark2,
+        chord: Chord::plain(VK_NUMPAD5.0),
+    },
+    Binding {
+        action: Action::TeleportBookmark3,
+        chord: Chord::plain(VK_NUMPAD6.0),
+    },
+    Binding {
+        action: Action::ToggleGodMode,
+        chord: Chord::plain(VK_NUMPAD7.0),
+    },
+    Binding {
+        action: Action::ClearHeat,
+        chord: Chord::plain(VK_NUMPAD8.0),
+    },
+    Binding {
+        action: Action::Spawn,
+        chord: Chord::plain(VK_NUMPAD9.0),
+    },
+    Binding {
+        action: Action::TimeScaleUp,
+        chord: Chord::plain(VK_ADD.0),
+    },
+    Binding {
+        action: Action::TimeScaleDown,
+        chord: Chord::plain(VK_SUBTRACT.0),
+    },
+    Binding {
+        action: Action::ToggleHeatLock,
+        chord: Chord::plain(VK_MULTIPLY.0),
+    },
+    Binding {
+        action: Action::SaveBookmark,
+        chord: Chord::plain(VK_DECIMAL.0),
+    },
+    Binding {
+        action: Action::ToggleRecording,
+        chord: Chord::plain(VK_DIVIDE.0),
+    },
+];
 
 /// The live modifier state at the time of a key message.
 fn modifiers() -> (bool, bool, bool) {
@@ -353,7 +302,7 @@ mod tests {
     #[test]
     fn a_modified_chord_wins_over_the_plain_binding_of_the_same_key() {
         let map = Keymap {
-            bindings: vec![
+            bindings: Cow::Owned(vec![
                 Binding {
                     action: Action::TakeMarker,
                     chord: Chord::plain(VK_NUMPAD3.0),
@@ -367,7 +316,7 @@ mod tests {
                         alt: false,
                     },
                 },
-            ],
+            ]),
         };
         assert_eq!(
             map.resolve(VK_NUMPAD3.0, false, false, false),
@@ -382,7 +331,7 @@ mod tests {
 
     #[test]
     fn the_defaults_bind_every_action_once() {
-        let map = Keymap::defaults();
+        let map = Keymap::new();
         let mut chords: Vec<_> = map.bindings.iter().map(|b| b.chord).collect();
         chords.sort_by_key(|c| (c.key, c.ctrl, c.shift, c.alt));
         chords.dedup();
