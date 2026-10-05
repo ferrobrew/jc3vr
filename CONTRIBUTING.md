@@ -43,6 +43,7 @@ A def's doc-comments describe the game **as it is**: what a function does, what 
 - **Shader compilation**: Payload shaders (`.hlsl` files in `payload/src/shaders/`) are compiled to `.dxbc` bytecode and committed alongside their sources. After modifying a shader, recompile with:
   - Windows: `cargo run -p shadergen`
   - Linux: `cargo run -p shadergen --target x86_64-unknown-linux-gnu` (requires `wine` on PATH)
+- **Settings**: a setting a player would change gets an entry in the pause menu's VR pages when the feature lands; the debug UI holds only internals and diagnostics. See `docs/mod/settings.md`.
 - **Game shader reverse-engineering**: To extract, disassemble, and interpret the game's own shaders (the `.shader_bundle` files), see `docs/engine/rendering/shaders.md` and the tooling in `tools/shaders/`. For how the mod patches them in memory, see `docs/mod/rendering/shader-patching.md`.
 
 ---

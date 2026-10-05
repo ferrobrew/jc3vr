@@ -2,6 +2,10 @@
 
 The runtime configuration (`Config` in `payload/src/config/`, behind the `CONFIG` mutex) is saved to one TOML file and loaded from it at startup. Every setting the debug UI, the pause menu's VR pages, and the hotkeys change lives there, along with the player's body dimensions and the director's key bindings.
 
+## Where a setting is exposed
+
+A setting a player would change belongs in the pause menu's VR pages ([pause-menu.md](pause-menu.md)): comfort, controls, handedness, the switch for each gameplay feature, and the tuning of a feature that depends on the player's body or taste, such as a steering lock, a haptic strength, or how far the arms move to steer the wingsuit. The headset is on while the game is played, so a setting that only the debug UI reaches is out of a player's reach. The debug UI holds the internals: offsets, gains, thresholds that need a developer to judge, and diagnostics. A feature lands with its pause menu entries, the same way it lands with its documentation.
+
 ## Where the files live
 
 The payload keeps its files in the per-user configuration directory that the `directories` crate names for jc3vr (`ProjectDirs::from("me", "philpax", "jc3vr")`, see `config::paths`). On Windows that is `%APPDATA%\philpax\jc3vr\config`. Under Proton it is inside the game's prefix, `steamapps/compatdata/<app id>/pfx/drive_c/users/steamuser/AppData/Roaming/philpax/jc3vr/config/`. The directory is created on first use. The startup log names the settings file's path, and the debug window shows it under the build stamp as selectable text, with whether the file is up to date.
