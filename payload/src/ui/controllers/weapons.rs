@@ -384,25 +384,28 @@ fn heft_readout(ui: &mut Ui, h: &HeftStatus) {
 }
 
 fn grip_watch_readout(ui: &mut Ui, g: &GripWatchStatus) {
-    let per_hand = Hand::BOTH
-        .iter()
-        .map(|h| {
-            format!(
-                "{} {} (flips {})",
-                h.label(),
-                g.change_deg[h.index()].map_or("-".to_owned(), |c| format!("{c:.1}°")),
-                g.flips[h.index()]
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    ui.label(format!(
-        "Gun in hand, change over the last tick: {per_hand}{}",
-        g.last_flip.map_or(String::new(), |(hand, c)| format!(
-            " · last flip {} hand {c:.0}°",
-            hand.label()
-        ))
-    ));
+    let degrees = |d: Option<f32>| d.map_or("-".to_owned(), |d| format!("{d:.1}°"));
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let pinned = match g.pinned[i] {
+            Some(true) => "pinned",
+            Some(false) => "not pinned",
+            None => "no gun",
+        };
+        ui.label(format!(
+            "Gun in {} hand ({pinned}): tick change {} · from grab {} · animation off the grip {} · snaps {} · sweeps {} · bone changes {}",
+            hand.label(),
+            degrees(g.change_deg[i]),
+            degrees(g.from_grab_deg[i]),
+            degrees(g.animated_deviation_deg[i]),
+            g.flips[i],
+            g.sweeps[i],
+            g.bone_changes[i],
+        ));
+    }
+    if let Some((hand, c)) = g.last_flip {
+        ui.label(format!("Last turn: {} hand {c:.0}°", hand.label()));
+    }
 }
 
 fn assist_readout(ui: &mut Ui, a: &AimStatus) {
