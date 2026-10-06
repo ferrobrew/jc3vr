@@ -34,8 +34,14 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
     }
     if status.mode == ProceduralMode::Body {
         ui.label(format!(
-            "Hips {:.3} m below the animation · neck {:.3} m from its target",
-            status.hips_drop_m, status.neck_error_m
+            "Hips {:.3} m below the animation · neck {:.3} m from its target · {}",
+            status.hips_drop_m,
+            status.neck_error_m,
+            if status.stepping {
+                "stepping"
+            } else {
+                "feet planted"
+            },
         ));
     }
 }

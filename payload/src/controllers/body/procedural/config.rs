@@ -28,6 +28,18 @@ pub struct ProceduralBodyConfig {
     /// owns (the hips, waist, chest, shoulders, and legs), so the solve after the gate cannot move
     /// them.
     pub neutralize_targets: bool,
+    /// Hold the feet in the world, stepping when the body moves or turns away from them, instead
+    /// of leaving them where the animation puts them.
+    pub plant_feet: bool,
+    /// How far a planted foot may be from where the animation would put it before it steps,
+    /// metres.
+    pub step_threshold_m: f32,
+    /// How far a planted foot may be turned from the animation's before it steps, degrees.
+    pub step_turn_deg: f32,
+    /// How long a step takes, seconds.
+    pub step_duration_s: f32,
+    /// How high a step lifts the foot, metres.
+    pub step_height_m: f32,
 }
 
 impl ProceduralBodyConfig {
@@ -43,6 +55,11 @@ impl ProceduralBodyConfig {
             chest_turn_limit_deg: 70.0,
             lean_limit_deg: 60.0,
             neutralize_targets: true,
+            plant_feet: true,
+            step_threshold_m: 0.15,
+            step_turn_deg: 35.0,
+            step_duration_s: 0.3,
+            step_height_m: 0.06,
         }
     }
 
@@ -65,6 +82,10 @@ impl ProceduralBodyConfig {
                 180.0,
             ),
             ("lean_limit_deg", self.lean_limit_deg, 0.0, 90.0),
+            ("step_threshold_m", self.step_threshold_m, 0.01, 1.0),
+            ("step_turn_deg", self.step_turn_deg, 1.0, 180.0),
+            ("step_duration_s", self.step_duration_s, 0.05, 2.0),
+            ("step_height_m", self.step_height_m, 0.0, 0.5),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {

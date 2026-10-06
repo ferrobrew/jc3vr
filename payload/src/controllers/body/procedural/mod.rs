@@ -45,7 +45,12 @@ use crate::{
                 config::{ProceduralBodyConfig, ProceduralMode},
                 rig::{Rig, RigBone, RigError},
                 skeleton::Transform,
-                solver::{SolveInput, pose::RigPose, solve},
+                solver::{
+                    SolveInput,
+                    feet::{Feet, FootPose, StepTuning},
+                    pose::RigPose,
+                    solve,
+                },
             },
         },
         locomotion::{anchor::status as anchor_status, status as locomotion_status},
@@ -69,6 +74,8 @@ pub struct ProceduralStatus {
     pub hips_drop_m: f32,
     /// How far the solved neck sits from its target, metres.
     pub neck_error_m: f32,
+    /// Whether a planted foot is stepping.
+    pub stepping: bool,
 }
 
 /// The last gate's status.
@@ -142,9 +149,13 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             OWNS_BODY.store(weight > 0.0, Ordering::Relaxed);
             state.status.weight = weight;
             if weight <= 0.0 {
+                state.feet.reset();
                 return;
             }
-            let Some(input) = solve_input(character, &animated) else {
+            let world = Mat4::from(character.m_WorldMatrixT1);
+            let feet = state.place_feet(&world, &animated, dt, &config);
+            state.status.stepping = state.feet.stepping();
+            let Some(input) = solve_input(character, &animated, feet) else {
                 return;
             };
             let solved = solve(&rig, &input, &config);
@@ -194,6 +205,8 @@ struct State {
     rig: Option<(usize, Option<Rig>)>,
     /// The blend's linear progress toward the procedural pose.
     progress: f32,
+    /// The planted feet, world space.
+    feet: Feet,
     logged_at: Option<Instant>,
     status: ProceduralStatus,
 }
@@ -227,6 +240,41 @@ impl State {
         self.rig.as_ref().and_then(|(_, rig)| rig.clone())
     }
 
+    /// Where the feet go this tick, model space: planted in the world and stepping when
+    /// `config.plant_feet`, where the animation puts them otherwise.
+    fn place_feet(
+        &mut self,
+        world: &Mat4,
+        animated: &RigPose,
+        dt: f32,
+        config: &ProceduralBodyConfig,
+    ) -> [FootPose; 2] {
+        let model = [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
+            position: animated.position(bone),
+            rotation: animated.get(bone).rotation,
+        });
+        if !config.plant_feet {
+            self.feet.reset();
+            return model;
+        }
+        let (_, rotation, _) = world.to_scale_rotation_translation();
+        let inverse = world.inverse();
+        let wanted = model.map(|f| FootPose {
+            position: world.transform_point3(f.position),
+            rotation: rotation * f.rotation,
+        });
+        let tuning = StepTuning {
+            threshold_m: config.step_threshold_m,
+            threshold_rad: config.step_turn_deg.to_radians(),
+            duration_s: config.step_duration_s,
+            height_m: config.step_height_m,
+        };
+        self.feet.step(wanted, dt, &tuning).map(|f| FootPose {
+            position: inverse.transform_point3(f.position),
+            rotation: (rotation.inverse() * f.rotation).normalize(),
+        })
+    }
+
     fn step_weight(&mut self, eligible: bool, dt: f32, config: &ProceduralBodyConfig) -> f32 {
         let target = if eligible { 1.0 } else { 0.0 };
         if config.blend_s <= 0.0 {
@@ -243,6 +291,7 @@ impl State {
 static STATE: Mutex<State> = Mutex::new(State {
     rig: None,
     progress: 0.0,
+    feet: Feet::new(),
     logged_at: None,
     status: ProceduralStatus {
         at: None,
@@ -252,6 +301,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         round_trip: None,
         hips_drop_m: 0.0,
         neck_error_m: 0.0,
+        stepping: false,
     },
 });
 
@@ -321,8 +371,12 @@ fn eligible(character: &Character, now: Instant) -> bool {
         && character.m_CurrentMotionState == Character::MOTION_STATE_TASK_DEFINED
 }
 
-/// The solve's inputs from the headpose and the torso estimate, in model space.
-fn solve_input(character: &Character, animated: &RigPose) -> Option<SolveInput> {
+/// The solve's inputs from the headpose, the torso estimate, and the feet, in model space.
+fn solve_input(
+    character: &Character,
+    animated: &RigPose,
+    feet: [FootPose; 2],
+) -> Option<SolveInput> {
     let world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, _) = world.to_scale_rotation_translation();
     let head = world.inverse().transform_point3(query().position);
@@ -331,10 +385,8 @@ fn solve_input(character: &Character, animated: &RigPose) -> Option<SolveInput> 
         head,
         head_rotation: body_relative_rotation(),
         torso_yaw: torso_turn(rotation),
-        feet: [
-            animated.position(RigBone::LeftFoot),
-            animated.position(RigBone::RightFoot),
-        ],
+        feet: feet.map(|f| f.position),
+        foot_rotations: feet.map(|f| f.rotation),
     })
 }
 

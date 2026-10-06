@@ -14,6 +14,7 @@
 //! Everything is a rotation composed onto the animated bones or a translation of them, so no bone's
 //! rest frame needs to be known.
 
+pub mod feet;
 pub mod pose;
 pub mod two_bone;
 
@@ -38,6 +39,8 @@ pub struct SolveInput {
     pub torso_yaw: Option<f32>,
     /// Where each foot (the ankle) should be, left then right.
     pub feet: [Vec3; 2],
+    /// How each foot should be turned, model space, left then right.
+    pub foot_rotations: [Quat; 2],
 }
 
 /// Solve the standing body.
@@ -74,7 +77,7 @@ pub fn solve(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Ri
             &mut pose,
             [up, leg, foot],
             input.feet[side],
-            input.animated.get(foot).rotation,
+            input.foot_rotations[side],
         );
     }
     if pose.is_finite() {
@@ -226,6 +229,10 @@ mod tests {
             feet: [
                 animated.position(RigBone::LeftFoot),
                 animated.position(RigBone::RightFoot),
+            ],
+            foot_rotations: [
+                animated.get(RigBone::LeftFoot).rotation,
+                animated.get(RigBone::RightFoot).rotation,
             ],
         };
         (rig, input, ProceduralBodyConfig::new())

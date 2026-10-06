@@ -28,7 +28,9 @@ The solver (`solver`, pure and unit-tested) works in Rico's model space from the
 
 1. The hips follow the head down: their height is the head's less the reference pose's head-over-hips height, at most the reference standing height (so legs are straight when the head is at standing height, which is also what a seated player gets, since their head is remapped to Rico's standing eye height), and at least `min_hips_height` of it. Horizontally they sit over the middle of the feet, moved back by `counterbalance` of the head's lean ahead of its neutral place over the feet, so leaning forward hinges at the hips. They turn to the player's torso heading from the torso estimate ([alignment.md](alignment.md)), at most `pelvis_turn_limit_deg`, measured on the line between the hip joints.
 2. The chest twists to the torso heading, at most `chest_turn_limit_deg`, shared out up the spine (more of it higher), measured on the line between the clavicles. Then the spine swings so the neck points at the point under the player's head (the head position plus the animated head-to-neck offset turned by the head's rotation), shared out along the four spine bones and repeated three times to converge, never past `lean_limit_deg` from upright.
-3. Each leg is solved with analytic two-bone IK so the ankle returns to where the animation put it, bending the knee in the plane it already bent in, and the foot keeps its animated orientation.
+3. Each leg is solved with analytic two-bone IK so the ankle reaches its foot's place, bending the knee in the plane it already bent in, and the foot takes its place's orientation.
+
+The feet's places come from `solver::feet` (with `plant_feet`, the default): each foot holds its place and orientation in the world while the body moves and turns above it, so the roomscale chase moving the root, the body turning to follow the torso, and the idle's own foot shuffle no longer slide it. A foot steps to where the animation would put it once it is more than `step_threshold_m` away horizontally or `step_turn_deg` turned. One foot steps at a time, the worse one first, over `step_duration_s` on an eased arc lifted `step_height_m` at its middle, and lands wherever its wanted place has moved to meanwhile. The ground is the animation's: a wanted place is the animated foot carried by the root, so its height is the root's, and a foot is planted at the height it stepped to. Without `plant_feet`, the feet are where the animation puts them.
 
 The rotations are composed onto the animated bones, so no bone's rest frame is assumed.
 
@@ -36,7 +38,7 @@ The Controllers tab's "Procedural body" section shows the mode, the weight, whet
 
 ## Not yet
 
-- The feet are where the animation puts them, which while standing still is planted. Feet planted in the world that step when the body turns or moves away from them, and the gait while walking, are the next stage. They need ground heights: the engine casts its own ground rays inside the finalize pass, but the mod's scene casts have only been run from the locomotion post-hook, so the planted feet will start from the root's height and take casts from there.
+- The feet take the root's ground height. Uneven ground under one foot, and the gait while walking, need ground casts: the engine casts its own ground rays inside the finalize pass, but the mod's scene casts have only been run from the locomotion post-hook and the aim's post-update, whose thread safety at the gate is not established, so the casts are to be made in the locomotion post-hook for the footholds a tick ahead, as the design's fallback has it.
 - The arms are the controllers' wrist targets, solved by HumanIK on the procedural torso after the gate; the elbow hints, the clavicles' reach, and the torso's keep-out for the hands are later work.
 
 ## What needs confirming in the headset
@@ -45,4 +47,5 @@ The Controllers tab's "Procedural body" section shows the mode, the weight, whet
 2. With `STANDING`, standing still: the readout's weight reaches one, the hips sit where the player's are (a hand on the hip lands on Rico's), the knees bend when the player crouches, and the feet stay on the ground. Turning the torso turns the hips and the chest within their limits.
 3. The weapon stays in the hand, and shooting Rico's procedural body (from an NPC) hits where it is drawn.
 4. The weight blends out as soon as the stick moves and back in on stopping, with no pop.
-5. The engine's own reach for the owned effectors reads zero the tick after the gate (the body IK readout's engine values for the head stay non-zero).
+5. Turning the body in place (the right stick, or turning the torso past the follow's deadband) plants the feet and then steps them one at a time; walking in the room under the chase does the same; the readout shows `stepping` during a step.
+6. The engine's own reach for the owned effectors reads zero the tick after the gate (the body IK readout's engine values for the head stay non-zero).
