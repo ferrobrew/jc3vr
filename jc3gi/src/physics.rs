@@ -449,21 +449,69 @@ impl std::convert::AsMut<PfxCharacterInstance> for PfxCharacterInstance {
 }
 #[repr(C, align(8))]
 /// An engine physics instance (`IPfxInstance`), the object behind a body's
-/// [`BODY_PROPERTY_PFX_INSTANCE`](crate::physics::hknpWorld::BODY_PROPERTY_PFX_INSTANCE) property. Only one member
-/// is bound.
+/// [`BODY_PROPERTY_PFX_INSTANCE`](crate::physics::hknpWorld::BODY_PROPERTY_PFX_INSTANCE) property. The physics
+/// system's collision listener (`CHavokCollisionListener`) subscribes to the world's
+/// manifold-processed and contact-impulse events; for each event it looks up both bodies'
+/// instances and calls the matching event virtual on each instance whose switch for that event is
+/// set, with the other body's instance (possibly null) and whether the instance is the event's
+/// first body. Only some members are bound.
 pub struct PfxInstance {
-    _field_0: [u8; 40],
+    vftable: *const crate::physics::PfxInstanceVftable,
+    _field_8: [u8; 32],
     /// The instance's owner (`IPfxGameObject*`): the [`PhysicsGameObject`](crate::physics::PhysicsGameObject) a physics query reports
     /// for a hit on the instance's bodies ([`CastRayInfo::m_GameObject`](crate::physics::CastRayInfo::m_GameObject)).
     pub m_GameObject: *mut ::std::ffi::c_void,
+    /// Whether the collision listener calls
+    /// [`OnManifoldProcessedEvent`](crate::physics::PfxInstance::OnManifoldProcessedEvent). Clear on a new instance.
+    pub m_IsManifoldProcessedEventActive: bool,
+    /// Whether the collision listener calls
+    /// [`OnContactImpulseEvent`](crate::physics::PfxInstance::OnContactImpulseEvent). Clear on a new instance.
+    pub m_IsContactImpulseEventActive: bool,
+    _field_32: [u8; 6],
 }
 fn _PfxInstance_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x30], PfxInstance>([0u8; 0x30]);
+        ::std::mem::transmute::<[u8; 0x38], PfxInstance>([0u8; 0x38]);
     }
     unreachable!()
 }
-impl PfxInstance {}
+impl PfxInstance {
+    pub fn vftable(&self) -> *const crate::physics::PfxInstanceVftable {
+        self.vftable as *const crate::physics::PfxInstanceVftable
+    }
+    /// Called for a manifold-processed event between one of the instance's bodies and
+    /// another while [`m_IsManifoldProcessedEventActive`](crate::physics::PfxInstance::m_IsManifoldProcessedEventActive)
+    /// is set. `input` is the event handler input (`hknpEventHandlerInput`) and `event` the
+    /// event (`hknpManifoldProcessedEvent`).
+    pub unsafe fn OnManifoldProcessedEvent(
+        &mut self,
+        input: *const ::std::ffi::c_void,
+        event: *const ::std::ffi::c_void,
+        other: *mut crate::physics::PfxInstance,
+        is_body_a: bool,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnManifoldProcessedEvent).read();
+            f(self as *mut Self as _, input, event, other, is_body_a)
+        }
+    }
+    /// Called for a contact-impulse event between one of the instance's bodies and another
+    /// while [`m_IsContactImpulseEventActive`](crate::physics::PfxInstance::m_IsContactImpulseEventActive) is set.
+    /// `input` is the event handler input (`hknpEventHandlerInput`) and `event` the event
+    /// ([`hknpContactImpulseEvent`](crate::havok::hknpContactImpulseEvent)).
+    pub unsafe fn OnContactImpulseEvent(
+        &mut self,
+        input: *const ::std::ffi::c_void,
+        event: *const ::std::ffi::c_void,
+        other: *mut crate::physics::PfxInstance,
+        is_body_a: bool,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnContactImpulseEvent).read();
+            f(self as *mut Self as _, input, event, other, is_body_a)
+        }
+    }
+}
 impl std::convert::AsRef<PfxInstance> for PfxInstance {
     fn as_ref(&self) -> &PfxInstance {
         self
@@ -471,6 +519,68 @@ impl std::convert::AsRef<PfxInstance> for PfxInstance {
 }
 impl std::convert::AsMut<PfxInstance> for PfxInstance {
     fn as_mut(&mut self) -> &mut PfxInstance {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct PfxInstanceVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_2: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_3: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_4: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_5: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_6: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_7: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_8: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_9: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_10: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_11: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_12: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_13: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_14: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_15: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_16: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_17: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_18: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    _vfunc_19: unsafe extern "system" fn(this: *mut crate::physics::PfxInstance),
+    /// Called for a manifold-processed event between one of the instance's bodies and
+    /// another while [`m_IsManifoldProcessedEventActive`](crate::physics::PfxInstance::m_IsManifoldProcessedEventActive)
+    /// is set. `input` is the event handler input (`hknpEventHandlerInput`) and `event` the
+    /// event (`hknpManifoldProcessedEvent`).
+    pub OnManifoldProcessedEvent: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxInstance,
+        input: *const ::std::ffi::c_void,
+        event: *const ::std::ffi::c_void,
+        other: *mut crate::physics::PfxInstance,
+        is_body_a: bool,
+    ),
+    /// Called for a contact-impulse event between one of the instance's bodies and another
+    /// while [`m_IsContactImpulseEventActive`](crate::physics::PfxInstance::m_IsContactImpulseEventActive) is set.
+    /// `input` is the event handler input (`hknpEventHandlerInput`) and `event` the event
+    /// ([`hknpContactImpulseEvent`](crate::havok::hknpContactImpulseEvent)).
+    pub OnContactImpulseEvent: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxInstance,
+        input: *const ::std::ffi::c_void,
+        event: *const ::std::ffi::c_void,
+        other: *mut crate::physics::PfxInstance,
+        is_body_a: bool,
+    ),
+}
+fn _PfxInstanceVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xB0], PfxInstanceVftable>([0u8; 0xB0]);
+    }
+    unreachable!()
+}
+impl PfxInstanceVftable {}
+impl std::convert::AsRef<PfxInstanceVftable> for PfxInstanceVftable {
+    fn as_ref(&self) -> &PfxInstanceVftable {
+        self
+    }
+}
+impl std::convert::AsMut<PfxInstanceVftable> for PfxInstanceVftable {
+    fn as_mut(&mut self) -> &mut PfxInstanceVftable {
         self
     }
 }
@@ -1694,6 +1804,40 @@ fn _hknpWorld_size_check() {
     unreachable!()
 }
 impl hknpWorld {
+    pub const createConstraint_ADDRESS: usize = 0x1414E7200;
+    /// Creates a constraint from `cinfo`, writes its id to `out`, and returns `out`. A constraint
+    /// whose two bodies are the same, or whose data is of a type the world does not support, is
+    /// created disabled. The engine's callers allocate the constraint data from the Havok heap and
+    /// release their own reference to it once the constraint exists. The world's constraint
+    /// collision filter keeps the two bodies of a constraint from colliding.
+    pub unsafe fn createConstraint(
+        &mut self,
+        out: *mut u32,
+        cinfo: *const crate::havok::hknpConstraintCinfo,
+    ) -> *mut u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                out: *mut u32,
+                cinfo: *const crate::havok::hknpConstraintCinfo,
+            ) -> *mut u32 = ::std::mem::transmute(Self::createConstraint_ADDRESS);
+            f(self as *mut Self as _, out, cinfo)
+        }
+    }
+    pub const destroyConstraints_ADDRESS: usize = 0x1414E7370;
+    /// Destroys the `count` constraints whose ids are at `ids`, firing the world's
+    /// constraint-disabled signal for those that were enabled and a second signal for each, and
+    /// frees their slots.
+    pub unsafe fn destroyConstraints(&mut self, ids: *const u32, count: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ids: *const u32,
+                count: i32,
+            ) = ::std::mem::transmute(Self::destroyConstraints_ADDRESS);
+            f(self as *mut Self as _, ids, count)
+        }
+    }
     pub const createDynamicBody_ADDRESS: usize = 0x1401E9B20;
     /// Creates a dynamic body from `cinfo` with a new motion from `motion_cinfo`, writes the new
     /// body id to `out`, and returns `out`. The body takes its own reference to the shape. With

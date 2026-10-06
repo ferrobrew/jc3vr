@@ -64,8 +64,23 @@ The layers are [`PfxLayer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam
 
 The vehicle raycast layer meeting the weapons layer means a vehicle's wheel rays can hit a weapons-layer body. Whether the explosion and trigger queries, and the AI's obstacle tracking, see such a body in other ways is unverified.
 
+## Joining bodies with a fixed constraint
+
+The magnet weapon (`CMagnetWeaponComponent::ConstrainBodiesToGravityField`, which the disassembler names `CPartInstance::AttachPartWithConstraint`) holds a body in its field with a fixed constraint:
+
+1. It allocates a [`hkpFixedConstraintData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/havok::hkpFixedConstraintData) from the calling thread's Havok heap and constructs it ([`Construct`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/havok::hkpFixedConstraintData##func-Construct)), which leaves it with one reference and identity frames.
+2. It sets the constraint's frame in each body's space ([`setInBodySpace`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/havok::hkpFixedConstraintData##func-setInBodySpace), two [`hkTransformf`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/havok::hkTransformf)s); the constraint holds the two frames together.
+3. It fills a [`hknpConstraintCinfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/havok::hknpConstraintCinfo) with the data and the two body ids, flags clear, and creates the constraint ([`hknpWorld::createConstraint`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpWorld##func-createConstraint)), which writes the constraint's id. A constraint between a body and itself, or with data the world does not support, is created disabled.
+4. It releases its own reference to the data.
+
+[`hknpWorld::destroyConstraints`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpWorld##func-destroyConstraints) destroys constraints by id. The world's constraint collision filter follows the world's constraint-enabled and constraint-disabled signals, so the two bodies of an enabled constraint do not collide. Whether data that lives outside the Havok heap, with a zero allocation-size half so that it is not counted, survives the constraint's creation and destruction untouched is unverified.
+
+## Contact events
+
+The physics system's collision listener (`CHavokCollisionListener`) subscribes to the world's manifold-processed and contact-impulse events. For each event, it looks up both bodies' engine instances, and for each instance whose switch for that event is set ([`PfxInstance::m_IsManifoldProcessedEventActive`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxInstance##field-m_IsManifoldProcessedEventActive), [`m_IsContactImpulseEventActive`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxInstance##field-m_IsContactImpulseEventActive)) it calls the instance's event virtual ([`OnManifoldProcessedEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxInstance##vfunc-OnManifoldProcessedEvent), [`OnContactImpulseEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxInstance##vfunc-OnContactImpulseEvent)) with the event, the other body's instance (null for a body without one), and whether the instance is the event's first body. A contact-impulse event ([`hknpContactImpulseEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/havok::hknpContactImpulseEvent)) names its two bodies.
+
 ## Unverified
 
 - Which body quality the hang proxy's quality preset is: the game sets one on that proxy, and the preset's flags are not established.
 - How the engine's contact and damage listeners treat a weapons-layer body whose instance has no owner when it meets a ragdoll; the hang proxy, which also has no owner, never meets one.
-- The release slot and layout of the contact-impulse event on an engine physics instance.
+- The layout of a contact-impulse event's impulses and status, how a body asks the solver to raise the event at all, and on which thread the events are dispatched (during the solve on the physics workers, or after it on the game thread).

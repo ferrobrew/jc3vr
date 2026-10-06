@@ -78,6 +78,31 @@ impl std::convert::AsMut<hkReferencedObjectVftable> for hkReferencedObjectVftabl
         self
     }
 }
+#[derive(Copy, Clone)]
+#[repr(C, align(16))]
+/// A Havok transform (`hkTransformf`): a rotation as three column vectors, the images of the local
+/// axes, and a translation.
+pub struct hkTransformf {
+    pub m_rotation: [crate::types::vector_math::AlignedVector3; 3],
+    pub m_translation: crate::types::vector_math::AlignedVector3,
+}
+fn _hkTransformf_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x40], hkTransformf>([0u8; 0x40]);
+    }
+    unreachable!()
+}
+impl hkTransformf {}
+impl std::convert::AsRef<hkTransformf> for hkTransformf {
+    fn as_ref(&self) -> &hkTransformf {
+        self
+    }
+}
+impl std::convert::AsMut<hkTransformf> for hkTransformf {
+    fn as_mut(&mut self) -> &mut hkTransformf {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// The construction info of a Havok body (`hknpBodyCinfo`), read by
 /// [`hknpWorld::createDynamicBody`](crate::physics::hknpWorld::createDynamicBody). Positions are Havok
@@ -160,6 +185,62 @@ impl std::convert::AsRef<hknpCapsuleShape> for hknpCapsuleShape {
 }
 impl std::convert::AsMut<hknpCapsuleShape> for hknpCapsuleShape {
     fn as_mut(&mut self) -> &mut hknpCapsuleShape {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The construction info of a constraint (`hknpConstraintCinfo`), read by
+/// [`hknpWorld::createConstraint`](crate::physics::hknpWorld::createConstraint).
+pub struct hknpConstraintCinfo {
+    /// The constraint's data, such as a [`hkpFixedConstraintData`](crate::havok::hkpFixedConstraintData) (`hkRefPtr<hkpConstraintData>`).
+    pub m_constraintData: *mut crate::havok::hkReferencedObject,
+    /// The constraint's first body.
+    pub m_bodyA: u32,
+    /// The constraint's second body.
+    pub m_bodyB: u32,
+    /// The constraint's flags; the engine's callers pass zero.
+    pub m_flags: u8,
+    _field_11: [u8; 7],
+}
+fn _hknpConstraintCinfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], hknpConstraintCinfo>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl hknpConstraintCinfo {}
+impl std::convert::AsRef<hknpConstraintCinfo> for hknpConstraintCinfo {
+    fn as_ref(&self) -> &hknpConstraintCinfo {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConstraintCinfo> for hknpConstraintCinfo {
+    fn as_mut(&mut self) -> &mut hknpConstraintCinfo {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// A contact-impulse event (`hknpContactImpulseEvent`), raised by the solver for a contact between
+/// two bodies. Only the two bodies are bound; the impulses' layout is not established.
+pub struct hknpContactImpulseEvent {
+    _field_0: [u8; 8],
+    /// The two bodies, the first and the second.
+    pub m_bodyIds: [u32; 2],
+}
+fn _hknpContactImpulseEvent_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], hknpContactImpulseEvent>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl hknpContactImpulseEvent {}
+impl std::convert::AsRef<hknpContactImpulseEvent> for hknpContactImpulseEvent {
+    fn as_ref(&self) -> &hknpContactImpulseEvent {
+        self
+    }
+}
+impl std::convert::AsMut<hknpContactImpulseEvent> for hknpContactImpulseEvent {
+    fn as_mut(&mut self) -> &mut hknpContactImpulseEvent {
         self
     }
 }
@@ -270,6 +351,86 @@ impl std::convert::AsRef<hknpShape> for hknpShape {
 }
 impl std::convert::AsMut<hknpShape> for hknpShape {
     fn as_mut(&mut self) -> &mut hknpShape {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// The data of a fixed constraint (`hkpFixedConstraintData`), which holds two bodies in a fixed
+/// pose relative to each other. The magnet weapon
+/// (`CMagnetWeaponComponent::ConstrainBodiesToGravityField`) allocates one from the Havok heap of
+/// the calling thread, constructs it, sets its frames, and creates a constraint from it. The
+/// disassembler names that function `CPartInstance::AttachPartWithConstraint`. Only some members
+/// are bound.
+pub struct hkpFixedConstraintData {
+    pub base: crate::havok::hkReferencedObject,
+    _field_10: [u8; 208],
+}
+fn _hkpFixedConstraintData_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xE0], hkpFixedConstraintData>([0u8; 0xE0]);
+    }
+    unreachable!()
+}
+impl hkpFixedConstraintData {
+    pub fn vftable(&self) -> *const crate::havok::hkReferencedObjectVftable {
+        self.base.vftable() as *const crate::havok::hkReferencedObjectVftable
+    }
+    pub const Construct_ADDRESS: usize = 0x141354DB0;
+    /// `hkpFixedConstraintData::hkpFixedConstraintData`: constructs the data with one reference
+    /// and the identity frames.
+    pub unsafe fn Construct(&mut self) -> *mut crate::havok::hkpFixedConstraintData {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::havok::hkpFixedConstraintData = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const setInBodySpace_ADDRESS: usize = 0x141355090;
+    /// Sets the constraint's frame in each body's space: `pivot_a` in the first body's, `pivot_b`
+    /// in the second's. The constraint holds the two frames together.
+    pub unsafe fn setInBodySpace(
+        &mut self,
+        pivot_a: *const crate::havok::hkTransformf,
+        pivot_b: *const crate::havok::hkTransformf,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                pivot_a: *const crate::havok::hkTransformf,
+                pivot_b: *const crate::havok::hkTransformf,
+            ) = ::std::mem::transmute(Self::setInBodySpace_ADDRESS);
+            f(self as *mut Self as _, pivot_a, pivot_b)
+        }
+    }
+    /// Destroys the object and returns its memory to the Havok heap it came from. The engine
+    /// calls it when a release drops the last reference.
+    pub unsafe fn deleteThisReferencedObject(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).deleteThisReferencedObject).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<crate::havok::hkReferencedObject> for hkpFixedConstraintData {
+    fn as_ref(&self) -> &crate::havok::hkReferencedObject {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hkReferencedObject> for hkpFixedConstraintData {
+    fn as_mut(&mut self) -> &mut crate::havok::hkReferencedObject {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<hkpFixedConstraintData> for hkpFixedConstraintData {
+    fn as_ref(&self) -> &hkpFixedConstraintData {
+        self
+    }
+}
+impl std::convert::AsMut<hkpFixedConstraintData> for hkpFixedConstraintData {
+    fn as_mut(&mut self) -> &mut hkpFixedConstraintData {
         self
     }
 }
