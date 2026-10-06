@@ -223,16 +223,17 @@ pub(crate) unsafe fn push_body(character: &mut Character) {
     let enabled = Config::lock_query(|c| {
         c.controllers.physical_hands.enabled && c.controllers.physical_hands.push
     });
-    if !enabled {
-        return;
-    }
-    let push = {
+    let palms = if enabled {
         let state = STATE.lock();
-        if !state.fresh(Instant::now()) {
-            return;
+        if state.fresh(Instant::now()) {
+            state.status.push
+        } else {
+            Vec2::ZERO
         }
-        state.status.push
+    } else {
+        Vec2::ZERO
     };
+    let push = palms + physics::push();
     if push == Vec2::ZERO || !push.is_finite() {
         return;
     }

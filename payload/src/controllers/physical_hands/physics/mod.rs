@@ -6,17 +6,19 @@
 //!   bodies are;
 //! - [`callback`]: the physics system's pre-simulation callback that drives the bodies;
 //! - [`drive`]: the drive, pure: the velocities that carry a body to its hand within the hand's
-//!   strength;
+//!   strength, and the push a held-back hand gives the player;
 //! - [`config`]: the settings.
 //!
 //! Each simulation tick runs in this order:
 //!
 //! 1. The player aim control's post-simulation update ([`observe`]) publishes each acting hand's
 //!    palm pose and velocity, world space, and takes the last step's results: where each body was
-//!    left against where it was sent, which draws the hand at its body ([`apply`]).
+//!    left against where it was sent, which draws the hand at its body ([`apply`]), and the share
+//!    of its strength each hand used, which pulses it.
 //! 2. Before the next step, the pre-simulation callback ([`step`]) makes, adds, or parks each
 //!    hand's body, reads where the last step left it, and drives it toward where its palm will be
-//!    at the end of this step, predicted from the published pose and velocity.
+//!    at the end of this step, predicted from the published pose and velocity; the push a held-back
+//!    hand gives the player is worked out here ([`push`]).
 //! 3. The step integrates the velocities and resolves the bodies' contacts: a hand stops at a wall,
 //!    shoves a crate, and leans on a car.
 //!
@@ -41,7 +43,7 @@ use std::{
 };
 
 pub use config::HandBodiesConfig;
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
 use parking_lot::Mutex;
 
@@ -57,11 +59,13 @@ use crate::{
             palm::PalmBox,
             physics::{
                 body::{BodyError, BodySpec, Capsule, HandBody, player_system_group},
-                drive::{DriveTuning, Goal, drive},
+                drive::{DriveTuning, Goal, PushTuning, drive, lag_push, smooth_push},
             },
+            pulse,
         },
         roomscale::teleport,
         scheme,
+        weapons::haptics::PulseSource,
     },
     headpose, hooks,
 };
@@ -119,6 +123,8 @@ pub struct HandBodiesStatus {
     pub system_group: Option<u32>,
     /// Indexed by [`Hand::index`].
     pub hands: [HandBodyStatus; 2],
+    /// The push the hands give the player, world `(x, z)` metres per second.
+    pub push: Vec2,
     pub created: u64,
     pub destroyed: u64,
     pub last_error: Option<String>,
@@ -176,6 +182,7 @@ pub(crate) fn observe(dt: f32) {
     let palms = enabled(&config).then(|| acting_palms(&config)).flatten();
     let now = Instant::now();
     let body_rotation = headpose::xr::body_rotation();
+    let mut loads = [0.0; 2];
     {
         let mut shared = SHARED.lock();
         if teleport::epoch() != shared.epoch {
@@ -219,6 +226,23 @@ pub(crate) fn observe(dt: f32) {
             } else {
                 Vec3::ZERO
             };
+            if stepped && targets[i].is_some() {
+                loads[i] = shared.loads[i];
+            }
+        }
+    }
+    if config.bodies.pressure_haptics {
+        for hand in Hand::BOTH {
+            let load = loads[hand.index()];
+            if load >= MIN_PRESSURE_LOAD {
+                pulse(
+                    hand,
+                    config.pressure_pulse,
+                    load,
+                    &config,
+                    PulseSource::Collision,
+                );
+            }
         }
     }
 }
@@ -241,6 +265,18 @@ pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
             hand.grip.position += offset;
             hand.aim.position += offset;
         }
+    }
+}
+
+/// The push the hand bodies give the player, world `(x, z)` metres per second: zero when no step
+/// has run lately.
+pub(crate) fn push() -> Vec2 {
+    let shared = SHARED.lock();
+    let now = Instant::now();
+    if shared.stepped_lately(now) && shared.fresh(now) {
+        shared.push
+    } else {
+        Vec2::ZERO
     }
 }
 
@@ -269,13 +305,21 @@ pub(super) unsafe fn step() {
         shared.status.destroyed += destroyed;
         shared.status.steps = hands.steps;
         shared.status.hands = [HandBodyStatus::default(); 2];
+        shared.status.push = Vec2::ZERO;
+        shared.push = Vec2::ZERO;
         shared.world_offsets = [Vec3::ZERO; 2];
+        shared.loads = [0.0; 2];
         return;
     }
 
-    let (targets, published, world_scale) = {
+    let (targets, published, world_scale, mut push) = {
         let shared = SHARED.lock();
-        (shared.targets, shared.published, shared.world_scale)
+        (
+            shared.targets,
+            shared.published,
+            shared.world_scale,
+            shared.push,
+        )
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
     let age_s = published
@@ -300,12 +344,21 @@ pub(super) unsafe fn step() {
         max_speed_mps: b.max_speed_mps,
         max_angular_speed_rps: b.max_angular_speed_rps,
     };
+    let push_tuning = PushTuning {
+        hand_mass_kg: b.mass_kg,
+        max_force_n: b.force_n(),
+        body_mass_kg: b.body_mass_kg,
+        deadband_m: b.push_deadband_m * scale,
+        min_horizontal: b.min_push_horizontal,
+    };
 
     let mut statuses = [HandBodyStatus::default(); 2];
     let mut offsets = [Vec3::ZERO; 2];
+    let mut loads = [0.0; 2];
     let mut created = 0;
     let mut destroyed = 0;
     let mut error = None;
+    let mut hand_push = Vec2::ZERO;
     for hand in Hand::BOTH {
         let i = hand.index();
         let target = targets[i].filter(|_| fresh);
@@ -340,6 +393,10 @@ pub(super) unsafe fn step() {
                         destroyed += u64::from(acted.destroyed);
                         statuses[i] = acted.status;
                         offsets[i] = (-acted.lag).clamp_length_max(b.break_distance_m * scale);
+                        loads[i] = press_load(acted.lag, b, scale);
+                        if b.push {
+                            hand_push += lag_push(acted.lag, &push_tuning, step_s);
+                        }
                     }
                     Err(e) => {
                         error = Some(e.to_string());
@@ -366,6 +423,17 @@ pub(super) unsafe fn step() {
             }
         }
     }
+    push = if b.push {
+        smooth_push(
+            push,
+            hand_push,
+            step_s,
+            b.push_smoothing_s,
+            b.max_push_speed_mps,
+        )
+    } else {
+        Vec2::ZERO
+    };
     let log_now = hands
         .last_log
         .is_none_or(|at| now.saturating_duration_since(at) >= READOUT_PERIOD);
@@ -380,6 +448,8 @@ pub(super) unsafe fn step() {
                     speed_mps = s.speed_mps,
                     force_share = s.force_share,
                     torque_share = s.torque_share,
+                    push_x = push.x,
+                    push_z = push.y,
                     "hand bodies: drive"
                 );
             }
@@ -388,11 +458,14 @@ pub(super) unsafe fn step() {
 
     let mut shared = SHARED.lock();
     shared.world_offsets = offsets;
+    shared.loads = loads;
+    shared.push = push;
     shared.stepped = Some(now);
     let status = &mut shared.status;
     status.steps = hands.steps;
     status.system_group = group;
     status.hands = statuses;
+    status.push = push;
     status.created += created;
     status.destroyed += destroyed;
     if let Some(error) = error {
@@ -413,6 +486,9 @@ const MAX_LEAD_S: f32 = 0.1;
 
 /// How long the palms' velocities are smoothed over, seconds.
 const VELOCITY_SMOOTHING_S: f32 = 0.03;
+
+/// The least share of a hand's strength that pulses it.
+const MIN_PRESSURE_LOAD: f32 = 0.1;
 
 /// How often the drive is written to the debug log while a hand acts.
 const READOUT_PERIOD: Duration = Duration::from_secs(1);
@@ -444,6 +520,10 @@ struct Shared {
     world_offsets: [Vec3; 2],
     /// The same in the cockpit frame, for drawing the hands.
     cockpit_offsets: [Vec3; 2],
+    /// The share of each hand's strength the last step used.
+    loads: [f32; 2],
+    /// The smoothed push, world `(x, z)` metres per second.
+    push: Vec2,
     /// When the last step ran.
     stepped: Option<Instant>,
     status: HandBodiesStatus,
@@ -469,6 +549,8 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     epoch: 0,
     world_offsets: [Vec3::ZERO; 2],
     cockpit_offsets: [Vec3::ZERO; 2],
+    loads: [0.0; 2],
+    push: Vec2::ZERO,
     stepped: None,
     status: HandBodiesStatus {
         registered: false,
@@ -485,6 +567,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
             torque_share: 0.0,
             resets: 0,
         }; 2],
+        push: Vec2::ZERO,
         created: 0,
         destroyed: 0,
         last_error: None,
@@ -750,6 +833,16 @@ impl Hands {
             .map(|hand| u64::from(unsafe { self.destroy(hand, reason) }))
             .sum()
     }
+}
+
+/// How hard a hand presses into what holds it back, `0..=1`: its lag past the push deadband, as a
+/// share of the lag that presses fully.
+fn press_load(lag: Vec3, config: &HandBodiesConfig, scale: f32) -> f32 {
+    let full = config.pressure_full_lag_m * scale;
+    if full <= 0.0 || !lag.is_finite() {
+        return 0.0;
+    }
+    ((lag.length() - config.push_deadband_m * scale) / full).clamp(0.0, 1.0)
 }
 
 /// Why a body made to `existing` cannot serve as one made to `wanted`, if it cannot.

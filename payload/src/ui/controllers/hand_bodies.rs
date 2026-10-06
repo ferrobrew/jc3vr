@@ -1,4 +1,5 @@
-//! Hand bodies: each hand body's phase and drive, and their settings.
+//! Hand bodies: each hand body's phase and drive, the push they give the player, and their
+//! settings.
 
 use egui::Ui;
 
@@ -15,7 +16,7 @@ pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
         );
     }
     ui.label(format!(
-        "Callback {} · {} steps · player group {}",
+        "Callback {} · {} steps · player group {} · push ({:+.2}, {:+.2}) m/s",
         if status.registered {
             "registered"
         } else {
@@ -25,6 +26,8 @@ pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
         status
             .system_group
             .map_or_else(|| "none".to_owned(), |g| g.to_string()),
+        status.push.x,
+        status.push.y
     ));
     ui.label(format!(
         "{} created · {} destroyed",
@@ -77,5 +80,19 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
         ui.add(egui::Slider::new(&mut b.half_length_m, 0.0..=0.1).text("Capsule half length (m)"));
         ui.add(egui::Slider::new(&mut b.break_distance_m, 0.1..=2.0).text("Break distance (m)"));
         ui.checkbox(&mut b.render_at_body, "Draw the hands at their bodies");
+        ui.separator();
+        ui.checkbox(&mut b.push, "Push the body off what the hands press");
+        ui.add(egui::Slider::new(&mut b.body_mass_kg, 10.0..=300.0).text("Body mass (kg)"));
+        ui.add(egui::Slider::new(&mut b.push_deadband_m, 0.0..=0.1).text("Push deadband (m)"));
+        ui.add(egui::Slider::new(&mut b.max_push_speed_mps, 0.0..=6.0).text("Fastest push (m/s)"));
+        ui.add(
+            egui::Slider::new(&mut b.min_push_horizontal, 0.0..=1.0).text("Least horizontal lag"),
+        );
+        ui.add(egui::Slider::new(&mut b.push_smoothing_s, 0.0..=0.5).text("Push smoothing (s)"));
+        ui.checkbox(&mut b.pressure_haptics, "Pressure pulses");
+        ui.add(
+            egui::Slider::new(&mut b.pressure_full_lag_m, 0.01..=0.5)
+                .text("Lag of the strongest pulse (m)"),
+        );
     });
 }

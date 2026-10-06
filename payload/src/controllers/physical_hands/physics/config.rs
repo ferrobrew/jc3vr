@@ -35,6 +35,26 @@ pub struct HandBodiesConfig {
     pub break_distance_m: f32,
     /// Draw each hand where its body is, so that a hand stops at what stops its body.
     pub render_at_body: bool,
+    /// Push the player away from what a hand presses into and cannot move.
+    pub push: bool,
+    /// The mass the hands' reaction moves, kilograms: the lighter, the further a push carries the
+    /// player.
+    pub body_mass_kg: f32,
+    /// How far a hand body may lag behind its controller before the lag pushes the player, metres,
+    /// so that resting a hand on a wall does not drift the body.
+    pub push_deadband_m: f32,
+    /// The fastest push of both hands together, metres per second.
+    pub max_push_speed_mps: f32,
+    /// The least horizontal share of a hand's lag for it to push the player, `0..=1`: pressing down
+    /// on a table or the floor does not push.
+    pub min_push_horizontal: f32,
+    /// How long the push is smoothed over, seconds.
+    pub push_smoothing_s: f32,
+    /// Pulse a hand while it presses into something that holds it back, harder the further it is
+    /// held back.
+    pub pressure_haptics: bool,
+    /// How far past the push deadband a hand is held back for the strongest pressure pulse, metres.
+    pub pressure_full_lag_m: f32,
 }
 
 impl HandBodiesConfig {
@@ -53,6 +73,14 @@ impl HandBodiesConfig {
             half_length_m: 0.035,
             break_distance_m: 0.6,
             render_at_body: true,
+            push: true,
+            body_mass_kg: 90.0,
+            push_deadband_m: 0.02,
+            max_push_speed_mps: 2.5,
+            min_push_horizontal: 0.3,
+            push_smoothing_s: 0.1,
+            pressure_haptics: true,
+            pressure_full_lag_m: 0.1,
         }
     }
 

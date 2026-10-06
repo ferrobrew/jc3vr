@@ -1,12 +1,13 @@
 //! The drive of a hand body, pure: the velocities that carry a body to where its hand should be at
-//! the end of the next physics step, within the hand's strength.
+//! the end of the next physics step, within the hand's strength, and the push the hand's lag gives
+//! the player.
 //!
 //! The drive is a velocity target solved once per step: the body is asked to reach its goal in one
 //! step, and the change of velocity that asks for it is capped by the hand's force and twist over
 //! the step. The physics step then integrates the velocities and resolves the body's contacts, so a
 //! hand that meets a wall stops at it, and the next step asks again, no harder than its strength.
 
-use glam::{Mat3, Quat, Vec3};
+use glam::{Mat3, Quat, Vec2, Vec3};
 
 /// How a hand body is driven.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -74,6 +75,61 @@ pub fn drive(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f32) 
         force_share,
         torque_share,
     }
+}
+
+/// How a hand's lag pushes the player.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PushTuning {
+    /// The hand body's mass, kilograms.
+    pub hand_mass_kg: f32,
+    /// The strongest pull of the hand, newtons.
+    pub max_force_n: f32,
+    /// The mass the reaction moves, kilograms.
+    pub body_mass_kg: f32,
+    /// The lag left alone, metres.
+    pub deadband_m: f32,
+    /// The least horizontal share of the lag that pushes, `0..=1`.
+    pub min_horizontal: f32,
+}
+
+/// The push a hand gives the player, world `(x, z)` metres per second, from `lag`: how far the hand
+/// body is short of the goal it was driven to on the last step, world space. A hand that tracks
+/// freely has no lag; one that a wall or an object too heavy to move stops falls behind its
+/// controller, and it pushes the player the other way as hard as the spring between the body and
+/// the controller pulls, within the hand's strength, over a step of `step_s` seconds. A lag that is
+/// mostly vertical (pressing down on a table or the floor) does not push.
+pub fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
+    if !(lag.is_finite() && step_s.is_finite() && step_s > 0.0 && tuning.body_mass_kg > 0.0) {
+        return Vec2::ZERO;
+    }
+    let length = lag.length();
+    if length <= tuning.deadband_m || length <= f32::EPSILON {
+        return Vec2::ZERO;
+    }
+    let horizontal = Vec2::new(lag.x, lag.z);
+    if horizontal.length() < tuning.min_horizontal * length {
+        return Vec2::ZERO;
+    }
+    let pressed = length - tuning.deadband_m;
+    let force = (tuning.hand_mass_kg * pressed / (step_s * step_s)).min(tuning.max_force_n);
+    let speed = force * step_s / tuning.body_mass_kg;
+    -horizontal.normalize_or_zero() * speed
+}
+
+/// Fold `push` into the smoothed push `smoothed` over `dt` seconds with the time constant
+/// `smoothing_s`, and cap the result at `max_speed`.
+pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_speed: f32) -> Vec2 {
+    if !push.is_finite() || !smoothed.is_finite() {
+        return Vec2::ZERO;
+    }
+    let blend = if smoothing_s > 0.0 && dt.is_finite() && dt > 0.0 {
+        1.0 - (-dt / smoothing_s).exp()
+    } else {
+        1.0
+    };
+    smoothed
+        .lerp(push, blend)
+        .clamp_length_max(max_speed.max(0.0))
 }
 
 fn finite(body: &BodyMotion) -> bool {
@@ -258,5 +314,54 @@ mod tests {
         let d = drive(&body, &goal(Vec3::ZERO), &tuning(), STEP);
         assert_eq!(d.linear, Vec3::X);
         assert_eq!(d.force_share, 0.0);
+    }
+
+    fn push_tuning() -> PushTuning {
+        PushTuning {
+            hand_mass_kg: 10.0,
+            max_force_n: 5000.0,
+            body_mass_kg: 90.0,
+            deadband_m: 0.02,
+            min_horizontal: 0.3,
+        }
+    }
+
+    #[test]
+    fn a_hand_held_back_by_a_wall_pushes_the_player_away() {
+        // The hand is short of its goal along +X: the wall is at +X, so the player goes -X.
+        let push = lag_push(Vec3::X * 0.1, &push_tuning(), STEP);
+        assert!(push.x < 0.0);
+        assert!(push.y.abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_small_lag_does_not_push() {
+        assert_eq!(lag_push(Vec3::X * 0.01, &push_tuning(), STEP), Vec2::ZERO);
+    }
+
+    #[test]
+    fn pressing_down_does_not_push() {
+        assert_eq!(
+            lag_push(Vec3::new(0.01, -0.2, 0.0), &push_tuning(), STEP),
+            Vec2::ZERO
+        );
+    }
+
+    #[test]
+    fn the_push_is_capped_by_the_hand_strength() {
+        let t = push_tuning();
+        let far = lag_push(Vec3::Z * 10.0, &t, STEP);
+        assert!((far.length() - t.max_force_n * STEP / t.body_mass_kg).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_smoothed_push_approaches_the_push_and_is_capped() {
+        let mut smoothed = Vec2::ZERO;
+        for _ in 0..100 {
+            smoothed = smooth_push(smoothed, Vec2::X * 5.0, STEP, 0.1, 2.5);
+        }
+        assert!((smoothed - Vec2::X * 2.5).length() < 1e-3);
+        let once = smooth_push(Vec2::ZERO, Vec2::X, STEP, 0.1, 2.5);
+        assert!(once.x > 0.0 && once.x < 1.0);
     }
 }

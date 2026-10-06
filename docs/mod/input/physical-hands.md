@@ -1,6 +1,6 @@
 # Physical hands
 
-Each empty hand has a palm that collides with the world. With the hand bodies on (the default), each empty hand is a body in the game's physics world, driven toward its controller within the hand's strength: it stops at walls and is drawn there, and it shoves and topples what it meets. With them off, the palm is probed with ray casts instead, as the rest of this doc describes from [the probes](#probes) on. With the probes, pressing a palm into a wall pushes the body away from it and holds the rendered hand at the surface; a palm passes through characters; a palm pressed into a loose object shoves it, slowly or hard, and a heavy one resists; and, with the probes or the bodies, a grip press near a loose object takes hold of it where the hand touched it, or near a weapon lying in the world, collects the weapon. The code is `payload/src/controllers/physical_hands/` (the hand bodies in its `physics/`); the engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md), [melee-and-damage.md](../../engine/gameplay/melee-and-damage.md), and [item-pickup.md](../../engine/gameplay/item-pickup.md).
+Each empty hand has a palm that collides with the world. With the hand bodies on (the default), each empty hand is a body in the game's physics world, driven toward its controller within the hand's strength: it stops at walls and is drawn there, it shoves and topples what it meets, and pressing it into what does not give pushes the player away. With them off, the palm is probed with ray casts instead, as the rest of this doc describes from [the probes](#probes) on. With the probes, pressing a palm into a wall pushes the body away from it and holds the rendered hand at the surface; a palm passes through characters; a palm pressed into a loose object shoves it, slowly or hard, and a heavy one resists; and, with the probes or the bodies, a grip press near a loose object takes hold of it where the hand touched it, or near a weapon lying in the world, collects the weapon. The code is `payload/src/controllers/physical_hands/` (the hand bodies in its `physics/`); the engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md), [melee-and-damage.md](../../engine/gameplay/melee-and-damage.md), and [item-pickup.md](../../engine/gameplay/item-pickup.md).
 
 ## Hand bodies
 
@@ -26,6 +26,11 @@ The default strength is "Rico strength": a ten-kilogram hand pulling at up to fi
 
 Each step also measures where the last step left the body against the goal it was sent to. With `bodies.render_at_body`, the hand's cockpit poses are moved by that offset ([`apply`](../../../payload/src/controllers/physical_hands/mod.rs)), so the IK targets and the late update put the rendered hand where its body is: on the wall, not through it. The offset is updated at the simulation rate and added to the latest controller pose at the render rate, so a free hand, whose offset is near zero, keeps the controller's latency.
 
+### Pushing the player
+
+A hand that something holds back falls behind its goal. With `bodies.push`, the lag past `bodies.push_deadband_m` pulls on the hand like a spring, the hand's mass over the step squared per metre, up to the hand's strength; the reaction, over the step, moves `bodies.body_mass_kg` of player the other way. The push is added to the on-foot locomotion task's wanted velocity, as the probes' push is ([pushing off surfaces](#pushing-off-surfaces)), smoothed over `bodies.push_smoothing_s` and capped at `bodies.max_push_speed_mps` for both hands together. A lag that is mostly vertical (`bodies.min_push_horizontal`), pressing down on a table or the floor, does not push. A hand that moves what it meets, or tracks freely, has no lag and pushes nothing, and as the player moves away the goal moves with them, so the push settles with the hand resting on the surface.
+
+With `bodies.pressure_haptics`, a held-back hand pulses `pressure_pulse` in proportion to its lag past the deadband, full at `bodies.pressure_full_lag_m`.
 
 ### Lifecycle
 
@@ -33,7 +38,7 @@ A hand acts on foot on the ground, for a tracked hand the controllers drive that
 
 The callback is registered once, from the game thread's frame tick ahead of the game's update, so never while the engine walks its callbacks, and removed by the shutdown cleanup, which also destroys the bodies, before the payload unloads. The bodies keep no Havok-space positions: every step converts game space with the world's current shift, so a world recentring needs nothing of them.
 
-A hand its body drives does not probe, push off surfaces, shove, or knock; it still reaches for what its grip would take, and grabbing a loose object or a weapon works as described below. A holding hand has no body, so it never fights the object it holds.
+A hand its body drives does not probe, push off surfaces through the probes, shove, or knock; it still reaches for what its grip would take, and grabbing a loose object or a weapon works as described below. A holding hand has no body, so it never fights the object it holds.
 
 ## Probes
 
@@ -133,9 +138,9 @@ The shoves and knocks and the held objects' velocities change the main thread's 
 
 ## Settings and readouts
 
-The hand bodies' settings are `physical_hands.bodies`, under "Hand bodies" in the debug UI's Controllers tab, with their readout beside the physical hands': whether the callback is registered, the steps it ran, the player's system group, and for each hand its phase, body id, collision-filter word, lag, speed, and the share of its pull and twist used. The pause menu's `VR: CONTROLS` page has `PHYSICAL HANDS` (`bodies.enabled`) and `HAND STRENGTH` (`bodies.strength`) under "HANDS AND AIM".
+The hand bodies' settings are `physical_hands.bodies`, under "Hand bodies" in the debug UI's Controllers tab, with their readout beside the physical hands': whether the callback is registered, the steps it ran, the player's system group, the push, and for each hand its phase, body id, collision-filter word, lag, speed, and the share of its pull and twist used. The pause menu's `VR: CONTROLS` page has `PHYSICAL HANDS` (`bodies.enabled`) and `HAND STRENGTH` (`bodies.strength`) under "HANDS AND AIM".
 
-The log has the lifecycle at info level: `hand bodies: registered the pre-simulation callback`, `the pre-simulation callback first fired` (a warning instead when it fires on another thread than the registration's), `created a hand body` with its body id, collision-filter word, and system group, `added a hand body to the world`, `removed a hand body from the world` and `destroyed a hand body` with the reason. Once a second while a hand acts, `hand bodies: drive` at debug level gives each hand's lag, speed, and pull and twist shares.
+The log has the lifecycle at info level: `hand bodies: registered the pre-simulation callback`, `the pre-simulation callback first fired` (a warning instead when it fires on another thread than the registration's), `created a hand body` with its body id, collision-filter word, and system group, `added a hand body to the world`, `removed a hand body from the world` and `destroyed a hand body` with the reason. Once a second while a hand acts, `hand bodies: drive` at debug level gives each hand's lag, speed, pull and twist shares, and the push.
 
 The palms' settings are `physical_hands` in the controller settings, under "Physical hands" in the debug UI's Controllers tab, with the readout (each palm's press, push, and speed, its shove's impulse, load, and resistance, what it reaches or holds with the mass, the lag, and the pull and twist used, and the counters) beside the other subsystems. The shove settings are `physical_hands.shove` and the pickup settings `physical_hands.pickup`. `show_boxes` draws the palm boxes in the world-space overlay, coloured by whether they press into the world or an object, with a line along each shove, longer for a harder push and redder for a body that resists. With `pickup.show_targets`, a disc marks each hand's grab point and a line joins it to where the hand would have it, redder the harder the hand pulls.
 
@@ -166,8 +171,8 @@ With the hand bodies on:
 
 1. In the log, after loading in: `registered the pre-simulation callback`, then `the pre-simulation callback first fired` without the other-thread warning, then `created a hand body` and `added a hand body to the world` for each hand. The readout's filter word has the weapons layer in its low field and the player's group in its high half.
 2. Wave the hands in the open: the readout's lag stays within a couple of centimetres and the pull share near zero; the rendered hands keep up with the controllers.
-3. Press a hand into a wall: the rendered hand stops at the wall and the lag grows with the press.
-4. Push a crate: it slides; push a barrel at its side: it rolls; push a parked car: it barely moves.
+3. Press a hand into a wall: the rendered hand stops at the wall, the lag grows with the press, the body is pushed back, and the hand buzzes. Press down on a table: nothing pushes.
+4. Push a crate: it slides; push a barrel at its side: it rolls; push a parked car: it barely moves and the body is pushed back.
 5. Put a hand inside the player's chest: the player does not move.
 6. Draw a gun: that hand's body is removed (`removed a hand body from the world`); holster it: added again. Enter a vehicle: both removed. Load a save: both destroyed.
 7. Toggle `PHYSICAL HANDS` off in the pause menu and resume: both destroyed, and the palm probes take over.

@@ -891,6 +891,37 @@ fn hand_bodies(b: &HandBodiesConfig) -> Result<(), Invalid> {
         "physical_hands.bodies.break_distance_m",
         b.break_distance_m,
         10.0,
+    )?;
+    positive(
+        "physical_hands.bodies.body_mass_kg",
+        b.body_mass_kg,
+        10_000.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.push_deadband_m",
+        b.push_deadband_m,
+        1.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.max_push_speed_mps",
+        b.max_push_speed_mps,
+        20.0,
+    )?;
+    range(
+        "physical_hands.bodies.min_push_horizontal",
+        b.min_push_horizontal,
+        0.0,
+        1.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.push_smoothing_s",
+        b.push_smoothing_s,
+        10.0,
+    )?;
+    positive(
+        "physical_hands.bodies.pressure_full_lag_m",
+        b.pressure_full_lag_m,
+        2.0,
     )
 }
 
