@@ -13,6 +13,7 @@ mod explosives;
 mod fingers;
 mod frame;
 mod hands;
+mod locomotion;
 mod map;
 mod mode;
 mod overlay;
@@ -41,9 +42,9 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        map as controller_map, mode as controller_mode, overlay as controller_overlay,
-        physical_hands as controller_physical_hands, roomscale as controller_roomscale, scheme,
-        summary as controller_summary,
+        locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
+        overlay as controller_overlay, physical_hands as controller_physical_hands,
+        roomscale as controller_roomscale, scheme, summary as controller_summary,
     },
     hud::{pointer, summary_panel},
     vr::input::{self as vr_input, ActionsOrigin},
@@ -76,6 +77,11 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let stance_status = controller_roomscale::stance::status();
     let unarmed_status = controller_roomscale::stance::unarmed::status();
     let alignment_status = controller_alignment::status();
+    let locomotion_status = (
+        controller_locomotion::status(),
+        controller_locomotion::acts::status(),
+        controller_locomotion::anchor::status(),
+    );
     let weapons_readout = weapons::WeaponsReadout::read();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
@@ -178,6 +184,13 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Posture and roomscale")
             .default_open(true)
             .show(ui, |ui| roomscale::roomscale_readout(ui, &roomscale_status));
+
+        egui::CollapsingHeader::new("Stick locomotion and view anchor")
+            .default_open(true)
+            .show(ui, |ui| {
+                let (stick, acts, anchor) = &locomotion_status;
+                locomotion::locomotion_readout(ui, stick, acts, anchor)
+            });
 
         egui::CollapsingHeader::new("Standing stance")
             .default_open(true)

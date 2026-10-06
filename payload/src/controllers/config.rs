@@ -23,6 +23,7 @@ use crate::{
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+        locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig},
         physical_hands::PhysicalHandsConfig,
         roomscale::stance::StanceConfig,
         summary::SummaryConfig,
@@ -231,12 +232,21 @@ impl Default for InputConfig {
 pub struct LocomotionConfig {
     /// The frame the off-hand stick's direction is relative to.
     pub direction: LocomotionDirection,
+    /// The stick's velocity, with fixed acceleration.
+    pub stick: StickConfig,
+    /// The filter that keeps the turning animations off the body.
+    pub acts: ActFilterConfig,
+    /// The on-foot view anchored to Rico's root rather than his animated head.
+    pub view: StableViewConfig,
 }
 
 impl LocomotionConfig {
     pub const fn new() -> Self {
         Self {
             direction: LocomotionDirection::Head,
+            stick: StickConfig::new(),
+            acts: ActFilterConfig::new(),
+            view: StableViewConfig::new(),
         }
     }
 }

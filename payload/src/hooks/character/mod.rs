@@ -87,6 +87,7 @@ fn character_update_pass_finalize_pose_parallel(
             character,
             plan.as_ref().map_or([false; 2], HandPlan::driven),
             stance_plan.as_ref().map_or(0.0, |p| p.chest_yaw),
+            dt,
         );
         if let Some(plan) = &plan {
             hands::ik::queue(character, plan);

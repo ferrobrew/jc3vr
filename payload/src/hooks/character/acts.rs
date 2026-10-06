@@ -1,4 +1,5 @@
-//! The act filter: drops the local player's acts that the mod replaces.
+//! The act filter: drops the local player's acts that the mod replaces, and swaps the ones the stick
+//! locomotion straightens ([`act_filter`]).
 
 use std::sync::OnceLock;
 
@@ -6,7 +7,13 @@ use detours_macro::detour;
 use jc3gi::{animation::symbol_table::EventIdSymbolTable, character::character::Character};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, controllers::aim_state};
+use crate::{
+    config::Config,
+    controllers::{
+        aim_state,
+        locomotion::acts::{ActDecision, filter as act_filter},
+    },
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&CHARACTER_QUEUE_ACT_BINDER)
@@ -21,16 +28,38 @@ pub(super) fn hook_library() -> HookLibrary {
 ///   matching return transitions on its own (they only fire from the reverse states).
 /// - Drop the automatic holsters under the controller scheme's mental-state cuts (see
 ///   [`aim_state::swallow_local_act`]).
+/// - Drop the turn-in-place acts and straighten the turning starts and stops while the stick
+///   drives the body on foot ([`act_filter`]).
 #[detour(address = jc3gi::character::character::Character::QueueAct_ADDRESS)]
 fn character_queue_act(character: *mut Character, act: *const u32) {
-    if (unsafe { character.as_ref() }).is_some_and(|c| c.m_IsLocalCharacter)
+    if let Some(local) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter)
         && let Some(&id) = (unsafe { act.as_ref() })
     {
         let id = id as i32;
-        let reverse = Config::lock_query(|c| c.movement.suppress_reverse_look)
-            && reverse_act_ids().is_some_and(|ids| ids.contains(&id));
+        let (suppress_reverse_look, controllers_enabled, locomotion) = Config::lock_query(|c| {
+            (
+                c.movement.suppress_reverse_look,
+                c.controllers.enabled,
+                c.controllers.locomotion,
+            )
+        });
+        let reverse =
+            suppress_reverse_look && reverse_act_ids().is_some_and(|ids| ids.contains(&id));
         if reverse || aim_state::swallow_local_act(id) {
             return;
+        }
+        // SAFETY: the local character, on the thread queuing its act.
+        match unsafe { act_filter(local, id, &locomotion, controllers_enabled) } {
+            ActDecision::Pass => {}
+            ActDecision::Drop => return,
+            ActDecision::Replace(replacement) => {
+                let replacement = replacement as u32;
+                CHARACTER_QUEUE_ACT
+                    .get()
+                    .unwrap()
+                    .call(character, &replacement);
+                return;
+            }
         }
     }
     CHARACTER_QUEUE_ACT.get().unwrap().call(character, act);

@@ -19,7 +19,11 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::{body::alignment, frame::Hand},
+    controllers::{
+        body::alignment,
+        frame::Hand,
+        locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
+    },
     headpose,
     hooks::{self, animation::active_state_type_id},
 };
@@ -219,11 +223,12 @@ pub(crate) fn shoulders_driven() -> [bool; 2] {
 /// queues nothing. `controller_hands` (indexed by [`Hand::index`]) marks the wrists the controllers
 /// drive this tick, whose hand pins stand down. `stance_chest_yaw` is the standing stance's turn of
 /// the chest toward the body's forward, radians about the model's up axis, which joins the torso
-/// rotation ([`crate::controllers::roomscale::stance`]).
+/// rotation ([`crate::controllers::roomscale::stance`]). `dt` is the pass's step.
 pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
     character: *mut Character,
     controller_hands: [bool; 2],
     stance_chest_yaw: f32,
+    dt: f32,
 ) {
     unsafe {
         let Some(character) = character.as_mut().filter(|c| c.m_IsLocalCharacter) else {
@@ -286,12 +291,23 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let eye_mid_world = character_world.transform_point3(eye_mid_model);
         let eye_arm = character_rotation.inverse() * (eye_mid_world - animated_neck_world);
 
-        headpose::set_anchors(headpose::Anchors {
-            head: animated_head_world,
-            head_prev: animated_head_world_prev,
-            neck: animated_neck_world,
-            eye_arm,
-        });
+        // On foot the view hangs from Rico's root rather than his animated head, so the clips' bob
+        // and lurch never reach it (`controllers::locomotion::anchor`).
+        headpose::set_anchors(stabilize_anchors(
+            character,
+            headpose::Anchors {
+                head: animated_head_world,
+                head_prev: animated_head_world_prev,
+                neck: animated_neck_world,
+                eye_arm,
+            },
+            Neutral {
+                head: joint_translation(&head_joint),
+                neck: joint_translation(&neck_joint),
+                eyes: eye_mid_model,
+            },
+            dt,
+        ));
 
         // Snapshot the pre-IK head and neck model-space orientations for the post-solve override's
         // compose base (see PreIkPose). Refreshed every frame the local player is active, so it can

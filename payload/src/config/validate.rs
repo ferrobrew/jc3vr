@@ -11,6 +11,7 @@ use crate::{
     controllers::{
         config::{ControllersConfig, SightTable},
         frame::PressThresholds,
+        locomotion::config::validate as locomotion,
         physical_hands::{
             PhysicalHandsConfig,
             config::{PickupConfig, ShoveConfig},
@@ -39,6 +40,7 @@ impl std::error::Error for Invalid {}
 /// Check every controller setting except the sight corrections ([`sights`]), returning the first
 /// that is out of range or inconsistent. Paths are relative to `controllers`.
 pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
+    locomotion(&c.locomotion.stick, &c.locomotion.acts, &c.locomotion.view)?;
     let input = &c.input;
     press_thresholds("input.trigger_press", input.trigger_press)?;
     press_thresholds("input.squeeze_press", input.squeeze_press)?;

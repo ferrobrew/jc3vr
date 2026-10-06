@@ -1,6 +1,6 @@
-//! The `VR: COMFORT` page: recentering the view, the posture and the roomscale chase, crouching,
-//! the comfort fades, and how the view behaves getting into a vehicle. The recenter is an action,
-//! not a setting.
+//! The `VR: COMFORT` page: recentering the view and steadying it on foot, the stick movement, the
+//! posture and the roomscale chase, crouching, the comfort fades, and how the view behaves getting
+//! into a vehicle. The recenter is an action, not a setting.
 
 use std::time::{Duration, Instant};
 
@@ -40,6 +40,34 @@ fn build() -> Page {
             label: "STATUS".into(),
             read: recenter_status_text,
         })
+        .item(config_toggle!("STEADY VIEW ON FOOT", |c| c
+            .controllers
+            .locomotion
+            .view
+            .enabled))
+        .header("MOVEMENT")
+        .item(config_toggle!("SMOOTH STICK MOVEMENT", |c| c
+            .controllers
+            .locomotion
+            .stick
+            .enabled))
+        .item(config_slider!(
+            "MOVE ACCELERATION",
+            ACCELERATION_RANGE,
+            SliderFormat::new(1, " M/S2"),
+            |c| c.controllers.locomotion.stick.acceleration_mps2
+        ))
+        .item(config_slider!(
+            "MOVE DECELERATION",
+            ACCELERATION_RANGE,
+            SliderFormat::new(1, " M/S2"),
+            |c| c.controllers.locomotion.stick.deceleration_mps2
+        ))
+        .item(config_toggle!("NO TURNING ANIMATIONS", |c| c
+            .controllers
+            .locomotion
+            .acts
+            .enabled))
         .header("POSTURE")
         .item(config_choice!("POSTURE", &POSTURES, &POSTURE_LABELS, |c| c
             .controllers
@@ -191,6 +219,10 @@ const SEAT_TRANSITION_LABELS: [&str; 3] = ["FOLLOW THE ANIMATION", "FADE", "INST
 // truncated to an integer.
 
 /// How far the head may lead the body before the room walk follows, in centimetres.
+/// The stick locomotion's rates, metres per second squared: from a slow, drifting start to all
+/// but instant.
+const ACCELERATION_RANGE: SliderRange = SliderRange::new(2.0, 42.0, 80);
+
 const CHASE_DEADZONE_RANGE: SliderRange = SliderRange::new(0.0, 0.5, 50);
 /// How far the seated crouch lowers the eyes, in centimetres.
 const SEATED_DROP_RANGE: SliderRange = SliderRange::new(0.2, 1.2, 100);

@@ -57,6 +57,7 @@ pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;
+pub mod locomotion;
 pub mod map;
 pub(crate) mod menu;
 pub mod mode;

@@ -35,6 +35,7 @@ use crate::{
     controllers::{
         body::BodyDimensions,
         config::RoomscaleConfig,
+        locomotion::after_task,
         physical_hands,
         roomscale::{
             self, SeatPhase,
@@ -294,8 +295,10 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         return;
     };
 
-    // The palms' push off what they press into counts as the task's own movement, so it is added
-    // before the chase reads the task's velocity.
+    // The stick's velocity replaces the clip's root velocity first; the palms' push off what they
+    // press into then counts as the task's own movement, so it is added before the chase reads the
+    // task's velocity.
+    unsafe { after_task(character, dt) };
     unsafe { physical_hands::push_body(character) };
 
     let seated_out = frame.seat == SeatPhase::Out;
