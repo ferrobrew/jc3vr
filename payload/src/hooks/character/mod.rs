@@ -8,6 +8,7 @@
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
 //! - [`acts`]: the local player's act filter;
+//! - [`gate`]: the HumanIK solve gate, where the procedural body writes the pose;
 //! - [`modifiers`]: the weapon-agnostic body and the standing stance's relaxed idle, which keep the
 //!   weapon's animation modifiers off the body's rule systems;
 //! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose;
@@ -20,7 +21,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     self,
-    body::procedural::skeleton,
+    body::procedural::{owns_body, skeleton},
     hands::{self, ik::HandPlan},
     roomscale::stance,
 };
@@ -28,6 +29,7 @@ use crate::controllers::{
 pub(crate) mod acts;
 pub(crate) mod body_ik;
 pub(crate) mod config;
+pub(crate) mod gate;
 pub(crate) mod head;
 pub(crate) mod layers;
 pub(crate) mod modifiers;
@@ -42,6 +44,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CHARACTER_UPDATE_SECONDARY_HAND_IK_PASS_BINDER)
         .with_static_binder(&CHARACTER_UPDATE_PROP_EFFECTS_BINDER)
         .with_hook_library(acts::hook_library())
+        .with_hook_library(gate::hook_library())
         .with_hook_library(layers::hook_library())
         .with_hook_library(modifiers::hook_library())
 }
@@ -92,9 +95,12 @@ fn character_update_pass_finalize_pose_parallel(
         if let Some(plan) = &plan {
             hands::ik::queue(character, plan);
         }
-        controllers::roomscale::queue_crouch_ik(character);
-        if let Some(stance_plan) = stance_plan.as_ref() {
-            stance::queue(character, stance_plan);
+        // The procedural body poses the hips and legs itself at the solve gate.
+        if !owns_body() {
+            controllers::roomscale::queue_crouch_ik(character);
+            if let Some(stance_plan) = stance_plan.as_ref() {
+                stance::queue(character, stance_plan);
+            }
         }
     }
 

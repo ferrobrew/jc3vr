@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::alignment,
+        body::{alignment, procedural::owns_body},
         frame::Hand,
         locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
     },
@@ -497,7 +497,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             && character
                 .m_AimFlags
                 .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
-        let drive_torso = !torso.is_near_identity() && !defer_to_aim;
+        // The procedural body poses the torso itself at the solve gate.
+        let drive_torso = !torso.is_near_identity() && !defer_to_aim && !owns_body();
 
         // The girdle is then *told where to be*, rather than left to the solver. Relying on the head
         // effector's pull to carry the torso along does not work: the solver has cheaper ways to

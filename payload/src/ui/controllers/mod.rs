@@ -19,6 +19,7 @@ mod mode;
 mod overlay;
 mod physical_hands;
 mod presets;
+mod procedural;
 mod reload;
 mod roomscale;
 mod scope;
@@ -77,6 +78,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let stance_status = controller_roomscale::stance::status();
     let unarmed_status = controller_roomscale::stance::unarmed::status();
     let alignment_status = controller_alignment::status();
+    let procedural_status = controller_body::procedural::status();
     let locomotion_status = (
         controller_locomotion::status(),
         controller_locomotion::acts::status(),
@@ -190,6 +192,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 let (stick, acts, anchor) = &locomotion_status;
                 locomotion::locomotion_readout(ui, stick, acts, anchor)
+            });
+
+        egui::CollapsingHeader::new("Procedural body")
+            .default_open(true)
+            .show(ui, |ui| {
+                procedural::procedural_readout(ui, &procedural_status)
             });
 
         egui::CollapsingHeader::new("Standing stance")

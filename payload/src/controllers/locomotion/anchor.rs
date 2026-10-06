@@ -34,6 +34,9 @@ pub struct AnchorStatus {
     pub weight: f32,
     /// Whether the view should hang from the root this tick.
     pub eligible: bool,
+    /// Whether Rico is on foot on the ground, out of a ragdoll and the water, whatever the
+    /// settings say.
+    pub on_ground: bool,
     /// The measured neutral head, neck, and eyes, model space.
     pub neutral: Option<Neutral>,
     /// The seconds of standing still sampled toward the measurement.
@@ -125,6 +128,7 @@ pub(crate) unsafe fn stabilize(
     state.status = AnchorStatus {
         weight,
         eligible,
+        on_ground: on_ground && grounded && !ragdoll,
         neutral: state.neutral,
         capture_progress: state.capture.progress(),
         height_offset: height.current - world_t1.w_axis.y,
@@ -169,6 +173,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     status: AnchorStatus {
         weight: 0.0,
         eligible: false,
+        on_ground: false,
         neutral: None,
         capture_progress: 0.0,
         height_offset: 0.0,

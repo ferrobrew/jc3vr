@@ -13,7 +13,7 @@ The stick locomotion takes both away from the animation. The code is in `payload
 - The velocity moves toward the target at a fixed rate (`accel::step`): straight toward it, by at most `acceleration_mps2` times the step while speeding up and `deceleration_mps2` while slowing or turning away. A start, a stop, and a change of direction all take a time proportional to the change and never overshoot, so there is nothing for the view to feel but a steady push. The defaults reach the run speed in about half a second and stop from it in about a third.
 - After a gap in the task (a jump, a fall, a vehicle exit), the integrator starts from the proxy's real velocity, so a landing carries its speed.
 
-The legs still play the game's clips, at the clips' own speed and cadence, so they slide a little against the ground when the two speeds differ; the procedural body's legs are to replace them.
+The legs still play the game's clips, at the clips' own speed and cadence, so they slide a little against the ground when the two speeds differ; the procedural body's legs ([procedural-body.md](procedural-body.md)) are to replace them.
 
 The task's velocity, the target, the written velocity, and the proxy's velocity are logged once a second while moving (`locomotion: stick velocity`, debug level on the `controllers` target), and the readout is the Controllers tab's "Stick locomotion and view anchor" section.
 

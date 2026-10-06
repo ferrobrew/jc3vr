@@ -19,7 +19,7 @@ pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, Sig
 use crate::{
     controllers::{
         bindings::{panel_chord, yank::YankConfig},
-        body::alignment::AlignmentConfig,
+        body::{alignment::AlignmentConfig, procedural::config::ProceduralBodyConfig},
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
@@ -757,6 +757,8 @@ pub struct BodyRemapConfig {
     /// Keeping the character's body aligned with the player's: the torso estimate, the body
     /// turning under the view, and the chest turn.
     pub alignment: AlignmentConfig,
+    /// The procedural body: Rico's pose built from the player's head and body.
+    pub procedural: ProceduralBodyConfig,
 }
 
 impl BodyRemapConfig {
@@ -765,6 +767,7 @@ impl BodyRemapConfig {
             remap_head: true,
             remap_hands: true,
             alignment: AlignmentConfig::new(),
+            procedural: ProceduralBodyConfig::new(),
         }
     }
 }

@@ -26,9 +26,10 @@ use crate::{
                 Calibration, CalibrationError, CaptureStatus, Notice, Stance, Step, Unavailable,
                 height_from_eye_height, span_out_of_proportion,
             },
+            procedural::config::ProceduralMode,
         },
         frame::{self, Hand, TrackedPose},
-        menu::{config_toggle, read_config},
+        menu::{config_choice, config_toggle, read_config},
         roomscale::{
             self,
             posture::{DetectedPosture, EffectivePosture},
@@ -111,6 +112,14 @@ fn summary(page: Page) -> Page {
             .controllers
             .body
             .remap_hands))
+        .header("PROCEDURAL BODY")
+        .item(config_choice!(
+            "BODY FROM YOUR HEAD",
+            &PROCEDURAL_MODES,
+            &PROCEDURAL_MODE_LABELS,
+            |c| c.controllers.body.procedural.mode
+        ))
+        .text("TEST WRITES THE POSE BACK AS IS.")
 }
 
 fn stand(page: Page) -> Page {
@@ -345,6 +354,13 @@ fn start() -> ButtonOutcome {
 
 /// The `STANCE` choice's options, in [`Stance::ALL`]'s order.
 const STANCE_OPTIONS: [&str; 2] = ["STANDING", "SEATED"];
+
+const PROCEDURAL_MODES: [ProceduralMode; 3] = [
+    ProceduralMode::Off,
+    ProceduralMode::PassThrough,
+    ProceduralMode::Body,
+];
+const PROCEDURAL_MODE_LABELS: [&str; 3] = ["OFF", "TEST", "STANDING"];
 
 /// The range of the seated review's height slider, metres, a centimetre a notch: the heights whose
 /// standing eye heights a standing calibration accepts.
