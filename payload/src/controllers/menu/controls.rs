@@ -136,6 +136,17 @@ fn build() -> Page {
             .overlay
             .hide_game_reticle))
         .item(config_toggle!("FINGERS", |c| c.controllers.fingers.enabled))
+        .item(config_toggle!("PHYSICAL HANDS", |c| c
+            .controllers
+            .physical_hands
+            .bodies
+            .enabled))
+        .item(config_slider!(
+            "HAND STRENGTH",
+            STRENGTH_RANGE,
+            SliderFormat::new(2, "X"),
+            |c| c.controllers.physical_hands.bodies.strength
+        ))
         .header("HUD")
         .item(config_toggle!("HUD ON THE HANDS", |c| c.hud.atlas.enabled))
         .item(config_toggle!("AMMO ABOVE GUN HAND", |c| c
@@ -499,6 +510,8 @@ const WHEEL_LOCK_RANGE: SliderRange = SliderRange::new(60.0, 180.0, 120);
 const WHEEL_RESPONSE_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 /// The wingsuit's full pitch by wrist tilt, degrees, in degrees.
 const TILT_RANGE: SliderRange = SliderRange::new(10.0, 60.0, 50);
+/// The hands' strength scale, in twentieths.
+const STRENGTH_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
 
 /// The switches of the six physical vehicle controls.
 fn physical_controls(c: &Config) -> [&bool; 6] {

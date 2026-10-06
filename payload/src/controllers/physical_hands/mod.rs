@@ -9,9 +9,11 @@
 //!   grip in [`grasp`] and the solver that carries what the hands hold in [`hold`];
 //! - [`rigid`]: a rigid body's response to impulses;
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
+//! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
 //! - [`config`]: the settings.
 //!
-//! The palms are probed rather than simulated: no body is added to the physics world. Each tick,
+//! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
+//! palms are probed rather than simulated: no body is added to the physics world. Each tick,
 //! from the player aim control's post-simulation update ([`after_aim`], the simulation-phase update
 //! where the engine casts its own aim ray), each probe point of each acting palm is cast from where
 //! it last was in the open to where it is now, through the player aim's ray filter, which never
@@ -42,6 +44,7 @@ mod engine;
 pub mod grasp;
 pub mod hold;
 pub mod palm;
+pub mod physics;
 pub mod pickup;
 pub mod push;
 pub mod rigid;
@@ -183,6 +186,7 @@ pub(crate) fn input_tick() {
 /// Hold each pressed hand at the surface it presses into, in the cockpit frame. Called by
 /// [`crate::controllers::hands::active_hands`].
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
+    physics::apply(cockpit);
     let enabled = Config::lock_query(|c| {
         c.controllers.physical_hands.enabled && c.controllers.physical_hands.clamp_hand
     });
@@ -248,6 +252,7 @@ pub(crate) unsafe fn push_body(character: &mut Character) {
 /// `owner` must be the live local player character, called from its aim control's update after
 /// the original has run.
 pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
+    physics::observe(dt);
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let idle = if !config.enabled || !scheme::is_controllers() || !hooks::in_gameplay() {
         Some(Idle::Disabled)
@@ -382,6 +387,34 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 acting: true,
                 palm: Some(palm),
                 speed,
+                ..HandStatus::default()
+            };
+            continue;
+        }
+        if physics::drives(hand) {
+            // A hand its body drives does not probe, push, or shove: the body meets the world
+            // itself. It still reaches for what its grip would take.
+            state.probes[i].iter_mut().for_each(PointProbe::reset);
+            state.pressed[i] = false;
+            state.gives[i].reset();
+            let reach = if pickup_on {
+                // SAFETY: the simulation phase outside the physics step.
+                unsafe {
+                    pickup::reach(
+                        &palm,
+                        config.pickup.reach_m * active.world_scale,
+                        None,
+                        &config.pickup,
+                        &mut |from, to| cast(from, to, &reach_options),
+                    )
+                }
+            } else {
+                None
+            };
+            hand_status[i] = HandStatus {
+                palm: Some(palm),
+                speed,
+                reach,
                 ..HandStatus::default()
             };
             continue;

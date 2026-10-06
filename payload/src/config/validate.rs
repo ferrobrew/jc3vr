@@ -15,6 +15,7 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig,
             config::{PickupConfig, ShoveConfig},
+            physics::HandBodiesConfig,
         },
         vehicles::config::WheelSpec,
         weapons::{
@@ -769,7 +770,8 @@ fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
     pulse("physical_hands.contact_pulse", &p.contact_pulse)?;
     pulse("physical_hands.pressure_pulse", &p.pressure_pulse)?;
     shove(&p.shove)?;
-    pickup(&p.pickup)
+    pickup(&p.pickup)?;
+    hand_bodies(&p.bodies)
 }
 
 fn shove(s: &ShoveConfig) -> Result<(), Invalid> {
@@ -851,6 +853,45 @@ fn pickup(p: &PickupConfig) -> Result<(), Invalid> {
     )?;
     pulse("physical_hands.pickup.grab_pulse", &p.grab_pulse)?;
     pulse("physical_hands.pickup.release_pulse", &p.release_pulse)
+}
+
+fn hand_bodies(b: &HandBodiesConfig) -> Result<(), Invalid> {
+    range("physical_hands.bodies.strength", b.strength, 0.0, 10.0)?;
+    positive("physical_hands.bodies.mass_kg", b.mass_kg, 1000.0)?;
+    nonnegative(
+        "physical_hands.bodies.max_force_n",
+        b.max_force_n,
+        1_000_000.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.max_torque_nm",
+        b.max_torque_nm,
+        100_000.0,
+    )?;
+    range("physical_hands.bodies.linear_gain", b.linear_gain, 0.0, 1.0)?;
+    range(
+        "physical_hands.bodies.angular_gain",
+        b.angular_gain,
+        0.0,
+        1.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.max_speed_mps",
+        b.max_speed_mps,
+        200.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.max_angular_speed_rps",
+        b.max_angular_speed_rps,
+        500.0,
+    )?;
+    positive("physical_hands.bodies.radius_m", b.radius_m, 0.5)?;
+    nonnegative("physical_hands.bodies.half_length_m", b.half_length_m, 0.5)?;
+    positive(
+        "physical_hands.bodies.break_distance_m",
+        b.break_distance_m,
+        10.0,
+    )
 }
 
 fn reload(r: &ReloadConfig) -> Result<(), Invalid> {

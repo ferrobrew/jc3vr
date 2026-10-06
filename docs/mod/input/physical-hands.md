@@ -1,10 +1,43 @@
 # Physical hands
 
-Each empty hand has a palm that collides with the world. Pressing a palm into a wall pushes the body away from it and holds the rendered hand at the surface; a palm passes through characters; a palm pressed into a loose object shoves it, slowly or hard, and a heavy one resists; and a grip press near a loose object takes hold of it where the hand touched it, or near a weapon lying in the world, collects the weapon. The code is `payload/src/controllers/physical_hands/`; the engine side is in [melee-and-damage.md](../../engine/gameplay/melee-and-damage.md) and [item-pickup.md](../../engine/gameplay/item-pickup.md).
+Each empty hand has a palm that collides with the world. With the hand bodies on (the default), each empty hand is a body in the game's physics world, driven toward its controller within the hand's strength: it stops at walls and is drawn there, and it shoves and topples what it meets. With them off, the palm is probed with ray casts instead, as the rest of this doc describes from [the probes](#probes) on. With the probes, pressing a palm into a wall pushes the body away from it and holds the rendered hand at the surface; a palm passes through characters; a palm pressed into a loose object shoves it, slowly or hard, and a heavy one resists; and, with the probes or the bodies, a grip press near a loose object takes hold of it where the hand touched it, or near a weapon lying in the world, collects the weapon. The code is `payload/src/controllers/physical_hands/` (the hand bodies in its `physics/`); the engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md), [melee-and-damage.md](../../engine/gameplay/melee-and-damage.md), and [item-pickup.md](../../engine/gameplay/item-pickup.md).
 
-## Probes, not bodies
+## Hand bodies
 
-The palms are probed with ray casts rather than simulated as bodies. A keyframed box per palm would need the Havok shape and body construction, the game's collision filter, and a drive before each physics step, none of which the mod binds, and a contact would still need translating into the game's damage and reactions. The casts reuse the player aim's filtered ray query ([`PhysicsSystem::CastRay`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRay) through the aim's filter, as in [the aim raycast](../../../payload/src/controllers/aim/raycast.rs)), which never hits the player and already names the hit object and body. The game's own melee uses a box overlap query ([`PhysicsSystem::CollideBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CollideBox)) for objects; it is bound but not used, because its all-hits collector owns Havok heap memory the mod would have to manage.
+A hand body is a capsule along the hand's fingers, centred on the palm box's centre (`bodies.radius_m` and `bodies.half_length_m`, scaled by the VR world scale), of `bodies.mass_kg`. It is made the way the grappling hook's hang proxy makes its free capsule ([havok-bodies.md](../../engine/physics/havok-bodies.md#making-a-free-dynamic-body)): a capsule shape, a dynamic body left out of the simulation, and the engine's wrapper ([`PfxRigidBody`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxRigidBody)) around it, whose owner stays null. The wrapper turns the body's gravity off, so the drive does not fight it, and the body's motion never sleeps.
+
+### What a hand touches
+
+The body is on the weapons layer ([`WEAPONS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxLayer##variant-WEAPONS)) in the player's own collision system group, read from the player's character proxy each step. In the player's group with a zero subsystem id, it never touches the player's capsule, nor the other hand. On the weapons layer, it meets the static world, terrain, props, destruction debris, character capsules, ragdolls, and vehicles, and the aim's ray query passes through it. A player whose proxy is in system group zero gets no hand bodies, since they would collide with the player.
+
+### The drive
+
+The pre-simulation callback ([`PfxPreSimulationCallback`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxPreSimulationCallback)) drives the bodies before each physics step, on the game thread and outside the step. Each step, for each acting hand:
+
+1. The goal is where the palm will be at the end of the step: the palm pose the player aim's post-simulation update last published, carried forward by the palm's smoothed velocity over the time since it was published plus the step ([`PhysicsSystem::STEP_SECONDS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem)).
+2. The body is asked to reach the goal in one step: the linear velocity that closes `bodies.linear_gain` of the position error, capped at `bodies.max_speed_mps`, and the angular velocity that closes `bodies.angular_gain` of the rotation error, capped at `bodies.max_angular_speed_rps`.
+3. The change of velocity that asks for it is capped by the hand's strength over the step: the pull at `bodies.max_force_n` through the body's mass, and the twist at `bodies.max_torque_nm` through its world inertia, each times `bodies.strength`. The result is set as the body's velocities ([`hknpWorld::setBodyVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpWorld##func-setBodyVelocity)).
+
+The step then integrates the velocities and resolves the body's contacts. A free hand reaches its goal; a hand against a wall stops at it, and the next step asks again, no harder than its strength; a hand against a crate pushes it, and a crate too heavy for the hand's strength holds it back. The math is in `physics/drive.rs` with its tests.
+
+The default strength is "Rico strength": a ten-kilogram hand pulling at up to five kilonewtons and twisting at up to four hundred newton metres, exaggerated but bounded so that a tracking glitch cannot fling what the hand touches. A body that falls more than `bodies.break_distance_m` behind its goal (a teleport, a hand pulled through a wall) is put back on it at rest.
+
+### Drawing the hand at its body
+
+Each step also measures where the last step left the body against the goal it was sent to. With `bodies.render_at_body`, the hand's cockpit poses are moved by that offset ([`apply`](../../../payload/src/controllers/physical_hands/mod.rs)), so the IK targets and the late update put the rendered hand where its body is: on the wall, not through it. The offset is updated at the simulation rate and added to the latest controller pose at the render rate, so a free hand, whose offset is near zero, keeps the controller's latency.
+
+
+### Lifecycle
+
+A hand acts on foot on the ground, for a tracked hand the controllers drive that holds nothing and is not holding a loose object with the grip. Its body is made on the first step it acts and added to the simulation at its goal. A hand that stops acting has its body held in place for a moment, then taken out of the simulation (parked) until it acts again: a drawn gun, a vehicle, a swim, the parachute, or a lost controller. Both bodies are destroyed when the game leaves gameplay (a load, the main menu), when the hand bodies are switched off, when the player's collision system group changes (a new character after a death), when the hand's size or mass setting changes, and when the payload unloads. A body whose slot no longer holds it is forgotten without touching the engine.
+
+The callback is registered once, from the game thread's frame tick ahead of the game's update, so never while the engine walks its callbacks, and removed by the shutdown cleanup, which also destroys the bodies, before the payload unloads. The bodies keep no Havok-space positions: every step converts game space with the world's current shift, so a world recentring needs nothing of them.
+
+A hand its body drives does not probe, push off surfaces, shove, or knock; it still reaches for what its grip would take, and grabbing a loose object or a weapon works as described below. A holding hand has no body, so it never fights the object it holds.
+
+## Probes
+
+With the hand bodies off, the palms are probed with ray casts. The casts reuse the player aim's filtered ray query ([`PhysicsSystem::CastRay`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRay) through the aim's filter, as in [the aim raycast](../../../payload/src/controllers/aim/raycast.rs)), which never hits the player and already names the hit object and body. The game's own melee uses a box overlap query ([`PhysicsSystem::CollideBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CollideBox)) for objects; it is bound but not used, because its all-hits collector owns Havok heap memory the mod would have to manage.
 
 ## The palm
 
@@ -94,13 +127,25 @@ A palm meeting a surface pulses its hand (`contact_pulse`, weaker for a slower m
 
 ## Threading
 
+The hand bodies are made, added, parked, driven, and destroyed only in the pre-simulation callback, which the physics system calls on the game thread outside the step, and in the shutdown cleanup on the game thread; the aim update only publishes the palms' poses, so it may run on any thread. The palms' poses go to the callback, and the callback's offsets, loads, and push come back, through the hand bodies' own leaf lock, never the VR runtime's; each goes stale after a fifth of a second without a tick. A panic in the callback is caught before it reaches the engine and stops the hand bodies for the session.
+
 The shoves and knocks and the held objects' velocities change the main thread's engine state. The input tick notes its thread; the palms act only when the aim update runs on that thread, and otherwise stand down and count the tick in the readout. The push is read by the locomotion task's post-call and the clamp by every caller of the active hands, through the physical hands' own lock, never the VR runtime's. Both go stale after a fifth of a second without a tick. The pickup grabs and releases are read on the input tick and acted on at the next aim update, through the same lock. The shoves and holds read and write the Havok motion directly, between physics steps, as the engine's own melee impulse does; they would be unsafe from inside the step or from a Havok callback, and are never made there.
 
 ## Settings and readouts
 
-The settings are `physical_hands` in the controller settings, under "Physical hands" in the debug UI's Controllers tab, with the readout (each palm's press, push, and speed, its shove's impulse, load, and resistance, what it reaches or holds with the mass, the lag, and the pull and twist used, and the counters) beside the other subsystems. The shove settings are `physical_hands.shove` and the pickup settings `physical_hands.pickup`. `show_boxes` draws the palm boxes in the world-space overlay, coloured by whether they press into the world or an object, with a line along each shove, longer for a harder push and redder for a body that resists. With `pickup.show_targets`, a disc marks each hand's grab point and a line joins it to where the hand would have it, redder the harder the hand pulls.
+The hand bodies' settings are `physical_hands.bodies`, under "Hand bodies" in the debug UI's Controllers tab, with their readout beside the physical hands': whether the callback is registered, the steps it ran, the player's system group, and for each hand its phase, body id, collision-filter word, lag, speed, and the share of its pull and twist used. The pause menu's `VR: CONTROLS` page has `PHYSICAL HANDS` (`bodies.enabled`) and `HAND STRENGTH` (`bodies.strength`) under "HANDS AND AIM".
+
+The log has the lifecycle at info level: `hand bodies: registered the pre-simulation callback`, `the pre-simulation callback first fired` (a warning instead when it fires on another thread than the registration's), `created a hand body` with its body id, collision-filter word, and system group, `added a hand body to the world`, `removed a hand body from the world` and `destroyed a hand body` with the reason. Once a second while a hand acts, `hand bodies: drive` at debug level gives each hand's lag, speed, and pull and twist shares.
+
+The palms' settings are `physical_hands` in the controller settings, under "Physical hands" in the debug UI's Controllers tab, with the readout (each palm's press, push, and speed, its shove's impulse, load, and resistance, what it reaches or holds with the mass, the lag, and the pull and twist used, and the counters) beside the other subsystems. The shove settings are `physical_hands.shove` and the pickup settings `physical_hands.pickup`. `show_boxes` draws the palm boxes in the world-space overlay, coloured by whether they press into the world or an object, with a line along each shove, longer for a harder push and redder for a body that resists. With `pickup.show_targets`, a disc marks each hand's grab point and a line joins it to where the hand would have it, redder the harder the hand pulls.
 
 ## Unverified in the headset
+
+- That the callback fires once per simulation tick, on the game thread, and that the bodies are created with the weapons layer in the player's system group (the readout's filter word against the player's group).
+- That the player's capsule never moves when a hand is inside it, which confirms the group exclusion.
+- How the drive feels at the default strength: whether a free hand tracks without visible lag, whether a hand against a wall is steady, and whether props jitter between the hand and the world.
+- How the engine's listeners treat a hand body, an instance with no owner, meeting a ragdoll, a vehicle's wheel rays, and an explosion; and whether a fast hand damages props through the game's own damage listeners.
+- Whether a parked body's removal and re-addition each time a gun is drawn and holstered is cheap enough.
 
 - That the aim update runs on the input tick's thread. The readout's off-thread count says.
 - Whether holding the hand at the surface reads well with the render-time late update.
@@ -116,6 +161,18 @@ The settings are `physical_hands` in the controller settings, under "Physical ha
 - Whether the hold's defaults hold a crate steadily at the game's simulation rate, and how a throw feels at `throw_scale` one.
 
 ## Headset checklist
+
+With the hand bodies on:
+
+1. In the log, after loading in: `registered the pre-simulation callback`, then `the pre-simulation callback first fired` without the other-thread warning, then `created a hand body` and `added a hand body to the world` for each hand. The readout's filter word has the weapons layer in its low field and the player's group in its high half.
+2. Wave the hands in the open: the readout's lag stays within a couple of centimetres and the pull share near zero; the rendered hands keep up with the controllers.
+3. Press a hand into a wall: the rendered hand stops at the wall and the lag grows with the press.
+4. Push a crate: it slides; push a barrel at its side: it rolls; push a parked car: it barely moves.
+5. Put a hand inside the player's chest: the player does not move.
+6. Draw a gun: that hand's body is removed (`removed a hand body from the world`); holster it: added again. Enter a vehicle: both removed. Load a save: both destroyed.
+7. Toggle `PHYSICAL HANDS` off in the pause menu and resume: both destroyed, and the palm probes take over.
+
+With the hand bodies off:
 
 1. Lay a palm flat on a wall at arm's length: the hand rests on the surface, does not pass through, and the body does not drift.
 2. Push the wall: the body (and the view) moves back, settling with the palm on the wall. Push the floor or a table top: nothing moves.

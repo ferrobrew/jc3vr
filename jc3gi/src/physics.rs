@@ -200,6 +200,42 @@ impl std::convert::AsMut<Constraint> for Constraint {
         self
     }
 }
+#[repr(C, align(8))]
+/// The world's collision filter (`CCustomGroupCollisionFilter`), behind the constraint collision
+/// filter that also keeps constrained bodies apart. It reads each body's collision-filter word
+/// ([`hknpBody::m_collisionFilterInfo`](crate::physics::hknpBody::m_collisionFilterInfo)), whose fields are the layer
+/// ([`LAYER_MASK`](crate::physics::CustomGroupCollisionFilter::LAYER_MASK), a [`PfxLayer`](crate::physics::PfxLayer)), the subsystem id and the no-collide id (each
+/// [`FIELD_MASK`](crate::physics::CustomGroupCollisionFilter::FIELD_MASK) wide, from [`SUBSYSTEM_SHIFT`](crate::physics::CustomGroupCollisionFilter::SUBSYSTEM_SHIFT) and
+/// [`NO_COLLIDE_SHIFT`](crate::physics::CustomGroupCollisionFilter::NO_COLLIDE_SHIFT)), and the system group (from
+/// [`SYSTEM_GROUP_SHIFT`](crate::physics::CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT)). Two bodies in different system groups, or in
+/// system group zero, collide when the layer table says their layers do. Two bodies in the same
+/// non-zero system group collide only when their layers are equal, at least one has a non-zero
+/// subsystem id, and neither's subsystem id is the other's no-collide id. Only the word's layout is
+/// bound.
+pub struct CustomGroupCollisionFilter {}
+impl CustomGroupCollisionFilter {}
+impl CustomGroupCollisionFilter {
+    /// The width of the subsystem-id and no-collide-id fields.
+    pub const FIELD_MASK: u32 = 31;
+    /// The layer field of a collision-filter word.
+    pub const LAYER_MASK: u32 = 31;
+    /// Where the no-collide-id field begins.
+    pub const NO_COLLIDE_SHIFT: u32 = 10;
+    /// Where the subsystem-id field begins.
+    pub const SUBSYSTEM_SHIFT: u32 = 5;
+    /// Where the system-group field, the word's high half, begins.
+    pub const SYSTEM_GROUP_SHIFT: u32 = 16;
+}
+impl std::convert::AsRef<CustomGroupCollisionFilter> for CustomGroupCollisionFilter {
+    fn as_ref(&self) -> &CustomGroupCollisionFilter {
+        self
+    }
+}
+impl std::convert::AsMut<CustomGroupCollisionFilter> for CustomGroupCollisionFilter {
+    fn as_mut(&mut self) -> &mut CustomGroupCollisionFilter {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
 pub struct IgnoreMaterialFlagFilter {
@@ -438,11 +474,242 @@ impl std::convert::AsMut<PfxInstance> for PfxInstance {
         self
     }
 }
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// The engine's collision layers (`EPfxLayer`), the low field of a body's collision-filter word
+/// ([`CustomGroupCollisionFilter`](crate::physics::CustomGroupCollisionFilter)). The physics system's constructor fills the filter's layer table
+/// with the pairs of layers that collide; only the layers in it collide at all. The query layers
+/// (the raycast and shape-query layers) are what a query passes as its own layer.
+pub enum PfxLayer {
+    FULL_COLLISION = 0isize as _,
+    NO_COLLISION = 1isize as _,
+    STATIC = 2isize as _,
+    TERRAIN = 3isize as _,
+    DYNAMIC = 4isize as _,
+    DESTRUCTION = 5isize as _,
+    CHARACTER_COLLISION = 6isize as _,
+    CHARACTER_GHOST_MODE = 7isize as _,
+    CHARACTER_RAGDOLL = 8isize as _,
+    CHARACTER_RAGDOLL_KEYFRAMED = 9isize as _,
+    CHARACTER_ATTACHED_DYNAMIC_RB = 10isize as _,
+    CHARACTER_RAGDOLL_PROXIES = 11isize as _,
+    PARTICLE = 12isize as _,
+    EXPLOSIVE = 13isize as _,
+    PROJECTILE = 14isize as _,
+    WEAPONS = 15isize as _,
+    VEHICLE_COLLISION_WHEEL = 16isize as _,
+    VEHICLE_COLLISION_DYNAMIC_ONLY = 17isize as _,
+    VEHICLE_COLLISION = 18isize as _,
+    VEHICLE_RAYCAST = 19isize as _,
+    RAYCAST_DEFAULT = 20isize as _,
+    RAYCAST_EVERYTHING_PHYSICAL = 21isize as _,
+    RAYCAST_WHEELS = 22isize as _,
+    SHAPEQUERY_DEFAULT = 23isize as _,
+    SHAPEQUERY_TRIGGER = 24isize as _,
+    SHAPEQUERY_EXPLOSION = 25isize as _,
+    SHAPEQUERY_VEHICLES = 26isize as _,
+    STATIC_AND_DESTRUCTION = 27isize as _,
+    ALL_DYNAMIC_OBJECTS = 28isize as _,
+    LISTENER_EFFECTS = 29isize as _,
+}
+fn _PfxLayer_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], PfxLayer>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
-/// `CPfxRigidBody`: the engine's wrapper around a Havok rigid body in the physics system's world.
-/// Only some members are bound.
-pub struct PfxRigidBody {}
+/// A pre-simulation callback (`CPfxPreSimulationCallback`), an object the physics system calls
+/// before each step ([`PhysicsSystem::AddPreSimulationCallback`](crate::physics::PhysicsSystem::AddPreSimulationCallback)). The engine never deletes one;
+/// its owner removes it ([`PhysicsSystem::RemovePreSimulationCallback`](crate::physics::PhysicsSystem::RemovePreSimulationCallback)) and frees it.
+pub struct PfxPreSimulationCallback {
+    vftable: *const crate::physics::PfxPreSimulationCallbackVftable,
+}
+fn _PfxPreSimulationCallback_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], PfxPreSimulationCallback>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl PfxPreSimulationCallback {
+    pub fn vftable(&self) -> *const crate::physics::PfxPreSimulationCallbackVftable {
+        self.vftable as *const crate::physics::PfxPreSimulationCallbackVftable
+    }
+    /// The destructor.
+    pub unsafe fn Destructor(&mut self, flags: u8) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Destructor).read();
+            f(self as *mut Self as _, flags)
+        }
+    }
+    /// Called by [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) before each step, on the thread that runs it, with
+    /// the world and the time the update was given, outside the step: the world may be changed
+    /// here, and the step that follows integrates the velocities set here. The callbacks fire
+    /// in the order they were added.
+    pub unsafe fn preSimulationCallback(
+        &mut self,
+        world: *mut crate::physics::hknpWorld,
+        dt: f32,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).preSimulationCallback).read();
+            f(self as *mut Self as _, world, dt)
+        }
+    }
+    /// Called when the world's origin moves (`CPhysicsSystem::RecenterWorld`), after every
+    /// body has been moved, with the shift added to every Havok-space position. A callback
+    /// that keeps Havok-space positions of its own moves them here.
+    pub unsafe fn onWorldShiftCallback(
+        &mut self,
+        shift: *const crate::types::vector_math::AlignedVector3,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).onWorldShiftCallback).read();
+            f(self as *mut Self as _, shift)
+        }
+    }
+}
+impl std::convert::AsRef<PfxPreSimulationCallback> for PfxPreSimulationCallback {
+    fn as_ref(&self) -> &PfxPreSimulationCallback {
+        self
+    }
+}
+impl std::convert::AsMut<PfxPreSimulationCallback> for PfxPreSimulationCallback {
+    fn as_mut(&mut self) -> &mut PfxPreSimulationCallback {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct PfxPreSimulationCallbackVftable {
+    /// The destructor.
+    pub Destructor: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxPreSimulationCallback,
+        flags: u8,
+    ),
+    /// Called by [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) before each step, on the thread that runs it, with
+    /// the world and the time the update was given, outside the step: the world may be changed
+    /// here, and the step that follows integrates the velocities set here. The callbacks fire
+    /// in the order they were added.
+    pub preSimulationCallback: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxPreSimulationCallback,
+        world: *mut crate::physics::hknpWorld,
+        dt: f32,
+    ),
+    /// Called when the world's origin moves (`CPhysicsSystem::RecenterWorld`), after every
+    /// body has been moved, with the shift added to every Havok-space position. A callback
+    /// that keeps Havok-space positions of its own moves them here.
+    pub onWorldShiftCallback: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxPreSimulationCallback,
+        shift: *const crate::types::vector_math::AlignedVector3,
+    ),
+}
+fn _PfxPreSimulationCallbackVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x18],
+            PfxPreSimulationCallbackVftable,
+        >([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl PfxPreSimulationCallbackVftable {}
+impl std::convert::AsRef<PfxPreSimulationCallbackVftable>
+for PfxPreSimulationCallbackVftable {
+    fn as_ref(&self) -> &PfxPreSimulationCallbackVftable {
+        self
+    }
+}
+impl std::convert::AsMut<PfxPreSimulationCallbackVftable>
+for PfxPreSimulationCallbackVftable {
+    fn as_mut(&mut self) -> &mut PfxPreSimulationCallbackVftable {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// `CPfxRigidBody`: the engine's wrapper around a Havok rigid body in the physics system's world,
+/// an engine physics instance ([`PfxInstance`](crate::physics::PfxInstance)) for one body. It is allocated with the engine's
+/// [`OperatorNew`](crate::memory::OperatorNew) and destroyed through its deleting destructor
+/// ([`Destruct`](crate::physics::PfxRigidBody::Destruct)), which removes the body from the world and destroys it. Only some
+/// members are bound.
+pub struct PfxRigidBody {
+    vftable: *const crate::physics::PfxRigidBodyVftable,
+    _field_8: [u8; 56],
+    /// The body's id in the physics system's world.
+    pub m_BodyId: u32,
+    _field_44: [u8; 124],
+}
+fn _PfxRigidBody_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC0], PfxRigidBody>([0u8; 0xC0]);
+    }
+    unreachable!()
+}
 impl PfxRigidBody {
+    pub fn vftable(&self) -> *const crate::physics::PfxRigidBodyVftable {
+        self.vftable as *const crate::physics::PfxRigidBodyVftable
+    }
+    pub const Construct_ADDRESS: usize = 0x1402940D0;
+    /// `CPfxRigidBody::CPfxRigidBody`: wraps the existing body `*body_id` of the physics system's
+    /// world. It sets the body's instance property
+    /// ([`BODY_PROPERTY_PFX_INSTANCE`](crate::physics::hknpWorld::BODY_PROPERTY_PFX_INSTANCE)) to the wrapper, sets
+    /// a body flag, and writes the body's collision-filter word to
+    /// [`NO_COLLISION`](crate::physics::PfxLayer::NO_COLLISION). `data` is a `boost::shared_ptr<CDataCacheWrapper>`
+    /// the wrapper keeps; the grappling hook's hang proxy passes an empty one (two null words) and
+    /// `false` for `add_flag`, which the wrapper passes as the flags of its later body additions.
+    /// The instance's owner ([`PfxInstance::m_GameObject`](crate::physics::PfxInstance::m_GameObject)) starts null.
+    pub unsafe fn Construct(
+        &mut self,
+        body_id: *const u32,
+        data: *const [u64; 2],
+        add_flag: bool,
+    ) -> *mut crate::physics::PfxRigidBody {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_id: *const u32,
+                data: *const [u64; 2],
+                add_flag: bool,
+            ) -> *mut crate::physics::PfxRigidBody = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _, body_id, data, add_flag)
+        }
+    }
+    pub const SetCollisionLayer_ADDRESS: usize = 0x14024F4A0;
+    /// Replaces the collision layer of the body's collision-filter word with `layer` (a
+    /// [`PfxLayer`](crate::physics::PfxLayer)), keeping its other fields, and refreshes the body's collision state in the
+    /// world. The disassembler mislabels it `boost::shared_ptr<CAnimationRuleSystem>::operator->`.
+    pub unsafe fn SetCollisionLayer(&mut self, layer: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, layer: u32) = ::std::mem::transmute(
+                Self::SetCollisionLayer_ADDRESS,
+            );
+            f(self as *mut Self as _, layer)
+        }
+    }
+    pub const SetCollisionSystemGroup_ADDRESS: usize = 0x14024F410;
+    /// Replaces the system group of the body's collision-filter word with `group`, keeping its
+    /// other fields; see [`CustomGroupCollisionFilter`](crate::physics::CustomGroupCollisionFilter).
+    pub unsafe fn SetCollisionSystemGroup(&mut self, group: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, group: u32) = ::std::mem::transmute(
+                Self::SetCollisionSystemGroup_ADDRESS,
+            );
+            f(self as *mut Self as _, group)
+        }
+    }
+    pub const SetGravityFactor_ADDRESS: usize = 0x14027FE60;
+    /// Sets the factor of gravity on the body's motion: copies the motion's current motion
+    /// properties into the wrapper, sets their gravity factor, and gives the motion the properties
+    /// so changed. It acts only on a body that is neither static nor keyframed.
+    pub unsafe fn SetGravityFactor(&mut self, factor: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, factor: f32) = ::std::mem::transmute(
+                Self::SetGravityFactor_ADDRESS,
+            );
+            f(self as *mut Self as _, factor)
+        }
+    }
     pub const ApplyImpulse_ADDRESS: usize = 0x14024ED80;
     /// Applies the linear impulse `impulse` (world space) to the body at the world point
     /// `position`, through `hknpWorld::applyBodyImpulseAt`, and then notifies the body's own
@@ -463,6 +730,64 @@ impl PfxRigidBody {
             f(self as *mut Self as _, impulse, position, debug_scale)
         }
     }
+    /// The deleting destructor: removes the body from the world when it is in it, clears the
+    /// body's instance property, destroys the body, releases the wrapper's own references, and
+    /// with [`DESTRUCT_FREE`](crate::physics::PfxRigidBody::DESTRUCT_FREE) in `flags` frees the wrapper's memory to the
+    /// engine allocator. The disassembler mislabels it `CPfxRagdollProxyPhantom::Destruct`.
+    pub unsafe fn Destruct(&mut self, flags: u8) -> *mut crate::physics::PfxRigidBody {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Destruct).read();
+            f(self as *mut Self as _, flags)
+        }
+    }
+    /// Whether the body is in the simulation.
+    pub unsafe fn IsAddedToWorld(&self) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsAddedToWorld).read();
+            f(self as *const Self as _)
+        }
+    }
+    /// Adds the body, and any body attached to it, to the simulation at once
+    /// (`hknpWorld::addBodies`) when it is not already in it. The disassembler mislabels it
+    /// `CRagdollProxyPhantom::AddToWorld`.
+    pub unsafe fn AddToWorld(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).AddToWorld).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Removes the body, and any body attached to it, from the simulation
+    /// (`hknpWorld::removeBodies`); the body still exists and can be added again. Bit 0 of
+    /// `flags` selects the activation mode of the removal.
+    pub unsafe fn RemoveFromWorld(&mut self, flags: u8) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).RemoveFromWorld).read();
+            f(self as *mut Self as _, flags)
+        }
+    }
+    /// Writes the body's transform to `out`, game space: the body's rotation in the rows and
+    /// its Havok-space position plus [`PhysicsSystem::m_AccumulatedShift`](crate::physics::PhysicsSystem::m_AccumulatedShift) in the translation.
+    pub unsafe fn GetTransform(&self, out: *mut crate::types::math::Matrix4) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetTransform).read();
+            f(self as *const Self as _, out)
+        }
+    }
+    /// Places the body at `transform`, game space, through `hknpWorld::setBodyTransform`. The
+    /// velocities are kept. The disassembler mislabels it `CPartInstance::ClearWindowDamage`.
+    pub unsafe fn SetTransform(
+        &mut self,
+        transform: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SetTransform).read();
+            f(self as *mut Self as _, transform)
+        }
+    }
+}
+impl PfxRigidBody {
+    /// The [`Destruct`](crate::physics::PfxRigidBody::Destruct) flag that frees the wrapper's memory.
+    pub const DESTRUCT_FREE: u8 = 1;
 }
 impl std::convert::AsRef<PfxRigidBody> for PfxRigidBody {
     fn as_ref(&self) -> &PfxRigidBody {
@@ -471,6 +796,71 @@ impl std::convert::AsRef<PfxRigidBody> for PfxRigidBody {
 }
 impl std::convert::AsMut<PfxRigidBody> for PfxRigidBody {
     fn as_mut(&mut self) -> &mut PfxRigidBody {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct PfxRigidBodyVftable {
+    /// The deleting destructor: removes the body from the world when it is in it, clears the
+    /// body's instance property, destroys the body, releases the wrapper's own references, and
+    /// with [`DESTRUCT_FREE`](crate::physics::PfxRigidBody::DESTRUCT_FREE) in `flags` frees the wrapper's memory to the
+    /// engine allocator. The disassembler mislabels it `CPfxRagdollProxyPhantom::Destruct`.
+    pub Destruct: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxRigidBody,
+        flags: u8,
+    ) -> *mut crate::physics::PfxRigidBody,
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_2: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_3: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_4: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_5: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_6: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_7: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_8: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    /// Whether the body is in the simulation.
+    pub IsAddedToWorld: unsafe extern "system" fn(
+        this: *const crate::physics::PfxRigidBody,
+    ) -> bool,
+    /// Adds the body, and any body attached to it, to the simulation at once
+    /// (`hknpWorld::addBodies`) when it is not already in it. The disassembler mislabels it
+    /// `CRagdollProxyPhantom::AddToWorld`.
+    pub AddToWorld: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_11: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    /// Removes the body, and any body attached to it, from the simulation
+    /// (`hknpWorld::removeBodies`); the body still exists and can be added again. Bit 0 of
+    /// `flags` selects the activation mode of the removal.
+    pub RemoveFromWorld: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxRigidBody,
+        flags: u8,
+    ),
+    _vfunc_13: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    /// Writes the body's transform to `out`, game space: the body's rotation in the rows and
+    /// its Havok-space position plus [`PhysicsSystem::m_AccumulatedShift`](crate::physics::PhysicsSystem::m_AccumulatedShift) in the translation.
+    pub GetTransform: unsafe extern "system" fn(
+        this: *const crate::physics::PfxRigidBody,
+        out: *mut crate::types::math::Matrix4,
+    ),
+    /// Places the body at `transform`, game space, through `hknpWorld::setBodyTransform`. The
+    /// velocities are kept. The disassembler mislabels it `CPartInstance::ClearWindowDamage`.
+    pub SetTransform: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxRigidBody,
+        transform: *const crate::types::math::Matrix4,
+    ),
+}
+fn _PfxRigidBodyVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x80], PfxRigidBodyVftable>([0u8; 0x80]);
+    }
+    unreachable!()
+}
+impl PfxRigidBodyVftable {}
+impl std::convert::AsRef<PfxRigidBodyVftable> for PfxRigidBodyVftable {
+    fn as_ref(&self) -> &PfxRigidBodyVftable {
+        self
+    }
+}
+impl std::convert::AsMut<PfxRigidBodyVftable> for PfxRigidBodyVftable {
+    fn as_mut(&mut self) -> &mut PfxRigidBodyVftable {
         self
     }
 }
@@ -597,6 +987,59 @@ impl PhysicsSystem {
     }
 }
 impl PhysicsSystem {
+    pub const Update_ADDRESS: usize = 0x1402D1B40;
+    /// Advances the physics by one step. It fires the pre-update signal, clears the collision
+    /// array, and updates the bodies that do not simulate; then, unless one of its two suspend
+    /// flags is set (`CGameStateRun::Update` sets one from its update context's pause), and when
+    /// the world exists and `dt` is above a small threshold, it fires the pre-simulation callbacks
+    /// ([`AddPreSimulationCallback`](crate::physics::PhysicsSystem::AddPreSimulationCallback)) with the world and `dt`, and
+    /// steps the world once by [`STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS) on the physics thread pool,
+    /// joining the pool before it returns. The game states' updates
+    /// (`CGameStateRun::Update` and the loading and front-end states' updates) call it inline on
+    /// the thread that runs them, through the physics update, which dispatches the queued
+    /// collisions and the damage listeners' events after it.
+    pub unsafe fn Update(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::Update_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const AddPreSimulationCallback_ADDRESS: usize = 0x1402BEA00;
+    /// Appends `callback` to the pre-simulation callbacks [`Update`](crate::physics::PhysicsSystem::Update) fires before
+    /// each step, a plain `std::vector` push. The ragdolls, the grappling hook's wire, and the AI
+    /// world register themselves this way. A callback added while the callbacks fire would
+    /// invalidate the walk over them.
+    pub unsafe fn AddPreSimulationCallback(
+        &mut self,
+        callback: *mut crate::physics::PfxPreSimulationCallback,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                callback: *mut crate::physics::PfxPreSimulationCallback,
+            ) = ::std::mem::transmute(Self::AddPreSimulationCallback_ADDRESS);
+            f(self as *mut Self as _, callback)
+        }
+    }
+    pub const RemovePreSimulationCallback_ADDRESS: usize = 0x140286FC0;
+    /// Clears every entry of the pre-simulation callbacks that is `callback`. The entry is not
+    /// erased at once: the next walk over the callbacks (before a step, or on a world shift)
+    /// compacts the cleared entries away, so a callback may remove itself, or another, while they
+    /// fire.
+    pub unsafe fn RemovePreSimulationCallback(
+        &mut self,
+        callback: *mut crate::physics::PfxPreSimulationCallback,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                callback: *mut crate::physics::PfxPreSimulationCallback,
+            ) = ::std::mem::transmute(Self::RemovePreSimulationCallback_ADDRESS);
+            f(self as *mut Self as _, callback)
+        }
+    }
     pub const CastRay_ADDRESS: usize = 0x140286740;
     /// The general ray query: casts `ray` (world space, normalized direction) from `min_fraction`
     /// out to `max_distance` along its direction against collision `layer`, returning whether it
@@ -802,6 +1245,9 @@ impl PhysicsSystem {
     /// The collision layer [`CastRaySimple`](crate::physics::PhysicsSystem::CastRaySimple) hardcodes, and the one the
     /// player's direct-aim query passes to [`CastRay`](crate::physics::PhysicsSystem::CastRay).
     pub const QUERY_LAYER: i32 = 21;
+    /// The simulation step, seconds. [`Update`](crate::physics::PhysicsSystem::Update) steps the world once per call by
+    /// exactly this, whatever time it is given.
+    pub const STEP_SECONDS: f32 = 0.033333335;
 }
 impl std::convert::AsRef<PhysicsSystem> for PhysicsSystem {
     fn as_ref(&self) -> &PhysicsSystem {
@@ -1053,6 +1499,19 @@ impl std::convert::AsMut<WaterProxyVftable> for WaterProxyVftable {
         self
     }
 }
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// `hknpWorld::AdditionMode`: whether [`hknpWorld::createDynamicBody`](crate::physics::hknpWorld::createDynamicBody) adds the new body to the
+/// simulation. Only the value that leaves it out is bound.
+pub enum hknpAdditionMode {
+    DO_NOT_ADD = 0isize as _,
+}
+fn _hknpAdditionMode_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], hknpAdditionMode>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(16))]
 /// A Havok body (`hknpBody`): its transform, collision data, and the motion that moves it. Only
 /// some members are bound.
@@ -1060,7 +1519,10 @@ pub struct hknpBody {
     _field_0: [u8; 64],
     /// The body's flags; see [`IS_DYNAMIC`](crate::physics::hknpBody::IS_DYNAMIC).
     pub m_flags: u32,
-    _field_44: [u8; 36],
+    /// The body's collision-filter word, read by the world's collision filter; see
+    /// [`CustomGroupCollisionFilter`](crate::physics::CustomGroupCollisionFilter) for its fields.
+    pub m_collisionFilterInfo: u32,
+    _field_48: [u8; 32],
     /// The body's motion in [`hknpWorld::m_motions`](crate::physics::hknpWorld::m_motions); bodies attached to one another share it.
     pub m_motionId: u32,
     _field_6c: [u8; 36],
@@ -1232,6 +1694,32 @@ fn _hknpWorld_size_check() {
     unreachable!()
 }
 impl hknpWorld {
+    pub const createDynamicBody_ADDRESS: usize = 0x1401E9B20;
+    /// Creates a dynamic body from `cinfo` with a new motion from `motion_cinfo`, writes the new
+    /// body id to `out`, and returns `out`. The body takes its own reference to the shape. With
+    /// [`DO_NOT_ADD`](crate::physics::hknpAdditionMode::DO_NOT_ADD) the body exists but is not in the simulation
+    /// until it is added; any other `mode` adds it through the world's body addition with `flags`.
+    /// The disassembler names the body creation it calls `hknpWorld::setBodyShape`.
+    pub unsafe fn createDynamicBody(
+        &mut self,
+        out: *mut u32,
+        cinfo: *const crate::havok::hknpBodyCinfo,
+        motion_cinfo: *const crate::havok::hknpMotionCinfo,
+        mode: crate::physics::hknpAdditionMode,
+        flags: u8,
+    ) -> *mut u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                out: *mut u32,
+                cinfo: *const crate::havok::hknpBodyCinfo,
+                motion_cinfo: *const crate::havok::hknpMotionCinfo,
+                mode: crate::physics::hknpAdditionMode,
+                flags: u8,
+            ) -> *mut u32 = ::std::mem::transmute(Self::createDynamicBody_ADDRESS);
+            f(self as *mut Self as _, out, cinfo, motion_cinfo, mode, flags)
+        }
+    }
     pub const castRay_ADDRESS: usize = 0x141500BE0;
     /// Casts a ray query (`hknpRayCastQuery`) and reports hits to `collector`
     /// (`hknpCollisionQueryCollector`).

@@ -3,7 +3,7 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
+use crate::controllers::{physical_hands::physics::HandBodiesConfig, weapons::config::PulseSpec};
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
 /// controller scheme, on foot on the ground, and for a hand that holds nothing, so they default on.
@@ -57,6 +57,8 @@ pub struct PhysicalHandsConfig {
     pub show_boxes: bool,
     /// Picking up and holding loose objects with an empty hand's grip.
     pub pickup: PickupConfig,
+    /// The hand bodies, which replace the palm's probes for the hands they drive.
+    pub bodies: HandBodiesConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -87,6 +89,7 @@ impl PhysicalHandsConfig {
             },
             show_boxes: false,
             pickup: PickupConfig::new(),
+            bodies: HandBodiesConfig::new(),
         }
     }
 }

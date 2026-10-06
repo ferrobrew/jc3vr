@@ -23,6 +23,10 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [profiling.md](engine/performance/profiling.md) — the engine's timing systems: which are live and which are compiled out on the CPU and GPU sides, and the per-pass structure of the frame.
 
+### physics/
+
+- [havok-bodies.md](engine/physics/havok-bodies.md) — the physics step and where the world may change before it (the pre-simulation callbacks, world recentring), making and tearing down a free dynamic body with the engine's wrapper, and the collision filter's word, system groups, and layer table.
+
 ### character/
 
 - [skeleton.md](engine/character/skeleton.md) — the pose producer's tick-spaced pose pair, the Havok pose and skeleton, the shipped skeleton's bone hierarchy, the model-space Joint API, frame ordering, what reads the pose before the last override point, and where to override bones.
@@ -101,7 +105,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [controls-summary.md](mod/input/controls-summary.md) — the controls summary on the off-hand wrist: hiding the game's button hints, the binding tables read by both the injection and a describer, labels from the game's localisation, the panel and its glance, the glyph and font assets, and the in-game status list.
 - [controllers.md](mod/input/controllers.md) — the motion controllers as built: the OpenXR input foundation, scheme selection, mode detection, the bindings and their injection, the gamepad-semantics pin, the aim-state pin, controller-owned hands, per-hand aiming, the sight lines and their tuning tool, the world-space overlay layer, recoil, haptics, dual-wield, the anchored grapple hand, vehicles and flight, grenades, aim assist, and scopes.
 - [reload.md](mod/input/reload.md) — the true reload: the game's reloads stopped, the eject by button or flick, the universal belt pouch, loading into the gun's real well, the one-handed belt reload, the chamber and the hand-worked slide, charging handle, bolt, and pump, the dual-wielded pistols' split magazines, and what is unverified.
-- [physical-hands.md](mod/input/physical-hands.md) — each empty hand's palm colliding with the world: the probes, pushing off surfaces, holding the hand at them, passing through characters, shoving and knocking objects with a soft contact that heavy objects resist, picking up loose objects at the touched point and holding them with one or both hands within the hands' strength, throwing them, grabbing weapons, and the headset checklist.
+- [physical-hands.md](mod/input/physical-hands.md) — each empty hand's palm colliding with the world: the hand bodies in the physics world, their drive, lifecycle, and push on the player, the probes they replace, pushing off surfaces, holding the hand at them, passing through characters, shoving and knocking objects with a soft contact that heavy objects resist, picking up loose objects at the touched point and holding them with one or both hands within the hands' strength, throwing them, grabbing weapons, and the headset checklist.
 - [steering-wheel.md](mod/input/steering-wheel.md) — the physical wheel and handlebars placed from the driven vehicle's parts: the box fit, the override table, the fallback held in the vehicle's space, the handlebars for the ATV, jetski, and duck, the rendered wheel turned in the render update, and the headset checklist.
 
 ## issues/

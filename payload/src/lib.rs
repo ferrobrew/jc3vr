@@ -283,6 +283,10 @@ fn update() {
         // one pass, and before the game's own update consumes the state they set.
         director::update();
 
+        // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
+        // registering it never races the engine's walk over the callbacks.
+        controllers::physical_hands::physics::frame_tick();
+
         // The per-eye captures feed the VR blit, the desktop mirror, and the F10 capture composite.
         // Driven here rather than from inside the egui closure below: they are what VR submits, and
         // preparing them only as a side effect of the debug UI meant an `EguiState` that failed to
