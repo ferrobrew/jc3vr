@@ -113,7 +113,16 @@ impl std::convert::AsMut<AnimatedModel> for AnimatedModel {
 /// A character's animation controller (`NCharacterSystem::CAnimationControl`): the skeleton, the
 /// pose producer, and one body part per animation layer.
 pub struct AnimationController {
-    _field_0: [u8; 200],
+    _field_0: [u8; 160],
+    /// The skeleton resource, through which [`GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex) resolves a bone by
+    /// the hash of its name.
+    pub m_Skeleton: *mut crate::animation::skeleton::Skeleton,
+    _field_a8: [u8; 16],
+    /// The pose producer, whose [`m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1) the
+    /// joint accessors ([`GetJoint`](crate::character::character::AnimationController::GetJoint) and [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and
+    /// write.
+    pub m_PoseProducer: *mut crate::animation::pose_producer::PoseProducer,
+    _field_c0: [u8; 8],
     /// The animation layers' body parts, in layer order: index *i* belongs to the layer named by
     /// [`AnimationLayer`](crate::character::character::AnimationLayer) *i*, alongside the rule system at the same index of
     /// [`AnimatedModel::m_RuleSystems`](crate::character::character::AnimatedModel::m_RuleSystems).

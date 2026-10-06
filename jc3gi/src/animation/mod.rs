@@ -4,4 +4,5 @@ pub mod ik;
 pub mod message;
 pub mod pose_producer;
 pub mod rule_system;
+pub mod skeleton;
 pub mod symbol_table;

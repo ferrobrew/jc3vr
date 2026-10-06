@@ -20,6 +20,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     self,
+    body::procedural::skeleton,
     hands::{self, ik::HandPlan},
     roomscale::stance,
 };
@@ -75,6 +76,9 @@ fn character_update_pass_finalize_pose_parallel(
     let plan = local.then(hands::ik::plan);
     // SAFETY: the engine passes the pass's update context, whose first field is the step.
     let dt = unsafe { context.cast::<GameObjectUpdateContext>().as_ref() }.map_or(0.0, |c| c.m_Dt);
+    if let Some(character) = unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter) {
+        unsafe { skeleton::dump_once(character) };
+    }
     unsafe { stance::unarmed::tick(character) };
     let stance_plan = unsafe { stance::plan(character, dt) };
     unsafe {

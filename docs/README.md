@@ -25,7 +25,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ### character/
 
-- [skeleton.md](engine/character/skeleton.md) — the Havok pose store, the model-space Joint API, frame ordering, and where to override bones.
+- [skeleton.md](engine/character/skeleton.md) — the pose producer's tick-spaced pose pair, the Havok pose and skeleton, the shipped skeleton's bone hierarchy, the model-space Joint API, frame ordering, what reads the pose before the last override point, and where to override bones.
 - [humanik.md](engine/character/humanik.md) — the HumanIK solver: layout, per-frame lifecycle, effector ids, and the external-target injection recipe.
 - [hands-locomotion-and-state.md](engine/character/hands-locomotion-and-state.md) — the weapon-to-hand attach chain, the per-arm aim IK, root motion and the collision proxy, scene queries, teleport signals, the vehicle seat attach, the proxy capsule and pause, and the per-tick character state signals.
 - [idle-stance.md](engine/character/idle-stance.md) — the on-foot idle's clip variants, the animation modifiers that choose them, and why every armed idle is a combat stance.

@@ -48,6 +48,7 @@
 pub mod alignment;
 pub mod calibration;
 pub(crate) mod menu;
+pub mod procedural;
 pub mod torso;
 
 use glam::{Quat, Vec3};

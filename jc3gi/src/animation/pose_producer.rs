@@ -134,7 +134,29 @@ impl std::convert::AsMut<Blender> for Blender {
 /// unchanged. The blenders are added in the order of the animation controller's body parts
 /// ([`AnimationController::m_BodyParts`](crate::character::character::AnimationController::m_BodyParts)),
 /// one per layer.
-pub struct PoseProducer {}
+///
+/// The two poses are a tick-spaced pair. Kicking the pose job (`CPoseProducer::KickUpdateJob`)
+/// swaps them and queues `PoseUpdate_fragment` on a CPU fragment worker, so the pose the job
+/// writes this tick is the buffer that held the tick before last, and the previous
+/// tick's result (with every change made to it after the job, the HumanIK solve and joint writes
+/// included) becomes [`m_PoseT0`](crate::animation::pose_producer::PoseProducer::m_PoseT0) untouched. The skinning job blends `T0` to `T1`.
+pub struct PoseProducer {
+    _field_0: [u8; 32],
+    /// The previous tick's pose.
+    pub m_PoseT0: *mut crate::animation::skeleton::HkaPose,
+    /// The current tick's pose: the one the pose job writes, and the one the animation controller's
+    /// joint accessors
+    /// ([`AnimationController::GetJoint`](crate::character::character::AnimationController::GetJoint) and
+    /// [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and write in model
+    /// space.
+    pub m_PoseT1: *mut crate::animation::skeleton::HkaPose,
+}
+fn _PoseProducer_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], PoseProducer>([0u8; 0x30]);
+    }
+    unreachable!()
+}
 impl PoseProducer {
     pub const MakeSkinningPalette_ADDRESS: usize = 0x141E69600;
     /// Queues a skinning-palette job for this producer: advances the time of any time-updatable

@@ -47,6 +47,51 @@ impl EventIdSymbolTable {
     /// The right melee stumble, for a character struck from behind; see
     /// [`ACT_HITREACT_MELEE_STUMBLE_LEFT_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_MELEE_STUMBLE_LEFT_0).
     pub const ACT_HITREACT_MELEE_STUMBLE_RIGHT_180: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_RIGHT_180";
+    /// The forward run start, out of the idle: one of the directional run-start (wind-up) acts that
+    /// [`QueueStarts`](crate::input::locomotion::NStateTask_LocoUtil::QueueStarts) chooses by the angle from
+    /// the body's forward to the move direction. Its clip starts straight ahead.
+    pub const ACT_IDLE_TO_START_0: &::std::ffi::CStr = c"ACT_IDLE_TO_START_0";
+    /// The run start that turns a third to the left; see
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0).
+    pub const ACT_IDLE_TO_START_120L: &::std::ffi::CStr = c"ACT_IDLE_TO_START_120L";
+    /// The run start that turns a third to the right; see
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0).
+    pub const ACT_IDLE_TO_START_120R: &::std::ffi::CStr = c"ACT_IDLE_TO_START_120R";
+    /// The run start that turns around to the left; see
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0).
+    pub const ACT_IDLE_TO_START_180L: &::std::ffi::CStr = c"ACT_IDLE_TO_START_180L";
+    /// The run start that turns around to the right; see
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0).
+    pub const ACT_IDLE_TO_START_180R: &::std::ffi::CStr = c"ACT_IDLE_TO_START_180R";
+    /// The run start that turns a quarter to the left; see
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0).
+    pub const ACT_IDLE_TO_START_90L: &::std::ffi::CStr = c"ACT_IDLE_TO_START_90L";
+    /// The run start that turns a quarter to the right on the way out of the idle; see
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0).
+    pub const ACT_IDLE_TO_START_90R: &::std::ffi::CStr = c"ACT_IDLE_TO_START_90R";
+    /// The forward walk start: the walk flavor of
+    /// [`ACT_IDLE_TO_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_START_0), which
+    /// [`QueueStarts`](crate::input::locomotion::NStateTask_LocoUtil::QueueStarts) picks when the speed is
+    /// below the movement settings' threshold.
+    pub const ACT_IDLE_TO_WALK_START_0: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_0";
+    /// The walk start that turns a third to the left; see
+    /// [`ACT_IDLE_TO_WALK_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_WALK_START_0).
+    pub const ACT_IDLE_TO_WALK_START_120L: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_120L";
+    /// The walk start that turns a third to the right; see
+    /// [`ACT_IDLE_TO_WALK_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_WALK_START_0).
+    pub const ACT_IDLE_TO_WALK_START_120R: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_120R";
+    /// The walk start that turns around to the left; see
+    /// [`ACT_IDLE_TO_WALK_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_WALK_START_0).
+    pub const ACT_IDLE_TO_WALK_START_180L: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_180L";
+    /// The walk start that turns around to the right; see
+    /// [`ACT_IDLE_TO_WALK_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_WALK_START_0).
+    pub const ACT_IDLE_TO_WALK_START_180R: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_180R";
+    /// The walk start that turns a quarter to the left; see
+    /// [`ACT_IDLE_TO_WALK_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_WALK_START_0).
+    pub const ACT_IDLE_TO_WALK_START_90L: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_90L";
+    /// The walk start that turns a quarter to the right; see
+    /// [`ACT_IDLE_TO_WALK_START_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_IDLE_TO_WALK_START_0).
+    pub const ACT_IDLE_TO_WALK_START_90R: &::std::ffi::CStr = c"ACT_IDLE_TO_WALK_START_90R";
     /// The automatic holster queued by `CPlayer::UpdateMentalState`
     /// ([`Player_UpdateMentalState`](crate::character::player::Player_UpdateMentalState)) when the
     /// player's mental state decays to relaxed with a weapon wielded. It drives a state chain in
@@ -57,6 +102,35 @@ impl EventIdSymbolTable {
     pub const ACT_REVERSE: &::std::ffi::CStr = c"ACT_REVERSE";
     /// The motorbike variant of [`ACT_REVERSE`](crate::animation::symbol_table::EventIdSymbolTable::ACT_REVERSE).
     pub const ACT_REVERSE_MOTORBIKE: &::std::ffi::CStr = c"ACT_REVERSE_MOTORBIKE";
+    /// See [`ACT_ROTATE_45L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_45L).
+    pub const ACT_ROTATE_180L: &::std::ffi::CStr = c"ACT_ROTATE_180L";
+    /// See [`ACT_ROTATE_90L_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_90L_WARP).
+    pub const ACT_ROTATE_180L_WARP: &::std::ffi::CStr = c"ACT_ROTATE_180L_WARP";
+    /// See [`ACT_ROTATE_45L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_45L).
+    pub const ACT_ROTATE_180R: &::std::ffi::CStr = c"ACT_ROTATE_180R";
+    /// See [`ACT_ROTATE_90L_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_90L_WARP).
+    pub const ACT_ROTATE_180R_WARP: &::std::ffi::CStr = c"ACT_ROTATE_180R_WARP";
+    /// The rotate-on-spot acts: a standing turn in place by an eighth, a quarter, or half a turn,
+    /// left or right, queued by the on-foot input tasks' on-spot turn queuers when the body's
+    /// facing and the wanted facing differ while the character stands still.
+    pub const ACT_ROTATE_45L: &::std::ffi::CStr = c"ACT_ROTATE_45L";
+    /// See [`ACT_ROTATE_45L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_45L).
+    pub const ACT_ROTATE_45R: &::std::ffi::CStr = c"ACT_ROTATE_45R";
+    /// See [`ACT_ROTATE_45L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_45L).
+    pub const ACT_ROTATE_90L: &::std::ffi::CStr = c"ACT_ROTATE_90L";
+    /// The warp flavors of the rotate-on-spot acts; see [`ACT_ROTATE_45L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_45L).
+    pub const ACT_ROTATE_90L_WARP: &::std::ffi::CStr = c"ACT_ROTATE_90L_WARP";
+    /// See [`ACT_ROTATE_45L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_45L).
+    pub const ACT_ROTATE_90R: &::std::ffi::CStr = c"ACT_ROTATE_90R";
+    /// See [`ACT_ROTATE_90L_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_90L_WARP).
+    pub const ACT_ROTATE_90R_WARP: &::std::ffi::CStr = c"ACT_ROTATE_90R_WARP";
+    /// Ends a standing rotation that [`ACT_ROTATE_LEFT_START`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_LEFT_START) or
+    /// [`ACT_ROTATE_RIGHT_START`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_RIGHT_START) started.
+    pub const ACT_ROTATE_END: &::std::ffi::CStr = c"ACT_ROTATE_END";
+    /// Starts the standing rotation to the left; see [`ACT_ROTATE_END`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_END).
+    pub const ACT_ROTATE_LEFT_START: &::std::ffi::CStr = c"ACT_ROTATE_LEFT_START";
+    /// Starts the standing rotation to the right; see [`ACT_ROTATE_END`](crate::animation::symbol_table::EventIdSymbolTable::ACT_ROTATE_END).
+    pub const ACT_ROTATE_RIGHT_START: &::std::ffi::CStr = c"ACT_ROTATE_RIGHT_START";
     /// The gun-side pump act: the pump shotgun's (`w151`) own state machine plays the pump on
     /// the gun's model for it. The shotgun's gun-facing do-act component
     /// ([`DoActWeaponComponent`](crate::equipment::weapon::DoActWeaponComponent)) sends it to the gun
@@ -68,6 +142,34 @@ impl EventIdSymbolTable {
     /// `UB_ACT_SNIPER_BOLT_ACTION`, which the rifle's per-tick update queues
     /// ([`SniperWeapon::UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel)).
     pub const ACT_SNIPER_BOLT_ACTION: &::std::ffi::CStr = c"ACT_SNIPER_BOLT_ACTION";
+    /// The straight stop: one of the stop-and-turn acts that
+    /// [`QueueStopTurns`](crate::input::locomotion::NStateTask_LocoUtil::QueueStopTurns) chooses by the angle
+    /// from the body's forward to the aim, here none.
+    pub const ACT_STOP_TURN_0: &::std::ffi::CStr = c"ACT_STOP_TURN_0";
+    /// The warp flavor of the straight stop; the `_WARP` stop turns below are its turning
+    /// variants.
+    pub const ACT_STOP_TURN_0_WARP: &::std::ffi::CStr = c"ACT_STOP_TURN_0_WARP";
+    /// The stop that turns a third to the left; see [`ACT_STOP_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0).
+    pub const ACT_STOP_TURN_120L: &::std::ffi::CStr = c"ACT_STOP_TURN_120L";
+    /// The stop that turns a third to the right; see [`ACT_STOP_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0).
+    pub const ACT_STOP_TURN_120R: &::std::ffi::CStr = c"ACT_STOP_TURN_120R";
+    /// The stop that turns around to the left; see [`ACT_STOP_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0).
+    pub const ACT_STOP_TURN_180L: &::std::ffi::CStr = c"ACT_STOP_TURN_180L";
+    /// See [`ACT_STOP_TURN_0_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0_WARP).
+    pub const ACT_STOP_TURN_180L_WARP: &::std::ffi::CStr = c"ACT_STOP_TURN_180L_WARP";
+    /// The stop that turns around to the right; see [`ACT_STOP_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0).
+    pub const ACT_STOP_TURN_180R: &::std::ffi::CStr = c"ACT_STOP_TURN_180R";
+    /// See [`ACT_STOP_TURN_0_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0_WARP).
+    pub const ACT_STOP_TURN_180R_WARP: &::std::ffi::CStr = c"ACT_STOP_TURN_180R_WARP";
+    /// The stop that turns a quarter to the left; see [`ACT_STOP_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0).
+    pub const ACT_STOP_TURN_90L: &::std::ffi::CStr = c"ACT_STOP_TURN_90L";
+    /// See [`ACT_STOP_TURN_0_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0_WARP).
+    pub const ACT_STOP_TURN_90L_WARP: &::std::ffi::CStr = c"ACT_STOP_TURN_90L_WARP";
+    /// The stop that turns a quarter to the right; see
+    /// [`ACT_STOP_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0).
+    pub const ACT_STOP_TURN_90R: &::std::ffi::CStr = c"ACT_STOP_TURN_90R";
+    /// See [`ACT_STOP_TURN_0_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0_WARP).
+    pub const ACT_STOP_TURN_90R_WARP: &::std::ffi::CStr = c"ACT_STOP_TURN_90R_WARP";
     /// The one-off idle-variation act: transitions the on-foot idle from `S_IDLE` to
     /// `S_IDLE_ONE_OFF` in `rico_base.afsmb`, playing a single idle-break animation (a weight shift,
     /// a look-around, a fidget) before returning to `S_IDLE`. `NStateTask_InputLocoIdleTask::Update`
@@ -75,6 +177,15 @@ impl EventIdSymbolTable {
     /// per-character idle countdown (reset to a random ~8.5-12 s each time the character moves)
     /// elapses while the character is standing still, calm, and not attached to a vehicle.
     pub const ACT_TO_IDLE_ONE_OFF: &::std::ffi::CStr = c"ACT_TO_IDLE_ONE_OFF";
+    /// See [`ACT_TURN_90L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_TURN_90L).
+    pub const ACT_TURN_180L: &::std::ffi::CStr = c"ACT_TURN_180L";
+    /// See [`ACT_TURN_90L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_TURN_90L).
+    pub const ACT_TURN_180R: &::std::ffi::CStr = c"ACT_TURN_180R";
+    /// The quarter and half turns to either side. The locomotion utilities and the grapple-fire move
+    /// task also queue the half turns.
+    pub const ACT_TURN_90L: &::std::ffi::CStr = c"ACT_TURN_90L";
+    /// See [`ACT_TURN_90L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_TURN_90L).
+    pub const ACT_TURN_90R: &::std::ffi::CStr = c"ACT_TURN_90R";
     /// The upper-body holster act. Queued by
     /// [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)'s
     /// relaxed branch for the player, by
