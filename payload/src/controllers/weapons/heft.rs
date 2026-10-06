@@ -1,24 +1,32 @@
-//! The one-handed weight of a long gun: held in one hand, it sags, trails the hand, and sways, it
-//! kicks harder, and it shoots wider; bracing it on the foregrip takes all of that away.
+//! The weight of a long gun. Held in one hand, it sags, trails the hand, and sways, it kicks
+//! harder, and it shoots wider. Braced on the foregrip, most of that goes, but the gun keeps a
+//! weight of its own: it lags a quick swing of the hands a little on a critically damped spring and
+//! settles on the aim without overshooting, and it sags a little.
 //!
 //! How much of each a weapon gets is its class's tuning ([`HeftClass`], from the weapon's class,
-//! [`WeaponBase::m_Class`]): none for the sidearms, a little for the rifles, and a lot for the
-//! launchers and the other heavy weapons. The input tick publishes the held weapon and its hand
-//! ([`observe`]); everything else reads that.
+//! [`WeaponBase::m_Class`]): none for the pistols and revolvers, in either hold; one-handed, none
+//! for the SMGs either, a little for the rifles, and a lot for the launchers and the other heavy
+//! weapons; braced, least for the SMGs and most for the heavy weapons. The input tick publishes the
+//! held weapon and its hand ([`observe`]); everything else reads that.
 //!
 //! - The pose: [`apply`] turns the holding hand's poses about the controller's grip, on the active
 //!   hands every hand subsystem starts from ([`crate::controllers::hands::active_hands`]), so the
 //!   IK, the late update, the gun's sight line, and the overlay all carry it, and a shot goes where
 //!   the drooping gun points. The gun pitches down about the horizontal axis across its barrel, by
-//!   the class's sag plus its reach sag as the hand moves away from the head, scaled by how level
-//!   the barrel is; it sways on two incommensurate sine waves; and the result is followed on a
-//!   damped rotational spring, so the gun trails a fast turn of the wrist and settles after it.
+//!   the sag plus the one-handed reach sag as the hand moves away from the head, scaled by how level
+//!   the barrel is; held in one hand it sways on two incommensurate sine waves; and the result is
+//!   followed on a damped rotational spring, so the gun trails a fast turn and settles after it.
+//!   The one-handed and the braced weights blend by how far the foregrip is engaged ([`Weight`]).
+//!   While the foregrip is held, the off-hand is turned with the gun, so the gun drives both hands
+//!   and they stay on it; the braced weight's angle is capped small, so the hands never stray far
+//!   from the controllers.
 //! - The kick: the recoil multiplies a one-handed shot's kick by the class's kick scale
 //!   ([`one_hand_kick`]); the foregrip's own two-hand kick scale takes over as the grip engages.
 //! - The spread: a detour on [`WeaponBase::GetCurrentScatterValue`] multiplies the scatter the game
 //!   gives the local player's shot by the class's spread scale ([`spread_scale`]).
 //!
-//! The off-hand's foregrip weight ([`foregrip::two_hand_grip`]) scales all three down to nothing.
+//! The off-hand's foregrip weight ([`foregrip::two_hand_grip`]) scales the one-handed weight down
+//! to nothing, and the braced weight up from nothing.
 //! The spring runs on wall-clock time and is advanced lazily by whichever thread reads the hands, as
 //! the recoil's is.
 //!
@@ -44,7 +52,7 @@ use crate::{
         hands::CockpitHand,
         scheme,
         weapons::{
-            config::{HeftConfig, HeftTuning},
+            config::{BracedHeftConfig, BracedTuning, HeftConfig, HeftTuning},
             foregrip,
             recoil::Motion,
         },
@@ -58,8 +66,10 @@ pub(super) fn hook_library() -> HookLibrary {
 /// The weight class a weapon's one-handed tuning comes from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HeftClass {
-    /// Pistols, revolvers, and SMGs.
+    /// Pistols and revolvers.
     Sidearm,
+    /// SMGs: a sidearm in one hand, the lightest of the long guns braced.
+    Smg,
     /// Assault rifles, shotguns, and sniper rifles.
     Rifle,
     /// Launchers, miniguns, mortars, mounted-calibre guns, and the special weapons.
@@ -71,9 +81,8 @@ impl HeftClass {
     /// the enum's range), held in a two-handed slot or not. A weapon whose class is unset or
     /// unknown is a rifle in a two-handed slot and a sidearm otherwise.
     pub fn of(class: i32, two_handed: bool) -> Self {
-        const SIDEARMS: [WeaponClass; 3] = [
+        const SIDEARMS: [WeaponClass; 2] = [
             WeaponClass::E_WEAPON_CLASS_PISTOL,
-            WeaponClass::E_WEAPON_CLASS_SMG,
             WeaponClass::E_WEAPON_CLASS_REVOLVER,
         ];
         const RIFLES: [WeaponClass; 3] = [
@@ -93,6 +102,8 @@ impl HeftClass {
         let is = |set: &[WeaponClass]| set.iter().any(|&c| c as i32 == class);
         if is(&SIDEARMS) {
             HeftClass::Sidearm
+        } else if class == WeaponClass::E_WEAPON_CLASS_SMG as i32 {
+            HeftClass::Smg
         } else if is(&RIFLES) {
             HeftClass::Rifle
         } else if is(&HEAVY) {
@@ -107,15 +118,26 @@ impl HeftClass {
     pub const fn label(self) -> &'static str {
         match self {
             HeftClass::Sidearm => "sidearm",
+            HeftClass::Smg => "SMG",
             HeftClass::Rifle => "rifle",
             HeftClass::Heavy => "heavy",
         }
     }
 
-    /// This class's tuning in `config`.
+    /// This class's one-handed tuning in `config`.
     pub fn tuning(self, config: &HeftConfig) -> HeftTuning {
         match self {
-            HeftClass::Sidearm => config.sidearm,
+            HeftClass::Sidearm | HeftClass::Smg => config.sidearm,
+            HeftClass::Rifle => config.rifle,
+            HeftClass::Heavy => config.heavy,
+        }
+    }
+
+    /// This class's braced tuning in `config`, before its strength.
+    pub fn braced(self, config: &BracedHeftConfig) -> BracedTuning {
+        match self {
+            HeftClass::Sidearm => BracedTuning::NONE,
+            HeftClass::Smg => config.smg,
             HeftClass::Rifle => config.rifle,
             HeftClass::Heavy => config.heavy,
         }
@@ -168,7 +190,7 @@ pub fn observe(target: Option<HeftTarget>) {
 
 /// Turn the holding hand's poses by the weight. `hands` are the cockpit-frame hands, already in
 /// any two-handed pose, indexed by [`Hand::index`]; `head` is the head's cockpit position. The
-/// off-hand of a partly engaged foregrip moves with the gun by the grip's weight.
+/// off-hand of an engaged foregrip moves with the gun by the grip's weight, so the gun carries it.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConfig) {
     let now = Instant::now();
     let grip = foregrip::two_hand_grip();
@@ -177,9 +199,10 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
         .at
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32());
     state.at = Some(now);
+    let acting = config.enabled || config.braced.enabled;
     let target = state
         .target
-        .filter(|(_, at)| config.enabled && now.saturating_duration_since(*at) < MAX_AGE)
+        .filter(|(_, at)| acting && now.saturating_duration_since(*at) < MAX_AGE)
         .map(|(t, _)| t);
     let Some(target) = target else {
         state.spring = None;
@@ -189,8 +212,8 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
         };
         return;
     };
-    let tuning = target.class.tuning(config);
     let share = unbraced_share(grip, target.hand);
+    let weight = Weight::of(target.class, config, share);
     let Some(h) = hands[target.hand.index()] else {
         state.spring = None;
         return;
@@ -199,19 +222,13 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
     let pose = weighted_pose(
         h.grip,
         head,
-        &tuning,
+        &weight,
         config,
-        share,
-        sway(t, config.sway_hz, tuning.sway_deg.to_radians()),
+        sway(t, config.sway_hz, weight.sway_deg.to_radians()),
     );
-    let shown = if tuning.lag_stiffness > 0.0 && share > 0.0 && dt <= MAX_GAP.as_secs_f32() {
+    let shown = if weight.stiffness > 0.0 && dt <= MAX_GAP.as_secs_f32() {
         let spring = state.spring.get_or_insert(RotSpring::at(pose.orientation));
-        spring.step(
-            pose.orientation,
-            dt,
-            tuning.lag_stiffness,
-            tuning.lag_damping_ratio,
-        );
+        spring.step(pose.orientation, dt, weight.stiffness, weight.damping_ratio);
         spring.orientation
     } else {
         state.spring = Some(RotSpring::at(pose.orientation));
@@ -219,9 +236,9 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
     };
     let rotation = clamp_angle(
         shown * h.grip.orientation.inverse(),
-        config.max_angle_deg.to_radians(),
+        weight.max_angle_deg.to_radians(),
     );
-    let sway_shown = pose.sway * share * pose.sway_reach;
+    let sway_shown = pose.sway * weight.sway_share * pose.sway_reach;
     state.status = HeftStatus {
         target: Some(target),
         share,
@@ -293,20 +310,89 @@ pub struct WeightedPose {
     pub sway_reach: f32,
 }
 
-/// Sag and sway the grip orientation of a gun held at `grip` with the head at `head`, for the
-/// unbraced `share` of the class's `tuning`. The sag turns the barrel (the grip's -Z) down about
-/// the horizontal axis across it, by the sag plus the reach sag as the hand moves out, scaled by
-/// how level the barrel is; `sway` (pitch and yaw, radians) turns it about the grip's own axes,
-/// half of it close in and all of it at full reach.
+/// What a gun's weight asks of its pose: its one-handed and its braced tunings blended by how
+/// braced it is.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Weight {
+    /// The sag close in, degrees.
+    pub sag_deg: f32,
+    /// The further sag at full reach, degrees.
+    pub reach_sag_deg: f32,
+    /// The sway's amplitude, degrees.
+    pub sway_deg: f32,
+    /// How much of the sway shows, `0..=1`.
+    pub sway_share: f32,
+    /// The spring's stiffness, per second squared; zero follows rigidly.
+    pub stiffness: f32,
+    pub damping_ratio: f32,
+    /// The furthest the gun may turn from where the hands turn it, degrees.
+    pub max_angle_deg: f32,
+}
+
+impl Weight {
+    /// The weight of a gun of `class` with the unbraced `share` (one in one hand, zero braced):
+    /// each of the one-handed and the braced weights, where its switch in `config` is on, blended
+    /// by the share. The sag and the limits blend linearly; the spring blends by its natural
+    /// frequency, a rigid side counting as a very stiff spring, so that the lag shrinks smoothly as
+    /// the foregrip engages.
+    pub fn of(class: HeftClass, config: &HeftConfig, share: f32) -> Self {
+        let one = if config.enabled {
+            class.tuning(config)
+        } else {
+            HeftTuning::NONE
+        };
+        let braced = if config.braced.enabled {
+            class
+                .braced(&config.braced)
+                .at_strength(config.braced.strength)
+        } else {
+            BracedTuning::NONE
+        };
+        Self::blend(&one, &braced, share, config)
+    }
+
+    /// The blend of the one-handed `one` and the braced `braced` by the unbraced `share`.
+    pub fn blend(one: &HeftTuning, braced: &BracedTuning, share: f32, config: &HeftConfig) -> Self {
+        let share = if share.is_finite() {
+            share.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let (one_k, braced_k) = (one.lag_stiffness.max(0.0), braced.stiffness.max(0.0));
+        let stiffness = if share >= 1.0 {
+            one_k
+        } else if share <= 0.0 {
+            braced_k
+        } else if one_k == 0.0 && braced_k == 0.0 {
+            0.0
+        } else {
+            let omega = |k: f32| if k > 0.0 { k.sqrt() } else { RIGID_OMEGA };
+            lerp(omega(braced_k), omega(one_k), share).powi(2)
+        };
+        Self {
+            sag_deg: lerp(braced.sag_deg, one.sag_deg, share),
+            reach_sag_deg: one.reach_sag_deg * share,
+            sway_deg: one.sway_deg,
+            sway_share: share,
+            stiffness,
+            damping_ratio: lerp(1.0, one.lag_damping_ratio, share),
+            max_angle_deg: lerp(config.braced.max_angle_deg, config.max_angle_deg, share),
+        }
+    }
+}
+
+/// Sag and sway the grip orientation of a gun held at `grip` with the head at `head`, by its
+/// `weight`. The sag turns the barrel (the grip's -Z) down about the horizontal axis across it, by
+/// the sag plus the reach sag as the hand moves out, scaled by how level the barrel is; `sway`
+/// (pitch and yaw, radians, at full share) turns it about the grip's own axes, half of it close in
+/// and all of it at full reach.
 pub fn weighted_pose(
     grip: Pose,
     head: Vec3,
-    tuning: &HeftTuning,
+    weight: &Weight,
     config: &HeftConfig,
-    share: f32,
     sway: Vec2,
 ) -> WeightedPose {
-    let share = share.clamp(0.0, 1.0);
     let reach = smoothstep(
         config.reach_near_m,
         config.reach_far_m,
@@ -314,11 +400,11 @@ pub fn weighted_pose(
     );
     let forward = grip.orientation * Vec3::NEG_Z;
     let level = Vec2::new(forward.x, forward.z).length().min(1.0);
-    let sag = (tuning.sag_deg + tuning.reach_sag_deg * reach).to_radians() * level * share;
+    let sag = (weight.sag_deg + weight.reach_sag_deg * reach).to_radians() * level;
     let across = Vec3::Y.cross(forward).try_normalize();
     let droop = across.map_or(Quat::IDENTITY, |axis| Quat::from_axis_angle(axis, sag));
     let sway_reach = 0.5 + 0.5 * reach;
-    let sway_scaled = sway * share * sway_reach;
+    let sway_scaled = sway * weight.sway_share * sway_reach;
     let wobble = Quat::from_rotation_y(sway_scaled.y) * Quat::from_rotation_x(sway_scaled.x);
     WeightedPose {
         orientation: (droop * grip.orientation * wobble).normalize(),
@@ -397,6 +483,9 @@ pub fn clamp_angle(rotation: Quat, max: f32) -> Quat {
     }
 }
 
+/// The natural frequency a rigid side of a blend counts as, radians per second: stiff enough that
+/// its lag cannot be seen, soft enough for the spring's sub-steps.
+const RIGID_OMEGA: f32 = 120.0;
 /// How long a published weapon stays in effect without a new input tick.
 const MAX_AGE: Duration = Duration::from_millis(500);
 /// A gap longer than this between reads puts the spring at rest on its target.
@@ -497,11 +586,56 @@ mod tests {
         q * Vec3::NEG_Z
     }
 
+    /// The one-handed pose of a gun with `tuning` at the unbraced `share`, with no braced weight.
+    fn pose_of(grip: Pose, tuning: &HeftTuning, share: f32, sway: Vec2) -> WeightedPose {
+        let c = config();
+        let weight = Weight::blend(tuning, &BracedTuning::NONE, share, &c);
+        weighted_pose(grip, Vec3::ZERO, &weight, &c, sway)
+    }
+
+    const FRAME_S: f32 = 1.0 / 90.0;
+
+    /// The spring's lag behind a target turning about +Y at `speed` radians per second for
+    /// `seconds`, then the largest overshoot past the target once it stops, both radians.
+    fn swing(weight: &Weight, speed: f32, seconds: f32) -> (f32, f32) {
+        let mut spring = RotSpring::at(Quat::IDENTITY);
+        let mut yaw = 0.0;
+        let frames = (seconds / FRAME_S) as usize;
+        for _ in 0..frames {
+            yaw += speed * FRAME_S;
+            spring.step(
+                Quat::from_rotation_y(yaw),
+                FRAME_S,
+                weight.stiffness,
+                weight.damping_ratio,
+            );
+        }
+        let lag = spring.orientation.angle_between(Quat::from_rotation_y(yaw));
+        let target = Quat::from_rotation_y(yaw);
+        let mut overshoot: f32 = 0.0;
+        for _ in 0..90 {
+            spring.step(target, FRAME_S, weight.stiffness, weight.damping_ratio);
+            // Past the target is further round in the swing's direction.
+            let past = (spring.orientation * target.inverse()).to_scaled_axis().y;
+            overshoot = overshoot.max(past);
+        }
+        assert!(spring.orientation.angle_between(target) < 1e-3);
+        (lag, overshoot)
+    }
+
+    fn braced(class: HeftClass) -> Weight {
+        Weight::of(class, &config(), 0.0)
+    }
+
     #[test]
     fn weapon_classes_map_to_weight_classes() {
         let class = |c: WeaponClass, two| HeftClass::of(c as i32, two);
         assert_eq!(
             class(WeaponClass::E_WEAPON_CLASS_SMG, false),
+            HeftClass::Smg
+        );
+        assert_eq!(
+            class(WeaponClass::E_WEAPON_CLASS_PISTOL, false),
             HeftClass::Sidearm
         );
         assert_eq!(
@@ -527,28 +661,29 @@ mod tests {
     fn sidearms_carry_no_weight() {
         let c = config();
         let grip = level_grip(Vec3::new(0.0, -0.3, -0.6));
-        let pose = weighted_pose(grip, Vec3::ZERO, &c.sidearm, &c, 1.0, Vec2::ZERO);
+        let pose = pose_of(grip, &c.sidearm, 1.0, Vec2::ZERO);
         assert!(pose.orientation.angle_between(Quat::IDENTITY) < 1e-5);
         assert_eq!(c.sidearm.kick_scale, 1.0);
         assert_eq!(c.sidearm.spread_scale, 1.0);
+        // In either hold: a pistol braced in two hands carries nothing either.
+        for share in [0.0, 0.5, 1.0] {
+            let weight = Weight::of(HeftClass::Sidearm, &c, share);
+            assert_eq!((weight.sag_deg, weight.stiffness), (0.0, 0.0), "{share}");
+        }
     }
 
     #[test]
     fn a_heavy_gun_sags_down_and_more_at_reach() {
         let c = config();
-        let near = weighted_pose(
+        let near = pose_of(
             level_grip(Vec3::new(0.0, -0.2, -0.1)),
-            Vec3::ZERO,
             &c.heavy,
-            &c,
             1.0,
             Vec2::ZERO,
         );
-        let far = weighted_pose(
+        let far = pose_of(
             level_grip(Vec3::new(0.0, -0.2, -0.7)),
-            Vec3::ZERO,
             &c.heavy,
-            &c,
             1.0,
             Vec2::ZERO,
         );
@@ -564,8 +699,8 @@ mod tests {
     fn a_rifle_sags_less_than_a_launcher() {
         let c = config();
         let grip = level_grip(Vec3::new(0.0, -0.2, -0.5));
-        let rifle = weighted_pose(grip, Vec3::ZERO, &c.rifle, &c, 1.0, Vec2::ZERO);
-        let heavy = weighted_pose(grip, Vec3::ZERO, &c.heavy, &c, 1.0, Vec2::ZERO);
+        let rifle = pose_of(grip, &c.rifle, 1.0, Vec2::ZERO);
+        let heavy = pose_of(grip, &c.heavy, 1.0, Vec2::ZERO);
         assert!(rifle.sag > 0.0 && rifle.sag < heavy.sag);
     }
 
@@ -573,8 +708,12 @@ mod tests {
     fn bracing_removes_the_weight() {
         let c = config();
         let grip = level_grip(Vec3::new(0.0, -0.2, -0.6));
-        let braced = weighted_pose(grip, Vec3::ZERO, &c.heavy, &c, 0.0, Vec2::new(0.1, 0.1));
+        let braced = pose_of(grip, &c.heavy, 0.0, Vec2::new(0.1, 0.1));
         assert!(braced.orientation.angle_between(grip.orientation) < 1e-5);
+        assert_eq!(
+            Weight::blend(&c.heavy, &BracedTuning::NONE, 0.0, &c).stiffness,
+            0.0
+        );
         let grip_on = |weight| {
             Some(foregrip::TwoHandGrip {
                 holder: Hand::Right,
@@ -594,7 +733,7 @@ mod tests {
             position: Vec3::new(0.0, -0.2, -0.6),
             orientation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
         };
-        let pose = weighted_pose(grip, Vec3::ZERO, &c.heavy, &c, 1.0, Vec2::ZERO);
+        let pose = pose_of(grip, &c.heavy, 1.0, Vec2::ZERO);
         assert!(pose.sag.abs() < 1e-4);
         assert!(pose.orientation.is_finite());
     }
@@ -630,6 +769,125 @@ mod tests {
             spring.step(-Quat::from_rotation_x(0.3), 0.01, 260.0, 0.75);
         }
         assert!(spring.orientation.angle_between(Quat::from_rotation_x(0.3)) < 1e-3);
+    }
+
+    #[test]
+    fn a_critically_damped_spring_settles_without_overshoot() {
+        let target = Quat::from_rotation_y(0.4);
+        for stiffness in [50.0, 500.0, 5000.0] {
+            let mut spring = RotSpring::at(Quat::IDENTITY);
+            // The turn left to the target, about +Y; negative past it.
+            let remaining =
+                |spring: &RotSpring| (target * spring.orientation.inverse()).to_scaled_axis().y;
+            let mut last = remaining(&spring);
+            for _ in 0..180 {
+                spring.step(target, FRAME_S, stiffness, 1.0);
+                // Never past the target, so the remaining turn only shrinks.
+                let now = remaining(&spring);
+                assert!(now >= -1e-4, "{stiffness}: past the target by {now}");
+                assert!(now <= last + 1e-5, "{stiffness}: {now} after {last}");
+                last = now;
+            }
+            assert!(last.abs() < 1e-3, "{stiffness}: {last}");
+        }
+    }
+
+    #[test]
+    fn a_braced_gun_lags_a_quick_swing_a_little_and_settles_on_the_aim() {
+        // A brisk swing of the aim, a sixth of a turn a second.
+        let speed = std::f32::consts::TAU / 6.0;
+        for class in [HeftClass::Smg, HeftClass::Rifle, HeftClass::Heavy] {
+            let weight = braced(class);
+            assert_eq!(weight.damping_ratio, 1.0);
+            let (lag, overshoot) = swing(&weight, speed, 0.5);
+            // The lag is felt but small: a critically damped spring trails a steady swing by
+            // twice its speed over the natural frequency (a little less here, the aim moving in
+            // frame-sized steps), well inside the cap.
+            let expected = 2.0 * speed / weight.stiffness.sqrt();
+            assert!(
+                lag > expected * 0.6 && lag < expected * 1.1,
+                "{class:?}: {lag} vs {expected}"
+            );
+            assert!(
+                lag > 0.2_f32.to_radians() && lag < weight.max_angle_deg.to_radians(),
+                "{class:?}: {}",
+                lag.to_degrees()
+            );
+            assert!(overshoot < 1e-3, "{class:?} overshoots by {overshoot}");
+        }
+    }
+
+    #[test]
+    fn heavier_braced_guns_lag_more() {
+        let speed = 1.0;
+        let lag = |class| swing(&braced(class), speed, 0.5).0;
+        let (smg, rifle, heavy) = (
+            lag(HeftClass::Smg),
+            lag(HeftClass::Rifle),
+            lag(HeftClass::Heavy),
+        );
+        assert!(smg < rifle && rifle < heavy, "{smg} {rifle} {heavy}");
+        // And sag further.
+        assert!(braced(HeftClass::Smg).sag_deg < braced(HeftClass::Rifle).sag_deg);
+        assert!(braced(HeftClass::Rifle).sag_deg < braced(HeftClass::Heavy).sag_deg);
+    }
+
+    #[test]
+    fn the_braced_sag_is_mild() {
+        let c = config();
+        let grip = level_grip(Vec3::new(0.0, -0.2, -0.6));
+        for class in [HeftClass::Smg, HeftClass::Rifle, HeftClass::Heavy] {
+            let weight = braced(class);
+            let pose = weighted_pose(grip, Vec3::ZERO, &weight, &c, Vec2::new(0.1, 0.1));
+            let sag = pose.sag.to_degrees();
+            assert!(sag > 0.0 && sag < 5.0, "{class:?}: {sag}");
+            // Braced, the gun does not sway.
+            let still = weighted_pose(grip, Vec3::ZERO, &weight, &c, Vec2::ZERO);
+            assert!(pose.orientation.angle_between(still.orientation) < 1e-6);
+        }
+    }
+
+    #[test]
+    fn the_strength_scales_the_braced_weight() {
+        let rifle = config().braced.rifle;
+        let double = rifle.at_strength(2.0);
+        assert!((double.sag_deg - rifle.sag_deg * 2.0).abs() < 1e-5);
+        // The lag doubles: the natural frequency halves.
+        assert!((double.stiffness.sqrt() * 2.0 - rifle.stiffness.sqrt()).abs() < 1e-3);
+        assert_eq!(rifle.at_strength(0.0), BracedTuning::NONE);
+        assert_eq!(rifle.at_strength(f32::NAN), BracedTuning::NONE);
+        let mut off = config();
+        off.braced.enabled = false;
+        let weight = Weight::of(HeftClass::Heavy, &off, 0.0);
+        assert_eq!((weight.sag_deg, weight.stiffness), (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_weight_blends_from_one_hand_to_braced() {
+        let c = config();
+        let one = Weight::of(HeftClass::Rifle, &c, 1.0);
+        assert_eq!(one.stiffness, c.rifle.lag_stiffness);
+        assert_eq!(one.damping_ratio, c.rifle.lag_damping_ratio);
+        assert_eq!(one.sag_deg, c.rifle.sag_deg);
+        assert_eq!(one.max_angle_deg, c.max_angle_deg);
+        let two = Weight::of(HeftClass::Rifle, &c, 0.0);
+        assert_eq!(two.stiffness, c.braced.rifle.stiffness);
+        assert_eq!(two.sag_deg, c.braced.rifle.sag_deg);
+        assert_eq!((two.reach_sag_deg, two.sway_share), (0.0, 0.0));
+        assert_eq!(two.max_angle_deg, c.braced.max_angle_deg);
+        // In between, the spring stiffens and the sag lightens as the grip engages.
+        let mut last = one;
+        for share in [0.75, 0.5, 0.25, 0.0] {
+            let w = Weight::of(HeftClass::Rifle, &c, share);
+            assert!(
+                w.stiffness > last.stiffness && w.sag_deg < last.sag_deg,
+                "{share}"
+            );
+            last = w;
+        }
+        // A one-handed SMG stays rigid; only its braced weight springs.
+        assert_eq!(Weight::of(HeftClass::Smg, &c, 1.0).stiffness, 0.0);
+        assert!(Weight::of(HeftClass::Smg, &c, 0.5).stiffness > 0.0);
     }
 
     #[test]

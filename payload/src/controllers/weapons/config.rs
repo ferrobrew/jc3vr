@@ -270,13 +270,14 @@ impl Default for RecoilConfig {
     }
 }
 
-/// The one-handed weight of a heavy weapon (see [`crate::controllers::weapons::heft`]): held in
-/// one hand, a long gun sags, trails the hand on a spring, and sways, its kick grows, and its
-/// spread widens, all scaled by the weapon's class. Bracing it on the foregrip takes all of it
-/// away. Acts only under the controller scheme, so it defaults on.
+/// The weight of a long weapon (see [`crate::controllers::weapons::heft`]): held in one hand, a
+/// long gun sags, trails the hand on a spring, and sways, its kick grows, and its spread widens,
+/// all scaled by the weapon's class; braced on the foregrip, it keeps a lighter weight of its own
+/// ([`BracedHeftConfig`]). Acts only under the controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HeftConfig {
+    /// The one-handed weight.
     pub enabled: bool,
     /// Widen the game's own shot scatter while the weapon is held in one hand.
     pub spread: bool,
@@ -294,6 +295,8 @@ pub struct HeftConfig {
     pub rifle: HeftTuning,
     /// Rocket and grenade launchers, miniguns, and the other heavy and special weapons.
     pub heavy: HeftTuning,
+    /// The weight of a gun braced in both hands.
+    pub braced: BracedHeftConfig,
 }
 
 impl HeftConfig {
@@ -324,6 +327,7 @@ impl HeftConfig {
                 kick_scale: 1.8,
                 spread_scale: 2.5,
             },
+            braced: BracedHeftConfig::new(),
         }
     }
 }
@@ -331,6 +335,95 @@ impl HeftConfig {
 impl Default for HeftConfig {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The weight of a long gun braced in both hands, on the foregrip (see
+/// [`crate::controllers::weapons::heft`]): the gun follows where the hands turn it on a critically
+/// damped spring, so it lags a quick swing a little and settles on the aim without overshooting,
+/// and it sags a little. The hands are carried with the gun, so they stay on it. Pistols and
+/// revolvers carry none. Acts only under the controller scheme, so it defaults on.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BracedHeftConfig {
+    pub enabled: bool,
+    /// How heavy a braced gun feels: one is the classes' tuning, zero carries no weight, and two
+    /// lags twice as long and sags twice as far.
+    pub strength: f32,
+    /// The furthest a braced gun may lag or sag from where the hands turn it, degrees, so that the
+    /// hands, carried with it, never stray far from the controllers.
+    pub max_angle_deg: f32,
+    /// SMGs, the lightest.
+    pub smg: BracedTuning,
+    /// Assault rifles, shotguns, and sniper rifles.
+    pub rifle: BracedTuning,
+    /// Launchers, miniguns, and the other heavy and special weapons, the heaviest.
+    pub heavy: BracedTuning,
+}
+
+impl BracedHeftConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            strength: 1.0,
+            max_angle_deg: 8.0,
+            smg: BracedTuning {
+                sag_deg: 0.5,
+                stiffness: 5000.0,
+            },
+            rifle: BracedTuning {
+                sag_deg: 1.5,
+                stiffness: 1600.0,
+            },
+            heavy: BracedTuning {
+                sag_deg: 3.0,
+                stiffness: 500.0,
+            },
+        }
+    }
+}
+
+impl Default for BracedHeftConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One weapon class's braced weight.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BracedTuning {
+    /// How far the barrel pitches down, degrees.
+    pub sag_deg: f32,
+    /// The stiffness of the critically damped spring the gun follows the hands on, per second
+    /// squared. The higher, the less it lags: a swing at a steady speed trails by about twice the
+    /// speed over the stiffness's square root. Zero follows rigidly.
+    pub stiffness: f32,
+}
+
+impl BracedTuning {
+    /// No weight at all: the braced gun follows the hands as they are.
+    pub const NONE: Self = Self {
+        sag_deg: 0.0,
+        stiffness: 0.0,
+    };
+
+    /// This tuning at `strength`: the sag scaled by it, and the stiffness by its inverse square,
+    /// so that the lag scales with it. Zero or less carries no weight.
+    pub fn at_strength(self, strength: f32) -> Self {
+        if !(strength.is_finite() && strength > 0.0) {
+            return Self::NONE;
+        }
+        Self {
+            sag_deg: self.sag_deg * strength,
+            stiffness: self.stiffness / (strength * strength),
+        }
+    }
+}
+
+impl Default for BracedTuning {
+    fn default() -> Self {
+        Self::NONE
     }
 }
 

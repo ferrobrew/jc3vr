@@ -188,6 +188,23 @@ fn build() -> Page {
             SliderFormat::new(2, "X"),
             |c| c.controllers.weapons.recoil.kick_scale
         ))
+        .item(config_toggle!("ONE-HANDED WEIGHT", |c| c
+            .controllers
+            .weapons
+            .heft
+            .enabled))
+        .item(config_toggle!("TWO-HANDED WEIGHT", |c| c
+            .controllers
+            .weapons
+            .heft
+            .braced
+            .enabled))
+        .item(config_slider!(
+            "TWO-HANDED STRENGTH",
+            WEIGHT_RANGE,
+            SliderFormat::new(2, "X"),
+            |c| c.controllers.weapons.heft.braced.strength
+        ))
         .item(config_toggle!("SCOPES", |c| c.controllers.weapons.scopes))
         .item(config_toggle!("TRUE RELOAD", |c| c
             .controllers
@@ -470,6 +487,8 @@ const DEADZONE_RANGE: SliderRange = SliderRange::new(0.0, 0.5, 50);
 const TURN_SPEED_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 /// The recoil kick scale, in twentieths.
 const RECOIL_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
+/// The two-handed weight's strength, in twentieths.
+const WEIGHT_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
 /// The parachute handles' full pull, metres, in centimetres.
 const FULL_PULL_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
 /// The parachute handles' height above the shoulders, metres, in centimetres.

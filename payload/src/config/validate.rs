@@ -704,6 +704,22 @@ fn heft(h: &HeftConfig) -> Result<(), Invalid> {
         nonnegative(&format!("{name}.kick_scale"), t.kick_scale, 100.0)?;
         nonnegative(&format!("{name}.spread_scale"), t.spread_scale, 100.0)?;
     }
+    let b = &h.braced;
+    range("weapons.heft.braced.strength", b.strength, 0.0, 10.0)?;
+    range(
+        "weapons.heft.braced.max_angle_deg",
+        b.max_angle_deg,
+        0.0,
+        90.0,
+    )?;
+    for (name, t) in [
+        ("weapons.heft.braced.smg", &b.smg),
+        ("weapons.heft.braced.rifle", &b.rifle),
+        ("weapons.heft.braced.heavy", &b.heavy),
+    ] {
+        range(&format!("{name}.sag_deg"), t.sag_deg, 0.0, 90.0)?;
+        nonnegative(&format!("{name}.stiffness"), t.stiffness, 100_000.0)?;
+    }
     Ok(())
 }
 

@@ -18,9 +18,9 @@ use crate::{
         weapons::{
             self, WeaponsStatus,
             config::{
-                DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig, HeftConfig,
-                HeftTuning, HolsterAnchor, HolstersConfig, PouchSide, PouchesConfig, PulseSpec,
-                RecoilConfig, VolumeSpec,
+                BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
+                HeftConfig, HeftTuning, HolsterAnchor, HolstersConfig, PouchSide, PouchesConfig,
+                PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -341,13 +341,13 @@ fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
 fn heft_readout(ui: &mut Ui, h: &HeftStatus) {
     let Some(target) = h.target else {
         ui.label(format!(
-            "One-handed weight: no weapon · scatter widened {} times",
+            "Weight: no weapon · scatter widened {} times",
             h.widened_shots
         ));
         return;
     };
     ui.label(format!(
-        "One-handed weight: {} in the {} hand · unbraced {:.2} · reach {:.2}",
+        "Weight: {} in the {} hand · unbraced {:.2} · reach {:.2}",
         target.class.label(),
         target.hand.label(),
         h.share,
@@ -448,6 +448,16 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         );
     ui.add_enabled_ui(w.heft.enabled, |ui| {
         ui.indent("heft", |ui| heft_settings(ui, &mut w.heft));
+    });
+    ui.checkbox(&mut w.heft.braced.enabled, "Two-handed weight")
+        .on_hover_text(
+            "Braced on the foregrip, a long gun lags a quick swing a little and settles, and sags \
+             a little, by its class; the hands stay on it. Pistols carry none.",
+        );
+    ui.add_enabled_ui(w.heft.braced.enabled, |ui| {
+        ui.indent("braced heft", |ui| {
+            braced_heft_settings(ui, &mut w.heft.braced)
+        });
     });
     ui.checkbox(&mut w.haptics.enabled, "Haptics");
     ui.add_enabled_ui(w.haptics.enabled, |ui| {
@@ -676,7 +686,34 @@ fn heft_settings(ui: &mut Ui, h: &mut HeftConfig) {
     if ui.button("Reset the weight").clicked() {
         *h = HeftConfig {
             enabled: h.enabled,
+            braced: h.braced,
             ..HeftConfig::new()
+        };
+    }
+}
+
+fn braced_heft_settings(ui: &mut Ui, b: &mut BracedHeftConfig) {
+    ui.add(egui::Slider::new(&mut b.strength, 0.0..=2.0).text("Strength"));
+    ui.add(egui::Slider::new(&mut b.max_angle_deg, 0.0..=20.0).text("Largest angle (°)"));
+    for (label, tuning) in [
+        ("SMGs", &mut b.smg),
+        ("Rifles", &mut b.rifle),
+        ("Heavy", &mut b.heavy),
+    ] {
+        ui.collapsing(label, |ui| {
+            ui.add(egui::Slider::new(&mut tuning.sag_deg, 0.0..=10.0).text("Sag (°)"));
+            ui.add(
+                egui::Slider::new(&mut tuning.stiffness, 0.0..=20_000.0)
+                    .logarithmic(true)
+                    .text("Stiffness (0 follows rigidly)"),
+            );
+        });
+    }
+    if ui.button("Reset the two-handed weight").clicked() {
+        *b = BracedHeftConfig {
+            enabled: b.enabled,
+            strength: b.strength,
+            ..BracedHeftConfig::new()
         };
     }
 }
