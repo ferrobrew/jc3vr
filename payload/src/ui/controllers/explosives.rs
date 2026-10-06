@@ -103,10 +103,9 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         w.presses,
         w.idle_presses
     ));
-    if let (Some(depth), Some(lateral)) = (w.reading.depth_m, w.reading.lateral_m) {
+    if let (Some(distance), Some(height)) = (w.reading.distance_m, w.reading.height_m) {
         ui.label(format!(
-            "  fingertip {:+.3} m past the face, {:.3} m off its axis",
-            depth, lateral
+            "  fingertip {distance:.3} m from the button, {height:+.3} m in front of its face"
         ));
     }
 }
@@ -143,20 +142,23 @@ fn c4_settings(ui: &mut Ui, c: &mut C4Config) {
     ui.add(egui::Slider::new(&mut c.velocity_scale, 0.25..=3.0).text("Velocity scale"));
     ui.add(egui::Slider::new(&mut c.max_speed_mps, 5.0..=60.0).text("Fastest throw (m/s)"));
     pulse_settings(ui, "Prime pulse", &mut c.prime_pulse);
+    pulse_settings(ui, "Throw pulse", &mut c.throw_pulse);
+    pulse_settings(ui, "Refused pulse", &mut c.refused_pulse);
+    pulse_settings(ui, "Detonation pulse", &mut c.detonate_pulse);
 }
 
 fn detonator_settings(ui: &mut Ui, d: &mut WristDetonatorConfig) {
     vec3_drag(ui, "Button (left grip frame, m)", &mut d.offset_m, 0.002);
     vec3_drag(ui, "Button normal (left grip frame)", &mut d.normal, 0.01);
     ui.add(egui::Slider::new(&mut d.radius_m, 0.01..=0.08).text("Button radius (m)"));
-    ui.add(egui::Slider::new(&mut d.press_depth_m, 0.002..=0.05).text("Press depth (m)"));
+    ui.add(egui::Slider::new(&mut d.touch_radius_m, 0.005..=0.08).text("Touch radius (m)"));
     ui.add(
-        egui::Slider::new(&mut d.release_depth_m, -0.02..=d.press_depth_m)
-            .text("Release depth (m)"),
+        egui::Slider::new(&mut d.release_radius_m, d.touch_radius_m..=0.15)
+            .text("Release radius (m)"),
     );
-    ui.add(egui::Slider::new(&mut d.max_depth_m, d.press_depth_m..=0.2).text("Deepest press (m)"));
+    ui.add(egui::Slider::new(&mut d.max_behind_m, 0.0..=0.05).text("Deepest behind the face (m)"));
     ui.add(
-        egui::Slider::new(&mut d.min_approach_speed_mps, 0.0..=1.0).text("Quick press speed (m/s)"),
+        egui::Slider::new(&mut d.min_entry_speed_mps, 0.0..=1.0).text("Quick press speed (m/s)"),
     );
     ui.add(egui::Slider::new(&mut d.dwell_s, 0.0..=1.0).text("Slow press dwell (s)"));
     vec3_drag(
@@ -173,4 +175,5 @@ fn detonator_settings(ui: &mut Ui, d: &mut WristDetonatorConfig) {
     );
     ui.checkbox(&mut d.overlay, "Draw the button");
     pulse_settings(ui, "Press pulse", &mut d.pulse);
+    pulse_settings(ui, "No charges pulse", &mut d.empty_pulse);
 }

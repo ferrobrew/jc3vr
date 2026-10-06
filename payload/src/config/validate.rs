@@ -308,26 +308,24 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     nonnegative("weapons.c4.velocity_scale", c4.velocity_scale, 100.0)?;
     nonnegative("weapons.c4.max_speed_mps", c4.max_speed_mps, 1_000.0)?;
     pulse("weapons.c4.prime_pulse", &c4.prime_pulse)?;
+    pulse("weapons.c4.throw_pulse", &c4.throw_pulse)?;
+    pulse("weapons.c4.refused_pulse", &c4.refused_pulse)?;
+    pulse("weapons.c4.detonate_pulse", &c4.detonate_pulse)?;
     let d = &c4.detonator;
     vec3("weapons.c4.detonator.offset_m", d.offset_m, 5.0)?;
     vec3("weapons.c4.detonator.normal", d.normal, 5.0)?;
     positive("weapons.c4.detonator.radius_m", d.radius_m, 1.0)?;
-    positive("weapons.c4.detonator.press_depth_m", d.press_depth_m, 1.0)?;
+    positive("weapons.c4.detonator.touch_radius_m", d.touch_radius_m, 1.0)?;
     range(
-        "weapons.c4.detonator.release_depth_m",
-        d.release_depth_m,
-        -1.0,
-        d.press_depth_m,
-    )?;
-    range(
-        "weapons.c4.detonator.max_depth_m",
-        d.max_depth_m,
-        d.press_depth_m,
+        "weapons.c4.detonator.release_radius_m",
+        d.release_radius_m,
+        d.touch_radius_m,
         1.0,
     )?;
+    nonnegative("weapons.c4.detonator.max_behind_m", d.max_behind_m, 1.0)?;
     nonnegative(
-        "weapons.c4.detonator.min_approach_speed_mps",
-        d.min_approach_speed_mps,
+        "weapons.c4.detonator.min_entry_speed_mps",
+        d.min_entry_speed_mps,
         100.0,
     )?;
     nonnegative("weapons.c4.detonator.dwell_s", d.dwell_s, 60.0)?;
@@ -342,6 +340,7 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
         5.0,
     )?;
     pulse("weapons.c4.detonator.pulse", &d.pulse)?;
+    pulse("weapons.c4.detonator.empty_pulse", &d.empty_pulse)?;
     reload(&w.reload)?;
     positive("weapons.scope.zoom", w.scope.zoom, 100.0)?;
     positive("weapons.scope.lens_radius_m", w.scope.lens_radius_m, 10.0)?;

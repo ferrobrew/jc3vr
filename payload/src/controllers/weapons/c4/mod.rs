@@ -34,6 +34,10 @@
 //! request times out. The stick click's `DETONATE_EXPLOSIVE` reaches the same input through the
 //! game's own hold rule.
 //!
+//! Every step is felt: a primed charge pulses its hand, a thrown one pulses the hand it leaves, a
+//! grab the game refuses buzzes the grabbing hand (and is logged at info level), and a detonation
+//! the weapon starts, from either source, pulses both hands and flashes the wrist button.
+//!
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
 
 pub mod press;
@@ -63,7 +67,7 @@ use crate::{
         scheme,
         weapons::{
             c4::stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
-            config::C4Config,
+            config::{C4Config, PulseSpec},
             grenade::stage::Release,
             haptics::{self, PulseSource},
         },
@@ -336,7 +340,7 @@ fn update_from_user_serial(
 
     // SAFETY: the weapon and its user are live, on the thread that updates the weapon; the
     // references end before the original update runs.
-    let (reading, pulse, raised, previous) = unsafe {
+    let (reading, pulses, raised, previous) = unsafe {
         let (w, user) = (&mut *weapon, &mut *user);
         let reading = read_weapon(w, user);
         let mut state = STATE.lock();
@@ -345,12 +349,13 @@ fn update_from_user_serial(
         state.status.may_plant = reading.may_plant;
         state.status.may_detonate = reading.may_detonate;
         state.status.planting_mode = reading.view.planting;
-        let mut pulse = None;
+        let mut pulses = Vec::new();
         if acting || state.stage != Stage::Idle {
             let hand = state.stage.hand();
             let (next, action, outcome) = stage::before_update(state.stage, reading.view);
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
+                pulses.extend(outcome_pulse(hand, outcome, &tuning));
             }
             let grip = hand.and_then(|h| {
                 state.grips[h.index()].map(|g| held_matrix(g, hold_offset(h, &tuning)))
@@ -361,9 +366,7 @@ fn update_from_user_serial(
             state.status.stage = next;
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
-                if outcome == Outcome::Primed {
-                    pulse = hand;
-                }
+                pulses.extend(outcome_pulse(hand, outcome, &tuning));
             }
         }
         // The detonate input is raised for the weapon's update only, and the game's own value is
@@ -373,7 +376,7 @@ fn update_from_user_serial(
         if raised {
             user.m_WeaponInputs[DETONATE_INPUT] = previous.max(1.0);
         }
-        (reading, pulse, raised, previous)
+        (reading, pulses, raised, previous)
     };
 
     original();
@@ -392,9 +395,34 @@ fn update_from_user_serial(
         settle_detonation(&mut state, started, reading.live, dt);
     }
     drop(state);
-    if let Some(hand) = pulse {
-        haptics::pulse(hand, tuning.prime_pulse, PulseSource::C4);
+    for (hand, spec, source) in pulses {
+        haptics::pulse(hand, spec, source);
     }
+    if started {
+        wrist::note_detonation();
+        for hand in Hand::BOTH {
+            haptics::pulse(hand, tuning.detonate_pulse, PulseSource::C4);
+        }
+    }
+}
+
+/// The pulse a throw step's `outcome` gives the throwing `hand`: a prime and a throw pulse it, and
+/// a refusal buzzes it and is logged at info level.
+fn outcome_pulse(
+    hand: Option<Hand>,
+    outcome: Outcome,
+    tuning: &C4Config,
+) -> Option<(Hand, PulseSpec, PulseSource)> {
+    let (spec, source) = match outcome {
+        Outcome::Primed => (tuning.prime_pulse, PulseSource::C4),
+        Outcome::Thrown(_) => (tuning.throw_pulse, PulseSource::C4),
+        Outcome::Refused(_) | Outcome::SpawnFailed => {
+            tracing::info!(target: "controllers", ?hand, outcome = %outcome.label(), "c4 pouch");
+            (tuning.refused_pulse, PulseSource::PouchRefused)
+        }
+        Outcome::Gone | Outcome::Cancelled => return None,
+    };
+    Some((hand?, spec, source))
 }
 
 /// The character's detonate input's slot in its weapon inputs.

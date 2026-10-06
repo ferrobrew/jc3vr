@@ -1,22 +1,26 @@
 //! The wrist detonator's press detector, and where the button and the fingertip are. Pure.
 //!
-//! The button is a disc on the inside of the off-hand's wrist, fixed to the off-hand controller's
-//! grip pose, with a face normal pointing out of the wrist. The dominant hand's index fingertip
-//! presses it. Both are in the cockpit frame, where the controller frame reports both hands, so
-//! their relative placement does not depend on the hand remap or the world scale.
+//! The button is a disc on the inside of the off-hand's wrist, fixed to the off-hand's grip pose,
+//! with a face normal pointing out of the wrist. The dominant hand's index fingertip presses it.
+//! The caller gives both in one frame, the frame the button is drawn in, so that the fingertip the
+//! player sees on the button is the one that presses it ([`carry`] brings a point read from the
+//! controllers into it).
 //!
-//! A press must be a deliberate push into the face, so that brushing the wrist does not detonate:
+//! A press is a touch of the fingertip on the button from any direction in front of the wrist, so
+//! that a poke from above, from the side, or straight in all work, while a brush past it does not:
 //!
-//! - the fingertip must reach the face from in front of it, within the face's radius. A fingertip
-//!   that arrives beside the button already behind the face's plane (a slide along the arm) is
-//!   blocked until it comes back out in front;
-//! - it must then push `press_depth_m` past the face, and either have been moving into the face at
-//!   least `min_approach_speed_mps` as it reached it, or stay pushed in for `dwell_s`;
-//! - a fingertip further than `max_depth_m` past the face is a hand passing through the wrist, and
-//!   is blocked;
-//! - once pressed, the button presses again only after the fingertip has come back out to
-//!   `release_depth_m`, which is less than `press_depth_m`, so a fingertip resting at the press
-//!   depth does not chatter.
+//! - the fingertip touches while it is within `touch_radius_m` of the face's centre and no more
+//!   than `max_behind_m` behind the face's plane. A fingertip that far behind the plane has come
+//!   through the wrist, which a real finger cannot, so it is a tracking error or the estimate of a
+//!   finger resting elsewhere, and it is blocked;
+//! - a touch presses at once when the fingertip was closing on the centre at
+//!   `min_entry_speed_mps` or more as it came in, and otherwise once it has stayed touching for
+//!   `dwell_s`;
+//! - once pressed, the button presses again only after the fingertip has moved away past
+//!   `release_radius_m`, which is more than `touch_radius_m`, so a fingertip resting on the button
+//!   does not chatter;
+//! - a fingertip first seen touching (tracking just found it there) waits to move away, so that
+//!   regaining tracking never presses.
 //!
 //! A hand that loses tracking resets the detector without a press.
 
@@ -27,7 +31,7 @@ use crate::controllers::{
     weapons::config::WristDetonatorConfig,
 };
 
-/// The button's face in the cockpit frame.
+/// The button's face in the caller's frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ButtonFace {
     pub centre: Vec3,
@@ -35,8 +39,8 @@ pub struct ButtonFace {
     pub normal: Vec3,
 }
 
-/// The button's face on the `off` hand whose controller grip is at `grip`: the configured left-hand
-/// placement, mirrored for the right hand. `None` for a degenerate normal.
+/// The button's face on the `off` hand whose grip is at `grip`: the configured left-hand placement,
+/// mirrored for the right hand. `None` for a degenerate normal.
 pub fn button_face(off: Hand, grip: Pose, tuning: &WristDetonatorConfig) -> Option<ButtonFace> {
     let local_normal = mirror_from_left(off, tuning.normal).try_normalize()?;
     let local_centre = mirror_from_left(off, tuning.offset_m);
@@ -46,6 +50,15 @@ pub fn button_face(off: Hand, grip: Pose, tuning: &WristDetonatorConfig) -> Opti
         normal: (orientation * local_normal).normalize(),
     };
     (face.centre.is_finite() && face.normal.is_finite()).then_some(face)
+}
+
+/// A point on a hand whose pose is `from`, carried with the hand to where its pose is `to`: the
+/// same point in the hand's own frame. The controllers report a fingertip relative to the
+/// controller they track; carried from the controller's grip to the grip the hand is drawn at, it
+/// lands on the drawn hand.
+pub fn carry(point: Vec3, from: Pose, to: Pose) -> Vec3 {
+    let local = from.orientation.normalize().inverse() * (point - from.position);
+    to.position + to.orientation.normalize() * local
 }
 
 /// What the fingertip is read from on one hand.
@@ -59,9 +72,9 @@ pub struct FingertipSource<'a> {
     pub trigger_touch: bool,
 }
 
-/// The dominant hand's index fingertip in the cockpit frame: the tracked skeleton's index tip when
-/// it is valid, and otherwise an estimate in the controller's aim frame, ahead of the controller
-/// while the finger points and at the trigger while it rests there.
+/// The dominant hand's index fingertip in the frame its `source` is given in: the tracked
+/// skeleton's index tip when it is valid, and otherwise an estimate in the controller's aim frame,
+/// ahead of the controller while the finger points and at the trigger while it rests there.
 pub fn fingertip(hand: Hand, source: FingertipSource<'_>, tuning: &WristDetonatorConfig) -> Vec3 {
     if let Some(tip) = source
         .joints
@@ -88,22 +101,23 @@ pub enum PressPhase {
     /// No fingertip or no button: a hand is untracked or the detonator is off.
     #[default]
     Lost,
-    /// The fingertip is in front of the face, or beside it short of its plane: free to press.
+    /// The fingertip is away from the button: free to press.
     Armed {
-        /// The fastest the fingertip has moved into the face while near it, metres per second.
+        /// The fastest the fingertip has closed on the button's centre while near it, metres per
+        /// second.
         approach_mps: f32,
     },
-    /// The fingertip came through the face from in front and is pushing into it.
-    Pushing {
-        /// Whether it was moving fast enough as it reached the face to press at once.
+    /// The fingertip touches the button.
+    Touching {
+        /// Whether it came in fast enough to press at once.
         fast: bool,
-        /// How long it has stayed at the press depth, seconds.
+        /// How long it has touched, seconds.
         dwell_s: f32,
     },
-    /// The button pressed; it waits for the fingertip to come back out.
+    /// The button pressed; it waits for the fingertip to move away.
     Pressed,
-    /// The fingertip reached the plane from the side, or went too deep; it waits for the fingertip
-    /// to come back out in front.
+    /// The fingertip was first seen touching, or came from behind the wrist; it waits for the
+    /// fingertip to move away.
     Blocked,
 }
 
@@ -112,10 +126,21 @@ impl PressPhase {
         match self {
             PressPhase::Lost => "no fingertip or button",
             PressPhase::Armed { .. } => "armed",
-            PressPhase::Pushing { fast: true, .. } => "pushing",
-            PressPhase::Pushing { fast: false, .. } => "pushing slowly (dwell)",
-            PressPhase::Pressed => "pressed, waiting for release",
-            PressPhase::Blocked => "blocked, waiting for the finger to come back out",
+            PressPhase::Touching { fast: true, .. } => "touching",
+            PressPhase::Touching { fast: false, .. } => "touching slowly (dwell)",
+            PressPhase::Pressed => "pressed, waiting for the finger to move away",
+            PressPhase::Blocked => "blocked, waiting for the finger to move away",
+        }
+    }
+
+    /// How far a slow touch is through its dwell, `0..=1`; zero when not touching.
+    pub fn dwell_progress(self, tuning: &WristDetonatorConfig) -> f32 {
+        match self {
+            PressPhase::Touching { dwell_s, .. } if tuning.dwell_s > 0.0 => {
+                (dwell_s / tuning.dwell_s).clamp(0.0, 1.0)
+            }
+            PressPhase::Touching { .. } => 1.0,
+            _ => 0.0,
         }
     }
 }
@@ -125,10 +150,10 @@ impl PressPhase {
 pub struct PressReading {
     /// The button pressed on this step.
     pub pressed: bool,
-    /// How far past the face the fingertip is, metres (negative in front of it).
-    pub depth_m: Option<f32>,
-    /// How far the fingertip is from the button's axis, metres.
-    pub lateral_m: Option<f32>,
+    /// How far the fingertip is from the face's centre, metres.
+    pub distance_m: Option<f32>,
+    /// How far the fingertip is in front of the face's plane, metres (negative behind it).
+    pub height_m: Option<f32>,
     pub phase: PressPhase,
 }
 
@@ -136,15 +161,15 @@ pub struct PressReading {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct PressDetector {
     phase: PressPhase,
-    /// The fingertip's depth on the previous step.
-    last_depth_m: Option<f32>,
+    /// The fingertip's distance from the face's centre on the previous step.
+    last_distance_m: Option<f32>,
 }
 
 impl PressDetector {
     pub const fn new() -> Self {
         Self {
             phase: PressPhase::Lost,
-            last_depth_m: None,
+            last_distance_m: None,
         }
     }
 
@@ -162,113 +187,80 @@ impl PressDetector {
             return PressReading::default();
         };
         let relative = tip - face.centre;
+        let distance = relative.length();
         let height = relative.dot(face.normal);
-        let depth = -height;
-        let lateral = (relative - face.normal * height).length();
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        // Positive while moving into the face.
-        let approach = match self.last_depth_m {
-            Some(last) if dt > 0.0 => (depth - last) / dt,
+        // Positive while closing on the centre.
+        let approach = match self.last_distance_m {
+            Some(last) if dt > 0.0 => (last - distance) / dt,
             _ => 0.0,
         };
-        self.last_depth_m = Some(depth);
+        self.last_distance_m = Some(distance);
 
-        let radius = tuning.radius_m.max(0.0);
-        let on_face = lateral <= radius;
-        let out_front = depth < tuning.release_depth_m;
-        let too_deep = depth > tuning.max_depth_m;
-        let near = on_face && depth > -APPROACH_ZONE_M;
+        let within = distance <= tuning.touch_radius_m.max(0.0);
+        let behind = height < -tuning.max_behind_m.max(0.0);
+        let touching = within && !behind;
+        let away = distance > tuning.release_radius_m.max(tuning.touch_radius_m);
         let mut pressed = false;
         self.phase = match self.phase {
-            // A fingertip first seen behind the plane has not come from in front.
-            PressPhase::Lost if out_front => PressPhase::Armed { approach_mps: 0.0 },
-            PressPhase::Lost => PressPhase::Blocked,
+            PressPhase::Lost if within => PressPhase::Blocked,
+            PressPhase::Lost => PressPhase::Armed { approach_mps: 0.0 },
             PressPhase::Armed { approach_mps } => {
-                let approach_mps = if near {
-                    approach_mps.max(approach)
-                } else {
+                let approach_mps = if away {
                     0.0
+                } else {
+                    approach_mps.max(approach)
                 };
-                if too_deep {
+                if touching {
+                    let fast = approach_mps >= tuning.min_entry_speed_mps;
+                    Self::touch(fast, 0.0, tuning, &mut pressed)
+                } else if within {
                     PressPhase::Blocked
-                } else if depth >= 0.0 && !on_face {
-                    // Through the plane beside the button: a slide along the arm.
-                    if out_front {
-                        PressPhase::Armed { approach_mps: 0.0 }
-                    } else {
-                        PressPhase::Blocked
-                    }
-                } else if depth >= 0.0 {
-                    let pushing = PressPhase::Pushing {
-                        fast: approach_mps >= tuning.min_approach_speed_mps,
-                        dwell_s: 0.0,
-                    };
-                    self.push(pushing, depth, dt, tuning, &mut pressed)
                 } else {
                     PressPhase::Armed { approach_mps }
                 }
             }
-            pushing @ PressPhase::Pushing { .. } => {
-                if too_deep {
+            PressPhase::Touching { fast, dwell_s } => {
+                if touching {
+                    Self::touch(fast, dwell_s + dt, tuning, &mut pressed)
+                } else if within {
                     PressPhase::Blocked
-                } else if depth < 0.0 {
-                    PressPhase::Armed { approach_mps: 0.0 }
-                } else if !on_face {
-                    // Slid off the face while pushed in.
-                    if out_front {
-                        PressPhase::Armed { approach_mps: 0.0 }
-                    } else {
-                        PressPhase::Blocked
-                    }
                 } else {
-                    self.push(pushing, depth, dt, tuning, &mut pressed)
+                    PressPhase::Armed { approach_mps: 0.0 }
                 }
             }
-            PressPhase::Pressed | PressPhase::Blocked if out_front => {
+            PressPhase::Pressed | PressPhase::Blocked if away => {
                 PressPhase::Armed { approach_mps: 0.0 }
             }
             phase @ (PressPhase::Pressed | PressPhase::Blocked) => phase,
         };
         PressReading {
             pressed,
-            depth_m: Some(depth),
-            lateral_m: Some(lateral),
+            distance_m: Some(distance),
+            height_m: Some(height),
             phase: self.phase,
         }
     }
 
-    /// Advance a push at `depth`: press once the press depth is reached by a fast fingertip, or
-    /// held there by a slow one for the dwell.
-    fn push(
-        &self,
-        phase: PressPhase,
-        depth: f32,
-        dt: f32,
+    /// A touch that has lasted `dwell_s`: it presses at once when it came in fast, and otherwise
+    /// once the dwell is reached.
+    fn touch(
+        fast: bool,
+        dwell_s: f32,
         tuning: &WristDetonatorConfig,
         pressed: &mut bool,
     ) -> PressPhase {
-        let PressPhase::Pushing { fast, dwell_s } = phase else {
-            return phase;
-        };
-        if depth < tuning.press_depth_m {
-            return PressPhase::Pushing { fast, dwell_s };
-        }
-        let dwell_s = dwell_s + dt;
         if fast || dwell_s >= tuning.dwell_s.max(0.0) {
             *pressed = true;
             PressPhase::Pressed
         } else {
-            PressPhase::Pushing { fast, dwell_s }
+            PressPhase::Touching { fast, dwell_s }
         }
     }
 }
 
 /// The `XR_EXT_hand_tracking` index of the index finger's tip (`XR_HAND_JOINT_INDEX_TIP_EXT`).
 pub(super) const INDEX_TIP_JOINT: usize = 10;
-
-/// How far in front of the face, metres, the fingertip's approach speed is watched: its speed into
-/// the face while it is this close decides whether it reached the face fast.
-const APPROACH_ZONE_M: f32 = 0.04;
 
 /// A vector given for the left hand, mirrored across the controller's X for `hand`.
 fn mirror_from_left(hand: Hand, v: Vec3) -> Vec3 {
@@ -296,11 +288,6 @@ mod tests {
         normal: Vec3::X,
     };
 
-    /// A fingertip on the button's axis at `depth` past the face.
-    fn on_axis(depth: f32) -> Vec3 {
-        Vec3::new(-depth, 0.0, 0.0)
-    }
-
     /// Step the detector through `path`, returning how many presses happened.
     fn run(d: &mut PressDetector, path: impl IntoIterator<Item = Vec3>) -> usize {
         let t = tuning();
@@ -309,109 +296,170 @@ mod tests {
             .count()
     }
 
-    /// A straight move from depth `from` to `to` at `speed` metres per second.
-    fn push(from: f32, to: f32, speed: f32) -> Vec<Vec3> {
-        let step = speed * DT * (to - from).signum();
-        let count = ((to - from).abs() / (speed * DT)).ceil() as usize;
+    /// A straight move from `from` to `to` at `speed` metres per second.
+    fn moving(from: Vec3, to: Vec3, speed: f32) -> Vec<Vec3> {
+        let count = (from.distance(to) / (speed * DT)).ceil().max(1.0) as usize;
         (0..=count)
-            .map(|i| {
-                on_axis(if i == count {
-                    to
-                } else {
-                    from + step * i as f32
-                })
-            })
+            .map(|i| from.lerp(to, i as f32 / count as f32))
             .collect()
     }
 
+    fn held(at: Vec3, seconds: f32) -> impl Iterator<Item = Vec3> {
+        std::iter::repeat_n(at, (seconds / DT).ceil() as usize + 1)
+    }
+
+    /// A point in front of the face at `distance` along `direction` (which points away from the
+    /// face, out of the wrist or across it).
+    fn from_direction(direction: Vec3, distance: f32) -> Vec3 {
+        direction.normalize() * distance
+    }
+
     #[test]
-    fn a_quick_push_from_in_front_presses_once() {
+    fn a_quick_poke_presses_once() {
         let mut d = PressDetector::new();
-        assert_eq!(run(&mut d, push(-0.05, 0.02, 0.4)), 1);
-        // Holding it in does not press again.
-        assert_eq!(run(&mut d, std::iter::repeat_n(on_axis(0.02), 60)), 0);
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, Vec3::ZERO, 0.5)), 1);
+        // Resting on the button does not press again.
+        assert_eq!(run(&mut d, held(Vec3::ZERO, 1.0)), 0);
         assert_eq!(d.phase, PressPhase::Pressed);
     }
 
     #[test]
-    fn the_press_needs_the_finger_back_out_past_the_release_depth() {
+    fn a_poke_from_any_direction_in_front_presses() {
+        // Straight in, from above, from either side along the forearm, and at an angle.
+        let directions = [
+            Vec3::X,
+            Vec3::new(0.3, 1.0, 0.0),
+            Vec3::new(0.2, 0.0, 1.0),
+            Vec3::new(0.2, 0.0, -1.0),
+            Vec3::new(1.0, -1.0, 1.0),
+        ];
+        for direction in directions {
+            let mut d = PressDetector::new();
+            let start = from_direction(direction, 0.12);
+            assert_eq!(
+                run(&mut d, moving(start, Vec3::ZERO, 0.5)),
+                1,
+                "{direction}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_press_needs_the_finger_to_move_away_past_the_release_radius() {
         let t = tuning();
         let mut d = PressDetector::new();
-        assert_eq!(run(&mut d, push(-0.05, 0.02, 0.4)), 1);
-        // Jitter around the press depth, never coming back out past the release depth.
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, Vec3::ZERO, 0.5)), 1);
+        // Jitter between touching and just inside the release radius.
         let jitter = (0..40).map(|i| {
-            on_axis(if i % 2 == 0 {
-                t.press_depth_m + 0.002
-            } else {
-                t.release_depth_m + 0.001
-            })
+            Vec3::X
+                * if i % 2 == 0 {
+                    t.touch_radius_m * 0.5
+                } else {
+                    t.release_radius_m * 0.95
+                }
         });
         assert_eq!(run(&mut d, jitter), 0);
-        // Out, and in again: a second press.
-        assert_eq!(run(&mut d, push(0.02, -0.03, 0.4)), 0);
-        assert_eq!(run(&mut d, push(-0.03, 0.02, 0.4)), 1);
+        // Away, and in again: a second press.
+        assert_eq!(run(&mut d, moving(Vec3::ZERO, Vec3::X * 0.1, 0.5)), 0);
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, Vec3::ZERO, 0.5)), 1);
     }
 
     #[test]
-    fn a_slow_push_presses_only_after_the_dwell() {
+    fn a_slow_touch_presses_only_after_the_dwell() {
         let t = tuning();
         let mut d = PressDetector::new();
-        assert_eq!(run(&mut d, push(-0.05, 0.02, 0.05)), 0);
-        let dwell_ticks = (t.dwell_s / DT).ceil() as usize + 1;
-        assert_eq!(
-            run(&mut d, std::iter::repeat_n(on_axis(0.02), dwell_ticks)),
-            1
+        let slow = t.min_entry_speed_mps * 0.3;
+        // Just inside the touch radius, so that the move in takes little of the dwell.
+        let rest = Vec3::X * t.touch_radius_m * 0.9;
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, rest, slow)), 0);
+        assert!(matches!(d.phase, PressPhase::Touching { fast: false, .. }));
+        assert_eq!(run(&mut d, held(rest, t.dwell_s)), 1);
+        // A slow touch that leaves before the dwell does nothing.
+        let mut d = PressDetector::new();
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, rest, slow)), 0);
+        assert_eq!(run(&mut d, held(rest, t.dwell_s * 0.3)), 0);
+        assert_eq!(run(&mut d, moving(rest, Vec3::X * 0.1, 0.5)), 0);
+        assert!(matches!(d.phase, PressPhase::Armed { .. }));
+    }
+
+    #[test]
+    fn a_fast_pass_beside_the_button_does_not_press() {
+        let t = tuning();
+        let mut d = PressDetector::new();
+        // Sweeping along the forearm just outside the touch radius, fast.
+        let offset = t.touch_radius_m * 1.3;
+        let sweep = moving(
+            Vec3::new(offset, 0.0, 0.15),
+            Vec3::new(offset, 0.0, -0.15),
+            2.0,
         );
-        // A slow touch that backs out before the dwell does nothing.
-        let mut d = PressDetector::new();
-        assert_eq!(run(&mut d, push(-0.05, 0.02, 0.05)), 0);
-        assert_eq!(run(&mut d, std::iter::repeat_n(on_axis(0.02), 5)), 0);
-        assert_eq!(run(&mut d, push(0.02, -0.05, 0.5)), 0);
+        assert_eq!(run(&mut d, sweep), 0);
     }
 
     #[test]
-    fn a_brush_along_the_arm_into_the_button_is_blocked() {
-        let mut d = PressDetector::new();
-        // Behind the face's plane beside the button, then sliding sideways onto it, fast.
-        let depth = 0.02;
-        let slide = (0..30).map(|i| Vec3::new(-depth, 0.0, 0.10 - 0.005 * i as f32));
-        assert_eq!(run(&mut d, slide), 0);
-        assert_eq!(d.phase, PressPhase::Blocked);
-        // Coming back out in front re-arms it.
-        assert_eq!(run(&mut d, push(depth, -0.03, 0.4)), 0);
-        assert_eq!(run(&mut d, push(-0.03, 0.02, 0.4)), 1);
-    }
-
-    #[test]
-    fn a_hand_passing_through_the_wrist_does_not_press() {
+    fn a_fingertip_behind_the_wrist_does_not_press() {
         let t = tuning();
         let mut d = PressDetector::new();
-        // So fast that one step goes from in front to beyond the deepest press.
-        let through = [on_axis(-0.03), on_axis(t.max_depth_m + 0.02)];
-        assert_eq!(run(&mut d, through), 0);
+        // Coming up through the arm, from behind the face's plane.
+        let below = Vec3::new(-(t.max_behind_m + 0.01), 0.0, 0.0);
+        assert_eq!(
+            run(&mut d, moving(Vec3::new(-0.1, 0.0, 0.0), below, 0.5)),
+            0
+        );
+        assert_eq!(run(&mut d, held(below, t.dwell_s * 2.0)), 0);
         assert_eq!(d.phase, PressPhase::Blocked);
-    }
-
-    #[test]
-    fn a_tangential_swipe_across_the_face_does_not_press() {
-        let mut d = PressDetector::new();
-        // Skimming the face from in front, barely past it, moving sideways.
-        let swipe =
-            (0..30).map(|i| Vec3::new(-0.005 + 0.0007 * i as f32, 0.0, 0.06 - 0.004 * i as f32));
-        assert_eq!(run(&mut d, swipe), 0);
+        // Away, and a poke from in front presses.
+        assert_eq!(run(&mut d, moving(below, Vec3::X * 0.1, 0.5)), 0);
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, Vec3::ZERO, 0.5)), 1);
     }
 
     #[test]
     fn losing_tracking_resets_without_a_press() {
         let t = tuning();
         let mut d = PressDetector::new();
-        assert_eq!(run(&mut d, push(-0.05, 0.005, 0.4)), 0);
+        let near = Vec3::X * (t.touch_radius_m + 0.005);
+        assert_eq!(run(&mut d, moving(Vec3::X * 0.1, near, 0.5)), 0);
         let lost = d.step(None, Some(FACE), DT, &t);
         assert!(!lost.pressed);
         assert_eq!(lost.phase, PressPhase::Lost);
-        // Reappearing already pushed in is not a press from in front.
-        assert!(!d.step(Some(on_axis(0.02)), Some(FACE), DT, &t).pressed);
+        // Reappearing on the button is not a press.
+        assert!(!d.step(Some(Vec3::ZERO), Some(FACE), DT, &t).pressed);
         assert_eq!(d.phase, PressPhase::Blocked);
+        assert_eq!(run(&mut d, held(Vec3::ZERO, t.dwell_s * 2.0)), 0);
+    }
+
+    #[test]
+    fn the_dwell_progress_fills_while_touching() {
+        let t = tuning();
+        assert_eq!(
+            PressPhase::Armed { approach_mps: 1.0 }.dwell_progress(&t),
+            0.0
+        );
+        let half = PressPhase::Touching {
+            fast: false,
+            dwell_s: t.dwell_s * 0.5,
+        };
+        assert!((half.dwell_progress(&t) - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_point_is_carried_with_its_hand() {
+        let from = Pose {
+            position: Vec3::new(1.0, 0.0, 0.0),
+            orientation: Quat::IDENTITY,
+        };
+        let to = Pose {
+            position: Vec3::new(0.0, 2.0, 0.0),
+            orientation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        };
+        // A point 0.1 m ahead (-Z) of the first pose is 0.1 m ahead of the second, which a quarter
+        // turn about +Y points along -X.
+        let carried = carry(Vec3::new(1.0, 0.0, -0.1), from, to);
+        assert!(
+            carried.distance(Vec3::new(-0.1, 2.0, 0.0)) < 1e-5,
+            "{carried}"
+        );
+        assert_eq!(carry(Vec3::ONE, Pose::IDENTITY, Pose::IDENTITY), Vec3::ONE);
     }
 
     #[test]

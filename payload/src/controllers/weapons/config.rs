@@ -580,6 +580,14 @@ pub struct C4Config {
     pub max_speed_mps: f32,
     /// A pulse on the hand a charge is primed in.
     pub prime_pulse: PulseSpec,
+    /// A pulse on the hand that throws a charge, as it leaves the hand.
+    pub throw_pulse: PulseSpec,
+    /// A buzz on the hand that grabbed the pouch when the game refuses it a charge: as many are
+    /// placed as may be, or planting is not allowed now.
+    pub refused_pulse: PulseSpec,
+    /// A pulse on both hands when the placed charges detonate, from the wrist button or the stick
+    /// click alike.
+    pub detonate_pulse: PulseSpec,
     /// The detonator button on the off-hand's wrist.
     pub detonator: WristDetonatorConfig,
 }
@@ -596,6 +604,18 @@ impl C4Config {
                 amplitude: 0.3,
                 duration_s: 0.04,
             },
+            throw_pulse: PulseSpec {
+                amplitude: 0.4,
+                duration_s: 0.03,
+            },
+            refused_pulse: PulseSpec {
+                amplitude: 0.5,
+                duration_s: 0.15,
+            },
+            detonate_pulse: PulseSpec {
+                amplitude: 1.0,
+                duration_s: 0.25,
+            },
             detonator: WristDetonatorConfig::new(),
         }
     }
@@ -609,8 +629,8 @@ impl Default for C4Config {
 
 /// The detonator button on the inside of the off-hand's wrist, pressed by the dominant hand's
 /// index fingertip (see [`crate::controllers::weapons::c4::press`]). The button's frame is the
-/// off-hand controller's grip frame, given for the left hand (the off-hand of a right-handed
-/// player) and mirrored for the right.
+/// off-hand's grip frame, given for the left hand (the off-hand of a right-handed player) and
+/// mirrored for the right.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WristDetonatorConfig {
@@ -618,22 +638,24 @@ pub struct WristDetonatorConfig {
     /// fist, -Z runs out of the front of the fist and +Z back toward the wrist, and +X on the left
     /// hand points out of the palm.
     pub offset_m: Vec3,
-    /// The direction out of the button's face, which a press pushes against. Normalised on use.
+    /// The direction out of the button's face, which the button is drawn facing. Normalised on
+    /// use.
     pub normal: Vec3,
-    /// The button face's radius, metres: a fingertip further off the button's axis does not press.
+    /// The drawn button's radius, metres.
     pub radius_m: f32,
-    /// How far past the face the fingertip must push to press, metres.
-    pub press_depth_m: f32,
-    /// How far past the face the fingertip must come back to before the button presses again,
-    /// metres. Less than `press_depth_m`, so the press has hysteresis.
-    pub release_depth_m: f32,
-    /// How far past the face a fingertip may go and still press, metres: deeper is a hand passing
-    /// through the wrist rather than a press.
-    pub max_depth_m: f32,
-    /// How fast the fingertip must be moving into the face as it reaches it, metres per second,
-    /// for the press to count at once.
-    pub min_approach_speed_mps: f32,
-    /// How long a slower fingertip must stay pushed in to press, seconds.
+    /// How close to the button's centre the fingertip must come to touch it, metres.
+    pub touch_radius_m: f32,
+    /// How far from the button's centre a fingertip must move away before the button presses
+    /// again, metres. More than `touch_radius_m`, so that a fingertip resting on the button does
+    /// not press it twice.
+    pub release_radius_m: f32,
+    /// How far behind the face's plane a fingertip may be and still touch, metres: further behind,
+    /// it has come through the wrist, which a real finger cannot.
+    pub max_behind_m: f32,
+    /// How fast the fingertip must be closing on the button as it touches it, metres per second,
+    /// for the touch to press at once.
+    pub min_entry_speed_mps: f32,
+    /// How long a slower fingertip must keep touching to press, seconds.
     pub dwell_s: f32,
     /// Where the index fingertip is in the dominant controller's aim frame while the finger points
     /// (off the trigger), metres, given for the right hand and mirrored for the left. Used when the
@@ -642,10 +664,13 @@ pub struct WristDetonatorConfig {
     /// Where the index fingertip is in the dominant controller's aim frame while it rests on the
     /// trigger, metres, given for the right hand and mirrored for the left.
     pub fingertip_resting_m: Vec3,
-    /// Draw the button on the wrist: dim with no charges placed, lit while charges are placed.
+    /// Draw the button on the wrist, facing out of it: dim with no charges placed, lit with a pip
+    /// beside it for each placed charge, and flashing on a press and on the detonation.
     pub overlay: bool,
-    /// A pulse on both hands when the button presses.
+    /// A click on both hands when the button presses with charges placed.
     pub pulse: PulseSpec,
+    /// A buzz on the pressing hand when the button presses with no charges placed.
+    pub empty_pulse: PulseSpec,
 }
 
 impl WristDetonatorConfig {
@@ -653,18 +678,22 @@ impl WristDetonatorConfig {
         Self {
             offset_m: Vec3::new(0.03, 0.0, 0.08),
             normal: Vec3::X,
-            radius_m: 0.03,
-            press_depth_m: 0.012,
-            release_depth_m: 0.004,
-            max_depth_m: 0.06,
-            min_approach_speed_mps: 0.15,
-            dwell_s: 0.25,
+            radius_m: 0.02,
+            touch_radius_m: 0.03,
+            release_radius_m: 0.05,
+            max_behind_m: 0.015,
+            min_entry_speed_mps: 0.25,
+            dwell_s: 0.15,
             fingertip_pointing_m: Vec3::new(0.0, -0.02, -0.04),
             fingertip_resting_m: Vec3::new(0.0, -0.04, 0.02),
             overlay: true,
             pulse: PulseSpec {
                 amplitude: 0.6,
                 duration_s: 0.03,
+            },
+            empty_pulse: PulseSpec {
+                amplitude: 0.25,
+                duration_s: 0.12,
             },
         }
     }

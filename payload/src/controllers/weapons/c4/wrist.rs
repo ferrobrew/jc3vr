@@ -1,35 +1,47 @@
 //! The wrist detonator: a button on the inside of the off-hand's wrist that the dominant hand's
 //! index fingertip presses to detonate the placed charges.
 //!
-//! On each input tick the button's face is placed from the off-hand controller's grip pose and the
-//! fingertip from the dominant hand (its tracked skeleton, or an estimate from its controller), both
-//! from the controller frame, and the press detector ([`press`]) decides whether this tick pressed
-//! it. A press with charges placed asks the C4 weapon to detonate them
-//! ([`request_detonation`]); any press clicks both hands. The button is drawn on the wrist through
-//! the world-space overlay: dim with no charges placed, lit while there are, and brighter while the
-//! fingertip pushes into it.
+//! On each input tick the button is placed on the off-hand where the hand is drawn (its grip in
+//! [`hands::active_hands`], the poses the rendered hands follow), and the dominant fingertip is
+//! read from the controller frame (its tracked skeleton, or an estimate from its controller) and
+//! carried with the dominant hand to where that hand is drawn ([`press::carry`]). The press
+//! detector ([`press`]) and the drawn button therefore share one frame: the finger the player sees
+//! touching the button is the one that presses it, whatever the body-scale remap or the two-handed
+//! pose does to the hands.
+//!
+//! A press with charges placed asks the C4 weapon to detonate them ([`request_detonation`]) and
+//! clicks both hands; a press with none buzzes the pressing hand and flashes the button grey. The
+//! button is drawn on the wrist through the world-space overlay, lying on the wrist facing out of
+//! it: dim with no charges placed, lit with a pip beside it for each placed charge, filling as a
+//! slow touch dwells, and flashing on a press. A detonation the game starts, from the button or the
+//! stick click, flashes it bright ([`note_detonation`]).
 
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    config::ControllersConfig,
-    frame::{self, Hand},
-    overlay::{
-        primitive::{
-            Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
+use crate::{
+    controllers::{
+        config::ControllersConfig,
+        frame::{self, Hand},
+        hands,
+        overlay::{
+            primitive::{
+                Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
+            },
+            store,
         },
-        store,
-    },
-    weapons::{
-        c4::{
-            self, DetonationSource,
-            press::{self, FingertipSource, PressDetector, PressPhase, PressReading},
+        weapons::{
+            c4::{
+                self, DetonationSource,
+                press::{self, FingertipSource, PressDetector, PressPhase, PressReading},
+            },
+            config::WristDetonatorConfig,
+            haptics::{self, PulseSource},
         },
-        haptics::{self, PulseSource},
     },
+    headpose,
 };
 
 /// Where the fingertip was read from.
@@ -83,34 +95,39 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         stand_down();
         return;
     }
+    let Some(active) = hands::active_hands() else {
+        stand_down();
+        return;
+    };
     let tuning = &config.weapons.c4.detonator;
     let dominant = config.dominant_hand;
     let off = dominant.other();
-    let placed = frame::with_latest(|frame| {
-        let off_grip = frame.hand(off).grip;
-        let face = (frame.hand(off).active && off_grip.is_valid())
-            .then(|| press::button_face(off, off_grip.pose, tuning))
-            .flatten();
+    let drawn = active.hands;
+    let face = drawn[off.index()].and_then(|hand| press::button_face(off, hand.grip, tuning));
+    let tip = frame::with_latest(|frame| {
         let dom = frame.hand(dominant);
+        let drawn = drawn[dominant.index()]?;
+        if !(dom.active && dom.aim.is_valid() && dom.grip.is_valid()) {
+            return None;
+        }
         let joints = dom.joints.as_ref();
-        let tip = (dom.active && dom.aim.is_valid()).then(|| {
-            let source = FingertipSource {
-                joints,
-                aim: dom.aim.pose,
-                trigger_touch: dom.inputs.trigger_touch,
-            };
-            let kind = match joints {
-                Some(j) if j[press::INDEX_TIP_JOINT].valid => FingertipSourceKind::Skeleton,
-                _ => FingertipSourceKind::Estimate,
-            };
-            (press::fingertip(dominant, source, tuning), kind)
-        });
-        (face, tip)
-    });
-    let (face, tip) = placed.unwrap_or((None, None));
-    let charges = c4::charges().unwrap_or(0);
+        let source = FingertipSource {
+            joints,
+            aim: dom.aim.pose,
+            trigger_touch: dom.inputs.trigger_touch,
+        };
+        let kind = match joints {
+            Some(j) if j[press::INDEX_TIP_JOINT].valid => FingertipSourceKind::Skeleton,
+            _ => FingertipSourceKind::Estimate,
+        };
+        let tip = press::fingertip(dominant, source, tuning);
+        Some((press::carry(tip, dom.grip.pose, drawn.grip), kind))
+    })
+    .flatten();
+    let charges = c4::charges().unwrap_or(0).max(0);
     let lit = charges > 0;
 
+    let now = Instant::now();
     let mut state = STATE.lock();
     let reading = state
         .detector
@@ -124,27 +141,54 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         idle_presses: state.status.idle_presses + u64::from(reading.pressed && !lit),
     };
     if reading.pressed {
-        state.flash_until = Some(Instant::now() + FLASH);
+        state.flash = Some(Flash {
+            kind: if lit {
+                FlashKind::Pressed
+            } else {
+                FlashKind::Empty
+            },
+            until: now + FlashKind::Pressed.length(),
+        });
     }
-    let flashing = state.flash_until.is_some_and(|t| Instant::now() < t);
+    state.flash = state.flash.filter(|f| now < f.until);
+    let flash = state.flash.map(|f| f.kind);
     drop(state);
 
     if reading.pressed {
-        tracing::debug!(target: "controllers", charges, "wrist detonator pressed");
         if lit {
+            tracing::info!(target: "controllers", charges, "wrist detonator: detonating");
             c4::request_detonation(DetonationSource::WristButton);
-        }
-        for hand in Hand::BOTH {
-            haptics::pulse(hand, tuning.pulse, PulseSource::C4);
+            for hand in Hand::BOTH {
+                haptics::pulse(hand, tuning.pulse, PulseSource::C4);
+            }
+        } else {
+            tracing::info!(target: "controllers", "wrist detonator: pressed with no charges placed");
+            haptics::pulse(dominant, tuning.empty_pulse, PulseSource::C4);
         }
     }
-    if tuning.overlay && config.overlay.enabled {
-        let offset = mirrored(off, tuning.offset_m);
-        let mut prims = vec![button(off, offset, tuning.radius_m, lit, reading, flashing)];
-        store::submit(Source::WristDetonator, &mut prims, TTL);
-    } else {
+    let Some(face) = face.filter(|_| tuning.overlay && config.overlay.enabled) else {
         store::clear(Source::WristDetonator);
-    }
+        return;
+    };
+    let body = headpose::xr::body_rotation();
+    let look = Look {
+        off,
+        normal: (body * face.normal).normalize_or(Vec3::Y),
+        charges,
+        progress: reading.phase.dwell_progress(tuning),
+        flash,
+    };
+    let mut prims = button(&look, tuning);
+    store::submit(Source::WristDetonator, &mut prims, TTL);
+}
+
+/// Note that the game started a detonation, from the wrist button or its own input, so that the
+/// button flashes it.
+pub(super) fn note_detonation() {
+    STATE.lock().flash = Some(Flash {
+        kind: FlashKind::Detonated,
+        until: Instant::now() + FlashKind::Detonated.length(),
+    });
 }
 
 /// Stop: forget the fingertip's approach and take the button off the wrist.
@@ -153,7 +197,7 @@ pub(crate) fn stand_down() {
     state.detector = PressDetector::new();
     state.status.acting = false;
     state.status.reading = PressReading::default();
-    state.flash_until = None;
+    state.flash = None;
     drop(state);
     store::clear(Source::WristDetonator);
 }
@@ -161,17 +205,53 @@ pub(crate) fn stand_down() {
 /// The overlay slot lives a little past one input tick.
 const TTL: Duration = Duration::from_millis(150);
 
-/// How long the button flashes after a press.
-const FLASH: Duration = Duration::from_millis(250);
+/// The most pips drawn beside the button; more charges than this show as this many.
+const MAX_PIPS: i32 = 8;
 
-const DIM: Rgba = [0.6, 0.6, 0.6, 0.5];
+/// A pip's diameter and the gap from one pip's centre to the next, metres.
+const PIP_SIZE_M: f32 = 0.009;
+const PIP_SPACING_M: f32 = 0.013;
+
+const DIM: Rgba = [0.55, 0.55, 0.6, 0.35];
+const DIM_RIM: Rgba = [0.8, 0.8, 0.85, 0.7];
 const LIT: Rgba = [1.0, 0.2, 0.1, 0.9];
-const FLASHING: Rgba = [1.0, 0.95, 0.8, 1.0];
+const LIT_RIM: Rgba = [1.0, 0.75, 0.6, 0.95];
+const DWELL: Rgba = [1.0, 0.85, 0.2, 0.95];
+const PRESSED: Rgba = [1.0, 0.95, 0.8, 1.0];
+const EMPTY: Rgba = [0.5, 0.6, 0.8, 0.9];
+const DETONATED: Rgba = [1.0, 0.6, 0.1, 1.0];
+const PIP: Rgba = [1.0, 0.35, 0.15, 0.95];
+
+/// A flash of the button after an event.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Flash {
+    kind: FlashKind,
+    until: Instant,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum FlashKind {
+    /// A press with charges placed.
+    Pressed,
+    /// A press with no charges placed.
+    Empty,
+    /// The game started a detonation.
+    Detonated,
+}
+
+impl FlashKind {
+    const fn length(self) -> Duration {
+        match self {
+            FlashKind::Pressed | FlashKind::Empty => Duration::from_millis(250),
+            FlashKind::Detonated => Duration::from_millis(600),
+        }
+    }
+}
 
 struct State {
     detector: PressDetector,
     status: WristStatus,
-    flash_until: Option<Instant>,
+    flash: Option<Flash>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -180,8 +260,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         acting: false,
         reading: PressReading {
             pressed: false,
-            depth_m: None,
-            lateral_m: None,
+            distance_m: None,
+            height_m: None,
             phase: PressPhase::Lost,
         },
         fingertip: None,
@@ -189,8 +269,66 @@ static STATE: Mutex<State> = Mutex::new(State {
         presses: 0,
         idle_presses: 0,
     },
-    flash_until: None,
+    flash: None,
 });
+
+/// What the button looks like on a tick.
+struct Look {
+    off: Hand,
+    /// The face's normal in the world.
+    normal: Vec3,
+    charges: i32,
+    /// How far a slow touch is through its dwell, `0..=1`.
+    progress: f32,
+    flash: Option<FlashKind>,
+}
+
+/// The button's sprites on the off-hand's wrist, lying on the wrist facing out of it: a disc and
+/// its rim, and a pip for each placed charge in a row along the forearm toward the elbow.
+fn button(look: &Look, tuning: &WristDetonatorConfig) -> Vec<Primitive> {
+    let centre = mirrored(look.off, tuning.offset_m);
+    let radius = tuning.radius_m.max(0.005);
+    let lit = look.charges > 0;
+    let (fill, rim, scale) = match look.flash {
+        Some(FlashKind::Detonated) => (DETONATED, DETONATED, 1.8),
+        Some(FlashKind::Pressed) => (PRESSED, PRESSED, 1.2),
+        Some(FlashKind::Empty) => (EMPTY, EMPTY, 1.0),
+        None if lit => (mix(LIT, DWELL, look.progress), LIT_RIM, 1.0),
+        None => (mix(DIM, DWELL, look.progress), DIM_RIM, 1.0),
+    };
+    let sprite = |offset: Vec3, size: f32, shape: Shape, color: Rgba| Primitive::Sprite {
+        at: Anchor::Hand {
+            hand: look.off,
+            pose: HandPose::Grip,
+            offset,
+        },
+        size: SpriteSize::World(size),
+        facing: Facing::Surface {
+            normal: look.normal,
+        },
+        shape,
+        color,
+        depth: DepthMode::XRay {
+            occluded_alpha: 0.5,
+        },
+    };
+    let diameter = radius * 2.0 * scale;
+    let mut prims = vec![
+        sprite(centre, diameter, Shape::Disc, fill),
+        sprite(centre, diameter, Shape::Ring { thickness: 0.25 }, rim),
+    ];
+    // +Z of the grip frame runs back from the fist toward the elbow.
+    for i in 0..look.charges.min(MAX_PIPS) {
+        let along = radius + PIP_SPACING_M * (i as f32 + 1.0);
+        prims.push(sprite(
+            centre + Vec3::Z * along,
+            PIP_SIZE_M,
+            Shape::Disc,
+            PIP,
+        ));
+    }
+    prims
+}
 
 /// A vector given for the left hand, mirrored for `hand`.
 fn mirrored(hand: Hand, v: Vec3) -> Vec3 {
@@ -200,44 +338,64 @@ fn mirrored(hand: Hand, v: Vec3) -> Vec3 {
     }
 }
 
-/// The button's sprite on the `off` wrist: a ring while no charges are placed, a disc while they
-/// are, growing brighter as the fingertip pushes in, and a flash after a press.
-fn button(
-    off: Hand,
-    offset: Vec3,
-    radius: f32,
-    lit: bool,
-    reading: PressReading,
-    flashing: bool,
-) -> Primitive {
-    let pushing = matches!(reading.phase, PressPhase::Pushing { .. });
-    let color = if flashing {
-        FLASHING
-    } else if lit {
-        let mut c = LIT;
-        if pushing {
-            c[1] = 0.5;
+fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
+    let t = t.clamp(0.0, 1.0);
+    std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn look(charges: i32, flash: Option<FlashKind>) -> Look {
+        Look {
+            off: Hand::Left,
+            normal: Vec3::X,
+            charges,
+            progress: 0.0,
+            flash,
         }
-        c
-    } else {
-        DIM
-    };
-    Primitive::Sprite {
-        at: Anchor::Hand {
-            hand: off,
-            pose: HandPose::Grip,
-            offset,
-        },
-        size: SpriteSize::World(radius.max(0.005) * 2.0),
-        facing: Facing::Billboard,
-        shape: if lit || flashing {
-            Shape::Disc
-        } else {
-            Shape::Ring { thickness: 0.3 }
-        },
-        color,
-        depth: DepthMode::XRay {
-            occluded_alpha: 0.5,
-        },
+    }
+
+    fn colour(prim: &Primitive) -> Rgba {
+        match prim {
+            Primitive::Sprite { color, .. } => *color,
+            Primitive::Line { color, .. } => *color,
+        }
+    }
+
+    #[test]
+    fn a_pip_shows_each_placed_charge() {
+        let t = WristDetonatorConfig::new();
+        // The disc and its rim, then one pip per charge, up to the most drawn.
+        assert_eq!(button(&look(0, None), &t).len(), 2);
+        assert_eq!(button(&look(3, None), &t).len(), 5);
+        assert_eq!(button(&look(40, None), &t).len(), 2 + MAX_PIPS as usize);
+    }
+
+    #[test]
+    fn the_button_lights_with_charges_and_flashes_on_events() {
+        let t = WristDetonatorConfig::new();
+        assert_eq!(colour(&button(&look(0, None), &t)[0]), DIM);
+        assert_eq!(colour(&button(&look(2, None), &t)[0]), LIT);
+        assert_eq!(
+            colour(&button(&look(0, Some(FlashKind::Empty)), &t)[0]),
+            EMPTY
+        );
+        assert_eq!(
+            colour(&button(&look(2, Some(FlashKind::Detonated)), &t)[0]),
+            DETONATED
+        );
+    }
+
+    #[test]
+    fn the_button_lies_on_the_wrist_facing_out() {
+        let t = WristDetonatorConfig::new();
+        for prim in button(&look(2, None), &t) {
+            let Primitive::Sprite { facing, .. } = prim else {
+                panic!("{prim:?}");
+            };
+            assert_eq!(facing, Facing::Surface { normal: Vec3::X });
+        }
     }
 }
