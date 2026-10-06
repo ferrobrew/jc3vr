@@ -116,6 +116,10 @@ pub enum Anchor {
         pose: HandPose,
         offset: Vec3,
     },
+    /// An offset in world axes from the head, placed at render time from the head's render-time
+    /// position. For a point that rides with the player, such as one placed in the cockpit frame,
+    /// which a world anchor placed at the tick rate trails while the player moves fast.
+    Head(Vec3),
 }
 
 impl Anchor {

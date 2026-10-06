@@ -343,7 +343,12 @@ impl CockpitTransform {
     }
 
     pub fn point_to_world(&self, cockpit: Vec3) -> Vec3 {
-        self.head_world + self.body * ((cockpit - self.head_cockpit) * self.scale())
+        self.head_world + self.point_from_head(cockpit)
+    }
+
+    /// A cockpit-frame point as a world-space offset from the head.
+    pub fn point_from_head(&self, cockpit: Vec3) -> Vec3 {
+        self.body * ((cockpit - self.head_cockpit) * self.scale())
     }
 
     /// A world-space displacement as a cockpit-frame one: turned into the body frame and scaled.

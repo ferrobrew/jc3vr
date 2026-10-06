@@ -19,6 +19,7 @@ use crate::{
             config_choice, config_slider, config_toggle, edit_config, nearest_index, read_config,
             reset_live_to_defaults, settings_state,
         },
+        vehicles::config::{ArmPitch, WheelTracking},
         weapons::reload::config::ReloadButton,
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
@@ -265,16 +266,67 @@ fn build() -> Page {
                 .iter()
                 .all(|&&enabled| enabled),
         })
+        .item(config_choice!(
+            "WHEEL TURNED BY",
+            &WHEEL_TRACKING,
+            &WHEEL_TRACKING_LABELS,
+            |c| c.controllers.vehicles.physical.wheel.turned_by
+        ))
+        .item(config_slider!(
+            "WHEEL FULL LOCK",
+            WHEEL_LOCK_RANGE,
+            SliderFormat::new(0, " DEG"),
+            |c| c.controllers.vehicles.physical.wheel.lock_deg
+        ))
+        .item(config_slider!(
+            "WHEEL RESPONSE",
+            WHEEL_RESPONSE_RANGE,
+            SliderFormat::new(2, ""),
+            |c| c.controllers.vehicles.physical.wheel.response
+        ))
         .item(config_toggle!("WINGSUIT ARM STEERING", |c| c
             .controllers
             .vehicles
             .arm_steering
             .wingsuit))
+        .item(config_choice!(
+            "WINGSUIT PITCH BY",
+            &ArmPitch::ALL,
+            &ARM_PITCH_LABELS,
+            |c| c.controllers.vehicles.arm_steering.pitch_by
+        ))
+        .item(config_slider!(
+            "WINGSUIT FULL TILT",
+            TILT_RANGE,
+            SliderFormat::new(0, " DEG"),
+            |c| c.controllers.vehicles.arm_steering.full_tilt_deg
+        ))
+        .item(config_toggle!("INVERT WINGSUIT PITCH", |c| c
+            .controllers
+            .vehicles
+            .arm_steering
+            .invert_pitch))
+        .item(config_toggle!("WINGSUIT ARMS READOUT", |c| c
+            .controllers
+            .vehicles
+            .arm_steering
+            .show_readout))
         .item(config_toggle!("PARACHUTE HANDLES", |c| c
             .controllers
             .vehicles
             .parachute_handles
             .enabled))
+        .item(config_toggle!("MARK PARACHUTE HANDLES", |c| c
+            .controllers
+            .vehicles
+            .parachute_handles
+            .show_handles))
+        .item(config_slider!(
+            "HANDLE HEIGHT ABOVE SHOULDER",
+            HANDLE_HEIGHT_RANGE,
+            SliderFormat::new(2, " M"),
+            |c| c.controllers.vehicles.parachute_handles.from_shoulder_m.y
+        ))
         .item(config_slider!(
             "HANDLE FULL PULL",
             FULL_PULL_RANGE,
@@ -390,6 +442,12 @@ const SNAP_ANGLE_LABELS: [&str; 5] = [
     "90 DEGREES",
 ];
 
+const WHEEL_TRACKING: [WheelTracking; 2] = [WheelTracking::Position, WheelTracking::Twist];
+const WHEEL_TRACKING_LABELS: [&str; 2] = ["HAND TRAVEL", "WRIST TWIST"];
+
+/// By [`ArmPitch::ALL`].
+const ARM_PITCH_LABELS: [&str; 3] = ["WRIST TILT", "HAND HEIGHT", "ARM SWEEP"];
+
 const GUN_READOUTS: [GunReadout; 3] = [GunReadout::None, GunReadout::Dot, GunReadout::Laser];
 const GUN_READOUT_LABELS: [&str; 3] = ["NONE", "DOT", "LASER"];
 
@@ -406,6 +464,14 @@ const TURN_SPEED_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 const RECOIL_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
 /// The parachute handles' full pull, metres, in centimetres.
 const FULL_PULL_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
+/// The parachute handles' height above the shoulders, metres, in centimetres.
+const HANDLE_HEIGHT_RANGE: SliderRange = SliderRange::new(0.0, 0.4, 40);
+/// The steering wheel's full lock either way, degrees, in degrees: at most half a turn.
+const WHEEL_LOCK_RANGE: SliderRange = SliderRange::new(60.0, 180.0, 120);
+/// The steering wheel's response exponent, in twentieths.
+const WHEEL_RESPONSE_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
+/// The wingsuit's full pitch by wrist tilt, degrees, in degrees.
+const TILT_RANGE: SliderRange = SliderRange::new(10.0, 60.0, 50);
 
 /// The switches of the six physical vehicle controls.
 fn physical_controls(c: &Config) -> [&bool; 6] {
@@ -455,6 +521,8 @@ mod tests {
         assert_eq!(TURN_MODES.len(), TURN_MODE_LABELS.len());
         assert_eq!(SNAP_ANGLES.len(), SNAP_ANGLE_LABELS.len());
         assert_eq!(GUN_READOUTS.len(), GUN_READOUT_LABELS.len());
+        assert_eq!(WHEEL_TRACKING.len(), WHEEL_TRACKING_LABELS.len());
+        assert_eq!(ArmPitch::ALL.len(), ARM_PITCH_LABELS.len());
         assert_eq!(
             SNAP_ANGLES[nearest_index(&SNAP_ANGLES, VrTurnConfig::new().snap_angle_deg)],
             VrTurnConfig::new().snap_angle_deg,

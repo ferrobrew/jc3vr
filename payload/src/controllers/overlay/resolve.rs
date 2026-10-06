@@ -79,7 +79,8 @@ pub fn resolve(primitives: &[Primitive], frame: &Frame, out: &mut Vec<GpuPrimiti
     out.extend(keyed.into_iter().map(|(_, p)| p));
 }
 
-/// The world position of an anchor, or `None` when its hand has no pose.
+/// The world position of a world or hand anchor, or `None` when its hand has no pose or it is
+/// anchored to the head.
 pub fn anchor_position(anchor: Anchor, hands: &[Option<HandPoses>; 2]) -> Option<Vec3> {
     match anchor {
         Anchor::World(p) => Some(p),
@@ -87,6 +88,15 @@ pub fn anchor_position(anchor: Anchor, hands: &[Option<HandPoses>; 2]) -> Option
             let pose = hands[hand.index()]?.get(pose);
             Some(pose.position + pose.orientation * offset)
         }
+        Anchor::Head(_) => None,
+    }
+}
+
+/// The world position of any anchor in `frame`, or `None` when its hand has no pose.
+fn place(anchor: Anchor, frame: &Frame) -> Option<Vec3> {
+    match anchor {
+        Anchor::Head(offset) => Some(frame.head.position + offset),
+        anchor => anchor_position(anchor, &frame.hands),
     }
 }
 
@@ -109,7 +119,7 @@ fn resolve_one(primitive: &Primitive, frame: &Frame) -> Option<(f32, GpuPrimitiv
             color,
             depth,
         } => {
-            let center = anchor_position(at, &frame.hands)?;
+            let center = place(at, frame)?;
             let distance = center.distance(frame.head.position);
             let radius = sprite_radius(size, distance);
             let (u, v) = sprite_axes(facing, frame.head.orientation);
@@ -134,8 +144,8 @@ fn resolve_one(primitive: &Primitive, frame: &Frame) -> Option<(f32, GpuPrimitiv
             color,
             depth,
         } => {
-            let a = anchor_position(from, &frame.hands)?;
-            let b = anchor_position(to, &frame.hands)?;
+            let a = place(from, frame)?;
+            let b = place(to, frame)?;
             let packed = GpuPrimitive {
                 a: (a - frame.origin).extend(width * 0.5).to_array(),
                 b: (b - frame.origin).extend(0.0).to_array(),
@@ -214,6 +224,15 @@ mod tests {
         let p = anchor_position(anchor, &f.hands).unwrap();
         assert!(p.distance(Vec3::new(9.3, 1.2, -20.4)) < 1e-5);
         assert!(anchor_position(Anchor::hand(Hand::Left, HandPose::Grip), &f.hands).is_none());
+    }
+
+    #[test]
+    fn a_head_anchor_rides_the_head() {
+        let f = frame();
+        let offset = Vec3::new(0.3, -0.2, 0.1);
+        let p = place(Anchor::Head(offset), &f).unwrap();
+        assert!(p.distance(f.head.position + offset) < 1e-6);
+        assert_eq!(anchor_position(Anchor::Head(offset), &f.hands), None);
     }
 
     #[test]

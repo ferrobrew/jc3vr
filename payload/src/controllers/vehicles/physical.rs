@@ -520,9 +520,9 @@ fn step_wheel(
         let (_, point) = holding[i]?;
         let grip = state.wheel_grips[i]
             .get_or_insert_with(|| WheelGrip::new(&placement.wheel, point, orientations[i]));
-        grip.turn(&placement.wheel, spec.tracking, point, orientations[i])
+        grip.turn(&placement.wheel, spec.turned_by, point, orientations[i])
     });
-    if let Some(turn) = steering::combine(turns.into_iter().flatten()) {
+    if let Some(turn) = steering::combine(turns) {
         state.wheel_angle = steering::advance(state.wheel_angle, turn, spec);
     }
     Some(steering::steer_for_angle(state.wheel_angle, spec))

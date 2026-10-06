@@ -1,10 +1,17 @@
 //! The parachute's handles, standing in for a canopy's toggle lines. Pure.
 //!
-//! One handle hangs above and outside each shoulder ([`handle_centres`]), and only that side's hand
-//! takes it. The hands are not on the handles until the player takes them: like the other grab
-//! volumes, a grip press with the hand inside a handle's volume takes it, and it is held only while
-//! the grip is: releasing the grip, or moving further than the release distance from it, lets go
-//! ([`step`]), as a physical vehicle control does ([`crate::controllers::vehicles::physical`]).
+//! One handle hangs a little above, ahead of, and outside each shoulder, along the torso's heading
+//! ([`handle_centres`]), and only that side's hand takes it. The hands are not on the handles until
+//! the player takes them: like the other grab volumes, a grip press with the hand inside a handle's
+//! volume takes it, and it is held only while the grip is: releasing the grip, or moving further
+//! than the release distance from it, lets go ([`step`]), as a physical vehicle control does
+//! ([`crate::controllers::vehicles::physical`]). A handle's volume wins over the body's volumes it
+//! overlaps. Around it a wider reach ([`reach_candidates`]) takes the handle for a press that no
+//! other volume claims, so that a hand that misses the handle by a little takes it rather than
+//! firing the grapple.
+//!
+//! Each handle is marked while the handles act ([`marks`]): faintly out of reach, brighter in reach,
+//! and lit while held, so the player can find them.
 //!
 //! A held handle is pulled by how far its hand has come down from where it took the handle, over a
 //! deadzone, reaching a full pull at the full-pull distance ([`pull`]). The two pulls steer
@@ -24,7 +31,7 @@
 //! nothing. The holding hand is drawn on the handle ([`anchor_point`]): straight below where it was
 //! taken, no further down than a full pull and no higher than where it was taken.
 
-use glam::{Vec2, Vec3};
+use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
     bindings::grab::{Candidate, GrabVolume},
@@ -70,11 +77,16 @@ pub struct StepInputs {
 }
 
 /// Where the handles' volumes are centred for shoulder joints at `shoulders`, indexed by
-/// [`Hand::index`]: each shoulder's offset, mirrored for the left.
-pub fn handle_centres(config: &ParachuteHandlesConfig, shoulders: [Vec3; 2]) -> [Vec3; 2] {
-    let right = config.offset_m;
+/// [`Hand::index`], for a torso turned by `torso` in the cockpit frame: each shoulder's offset
+/// along the torso's axes, mirrored for the left.
+pub fn handle_centres(
+    config: &ParachuteHandlesConfig,
+    shoulders: [Vec3; 2],
+    torso: Quat,
+) -> [Vec3; 2] {
+    let right = config.from_shoulder_m;
     let left = Vec3::new(-right.x, right.y, right.z);
-    [shoulders[0] + left, shoulders[1] + right]
+    [shoulders[0] + torso * left, shoulders[1] + torso * right]
 }
 
 /// The handles' grab volumes: a free hand's handle at its place by the shoulder, a held one where
@@ -93,6 +105,74 @@ pub fn candidates(
             centre: held.unwrap_or(centres[i]),
             radius: config.radius_m,
             hand: Some(hand),
+        }
+    })
+}
+
+/// The handles' wider reach: the free handles' volumes grown to the reach, which take a press that
+/// no other volume claims.
+pub fn reach_candidates(
+    config: &ParachuteHandlesConfig,
+    state: &HandleState,
+    centres: [Vec3; 2],
+) -> impl Iterator<Item = Candidate> {
+    let radius = config.reach_m.max(config.radius_m);
+    Hand::BOTH
+        .into_iter()
+        .filter(move |hand| state.holds[hand.index()].is_none())
+        .map(move |hand| Candidate {
+            volume: GrabVolume::ParachuteHandle(hand),
+            centre: centres[hand.index()],
+            radius,
+            hand: Some(hand),
+        })
+}
+
+/// How a handle is marked.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum MarkState {
+    /// Free, its hand out of reach or untracked.
+    Idle,
+    /// Free, its hand in reach: a grip press takes it.
+    InReach,
+    /// Held.
+    Held,
+}
+
+/// A handle's mark: where it is and how it is shown.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Mark {
+    pub hand: Hand,
+    pub centre: Vec3,
+    pub radius: f32,
+    pub state: MarkState,
+}
+
+/// The handles' marks, indexed by [`Hand::index`], for hands with grips at `grips`: a held handle
+/// where its hand holds it, a free one at its place, in reach when its hand is within the reach.
+pub fn marks(
+    config: &ParachuteHandlesConfig,
+    state: &HandleState,
+    centres: [Vec3; 2],
+    grips: [Option<Vec3>; 2],
+) -> [Mark; 2] {
+    let placed = candidates(config, state, centres, grips);
+    let reach = config.reach_m.max(config.radius_m);
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let centre = placed[i].centre;
+        let state = if state.holds[i].is_some() {
+            MarkState::Held
+        } else if grips[i].is_some_and(|g| g.distance(centre) <= reach) {
+            MarkState::InReach
+        } else {
+            MarkState::Idle
+        };
+        Mark {
+            hand,
+            centre,
+            radius: config.radius_m,
+            state,
         }
     })
 }
@@ -195,6 +275,10 @@ mod tests {
     const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
     const SHOULDERS: [Vec3; 2] = [Vec3::new(-0.2, -0.2, 0.1), Vec3::new(0.2, -0.2, 0.1)];
 
+    fn centres() -> [Vec3; 2] {
+        handle_centres(&CONFIG, SHOULDERS, Quat::IDENTITY)
+    }
+
     /// A tick with every tracked hand's grip held.
     fn tick(
         state: &mut HandleState,
@@ -217,17 +301,18 @@ mod tests {
     }
 
     fn both_taken() -> (HandleState, [Vec3; 2]) {
-        let centres = handle_centres(&CONFIG, SHOULDERS);
+        let centres = centres();
         let mut state = HandleState::new();
         tick(&mut state, centres.map(Some), [true; 2]);
         (state, centres)
     }
 
     #[test]
-    fn the_handles_sit_above_and_outside_their_shoulders_for_their_own_hand() {
-        let centres = handle_centres(&CONFIG, SHOULDERS);
+    fn the_handles_sit_above_ahead_and_outside_their_shoulders_for_their_own_hand() {
+        let centres = centres();
         assert!(centres[0].x < SHOULDERS[0].x && centres[1].x > SHOULDERS[1].x);
         assert!(centres.iter().all(|c| c.y > SHOULDERS[0].y));
+        assert!(centres.iter().all(|c| c.z < SHOULDERS[0].z));
         let c = candidates(&CONFIG, &HandleState::new(), centres, [None; 2]);
         assert_eq!(
             grab_volume(centres[1], Hand::Right, &c),
@@ -237,8 +322,57 @@ mod tests {
     }
 
     #[test]
+    fn the_handles_turn_with_the_torso() {
+        let torso = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let turned = handle_centres(&CONFIG, [Vec3::ZERO; 2], torso);
+        // Facing -X: the right handle is out toward -Z and ahead toward -X.
+        let right = CONFIG.from_shoulder_m;
+        assert!((turned[1] - Vec3::new(right.z, right.y, -right.x)).length() < 1e-5);
+        assert!(turned[0].z > 0.0 && turned[1].z < 0.0);
+    }
+
+    #[test]
+    fn a_press_near_a_free_handle_reaches_it_but_not_over_the_body() {
+        let centres = centres();
+        let state = HandleState::new();
+        let near = centres[1] + Vec3::X * (CONFIG.radius_m + CONFIG.reach_m) * 0.5;
+        let placed = candidates(&CONFIG, &state, centres, [None; 2]);
+        assert_eq!(grab_volume(near, Hand::Right, &placed), None);
+        let reach: Vec<_> = reach_candidates(&CONFIG, &state, centres).collect();
+        assert_eq!(
+            grab_volume(near, Hand::Right, &reach),
+            Some(GrabVolume::ParachuteHandle(Hand::Right))
+        );
+        assert_eq!(grab_volume(near, Hand::Left, &reach), None);
+        let far = centres[1] + Vec3::X * CONFIG.reach_m * 1.1;
+        assert_eq!(grab_volume(far, Hand::Right, &reach), None);
+        // A held handle has no reach of its own: its hand is in its volume already.
+        let (state, _) = both_taken();
+        assert_eq!(reach_candidates(&CONFIG, &state, centres).count(), 0);
+    }
+
+    #[test]
+    fn the_marks_show_reach_and_hold() {
+        let centres = centres();
+        let mut state = HandleState::new();
+        let near = centres[1] + Vec3::Y * CONFIG.reach_m * 0.9;
+        let marks = marks(&CONFIG, &state, centres, [None, Some(near)]);
+        assert_eq!(marks[0].state, MarkState::Idle);
+        assert_eq!(marks[1].state, MarkState::InReach);
+        assert_eq!(marks[1].centre, centres[1]);
+        tick(&mut state, [None, Some(centres[1])], [false, true]);
+        let low = centres[1] - Vec3::Y * 0.1;
+        let held = super::marks(&CONFIG, &state, centres, [None, Some(low)]);
+        assert_eq!(held[1].state, MarkState::Held);
+        assert!(
+            (held[1].centre - low).length() < 1e-5,
+            "drawn where the hand holds it"
+        );
+    }
+
+    #[test]
     fn a_handle_is_held_only_once_taken_and_only_while_the_grip_is() {
-        let centres = handle_centres(&CONFIG, SHOULDERS);
+        let centres = centres();
         let mut state = HandleState::new();
         let down = centres[1] - Vec3::Y * CONFIG.full_pull_m;
         let (pulls, _) = tick(&mut state, [None, Some(down)], [false; 2]);

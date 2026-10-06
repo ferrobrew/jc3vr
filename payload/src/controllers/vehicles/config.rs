@@ -168,7 +168,7 @@ impl PhysicalControlsConfig {
                 lock_deg: 135.0,
                 response: 1.0,
                 deadzone_deg: 2.0,
-                tracking: WheelTracking::Twist,
+                turned_by: WheelTracking::Position,
                 return_deg_per_s: 360.0,
             },
             handlebars: HandlebarsSpec {
@@ -251,8 +251,9 @@ pub struct WheelSpec {
     pub response: f32,
     /// Wheel angles within this of centre steer nothing, degrees.
     pub deadzone_deg: f32,
-    /// What a holding hand turns the wheel by.
-    pub tracking: WheelTracking,
+    /// What a holding hand turns the wheel by. Named apart from the `tracking` key that saved the
+    /// earlier twist default, so that a saved file takes the travel default once.
+    pub turned_by: WheelTracking,
     /// How fast the released wheel returns to centre, degrees per second.
     pub return_deg_per_s: f32,
 }
@@ -266,18 +267,20 @@ impl Default for WheelSpec {
 /// What a hand holding the wheel turns it by.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WheelTracking {
-    /// The hand's twist about the wheel's axis, as a hand clamped to the rim turns. Independent of
-    /// where the hand is, so a wheel fitted slightly off still turns truly.
-    Twist,
-    /// The hand's travel around the hub in the wheel's plane.
+    /// The hand's travel around the hub in the wheel's plane, with the hand's twist standing in
+    /// near the hub. The default: it follows the arms carrying the hands round the rim.
     Position,
+    /// The hand's twist about the wheel's axis alone, as a hand clamped to the rim turns.
+    /// Independent of where the hand is, so a wheel fitted slightly off still turns truly, but it
+    /// reads only the wrist's roll.
+    Twist,
 }
 
 impl WheelTracking {
     pub const fn label(self) -> &'static str {
         match self {
-            WheelTracking::Twist => "the hand's twist",
             WheelTracking::Position => "the hand's travel around the hub",
+            WheelTracking::Twist => "the hand's twist",
         }
     }
 }
@@ -341,9 +344,9 @@ impl LeverAxis {
 }
 
 /// The arm-pose steering of the wingsuit (see [`crate::controllers::vehicles::arm_steering`]):
-/// with the arms spread, the difference in the hands' heights banks, and both hands raised or
-/// lowered pitches. On by default, as part of the full gameplay preset, alongside the stick
-/// steering it adds to.
+/// with the arms spread, the difference in the hands' heights banks, and the wrists' tilt, the
+/// hands' height, or the arms' sweep pitches ([`ArmPitch`]). On by default, as part of the full
+/// gameplay preset, alongside the stick steering it adds to.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArmSteeringConfig {
@@ -351,16 +354,36 @@ pub struct ArmSteeringConfig {
     /// How far apart the hands must be, as a share of the arm span, for the arms to count as
     /// spread. Closer together, the arms steer nothing and the stick steers alone.
     pub min_spread: f32,
-    /// Height differences and offsets below this steer nothing, metres.
+    /// Height differences and offsets below this steer nothing, metres. The bank, and the height
+    /// and sweep pitches, share it.
     pub deadzone_m: f32,
     /// The height difference between the hands that banks fully, metres.
     pub full_bank_m: f32,
-    /// How far both hands must be above or below the shoulders to pitch fully, metres.
+    /// What pitches the wingsuit.
+    pub pitch_by: ArmPitch,
+    /// How far both hands must be above or below the shoulders to pitch fully, metres, under
+    /// [`ArmPitch::Height`].
     pub full_pitch_m: f32,
-    /// Lowered hands pitch down (a dive) by default; this reverses it.
+    /// How far the wrists must tilt from the neutral to pitch fully, degrees, under
+    /// [`ArmPitch::WristTilt`].
+    pub full_tilt_deg: f32,
+    /// Wrist tilts within this of the neutral pitch nothing, degrees.
+    pub tilt_deadzone_deg: f32,
+    /// The wrist tilt that pitches nothing, degrees, positive with the leading edges down: zero is
+    /// the palms held flat.
+    pub tilt_neutral_deg: f32,
+    /// How far both hands must be swept ahead of or behind the shoulders to pitch fully, metres,
+    /// under [`ArmPitch::Sweep`].
+    pub full_sweep_m: f32,
+    /// Reverse the pitch: by default, the leading edges tilted down, the hands lowered, or the arms
+    /// swept back dive.
     pub invert_pitch: bool,
     /// Ring each hand in the wingsuit, lit while the arms steer, with a line between them.
     pub show_guide: bool,
+    /// Show a panel below the view in the wingsuit with what the arm steering reads and writes:
+    /// the spread, whether the arms steer, the bank and pitch inputs, the arms' stick vector, the
+    /// player's stick, and the sum written. A diagnostic, off by default.
+    pub show_readout: bool,
 }
 
 impl ArmSteeringConfig {
@@ -370,9 +393,15 @@ impl ArmSteeringConfig {
             min_spread: 0.5,
             deadzone_m: 0.04,
             full_bank_m: 0.45,
+            pitch_by: ArmPitch::WristTilt,
             full_pitch_m: 0.30,
+            full_tilt_deg: 30.0,
+            tilt_deadzone_deg: 5.0,
+            tilt_neutral_deg: 0.0,
+            full_sweep_m: 0.35,
             invert_pitch: false,
             show_guide: true,
+            show_readout: false,
         }
     }
 }
@@ -383,20 +412,49 @@ impl Default for ArmSteeringConfig {
     }
 }
 
+/// What pitches the wingsuit under the arm steering.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArmPitch {
+    /// Both wrists' tilt about the arms: the leading edges, the thumb side of a flat palm, tilted
+    /// down dive and tilted up climb. The default: the wrist turns faster than the arms move.
+    WristTilt,
+    /// Both hands' height above or below the shoulders: lowered dive.
+    Height,
+    /// Both hands swept behind or ahead of the shoulders: swept back dive.
+    Sweep,
+}
+
+impl ArmPitch {
+    pub const ALL: [ArmPitch; 3] = [ArmPitch::WristTilt, ArmPitch::Height, ArmPitch::Sweep];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            ArmPitch::WristTilt => "the wrists' tilt",
+            ArmPitch::Height => "the hands' height",
+            ArmPitch::Sweep => "the arms' sweep",
+        }
+    }
+}
+
 /// The parachute's handles (see [`crate::controllers::vehicles::parachute`]): one grab volume per
-/// hand above and outside its shoulder, where a canopy's toggle lines hang. A grip press inside one
-/// takes the handle, and pulling it down from where it was taken banks to that side; both pulled
-/// down brake. On by default, as part of the full gameplay preset; the stick still steers and
-/// dives alongside them.
+/// hand a little above, ahead of, and outside its shoulder, where a hand raised to a canopy's
+/// toggle comes to rest standing or seated. A grip press inside one takes the handle, and pulling
+/// it down from where it was taken banks to that side; both pulled down brake. On by default, as
+/// part of the full gameplay preset; the stick still steers and dives alongside them.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ParachuteHandlesConfig {
     pub enabled: bool,
-    /// The right handle's centre from the right shoulder joint (+X out, +Y up, +Z back), metres;
-    /// the left handle mirrors it.
-    pub offset_m: Vec3,
-    /// How far from a handle's centre a hand's grip may be for a grip press to take it, metres.
+    /// The right handle's centre from the right shoulder joint along the torso's axes (+X out, +Y
+    /// up, +Z back), metres; the left handle mirrors it. Named apart from the `offset_m` key that
+    /// saved the earlier place above eye level, so that a saved file takes this default once.
+    pub from_shoulder_m: Vec3,
+    /// How far from a handle's centre a hand's grip may be for a grip press to take it over every
+    /// other volume, metres.
     pub radius_m: f32,
+    /// How far from a handle's centre a grip press outside every other volume still takes it
+    /// rather than firing the grapple, metres. At least the radius.
+    pub reach_m: f32,
     /// How far down from where it was taken a handle is pulled to act fully, metres.
     pub full_pull_m: f32,
     /// Pulls shorter than this act on nothing, metres.
@@ -406,18 +464,23 @@ pub struct ParachuteHandlesConfig {
     pub brake_threshold: f32,
     /// How far a holding hand may move from its handle before it lets go, metres.
     pub release_distance_m: f32,
+    /// Mark each handle under the parachute: faint while out of reach, brighter in reach, lit
+    /// while held.
+    pub show_handles: bool,
 }
 
 impl ParachuteHandlesConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            offset_m: Vec3::new(0.18, 0.28, -0.05),
-            radius_m: 0.12,
+            from_shoulder_m: Vec3::new(0.15, 0.12, -0.12),
+            radius_m: 0.14,
+            reach_m: 0.30,
             full_pull_m: 0.30,
             deadzone_m: 0.03,
             brake_threshold: 0.2,
             release_distance_m: 0.25,
+            show_handles: true,
         }
     }
 }

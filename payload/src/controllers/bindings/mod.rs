@@ -276,8 +276,11 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // so that what the hands hold (a foregrip, a primed grenade, a physical control) is still held
     // when gameplay resumes.
     let in_menu = detection.mode == Mode::Ui;
-    let (start, vehicle_volumes) = if in_menu {
-        (weapons::TickStart::default(), [None; 2])
+    let (start, vehicle) = if in_menu {
+        (
+            weapons::TickStart::default(),
+            vehicles::TickVolumes::default(),
+        )
     } else {
         (
             weapons::begin_tick(detection.mode),
@@ -285,14 +288,16 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         )
     };
     // A parachute handle wins over the body's volumes: a hand up by the risers reaches for its
-    // toggle, and a hand holding one must keep it rather than draw from a shoulder holster. Every
-    // placed volume wins over an object in the physical hands' reach: the body's volumes are where
-    // the hand goes on purpose, and a loose object near a holster must not block the draw.
+    // toggle, and a hand holding one must keep it rather than draw from a shoulder holster. A hand
+    // that misses a handle by a little, outside every other volume, still takes it rather than
+    // firing the grapple. Every placed volume wins over an object in the physical hands' reach:
+    // the body's volumes are where the hand goes on purpose, and a loose object near a holster
+    // must not block the draw.
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let placed = match vehicle_volumes[i] {
+        let placed = match vehicle.volumes[i] {
             handle @ Some(GrabVolume::ParachuteHandle(_)) => handle,
-            vehicle => start.volumes[i].or(vehicle),
+            other => start.volumes[i].or(other).or(vehicle.reach[i]),
         };
         placed.or_else(|| {
             (!in_menu)

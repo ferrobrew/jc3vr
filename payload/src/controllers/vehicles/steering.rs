@@ -3,17 +3,24 @@
 //! Each holding hand reports how far it turned the wheel since the last tick
 //! ([`WheelGrip::turn`]), by one of two measures ([`WheelTracking`]):
 //!
-//! - the hand's twist about the wheel's axis, as a hand clamped to a rim turns with it. It does not
-//!   depend on where the hub is, so a wheel fitted a few centimetres off, or a hand that drifts
-//!   toward the hub, still turns it truly;
-//! - the hand's travel around the hub in the wheel's plane, weighted down as the hand nears the hub,
-//!   where its angle is unstable.
+//! - the hand's travel around the hub: the angle of its grip, projected into the wheel's plane,
+//!   about the hub. This is the default, because it is what moves when a player turns a wheel with
+//!   their arms. Near the hub that angle is unstable, so the hand's twist about the wheel's axis
+//!   stands in for it there, blended in as the hand nears the hub;
+//! - the hand's twist about the wheel's axis alone, as a hand clamped to a rim turns with it. It does
+//!   not depend on where the hub is, so a wheel fitted a few centimetres off still turns truly, but
+//!   it reads only the wrist's roll: arms that carry the hands round the rim with the wrists held
+//!   still turn it barely at all.
 //!
 //! Only the change since the last tick counts, from where the hand took hold, so grabbing never
-//! jumps the wheel, and the turns accumulate ([`advance`]): the wheel goes past half a turn either
-//! way, a hand let go and taken again further round carries on from the wheel's angle (a
-//! hand-over), and the wheel stops at its lock, as a car's does. Two hands turn it by the mean of
-//! their turns.
+//! jumps the wheel, and the turns accumulate ([`advance`]): each tick's change is unwrapped, so the
+//! wheel goes past half a turn either way, a hand let go and taken again further round carries on
+//! from the wheel's angle (a hand-over), and the wheel stops at its lock, as a car's does.
+//!
+//! Two hands turn it as one rigid wheel would ([`combine`]): by the turn of the hand that turned it
+//! furthest, held back by the other only when that one turns the other way. A relaxed hand that
+//! lags behind therefore neither halves the turn nor stops it, and two hands pulling against each
+//! other cancel.
 //!
 //! The angle over the lock, past a small deadzone and shaped by the response exponent, is the
 //! steering ([`steer_for_angle`]); [`angle_for_steer`] is its inverse, for drawing the wheel at the
@@ -59,25 +66,35 @@ impl WheelGrip {
     ) -> Option<Turn> {
         let now = Self::new(frame, position, orientation);
         let last = std::mem::replace(self, now);
-        let by_twist = match (tracking, last.orientation, now.orientation) {
-            (WheelTracking::Twist, Some(last), Some(now)) => {
-                Some(clockwise_twist(now * last.inverse(), frame.normal()))
+        let twist = match (last.orientation, now.orientation) {
+            (Some(last), Some(now)) => Some(clockwise_twist(now * last.inverse(), frame.normal())),
+            _ => None,
+        };
+        let travel = match (last.angle, now.angle) {
+            (Some(last), Some(now)) => {
+                Some((wrap_angle(now - last), position_weight(frame, position)))
             }
             _ => None,
         };
-        if let Some(turn) = by_twist {
-            return Some(Turn {
-                radians: turn,
+        match (tracking, travel, twist) {
+            (WheelTracking::Twist, _, Some(twist)) => Some(Turn {
+                radians: twist,
                 weight: 1.0,
-            });
+            }),
+            (WheelTracking::Position, Some((travel, weight)), Some(twist)) => Some(Turn {
+                radians: travel * weight + twist * (1.0 - weight),
+                weight: 1.0,
+            }),
+            (_, Some((travel, weight)), _) => Some(Turn {
+                radians: travel,
+                weight,
+            }),
+            (WheelTracking::Position, None, Some(twist)) => Some(Turn {
+                radians: twist,
+                weight: 1.0,
+            }),
+            (_, None, None) => None,
         }
-        let (Some(last), Some(now)) = (last.angle, now.angle) else {
-            return None;
-        };
-        Some(Turn {
-            radians: wrap_angle(now - last),
-            weight: position_weight(frame, position),
-        })
     }
 }
 
@@ -86,19 +103,38 @@ impl WheelGrip {
 pub struct Turn {
     /// Radians clockwise.
     pub radians: f32,
-    /// How much the turn counts against the other hand's, `0..=1`.
+    /// How much of the turn counts, `0..=1`: less for a hand near the hub whose travel alone
+    /// measures it.
     pub weight: f32,
 }
 
-/// The holding hands' turns together: their weighted mean, `None` when no hand's turn counts.
-pub fn combine(turns: impl IntoIterator<Item = Turn>) -> Option<f32> {
-    let (sum, weights) = turns
-        .into_iter()
-        .filter(|t| t.radians.is_finite() && t.weight.is_finite() && t.weight > 0.0)
-        .fold((0.0, 0.0), |(sum, weights), t| {
-            (sum + t.radians * t.weight, weights + t.weight)
-        });
-    (weights > 1e-4).then(|| sum / weights)
+/// The holding hands' turns together, as a rigid wheel held by both would turn: each turn counts by
+/// its weight, the furthest-turning hand leads, and the other adds to it only when it turns the
+/// other way, so that it holds the wheel back by as much. `None` when no hand's turn counts.
+///
+/// A mean of the two would halve the turn whenever one hand rests on the rim while the other turns
+/// it, which is how a player often drives; taking the leader keeps the wheel with the hand that
+/// moves it. A hand's jitter while both rest has no preferred sign, so the wheel does not drift.
+pub fn combine(turns: [Option<Turn>; 2]) -> Option<f32> {
+    let [one, other] = turns.map(|turn| {
+        turn.filter(|t| t.radians.is_finite() && t.weight.is_finite() && t.weight > 0.0)
+            .map(|t| t.radians * t.weight.min(1.0))
+    });
+    match (one, other) {
+        (Some(one), Some(other)) => {
+            let (lead, follow) = if one.abs() >= other.abs() {
+                (one, other)
+            } else {
+                (other, one)
+            };
+            Some(if lead * follow < 0.0 {
+                lead + follow
+            } else {
+                lead
+            })
+        }
+        (one, other) => one.or(other),
+    }
 }
 
 /// The wheel at `angle` turned by `turn`, stopped at the lock either way.
@@ -350,28 +386,106 @@ mod tests {
         assert!((angle - (FRAC_PI_2 + 0.5)).abs() < 1e-4);
     }
 
+    fn turn(radians: f32) -> Option<Turn> {
+        Some(Turn {
+            radians,
+            weight: 1.0,
+        })
+    }
+
     #[test]
-    fn two_hands_turn_the_wheel_by_their_weighted_mean() {
-        let one = Turn {
-            radians: 0.2,
-            weight: 1.0,
-        };
-        let other = Turn {
-            radians: 0.0,
-            weight: 1.0,
-        };
-        assert!((combine([one, other]).unwrap() - 0.1).abs() < 1e-6);
-        let faint = Turn {
+    fn two_hands_turn_the_wheel_by_the_leading_hand() {
+        // One hand turns, the other rests on the rim: the wheel goes with the one that turns.
+        assert_eq!(combine([turn(0.2), turn(0.0)]), Some(0.2));
+        assert_eq!(combine([turn(0.0), turn(-0.2)]), Some(-0.2));
+        // Both turn the same way, one lagging: still the leader's.
+        assert_eq!(combine([turn(0.1), turn(0.25)]), Some(0.25));
+        // Pulling against each other holds the wheel back by the opposing hand's turn.
+        assert_eq!(combine([turn(0.2), turn(-0.2)]), Some(0.0));
+        assert!((combine([turn(0.2), turn(-0.05)]).unwrap() - 0.15).abs() < 1e-6);
+        // A turn counts by its weight, and one with none, or not a number, not at all.
+        let faint = Some(Turn {
             radians: 1.0,
             weight: 0.0,
-        };
-        assert_eq!(combine([one, faint]), Some(0.2));
-        assert_eq!(combine([faint]), None);
+        });
+        assert_eq!(combine([turn(0.2), faint]), Some(0.2));
+        assert_eq!(combine([faint, None]), None);
+        assert_eq!(combine([turn(f32::NAN), turn(0.1)]), Some(0.1));
+        let half = Some(Turn {
+            radians: 0.4,
+            weight: 0.5,
+        });
+        assert_eq!(combine([half, None]), Some(0.2));
+    }
+
+    #[test]
+    fn by_default_the_hands_travel_round_the_rim_turns_the_wheel_with_the_wrists_still() {
+        // The arms carry both hands round the rim while the wrists keep their orientation: the
+        // twist alone reads nothing, the travel the whole turn.
+        let spec = spec();
+        assert_eq!(spec.turned_by, WheelTracking::Position);
+        let frame = frame();
+        let wrist = Some(Quat::from_rotation_x(-0.4));
+        let start = [-FRAC_PI_2, FRAC_PI_2];
+        for (tracking, expected) in [(WheelTracking::Position, 0.6), (WheelTracking::Twist, 0.0)] {
+            let mut grips = start.map(|a| WheelGrip::new(&frame, frame.rim_point(a), wrist));
+            let mut angle = 0.0;
+            for step in 1..=6 {
+                let turns = [0, 1].map(|i| {
+                    let at = frame.rim_point(start[i] + 0.1 * step as f32);
+                    grips[i].turn(&frame, tracking, at, wrist)
+                });
+                angle = advance(angle, combine(turns).unwrap(), &spec);
+            }
+            assert!((angle - expected).abs() < 1e-4, "{tracking:?} {angle}");
+        }
+    }
+
+    #[test]
+    fn the_travel_unwraps_past_half_a_turn() {
+        let mut spec = spec();
+        spec.lock_deg = 540.0;
+        let frame = frame();
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None);
+        let mut angle = 0.0;
+        // A turn and a quarter clockwise, crossing the bottom of the rim where the hand's angle
+        // wraps from a half turn to minus a half turn.
+        for step in 1..=50 {
+            let at = frame.rim_point(step as f32 * TAU * 1.25 / 50.0);
+            let turn = grip.turn(&frame, WheelTracking::Position, at, None);
+            angle = advance(angle, combine([turn, None]).unwrap(), &spec);
+        }
+        assert!((angle - TAU * 1.25).abs() < 1e-3, "{}", angle.to_degrees());
+    }
+
+    #[test]
+    fn near_the_hub_the_twist_stands_in_for_the_travel() {
+        let frame = frame();
+        let base = Quat::IDENTITY;
+        let at = frame.centre + frame.up * 0.01;
+        let mut grip = WheelGrip::new(&frame, at, Some(base));
+        // The hand swings across the hub, where its angle jumps, while its wrist turns a little.
+        let across = frame.centre - frame.up * 0.01;
+        let turn = grip
+            .turn(
+                &frame,
+                WheelTracking::Position,
+                across,
+                Some(turned(&frame, base, 0.1)),
+            )
+            .unwrap();
+        assert!((turn.radians - 0.1).abs() < 1e-4, "{turn:?}");
+        assert_eq!(turn.weight, 1.0);
     }
 
     #[test]
     fn the_lock_steers_fully_past_a_deadzone_and_the_inverse_round_trips() {
         let mut spec = spec();
+        // The default is linear: halfway to the lock past the deadzone steers half.
+        let deadzone = spec.deadzone_deg.to_radians();
+        let halfway = deadzone + (spec.lock_deg.to_radians() - deadzone) * 0.5;
+        assert!((steer_for_angle(halfway, &spec) - 0.5).abs() < 1e-5);
+        assert!((steer_for_angle(-halfway, &spec) + 0.5).abs() < 1e-5);
         let lock = spec.lock_deg.to_radians();
         assert_eq!(steer_for_angle(lock, &spec), 1.0);
         assert_eq!(steer_for_angle(-2.0 * lock, &spec), -1.0);

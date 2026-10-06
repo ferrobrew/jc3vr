@@ -12,24 +12,26 @@ The meshes whose box misleads have an override in `WHEEL_OVERRIDES`: the circuit
 
 ## Turning the wheel
 
-The design follows the VR wheels of other games: Sacchan's SaccGroundVehicle for VRChat (twist-tracked, hold to grip, per-hand accumulators seeded from the current steering, ±450° for a car) and BNG's VR Interaction Framework wheel (position-tracked, hold to grip, ±360°, a linear return).
+The design follows the VR wheels of other games: Sacchan's SaccGroundVehicle for VRChat (hold to grip, per-hand accumulators seeded from the current steering, ±450° for a car) and BNG's VR Interaction Framework wheel (position-tracked, hold to grip, ±360°, a linear return).
 
 A hand holds the wheel only while its grip is held. A grip press with the hand within `physical.grab_radius_m` of the rim takes the wheel, and releasing the grip lets go; so does moving further than `physical.release_distance_m` from the rim. A hand that passes through the rim, or rests on it with the grip open, takes nothing. The press is latched at its edge as for every grab volume, so a press made outside the rim and carried onto it fires the vehicle's weapon rather than grabbing.
 
-Each holding hand turns the wheel by how far it turned since the last tick, measured one of two ways (`physical.wheel.tracking`):
+Each holding hand turns the wheel by how far it turned since the last tick, measured one of two ways (`physical.wheel.turned_by`):
 
-- `Twist` (the default): the hand's rotation about the wheel's axis, as a hand clamped to a rim turns with it. It does not depend on where the hand is relative to the hub, so a wheel fitted a few centimetres off, a hand drifting toward the hub, or the cockpit frame swaying with the driving animation (which moves the hands relative to the car) does not turn the wheel.
-- `Position`: the hand's travel around the hub in the wheel's plane. A hand within a quarter of the radius of the hub counts for nothing and one past half the radius counts fully, since the angle around the hub is unstable near it.
+- `Position` (the default): the hand's travel around the hub, the angle of its grip projected into the wheel's plane. This is what moves when a player turns a wheel with their arms. The angle around the hub is unstable near it, so a hand within a quarter of the radius of the hub turns the wheel by its twist instead, and from there to half the radius the travel takes over from the twist.
+- `Twist`: the hand's rotation about the wheel's axis alone, as a hand clamped to a rim turns with it. It does not depend on where the hand is relative to the hub, so a wheel fitted a few centimetres off does not matter, but it reads only the wrist's roll: arms that carry the hands round the rim with the wrists held still barely turn the wheel. It was the default until a headset test found exactly that, with the grips following the hands and the wheel and the car hardly turning.
 
-Only the change since the last tick counts, from where the hand took hold, so grabbing never jumps the wheel. The turns accumulate, so the wheel goes past half a turn, and a hand that lets go and takes the wheel again further round carries on from the wheel's angle (a hand-over). Two hands turn it by the mean of their turns. The wheel stops at `physical.wheel.lock_deg` either way, and a hand that turns back from the stop unwinds it at once.
+Only the change since the last tick counts, from where the hand took hold, so grabbing never jumps the wheel. Each tick's change is unwrapped and the turns accumulate, so the wheel goes past half a turn, and a hand that lets go and takes the wheel again further round carries on from the wheel's angle (a hand-over). The wheel stops at `physical.wheel.lock_deg` either way, and a hand that turns back from the stop unwinds it at once.
 
-The steering is the wheel's angle past `physical.wheel.deadzone_deg` (2°) as a share of the rest of the way to the lock, raised to `physical.wheel.response` (1, linear; above one is gentler around centre and still reaches full lock). The lock is 135° either way, which hands at nine and three o'clock reach without letting go. A road car turns several times that, but the game's steering is arcade and ramps by itself, and a VR wheel has no rim to push against, so a road car's range made full lock a hand-over-hand exercise.
+Two hands turn the wheel as one rigid wheel held by both would turn. The hand that turned furthest this tick leads; the other adds its turn only when it turns the other way, holding the wheel back by as much. A relaxed hand that rides the rim behind the other therefore neither halves the turn nor stops it, and two hands pulling against each other cancel. The mean of the two hands' turns, which this replaces, halved the turn whenever one hand rested; the rotation of the line between the hands has the same flaw, since one hand travelling round the rim turns that line by half as much. The jitter of two hands resting on the rim has no preferred direction, so the leader's pick does not make the wheel drift.
+
+The steering is the wheel's angle past `physical.wheel.deadzone_deg` (2°) as a share of the rest of the way to the lock, raised to `physical.wheel.response` (1, linear; above one is gentler around centre and still reaches full lock). The lock is 135° either way, which hands at nine and three o'clock reach without letting go, and the wheel turns one to one with the hands, so the drawn wheel stays under them. A road car turns several times that, but the game's steering is arcade and ramps by itself, and a VR wheel has no rim to push against, so a road car's range made full lock a hand-over-hand exercise. The pause menu offers the lock from 60° to 180°, the response, and the tracking.
 
 Let go, the wheel returns to centre at `physical.wheel.return_deg_per_s` (360°/s), slowing over its last 30° to settle, and keeps steering on its way back so that the vehicle straightens with it; once centred, the stick steers again.
 
 The holding hand is drawn on the rim at its own angle around the hub, and the highlight rings the rim point a free hand would take.
 
-Before this, the wheel was taken by a grip press and held until the next press (so an open hand stayed on it), it turned by the hands' travel around the hub only, and it steered linearly to a full lock of 180° either way.
+Before the twist default, the wheel was taken by a grip press and held until the next press (so an open hand stayed on it), it turned by the hands' travel around the hub only, and it steered linearly to a full lock of 180° either way.
 
 ## The driving position
 
@@ -79,11 +81,11 @@ The render update runs on worker threads, so the detour reads only its own slot:
 
 ## Debug UI and settings
 
-Under the vehicles section the readout shows the wheel's angle and the steering written, the driving position and the driving view's correction (above), the vehicle type hash, the wheel and fork parts found, where the wheel came from (the part, an override, or the fallback with its reason), the wheel in the part's space and as placed in the cockpit, whether the fallback is held in the vehicle's space, where the handlebars came from, and the rendered wheel's angle with a count of the render updates that turned it. The wheel's settings are `physical.wheel.lock_deg`, `response`, `deadzone_deg`, `tracking`, and `return_deg_per_s`; the placement adds `physical.from_vehicle`, `physical.animate_wheel`, and `physical.show_wheel`, which draws the wheel's rim, its axis toward the driver, and a spoke to the top of its rim in the overlay.
+Under the vehicles section the readout shows the wheel's angle and the steering written, the driving position and the driving view's correction (above), the vehicle type hash, the wheel and fork parts found, where the wheel came from (the part, an override, or the fallback with its reason), the wheel in the part's space and as placed in the cockpit, whether the fallback is held in the vehicle's space, where the handlebars came from, and the rendered wheel's angle with a count of the render updates that turned it. The wheel's settings are `physical.wheel.lock_deg`, `response`, `deadzone_deg`, `turned_by`, and `return_deg_per_s`; the placement adds `physical.from_vehicle`, `physical.animate_wheel`, and `physical.show_wheel`, which draws the wheel's rim, its axis toward the driver, and a spoke to the top of its rim in the overlay.
 
 ## Unverified
 
-- That twist tracking feels right with the hands drawn on the rim at their own angle, and whether players drag a hand round the rim without turning it (which twist does not count, and `Position` does).
+- That the travel tracking feels right with the hands drawn on the rim at their own angle, and that the leading hand's pick keeps the wheel with the hand that turns it without a jitter or a drift while both rest.
 - The default lock of 135° and the return rate against the game's own steering ramp.
 
 - The box fit's hub, radius, and tilt in each car, and the override values.
@@ -97,7 +99,7 @@ Under the vehicles section the readout shows the wheel's angle and the steering 
 
 ## Headset checklist
 
-1. Steering: a press on the rim takes the wheel, an open hand resting on it does not, and opening the grip lets go. Turning both hands a quarter turn steers about two thirds; full lock is reachable without letting go; a hand-over (let go with one hand, take the wheel further round) carries on without a jump; letting go returns the wheel and the car to straight. Try `Position` tracking too, and say which feels right.
+1. Steering: a press on the rim takes the wheel, an open hand resting on it does not, and opening the grip lets go. Turning both hands a quarter turn round the rim steers about two thirds, and so does turning one hand a quarter turn while the other rests on the rim; the drawn wheel stays under the hands; full lock is reachable without letting go; a hand-over (let go with one hand, take the wheel further round) carries on without a jump; letting go returns the wheel and the car to straight. Try `Twist` tracking too, and say which feels right.
 2. Driving view: in several cars (the modern SUV, the racing supercar, the old mini, the armoured transport), the view eases to the same place behind the wheel within a second of settling, with no jump, and the hands meet the drawn rim. Compare with the setting off. Note the logged "driving position" lines; a seat that still feels wrong gets an entry in `SEAT_OVERRIDES`, and the spread of the measured hubs says whether the standard should move toward their median.
 3. Driving view and posture: sitting low or high and recentring in the seat leaves the correction alone; leaning toward the wheel still moves the view one to one; getting out eases the view back to Rico's eyes during the exit, with no jump on foot.
 4. The modern SUV, the modern saloon, the racing supercar, and the sports muscle car: the rim ring sits on the drawn wheel, the hands grab it where the wheel is drawn, and the wheel stays put while the driving animation sways the head.

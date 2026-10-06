@@ -11,10 +11,11 @@ use crate::{
         frame::Hand,
         vehicles::{
             self, VehiclesStatus,
+            arm_steering::PitchInput,
             config::{
-                ArmSteeringConfig, DrivingViewConfig, HandlebarsSpec, LeverAxis, LeverSpec,
-                MountedConfig, ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec,
-                VehiclesConfig, WheelSpec, WheelTracking,
+                ArmPitch, ArmSteeringConfig, DrivingViewConfig, HandlebarsSpec, LeverAxis,
+                LeverSpec, MountedConfig, ParachuteHandlesConfig, PhysicalControlsConfig,
+                StickSpec, VehiclesConfig, WheelSpec, WheelTracking,
             },
             driver_aim,
             driving_view::{self, DrivingViewStatus},
@@ -167,23 +168,36 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         Some(a) => {
             ui.label(format!(
                 "Arms: spread {:.0}% of the arm span (steers from {:.0}%) · bank {:+.2} m (left \
-                 above right) · height {:+.2} m above the shoulders at {:+.2} m",
+                 above right) · height {:+.2} m above the shoulders at {:+.2} m · wrist tilt \
+                 {:+.0}° (leading edges down) · sweep {:+.2} m ahead of the shoulders",
                 a.pose.spread * 100.0,
                 a.needed_spread * 100.0,
                 a.pose.bank_m,
                 a.pose.height_m,
                 a.shoulder_y,
+                a.pose.tilt.to_degrees(),
+                a.pose.sweep_m,
+            ));
+            ui.label(format!(
+                "Pitch input: {}",
+                match a.pitch {
+                    PitchInput::Height(m) => format!("height {m:+.2} m"),
+                    PitchInput::TiltDeg(deg) => format!("tilt {deg:+.0}° from the neutral"),
+                    PitchInput::Sweep(m) => format!("sweep {m:+.2} m"),
+                }
             ));
             ui.label(
                 "Spread both arms out to the sides to fly by them: lower one hand to bank \
-                 toward it, lower both to dive, raise both to climb. The stick still adds.",
+                 toward it, and pitch by the configured measure. The stick still adds.",
             );
             ui.label(format!(
-                "Arm steer {} · written ({:+.2}, {:+.2})",
+                "Arm steer {} · stick ({:+.2}, {:+.2}) · written ({:+.2}, {:+.2})",
                 a.arms.map_or("not spread".to_owned(), |v| format!(
                     "({:+.2}, {:+.2})",
                     v.x, v.y
                 )),
+                a.stick.x,
+                a.stick.y,
                 a.written.x,
                 a.written.y
             ));
@@ -411,7 +425,7 @@ fn wheel(ui: &mut Ui, w: &mut WheelSpec) {
     ui.horizontal(|ui| {
         ui.label("turned by");
         for tracking in [WheelTracking::Twist, WheelTracking::Position] {
-            ui.radio_value(&mut w.tracking, tracking, tracking.label());
+            ui.radio_value(&mut w.turned_by, tracking, tracking.label());
         }
     });
     ui.add(egui::Slider::new(&mut w.return_deg_per_s, 0.0..=1080.0).text("return (°/s)"));
@@ -465,15 +479,45 @@ fn arm_settings(ui: &mut Ui, a: &mut ArmSteeringConfig) {
             .text("full bank (m)")
             .fixed_decimals(2),
     );
+    ui.horizontal(|ui| {
+        ui.label("pitched by");
+        for pitch in ArmPitch::ALL {
+            ui.radio_value(&mut a.pitch_by, pitch, pitch.label());
+        }
+    });
+    ui.add(
+        egui::Slider::new(&mut a.full_tilt_deg, 5.0..=90.0)
+            .text("full pitch by tilt (°)")
+            .fixed_decimals(0),
+    );
+    ui.add(
+        egui::Slider::new(&mut a.tilt_deadzone_deg, 0.0..=30.0)
+            .text("tilt deadzone (°)")
+            .fixed_decimals(0),
+    );
+    ui.add(
+        egui::Slider::new(&mut a.tilt_neutral_deg, -45.0..=45.0)
+            .text("neutral tilt (°, leading edges down)")
+            .fixed_decimals(0),
+    );
     ui.add(
         egui::Slider::new(&mut a.full_pitch_m, 0.1..=1.0)
-            .text("full pitch (m)")
+            .text("full pitch by height (m)")
             .fixed_decimals(2),
     );
-    ui.checkbox(&mut a.invert_pitch, "Raised hands dive");
+    ui.add(
+        egui::Slider::new(&mut a.full_sweep_m, 0.1..=1.0)
+            .text("full pitch by sweep (m)")
+            .fixed_decimals(2),
+    );
+    ui.checkbox(&mut a.invert_pitch, "Invert the pitch");
     ui.checkbox(
         &mut a.show_guide,
         "Ring the hands, lit while the arms steer, with a line between them",
+    );
+    ui.checkbox(
+        &mut a.show_readout,
+        "Show the arm steering's readout in the headset",
     );
 }
 
@@ -482,7 +526,7 @@ fn handle_settings(ui: &mut Ui, h: &mut ParachuteHandlesConfig) {
     vec3_drag(
         ui,
         "right handle from the shoulder (m)",
-        &mut h.offset_m,
+        &mut h.from_shoulder_m,
         0.005,
     );
     ui.add(
@@ -490,6 +534,12 @@ fn handle_settings(ui: &mut Ui, h: &mut ParachuteHandlesConfig) {
             .text("grab radius (m)")
             .fixed_decimals(2),
     );
+    ui.add(
+        egui::Slider::new(&mut h.reach_m, 0.03..=0.5)
+            .text("reach instead of the grapple (m)")
+            .fixed_decimals(2),
+    );
+    ui.checkbox(&mut h.show_handles, "Mark the handles");
     ui.add(
         egui::Slider::new(&mut h.full_pull_m, 0.1..=0.6)
             .text("full pull (m)")

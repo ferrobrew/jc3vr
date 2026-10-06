@@ -522,6 +522,29 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
         v.arm_steering.full_pitch_m,
         10.0,
     )?;
+    range(
+        "vehicles.arm_steering.full_tilt_deg",
+        v.arm_steering.full_tilt_deg,
+        1.0,
+        180.0,
+    )?;
+    range(
+        "vehicles.arm_steering.tilt_deadzone_deg",
+        v.arm_steering.tilt_deadzone_deg,
+        0.0,
+        90.0,
+    )?;
+    range(
+        "vehicles.arm_steering.tilt_neutral_deg",
+        v.arm_steering.tilt_neutral_deg,
+        -90.0,
+        90.0,
+    )?;
+    positive(
+        "vehicles.arm_steering.full_sweep_m",
+        v.arm_steering.full_sweep_m,
+        10.0,
+    )?;
     vec3(
         "vehicles.driving_view.hub_from_eyes_m",
         v.driving_view.hub_from_eyes_m,
@@ -534,13 +557,18 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
         10.0,
     )?;
     vec3(
-        "vehicles.parachute_handles.offset_m",
-        v.parachute_handles.offset_m,
+        "vehicles.parachute_handles.from_shoulder_m",
+        v.parachute_handles.from_shoulder_m,
         10.0,
     )?;
     positive(
         "vehicles.parachute_handles.radius_m",
         v.parachute_handles.radius_m,
+        10.0,
+    )?;
+    positive(
+        "vehicles.parachute_handles.reach_m",
+        v.parachute_handles.reach_m,
         10.0,
     )?;
     positive(

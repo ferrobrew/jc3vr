@@ -21,9 +21,10 @@
 //!
 //! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
 //!    places the physical controls' and the parachute handles' grab volumes, and returns the volume
-//!    each hand is in. A hand holding a control or a handle is always in it, so that a press made
-//!    while it still holds (a release and a press between two ticks) takes the control again
-//!    rather than firing a weapon or the grapple.
+//!    each hand is in, with the parachute handle each free hand is within reach of. A hand holding
+//!    a control or a handle is always in it, so that a press made while it still holds (a release
+//!    and a press between two ticks) takes the control again rather than firing a weapon or the
+//!    grapple.
 //!
 //! A control or a handle is held only while its hand's grip is: releasing the grip lets go.
 //! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, replaces the tables'
@@ -76,14 +77,14 @@ use crate::{
             grab::{self, GrabVolume},
             hold::{Desired, MapKind, Target, Want},
         },
-        body::{self, BodyDimensions},
+        body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
         frame::{Hand, Pose},
         hands::{self, ActiveHands, CockpitHand, tiers},
         mode::{AirborneVariant, Mode, VehicleSeat},
         overlay::{primitive::Source, store},
         vehicles::{
-            arm_steering::{self as arm, ArmPose},
+            arm_steering::{self as arm, ArmBody, ArmHand, ArmPose, PitchInput},
             config::{ParachuteHandlesConfig, PhysicalControlsConfig},
             fit::{FitInputs, FitReadout, VehicleLatch},
             mounted::{MountedGun, MountedTarget, Reference},
@@ -123,10 +124,29 @@ pub struct ArmReadout {
     pub needed_spread: f32,
     /// The shoulders' height in the cockpit frame, which the pose's height is measured from.
     pub shoulder_y: f32,
+    /// The pitch input the configured measure read.
+    pub pitch: PitchInput,
     /// The arms' own stick vector, `None` while they are not spread.
     pub arms: Option<Vec2>,
+    /// The player's stick (+X right, +Y forward).
+    pub stick: Vec2,
     /// The stick vector written to the move half-axes: the stick and the arms together.
     pub written: Vec2,
+}
+
+/// The arm steering's readout for the headset panel, while that panel is switched on and the arms
+/// act in the wingsuit. A leaf slot: the panel reads it on the draw task.
+pub fn arm_panel() -> Option<ArmReadout> {
+    *ARM_PANEL.lock()
+}
+
+/// The grab volumes [`begin_tick`] found.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct TickVolumes {
+    /// The volume each hand is in, indexed by [`Hand::index`].
+    pub volumes: [Option<GrabVolume>; 2],
+    /// The parachute handle each free hand is within reach of, for a press no other volume claims.
+    pub reach: [Option<GrabVolume>; 2],
 }
 
 /// The parachute handles as the last input tick saw them.
@@ -205,10 +225,10 @@ pub fn mounted_aim_point() -> Option<Vec3> {
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
 /// controls, and return the control each hand is in. Called while the bindings inject, before the
 /// tables.
-pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
+pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let Some(active) = hands::active_hands_raw() else {
         stand_down();
-        return [None; 2];
+        return TickVolumes::default();
     };
     let config = active.config;
     let seat = match mode {
@@ -256,16 +276,29 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
         parachute::release_all(&mut state.handles, &mut handle_events);
     }
     let mut candidates = physical::candidates(&placement, &state.controls, offered, grips);
+    let mut reach = Vec::new();
+    let mut marks = None;
     if handles_on {
         let dims = body_dimensions(&config);
-        let shoulders = body::shoulder_positions(active.head.position, Quat::IDENTITY, &dims);
-        let centres = parachute::handle_centres(&handles_config, shoulders);
+        // Along the torso, so that a player turned from the recenter's forward finds the handles
+        // by their own shoulders; without an estimate, along the cockpit frame.
+        let torso = alignment::estimate().map_or(Quat::IDENTITY, |e| e.rotation());
+        let shoulders = body::shoulder_positions(active.head.position, torso, &dims);
+        let centres = parachute::handle_centres(&handles_config, shoulders, torso);
         candidates.extend(parachute::candidates(
             &handles_config,
             &state.handles,
             centres,
             grips,
         ));
+        reach.extend(parachute::reach_candidates(
+            &handles_config,
+            &state.handles,
+            centres,
+        ));
+        marks = handles_config
+            .show_handles
+            .then(|| parachute::marks(&handles_config, &state.handles, centres, grips));
     }
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -276,6 +309,10 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
             return Some(GrabVolume::ParachuteHandle(hand));
         }
         grab::grab_volume(grips[i]?, hand, &candidates)
+    });
+    let reach = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        grab::grab_volume(grips[i]?, hand, &reach).filter(|_| volumes[i].is_none())
     });
     state.handles_on = handles_on;
     state.handles_config = handles_config;
@@ -304,8 +341,18 @@ pub(crate) fn begin_tick(mode: Mode) -> [Option<GrabVolume>; 2] {
     let shown = (physical_config.show_wheel && seat.is_some_and(|s| s.driver)).then_some(fit.wheel);
     let wings = (arms_act(mode, &config) && config.vehicles.arm_steering.show_guide)
         .then_some(arms_engaged);
-    highlights::submit(&config, &candidates, volumes, wings, shown, &xf);
-    volumes
+    highlights::submit(
+        &config,
+        &highlights::Highlights {
+            candidates: &candidates,
+            volumes,
+            wings,
+            handles: marks,
+            wheel: shown,
+        },
+        &xf,
+    );
+    TickVolumes { volumes, reach }
 }
 
 /// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,
@@ -414,6 +461,7 @@ pub(crate) fn finish_tick(
     state.status.handles = handles;
     push_events(&mut state.status, events);
     drop(state);
+    *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout);
     log_handle_events(&handle_events);
 }
 
@@ -452,6 +500,7 @@ pub(crate) fn stand_down() {
     state.status.rendered_angle = None;
     push_events(&mut state.status, events);
     drop(state);
+    *ARM_PANEL.lock() = None;
     log_handle_events(&handle_events);
     store::clear(Source::VehicleControls);
 }
@@ -561,6 +610,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     render: None,
     steering_turn: None,
 });
+
+/// The arm steering's readout for the headset panel ([`arm_panel`]).
+static ARM_PANEL: Mutex<Option<ArmReadout>> = Mutex::new(None);
 
 /// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
 /// [`is_mounted_weapon`].
@@ -688,19 +740,31 @@ fn arm_tick(
     if !arms_act(mode, &active.config) {
         return None;
     }
-    let left = active.hands[Hand::Left.index()]?.grip.position;
-    let right = active.hands[Hand::Right.index()]?.grip.position;
+    let hand = |hand: Hand| {
+        active.hands[hand.index()].map(|h| ArmHand {
+            position: h.grip.position,
+            wrist: h.wrist.orientation,
+        })
+    };
+    let hands = [hand(Hand::Left)?, hand(Hand::Right)?];
     let dims = body_dimensions(&active.config);
-    let shoulder_y = active.head.position.y - (dims.eye_height - dims.shoulder_height);
-    let pose = arm_steering::arm_pose(left, right, shoulder_y, dims.arm_span);
+    let body = ArmBody {
+        head: active.head.position,
+        eyes_above_shoulders: dims.eye_height - dims.shoulder_height,
+        arm_span: dims.arm_span,
+    };
+    let pose = arm::arm_pose(hands, &body);
     let arms = arm::steer(&pose, config, engaged);
-    let written = arm::combine(controls.off().stick, arms);
+    let stick = controls.off().stick;
+    let written = arm::combine(stick, arms);
     write_move(desired, written);
     Some(ArmReadout {
         pose,
         needed_spread: arm::needed_spread(config, engaged),
-        shoulder_y,
+        shoulder_y: body.head.y - body.eyes_above_shoulders,
+        pitch: arm::pitch_input(&pose, config),
         arms,
+        stick,
         written,
     })
 }
