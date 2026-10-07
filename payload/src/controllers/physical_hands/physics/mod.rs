@@ -162,6 +162,34 @@ pub fn status() -> HandBodiesStatus {
     status
 }
 
+/// The pre-simulation callback's live state, read from atomics only, so any thread may read it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct CallbackStatus {
+    /// Whether the callback is registered with the physics system.
+    pub registered: bool,
+    /// Whether a panic stopped the hand bodies for the session.
+    pub failed: bool,
+    /// Times the callback has fired.
+    pub fires: u64,
+    /// The game thread's id, as the registration saw it; zero before it.
+    pub game_thread: u32,
+    /// The id of the thread the callback last fired on; zero before it first fired.
+    pub firing_thread: u32,
+    /// Whether each hand's body has contact events on, indexed by [`Hand::index`].
+    pub listening: [bool; 2],
+}
+
+pub fn callback_status() -> CallbackStatus {
+    CallbackStatus {
+        registered: callback::registered(),
+        failed: callback::failed(),
+        fires: callback::fires(),
+        game_thread: callback::registering_thread(),
+        firing_thread: callback::firing_thread(),
+        listening: Hand::BOTH.map(contact::listening),
+    }
+}
+
 /// Whether the hand bodies are on: their switch, under the physical hands' master switch, unless a
 /// panic stopped them.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {

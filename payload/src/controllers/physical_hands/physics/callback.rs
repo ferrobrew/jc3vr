@@ -9,7 +9,7 @@
 
 use std::{
     panic::{self, AssertUnwindSafe},
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 
 use jc3gi::{
@@ -72,10 +72,27 @@ pub(super) fn registering_thread() -> u32 {
     REGISTERING_THREAD.load(Ordering::Relaxed)
 }
 
+/// Whether the callback is registered with the physics system.
+pub(super) fn registered() -> bool {
+    REGISTERED.load(Ordering::Acquire)
+}
+
+/// The id of the thread the callback last fired on; zero before it first fired.
+pub(super) fn firing_thread() -> u32 {
+    FIRING_THREAD.load(Ordering::Relaxed)
+}
+
+/// How many times the callback has fired since the payload loaded.
+pub(super) fn fires() -> u64 {
+    FIRES.load(Ordering::Relaxed)
+}
+
 static REGISTERED: AtomicBool = AtomicBool::new(false);
 static FAILED: AtomicBool = AtomicBool::new(false);
 static REGISTERING_THREAD: AtomicU32 = AtomicU32::new(0);
 static FIRST_FIRE: AtomicBool = AtomicBool::new(true);
+static FIRING_THREAD: AtomicU32 = AtomicU32::new(0);
+static FIRES: AtomicU64 = AtomicU64::new(0);
 
 /// The engine-facing object: a pointer to its virtual table, and nothing the engine writes.
 #[repr(C)]
@@ -106,6 +123,9 @@ unsafe extern "system" fn pre_simulation(
     if FAILED.load(Ordering::Acquire) {
         return;
     }
+    FIRES.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: reads the calling thread's own id.
+    FIRING_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
     if FIRST_FIRE.swap(false, Ordering::Relaxed) {
         // SAFETY: reads the calling thread's own id.
         let thread = unsafe { GetCurrentThreadId() };

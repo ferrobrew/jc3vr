@@ -117,6 +117,11 @@ pub(super) fn forget(hand: Hand) {
     MOTION.lock()[hand.index()] = None;
 }
 
+/// Whether `hand`'s body has contact events on: its wrapper is hooked for them.
+pub(super) fn listening(hand: Hand) -> bool {
+    WRAPPERS[hand.index()].load(Ordering::Acquire) != 0
+}
+
 /// Note where `hand`'s body is and the velocity it is driven at for the coming step.
 pub(super) fn record_motion(hand: Hand, position: Vec3, velocity: Vec3) {
     MOTION.lock()[hand.index()] = Some((position, velocity));

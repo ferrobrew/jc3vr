@@ -23,7 +23,7 @@
 //! the wrist after the placement, for [`crate::controllers::weapons::grip_watch`].
 
 use std::{
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU8, AtomicU64, Ordering},
     time::Instant,
 };
 
@@ -91,6 +91,31 @@ pub fn status() -> GripStatus {
         hands: *LAST.lock(),
         pins: PINS.load(Ordering::Relaxed),
     }
+}
+
+/// How a hand's last placement fared at reading its canonical grip.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum GripRead {
+    /// The canonical grip was read, or found cached.
+    Read = 1,
+    /// The wrist or an attach bone did not resolve on the skeleton.
+    BonesUnresolved,
+    /// The bind pose gave no usable wrist-to-attach pose.
+    DegenerateBindPose,
+}
+
+/// Each hand's last canonical grip read, indexed by [`Hand::index`], or `None` before the hand
+/// placed a gun. Atomics only, so any thread may read it.
+pub(crate) fn grip_reads() -> [Option<GripRead>; 2] {
+    READS
+        .each_ref()
+        .map(|read| match read.load(Ordering::Relaxed) {
+            1 => Some(GripRead::Read),
+            2 => Some(GripRead::BonesUnresolved),
+            3 => Some(GripRead::DegenerateBindPose),
+            _ => None,
+        })
 }
 
 /// Pin the attach bone of each gun the local player holds in a controller-driven hand, then let the
@@ -320,9 +345,15 @@ unsafe fn pin(
     let attach_index = unsafe { character.GetSafeIndex(attach) };
     let primary_index = unsafe { character.GetSafeIndex(primary_safe) };
     if wrist_index == 0 || attach_index == 0 || primary_index == 0 || attach_index == wrist_index {
+        record_read(hand, GripRead::BonesUnresolved);
         return None;
     }
-    let offset = unsafe { canonical_grip(controller, hand, wrist_index, primary_index) }?;
+    let Some(offset) = (unsafe { canonical_grip(controller, hand, wrist_index, primary_index) })
+    else {
+        record_read(hand, GripRead::DegenerateBindPose);
+        return None;
+    };
+    record_read(hand, GripRead::Read);
     let mut wrist_joint = Joint::default();
     unsafe { controller.GetJoint(wrist_index, &mut wrist_joint) };
     let mut attach_joint = Joint::default();
@@ -381,6 +412,10 @@ unsafe fn canonical_grip(
     Some(grip)
 }
 
+fn record_read(hand: Hand, read: GripRead) {
+    READS[hand.index()].store(read as u8, Ordering::Relaxed);
+}
+
 fn joint_to_pose(joint: &Joint) -> Pose {
     let [x, y, z] = joint.m_Translation.data;
     let [qx, qy, qz, qw] = joint.m_Orientation.data;
@@ -407,6 +442,8 @@ struct GripKey {
 static GRIPS: Mutex<[Option<(GripKey, Pose)>; 2]> = Mutex::new([None; 2]);
 static LAST: Mutex<[Option<HandGrip>; 2]> = Mutex::new([None; 2]);
 static PINS: AtomicU64 = AtomicU64::new(0);
+/// Each hand's last [`GripRead`] as its discriminant, `0` before the hand placed a gun.
+static READS: [AtomicU8; 2] = [const { AtomicU8::new(0) }; 2];
 
 #[cfg(test)]
 mod tests {

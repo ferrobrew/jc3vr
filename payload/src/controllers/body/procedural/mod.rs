@@ -137,6 +137,12 @@ pub fn status() -> ProceduralStatus {
     STATE.lock().status
 }
 
+/// The last gate's status, copied out after the gate let go of its state, so a reader never waits
+/// on a gate in progress. A leaf lock, so any thread may read it.
+pub fn published_status() -> ProceduralStatus {
+    *PUBLISHED.lock()
+}
+
 /// Whether the procedural body poses the torso and legs: the pre-solve IK that would pose them
 /// stands down while it does.
 pub fn owns_body() -> bool {
@@ -150,6 +156,18 @@ pub fn owns_body() -> bool {
 /// `character` must be the live local character, inside its pose-finalization pass, on the thread
 /// running it.
 pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
+    // SAFETY: forwarded from the caller.
+    unsafe { run_gate(character) };
+    let status = STATE.lock().status;
+    *PUBLISHED.lock() = status;
+}
+
+/// The gate itself; [`at_solve_gate`] publishes its status after it.
+///
+/// # Safety
+///
+/// As [`at_solve_gate`].
+unsafe fn run_gate(character: &mut Character) {
     let config = Config::lock_query(|c| c.controllers.body.procedural);
     let now = Instant::now();
     set_local_character(character);
@@ -378,6 +396,10 @@ const LEG_EFFECTORS: [Effector; 8] = [
 ];
 
 static OWNS_BODY: AtomicBool = AtomicBool::new(false);
+
+/// The status [`published_status`] returns. Taken only after the gate releases [`STATE`], and
+/// nothing is locked under it.
+static PUBLISHED: Mutex<ProceduralStatus> = Mutex::new(INITIAL_STATUS);
 
 struct State {
     /// The rig, for the animation controller it was built from; `None` beside the key when that
@@ -787,28 +809,31 @@ static STATE: Mutex<State> = Mutex::new(State {
     arms: None,
     logged_at: None,
     gait_logged_at: None,
-    status: ProceduralStatus {
-        at: None,
-        mode: ProceduralMode::Off,
-        weight: 0.0,
-        legs_weight: 0.0,
-        case: Case::NotInHeadset,
-        rig_error: None,
-        round_trip: None,
-        hips_drop_m: 0.0,
-        reach_drop_m: 0.0,
-        neck_error_m: 0.0,
-        stepping: false,
-        speed_mps: 0.0,
-        gait_phase: None,
-        stance_measured: false,
-        ground: GroundTally::new(),
-        clavicles: [ClavicleTurn::ZERO; 2],
-        air_weight: 0.0,
-        vertical_mps: 0.0,
-        landing_dip_m: 0.0,
-    },
+    status: INITIAL_STATUS,
 });
+
+/// The status before the first gate.
+const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
+    at: None,
+    mode: ProceduralMode::Off,
+    weight: 0.0,
+    legs_weight: 0.0,
+    case: Case::NotInHeadset,
+    rig_error: None,
+    round_trip: None,
+    hips_drop_m: 0.0,
+    reach_drop_m: 0.0,
+    neck_error_m: 0.0,
+    stepping: false,
+    speed_mps: 0.0,
+    gait_phase: None,
+    stance_measured: false,
+    ground: GroundTally::new(),
+    clavicles: [ClavicleTurn::ZERO; 2],
+    air_weight: 0.0,
+    vertical_mps: 0.0,
+    landing_dip_m: 0.0,
+};
 
 /// The animated model-space pose of the rig's bones.
 unsafe fn read_pose(controller: &AnimationController, rig: &Rig) -> RigPose {
