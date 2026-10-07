@@ -109,7 +109,7 @@ A step-by-step page (the body calibration) keeps its step in a static beside its
 
 ## Pages
 
-Four pages are registered, in this order, as the tabs `BODY` (`controllers/body/menu.rs`, titled `VR: BODY`), `CONTROLS` (`controllers/menu/controls.rs`, `VR: CONTROLS`), `COMFORT` (`controllers/menu/comfort.rs`, `VR: COMFORT`), and `DISPLAY` (`controllers/menu/display.rs`, `VR: DISPLAY`). Labels are written in upper case in the source because that is how the movie shows them: it upper-cases row labels and key text, and shows option labels as given. A registry test checks it.
+Five pages are registered, in this order, as the tabs `BODY` (`controllers/body/menu.rs`, titled `VR: BODY`), `CONTROLS` (`controllers/menu/controls.rs`, `VR: CONTROLS`), `COMFORT` (`controllers/menu/comfort.rs`, `VR: COMFORT`), `DISPLAY` (`controllers/menu/display.rs`, `VR: DISPLAY`), and `STATUS` (`controllers/menu/status/`, `VR: STATUS`). Labels are written in upper case in the source because that is how the movie shows them: it upper-cases row labels and key text, and shows option labels as given. A registry test checks it.
 
 ### Settings pages
 
@@ -149,6 +149,49 @@ Every problem is also logged with its full reason (target `controllers`), at mos
 
 A grip's position counts whether the runtime measured it or inferred it, because arms spread in a T-pose are outside the cameras of an inside-out headset, which then reports the controllers' positions as inferred. The arm span has no upper bound relative to the height: the controllers cannot be further apart than the arms reach, so a span far over the height means the height is short, as it is when a standing step 1 was taken seated. How the dimensions are derived is in [the controllers doc](input/controllers.md#body-dimensions). Leaving the page abandons a calibration in progress. The flow's state machine is `controllers/body/calibration/flow.rs` and is unit-tested (both stances, the height correction, and the stance's default from the posture), as are the height estimate from the span, the values derived after a correction, the page's status texts, their fit in the row, and the log's rate limit.
 
+### Status page
+
+`VR: STATUS` is read-only: it shows whether each of the mod's systems is live, for confirming a headset session at a glance. Every row is a readout whose value starts with a state word, `OK` (live and doing what it should), `OFF` (switched off, or not used in the current setup), `WAITING` (on, but waiting for a session, the player, or a measurement), or `FAILED` (on and broken), followed after a comma by a short reason or the key numbers. The rows are grouped in sections:
+
+| Section | Row | Reads |
+|---|---|---|
+| `SAVED SETTINGS` | `SETTINGS FILE` | the settings file's save state, as `VR: CONTROLS` shows it ([settings.md](settings.md)) |
+| `RENDERING` | `VR SESSION` | whether a VR frame is rendering, and the session state the runtime last reported; `FAILED` while bring-up is retrying |
+| | `DIRECT EYE BLIT` | how the last frame left the direct route (`vr::direct_status`): both eyes direct, the back buffer unreadable, a failed acquire, the route given up for the session, or not armed (the single-pass collapse, or a mono frame) |
+| | `FRAME TIME` | the median and 95th percentile of the last few seconds of game frame intervals, from the always-on frame timing |
+| | `RENDER SIZE` | the engine's render size, and whether it has reached the native target |
+| `INPUT` | `CONTROLLER ACTIONS` | whether the actions are attached, created or reused from a reinject, and whether a restart is needed |
+| | `LAYOUT FINGERPRINT` | the first eight hex digits of the action layout's fingerprint for the hand the bindings were suggested for (the whole one is logged) |
+| | `SELF-CHECK` | whether the input self-check has run, and how many findings it logged |
+| `HUD` | `ATLAS PARTS` | which parts the HUD atlas moved into cells on the last frame, or the count of failed moves and restores |
+| | `WORLD MARKERS` | how many markers were placed in the world on the last frame, and how many were left on the panel |
+| | `MARKER DEPTH` | how many of them took their distance from the scene depth, the fallback ray, or their own point |
+| `GUN IN HAND` | `RIGID GRIP` | which hands' guns were pinned to the canonical grip at their last placement, and the pins since load |
+| | `CANONICAL GRIP` | whether each hand's canonical grip was read, or why not (bones missing, an unusable bind pose) |
+| | `FLIP WATCH` | the grip watch's snaps and sweeps since load; a snap fails the row |
+| | `ATTACH BONE CHANGES` | the grip watch's attach-bone changes per hand |
+| `HAND BODIES` | `CALLBACK` | whether the pre-simulation callback is registered, has fired, and fires on the game thread (else the thread's id) |
+| | `CALLBACK FIRES` | how many times it has fired |
+| | `LEFT BODY`, `RIGHT BODY` | each body's phase (in the world, parked, or none) and its id |
+| | `BODY ERRORS` | the bodies made and destroyed, or the last body error |
+| | `CONTACT EVENTS` | which hands' bodies listen for contacts, the contacts seen, and any dropped |
+| | `BLOWS DEALT` | blows dealt to characters, and the last one's impulse |
+| | `GRAB JOINTS` | how many hands hold what they grip through a joint |
+| `LOCOMOTION` | `STICK VELOCITY` | whether the stick drives the body's velocity this tick, and its speed |
+| | `ACT FILTER` | acts dropped and swapped (and refused swaps) since load |
+| | `ACT WATCHDOG` | the watchdog's releases, and whether one is in progress |
+| | `STEADY VIEW` | the root-fixed view anchor: engaged, blending, measuring, waiting for the player to stand still, or idle |
+| | `NEUTRAL HEAD` | the measured neutral eye height in model space |
+| `PROCEDURAL BODY` | `MODE` | the procedural body's mode, and whether its gate has run in it (the log adds how long ago); a rig error fails it |
+| | `PASS-THROUGH ERROR` | in the test mode, the largest read-back error over the driven bones, failed past a millimetre or a tenth of a degree |
+| | `HAND-OVER CASE` | in the full mode, the hand-over table's current case; `OK` on foot, `WAITING` while the animation has the body |
+| | `GROUND CASTS` | in the full mode, the last gate's ground casts that hit, and any errors |
+| | `STANCE` | whether the neutral stance has been measured |
+
+The values refresh every frame while the page is shown, as every readout does. Each time the page opens it also logs the whole page once at info, as one line starting `status:`, each row as `label: value` and sections separated by `|`; where a value is cut short for its row (the full fingerprint, an error's text, the hand-over case's full name), the log line adds the whole of it in parentheses. A rebuild while the page is shown does not log it again.
+
+The rows run on the capture thread while the game thread holds the VR runtime lock and waits on that thread ([threading.md](threading.md)), so each reads only what its module publishes for any thread: atomics, or a leaf lock nothing holds while it waits, and one at a time. The modules publish these for the page: the direct route's last frame (`vr::blit`), the session state and bring-up result (`vr::state`), the render sizes (`vr::resolution`), the frame-interval percentiles (`frame_timing`), each hand's canonical grip read (`controllers::hands::grip`), the hand bodies' callback and contact listeners (`physical_hands::physics::callback_status`), and a copy of the procedural body's status taken after its gate lets go of its own state (`body::procedural::published_status`), since the gate holds that state through its ground casts.
+
 ## Row encoding
 
 `pause_menu/model/rows.rs` encodes each item as the row object one of the movie's widgets draws. Every row sets `m_Type` (its id), `m_Format`, `m_Name`, `m_Value`, `m_DefaultValue` (the reset-all reads it for every row), and `m_NeedConfirm` (false).
@@ -171,7 +214,7 @@ The list shows a scrolling window of the page on a fixed set of row clips ([`ROW
 
 ## Status
 
-Nothing here has run in game yet. The pure logic (ids, row encoding, slider mapping, the live diff, the state machine, command routing (the entry's event included), where the root entry goes, the tabs' memory and scroll fitting, the tab commands, the header skip and style bookkeeping, the calibration flow and derivation, the settings pages' value mappings, and the recenter status) is unit-tested. Each of the following needs checking in game, in roughly this order:
+Nothing here has run in game yet. The pure logic (ids, row encoding, slider mapping, the live diff, the state machine, command routing (the entry's event included), where the root entry goes, the tabs' memory and scroll fitting, the tab commands, the header skip and style bookkeeping, the calibration flow and derivation, the settings pages' value mappings, the recenter status, and the status page's state words) is unit-tested. Each of the following needs checking in game, in roughly this order:
 
 1. Invoking `AddOption` on the pause clip returns the entry object, and setting its `m_Type`, `m_Event`, `m_NeedConfirm`, and `m_CloseMenu` sticks (the entry class is file-private to the movie, with public fields).
 2. The VR entry renders and highlights like the native ones (label width, the button mask resize).
@@ -217,3 +260,4 @@ Nothing here has run in game yet. The pure logic (ids, row encoding, slider mapp
 42. Without a gamepad, the back button shows on the VR screen and hides on the way back. Switching between gamepad and mouse while on the VR screen does not show or hide it, because the document toggles it only while the options list is the current one.
 43. A VR page whose install fails during the opening leaves the native graphics page on the screen; backing out then leaves the document in the options menu's state over the root list, where a further back returns to the root menu's state.
 44. The recenter button's request is taken while the pause menu is up (the frame's start services it; if the game thread's tick that services it does not run while paused, `STATUS` shows `NOT DONE, SEE LOG` and the request runs when the game resumes), and the re-base is the kind the F7 key does in the same posture.
+45. The status page's values fit beside their labels: most are at most 24 characters, and two rare ones (all four atlas parts, a refused act swap) run to 26. The game is paused while the page is shown, so the rows fed by the simulation (the stick velocity, the steady view, the procedural body, the grip) show the last tick before the pause, and the counters what had happened by then; check that the rendering rows keep moving while paused.

@@ -1,7 +1,8 @@
 //! The pause menu's VR settings pages: `VR: CONTROLS` ([`controls`]) for the controller and turning
 //! settings, `VR: COMFORT` ([`comfort`]), and `VR: DISPLAY` ([`display`]) for the rendering and the
-//! floating panel, and the glue they and the body page share. See `docs/mod/pause-menu.md` for the
-//! menu itself.
+//! floating panel, and the glue they and the body page share; and the read-only `VR: STATUS`
+//! ([`status`]), which shows whether each system is live. See `docs/mod/pause-menu.md` for the menu
+//! itself.
 //!
 //! The pages edit the live configuration, so every change applies at once, and each change goes
 //! through [`crate::config::edit`], so the settings file saves it like any other change the user
@@ -12,6 +13,7 @@
 pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
+pub(crate) mod status;
 
 use smol_str::SmolStr;
 
