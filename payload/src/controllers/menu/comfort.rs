@@ -1,6 +1,7 @@
 //! The `VR: COMFORT` page: recentering the view and steadying it on foot, the stick movement, the
-//! posture and the roomscale chase, crouching, the comfort fades, and how the view behaves getting
-//! into a vehicle. The recenter is an action, not a setting.
+//! view on the grapple, the posture and the roomscale chase, crouching, the comfort fades, and the
+//! view in vehicles: getting in, and the driver's view at the wheel. The recenter is an action, not
+//! a setting.
 
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,7 @@ use crate::{
         menu::{config_choice, config_slider, config_toggle},
         roomscale::manual_recenter_kind,
     },
+    grapple::GrappleComfortMode,
     pause_menu::model::{
         page::{Button, ButtonOutcome, Page, PageDef, Readout},
         slider::{SliderFormat, SliderRange},
@@ -68,6 +70,13 @@ fn build() -> Page {
             .locomotion
             .acts
             .enabled))
+        .header("GRAPPLE")
+        .item(config_choice!(
+            "VIEW ON THE GRAPPLE",
+            &GRAPPLE_MODES,
+            &GRAPPLE_MODE_LABELS,
+            |c| c.headpose.grapple.mode
+        ))
         .header("POSTURE")
         .item(config_choice!("POSTURE", &POSTURES, &POSTURE_LABELS, |c| c
             .controllers
@@ -119,12 +128,23 @@ fn build() -> Page {
             SliderFormat::new(2, " S"),
             |c| c.controllers.roomscale.fade.in_s
         ))
+        .header("VEHICLES")
         .item(config_choice!(
             "VEHICLE ENTRY",
             &SEAT_TRANSITIONS,
             &SEAT_TRANSITION_LABELS,
             |c| c.controllers.roomscale.seat_transition
         ))
+        .item(config_toggle!("FIT VIEW TO THE WHEEL", |c| c
+            .controllers
+            .vehicles
+            .driving_view
+            .enabled))
+        .item(config_toggle!("FIT VIEW IN BOATS TOO", |c| c
+            .controllers
+            .vehicles
+            .driving_view
+            .boats))
 }
 
 /// The recenter button: ask for a recenter of the kind the F7 key does, at the start of the next
@@ -215,14 +235,20 @@ const SEAT_TRANSITIONS: [SeatTransition; 3] = [
 ];
 const SEAT_TRANSITION_LABELS: [&str; 3] = ["FOLLOW THE ANIMATION", "FADE", "INSTANT"];
 
+const GRAPPLE_MODES: [GrappleComfortMode; 3] = [
+    GrappleComfortMode::HoldView,
+    GrappleComfortMode::LevelPitch,
+    GrappleComfortMode::Off,
+];
+const GRAPPLE_MODE_LABELS: [&str; 3] = ["HOLD STILL", "KEEP LEVEL", "SWING WITH BODY"];
+
 // Slider notch counts are multiples of ten: the movie's keyboard step is a tenth of the notches,
 // truncated to an integer.
 
-/// How far the head may lead the body before the room walk follows, in centimetres.
 /// The stick locomotion's rates, metres per second squared: from a slow, drifting start to all
 /// but instant.
 const ACCELERATION_RANGE: SliderRange = SliderRange::new(2.0, 42.0, 80);
-
+/// How far the head may lead the body before the room walk follows, in centimetres.
 const CHASE_DEADZONE_RANGE: SliderRange = SliderRange::new(0.0, 0.5, 50);
 /// How far the seated crouch lowers the eyes, in centimetres.
 const SEATED_DROP_RANGE: SliderRange = SliderRange::new(0.2, 1.2, 100);
@@ -300,5 +326,6 @@ mod tests {
     fn the_choice_lists_line_up() {
         assert_eq!(POSTURES.len(), POSTURE_LABELS.len());
         assert_eq!(SEAT_TRANSITIONS.len(), SEAT_TRANSITION_LABELS.len());
+        assert_eq!(GRAPPLE_MODES.len(), GRAPPLE_MODE_LABELS.len());
     }
 }

@@ -49,7 +49,7 @@ On each input tick while the player drives, the fit measures the hub from the ch
 
 Once the driver has settled (the same settle time as the fallback's latch), the fit averages the measurement over half a second and keeps the mean for the rest of the entry, so the driving animation's sway does not move the view. The correction is the mean's offset from the standard: moving the view by it puts the hub at the standard place. It is limited to `vehicles.driving_view.max_m` (0.25 m) in length, shortened along its direction. A seat that needs tuning gets an entry in `SEAT_OVERRIDES`, keyed by the wheel part's name like `WHEEL_OVERRIDES`, which either skips the seat or gives its correction outright (still limited). It holds only the transport boat's ship's wheel, skipped as a standing helm, until the headset says which seats need tuning.
 
-The correction applies in cars only by default. Some boats are driven standing at the helm, where a seated standard would drag the view down by the full limit; `vehicles.driving_view.boats` turns them on.
+The correction applies in cars only by default. Some boats are driven standing at the helm, where a seated standard would drag the view down by the full limit; `vehicles.driving_view.boats` turns them on. The pause menu's `VR: COMFORT` page has both switches (`FIT VIEW TO THE WHEEL` and `FIT VIEW IN BOATS TOO`).
 
 ### Applying it
 

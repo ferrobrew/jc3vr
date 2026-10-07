@@ -16,6 +16,7 @@ use smol_str::SmolStr;
 use crate::{
     config::{self, Config, SaveStatus},
     controllers::config::ControllersConfig,
+    grapple::GrappleComfortConfig,
     headpose::config::VrTurnConfig,
 };
 
@@ -112,14 +113,15 @@ pub(crate) fn settings_state() -> SmolStr {
     save_status_label(config::status()).into()
 }
 
-/// Reset every setting the controller pages cover (the controller settings and the VR turn
-/// settings) to its default, keeping the per-weapon sight calibration, which is measured rather
-/// than chosen.
+/// Reset every setting the controller pages cover (the controller settings, the VR turn settings,
+/// and the grapple's comfort settings) to its default, keeping the per-weapon sight calibration,
+/// which is measured rather than chosen.
 pub(crate) fn reset_to_defaults(config: &mut Config) {
     let sights = config.controllers.aim.sights;
     config.controllers = ControllersConfig::new();
     config.controllers.aim.sights = sights;
     config.headpose.vr_turn = VrTurnConfig::new();
+    config.headpose.grapple = GrappleComfortConfig::new();
 }
 
 /// Reset the live settings to their defaults ([`reset_to_defaults`]).
@@ -171,6 +173,7 @@ pub(crate) mod tests {
             config::{SchemeSetting, SightOverride},
             frame::Hand,
         },
+        grapple::GrappleComfortMode,
         pause_menu::model::page::{Item, Page},
     };
 
@@ -223,8 +226,9 @@ pub(crate) mod tests {
             }
         }
         page.reset_to_defaults();
-        let covered =
-            |c: &Config| serde_json::to_value((c.controllers, c.headpose.vr_turn)).unwrap();
+        let covered = |c: &Config| {
+            serde_json::to_value((c.controllers, c.headpose.vr_turn, c.headpose.grapple)).unwrap()
+        };
         assert_eq!(read_config(covered), covered(&Config::new()));
     }
 
@@ -240,12 +244,14 @@ pub(crate) mod tests {
         config.controllers.dominant_hand = Hand::Left;
         config.controllers.scheme = SchemeSetting::Gamepad;
         config.headpose.vr_turn.snap_angle_deg = 45.0;
+        config.headpose.grapple.mode = GrappleComfortMode::Off;
         config.headpose.mouse_sensitivity = 3.0;
         reset_to_defaults(&mut config);
         assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
         assert_eq!(config.controllers.dominant_hand, Hand::Right);
         assert_eq!(config.controllers.scheme, SchemeSetting::Controllers);
         assert_eq!(config.headpose.vr_turn.snap_angle_deg, 30.0);
+        assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::HoldView);
         // Settings outside the controller pages are not the menu's to reset.
         assert_eq!(config.headpose.mouse_sensitivity, 3.0);
     }
