@@ -71,6 +71,44 @@ impl RigPose {
         out
     }
 
+    /// `self` (the animated pose) mixed toward `solved` region by region: the torso by `torso`,
+    /// and the legs by `legs`, each leg pose carried by the mixed hips so the legs stay on the
+    /// hips whatever the two weights. With the legs on the animation and the torso procedural,
+    /// the animated legs hang from the procedural hips.
+    pub fn blend_regions(&self, solved: &Self, legs: f32, torso: f32) -> Self {
+        let mut out = self.blend(solved, torso);
+        let hips = *out.get(RigBone::Hips);
+        let animated = self.carried_legs(&hips);
+        let procedural = solved.carried_legs(&hips);
+        let w = legs.clamp(0.0, 1.0);
+        for bone in RigBone::ALL {
+            if bone.descends_from(RigBone::Pelvis) {
+                let (a, b) = (animated.get(bone), procedural.get(bone));
+                out.bones[bone.index()] = Transform {
+                    translation: a.translation.lerp(b.translation, w),
+                    rotation: a.rotation.slerp(b.rotation, w).normalize(),
+                    scale: a.scale.lerp(b.scale, w),
+                };
+            }
+        }
+        out
+    }
+
+    /// The legs moved rigidly from this pose's hips to `hips`.
+    fn carried_legs(&self, hips: &Transform) -> Self {
+        let from = self.get(RigBone::Hips);
+        let turn = hips.rotation * from.rotation.inverse();
+        let mut out = *self;
+        for bone in RigBone::ALL {
+            if bone.descends_from(RigBone::Pelvis) {
+                let t = &mut out.bones[bone.index()];
+                t.translation = hips.translation + turn * (t.translation - from.translation);
+                t.rotation = (turn * t.rotation).normalize();
+            }
+        }
+        out
+    }
+
     pub fn is_finite(&self) -> bool {
         self.bones
             .iter()
@@ -106,6 +144,39 @@ mod tests {
         let moved = p.position(RigBone::Head) - pivot;
         assert!((arm.length() - moved.length()).abs() < 1e-5);
         assert!(moved.angle_between(arm) > 0.49);
+    }
+
+    #[test]
+    fn region_blends_keep_the_legs_on_the_hips() {
+        let animated = pose();
+        let mut solved = pose();
+        solved.translate(RigBone::Hips, Vec3::new(0.0, -0.2, 0.1));
+        solved.rotate_about(
+            RigBone::LeftUpLeg,
+            Quat::from_rotation_x(0.4),
+            solved.position(RigBone::LeftUpLeg),
+        );
+        // Both procedural: the solved pose.
+        let full = animated.blend_regions(&solved, 1.0, 1.0);
+        for bone in RigBone::ALL {
+            assert!(full.position(bone).abs_diff_eq(solved.position(bone), 1e-5));
+        }
+        // Legs animated under procedural hips: the animated legs, carried by the solved hips.
+        let jump = animated.blend_regions(&solved, 0.0, 1.0);
+        let offset = solved.position(RigBone::Hips) - animated.position(RigBone::Hips);
+        for bone in [RigBone::Pelvis, RigBone::LeftUpLeg, RigBone::LeftFoot] {
+            assert!(
+                jump.position(bone)
+                    .abs_diff_eq(animated.position(bone) + offset, 1e-5)
+            );
+        }
+        let none = animated.blend_regions(&solved, 0.0, 0.0);
+        for bone in RigBone::ALL {
+            assert!(
+                none.position(bone)
+                    .abs_diff_eq(animated.position(bone), 1e-5)
+            );
+        }
     }
 
     #[test]

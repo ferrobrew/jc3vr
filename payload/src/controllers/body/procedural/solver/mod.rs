@@ -132,6 +132,12 @@ impl DropFollower {
         self.current = 0.0;
     }
 
+    /// Start from `drop`: the hips start where something else left them and rise from there at the
+    /// follower's pace.
+    pub fn seed(&mut self, drop: f32) {
+        self.current = if drop.is_finite() { drop.max(0.0) } else { 0.0 };
+    }
+
     /// Move toward `need` over `dt` seconds with the time constant `time_s`, and return the drop.
     pub fn step(&mut self, need: f32, dt: f32, time_s: f32) -> f32 {
         let need = if need.is_finite() { need.max(0.0) } else { 0.0 };
@@ -148,6 +154,17 @@ impl DropFollower {
         };
         self.current
     }
+}
+
+/// The hips' height for a head at `head_height`, before any drop for the legs' reach: the head's
+/// less the reference pose's head-over-hips height, at most the reference standing height and at
+/// least `min_hips_height` of it.
+pub fn hips_height(rig: &Rig, head_height: f32, config: &ProceduralBodyConfig) -> f32 {
+    let reference_hips = rig.reference(RigBone::Hips).translation;
+    let head_over_hips = rig.reference(RigBone::Head).translation.y - reference_hips.y;
+    let standing = reference_hips.y;
+    let lowest = standing * config.min_hips_height.clamp(0.1, 1.0);
+    (head_height - head_over_hips).clamp(lowest, standing)
 }
 
 /// The yaw of the horizontal line from `left` to `right` about +Y, measured from +X: the facing of
@@ -198,9 +215,7 @@ fn place_hips(rig: &Rig, pose: &mut RigPose, input: &HipsInput, config: &Procedu
     } = *input;
     let reference_hips = rig.reference(RigBone::Hips).translation;
     let head_over_hips = rig.reference(RigBone::Head).translation - reference_hips;
-    let standing = reference_hips.y;
-    let lowest = standing * config.min_hips_height.clamp(0.1, 1.0);
-    let height = (head.y - head_over_hips.y).clamp(lowest, standing) - drop;
+    let height = hips_height(rig, head.y, config) - drop;
 
     let support = (feet[0] + feet[1]) * 0.5;
     let turn = Quat::from_rotation_y(yaw);

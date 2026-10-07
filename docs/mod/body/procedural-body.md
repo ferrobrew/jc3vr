@@ -22,7 +22,34 @@ The body drives the hips, the pelvis, both legs down to the foot, the four spine
 
 ## The body
 
-The body takes over while Rico is on foot on the ground with the headset driving the view and the movement task running, standing or moving. The air, vehicles, and every authored state keep the animation, and the hand-over between the two blends over `blend_s` seconds, eased. While the procedural pose has any weight, the pre-solve IK that would pose the same bones stands down: the body IK's shoulder, chest, and hand-pin targets, the roomscale crouch's hips and ankle targets, and the squared stance. The game's own MAIN-pass targets on the owned effectors (the hips, the waist, the chest end, the shoulders, the hip joints, the knees, the ankles, and the feet) have their reach and pull faded out by the same weight (`neutralize_targets`), so the solve after the gate leaves the pose alone. The head's own target stays: the body IK's head target closes what is left between the neck and the player's head.
+The body takes over while Rico is on foot on the ground with the headset driving the view, standing or moving; the hand-over table below gives the rest of the game's states back to the animation. While the procedural torso has any weight, the pre-solve IK that would pose the same bones stands down: the body IK's shoulder, chest, and hand-pin targets, the roomscale crouch's hips and ankle targets, and the squared stance. The game's own MAIN-pass targets on the owned effectors have their reach and pull faded out by their region's weight (`neutralize_targets`): the hips, the waist, the chest end, and the shoulders by the torso's, and the hip joints, the knees, the ankles, and the feet by the legs'. The solve after the gate then leaves the pose alone. The head's own target stays: the body IK's head target closes what is left between the neck and the player's head.
+
+### The hand-over table
+
+The body is two regions, each with its own weight against the animation: the legs (the pelvis and both legs) and the torso (the hips, the spine, the neck, the head, and the clavicles). The arms are the controllers' in every case, through the hand IK, and the head is the headset's, through the head override. `authority::classify` reads the character's state at the gate and picks the first matching case:
+
+| Case | Legs | Torso |
+| --- | --- | --- |
+| Not in the headset, or not in gameplay (menus, cutscenes) | animation | animation |
+| Dead (no health, or [`SB_IS_IN_DEAD_STATE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_IN_DEAD_STATE)) | animation, at once | animation, at once |
+| Ragdoll (the ragdoll motion state, or [`SB_IN_RAGDOLL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_RAGDOLL)) | animation, at once | animation, at once |
+| Getting up from a ragdoll ([`SB_IS_GETTING_UP_FROM_RAGDOLL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_GETTING_UP_FROM_RAGDOLL)) | animation | animation |
+| In or on a vehicle: the mode detection's vehicle seat, [`SB_INSIDE_VEHICLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_INSIDE_VEHICLE), or a stunt position ([`Character::IsInStuntPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInStuntPosition)) | animation | animation |
+| A grapple or stunt traversal: the mode detection's traversal, [`Character::IsStuntTraversing`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsStuntTraversing), [`Character::IsGrappleHanging`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsGrappleHanging), or [`SB_IN_GRAPPLE_STRUGGLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_GRAPPLE_STRUGGLE) | animation | animation |
+| Swimming | animation | animation |
+| The wingsuit, the parachute, or a fall past the jump's grace (`view.jump_grace_s` of the stick locomotion) | animation | animation |
+| A jump within that grace (falling, or [`SB_IS_JUMPING`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_JUMPING), with the movement task stopped) | animation | procedural |
+| An authored motion: [`SB_IS_LOCO_ONE_OFF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_LOCO_ONE_OFF), [`SB_IS_LANDING_HARD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_LANDING_HARD), [`SB_IN_LOOP_CONTEXT_ACTION`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_LOOP_CONTEXT_ACTION), [`SB_IN_FULLBODY_PICKUP`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_FULLBODY_PICKUP), or cover ([`SB_IN_COVER_ENTRY`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_COVER_ENTRY), [`SB_IN_COVER`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_COVER), [`SB_IN_COVER_EXIT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IN_COVER_EXIT)) | animation | animation |
+| On foot, but the movement task has not run for a tick or two | animation | animation |
+| On foot on the ground | procedural | procedural |
+
+Each region's weight follows its case's with a critically damped spring: `blend_s` toward the procedural pose and the quicker `blend_out_s` back to the animation, whose authored motion is under way by then. A death or a ragdoll hands both regions over at once, since a ragdoll writes the pose itself. With the legs on the animation and the torso procedural (a jump), the animated legs hang from the procedural hips; the region blend carries each leg pose by the blended hips, so the legs never part from the hips mid-blend.
+
+Handing back is continuous because the animation has been playing all along. Taking over restarts from where the animation left the body: when the legs come back, the feet are planted where the animated feet stand and step to their places from there, and when the torso comes back, the hips' reach drop starts at the animated hips' height below the procedural one, so a landing's crouch rises at the drop's pace instead of popping up.
+
+Every change of case is logged at info level (`procedural body: the hand-over case changes`, with the case left and entered and both weights), and the readout shows the case and both weights.
+
+The predicates the table calls at the gate walk the character's own rule system and interaction graph; the engine calls the same ones from the same pass for the character (the stunt position from the pose-finalization pass itself, and the grapple hang from the ground information), so the reads are made where the engine makes them. The vehicle seat, the traversal, and the airborne modes come from the mode detection the input tick publishes, so they lag by up to a frame; the state bits, the motion state, and the health are read at the gate.
 
 The solver (`solver`, pure and unit-tested) works in Rico's model space from the animated pose:
 
@@ -70,7 +97,10 @@ The Controllers tab's "Procedural body" section shows the mode, the weight, whet
 
 - The clavicles do not yet rotate toward a hand reaching above the shoulder or far out; the arm alone reaches.
 - The physical hands' keep-out for held objects uses its own body cylinder, not the procedural torso's capsules.
-- In the air the body hands back to the animation; procedural landing and air legs are later work.
+- In the air the legs are the animation's; procedural landing and air legs are later work, and a landing dip of the pelvis is not added.
+- A hit reaction keeps the procedural body; the game's stumble does not reach the torso.
+- A scripted sequence that drives Rico while the game runs (the sequences' transform tracks) is not detected; only cutscenes that leave gameplay are.
+- Which state the game's vaults and ledge climbs set is not confirmed. They are expected to show as the locomotion one-off bit or as the movement task stopping; the case log shows which.
 
 ## What needs confirming in the headset
 
@@ -82,4 +112,5 @@ The Controllers tab's "Procedural body" section shows the mode, the weight, whet
 6. Turning the body in place (the right stick, or turning the torso past the follow's deadband) plants the feet and then steps them one at a time; walking in the room under the chase does the same; the readout shows `stepping` during a step.
 7. A seated player gets a standing Rico, and the seated crouch toggle folds the legs.
 8. With hands on: a hand held on the belly or the chest rests on Rico's body instead of sinking in, an arm folded across the chest goes around it, the elbows hang naturally, and the debug line `hand IK: kept the wrist target out of the procedural torso` appears while a hand is against the body. A weapon held at the chest still aims where the hand points; if two-handed aiming is pushed off, report the radii.
-9. The engine's own reach for the owned effectors reads zero the tick after the gate (the body IK readout's engine values for the head stay non-zero).
+9. The hand-over: entering a vehicle, the wingsuit, the parachute, a grapple reel, a stunt, swimming, a vault, and a ledge climb each log a change of case and blend to the animation without a pop; a ragdoll and a death hand over at once; jumping keeps the torso and gives the legs to the animation, and landing plants the feet where the animation put them. Report any vault or climb that logs `on foot` while it plays.
+10. The engine's own reach for the owned effectors reads zero the tick after the gate (the body IK readout's engine values for the head stay non-zero).

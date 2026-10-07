@@ -10,8 +10,12 @@ use crate::config::validate::Invalid;
 pub struct ProceduralBodyConfig {
     /// What the pose authority does at the HumanIK solve gate.
     pub mode: ProceduralMode,
-    /// How long the body takes to hand over between the animation and the procedural pose, seconds.
+    /// How long a region of the body takes to hand over from the animation to the procedural pose,
+    /// seconds: the smoothing time of its spring.
     pub blend_s: f32,
+    /// How long a region takes to hand back to the animation, seconds; shorter, since the game's
+    /// authored motion (a vehicle entry, a vault, a fall) is under way when it does.
+    pub blend_out_s: f32,
     /// How far the hips move back for the head's lean forward, as a share of it: a lean becomes a
     /// hip hinge rather than a spine fold.
     pub counterbalance: f32,
@@ -95,7 +99,8 @@ impl ProceduralBodyConfig {
             // Off until the gate is confirmed in the headset: the pose written there has not yet
             // been seen to reach the solve and the hit shapes.
             mode: ProceduralMode::Off,
-            blend_s: 0.3,
+            blend_s: 0.35,
+            blend_out_s: 0.2,
             counterbalance: 0.3,
             min_hips_height: 0.5,
             pelvis_turn_limit_deg: 35.0,
@@ -135,6 +140,7 @@ impl ProceduralBodyConfig {
     pub(crate) fn validate(&self) -> Result<(), Invalid> {
         let checks = [
             ("blend_s", self.blend_s, 0.0, 10.0),
+            ("blend_out_s", self.blend_out_s, 0.0, 10.0),
             ("counterbalance", self.counterbalance, 0.0, 1.0),
             ("min_hips_height", self.min_hips_height, 0.1, 1.0),
             (

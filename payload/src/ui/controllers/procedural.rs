@@ -14,15 +14,19 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         ui.label("Inactive: the local player's solve gate has not run recently.");
     }
     ui.label(format!(
-        "Mode {} · weight {:.2} · owns the body {}",
+        "Mode {} · torso {:.2} · legs {:.2} · owns the body {}",
         match status.mode {
             ProceduralMode::Off => "off",
             ProceduralMode::PassThrough => "pass-through",
             ProceduralMode::Full => "full body",
         },
         status.weight,
+        status.legs_weight,
         if owns_body() { "yes" } else { "no" },
     ));
+    if status.mode == ProceduralMode::Full {
+        ui.label(format!("Hand-over case: {}", status.case.label()));
+    }
     if let Some(error) = status.rig_error {
         ui.label(format!("Not rigged: {error}"));
     }

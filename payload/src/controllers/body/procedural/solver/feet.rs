@@ -132,6 +132,23 @@ impl Feet {
         self.phase
     }
 
+    /// Whether the feet are in the world, rather than lifted out by [`reset`](Self::reset).
+    pub fn placed(&self) -> bool {
+        self.feet.iter().all(Option::is_some)
+    }
+
+    /// Plant both feet at `poses` (world space): the feet carry on from where something else, the
+    /// animation, left them, and step to their wanted places from there.
+    pub fn plant(&mut self, poses: [FootPose; 2]) {
+        self.phase = None;
+        self.feet = poses.map(|pose| {
+            Some(Foot::Planted {
+                pose,
+                normal: Vec3::Y,
+            })
+        });
+    }
+
     /// Advance by one tick and return where the feet are. `ground` gives the ground under a point,
     /// or `None` where there is none to find.
     pub fn step(

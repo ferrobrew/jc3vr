@@ -15,11 +15,12 @@
 //! - [`config`]: the mode and the tuning.
 //!
 //! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
-//! how it reads back, the proof that the write path is sound; `Full` builds the body while Rico is
-//! on foot on the ground, standing or moving, blending in and out with the animation, and zeroes
-//! the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
+//! how it reads back, the proof that the write path is sound; `Full` builds the body, handing each
+//! region (the legs, the torso) between it and the animation by the table in [`authority`], and
+//! zeroes the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
 //! pre-solve IK (the body IK's torso, the roomscale crouch, the squared stance) to stand down.
 
+pub mod authority;
 pub mod config;
 pub mod ground;
 pub mod rig;
@@ -35,6 +36,7 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::{AnimationController, Character, Joint},
+    state::StateBitFlag,
 };
 use parking_lot::Mutex;
 
@@ -44,6 +46,7 @@ use crate::{
         body::{
             alignment::torso_turn,
             procedural::{
+                authority::{Case, CharacterState, RegionBlend, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
                 ground::{GroundCaster, GroundLog, GroundTally},
                 rig::{Rig, RigBone, RigError},
@@ -53,14 +56,14 @@ use crate::{
                     arms::TorsoKeepOut,
                     feet::{Feet, FeetInput, FootPose, StepTuning},
                     gait::{self, NeutralStance, StanceFoot},
+                    hips_height,
                     pose::RigPose,
                     reach_drop, solve,
                 },
             },
         },
-        locomotion::{
-            LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
-        },
+        locomotion::{LocomotionStatus, status as locomotion_status},
+        mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
     },
     headpose::{Source, body_relative_rotation, query, source},
     hooks::in_gameplay,
@@ -71,8 +74,12 @@ use crate::{
 pub struct ProceduralStatus {
     pub at: Option<Instant>,
     pub mode: ProceduralMode,
-    /// The weight of the procedural pose against the animation.
+    /// The torso's weight of the procedural pose against the animation.
     pub weight: f32,
+    /// The legs' weight of the procedural pose against the animation.
+    pub legs_weight: f32,
+    /// The hand-over table's case at the last gate.
+    pub case: Case,
     /// Why the skeleton could not be rigged, if it could not.
     pub rig_error: Option<RigError>,
     /// The pass-through's largest read-back error over the driven bones: metres and degrees.
@@ -140,8 +147,9 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
     state.status.mode = config.mode;
     state.arms = None;
     if config.mode == ProceduralMode::Off {
-        state.progress = 0.0;
+        state.blend.reset();
         state.status.weight = 0.0;
+        state.status.legs_weight = 0.0;
         OWNS_BODY.store(false, Ordering::Relaxed);
         return;
     }
@@ -179,11 +187,18 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             }
         }
         ProceduralMode::Full => {
-            let eligible = eligible(character, &locomotion, now);
-            let weight = state.step_weight(eligible, dt, &config);
-            OWNS_BODY.store(weight > 0.0, Ordering::Relaxed);
-            state.status.weight = weight;
-            if weight <= 0.0 {
+            let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
+            let case = classify(&unsafe {
+                state.character_state(character, &locomotion, now, jump_grace_s)
+            });
+            let previous = state.blend.weights();
+            let weights = state.blend.step(case, dt, &config);
+            state.log_case(case, &weights);
+            OWNS_BODY.store(weights.torso > 0.0, Ordering::Relaxed);
+            state.status.case = case;
+            state.status.weight = weights.torso;
+            state.status.legs_weight = weights.legs;
+            if !weights.any() {
                 state.feet.reset();
                 state.drop.reset();
                 return;
@@ -191,18 +206,31 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             let world = Mat4::from(character.m_WorldMatrixT1);
             let velocity = body_velocity(&locomotion);
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
-            let feet = state.place_feet(
-                &FeetRequest {
-                    world: &world,
-                    rig: &rig,
-                    animated: &animated,
-                    still: locomotion.standing_still(),
-                    velocity,
-                    dt,
-                },
-                &config,
-                &mut caster,
-            );
+            // The legs come back from the animation with the feet where it left them, and step
+            // from there; while the animation has them, the feet are its own.
+            let legs_procedural = weights.legs > 0.0 || case.targets()[0] > 0.0;
+            let feet = if legs_procedural {
+                if !state.feet.placed() {
+                    state
+                        .feet
+                        .plant(animated_feet(&animated).map(|f| to_world(&world, &f)));
+                }
+                state.place_feet(
+                    &FeetRequest {
+                        world: &world,
+                        rig: &rig,
+                        animated: &animated,
+                        still: locomotion.standing_still(),
+                        velocity,
+                        dt,
+                    },
+                    &config,
+                    &mut caster,
+                )
+            } else {
+                state.feet.reset();
+                animated_feet(&animated)
+            };
             state.status.ground = caster.tally;
             state.ground_log.record(&caster.tally, now);
             state.status.stepping = state.feet.stepping();
@@ -211,13 +239,22 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             let Some(mut input) = solve_input(character, &animated, feet) else {
                 return;
             };
+            // The torso comes back from the animation with the hips where it left them, and rises
+            // from there at the reach drop's pace.
+            if previous.torso <= 0.0 {
+                let seed =
+                    hips_height(&rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
+                state.drop.seed(seed.min(
+                    rig.reference(RigBone::Hips).translation.y * (1.0 - config.min_hips_height),
+                ));
+            }
             let need = reach_drop(&rig, &input, &config);
             input.hips_drop = state.drop.step(need, dt, config.reach_drop_s);
             state.status.reach_drop_m = input.hips_drop;
             let solved = solve(&rig, &input, &config);
-            let pose = animated.blend(&solved, weight);
+            let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
             unsafe { write_pose(controller, &rig, &pose) };
-            state.arms = Some(ArmContext {
+            state.arms = (weights.torso > 0.0).then(|| ArmContext {
                 keep_out: config.keep_out.then(|| {
                     TorsoKeepOut::around(
                         &pose,
@@ -228,10 +265,10 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
                 }),
                 elbow_reach: config
                     .elbow_hints
-                    .then_some(config.elbow_hint_reach * weight),
+                    .then_some(config.elbow_hint_reach * weights.torso),
             });
             if config.neutralize_targets {
-                neutralize_owned_targets(&mut character.m_HIK, weight);
+                neutralize_owned_targets(&mut character.m_HIK, &weights);
             }
             state.status.hips_drop_m =
                 animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
@@ -250,16 +287,23 @@ const MAX_STEP_S: f32 = 0.1;
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
+/// How long after the movement task last ran it still counts as running: a tick or two.
+const MOVEMENT_TASK_GAP: Duration = Duration::from_millis(100);
+
 /// How often the walk is logged while walking.
 const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 
-/// The effectors whose bones the procedural body owns: everything below the neck but the arms.
-const OWNED_EFFECTORS: [Effector; 13] = [
+/// The effectors of the torso region's bones.
+const TORSO_EFFECTORS: [Effector; 5] = [
     Effector::HIPS,
     Effector::WAIST,
     Effector::CHEST_END,
     Effector::LEFT_SHOULDER,
     Effector::RIGHT_SHOULDER,
+];
+
+/// The effectors of the legs region's bones.
+const LEG_EFFECTORS: [Effector; 8] = [
     Effector::LEFT_HIP,
     Effector::RIGHT_HIP,
     Effector::LEFT_KNEE,
@@ -276,8 +320,12 @@ struct State {
     /// The rig, for the animation controller it was built from; `None` beside the key when that
     /// controller's skeleton could not be rigged.
     rig: Option<(usize, Option<Rig>)>,
-    /// The blend's linear progress toward the procedural pose.
-    progress: f32,
+    /// The regions' weights against the animation.
+    blend: RegionBlend,
+    /// When Rico was last on the ground with the movement task running, for the jump's grace.
+    grounded_at: Option<Instant>,
+    /// Whether the hand-over case has been logged once.
+    case_logged: bool,
     /// The planted feet, world space.
     feet: Feet,
     /// The neutral stance the feet stand and walk around, for the rigged skeleton.
@@ -419,16 +467,99 @@ impl State {
             })
     }
 
-    fn step_weight(&mut self, eligible: bool, dt: f32, config: &ProceduralBodyConfig) -> f32 {
-        let target = if eligible { 1.0 } else { 0.0 };
-        if config.blend_s <= 0.0 {
-            self.progress = target;
-        } else {
-            let step = dt / config.blend_s;
-            self.progress += (target - self.progress).clamp(-step, step);
+    /// What the character is doing, for the hand-over table, read at the gate. The predicates
+    /// called here walk the character's own rule system and interaction graph, which the engine
+    /// itself reads from this pass (`Character::IsInStuntPosition` and
+    /// `Character::IsGrappleHanging` among them).
+    ///
+    /// # Safety
+    ///
+    /// As [`at_solve_gate`].
+    unsafe fn character_state(
+        &mut self,
+        character: &Character,
+        locomotion: &LocomotionStatus,
+        now: Instant,
+        jump_grace_s: f32,
+    ) -> CharacterState {
+        let detection = current_mode();
+        let bits = unsafe { character.m_ControlParameters.as_ref() }.map(|control| {
+            let vm = &control.m_UserVM;
+            [
+                vm.m_CurrentStateBitFlags0,
+                vm.m_CurrentStateBitFlags1,
+                vm.m_CurrentStateBitFlags2,
+            ]
+        });
+        let has = |flag: StateBitFlag| {
+            let bit = flag as u32 as usize;
+            bits.and_then(|words| words.get(bit / 64).copied())
+                .is_some_and(|word| (word >> (bit % 64)) & 1 != 0)
+        };
+        let motion = character.m_CurrentMotionState;
+        let movement_task = locomotion
+            .at
+            .is_some_and(|at| now.saturating_duration_since(at) <= MOVEMENT_TASK_GAP);
+        let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
+        if movement_task && on_ground {
+            self.grounded_at = Some(now);
         }
-        let t = self.progress.clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
+        let in_grace = self
+            .grounded_at
+            .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= jump_grace_s);
+        let falling = detection.mode == Mode::Airborne(AirborneVariant::Falling);
+        CharacterState {
+            in_headset: source() == Source::Vr,
+            in_gameplay: in_gameplay(),
+            dead: unsafe { character.GetHealth() } <= 0 || has(StateBitFlag::SB_IS_IN_DEAD_STATE),
+            ragdoll: motion == Character::MOTION_STATE_RAGDOLL || has(StateBitFlag::SB_IN_RAGDOLL),
+            getting_up: has(StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL),
+            vehicle: matches!(detection.mode, Mode::Vehicle(_))
+                || has(StateBitFlag::SB_INSIDE_VEHICLE)
+                || unsafe { character.IsInStuntPosition() },
+            traversal: detection.traversal.is_some()
+                || unsafe { character.IsStuntTraversing() }
+                || unsafe { character.IsGrappleHanging() }
+                || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
+            swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
+                || motion == Character::MOTION_STATE_SWIMMING
+                || has(StateBitFlag::SB_IS_SWIMMING),
+            flight: matches!(
+                detection.mode,
+                Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
+            ) || (falling && !in_grace),
+            jump: (falling || has(StateBitFlag::SB_IS_JUMPING)) && in_grace && !movement_task,
+            authored_motion: [
+                StateBitFlag::SB_IS_LOCO_ONE_OFF,
+                StateBitFlag::SB_IS_LANDING_HARD,
+                StateBitFlag::SB_IN_LOOP_CONTEXT_ACTION,
+                StateBitFlag::SB_IN_FULLBODY_PICKUP,
+                StateBitFlag::SB_IN_COVER_ENTRY,
+                StateBitFlag::SB_IN_COVER,
+                StateBitFlag::SB_IN_COVER_EXIT,
+            ]
+            .into_iter()
+            .any(has),
+            movement_task,
+        }
+    }
+
+    /// Log a change of the hand-over table's case, with the weights it leaves.
+    fn log_case(&mut self, case: Case, weights: &Weights) {
+        if self.status.case == case && self.case_logged {
+            return;
+        }
+        self.case_logged = true;
+        tracing::info!(
+            target: "body",
+            from = self.status.case.label(),
+            to = case.label(),
+            legs = case.targets()[0],
+            torso = case.targets()[1],
+            legs_now = weights.legs,
+            torso_now = weights.torso,
+            "procedural body: the hand-over case changes",
+        );
     }
 
     /// Log the walk every [`GAIT_LOG_INTERVAL`] while walking.
@@ -460,7 +591,9 @@ impl State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     rig: None,
-    progress: 0.0,
+    blend: RegionBlend::new(),
+    grounded_at: None,
+    case_logged: false,
     feet: Feet::new(),
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
@@ -472,6 +605,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         at: None,
         mode: ProceduralMode::Off,
         weight: 0.0,
+        legs_weight: 0.0,
+        case: Case::NotInHeadset,
         rig_error: None,
         round_trip: None,
         hips_drop_m: 0.0,
@@ -538,17 +673,6 @@ fn round_trip_error(written: &RigPose, read: &RigPose) -> (f32, f32) {
         })
 }
 
-/// Whether Rico is on foot on the ground with the headset driving the view, standing or moving:
-/// the procedural body's case. The air, vehicles, and every authored state keep the animation.
-fn eligible(character: &Character, locomotion: &LocomotionStatus, now: Instant) -> bool {
-    let anchor = anchor_status();
-    source() == Source::Vr
-        && in_gameplay()
-        && anchor.on_ground
-        && locomotion.fresh(now)
-        && character.m_CurrentMotionState == Character::MOTION_STATE_TASK_DEFINED
-}
-
 /// The body's horizontal velocity, world space: the stick's commanded velocity, or the movement
 /// task's where the stick does not drive the body.
 fn body_velocity(locomotion: &LocomotionStatus) -> Vec3 {
@@ -581,17 +705,35 @@ fn solve_input(
     })
 }
 
-/// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, so the solve
-/// after the gate leaves them where the pose put them.
-fn neutralize_owned_targets(hik: &mut HumanIK, weight: f32) {
-    let keep = (1.0 - weight).clamp(0.0, 1.0);
-    for effector in OWNED_EFFECTORS {
-        let i = effector as usize;
+/// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region
+/// by its weight, so the solve after the gate leaves them where the pose put them.
+fn neutralize_owned_targets(hik: &mut HumanIK, weights: &Weights) {
+    let torso = TORSO_EFFECTORS.map(|e| (e as usize, weights.torso));
+    let legs = LEG_EFFECTORS.map(|e| (e as usize, weights.legs));
+    for (i, weight) in torso.into_iter().chain(legs) {
+        let keep = (1.0 - weight).clamp(0.0, 1.0);
         hik.m_TargetReachT[i] *= keep;
         hik.m_TargetReachR[i] *= keep;
         hik.m_ReachT[i] *= keep;
         hik.m_ReachR[i] *= keep;
         hik.m_TargetPull[i] *= keep;
         hik.m_Pull[i] *= keep;
+    }
+}
+
+/// The animated feet, model space.
+fn animated_feet(animated: &RigPose) -> [FootPose; 2] {
+    [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
+        position: animated.position(bone),
+        rotation: animated.get(bone).rotation,
+    })
+}
+
+/// A model-space foot pose in the world.
+fn to_world(world: &Mat4, foot: &FootPose) -> FootPose {
+    let (_, rotation, _) = world.to_scale_rotation_translation();
+    FootPose {
+        position: world.transform_point3(foot.position),
+        rotation: (rotation * foot.rotation).normalize(),
     }
 }
