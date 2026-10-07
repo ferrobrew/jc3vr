@@ -69,10 +69,11 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::{self, CockpitHand, pose as hand_pose},
-        mode::{self, Mode, OnFootVariant},
+        mode,
         physical_hands::{
             PhysicalHandsConfig, STATE, climb, free_hands,
             grasp::{AngularTracker, VelocityTracker},
+            mode_acts,
             palm::PalmBox,
             physics::{
                 body::{BodySpec, Capsule, HandBody, player_system_group},
@@ -702,14 +703,13 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     },
 });
 
-/// The hands' palms when they act, with the VR world scale: on foot on the ground, for a tracked
-/// hand the controllers drive that holds nothing.
+/// The hands' palms when they act, with the VR world scale: on foot on the ground or falling, for
+/// a tracked hand the controllers drive that holds nothing.
 fn acting_palms(config: &PhysicalHandsConfig) -> Option<([Option<PalmBox>; 2], f32)> {
     if !scheme::is_controllers() || !hooks::in_gameplay() {
         return None;
     }
-    let detection = mode::current();
-    if detection.mode != Mode::OnFoot(OnFootVariant::Ground) || detection.traversal.is_some() {
+    if !mode_acts(mode::current()) {
         return None;
     }
     let active = hands::active_hands_raw()?;

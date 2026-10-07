@@ -311,6 +311,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                             palm,
                             pin,
                             rig_epoch,
+                            missing_steps: 0,
                         })
                     }
                     _ => None,
@@ -343,8 +344,17 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             }
             _ => {}
         }
-        if state.grips[i].is_some() && bodies[i].is_none() {
-            state.drop_hand(hand, "the hand's body stopped acting");
+        // A hand whose body stops acting for a step or two (a flicker of the mode, a dropped
+        // tracking sample) keeps its grip; one that stays out lets go.
+        if let Some(grip) = state.grips[i].as_mut() {
+            grip.missing_steps = if bodies[i].is_some() {
+                0
+            } else {
+                grip.missing_steps.saturating_add(1)
+            };
+            if grip.missing_steps > MAX_STALE_STEPS {
+                state.drop_hand(hand, "the hand's body stopped acting");
+            }
         }
         // The ground written for the proxy below must stay a static body of the world.
         // SAFETY: forwarded from the caller.
@@ -532,8 +542,9 @@ pub(super) fn stand_down() {
 /// How long a publish stays current for the input tick, which runs every frame.
 const STALE_AFTER: Duration = Duration::from_millis(200);
 
-/// How many steps in a row may run without a publish before the grips let go: the aim update runs
-/// every simulation tick, and a game pause stops the steps as well as the publishes.
+/// How many steps in a row may run without a publish, or with a gripping hand's body not acting,
+/// before the grips let go: the aim update runs every simulation tick, and a game pause stops the
+/// steps as well as the publishes.
 const MAX_STALE_STEPS: u32 = 6;
 
 /// How far below the gripped top feet that stand count as on the ledge, metres.
@@ -574,6 +585,8 @@ struct Grip {
     pin: (Vec3, Quat),
     /// The rig the grip was taken in ([`State::rig_epoch`]).
     rig_epoch: u64,
+    /// How many steps in a row the hand's body has not acted.
+    missing_steps: u32,
 }
 
 struct State {

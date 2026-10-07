@@ -31,8 +31,9 @@
 //!    the hand touched ([`grasp`]) and carried within the hands' strength ([`hold`]); the rendered
 //!    hand stays on the grab point, and what the hand cannot move pushes the body.
 //!
-//! A palm acts only on foot on the ground, for a tracked hand the controller drives that holds
-//! nothing: not a gun, not the foregrip, not a grenade or a charge being thrown.
+//! A palm acts only on foot, on the ground or falling ([`mode_acts`]), for a tracked hand the
+//! controller drives that holds nothing: not a gun, not the foregrip, not a grenade or a charge
+//! being thrown.
 //!
 //! The knocks, the shoves, and the holds change engine state that is the main thread's, so they
 //! are made only when the aim update runs on the thread the input tick runs on ([`input_tick`]
@@ -76,7 +77,7 @@ use crate::{
         body,
         frame::{Hand, Pose},
         hands::{self, CockpitHand, pose as hand_pose, reach, tiers},
-        mode::{self, Mode, OnFootVariant},
+        mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         motion,
         physical_hands::{
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
@@ -104,7 +105,7 @@ use crate::{
 pub enum Idle {
     /// The physical hands are off, or the controller scheme is not in effect.
     Disabled,
-    /// Not on foot on the ground.
+    /// Not on foot on the ground or falling.
     Mode,
     /// No tracked hands.
     NoHands,
@@ -116,7 +117,7 @@ impl Idle {
     pub const fn label(self) -> &'static str {
         match self {
             Idle::Disabled => "off",
-            Idle::Mode => "not on foot on the ground",
+            Idle::Mode => "not on foot on the ground or falling",
             Idle::NoHands => "no tracked hands",
             Idle::OffThread => "the aim update is off the main thread",
         }
@@ -264,9 +265,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     } else if MAIN_THREAD.load(Ordering::Relaxed) != unsafe { GetCurrentThreadId() } {
         Some(Idle::OffThread)
     } else {
-        let detection = mode::current();
-        (detection.mode != Mode::OnFoot(OnFootVariant::Ground) || detection.traversal.is_some())
-            .then_some(Idle::Mode)
+        (!mode_acts(mode::current())).then_some(Idle::Mode)
     };
     if let Some(idle) = idle {
         stand_down(idle);
@@ -580,6 +579,16 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     drop(state);
     climb::observe(climb_palms, climb_reaches, body_rotation, &config);
     draw::submit(&snapshot, &config);
+}
+
+/// Whether the hands act in the mode `detection`: on foot on the ground, or falling, so that a
+/// hand flung or jumped at a ledge can catch it; not swimming, in a vehicle, in the wingsuit or
+/// under the parachute, nor while the grapple carries the player.
+pub(crate) fn mode_acts(detection: Detection) -> bool {
+    matches!(
+        detection.mode,
+        Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
+    ) && detection.traversal.is_none()
 }
 
 /// How long a tick's results stay current: the aim update runs every simulation tick while the

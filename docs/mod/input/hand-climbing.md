@@ -36,7 +36,7 @@ With the procedural body ([procedural-body.md](../body/procedural-body.md#the-ha
 
 ## When the grips let go
 
-Besides the grip itself, every grip lets go when climbing is switched off, the player is teleported, the palms' tick stops publishing for a few steps (the hands stand down: a drawn gun, a vehicle, a lost controller), the player has no proxy, or the body could not follow the hands. One hand's grip lets go when its body stops acting. The game's pause stops the steps and the palms' tick alike, so a grip holds through it.
+Besides the grip itself, every grip lets go when climbing is switched off, the player is teleported, the palms' tick stops publishing for a few steps (the hands stand down: a drawn gun, a vehicle, a lost controller), the player has no proxy, or the body could not follow the hands. One hand's grip lets go when its body stops acting for more than a few steps; a flicker of the mode or a dropped tracking sample keeps it. The hands act while the player falls on foot, so a hand flung at a ledge or jumped at a wall can grip it, and the written support then keeps the game on foot. The game's pause stops the steps and the palms' tick alike, so a grip holds through it.
 
 ## Threading
 
