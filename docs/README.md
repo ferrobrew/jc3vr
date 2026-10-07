@@ -115,4 +115,5 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [20-animation-judder.md](issues/20-animation-judder.md) — animation judder (issue #20).
 - [32-monoscopic-far-field.md](issues/32-monoscopic-far-field.md) — the render-pass sort/depth-bucket machinery as the distance-split mechanism for a shared far field (issue #32).
 - [40-terrain-black-tiles.md](issues/40-terrain-black-tiles.md) — terrain walls and cave ceilings rendering black at grazing angles (issue #40).
+- [session-stalls-and-low-camera.md](issues/session-stalls-and-low-camera.md) — two 80-second game-thread stalls outside `Game::Update` and a camera at 0.85 m below the character's eyes, which was the floor remap following a low reported head height rather than a fallback.
 - [swim-yaw-endless-spin.md](issues/swim-yaw-endless-spin.md) — the swimming body flipping 180° the moment it moved: the crawl capsule offset's gimbal lock under the old `SetOrientation` yaw chase, and which `DoRotate` call actually turns the body.

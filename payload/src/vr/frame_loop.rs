@@ -207,6 +207,10 @@ impl FrameContext {
     }
 }
 
+/// Whether the last located views had a valid pose, so a tracking loss and its recovery log once
+/// each.
+static HEAD_TRACKED: AtomicBool = AtomicBool::new(true);
+
 /// Whether [`frame_begin`] is currently in a `wait_frame`/`begin_frame` failure streak, so repeated
 /// failures log a transition and a recovery instead of one line per frame. See the rate-limiting
 /// comment in [`frame_begin`].
@@ -278,7 +282,7 @@ impl VrState {
 
         let mut head_pose = None;
         if frame_state.should_render {
-            let (_flags, views) = session
+            let (view_flags, views) = session
                 .handle
                 .locate_views(
                     VIEW_TYPE,
@@ -286,8 +290,26 @@ impl VrState {
                     &session.local,
                 )
                 .context("vr: locate_views failed")?;
+            // Without a valid position the views' positions are undefined, so the head pose stays
+            // unpublished: the recenter keeps the last tracked pose, and the STAGE head height keeps
+            // the last tracked height, rather than either taking whatever the runtime returns while
+            // tracking is lost. Both follow the head again on the first tracked frame.
+            let tracked = view_flags.contains(
+                xr::ViewStateFlags::POSITION_VALID | xr::ViewStateFlags::ORIENTATION_VALID,
+            );
+            if HEAD_TRACKED.swap(tracked, Ordering::Relaxed) != tracked {
+                if tracked {
+                    tracing::info!(target: "vr", "head tracking: the view pose is valid again");
+                } else {
+                    tracing::warn!(
+                        target: "vr",
+                        flags = ?view_flags,
+                        "head tracking: the view pose is not valid; holding the last head height",
+                    );
+                }
+            }
             if views.len() >= 2 {
-                head_pose = Some(mid_pose(views[0].pose, views[1].pose));
+                head_pose = tracked.then(|| mid_pose(views[0].pose, views[1].pose));
                 // The compositor submission poses. While a freeze diagnostic holds the render still,
                 // the image is no longer rendered from where the head is, so the pair latched at
                 // freeze time is submitted instead of the live one -- otherwise the runtime keeps

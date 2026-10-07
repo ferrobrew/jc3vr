@@ -7,8 +7,9 @@ use windows::Win32::{
     UI::{
         Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
         WindowsAndMessaging::{
-            GetClientRect, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN,
+            GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN,
+            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
+            WM_RBUTTONUP, WM_SIZE, WM_SYSKEYDOWN,
         },
     },
 };
@@ -30,6 +31,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::window::WndProc_ADDRESS)]
 fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    log_window_state(msg, wparam);
     // F4 hides the flat egui debug overlay from the desktop window only (both the direct
     // back-buffer path and the deferred mirror-overlay path honour `hud.flat_overlay_visible`):
     // useful while recording the side-by-side stereo preview without the overlay in frame. The VR
@@ -199,4 +201,24 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         egui_state.wndproc(hwnd, msg, wparam, lparam);
     }
     WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam)
+}
+
+/// Log the game window gaining or losing the foreground, and being minimized or restored. The
+/// engine's main loop can sit outside `Game::Update` for as long as the window is in the
+/// background, which the frame breakdown can only report as untracked time, so these lines are
+/// what places a long frame against what the window was doing.
+fn log_window_state(msg: u32, wparam: WPARAM) {
+    match msg {
+        WM_ACTIVATEAPP => {
+            let active = wparam.0 != 0;
+            tracing::info!(target: "window", active, "window: the application activation changed");
+        }
+        WM_SIZE if wparam.0 == SIZE_MINIMIZED as usize => {
+            tracing::info!(target: "window", "window: minimized");
+        }
+        WM_SIZE if wparam.0 == SIZE_RESTORED as usize => {
+            tracing::debug!(target: "window", "window: restored");
+        }
+        _ => {}
+    }
 }

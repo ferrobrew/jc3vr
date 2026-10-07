@@ -96,6 +96,19 @@ impl Drop for Scope {
 /// the long one. Call once per frame from the game thread, at the top of `Game::Update`.
 pub(crate) fn frame_tick() {
     let now = duration_ns(epoch().elapsed());
+    // A stall averages into its ten-second window as a frame time a few hundred milliseconds long,
+    // which hides that it was one frame, so a frame past the threshold is also logged on its own;
+    // the line's timestamp is when the stalled frame ended.
+    let interval = LAST_TICK_NS
+        .with(|last| last.replace(Some(now)))
+        .map(|last| now.saturating_sub(last));
+    if let Some(interval) = interval.filter(|&ns| ns >= STALL_LOG_NS) {
+        tracing::warn!(
+            target: "perf",
+            frame_s = ns_to_ms(interval) / 1000.0,
+            "perf: a game frame stalled",
+        );
+    }
     let (ui, log) = WINDOWS.with_borrow_mut(|windows| windows.tick(now, drain));
     if let Some(ui) = ui {
         *LATEST.lock() = Some(ui);
@@ -132,7 +145,12 @@ static SLOTS: [SlotCounters; Slot::COUNT] = [const { SlotCounters::new() }; Slot
 static BUCKETS: [[AtomicU64; Kind::COUNT]; ThreadClass::COUNT] =
     [const { [const { AtomicU64::new(0) }; Kind::COUNT] }; ThreadClass::COUNT];
 
+/// The frame interval past which [`frame_tick`] logs the frame on its own.
+const STALL_LOG_NS: u64 = 1_000_000_000;
+
 thread_local! {
+    /// When the game thread last ticked, on the frame clock.
+    static LAST_TICK_NS: Cell<Option<u64>> = const { Cell::new(None) };
     /// The time of the scopes that have closed inside the innermost open scope on this thread.
     static CHILD_NS: Cell<u64> = const { Cell::new(0) };
     /// The reporting windows. Only the game thread ticks them.

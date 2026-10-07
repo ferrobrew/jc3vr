@@ -29,6 +29,8 @@ The log gets one line every ten seconds, target `perf`, next to the `VR frame-lo
 perf: frame breakdown window_s=10.0 frames=720 frame_ms=13.89 frame_max_ms=31.20 | game: mod=1.10 openxr=0.45 engine=6.80 wait=5.30 untracked=0.24 | tail: mod=0.30 openxr=0.20 engine=0.00 wait=1.10 | other: mod=0.40 openxr=0.00 engine=0.00 wait=0.00 | slots: debug_ui=0.80/2.10 ...
 ```
 
+A game frame longer than a second is also logged on its own, at warn level, as `perf: a game frame stalled frame_s=…`: averaged into its window, an 80-second frame reads as a few hundred milliseconds of `untracked` per frame and hides that it was one frame.
+
 Every time is milliseconds. The per-thread numbers are per frame. Each slot is listed as `name=<self time per frame>/<longest single call>`, the latter including nested scopes. Slots that did not run in the window are left out.
 
 The Performance tab's "Frame breakdown" section shows the same numbers over the last second, with the slots sorted by self time.
