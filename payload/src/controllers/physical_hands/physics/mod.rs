@@ -25,7 +25,9 @@
 //! 2. Before the next step, the pre-simulation callback ([`step`]) makes, adds, or parks each
 //!    hand's body, reads where the last step left it, and drives it toward where its palm will be
 //!    at the end of this step, predicted from the published pose and velocity; the push a held-back
-//!    hand gives the player is worked out here ([`push`]).
+//!    hand gives the player is worked out here ([`push`]). The climb
+//!    ([`crate::controllers::physical_hands::climb`]) first takes and ends its grips and moves the
+//!    player, and a gripping hand's body is held where it took hold instead.
 //! 3. The step integrates the velocities and resolves the bodies' contacts: a hand stops at a wall,
 //!    shoves a crate, and leans on a car.
 //!
@@ -69,7 +71,7 @@ use crate::{
         hands::{self, CockpitHand, pose as hand_pose},
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
-            PhysicalHandsConfig, STATE, free_hands,
+            PhysicalHandsConfig, STATE, climb, free_hands,
             grasp::{AngularTracker, VelocityTracker},
             palm::PalmBox,
             physics::{
@@ -385,6 +387,8 @@ pub(super) unsafe fn step() {
         None
     };
     if let Some(reason) = reason {
+        // SAFETY: forwarded from the caller; no hand body acts, so every grip lets go.
+        unsafe { climb::step([None; 2]) };
         let destroyed = unsafe { hands.destroy_all(reason) };
         let mut shared = SHARED.lock();
         shared.status.destroyed += destroyed;
@@ -448,6 +452,21 @@ pub(super) unsafe fn step() {
         min_horizontal: b.min_push_horizontal,
     };
 
+    // The climb takes its grips where the acting bodies are now, and pins the gripping hands there.
+    let poses = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let acting = fresh && group.is_some() && targets[i].is_some();
+        let body = hands.bodies[i]
+            .as_ref()
+            .filter(|_| acting && hands.phase(hand) == BodyPhase::Acting)?;
+        // SAFETY: forwarded from the caller.
+        let motion = unsafe { body.motion() }.ok()?;
+        Some((motion.position, motion.orientation))
+    });
+    // SAFETY: forwarded from the caller; the characters' proxy updates ran before this callback.
+    let grips = unsafe { climb::step(poses) };
+    let climbing = grips.iter().any(Option::is_some);
+
     let mut statuses = [HandBodyStatus::default(); 2];
     let mut offsets = [Vec3::ZERO; 2];
     let mut loads = [0.0; 2];
@@ -470,11 +489,11 @@ pub(super) unsafe fn step() {
                     system_group: group,
                     contact_events: b.hits.enabled,
                 };
-                let goal = Goal {
+                let goal = grips[i].unwrap_or(Goal {
                     position: target.position + target.linear * lead_s,
                     orientation: Quat::from_scaled_axis(target.angular * lead_s)
                         * target.orientation,
-                };
+                });
                 let request = ActRequest {
                     hand,
                     spec,
@@ -527,7 +546,7 @@ pub(super) unsafe fn step() {
             }
         }
     }
-    push = if b.push {
+    push = if b.push && !climbing {
         smooth_push(
             push,
             hand_push,

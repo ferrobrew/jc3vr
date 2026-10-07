@@ -152,6 +152,11 @@ fn build() -> Page {
             .bodies
             .hits
             .damage))
+        .item(config_toggle!("CLIMB WITH THE HANDS", |c| c
+            .controllers
+            .physical_hands
+            .climb
+            .enabled))
         .header("CONTROLS SUMMARY")
         .item(config_toggle!("CONTROLS ON WRIST", |c| c
             .controllers

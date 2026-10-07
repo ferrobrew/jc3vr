@@ -10,6 +10,7 @@
 //! - [`rigid`]: a rigid body's response to impulses;
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
+//! - [`climb`]: climbing by gripping the static world with a hand its body drives;
 //! - [`config`]: the settings.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
@@ -37,6 +38,7 @@
 //! notes it); otherwise the palms stand down and the readout says why.
 
 mod bodies;
+pub mod climb;
 pub mod config;
 pub mod contact;
 mod draw;
@@ -356,6 +358,9 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         }
     };
 
+    let climb_on = climb::enabled(&config);
+    let mut climb_palms = [None; 2];
+    let mut climb_reaches = [None; 2];
     let mut touches = Vec::new();
     let mut hand_status = [HandStatus::default(); 2];
     let mut clamp = [Vec3::ZERO; 2];
@@ -419,6 +424,22 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             } else {
                 None
             };
+            if climb_on {
+                climb_palms[i] = Some(palm.centre);
+                // A loose object in reach wins over the world it rests on.
+                climb_reaches[i] = if reach.is_none() {
+                    // SAFETY: the simulation phase outside the physics step.
+                    unsafe {
+                        climb::reach(
+                            &palm,
+                            config.climb.reach_m * active.world_scale,
+                            &mut |from, to| cast(from, to, &probe_options),
+                        )
+                    }
+                } else {
+                    None
+                };
+            }
             hand_status[i] = HandStatus {
                 palm: Some(palm),
                 speed,
@@ -552,6 +573,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     physics::publish_holds(state.pickup.joint_targets());
     let snapshot = state.status.hands;
     drop(state);
+    climb::observe(climb_palms, climb_reaches, &config);
     draw::submit(&snapshot, &config);
 }
 
@@ -708,6 +730,7 @@ fn stand_down(idle: Idle) {
     state.status.push = Vec2::ZERO;
     state.status.casts = 0;
     drop(state);
+    climb::stand_down();
     draw::clear();
 }
 

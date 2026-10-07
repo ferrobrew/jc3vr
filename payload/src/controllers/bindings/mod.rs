@@ -292,7 +292,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // that misses a handle by a little, outside every other volume, still takes it rather than
     // firing the grapple. Every placed volume wins over an object in the physical hands' reach:
     // the body's volumes are where the hand goes on purpose, and a loose object near a holster
-    // must not block the draw.
+    // must not block the draw. A loose object in reach wins over the world it rests on.
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
         let placed = match vehicle.volumes[i] {
@@ -301,7 +301,10 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         };
         placed.or_else(|| {
             (!in_menu)
-                .then(|| physical_hands::pickup::volume(hand))
+                .then(|| {
+                    physical_hands::pickup::volume(hand)
+                        .or_else(|| physical_hands::climb::volume(hand))
+                })
                 .flatten()
         })
     });
@@ -415,6 +418,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         }
         vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
         physical_hands::pickup::finish_tick(&finish, &mut step.desired);
+        physical_hands::climb::finish_tick(finish.grips.map(|g| g.held()), finish.grabs);
     } else {
         weapons::wheel::pause();
         physical_hands::pickup::pause();

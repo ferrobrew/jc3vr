@@ -242,6 +242,37 @@ A real pause (the pause menu is up) switches `CGameStateRun` into its paused upd
 
 The pyxis `Clock` binds the millisecond counters as the six `u32` fields the code accesses: `m_Time`, `m_RealTimeAtUpdate`, `m_RealTimeAtUpdateGame`, `m_PauseTimeAtUpdate`, `m_PauseTimeAtUpdateGame`, and `m_PauseTime`, the millisecond counter that stops during a pause. Because of this split, game time can stop while the real clock, and the render path of the unpaused `CGameStateRun` update that calls the camera update, keeps running.
 
+### 4.7 The proxy's support and the fall
+
+Whether a character stands on something is the proxy's support, [`PfxCharacterInstance::m_GroundInformation`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##field-m_GroundInformation), a Havok [`hknpCharacterSurfaceInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpCharacterSurfaceInfo): a supported state (`UNSUPPORTED`, `SLIDING`, or `SUPPORTED`), the surface's normal and velocity, and whether the surface is dynamic. Beside it the proxy keeps the body it stands on, [`m_GroundBodyId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##field-m_GroundBodyId), and the last valid one.
+
+The proxy's update, [`PfxCharacterInstance::UpdateContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-UpdateContext), finds the support afresh every tick through [`CheckSupportCustom`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-CheckSupportCustom), which asks the Havok character rigid body for its supporting contacts and writes the surface information and the ground body, or clears the ground body without support. A proxy whose body is not active is left unsupported. The update then runs the Havok character context on the support and the proxy input (§4.1) and sets the character rigid body's velocity to the context's output through [`hknpCharacterRigidBody::setLinearVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpCharacterRigidBody##func-setLinearVelocity), which also keeps the change of velocity over the step as the body's acceleration.
+
+#### When the support is found and when it is read
+
+The character's update passes are registered in the game world's update queues by priority ([`Character::UpdatePassPrePhysics_Serial`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePassPrePhysics_Serial) has the details). In the pre-simulation queue, the state-machine passes come before the pre-physics pass, and the queue runs them in priority order, each priority to completion. The pre-physics pass runs the pre-physics state tasks (the on-foot movement task among them) and then the integrating-physics update, which calls the proxy's update. The physics update follows the whole queue: [`PhysicsSystem::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-Update) fires the pre-simulation callbacks ([havok-bodies.md](../physics/havok-bodies.md#pre-simulation-callbacks)) and steps the world, and the post-simulation queue runs the post-physics pass afterwards. So in one tick:
+
+1. the state machines evaluate their conditions on the support the previous tick's proxy update found;
+2. the proxy's update finds the support for this tick and sets the proxy's velocity;
+3. the pre-simulation callbacks run, then the step;
+4. the post-physics pass and the next tick's state machines read the support found in 2.
+
+A support or a velocity written by a pre-simulation callback is therefore the one the step and every reader until the next proxy update see.
+
+#### Who reads it
+
+[`PfxCharacterInstance::IsSupported`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-IsSupported) is the supported-state test. Its callers are the state machines' ground-contact condition (`CSuperGroundContactCondition`, which is exactly that call), the reel landing condition (`CReelLandCondition`), the fall bookkeeping (`CCharacter::UpdateFalling`), the ground raycasts (`CCharacter::DoGroundInfoRaycasts`), [`Character::IsInAir`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInAir), the script VM's ground query (`CCharacterModule::GetGroundInfo`), and the aim blend states' samplers. [`PfxCharacterInstance::IsGroundBodyValid`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-IsGroundBodyValid) checks that the ground body names a static or dynamic body ([`hknpBody::IS_STATIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpBody), [`IS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpBody)); the disassembler mislabels it `CPfxCharacterInstance::GetSurfaceNormal`.
+
+The character's ground contact is a valid ground body, a supported or sliding proxy, and no ragdoll that owns the character's displacement. With ground contact:
+
+- the ground raycasts skip the height-over-ground cast and clear the fall distance and the time until landing, and look up the ground body's owner to tell a vehicle underfoot;
+- the fall distance condition (`CFallDistanceCondition`) reads a fall distance of zero;
+- the fall time and the jump-or-fall time do not accumulate (`CCharacter::UpdateFalling` counts them only in the falling and jumping states, and only without ground contact).
+
+The fall conditions in the symbol dump are the ground-contact condition, the fall distance condition, the fall time condition, and the fall transition condition (`CFallTransitionCondition`, on the proxy's vertical speed, the fall distance, the time until landing, and the jump-or-fall time). Which of them Rico's state machine (`rico_base.afsmb`) uses to leave the on-foot states for the falling ones is not established from the shipped data, so that a supported proxy with ground contact never starts a fall is inferred from the readers above, not verified.
+
+The engine's own way of holding a positioned character supported is in the symbol dump (`CPfxCharacterInstance::SetAttachedSupport`, from `UpdateContextAttached`): supported, level, with no ground body. Its counterparts in the disassembler are not located; the functions the disassembler names `CPfxCharacterInstance::UpdateContextAttached` and `CPfxCharacterInstance::SetLinearVelocity` are something else, as is the one named `hknpCharacterRigidBody::setLinearVelocity`, a hash-map lookup.
+
 ## 5. Per-tick character state signals
 
 The engine exposes per-tick signals, readable from the local `CCharacter` or a cheap singleton, that separate the player's modes: on foot, in a vehicle (and its class), wingsuit, parachute, grapple traversal, swimming, and game UI up.

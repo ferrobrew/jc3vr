@@ -8,6 +8,7 @@ mod aim;
 mod aim_state;
 mod alignment;
 mod body;
+mod climb;
 mod diagnostics;
 mod explosives;
 mod fingers;
@@ -75,6 +76,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let fingers_status = controller_fingers::status();
     let physical_hands_status = controller_physical_hands::status();
     let hand_bodies_status = controller_physical_hands::physics::status();
+    let climb_status = controller_physical_hands::climb::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
     let stance_status = controller_roomscale::stance::status();
@@ -168,6 +170,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 hand_bodies::hand_bodies_readout(ui, &hand_bodies_status)
             });
+
+        egui::CollapsingHeader::new("Hand climbing")
+            .default_open(true)
+            .show(ui, |ui| climb::climb_readout(ui, &climb_status));
 
         egui::CollapsingHeader::new("Weapon handling")
             .default_open(true)

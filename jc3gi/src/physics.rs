@@ -333,14 +333,31 @@ fn _MaterialPassFlags_size_check() {
     }
     unreachable!()
 }
-#[repr(C, align(8))]
+#[repr(C, align(16))]
 /// `CPfxCharacterInstance`: the character's physics-side body instance (the Havok character proxy),
 /// owned by `CCharacter` through a `boost::shared_ptr`. Only some members are bound.
 pub struct PfxCharacterInstance {
     _field_0: [u8; 56],
     /// The proxy input the physics step reads; see [`CharacterInput`](crate::physics::CharacterInput).
     pub m_Input: crate::physics::CharacterInput,
-    _field_48: [u8; 124],
+    _field_48: [u8; 40],
+    /// What the proxy stands on, as [`CheckSupportCustom`](crate::physics::PfxCharacterInstance::CheckSupportCustom) last found
+    /// it: whether it is supported, sliding, or unsupported, and the surface's normal and
+    /// velocity. Written at the start of each proxy update ([`UpdateContext`](crate::physics::PfxCharacterInstance::UpdateContext)),
+    /// before the physics step, and read until the next: the state machines' ground-contact
+    /// condition and [`IsSupported`](crate::physics::PfxCharacterInstance::IsSupported) read its supported state.
+    pub m_GroundInformation: crate::physics::hknpCharacterSurfaceInfo,
+    /// The game material of the surface the proxy stands on; cleared with the ground body when
+    /// the proxy has no support.
+    pub m_ContactMaterialId: i32,
+    /// The body the proxy stands on, or [`INVALID_BODY_ID`](crate::physics::PfxCharacterInstance::INVALID_BODY_ID) without
+    /// support. [`IsGroundBodyValid`](crate::physics::PfxCharacterInstance::IsGroundBodyValid) checks it names a body, and the
+    /// ground raycasts (`CCharacter::DoGroundInfoRaycasts`) look up its owner to tell a vehicle
+    /// underfoot.
+    pub m_GroundBodyId: u32,
+    /// The last valid [`m_GroundBodyId`](crate::physics::PfxCharacterInstance::m_GroundBodyId), kept across ticks without support.
+    pub m_LastValidGroundBodyId: u32,
+    _field_ac: [u8; 24],
     /// Whether the proxy is standing on stairs. The on-foot locomotion task takes its velocity
     /// along the blackboard's slope direction while it is set.
     pub m_IsSupportedOnStairs: bool,
@@ -349,19 +366,20 @@ pub struct PfxCharacterInstance {
     /// Written by [`SetProxyState`](crate::physics::PfxCharacterInstance::SetProxyState).
     pub m_ProxyState: i32,
     _field_cc: [u8; 4],
-    /// The Havok character rigid body (`hknpCharacterRigidBody*`), which holds the body id that
+    /// The Havok character rigid body, which holds the body id that
     /// [`GetCharacterRigidBodyId`](crate::physics::PfxCharacterInstance::GetCharacterRigidBodyId) reads.
-    pub m_CharacterRigidBody: *mut ::std::ffi::c_void,
+    pub m_CharacterRigidBody: *mut crate::physics::hknpCharacterRigidBody,
     _field_d8: [u8; 16],
     /// The character rigid-body listener (`CCustomCharacterRBListener*`).
     pub m_CharacterRBListener: *mut ::std::ffi::c_void,
     /// The owning character (`IPfxCharacter*`). Its `GetSharedPfxCharacterSettings` virtual returns
     /// the shared settings that hold the per-state shape table.
     pub m_Owner: *mut ::std::ffi::c_void,
+    _field_f8: [u8; 8],
 }
 fn _PfxCharacterInstance_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0xF8], PfxCharacterInstance>([0u8; 0xF8]);
+        ::std::mem::transmute::<[u8; 0x100], PfxCharacterInstance>([0u8; 0x100]);
     }
     unreachable!()
 }
@@ -429,6 +447,68 @@ impl PfxCharacterInstance {
                 Self::BuildDefaultCharacterContext_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const IsSupported_ADDRESS: usize = 0x14024D770;
+    /// Whether the proxy is supported: the supported state of
+    /// [`m_GroundInformation`](crate::physics::PfxCharacterInstance::m_GroundInformation) is
+    /// [`SUPPORTED`](crate::physics::hknpCharacterSurfaceInfo::SUPPORTED). The state machines' ground-contact
+    /// condition (`CSuperGroundContactCondition`) is this call, and `CCharacter::UpdateFalling`,
+    /// the ground raycasts, and [`Character::IsInAir`](crate::character::character::Character::IsInAir)
+    /// read it.
+    pub unsafe fn IsSupported(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsSupported_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsGroundBodyValid_ADDRESS: usize = 0x14024D930;
+    /// Whether [`m_GroundBodyId`](crate::physics::PfxCharacterInstance::m_GroundBodyId) names a body of the world: an id below the
+    /// body array's capacity whose slot holds a static or dynamic body. The disassembler mislabels
+    /// it `CPfxCharacterInstance::GetSurfaceNormal`.
+    pub unsafe fn IsGroundBodyValid(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsGroundBodyValid_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const CheckSupportCustom_ADDRESS: usize = 0x1402B1150;
+    /// Finds the proxy's support from the character rigid body's contacts and writes it to
+    /// [`m_GroundInformation`](crate::physics::PfxCharacterInstance::m_GroundInformation), with the ground body; without support it
+    /// sets [`m_GroundBodyId`](crate::physics::PfxCharacterInstance::m_GroundBodyId) to
+    /// [`INVALID_BODY_ID`](crate::physics::PfxCharacterInstance::INVALID_BODY_ID) and clears the contact material. A valid ground
+    /// body is also kept in [`m_LastValidGroundBodyId`](crate::physics::PfxCharacterInstance::m_LastValidGroundBodyId).
+    pub unsafe fn CheckSupportCustom(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::CheckSupportCustom_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const UpdateContext_ADDRESS: usize = 0x1402BBDA0;
+    /// The proxy's update before the physics step, from the character's integrating-physics
+    /// update in its pre-physics pass: it finds the support
+    /// ([`CheckSupportCustom`](crate::physics::PfxCharacterInstance::CheckSupportCustom)), runs the Havok character context on
+    /// the support and [`m_Input`](crate::physics::PfxCharacterInstance::m_Input), and sets the character rigid body's velocity to
+    /// the context's output ([`hknpCharacterRigidBody::setLinearVelocity`](crate::physics::hknpCharacterRigidBody::setLinearVelocity)). A proxy whose body is
+    /// not active is left unsupported.
+    pub unsafe fn UpdateContext(
+        &mut self,
+        dt: f32,
+        input: *mut crate::physics::CharacterInput,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                input: *mut crate::physics::CharacterInput,
+            ) = ::std::mem::transmute(Self::UpdateContext_ADDRESS);
+            f(self as *mut Self as _, dt, input)
         }
     }
 }
@@ -1722,6 +1802,14 @@ impl hknpBody {
     /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a dynamic body, the only kind the velocity and impulse
     /// setters ([`hknpWorld::setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity), [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt)) act on.
     pub const IS_DYNAMIC: u32 = 2;
+    /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a keyframed body: one moved along a set path that
+    /// collisions do not push. `CPfxCharacterInstance::IsGroundBodyStaticOrKeyFramed` tests it with
+    /// [`IS_STATIC`](crate::physics::hknpBody::IS_STATIC).
+    pub const IS_KEYFRAMED: u32 = 4;
+    /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a static body. A slot with neither this nor
+    /// [`IS_DYNAMIC`](crate::physics::hknpBody::IS_DYNAMIC) holds no valid body, which is how
+    /// [`PfxCharacterInstance::IsGroundBodyValid`](crate::physics::PfxCharacterInstance::IsGroundBodyValid) tells a body from an empty slot.
+    pub const IS_STATIC: u32 = 1;
     /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit that has the solver raise a
     /// [`hknpContactImpulseEvent`](crate::havok::hknpContactImpulseEvent) for the body's contacts.
     /// [`PfxRigidBody::SetContactImpulseEventActive`](crate::physics::PfxRigidBody::SetContactImpulseEventActive) sets and clears it.
@@ -1810,6 +1898,104 @@ impl std::convert::AsRef<hknpBodyPropertyMap> for hknpBodyPropertyMap {
 }
 impl std::convert::AsMut<hknpBodyPropertyMap> for hknpBodyPropertyMap {
     fn as_mut(&mut self) -> &mut hknpBodyPropertyMap {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// A Havok character rigid body (`hknpCharacterRigidBody`): the dynamic body of a character proxy
+/// ([`PfxCharacterInstance::m_CharacterRigidBody`](crate::physics::PfxCharacterInstance::m_CharacterRigidBody)), whose velocity the character context sets
+/// before each step. Only some members are bound.
+pub struct hknpCharacterRigidBody {
+    _field_0: [u8; 16],
+    /// The body's id in [`m_world`](crate::physics::hknpCharacterRigidBody::m_world).
+    pub m_bodyId: u32,
+    _field_14: [u8; 12],
+    /// The world the body is in.
+    pub m_world: *mut crate::physics::hknpWorld,
+    _field_28: [u8; 8],
+}
+fn _hknpCharacterRigidBody_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], hknpCharacterRigidBody>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl hknpCharacterRigidBody {
+    pub const setLinearVelocity_ADDRESS: usize = 0x141521600;
+    /// Sets the body's linear velocity to `velocity` (world space), keeping its angular velocity
+    /// ([`hknpWorld::setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity)), and keeps the change over `timestep` as the body's
+    /// acceleration. A change too small to matter only activates the body, and only with
+    /// `force_activate`. The proxy's update
+    /// ([`PfxCharacterInstance::UpdateContext`](crate::physics::PfxCharacterInstance::UpdateContext)) calls it with the character context's output. The
+    /// disassembler mislabels it `CPfxCharacterInstance::CCharacterInput::SetWantedVelocity`, and
+    /// gives this function's name to an unrelated lookup.
+    pub unsafe fn setLinearVelocity(
+        &mut self,
+        velocity: *const crate::types::vector_math::AlignedVector3,
+        timestep: *const crate::havok::hkSimdFloat32,
+        force_activate: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                velocity: *const crate::types::vector_math::AlignedVector3,
+                timestep: *const crate::havok::hkSimdFloat32,
+                force_activate: bool,
+            ) = ::std::mem::transmute(Self::setLinearVelocity_ADDRESS);
+            f(self as *mut Self as _, velocity, timestep, force_activate)
+        }
+    }
+}
+impl std::convert::AsRef<hknpCharacterRigidBody> for hknpCharacterRigidBody {
+    fn as_ref(&self) -> &hknpCharacterRigidBody {
+        self
+    }
+}
+impl std::convert::AsMut<hknpCharacterRigidBody> for hknpCharacterRigidBody {
+    fn as_mut(&mut self) -> &mut hknpCharacterRigidBody {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// What a Havok character stands on (`hknpCharacterSurfaceInfo`), as its support check finds it.
+pub struct hknpCharacterSurfaceInfo {
+    /// Whether the surface is a dynamic body.
+    pub m_isSurfaceDynamic: bool,
+    /// The support: [`UNSUPPORTED`](crate::physics::hknpCharacterSurfaceInfo::UNSUPPORTED), [`SLIDING`](crate::physics::hknpCharacterSurfaceInfo::SLIDING), or
+    /// [`SUPPORTED`](crate::physics::hknpCharacterSurfaceInfo::SUPPORTED).
+    pub m_supportedState: u8,
+    _field_2: [u8; 2],
+    /// How far the character is above the surface beyond the support distance, metres.
+    pub m_surfaceDistanceExcess: f32,
+    _field_8: [u8; 8],
+    /// The surface's normal, Havok space.
+    pub m_surfaceNormal: crate::types::vector_math::AlignedVector3,
+    /// The surface's velocity, world space. A supported proxy's update carries it into the
+    /// velocity the proxy inherits from its ground.
+    pub m_surfaceVelocity: crate::types::vector_math::AlignedVector3,
+}
+fn _hknpCharacterSurfaceInfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], hknpCharacterSurfaceInfo>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl hknpCharacterSurfaceInfo {}
+impl hknpCharacterSurfaceInfo {
+    /// [`m_supportedState`](crate::physics::hknpCharacterSurfaceInfo::m_supportedState): on a surface too steep to stand on.
+    pub const SLIDING: u8 = 1;
+    /// [`m_supportedState`](crate::physics::hknpCharacterSurfaceInfo::m_supportedState): standing on a surface.
+    pub const SUPPORTED: u8 = 2;
+    /// [`m_supportedState`](crate::physics::hknpCharacterSurfaceInfo::m_supportedState): no support.
+    pub const UNSUPPORTED: u8 = 0;
+}
+impl std::convert::AsRef<hknpCharacterSurfaceInfo> for hknpCharacterSurfaceInfo {
+    fn as_ref(&self) -> &hknpCharacterSurfaceInfo {
+        self
+    }
+}
+impl std::convert::AsMut<hknpCharacterSurfaceInfo> for hknpCharacterSurfaceInfo {
+    fn as_mut(&mut self) -> &mut hknpCharacterSurfaceInfo {
         self
     }
 }

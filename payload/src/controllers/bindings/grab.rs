@@ -3,12 +3,14 @@
 //!
 //! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, the
 //! reload pouch, a gun's action, the C4 pouch, the vehicle controls, the parachute's handles, and
-//! an object in the physical hands' reach. The subsystem that owns a volume places it each input tick as a
+//! an object or a surface to climb in the physical hands' reach. The subsystem that owns a volume places it each input tick as a
 //! [`Candidate`] (the weapons in [`crate::controllers::weapons`], the vehicle controls and the
 //! parachute's handles in [`crate::controllers::vehicles`]), and [`grab_volume`] picks the one a
 //! hand's grab point is in. The pickup volume is not placed: the physical hands report it for a
 //! hand that reaches a loose object or a weapon ([`crate::controllers::physical_hands::pickup`]),
-//! and every placed volume wins over it. The tables latch the answer at the grip's press edge.
+//! and every placed volume wins over it; nor is the climb's, which the physical hands report for
+//! a hand that reaches the static world ([`crate::controllers::physical_hands::climb`]), and which
+//! the pickup volume wins over. The tables latch the answer at the grip's press edge.
 
 use glam::Vec3;
 
@@ -39,6 +41,9 @@ pub enum GrabVolume {
     /// An object within the empty hand's reach (see
     /// [`crate::controllers::physical_hands::pickup`]).
     Pickup,
+    /// The static world within the empty hand's reach, to climb (see
+    /// [`crate::controllers::physical_hands::climb`]).
+    Climb,
 }
 
 impl GrabVolume {
@@ -54,6 +59,7 @@ impl GrabVolume {
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
             GrabVolume::ParachuteHandle(Hand::Right) => "right parachute handle",
             GrabVolume::Pickup => "object in reach",
+            GrabVolume::Climb => "surface to climb",
         }
     }
 }

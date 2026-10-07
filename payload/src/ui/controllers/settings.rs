@@ -11,8 +11,8 @@ use crate::{
     },
     headpose::config::VrTurnMode,
     ui::controllers::{
-        aim, alignment, fingers, hand_bodies, hands, overlay, physical_hands, roomscale, scope,
-        summary, vehicles, weapons,
+        aim, alignment, climb, fingers, hand_bodies, hands, overlay, physical_hands, roomscale,
+        scope, summary, vehicles, weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -230,6 +230,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Hand bodies").show(ui, |ui| {
         hand_bodies::hand_bodies_settings(ui, &mut c.physical_hands.bodies)
+    });
+
+    egui::CollapsingHeader::new("Hand climbing").show(ui, |ui| {
+        climb::climb_settings(ui, &mut c.physical_hands.climb)
     });
 
     egui::CollapsingHeader::new("Overlay")

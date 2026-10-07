@@ -437,7 +437,10 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             GrabVolume::MagazinePouch => GrabOutcome::Magazine,
             GrabVolume::WeaponAction => GrabOutcome::Action,
             GrabVolume::C4Pouch => GrabOutcome::C4,
-            GrabVolume::VehicleControl(_) | GrabVolume::ParachuteHandle(_) | GrabVolume::Pickup => {
+            GrabVolume::VehicleControl(_)
+            | GrabVolume::ParachuteHandle(_)
+            | GrabVolume::Pickup
+            | GrabVolume::Climb => {
                 continue;
             }
         };
@@ -962,7 +965,8 @@ fn colour(volume: GrabVolume) -> Rgba {
         GrabVolume::GrenadePouch
         | GrabVolume::VehicleControl(_)
         | GrabVolume::ParachuteHandle(_)
-        | GrabVolume::Pickup => POUCH,
+        | GrabVolume::Pickup
+        | GrabVolume::Climb => POUCH,
         GrabVolume::MagazinePouch | GrabVolume::WeaponAction => MAGAZINE,
         GrabVolume::C4Pouch => C4,
     }

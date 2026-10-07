@@ -481,7 +481,7 @@ pub(super) struct TickOutcome {
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
 /// (-Z), between the two, and out of either edge of the hand.
-const REACH_DIRECTIONS: [Vec3; 5] = [
+pub(super) const REACH_DIRECTIONS: [Vec3; 5] = [
     Vec3::new(0.0, -1.0, 0.0),
     Vec3::new(0.0, 0.0, -1.0),
     Vec3::new(0.0, -1.0, -1.0),

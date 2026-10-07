@@ -1130,6 +1130,40 @@ impl Character {
             f(self as *const Self as _)
         }
     }
+    pub const IsInAir_ADDRESS: usize = 0x14079E3C0;
+    /// Whether the character is in the air: its proxy has no valid ground body
+    /// ([`PfxCharacterInstance::IsGroundBodyValid`](crate::physics::PfxCharacterInstance::IsGroundBodyValid)), or is neither supported
+    /// ([`PfxCharacterInstance::IsSupported`](crate::physics::PfxCharacterInstance::IsSupported)) nor sliding, or it has a ragdoll that does not
+    /// follow the character; and a flag of the control parameters (not yet named) is clear.
+    pub unsafe fn IsInAir(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInAir_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const UpdatePassPrePhysics_Serial_ADDRESS: usize = 0x1407F4710;
+    /// The character's serial pre-physics update pass: the queued impulses, the pre-physics state
+    /// tasks (the on-foot movement task among them), the ragdoll's pre-physics update, and the
+    /// integrating-physics update, which runs the proxy's update
+    /// ([`PfxCharacterInstance::UpdateContext`](crate::physics::PfxCharacterInstance::UpdateContext)). The character registers it in the game world's
+    /// pre-simulation update queue after its state-machine passes, which the queue runs in order
+    /// of registration priority, so each tick the state machines evaluate their conditions on the
+    /// proxy's support as the previous tick's proxy update left it, and the physics system's
+    /// pre-simulation callbacks run after this pass.
+    pub unsafe fn UpdatePassPrePhysics_Serial(
+        &mut self,
+        context: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::UpdatePassPrePhysics_Serial_ADDRESS);
+            f(self as *mut Self as _, context)
+        }
+    }
     pub const IsStuntTraversing_ADDRESS: usize = 0x14077EF60;
     /// Whether the body rule system is in one of the four stunt-position traversal states
     /// (`S_STUNT_FWD`, `S_STUNT_RIGHT`, `S_STUNT_LEFT`, `S_STUNT_BWD`).

@@ -189,6 +189,29 @@ impl std::convert::AsMut<hkReferencedObjectVftable> for hkReferencedObjectVftabl
 }
 #[derive(Copy, Clone)]
 #[repr(C, align(16))]
+/// A Havok SIMD scalar (`hkSimdFloat32`): one value held in all four lanes of a vector register.
+pub struct hkSimdFloat32 {
+    pub m_real: [f32; 4],
+}
+fn _hkSimdFloat32_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], hkSimdFloat32>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl hkSimdFloat32 {}
+impl std::convert::AsRef<hkSimdFloat32> for hkSimdFloat32 {
+    fn as_ref(&self) -> &hkSimdFloat32 {
+        self
+    }
+}
+impl std::convert::AsMut<hkSimdFloat32> for hkSimdFloat32 {
+    fn as_mut(&mut self) -> &mut hkSimdFloat32 {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(16))]
 /// A Havok transform (`hkTransformf`): a rotation as three column vectors, the images of the local
 /// axes, and a translation.
 pub struct hkTransformf {
