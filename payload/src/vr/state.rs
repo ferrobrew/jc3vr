@@ -5,7 +5,7 @@
 
 use std::{
     panic::Location,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicI32, Ordering},
     time::Instant,
 };
 
@@ -160,6 +160,31 @@ pub fn status() -> VrStatus {
     }
 }
 
+/// The runtime's state as the game thread last published it, for a status readout. Atomics only,
+/// so any thread may read it, unlike [`status`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PublishedStatus {
+    /// Whether the runtime is brought up: an instance and a session exist.
+    pub(crate) runtime_up: bool,
+    /// The session state the runtime last reported, or `None` before the first report since
+    /// bring-up. A session reused from a reinject reports none until it next changes state.
+    pub(crate) session_state: Option<xr::SessionState>,
+    /// Whether the last bring-up attempt failed, so the runtime is retrying.
+    pub(crate) bring_up_failed: bool,
+}
+
+/// The runtime's published state.
+pub(crate) fn published_status() -> PublishedStatus {
+    PublishedStatus {
+        runtime_up: RUNTIME_UP.load(Ordering::Relaxed),
+        session_state: match SESSION_STATE.load(Ordering::Relaxed) {
+            0 => None,
+            raw => Some(xr::SessionState::from_raw(raw)),
+        },
+        bring_up_failed: BRING_UP_FAILED.load(Ordering::Relaxed),
+    }
+}
+
 /// Tear the runtime down and clear all state. Idempotent. Registered with [`crate::lifecycle`], so it
 /// runs on uninject — where, if [`VrConfig::persist_instance`] is set, the instance and session are
 /// kept alive (their handles stashed in the game process environment, the wrappers leaked) for a
@@ -191,6 +216,15 @@ pub(super) fn lock_state() -> MutexGuard<'static, VrState> {
     let _timing = frame_timing::scope(Slot::VrLock);
     VR_STATE.lock()
 }
+
+/// Whether the runtime is brought up ([`published_status`]).
+static RUNTIME_UP: AtomicBool = AtomicBool::new(false);
+
+/// The raw session state the runtime last reported, `0` (not a session state) for none.
+static SESSION_STATE: AtomicI32 = AtomicI32::new(0);
+
+/// Whether the last bring-up attempt failed.
+static BRING_UP_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// The live VR runtime state. Blocking locks go through [`lock_state`], which checks the caller's
 /// thread role; [`status`] alone uses `try_lock`, which cannot deadlock and so is not checked. A
@@ -316,7 +350,9 @@ impl VrState {
         }
         self.last_attempt = Some(now);
 
-        if let Err(e) = self.bring_up(cfg) {
+        let result = self.bring_up(cfg);
+        BRING_UP_FAILED.store(result.is_err(), Ordering::Relaxed);
+        if let Err(e) = result {
             // A missing loader is a deployment fault, not a transient one: retrying cannot conjure
             // the DLL, and the warn-and-continue path below would leave the game running flat for a
             // whole session while looking, in the log, exactly like a headset that is merely idle.
@@ -430,6 +466,7 @@ impl VrState {
         self.input = input;
         self.recommended_view = recommended_view;
         self.runtime_name = runtime_name;
+        RUNTIME_UP.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -500,6 +537,7 @@ impl VrState {
     /// (EXITING / LOSS_PENDING).
     fn on_session_state(&mut self, state: xr::SessionState) -> bool {
         tracing::info!(target: "vr", "session state -> {state:?}");
+        SESSION_STATE.store(state.into_raw(), Ordering::Relaxed);
         let Some(session) = self.session.as_mut() else {
             return false;
         };
@@ -629,6 +667,8 @@ impl VrState {
         stage::clear();
         self.recommended_view = None;
         self.runtime_name = None;
+        RUNTIME_UP.store(false, Ordering::Relaxed);
+        SESSION_STATE.store(0, Ordering::Relaxed);
     }
 }
 

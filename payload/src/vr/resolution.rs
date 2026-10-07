@@ -46,6 +46,8 @@
 //! (`vr.native_resolution = false`, logged) and the original size is restored; the mod continues at
 //! desktop resolution. Never crashes, never wedges.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use jc3gi::{
     camera::camera_manager::CameraManager, graphics_engine::graphics_engine::GraphicsEngine,
 };
@@ -60,6 +62,21 @@ use crate::{
 /// fault. A resize is serviced in the very next `Draw` prologue, so this is a generous ceiling that
 /// only trips on a genuinely stuck or faulted resize.
 const SERVICE_TIMEOUT_FRAMES: u32 = 240;
+
+/// The engine's display size as [`apply_native_resolution`] last read it, [`pack`]ed.
+static ENGINE_SIZE: AtomicU64 = AtomicU64::new(0);
+
+/// The native target [`apply_native_resolution`] last computed, [`pack`]ed.
+static TARGET_SIZE: AtomicU64 = AtomicU64::new(0);
+
+/// A size as one word, `0` for none.
+fn pack(size: Option<(u32, u32)>) -> u64 {
+    size.map_or(0, |(w, h)| (u64::from(w) << 32) | u64::from(h))
+}
+
+fn unpack(word: u64) -> Option<(u32, u32)> {
+    (word != 0).then_some(((word >> 32) as u32, word as u32))
+}
 
 /// The native-resolution driver state, on the game thread. A const-constructible [`Mutex`] singleton.
 static STATE: Mutex<ResolutionState> = Mutex::new(ResolutionState::new());
@@ -102,6 +119,8 @@ pub fn apply_native_resolution() {
         device.m_DeviceInfo.m_DisplayWidth,
         device.m_DeviceInfo.m_DisplayHeight,
     );
+    ENGINE_SIZE.store(pack(Some(current)), Ordering::Relaxed);
+    TARGET_SIZE.store(pack(target), Ordering::Relaxed);
 
     let mut st = STATE.lock();
 
@@ -205,6 +224,25 @@ pub fn apply_native_resolution() {
     }
 
     issue_resize(&mut st, ge, current, desired);
+}
+
+/// The engine's render size and the size the driver wants it at, as the last frame saw them, for a
+/// status readout. Atomics only, so any thread may read it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResolutionStatus {
+    /// The engine's display size, or `None` before the engine is initialized.
+    pub(crate) engine: Option<(u32, u32)>,
+    /// The native render size the driver targets, or `None` while no session runs or native
+    /// resolution is off. Twice the per-eye width under single-pass double-wide.
+    pub(crate) target: Option<(u32, u32)>,
+}
+
+/// The last frame's sizes.
+pub(crate) fn status() -> ResolutionStatus {
+    ResolutionStatus {
+        engine: unpack(ENGINE_SIZE.load(Ordering::Relaxed)),
+        target: unpack(TARGET_SIZE.load(Ordering::Relaxed)),
+    }
 }
 
 /// The lifecycle cleanup: mark shutdown and restore the pre-VR display size **synchronously**.
@@ -428,4 +466,16 @@ struct Pending {
     window_before: Option<(i32, i32, i32, i32)>,
     /// Frames waited for service, for the timeout fault.
     frames: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sizes_pack_into_one_word_and_back() {
+        for size in [None, Some((1, 1)), Some((4320, 2160)), Some((u32::MAX, 7))] {
+            assert_eq!(unpack(pack(size)), size);
+        }
+    }
 }

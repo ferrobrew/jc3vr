@@ -113,31 +113,95 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
 /// free already. A failed acquire leaves the route disarmed, and the submit retries the acquire and
 /// blits from the captures, as it does with the route off.
 pub fn arm_direct(frame: &mut FrameContext, cfg: &VrConfig) {
-    let target = if cfg.direct_eye_blit && !GAVE_UP.load(Ordering::Relaxed) {
+    let (target, arm) = if !cfg.direct_eye_blit {
+        (None, DirectArm::ConfigOff)
+    } else if GAVE_UP.load(Ordering::Relaxed) {
+        (None, DirectArm::GaveUp)
+    } else {
         match frame.acquire() {
-            Ok(()) => frame.eye_image(0).map(|image| DirectTarget {
-                image,
-                linearize: matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize),
-                blitted: [false; 2],
-            }),
+            Ok(()) => {
+                let target = frame.eye_image(0).map(|image| DirectTarget {
+                    image,
+                    linearize: matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize),
+                    blitted: [false; 2],
+                });
+                let arm = if target.is_some() {
+                    DirectArm::Armed
+                } else {
+                    DirectArm::AcquireFailed
+                };
+                (target, arm)
+            }
             Err(e) => {
                 tracing::debug!(
                     target: "vr",
                     "direct eye blit: acquiring the swapchain image failed: {e:#}"
                 );
-                None
+                (None, DirectArm::AcquireFailed)
             }
         }
-    } else {
-        None
     };
     *DIRECT.lock() = target;
+    LAST_ARM.store(arm as u8, Ordering::Relaxed);
 }
 
 /// Leave the direct route off for this frame, so every eye is copied into its capture and blitted
 /// at the submit.
 pub fn disarm_direct() {
     *DIRECT.lock() = None;
+    LAST_ARM.store(DirectArm::NotArmed as u8, Ordering::Relaxed);
+}
+
+/// What the direct route did on the last frame, for a status readout. Atomics only, so any thread
+/// may read it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DirectStatus {
+    /// How the last frame's [`arm_direct`] or [`disarm_direct`] left the route, or `None` before
+    /// the first frame.
+    pub(crate) arm: Option<DirectArm>,
+    /// How many eyes the last submitted frame took from the direct route.
+    pub(crate) direct_eyes: u8,
+    /// Whether the back buffer was last found readable by the direct route, or `None` before it
+    /// was checked.
+    pub(crate) back_buffer_readable: Option<bool>,
+}
+
+/// How a frame left the direct route.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum DirectArm {
+    /// The image was acquired and published for the eyes' post-draws.
+    Armed = 1,
+    /// `vr.direct_eye_blit` is off.
+    ConfigOff,
+    /// An earlier failure turned the route off for the session.
+    GaveUp,
+    /// Acquiring the swapchain image failed this frame.
+    AcquireFailed,
+    /// The frame did not ask for the route: it does not render, does not render in stereo, or its
+    /// one dispatch carries both eyes.
+    NotArmed,
+}
+
+/// The direct route's last frame.
+pub(crate) fn direct_status() -> DirectStatus {
+    let arm = match LAST_ARM.load(Ordering::Relaxed) {
+        1 => Some(DirectArm::Armed),
+        2 => Some(DirectArm::ConfigOff),
+        3 => Some(DirectArm::GaveUp),
+        4 => Some(DirectArm::AcquireFailed),
+        5 => Some(DirectArm::NotArmed),
+        _ => None,
+    };
+    DirectStatus {
+        arm,
+        direct_eyes: LAST_DIRECT_EYES.load(Ordering::Relaxed),
+        back_buffer_readable: match BACK_BUFFER_READABLE.load(Ordering::Relaxed) {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        },
+    }
 }
 
 /// Blit `src`, the engine's back buffer as eye `eye`'s post-draw leaves it, into that eye's
@@ -234,6 +298,12 @@ static DIRECT: Mutex<Option<DirectTarget>> = Mutex::new(None);
 /// Whether the back buffer was last found readable by the direct route: `0` no, `1` yes, `2` not
 /// checked yet. Only for logging the verdict when it changes.
 static BACK_BUFFER_READABLE: AtomicU8 = AtomicU8::new(2);
+
+/// The last frame's [`DirectArm`] as its discriminant, `0` before the first frame.
+static LAST_ARM: AtomicU8 = AtomicU8::new(0);
+
+/// How many eyes the last submitted frame took from the direct route.
+static LAST_DIRECT_EYES: AtomicU8 = AtomicU8::new(0);
 
 /// Set when the direct route failed in a way a later frame would repeat, which leaves it off for
 /// the rest of the session.
@@ -402,6 +472,10 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
         .lock()
         .take()
         .map_or([false; 2], |target| target.blitted);
+    LAST_DIRECT_EYES.store(
+        blitted.iter().filter(|&&eye| eye).count() as u8,
+        Ordering::Relaxed,
+    );
 
     frame
         .acquire()

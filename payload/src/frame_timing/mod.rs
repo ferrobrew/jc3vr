@@ -22,8 +22,10 @@
 //! the game thread's once-a-frame [`frame_tick`] touches a lock, and only once a second.
 //!
 //! Threading: [`scope`] may be used on any thread. [`frame_tick`] must be called once per frame from
-//! the game thread, and [`latest`] is read from the game thread's debug UI.
+//! the game thread, and [`latest`] is read from the game thread's debug UI. [`frame_percentiles`],
+//! the spread of the recent frame intervals, may be read from any thread.
 
+mod recent;
 mod report;
 mod slot;
 
@@ -40,11 +42,12 @@ use std::{
 use parking_lot::Mutex;
 
 pub(crate) use crate::frame_timing::{
+    recent::FramePercentiles,
     report::{Report, Totals, ns_to_ms},
     slot::{Kind, Slot, ThreadClass},
 };
 use crate::{
-    frame_timing::report::SlotTotals,
+    frame_timing::{recent::RecentFrames, report::SlotTotals},
     thread_role::{self, ThreadRole},
 };
 
@@ -110,6 +113,15 @@ pub(crate) fn frame_tick() {
         );
     }
     let (ui, log) = WINDOWS.with_borrow_mut(|windows| windows.tick(now, drain));
+    let percentiles = RECENT.with_borrow_mut(|recent| {
+        if let Some(interval) = interval {
+            recent.push(interval);
+        }
+        ui.is_some().then(|| recent.percentiles()).flatten()
+    });
+    if let Some(percentiles) = percentiles {
+        *PERCENTILES.lock() = Some(percentiles);
+    }
     if let Some(ui) = ui {
         *LATEST.lock() = Some(ui);
     }
@@ -121,6 +133,12 @@ pub(crate) fn frame_tick() {
 /// The breakdown over the last complete [`UI_WINDOW`], or `None` before the first one closes.
 pub(crate) fn latest() -> Option<Report> {
     LATEST.lock().clone()
+}
+
+/// The median and 95th percentile of the recent game frame intervals, refreshed every
+/// [`UI_WINDOW`], or `None` before the first window closes. A leaf lock, so any thread may read it.
+pub(crate) fn frame_percentiles() -> Option<FramePercentiles> {
+    *PERCENTILES.lock()
 }
 
 /// One slot's live counters.
@@ -155,7 +173,12 @@ thread_local! {
     static CHILD_NS: Cell<u64> = const { Cell::new(0) };
     /// The reporting windows. Only the game thread ticks them.
     static WINDOWS: RefCell<Windows> = const { RefCell::new(Windows::new()) };
+    /// The recent frame intervals. Only the game thread records them.
+    static RECENT: RefCell<RecentFrames> = const { RefCell::new(RecentFrames::new()) };
 }
+
+/// The percentiles [`frame_percentiles`] returns.
+static PERCENTILES: Mutex<Option<FramePercentiles>> = Mutex::new(None);
 
 /// The breakdown over the last complete [`UI_WINDOW`].
 static LATEST: Mutex<Option<Report>> = Mutex::new(None);

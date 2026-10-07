@@ -72,7 +72,7 @@ pub use back_buffer::{
     owned as back_buffer_owned, resize_substitute_bypassed, substitute_render_setups,
     sync_swapchain_to_window,
 };
-pub(crate) use blit::blit_direct;
+pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status};
 pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
@@ -82,6 +82,8 @@ pub use recenter::{
     request_seat_recenter,
 };
 pub use resolution::apply_native_resolution;
+pub(crate) use resolution::{ResolutionStatus, status as resolution_status};
+pub(crate) use state::{PublishedStatus, published_status};
 pub use state::{VrStatus, install, is_running, status, uninstall, update, wait_for_frame_tail};
 
 /// The OpenXR view configuration: standard stereo, two views (one per eye).
