@@ -1,6 +1,6 @@
-//! The `VR: BODY` page: the saved body dimensions, the body-scaling switches, and the guided
-//! calibration that measures the player in the headset ([`Calibration`]) and saves the result with
-//! the rest of the settings.
+//! The `VR: BODY` page: the saved body dimensions, the body-scaling switches, the procedural body,
+//! the body's alignment with the player's torso, and the guided calibration that measures the
+//! player in the headset ([`Calibration`]) and saves the result with the rest of the settings.
 //!
 //! The calibration runs standing or seated ([`Stance`]), as the summary's `STANCE` choice says; it
 //! defaults from the posture setting each time the page opens. A seated calibration measures the
@@ -130,6 +130,19 @@ fn summary(page: Page) -> Page {
             .procedural
             .keep_out))
         .text("TEST WRITES THE POSE BACK AS IS.")
+        .header("ALIGNMENT")
+        .item(config_toggle!("BODY FACES YOUR TORSO", |c| c
+            .controllers
+            .body
+            .alignment
+            .root_follow))
+        .text("ONLY THE TURN INPUT TURNS THE VIEW.")
+        .item(config_toggle!("CHEST FACES YOUR TORSO", |c| c
+            .controllers
+            .body
+            .alignment
+            .drive_chest))
+        .text("BODY FROM YOUR HEAD TURNS IT IN FULL.")
 }
 
 fn stand(page: Page) -> Page {
