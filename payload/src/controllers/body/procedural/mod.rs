@@ -57,7 +57,7 @@ use crate::{
                 ground::{GroundCaster, GroundLog, GroundTally},
                 joints::{LiveRig, RigCache},
                 rig::{Rig, RigBone, RigError},
-                signals::{in_hit_reaction, in_ledge_climb, set_local_character},
+                signals::{in_hit_reaction, in_ledge_climb},
                 solver::{
                     DropFollower, SolveInput,
                     air::{AirFollower, AirTuning, DipTuning, LandingDip, air_feet, mix_feet},
@@ -185,7 +185,6 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
 unsafe fn run_gate(character: &mut Character) {
     let config = Config::lock_query(|c| c.controllers.body.procedural);
     let now = Instant::now();
-    set_local_character(character);
     let mut state = STATE.lock();
     let dt = state
         .status

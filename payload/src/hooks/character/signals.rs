@@ -34,7 +34,7 @@ fn ledge_climb_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) 
 fn animated_model_queue_act(model: *mut AnimatedModel, act: *const u32) {
     // SAFETY: the act is the caller's live `idstring`.
     if let Some(&id) = unsafe { act.as_ref() } {
-        note_act(model, id as i32, Instant::now());
+        note_act(model, id as i32);
     }
     ANIMATED_MODEL_QUEUE_ACT.get().unwrap().call(model, act);
 }

@@ -17,6 +17,8 @@
 //! - the `SECONDARY` hand pass's entry, where the game's secondary hand targets are switched off
 //!   ([`hands::ik::before_secondary`]).
 
+use std::time::Instant;
+
 use detours_macro::detour;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext};
 use re_utilities::hook_library::HookLibrary;
@@ -24,7 +26,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     controllers::{
         self,
-        body::procedural::{owns_body, skeleton},
+        body::procedural::{owns_body, signals::set_local_character, skeleton},
         hands::{self, ik::HandPlan},
         roomscale::stance,
     },
@@ -89,6 +91,7 @@ fn character_update_pass_finalize_pose_parallel(
     let dt = unsafe { context.cast::<GameObjectUpdateContext>().as_ref() }.map_or(0.0, |c| c.m_Dt);
     if let Some(character) = unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter) {
         unsafe { skeleton::dump_once(character) };
+        set_local_character(character, Instant::now());
     }
     unsafe { stance::unarmed::tick(character) };
     let stance_plan = unsafe { stance::plan(character, dt) };

@@ -32,12 +32,14 @@ use parking_lot::Mutex;
 use crate::hooks::character::resolve_act_id;
 
 /// Publish the local player's character, whose animated model's acts [`note_act`] watches. Called
-/// from the solve gate on every pass.
-pub(crate) fn set_local_character(character: &Character) {
-    LOCAL_MODEL.store(
-        character as *const Character as usize + offset_of!(Character, m_AnimatedModel),
-        Ordering::Relaxed,
-    );
+/// at the entry of every pose-finalization pass of the local player, so the address is refreshed
+/// every tick; one not refreshed within [`LOCAL_FRESH`] is not matched, so a model freed with its
+/// character (a death, a respawn) cannot pass for the player's when another character comes to
+/// live at its address.
+pub(crate) fn set_local_character(character: &Character, now: Instant) {
+    let model = character as *const Character as usize + offset_of!(Character, m_AnimatedModel);
+    LOCAL_MODEL.store(model, Ordering::Relaxed);
+    STATE.lock().local_at = Some(now);
 }
 
 /// Stamp a tick of the local player's ledge climb. Called from the climb's motion task.
@@ -54,8 +56,9 @@ pub(crate) fn note_ledge_climb(now: Instant) {
 }
 
 /// Stamp a hit reaction when `act` is one queued on the local player's animated model `model`.
-/// Called from the act queue, for every model.
-pub(crate) fn note_act(model: *const AnimatedModel, act: i32, now: Instant) {
+/// Called from the act queue, for every model's every act, so anything that is not the local
+/// player's model is turned away with one atomic load before the clock or a lock is touched.
+pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
     let local = LOCAL_MODEL.load(Ordering::Relaxed);
     if local == 0 || model as usize != local {
         return;
@@ -66,7 +69,16 @@ pub(crate) fn note_act(model: *const AnimatedModel, act: i32, now: Instant) {
     let Some(&(_, name)) = ids.iter().find(|(id, _)| *id == act) else {
         return;
     };
-    STATE.lock().hit_reaction_at = Some(now);
+    let now = Instant::now();
+    let mut state = STATE.lock();
+    if state
+        .local_at
+        .is_none_or(|at| now.saturating_duration_since(at) > LOCAL_FRESH)
+    {
+        return;
+    }
+    state.hit_reaction_at = Some(now);
+    drop(state);
     tracing::info!(
         target: "body",
         act = %name.to_string_lossy(),
@@ -94,6 +106,10 @@ pub fn in_hit_reaction(now: Instant, hold_s: f32) -> bool {
 /// How long after the climb's task last ran it still counts as running: a tick or two.
 const TASK_GAP: Duration = Duration::from_millis(100);
 
+/// How long the published local model counts as the player's after it was last refreshed: a few
+/// ticks.
+const LOCAL_FRESH: Duration = Duration::from_millis(250);
+
 /// The acts that start a hit reaction the animation plays out: the stumbles and the knock-back.
 /// The flinch is a partial the body keeps.
 const HIT_REACTION_ACTS: [&CStr; 4] = [
@@ -104,11 +120,14 @@ const HIT_REACTION_ACTS: [&CStr; 4] = [
 ];
 
 struct State {
+    /// When the local model was last published.
+    local_at: Option<Instant>,
     ledge_climb_at: Option<Instant>,
     hit_reaction_at: Option<Instant>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
+    local_at: None,
     ledge_climb_at: None,
     hit_reaction_at: None,
 });
