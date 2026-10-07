@@ -390,7 +390,7 @@ unsafe fn release(object: *mut hkReferencedObject) {
     }
     let count = hkReferencedObject::REFERENCE_COUNT_MASK;
     let previous = word
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |v| {
             Some((v & !count) | (v.wrapping_sub(1) & count))
         })
         .unwrap_or_else(|v| v);
