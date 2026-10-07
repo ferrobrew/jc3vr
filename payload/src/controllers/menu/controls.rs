@@ -183,6 +183,24 @@ fn build() -> Page {
             .weapons
             .holsters
             .stick_click_cycles))
+        .item(config_toggle!("WEAPON WHEEL", |c| c
+            .controllers
+            .weapons
+            .wheel
+            .enabled))
+        .item(config_toggle!("TRIGGER DRAWS WEAPON", |c| c
+            .controllers
+            .weapons
+            .fire_draws_weapon))
+        .item(config_toggle!("SWITCH WEAPON WHEN EMPTY", |c| c
+            .controllers
+            .weapons
+            .auto_switch_when_empty))
+        .item(config_toggle!("EACH HAND FIRES ITS PISTOL", |c| c
+            .controllers
+            .weapons
+            .dual_wield
+            .split))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons
@@ -233,6 +251,11 @@ fn build() -> Page {
             .weapons
             .reload
             .flick_eject))
+        .item(config_toggle!("CHAMBER BY HAND", |c| c
+            .controllers
+            .weapons
+            .reload
+            .chamber))
         .item(config_toggle!("MANUAL BOLT AND PUMP", |c| c
             .controllers
             .weapons
