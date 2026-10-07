@@ -101,13 +101,14 @@ The arms are the controllers' wrist targets ([controllers.md](../input/controlle
 
 The first gate that queues the wrist targets logs `hand IK: queued the wrist targets at the solve gate` (info level, with whether a procedural torso was there), and a keep-out push is logged at most every two seconds (`hand IK: kept the wrist target out of the procedural torso`, debug level, with the distance). The hands readout on the Controllers tab shows, per hand, whether the target was queued on the procedural torso, how far it was kept out, and whether an elbow hint was queued. The physical hands' offsets are composed into the wrist before the keep-out, so a hand body pressed against the world and the torso's keep-out both apply.
 
+The gate's torso keep-out (`body::procedural::torso_keep_out`) is also the capsule geometry the physical hands' held-object keep-out queries, carried from Rico's model space into world space by the character's own transform (`TorsoKeepOut::to_world`); see [physical-hands.md](../input/physical-hands.md#the-players-own-body). The two keep-outs share this one source rather than each describing the torso's shape on its own.
+
 ### Diagnostics
 
 The Controllers tab's "Procedural body" section shows the mode, the weight, whether the body owns the pose, a rigging error, the pass-through's read-back error, how far the hips sit below the animation's and the neck from its target, whether a foot is stepping, the body's speed and the walk's phase, the reach drop, whether the stance is measured, the last tick's ground casts, each clavicle's turn up and forward, and the legs' weight in the air, the root's vertical speed, and the landing dip. While walking, `procedural body: walking` is logged every two seconds at debug level with the speed, the stride, the duty factor, the phase, the reach drop, and the neck's error.
 
 ## Not yet
 
-- The physical hands' keep-out for held objects uses its own body cylinder, not the procedural torso's capsules.
 - A hit reaction's length is a fixed hold, not the stumble's own: the game keeps nothing that says when the stumble ends. A short stumble hands back late, and a long one early.
 
 ## What needs confirming in the headset

@@ -23,10 +23,13 @@
 
 use glam::{Vec2, Vec3};
 
-use crate::controllers::physical_hands::{
-    config::{PhysicalHandsConfig, PickupConfig},
-    grasp::{GripTarget, rotation_vector},
-    rigid::{RigidBody, Velocities},
+use crate::controllers::{
+    body::procedural::solver::arms::TorsoKeepOut,
+    physical_hands::{
+        config::{PhysicalHandsConfig, PickupConfig},
+        grasp::{GripTarget, rotation_vector},
+        rigid::{RigidBody, Velocities},
+    },
 };
 
 /// The hold's tuning.
@@ -210,6 +213,26 @@ pub struct BodySpace {
     pub forward: Vec3,
 }
 
+/// Where a carried object's centre is kept out of the player's own body: the procedural body's
+/// torso capsules while it poses the torso this tick, or the plain cylinder otherwise. Sharing the
+/// torso's own capsules, rather than a cylinder loose enough to cover any pose, keeps a held
+/// object off the chest and the belly as closely as the hand IK does.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum PlayerKeepOut {
+    Torso(TorsoKeepOut),
+    Cylinder(BodySpace),
+}
+
+impl PlayerKeepOut {
+    /// The offset that moves `point` out of the keep-out; zero for a point outside it.
+    pub fn offset(&self, point: Vec3) -> Vec3 {
+        match self {
+            Self::Torso(torso) => torso.push_out(point) - point,
+            Self::Cylinder(space) => keep_out(point, space),
+        }
+    }
+}
+
 /// The offset that moves `point` out of `space` horizontally; zero for a point outside it.
 pub fn keep_out(point: Vec3, space: &BodySpace) -> Vec3 {
     if !(point.is_finite() && space.radius_m > 0.0)
@@ -248,7 +271,13 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-    use crate::controllers::physical_hands::rigid::tests::crate_body;
+    use crate::controllers::{
+        body::procedural::{
+            rig::{Rig, tests::skeleton},
+            solver::pose::RigPose,
+        },
+        physical_hands::rigid::tests::crate_body,
+    };
 
     const DT: f32 = 1.0 / 60.0;
 
@@ -470,6 +499,45 @@ mod tests {
         assert_eq!(keep_out(Vec3::new(0.1, 2.5, 0.0), &space), Vec3::ZERO);
         let on_axis = keep_out(Vec3::new(0.0, 1.0, 0.0), &space);
         assert!((on_axis - Vec3::new(0.0, 0.0, -0.3)).length() < 1e-5);
+    }
+
+    #[test]
+    fn the_player_keep_out_dispatches_to_the_torso_or_the_cylinder() {
+        let cylinder = PlayerKeepOut::Cylinder(BodySpace {
+            base: Vec3::ZERO,
+            height_m: 1.8,
+            radius_m: 0.3,
+            forward: Vec3::NEG_Z,
+        });
+        assert_eq!(
+            cylinder.offset(Vec3::new(0.1, 1.0, 0.0)),
+            keep_out(
+                Vec3::new(0.1, 1.0, 0.0),
+                &BodySpace {
+                    base: Vec3::ZERO,
+                    height_m: 1.8,
+                    radius_m: 0.3,
+                    forward: Vec3::NEG_Z,
+                }
+            )
+        );
+        assert_eq!(cylinder.offset(Vec3::new(5.0, 1.0, 0.0)), Vec3::ZERO);
+
+        let rig = Rig::from_skeleton(&skeleton()).unwrap();
+        let torso = PlayerKeepOut::Torso(TorsoKeepOut::around(
+            &RigPose {
+                bones: rig.reference,
+            },
+            0.14,
+            0.13,
+            0.03,
+        ));
+        let inside = Vec3::new(0.02, 1.1, -0.05);
+        let offset = torso.offset(inside);
+        assert!(offset.length() > 0.0, "{offset:?}");
+        assert!((inside + offset - inside).length() > 0.0);
+        let outside = Vec3::new(0.0, 1.1, -0.4);
+        assert_eq!(torso.offset(outside), Vec3::ZERO);
     }
 
     #[test]

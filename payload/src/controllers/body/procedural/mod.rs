@@ -132,6 +132,17 @@ pub fn arm_context() -> Option<ArmContext> {
     STATE.lock().arms
 }
 
+/// This tick's torso keep-out, carried into world space by `to_world` (the character's own world
+/// transform): `None` when the procedural body did not pose the torso this tick, or posed it with
+/// the keep-out switched off. A caller that keeps its own carried target out of the player's body,
+/// such as the physical hands' held-object keep-out, queries this instead of rebuilding the torso's
+/// shape, so the two keep-outs never drift apart.
+pub fn torso_keep_out(to_world: Mat4) -> Option<TorsoKeepOut> {
+    arm_context()?
+        .keep_out
+        .map(|keep_out| keep_out.to_world(to_world))
+}
+
 /// The last gate's status.
 pub fn status() -> ProceduralStatus {
     STATE.lock().status

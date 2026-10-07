@@ -77,7 +77,7 @@ use crate::{
         physical_hands::{
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
             grasp::{AngularTracker, PalmMotion, Reach, VelocityTracker},
-            hold::BodySpace,
+            hold::{BodySpace, PlayerKeepOut},
             palm::{PROBE_POINTS, PalmBox},
             pickup::{HeldReport, JointInputs, PickupState, PickupStatus},
             shove::{Give, ShoveTuning},
@@ -297,12 +297,19 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     )
     .map(at);
     let free = free_hands();
-    let player_at = Mat4::from(owner.m_WorldMatrixT1).w_axis.truncate();
-    let space = (config.pickup.keep_out_radius_m > 0.0).then(|| BodySpace {
-        base: player_at,
-        height_m: body::player().height * active.world_scale,
-        radius_m: config.pickup.keep_out_radius_m * active.world_scale,
-        forward: body_rotation * Vec3::NEG_Z,
+    let to_world = Mat4::from(owner.m_WorldMatrixT1);
+    let space = (config.pickup.keep_out_radius_m > 0.0).then(|| {
+        body::procedural::torso_keep_out(to_world).map_or_else(
+            || {
+                PlayerKeepOut::Cylinder(BodySpace {
+                    base: to_world.w_axis.truncate(),
+                    height_m: body::player().height * active.world_scale,
+                    radius_m: config.pickup.keep_out_radius_m * active.world_scale,
+                    forward: body_rotation * Vec3::NEG_Z,
+                })
+            },
+            PlayerKeepOut::Torso,
+        )
     });
     let shove_tuning = ShoveTuning::of(&config.shove);
     // SAFETY: forwarded from the caller.

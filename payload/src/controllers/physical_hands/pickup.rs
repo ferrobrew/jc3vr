@@ -43,7 +43,7 @@ use crate::{
             config::PickupConfig,
             contact::{Surface, SurfaceHit},
             grasp::{self, Grip, PalmMotion, Reach, TargetKind},
-            hold::{self, BodySpace, HandHold, HoldTuning},
+            hold::{self, HandHold, HoldTuning, PlayerKeepOut},
             palm::PalmBox,
             physics::HoldTarget,
             pulse,
@@ -294,7 +294,7 @@ pub(super) unsafe fn reach(
 pub(super) unsafe fn tick(
     state: &mut PickupState,
     palms: [Option<PalmMotion>; 2],
-    space: Option<BodySpace>,
+    space: Option<PlayerKeepOut>,
     joints: JointInputs,
     dt: f32,
     config: &PickupConfig,
@@ -416,7 +416,7 @@ pub(super) unsafe fn tick(
             }
             let mut target = holder.grip.target(palm.pose);
             if let Some(space) = &space {
-                target.point += hold::keep_out(holder.grip.centre_at(target), space);
+                target.point += space.offset(holder.grip.centre_at(target));
             }
             if grasp::torn_away(anchor, target.point, config.break_distance_m) {
                 state.held[k] = None;

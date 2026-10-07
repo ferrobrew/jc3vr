@@ -10,7 +10,7 @@
 //! shoulder-to-wrist line, out along a pole that points down, out to the arm's side, and a little
 //! back, as far as the arm's length bends it.
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 
 use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
 
@@ -60,6 +60,21 @@ impl TorsoKeepOut {
                 },
             ],
             margin: margin.max(0.0),
+        }
+    }
+
+    /// This keep-out's capsules carried from Rico's model space into world space by `to_world`,
+    /// the character's own world transform: the shared geometry other systems that work in world
+    /// space, such as the physical hands' held-object keep-out, query it through. The transform is
+    /// rigid (translation and rotation only), so the radii and the margin are carried unchanged.
+    pub fn to_world(self, to_world: Mat4) -> Self {
+        Self {
+            capsules: self.capsules.map(|capsule| Capsule {
+                a: to_world.transform_point3(capsule.a),
+                b: to_world.transform_point3(capsule.b),
+                radius: capsule.radius,
+            }),
+            margin: self.margin,
         }
     }
 
@@ -149,6 +164,8 @@ const POLE_BACK: f32 = 0.3;
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
+
     use super::*;
     use crate::controllers::body::procedural::rig::{Rig, tests::skeleton};
 
@@ -170,6 +187,29 @@ mod tests {
         assert!(pushed.z < 0.0, "pushed backward: {pushed:?}");
         let outside = Vec3::new(0.0, 1.1, -0.4);
         assert_eq!(torso.push_out(outside), outside);
+    }
+
+    #[test]
+    fn the_world_space_keep_out_pushes_out_the_same_point_wherever_it_is_carried() {
+        let torso = keep_out();
+        let to_world = Mat4::from_rotation_translation(
+            Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            Vec3::new(1.0, 2.0, 3.0),
+        );
+        let world = torso.to_world(to_world);
+        assert_eq!(world.margin, torso.margin);
+        for capsule in world.capsules {
+            assert!((capsule.b - capsule.a).length() > 0.0);
+        }
+        let point_model = Vec3::new(0.02, 1.1, -0.05);
+        let pushed_model = torso.push_out(point_model);
+        let point_world = to_world.transform_point3(point_model);
+        let pushed_world = world.push_out(point_world);
+        assert!(
+            (pushed_world - to_world.transform_point3(pushed_model)).length() < 1e-4,
+            "{pushed_world:?} vs {:?}",
+            to_world.transform_point3(pushed_model)
+        );
     }
 
     #[test]

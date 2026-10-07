@@ -134,7 +134,7 @@ A body joined to the world or to another body by a Havok constraint, such as a h
 
 ### The player's own body
 
-The held object's centre is kept out of a cylinder around the player's body (`pickup.keep_out_radius_m`, the player's height tall): a target inside it is moved out horizontally, so a held crate is not driven into the player's capsule, where it would shove the player. The object and the capsule still collide; making the held body ignore the player would need its collision filter word changed on the live world and restored on every release, which the mod does not do.
+The held object's centre is kept out of the player's own body (`PlayerKeepOut` in `physical_hands/hold.rs`), so a held crate is not driven into the player's capsule, where it would shove the player. While the procedural body poses the torso this tick ([procedural-body.md](../body/procedural-body.md#the-arms)), the keep-out is the same chest and belly capsules the wrist targets are kept out of, carried from Rico's model space into world space by the character's own transform (`body::procedural::torso_keep_out`), so a held object rests against the torso's own shape rather than a looser bound. Otherwise it falls back to a cylinder around the player's body (`pickup.keep_out_radius_m`, the player's height tall): a target inside it is moved out horizontally. The object and the capsule still collide; making the held body ignore the player would need its collision filter word changed on the live world and restored on every release, which the mod does not do.
 
 A holding hand does not probe or push off surfaces, and the other palm's probes pass through what the hands hold, so a free hand never pushes the body off the carried object. The reach rays do find a held object, so that the second hand can take hold of it.
 
@@ -183,7 +183,7 @@ The palms' settings are `physical_hands` in the controller settings, under "Phys
 - That one physics step runs between two aim updates; several steps per update would integrate the set velocities several times, and a held object would overshoot.
 - That the Havok solver respects the set velocities against contacts and joints as expected: a held crate stops at a wall, a hinged gate swings about its hinge.
 - Which world props are joined by a placed constraint.
-- That a held object kept out of the body's cylinder never shoves the player's capsule, and whether the cylinder's default radius fits the capsule.
+- That a held object kept out of the player's own body, by the torso's capsules or the fallback cylinder, never shoves the player's capsule, and whether the cylinder's default radius fits the capsule where the procedural body is off.
 - Whether the shove's resistance settles without the body chattering between pushed and not, and whether its strength default moves a car at all against its brakes.
 - Which weapon the game picks up when several are in range, and that the use-item click alone starts the pickup.
 - Whether the hold's defaults hold a crate steadily at the game's simulation rate, and how a throw feels at `throw_scale` one.
