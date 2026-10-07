@@ -12,9 +12,11 @@
 //! - The pose: [`apply`] turns the holding hand's poses about the controller's grip, on the active
 //!   hands every hand subsystem starts from ([`crate::controllers::hands::active_hands`]), so the
 //!   IK, the late update, the gun's sight line, and the overlay all carry it, and a shot goes where
-//!   the drooping gun points. The gun pitches down about the horizontal axis across its barrel, by
-//!   the sag plus the one-handed reach sag as the hand moves away from the head, scaled by how level
-//!   the barrel is; held in one hand it sways on two incommensurate sine waves; and the result is
+//!   the drooping gun points. The barrel is the wrist frame's fingers axis, not the controller's
+//!   grip -Z, which runs up the handle. The gun pitches down about the horizontal axis across its
+//!   barrel, by the sag plus the one-handed reach sag as the hand moves away from the head, scaled
+//!   by how level the barrel is; held in one hand it sways in pitch about that axis and in yaw
+//!   about the vertical, on two incommensurate sine waves; and the result is
 //!   followed on a damped rotational spring, so the gun trails a fast turn and settles after it.
 //!   The one-handed and the braced weights blend by how far the foregrip is engaged ([`Weight`]).
 //!   While the foregrip is held, the off-hand is turned with the gun, so the gun drives both hands
@@ -48,7 +50,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        frame::{Hand, Pose},
+        frame::Hand,
         hands::CockpitHand,
         scheme,
         weapons::{
@@ -220,7 +222,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
     };
     let t = epoch().elapsed().as_secs_f32();
     let pose = weighted_pose(
-        h.grip,
+        &h,
         head,
         &weight,
         config,
@@ -381,33 +383,46 @@ impl Weight {
     }
 }
 
-/// Sag and sway the grip orientation of a gun held at `grip` with the head at `head`, by its
-/// `weight`. The sag turns the barrel (the grip's -Z) down about the horizontal axis across it, by
-/// the sag plus the reach sag as the hand moves out, scaled by how level the barrel is; `sway`
-/// (pitch and yaw, radians, at full share) turns it about the grip's own axes, half of it close in
-/// and all of it at full reach.
+/// Sag and sway the grip orientation of a gun held in `hand` with the head at `head`, by its
+/// `weight`. The barrel is the wrist frame's fingers axis (its -Z), along which the hand holds the
+/// gun; the controller's grip -Z runs up the handle instead. The sag turns the barrel down about
+/// the horizontal axis across it, by the sag plus the reach sag as the hand moves out, scaled by
+/// how level the barrel is; `sway` (pitch and yaw, radians, at full share) pitches it about that
+/// same horizontal axis and yaws it about the vertical, so that neither rolls the gun, half of it
+/// close in and all of it at full reach.
 pub fn weighted_pose(
-    grip: Pose,
+    hand: &CockpitHand,
     head: Vec3,
     weight: &Weight,
     config: &HeftConfig,
     sway: Vec2,
 ) -> WeightedPose {
+    let grip = hand.grip;
     let reach = smoothstep(
         config.reach_near_m,
         config.reach_far_m,
         grip.position.distance(head),
     );
-    let forward = grip.orientation * Vec3::NEG_Z;
-    let level = Vec2::new(forward.x, forward.z).length().min(1.0);
+    let barrel = hand.wrist.orientation * Vec3::NEG_Z;
+    let level = Vec2::new(barrel.x, barrel.z).length().min(1.0);
     let sag = (weight.sag_deg + weight.reach_sag_deg * reach).to_radians() * level;
-    let across = Vec3::Y.cross(forward).try_normalize();
+    let across = Vec3::Y.cross(barrel).try_normalize();
     let droop = across.map_or(Quat::IDENTITY, |axis| Quat::from_axis_angle(axis, sag));
+    // A vertical barrel has no horizontal axis across it; the palm axis is square to the barrel,
+    // and any axis square to it serves for a sway that small.
+    let pitch_axis = across
+        .or_else(|| {
+            (grip.orientation * Vec3::X)
+                .reject_from(barrel)
+                .try_normalize()
+        })
+        .unwrap_or(Vec3::X);
     let sway_reach = 0.5 + 0.5 * reach;
     let sway_scaled = sway * weight.sway_share * sway_reach;
-    let wobble = Quat::from_rotation_y(sway_scaled.y) * Quat::from_rotation_x(sway_scaled.x);
+    let wobble =
+        Quat::from_rotation_y(sway_scaled.y) * Quat::from_axis_angle(pitch_axis, sway_scaled.x);
     WeightedPose {
-        orientation: (droop * grip.orientation * wobble).normalize(),
+        orientation: (wobble * droop * grip.orientation).normalize(),
         sag: if across.is_some() { sag } else { 0.0 },
         reach,
         sway,
@@ -570,27 +585,56 @@ fn get_current_scatter_value(weapon: *const WeaponBase) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::{config::GripOffset, frame::Pose, hands::pose as hand_pose};
 
     fn config() -> HeftConfig {
         HeftConfig::new()
     }
 
-    fn level_grip(position: Vec3) -> Pose {
-        Pose {
+    const OFFSET: GripOffset = GripOffset::INDEX_BEST_GUESS;
+
+    /// A right hand holding a pistol grip at `position`, the barrel pitched up by `pitch_up` and
+    /// turned left by `yaw` (radians): an OpenXR grip with its -Z up the handle, tilted back from
+    /// the level controller by the grip offset's pitch so that the fingers, and the barrel along
+    /// them, point forward.
+    fn pistol(position: Vec3, pitch_up: f32, yaw: f32) -> CockpitHand {
+        let tilt = OFFSET.rotation_deg.x.to_radians();
+        let orientation = Quat::from_rotation_y(yaw)
+            * Quat::from_rotation_x(pitch_up)
+            * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2 - tilt);
+        let grip = Pose {
             position,
-            orientation: Quat::IDENTITY,
-        }
+            orientation,
+        };
+        hand_pose::cockpit_hand(Hand::Right, grip, grip, &OFFSET, None)
     }
 
-    fn forward(q: Quat) -> Vec3 {
-        q * Vec3::NEG_Z
+    fn level(position: Vec3) -> CockpitHand {
+        pistol(position, 0.0, 0.0)
+    }
+
+    /// The barrel of a gun held by a grip turned to `grip`: the wrist frame's fingers axis.
+    fn barrel(grip: Quat) -> Vec3 {
+        grip * hand_pose::grip_to_wrist(Hand::Right, &OFFSET).orientation * Vec3::NEG_Z
+    }
+
+    /// The axis up the handle of a gun held by a grip turned to `grip`.
+    fn handle(grip: Quat) -> Vec3 {
+        grip * Vec3::NEG_Z
     }
 
     /// The one-handed pose of a gun with `tuning` at the unbraced `share`, with no braced weight.
-    fn pose_of(grip: Pose, tuning: &HeftTuning, share: f32, sway: Vec2) -> WeightedPose {
+    fn pose_of(hand: &CockpitHand, tuning: &HeftTuning, share: f32, sway: Vec2) -> WeightedPose {
         let c = config();
         let weight = Weight::blend(tuning, &BracedTuning::NONE, share, &c);
-        weighted_pose(grip, Vec3::ZERO, &weight, &c, sway)
+        weighted_pose(hand, Vec3::ZERO, &weight, &c, sway)
+    }
+
+    #[test]
+    fn the_test_grip_points_the_barrel_forward_and_the_handle_up() {
+        let hand = level(Vec3::ZERO);
+        assert!(barrel(hand.grip.orientation).distance(Vec3::NEG_Z) < 1e-5);
+        assert!(handle(hand.grip.orientation).y > 0.9);
     }
 
     const FRAME_S: f32 = 1.0 / 90.0;
@@ -660,9 +704,9 @@ mod tests {
     #[test]
     fn sidearms_carry_no_weight() {
         let c = config();
-        let grip = level_grip(Vec3::new(0.0, -0.3, -0.6));
-        let pose = pose_of(grip, &c.sidearm, 1.0, Vec2::ZERO);
-        assert!(pose.orientation.angle_between(Quat::IDENTITY) < 1e-5);
+        let hand = level(Vec3::new(0.0, -0.3, -0.6));
+        let pose = pose_of(&hand, &c.sidearm, 1.0, Vec2::ZERO);
+        assert!(pose.orientation.angle_between(hand.grip.orientation) < 1e-5);
         assert_eq!(c.sidearm.kick_scale, 1.0);
         assert_eq!(c.sidearm.spread_scale, 1.0);
         // In either hold: a pistol braced in two hands carries nothing either.
@@ -676,40 +720,87 @@ mod tests {
     fn a_heavy_gun_sags_down_and_more_at_reach() {
         let c = config();
         let near = pose_of(
-            level_grip(Vec3::new(0.0, -0.2, -0.1)),
+            &level(Vec3::new(0.0, -0.2, -0.1)),
             &c.heavy,
             1.0,
             Vec2::ZERO,
         );
         let far = pose_of(
-            level_grip(Vec3::new(0.0, -0.2, -0.7)),
+            &level(Vec3::new(0.0, -0.2, -0.7)),
             &c.heavy,
             1.0,
             Vec2::ZERO,
         );
-        assert!(forward(near.orientation).y < -0.1, "{near:?}");
-        assert!(forward(far.orientation).y < forward(near.orientation).y);
+        assert!(barrel(near.orientation).y < -0.1, "{near:?}");
+        assert!(barrel(far.orientation).y < barrel(near.orientation).y);
         assert!((near.sag.to_degrees() - c.heavy.sag_deg).abs() < 0.5);
         assert!((far.sag.to_degrees() - c.heavy.sag_deg - c.heavy.reach_sag_deg).abs() < 0.5);
         // The sag pitches the barrel only: it stays in its vertical plane.
-        assert!(forward(far.orientation).x.abs() < 1e-5);
+        assert!(barrel(far.orientation).x.abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_gun_aimed_up_or_down_or_to_the_side_still_sags_down() {
+        let c = config();
+        for (pitch_deg, yaw) in [(40.0f32, 0.0), (-35.0, 0.0), (25.0, 0.9), (0.0, -2.1)] {
+            let hand = pistol(Vec3::new(0.1, -0.2, -0.6), pitch_deg.to_radians(), yaw);
+            let before = barrel(hand.grip.orientation);
+            let pose = pose_of(&hand, &c.heavy, 1.0, Vec2::ZERO);
+            let after = barrel(pose.orientation);
+            assert!(
+                after.y < before.y - 0.05,
+                "{pitch_deg} {yaw}: {before} {after}"
+            );
+            // Down in the barrel's own vertical plane: the heading does not change.
+            let heading = |v: Vec3| Vec2::new(v.x, v.z).normalize();
+            assert!(
+                heading(before).distance(heading(after)) < 1e-4,
+                "{pitch_deg} {yaw}"
+            );
+            // And the handle keeps its side: the sag does not roll the gun.
+            let across = Vec3::Y.cross(before).normalize();
+            let roll = |grip: Quat| handle(grip).dot(across);
+            assert!(roll(hand.grip.orientation).abs() < 1e-4);
+            assert!(roll(pose.orientation).abs() < 1e-4, "{pitch_deg} {yaw}");
+        }
+    }
+
+    #[test]
+    fn the_sway_pitches_and_yaws_without_rolling() {
+        let c = config();
+        let hand = pistol(Vec3::new(0.0, -0.2, -0.6), 0.2, 0.7);
+        let weight = Weight::blend(&HeftTuning::NONE, &BracedTuning::NONE, 1.0, &c);
+        let before = barrel(hand.grip.orientation);
+        let up_before = handle(hand.grip.orientation);
+        // A yaw sway swings the barrel about the vertical: its elevation and the handle's stay.
+        let yawed = weighted_pose(&hand, Vec3::ZERO, &weight, &c, Vec2::new(0.0, 0.05));
+        let after = barrel(yawed.orientation);
+        assert!((after.y - before.y).abs() < 1e-5, "{before} {after}");
+        assert!(after.angle_between(before) > 0.02);
+        assert!((handle(yawed.orientation).y - up_before.y).abs() < 1e-5);
+        // A pitch sway moves the barrel in its vertical plane.
+        let pitched = weighted_pose(&hand, Vec3::ZERO, &weight, &c, Vec2::new(0.05, 0.0));
+        let after = barrel(pitched.orientation);
+        assert!((after.y - before.y).abs() > 0.02, "{before} {after}");
+        let heading = |v: Vec3| Vec2::new(v.x, v.z).normalize();
+        assert!(heading(before).distance(heading(after)) < 1e-4);
     }
 
     #[test]
     fn a_rifle_sags_less_than_a_launcher() {
         let c = config();
-        let grip = level_grip(Vec3::new(0.0, -0.2, -0.5));
-        let rifle = pose_of(grip, &c.rifle, 1.0, Vec2::ZERO);
-        let heavy = pose_of(grip, &c.heavy, 1.0, Vec2::ZERO);
+        let hand = level(Vec3::new(0.0, -0.2, -0.5));
+        let rifle = pose_of(&hand, &c.rifle, 1.0, Vec2::ZERO);
+        let heavy = pose_of(&hand, &c.heavy, 1.0, Vec2::ZERO);
         assert!(rifle.sag > 0.0 && rifle.sag < heavy.sag);
     }
 
     #[test]
     fn bracing_removes_the_weight() {
         let c = config();
-        let grip = level_grip(Vec3::new(0.0, -0.2, -0.6));
-        let braced = pose_of(grip, &c.heavy, 0.0, Vec2::new(0.1, 0.1));
-        assert!(braced.orientation.angle_between(grip.orientation) < 1e-5);
+        let hand = level(Vec3::new(0.0, -0.2, -0.6));
+        let braced = pose_of(&hand, &c.heavy, 0.0, Vec2::new(0.1, 0.1));
+        assert!(braced.orientation.angle_between(hand.grip.orientation) < 1e-5);
         assert_eq!(
             Weight::blend(&c.heavy, &BracedTuning::NONE, 0.0, &c).stiffness,
             0.0
@@ -729,13 +820,13 @@ mod tests {
     #[test]
     fn a_vertical_barrel_does_not_sag() {
         let c = config();
-        let grip = Pose {
-            position: Vec3::new(0.0, -0.2, -0.6),
-            orientation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
-        };
-        let pose = pose_of(grip, &c.heavy, 1.0, Vec2::ZERO);
-        assert!(pose.sag.abs() < 1e-4);
-        assert!(pose.orientation.is_finite());
+        for pitch in [std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2] {
+            let hand = pistol(Vec3::new(0.0, -0.2, -0.6), pitch, 0.3);
+            assert!(barrel(hand.grip.orientation).y.abs() > 1.0 - 1e-5);
+            let pose = pose_of(&hand, &c.heavy, 1.0, Vec2::new(0.02, 0.02));
+            assert!(pose.sag.abs() < 1e-4);
+            assert!(pose.orientation.is_finite());
+        }
     }
 
     #[test]
@@ -835,14 +926,14 @@ mod tests {
     #[test]
     fn the_braced_sag_is_mild() {
         let c = config();
-        let grip = level_grip(Vec3::new(0.0, -0.2, -0.6));
+        let hand = level(Vec3::new(0.0, -0.2, -0.6));
         for class in [HeftClass::Smg, HeftClass::Rifle, HeftClass::Heavy] {
             let weight = braced(class);
-            let pose = weighted_pose(grip, Vec3::ZERO, &weight, &c, Vec2::new(0.1, 0.1));
+            let pose = weighted_pose(&hand, Vec3::ZERO, &weight, &c, Vec2::new(0.1, 0.1));
             let sag = pose.sag.to_degrees();
             assert!(sag > 0.0 && sag < 5.0, "{class:?}: {sag}");
             // Braced, the gun does not sway.
-            let still = weighted_pose(grip, Vec3::ZERO, &weight, &c, Vec2::ZERO);
+            let still = weighted_pose(&hand, Vec3::ZERO, &weight, &c, Vec2::ZERO);
             assert!(pose.orientation.angle_between(still.orientation) < 1e-6);
         }
     }
