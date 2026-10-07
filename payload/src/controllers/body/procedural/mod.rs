@@ -12,7 +12,8 @@
 //! - [`rig`]: the bones the body drives, found by name.
 //! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
 //! - [`ground`]: the scene rays that find the ground under the footholds.
-//! - [`signals`]: the grapple's ledge climb, which the character does not keep.
+//! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
+//!   keep.
 //! - [`config`]: the mode and the tuning.
 //!
 //! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
@@ -52,7 +53,7 @@ use crate::{
                 config::{ProceduralBodyConfig, ProceduralMode},
                 ground::{GroundCaster, GroundLog, GroundTally},
                 rig::{Rig, RigBone, RigError},
-                signals::in_ledge_climb,
+                signals::{in_hit_reaction, in_ledge_climb, set_local_character},
                 skeleton::Transform,
                 solver::{
                     DropFollower, SolveInput,
@@ -151,6 +152,7 @@ pub fn owns_body() -> bool {
 pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
     let config = Config::lock_query(|c| c.controllers.body.procedural);
     let now = Instant::now();
+    set_local_character(character);
     let mut state = STATE.lock();
     let dt = state
         .status
@@ -203,7 +205,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
         ProceduralMode::Full => {
             let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
             let case = classify(&unsafe {
-                state.character_state(character, &locomotion, now, jump_grace_s)
+                state.character_state(character, &locomotion, now, jump_grace_s, &config)
             });
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
@@ -654,6 +656,7 @@ impl State {
         locomotion: &LocomotionStatus,
         now: Instant,
         jump_grace_s: f32,
+        config: &ProceduralBodyConfig,
     ) -> CharacterState {
         let detection = current_mode();
         let bits = unsafe { character.m_ControlParameters.as_ref() }.map(|control| {
@@ -684,6 +687,7 @@ impl State {
         CharacterState {
             in_headset: source() == Source::Vr,
             in_gameplay: in_gameplay(),
+            sequence: character.m_InSequence,
             dead: unsafe { character.GetHealth() } <= 0 || has(StateBitFlag::SB_IS_IN_DEAD_STATE),
             ragdoll: motion == Character::MOTION_STATE_RAGDOLL || has(StateBitFlag::SB_IN_RAGDOLL),
             getting_up: has(StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL),
@@ -695,6 +699,7 @@ impl State {
                 || unsafe { character.IsGrappleHanging() }
                 || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
             ledge_climb: in_ledge_climb(now),
+            hit_reaction: in_hit_reaction(now, config.hit_reaction_hold_s),
             swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
                 || motion == Character::MOTION_STATE_SWIMMING
                 || has(StateBitFlag::SB_IS_SWIMMING),

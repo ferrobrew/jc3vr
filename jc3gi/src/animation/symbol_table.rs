@@ -28,6 +28,11 @@ impl EventIdSymbolTable {
     }
 }
 impl EventIdSymbolTable {
+    /// The knock-back a player takes from an explosion's impulse:
+    /// [`Character::HitReaction`](crate::character::character::Character::HitReaction) queues it when
+    /// the state machine accepts it, and the full ragdoll otherwise. In `rico_base.afsmb` it leads
+    /// to the `S_JC_HITREACT_FLY_*` states.
+    pub const ACT_HITREACT_FLY: &::std::ffi::CStr = c"ACT_HITREACT_FLY";
     /// The left melee stumble, for a character struck from the front. The
     /// player's melee input task
     /// ([`NStateTask_InputMeleeTask::Update`](crate::input::locomotion::NStateTask_InputMeleeTask::Update))
@@ -47,6 +52,18 @@ impl EventIdSymbolTable {
     /// The right melee stumble, for a character struck from behind; see
     /// [`ACT_HITREACT_MELEE_STUMBLE_LEFT_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_MELEE_STUMBLE_LEFT_0).
     pub const ACT_HITREACT_MELEE_STUMBLE_RIGHT_180: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_RIGHT_180";
+    /// The stumble a hit's impulse knocks a player into, past the character's stumble threshold
+    /// and short of its ragdoll threshold. [`Character::HitReaction`](crate::character::character::Character::HitReaction)
+    /// queues it, or [`ACT_HITREACT_STUMBLE_BULLET`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_STUMBLE_BULLET) for a bullet
+    /// or [`ACT_HITREACT_STUMBLE_MELEE`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_STUMBLE_MELEE) for a melee blow, on the
+    /// character's [`AnimatedModel`](crate::character::character::AnimatedModel) when the state machine
+    /// accepts it, and the flinch otherwise. In `rico_base.afsmb` the stumbles lead to the
+    /// `S_JC_HITREACT_STUMBLE_*` states.
+    pub const ACT_HITREACT_STUMBLE: &::std::ffi::CStr = c"ACT_HITREACT_STUMBLE";
+    /// The bullet variant of [`ACT_HITREACT_STUMBLE`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_STUMBLE).
+    pub const ACT_HITREACT_STUMBLE_BULLET: &::std::ffi::CStr = c"ACT_HITREACT_STUMBLE_BULLET";
+    /// The melee variant of [`ACT_HITREACT_STUMBLE`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_STUMBLE).
+    pub const ACT_HITREACT_STUMBLE_MELEE: &::std::ffi::CStr = c"ACT_HITREACT_STUMBLE_MELEE";
     /// The forward run start, out of the idle: one of the directional run-start (wind-up) acts that
     /// [`QueueStarts`](crate::input::locomotion::NStateTask_LocoUtil::QueueStarts) chooses by the angle from
     /// the body's forward to the move direction. Its clip starts straight ahead.

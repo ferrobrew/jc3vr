@@ -12,7 +12,8 @@
 //! - [`modifiers`]: the weapon-agnostic body and the standing stance's relaxed idle, which keep the
 //!   weapon's animation modifiers off the body's rule systems;
 //! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose;
-//! - [`signals`]: the grapple's ledge climb, for the procedural body's hand-over table;
+//! - [`signals`]: the grapple's ledge climb and the hit reactions, for the procedural body's
+//!   hand-over table;
 //! - the `SECONDARY` hand pass's entry, where the game's secondary hand targets are switched off
 //!   ([`hands::ik::before_secondary`]).
 

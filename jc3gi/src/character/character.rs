@@ -83,6 +83,20 @@ impl AnimatedModel {
             f(self as *mut Self as _, act)
         }
     }
+    pub const QueueAct_ADDRESS: usize = 0x1404C8DA0;
+    /// Queues an act (`act` points at the runtime `idstring` value) on the model's state machines,
+    /// appending it to the model's act queue, which holds at most 32 acts; an act queued with the
+    /// queue full is dropped. [`Character::QueueAct`](crate::character::character::Character::QueueAct) forwards here for
+    /// [`Character::m_AnimatedModel`](crate::character::character::Character::m_AnimatedModel), and engine code that holds the model, such as
+    /// [`Character::HitReaction`](crate::character::character::Character::HitReaction), calls it directly.
+    pub unsafe fn QueueAct(&mut self, act: *const u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, act: *const u32) = ::std::mem::transmute(
+                Self::QueueAct_ADDRESS,
+            );
+            f(self as *mut Self as _, act)
+        }
+    }
 }
 impl AnimatedModel {
     /// The [`m_ModelInstances`](crate::character::character::AnimatedModel::m_ModelInstances) slot holding the character's
@@ -422,7 +436,14 @@ pub struct Character {
     /// [`Avatar`](crate::character::avatar::Avatar) base of the `CPlayer`. Holds the mental state written by
     /// [`SetMentalState`](crate::character::character::Character::SetMentalState).
     pub m_Avatar: *mut crate::character::avatar::Avatar,
-    _field_29b8: [u8; 24],
+    _field_29b8: [u8; 16],
+    /// Whether a scripted sequence (`CSequenceObject2`) drives the character. Set by
+    /// [`SetupForSequence`](crate::character::character::Character::SetupForSequence) when a sequence takes the character over and
+    /// cleared by [`ResetAfterSequence3`](crate::character::character::Character::ResetAfterSequence3) when it hands it back; while
+    /// it is set, the sequence's transform tracks place the character and its animation layers run
+    /// the sequence's own state machines.
+    pub m_InSequence: bool,
+    _field_29c9: [u8; 7],
     /// Whether this character is a player character (local or remote). Gates the player-only
     /// side effects of setters such as [`SetUnlimitedAmmo`](crate::character::character::Character::SetUnlimitedAmmo).
     pub m_IsPlayer: bool,
@@ -1636,6 +1657,77 @@ impl Character {
                 Self::ForceNeutralState_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const SetupForSequence_ADDRESS: usize = 0x1407FD730;
+    /// Hands the character to a scripted sequence: forces the neutral state
+    /// ([`ForceNeutralState`](crate::character::character::Character::ForceNeutralState)), pauses a behaviour-tree avatar, sets
+    /// [`m_InSequence`](crate::character::character::Character::m_InSequence), and makes a player invulnerable for the sequence unless
+    /// the god mode already holds. Called from `CSequenceObject2::UpdateSequencePreSim` for each
+    /// character the sequence drives.
+    pub unsafe fn SetupForSequence(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::SetupForSequence_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const ResetAfterSequence3_ADDRESS: usize = 0x1407D6590;
+    /// Hands the character back from a scripted sequence: lifts the sequence's invulnerability,
+    /// restores each default animation layer's state machine and animation set, unpauses a
+    /// behaviour-tree avatar, and clears [`m_InSequence`](crate::character::character::Character::m_InSequence). Called by
+    /// `CSequenceObject2::ResetGameObject`, by [`ForceNeutralState`](crate::character::character::Character::ForceNeutralState), and
+    /// on entering the cinematic mode.
+    pub unsafe fn ResetAfterSequence3(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ResetAfterSequence3_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const HitReaction_ADDRESS: usize = 0x1407D7980;
+    /// Reacts to a hit's impulse along `direction`, scaled per damage type and capped. Accumulates
+    /// the impulse, and from the character's thresholds picks the reaction: a ragdoll, a knock-back
+    /// ([`ACT_HITREACT_FLY`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_FLY), from
+    /// an explosion), a stumble
+    /// ([`ACT_HITREACT_STUMBLE`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_STUMBLE)
+    /// and its bullet and melee variants), or a flinch, queued on
+    /// [`m_AnimatedModel`](crate::character::character::Character::m_AnimatedModel) with [`AnimatedModel::QueueAct`](crate::character::character::AnimatedModel::QueueAct). A player and
+    /// other characters take different branches. `zone` is the hit body-part group's `idstring`,
+    /// passed by address and released by the callee.
+    pub unsafe fn HitReaction(
+        &mut self,
+        hit_position: *const crate::types::math::Vector3,
+        direction: *const crate::types::math::Vector3,
+        impulse: f32,
+        killing_blow: bool,
+        zone: *mut u32,
+        damage_flags: u32,
+        damaged_by_vehicle: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                hit_position: *const crate::types::math::Vector3,
+                direction: *const crate::types::math::Vector3,
+                impulse: f32,
+                killing_blow: bool,
+                zone: *mut u32,
+                damage_flags: u32,
+                damaged_by_vehicle: bool,
+            ) = ::std::mem::transmute(Self::HitReaction_ADDRESS);
+            f(
+                self as *mut Self as _,
+                hit_position,
+                direction,
+                impulse,
+                killing_blow,
+                zone,
+                damage_flags,
+                damaged_by_vehicle,
+            )
         }
     }
     pub const SetOrientation_ADDRESS: usize = 0x14075FD90;

@@ -8,7 +8,8 @@
 //!
 //! | Case | Legs | Torso |
 //! | --- | --- | --- |
-//! | not in the headset, not in gameplay (menus, cutscenes, scripted sequences) | animation | animation |
+//! | not in the headset, not in gameplay (menus, cutscenes) | animation | animation |
+//! | in a scripted sequence | animation | animation |
 //! | dead | animation, at once | animation, at once |
 //! | ragdoll | animation, at once | animation, at once |
 //! | getting up from a ragdoll | animation | animation |
@@ -17,6 +18,7 @@
 //! | the grapple's ledge climb | animation | animation |
 //! | swimming | animation | animation |
 //! | wingsuit, parachute, a fall past the jump's grace | animation | animation |
+//! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation | animation |
 //! | a jump, within the grace | procedural, hanging in the air (animation with `air_legs` off) | procedural |
 //! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
 //! | on foot without the movement task running | animation | animation |
@@ -33,6 +35,7 @@ pub enum Case {
     #[default]
     NotInHeadset,
     NotInGameplay,
+    Sequence,
     Dead,
     Ragdoll,
     GettingUp,
@@ -41,6 +44,7 @@ pub enum Case {
     LedgeClimb,
     Swimming,
     Flight,
+    HitReaction,
     Jump,
     AuthoredMotion,
     NoMovementTask,
@@ -52,6 +56,7 @@ impl Case {
         match self {
             Self::NotInHeadset => "not in the headset",
             Self::NotInGameplay => "not in gameplay",
+            Self::Sequence => "scripted sequence",
             Self::Dead => "dead",
             Self::Ragdoll => "ragdoll",
             Self::GettingUp => "getting up",
@@ -60,6 +65,7 @@ impl Case {
             Self::LedgeClimb => "grapple ledge climb",
             Self::Swimming => "swimming",
             Self::Flight => "wingsuit, parachute, or fall",
+            Self::HitReaction => "hit reaction",
             Self::Jump => "jump",
             Self::AuthoredMotion => "authored motion",
             Self::NoMovementTask => "movement task not running",
@@ -90,6 +96,8 @@ impl Case {
 pub struct CharacterState {
     pub in_headset: bool,
     pub in_gameplay: bool,
+    /// Driven by a scripted sequence.
+    pub sequence: bool,
     pub dead: bool,
     pub ragdoll: bool,
     pub getting_up: bool,
@@ -100,6 +108,8 @@ pub struct CharacterState {
     pub swimming: bool,
     /// In the wingsuit, under the parachute, or falling past the jump's grace.
     pub flight: bool,
+    /// Within the hold of a stumble's or a knock-back's act.
+    pub hit_reaction: bool,
     /// In the air within the jump's grace.
     pub jump: bool,
     pub authored_motion: bool,
@@ -113,6 +123,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::NotInHeadset
     } else if !state.in_gameplay {
         Case::NotInGameplay
+    } else if state.sequence {
+        Case::Sequence
     } else if state.dead {
         Case::Dead
     } else if state.ragdoll {
@@ -129,6 +141,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::Swimming
     } else if state.flight {
         Case::Flight
+    } else if state.hit_reaction {
+        Case::HitReaction
     } else if state.jump {
         Case::Jump
     } else if state.authored_motion {
@@ -312,6 +326,31 @@ mod tests {
                 ..on_foot()
             }),
             Case::LedgeClimb
+        );
+        assert_eq!(
+            classify(&CharacterState {
+                sequence: true,
+                dead: true,
+                ..on_foot()
+            }),
+            Case::Sequence
+        );
+        // A reaction wins over the jump a knock-back looks like, and loses to a ragdoll.
+        assert_eq!(
+            classify(&CharacterState {
+                hit_reaction: true,
+                jump: true,
+                ..on_foot()
+            }),
+            Case::HitReaction
+        );
+        assert_eq!(
+            classify(&CharacterState {
+                hit_reaction: true,
+                ragdoll: true,
+                ..on_foot()
+            }),
+            Case::Ragdoll
         );
     }
 
