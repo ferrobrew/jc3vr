@@ -1,6 +1,7 @@
-//! The pause menu's VR pages for the controller, turning, and comfort settings: `VR: CONTROLS`
-//! ([`controls`]) and `VR: COMFORT` ([`comfort`]), and the glue they and the body page share. See
-//! `docs/mod/pause-menu.md` for the menu itself.
+//! The pause menu's VR settings pages: `VR: CONTROLS` ([`controls`]) for the controller and turning
+//! settings, `VR: COMFORT` ([`comfort`]), and `VR: DISPLAY` ([`display`]) for the rendering and the
+//! floating panel, and the glue they and the body page share. See `docs/mod/pause-menu.md` for the
+//! menu itself.
 //!
 //! The pages edit the live configuration, so every change applies at once, and each change goes
 //! through [`crate::config::edit`], so the settings file saves it like any other change the user
@@ -10,6 +11,7 @@
 
 pub(crate) mod comfort;
 pub(crate) mod controls;
+pub(crate) mod display;
 
 use smol_str::SmolStr;
 
@@ -115,7 +117,8 @@ pub(crate) fn settings_state() -> SmolStr {
 
 /// Reset every setting the controller pages cover (the controller settings, the VR turn settings,
 /// and the grapple's comfort settings) to its default, keeping the per-weapon sight calibration,
-/// which is measured rather than chosen.
+/// which is measured rather than chosen. The display settings are not among them: they are the
+/// renderer's and the HUD's, and `VR: DISPLAY`'s own reset covers them.
 pub(crate) fn reset_to_defaults(config: &mut Config) {
     let sights = config.controllers.aim.sights;
     config.controllers = ControllersConfig::new();
@@ -191,6 +194,8 @@ pub(crate) mod tests {
                 validate::sights(&c.controllers.aim.sights)?;
                 validate::vr_turn(&c.headpose.vr_turn)
             })
+            .map_err(|e| e.to_string())?;
+            read_config(|c| c.foveation.validate()).map_err(|e| e.to_string())
         };
         for item in &page.items {
             match item {
@@ -225,11 +230,10 @@ pub(crate) mod tests {
                 Item::Header(_) | Item::Text(_) | Item::Readout(_) | Item::Button(_) => {}
             }
         }
+        // Only this page's items changed, so its reset brings the whole configuration back.
         page.reset_to_defaults();
-        let covered = |c: &Config| {
-            serde_json::to_value((c.controllers, c.headpose.vr_turn, c.headpose.grapple)).unwrap()
-        };
-        assert_eq!(read_config(covered), covered(&Config::new()));
+        let saved = |c: &Config| serde_json::to_value(c).unwrap();
+        assert_eq!(read_config(saved), saved(&Config::new()));
     }
 
     #[test]
@@ -246,14 +250,16 @@ pub(crate) mod tests {
         config.headpose.vr_turn.snap_angle_deg = 45.0;
         config.headpose.grapple.mode = GrappleComfortMode::Off;
         config.headpose.mouse_sensitivity = 3.0;
+        config.hud.distance = 2.0;
         reset_to_defaults(&mut config);
         assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
         assert_eq!(config.controllers.dominant_hand, Hand::Right);
         assert_eq!(config.controllers.scheme, SchemeSetting::Controllers);
         assert_eq!(config.headpose.vr_turn.snap_angle_deg, 30.0);
         assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::HoldView);
-        // Settings outside the controller pages are not the menu's to reset.
+        // Settings outside the controller pages are not the reset's, the display ones included.
         assert_eq!(config.headpose.mouse_sensitivity, 3.0);
+        assert_eq!(config.hud.distance, 2.0);
     }
 
     #[test]

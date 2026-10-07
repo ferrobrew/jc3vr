@@ -11,7 +11,12 @@ use crate::{
 pub(crate) const ENTRY_LABEL: &str = "VR";
 
 /// The registered pages.
-pub(crate) const PAGES: &[PageDef] = &[body::menu::PAGE, menu::controls::PAGE, menu::comfort::PAGE];
+pub(crate) const PAGES: &[PageDef] = &[
+    body::menu::PAGE,
+    menu::controls::PAGE,
+    menu::comfort::PAGE,
+    menu::display::PAGE,
+];
 
 /// The most pages the VR entry can show: one per selector on the settings screen's tab bar. A page
 /// past this limit would have no tab.
