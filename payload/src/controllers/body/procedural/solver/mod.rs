@@ -17,6 +17,7 @@
 //! Everything is a rotation composed onto the animated bones or a translation of them, so no bone's
 //! rest frame needs to be known.
 
+pub mod arms;
 pub mod feet;
 pub mod gait;
 pub mod pose;

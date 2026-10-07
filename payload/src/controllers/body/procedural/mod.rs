@@ -50,6 +50,7 @@ use crate::{
                 skeleton::Transform,
                 solver::{
                     DropFollower, SolveInput,
+                    arms::TorsoKeepOut,
                     feet::{Feet, FeetInput, FootPose, StepTuning},
                     gait::{self, NeutralStance, StanceFoot},
                     pose::RigPose,
@@ -94,6 +95,21 @@ pub struct ProceduralStatus {
     pub ground: GroundTally,
 }
 
+/// What the controllers' arm targets are queued against while the procedural body poses the
+/// torso: published by the gate for the hand IK it runs next.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ArmContext {
+    /// The torso the wrist and elbow targets are kept out of.
+    pub keep_out: Option<TorsoKeepOut>,
+    /// The elbow hints' reach, already scaled by the procedural pose's weight.
+    pub elbow_reach: Option<f32>,
+}
+
+/// The arm context of this tick's gate, `None` when the procedural body did not pose the torso.
+pub fn arm_context() -> Option<ArmContext> {
+    STATE.lock().arms
+}
+
 /// The last gate's status.
 pub fn status() -> ProceduralStatus {
     STATE.lock().status
@@ -122,6 +138,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
         .min(MAX_STEP_S);
     state.status.at = Some(now);
     state.status.mode = config.mode;
+    state.arms = None;
     if config.mode == ProceduralMode::Off {
         state.progress = 0.0;
         state.status.weight = 0.0;
@@ -200,6 +217,19 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             let solved = solve(&rig, &input, &config);
             let pose = animated.blend(&solved, weight);
             unsafe { write_pose(controller, &rig, &pose) };
+            state.arms = Some(ArmContext {
+                keep_out: config.keep_out.then(|| {
+                    TorsoKeepOut::around(
+                        &pose,
+                        config.chest_radius_m,
+                        config.abdomen_radius_m,
+                        config.hand_margin_m,
+                    )
+                }),
+                elbow_reach: config
+                    .elbow_hints
+                    .then_some(config.elbow_hint_reach * weight),
+            });
             if config.neutralize_targets {
                 neutralize_owned_targets(&mut character.m_HIK, weight);
             }
@@ -255,6 +285,8 @@ struct State {
     /// The hips' drop for the legs' reach.
     drop: DropFollower,
     ground_log: GroundLog,
+    /// This tick's arm context, for the hand IK the gate runs next.
+    arms: Option<ArmContext>,
     logged_at: Option<Instant>,
     gait_logged_at: Option<Instant>,
     status: ProceduralStatus,
@@ -433,6 +465,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
     ground_log: GroundLog::new(),
+    arms: None,
     logged_at: None,
     gait_logged_at: None,
     status: ProceduralStatus {

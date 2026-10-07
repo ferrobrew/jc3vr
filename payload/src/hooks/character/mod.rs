@@ -92,8 +92,10 @@ fn character_update_pass_finalize_pose_parallel(
             stance_plan.as_ref().map_or(0.0, |p| p.chest_yaw),
             dt,
         );
-        if let Some(plan) = &plan {
-            hands::ik::queue(character, plan);
+        // While the procedural body poses the torso, the wrist targets wait for the solve gate,
+        // where the torso they are solved on exists.
+        if let Some(plan) = plan {
+            hands::ik::queue_or_defer(character, plan);
         }
         // The procedural body poses the hips and legs itself at the solve gate.
         if !owns_body() {

@@ -126,6 +126,13 @@ fn arm_readout(
             ik.pull,
             ik.shoulder_yield * 100.0
         ));
+        if ik.at_gate {
+            ui.label(format!(
+                "on the procedural torso · kept out {} · elbow hint {}",
+                mm(Some(ik.kept_out_m)),
+                if ik.elbow_hint { "queued" } else { "none" }
+            ));
+        }
     }
     ui.label(format!(
         "solve miss {} · detach {}",

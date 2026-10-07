@@ -22,6 +22,13 @@
 //!   and the wrist's current reach is zeroed there so that a stale `SECONDARY` target cannot pull
 //!   it back.
 //!
+//! While the procedural body poses the torso ([`crate::controllers::body::procedural`]), the
+//! targets are queued at the HumanIK solve gate instead ([`queue_or_defer`], [`queue_deferred`]):
+//! the rotation target is a delta from the wrist as it stands before the solve, and only after the
+//! gate's write is that the wrist the procedural torso carries. There the targets are also kept out
+//! of the torso, the pull is zero so the solve cannot move the torso to reach, and each arm gets an
+//! elbow hint.
+//!
 //! The wielded weapon rides the hand's attach bone, a child of the wrist, and the engine refreshes
 //! the weapon's cached transform from that bone right after the `MAIN` solve, so the gun follows
 //! the IK-driven wrist within the same tick without a joint override.
@@ -33,8 +40,9 @@
 //! solved joints for the late update's detach.
 
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    time::{Duration, Instant},
 };
 
 use glam::{Mat4, Vec3};
@@ -52,6 +60,10 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        body::procedural::{
+            ArmContext, arm_context, owns_body,
+            solver::arms::{Side, elbow_hint},
+        },
         frame::{Hand, Pose},
         hands::{
             self, ActiveHands, late, pose as hand_pose, reach,
@@ -128,6 +140,12 @@ pub struct HandIkStatus {
     /// Whether a game system held a live `MAIN` target on the wrist, which the controller target
     /// replaced.
     pub overrode_live_target: bool,
+    /// Whether the target was queued at the solve gate, on the procedural torso.
+    pub at_gate: bool,
+    /// How far the torso's keep-out moved the wrist target, metres.
+    pub kept_out_m: f32,
+    /// Whether an elbow hint was queued.
+    pub elbow_hint: bool,
 }
 
 /// Why no wrist target was queued for a hand.
@@ -188,21 +206,59 @@ pub(crate) fn local_character() -> usize {
     LOCAL_CHARACTER.load(Ordering::Relaxed)
 }
 
-/// Queue the wrist targets for the hands `plan` drives, switch the `SECONDARY` pass off for them,
-/// and record the tick. Called at the entry of the pose-finalization pass, after the body IK has
-/// published this tick's head anchors.
+/// Queue the wrist targets for the hands `plan` drives at the entry of the pose-finalization pass,
+/// or, while the procedural body poses the torso, keep the plan for the solve gate
+/// ([`queue_deferred`]).
 ///
 /// # Safety
 ///
-/// `character` must be null or a live character; called from the pre-call finalize detour.
-pub(crate) unsafe fn queue(character: *mut Character, plan: &HandPlan) {
+/// As [`queue`].
+pub(crate) unsafe fn queue_or_defer(character: *mut Character, plan: HandPlan) {
+    if owns_body() {
+        DEFERRED.replace(Some(plan));
+    } else {
+        unsafe { queue(character, &plan, None) };
+    }
+}
+
+/// Queue the plan [`queue_or_defer`] kept for the solve gate, against the procedural torso the gate
+/// just wrote. Called from the gate, after the procedural body.
+///
+/// # Safety
+///
+/// As [`queue`]; called from the solve gate's pre-call detour.
+pub(crate) unsafe fn queue_deferred(character: *mut Character) {
+    let Some(plan) = DEFERRED.take() else {
+        return;
+    };
+    let arms = arm_context();
+    if !GATE_LOGGED.swap(true, Ordering::Relaxed) {
+        tracing::info!(
+            target: "controllers",
+            on_procedural_torso = arms.is_some(),
+            "hand IK: queued the wrist targets at the solve gate",
+        );
+    }
+    unsafe { queue(character, &plan, arms.as_ref()) };
+}
+
+/// Queue the wrist targets for the hands `plan` drives, switch the `SECONDARY` pass off for them,
+/// and record the tick. Called at the entry of the pose-finalization pass, after the body IK has
+/// published this tick's head anchors, or at the solve gate with `arms` while the procedural body
+/// poses the torso.
+///
+/// # Safety
+///
+/// `character` must be null or a live character; called from the pre-call finalize detour or the
+/// solve gate.
+unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmContext>) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
     LOCAL_CHARACTER.store(character as *mut Character as usize, Ordering::Relaxed);
 
     let smoothing = Config::lock_query(|c| c.controllers.hands.reach.shoulder_smoothing_s);
-    let arms = match unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() } {
+    let measured = match unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() } {
         Some(controller) => unsafe { rig::measure(character, controller, smoothing) },
         None => [None; 2],
     };
@@ -216,8 +272,9 @@ pub(crate) unsafe fn queue(character: *mut Character, plan: &HandPlan) {
                 let request = HandRequest {
                     hand,
                     weight: plan.weights[hand.index()],
-                    arm: arms[hand.index()],
+                    arm: measured[hand.index()],
                     shoulder_pinned: shoulders_pinned[hand.index()],
+                    torso: arms.copied(),
                 };
                 unsafe { queue_hand(character, active, request) }.map_or_else(
                     |skip| HandIkStatus {
@@ -297,10 +354,12 @@ pub(crate) unsafe fn before_secondary(character: *mut Character) {
     }
 }
 
-/// Forget this thread's `SECONDARY` plan at the end of a pose-finalization pass, so that a pass
-/// whose `SECONDARY` pass did not run (HumanIK switched off) leaves nothing for a later one.
+/// Forget this thread's `SECONDARY` plan, and a plan kept for a solve gate that did not run, at the
+/// end of a pose-finalization pass, so that a pass whose solve did not run (HumanIK switched off)
+/// leaves nothing for a later one.
 pub(crate) fn end_finalize() {
     SECONDARY_PLAN.set(None);
+    DEFERRED.take();
 }
 
 /// Publish the post-solve pose the late update swings the forearm about, and the bone indices it
@@ -346,6 +405,8 @@ struct HandRequest {
     arm: Option<TickArm>,
     /// Whether the body IK queued a position target on this side's shoulder this tick.
     shoulder_pinned: bool,
+    /// The procedural torso the targets are queued against, at the solve gate.
+    torso: Option<ArmContext>,
 }
 
 /// Queue one hand's targets. Returns the status and the recorded world target, or why nothing was
@@ -360,6 +421,7 @@ unsafe fn queue_hand(
         weight,
         arm,
         shoulder_pinned,
+        torso,
     } = request;
     let cockpit = active.hands[hand.index()].ok_or(HandIkSkip::NotDriven)?;
     // The same gates the engine checks before the solve: a target queued with no solve is never
@@ -414,10 +476,26 @@ unsafe fn queue_hand(
         cockpit.wrist,
         active.world_scale,
     );
-    let to_model = Mat4::from(character.m_WorldMatrixT1).inverse();
-    let (_, target_rotation, target_position) = (to_model
+    let to_world = Mat4::from(character.m_WorldMatrixT1);
+    let (_, target_rotation, wanted_position) = (to_world.inverse()
         * Mat4::from_rotation_translation(world.orientation, world.position))
     .to_scale_rotation_translation();
+    // The hand rests on the procedural torso rather than in it; the recorded target is the
+    // pushed one, so the late update corrects toward where the hand was asked to go.
+    let keep_out = torso.and_then(|t| t.keep_out);
+    let target_position = keep_out.map_or(wanted_position, |k| k.push_out(wanted_position));
+    let kept_out_m = target_position.distance(wanted_position);
+    let world = Pose {
+        position: if kept_out_m > 0.0 {
+            to_world.transform_point3(target_position)
+        } else {
+            world.position
+        },
+        ..world
+    };
+    if kept_out_m > 0.0 {
+        log_kept_out(hand, kept_out_m);
+    }
 
     let overrode_live_target =
         unsafe { body_ik::effector_live_targeted(&character.m_HIK, effector) };
@@ -436,7 +514,13 @@ unsafe fn queue_hand(
     let ramp = extension.filter(|_| reach_cfg.reach_pull).map_or(0.0, |e| {
         reach::pull_ramp(e, reach_cfg.pull_start, reach_cfg.pull_full)
     });
-    let pull = (cfg.pull.max(ramp * reach_cfg.pull_max) * weight).clamp(0.0, 1.0);
+    // On the procedural torso the arm reaches with the arm alone: the torso is the player's, and
+    // a pull would let the solve bend it toward the hand.
+    let pull = if torso.is_some() {
+        0.0
+    } else {
+        (cfg.pull.max(ramp * reach_cfg.pull_max) * weight).clamp(0.0, 1.0)
+    };
     let hik = &mut character.m_HIK;
     let slot = effector as usize;
     let position = Vector3 {
@@ -459,7 +543,7 @@ unsafe fn queue_hand(
 
     // The body IK's shoulder target holds the girdle where the lean put it, which would cancel the
     // pull; it yields by the same ramp. Its reach was written this tick, so scaling it is safe.
-    let shoulder_yield = if shoulder_pinned {
+    let shoulder_yield = if shoulder_pinned && torso.is_none() {
         (ramp * weight).clamp(0.0, 1.0)
     } else {
         0.0
@@ -495,6 +579,42 @@ unsafe fn queue_hand(
     // written, or a past writer's value leaks in.
     hik.m_TargetResist[slot] = (cfg.resist * weight).clamp(0.0, 1.0);
 
+    let elbow = torso
+        .and_then(|t| t.elbow_reach)
+        .zip(arm)
+        .and_then(|(reach, arm)| {
+            let side = match hand {
+                Hand::Left => Side::Left,
+                Hand::Right => Side::Right,
+            };
+            let hint = elbow_hint(arm.shoulder_model, target_position, arm.length, side)?;
+            Some((reach, keep_out.map_or(hint, |k| k.push_out(hint))))
+        });
+    if let Some((reach, hint)) = elbow {
+        let elbow_effector = match hand {
+            Hand::Left => Effector::LEFT_ELBOW,
+            Hand::Right => Effector::RIGHT_ELBOW,
+        } as i32;
+        let hint = Vector3 {
+            data: hint.to_array(),
+        };
+        unsafe {
+            hik.AddEffectorTargetPosition(
+                elbow_effector,
+                &hint,
+                SolveStep::UPPER_BODY,
+                Pass::MAIN,
+                false,
+                0.0,
+                false,
+                0.0,
+            );
+        }
+        let elbow_slot = elbow_effector as usize;
+        hik.m_TargetReachT[elbow_slot] = (reach * weight).clamp(0.0, 1.0);
+        hik.m_TargetPull[elbow_slot] = 0.0;
+    }
+
     Ok((
         HandIkStatus {
             queued: true,
@@ -506,6 +626,9 @@ unsafe fn queue_hand(
             pull,
             shoulder_yield,
             overrode_live_target,
+            at_gate: torso.is_some(),
+            kept_out_m,
+            elbow_hint: elbow.is_some(),
             ..HandIkStatus::default()
         },
         TickTarget {
@@ -539,6 +662,26 @@ fn knuckle_names(hand: Hand) -> [&'static str; 2] {
     }
 }
 
+/// Log, at most every [`KEEP_OUT_LOG_INTERVAL`], that the torso kept a wrist target out.
+fn log_kept_out(hand: Hand, distance: f32) {
+    let now = Instant::now();
+    let mut last = KEEP_OUT_LOGGED_AT.lock();
+    if last.is_some_and(|at| now.saturating_duration_since(at) < KEEP_OUT_LOG_INTERVAL) {
+        return;
+    }
+    *last = Some(now);
+    tracing::debug!(
+        target: "controllers",
+        hand = ?hand,
+        distance_m = distance,
+        "hand IK: kept the wrist target out of the procedural torso",
+    );
+}
+
+const KEEP_OUT_LOG_INTERVAL: Duration = Duration::from_secs(2);
+
+static KEEP_OUT_LOGGED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
 fn log_once(flag: &AtomicBool, message: &str) {
     if !flag.swap(true, Ordering::Relaxed) {
         tracing::warn!(target: "controllers", "hand IK: {message}");
@@ -558,6 +701,9 @@ static STATUS: Mutex<[HandIkStatus; 2]> = Mutex::new(
         secondary_wrist_off: false,
         secondary_grip_off: false,
         overrode_live_target: false,
+        at_gate: false,
+        kept_out_m: 0.0,
+        elbow_hint: false,
     }; 2],
 );
 static TICKS: Mutex<TickRecords> = Mutex::new(TickRecords {
@@ -577,7 +723,11 @@ struct SecondaryPlan {
 
 thread_local! {
     static SECONDARY_PLAN: Cell<Option<SecondaryPlan>> = const { Cell::new(None) };
+    /// The plan [`queue_or_defer`] keeps for the solve gate of the same pass, which runs on the
+    /// same thread.
+    static DEFERRED: RefCell<Option<HandPlan>> = const { RefCell::new(None) };
 }
+static GATE_LOGGED: AtomicBool = AtomicBool::new(false);
 static UNMAPPED_LOGGED: AtomicBool = AtomicBool::new(false);
 static KNUCKLES_LOGGED: AtomicBool = AtomicBool::new(false);
 static LIVE_TARGET_LOGGED: AtomicBool = AtomicBool::new(false);

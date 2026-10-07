@@ -74,6 +74,19 @@ pub struct ProceduralBodyConfig {
     /// How quickly the hips drop for a foot the legs cannot otherwise reach, seconds: the time
     /// constant of the drop's follower (it rises back at a third of the pace).
     pub reach_drop_s: f32,
+    /// Keep the wrist and elbow targets out of the procedural torso (a chest and an abdomen
+    /// capsule along the spine), so the arms do not pass through the body.
+    pub keep_out: bool,
+    /// The chest capsule's radius, metres.
+    pub chest_radius_m: f32,
+    /// The abdomen capsule's radius, metres.
+    pub abdomen_radius_m: f32,
+    /// How far outside the torso a pushed wrist or elbow lands, metres: the hand's half-thickness.
+    pub hand_margin_m: f32,
+    /// Hint where each driven arm's elbow goes, with a weak target on the elbow.
+    pub elbow_hints: bool,
+    /// The elbow hint's reach: how strongly the solve pulls the elbow toward the hint.
+    pub elbow_hint_reach: f32,
 }
 
 impl ProceduralBodyConfig {
@@ -109,6 +122,12 @@ impl ProceduralBodyConfig {
             max_step_down_m: 0.6,
             ankle_tilt_limit_deg: 25.0,
             reach_drop_s: 0.05,
+            keep_out: true,
+            chest_radius_m: 0.14,
+            abdomen_radius_m: 0.13,
+            hand_margin_m: 0.03,
+            elbow_hints: true,
+            elbow_hint_reach: 0.3,
         }
     }
 
@@ -148,6 +167,10 @@ impl ProceduralBodyConfig {
             ("max_step_down_m", self.max_step_down_m, 0.0, 2.0),
             ("ankle_tilt_limit_deg", self.ankle_tilt_limit_deg, 0.0, 60.0),
             ("reach_drop_s", self.reach_drop_s, 0.0, 2.0),
+            ("chest_radius_m", self.chest_radius_m, 0.0, 0.4),
+            ("abdomen_radius_m", self.abdomen_radius_m, 0.0, 0.4),
+            ("hand_margin_m", self.hand_margin_m, 0.0, 0.2),
+            ("elbow_hint_reach", self.elbow_hint_reach, 0.0, 1.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {

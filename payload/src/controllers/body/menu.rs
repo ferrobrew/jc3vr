@@ -124,6 +124,11 @@ fn summary(page: Page) -> Page {
             .body
             .procedural
             .gait))
+        .item(config_toggle!("HANDS OUT OF THE BODY", |c| c
+            .controllers
+            .body
+            .procedural
+            .keep_out))
         .text("TEST WRITES THE POSE BACK AS IS.")
 }
 

@@ -52,13 +52,24 @@ The ground under a foothold is found with a scene ray straight down through it, 
 
 The rays are cast from the solve gate itself. The engine casts its own ground ray in the same pass, before the gate: [`Character::UpdateGroundInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdateGroundInfo) reaches [`Character::CalculateHeightOverGround`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-CalculateHeightOverGround) whenever a character is off its support, which builds its hit record and filter on the stack and calls the same query ([`PhysicsSystem::CastRay`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsSystem##func-CastRay)) on the same layer as the mod's cast does ([skeleton.md](../../engine/character/skeleton.md#who-reads-the-pose-before-updatepropeffects)). The pass is queued for the parallel update of every character after the physics step, so such queries are made from the engine's worker threads against a settled world by design. The design's fallback, casting a tick ahead from the locomotion post-hook, is therefore not needed. The first cast of a session logs its thread (`procedural body: the first ground cast from the solve gate`, info level), and a tally of casts, hits, surfaces too steep, errors, and the largest ground offset is logged every ten seconds while casts run (`procedural body: ground casts`).
 
+### The arms
+
+The arms are the controllers' wrist targets ([controllers.md](../input/controllers.md)), solved by HumanIK on the procedural torso after the gate. While the procedural body poses the torso, the hand IK does not queue them at the pass's entry; it keeps its plan for the gate (`hands::ik::queue_or_defer`), and the gate queues it right after writing the pose (`hands::ik::queue_deferred`). The rotation target is a delta from the wrist as it stands before the solve, and only after the write is that the wrist the procedural torso carries, so a target queued at the entry would turn the hand by however far the torso moved it. At the gate:
+
+- The wrist target is kept out of the torso (`keep_out`, on by default; `HANDS OUT OF THE BODY` on the `VR: BODY` page). The torso is two capsules along the written spine: the chest from `Spine2` to the neck (`chest_radius_m`) and the abdomen from the hips to `Spine2` (`abdomen_radius_m`). A target inside either, widened by `hand_margin_m` for the hand's thickness, moves straight out of it, so a hand on the belly rests on it and an arm across the chest goes around it. The recorded target is the moved one, so the render-time late update corrects toward it.
+- The pull is zero, and the body IK's shoulder pin does not yield: the torso is the player's, and the solve may not bend it toward a hand. A hand beyond the arm's reach stops at the arm's length.
+- Each driven arm gets an elbow hint (`elbow_hints`, on by default): a weak position target on the elbow (`elbow_hint_reach`, scaled by the procedural pose's weight) at the middle of the shoulder-to-wrist line, out along a pole that points down, out to the arm's side, and a little back, as far as the arm's length bends it, and kept out of the torso the same way. It gives the solve a natural elbow without fixing it.
+
+The first gate that queues the wrist targets logs `hand IK: queued the wrist targets at the solve gate` (info level, with whether a procedural torso was there), and a keep-out push is logged at most every two seconds (`hand IK: kept the wrist target out of the procedural torso`, debug level, with the distance). The hands readout on the Controllers tab shows, per hand, whether the target was queued on the procedural torso, how far it was kept out, and whether an elbow hint was queued. The physical hands' offsets are composed into the wrist before the keep-out, so a hand body pressed against the world and the torso's keep-out both apply.
+
 ### Diagnostics
 
 The Controllers tab's "Procedural body" section shows the mode, the weight, whether the body owns the pose, a rigging error, the pass-through's read-back error, how far the hips sit below the animation's and the neck from its target, whether a foot is stepping, the body's speed and the walk's phase, the reach drop, whether the stance is measured, and the last tick's ground casts. While walking, `procedural body: walking` is logged every two seconds at debug level with the speed, the stride, the duty factor, the phase, the reach drop, and the neck's error.
 
 ## Not yet
 
-- The arms are the controllers' wrist targets, solved by HumanIK on the procedural torso after the gate; the elbow hints, the clavicles' reach, and the torso's keep-out for the hands are later work.
+- The clavicles do not yet rotate toward a hand reaching above the shoulder or far out; the arm alone reaches.
+- The physical hands' keep-out for held objects uses its own body cylinder, not the procedural torso's capsules.
 - In the air the body hands back to the animation; procedural landing and air legs are later work.
 
 ## What needs confirming in the headset
@@ -70,4 +81,5 @@ The Controllers tab's "Procedural body" section shows the mode, the weight, whet
 5. On stairs and slopes the feet land on the treads and tilt to the slope, and the hips drop for the lower foot. The first ground cast's log line names a worker thread or the game thread, and the ten-second tally shows hits with no errors.
 6. Turning the body in place (the right stick, or turning the torso past the follow's deadband) plants the feet and then steps them one at a time; walking in the room under the chase does the same; the readout shows `stepping` during a step.
 7. A seated player gets a standing Rico, and the seated crouch toggle folds the legs.
-8. The engine's own reach for the owned effectors reads zero the tick after the gate (the body IK readout's engine values for the head stay non-zero).
+8. With hands on: a hand held on the belly or the chest rests on Rico's body instead of sinking in, an arm folded across the chest goes around it, the elbows hang naturally, and the debug line `hand IK: kept the wrist target out of the procedural torso` appears while a hand is against the body. A weapon held at the chest still aims where the hand points; if two-handed aiming is pushed off, report the radii.
+9. The engine's own reach for the owned effectors reads zero the tick after the gate (the body IK readout's engine values for the head stay non-zero).

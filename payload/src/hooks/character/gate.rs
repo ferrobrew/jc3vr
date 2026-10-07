@@ -1,6 +1,6 @@
 //! The HumanIK solve gate: a pre-call detour on `HumanIK::HasTargets`, whose one caller is the
 //! pose-finalization pass, where the procedural body writes the local player's pose
-//! ([`at_solve_gate`]).
+//! ([`at_solve_gate`]) and the controllers' wrist targets are queued on it ([`queue_deferred`]).
 
 use std::mem::offset_of;
 
@@ -11,7 +11,7 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::body::procedural::at_solve_gate;
+use crate::controllers::{body::procedural::at_solve_gate, hands::ik::queue_deferred};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&HUMAN_IK_HAS_TARGETS_BINDER)
@@ -30,6 +30,8 @@ fn human_ik_has_targets(hik: *mut HumanIK, pass: Pass) -> bool {
         // on the thread that owns that character for its duration.
         if let Some(character) = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter) {
             unsafe { at_solve_gate(character) };
+            // The wrist targets kept for the gate are queued on the torso it just wrote.
+            unsafe { queue_deferred(character) };
         }
     }
     HUMAN_IK_HAS_TARGETS.get().unwrap().call(hik, pass)
