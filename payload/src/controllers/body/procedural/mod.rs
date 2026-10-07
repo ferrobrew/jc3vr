@@ -53,6 +53,7 @@ use crate::{
                 skeleton::Transform,
                 solver::{
                     DropFollower, SolveInput,
+                    air::{AirFollower, AirTuning, DipTuning, LandingDip, air_feet, mix_feet},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
                     feet::{Feet, FeetInput, FootPose, StepTuning},
@@ -104,6 +105,12 @@ pub struct ProceduralStatus {
     pub ground: GroundTally,
     /// The clavicles' turns toward the hands, left then right.
     pub clavicles: [ClavicleTurn; 2],
+    /// The legs' weight of the air's feet against the ground's.
+    pub air_weight: f32,
+    /// The root's vertical speed, metres per second, up positive.
+    pub vertical_mps: f32,
+    /// The landing dip's drop of the hips, metres.
+    pub landing_dip_m: f32,
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -197,46 +204,78 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             });
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
-            state.log_case(case, &weights);
+            state.log_case(case, &weights, &config);
             OWNS_BODY.store(weights.torso > 0.0, Ordering::Relaxed);
             state.status.case = case;
             state.status.weight = weights.torso;
             state.status.legs_weight = weights.legs;
+            let world = Mat4::from(character.m_WorldMatrixT1);
+            let vertical = state.vertical_speed(world.w_axis.y, dt);
+            state.track_landing(case, vertical, now, &config);
             if !weights.any() {
                 state.feet.reset();
                 state.drop.reset();
                 state.clavicles.reset();
+                state.air.reset();
+                state.dip.reset();
+                state.takeoff_feet = None;
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 return;
             }
-            let world = Mat4::from(character.m_WorldMatrixT1);
             let velocity = body_velocity(&locomotion);
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
-            let legs_procedural = weights.legs > 0.0 || case.targets()[0] > 0.0;
+            let legs_procedural = weights.legs > 0.0 || case.targets(config.air_legs)[0] > 0.0;
+            let airborne = config.air_legs && matches!(case, Case::Jump | Case::Flight);
             let feet = if legs_procedural {
-                if !state.feet.placed() {
-                    state
-                        .feet
-                        .plant(animated_feet(&animated).map(|f| to_world(&world, &f)));
+                let request = FeetRequest {
+                    world: &world,
+                    rig: &rig,
+                    animated: &animated,
+                    still: locomotion.standing_still(),
+                    velocity,
+                    dt,
+                };
+                let ground_feet = if airborne {
+                    // The feet leave the ground with the body; the landing plants them afresh
+                    // where they are wanted.
+                    state.feet.reset();
+                    let takeoff = state.last_feet.unwrap_or_else(|| animated_feet(&animated));
+                    *state.takeoff_feet.get_or_insert(takeoff)
+                } else {
+                    let landed = state.takeoff_feet.take().is_some();
+                    if !state.feet.placed() && !landed {
+                        state
+                            .feet
+                            .plant(animated_feet(&animated).map(|f| to_world(&world, &f)));
+                    }
+                    state.place_feet(&request, &config, &mut caster)
+                };
+                let air_weight = state.air.step(airborne, dt);
+                state.status.air_weight = air_weight;
+                if air_weight > 0.0 {
+                    let tuning = AirTuning {
+                        tuck: config.air_tuck,
+                        hang: config.air_hang,
+                        fall_speed_mps: config.air_fall_speed_mps,
+                        toe_drop: config.air_toe_drop_deg.to_radians(),
+                    };
+                    let hips = hips_height(&rig, head_in_model(&world).y, &config);
+                    let stance = state.stance_feet(&request);
+                    let air = air_feet(&rig, stance, hips, vertical, &tuning);
+                    mix_feet(ground_feet, air, air_weight)
+                } else {
+                    ground_feet
                 }
-                state.place_feet(
-                    &FeetRequest {
-                        world: &world,
-                        rig: &rig,
-                        animated: &animated,
-                        still: locomotion.standing_still(),
-                        velocity,
-                        dt,
-                    },
-                    &config,
-                    &mut caster,
-                )
             } else {
                 state.feet.reset();
+                state.air.reset();
+                state.takeoff_feet = None;
+                state.status.air_weight = 0.0;
                 animated_feet(&animated)
             };
+            state.last_feet = Some(feet);
             state.status.ground = caster.tally;
             state.ground_log.record(&caster.tally, now);
             state.status.stepping = state.feet.stepping();
@@ -250,13 +289,15 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             if previous.torso <= 0.0 {
                 let seed =
                     hips_height(&rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
-                state.drop.seed(seed.min(
-                    rig.reference(RigBone::Hips).translation.y * (1.0 - config.min_hips_height),
-                ));
+                state.drop.seed(seed.min(hips_room(&rig, &config)));
             }
             let need = reach_drop(&rig, &input, &config);
-            input.hips_drop = state.drop.step(need, dt, config.reach_drop_s);
-            state.status.reach_drop_m = input.hips_drop;
+            let reach = state.drop.step(need, dt, config.reach_drop_s);
+            let dip = state.dip.step(dt, config.landing_dip_s);
+            state.status.reach_drop_m = reach;
+            state.status.landing_dip_m = dip;
+            // The dip is the hips' alone: the view is anchored to the root, not to them.
+            input.hips_drop = (reach + dip).min(hips_room(&rig, &config));
             let mut solved = solve(&rig, &input, &config);
             let turns = unsafe { state.turn_clavicles(character, &rig, &solved, dt, &config) };
             for side in Side::BOTH {
@@ -303,6 +344,13 @@ const MOVEMENT_TASK_GAP: Duration = Duration::from_millis(100);
 /// How often the walk is logged while walking.
 const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 
+/// The fastest the root moves vertically between two gates and still counts as moving, metres per
+/// second; anything faster is a teleport.
+const MAX_VERTICAL_MPS: f32 = 60.0;
+
+/// How long after a jump ends its landing may still dip the hips.
+const LANDING_WINDOW: Duration = Duration::from_millis(300);
+
 /// The effectors of the torso region's bones.
 const TORSO_EFFECTORS: [Effector; 5] = [
     Effector::HIPS,
@@ -344,6 +392,19 @@ struct State {
     drop: DropFollower,
     /// The clavicles' turns toward the hands.
     clavicles: ClavicleFollower,
+    /// The legs' mix of the air's feet against the ground's.
+    air: AirFollower,
+    /// The hips' landing dip.
+    dip: LandingDip,
+    /// The root's height at the last gate, for its vertical speed.
+    root_height: Option<f32>,
+    /// The feet the last gate placed, model space.
+    last_feet: Option<[FootPose; 2]>,
+    /// The feet as they left the ground, model space, while the legs are in the air.
+    takeoff_feet: Option<[FootPose; 2]>,
+    /// The fastest fall of the jump under way, metres per second down, and when the jump ended
+    /// if it has.
+    fall: Option<(f32, Option<Instant>)>,
     ground_log: GroundLog,
     /// This tick's arm context, for the hand IK the gate runs next.
     arms: Option<ArmContext>,
@@ -422,33 +483,16 @@ impl State {
     ) -> [FootPose; 2] {
         let FeetRequest {
             world,
-            rig,
             animated,
-            still,
             velocity,
             dt,
+            ..
         } = *request;
-        let animated_feet = [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
-            position: animated.position(bone),
-            rotation: animated.get(bone).rotation,
-        });
         if !config.plant_feet {
             self.feet.reset();
-            return animated_feet;
+            return animated_feet(animated);
         }
-        // The feet stand around the measured stance. Until it is measured, standing still keeps
-        // the animation's feet and moving takes the reference pose's.
-        let model = match self.stance.get() {
-            Some(stance) => stance.map(|f| FootPose {
-                position: f.position,
-                rotation: f.rotation,
-            }),
-            None if still => animated_feet,
-            None => [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
-                position: rig.reference(bone).translation,
-                rotation: rig.reference(bone).rotation,
-            }),
-        };
+        let model = self.stance_feet(request);
         let (_, rotation, _) = world.to_scale_rotation_translation();
         let inverse = world.inverse();
         let wanted = model.map(|f| FootPose {
@@ -511,6 +555,86 @@ impl State {
         let turns = self.clavicles.step(wanted, dt, config.clavicle_follow_s);
         self.status.clavicles = turns;
         turns
+    }
+
+    /// The neutral stance's feet, model space. Until the stance is measured, standing still keeps
+    /// the animation's feet and moving takes the reference pose's.
+    fn stance_feet(&self, request: &FeetRequest<'_>) -> [FootPose; 2] {
+        match self.stance.get() {
+            Some(stance) => stance.map(|f| FootPose {
+                position: f.position,
+                rotation: f.rotation,
+            }),
+            None if request.still => animated_feet(request.animated),
+            None => [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
+                position: request.rig.reference(bone).translation,
+                rotation: request.rig.reference(bone).rotation,
+            }),
+        }
+    }
+
+    /// The root's vertical speed since the last gate, metres per second, up positive.
+    fn vertical_speed(&mut self, root_height: f32, dt: f32) -> f32 {
+        let previous = self.root_height.replace(root_height);
+        let speed = match previous {
+            Some(previous) if dt > 0.0 => (root_height - previous) / dt,
+            _ => 0.0,
+        };
+        // A teleport is not a fall.
+        let speed = if speed.is_finite() && speed.abs() <= MAX_VERTICAL_MPS {
+            speed
+        } else {
+            0.0
+        };
+        self.status.vertical_mps = speed;
+        speed
+    }
+
+    /// Follow a jump's fall, and dip the hips when it lands on foot: the fastest fall of the jump
+    /// kicks the dip when the body is back on the ground within [`LANDING_WINDOW`] of the jump
+    /// ending.
+    fn track_landing(
+        &mut self,
+        case: Case,
+        vertical: f32,
+        now: Instant,
+        config: &ProceduralBodyConfig,
+    ) {
+        match case {
+            Case::Jump => {
+                let fastest = self.fall.map_or(0.0, |(fall, _)| fall).max(-vertical);
+                self.fall = Some((fastest, None));
+            }
+            Case::OnFoot => {
+                if let Some((fall, _)) = self.fall.take()
+                    && config.landing_dip
+                {
+                    let tuning = DipTuning {
+                        per_mps: config.landing_dip_per_mps,
+                        max_m: config.landing_dip_max_m,
+                        min_speed_mps: config.landing_dip_min_speed_mps,
+                        time_s: config.landing_dip_s,
+                    };
+                    let depth = self.dip.land(fall, &tuning);
+                    tracing::debug!(
+                        target: "body",
+                        fall_mps = fall,
+                        dip_m = depth,
+                        "procedural body: landed",
+                    );
+                }
+            }
+            // A landing can pass a tick or two with the movement task not yet running; anything
+            // longer, or a fall into the air's other states, is not a jump's landing.
+            _ => {
+                if let Some((fall, ended)) = self.fall {
+                    let ended = ended.unwrap_or(now);
+                    self.fall = (case == Case::NoMovementTask
+                        && now.saturating_duration_since(ended) <= LANDING_WINDOW)
+                        .then_some((fall, Some(ended)));
+                }
+            }
+        }
     }
 
     /// What the character is doing, for the hand-over table, read at the gate. The predicates
@@ -591,7 +715,7 @@ impl State {
     }
 
     /// Log a change of the hand-over table's case, with the weights it leaves.
-    fn log_case(&mut self, case: Case, weights: &Weights) {
+    fn log_case(&mut self, case: Case, weights: &Weights, config: &ProceduralBodyConfig) {
         if self.status.case == case && self.case_logged {
             return;
         }
@@ -600,8 +724,8 @@ impl State {
             target: "body",
             from = self.status.case.label(),
             to = case.label(),
-            legs = case.targets()[0],
-            torso = case.targets()[1],
+            legs = case.targets(config.air_legs)[0],
+            torso = case.targets(config.air_legs)[1],
             legs_now = weights.legs,
             torso_now = weights.torso,
             "procedural body: the hand-over case changes",
@@ -644,6 +768,12 @@ static STATE: Mutex<State> = Mutex::new(State {
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
     clavicles: ClavicleFollower::new(),
+    air: AirFollower::new(),
+    dip: LandingDip::new(),
+    root_height: None,
+    last_feet: None,
+    takeoff_feet: None,
+    fall: None,
     ground_log: GroundLog::new(),
     arms: None,
     logged_at: None,
@@ -665,6 +795,9 @@ static STATE: Mutex<State> = Mutex::new(State {
         stance_measured: false,
         ground: GroundTally::new(),
         clavicles: [ClavicleTurn::ZERO; 2],
+        air_weight: 0.0,
+        vertical_mps: 0.0,
+        landing_dip_m: 0.0,
     },
 });
 
@@ -741,7 +874,7 @@ fn solve_input(
 ) -> Option<SolveInput> {
     let world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, _) = world.to_scale_rotation_translation();
-    let head = world.inverse().transform_point3(query().position);
+    let head = head_in_model(&world);
     head.is_finite().then(|| SolveInput {
         animated: *animated,
         head,
@@ -751,6 +884,16 @@ fn solve_input(
         foot_rotations: feet.map(|f| f.rotation),
         hips_drop: 0.0,
     })
+}
+
+/// The player's head in the model space of the root at `world`.
+fn head_in_model(world: &Mat4) -> Vec3 {
+    world.inverse().transform_point3(query().position)
+}
+
+/// The most the hips may drop below where the head puts them: down to their lowest.
+fn hips_room(rig: &Rig, config: &ProceduralBodyConfig) -> f32 {
+    rig.reference(RigBone::Hips).translation.y * (1.0 - config.min_hips_height.clamp(0.1, 1.0))
 }
 
 /// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region

@@ -16,7 +16,7 @@
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
 //! | swimming | animation | animation |
 //! | wingsuit, parachute, a fall past the jump's grace | animation | animation |
-//! | a jump, within the grace | animation | procedural |
+//! | a jump, within the grace | procedural, hanging in the air (animation with `air_legs` off) | procedural |
 //! | an authored one-off (a locomotion one-off such as a vault, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
 //! | on foot without the movement task running | animation | animation |
 //! | on foot on the ground | procedural | procedural |
@@ -64,10 +64,12 @@ impl Case {
         }
     }
 
-    /// The weights the case asks for: the legs', then the torso's.
-    pub const fn targets(self) -> [f32; 2] {
+    /// The weights the case asks for: the legs', then the torso's. In a jump the legs are the
+    /// procedural body's, hanging in the air, when `air_legs`, and the animation's otherwise.
+    pub const fn targets(self, air_legs: bool) -> [f32; 2] {
         match self {
             Self::OnFoot => [1.0, 1.0],
+            Self::Jump if air_legs => [1.0, 1.0],
             Self::Jump => [0.0, 1.0],
             _ => [0.0, 0.0],
         }
@@ -159,7 +161,7 @@ impl RegionBlend {
 
     /// Ease toward `case`'s weights over `dt` seconds.
     pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> Weights {
-        let targets = case.targets();
+        let targets = case.targets(config.air_legs);
         for (spring, target) in self.springs.iter_mut().zip(targets) {
             if case.snaps() {
                 *spring = Spring {
@@ -315,6 +317,12 @@ mod tests {
             }
         );
         let w = blend.step(Case::Jump, 1.0 / 30.0, &config);
+        assert!(w.legs == 1.0 && w.torso == 1.0);
+        let animated_legs = ProceduralBodyConfig {
+            air_legs: false,
+            ..config
+        };
+        let w = blend.step(Case::Jump, 1.0 / 30.0, &animated_legs);
         assert!(w.legs < 1.0 && w.torso == 1.0);
     }
 

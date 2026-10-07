@@ -106,6 +106,28 @@ pub struct ProceduralBodyConfig {
     pub clavicle_reach_start: f32,
     /// How quickly the clavicles follow the hands, seconds: the time constant of their follower.
     pub clavicle_follow_s: f32,
+    /// Pose the legs in a jump or a short fall: tucked under the hips while rising and let down
+    /// while falling, instead of the animation's legs under the procedural hips.
+    pub air_legs: bool,
+    /// The hip-to-ankle height while rising, as a share of the standing leg's.
+    pub air_tuck: f32,
+    /// The hip-to-ankle height while falling fast, as a share of the standing leg's.
+    pub air_hang: f32,
+    /// The falling speed at which the legs are fully let down, metres per second.
+    pub air_fall_speed_mps: f32,
+    /// How far the toes point down with the legs let down, degrees.
+    pub air_toe_drop_deg: f32,
+    /// Dip the hips on landing from a jump or a short fall, by the speed of the fall.
+    pub landing_dip: bool,
+    /// How deep the landing dip goes per metre per second of falling speed past
+    /// `landing_dip_min_speed_mps`, metres.
+    pub landing_dip_per_mps: f32,
+    /// The deepest landing dip, metres.
+    pub landing_dip_max_m: f32,
+    /// The falling speed below which a landing does not dip, metres per second.
+    pub landing_dip_min_speed_mps: f32,
+    /// How long after landing the dip is deepest, seconds; it recovers over a few times that.
+    pub landing_dip_s: f32,
 }
 
 impl ProceduralBodyConfig {
@@ -154,6 +176,16 @@ impl ProceduralBodyConfig {
             clavicle_protraction_deg: 25.0,
             clavicle_reach_start: 0.8,
             clavicle_follow_s: 0.1,
+            air_legs: true,
+            air_tuck: 0.72,
+            air_hang: 0.94,
+            air_fall_speed_mps: 4.0,
+            air_toe_drop_deg: 20.0,
+            landing_dip: true,
+            landing_dip_per_mps: 0.02,
+            landing_dip_max_m: 0.15,
+            landing_dip_min_speed_mps: 1.5,
+            landing_dip_s: 0.1,
         }
     }
 
@@ -218,6 +250,19 @@ impl ProceduralBodyConfig {
             ),
             ("clavicle_reach_start", self.clavicle_reach_start, 0.3, 0.99),
             ("clavicle_follow_s", self.clavicle_follow_s, 0.0, 1.0),
+            ("air_tuck", self.air_tuck, 0.4, 1.0),
+            ("air_hang", self.air_hang, 0.4, 1.0),
+            ("air_fall_speed_mps", self.air_fall_speed_mps, 0.1, 50.0),
+            ("air_toe_drop_deg", self.air_toe_drop_deg, 0.0, 60.0),
+            ("landing_dip_per_mps", self.landing_dip_per_mps, 0.0, 0.2),
+            ("landing_dip_max_m", self.landing_dip_max_m, 0.0, 0.5),
+            (
+                "landing_dip_min_speed_mps",
+                self.landing_dip_min_speed_mps,
+                0.0,
+                20.0,
+            ),
+            ("landing_dip_s", self.landing_dip_s, 0.02, 1.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {

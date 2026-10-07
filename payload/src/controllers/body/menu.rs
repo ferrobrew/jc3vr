@@ -124,6 +124,11 @@ fn summary(page: Page) -> Page {
             .body
             .procedural
             .gait))
+        .item(config_toggle!("LEGS IN THE AIR", |c| c
+            .controllers
+            .body
+            .procedural
+            .air_legs))
         .item(config_toggle!("HANDS OUT OF THE BODY", |c| c
             .controllers
             .body

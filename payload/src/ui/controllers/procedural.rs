@@ -74,6 +74,10 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             right.elevation.to_degrees(),
             right.protraction.to_degrees(),
         ));
+        ui.label(format!(
+            "Legs in the air {:.2} · vertical speed {:+.2} m/s · landing dip {:.3} m",
+            status.air_weight, status.vertical_mps, status.landing_dip_m,
+        ));
     }
 }
 
