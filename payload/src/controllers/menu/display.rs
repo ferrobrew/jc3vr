@@ -1,7 +1,8 @@
 //! The `VR: DISPLAY` page: the headset's render resolution, the anti-aliasing and sharpening, the
-//! foveated rendering, and where the floating panel sits and how the reticle lands on it. The
-//! rendering internals (the FSR jitter and motion vectors, the foveation's radii, the mirror) and
-//! the panel's follow and depth tuning stay in the debug UI.
+//! foveated rendering, where the floating panel sits and how the reticle lands on it, and the HUD
+//! parts drawn at the hands and in the world. The rendering internals (the FSR jitter and motion
+//! vectors, the foveation's radii, the mirror) and the panel's follow and depth tuning stay in the
+//! debug UI.
 //!
 //! Every setting applies on the next frame, except the size of the headset's own image: it keeps
 //! the size it was created at until the game restarts, so a resolution change resizes the scene at
@@ -65,6 +66,22 @@ fn build() -> Page {
             &RETICLE_ALIGN_LABELS,
             |c| c.hud.reticle_align
         ))
+        .header("HUD")
+        .item(config_toggle!("HUD ON THE HANDS", |c| c.hud.atlas.enabled))
+        .item(config_toggle!("AMMO ABOVE GUN HAND", |c| c
+            .hud
+            .atlas
+            .ammo
+            .enabled))
+        .item(config_toggle!("TETHERS ABOVE FOREARM", |c| c
+            .hud
+            .atlas
+            .tether
+            .enabled))
+        .item(config_toggle!("MARKERS IN THE WORLD", |c| c
+            .hud
+            .world_markers
+            .enabled))
 }
 
 const RETICLE_ALIGNS: [ReticleAlign; 2] =
