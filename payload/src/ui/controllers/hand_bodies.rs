@@ -66,7 +66,12 @@ pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
                     s.torque_share * 100.0
                 ));
             }
-            ui.label(format!("{} resets", s.resets));
+            ui.label(match s.joint {
+                Some(constraint) => {
+                    format!("{} resets · joined (constraint {constraint})", s.resets)
+                }
+                None => format!("{} resets", s.resets),
+            });
         }
     });
     if let Some(error) = &status.last_error {
@@ -92,6 +97,10 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
         ui.add(egui::Slider::new(&mut b.half_length_m, 0.0..=0.1).text("Capsule half length (m)"));
         ui.add(egui::Slider::new(&mut b.break_distance_m, 0.1..=2.0).text("Break distance (m)"));
         ui.checkbox(&mut b.render_at_body, "Draw the hands at their bodies");
+        ui.checkbox(
+            &mut b.joint_grabs,
+            "Hold grabbed objects with a joint to the hand's body (experimental)",
+        );
         ui.separator();
         ui.checkbox(&mut b.push, "Push the body off what the hands press");
         ui.add(egui::Slider::new(&mut b.body_mass_kg, 10.0..=300.0).text("Body mass (kg)"));

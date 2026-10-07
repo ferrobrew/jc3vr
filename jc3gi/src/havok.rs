@@ -1,5 +1,114 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
+/// A Havok memory allocator (`hkMemoryAllocator`). The engine's Havok heap objects come from a
+/// router's [`m_heap`](crate::havok::hkMemoryRouter::m_heap) through [`blockAlloc`](crate::havok::hkMemoryAllocator::blockAlloc) with the
+/// object's size, and go back through [`blockFree`](crate::havok::hkMemoryAllocator::blockFree) with the same size, as a
+/// [`hkReferencedObject`](crate::havok::hkReferencedObject)'s deletion does. Only some members are bound.
+pub struct hkMemoryAllocator {
+    vftable: *const crate::havok::hkMemoryAllocatorVftable,
+}
+fn _hkMemoryAllocator_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], hkMemoryAllocator>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl hkMemoryAllocator {
+    pub fn vftable(&self) -> *const crate::havok::hkMemoryAllocatorVftable {
+        self.vftable as *const crate::havok::hkMemoryAllocatorVftable
+    }
+    /// Allocates `num_bytes` bytes, or returns null.
+    pub unsafe fn blockAlloc(&mut self, num_bytes: i32) -> *mut ::std::ffi::c_void {
+        unsafe {
+            let f = (&raw const (*self.vftable()).blockAlloc).read();
+            f(self as *mut Self as _, num_bytes)
+        }
+    }
+    /// Frees the block `p` of `num_bytes` bytes.
+    pub unsafe fn blockFree(&mut self, p: *mut ::std::ffi::c_void, num_bytes: i32) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).blockFree).read();
+            f(self as *mut Self as _, p, num_bytes)
+        }
+    }
+}
+impl std::convert::AsRef<hkMemoryAllocator> for hkMemoryAllocator {
+    fn as_ref(&self) -> &hkMemoryAllocator {
+        self
+    }
+}
+impl std::convert::AsMut<hkMemoryAllocator> for hkMemoryAllocator {
+    fn as_mut(&mut self) -> &mut hkMemoryAllocator {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct hkMemoryAllocatorVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::havok::hkMemoryAllocator),
+    /// Allocates `num_bytes` bytes, or returns null.
+    pub blockAlloc: unsafe extern "system" fn(
+        this: *mut crate::havok::hkMemoryAllocator,
+        num_bytes: i32,
+    ) -> *mut ::std::ffi::c_void,
+    /// Frees the block `p` of `num_bytes` bytes.
+    pub blockFree: unsafe extern "system" fn(
+        this: *mut crate::havok::hkMemoryAllocator,
+        p: *mut ::std::ffi::c_void,
+        num_bytes: i32,
+    ),
+}
+fn _hkMemoryAllocatorVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], hkMemoryAllocatorVftable>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl hkMemoryAllocatorVftable {}
+impl std::convert::AsRef<hkMemoryAllocatorVftable> for hkMemoryAllocatorVftable {
+    fn as_ref(&self) -> &hkMemoryAllocatorVftable {
+        self
+    }
+}
+impl std::convert::AsMut<hkMemoryAllocatorVftable> for hkMemoryAllocatorVftable {
+    fn as_mut(&mut self) -> &mut hkMemoryAllocatorVftable {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A thread's Havok memory router (`hkMemoryRouter`), held in the thread-local storage slot
+/// [`s_memoryRouterSlot`](hkMemoryRouter::get_s_memoryRouterSlot). The game thread and the physics workers have
+/// one; Havok objects are allocated from and freed to the router of the thread that makes or
+/// deletes them. Only some members are bound.
+pub struct hkMemoryRouter {
+    _field_0: [u8; 88],
+    /// The heap allocator, which Havok objects and their buffers come from.
+    pub m_heap: *mut crate::havok::hkMemoryAllocator,
+}
+fn _hkMemoryRouter_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x60], hkMemoryRouter>([0u8; 0x60]);
+    }
+    unreachable!()
+}
+impl hkMemoryRouter {}
+impl hkMemoryRouter {
+    /// The thread-local storage slot (`hkMemoryRouter::s_memoryRouter`) that holds each thread's
+    /// router, read with `TlsGetValue`.
+    pub unsafe fn get_s_memoryRouterSlot() -> &'static mut u32 {
+        unsafe { &mut *(0x142F450C8 as *mut u32) }
+    }
+}
+impl std::convert::AsRef<hkMemoryRouter> for hkMemoryRouter {
+    fn as_ref(&self) -> &hkMemoryRouter {
+        self
+    }
+}
+impl std::convert::AsMut<hkMemoryRouter> for hkMemoryRouter {
+    fn as_mut(&mut self) -> &mut hkMemoryRouter {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// A Havok reference-counted object (`hkReferencedObject`), the base of Havok shapes, constraint
 /// data, and most Havok heap objects. Only its reference count is bound.
 pub struct hkReferencedObject {
@@ -427,10 +536,11 @@ impl std::convert::AsMut<hknpShape> for hknpShape {
 #[repr(C, align(16))]
 /// The data of a fixed constraint (`hkpFixedConstraintData`), which holds two bodies in a fixed
 /// pose relative to each other. The magnet weapon
-/// (`CMagnetWeaponComponent::ConstrainBodiesToGravityField`) allocates one from the Havok heap of
-/// the calling thread, constructs it, sets its frames, and creates a constraint from it. The
-/// disassembler names that function `CPartInstance::AttachPartWithConstraint`. Only some members
-/// are bound.
+/// (`CMagnetWeaponComponent::ConstrainBodiesToGravityField`) allocates one of this type's size from
+/// the calling thread's Havok heap ([`hkMemoryAllocator::blockAlloc`](crate::havok::hkMemoryAllocator::blockAlloc)), constructs it, sets its
+/// frames and the stabilized solving method, which the constructor already sets, and creates a
+/// constraint from it. The disassembler names that function
+/// `CPartInstance::AttachPartWithConstraint`. Only some members are bound.
 pub struct hkpFixedConstraintData {
     pub base: crate::havok::hkReferencedObject,
     _field_10: [u8; 208],

@@ -412,7 +412,7 @@ pub(super) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> 
 
 /// Drop one reference to `object`, destroying it when it was the last, as the engine's inline
 /// release does: an object whose allocation-size half is zero is not counted.
-unsafe fn release(object: *mut hkReferencedObject) {
+pub(super) unsafe fn release(object: *mut hkReferencedObject) {
     let Some(object) = (unsafe { object.as_mut() }) else {
         return;
     };

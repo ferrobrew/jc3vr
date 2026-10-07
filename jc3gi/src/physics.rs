@@ -1696,7 +1696,9 @@ fn _hknpAdditionMode_size_check() {
 /// A Havok body (`hknpBody`): its transform, collision data, and the motion that moves it. Only
 /// some members are bound.
 pub struct hknpBody {
-    _field_0: [u8; 64],
+    /// The body's transform, Havok space: the frame a constraint's pivots are given in
+    /// ([`hkpFixedConstraintData::setInBodySpace`](crate::havok::hkpFixedConstraintData::setInBodySpace)).
+    pub m_transform: crate::havok::hkTransformf,
     /// The body's flags; see [`IS_DYNAMIC`](crate::physics::hknpBody::IS_DYNAMIC).
     pub m_flags: u32,
     /// The body's collision-filter word, read by the world's collision filter; see
@@ -1811,6 +1813,80 @@ impl std::convert::AsMut<hknpBodyPropertyMap> for hknpBodyPropertyMap {
         self
     }
 }
+#[repr(C, align(8))]
+/// A constraint slot (`hknpConstraint`) of a world's [`hknpConstraintManager`](crate::physics::hknpConstraintManager). A slot whose
+/// constraint was destroyed has [`INVALID_BODY_ID`](crate::physics::hknpConstraint::INVALID_BODY_ID) as its first body. Only
+/// some members are bound.
+pub struct hknpConstraint {
+    /// The constraint's first body.
+    pub m_bodyIdA: u32,
+    /// The constraint's second body.
+    pub m_bodyIdB: u32,
+    /// The constraint's data (`hkRefPtr<hkpConstraintData>`), which the constraint holds a
+    /// reference to.
+    pub m_data: *mut crate::havok::hkReferencedObject,
+    /// The constraint's id.
+    pub m_id: u32,
+    _field_14: [u8; 2],
+    /// The constraint's flags; see [`IS_DISABLED`](crate::physics::hknpConstraint::IS_DISABLED).
+    pub m_flags: u8,
+    _field_17: [u8; 33],
+}
+fn _hknpConstraint_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x38], hknpConstraint>([0u8; 0x38]);
+    }
+    unreachable!()
+}
+impl hknpConstraint {}
+impl hknpConstraint {
+    /// The [`m_bodyIdA`](crate::physics::hknpConstraint::m_bodyIdA) of a destroyed constraint's slot.
+    pub const INVALID_BODY_ID: u32 = 2147483647;
+    /// The [`m_flags`](crate::physics::hknpConstraint::m_flags) bit of a disabled constraint.
+    pub const IS_DISABLED: u8 = 4;
+}
+impl std::convert::AsRef<hknpConstraint> for hknpConstraint {
+    fn as_ref(&self) -> &hknpConstraint {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConstraint> for hknpConstraint {
+    fn as_mut(&mut self) -> &mut hknpConstraint {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A Havok world's constraint manager (`hknpConstraintManager`): a buffer of constraint slots
+/// indexed by constraint id. Only some members are bound.
+pub struct hknpConstraintManager {
+    _field_0: [u8; 8],
+    /// The constraint slots, [`m_capacity`](crate::physics::hknpConstraintManager::m_capacity) of them.
+    pub m_constraintBuffer: *mut crate::physics::hknpConstraint,
+    /// The number of slots.
+    pub m_capacity: u32,
+    _field_14: [u8; 28],
+}
+fn _hknpConstraintManager_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], hknpConstraintManager>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl hknpConstraintManager {}
+impl hknpConstraintManager {
+    /// The id the manager hands [`hknpWorld::createConstraint`](crate::physics::hknpWorld::createConstraint) when every slot is in use.
+    pub const INVALID_CONSTRAINT_ID: u32 = 2147483647;
+}
+impl std::convert::AsRef<hknpConstraintManager> for hknpConstraintManager {
+    fn as_ref(&self) -> &hknpConstraintManager {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConstraintManager> for hknpConstraintManager {
+    fn as_mut(&mut self) -> &mut hknpConstraintManager {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// A Havok motion (`hknpMotion`): the mass properties and velocities that move one body or a set
 /// of attached bodies. Positions are Havok space: the game-space position less
@@ -1870,10 +1946,13 @@ pub struct hknpWorld {
     _field_74: [u8; 108],
     /// The motion manager's motion array, indexed by [`hknpBody::m_motionId`](crate::physics::hknpBody::m_motionId).
     pub m_motions: *mut crate::physics::hknpMotion,
+    _field_e8: [u8; 56],
+    /// The world's constraints.
+    pub m_constraintManager: crate::physics::hknpConstraintManager,
 }
 fn _hknpWorld_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0xE8], hknpWorld>([0u8; 0xE8]);
+        ::std::mem::transmute::<[u8; 0x150], hknpWorld>([0u8; 0x150]);
     }
     unreachable!()
 }
@@ -1881,9 +1960,13 @@ impl hknpWorld {
     pub const createConstraint_ADDRESS: usize = 0x1414E7200;
     /// Creates a constraint from `cinfo`, writes its id to `out`, and returns `out`. A constraint
     /// whose two bodies are the same, or whose data is of a type the world does not support, is
-    /// created disabled. The engine's callers allocate the constraint data from the Havok heap and
-    /// release their own reference to it once the constraint exists. The world's constraint
-    /// collision filter keeps the two bodies of a constraint from colliding.
+    /// created disabled; otherwise it is enabled at once. The constraint takes a reference of its
+    /// own to the data (`hknpConstraint::init`, which the disassembler names
+    /// `hknpWorldEx::handleConstraintActivationMode`), so the engine's callers, which allocate the
+    /// data from the Havok heap, release their own reference once the constraint exists. The
+    /// world's constraint collision filter keeps the two bodies of an enabled constraint from
+    /// colliding. The engine's own users destroy their constraints before they replace or destroy
+    /// the constrained bodies.
     pub unsafe fn createConstraint(
         &mut self,
         out: *mut u32,
@@ -1900,8 +1983,11 @@ impl hknpWorld {
     }
     pub const destroyConstraints_ADDRESS: usize = 0x1414E7370;
     /// Destroys the `count` constraints whose ids are at `ids`, firing the world's
-    /// constraint-disabled signal for those that were enabled and a second signal for each, and
-    /// frees their slots.
+    /// constraint-disabled signal for those that were enabled and a second signal for each. Each
+    /// constraint releases its reference to its data, which destroys data no one else holds, and
+    /// its slot goes onto the manager's destroyed list with its first body set to
+    /// [`hknpConstraint::INVALID_BODY_ID`](crate::physics::hknpConstraint::INVALID_BODY_ID); the manager reuses destroyed ids once its free ones
+    /// run out.
     pub unsafe fn destroyConstraints(&mut self, ids: *const u32, count: i32) {
         unsafe {
             let f: unsafe extern "system" fn(

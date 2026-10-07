@@ -57,6 +57,10 @@ pub struct HandBodiesConfig {
     pub pressure_full_lag_m: f32,
     /// What a hand body's contacts do: the pulse of a hit, and a character's reaction to it.
     pub hits: HandHitsConfig,
+    /// Hold what a hand's grip takes by joining the hand's body to it with a fixed constraint, so
+    /// that a held object has mass and the hand's strength carries it, in place of driving the
+    /// object toward the hand.
+    pub joint_grabs: bool,
 }
 
 /// A hand body's hits (see [`crate::controllers::physical_hands::physics::hit`]): each contact a
@@ -139,6 +143,7 @@ impl HandBodiesConfig {
             pressure_haptics: true,
             pressure_full_lag_m: 0.1,
             hits: HandHitsConfig::new(),
+            joint_grabs: false,
         }
     }
 

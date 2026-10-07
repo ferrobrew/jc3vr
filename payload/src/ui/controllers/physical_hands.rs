@@ -34,7 +34,8 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
             }
             if let Some(held) = s.held {
                 ui.label(format!(
-                    "holding {:.1} kg{}{} · {:.0} mm off",
+                    "{} {:.1} kg{}{} · {:.0} mm off",
+                    if held.joined { "joined to" } else { "holding" },
                     held.mass_kg,
                     if held.shared { " with both hands" } else { "" },
                     if held.liftable {

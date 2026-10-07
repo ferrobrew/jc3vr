@@ -79,7 +79,7 @@ use crate::{
             grasp::{AngularTracker, PalmMotion, Reach, VelocityTracker},
             hold::BodySpace,
             palm::{PROBE_POINTS, PalmBox},
-            pickup::{HeldReport, PickupState, PickupStatus},
+            pickup::{HeldReport, JointInputs, PickupState, PickupStatus},
             shove::{Give, ShoveTuning},
             touch::{ShoveInput, Touch, pressure_pulses},
         },
@@ -507,12 +507,14 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     }
 
     if pickup_on {
+        let joints = joint_inputs(&config);
         // SAFETY: the simulation phase outside the physics step.
-        let outcome = unsafe { pickup::tick(&mut state.pickup, palms, space, dt, &config.pickup) };
+        let outcome =
+            unsafe { pickup::tick(&mut state.pickup, palms, space, joints, dt, &config.pickup) };
         state.record_pickup(outcome, &mut hand_status, &config);
         for hand in Hand::BOTH {
             let i = hand.index();
-            let Some(held) = hand_status[i].held else {
+            let Some(held) = hand_status[i].held.filter(|h| !h.joined) else {
                 continue;
             };
             // The rendered hand stays on the grab point, wherever the body is.
@@ -540,6 +542,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     state.status.casts = casts;
     state.clamp = clamp;
     state.at = Some(now);
+    physics::publish_holds(state.pickup.joint_targets());
     let snapshot = state.status.hands;
     drop(state);
     draw::submit(&snapshot, &config);
@@ -689,6 +692,7 @@ fn stand_down(idle: Idle) {
     }
     state.reset_probes();
     state.pickup.drop_all();
+    physics::publish_holds([None; 2]);
     state.last_sample = [None; 2];
     state.clamp = [Vec3::ZERO; 2];
     state.at = None;
@@ -698,6 +702,19 @@ fn stand_down(idle: Idle) {
     state.status.casts = 0;
     drop(state);
     draw::clear();
+}
+
+/// What the hand bodies tell the pickups about the joints: which hands take what they grab through
+/// a joint, which lost theirs, and each body's load.
+fn joint_inputs(config: &PhysicalHandsConfig) -> JointInputs {
+    let lost = physics::take_joint_losses();
+    let joining = physics::enabled(config) && config.bodies.joint_grabs;
+    let bodies = physics::status();
+    JointInputs {
+        join: Hand::BOTH.map(|hand| joining && physics::drives(hand)),
+        lost,
+        loads: bodies.hands.map(|h| (h.force_share, h.torque_share)),
+    }
 }
 
 /// Which hands hold nothing: no gun, not the foregrip, no grenade or charge being thrown, and the

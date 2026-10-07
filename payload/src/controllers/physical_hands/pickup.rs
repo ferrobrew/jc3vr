@@ -12,13 +12,17 @@
 //! action, so that the game picks the weapon up its own way ([`finish_tick`]). A pickup grab of an
 //! object asks the next simulation tick to take hold of it; letting the grip go asks it to let go.
 //!
-//! A held object is held at the point the hand touched, and driven, not attached: each tick its
-//! body is given the velocities that carry the grab point to where the hand holds it and turn the
-//! body as the hand turns, within the hands' strength
+//! A held object is held at the point the hand touched, in one of two ways. A hand its body drives
+//! holds it, with the hand bodies' `joint_grabs`, through a joint: a fixed constraint between the
+//! hand's body and the object's, which the physics step makes and ends
+//! ([`crate::controllers::physical_hands::physics`]), so the object has mass, the hand's own
+//! strength carries it, and it leaves with the velocity the hand gave it. Otherwise the object is
+//! carried, not attached: each tick its body is given the velocities that carry the grab point to
+//! where the hand holds it and turn the body as the hand turns, within the hands' strength
 //! ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's velocity, so
-//! that it is thrown. One hand lifts what weighs less than [`PickupConfig::hand_force_n`], and two
-//! hands twice that; a hand that holds what it cannot lift drags it, and a body hinged to the world
-//! swings about its hinge. A hand that holds something does not probe, push off surfaces, or
+//! that it is thrown. One hand carries what weighs less than [`PickupConfig::hand_force_n`], and
+//! two hands twice that; a hand that holds what it cannot lift drags it, and a body hinged to the
+//! world swings about its hinge. A hand that holds something does not probe, push off surfaces, or
 //! strike.
 
 use std::{num::NonZeroUsize, time::Instant};
@@ -41,6 +45,7 @@ use crate::{
             grasp::{self, Grip, PalmMotion, Reach, TargetKind},
             hold::{self, BodySpace, HandHold, HoldTuning},
             palm::PalmBox,
+            physics::HoldTarget,
             pulse,
             rigid::Velocities,
         },
@@ -68,6 +73,20 @@ pub struct HeldReport {
     pub load: f32,
     /// The share of the hand's strongest twist used, `0..=1`.
     pub twist: f32,
+    /// Whether the hand holds the object through a joint rather than carrying it.
+    pub joined: bool,
+}
+
+/// What the hand bodies tell a pickup tick about the joints.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub(super) struct JointInputs {
+    /// Which hands take what they grab through a joint: those their bodies drive, with
+    /// `joint_grabs`.
+    pub join: [bool; 2],
+    /// Which hands lost the joint their grip held.
+    pub lost: [bool; 2],
+    /// The share of each hand body's strongest pull and twist the last step used.
+    pub loads: [(f32, f32); 2],
 }
 
 /// The pickups' readout.
@@ -186,6 +205,21 @@ impl PickupState {
         self.held[hand.index()].is_some()
     }
 
+    /// Whether `hand` carries what it holds, rather than holding it through a joint.
+    pub(super) fn carrying(&self, hand: Hand) -> bool {
+        self.held[hand.index()].is_some_and(|h| !h.joined)
+    }
+
+    /// What each hand holds through a joint.
+    pub(super) fn joint_targets(&self) -> [Option<HoldTarget>; 2] {
+        self.held.map(|h| {
+            h.filter(|h| h.joined).map(|h| HoldTarget {
+                object: h.object,
+                body: h.body,
+            })
+        })
+    }
+
     /// The objects the hands hold, as addresses, zero for none.
     pub(super) fn held_objects(&self) -> [usize; 2] {
         self.held.map(|h| h.map_or(0, |h| h.object.get()))
@@ -251,8 +285,8 @@ pub(super) unsafe fn reach(
 }
 
 /// The pickups' simulation tick: take hold and let go as the input tick asked, and drive what the
-/// hands hold. `palms` are the acting hands' palms; a hand without one lets go. `space` is the
-/// player's body, which a held object is kept out of.
+/// hands carry. `palms` are the acting hands' palms; a hand without one lets go. `space` is the
+/// player's body, which a carried object is kept out of.
 ///
 /// # Safety
 ///
@@ -261,10 +295,21 @@ pub(super) unsafe fn tick(
     state: &mut PickupState,
     palms: [Option<PalmMotion>; 2],
     space: Option<BodySpace>,
+    joints: JointInputs,
     dt: f32,
     config: &PickupConfig,
 ) -> TickOutcome {
     let mut outcome = TickOutcome::default();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if joints.lost[i] && state.held[i].is_some_and(|h| h.joined) {
+            state.held[i] = None;
+            outcome.released[i] = true;
+            outcome.lost += 1;
+            outcome.error =
+                Some("physical hands: pickup: the hand's joint to the object ended".to_owned());
+        }
+    }
     let now = Instant::now();
     let input_fresh = state
         .input_at
@@ -280,7 +325,8 @@ pub(super) unsafe fn tick(
             Some(Request::Release) => {
                 if let Some(held) = state.held[i].take() {
                     let shared = state.held[hand.other().index()].is_some_and(|o| o.same(&held));
-                    if !shared {
+                    // A joined object leaves with the velocity the hand gave it.
+                    if !shared && !held.joined {
                         // SAFETY: forwarded from the caller.
                         match unsafe { throw(&held, palms[i], config) } {
                             Ok(speed) => outcome.throw = Some(speed),
@@ -303,6 +349,7 @@ pub(super) unsafe fn tick(
                                 body: reach.body,
                                 grip: Grip::of(palm.pose, body.pose, reach.point),
                                 mass_kg,
+                                joined: joints.join[i],
                             });
                             outcome.taken[i] = true;
                         }
@@ -323,7 +370,8 @@ pub(super) unsafe fn tick(
         }
     }
 
-    // Drive each held body once, from every hand that holds it.
+    // Drive each carried body once, from every hand that carries it; a joined hold is only
+    // reported.
     let mut driven = [false; 2];
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -342,12 +390,30 @@ pub(super) unsafe fn tick(
                 continue;
             }
         };
+        let holding = holders.iter().flatten().count();
         let mut holds = [None; 2];
         for k in 0..2 {
             let (Some(holder), Some(palm)) = (holders[k], palms[k]) else {
                 continue;
             };
             let anchor = holder.grip.anchor(body.pose);
+            if holder.joined {
+                let target = holder.grip.target(palm.pose).point;
+                let (load, twist) = joints.loads[k];
+                outcome.reports[k] = Some(HeldReport {
+                    mass_kg: held.mass_kg,
+                    liftable: grasp::can_lift(held.mass_kg, holding, config),
+                    shared: holding > 1,
+                    centre: body.pose.centre,
+                    anchor,
+                    target,
+                    lag_m: anchor.distance(target),
+                    load,
+                    twist,
+                    joined: true,
+                });
+                continue;
+            }
             let mut target = holder.grip.target(palm.pose);
             if let Some(space) = &space {
                 target.point += hold::keep_out(holder.grip.centre_at(target), space);
@@ -390,6 +456,7 @@ pub(super) unsafe fn tick(
                 lag_m: hold.anchor.distance(hold.target.point),
                 load: solution.loads[k],
                 twist: solution.torque_loads[k],
+                joined: false,
             });
         }
     }
@@ -429,6 +496,8 @@ struct Held {
     body: u32,
     grip: Grip,
     mass_kg: f32,
+    /// Whether the hand holds the object through a joint rather than carrying it.
+    joined: bool,
 }
 
 impl Held {
