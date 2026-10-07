@@ -12,7 +12,8 @@
 //! - the wheel turns by the holding hands' turns ([`crate::controllers::vehicles::steering`]), and
 //!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes;
 //! - the handlebars pivot about their middle: their turn in the horizontal plane steers and their
-//!   roll leans. With one hand on them, the other end mirrors it through the middle;
+//!   roll leans. With one hand on them, the other end mirrors it through the middle. They move by
+//!   the grips' change since the hands holding them last changed, so a grab does not jump them;
 //! - a stick's top follows the hand across the horizontal plane, and its deflection over the full
 //!   deflection drives both of its axes; let go, it springs back to centre;
 //! - a lever's handle follows the hand along its axis, and its position over half the travel is its
@@ -34,7 +35,7 @@ mod tests;
 use glam::{Quat, Vec2, Vec3};
 
 pub use crate::controllers::vehicles::physical::{
-    handlebars::{bar_angles, bar_ends},
+    handlebars::bar_ends,
     sticks::{lever_handle, lever_value, stick_deflection},
 };
 use crate::controllers::{
@@ -44,7 +45,7 @@ use crate::controllers::{
     vehicles::{
         config::{LeverSpec, PhysicalControlsConfig, StickSpec},
         physical::{
-            handlebars::{clamp_bars, step_bars},
+            handlebars::{BarsLatch, bars_now, step_bars},
             held_wheel::step_wheel,
             sticks::{deflection3, step_lever, step_stick},
         },
@@ -160,6 +161,8 @@ pub struct ControlState {
     wheel_grips: [Option<WheelGrip>; 2],
     /// The handlebars' turn and roll, radians.
     pub bars: Vec2,
+    /// The bars and the grips' measure of them when the hands holding them last changed.
+    bars_latch: Option<BarsLatch>,
     /// The stick's deflection in the horizontal plane (+X right, +Y back), metres.
     pub stick: Vec2,
     /// The collective's and the throttle's positions, `-1..=1`.
@@ -173,6 +176,7 @@ impl ControlState {
             wheel_angle: 0.0,
             wheel_grips: [None; 2],
             bars: Vec2::ZERO,
+            bars_latch: None,
             stick: Vec2::ZERO,
             levers: [0.0; 2],
         }
@@ -450,11 +454,12 @@ pub fn anchor_point(
             Some(placement.wheel.rim_point(angle))
         }
         ControlKind::Handlebars => {
-            let spec = &placement.config.handlebars;
-            let centre = placement.bars.centre;
-            let bars = bar_angles(centre, grips_holding(state, ControlKind::Handlebars, grips))
-                .map_or(state.bars, |angles| clamp_bars(angles, spec));
-            Some(bar_ends(centre, placement.bars.half_width, bars)[hand.index()])
+            let bars = bars_now(
+                state,
+                placement,
+                grips_holding(state, ControlKind::Handlebars, grips),
+            );
+            Some(bar_ends(placement.bars.centre, placement.bars.half_width, bars)[hand.index()])
         }
         kind => {
             if let Some(spec) = placement.stick(kind) {

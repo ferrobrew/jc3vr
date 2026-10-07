@@ -3,7 +3,11 @@
 use std::f32::consts::FRAC_PI_2;
 
 use super::*;
-use crate::controllers::vehicles::{config::LeverAxis, physical::sticks::detent, steering};
+use crate::controllers::vehicles::{
+    config::LeverAxis,
+    physical::{handlebars::bar_angles, sticks::detent},
+    steering,
+};
 
 const DT: f32 = 1.0 / 30.0;
 
@@ -244,6 +248,68 @@ fn the_handlebars_steer_with_a_pulled_back_grip_and_lean_with_a_lowered_one() {
     assert!(ends[1].z > 0.0 && ends[0].z < 0.0);
     let rolled = bar_ends(c, 0.3, Vec2::new(0.0, lean.y));
     assert!(rolled[1].y < 0.0);
+}
+
+#[test]
+fn grabbing_the_handlebars_off_their_ends_neither_jumps_nor_biases_them() {
+    let p = placement(|c| c.handlebars.enabled = true);
+    let kinds = [ControlKind::Handlebars];
+    let ends = bar_ends(p.bars.centre, p.bars.half_width, Vec2::ZERO);
+    let mut state = ControlState::default();
+    let close = |a: Vec2, b: Vec2| (a - b).length() < 1e-4;
+
+    // The right hand takes its end a few centimetres in front of it and a little low.
+    let right = ends[1] + Vec3::new(0.0, -0.03, -0.05);
+    let (out, _) = step_with(
+        &mut state,
+        &p,
+        &kinds,
+        [None, Some(right)],
+        [None, Some(ControlKind::Handlebars)],
+    );
+    assert!(close(state.bars, Vec2::ZERO), "{}", state.bars);
+    assert_eq!(out.steer, Some(0.0));
+
+    // Pulling it back turns the bars by the change alone.
+    let pulled = right + Vec3::new(0.0, 0.0, 0.04);
+    let (out, _) = step_with(&mut state, &p, &kinds, [None, Some(pulled)], [None; 2]);
+    let turned = state.bars;
+    let measured = |grips| bar_angles(p.bars.centre, grips).unwrap();
+    let change = measured([None, Some(pulled)]) - measured([None, Some(right)]);
+    assert!(out.steer.unwrap() > 0.0);
+    assert!(close(turned, change), "{turned} {change}");
+
+    // The left hand joins off its end too, and the bars stay where they were.
+    let left = ends[0] + Vec3::new(0.0, 0.02, 0.06);
+    step_with(
+        &mut state,
+        &p,
+        &kinds,
+        [Some(left), Some(pulled)],
+        [Some(ControlKind::Handlebars), None],
+    );
+    assert!(close(state.bars, turned), "{}", state.bars);
+    let anchored = anchor_point(
+        &state,
+        &p,
+        state.holds[0].unwrap(),
+        Hand::Left,
+        [Some(left), Some(pulled)],
+    )
+    .unwrap();
+    let drawn = bar_ends(p.bars.centre, p.bars.half_width, turned)[0];
+    assert!(anchored.distance(drawn) < 1e-4);
+
+    // The right hand lets go, and the bars still stay.
+    step_held(
+        &mut state,
+        &p,
+        &kinds,
+        [Some(left), Some(pulled)],
+        [None; 2],
+        [true, false],
+    );
+    assert!(close(state.bars, turned), "{}", state.bars);
 }
 
 #[test]

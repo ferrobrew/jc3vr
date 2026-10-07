@@ -1,6 +1,6 @@
 # The steering wheel and handlebars
 
-The physical wheel and handlebars ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) are placed where the driven vehicle's own are, the held wheel turns and steers as a wheel does, and the vehicle's rendered steering wheel turns with the steering. The code is in `payload/src/controllers/vehicles/`: `wheel.rs` holds the pure geometry and the override table, `fit.rs` reads the vehicle on the input tick, `steering.rs` turns the held wheel, `physical.rs` grabs and releases it, and `wheel_render.rs` turns the rendered wheel. The engine side is in [vehicle-parts.md](../../engine/gameplay/vehicle-parts.md).
+The physical wheel and handlebars ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) are placed where the driven vehicle's own are, the held wheel turns and steers as a wheel does, and the vehicle's rendered steering wheel turns with the steering. The code is in `payload/src/controllers/vehicles/`: `wheel.rs` holds the pure geometry and the override table, `fit.rs` reads the vehicle on the input tick, `steering.rs` turns the held wheel, `physical/` grabs and releases it and the handlebars, and `wheel_render.rs` turns the rendered wheel. The engine side is in [vehicle-parts.md](../../engine/gameplay/vehicle-parts.md).
 
 ## Placing the wheel
 
@@ -70,6 +70,8 @@ The wheel is centred on the vehicle, so it is never mirrored for a left-handed l
 ## Handlebars
 
 The ATV, the jetski, and the duck share their classes with cars and boats, but steer by handlebars. A vehicle whose parts include a steering fork (behaviour `SteeringFork`, or a part named `<model>_upper_steering`) is offered the handlebars in place of the wheel, motorcycles included. The fork's model-space box, at rest (its parent space offset under its parent's root-space transform, without the hinge's turn), places the grips' middle at the box's rear and mid-height, and the half width at half the box's width less a hand's half width. Without a usable fork, the handlebars spec places them. The game turns the forks itself, by the steering, so they are not animated by the mod.
+
+The grips measure the bars' turn and roll from the line between them, or with one hand from its grip mirrored through the middle. A hand rarely takes the bars exactly at their end, so that measure is latched whenever the hands holding the bars change (a grab, a second hand joining, or one letting go), and the bars move from where they were by the change the grips measure since. A grab a few centimetres in front of the end therefore neither jumps the bars nor leaves them biased, and the hands are drawn on the bars' ends as the bars turn.
 
 ## Turning the rendered wheel
 
