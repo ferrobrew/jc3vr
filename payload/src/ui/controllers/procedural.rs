@@ -66,6 +66,14 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             "Ground casts this tick {} · hits {} · too steep {} · errors {} · largest offset {:+.3} m",
             ground.casts, ground.hits, ground.steep, ground.errors, ground.largest_offset_m,
         ));
+        let [left, right] = status.clavicles;
+        ui.label(format!(
+            "Clavicles: left up {:+.1}° forward {:.1}° · right up {:+.1}° forward {:.1}°",
+            left.elevation.to_degrees(),
+            left.protraction.to_degrees(),
+            right.elevation.to_degrees(),
+            right.protraction.to_degrees(),
+        ));
     }
 }
 

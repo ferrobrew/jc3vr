@@ -6,10 +6,19 @@
 //! a bone together with everything under it, so the rig insists that each bone's parent in the
 //! skeleton is the one it expects: a skeleton with a bone in between would make the solver's
 //! propagation wrong, and the rig refuses it instead.
+//!
+//! The arms are not driven, but the clavicles turn toward the hands, so the rig also measures each
+//! arm from its reference pose ([`ArmRig`]): where the shoulder joint sits on its clavicle, and the
+//! arm's length to the wrist.
 
 use std::fmt;
 
-use crate::controllers::body::procedural::skeleton::{SkeletonSnapshot, Transform};
+use glam::Vec3;
+
+use crate::controllers::body::procedural::{
+    skeleton::{SkeletonSnapshot, Transform},
+    solver::arms::Side,
+};
 
 /// A bone the procedural body drives.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -119,6 +128,17 @@ pub struct Rig {
     pub bones: [usize; RigBone::COUNT],
     /// Each rig bone's reference pose in model space.
     pub reference: [Transform; RigBone::COUNT],
+    /// The arms, left then right.
+    pub arms: [ArmRig; 2],
+}
+
+/// One arm, measured from the reference pose.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ArmRig {
+    /// The shoulder joint (the upper arm's origin) in its clavicle's frame.
+    pub shoulder_local: Vec3,
+    /// The upper arm's and the forearm's lengths together, metres.
+    pub length: f32,
 }
 
 impl Rig {
@@ -145,7 +165,38 @@ impl Rig {
         }
         let model = skeleton.reference_model_space();
         let reference = RigBone::ALL.map(|bone| model[bones[bone.index()]]);
-        Ok(Self { bones, reference })
+        let mut arms = [ArmRig {
+            shoulder_local: Vec3::ZERO,
+            length: 0.0,
+        }; 2];
+        for side in Side::BOTH {
+            let (clavicle, names) = side.arm_bones();
+            let mut parent = bones[clavicle.index()];
+            let mut chain = [0; 3];
+            for (link, name) in chain.iter_mut().zip(names) {
+                let index = skeleton
+                    .bones
+                    .iter()
+                    .position(|b| b.name == name)
+                    .ok_or(RigError::MissingArmBone(name))?;
+                if skeleton.bones[index].parent != Some(parent) {
+                    return Err(RigError::UnexpectedArmParent(name));
+                }
+                *link = index;
+                parent = index;
+            }
+            let [upper, fore, hand] = chain.map(|i| model[i].translation);
+            let clavicle = reference[clavicle.index()];
+            arms[side.index()] = ArmRig {
+                shoulder_local: clavicle.rotation.inverse() * (upper - clavicle.translation),
+                length: upper.distance(fore) + fore.distance(hand),
+            };
+        }
+        Ok(Self {
+            bones,
+            reference,
+            arms,
+        })
     }
 
     /// The skeleton index of `bone`.
@@ -157,6 +208,11 @@ impl Rig {
     pub fn reference(&self, bone: RigBone) -> &Transform {
         &self.reference[bone.index()]
     }
+
+    /// The arm on `side`.
+    pub fn arm(&self, side: Side) -> &ArmRig {
+        &self.arms[side.index()]
+    }
 }
 
 /// Why a skeleton cannot be rigged.
@@ -164,6 +220,10 @@ impl Rig {
 pub enum RigError {
     MissingBone(RigBone),
     UnexpectedParent(RigBone),
+    /// An arm bone under a clavicle is missing.
+    MissingArmBone(&'static str),
+    /// An arm bone's parent is not the bone above it in the arm.
+    UnexpectedArmParent(&'static str),
 }
 
 impl fmt::Display for RigError {
@@ -177,6 +237,10 @@ impl fmt::Display for RigError {
                 bone.name(),
                 bone.parent().map_or("the root", RigBone::name)
             ),
+            Self::MissingArmBone(name) => write!(f, "the skeleton has no {name} bone"),
+            Self::UnexpectedArmParent(name) => {
+                write!(f, "{name}'s parent is not the bone above it in the arm")
+            }
         }
     }
 }
@@ -294,12 +358,21 @@ pub(crate) mod tests {
             Vec3::new(0.05, 1.45, 0.0),
             &mut bones,
         );
-        add(
-            "LeftArm",
-            Some("LeftShoulder"),
-            Vec3::new(-0.2, 1.45, 0.0),
-            &mut bones,
-        );
+        for (side, x) in [("Left", -1.0), ("Right", 1.0)] {
+            let chain = [
+                (format!("{side}Arm"), format!("{side}Shoulder"), 0.2),
+                (format!("{side}ForeArm"), format!("{side}Arm"), 0.5),
+                (format!("{side}Hand"), format!("{side}ForeArm"), 0.78),
+            ];
+            for (name, parent, out) in chain {
+                add(
+                    &name,
+                    Some(&parent),
+                    Vec3::new(x * out, 1.45, 0.0),
+                    &mut bones,
+                );
+            }
+        }
         SkeletonSnapshot {
             name: "test".into(),
             bones,
@@ -355,6 +428,27 @@ pub(crate) mod tests {
         assert_eq!(
             Rig::from_skeleton(&skeleton),
             Err(RigError::UnexpectedParent(RigBone::Spine1))
+        );
+    }
+
+    #[test]
+    fn the_arms_are_measured_from_the_reference_pose() {
+        let rig = Rig::from_skeleton(&skeleton()).unwrap();
+        for side in Side::BOTH {
+            let arm = rig.arm(side);
+            assert!((arm.length - 0.58).abs() < 1e-5, "{arm:?}");
+            let x = if side == Side::Left { -0.15 } else { 0.15 };
+            assert!(arm.shoulder_local.abs_diff_eq(Vec3::new(x, 0.0, 0.0), 1e-5));
+        }
+        let mut skeleton = skeleton();
+        for bone in &mut skeleton.bones {
+            if bone.name == "RightForeArm" {
+                bone.name = "RightForeArmRoll".into();
+            }
+        }
+        assert_eq!(
+            Rig::from_skeleton(&skeleton),
+            Err(RigError::MissingArmBone("RightForeArm"))
         );
     }
 

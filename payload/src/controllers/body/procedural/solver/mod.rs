@@ -14,10 +14,13 @@
 //! 3. The legs ([`two_bone::solve`]): each foot goes back to its target, bending the knee in the
 //!    plane it already bent in, and takes the foot's own orientation.
 //!
+//! The clavicles then turn toward the hands ([`clavicles`]), after the spine has placed them.
+//!
 //! Everything is a rotation composed onto the animated bones or a translation of them, so no bone's
 //! rest frame needs to be known.
 
 pub mod arms;
+pub mod clavicles;
 pub mod feet;
 pub mod gait;
 pub mod pose;

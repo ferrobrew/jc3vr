@@ -45,7 +45,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::{Effector, Pass, SolveStep},
     character::character::{
@@ -66,7 +66,7 @@ use crate::{
         },
         frame::{Hand, Pose},
         hands::{
-            self, ActiveHands, late, pose as hand_pose, reach,
+            self, ActiveHands, CockpitHand, late, pose as hand_pose, reach,
             rig::{self, TickArm},
             secondary::{self, SecondaryParts, Switched},
             tiers,
@@ -240,6 +240,34 @@ pub(crate) unsafe fn queue_deferred(character: *mut Character) {
         );
     }
     unsafe { queue(character, &plan, arms.as_ref()) };
+}
+
+/// The model-space wrist targets of the plan [`queue_or_defer`] kept for this pass's solve gate,
+/// before the torso's keep-out, each with its hand's tier weight: where the hands are reaching,
+/// for the procedural body's clavicles. `None` for a hand the plan does not drive, and for both
+/// when no plan is kept.
+///
+/// # Safety
+///
+/// As [`queue_deferred`]; called from the solve gate before it.
+pub(crate) unsafe fn deferred_wrist_targets(character: &Character) -> [Option<(Vec3, f32)>; 2] {
+    DEFERRED.with_borrow(|plan| {
+        let Some((plan, active)) = plan
+            .as_ref()
+            .and_then(|plan| plan.active.as_ref().map(|active| (plan, active)))
+            .filter(|_| headpose::anchor().is_some())
+        else {
+            return [None; 2];
+        };
+        Hand::BOTH.map(|hand| {
+            let cockpit = active.hands[hand.index()].filter(|_| plan.drives(hand))?;
+            let target = wrist_target(character, active, &cockpit);
+            target
+                .position
+                .is_finite()
+                .then_some((target.position, plan.weights[hand.index()]))
+        })
+    })
 }
 
 /// Queue the wrist targets for the hands `plan` drives, switch the `SECONDARY` pass off for them,
@@ -467,19 +495,12 @@ unsafe fn queue_hand(
         hand_pose::wrist_frame_from_bones(hand, wrist_position, index_position, middle_position)
             .ok_or(HandIkSkip::NoHandFrame)?;
 
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let world = hand_pose::compose_world(
-        head.position,
-        body,
-        active.head.position,
-        cockpit.wrist,
-        active.world_scale,
-    );
+    let WristTarget {
+        world,
+        rotation: target_rotation,
+        position: wanted_position,
+    } = wrist_target(character, active, &cockpit);
     let to_world = Mat4::from(character.m_WorldMatrixT1);
-    let (_, target_rotation, wanted_position) = (to_world.inverse()
-        * Mat4::from_rotation_translation(world.orientation, world.position))
-    .to_scale_rotation_translation();
     // The hand rests on the procedural torso rather than in it; the recorded target is the
     // pushed one, so the late update corrects toward where the hand was asked to go.
     let keep_out = torso.and_then(|t| t.keep_out);
@@ -638,13 +659,46 @@ unsafe fn queue_hand(
     ))
 }
 
+/// A hand's wrist target before the torso's keep-out.
+struct WristTarget {
+    /// The wrist frame in the world.
+    world: Pose,
+    /// The wrist's orientation in the character's model space.
+    rotation: Quat,
+    /// The wrist's position in the character's model space.
+    position: Vec3,
+}
+
+/// The wrist target of the hand at `cockpit`: its cockpit wrist composed into the world through
+/// the head, and brought into `character`'s model space through its current world matrix.
+fn wrist_target(character: &Character, active: &ActiveHands, cockpit: &CockpitHand) -> WristTarget {
+    let head = headpose::query();
+    let body = headpose::xr::body_rotation();
+    let world = hand_pose::compose_world(
+        head.position,
+        body,
+        active.head.position,
+        cockpit.wrist,
+        active.world_scale,
+    );
+    let to_world = Mat4::from(character.m_WorldMatrixT1);
+    let (_, rotation, position) = (to_world.inverse()
+        * Mat4::from_rotation_translation(world.orientation, world.position))
+    .to_scale_rotation_translation();
+    WristTarget {
+        world,
+        rotation,
+        position,
+    }
+}
+
 /// The model-space position and orientation of `bone`.
-unsafe fn joint(controller: &mut AnimationController, bone: u32) -> (Vec3, glam::Quat) {
+unsafe fn joint(controller: &mut AnimationController, bone: u32) -> (Vec3, Quat) {
     let mut joint = Joint::default();
     unsafe { controller.GetJoint(bone, &mut joint) };
     let [x, y, z] = joint.m_Translation.data;
     let [qx, qy, qz, qw] = joint.m_Orientation.data;
-    (Vec3::new(x, y, z), glam::Quat::from_xyzw(qx, qy, qz, qw))
+    (Vec3::new(x, y, z), Quat::from_xyzw(qx, qy, qz, qw))
 }
 
 /// A bone's skeleton index by name, or `None` when the lookup fails (the root index, which a

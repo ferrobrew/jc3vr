@@ -91,6 +91,21 @@ pub struct ProceduralBodyConfig {
     pub elbow_hints: bool,
     /// The elbow hint's reach: how strongly the solve pulls the elbow toward the hint.
     pub elbow_hint_reach: f32,
+    /// Turn each clavicle toward its hand when the hand is raised above the shoulder or reaches
+    /// toward the end of the arm, so the shoulder goes with an overhead or far reach.
+    pub clavicles: bool,
+    /// How far a clavicle lifts for a hand overhead, at most, degrees.
+    pub clavicle_elevation_deg: f32,
+    /// How far a clavicle drops for a hand reaching far down, at most, degrees.
+    pub clavicle_depression_deg: f32,
+    /// How far a clavicle swings forward for a hand reaching far ahead or across, at most,
+    /// degrees.
+    pub clavicle_protraction_deg: f32,
+    /// The share of the arm's length at which a reach ahead or down starts to take the clavicle;
+    /// it takes it fully at the arm's full length.
+    pub clavicle_reach_start: f32,
+    /// How quickly the clavicles follow the hands, seconds: the time constant of their follower.
+    pub clavicle_follow_s: f32,
 }
 
 impl ProceduralBodyConfig {
@@ -133,6 +148,12 @@ impl ProceduralBodyConfig {
             hand_margin_m: 0.03,
             elbow_hints: true,
             elbow_hint_reach: 0.3,
+            clavicles: true,
+            clavicle_elevation_deg: 30.0,
+            clavicle_depression_deg: 10.0,
+            clavicle_protraction_deg: 25.0,
+            clavicle_reach_start: 0.8,
+            clavicle_follow_s: 0.1,
         }
     }
 
@@ -177,6 +198,26 @@ impl ProceduralBodyConfig {
             ("abdomen_radius_m", self.abdomen_radius_m, 0.0, 0.4),
             ("hand_margin_m", self.hand_margin_m, 0.0, 0.2),
             ("elbow_hint_reach", self.elbow_hint_reach, 0.0, 1.0),
+            (
+                "clavicle_elevation_deg",
+                self.clavicle_elevation_deg,
+                0.0,
+                45.0,
+            ),
+            (
+                "clavicle_depression_deg",
+                self.clavicle_depression_deg,
+                0.0,
+                30.0,
+            ),
+            (
+                "clavicle_protraction_deg",
+                self.clavicle_protraction_deg,
+                0.0,
+                45.0,
+            ),
+            ("clavicle_reach_start", self.clavicle_reach_start, 0.3, 0.99),
+            ("clavicle_follow_s", self.clavicle_follow_s, 0.0, 1.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {

@@ -94,6 +94,32 @@ pub enum Side {
     Right,
 }
 
+impl Side {
+    /// The arm's bones on this side: the clavicle (a rig bone), and the names of the upper arm, the
+    /// forearm, and the hand under it.
+    pub const fn arm_bones(self) -> (RigBone, [&'static str; 3]) {
+        match self {
+            Self::Left => (
+                RigBone::LeftShoulder,
+                ["LeftArm", "LeftForeArm", "LeftHand"],
+            ),
+            Self::Right => (
+                RigBone::RightShoulder,
+                ["RightArm", "RightForeArm", "RightHand"],
+            ),
+        }
+    }
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::Right => 1,
+        }
+    }
+
+    pub const BOTH: [Self; 2] = [Self::Left, Self::Right];
+}
+
 /// The elbow hint for an arm of `length` (upper arm and forearm together) from `shoulder` to the
 /// wrist target `wrist`, on `side`.
 pub fn elbow_hint(shoulder: Vec3, wrist: Vec3, length: f32, side: Side) -> Option<Vec3> {

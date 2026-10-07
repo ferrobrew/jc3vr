@@ -10,7 +10,7 @@
 //!
 //! - [`skeleton`]: reading the skeleton, and logging it once per session.
 //! - [`rig`]: the bones the body drives, found by name.
-//! - [`solver`]: the body under the player's head, the feet, and the walk (pure).
+//! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
 //! - [`ground`]: the scene rays that find the ground under the footholds.
 //! - [`config`]: the mode and the tuning.
 //!
@@ -53,7 +53,8 @@ use crate::{
                 skeleton::Transform,
                 solver::{
                     DropFollower, SolveInput,
-                    arms::TorsoKeepOut,
+                    arms::{Side, TorsoKeepOut},
+                    clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
                     feet::{Feet, FeetInput, FootPose, StepTuning},
                     gait::{self, NeutralStance, StanceFoot},
                     hips_height,
@@ -62,6 +63,7 @@ use crate::{
                 },
             },
         },
+        hands::ik::deferred_wrist_targets,
         locomotion::{LocomotionStatus, status as locomotion_status},
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
     },
@@ -100,6 +102,8 @@ pub struct ProceduralStatus {
     pub stance_measured: bool,
     /// The last gate's ground casts.
     pub ground: GroundTally,
+    /// The clavicles' turns toward the hands, left then right.
+    pub clavicles: [ClavicleTurn; 2],
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -201,6 +205,8 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             if !weights.any() {
                 state.feet.reset();
                 state.drop.reset();
+                state.clavicles.reset();
+                state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 return;
             }
             let world = Mat4::from(character.m_WorldMatrixT1);
@@ -251,7 +257,11 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
             let need = reach_drop(&rig, &input, &config);
             input.hips_drop = state.drop.step(need, dt, config.reach_drop_s);
             state.status.reach_drop_m = input.hips_drop;
-            let solved = solve(&rig, &input, &config);
+            let mut solved = solve(&rig, &input, &config);
+            let turns = unsafe { state.turn_clavicles(character, &rig, &solved, dt, &config) };
+            for side in Side::BOTH {
+                clavicles::apply(&mut solved, &rig, side, turns[side.index()]);
+            }
             let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
             unsafe { write_pose(controller, &rig, &pose) };
             state.arms = (weights.torso > 0.0).then(|| ArmContext {
@@ -332,6 +342,8 @@ struct State {
     stance: NeutralStance,
     /// The hips' drop for the legs' reach.
     drop: DropFollower,
+    /// The clavicles' turns toward the hands.
+    clavicles: ClavicleFollower,
     ground_log: GroundLog,
     /// This tick's arm context, for the hand IK the gate runs next.
     arms: Option<ArmContext>,
@@ -467,6 +479,40 @@ impl State {
             })
     }
 
+    /// The clavicles' turns this tick: toward the wrist targets the hand IK queues next, eased.
+    ///
+    /// # Safety
+    ///
+    /// As [`at_solve_gate`].
+    unsafe fn turn_clavicles(
+        &mut self,
+        character: &Character,
+        rig: &Rig,
+        pose: &RigPose,
+        dt: f32,
+        config: &ProceduralBodyConfig,
+    ) -> [ClavicleTurn; 2] {
+        let wanted = if config.clavicles {
+            let targets = unsafe { deferred_wrist_targets(character) };
+            let tuning = ClavicleTuning {
+                elevation: config.clavicle_elevation_deg.to_radians(),
+                depression: config.clavicle_depression_deg.to_radians(),
+                protraction: config.clavicle_protraction_deg.to_radians(),
+                reach_start: config.clavicle_reach_start,
+            };
+            Side::BOTH.map(|side| {
+                targets[side.index()].map_or(ClavicleTurn::ZERO, |(target, weight)| {
+                    clavicles::wanted(pose, rig, side, target, weight, &tuning)
+                })
+            })
+        } else {
+            [ClavicleTurn::ZERO; 2]
+        };
+        let turns = self.clavicles.step(wanted, dt, config.clavicle_follow_s);
+        self.status.clavicles = turns;
+        turns
+    }
+
     /// What the character is doing, for the hand-over table, read at the gate. The predicates
     /// called here walk the character's own rule system and interaction graph, which the engine
     /// itself reads from this pass (`Character::IsInStuntPosition` and
@@ -597,6 +643,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     feet: Feet::new(),
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
+    clavicles: ClavicleFollower::new(),
     ground_log: GroundLog::new(),
     arms: None,
     logged_at: None,
@@ -617,6 +664,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         gait_phase: None,
         stance_measured: false,
         ground: GroundTally::new(),
+        clavicles: [ClavicleTurn::ZERO; 2],
     },
 });
 

@@ -129,6 +129,11 @@ fn summary(page: Page) -> Page {
             .body
             .procedural
             .keep_out))
+        .item(config_toggle!("SHOULDERS FOLLOW THE HANDS", |c| c
+            .controllers
+            .body
+            .procedural
+            .clavicles))
         .text("TEST WRITES THE POSE BACK AS IS.")
         .header("ALIGNMENT")
         .item(config_toggle!("BODY FACES YOUR TORSO", |c| c
