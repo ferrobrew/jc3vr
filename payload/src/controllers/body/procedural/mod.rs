@@ -10,6 +10,8 @@
 //!
 //! - [`skeleton`]: reading the skeleton, and logging it once per session.
 //! - [`rig`]: the bones the body drives, found by name.
+//! - [`joints`]: the rig for the skeleton the controller holds, and the bounds-checked joint reads
+//!   and writes.
 //! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
 //! - [`ground`]: the scene rays that find the ground under the footholds.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
@@ -25,6 +27,7 @@
 pub mod authority;
 pub mod config;
 pub mod ground;
+pub mod joints;
 pub mod rig;
 pub mod signals;
 pub mod skeleton;
@@ -35,10 +38,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use glam::{Mat4, Quat, Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
-    character::character::{AnimationController, Character, Joint},
+    character::character::{AnimationController, Character},
     state::StateBitFlag,
 };
 use parking_lot::Mutex;
@@ -52,9 +55,9 @@ use crate::{
                 authority::{Case, CharacterState, RegionBlend, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
                 ground::{GroundCaster, GroundLog, GroundTally},
+                joints::{LiveRig, RigCache},
                 rig::{Rig, RigBone, RigError},
                 signals::{in_hit_reaction, in_ledge_climb, set_local_character},
-                skeleton::Transform,
                 solver::{
                     DropFollower, SolveInput,
                     air::{AirFollower, AirTuning, DipTuning, LandingDip, air_feet, mix_feet},
@@ -203,19 +206,20 @@ unsafe fn run_gate(character: &mut Character) {
     else {
         return;
     };
-    let Some(rig) = (unsafe { state.rig_for(controller) }) else {
+    let Some(live) = (unsafe { state.rig_for(controller) }) else {
         OWNS_BODY.store(false, Ordering::Relaxed);
         return;
     };
-    let animated = unsafe { read_pose(controller, &rig) };
+    let rig = &live.rig;
+    let animated = unsafe { live.read(controller) };
     let locomotion = locomotion_status();
     state.observe_stance(&animated, &locomotion, dt);
     match config.mode {
         ProceduralMode::Off => {}
         ProceduralMode::PassThrough => {
             OWNS_BODY.store(false, Ordering::Relaxed);
-            unsafe { write_pose(controller, &rig, &animated) };
-            let read_back = unsafe { read_pose(controller, &rig) };
+            unsafe { live.write(controller, &animated) };
+            let read_back = unsafe { live.read(controller) };
             let error = round_trip_error(&animated, &read_back);
             state.status.round_trip = Some(error);
             if state
@@ -267,7 +271,7 @@ unsafe fn run_gate(character: &mut Character) {
             let feet = if legs_procedural {
                 let request = FeetRequest {
                     world: &world,
-                    rig: &rig,
+                    rig,
                     animated: &animated,
                     still: locomotion.standing_still(),
                     velocity,
@@ -297,9 +301,9 @@ unsafe fn run_gate(character: &mut Character) {
                         fall_speed_mps: config.air_fall_speed_mps,
                         toe_drop: config.air_toe_drop_deg.to_radians(),
                     };
-                    let hips = hips_height(&rig, head_in_model(&world).y, &config);
+                    let hips = hips_height(rig, head_in_model(&world).y, &config);
                     let stance = state.stance_feet(&request);
-                    let air = air_feet(&rig, stance, hips, vertical, &tuning);
+                    let air = air_feet(rig, stance, hips, vertical, &tuning);
                     mix_feet(ground_feet, air, air_weight)
                 } else {
                     ground_feet
@@ -324,23 +328,23 @@ unsafe fn run_gate(character: &mut Character) {
             // from there at the reach drop's pace.
             if previous.torso <= 0.0 {
                 let seed =
-                    hips_height(&rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
-                state.drop.seed(seed.min(hips_room(&rig, &config)));
+                    hips_height(rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
+                state.drop.seed(seed.min(hips_room(rig, &config)));
             }
-            let need = reach_drop(&rig, &input, &config);
+            let need = reach_drop(rig, &input, &config);
             let reach = state.drop.step(need, dt, config.reach_drop_s);
             let dip = state.dip.step(dt, config.landing_dip_s);
             state.status.reach_drop_m = reach;
             state.status.landing_dip_m = dip;
             // The dip is the hips' alone: the view is anchored to the root, not to them.
-            input.hips_drop = (reach + dip).min(hips_room(&rig, &config));
-            let mut solved = solve(&rig, &input, &config);
-            let turns = unsafe { state.turn_clavicles(character, &rig, &solved, dt, &config) };
+            input.hips_drop = (reach + dip).min(hips_room(rig, &config));
+            let mut solved = solve(rig, &input, &config);
+            let turns = unsafe { state.turn_clavicles(character, rig, &solved, dt, &config) };
             for side in Side::BOTH {
-                clavicles::apply(&mut solved, &rig, side, turns[side.index()]);
+                clavicles::apply(&mut solved, rig, side, turns[side.index()]);
             }
             let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
-            unsafe { write_pose(controller, &rig, &pose) };
+            unsafe { live.write(controller, &pose) };
             state.arms = (weights.torso > 0.0).then(|| ArmContext {
                 keep_out: config.keep_out.then(|| {
                     TorsoKeepOut::around(
@@ -415,9 +419,8 @@ static OWNS_BODY: AtomicBool = AtomicBool::new(false);
 static PUBLISHED: Mutex<ProceduralStatus> = Mutex::new(INITIAL_STATUS);
 
 struct State {
-    /// The rig, for the animation controller it was built from; `None` beside the key when that
-    /// controller's skeleton could not be rigged.
-    rig: Option<(usize, Option<Rig>)>,
+    /// The rig of the skeleton the animation controller holds.
+    rig: RigCache,
     /// The regions' weights against the animation.
     blend: RegionBlend,
     /// When Rico was last on the ground with the movement task running, for the jump's grace.
@@ -467,33 +470,15 @@ struct FeetRequest<'a> {
 }
 
 impl State {
-    /// The rig of `controller`'s skeleton, built once per controller. A skeleton that cannot be
-    /// rigged is reported once.
-    unsafe fn rig_for(&mut self, controller: &AnimationController) -> Option<Rig> {
-        let key = controller as *const AnimationController as usize;
-        if self.rig.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.status.rig_error = None;
+    /// The rig of `controller`'s skeleton, checked against it. A new skeleton forgets the stance
+    /// measured on the last one.
+    unsafe fn rig_for(&mut self, controller: &AnimationController) -> Option<LiveRig> {
+        let lookup = unsafe { self.rig.get(controller) };
+        if lookup.rebuilt {
+            self.status.rig_error = lookup.error;
             self.stance = NeutralStance::new();
-            let rig = match unsafe { skeleton::read(controller) } {
-                Ok(snapshot) => match Rig::from_skeleton(&snapshot) {
-                    Ok(rig) => {
-                        tracing::info!(target: "body", "procedural body: rigged the skeleton");
-                        Some(rig)
-                    }
-                    Err(error) => {
-                        tracing::warn!(target: "body", "procedural body: {error}");
-                        self.status.rig_error = Some(error);
-                        None
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!(target: "body", "procedural body: {error}");
-                    None
-                }
-            };
-            self.rig = Some((key, rig));
         }
-        self.rig.as_ref().and_then(|(_, rig)| rig.clone())
+        lookup.rig
     }
 
     /// Measure the neutral stance from the animated feet once Rico has stood still for a moment.
@@ -805,7 +790,7 @@ impl State {
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    rig: None,
+    rig: RigCache::new(),
     blend: RegionBlend::new(),
     grounded_at: None,
     case_logged: false,
@@ -848,45 +833,6 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     vertical_mps: 0.0,
     landing_dip_m: 0.0,
 };
-
-/// The animated model-space pose of the rig's bones.
-unsafe fn read_pose(controller: &AnimationController, rig: &Rig) -> RigPose {
-    RigPose {
-        bones: RigBone::ALL.map(|bone| {
-            let mut joint = Joint::default();
-            unsafe { controller.GetJoint(rig.skeleton_index(bone) as u32, &mut joint) };
-            from_joint(&joint)
-        }),
-    }
-}
-
-/// Write the rig's bones, parents first, so each write carries the children that follow.
-unsafe fn write_pose(controller: &mut AnimationController, rig: &Rig, pose: &RigPose) {
-    if !pose.is_finite() {
-        return;
-    }
-    for bone in RigBone::ALL {
-        let mut joint = to_joint(pose.get(bone));
-        unsafe { controller.SetJoint(rig.skeleton_index(bone) as u32, &mut joint) };
-    }
-}
-
-fn from_joint(joint: &Joint) -> Transform {
-    let [x, y, z, w] = joint.m_Orientation.data;
-    Transform {
-        translation: Vec3::from_array(joint.m_Translation.data),
-        rotation: Quat::from_xyzw(x, y, z, w),
-        scale: Vec3::from_array(joint.m_Scale.data),
-    }
-}
-
-fn to_joint(transform: &Transform) -> Joint {
-    let mut joint = Joint::default();
-    joint.m_Translation.data = transform.translation.to_array();
-    joint.m_Orientation.data = transform.rotation.to_array();
-    joint.m_Scale.data = transform.scale.to_array();
-    joint
-}
 
 /// The largest position (metres) and rotation (degrees) difference between two poses.
 fn round_trip_error(written: &RigPose, read: &RigPose) -> (f32, f32) {
