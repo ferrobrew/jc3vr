@@ -364,6 +364,51 @@ for NStateTask_InputLocoSetTargetDirTask {
     }
 }
 #[repr(C, align(8))]
+/// The on-foot input task that picks the target speed. Like the other `NStateTask` functions, it
+/// takes the character.
+pub struct NStateTask_InputLocoSetTargetSpeedsTask {}
+impl NStateTask_InputLocoSetTargetSpeedsTask {
+    pub const SetupTargetSpeeds_ADDRESS: usize = 0x14082FCE0;
+    /// Writes the move stick's magnitude (clamped to one) and the target speed to the character's
+    /// blackboard, the speed at [`ObjectBlackboard::SPEED_ID`](crate::blackboard::ObjectBlackboard::SPEED_ID),
+    /// from the character's movement settings. The speed is zero when the stick is at or below
+    /// [`m_WalkMinInput`](crate::input::locomotion::CharacterOnFootSettings::m_WalkMinInput); when a blackboard key
+    /// (unmapped) is present or [`Character::ShouldPreventFall`](crate::character::character::Character::ShouldPreventFall) reports a drop ahead, which
+    /// also sets a bit in the character's control parameters; when the predicted wall distance on
+    /// the blackboard is non-zero and closer than
+    /// [`m_PredictedWallDistanceTolerance`](crate::input::locomotion::CharacterOnFootSettings::m_PredictedWallDistanceTolerance);
+    /// and when a second blackboard key (unmapped) is present. Otherwise it is the run speed
+    /// ([`m_RunSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_RunSpeed), or
+    /// [`m_RunBackpedalSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_RunBackpedalSpeed) under a state bit)
+    /// above [`m_RunMinInput`](crate::input::locomotion::CharacterOnFootSettings::m_RunMinInput) when the character may run,
+    /// a fixed stunt speed under the stunt modification, and the walk speed
+    /// ([`m_WalkSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_WalkSpeed), or
+    /// [`m_NonCombatWalkSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_NonCombatWalkSpeed) by the mental
+    /// state) otherwise, never above the run speed.
+    pub unsafe fn SetupTargetSpeeds(
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::SetupTargetSpeeds_ADDRESS);
+            f(character)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_InputLocoSetTargetSpeedsTask>
+for NStateTask_InputLocoSetTargetSpeedsTask {
+    fn as_ref(&self) -> &NStateTask_InputLocoSetTargetSpeedsTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_InputLocoSetTargetSpeedsTask>
+for NStateTask_InputLocoSetTargetSpeedsTask {
+    fn as_mut(&mut self) -> &mut NStateTask_InputLocoSetTargetSpeedsTask {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The melee input task.
 pub struct NStateTask_InputMeleeTask {}
 impl NStateTask_InputMeleeTask {

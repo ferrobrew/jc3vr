@@ -758,6 +758,45 @@ impl Character {
             f(self as *mut Self as _, dt, range_id)
         }
     }
+    pub const UpdatePropTransforms_ADDRESS: usize = 0x14075EAA0;
+    /// Places the character's weapons and props on its current pose: calls
+    /// [`Inventory::UpdateAttachmentTransforms`](crate::character::inventory::Inventory::UpdateAttachmentTransforms)
+    /// with the character's snow and water factors and `transform_type`, unless a character flag
+    /// beside [`m_LodFlags`](crate::character::character::Character::m_LodFlags) (unmapped) switches the placement off.
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) makes the same
+    /// call inline twice: with the advancing placement (`transform_type` 2) after the finalize
+    /// state tasks, and with `transform_type` 1 after the `MAIN` HumanIK solve, which runs only
+    /// when [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) reports a queued target.
+    pub unsafe fn UpdatePropTransforms(&mut self, transform_type: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, transform_type: u32) = ::std::mem::transmute(
+                Self::UpdatePropTransforms_ADDRESS,
+            );
+            f(self as *mut Self as _, transform_type)
+        }
+    }
+    pub const ShouldPreventFall_ADDRESS: usize = 0x14075F9D0;
+    /// Whether the on-foot input should stop the character short of a drop ahead
+    /// (`CCharacter::ShouldPreventFall`): false when `predicted_fall_height` is below the
+    /// movement settings' [`m_PredictedFallHeightTolerance`](crate::input::locomotion::CharacterOnFootSettings::m_PredictedFallHeightTolerance),
+    /// and otherwise true unless the player holds a player action (unmapped), read as an analog
+    /// value or a digital state by a game setting.
+    /// [`NStateTask_InputLocoSetTargetSpeedsTask::SetupTargetSpeeds`](crate::input::locomotion::NStateTask_InputLocoSetTargetSpeedsTask::SetupTargetSpeeds)
+    /// calls it with the predicted fall height from the character's blackboard.
+    pub unsafe fn ShouldPreventFall(
+        &mut self,
+        predicted_fall_height: f32,
+        settings: *const crate::input::locomotion::CharacterMovementSettings,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                predicted_fall_height: f32,
+                settings: *const crate::input::locomotion::CharacterMovementSettings,
+            ) -> bool = ::std::mem::transmute(Self::ShouldPreventFall_ADDRESS);
+            f(self as *mut Self as _, predicted_fall_height, settings)
+        }
+    }
     pub const UpdatePropEffects_ADDRESS: usize = 0x1407C2380;
     /// The per-frame update of the character's attached prop visual effects. Runs last in
     /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel), after the IK
