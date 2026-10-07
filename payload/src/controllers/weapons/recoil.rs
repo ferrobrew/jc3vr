@@ -2,8 +2,8 @@
 //! (`docs/mod/input/controllers-and-roomscale.md`).
 //!
 //! Each hand that holds a gun carries an offset between its controller pose and the pose the hand,
-//! the gun, and the gun's sight line are placed at: a pitch and a yaw about the controller's grip,
-//! and a shift back along it. Every shot kicks the offset of the hand whose gun fired, by the
+//! the gun, and the gun's sight line are placed at: a pitch and a yaw of the barrel about the
+//! controller's grip, and a shift back along the barrel ([`offset_motion`]). Every shot kicks the offset of the hand whose gun fired, by the
 //! recoil the game adds for that shot ([`WeaponBase::m_RecoilPitch`] and
 //! [`WeaponBase::m_RecoilYaw`], read across the shot by [`crate::controllers::weapons::fire`]), and
 //! a damped spring returns it to zero. The offset is applied to the active hands
@@ -108,15 +108,24 @@ pub fn clamp_offset(offset: Vec3, max_angle_deg: f32) -> Vec3 {
     )
 }
 
-/// The rigid motion an offset applies about the grip `grip`: the pivot, the world rotation, and the
-/// world translation. Pitch turns the grip's -Z (its pointing direction) toward its +Y, yaw turns
-/// it about its +Y, and the shift is along its +Z (back toward the wrist).
-pub fn offset_motion(grip: Pose, offset: Vec3) -> Motion {
-    let local = Quat::from_rotation_y(offset.y) * Quat::from_rotation_x(offset.x);
+/// The rigid motion an offset applies about the grip of `hand`: the pivot, the world rotation, and
+/// the world translation. The gun's barrel is the wrist frame's fingers axis (its -Z), along which
+/// the hand holds it; the controller's grip -Z runs up the handle. Pitch turns the barrel up about
+/// the axis across it (the grip's palm axis, +X), yaw turns it about the axis up the handle, square
+/// to the barrel (positive to the left), and the shift is back along the barrel.
+pub fn offset_motion(hand: &CockpitHand, offset: Vec3) -> Motion {
+    let grip = hand.grip;
+    let barrel = (hand.wrist.orientation * Vec3::NEG_Z).normalize();
+    let across = (grip.orientation * Vec3::X)
+        .reject_from(barrel)
+        .try_normalize()
+        .unwrap_or_else(|| barrel.any_orthonormal_vector());
+    let up = across.cross(barrel);
+    let rotation = Quat::from_axis_angle(up, offset.y) * Quat::from_axis_angle(across, offset.x);
     Motion {
         pivot: grip.position,
-        rotation: (grip.orientation * local * grip.orientation.inverse()).normalize(),
-        translation: grip.orientation * Vec3::new(0.0, 0.0, offset.z),
+        rotation: rotation.normalize(),
+        translation: -barrel * offset.z,
     }
 }
 
@@ -172,7 +181,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &RecoilConfig) {
         let Some(h) = hands[hand.index()] else {
             continue;
         };
-        let motion = offset_motion(h.grip, offset);
+        let motion = offset_motion(&h, offset);
         hands[hand.index()] = Some(motion.hand(h));
         if let Some(g) = grip.filter(|g| g.holder == hand)
             && let Some(off) = hands[hand.other().index()]
@@ -297,7 +306,10 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use glam::Vec2;
+
     use super::*;
+    use crate::controllers::{config::GripOffset, hands::pose as hand_pose};
 
     fn config() -> RecoilConfig {
         RecoilConfig::new()
@@ -368,41 +380,83 @@ mod tests {
         assert_eq!(stiffness(&c, 0.0), c.spring_stiffness);
     }
 
-    #[test]
-    fn a_pitch_kick_raises_the_aim_and_pushes_the_hand_back() {
+    const OFFSET: GripOffset = GripOffset::INDEX_BEST_GUESS;
+
+    /// `hand` holding a pistol grip at `position`, the barrel pitched up by `pitch_up` and turned
+    /// left by `yaw` (radians): an OpenXR grip with its -Z up the handle, tilted back from the level
+    /// controller by the grip offset's pitch so that the fingers, and the barrel along them, point
+    /// forward.
+    fn pistol(hand: Hand, position: Vec3, pitch_up: f32, yaw: f32) -> CockpitHand {
+        let tilt = OFFSET.rotation_deg.x.to_radians();
         let grip = Pose {
-            position: Vec3::new(0.2, 1.2, -0.3),
-            orientation: Quat::from_rotation_y(0.4),
+            position,
+            orientation: Quat::from_rotation_y(yaw)
+                * Quat::from_rotation_x(pitch_up)
+                * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2 - tilt),
         };
-        let hand = CockpitHand {
-            wrist: Pose {
-                position: grip.position + grip.orientation * Vec3::new(0.0, -0.05, 0.05),
-                orientation: grip.orientation,
-            },
-            grip,
-            aim: Pose {
-                position: grip.position + grip.orientation * Vec3::new(0.0, 0.0, -0.05),
-                orientation: grip.orientation,
-            },
-        };
-        let moved = offset_motion(grip, Vec3::new(0.1, 0.0, 0.02)).hand(hand);
-        let forward = |p: Pose| p.orientation * Vec3::NEG_Z;
-        assert!(forward(moved.aim).y > forward(hand.aim).y + 0.05);
-        let back = grip.orientation * Vec3::Z;
-        assert!((moved.grip.position - grip.position).dot(back) > 0.019);
-        let none = offset_motion(grip, Vec3::ZERO).hand(hand);
-        assert!(none.aim.position.distance(hand.aim.position) < 1e-6);
+        hand_pose::cockpit_hand(hand, grip, grip, &OFFSET, None)
+    }
+
+    /// The barrel of a held gun: the wrist frame's fingers axis.
+    fn barrel(h: &CockpitHand) -> Vec3 {
+        h.wrist.orientation * Vec3::NEG_Z
+    }
+
+    fn handle(h: &CockpitHand) -> Vec3 {
+        h.grip.orientation * Vec3::NEG_Z
+    }
+
+    fn heading(v: Vec3) -> Vec2 {
+        Vec2::new(v.x, v.z).normalize()
+    }
+
+    #[test]
+    fn a_pitch_kick_raises_the_barrel_and_pushes_the_hand_back_along_it() {
+        for hand in Hand::BOTH {
+            for (pitch, yaw) in [(0.0, 0.0), (0.4, 0.9), (-0.3, -2.0)] {
+                let held = pistol(hand, Vec3::new(0.2, -0.3, -0.4), pitch, yaw);
+                let moved = offset_motion(&held, Vec3::new(0.1, 0.0, 0.02)).hand(held);
+                let (before, after) = (barrel(&held), barrel(&moved));
+                assert!(after.y > before.y + 0.05, "{hand:?} {pitch} {yaw}");
+                // Up in the barrel's own vertical plane, without rolling the handle off it.
+                assert!(heading(before).distance(heading(after)) < 1e-4);
+                let across = Vec3::Y.cross(before).normalize();
+                assert!(handle(&moved).dot(across).abs() < 1e-4);
+                // Back along the barrel, not down the handle.
+                let shift = moved.grip.position - held.grip.position;
+                assert!(shift.dot(-before) > 0.019, "{hand:?} {shift}");
+                assert!(shift.normalize().dot(-before) > 1.0 - 1e-5);
+            }
+        }
+        let held = pistol(Hand::Right, Vec3::ZERO, 0.0, 0.0);
+        let none = offset_motion(&held, Vec3::ZERO).hand(held);
+        assert!(none.aim.position.distance(held.aim.position) < 1e-6);
+    }
+
+    #[test]
+    fn a_yaw_kick_swings_the_barrel_about_the_handle_without_rolling() {
+        let held = pistol(Hand::Right, Vec3::new(0.2, -0.3, -0.4), 0.0, 0.5);
+        let moved = offset_motion(&held, Vec3::new(0.0, 0.1, 0.0)).hand(held);
+        let (before, after) = (barrel(&held), barrel(&moved));
+        // The barrel turns left in the horizontal plane about the upright axis through the handle,
+        // not about the barrel: the palm axis stays level, so the gun does not roll.
+        assert!((after.y - before.y).abs() < 1e-5);
+        assert!(
+            heading(before).perp_dot(heading(after)) < -0.09,
+            "{before} {after}"
+        );
+        let palm = |h: &CockpitHand| h.grip.orientation * Vec3::X;
+        assert!(palm(&held).y.abs() < 1e-5);
+        assert!(palm(&moved).y.abs() < 1e-5, "{}", palm(&moved));
+        assert!((handle(&moved).y - handle(&held).y).abs() < 1e-5);
     }
 
     #[test]
     fn a_scaled_motion_goes_part_of_the_way() {
-        let grip = Pose {
-            position: Vec3::ZERO,
-            orientation: Quat::IDENTITY,
-        };
-        let motion = offset_motion(grip, Vec3::new(0.2, 0.0, 0.1));
+        let held = pistol(Hand::Right, Vec3::ZERO, 0.0, 0.0);
+        let motion = offset_motion(&held, Vec3::new(0.2, 0.0, 0.1));
         let half = motion.scaled(0.5);
-        assert!((half.translation.z - 0.05).abs() < 1e-6);
+        assert!((half.translation.length() - 0.05).abs() < 1e-6);
         let (_, angle) = half.rotation.to_axis_angle();
         assert!((angle - 0.1).abs() < 1e-4);
         assert_eq!(motion.scaled(0.0).rotation, Quat::IDENTITY);
