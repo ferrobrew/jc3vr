@@ -22,7 +22,7 @@ The body dimensions are the `[body]` section of `settings.toml` and the director
 
 ## Loading
 
-`config::init` loads the file once, from `initialize_startup` before the hooks are installed, so the first frame's VR initialization (the dominant hand and the controller layout among the settings it reads) sees the saved values. A missing file is the first run: the defaults are used and nothing is written until a setting changes. A file that cannot be read or is not TOML logs a warning, the defaults are used, and the file is left alone until a setting changes, at which point it is replaced.
+`config::init` loads the file once, from `initialize_startup` before the hooks are installed, so the first frame's VR initialization (the dominant hand and the controller layout among the settings it reads) sees the saved values. A missing file is the first run: the defaults are used and nothing is written until a setting changes. A file that cannot be read or is not TOML logs a warning, the defaults are used, and the file is left alone until a setting changes. The first save then renames it to `settings.toml.bad-<timestamp>` beside it (the session stamp, logged with the path) before writing the new file, so a hand edit that broke the file is kept rather than replaced by the defaults; if the rename fails, the save fails and is retried, and the file stays as it is.
 
 The load is tolerant, so a file written by an older or newer build, or edited by hand, costs at most the settings it gets wrong (`config::load`):
 

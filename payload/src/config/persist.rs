@@ -43,13 +43,19 @@ pub(crate) enum SaveStatus {
 
 /// Load the settings file into the configuration. Called once at startup, before anything reads
 /// the configuration for initialization. Every failure falls back to the defaults: a missing file
-/// is the first run, and an unreadable or unparseable one is left as it is until a setting changes.
+/// is the first run, and an unreadable or unparseable one is left as it is until a setting changes,
+/// when the first save moves it aside before writing.
 pub(crate) fn init() {
     let Some(path) = paths::settings_file() else {
         return;
     };
     tracing::info!(path = %path.display(), "settings: using this settings file");
-    let config = load_from(&path);
+    let Loaded { config, unreadable } = load_from(&path);
+    if unreadable {
+        // The first save replaces the file, so the user's version is moved aside first rather
+        // than lost to the defaults.
+        WRITTEN.lock().set_aside = Some(set_aside_path(&path, &crate::session::stamp()));
+    }
     // The baseline the first save compares against: what the configuration was loaded as, so that
     // nothing is written (and a broken file is not replaced) until a setting changes.
     let baseline = toml::to_string(&config)
@@ -181,8 +187,19 @@ static SAVER: Mutex<Saver> = Mutex::new(Saver::new());
 
 static EDITS: Mutex<Edits> = Mutex::new(Edits::new());
 
-/// The generation the file holds. Held for each whole write, which serializes the writers.
-static WRITTEN: Mutex<u64> = Mutex::new(0);
+/// The file's state. Held for each whole write, which serializes the writers.
+static WRITTEN: Mutex<FileState> = Mutex::new(FileState {
+    generation: 0,
+    set_aside: None,
+});
+
+/// The settings file's state, as the writers see it.
+struct FileState {
+    /// The generation the file holds.
+    generation: u64,
+    /// Where the file that could not be loaded is moved before the first write replaces it.
+    set_aside: Option<PathBuf>,
+}
 
 /// What [`status`] reads.
 #[derive(Copy, Clone, Debug)]
@@ -437,6 +454,12 @@ enum SaveError {
     WriterPanicked,
     /// The file could not be written.
     Write(WriteError),
+    /// The file that could not be loaded could not be moved aside, so it was not replaced.
+    SetAside {
+        from: PathBuf,
+        to: PathBuf,
+        source: io::Error,
+    },
 }
 
 impl fmt::Display for SaveError {
@@ -447,6 +470,12 @@ impl fmt::Display for SaveError {
             Self::Spawn(source) => write!(f, "could not start the writer: {source}"),
             Self::WriterPanicked => write!(f, "the writer panicked"),
             Self::Write(source) => write!(f, "{source}"),
+            Self::SetAside { from, to, source } => write!(
+                f,
+                "could not move the unreadable {} to {}, so it was not replaced: {source}",
+                from.display(),
+                to.display()
+            ),
         }
     }
 }
@@ -458,6 +487,7 @@ impl std::error::Error for SaveError {
             Self::Spawn(source) => Some(source),
             Self::WriterPanicked => None,
             Self::Write(source) => Some(source),
+            Self::SetAside { source, .. } => Some(source),
         }
     }
 }
@@ -486,13 +516,27 @@ impl std::error::Error for ReadError {
     }
 }
 
+/// What [`load_from`] read.
+struct Loaded {
+    config: Config,
+    /// The file exists but could not be read or parsed, so the defaults stand in for it.
+    unreadable: bool,
+}
+
 /// Read and load the settings file at `path`, falling back to the defaults and logging why.
-fn load_from(path: &Path) -> Config {
+fn load_from(path: &Path) -> Loaded {
+    let unreadable = |config| Loaded {
+        config,
+        unreadable: true,
+    };
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(source) if source.kind() == io::ErrorKind::NotFound => {
             tracing::info!("settings: no settings file yet; using the defaults");
-            return Config::new();
+            return Loaded {
+                config: Config::new(),
+                unreadable: false,
+            };
         }
         Err(source) => {
             let error = ReadError {
@@ -500,9 +544,10 @@ fn load_from(path: &Path) -> Config {
                 source,
             };
             tracing::warn!(
-                "{error}; using the defaults, and leaving the file alone until a setting changes"
+                "{error}; using the defaults, and moving the file aside before a setting change \
+                 replaces it"
             );
-            return Config::new();
+            return unreadable(Config::new());
         }
     };
     match load::parse(&text) {
@@ -511,15 +556,27 @@ fn load_from(path: &Path) -> Config {
             if loaded.report.is_empty() {
                 tracing::info!("settings: loaded");
             }
-            loaded.config
+            Loaded {
+                config: loaded.config,
+                unreadable: false,
+            }
         }
         Err(error) => {
             tracing::warn!(
-                "{error}; using the defaults, and leaving the file alone until a setting changes"
+                "{error}; using the defaults, and moving the file aside before a setting change \
+                 replaces it"
             );
-            Config::new()
+            unreadable(Config::new())
         }
     }
+}
+
+/// Where the settings file at `path`, which could not be loaded, is kept: beside it, named after
+/// it with a `.bad-<stamp>` suffix.
+fn set_aside_path(path: &Path, stamp: &str) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_owned();
+    name.push(format!(".bad-{stamp}"));
+    path.with_file_name(name)
 }
 
 /// Serialize the configuration as a save writes it: with the user's values for the switches the
@@ -541,14 +598,35 @@ fn serialize_snapshot(saver: &mut Saver) -> Option<String> {
     }
 }
 
-/// Write `text` as save number `generation`, unless a newer save is already written.
+/// Write `text` as save number `generation`, unless a newer save is already written. The first
+/// write after a file that could not be loaded moves that file aside first, and writes nothing if
+/// it cannot.
 fn write_generation(generation: u64, path: &Path, text: &str) -> Result<Written, SaveError> {
     let mut written = WRITTEN.lock();
-    if *written > generation {
+    if written.generation > generation {
         return Ok(Written::Superseded);
     }
+    if let Some(to) = written.set_aside.take() {
+        match fs::rename(path, &to) {
+            Ok(()) => tracing::warn!(
+                path = %to.display(),
+                "settings: kept the settings file that could not be loaded"
+            ),
+            // Nothing is left to keep: the file went away after the load.
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => {
+                let error = SaveError::SetAside {
+                    from: path.to_owned(),
+                    to: to.clone(),
+                    source,
+                };
+                written.set_aside = Some(to);
+                return Err(error);
+            }
+        }
+    }
     write::replace(path, text.as_bytes()).map_err(SaveError::Write)?;
-    *written = generation;
+    written.generation = generation;
     Ok(Written::Written)
 }
 
@@ -630,6 +708,15 @@ mod tests {
             ..inputs()
         };
         assert_eq!(status_of(unavailable), SaveStatus::Unavailable);
+    }
+
+    #[test]
+    fn an_unreadable_file_is_kept_beside_itself() {
+        let path = Path::new("config").join("settings.toml");
+        assert_eq!(
+            set_aside_path(&path, "2026-01-02_03-04-05_678"),
+            Path::new("config").join("settings.toml.bad-2026-01-02_03-04-05_678")
+        );
     }
 
     #[test]
