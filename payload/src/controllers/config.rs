@@ -590,9 +590,9 @@ pub struct OverlayConfig {
     pub grapple_highlight: bool,
     /// Draw a beam from the grapple wrist to the grapple's target point.
     pub grapple_beam: bool,
-    /// Hide the game's own weapon reticle wherever the guns aim by hand, and its grapple reticle
-    /// wherever the grapple does: on foot whether or not a gun is out, and in a vehicle while its
-    /// weapons aim by hand. Both mark the gaze's aim point (see
+    /// Hide the game's own weapon reticle wherever the guns aim by hand (on foot whether or not a
+    /// gun is out, and in a vehicle while its weapons aim by hand), and its grapple reticle
+    /// everywhere under the controller scheme. Both mark the gaze's aim point (see
     /// [`crate::controllers::overlay::game_reticle`]). Independent of [`Self::enabled`].
     pub hide_game_reticle: bool,
     /// Draw a translucent ghost at the controller of a hand the animation owns.

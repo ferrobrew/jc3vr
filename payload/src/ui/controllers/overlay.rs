@@ -32,7 +32,7 @@ pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {
     )
     .on_hover_text(
         "Hide the HUD's weapon reticle while the guns aim by hand, and its grapple reticle \
-             while the grapple does: both mark where the gaze aims.",
+             always: both mark where the gaze aims, and the overlay marks the grapple's target.",
     );
     ui.checkbox(&mut o.enabled, "Enabled")
         .on_hover_text("Draw the world-space overlay layer.");
