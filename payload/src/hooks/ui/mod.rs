@@ -34,6 +34,7 @@ use crate::{
     controllers::{
         overlay::game_reticle::hide_game_reticles, summary::game_hints::hide_game_hints,
     },
+    frame_timing::{self, Slot},
     hud::{HUD_STATE, compute_panel_vp, current_aspect, split::roots},
 };
 
@@ -128,6 +129,7 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
     // dereference `this`.
     let is_main_movie =
         unsafe { UIManager::get().is_some_and(|manager| std::ptr::eq(manager.m_Movie, this)) };
+    let timing = frame_timing::scope(Slot::UiCapture);
     if is_main_movie {
         let (split_enabled, suppress_overlays, hud) = Config::lock_query(|c| {
             (
@@ -159,7 +161,9 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
             crate::hud::anchored::sample_status(&hud);
         }
     }
+    drop(timing);
     let result = MOVIE_CAPTURE.get().unwrap().call(this, if_changed);
+    let _timing = frame_timing::scope(Slot::UiCapture);
     // Everything moved for the capture moves back before the next advance, and the world-marker
     // and atlas layouts are keyed by the snapshot this capture produced.
     // SAFETY: `this` is the live movie the capture ran on, at the capture seam.

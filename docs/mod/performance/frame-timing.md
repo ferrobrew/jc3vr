@@ -8,7 +8,7 @@ A fixed set of slots (`frame_timing::Slot`), each a region of the frame wrapped 
 
 Each slot has a kind:
 
-- `mod`: the mod's own CPU work. The debug UI, the input tick and the controller bindings, the physical hands, the aim update, the render-update hook's glue, the submit's blit, the desktop mirror, the frame tail's glue, and the post-draw overlays on the draw task.
+- `mod`: the mod's own CPU work. The debug UI, the input tick and the controller bindings, the physical hands, the aim update, the render-update hook's glue, the submit's blit, the desktop mirror, the frame tail's glue, and the post-draw overlays on the draw task. Inside the engine's own work: the character pose-pass hooks around the HumanIK solve (`character_pose`), the procedural body at the solve gate (`body_gate`), the hand bodies' pre-simulation callback (`hand_bodies`), the UI capture thread's hooks (`ui_capture`), and the world markers' raycasts, placement, and depth sampling (`world_markers`).
 - `openxr`: OpenXR calls that do work rather than pace. `xrBeginFrame` with the view and head location, the controllers' action sync and reads, and `xrEndFrame`.
 - `engine`: the engine's own work. The rest of `Game::Update` (the sim tick), the engine's render update, and its game-thread draw per dispatch.
 - `wait`: blocking. `xrWaitFrame`, the swapchain image wait, the VR runtime lock (which the deferred tail holds until it submits the previous frame), and the drains that wait on the draw task.
@@ -16,6 +16,8 @@ Each slot has a kind:
 Self time is also bucketed by the thread it ran on, from its role in `crate::thread_role`: the game thread, the frame tail, and every other thread (the draw task and the fragment workers). The game thread is the one that bounds the frame rate. Its untracked time is the frame interval minus everything the scopes covered there, which is the engine's main loop outside `Game::Update` plus timer overhead.
 
 The frame interval is the time between successive `Game::Update` entries.
+
+The hooks inside the engine's work are timed around the mod's part only, never around the engine call they wrap, so `engine_update` and `post_draw` lose exactly the time those slots gain. The pose-pass hooks and the solve gate run on whichever thread the engine updates the character on, so their time can land in `other` as well as in `game`; the UI capture hooks land in `other`.
 
 The aim slot includes the engine's aim update it wraps, because the mod's grapple hook makes the engine's queued visibility checks immediate ray casts inside it.
 

@@ -121,6 +121,7 @@ unsafe extern "system" fn pre_simulation(
     }
     // Never unwind into the engine: a panic stops the hand bodies for the session instead.
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandBodies);
         // SAFETY: the engine calls this before a step, on the thread that steps the world.
         unsafe { crate::controllers::physical_hands::physics::step() }
     }));

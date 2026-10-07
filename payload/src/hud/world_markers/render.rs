@@ -54,6 +54,7 @@ pub(crate) fn prepare_frame(
     device: &Device,
     inputs: &FrameInputs<'_>,
 ) {
+    let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
     let (cfg, hud_cfg) = Config::lock_query(|c| (c.hud.world_markers, c.hud));
     let mut renderer = RENDERER.lock();
     let active = cfg.enabled

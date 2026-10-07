@@ -11,7 +11,10 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{body::procedural::at_solve_gate, hands::ik::queue_deferred};
+use crate::{
+    controllers::{body::procedural::at_solve_gate, hands::ik::queue_deferred},
+    frame_timing::{self, Slot},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&HUMAN_IK_HAS_TARGETS_BINDER)
@@ -29,6 +32,7 @@ fn human_ik_has_targets(hik: *mut HumanIK, pass: Pass) -> bool {
         // SAFETY: every solver the gate is called with is a character's `m_HIK`, and the pass runs
         // on the thread that owns that character for its duration.
         if let Some(character) = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter) {
+            let _timing = frame_timing::scope(Slot::BodyGate);
             unsafe { at_solve_gate(character) };
             // The wrist targets kept for the gate are queued on the torso it just wrote.
             unsafe { queue_deferred(character) };

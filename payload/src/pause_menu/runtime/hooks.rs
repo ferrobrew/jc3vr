@@ -41,6 +41,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
+    frame_timing::{self, Slot},
     pause_menu::{
         gfx::{CaptureThread, GfxValue, Screen, decode_arg},
         model::{
@@ -240,6 +241,7 @@ fn handle_command(
 #[detour(address = PauseUI::UpdateImpl_ADDRESS)]
 fn update(this: *mut PauseUI, dt: f32, dtf: f32) {
     UPDATE.get().unwrap().call(this, dt, dtf);
+    let _timing = frame_timing::scope(Slot::UiCapture);
 
     if SESSION.lock().state.shown_page().is_none() {
         return;

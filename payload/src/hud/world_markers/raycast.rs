@@ -28,6 +28,7 @@ use crate::{
 /// `owner` must be the live local player character, on the simulation thread outside the physics
 /// step.
 pub(crate) unsafe fn resolve_rays(owner: &Character) {
+    let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::WorldMarkers);
     let cfg = Config::lock_query(|c| c.hud.world_markers);
     if !(cfg.enabled && cfg.surface_placement && cfg.ray_fallback) {
         return;

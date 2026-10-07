@@ -23,6 +23,24 @@ pub(crate) enum Slot {
     /// update it wraps (with the grapple visibility checks the mod makes immediate), and the hand
     /// rays.
     Aim,
+    /// The mod's work in the character pose-pass hooks, around the HumanIK solve: the head, hand,
+    /// stance, and crouch targets queued at the pose finalization's entry, the secondary hand pass's
+    /// switches, and the head override and post-solve fix-ups after the prop effects. Excludes the
+    /// solve gate.
+    CharacterPose,
+    /// The local player's HumanIK solve gate: the procedural body's pose and the controllers' wrist
+    /// targets queued on it.
+    BodyGate,
+    /// The physical hands' pre-simulation callback, which drives the hand bodies before each physics
+    /// step.
+    HandBodies,
+    /// The mod's work in the UI capture thread's hooks: at the main UI movie's capture seam, the HUD
+    /// partition, the overlay and reticle hiding, and the atlas's and the world markers' moves into
+    /// their cells and back; and the pause menu's VR pages' per-frame update.
+    UiCapture,
+    /// The world markers' fallback raycasts in the simulation update, and their placement and depth
+    /// sampling on eye 0's post-draw.
+    WorldMarkers,
     /// The render-update hook's own glue, excluding everything timed separately inside it.
     UpdateRenderHook,
     /// `vr::update`: the OpenXR event pump.
@@ -44,7 +62,7 @@ pub(crate) enum Slot {
     /// The deferred frame tail's own glue, excluding its drain, mirror, and submit.
     Tail,
     /// The mod's work in `RenderEngine::PostDraw` on the draw task: the world-space overlays, the
-    /// HUD quad, the egui panel, and the eye captures.
+    /// HUD quad, the egui panel, and the eye captures, excluding the world markers' placement.
     PostDraw,
     /// `xrEndFrame`.
     VrEndFrame,
@@ -94,6 +112,11 @@ impl Slot {
         Slot::Bindings,
         Slot::PhysicalHands,
         Slot::Aim,
+        Slot::CharacterPose,
+        Slot::BodyGate,
+        Slot::HandBodies,
+        Slot::UiCapture,
+        Slot::WorldMarkers,
         Slot::UpdateRenderHook,
         Slot::VrUpdate,
         Slot::VrBeginFrame,
@@ -113,7 +136,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 22;
+    pub(crate) const COUNT: usize = 27;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -129,6 +152,11 @@ impl Slot {
             Slot::Bindings => "bindings",
             Slot::PhysicalHands => "physical_hands",
             Slot::Aim => "aim",
+            Slot::CharacterPose => "character_pose",
+            Slot::BodyGate => "body_gate",
+            Slot::HandBodies => "hand_bodies",
+            Slot::UiCapture => "ui_capture",
+            Slot::WorldMarkers => "world_markers",
             Slot::UpdateRenderHook => "update_render_hook",
             Slot::VrUpdate => "vr_update",
             Slot::VrBeginFrame => "vr_begin_frame",
@@ -156,6 +184,11 @@ impl Slot {
             | Slot::Bindings
             | Slot::PhysicalHands
             | Slot::Aim
+            | Slot::CharacterPose
+            | Slot::BodyGate
+            | Slot::HandBodies
+            | Slot::UiCapture
+            | Slot::WorldMarkers
             | Slot::UpdateRenderHook
             | Slot::VrUpdate
             | Slot::Submit

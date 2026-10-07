@@ -19,11 +19,14 @@ use detours_macro::detour;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    self,
-    body::procedural::{owns_body, skeleton},
-    hands::{self, ik::HandPlan},
-    roomscale::stance,
+use crate::{
+    controllers::{
+        self,
+        body::procedural::{owns_body, skeleton},
+        hands::{self, ik::HandPlan},
+        roomscale::stance,
+    },
+    frame_timing::{self, Slot},
 };
 
 pub(crate) mod acts;
@@ -75,6 +78,7 @@ fn character_update_pass_finalize_pose_parallel(
     //
     // The weapon-agnostic body's decision only publishes, for the next tick's modifier pass and
     // pose job, so its place here is free.
+    let timing = frame_timing::scope(Slot::CharacterPose);
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
     let plan = local.then(hands::ik::plan);
     // SAFETY: the engine passes the pass's update context, whose first field is the step.
@@ -105,11 +109,13 @@ fn character_update_pass_finalize_pose_parallel(
             }
         }
     }
+    drop(timing);
 
     CHARACTER_UPDATE_PASS_FINALIZE_POSE_PARALLEL
         .get()
         .unwrap()
         .call(character, context);
+    let _timing = frame_timing::scope(Slot::CharacterPose);
     hands::ik::end_finalize();
 }
 
@@ -123,7 +129,10 @@ fn character_update_secondary_hand_ik_pass(
     dt: f32,
     ik_has_run: *mut bool,
 ) {
-    unsafe { hands::ik::before_secondary(character) };
+    {
+        let _timing = frame_timing::scope(Slot::CharacterPose);
+        unsafe { hands::ik::before_secondary(character) };
+    }
     CHARACTER_UPDATE_SECONDARY_HAND_IK_PASS
         .get()
         .unwrap()
@@ -137,6 +146,7 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         .unwrap()
         .call(character, dt);
 
+    let _timing = frame_timing::scope(Slot::CharacterPose);
     unsafe {
         head::override_head(character);
         hands::ik::after_solve(character);
