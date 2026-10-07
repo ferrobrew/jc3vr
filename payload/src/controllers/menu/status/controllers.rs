@@ -260,9 +260,6 @@ fn canonical_grip_line(reads: [Option<GripRead>; 2]) -> Line {
 }
 
 fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
-    if status.failed {
-        return Line::failed("PANICKED, SEE LOG");
-    }
     if !status.registered {
         return if enabled {
             Line::waiting("NOT REGISTERED")
@@ -466,11 +463,6 @@ mod tests {
             callback_line(false, CallbackStatus::default()).health,
             Health::Off
         );
-        let failed = CallbackStatus {
-            failed: true,
-            ..fired(7)
-        };
-        assert_eq!(callback_line(true, failed).health, Health::Failed);
     }
 
     #[test]

@@ -22,7 +22,6 @@
 use std::{
     ffi::c_void,
     fmt,
-    panic::{self, AssertUnwindSafe},
     ptr::NonNull,
     sync::{
         OnceLock,
@@ -158,11 +157,9 @@ unsafe extern "system" fn on_contact_impulse(
     other: *mut PfxInstance,
     is_body_a: bool,
 ) {
-    // Never unwind into the engine.
-    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
-        // SAFETY: the listener passes the live event and the other body's instance, or null.
-        unsafe { record(this, event, other, is_body_a) }
-    }));
+    // The payload aborts on a panic, so the handler must not panic.
+    // SAFETY: the listener passes the live event and the other body's instance, or null.
+    unsafe { record(this, event, other, is_body_a) }
 }
 
 unsafe fn record(

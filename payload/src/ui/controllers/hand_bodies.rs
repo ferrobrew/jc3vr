@@ -9,12 +9,6 @@ use crate::controllers::{
 };
 
 pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
-    if status.failed {
-        ui.colored_label(
-            egui::Color32::LIGHT_RED,
-            "Stopped: the pre-simulation step panicked (see the log)",
-        );
-    }
     ui.label(format!(
         "Callback {} · {} steps · player group {} · push ({:+.2}, {:+.2}) m/s",
         if status.registered {

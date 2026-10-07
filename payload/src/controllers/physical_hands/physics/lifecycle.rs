@@ -95,29 +95,30 @@ impl Hands {
             destroyed = unsafe { self.destroy(hand, reason) };
         }
         let mut created = false;
-        if self.bodies[i].is_none() {
-            // SAFETY: forwarded from the caller.
-            let body = unsafe { HandBody::create(hand, spec, goal.position, goal.orientation) }?;
-            let filter = unsafe { body.filter_info() }.ok();
-            let contact_events = unsafe { body.raises_contact_events() }.ok();
-            tracing::info!(
-                hand = hand.label(),
-                body_id = body.body_id(),
-                filter_info = ?filter.map(|f| format!("{f:#010x}")),
-                system_group = spec.system_group,
-                mass_kg = spec.mass_kg,
-                radius_m = spec.capsule.radius_m,
-                half_length_m = spec.capsule.half_length_m,
-                listens = spec.contact_events,
-                contact_events = ?contact_events,
-                "hand bodies: created a hand body"
-            );
-            self.bodies[i] = Some(body);
-            self.added[i] = false;
-            created = true;
-        }
-        let Some(body) = self.bodies[i].as_mut() else {
-            unreachable!("the body was made above");
+        let body = match &mut self.bodies[i] {
+            Some(body) => body,
+            empty @ None => {
+                // SAFETY: forwarded from the caller.
+                let body =
+                    unsafe { HandBody::create(hand, spec, goal.position, goal.orientation) }?;
+                let filter = unsafe { body.filter_info() }.ok();
+                let contact_events = unsafe { body.raises_contact_events() }.ok();
+                tracing::info!(
+                    hand = hand.label(),
+                    body_id = body.body_id(),
+                    filter_info = ?filter.map(|f| format!("{f:#010x}")),
+                    system_group = spec.system_group,
+                    mass_kg = spec.mass_kg,
+                    radius_m = spec.capsule.radius_m,
+                    half_length_m = spec.capsule.half_length_m,
+                    listens = spec.contact_events,
+                    contact_events = ?contact_events,
+                    "hand bodies: created a hand body"
+                );
+                self.added[i] = false;
+                created = true;
+                empty.insert(body)
+            }
         };
         if !self.added[i] {
             // Added, then placed, as the engine activates its own free bodies: a parked body comes
@@ -168,9 +169,12 @@ impl Hands {
         if (goal.position - motion.position).length() > break_distance_m {
             // A body put back on its hand would drag what it is joined to with it.
             // SAFETY: forwarded from the caller.
-            let joint_lost = unsafe { self.unjoin(hand, "the hand body fell too far behind") };
-            let Some(body) = self.bodies[i].as_mut() else {
-                unreachable!("the body was made above");
+            let joint_lost = unsafe {
+                end_joint(
+                    &mut self.joints[i],
+                    hand,
+                    "the hand body fell too far behind",
+                )
             };
             unsafe { body.place(goal.position, goal.orientation) }?;
             contact::record_motion(hand, goal.position, Vec3::ZERO);
@@ -258,20 +262,8 @@ impl Hands {
 
     /// End `hand`'s joint, if it has one. Returns whether it had one.
     pub(super) unsafe fn unjoin(&mut self, hand: Hand, reason: &str) -> bool {
-        let Some(joint) = self.joints[hand.index()].take() else {
-            return false;
-        };
-        let constraint = joint.id();
         // SAFETY: forwarded from the caller.
-        let destroyed = unsafe { joint.destroy() };
-        tracing::info!(
-            hand = hand.label(),
-            constraint,
-            destroyed,
-            reason,
-            "hand bodies: ended a joint"
-        );
-        true
+        unsafe { end_joint(&mut self.joints[hand.index()], hand, reason) }
     }
 
     /// Keep a hand's body where it is for a moment without driving it toward its hand.
@@ -336,6 +328,28 @@ impl Hands {
             .map(|hand| u64::from(unsafe { self.destroy(hand, reason) }))
             .sum()
     }
+}
+
+/// End the joint in `slot`, `hand`'s, if there is one. Returns whether there was one.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
+unsafe fn end_joint(slot: &mut Option<Joint>, hand: Hand, reason: &str) -> bool {
+    let Some(joint) = slot.take() else {
+        return false;
+    };
+    let constraint = joint.id();
+    // SAFETY: forwarded from the caller.
+    let destroyed = unsafe { joint.destroy() };
+    tracing::info!(
+        hand = hand.label(),
+        constraint,
+        destroyed,
+        reason,
+        "hand bodies: ended a joint"
+    );
+    true
 }
 
 /// Why a body made to `existing` cannot serve as one made to `wanted`, if it cannot.

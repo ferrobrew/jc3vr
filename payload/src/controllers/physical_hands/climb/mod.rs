@@ -441,7 +441,9 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         .into_iter()
         .find_map(|hand| state.grips[hand.index()].map(|g| g.hold.body));
     let Some(ground) = ground else {
-        unreachable!("a hand grips the world");
+        // The check above leaves a grip, but a climb with none to stand on ends rather than panics.
+        state.finish_climb();
+        return [None; 2];
     };
     // SAFETY: forwarded from the caller; the ground is a static body, checked at the grip.
     if let Err(e) = unsafe { engine::hold(velocity, ground) } {

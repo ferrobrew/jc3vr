@@ -136,8 +136,6 @@ pub struct HandBodyStatus {
 pub struct HandBodiesStatus {
     /// Whether the pre-simulation callback is registered.
     pub registered: bool,
-    /// Whether a panic stopped the hand bodies for the session.
-    pub failed: bool,
     /// Pre-simulation steps the callback has run.
     pub steps: u64,
     /// The player's collision system group the bodies share.
@@ -159,9 +157,7 @@ pub struct HandBodiesStatus {
 }
 
 pub fn status() -> HandBodiesStatus {
-    let mut status = SHARED.lock().status.clone();
-    status.failed = callback::failed();
-    status
+    SHARED.lock().status.clone()
 }
 
 /// The pre-simulation callback's live state, read from atomics only, so any thread may read it.
@@ -169,8 +165,6 @@ pub fn status() -> HandBodiesStatus {
 pub struct CallbackStatus {
     /// Whether the callback is registered with the physics system.
     pub registered: bool,
-    /// Whether a panic stopped the hand bodies for the session.
-    pub failed: bool,
     /// Times the callback has fired.
     pub fires: u64,
     /// The game thread's id, as the registration saw it; zero before it.
@@ -184,7 +178,6 @@ pub struct CallbackStatus {
 pub fn callback_status() -> CallbackStatus {
     CallbackStatus {
         registered: callback::registered(),
-        failed: callback::failed(),
         fires: callback::fires(),
         game_thread: callback::registering_thread(),
         firing_thread: callback::firing_thread(),
@@ -192,10 +185,9 @@ pub fn callback_status() -> CallbackStatus {
     }
 }
 
-/// Whether the hand bodies are on: their switch, under the physical hands' master switch, unless a
-/// panic stopped them.
+/// Whether the hand bodies are on: their switch, under the physical hands' master switch.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
-    config.enabled && config.bodies.enabled && !callback::failed()
+    config.enabled && config.bodies.enabled
 }
 
 /// An object's body a hand's grip holds through a joint.
@@ -231,7 +223,7 @@ pub(crate) fn drives(hand: Hand) -> bool {
 /// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
 /// removes it. Called once per frame on the game thread, ahead of the game's update.
 pub(crate) fn frame_tick() {
-    if crate::is_shutting_down() || callback::failed() {
+    if crate::is_shutting_down() {
         blows::discard();
         return;
     }
@@ -686,7 +678,6 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     stepped: None,
     status: HandBodiesStatus {
         registered: false,
-        failed: false,
         steps: 0,
         system_group: None,
         hands: [HandBodyStatus {

@@ -7,10 +7,7 @@
 //! game's update and so never while the callbacks fire (a registration then would invalidate the
 //! engine's walk over them), and removed by the shutdown cleanup before the payload unloads.
 
-use std::{
-    panic::{self, AssertUnwindSafe},
-    sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use jc3gi::{
     physics::{
@@ -28,9 +25,6 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 pub(super) unsafe fn ensure_registered() -> bool {
     if REGISTERED.load(Ordering::Acquire) {
         return true;
-    }
-    if FAILED.load(Ordering::Acquire) {
-        return false;
     }
     let Some(physics) = (unsafe { PhysicsSystem::get() }) else {
         return false;
@@ -62,11 +56,6 @@ pub(super) unsafe fn unregister() {
     }
 }
 
-/// Whether a panic stopped the callback for the rest of the session.
-pub(super) fn failed() -> bool {
-    FAILED.load(Ordering::Acquire)
-}
-
 /// The game thread's id, as the registration saw it; zero before it.
 pub(super) fn registering_thread() -> u32 {
     REGISTERING_THREAD.load(Ordering::Relaxed)
@@ -88,7 +77,6 @@ pub(super) fn fires() -> u64 {
 }
 
 static REGISTERED: AtomicBool = AtomicBool::new(false);
-static FAILED: AtomicBool = AtomicBool::new(false);
 static REGISTERING_THREAD: AtomicU32 = AtomicU32::new(0);
 static FIRST_FIRE: AtomicBool = AtomicBool::new(true);
 static FIRING_THREAD: AtomicU32 = AtomicU32::new(0);
@@ -120,9 +108,6 @@ unsafe extern "system" fn pre_simulation(
     _world: *mut hknpWorld,
     _dt: f32,
 ) {
-    if FAILED.load(Ordering::Acquire) {
-        return;
-    }
     FIRES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: reads the calling thread's own id.
     FIRING_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
@@ -144,16 +129,11 @@ unsafe extern "system" fn pre_simulation(
             );
         }
     }
-    // Never unwind into the engine: a panic stops the hand bodies for the session instead.
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandBodies);
-        // SAFETY: the engine calls this before a step, on the thread that steps the world.
-        unsafe { crate::controllers::physical_hands::physics::step() }
-    }));
-    if result.is_err() {
-        FAILED.store(true, Ordering::Release);
-        tracing::error!("hand bodies: the pre-simulation step panicked; the hand bodies stop");
-    }
+    // The payload aborts on a panic, so the step must not panic: its paths handle a missing body,
+    // joint, or grip as a lost one.
+    let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandBodies);
+    // SAFETY: the engine calls this before a step, on the thread that steps the world.
+    unsafe { crate::controllers::physical_hands::physics::step() }
 }
 
 /// The hand bodies keep no Havok-space positions: the step converts game space with the world's
