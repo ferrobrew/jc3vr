@@ -14,7 +14,7 @@ pub struct ProceduralBodyConfig {
     /// seconds: the smoothing time of its spring.
     pub blend_s: f32,
     /// How long a region takes to hand back to the animation, seconds; shorter, since the game's
-    /// authored motion (a vehicle entry, a vault, a fall) is under way when it does.
+    /// authored motion (a vehicle entry, a climb, a fall) is under way when it does.
     pub blend_out_s: f32,
     /// How far the hips move back for the head's lean forward, as a share of it: a lean becomes a
     /// hip hinge rather than a spine fold.

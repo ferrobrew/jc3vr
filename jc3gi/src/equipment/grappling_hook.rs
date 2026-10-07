@@ -486,3 +486,63 @@ for NStateTask_InAirGrappleFireMotionTask {
         self
     }
 }
+#[repr(C, align(8))]
+/// The reeled-in ledge climb's motion task (`NStateTask_ReeledInLedgeClimbMotionTask`): the
+/// character state task that carries the character over a ledge it has reeled in to. The grapple's
+/// climb (`ACT_GRPL_CLIMB` into `S_GRAPPLE_CLIMB_START` in `rico_base.afsmb`) is the only ledge
+/// climb the player's state machine has: no state machine under `animations/jc_statemachine` uses
+/// the vault or obstacle-climb acts.
+pub struct NStateTask_ReeledInLedgeClimbMotionTask {}
+impl NStateTask_ReeledInLedgeClimbMotionTask {
+    pub const OnEnter_ADDRESS: usize = 0x140845520;
+    /// Enters the task: records the character's upright orientation and its measured world
+    /// velocity, and reads the climb's speed tuning from the character's blackboard.
+    pub unsafe fn OnEnter(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::OnEnter_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+    pub const Update_ADDRESS: usize = 0x140845630;
+    /// The per-tick update. Runs the non-swimming movement update, then drives the character over
+    /// the ledge with a code-controlled velocity: projected along the climb from the climb
+    /// segment's local time (`NGrapplingMotionUtils::ProjectClimbOverVelocityAtTime`) while the
+    /// segment plays, the animation's root velocity after it, plus the velocity the character
+    /// entered with. It sets the motion state to
+    /// [`MOTION_STATE_TASK_DEFINED`](crate::character::character::Character::MOTION_STATE_TASK_DEFINED)
+    /// and writes the proxy's wanted velocity. It runs on every tick its state is active.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_ReeledInLedgeClimbMotionTask>
+for NStateTask_ReeledInLedgeClimbMotionTask {
+    fn as_ref(&self) -> &NStateTask_ReeledInLedgeClimbMotionTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_ReeledInLedgeClimbMotionTask>
+for NStateTask_ReeledInLedgeClimbMotionTask {
+    fn as_mut(&mut self) -> &mut NStateTask_ReeledInLedgeClimbMotionTask {
+        self
+    }
+}

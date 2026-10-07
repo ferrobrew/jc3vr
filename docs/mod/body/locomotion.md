@@ -50,6 +50,6 @@ Because the camera's anchor no longer contains the animation, everything that co
 - Standing still after the measurement, the view does not move when the anchor switches on (the handover log line, and a root weight of 1 in the readout).
 - Walking and running with the stick: no bob, no surge, constant-rate starts and stops. In the debug log, `commanded` follows `target` at the configured rate and `proxy` follows `commanded`; a proxy velocity that lags well behind means the proxy's own smoothing is adding to the ramp.
 - With the act filter on, the state machine still enters and leaves movement, starts and stops look straight, and the watchdog's warning does not appear in normal play.
-- A vault, a melee lunge, a hit stumble, and a ledge stop: the first three come through the movement task as root motion and are flattened to the stick's velocity; if one stops working, turn `SMOOTH STICK MOVEMENT` off and report which.
+- A melee lunge, a hit stumble, and a ledge stop: the first two come through the movement task as root motion and are flattened to the stick's velocity; if one stops working, turn `SMOOTH STICK MOVEMENT` off and report which.
 - A jump from a run carries its speed, and landing re-seeds the velocity from the proxy.
 - Stairs and slopes feel smooth, and a long drop does not lag the view.

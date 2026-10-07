@@ -14,10 +14,11 @@
 //! | getting up from a ragdoll | animation | animation |
 //! | in or on a vehicle (seated, entering, leaving, a stunt position) | animation | animation |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
+//! | the grapple's ledge climb | animation | animation |
 //! | swimming | animation | animation |
 //! | wingsuit, parachute, a fall past the jump's grace | animation | animation |
 //! | a jump, within the grace | procedural, hanging in the air (animation with `air_legs` off) | procedural |
-//! | an authored one-off (a locomotion one-off such as a vault, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
+//! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
 //! | on foot without the movement task running | animation | animation |
 //! | on foot on the ground | procedural | procedural |
 //!
@@ -37,6 +38,7 @@ pub enum Case {
     GettingUp,
     Vehicle,
     Traversal,
+    LedgeClimb,
     Swimming,
     Flight,
     Jump,
@@ -55,6 +57,7 @@ impl Case {
             Self::GettingUp => "getting up",
             Self::Vehicle => "vehicle",
             Self::Traversal => "grapple or stunt traversal",
+            Self::LedgeClimb => "grapple ledge climb",
             Self::Swimming => "swimming",
             Self::Flight => "wingsuit, parachute, or fall",
             Self::Jump => "jump",
@@ -92,6 +95,8 @@ pub struct CharacterState {
     pub getting_up: bool,
     pub vehicle: bool,
     pub traversal: bool,
+    /// Climbing over a ledge at the end of a grapple.
+    pub ledge_climb: bool,
     pub swimming: bool,
     /// In the wingsuit, under the parachute, or falling past the jump's grace.
     pub flight: bool,
@@ -118,6 +123,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::Vehicle
     } else if state.traversal {
         Case::Traversal
+    } else if state.ledge_climb {
+        Case::LedgeClimb
     } else if state.swimming {
         Case::Swimming
     } else if state.flight {
@@ -296,6 +303,15 @@ mod tests {
                 ..on_foot()
             }),
             Case::AuthoredMotion
+        );
+        // The climb carries the body itself, and wins over the jump its start looks like.
+        assert_eq!(
+            classify(&CharacterState {
+                ledge_climb: true,
+                jump: true,
+                ..on_foot()
+            }),
+            Case::LedgeClimb
         );
     }
 

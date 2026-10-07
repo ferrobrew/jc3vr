@@ -12,6 +12,7 @@
 //! - [`rig`]: the bones the body drives, found by name.
 //! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
 //! - [`ground`]: the scene rays that find the ground under the footholds.
+//! - [`signals`]: the grapple's ledge climb, which the character does not keep.
 //! - [`config`]: the mode and the tuning.
 //!
 //! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
@@ -24,6 +25,7 @@ pub mod authority;
 pub mod config;
 pub mod ground;
 pub mod rig;
+pub mod signals;
 pub mod skeleton;
 pub mod solver;
 
@@ -50,6 +52,7 @@ use crate::{
                 config::{ProceduralBodyConfig, ProceduralMode},
                 ground::{GroundCaster, GroundLog, GroundTally},
                 rig::{Rig, RigBone, RigError},
+                signals::in_ledge_climb,
                 skeleton::Transform,
                 solver::{
                     DropFollower, SolveInput,
@@ -691,6 +694,7 @@ impl State {
                 || unsafe { character.IsStuntTraversing() }
                 || unsafe { character.IsGrappleHanging() }
                 || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
+            ledge_climb: in_ledge_climb(now),
             swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
                 || motion == Character::MOTION_STATE_SWIMMING
                 || has(StateBitFlag::SB_IS_SWIMMING),

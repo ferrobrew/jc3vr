@@ -356,7 +356,13 @@ The full read is one pointer chase to `m_ControlParameters`, three word loads, a
 - Spawn and stream-in. The `m_InstanceData`-gated bits (wingsuit) read false until the animation instance exists, and `m_ControlParameters` or `m_InstanceData` can be null in the first frames.
 - Teleports. On the tick a fast travel or mission warp re-bases the character (§4.3), the state signals can momentarily misclassify the frame.
 
-### 5.8 Confidence
+### 5.8 Ledge climbs and vaults
+
+The player has one ledge climb: the grapple's. Reeling in to a ledge ends in the climb over it (`ACT_GRPL_CLIMB` into `S_GRAPPLE_CLIMB_START` in `rico_base.afsmb`), and the climb's motion task, [`NStateTask_ReeledInLedgeClimbMotionTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReeledInLedgeClimbMotionTask), carries the character over: its [`Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReeledInLedgeClimbMotionTask##func-Update) runs on every tick the climb's state is active, writes a code-controlled wanted velocity along the climb (from the climb segment's local time while it plays, the animation's root velocity after), and sets the task-defined motion state. The character keeps no flag of its own for the climb, so the task's running is the signal.
+
+There is no on-foot vault or obstacle climb. The act table has `ACT_START_VAULT`, `ACT_END_VAULT`, and `ACT_CLIMB_OBSTACLE`, but no state machine the game ships under `animations/jc_statemachine` (Rico's `rico_base`, his partials and additives, and the NPCs', base and patch archives alike) names them or any vault state, so nothing queued them would be accepted. `CPfxCharacterInstance::CheckLedges` is not a ledge grab either: it pushes ledge points to the proxy so the character clamps to its support surface at a ledge's edge (`m_LedgeClampToSupportSurface`; unverified, read from the symbol dump only).
+
+### 5.9 Confidence
 
 | Signal | Confidence | Basis |
 |---|---|---|
