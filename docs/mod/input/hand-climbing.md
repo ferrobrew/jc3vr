@@ -30,6 +30,10 @@ The climbing velocity is smoothed over `climb.fling_smoothing_s`. When the last 
 
 A gripped surface whose normal is at least `climb.min_ledge_normal_y` upward is a ledge's top. With `climb.mantle`, once the feet come within `climb.mantle_start_m` below the highest such grip while the hands pull the body up, the mantle takes over from the hands: it lifts the feet straight up to `climb.mantle_clearance_m` above the grip, then carries the body over it to `climb.mantle_forward_m` past the grip, at up to `climb.mantle_speed_mps`, keeping the support written all the way. As soon as the proxy's own update finds it standing (supported on a surface at least that upward) with the feet near the grip's height, every grip lets go without a fling and the player stands on the ledge, still in the on-foot states the climb kept, so no landing plays. A mantle that has not stood within three seconds gives up and lets go.
 
+## The body
+
+With the procedural body ([procedural-body.md](../body/procedural-body.md#the-hand-over-table)), climbing is a case of its own in the hand-over table: the torso stays procedural, and the legs hang in the air under the hips as in a jump (`air_legs`), tucking while the body rises. The arms reach the gripping hands' bodies, which stay where they took hold, so Rico's hands stay on the wall. A hit reaction, a vehicle, and the other cases above it in the table still win. When the climb ends on the ground or on a ledge, the feet are planted afresh where the stance wants them, with no landing dip; when it ends in the air, the game's own fall takes the legs as after a jump.
+
 ## When the grips let go
 
 Besides the grip itself, every grip lets go when climbing is switched off, the player is teleported, the palms' tick stops publishing for a few steps (the hands stand down: a drawn gun, a vehicle, a lost controller), the player has no proxy, or the body could not follow the hands. One hand's grip lets go when its body stops acting. The game's pause stops the steps and the palms' tick alike, so a grip holds through it.
@@ -53,8 +57,9 @@ With `CLIMB WITH THE HANDS` on:
 3. Hand over hand up a wall: each new grip takes over smoothly, and the body follows the average of two gripping hands.
 4. Let go while pulling hard: `let go of the world` with a fling speed, and the player flies on and falls normally.
 5. Climb to a ledge, grip its top with both hands, and push down: `mantling over a ledge`, the body rises over the edge and onto the top, then `mantled onto the ledge`, and the player stands there with no landing animation.
-6. Grip, then draw a gun with the other hand or enter a vehicle: the grip lets go with its reason.
-7. Pause while hanging, resume: the grip still holds.
+6. With `BODY FROM YOUR HEAD` on `FULL`: hanging logs the case `climbing with the hands`, the legs hang and tuck, and a mantle ends with the feet planted on the ledge.
+7. Grip, then draw a gun with the other hand or enter a vehicle: the grip lets go with its reason.
+8. Pause while hanging, resume: the grip still holds.
 
 ## Unverified in the headset
 

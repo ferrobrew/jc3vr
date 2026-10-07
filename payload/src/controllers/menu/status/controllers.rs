@@ -374,6 +374,7 @@ fn hand_over_line(case: Case) -> Line {
         Case::Swimming => "SWIMMING",
         Case::Flight => "AIRBORNE",
         Case::HitReaction => "HIT REACTION",
+        Case::HandClimb => "HAND CLIMB",
         Case::Jump => "JUMP",
         Case::AuthoredMotion => "AUTHORED MOTION",
         Case::NoMovementTask => "NO MOVE TASK",

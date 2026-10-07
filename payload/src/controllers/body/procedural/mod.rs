@@ -71,6 +71,7 @@ use crate::{
         hands::ik::deferred_wrist_targets,
         locomotion::{LocomotionStatus, status as locomotion_status},
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
+        physical_hands::climb,
     },
     headpose::{Source, body_relative_rotation, query, source},
     hooks::in_gameplay,
@@ -261,7 +262,8 @@ unsafe fn run_gate(character: &mut Character) {
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
             let legs_procedural = weights.legs > 0.0 || case.targets(config.air_legs)[0] > 0.0;
-            let airborne = config.air_legs && matches!(case, Case::Jump | Case::Flight);
+            let airborne =
+                config.air_legs && matches!(case, Case::Jump | Case::HandClimb | Case::Flight);
             let feet = if legs_procedural {
                 let request = FeetRequest {
                     world: &world,
@@ -733,6 +735,7 @@ impl State {
                 || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
             ledge_climb: in_ledge_climb(now),
             hit_reaction: in_hit_reaction(now, config.hit_reaction_hold_s),
+            hand_climb: climb::climbing(),
             swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
                 || motion == Character::MOTION_STATE_SWIMMING
                 || has(StateBitFlag::SB_IS_SWIMMING),

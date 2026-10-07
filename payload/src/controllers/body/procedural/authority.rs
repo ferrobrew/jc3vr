@@ -19,6 +19,7 @@
 //! | swimming | animation | animation |
 //! | wingsuit, parachute, a fall past the jump's grace | animation | animation |
 //! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation | animation |
+//! | climbing with the hands | procedural, hanging in the air (animation with `air_legs` off) | procedural |
 //! | a jump, within the grace | procedural, hanging in the air (animation with `air_legs` off) | procedural |
 //! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
 //! | on foot without the movement task running | animation | animation |
@@ -45,6 +46,7 @@ pub enum Case {
     Swimming,
     Flight,
     HitReaction,
+    HandClimb,
     Jump,
     AuthoredMotion,
     NoMovementTask,
@@ -66,6 +68,7 @@ impl Case {
             Self::Swimming => "swimming",
             Self::Flight => "wingsuit, parachute, or fall",
             Self::HitReaction => "hit reaction",
+            Self::HandClimb => "climbing with the hands",
             Self::Jump => "jump",
             Self::AuthoredMotion => "authored motion",
             Self::NoMovementTask => "movement task not running",
@@ -73,13 +76,14 @@ impl Case {
         }
     }
 
-    /// The weights the case asks for: the legs', then the torso's. In a jump the legs are the
-    /// procedural body's, hanging in the air, when `air_legs`, and the animation's otherwise.
+    /// The weights the case asks for: the legs', then the torso's. In a jump and a hand climb the
+    /// legs are the procedural body's, hanging in the air, when `air_legs`, and the animation's
+    /// otherwise.
     pub const fn targets(self, air_legs: bool) -> [f32; 2] {
         match self {
             Self::OnFoot => [1.0, 1.0],
-            Self::Jump if air_legs => [1.0, 1.0],
-            Self::Jump => [0.0, 1.0],
+            Self::Jump | Self::HandClimb if air_legs => [1.0, 1.0],
+            Self::Jump | Self::HandClimb => [0.0, 1.0],
             _ => [0.0, 0.0],
         }
     }
@@ -110,6 +114,8 @@ pub struct CharacterState {
     pub flight: bool,
     /// Within the hold of a stumble's or a knock-back's act.
     pub hit_reaction: bool,
+    /// Hanging from a hand that grips the world.
+    pub hand_climb: bool,
     /// In the air within the jump's grace.
     pub jump: bool,
     pub authored_motion: bool,
@@ -143,6 +149,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::Flight
     } else if state.hit_reaction {
         Case::HitReaction
+    } else if state.hand_climb {
+        Case::HandClimb
     } else if state.jump {
         Case::Jump
     } else if state.authored_motion {
@@ -352,6 +360,24 @@ mod tests {
             }),
             Case::Ragdoll
         );
+        // Hanging from the hands is on foot to the game; a reaction or a vehicle still wins.
+        assert_eq!(
+            classify(&CharacterState {
+                hand_climb: true,
+                ..on_foot()
+            }),
+            Case::HandClimb
+        );
+        assert_eq!(
+            classify(&CharacterState {
+                hand_climb: true,
+                hit_reaction: true,
+                ..on_foot()
+            }),
+            Case::HitReaction
+        );
+        assert_eq!(Case::HandClimb.targets(true), [1.0, 1.0]);
+        assert_eq!(Case::HandClimb.targets(false), [0.0, 1.0]);
     }
 
     #[test]

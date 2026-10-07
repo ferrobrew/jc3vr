@@ -111,6 +111,13 @@ pub fn status() -> ClimbStatus {
     STATE.lock().status.clone()
 }
 
+/// Whether a hand grips the world, as the last pre-simulation step left it: the procedural body
+/// hangs the legs while one does.
+pub fn climbing() -> bool {
+    let state = STATE.lock();
+    state.grips.iter().any(Option::is_some) && state.stepped_lately(Instant::now())
+}
+
 /// Whether the climbing is on: its switch, under the hand bodies, which it needs.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.climb.enabled && physics::enabled(config)
@@ -250,6 +257,7 @@ pub(super) fn observe(
 pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let mut state = STATE.lock();
+    state.stepped = Some(Instant::now());
     if state.publishes == state.stepped_publish {
         state.stale_steps = state.stale_steps.saturating_add(1);
     } else {
@@ -533,6 +541,7 @@ struct State {
     publishes: u64,
     stepped_publish: u64,
     stale_steps: u32,
+    stepped: Option<Instant>,
     climbing: bool,
     mantle: Option<Mantle>,
     mantle_steps: u32,
@@ -547,6 +556,11 @@ struct State {
 impl State {
     fn fresh(&self, now: Instant) -> bool {
         self.published
+            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+    }
+
+    fn stepped_lately(&self, now: Instant) -> bool {
+        self.stepped
             .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
     }
 
@@ -607,6 +621,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     publishes: 0,
     stepped_publish: 0,
     stale_steps: 0,
+    stepped: None,
     climbing: false,
     mantle: None,
     mantle_steps: 0,
