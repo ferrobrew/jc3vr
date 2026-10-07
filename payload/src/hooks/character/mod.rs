@@ -92,6 +92,7 @@ fn character_update_pass_finalize_pose_parallel(
     if let Some(character) = unsafe { character.as_ref() }.filter(|c| c.m_IsLocalCharacter) {
         unsafe { skeleton::dump_once(character) };
         set_local_character(character, Instant::now());
+        gate::begin_pass(dt);
     }
     unsafe { stance::unarmed::tick(character) };
     let stance_plan = unsafe { stance::plan(character, dt) };
@@ -123,6 +124,7 @@ fn character_update_pass_finalize_pose_parallel(
         .unwrap()
         .call(character, context);
     let _timing = frame_timing::scope(Slot::CharacterPose);
+    gate::end_pass();
     hands::ik::end_finalize();
 }
 

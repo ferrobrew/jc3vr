@@ -164,15 +164,17 @@ pub fn owns_body() -> bool {
     OWNS_BODY.load(Ordering::Relaxed)
 }
 
-/// Run the pose authority for the local player, at the `MAIN` pass's solve gate.
+/// Run the pose authority for the local player, at the `MAIN` pass's solve gate. `dt` is the
+/// pass's step, which paces every follower, the blend, the walk, and the vertical speed, so the
+/// body keeps the simulation's time rather than the wall clock's.
 ///
 /// # Safety
 ///
 /// `character` must be the live local character, inside its pose-finalization pass, on the thread
 /// running it.
-pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
+pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) {
     // SAFETY: forwarded from the caller.
-    unsafe { run_gate(character) };
+    unsafe { run_gate(character, dt) };
     let status = STATE.lock().status;
     *PUBLISHED.lock() = status;
 }
@@ -182,15 +184,15 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
 /// # Safety
 ///
 /// As [`at_solve_gate`].
-unsafe fn run_gate(character: &mut Character) {
+unsafe fn run_gate(character: &mut Character, dt: f32) {
     let config = Config::lock_query(|c| c.controllers.body.procedural);
     let now = Instant::now();
     let mut state = STATE.lock();
-    let dt = state
-        .status
-        .at
-        .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
-        .min(MAX_STEP_S);
+    let dt = if dt.is_finite() {
+        dt.clamp(0.0, MAX_STEP_S)
+    } else {
+        0.0
+    };
     state.status.at = Some(now);
     state.status.mode = config.mode;
     state.arms = None;
@@ -248,7 +250,8 @@ unsafe fn run_gate(character: &mut Character) {
             state.status.weight = weights.torso;
             state.status.legs_weight = weights.legs;
             let world = Mat4::from(character.m_WorldMatrixT1);
-            let vertical = state.vertical_speed(world.w_axis.y, dt);
+            let previous_world = Mat4::from(character.m_WorldMatrixT0);
+            let vertical = state.vertical_speed(previous_world.w_axis.y, world.w_axis.y, dt);
             state.track_landing(case, vertical, now, &config);
             if !weights.any() {
                 state.feet.reset();
@@ -371,7 +374,7 @@ unsafe fn run_gate(character: &mut Character) {
     }
 }
 
-/// The longest step the blend takes, seconds: a gap is not a long blend.
+/// The longest step the body takes, seconds: a hitch is not a long blend.
 const MAX_STEP_S: f32 = 0.1;
 
 /// How often the pass-through logs its read-back.
@@ -438,8 +441,6 @@ struct State {
     air: AirFollower,
     /// The hips' landing dip.
     dip: LandingDip,
-    /// The root's height at the last gate, for its vertical speed.
-    root_height: Option<f32>,
     /// The feet the last gate placed, model space.
     last_feet: Option<[FootPose; 2]>,
     /// The feet as they left the ground, model space, while the legs are in the air.
@@ -597,19 +598,10 @@ impl State {
         }
     }
 
-    /// The root's vertical speed since the last gate, metres per second, up positive.
-    fn vertical_speed(&mut self, root_height: f32, dt: f32) -> f32 {
-        let previous = self.root_height.replace(root_height);
-        let speed = match previous {
-            Some(previous) if dt > 0.0 => (root_height - previous) / dt,
-            _ => 0.0,
-        };
-        // A teleport is not a fall.
-        let speed = if speed.is_finite() && speed.abs() <= MAX_VERTICAL_MPS {
-            speed
-        } else {
-            0.0
-        };
+    /// The root's vertical speed over the pass, metres per second, up positive: from its height at
+    /// the previous tick (`m_WorldMatrixT0`) to this one's (`m_WorldMatrixT1`).
+    fn vertical_speed(&mut self, previous: f32, current: f32, dt: f32) -> f32 {
+        let speed = root_speed(current - previous, dt, MAX_VERTICAL_MPS);
         self.status.vertical_mps = speed;
         speed
     }
@@ -799,7 +791,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     clavicles: ClavicleFollower::new(),
     air: AirFollower::new(),
     dip: LandingDip::new(),
-    root_height: None,
     last_feet: None,
     takeoff_feet: None,
     fall: None,
@@ -905,6 +896,20 @@ fn neutralize_owned_targets(hik: &mut HumanIK, weights: &Weights) {
     }
 }
 
+/// The speed of a root that moved `distance` metres over `dt` seconds, metres per second: zero for
+/// no step, and for anything faster than `max_mps`, which is a teleport rather than motion.
+fn root_speed(distance: f32, dt: f32, max_mps: f32) -> f32 {
+    if dt <= 0.0 {
+        return 0.0;
+    }
+    let speed = distance / dt;
+    if speed.is_finite() && speed.abs() <= max_mps {
+        speed
+    } else {
+        0.0
+    }
+}
+
 /// The animated feet, model space.
 fn animated_feet(animated: &RigPose) -> [FootPose; 2] {
     [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
@@ -919,5 +924,19 @@ fn to_world(world: &Mat4, foot: &FootPose) -> FootPose {
     FootPose {
         position: world.transform_point3(foot.position),
         rotation: (rotation * foot.rotation).normalize(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_root_speed_ignores_a_teleport_and_an_empty_step() {
+        assert_eq!(root_speed(0.1, 0.05, MAX_VERTICAL_MPS), 2.0);
+        assert_eq!(root_speed(-0.1, 0.05, MAX_VERTICAL_MPS), -2.0);
+        assert_eq!(root_speed(0.1, 0.0, MAX_VERTICAL_MPS), 0.0);
+        assert_eq!(root_speed(50.0, 0.05, MAX_VERTICAL_MPS), 0.0);
+        assert_eq!(root_speed(f32::NAN, 0.05, MAX_VERTICAL_MPS), 0.0);
     }
 }
