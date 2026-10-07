@@ -17,12 +17,7 @@ pub(crate) mod status;
 
 use smol_str::SmolStr;
 
-use crate::{
-    config::{self, Config, SaveStatus},
-    controllers::config::ControllersConfig,
-    grapple::GrappleComfortConfig,
-    headpose::config::VrTurnConfig,
-};
+use crate::config::{self, Config, SaveStatus};
 
 /// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in [`Config`].
 macro_rules! config_toggle {
@@ -117,23 +112,6 @@ pub(crate) fn settings_state() -> SmolStr {
     save_status_label(config::status()).into()
 }
 
-/// Reset every setting the controller pages cover (the controller settings, the VR turn settings,
-/// and the grapple's comfort settings) to its default, keeping the per-weapon sight calibration,
-/// which is measured rather than chosen. The display settings are not among them: they are the
-/// renderer's and the HUD's, and `VR: DISPLAY`'s own reset covers them.
-pub(crate) fn reset_to_defaults(config: &mut Config) {
-    let sights = config.controllers.aim.sights;
-    config.controllers = ControllersConfig::new();
-    config.controllers.aim.sights = sights;
-    config.headpose.vr_turn = VrTurnConfig::new();
-    config.headpose.grapple = GrappleComfortConfig::new();
-}
-
-/// Reset the live settings to their defaults ([`reset_to_defaults`]).
-pub(crate) fn reset_live_to_defaults() {
-    edit_config(reset_to_defaults);
-}
-
 #[cfg(not(test))]
 fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
     f(&mut config::CONFIG.lock())
@@ -169,16 +147,10 @@ fn save_status_label(status: SaveStatus) -> &'static str {
 pub(crate) mod tests {
     use std::cell::RefCell;
 
-    use glam::{Vec2, Vec3};
-
     use super::*;
     use crate::{
         config::validate,
-        controllers::{
-            config::{SchemeSetting, SightOverride},
-            frame::Hand,
-        },
-        grapple::GrappleComfortMode,
+        controllers::config::SchemeSetting,
         pause_menu::model::page::{Item, Page},
     };
 
@@ -236,32 +208,6 @@ pub(crate) mod tests {
         page.reset_to_defaults();
         let saved = |c: &Config| serde_json::to_value(c).unwrap();
         assert_eq!(read_config(saved), saved(&Config::new()));
-    }
-
-    #[test]
-    fn resetting_keeps_the_sight_calibration() {
-        let mut config = Config::new();
-        let sight = SightOverride {
-            weapon_hash: 7,
-            offset_m: Vec3::new(0.0, 0.02, 0.0),
-            angles_deg: Vec2::new(0.5, 0.0),
-        };
-        config.controllers.aim.sights.set(sight);
-        config.controllers.dominant_hand = Hand::Left;
-        config.controllers.scheme = SchemeSetting::Gamepad;
-        config.headpose.vr_turn.snap_angle_deg = 45.0;
-        config.headpose.grapple.mode = GrappleComfortMode::Off;
-        config.headpose.mouse_sensitivity = 3.0;
-        config.hud.distance = 2.0;
-        reset_to_defaults(&mut config);
-        assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
-        assert_eq!(config.controllers.dominant_hand, Hand::Right);
-        assert_eq!(config.controllers.scheme, SchemeSetting::Controllers);
-        assert_eq!(config.headpose.vr_turn.snap_angle_deg, 30.0);
-        assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::HoldView);
-        // Settings outside the controller pages are not the reset's, the display ones included.
-        assert_eq!(config.headpose.mouse_sensitivity, 3.0);
-        assert_eq!(config.hud.distance, 2.0);
     }
 
     #[test]

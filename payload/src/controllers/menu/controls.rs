@@ -15,15 +15,15 @@ use crate::{
         config::{GunReadout, LocomotionDirection, SchemeSetting},
         frame::Hand,
         menu::{
-            config_choice, config_slider, config_toggle, edit_config, nearest_index, read_config,
-            reset_live_to_defaults, settings_state,
+            comfort, config_choice, config_slider, config_toggle, edit_config, nearest_index,
+            read_config, settings_state,
         },
         vehicles::config::{ArmPitch, WheelTracking},
         weapons::{config::PouchSide, reload::config::ReloadButton},
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
-        page::{Button, ButtonOutcome, Choice, Page, PageDef, Readout, Toggle},
+        page::{Button, ButtonOutcome, Choice, Item, Page, PageDef, Readout, Toggle},
         slider::{SliderFormat, SliderRange},
     },
     vr::input::{
@@ -44,6 +44,11 @@ fn build() -> Page {
     if CONFIRMING_RESET.load(Ordering::Relaxed) {
         return confirm_reset();
     }
+    settings_page()
+}
+
+/// The page's settings, as it shows them outside the reset confirmation.
+fn settings_page() -> Page {
     let page = Page::new("VR: CONTROLS")
         .header("CONTROLLERS")
         .item(config_toggle!("MOTION CONTROLLERS", |c| c
@@ -55,7 +60,7 @@ fn build() -> Page {
             &SCHEME_LABELS,
             |c| c.controllers.scheme
         ))
-        .item(config_choice!("DOMINANT HAND", &HANDS, &HAND_LABELS, |c| c
+        .item(config_choice!(DOMINANT_HAND, &HANDS, &HAND_LABELS, |c| c
             .controllers
             .dominant_hand))
         .item(Readout {
@@ -413,9 +418,11 @@ fn build() -> Page {
 fn confirm_reset() -> Page {
     Page::new("VR: CONTROLS")
         .header("RESET TO DEFAULTS")
-        .text("EVERY CONTROLLER, TURNING, AND COMFORT")
-        .text("SETTING RETURNS TO ITS DEFAULT.")
-        .text("WEAPON SIGHT CALIBRATION IS KEPT.")
+        .text("EVERY SETTING ON THIS PAGE AND ON")
+        .text("VR: COMFORT RETURNS TO ITS DEFAULT.")
+        .text("THE DOMINANT HAND, THE WEAPON SIGHT")
+        .text("CALIBRATION, AND THE BODY PAGE'S")
+        .text("SETTINGS ARE KEPT.")
         .item(Button {
             label: "KEEP MY SETTINGS".into(),
             caption: "CANCEL".into(),
@@ -425,15 +432,58 @@ fn confirm_reset() -> Page {
             },
         })
         .item(Button {
-            label: "RESET EVERYTHING".into(),
+            label: "RESET CONTROLS AND COMFORT".into(),
             caption: "RESET".into(),
             action: || {
-                reset_live_to_defaults();
+                reset_shown_settings();
                 CONFIRMING_RESET.store(false, Ordering::Relaxed);
                 ButtonOutcome::Rebuild
             },
         })
 }
+
+/// Reset every setting `VR: CONTROLS` and `VR: COMFORT` show to its default, through the pages'
+/// own items, so that the reset covers what the player can see and nothing else: the debug UI's
+/// tuning, the body page, and the sight calibration keep their values. The dominant hand is kept
+/// too: it is a choice about the player rather than a preference, and changing it takes a restart.
+/// A choice the reset changes can show rows its old value hid, so the pages are reset again
+/// until the rows they show stop changing.
+fn reset_shown_settings() {
+    let shown = || {
+        let labels = |page: &Page| -> Vec<SmolStr> {
+            page.items.iter().filter_map(value_label).cloned().collect()
+        };
+        (labels(&settings_page()), labels(&(comfort::PAGE.build)()))
+    };
+    let mut rows = shown();
+    for _ in 0..RESET_PASSES {
+        for item in &settings_page().items {
+            if value_label(item).is_none_or(|label| label != DOMINANT_HAND) {
+                item.reset_to_default();
+            }
+        }
+        (comfort::PAGE.build)().reset_to_defaults();
+        let now = shown();
+        if now == rows {
+            return;
+        }
+        rows = now;
+    }
+}
+
+/// The label of a value item.
+fn value_label(item: &Item) -> Option<&SmolStr> {
+    match item {
+        Item::Toggle(toggle) => Some(&toggle.label),
+        Item::Choice(choice) => Some(&choice.label),
+        Item::Slider(slider) => Some(&slider.label),
+        Item::Header(_) | Item::Text(_) | Item::Readout(_) | Item::Button(_) => None,
+    }
+}
+
+/// The most times [`reset_shown_settings`] resets the pages: once for the rows shown before, and
+/// once for each level of rows that a reset choice shows.
+const RESET_PASSES: usize = 4;
 
 fn on_close() {
     CONFIRMING_RESET.store(false, Ordering::Relaxed);
@@ -461,6 +511,9 @@ fn layout_label(status: &InputStatus, configured: Hand) -> &'static str {
         },
     }
 }
+
+/// The dominant hand's row, which the reset leaves alone.
+const DOMINANT_HAND: &str = "DOMINANT HAND";
 
 /// Whether the page shows the reset confirmation.
 static CONFIRMING_RESET: AtomicBool = AtomicBool::new(false);
@@ -559,11 +612,61 @@ fn set_physical_controls(c: &mut Config, enabled: bool) {
 
 #[cfg(test)]
 mod tests {
+    use glam::{Vec2, Vec3};
+
     use super::*;
     use crate::{
-        controllers::menu::tests::exercise_page,
-        pause_menu::model::{page::Item, rows::encode_page},
+        controllers::{
+            config::SightOverride,
+            menu::tests::{TEST_CONFIG, exercise_page},
+        },
+        grapple::GrappleComfortMode,
+        pause_menu::model::rows::encode_page,
     };
+
+    #[test]
+    fn the_reset_covers_the_pages_and_keeps_the_rest() {
+        let sight = SightOverride {
+            weapon_hash: 7,
+            offset_m: Vec3::new(0.0, 0.02, 0.0),
+            angles_deg: Vec2::new(0.5, 0.0),
+        };
+        TEST_CONFIG.with_borrow_mut(|config| {
+            *config = Config::new();
+            config.controllers.aim.sights.set(sight);
+            config.controllers.dominant_hand = Hand::Left;
+            config.controllers.scheme = SchemeSetting::Gamepad;
+            config.controllers.locomotion.stick.acceleration_mps2 = 3.0;
+            config.headpose.vr_turn.snap_angle_deg = 45.0;
+            config.headpose.grapple.mode = GrappleComfortMode::Off;
+            // Not on either page: the debug UI's tuning, the body page, and the display.
+            config.controllers.hands.reach.pull_max = 0.5;
+            config.controllers.body.procedural.gait = false;
+            config.headpose.mouse_sensitivity = 3.0;
+            config.hud.distance = 2.0;
+        });
+        reset_shown_settings();
+        let defaults = Config::new();
+        read_config(|config| {
+            assert_eq!(config.controllers.scheme, defaults.controllers.scheme);
+            assert_eq!(
+                config.controllers.locomotion.stick.acceleration_mps2,
+                defaults.controllers.locomotion.stick.acceleration_mps2
+            );
+            assert_eq!(
+                config.headpose.vr_turn.snap_angle_deg,
+                defaults.headpose.vr_turn.snap_angle_deg
+            );
+            assert_eq!(config.headpose.grapple.mode, defaults.headpose.grapple.mode);
+
+            assert_eq!(config.controllers.dominant_hand, Hand::Left);
+            assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
+            assert_eq!(config.controllers.hands.reach.pull_max, 0.5);
+            assert!(!config.controllers.body.procedural.gait);
+            assert_eq!(config.headpose.mouse_sensitivity, 3.0);
+            assert_eq!(config.hud.distance, 2.0);
+        });
+    }
 
     #[test]
     fn the_page_edits_valid_settings_and_resets_to_the_defaults() {
