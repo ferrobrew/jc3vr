@@ -197,10 +197,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
     let now = Instant::now();
     let grip = foregrip::two_hand_grip();
     let mut state = STATE.lock();
-    let dt = state
-        .at
-        .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32());
-    state.at = Some(now);
+    let dt = advance_clock(&mut state.at, now);
     let acting = config.enabled || config.braced.enabled;
     let target = state
         .target
@@ -535,6 +532,18 @@ static STATE: Mutex<State> = Mutex::new(State {
         widened_shots: 0,
     },
 });
+
+/// The seconds from the clock `at` to `now`, moving the clock to `now` unless it is already past
+/// it. The hands are read on several threads, each taking its time before the lock, so a reader
+/// can arrive with an older time than the last one; moving the clock back would count the time
+/// between the two again on the next read.
+fn advance_clock(at: &mut Option<Instant>, now: Instant) -> f32 {
+    let dt = at.map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32());
+    if at.is_none_or(|at| now > at) {
+        *at = Some(now);
+    }
+    dt
+}
 
 /// The sway's clock.
 fn epoch() -> Instant {
@@ -979,6 +988,21 @@ mod tests {
         // A one-handed SMG stays rigid; only its braced weight springs.
         assert_eq!(Weight::of(HeftClass::Smg, &c, 1.0).stiffness, 0.0);
         assert!(Weight::of(HeftClass::Smg, &c, 0.5).stiffness > 0.0);
+    }
+
+    #[test]
+    fn a_late_reader_does_not_turn_the_clock_back() {
+        let start = Instant::now();
+        let later = start + Duration::from_millis(20);
+        let mut at = None;
+        assert_eq!(advance_clock(&mut at, later), 0.0);
+        // A reader that took the time before the last one but locked after it sees no time pass,
+        // and leaves the clock where it was.
+        assert_eq!(advance_clock(&mut at, start), 0.0);
+        assert_eq!(at, Some(later));
+        let next = later + Duration::from_millis(10);
+        assert!((advance_clock(&mut at, next) - 0.01).abs() < 1e-6);
+        assert_eq!(at, Some(next));
     }
 
     #[test]
