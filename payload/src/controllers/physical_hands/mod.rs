@@ -427,7 +427,10 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 None
             };
             if climb_on {
-                climb_palms[i] = Some(palm.centre);
+                // The palm in the rig: its tracking-space place turned and scaled as the world
+                // palm is, but not carried by the head's world position, which the climb moves.
+                let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, &config).centre;
+                climb_palms[i] = Some(body_rotation * rig * active.world_scale);
                 // A loose object in reach wins over the world it rests on.
                 climb_reaches[i] = if reach.is_none() {
                     // SAFETY: the simulation phase outside the physics step.
@@ -575,7 +578,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     physics::publish_holds(state.pickup.joint_targets());
     let snapshot = state.status.hands;
     drop(state);
-    climb::observe(climb_palms, climb_reaches, &config);
+    climb::observe(climb_palms, climb_reaches, body_rotation, &config);
     draw::submit(&snapshot, &config);
 }
 

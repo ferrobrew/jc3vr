@@ -11,8 +11,8 @@
 //! Each simulation tick runs in this order:
 //!
 //! 1. The player aim control's post-simulation update ([`observe`], from the palms' tick) publishes
-//!    each driven hand's palm, the static surface in its reach, and where the player's body is,
-//!    and pulses the hands for the grips the last step took or ended.
+//!    each driven hand's palm in the rig, the static surface in its reach, and where the player's
+//!    body is, and pulses the hands for the grips the last step took or ended.
 //! 2. The input tick ([`finish_tick`]) asks for a grip where a hand's grip press found the climb's
 //!    grab volume ([`volume`]), and for a release where the grip lets go.
 //! 3. The hand bodies' pre-simulation step ([`step`]) takes and ends the grips, pins each gripping
@@ -42,12 +42,9 @@ use crate::{
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
             PhysicalHandsConfig,
-            climb::{
-                engine::PlayerPlace,
-                solve::{
-                    ClimbTuning, Follow, Mantle, MantleTuning, body_target, climb_velocity, fling,
-                    mantle_starts, smooth,
-                },
+            climb::solve::{
+                ClimbTuning, Follow, Mantle, MantleTuning, body_target, climb_velocity, fling,
+                mantle_starts, smooth,
             },
             contact::{Surface, SurfaceHit},
             palm::PalmBox,
@@ -58,6 +55,7 @@ use crate::{
         roomscale::teleport,
         weapons::haptics::PulseSource,
     },
+    vr::recenter_count,
 };
 
 /// A static surface a hand can grip.
@@ -199,12 +197,14 @@ pub(super) unsafe fn reach(
         })
 }
 
-/// Publish what the palms' tick found: each driven hand's palm centre and the static surface in
-/// its reach, with where the player's body is, and pulse the hands for the last step's grips and
-/// releases. Called from the palms' tick, on the game thread outside the physics step.
+/// Publish what the palms' tick found: each driven hand's palm in the rig (its tracking-space
+/// place turned by `body_rotation`, the body's facing, and scaled into world metres) and the static
+/// surface in its reach, with where the player's body is, and pulse the hands for the last step's
+/// grips and releases. Called from the palms' tick, on the game thread outside the physics step.
 pub(super) fn observe(
     palms: [Option<Vec3>; 2],
     reaches: [Option<Hold>; 2],
+    body_rotation: Quat,
     config: &PhysicalHandsConfig,
 ) {
     let on = enabled(config);
@@ -215,8 +215,18 @@ pub(super) fn observe(
     let mode = mode::current().mode;
     let events = {
         let mut state = STATE.lock();
+        // A recenter or a snap turn moves every palm in the rig at once without the hands moving;
+        // the grips are taken afresh from where the body is then, rather than pulling it.
+        let recenters = recenter_count();
+        let jumped = state
+            .rotation
+            .is_some_and(|last| last.angle_between(body_rotation) > RIG_JUMP_RAD);
+        if jumped || state.recenters.is_some_and(|last| last != recenters) {
+            state.rig_epoch = state.rig_epoch.wrapping_add(1);
+        }
+        state.rotation = Some(body_rotation);
+        state.recenters = Some(recenters);
         state.palms = palms;
-        state.player = player;
         state.published = (on && player.is_some()).then(Instant::now);
         state.publishes = state.publishes.wrapping_add(1);
         for hand in Hand::BOTH {
@@ -281,15 +291,27 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         return [None; 2];
     }
 
+    // SAFETY: forwarded from the caller.
+    let place = unsafe { engine::player_place() };
+    let rig_epoch = state.rig_epoch;
     let mut released_by_grip = false;
     for hand in Hand::BOTH {
         let i = hand.index();
         match state.requests[i].take() {
             Some(Request::Grip(hold)) if state.grips[i].is_none() => {
                 // SAFETY: forwarded from the caller.
-                let grip = match (bodies[i], state.palms[i]) {
-                    (Some(pin), Some(palm)) if unsafe { engine::is_static(hold.body) } => {
-                        Some(Grip { hold, palm, pin })
+                let grip = match (bodies[i], state.palms[i], place) {
+                    (Some(pin), Some(palm), Ok(place))
+                        if unsafe { engine::is_static(hold.body) } =>
+                    {
+                        Some(Grip {
+                            hand,
+                            hold,
+                            body: place.body,
+                            palm,
+                            pin,
+                            rig_epoch,
+                        })
                     }
                     _ => None,
                 };
@@ -324,6 +346,13 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         if state.grips[i].is_some() && bodies[i].is_none() {
             state.drop_hand(hand, "the hand's body stopped acting");
         }
+        // The ground written for the proxy below must stay a static body of the world.
+        // SAFETY: forwarded from the caller.
+        if let Some(grip) = state.grips[i]
+            && !unsafe { engine::is_static(grip.hold.body) }
+        {
+            state.drop_hand(hand, "the gripped body is gone or no longer static");
+        }
     }
 
     if state.grips.iter().all(Option::is_none) {
@@ -350,8 +379,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         return [None; 2];
     }
 
-    // SAFETY: forwarded from the caller.
-    let place = match unsafe { engine::player_place() } {
+    let place = match place {
         Ok(place) => place,
         Err(e) => {
             state.status.last_error = Some(e.to_string());
@@ -371,21 +399,26 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         max_speed_mps: config.climb.max_speed_mps,
         step_s,
     };
-    let follows: Vec<Follow> = Hand::BOTH
-        .into_iter()
-        .filter_map(|hand| {
-            let grip = state.grips[hand.index()]?;
-            let palm = state.palms[hand.index()]?;
-            Some(Follow {
-                grip: grip.palm,
-                palm,
-            })
+    let palms = state.palms;
+    for grip in state.grips.iter_mut().flatten() {
+        if grip.rig_epoch != rig_epoch {
+            // The rig moved under the palms: hold the body where it is from here.
+            grip.rig_epoch = rig_epoch;
+            grip.body = place.body;
+            grip.palm = palms[grip.hand.index()].unwrap_or(grip.palm);
+        }
+    }
+    let follows = Hand::BOTH.map(|hand| {
+        let grip = state.grips[hand.index()]?;
+        let palm = state.palms[hand.index()]?;
+        Some(Follow {
+            body: grip.body,
+            grip: grip.palm,
+            palm,
         })
-        .collect();
-    let published = state.player.filter(|_| state.stale_steps == 0);
-    let target = published
-        .and_then(|player| body_target(&follows, player.body))
-        .unwrap_or(place.body);
+    });
+    let gripping = follows.iter().flatten().count();
+    let target = body_target(follows.into_iter().flatten()).unwrap_or(place.body);
     let gap = target - place.body;
     state.status.gap_m = gap.length();
     // The mantle carries the body away from where the hands would have it, on purpose.
@@ -470,7 +503,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         tracing::debug!(
             velocity = ?velocity,
             gap_m = gap.length(),
-            hands = follows.len(),
+            hands = gripping,
             mantling = state.mantle.is_some(),
             stands,
             "hand climbing: climb"
@@ -506,6 +539,10 @@ const MAX_STALE_STEPS: u32 = 6;
 /// How far below the gripped top feet that stand count as on the ledge, metres.
 const MANTLE_LANDED_BELOW_M: f32 = 0.15;
 
+/// The turn of the body's facing between two palms' ticks past which it is a snap turn rather than
+/// the body turning: a recenter or a snap turn re-takes the grips where the body is.
+const RIG_JUMP_RAD: f32 = 0.2;
+
 /// How many steps a mantle may take before it gives up: three seconds.
 const MAX_MANTLE_STEPS: u32 = 90;
 
@@ -527,18 +564,28 @@ enum Event {
 /// A hand gripping the world.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Grip {
+    hand: Hand,
     hold: Hold,
-    /// Where the palm was when it took hold, game space.
+    /// Where the player's body was when the hand took hold, game space.
+    body: Vec3,
+    /// Where the palm was in the rig when it took hold, world metres.
     palm: Vec3,
     /// Where the hand's body was when it took hold, where it stays.
     pin: (Vec3, Quat),
+    /// The rig the grip was taken in ([`State::rig_epoch`]).
+    rig_epoch: u64,
 }
 
 struct State {
     requests: [Option<Request>; 2],
     grips: [Option<Grip>; 2],
+    /// Each driven hand's palm in the rig, world metres.
     palms: [Option<Vec3>; 2],
-    player: Option<PlayerPlace>,
+    /// The body's facing and the recenter count the palms were last published with.
+    rotation: Option<Quat>,
+    recenters: Option<u32>,
+    /// Counts the recenters and snap turns that moved the rig under the palms.
+    rig_epoch: u64,
     published: Option<Instant>,
     publishes: u64,
     stepped_publish: u64,
@@ -618,7 +665,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     requests: [None; 2],
     grips: [None; 2],
     palms: [None; 2],
-    player: None,
+    rotation: None,
+    recenters: None,
+    rig_epoch: 0,
     published: None,
     publishes: 0,
     stepped_publish: 0,

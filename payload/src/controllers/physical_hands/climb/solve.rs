@@ -2,28 +2,47 @@
 //! takes it there within a physics step, the fling a release keeps, and the mantle over a ledge.
 //! Everything is in game space, metres and seconds.
 //!
-//! A grip remembers where its palm was when it took hold. The hands would have the body wherever
-//! keeps each palm on its grip: the body moved by how far each palm now is from its grip, averaged
-//! over the gripping hands. A palm and the body are published together, so a palm's place relative
-//! to the body is the controller's, whatever the body did since.
+//! A grip remembers where the body was when it took hold, and where the palm was in the rig: the
+//! palm's place in the tracking space, turned by the body's facing and scaled by the VR world scale
+//! into world metres, but not carried by the body's position. The hands would have the body wherever
+//! keeps each palm on its grip: where the body was at the grip, moved back by how far the palm has
+//! since moved in the rig, averaged over the gripping hands. Nothing in that target depends on
+//! where the body or the view is now, so the climb is a plain closed loop on the body's position:
+//! a hand held still holds the body still once it gets there.
 
 use glam::{Vec2, Vec3};
 
-/// One gripping hand: where its palm was when it took hold, and where it is now.
+/// One gripping hand: where the body and the palm were when it took hold, and where the palm is
+/// in the rig now.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Follow {
+    /// The player's body when the hand took hold, game space.
+    pub body: Vec3,
+    /// The palm in the rig when the hand took hold, world metres.
     pub grip: Vec3,
+    /// The palm in the rig now, world metres.
     pub palm: Vec3,
 }
 
-/// Where the hands would have the body: `body`, published with the palms, moved by the mean of how
-/// far each palm is from its grip. `None` without a gripping hand.
-pub fn body_target(follows: &[Follow], body: Vec3) -> Option<Vec3> {
-    if follows.is_empty() {
+impl Follow {
+    /// Where this hand would have the body.
+    pub fn target(&self) -> Vec3 {
+        self.body + (self.grip - self.palm)
+    }
+}
+
+/// Where the hands would have the body: the mean of the gripping hands' targets. `None` without a
+/// gripping hand.
+pub fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<Vec3> {
+    let (sum, count) = follows
+        .into_iter()
+        .fold((Vec3::ZERO, 0u32), |(sum, count), f| {
+            (sum + f.target(), count + 1)
+        });
+    if count == 0 {
         return None;
     }
-    let sum: Vec3 = follows.iter().map(|f| f.grip - f.palm).sum();
-    let target = body + sum / follows.len() as f32;
+    let target = sum / count as f32;
     target.is_finite().then_some(target)
 }
 
@@ -162,8 +181,13 @@ mod tests {
     #[test]
     fn a_fresh_grip_holds_the_body_where_it_is() {
         let body = Vec3::new(3.0, 10.0, -2.0);
-        let palm = Vec3::new(3.4, 11.5, -2.3);
-        let target = body_target(&[Follow { grip: palm, palm }], body).unwrap();
+        let palm = Vec3::new(0.4, 1.5, -0.3);
+        let target = body_target([Follow {
+            body,
+            grip: palm,
+            palm,
+        }])
+        .unwrap();
         assert!(target.abs_diff_eq(body, 1e-6));
         assert_eq!(climb_velocity(target, body, &tuning()), Vec3::ZERO);
     }
@@ -173,18 +197,16 @@ mod tests {
         let body = Vec3::ZERO;
         let grip = Vec3::new(0.3, 1.8, 0.4);
         let palm = grip - Vec3::Y * 0.2;
-        let target = body_target(&[Follow { grip, palm }], body).unwrap();
+        let target = body_target([Follow { body, grip, palm }]).unwrap();
         assert!(target.abs_diff_eq(Vec3::Y * 0.2, 1e-6));
         let velocity = climb_velocity(target, body, &tuning());
         assert!(velocity.y > 0.0 && velocity.x.abs() < 1e-6 && velocity.z.abs() < 1e-6);
         // Pushing the hand away from the wall pulls the body toward it.
-        let away = body_target(
-            &[Follow {
-                grip,
-                palm: grip - Vec3::Z * 0.1,
-            }],
+        let away = body_target([Follow {
             body,
-        )
+            grip,
+            palm: grip - Vec3::Z * 0.1,
+        }])
         .unwrap();
         assert!(away.z > 0.0);
     }
@@ -193,16 +215,46 @@ mod tests {
     fn two_hands_average_their_pulls() {
         let body = Vec3::ZERO;
         let left = Follow {
+            body,
             grip: Vec3::new(-0.3, 2.0, 0.4),
             palm: Vec3::new(-0.3, 1.8, 0.4),
         };
         let right = Follow {
+            body,
             grip: Vec3::new(0.3, 2.0, 0.4),
             palm: Vec3::new(0.3, 2.0, 0.4),
         };
-        let target = body_target(&[left, right], body).unwrap();
+        let target = body_target([left, right]).unwrap();
         assert!(target.abs_diff_eq(Vec3::Y * 0.1, 1e-6));
-        assert_eq!(body_target(&[], body), None);
+        assert_eq!(body_target([]), None);
+    }
+
+    #[test]
+    fn a_hand_held_still_after_a_pull_stops_the_body() {
+        // A pull of 30 cm down over ten steps, then the hand held still. The body follows the
+        // pull and comes to rest the pull's height above where it gripped, whatever the gain.
+        let start = Vec3::new(2.0, 5.0, 1.0);
+        let grip = Vec3::new(0.2, 1.6, -0.4);
+        for gain in [0.3, 0.8, 1.0] {
+            let tuning = ClimbTuning { gain, ..tuning() };
+            let mut body = start;
+            let mut velocity = Vec3::ZERO;
+            for step in 0..120 {
+                let pulled = 0.3 * (step.min(10) as f32 / 10.0);
+                let follow = Follow {
+                    body: start,
+                    grip,
+                    palm: grip - Vec3::Y * pulled,
+                };
+                velocity = climb_velocity(body_target([follow]).unwrap(), body, &tuning);
+                body += velocity * STEP;
+            }
+            assert!(velocity.length() < 1e-3, "gain {gain}: {velocity:?}");
+            assert!(
+                body.abs_diff_eq(start + Vec3::Y * 0.3, 1e-3),
+                "gain {gain}: {body:?}"
+            );
+        }
     }
 
     #[test]
