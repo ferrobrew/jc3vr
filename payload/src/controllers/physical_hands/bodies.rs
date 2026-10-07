@@ -15,8 +15,8 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     game::GameObject,
     physics::{
-        PfxCharacterInstance, PfxInstance, PhysicsGameObject, PhysicsSystem, RigidObject, hknpBody,
-        hknpMotion, hknpWorld,
+        PfxCharacterInstance, PfxInstance, PhysicsGameObject, RigidObject, hknpBody, hknpMotion,
+        hknpWorld,
     },
     types::vector_math::AlignedVector3,
 };
@@ -24,6 +24,7 @@ use jc3gi::{
 use crate::controllers::physical_hands::{
     grasp::{TargetKind, mass_of},
     rigid::{BodyPose, RigidBody, Velocities},
+    world::World,
 };
 
 /// Why a body could not be read or driven.
@@ -107,9 +108,9 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Option<TargetK
 ///
 /// Main thread, outside the physics step.
 pub(super) unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, BodyError> {
-    let (world, shift) = unsafe { world() }?;
-    let motion = unsafe { owned_motion(world, body, owner) }?;
-    let centre = Vec3::from_array(motion.m_centerOfMass.data) + shift;
+    let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+    let motion = unsafe { owned_motion(world.world(), body, owner) }?;
+    let centre = Vec3::from_array(motion.m_centerOfMass.data) + world.shift;
     let orientation = Quat::from_array(motion.m_orientation.data);
     let linear = Vec3::from_array(motion.m_linearVelocity.data);
     let local_angular = Vec3::from_array(motion.m_angularVelocity.data);
@@ -153,11 +154,11 @@ pub(super) unsafe fn drive(
     if !(velocities.linear.is_finite() && velocities.angular.is_finite()) {
         return Err(BodyError::BadMotion);
     }
-    let (world, _) = unsafe { world() }?;
-    unsafe { owned_motion(world, body, owner) }?;
+    let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+    unsafe { owned_motion(world.world(), body, owner) }?;
     let linear = aligned(velocities.linear);
     let angular = aligned(velocities.angular);
-    unsafe { world.setBodyVelocity(body, &linear, &angular) };
+    unsafe { world.world_mut().setBodyVelocity(body, &linear, &angular) };
     Ok(())
 }
 
@@ -176,20 +177,16 @@ pub(super) unsafe fn shove(
     if !(impulse.is_finite() && at.is_finite()) {
         return Err(BodyError::BadMotion);
     }
-    let (world, shift) = unsafe { world() }?;
-    unsafe { owned_motion(world, body, owner) }?;
+    let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+    unsafe { owned_motion(world.world(), body, owner) }?;
     let impulse = aligned(impulse);
-    let position = aligned(at - shift);
-    unsafe { world.applyBodyImpulseAt(body, &impulse, &position) };
+    let position = aligned(at - world.shift);
+    unsafe {
+        world
+            .world_mut()
+            .applyBodyImpulseAt(body, &impulse, &position)
+    };
     Ok(())
-}
-
-/// The physics world, and the shift from its positions to game space.
-unsafe fn world() -> Result<(&'static mut hknpWorld, Vec3), BodyError> {
-    let physics = unsafe { PhysicsSystem::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-    let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
-    let world = unsafe { physics.m_World.as_mut() }.ok_or(BodyError::NoPhysicsWorld)?;
-    Ok((world, shift))
 }
 
 /// The motion of the dynamic body `body`, checked to belong to `owner`.

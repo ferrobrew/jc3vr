@@ -9,8 +9,11 @@
 //! ([`PfxRigidBody::VFTABLE`]) whose event slot is [`on_contact_impulse`], and its switch and the
 //! body's event flag are set ([`PfxRigidBody::SetContactImpulseEventActive`]). Every other slot,
 //! the destructor included, is the engine's own, so the wrapper lives and dies as before. The copy
-//! is a static, valid for the payload's lifetime, and the bodies are destroyed before the payload
-//! unloads.
+//! carries the slot before the table too, the compiler's run-time type information for the class,
+//! so a type query on the wrapper still finds it. The copy is a static, valid for the payload's
+//! lifetime, and the bodies are destroyed before the payload unloads; a wrapper forgotten without
+//! being destroyed (its body went away under it) still points at the copy, so forgetting one pins
+//! the payload's image for the rest of the game's run.
 //!
 //! The events arrive during the physics step ([`hknpWorld::stepSolve`] dispatches them on the
 //! thread that steps the world), where the world must not be changed and the game's objects are
@@ -97,23 +100,41 @@ pub(super) unsafe fn listen(
         return Err(ContactError::ForeignTable);
     }
     let table = TABLE.get_or_init(|| {
-        // SAFETY: the engine's table is a static of exactly this many slots.
+        // SAFETY: the engine's table is a static of exactly this many slots, preceded by the
+        // compiler's run-time type information pointer.
         let mut table = unsafe { engine_table.read() };
+        let type_info = unsafe { engine_table.cast::<usize>().sub(1).read() };
         table.OnContactImpulseEvent = on_contact_impulse;
-        table
+        HookedTable { type_info, table }
     });
     WRAPPERS[hand.index()].store(wrapper.as_ptr() as usize, Ordering::Release);
     unsafe {
-        slot.write(table);
+        slot.write(&table.table);
         (*wrapper.as_ptr()).SetContactImpulseEventActive(true);
     }
     Ok(())
 }
 
-/// Stop attributing contacts to `hand`'s body: before its wrapper is destroyed or forgotten.
+/// Stop attributing contacts to `hand`'s body: before its wrapper is destroyed.
 pub(super) fn forget(hand: Hand) {
     WRAPPERS[hand.index()].store(0, Ordering::Release);
     MOTION.lock()[hand.index()] = None;
+}
+
+/// Stop attributing contacts to `hand`'s body, whose wrapper is forgotten without being destroyed.
+/// A wrapper that listened keeps pointing at the payload's copy of its table, and whether the
+/// engine still reaches it is unknown, so the payload's image is pinned rather than unmapped under
+/// it.
+pub(super) fn abandon(hand: Hand) {
+    if listening(hand) {
+        tracing::warn!(
+            hand = hand.label(),
+            "hand bodies: a forgotten hand body still points at the payload's virtual table; \
+             pinning the payload"
+        );
+        crate::module::pin();
+    }
+    forget(hand);
 }
 
 /// Whether `hand`'s body has contact events on: its wrapper is hooked for them.
@@ -133,8 +154,15 @@ pub(super) fn take() -> (Vec<Contact>, u64) {
     (contacts, DROPPED.swap(0, Ordering::Relaxed))
 }
 
-/// The engine wrapper's table with the event slot replaced.
-static TABLE: OnceLock<PfxRigidBodyVftable> = OnceLock::new();
+/// The engine wrapper's table with the event slot replaced, laid out as the compiler lays a virtual
+/// table out: the run-time type information pointer in the slot before the first virtual.
+#[repr(C)]
+struct HookedTable {
+    type_info: usize,
+    table: PfxRigidBodyVftable,
+}
+
+static TABLE: OnceLock<HookedTable> = OnceLock::new();
 
 /// Each hand's wrapper, as an address; zero for none.
 static WRAPPERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];

@@ -24,6 +24,8 @@ use jc3gi::{
     types::vector_math::AlignedVector3,
 };
 
+use crate::controllers::physical_hands::world::World;
+
 /// Why the player could not be climbed with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ClimbEngineError {
@@ -65,9 +67,9 @@ pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
         .ok_or(ClimbEngineError::NoPlayer)?;
     let proxy =
         unsafe { character.m_PfxCharacter.px.as_ref() }.ok_or(ClimbEngineError::NoPlayer)?;
-    let (world, shift) = unsafe { world() }?;
-    let slot = unsafe { proxy_slot(world, proxy) }?;
-    let body = Vec3::from_array(slot.m_transform.m_translation.data) + shift;
+    let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
+    let slot = unsafe { proxy_slot(world.world(), proxy) }?;
+    let body = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
     let feet = Mat4::from(character.m_WorldMatrixT1).w_axis.truncate();
     if !(body.is_finite() && feet.is_finite()) {
         return Err(ClimbEngineError::NoPlayer);
@@ -82,10 +84,10 @@ pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
 ///
 /// The game thread, outside the physics step.
 pub unsafe fn is_static(body: u32) -> bool {
-    let Ok((world, _)) = (unsafe { world() }) else {
+    let Some(world) = (unsafe { World::get() }) else {
         return false;
     };
-    unsafe { slot(world, body) }.is_some_and(|slot| slot.m_flags & hknpBody::IS_STATIC != 0)
+    unsafe { slot(world.world(), body) }.is_some_and(|slot| slot.m_flags & hknpBody::IS_STATIC != 0)
 }
 
 /// The support the proxy's update found for this step, before anything else wrote it: whether the
@@ -134,8 +136,8 @@ pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
         return Err(ClimbEngineError::BadVelocity);
     }
     let proxy = unsafe { proxy() }?;
-    let (world, _) = unsafe { world() }?;
-    unsafe { proxy_slot(world, proxy) }?;
+    let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
+    unsafe { proxy_slot(world.world(), proxy) }?;
     let body = unsafe { proxy.m_CharacterRigidBody.as_mut() }.ok_or(ClimbEngineError::NoPlayer)?;
     let timestep = hkSimdFloat32 {
         m_real: [PhysicsSystem::STEP_SECONDS; 4],
@@ -181,14 +183,6 @@ unsafe fn slot(world: &hknpWorld, body: u32) -> Option<&hknpBody> {
     }
     let slot = unsafe { &*world.m_bodies.add(body as usize) };
     (slot.m_motionId != hknpBody::INVALID_MOTION_ID).then_some(slot)
-}
-
-/// The physics world, and the shift from its positions to game space.
-unsafe fn world() -> Result<(&'static hknpWorld, Vec3), ClimbEngineError> {
-    let physics = unsafe { PhysicsSystem::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
-    let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
-    let world = unsafe { physics.m_World.as_ref() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
-    Ok((world, shift))
 }
 
 fn aligned(v: Vec3) -> AlignedVector3 {

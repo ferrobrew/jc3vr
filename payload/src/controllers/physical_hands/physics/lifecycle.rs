@@ -311,13 +311,22 @@ impl Hands {
             return false;
         };
         let body_id = body.body_id();
-        unsafe { body.destroy(hand) };
-        tracing::info!(
-            hand = hand.label(),
-            body_id,
-            reason,
-            "hand bodies: destroyed a hand body"
-        );
+        // SAFETY: forwarded from the caller.
+        if unsafe { body.destroy(hand) } {
+            tracing::info!(
+                hand = hand.label(),
+                body_id,
+                reason,
+                "hand bodies: destroyed a hand body"
+            );
+        } else {
+            tracing::warn!(
+                hand = hand.label(),
+                body_id,
+                reason,
+                "hand bodies: a hand body's slot no longer holds it; forgot it without destroying it"
+            );
+        }
         true
     }
 

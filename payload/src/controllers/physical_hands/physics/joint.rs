@@ -31,7 +31,8 @@ use windows::Win32::System::Threading::TlsGetValue;
 
 use crate::controllers::physical_hands::{
     bodies::{self, BodyError as ObjectError},
-    physics::body::{self as hand_body, release},
+    physics::body::release,
+    world::World,
 };
 
 /// Why a joint could not be made.
@@ -92,9 +93,9 @@ impl Joint {
         object: NonZeroUsize,
     ) -> Result<Self, JointError> {
         unsafe { bodies::read(object_body, object) }.map_err(JointError::Object)?;
-        let (world, _) = unsafe { hand_body::world() }.map_err(|_| JointError::NoPhysicsWorld)?;
-        let hand_frame = affine(&unsafe { slot(world, hand) }?.m_transform);
-        let object_frame = affine(&unsafe { slot(world, object_body) }?.m_transform);
+        let mut world = unsafe { World::get() }.ok_or(JointError::NoPhysicsWorld)?;
+        let hand_frame = affine(&unsafe { slot(world.world(), hand) }?.m_transform);
+        let object_frame = affine(&unsafe { slot(world.world(), object_body) }?.m_transform);
         let pivot_a = transform(Affine3A::IDENTITY);
         let pivot_b = transform(pivot_in(object_frame, hand_frame));
 
@@ -110,7 +111,7 @@ impl Joint {
         cinfo.m_bodyA = hand;
         cinfo.m_bodyB = object_body;
         let mut id = hknpConstraintManager::INVALID_CONSTRAINT_ID;
-        unsafe { world.createConstraint(&mut id, &cinfo) };
+        unsafe { world.world_mut().createConstraint(&mut id, &cinfo) };
         let joint = Self {
             id,
             hand_body: hand,
@@ -118,7 +119,7 @@ impl Joint {
             object,
             data: data as *mut hkpFixedConstraintData as usize,
         };
-        let made = unsafe { joint.entry(world) }.map(|entry| entry.m_flags);
+        let made = unsafe { joint.entry(world.world()) }.map(|entry| entry.m_flags);
         // The world's constraint holds its own reference; this one was the joint's.
         unsafe { release(cinfo.m_constraintData) };
         match made {
@@ -146,10 +147,10 @@ impl Joint {
     ///
     /// As [`Joint::create`].
     pub unsafe fn intact(&self) -> bool {
-        let Ok((world, _)) = (unsafe { hand_body::world() }) else {
+        let Some(world) = (unsafe { World::get() }) else {
             return false;
         };
-        unsafe { self.entry(world) }.is_some()
+        unsafe { self.entry(world.world()) }.is_some()
             && unsafe { bodies::read(self.object_body, self.object) }.is_ok()
     }
 
@@ -159,13 +160,13 @@ impl Joint {
     ///
     /// As [`Joint::create`].
     pub unsafe fn destroy(self) -> bool {
-        let Ok((world, _)) = (unsafe { hand_body::world() }) else {
+        let Some(mut world) = (unsafe { World::get() }) else {
             return false;
         };
-        if unsafe { self.entry(world) }.is_none() {
+        if unsafe { self.entry(world.world()) }.is_none() {
             return false;
         }
-        unsafe { world.destroyConstraints(&self.id, 1) };
+        unsafe { world.world_mut().destroyConstraints(&self.id, 1) };
         true
     }
 

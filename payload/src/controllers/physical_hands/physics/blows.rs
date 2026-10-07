@@ -39,6 +39,7 @@ use crate::controllers::{
             hit::{Blow, BlowPlan, HitGate, VictimTuning, blow, pulse_share},
         },
         pulse,
+        world::World,
     },
     weapons::haptics::PulseSource,
 };
@@ -191,8 +192,8 @@ static GATE: Mutex<(HitGate, Option<Instant>)> = Mutex::new((HitGate::new(), Non
 /// The game thread, outside the game's update.
 unsafe fn victim(contact: &Contact, attacker: &Character) -> Option<*mut Character> {
     let object = NonZeroUsize::new(contact.other_object)?;
-    let (world, _) = unsafe { body::world() }.ok()?;
-    let instance = unsafe { body::instance_of(world, contact.other_body) }?;
+    let world = unsafe { World::get() }?;
+    let instance = unsafe { body::instance_of(world.world(), contact.other_body) }?;
     if instance != contact.other_instance {
         return None;
     }

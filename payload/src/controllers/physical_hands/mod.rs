@@ -11,6 +11,7 @@
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
 //! - [`climb`]: climbing by gripping the static world with a hand its body drives;
+//! - [`world`]: the Havok world, lent out for one call at a time;
 //! - [`config`]: the settings.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
@@ -52,6 +53,7 @@ pub mod push;
 pub mod rigid;
 pub mod shove;
 mod touch;
+mod world;
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},

@@ -25,10 +25,10 @@ use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::{
     character::character::Character,
     havok::{hkReferencedObject, hknpBodyCinfo, hknpCapsuleShape, hknpMotionCinfo},
-    memory::OperatorNew,
+    memory::{MemoryFree, OperatorNew},
     physics::{
         CustomGroupCollisionFilter, PfxCharacterInstance, PfxInstance, PfxLayer, PfxRigidBody,
-        PhysicsSystem, hknpAdditionMode, hknpBody, hknpWorld,
+        hknpAdditionMode, hknpBody, hknpWorld,
     },
     types::{
         math::Matrix4,
@@ -38,9 +38,12 @@ use jc3gi::{
 
 use crate::controllers::{
     frame::Hand,
-    physical_hands::physics::{
-        contact::{self, ContactError},
-        drive::BodyMotion,
+    physical_hands::{
+        physics::{
+            contact::{self, ContactError},
+            drive::BodyMotion,
+        },
+        world::World,
     },
 };
 
@@ -123,16 +126,20 @@ impl HandBody {
         position: Vec3,
         orientation: Quat,
     ) -> Result<Self, BodyError> {
-        let (world, shift) = unsafe { world() }?;
-        // The wrapper's memory first: it is the one allocation a failure later could not return.
+        let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        // The wrapper's memory first: it is the one allocation a failure after the body is made
+        // could not return without destroying the body. A failure before then frees it.
         let memory =
             unsafe { OperatorNew(size_of::<PfxRigidBody>() as u64) }.cast::<PfxRigidBody>();
         let memory = NonNull::new(memory).ok_or(BodyError::NoWrapperMemory)?;
+        // SAFETY: the memory came from `OperatorNew` above and nothing else holds it.
+        let free_memory = || unsafe { MemoryFree(memory.as_ptr().cast()) };
 
         let a = aligned(Vec3::NEG_Z * spec.capsule.half_length_m);
         let b = aligned(Vec3::Z * spec.capsule.half_length_m);
         let shape = unsafe { hknpCapsuleShape::createCapsuleShape(&a, &b, spec.capsule.radius_m) };
         if shape.is_null() {
+            free_memory();
             return Err(BodyError::NoShape);
         }
 
@@ -143,7 +150,7 @@ impl HandBody {
             cinfo.assume_init_mut()
         };
         cinfo.m_shape = shape;
-        cinfo.m_position = aligned(position - shift);
+        cinfo.m_position = aligned(position - world.shift);
         cinfo.m_orientation = AlignedQuat {
             data: orientation.normalize().to_array(),
         };
@@ -159,11 +166,18 @@ impl HandBody {
 
         let mut body_id = PfxCharacterInstance::INVALID_BODY_ID;
         unsafe {
-            world.createDynamicBody(&mut body_id, cinfo, motion, hknpAdditionMode::DO_NOT_ADD, 0)
+            world.world_mut().createDynamicBody(
+                &mut body_id,
+                cinfo,
+                motion,
+                hknpAdditionMode::DO_NOT_ADD,
+                0,
+            )
         };
         // The body holds its own reference to the shape.
         unsafe { release(shape.cast::<hkReferencedObject>()) };
         if body_id == PfxCharacterInstance::INVALID_BODY_ID {
+            free_memory();
             return Err(BodyError::NoBodyId);
         }
 
@@ -203,8 +217,8 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn filter_info(&self) -> Result<u32, BodyError> {
-        let (world, _) = unsafe { world() }?;
-        let slot = unsafe { self.slot(world) }?;
+        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let slot = unsafe { self.slot(world.world()) }?;
         Ok(slot.m_collisionFilterInfo)
     }
 
@@ -214,8 +228,8 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn raises_contact_events(&self) -> Result<bool, BodyError> {
-        let (world, _) = unsafe { world() }?;
-        let slot = unsafe { self.slot(world) }?;
+        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let slot = unsafe { self.slot(world.world()) }?;
         Ok(slot.m_flags & hknpBody::RAISE_CONTACT_IMPULSE_EVENTS != 0)
     }
 
@@ -252,7 +266,8 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn motion(&self) -> Result<BodyMotion, BodyError> {
-        let (world, _) = unsafe { world() }?;
+        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let world = world.world();
         let slot = unsafe { self.slot(world) }?;
         let mut transform = Matrix4::IDENTITY;
         unsafe { self.wrapper.as_ref().GetTransform(&mut transform) };
@@ -297,9 +312,13 @@ impl HandBody {
         if !(linear.is_finite() && angular.is_finite()) {
             return Err(BodyError::BadMotion);
         }
-        let (world, _) = unsafe { world() }?;
-        unsafe { self.slot(world) }?;
-        unsafe { world.setBodyVelocity(self.body_id, &aligned(linear), &aligned(angular)) };
+        let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        unsafe { self.slot(world.world()) }?;
+        unsafe {
+            world
+                .world_mut()
+                .setBodyVelocity(self.body_id, &aligned(linear), &aligned(angular))
+        };
         Ok(())
     }
 
@@ -320,19 +339,28 @@ impl HandBody {
         unsafe { self.set_velocities(Vec3::ZERO, Vec3::ZERO) }
     }
 
-    /// Delete the wrapper, which removes the body from the simulation and destroys it.
+    /// Delete the wrapper, which removes the body from the simulation and destroys it, when the
+    /// body's slot still holds it; otherwise forget the wrapper without touching the engine
+    /// ([`HandBody::abandon`]). Returns whether it deleted the wrapper.
     ///
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn destroy(self, hand: Hand) {
+    pub unsafe fn destroy(self, hand: Hand) -> bool {
+        let held = unsafe { World::get() }
+            .is_some_and(|world| unsafe { self.slot(world.world()) }.is_ok());
+        if !held {
+            self.abandon(hand);
+            return false;
+        }
         contact::forget(hand);
         unsafe { (*self.wrapper.as_ptr()).Destruct(PfxRigidBody::DESTRUCT_FREE) };
+        true
     }
 
     /// Forget the wrapper without touching the engine: for a body whose slot no longer holds it.
     pub fn abandon(self, hand: Hand) {
-        contact::forget(hand);
+        contact::abandon(hand);
     }
 
     /// The body's slot, checked to still hold this wrapper's body: the id has a slot with a
@@ -366,7 +394,8 @@ pub unsafe fn player_system_group() -> Option<u32> {
     let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
     let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
-    let (world, _) = unsafe { world() }.ok()?;
+    let world = unsafe { World::get() }?;
+    let world = world.world();
     if body == PfxCharacterInstance::INVALID_BODY_ID
         || body > world.m_peakBodyIndex
         || world.m_bodies.is_null()
@@ -376,14 +405,6 @@ pub unsafe fn player_system_group() -> Option<u32> {
     let slot = unsafe { &*world.m_bodies.add(body as usize) };
     let group = slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT;
     (group != 0).then_some(group)
-}
-
-/// The physics world, and the shift from its positions to game space.
-pub(super) unsafe fn world() -> Result<(&'static mut hknpWorld, Vec3), BodyError> {
-    let physics = unsafe { PhysicsSystem::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-    let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
-    let world = unsafe { physics.m_World.as_mut() }.ok_or(BodyError::NoPhysicsWorld)?;
-    Ok((world, shift))
 }
 
 /// The engine instance of the body `body`, as an address.
