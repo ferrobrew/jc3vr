@@ -10,11 +10,23 @@
 //! immediate context under `Context::m_Mutex`, serialized with the engine's own render work, the
 //! same model as [`crate::capture::composite`].
 //!
+//! Each eye reaches its slice by one of two routes. The direct route ([`arm_direct`], on by default
+//! through `vr.direct_eye_blit`) acquires the swapchain image at the top of the render update and
+//! blits each eye from the engine's back buffer in that eye's own post-draw ([`blit_direct`]), so the
+//! full-size copy into the eye capture is made only when something else reads that capture (the
+//! desktop mirror's eye, a screenshot, the recorder, the previews). The capture route copies every
+//! eye into its capture in the post-draw and blits the captures at the frame submit; it remains for
+//! the single-pass collapse, whose one back buffer holds both eyes side by side and so has no
+//! per-eye source the blit can sample whole, for a back buffer the blit cannot sample, and for any
+//! eye the direct route did not reach. The submit blits exactly the eyes the direct route did not.
+//!
 //! The gamma bridge (linear source vs `_SRGB` target) is a runtime toggle; see
 //! [`crate::vr::config::BlitGamma`] and `vr_blit_ps.hlsl`. The blit also darkens the image by the
 //! comfort fade's level ([`crate::controllers::roomscale::fade`]): the engine's own screen fade
 //! belongs to the game's fades (loading, teleports, cutscenes), so the mod's fade is applied here,
 //! at the last stage before the compositor.
+
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
@@ -22,20 +34,27 @@ use parking_lot::Mutex;
 use windows::{
     Win32::{
         Graphics::{
-            Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-            Direct3D11::{
-                D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_COMPARISON_NEVER,
-                D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                D3D11_QUERY_DESC, D3D11_QUERY_EVENT, D3D11_RASTERIZER_DESC,
-                D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC_0,
-                D3D11_RTV_DIMENSION_TEXTURE2DARRAY, D3D11_SAMPLER_DESC, D3D11_SUBRESOURCE_DATA,
-                D3D11_TEX2D_ARRAY_RTV, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC,
-                D3D11_USAGE_DEFAULT, D3D11_VIEWPORT, ID3D11Buffer, ID3D11Device,
-                ID3D11DeviceContext, ID3D11PixelShader, ID3D11Query, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-                ID3D11Texture2D, ID3D11VertexShader,
+            Direct3D::{
+                D3D_PRIMITIVE_TOPOLOGY, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+                D3D11_SRV_DIMENSION_TEXTURE2D,
             },
-            Dxgi::Common::DXGI_FORMAT,
+            Direct3D11::{
+                D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE, D3D11_BUFFER_DESC,
+                D3D11_COMPARISON_NEVER, D3D11_CULL_NONE, D3D11_FILL_SOLID,
+                D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_QUERY_DESC, D3D11_QUERY_EVENT,
+                D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_VIEW_DESC,
+                D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RTV_DIMENSION_TEXTURE2DARRAY,
+                D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
+                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_ARRAY_RTV,
+                D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC,
+                D3D11_USAGE_DEFAULT, D3D11_VIEWPORT, ID3D11Buffer, ID3D11Device,
+                ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11Query,
+                ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
+                ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
+            },
+            Dxgi::Common::{
+                DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UNORM,
+            },
         },
         System::Threading::{EnterCriticalSection, LeaveCriticalSection},
     },
@@ -44,7 +63,11 @@ use windows::{
 
 use crate::{
     ui::render::EGUI_DEBUG_RENDER_STATE,
-    vr::{EyeImage, FrameContext, VrConfig, config::BlitGamma},
+    vr::{
+        EyeImage, FrameContext, VrConfig,
+        config::BlitGamma,
+        foveation::{capture_state, restore_state},
+    },
 };
 
 /// The committed, precompiled blit shaders. The vertex shader is the shared fullscreen-triangle from
@@ -61,11 +84,18 @@ static VR_BLIT: Mutex<Option<VrBlit>> = Mutex::new(None);
 /// ended -- on any blit failure it submits an empty frame rather than leaving the compositor waiting.
 pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
     if !frame.should_render() {
+        disarm_direct();
         end(frame);
         return;
     }
 
-    if let Err(e) = submit(&mut frame, cfg) {
+    let submitted = submit(&mut frame, cfg);
+    // The frame's view over the back buffer goes whatever happened, before a resize can need the
+    // buffer free.
+    if let Some(blit) = VR_BLIT.lock().as_mut() {
+        blit.end_frame();
+    }
+    if let Err(e) = submitted {
         tracing::warn!(target: "vr", "eye blit failed; submitting an empty frame: {e:#}");
         // Release any acquired image so the empty submit does not deadlock the swapchain.
         let _ = frame.release();
@@ -73,9 +103,209 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
     end(frame);
 }
 
+/// Start the direct route for this frame: acquire the swapchain image now and publish it, so each
+/// eye's post-draw can blit into its slice ([`blit_direct`]). Call on the game thread after
+/// [`crate::vr::frame_begin`] and before the dispatches, only for a frame that renders and whose
+/// dispatches each carry one eye. Any other frame calls [`disarm_direct`] instead.
+///
+/// Acquiring here rather than at the submit moves the swapchain image wait onto the game thread,
+/// where it is measured as `vr_swapchain_wait`; the image is the runtime's oldest and is normally
+/// free already. A failed acquire leaves the route disarmed, and the submit retries the acquire and
+/// blits from the captures, as it does with the route off.
+pub fn arm_direct(frame: &mut FrameContext, cfg: &VrConfig) {
+    let target = if cfg.direct_eye_blit && !GAVE_UP.load(Ordering::Relaxed) {
+        match frame.acquire() {
+            Ok(()) => frame.eye_image(0).map(|image| DirectTarget {
+                image,
+                linearize: matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize),
+                blitted: [false; 2],
+            }),
+            Err(e) => {
+                tracing::debug!(
+                    target: "vr",
+                    "direct eye blit: acquiring the swapchain image failed: {e:#}"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    *DIRECT.lock() = target;
+}
+
+/// Leave the direct route off for this frame, so every eye is copied into its capture and blitted
+/// at the submit.
+pub fn disarm_direct() {
+    *DIRECT.lock() = None;
+}
+
+/// Blit `src`, the engine's back buffer as eye `eye`'s post-draw leaves it, into that eye's
+/// swapchain slice, when the direct route is armed for this frame. Returns whether it did; on
+/// `false` the caller copies the eye into its capture, so the submit blits it from there. Restores
+/// the pipeline state the engine's following passes rely on.
+///
+/// # Safety
+/// Called from the post-draw hook with the engine context mutex held; `device` and `context` are
+/// the live engine device and immediate context.
+pub(crate) unsafe fn blit_direct(
+    device: &Device,
+    context: &ID3D11DeviceContext,
+    src: &ID3D11Resource,
+    eye: usize,
+) -> bool {
+    if eye >= 2 {
+        return false;
+    }
+    let mut direct = DIRECT.lock();
+    let Some(target) = direct.as_mut() else {
+        return false;
+    };
+    let Ok(src) = src.cast::<ID3D11Texture2D>() else {
+        return false;
+    };
+    let brightness = 1.0 - crate::controllers::roomscale::fade::level();
+    let image = EyeImage {
+        array_index: eye as u32,
+        ..target.image
+    };
+
+    let mut guard = VR_BLIT.lock();
+    if guard.is_none() {
+        match VrBlit::new(device) {
+            Ok(blit) => *guard = Some(blit),
+            Err(e) => {
+                give_up(format_args!("building the blit pipeline failed: {e:#}"));
+                return false;
+            }
+        }
+    }
+    let blit = guard.as_mut().expect("the blit pipeline was just ensured");
+    let Some(srv) = blit.back_buffer_srv(device, &src) else {
+        return false;
+    };
+    // SAFETY: the caller holds the context mutex; the image stays acquired until the submit
+    // releases it, which takes the target out of `DIRECT` first.
+    let result = unsafe {
+        let targets = capture_state(context);
+        let bindings = ShaderBindings::capture(context);
+        blit.set_params(context, target.linearize, brightness);
+        let result = blit.draw_eye(device, context, &image, srv);
+        bindings.restore(context);
+        restore_state(context, &targets);
+        result
+    };
+    match result {
+        Ok(()) => {
+            target.blitted[eye] = true;
+            true
+        }
+        Err(e) => {
+            give_up(format_args!("the draw failed: {e:#}"));
+            false
+        }
+    }
+}
+
 /// Tear down the blit pipeline (COM release). Called from the runtime cleanup.
 pub fn teardown() {
+    *DIRECT.lock() = None;
     *VR_BLIT.lock() = None;
+}
+
+/// The swapchain image the frame's dispatches blit into on the direct route, and which eyes they
+/// have reached. Present from [`arm_direct`] until the submit takes it, before it releases the
+/// image.
+struct DirectTarget {
+    /// The acquired image; each blit picks its eye's slice.
+    image: EyeImage,
+    linearize: bool,
+    blitted: [bool; 2],
+}
+
+// SAFETY: the raw pointer is the runtime-owned swapchain texture, valid from the acquire in
+// `arm_direct` until the release in `submit`, which takes the target out of `DIRECT` first; every
+// use of it is on the engine's immediate context under its mutex.
+unsafe impl Send for DirectTarget {}
+
+/// The direct route's target for the frame in flight, or `None` while the route is off.
+static DIRECT: Mutex<Option<DirectTarget>> = Mutex::new(None);
+
+/// Whether the back buffer was last found readable by the direct route: `0` no, `1` yes, `2` not
+/// checked yet. Only for logging the verdict when it changes.
+static BACK_BUFFER_READABLE: AtomicU8 = AtomicU8::new(2);
+
+/// Set when the direct route failed in a way a later frame would repeat, which leaves it off for
+/// the rest of the session.
+static GAVE_UP: AtomicBool = AtomicBool::new(false);
+
+/// Turn the direct route off for the session after a failure, logging it once. The eye that failed
+/// is copied into its capture and blitted at the submit like every eye after it.
+fn give_up(reason: std::fmt::Arguments<'_>) {
+    if !GAVE_UP.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            target: "vr",
+            "direct eye blit: {reason}; copying the eyes into their captures for the rest of \
+             the session"
+        );
+    }
+}
+
+/// The shader-stage bindings the blit changes, which [`capture_state`] does not cover: the input
+/// assembler's, the two shaders, and the pixel shader's first sampler, constant buffer, and
+/// resource. Restored after a blit inside the engine's frame, which goes on drawing after it.
+struct ShaderBindings {
+    input_layout: Option<ID3D11InputLayout>,
+    topology: D3D_PRIMITIVE_TOPOLOGY,
+    vertex_shader: Option<ID3D11VertexShader>,
+    pixel_shader: Option<ID3D11PixelShader>,
+    ps_samplers: [Option<ID3D11SamplerState>; 1],
+    ps_constants: [Option<ID3D11Buffer>; 1],
+    ps_resources: [Option<ID3D11ShaderResourceView>; 1],
+}
+
+impl ShaderBindings {
+    /// # Safety
+    /// `context` must be the live engine immediate context, held under its mutex.
+    unsafe fn capture(context: &ID3D11DeviceContext) -> Self {
+        let mut bindings = Self {
+            input_layout: None,
+            topology: D3D_PRIMITIVE_TOPOLOGY::default(),
+            vertex_shader: None,
+            pixel_shader: None,
+            ps_samplers: Default::default(),
+            ps_constants: Default::default(),
+            ps_resources: Default::default(),
+        };
+        // SAFETY: every out-pointer is a live local; the getters AddRef what they return, which the
+        // `Option` wrappers release.
+        unsafe {
+            bindings.input_layout = context.IAGetInputLayout().ok();
+            bindings.topology = context.IAGetPrimitiveTopology();
+            context.VSGetShader(&mut bindings.vertex_shader, None, None);
+            context.PSGetShader(&mut bindings.pixel_shader, None, None);
+            context.PSGetSamplers(0, Some(&mut bindings.ps_samplers));
+            context.PSGetConstantBuffers(0, Some(&mut bindings.ps_constants));
+            context.PSGetShaderResources(0, Some(&mut bindings.ps_resources));
+        }
+        bindings
+    }
+
+    /// # Safety
+    /// `context` must be the immediate context the bindings were captured from, held under its
+    /// mutex.
+    unsafe fn restore(self, context: &ID3D11DeviceContext) {
+        // SAFETY: rebinding objects the context itself returned.
+        unsafe {
+            context.IASetInputLayout(self.input_layout.as_ref());
+            context.IASetPrimitiveTopology(self.topology);
+            context.VSSetShader(self.vertex_shader.as_ref(), None);
+            context.PSSetShader(self.pixel_shader.as_ref(), None);
+            context.PSSetSamplers(0, Some(&self.ps_samplers));
+            context.PSSetConstantBuffers(0, Some(&self.ps_constants));
+            context.PSSetShaderResources(0, Some(&self.ps_resources));
+        }
+    }
 }
 
 /// The maximum time to wait for the GPU to report idle during teardown, in ~1 ms polling steps. A
@@ -166,6 +396,12 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
         let lock = EGUI_DEBUG_RENDER_STATE.lock();
         [lock.texture(0).cloned(), lock.texture(1).cloned()]
     };
+    // Every dispatch of the frame is drained by now, so no post-draw reads the target again; taking
+    // it here, before the release below, is what keeps a later frame off a released image.
+    let blitted = DIRECT
+        .lock()
+        .take()
+        .map_or([false; 2], |target| target.blitted);
 
     frame
         .acquire()
@@ -193,6 +429,9 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
         EnterCriticalSection(context.m_Mutex);
         blit.set_params(&context.m_Context, linearize, brightness);
         for (eye, src) in eye_textures.iter().enumerate() {
+            if blitted[eye] {
+                continue;
+            }
             let (Some(image), Some(src)) = (frame.eye_image(eye), src.as_ref()) else {
                 continue;
             };
@@ -227,6 +466,9 @@ struct VrBlit {
     /// Source shader-resource views over the captured eye textures, keyed by texture pointer, so a
     /// resize (which rebuilds the capture textures) rebuilds the SRV.
     srv_cache: [Option<(usize, ID3D11ShaderResourceView)>; 2],
+    /// The frame's view over the engine's back buffer for the direct route, keyed by texture
+    /// pointer, dropped at the submit.
+    back_buffer_srv: Option<(usize, ID3D11ShaderResourceView)>,
 }
 
 impl VrBlit {
@@ -308,6 +550,7 @@ impl VrBlit {
                 params_cb,
                 rtv_cache: Vec::new(),
                 srv_cache: [None, None],
+                back_buffer_srv: None,
             })
         }
     }
@@ -341,6 +584,22 @@ impl VrBlit {
         image: &EyeImage,
         src: &ID3D11Texture2D,
     ) -> anyhow::Result<()> {
+        let srv = self.srv_for(device, image.array_index as usize, src)?;
+        unsafe { self.draw_eye(device, context, image, srv) }
+    }
+
+    /// Draw `srv` over `image`'s swapchain slice. The caller must hold the context mutex.
+    ///
+    /// # Safety
+    /// `context` must be the live engine immediate context; `image` must reference the currently
+    /// acquired swapchain texture.
+    unsafe fn draw_eye(
+        &mut self,
+        device: &Device,
+        context: &ID3D11DeviceContext,
+        image: &EyeImage,
+        srv: ID3D11ShaderResourceView,
+    ) -> anyhow::Result<()> {
         // Wrap the runtime-owned swapchain texture borrowed (no AddRef); do not release it.
         let swapchain_tex = unsafe { ID3D11Texture2D::from_raw_borrowed(&image.texture) }
             .context("vr: the swapchain texture pointer was null")?;
@@ -351,7 +610,6 @@ impl VrBlit {
         }
 
         let rtv = self.rtv_for(device, swapchain_tex, image)?;
-        let srv = self.srv_for(device, image.array_index as usize, src)?;
 
         unsafe {
             context.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
@@ -363,6 +621,8 @@ impl VrBlit {
                 MinDepth: 0.0,
                 MaxDepth: 1.0,
             }]));
+            // Opaque: the slice takes the eye image as it is, whatever blend state is bound.
+            context.OMSetBlendState(None, None, u32::MAX);
             context.IASetInputLayout(None);
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.VSSetShader(&self.vertex_shader, None);
@@ -443,6 +703,85 @@ impl VrBlit {
         let srv = srv.context("vr: the captured eye shader-resource view was not created")?;
         *slot = Some((ptr, srv.clone()));
         Ok(srv)
+    }
+
+    /// Get (creating on the frame's first use) a shader-resource view over the engine's back buffer
+    /// that samples it exactly as its copy into an eye capture does: the raw 8-bit values, through
+    /// an `R8G8B8A8_UNORM` view. `None` when the texture cannot be read that way (no shader-resource
+    /// binding, multisampled, or a format other than `R8G8B8A8_UNORM` or `R8G8B8A8_TYPELESS`); the
+    /// caller then takes the capture route. The verdict is logged when it changes.
+    ///
+    /// The view holds a reference to the back buffer, which without the mod-owned back buffer is
+    /// DXGI buffer 0, and a swapchain resize fails while any reference to it is outstanding; so the
+    /// view lives for one frame only, dropped by [`VrBlit::end_frame`] at the submit.
+    fn back_buffer_srv(
+        &mut self,
+        device: &Device,
+        src: &ID3D11Texture2D,
+    ) -> Option<ID3D11ShaderResourceView> {
+        let ptr = src.as_raw() as usize;
+        if let Some((cached, srv)) = &self.back_buffer_srv
+            && *cached == ptr
+        {
+            return Some(srv.clone());
+        }
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: `src` is a live texture.
+        unsafe { src.GetDesc(&mut desc) };
+        let readable = desc.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
+            && desc.SampleDesc.Count == 1
+            && (desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM
+                || desc.Format == DXGI_FORMAT_R8G8B8A8_TYPELESS);
+        if BACK_BUFFER_READABLE.swap(u8::from(readable), Ordering::Relaxed) != u8::from(readable) {
+            if readable {
+                tracing::info!(
+                    target: "vr",
+                    width = desc.Width,
+                    height = desc.Height,
+                    "direct eye blit: blitting the eyes from the back buffer",
+                );
+            } else {
+                tracing::info!(
+                    target: "vr",
+                    format = desc.Format.0,
+                    bind_flags = desc.BindFlags,
+                    samples = desc.SampleDesc.Count,
+                    "direct eye blit: the back buffer cannot be sampled as the eye captures are; \
+                     copying the eyes instead",
+                );
+            }
+        }
+        if !readable {
+            return None;
+        }
+        let view = D3D11_SHADER_RESOURCE_VIEW_DESC {
+            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
+            Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                Texture2D: D3D11_TEX2D_SRV {
+                    MostDetailedMip: 0,
+                    MipLevels: 1,
+                },
+            },
+        };
+        let mut srv: Option<ID3D11ShaderResourceView> = None;
+        // SAFETY: `src` has the shader-resource binding and a format this view can read.
+        if let Err(e) = unsafe {
+            device
+                .m_Device
+                .CreateShaderResourceView(src, Some(&view), Some(&mut srv))
+        } {
+            give_up(format_args!("creating the back buffer's view failed: {e}"));
+            return None;
+        }
+        let srv = srv?;
+        self.back_buffer_srv = Some((ptr, srv.clone()));
+        Some(srv)
+    }
+
+    /// Drop the frame's view over the back buffer (see [`VrBlit::back_buffer_srv`]).
+    fn end_frame(&mut self) {
+        self.back_buffer_srv = None;
     }
 }
 

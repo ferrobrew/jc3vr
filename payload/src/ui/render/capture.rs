@@ -3,7 +3,10 @@
 //! Previews tab displays, and the visibility gate that keeps those preview-only copies from running
 //! when nobody is looking.
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 use windows::{
@@ -294,7 +297,8 @@ impl EguiDebugRenderState {
             if self.target_size == Some(size) && self.target_textures.iter().all(Option::is_some) {
                 return;
             }
-            for slot in &mut self.target_textures {
+            for (eye, slot) in self.target_textures.iter_mut().enumerate() {
+                mark_eye_capture(eye, false);
                 if let Some((_, Some(id))) = slot.take() {
                     // The renderer is not reachable here; the UI thread drains this queue.
                     self.pending_unregisters.push(id);
@@ -444,6 +448,27 @@ unsafe fn srv_texture_size(srv: &ID3D11ShaderResourceView) -> (u32, u32) {
 
 pub static EGUI_DEBUG_RENDER_STATE: Mutex<EguiDebugRenderState> =
     Mutex::new(EguiDebugRenderState::new());
+
+/// Record whether eye `eye`'s capture was refreshed by its latest dispatch. The post-draw hook skips
+/// the copy into the capture when the eye went straight to the headset and nothing else wanted it
+/// (see `crate::vr::blit`), so a reader that can come late to a frame checks this first.
+pub fn mark_eye_capture(eye: usize, fresh: bool) {
+    if let Some(flag) = EYE_CAPTURE_FRESH.get(eye) {
+        flag.store(fresh, Ordering::Relaxed);
+    }
+}
+
+/// Whether eye `eye`'s capture holds the image of its latest dispatch (see [`mark_eye_capture`]).
+pub fn eye_capture_fresh(eye: usize) -> bool {
+    EYE_CAPTURE_FRESH
+        .get(eye)
+        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+}
+
+/// Per eye, whether its capture was refreshed by its latest dispatch. An atomic rather than a field
+/// of [`EguiDebugRenderState`] so the post-draw hook can set it under the engine context mutex
+/// without taking that lock, which the main-colour capture takes outside the mutex.
+static EYE_CAPTURE_FRESH: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
 
 /// How long after [`mark_previews_visible`] was last called the Previews tab still counts as open.
 /// The tab has no "closed" event to hook -- an `egui_dock` tab simply stops being drawn once it is

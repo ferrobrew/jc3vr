@@ -72,7 +72,8 @@ pub use back_buffer::{
     owned as back_buffer_owned, resize_substitute_bypassed, substitute_render_setups,
     sync_swapchain_to_window,
 };
-pub use blit::present_and_submit;
+pub(crate) use blit::blit_direct;
+pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
 pub use mirror::{MIRROR_ZOOM_RANGE, present_mirror};

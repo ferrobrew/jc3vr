@@ -17,7 +17,8 @@ mod stereo;
 use crate::config;
 pub use crate::ui::render::capture::{
     EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState, POST_STAGE_DOF, POST_STAGE_MB,
-    capture_main_color, capture_post_stage, install, mark_previews_visible, previews_visible,
+    capture_main_color, capture_post_stage, eye_capture_fresh, install, mark_eye_capture,
+    mark_previews_visible, previews_visible,
 };
 
 /// Debug-UI only: swap the two eyes in the side-by-side stereo preview, so the pair can be fused

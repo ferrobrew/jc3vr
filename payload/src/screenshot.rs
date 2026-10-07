@@ -64,6 +64,11 @@ pub fn request() {
     REQUESTED.store(true, Ordering::Relaxed);
 }
 
+/// Whether a screenshot is waiting for a frame to capture.
+pub fn is_requested() -> bool {
+    REQUESTED.load(Ordering::Relaxed)
+}
+
 /// If a screenshot was requested, copy `source` to a CPU-readable staging texture (stitching the
 /// per-eye textures side by side for [`CaptureSource::Eyes`]) and read its pixels back, then hand
 /// them to a writer thread that encodes and writes the PNG and its sidecar. Render thread, inside

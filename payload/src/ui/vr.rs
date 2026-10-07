@@ -95,6 +95,10 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
              stops single-pass double-wide forcing a 2x-width swapchain. Takes effect on the next \
              resize, which toggling this issues.",
         );
+    ui.checkbox(&mut cfg.vr.direct_eye_blit, "Direct eye blit")
+        .on_hover_text(
+            "Blit each eye straight from the engine's back buffer into the headset swapchain on              the eye's own draw, skipping the full-size copy into the eye capture unless the              mirror, a screenshot, the recorder, or the previews need that eye. Off copies every              eye and blits at the frame submit.",
+        );
 }
 
 /// A human-readable label for the runtime's current session state.

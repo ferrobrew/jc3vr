@@ -16,6 +16,7 @@ use windows::Win32::{
 };
 
 use crate::{
+    config::Config,
     controllers::{overlay, weapons::scope},
     debug::trace::{TraceEvent, TraceState},
     frame_timing::{self, Slot},
@@ -23,6 +24,7 @@ use crate::{
     hud::egui_panel::draw_quad,
     screenshot::CaptureSource,
     stereo::single_pass::{collapse_active, set_collapse_ui_eye},
+    ui::render::{eye_capture_fresh, mark_eye_capture, previews_visible},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -196,7 +198,7 @@ fn graphics_flip(device: *mut Device) -> u64 {
         // mirror-overlay path in `crate::hud::mirror_overlay` honours the same flag).
         if !crate::capture::is_active()
             && !crate::director::cinematic::active()
-            && crate::config::Config::lock_query(|c| c.hud.flat_overlay_visible)
+            && Config::lock_query(|c| c.hud.flat_overlay_visible)
         {
             egui_state.render();
         }
@@ -329,6 +331,11 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
         // Final back buffer for this eye. (The HDR scene / MainColor is captured earlier, at the
         // start of the post chain, before it gets read and recycled -- see capture_main_color.)
+        //
+        // On the direct route the eye is blitted straight into its swapchain slice here, and the
+        // copy into its capture is made only for a reader of the capture (see `crate::vr::blit`).
+        // Either way this is the image the copy would have captured: everything the eye shows is
+        // drawn by now, and nothing the engine draws after this hook reaches the headset.
         if let Some(src) = graphics_engine.m_BackBufferLinear.as_ref() {
             if collapse_active() {
                 // The collapsed single walk rendered both eyes into this one (viewport-split) back
@@ -340,6 +347,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 let half_w = u32::from(src.m_Width) / 2;
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {
+                    mark_eye_capture(eye as usize, eye_textures[eye as usize].is_some());
                     if let Some(dst) = eye_textures[eye as usize].as_ref() {
                         let region = D3D11_BOX {
                             left: eye * half_w,
@@ -361,8 +369,21 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                         );
                     }
                 }
-            } else if let Some(dst) = eye_textures.get(index).and_then(Option::as_ref) {
-                context.m_Context.CopyResource(dst, &src.m_Texture);
+            } else {
+                // A share frame's far dispatch is not an eye image; its capture is overwritten by
+                // the near dispatch of the same eye.
+                let blitted = !crate::stereo::far_phase()
+                    && graphics_engine.m_Device.as_ref().is_some_and(|device| {
+                        crate::vr::blit_direct(device, &context.m_Context, &src.m_Texture, index)
+                    });
+                let copied = match eye_textures.get(index).and_then(Option::as_ref) {
+                    Some(dst) if !blitted || eye_capture_wanted(index) => {
+                        context.m_Context.CopyResource(dst, &src.m_Texture);
+                        true
+                    }
+                    _ => false,
+                };
+                mark_eye_capture(index, copied);
             }
 
             // The in-process recorder: pack and read back the chosen eye's capture on the dispatch
@@ -388,7 +409,10 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 } else if index != 1 || crate::stereo::far_phase() {
                     None
                 } else if let [Some(left), Some(right)] = &eye_textures {
-                    Some(CaptureSource::Eyes([left, right]))
+                    // Both captures must hold this frame; one the direct route skipped leaves the
+                    // request pending, and the next frame copies both for it.
+                    (eye_capture_fresh(0) && eye_capture_fresh(1))
+                        .then_some(CaptureSource::Eyes([left, right]))
                 } else {
                     // A missing eye capture (the pair is being rebuilt across a resize) still
                     // yields a screenshot -- of this eye's back buffer -- rather than none.
@@ -408,6 +432,17 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
     }
 
     result
+}
+
+/// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must
+/// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eye,
+/// the F10 capture composite, the recorder, a pending screenshot, and the Previews tab.
+fn eye_capture_wanted(eye: usize) -> bool {
+    Config::lock_query(|c| c.vr.mirror && usize::from(c.vr.mirror_eye).min(1) == eye)
+        || crate::capture::is_active()
+        || crate::recorder::is_recording()
+        || crate::screenshot::is_requested()
+        || previews_visible()
 }
 
 /// Last-seen thread id for [`render_engine_post_draw`]. See [`log_hook_thread`].

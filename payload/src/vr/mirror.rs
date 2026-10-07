@@ -77,7 +77,7 @@ use windows::{
 
 use crate::{
     config::{Config, Switch, disable_automatically},
-    ui::render::EGUI_DEBUG_RENDER_STATE,
+    ui::render::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
     vr::config::MirrorFraming,
 };
 
@@ -161,6 +161,12 @@ pub fn teardown() {
 /// be live (they are while the hooks are installed and a frame is in flight on the game thread).
 unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
     let eye = eye.min(1);
+    // The eye went straight to the headset without refreshing its capture (the mirror eye changed
+    // after its dispatch decided): leave the window on the previous frame rather than show a stale
+    // capture.
+    if !eye_capture_fresh(eye) {
+        return Ok(());
+    }
 
     // Clone (AddRef) the captured eye texture under a brief EGUI lock, dropped before the mirror
     // state / context work, mirroring the blit's lock discipline.

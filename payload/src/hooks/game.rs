@@ -252,6 +252,20 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             && !crate::capture::is_active()
             && !crate::debug::stereo_diff::is_active();
 
+        // Each eye's post-draw blits it straight into the swapchain when this frame's image is
+        // acquired now (see `vr::blit`). Not under the collapse: its one dispatch leaves both eyes
+        // side by side in one back buffer, which the submit splits from the captures instead.
+        match vr_frame.as_mut() {
+            Some(frame)
+                if stereo
+                    && frame.should_render()
+                    && !crate::stereo::single_pass::collapse_active() =>
+            {
+                crate::vr::arm_direct(frame, &vr_cfg);
+            }
+            _ => crate::vr::disarm_direct(),
+        }
+
         if stereo {
             #[cfg(feature = "profiler")]
             let snapshot_scope = puffin::profile_scope_custom!("Stereo snapshots");

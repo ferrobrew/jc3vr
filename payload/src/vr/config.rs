@@ -242,6 +242,13 @@ pub struct VrConfig {
     /// (with the engine's own objects rebuilt over the live swapchain) on session end and on eject.
     #[serde(default = "default_true")]
     pub own_back_buffer: bool,
+    /// Blit each eye's finished image into its swapchain slice from the eye's own post-draw, instead
+    /// of copying it into the eye capture there and blitting the capture at the frame submit (see
+    /// [`crate::vr::blit`]). Saves a full-size copy per eye whenever nothing else reads that eye's
+    /// capture; the swapchain image is acquired at the top of the render update instead of at the
+    /// submit. On by default; off restores the copy-then-blit path everywhere.
+    #[serde(default = "default_true")]
+    pub direct_eye_blit: bool,
     /// Diagnostic: which pose to hold still (see [`FreezeMode`] and [`crate::vr::pose_control`]).
     /// Whichever pose the mode holds is captured on the first frame it is on and reused every frame
     /// after, and is hand-editable while held -- so a motion-dependent artifact can be driven by an
@@ -300,6 +307,7 @@ impl VrConfig {
             persist_instance: true,
             auto_recenter_on_gameplay: true,
             own_back_buffer: true,
+            direct_eye_blit: true,
             freeze_mode: FreezeMode::Off,
             freeze_pose_step_m: 0.1,
             freeze_pose_step_deg: 1.0,
