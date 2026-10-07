@@ -119,6 +119,11 @@ fn summary(page: Page) -> Page {
             &PROCEDURAL_MODE_LABELS,
             |c| c.controllers.body.procedural.mode
         ))
+        .item(config_toggle!("WALKING LEGS", |c| c
+            .controllers
+            .body
+            .procedural
+            .gait))
         .text("TEST WRITES THE POSE BACK AS IS.")
 }
 
@@ -358,9 +363,9 @@ const STANCE_OPTIONS: [&str; 2] = ["STANDING", "SEATED"];
 const PROCEDURAL_MODES: [ProceduralMode; 3] = [
     ProceduralMode::Off,
     ProceduralMode::PassThrough,
-    ProceduralMode::Body,
+    ProceduralMode::Full,
 ];
-const PROCEDURAL_MODE_LABELS: [&str; 3] = ["OFF", "TEST", "STANDING"];
+const PROCEDURAL_MODE_LABELS: [&str; 3] = ["OFF", "TEST", "FULL"];
 
 /// The range of the seated review's height slider, metres, a centimetre a notch: the heights whose
 /// standing eye heights a standing calibration accepts.

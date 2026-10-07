@@ -689,6 +689,56 @@ impl Character {
             f(self as *mut Self as _, dt)
         }
     }
+    pub const UpdateGroundInfo_ADDRESS: usize = 0x1407F4D40;
+    /// Refreshes the character's ground information. Runs in
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) after the
+    /// finalize state-task range and before the weapons' first attachment refresh and the
+    /// HumanIK solve: calls [`DoGroundInfoRaycasts`](crate::character::character::Character::DoGroundInfoRaycasts) (always for the
+    /// player, under a state-bit gate for others), resolves the ground material from a grapple,
+    /// helicopter, or stunt attachment, and measures the water depth over the root.
+    pub unsafe fn UpdateGroundInfo(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateGroundInfo_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const DoGroundInfoRaycasts_ADDRESS: usize = 0x1407F49B0;
+    /// Fills the character's ground information. While the proxy is supported (or sliding), not
+    /// owned by a ragdoll, and not hanging from the grapple, the ground material and normal come
+    /// from the proxy's support and the height over ground is zero, with no ray cast. Otherwise
+    /// it measures the height over ground with
+    /// [`CalculateHeightOverGround`](crate::character::character::Character::CalculateHeightOverGround) and, when above the ground,
+    /// the fall distance.
+    pub unsafe fn DoGroundInfoRaycasts(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DoGroundInfoRaycasts_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const CalculateHeightOverGround_ADDRESS: usize = 0x1407D55E0;
+    /// Casts a ray straight down from just above the character's root (the ragdoll's transform
+    /// when a ragdoll owns the displacement) through
+    /// [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay), with a hit record and a
+    /// character raycast filter (`CCharacterRaycastFilter`, which ignores the character) both
+    /// built on the stack, on [`QUERY_LAYER`](crate::physics::PhysicsSystem::QUERY_LAYER), to 200 metres.
+    /// Records the hit's material, normal, and supporting vehicle, and the height over the ground
+    /// or the water surface ([`PhysicsSystem::CastRayWaterSurface`](crate::physics::PhysicsSystem::CastRayWaterSurface)),
+    /// whichever is nearer. Its call chain from
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) makes it the
+    /// engine's scene ray query inside the pose-finalization pass, which the post-physics pass
+    /// queues for the parallel update of every character.
+    pub unsafe fn CalculateHeightOverGround(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::CalculateHeightOverGround_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const UpdateSecondaryHandIKPass_ADDRESS: usize = 0x1407EF690;
     /// The `SECONDARY` HumanIK pass, called from
     /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) after the `MAIN`
@@ -1002,6 +1052,19 @@ impl Character {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
                 Self::IsStuntTraversing_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsInStuntPosition_ADDRESS: usize = 0x1407F5080;
+    /// Whether the character rides a vehicle in a stunt position: attached to a vehicle, and the
+    /// body rule system is in `S_IDLE_HANG_STUNT`, the interaction-graph node the character is on
+    /// is of node type 4 (not yet named), or
+    /// [`SB_IS_GRAPPLE_UPSIDEDOWN`](crate::state::StateBitFlag::SB_IS_GRAPPLE_UPSIDEDOWN) is set.
+    pub unsafe fn IsInStuntPosition(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInStuntPosition_ADDRESS,
             );
             f(self as *const Self as _)
         }

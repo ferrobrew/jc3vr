@@ -40,6 +40,40 @@ pub struct ProceduralBodyConfig {
     pub step_duration_s: f32,
     /// How high a step lifts the foot, metres.
     pub step_height_m: f32,
+    /// Walk the feet while the body moves (phase-driven steps matched to the body's velocity),
+    /// instead of leaving the moving body to the animation.
+    pub gait: bool,
+    /// The speed the feet start walking at, metres per second; below it they step as standing.
+    pub gait_speed_mps: f32,
+    /// The walking speed, metres per second, at which the walk's tuning is the `walk_*` values.
+    pub walk_speed_mps: f32,
+    /// The distance travelled in one walking cycle (a step of each foot), metres.
+    pub walk_stride_m: f32,
+    /// The share of a walking cycle each foot spends on the ground.
+    pub walk_duty: f32,
+    /// How high a walking step lifts the foot, metres.
+    pub walk_step_height_m: f32,
+    /// The running speed, metres per second, at which the walk's tuning is the `run_*` values.
+    pub run_speed_mps: f32,
+    /// The distance travelled in one running cycle, metres.
+    pub run_stride_m: f32,
+    /// The share of a running cycle each foot spends on the ground; below a half, both feet leave
+    /// it for a moment.
+    pub run_duty: f32,
+    /// How high a running step lifts the foot, metres.
+    pub run_step_height_m: f32,
+    /// Find the ground under each foothold with a scene ray, so the feet stand on slopes and
+    /// stairs, instead of taking the root's height.
+    pub ground_casts: bool,
+    /// How far above the root a foothold's ground is looked for, metres: the highest step up.
+    pub max_step_up_m: f32,
+    /// How far below the root a foothold's ground is looked for, metres: the lowest step down.
+    pub max_step_down_m: f32,
+    /// How far a foot tilts to the slope it stands on, at most, degrees.
+    pub ankle_tilt_limit_deg: f32,
+    /// How quickly the hips drop for a foot the legs cannot otherwise reach, seconds: the time
+    /// constant of the drop's follower (it rises back at a third of the pace).
+    pub reach_drop_s: f32,
 }
 
 impl ProceduralBodyConfig {
@@ -60,6 +94,21 @@ impl ProceduralBodyConfig {
             step_turn_deg: 35.0,
             step_duration_s: 0.3,
             step_height_m: 0.06,
+            gait: true,
+            gait_speed_mps: 0.3,
+            walk_speed_mps: 1.5,
+            walk_stride_m: 1.4,
+            walk_duty: 0.62,
+            walk_step_height_m: 0.08,
+            run_speed_mps: 5.0,
+            run_stride_m: 2.8,
+            run_duty: 0.4,
+            run_step_height_m: 0.14,
+            ground_casts: true,
+            max_step_up_m: 0.5,
+            max_step_down_m: 0.6,
+            ankle_tilt_limit_deg: 25.0,
+            reach_drop_s: 0.05,
         }
     }
 
@@ -86,6 +135,19 @@ impl ProceduralBodyConfig {
             ("step_turn_deg", self.step_turn_deg, 1.0, 180.0),
             ("step_duration_s", self.step_duration_s, 0.05, 2.0),
             ("step_height_m", self.step_height_m, 0.0, 0.5),
+            ("gait_speed_mps", self.gait_speed_mps, 0.05, 5.0),
+            ("walk_speed_mps", self.walk_speed_mps, 0.1, 20.0),
+            ("walk_stride_m", self.walk_stride_m, 0.1, 3.0),
+            ("walk_duty", self.walk_duty, 0.2, 0.9),
+            ("walk_step_height_m", self.walk_step_height_m, 0.0, 0.5),
+            ("run_speed_mps", self.run_speed_mps, 0.1, 20.0),
+            ("run_stride_m", self.run_stride_m, 0.1, 3.5),
+            ("run_duty", self.run_duty, 0.2, 0.9),
+            ("run_step_height_m", self.run_step_height_m, 0.0, 0.5),
+            ("max_step_up_m", self.max_step_up_m, 0.0, 2.0),
+            ("max_step_down_m", self.max_step_down_m, 0.0, 2.0),
+            ("ankle_tilt_limit_deg", self.ankle_tilt_limit_deg, 0.0, 60.0),
+            ("reach_drop_s", self.reach_drop_s, 0.0, 2.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {
@@ -93,6 +155,12 @@ impl ProceduralBodyConfig {
                     "body.procedural.{name} is {value}, outside [{min}, {max}]"
                 )));
             }
+        }
+        if self.run_speed_mps <= self.walk_speed_mps {
+            return Err(Invalid(format!(
+                "body.procedural.run_speed_mps ({}) is not above walk_speed_mps ({})",
+                self.run_speed_mps, self.walk_speed_mps
+            )));
         }
         Ok(())
     }
@@ -114,8 +182,10 @@ pub enum ProceduralMode {
     /// written pose reads back from what was written: proves the write path without moving
     /// anything.
     PassThrough,
-    /// Build the standing body under the player's head while Rico stands on foot.
-    Body,
+    /// Build the body under the player's head while Rico is on foot on the ground, standing and
+    /// moving. Saved files from before the moving body name it `Body`.
+    #[serde(alias = "Body")]
+    Full,
 }
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         match status.mode {
             ProceduralMode::Off => "off",
             ProceduralMode::PassThrough => "pass-through",
-            ProceduralMode::Body => "standing body",
+            ProceduralMode::Full => "full body",
         },
         status.weight,
         if owns_body() { "yes" } else { "no" },
@@ -32,7 +32,7 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             metres, degrees
         ));
     }
-    if status.mode == ProceduralMode::Body {
+    if status.mode == ProceduralMode::Full {
         ui.label(format!(
             "Hips {:.3} m below the animation · neck {:.3} m from its target · {}",
             status.hips_drop_m,
@@ -42,6 +42,25 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             } else {
                 "feet planted"
             },
+        ));
+        ui.label(format!(
+            "Speed {:.2} m/s · {} · reach drop {:.3} m · stance {}",
+            status.speed_mps,
+            status.gait_phase.map_or_else(
+                || "standing".to_owned(),
+                |p| format!("walking, phase {p:.2}")
+            ),
+            status.reach_drop_m,
+            if status.stance_measured {
+                "measured"
+            } else {
+                "not measured yet"
+            },
+        ));
+        let ground = &status.ground;
+        ui.label(format!(
+            "Ground casts this tick {} · hits {} · too steep {} · errors {} · largest offset {:+.3} m",
+            ground.casts, ground.hits, ground.steep, ground.errors, ground.largest_offset_m,
         ));
     }
 }

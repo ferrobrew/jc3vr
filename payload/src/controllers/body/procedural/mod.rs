@@ -10,16 +10,18 @@
 //!
 //! - [`skeleton`]: reading the skeleton, and logging it once per session.
 //! - [`rig`]: the bones the body drives, found by name.
-//! - [`solver`]: the standing body under the player's head (pure).
+//! - [`solver`]: the body under the player's head, the feet, and the walk (pure).
+//! - [`ground`]: the scene rays that find the ground under the footholds.
 //! - [`config`]: the mode and the tuning.
 //!
 //! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
-//! how it reads back, the proof that the write path is sound; `Body` builds the standing body while
-//! Rico stands on foot, blending in and out with the animation, and zeroes the game's own IK
-//! targets on the bones it owns. While it has any weight, [`owns_body`] tells the pre-solve IK
-//! (the body IK's torso, the roomscale crouch, the squared stance) to stand down.
+//! how it reads back, the proof that the write path is sound; `Full` builds the body while Rico is
+//! on foot on the ground, standing or moving, blending in and out with the animation, and zeroes
+//! the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
+//! pre-solve IK (the body IK's torso, the roomscale crouch, the squared stance) to stand down.
 
 pub mod config;
+pub mod ground;
 pub mod rig;
 pub mod skeleton;
 pub mod solver;
@@ -29,7 +31,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::{AnimationController, Character, Joint},
@@ -43,17 +45,21 @@ use crate::{
             alignment::torso_turn,
             procedural::{
                 config::{ProceduralBodyConfig, ProceduralMode},
+                ground::{GroundCaster, GroundLog, GroundTally},
                 rig::{Rig, RigBone, RigError},
                 skeleton::Transform,
                 solver::{
-                    SolveInput,
-                    feet::{Feet, FootPose, StepTuning},
+                    DropFollower, SolveInput,
+                    feet::{Feet, FeetInput, FootPose, StepTuning},
+                    gait::{self, NeutralStance, StanceFoot},
                     pose::RigPose,
-                    solve,
+                    reach_drop, solve,
                 },
             },
         },
-        locomotion::{anchor::status as anchor_status, status as locomotion_status},
+        locomotion::{
+            LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
+        },
     },
     headpose::{Source, body_relative_rotation, query, source},
     hooks::in_gameplay,
@@ -72,10 +78,20 @@ pub struct ProceduralStatus {
     pub round_trip: Option<(f32, f32)>,
     /// How far the solved hips sit below the animated ones, metres.
     pub hips_drop_m: f32,
+    /// How far the hips drop for the legs to reach the feet, metres.
+    pub reach_drop_m: f32,
     /// How far the solved neck sits from its target, metres.
     pub neck_error_m: f32,
     /// Whether a planted foot is stepping.
     pub stepping: bool,
+    /// The body's horizontal speed, metres per second.
+    pub speed_mps: f32,
+    /// The walk's phase while walking.
+    pub gait_phase: Option<f32>,
+    /// Whether the neutral stance the feet stand around has been measured.
+    pub stance_measured: bool,
+    /// The last gate's ground casts.
+    pub ground: GroundTally,
 }
 
 /// The last gate's status.
@@ -121,6 +137,8 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
         return;
     };
     let animated = unsafe { read_pose(controller, &rig) };
+    let locomotion = locomotion_status();
+    state.observe_stance(&animated, &locomotion, dt);
     match config.mode {
         ProceduralMode::Off => {}
         ProceduralMode::PassThrough => {
@@ -143,21 +161,42 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
                 );
             }
         }
-        ProceduralMode::Body => {
-            let eligible = eligible(character, now);
+        ProceduralMode::Full => {
+            let eligible = eligible(character, &locomotion, now);
             let weight = state.step_weight(eligible, dt, &config);
             OWNS_BODY.store(weight > 0.0, Ordering::Relaxed);
             state.status.weight = weight;
             if weight <= 0.0 {
                 state.feet.reset();
+                state.drop.reset();
                 return;
             }
             let world = Mat4::from(character.m_WorldMatrixT1);
-            let feet = state.place_feet(&world, &animated, dt, &config);
+            let velocity = body_velocity(&locomotion);
+            let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
+            let feet = state.place_feet(
+                &FeetRequest {
+                    world: &world,
+                    rig: &rig,
+                    animated: &animated,
+                    still: locomotion.standing_still(),
+                    velocity,
+                    dt,
+                },
+                &config,
+                &mut caster,
+            );
+            state.status.ground = caster.tally;
+            state.ground_log.record(&caster.tally, now);
             state.status.stepping = state.feet.stepping();
-            let Some(input) = solve_input(character, &animated, feet) else {
+            state.status.speed_mps = velocity.length();
+            state.status.gait_phase = state.feet.phase();
+            let Some(mut input) = solve_input(character, &animated, feet) else {
                 return;
             };
+            let need = reach_drop(&rig, &input, &config);
+            input.hips_drop = state.drop.step(need, dt, config.reach_drop_s);
+            state.status.reach_drop_m = input.hips_drop;
             let solved = solve(&rig, &input, &config);
             let pose = animated.blend(&solved, weight);
             unsafe { write_pose(controller, &rig, &pose) };
@@ -170,6 +209,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character) {
                 + input.head_rotation
                     * (animated.position(RigBone::Neck) - animated.position(RigBone::Head));
             state.status.neck_error_m = solved.position(RigBone::Neck).distance(neck_target);
+            state.log_gait(now, &config);
         }
     }
 }
@@ -179,6 +219,9 @@ const MAX_STEP_S: f32 = 0.1;
 
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// How often the walk is logged while walking.
+const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 
 /// The effectors whose bones the procedural body owns: everything below the neck but the arms.
 const OWNED_EFFECTORS: [Effector; 13] = [
@@ -207,8 +250,27 @@ struct State {
     progress: f32,
     /// The planted feet, world space.
     feet: Feet,
+    /// The neutral stance the feet stand and walk around, for the rigged skeleton.
+    stance: NeutralStance,
+    /// The hips' drop for the legs' reach.
+    drop: DropFollower,
+    ground_log: GroundLog,
     logged_at: Option<Instant>,
+    gait_logged_at: Option<Instant>,
     status: ProceduralStatus,
+}
+
+/// What the feet are placed from, besides the settings and the ground.
+struct FeetRequest<'a> {
+    /// The root's world transform.
+    world: &'a Mat4,
+    rig: &'a Rig,
+    animated: &'a RigPose,
+    /// Whether Rico stands still: the animated feet stand for the stance until it is measured.
+    still: bool,
+    /// The body's horizontal velocity, world space.
+    velocity: Vec3,
+    dt: f32,
 }
 
 impl State {
@@ -218,6 +280,7 @@ impl State {
         let key = controller as *const AnimationController as usize;
         if self.rig.as_ref().is_none_or(|(k, _)| *k != key) {
             self.status.rig_error = None;
+            self.stance = NeutralStance::new();
             let rig = match unsafe { skeleton::read(controller) } {
                 Ok(snapshot) => match Rig::from_skeleton(&snapshot) {
                     Ok(rig) => {
@@ -240,23 +303,60 @@ impl State {
         self.rig.as_ref().and_then(|(_, rig)| rig.clone())
     }
 
-    /// Where the feet go this tick, model space: planted in the world and stepping when
-    /// `config.plant_feet`, where the animation puts them otherwise.
+    /// Measure the neutral stance from the animated feet once Rico has stood still for a moment.
+    fn observe_stance(&mut self, animated: &RigPose, locomotion: &LocomotionStatus, dt: f32) {
+        let feet = [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| StanceFoot {
+            position: animated.position(bone),
+            rotation: animated.get(bone).rotation,
+        });
+        if let Some(stance) = self.stance.observe(feet, locomotion.standing_still(), dt) {
+            tracing::info!(
+                target: "body",
+                left = ?stance[0].position,
+                right = ?stance[1].position,
+                "procedural body: measured the neutral stance (model space)",
+            );
+        }
+        self.status.stance_measured = self.stance.get().is_some();
+    }
+
+    /// Where the feet go this tick, model space: planted in the world, stepping standing and
+    /// walking moving, when `config.plant_feet`; where the animation puts them otherwise.
     fn place_feet(
         &mut self,
-        world: &Mat4,
-        animated: &RigPose,
-        dt: f32,
+        request: &FeetRequest<'_>,
         config: &ProceduralBodyConfig,
+        caster: &mut GroundCaster,
     ) -> [FootPose; 2] {
-        let model = [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
+        let FeetRequest {
+            world,
+            rig,
+            animated,
+            still,
+            velocity,
+            dt,
+        } = *request;
+        let animated_feet = [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
             position: animated.position(bone),
             rotation: animated.get(bone).rotation,
         });
         if !config.plant_feet {
             self.feet.reset();
-            return model;
+            return animated_feet;
         }
+        // The feet stand around the measured stance. Until it is measured, standing still keeps
+        // the animation's feet and moving takes the reference pose's.
+        let model = match self.stance.get() {
+            Some(stance) => stance.map(|f| FootPose {
+                position: f.position,
+                rotation: f.rotation,
+            }),
+            None if still => animated_feet,
+            None => [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| FootPose {
+                position: rig.reference(bone).translation,
+                rotation: rig.reference(bone).rotation,
+            }),
+        };
         let (_, rotation, _) = world.to_scale_rotation_translation();
         let inverse = world.inverse();
         let wanted = model.map(|f| FootPose {
@@ -268,11 +368,23 @@ impl State {
             threshold_rad: config.step_turn_deg.to_radians(),
             duration_s: config.step_duration_s,
             height_m: config.step_height_m,
+            tilt_limit_rad: config.ankle_tilt_limit_deg.to_radians(),
         };
-        self.feet.step(wanted, dt, &tuning).map(|f| FootPose {
-            position: inverse.transform_point3(f.position),
-            rotation: (rotation.inverse() * f.rotation).normalize(),
-        })
+        let input = FeetInput {
+            wanted,
+            root_height: world.w_axis.y,
+            velocity,
+            gait: gait::tuning(velocity.length(), config),
+            dt,
+        };
+        // SAFETY: the gate runs with the local character live.
+        let mut ground = |point| unsafe { caster.ground(point) };
+        self.feet
+            .step(&input, &tuning, &mut ground)
+            .map(|f| FootPose {
+                position: inverse.transform_point3(f.position),
+                rotation: (rotation.inverse() * f.rotation).normalize(),
+            })
     }
 
     fn step_weight(&mut self, eligible: bool, dt: f32, config: &ProceduralBodyConfig) -> f32 {
@@ -286,13 +398,43 @@ impl State {
         let t = self.progress.clamp(0.0, 1.0);
         t * t * (3.0 - 2.0 * t)
     }
+
+    /// Log the walk every [`GAIT_LOG_INTERVAL`] while walking.
+    fn log_gait(&mut self, now: Instant, config: &ProceduralBodyConfig) {
+        let Some(phase) = self.status.gait_phase else {
+            return;
+        };
+        if self
+            .gait_logged_at
+            .is_some_and(|at| now.saturating_duration_since(at) < GAIT_LOG_INTERVAL)
+        {
+            return;
+        }
+        self.gait_logged_at = Some(now);
+        let speed = self.status.speed_mps;
+        let tuning = gait::tuning(speed, config);
+        tracing::debug!(
+            target: "body",
+            speed_mps = speed,
+            stride_m = tuning.map_or(0.0, |t| t.stride_m),
+            duty = tuning.map_or(0.0, |t| t.duty),
+            phase,
+            reach_drop_m = self.status.reach_drop_m,
+            neck_error_m = self.status.neck_error_m,
+            "procedural body: walking",
+        );
+    }
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     rig: None,
     progress: 0.0,
     feet: Feet::new(),
+    stance: NeutralStance::new(),
+    drop: DropFollower::new(),
+    ground_log: GroundLog::new(),
     logged_at: None,
+    gait_logged_at: None,
     status: ProceduralStatus {
         at: None,
         mode: ProceduralMode::Off,
@@ -300,8 +442,13 @@ static STATE: Mutex<State> = Mutex::new(State {
         rig_error: None,
         round_trip: None,
         hips_drop_m: 0.0,
+        reach_drop_m: 0.0,
         neck_error_m: 0.0,
         stepping: false,
+        speed_mps: 0.0,
+        gait_phase: None,
+        stance_measured: false,
+        ground: GroundTally::new(),
     },
 });
 
@@ -358,17 +505,27 @@ fn round_trip_error(written: &RigPose, read: &RigPose) -> (f32, f32) {
         })
 }
 
-/// Whether Rico stands on foot with the headset driving the view: the procedural body's only case
-/// for now. Walking, the air, vehicles, and every authored state keep the animation.
-fn eligible(character: &Character, now: Instant) -> bool {
+/// Whether Rico is on foot on the ground with the headset driving the view, standing or moving:
+/// the procedural body's case. The air, vehicles, and every authored state keep the animation.
+fn eligible(character: &Character, locomotion: &LocomotionStatus, now: Instant) -> bool {
     let anchor = anchor_status();
-    let locomotion = locomotion_status();
     source() == Source::Vr
         && in_gameplay()
         && anchor.on_ground
         && locomotion.fresh(now)
-        && locomotion.standing_still()
         && character.m_CurrentMotionState == Character::MOTION_STATE_TASK_DEFINED
+}
+
+/// The body's horizontal velocity, world space: the stick's commanded velocity, or the movement
+/// task's where the stick does not drive the body.
+fn body_velocity(locomotion: &LocomotionStatus) -> Vec3 {
+    let v: Vec2 = locomotion.velocity.unwrap_or(locomotion.task_velocity);
+    let velocity = Vec3::new(v.x, 0.0, v.y);
+    if velocity.is_finite() {
+        velocity
+    } else {
+        Vec3::ZERO
+    }
 }
 
 /// The solve's inputs from the headpose, the torso estimate, and the feet, in model space.
@@ -387,6 +544,7 @@ fn solve_input(
         torso_yaw: torso_turn(rotation),
         feet: feet.map(|f| f.position),
         foot_rotations: feet.map(|f| f.rotation),
+        hips_drop: 0.0,
     })
 }
 
