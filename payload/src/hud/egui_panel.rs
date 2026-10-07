@@ -168,7 +168,13 @@ impl EguiPanelState {
         let (width, height) = (cfg.resolution.0.max(1), cfg.resolution.1.max(1));
         if self.target.as_ref().map(HudTarget::size) != Some((width, height)) {
             match HudTarget::new(device, width, height) {
-                Ok(target) => self.target = Some(target),
+                Ok(target) => {
+                    // A new texture's contents are undefined, and `render_to` leaves the target
+                    // as it is when this frame's egui output was already taken.
+                    // SAFETY: the caller holds the engine context mutex; the view is live.
+                    unsafe { context.ClearRenderTargetView(target.color_rtv(), &[0.0; 4]) };
+                    self.target = Some(target);
+                }
                 Err(e) => {
                     tracing::error!("egui panel target: {e:#}");
                     self.target = None;

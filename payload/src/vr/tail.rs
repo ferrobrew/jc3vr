@@ -195,8 +195,8 @@ fn run_tail(job: TailJob) {
 
     // Mirror before the submit: both must be recorded before the runtime lock is released, and
     // the submit releasing the lock is what keeps the next frame off the capture textures. The
-    // flat overlay was rendered into its texture on eye 0's post-draw, so the mirror only
-    // composites it -- safe off-thread.
+    // flat overlay was rendered into its texture on the last dispatch's post-draw, which the drain
+    // above waited for, so the mirror only composites it -- safe off-thread.
     if job.mirror {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("Desktop mirror (tail)");

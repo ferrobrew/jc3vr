@@ -311,11 +311,18 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 hud::restart_notice::draw(&context.m_Context, device, back_buffer, index);
                 hud::arm_readout::draw(&context.m_Context, device, back_buffer, index);
             }
-            // Redirect the flat mirror overlay into an offscreen texture on eye 0 (consuming this
-            // frame's egui output) so the desktop mirror can composite it from the deferred frame
-            // tail's thread. A no-op unless a session renders, the mirror is on, and the panel is
-            // off. See `crate::hud::mirror_overlay`.
-            if index == 0 {
+            // Redirect the flat mirror overlay into an offscreen texture (consuming this frame's egui
+            // output) so the desktop mirror can composite it from the deferred frame tail's thread.
+            // A no-op unless a session renders, the mirror is on, and the panel is off. See
+            // `crate::hud::mirror_overlay`.
+            //
+            // It renders on the frame's last near dispatch rather than eye 0's: with the tail
+            // deferred, the game thread waits on eye 0's walk but not on the last one, which the
+            // tail drains before it composites the mirror. Nothing per-eye reads the overlay, and
+            // the floating panel, which consumes the same egui output, is off whenever this runs.
+            let last_near_dispatch = !crate::stereo::far_phase()
+                && (collapse_active() || !crate::stereo::active() || index == 1);
+            if last_near_dispatch {
                 hud::mirror_overlay::render(&context.m_Context, device, back_buffer);
             }
         }

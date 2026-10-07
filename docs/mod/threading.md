@@ -29,7 +29,7 @@ A frame runs in this order on the game thread:
 
 So the runtime lock is held for most of a frame, by the game thread and then by the tail, and both holders wait on the draw task and the fragment workers. Under it, the holders take the config lock, the controller frame slot, the stage information, the render-parameter slot, the input status and haptics queue, the capture-texture state, the blit and mirror pipelines, the egui panel state, and the engine's immediate-context critical section. All of these are taken briefly and nothing takes the runtime lock under them.
 
-The egui state lock is the other long one. The game thread holds it across the debug UI, and the draw task takes it at eye 0's `PostDraw` to render the floating panel and the mirror overlay, holding the egui panel lock while it waits for it.
+The egui state lock is the other long one. The game thread holds it across the debug UI, and the draw task takes it in `PostDraw`: at eye 0's to render the floating panel, holding the egui panel lock while it waits for it, and at the frame's last near dispatch's to render the mirror overlay. With the tail deferred, that last walk can overlap the next frame's debug UI, so the draw task can wait there for the game thread's egui pass; the game thread never waits on that walk while it holds the egui state lock (rule 6), and under the collapse eye 0's walk is that last walk too.
 
 ## Lock rules
 

@@ -4,9 +4,15 @@
 //! [`EguiState::render`](crate::egui_impl::EguiState::render). That call mutates the shared
 //! `EguiState` and issues D3D work, so it is only safe on the game thread after the frame's egui
 //! pass — which the deferred frame tail ([`crate::vr::tail`]) is not. So when the tail is deferred,
-//! render the overlay once on the draw thread (eye 0's post-draw, where the panel renders too), into
-//! an offscreen texture, and let the mirror composite that texture from whichever thread runs it —
-//! exactly the model the floating panel (issue #24) already uses.
+//! render the overlay once on the draw thread, into an offscreen texture, and let the mirror composite
+//! that texture from whichever thread runs it — the model the floating panel (issue #24) uses.
+//!
+//! It renders on the frame's last near dispatch, not on eye 0's like the panel: the game thread waits
+//! on eye 0's walk, and with the tail deferred it does not wait on the last one, which the tail drains
+//! before it composites the mirror. That walk can run after the next frame's egui pass has started,
+//! so it may take that frame's output a frame early;
+//! [`EguiState::render_to`](crate::egui_impl::EguiState::render_to) then leaves the texture
+//! as it is on the frame that finds the output gone, rather than blanking it.
 //!
 //! Only active while a VR session renders, the mirror is on, the floating panel is off (with the
 //! panel on, the mirror composites the panel texture instead), and the flat overlay is visible
@@ -33,9 +39,9 @@ pub(crate) fn is_active() -> bool {
         })
 }
 
-/// Render this frame's egui output into the overlay texture. Called from the eye-0 post-draw hook
-/// with the engine context mutex held, after the floating panel (a no-op while the panel is on, so
-/// only one of the two consumes the single-use egui output).
+/// Render this frame's egui output into the overlay texture. Called from the post-draw hook of the
+/// frame's last near dispatch with the engine context mutex held (a no-op while the floating panel
+/// is on, so only one of the two consumes the single-use egui output).
 ///
 /// Sizes the texture to the **window client rect**, not to `target` (the eye back buffer). The mirror
 /// composites the overlay across the whole back buffer, and the present then stretches that buffer
@@ -59,7 +65,13 @@ pub(crate) fn render(context: &ID3D11DeviceContext, device: &Device, target: &Te
     let mut overlay = OVERLAY.lock();
     if overlay.as_ref().map(HudTarget::size) != Some((width, height)) {
         match HudTarget::new(device, width, height) {
-            Ok(target) => *overlay = Some(target),
+            Ok(target) => {
+                // A new texture's contents are undefined, and `render_to` leaves the target as it
+                // is when this frame's egui output was already taken.
+                // SAFETY: the caller holds the engine context mutex; the view is live.
+                unsafe { context.ClearRenderTargetView(target.color_rtv(), &[0.0; 4]) };
+                *overlay = Some(target);
+            }
             Err(e) => {
                 tracing::error!("mirror overlay target: {e:#}");
                 *overlay = None;

@@ -178,16 +178,19 @@ impl EguiState {
     /// offscreen texture, issue #24) using the supplied context, consuming the single-use
     /// [`renderer_output`](EguiState::renderer_output). The target is cleared to transparent first: the
     /// egui renderer does not clear and early-returns on an empty frame, so without the clear the panel
-    /// would retain the previous frame. A no-op when the output has already been consumed this frame.
-    /// The caller must hold the engine context mutex.
+    /// would retain the previous frame. A no-op when the output has already been consumed, which
+    /// leaves the target holding the last output rendered into it: a consumer on a dispatch the game
+    /// thread does not wait for can run after the next frame's egui pass and take its output early, and
+    /// the next frame's call then finds nothing to render. The caller must hold the engine context
+    /// mutex.
     pub fn render_to(&mut self, context: &ID3D11DeviceContext, rtv: &ID3D11RenderTargetView) {
+        let Some(renderer_output) = self.renderer_output.take() else {
+            return;
+        };
         // SAFETY: `rtv` is a live render-target view; `context` is the caller-locked engine context.
         unsafe {
             context.ClearRenderTargetView(rtv, &[0.0, 0.0, 0.0, 0.0]);
         }
-        let Some(renderer_output) = self.renderer_output.take() else {
-            return;
-        };
         if let Err(e) = self
             .egui_renderer
             .render(context, rtv, &self.egui_context, renderer_output)
