@@ -67,6 +67,11 @@ pub(super) fn failed() -> bool {
     FAILED.load(Ordering::Acquire)
 }
 
+/// The game thread's id, as the registration saw it; zero before it.
+pub(super) fn registering_thread() -> u32 {
+    REGISTERING_THREAD.load(Ordering::Relaxed)
+}
+
 static REGISTERED: AtomicBool = AtomicBool::new(false);
 static FAILED: AtomicBool = AtomicBool::new(false);
 static REGISTERING_THREAD: AtomicU32 = AtomicU32::new(0);

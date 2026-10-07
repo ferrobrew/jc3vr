@@ -68,16 +68,16 @@ pub(super) unsafe fn surface(hit: &RayHit) -> SurfaceHit {
 ///
 /// `character` must be the live local player character.
 pub(super) unsafe fn melee_impulse(character: &Character) -> Option<f32> {
-    if !character.m_IsPlayer || character.m_Avatar.is_null() {
-        return None;
-    }
-    let player = character
-        .m_Avatar
-        .cast::<u8>()
-        .wrapping_sub(Player::AVATAR_BASE_OFFSET as usize)
-        .cast::<Player>();
-    let player = unsafe { player.as_ref() }?;
-    Some(player.m_MeleeImpulse)
+    unsafe { player_of(character) }.map(|player| player.m_MeleeImpulse)
+}
+
+/// The player's melee damage, from the player object behind `character`.
+///
+/// # Safety
+///
+/// `character` must be the live local player character.
+pub(super) unsafe fn melee_damage(character: &Character) -> Option<i32> {
+    unsafe { player_of(character) }.map(|player| player.m_MeleeDamage)
 }
 
 /// Push the body `body` by `impulse` at the game-space point `at`. A static or keyframed body is
@@ -99,8 +99,21 @@ pub(super) unsafe fn push_body(body: u32, impulse: Vec3, at: Vec3) -> Result<(),
     Ok(())
 }
 
+/// The player object behind the player character `character`.
+unsafe fn player_of(character: &Character) -> Option<&Player> {
+    if !character.m_IsPlayer || character.m_Avatar.is_null() {
+        return None;
+    }
+    let player = character
+        .m_Avatar
+        .cast::<u8>()
+        .wrapping_sub(Player::AVATAR_BASE_OFFSET as usize)
+        .cast::<Player>();
+    unsafe { player.as_ref() }
+}
+
 /// Whether the physics game object at `object` is a character.
-unsafe fn is_character(object: NonZeroUsize) -> bool {
+pub(super) unsafe fn is_character(object: NonZeroUsize) -> bool {
     let game_object =
         (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
     unsafe { (*game_object).IsType(Character::TYPE_ID()) }

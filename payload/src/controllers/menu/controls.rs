@@ -147,6 +147,12 @@ fn build() -> Page {
             SliderFormat::new(2, "X"),
             |c| c.controllers.physical_hands.bodies.strength
         ))
+        .item(config_toggle!("HAND BLOWS DEAL DAMAGE", |c| c
+            .controllers
+            .physical_hands
+            .bodies
+            .hits
+            .damage))
         .header("HUD")
         .item(config_toggle!("HUD ON THE HANDS", |c| c.hud.atlas.enabled))
         .item(config_toggle!("AMMO ABOVE GUN HAND", |c| c

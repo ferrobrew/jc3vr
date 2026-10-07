@@ -221,19 +221,58 @@ impl std::convert::AsMut<hknpConstraintCinfo> for hknpConstraintCinfo {
 }
 #[repr(C, align(16))]
 /// A contact-impulse event (`hknpContactImpulseEvent`), raised by the solver for a contact between
-/// two bodies. Only the two bodies are bound; the impulses' layout is not established.
+/// two bodies at least one of which carries
+/// [`RAISE_CONTACT_IMPULSE_EVENTS`](crate::physics::hknpBody::RAISE_CONTACT_IMPULSE_EVENTS). The contact
+/// impulse event creator (`hknpContactImpulseEventCreator::postContactSolve`) writes one into the
+/// solving thread's command stream after it solves the contact, and the world dispatches the
+/// streams in its post-solve phase (`hknpWorldEx::postSolve`), the last task
+/// [`hknpWorld::stepSolve`](crate::physics::hknpWorld::stepSolve) generates, which it runs alone on its
+/// calling thread. For a contact that keeps a collision cache, the creator raises
+/// [`STATUS_STARTED`](crate::havok::hknpContactImpulseEvent::STATUS_STARTED) on the first step the contact's impulse is positive,
+/// and raises [`STATUS_CONTINUED`](crate::havok::hknpContactImpulseEvent::STATUS_CONTINUED) and
+/// [`STATUS_FINISHED`](crate::havok::hknpContactImpulseEvent::STATUS_FINISHED) only for a contact a listener asked them of; a
+/// contact without a cache raises [`STATUS_IMMEDIATE`](crate::havok::hknpContactImpulseEvent::STATUS_IMMEDIATE) each step its
+/// impulse is positive.
 pub struct hknpContactImpulseEvent {
     _field_0: [u8; 8],
     /// The two bodies, the first and the second.
     pub m_bodyIds: [u32; 2],
+    /// The contact's solver Jacobian (`hknpContactJacobian`), null for a finished contact whose
+    /// manifold is gone; see [`hknpContactJacobianUtil::getNumContactPoints`](crate::havok::hknpContactJacobianUtil::getNumContactPoints).
+    pub m_contactJacobian: *const ::std::ffi::c_void,
+    /// The index of the contact's manifold in its Jacobian.
+    pub m_manifoldIndex: u8,
+    /// The world's contact solver type (`hknpContactSolverType`), which the Jacobian's layout
+    /// depends on.
+    pub m_contactSolverType: u8,
+    _field_1a: [u8; 6],
+    /// The event's status, one of the `STATUS_` constants.
+    pub m_status: u8,
+    _field_21: [u8; 3],
+    /// The contact's friction factor.
+    pub m_frictionFactor: f32,
+    _field_28: [u8; 8],
+    /// The impulse the solver applied at each of the contact's points over the step, newton
+    /// seconds; only the first [`hknpContactJacobianUtil::getNumContactPoints`](crate::havok::hknpContactJacobianUtil::getNumContactPoints) are the contact's.
+    pub m_contactImpulses: [f32; 4],
 }
 fn _hknpContactImpulseEvent_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x10], hknpContactImpulseEvent>([0u8; 0x10]);
+        ::std::mem::transmute::<[u8; 0x40], hknpContactImpulseEvent>([0u8; 0x40]);
     }
     unreachable!()
 }
 impl hknpContactImpulseEvent {}
+impl hknpContactImpulseEvent {
+    /// [`m_status`](crate::havok::hknpContactImpulseEvent::m_status): the contact's impulse stayed positive this step.
+    pub const STATUS_CONTINUED: u8 = 3;
+    /// [`m_status`](crate::havok::hknpContactImpulseEvent::m_status): the contact's impulse fell to zero this step.
+    pub const STATUS_FINISHED: u8 = 2;
+    /// [`m_status`](crate::havok::hknpContactImpulseEvent::m_status): a positive impulse on a contact without a collision cache.
+    pub const STATUS_IMMEDIATE: u8 = 4;
+    /// [`m_status`](crate::havok::hknpContactImpulseEvent::m_status): the contact's impulse became positive this step.
+    pub const STATUS_STARTED: u8 = 1;
+}
 impl std::convert::AsRef<hknpContactImpulseEvent> for hknpContactImpulseEvent {
     fn as_ref(&self) -> &hknpContactImpulseEvent {
         self
@@ -241,6 +280,37 @@ impl std::convert::AsRef<hknpContactImpulseEvent> for hknpContactImpulseEvent {
 }
 impl std::convert::AsMut<hknpContactImpulseEvent> for hknpContactImpulseEvent {
     fn as_mut(&mut self) -> &mut hknpContactImpulseEvent {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// Helpers that read a contact's solver Jacobian (`hknpContactJacobianUtil`).
+pub struct hknpContactJacobianUtil {}
+impl hknpContactJacobianUtil {
+    pub const getNumContactPoints_ADDRESS: usize = 0x14148C090;
+    /// The number of contact points, at most four, of the contact whose Jacobian is `jacobian`
+    /// under the world's contact solver type `solver_type`. The contact impulse event creator
+    /// counts a contact's impulses with it.
+    pub unsafe fn getNumContactPoints(
+        solver_type: u32,
+        jacobian: *const ::std::ffi::c_void,
+    ) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                solver_type: u32,
+                jacobian: *const ::std::ffi::c_void,
+            ) -> i32 = ::std::mem::transmute(Self::getNumContactPoints_ADDRESS);
+            f(solver_type, jacobian)
+        }
+    }
+}
+impl std::convert::AsRef<hknpContactJacobianUtil> for hknpContactJacobianUtil {
+    fn as_ref(&self) -> &hknpContactJacobianUtil {
+        self
+    }
+}
+impl std::convert::AsMut<hknpContactJacobianUtil> for hknpContactJacobianUtil {
+    fn as_mut(&mut self) -> &mut hknpContactJacobianUtil {
         self
     }
 }

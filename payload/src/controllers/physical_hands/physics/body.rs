@@ -36,7 +36,13 @@ use jc3gi::{
     },
 };
 
-use crate::controllers::physical_hands::physics::drive::BodyMotion;
+use crate::controllers::{
+    frame::Hand,
+    physical_hands::physics::{
+        contact::{self, ContactError},
+        drive::BodyMotion,
+    },
+};
 
 /// Why a hand body could not be made, read, or driven.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -51,6 +57,8 @@ pub enum BodyError {
     NoBodyId,
     /// The body's slot no longer holds the body this wrapper made.
     Lost,
+    /// The body's contacts could not be listened for.
+    Contacts(ContactError),
     /// The body's state holds a value that is not finite.
     BadMotion,
 }
@@ -64,6 +72,7 @@ impl fmt::Display for BodyError {
             BodyError::NoBodyId => "the world gave the new body no id",
             BodyError::Lost => "the body's slot no longer holds the hand's body",
             BodyError::BadMotion => "the body's state is not finite",
+            BodyError::Contacts(e) => return fmt::Display::fmt(e, f),
         };
         write!(f, "hand bodies: {what}")
     }
@@ -86,6 +95,8 @@ pub struct BodySpec {
     /// The collision system group it shares with the player's character proxy, so that it never
     /// collides with the player.
     pub system_group: u32,
+    /// Whether the body's contacts are listened for ([`contact`]).
+    pub contact_events: bool,
 }
 
 /// A hand body: the engine wrapper this module allocated, which owns the Havok body.
@@ -107,6 +118,7 @@ impl HandBody {
     ///
     /// The thread that steps the physics world, outside the step.
     pub unsafe fn create(
+        hand: Hand,
         spec: BodySpec,
         position: Vec3,
         orientation: Quat,
@@ -163,11 +175,18 @@ impl HandBody {
             wrapper.SetCollisionSystemGroup(spec.system_group);
             wrapper.SetGravityFactor(0.0);
         }
-        Ok(Self {
+        let body = Self {
             wrapper: memory,
             body_id,
             spec,
-        })
+        };
+        if spec.contact_events
+            && let Err(e) = unsafe { contact::listen(memory, hand) }
+        {
+            unsafe { body.destroy(hand) };
+            return Err(BodyError::Contacts(e));
+        }
+        Ok(body)
     }
 
     pub fn body_id(&self) -> u32 {
@@ -187,6 +206,17 @@ impl HandBody {
         let (world, _) = unsafe { world() }?;
         let slot = unsafe { self.slot(world) }?;
         Ok(slot.m_collisionFilterInfo)
+    }
+
+    /// Whether the body asks the solver for its contacts' impulse events.
+    ///
+    /// # Safety
+    ///
+    /// As [`HandBody::create`].
+    pub unsafe fn raises_contact_events(&self) -> Result<bool, BodyError> {
+        let (world, _) = unsafe { world() }?;
+        let slot = unsafe { self.slot(world) }?;
+        Ok(slot.m_flags & hknpBody::RAISE_CONTACT_IMPULSE_EVENTS != 0)
     }
 
     /// Whether the body is in the simulation.
@@ -295,12 +325,15 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn destroy(self) {
+    pub unsafe fn destroy(self, hand: Hand) {
+        contact::forget(hand);
         unsafe { (*self.wrapper.as_ptr()).Destruct(PfxRigidBody::DESTRUCT_FREE) };
     }
 
     /// Forget the wrapper without touching the engine: for a body whose slot no longer holds it.
-    pub fn abandon(self) {}
+    pub fn abandon(self, hand: Hand) {
+        contact::forget(hand);
+    }
 
     /// The body's slot, checked to still hold this wrapper's body: the id has a slot with a
     /// motion, and the slot's engine instance is this wrapper.
@@ -346,7 +379,7 @@ pub unsafe fn player_system_group() -> Option<u32> {
 }
 
 /// The physics world, and the shift from its positions to game space.
-unsafe fn world() -> Result<(&'static mut hknpWorld, Vec3), BodyError> {
+pub(super) unsafe fn world() -> Result<(&'static mut hknpWorld, Vec3), BodyError> {
     let physics = unsafe { PhysicsSystem::get() }.ok_or(BodyError::NoPhysicsWorld)?;
     let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
     let world = unsafe { physics.m_World.as_mut() }.ok_or(BodyError::NoPhysicsWorld)?;
@@ -354,7 +387,7 @@ unsafe fn world() -> Result<(&'static mut hknpWorld, Vec3), BodyError> {
 }
 
 /// The engine instance of the body `body`, as an address.
-unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> {
+pub(super) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> {
     let buffer = unsafe {
         world
             .m_bodyProperties

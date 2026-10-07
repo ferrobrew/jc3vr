@@ -15,7 +15,7 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig,
             config::{PickupConfig, ShoveConfig},
-            physics::HandBodiesConfig,
+            physics::{HandBodiesConfig, HandHitsConfig},
         },
         vehicles::config::WheelSpec,
         weapons::{
@@ -922,6 +922,36 @@ fn hand_bodies(b: &HandBodiesConfig) -> Result<(), Invalid> {
         "physical_hands.bodies.pressure_full_lag_m",
         b.pressure_full_lag_m,
         2.0,
+    )?;
+    hand_hits(&b.hits)
+}
+
+fn hand_hits(h: &HandHitsConfig) -> Result<(), Invalid> {
+    nonnegative(
+        "physical_hands.bodies.hits.min_impulse_ns",
+        h.min_impulse_ns,
+        10_000.0,
+    )?;
+    positive(
+        "physical_hands.bodies.hits.knockdown_impulse_ns",
+        h.knockdown_impulse_ns,
+        10_000.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.hits.damage_impulse_ns",
+        h.damage_impulse_ns,
+        10_000.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.hits.damage_scale",
+        h.damage_scale,
+        100.0,
+    )?;
+    nonnegative("physical_hands.bodies.hits.cooldown_s", h.cooldown_s, 60.0)?;
+    positive(
+        "physical_hands.bodies.hits.full_pulse_impulse_ns",
+        h.full_pulse_impulse_ns,
+        10_000.0,
     )
 }
 

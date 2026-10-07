@@ -497,12 +497,12 @@ impl PfxInstance {
     }
     /// Called for a contact-impulse event between one of the instance's bodies and another
     /// while [`m_IsContactImpulseEventActive`](crate::physics::PfxInstance::m_IsContactImpulseEventActive) is set.
-    /// `input` is the event handler input (`hknpEventHandlerInput`) and `event` the event
-    /// ([`hknpContactImpulseEvent`](crate::havok::hknpContactImpulseEvent)).
+    /// `input` is the event handler input (`hknpEventHandlerInput`). The listener calls it from
+    /// the world's event dispatch, inside [`hknpWorld::stepSolve`](crate::physics::hknpWorld::stepSolve).
     pub unsafe fn OnContactImpulseEvent(
         &mut self,
         input: *const ::std::ffi::c_void,
-        event: *const ::std::ffi::c_void,
+        event: *const crate::havok::hknpContactImpulseEvent,
         other: *mut crate::physics::PfxInstance,
         is_body_a: bool,
     ) {
@@ -557,12 +557,12 @@ pub struct PfxInstanceVftable {
     ),
     /// Called for a contact-impulse event between one of the instance's bodies and another
     /// while [`m_IsContactImpulseEventActive`](crate::physics::PfxInstance::m_IsContactImpulseEventActive) is set.
-    /// `input` is the event handler input (`hknpEventHandlerInput`) and `event` the event
-    /// ([`hknpContactImpulseEvent`](crate::havok::hknpContactImpulseEvent)).
+    /// `input` is the event handler input (`hknpEventHandlerInput`). The listener calls it from
+    /// the world's event dispatch, inside [`hknpWorld::stepSolve`](crate::physics::hknpWorld::stepSolve).
     pub OnContactImpulseEvent: unsafe extern "system" fn(
         this: *mut crate::physics::PfxInstance,
         input: *const ::std::ffi::c_void,
-        event: *const ::std::ffi::c_void,
+        event: *const crate::havok::hknpContactImpulseEvent,
         other: *mut crate::physics::PfxInstance,
         is_body_a: bool,
     ),
@@ -894,10 +894,37 @@ impl PfxRigidBody {
             f(self as *mut Self as _, transform)
         }
     }
+    /// [`PfxInstance::OnContactImpulseEvent`](crate::physics::PfxInstance::OnContactImpulseEvent); the wrapper's own does nothing.
+    pub unsafe fn OnContactImpulseEvent(
+        &mut self,
+        input: *const ::std::ffi::c_void,
+        event: *const crate::havok::hknpContactImpulseEvent,
+        other: *mut crate::physics::PfxInstance,
+        is_body_a: bool,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnContactImpulseEvent).read();
+            f(self as *mut Self as _, input, event, other, is_body_a)
+        }
+    }
+    /// Sets [`PfxInstance::m_IsContactImpulseEventActive`](crate::physics::PfxInstance::m_IsContactImpulseEventActive) to `active`, and sets or clears the
+    /// body's [`RAISE_CONTACT_IMPULSE_EVENTS`](crate::physics::hknpBody::RAISE_CONTACT_IMPULSE_EVENTS) flag
+    /// through the world's body flag setters (`hknpWorld::enableBodyFlags` and
+    /// `disableBodyFlags`, which the disassembler mislabels `CPfxRigidBody::CPfxRigidBody` and
+    /// a `hkSignal2::subscribe`), which rebuild the body's collision caches.
+    pub unsafe fn SetContactImpulseEventActive(&mut self, active: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SetContactImpulseEventActive).read();
+            f(self as *mut Self as _, active)
+        }
+    }
 }
 impl PfxRigidBody {
     /// The [`Destruct`](crate::physics::PfxRigidBody::Destruct) flag that frees the wrapper's memory.
     pub const DESTRUCT_FREE: u8 = 1;
+    /// The address of the `CPfxRigidBody` virtual table, which
+    /// [`Construct`](crate::physics::PfxRigidBody::Construct) installs. It has as many slots as the vftable below.
+    pub const VFTABLE: u64 = 5405740600;
 }
 impl std::convert::AsRef<PfxRigidBody> for PfxRigidBody {
     fn as_ref(&self) -> &PfxRigidBody {
@@ -956,10 +983,53 @@ pub struct PfxRigidBodyVftable {
         this: *mut crate::physics::PfxRigidBody,
         transform: *const crate::types::math::Matrix4,
     ),
+    _vfunc_16: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_17: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_18: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_19: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_20: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    /// [`PfxInstance::OnContactImpulseEvent`](crate::physics::PfxInstance::OnContactImpulseEvent); the wrapper's own does nothing.
+    pub OnContactImpulseEvent: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxRigidBody,
+        input: *const ::std::ffi::c_void,
+        event: *const crate::havok::hknpContactImpulseEvent,
+        other: *mut crate::physics::PfxInstance,
+        is_body_a: bool,
+    ),
+    _vfunc_22: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_23: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    /// Sets [`PfxInstance::m_IsContactImpulseEventActive`](crate::physics::PfxInstance::m_IsContactImpulseEventActive) to `active`, and sets or clears the
+    /// body's [`RAISE_CONTACT_IMPULSE_EVENTS`](crate::physics::hknpBody::RAISE_CONTACT_IMPULSE_EVENTS) flag
+    /// through the world's body flag setters (`hknpWorld::enableBodyFlags` and
+    /// `disableBodyFlags`, which the disassembler mislabels `CPfxRigidBody::CPfxRigidBody` and
+    /// a `hkSignal2::subscribe`), which rebuild the body's collision caches.
+    pub SetContactImpulseEventActive: unsafe extern "system" fn(
+        this: *mut crate::physics::PfxRigidBody,
+        active: bool,
+    ),
+    _vfunc_25: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_26: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_27: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_28: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_29: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_30: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_31: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_32: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_33: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_34: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_35: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_36: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_37: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_38: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_39: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_40: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_41: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_42: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
+    _vfunc_43: unsafe extern "system" fn(this: *mut crate::physics::PfxRigidBody),
 }
 fn _PfxRigidBodyVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x80], PfxRigidBodyVftable>([0u8; 0x80]);
+        ::std::mem::transmute::<[u8; 0x160], PfxRigidBodyVftable>([0u8; 0x160]);
     }
     unreachable!()
 }
@@ -1650,6 +1720,10 @@ impl hknpBody {
     /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a dynamic body, the only kind the velocity and impulse
     /// setters ([`hknpWorld::setBodyVelocity`](crate::physics::hknpWorld::setBodyVelocity), [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt)) act on.
     pub const IS_DYNAMIC: u32 = 2;
+    /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit that has the solver raise a
+    /// [`hknpContactImpulseEvent`](crate::havok::hknpContactImpulseEvent) for the body's contacts.
+    /// [`PfxRigidBody::SetContactImpulseEventActive`](crate::physics::PfxRigidBody::SetContactImpulseEventActive) sets and clears it.
+    pub const RAISE_CONTACT_IMPULSE_EVENTS: u32 = 128;
 }
 impl std::convert::AsRef<hknpBody> for hknpBody {
     fn as_ref(&self) -> &hknpBody {
@@ -1836,6 +1910,27 @@ impl hknpWorld {
                 count: i32,
             ) = ::std::mem::transmute(Self::destroyConstraints_ADDRESS);
             f(self as *mut Self as _, ids, count)
+        }
+    }
+    pub const stepSolve_ADDRESS: usize = 0x1414EDB40;
+    /// The solve half of a step (`*solver_data` from the collide half, `hknpSolverData`): it
+    /// generates the solve's task graphs, runs a graph of one task on the calling thread and any
+    /// other on `task_queue` (`hkTaskQueue`), joining it, and repeats until no task remains. The
+    /// last graph is the post-solve phase alone, which dispatches the step's events, so the
+    /// world's event listeners run on the calling thread, inside the step.
+    /// [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) calls it on the game thread.
+    pub unsafe fn stepSolve(
+        &mut self,
+        solver_data: *mut *mut ::std::ffi::c_void,
+        task_queue: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                solver_data: *mut *mut ::std::ffi::c_void,
+                task_queue: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::stepSolve_ADDRESS);
+            f(self as *mut Self as _, solver_data, task_queue)
         }
     }
     pub const createDynamicBody_ADDRESS: usize = 0x1401E9B20;

@@ -334,7 +334,27 @@ pub struct Character {
     /// [`GetHealth`](crate::character::character::Character::GetHealth). [`HUDUI::InitHealth`](crate::ui::hud_ui::HUDUI::InitHealth) passes
     /// the local player character's to the movie.
     pub m_MaxHealth: i16,
-    _field_1b2: [u8; 1926],
+    _field_1b2: [u8; 682],
+    /// The hit reaction's per-type impulse scales: [`HitReaction`](crate::character::character::Character::HitReaction) scales a
+    /// hit's impulse by the entry of the lowest [`DamageFlags`](crate::damage::DamageFlags) type bit set
+    /// (the first when none is). Per-character tuning read from data, as are the thresholds below.
+    pub m_HitReaction_DamageImpulseScale: [f32; 20],
+    /// The further impulse scale of a headshot.
+    pub m_HitReaction_HeadshotImpulseScale: f32,
+    /// The most a scaled impulse moves the character's ragdoll: the impulse
+    /// [`HitReaction`](crate::character::character::Character::HitReaction) queues on the ragdoll is the hit's direction times the
+    /// smaller of this and the scaled impulse.
+    pub m_HitReaction_DamageImpulseMax: f32,
+    /// The scaled impulse at or above which a hit knocks a non-player character into its ragdoll.
+    pub m_HitReaction_ImpulseRagdollThreshold: f32,
+    pub m_HitReaction_StuntFallOffImpactWeight: f32,
+    /// The scaled impulse above which a hit staggers the character: it becomes the character's
+    /// current reaction force, which the hit-reaction animation reads.
+    pub m_HitReaction_ImpulseStumbleThreshold: f32,
+    /// The impulse, accumulated over hits in quick succession, at which a hit too weak to stagger
+    /// the character alone counts as staggering.
+    pub m_HitReaction_AccumalatedImpulseStumbleThreshold: f32,
+    _field_4c4: [u8; 1140],
     /// The character's aiming-settings resource (`TResourceCachePtr<SCharacterAimingSettings>`, a
     /// resource handle resolved through the resource cache). Both aim-input updates read the
     /// aim-timer refill value from the resolved settings.
@@ -1696,7 +1716,16 @@ impl Character {
     /// and its bullet and melee variants), or a flinch, queued on
     /// [`m_AnimatedModel`](crate::character::character::Character::m_AnimatedModel) with [`AnimatedModel::QueueAct`](crate::character::character::AnimatedModel::QueueAct). A player and
     /// other characters take different branches. `zone` is the hit body-part group's `idstring`,
-    /// passed by address and released by the callee.
+    /// passed by address and released by the callee, so the caller passes a copy that holds its own
+    /// use of the group symbol table
+    /// ([`RagdollRBGroupId::init_ptr`](crate::animation::symbol_table::RagdollRBGroupId::init_ptr)). The
+    /// impulse is scaled by the type's entry of
+    /// [`m_HitReaction_DamageImpulseScale`](crate::character::character::Character::m_HitReaction_DamageImpulseScale) and compared
+    /// against [`m_HitReaction_ImpulseRagdollThreshold`](crate::character::character::Character::m_HitReaction_ImpulseRagdollThreshold)
+    /// and [`m_HitReaction_ImpulseStumbleThreshold`](crate::character::character::Character::m_HitReaction_ImpulseStumbleThreshold);
+    /// a ragdoll takes the impulse, along `direction` and capped by
+    /// [`m_HitReaction_DamageImpulseMax`](crate::character::character::Character::m_HitReaction_DamageImpulseMax). The character's
+    /// damage virtual runs it at the end of every damage message; it takes no health itself.
     pub unsafe fn HitReaction(
         &mut self,
         hit_position: *const crate::types::math::Vector3,

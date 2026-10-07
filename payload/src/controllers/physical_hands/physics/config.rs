@@ -55,6 +55,63 @@ pub struct HandBodiesConfig {
     pub pressure_haptics: bool,
     /// How far past the push deadband a hand is held back for the strongest pressure pulse, metres.
     pub pressure_full_lag_m: f32,
+    /// What a hand body's contacts do: the pulse of a hit, and a character's reaction to it.
+    pub hits: HandHitsConfig,
+}
+
+/// A hand body's hits (see [`crate::controllers::physical_hands::physics::hit`]): each contact a
+/// hand body starts pulses the hand by its impulse, and a character it strikes reacts as to a
+/// blow of that impulse, against its own stagger and knockdown thresholds; a hard enough blow deals
+/// damage.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HandHitsConfig {
+    /// Listen for the hand bodies' contacts at all: the hit pulses and the characters' reactions.
+    pub enabled: bool,
+    /// A character struck by a hand reacts to the blow: staggers, or is knocked down.
+    pub reactions: bool,
+    /// A blow at or above [`damage_impulse_ns`](Self::damage_impulse_ns) deals damage.
+    pub damage: bool,
+    /// The weakest contact impulse a character reacts to, newton seconds.
+    pub min_impulse_ns: f32,
+    /// The contact impulse that knocks a character down, newton seconds: a blow of this impulse
+    /// reaches the character's own knockdown threshold, and a weaker one the same share of it.
+    pub knockdown_impulse_ns: f32,
+    /// The weakest contact impulse that deals damage, newton seconds.
+    pub damage_impulse_ns: f32,
+    /// The damage of a blow at the knockdown impulse, as a share of the player's melee damage; a
+    /// weaker or stronger blow deals in proportion.
+    pub damage_scale: f32,
+    /// How long a character struck by a hand ignores that hand's further contacts, seconds, so that
+    /// one blow is one hit.
+    pub cooldown_s: f32,
+    /// Pulse a hand when its body starts a contact, harder the harder the contact.
+    pub haptics: bool,
+    /// The contact impulse of the strongest hit pulse, newton seconds.
+    pub full_pulse_impulse_ns: f32,
+}
+
+impl HandHitsConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            reactions: true,
+            damage: true,
+            min_impulse_ns: 8.0,
+            knockdown_impulse_ns: 70.0,
+            damage_impulse_ns: 35.0,
+            damage_scale: 1.0,
+            cooldown_s: 0.5,
+            haptics: true,
+            full_pulse_impulse_ns: 50.0,
+        }
+    }
+}
+
+impl Default for HandHitsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HandBodiesConfig {
@@ -81,6 +138,7 @@ impl HandBodiesConfig {
             push_smoothing_s: 0.1,
             pressure_haptics: true,
             pressure_full_lag_m: 0.1,
+            hits: HandHitsConfig::new(),
         }
     }
 

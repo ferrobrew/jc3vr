@@ -220,3 +220,48 @@ impl std::convert::AsMut<EventIdSymbolTable> for EventIdSymbolTable {
         self
     }
 }
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// A ragdoll rigid-body group id (`ava::idstring<NAnimationSystem::SRagdollRBGroupIdTag>`), which
+/// names the part of a character's body a hit struck. Every live value holds a use of the group
+/// symbol table: [`init_ptr`](crate::animation::symbol_table::RagdollRBGroupId::init_ptr) takes one, creating the table on first use, and the
+/// value's destructor gives it back, destroying the table when the last use goes. A function that
+/// takes an id by value destroys it, so its caller copies the id and takes a use for the copy
+/// first.
+pub struct RagdollRBGroupId {
+    /// The id.
+    pub m_id: u32,
+}
+fn _RagdollRBGroupId_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], RagdollRBGroupId>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+impl RagdollRBGroupId {
+    pub const init_ptr_ADDRESS: usize = 0x140416A70;
+    /// Takes a use of the group symbol table for this value.
+    pub unsafe fn init_ptr(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::init_ptr_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl RagdollRBGroupId {
+    /// The id a character's damage handler gives a hit it finds no group for, as it gives every
+    /// melee hit.
+    pub const NONE: u32 = 0;
+}
+impl std::convert::AsRef<RagdollRBGroupId> for RagdollRBGroupId {
+    fn as_ref(&self) -> &RagdollRBGroupId {
+        self
+    }
+}
+impl std::convert::AsMut<RagdollRBGroupId> for RagdollRBGroupId {
+    fn as_mut(&mut self) -> &mut RagdollRBGroupId {
+        self
+    }
+}

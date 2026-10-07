@@ -5,6 +5,9 @@
 //! - [`body`]: one hand body in the physics world, made and destroyed as the engine's own free
 //!   bodies are;
 //! - [`callback`]: the physics system's pre-simulation callback that drives the bodies;
+//! - [`contact`]: the contacts each body starts, as the physics system's collision listener
+//!   reports them, and [`blows`], which pulses the hands by them and deals the blows they strike
+//!   characters with, as worked out in [`hit`];
 //! - [`drive`]: the drive, pure: the velocities that carry a body to its hand within the hand's
 //!   strength, and the push a held-back hand gives the player;
 //! - [`config`]: the settings.
@@ -32,17 +35,21 @@
 //! the simulation, and every body is destroyed when the game leaves gameplay, the hand bodies are
 //! switched off, the player's character changes, or the payload unloads.
 
+mod blows;
 mod body;
 mod callback;
 pub mod config;
+mod contact;
 pub mod drive;
+pub mod hit;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
-pub use config::HandBodiesConfig;
+pub use blows::BlowReport;
+pub use config::{HandBodiesConfig, HandHitsConfig};
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::physics::PhysicsSystem;
 use parking_lot::Mutex;
@@ -127,6 +134,13 @@ pub struct HandBodiesStatus {
     pub push: Vec2,
     pub created: u64,
     pub destroyed: u64,
+    /// Contacts the bodies started, as the collision listener reported them.
+    pub contacts: u64,
+    /// Contacts dropped because more arrived between two frame ticks than the queue holds.
+    pub dropped_contacts: u64,
+    /// Blows dealt to characters.
+    pub blows: u64,
+    pub last_blow: Option<BlowReport>,
     pub last_error: Option<String>,
 }
 
@@ -157,12 +171,16 @@ pub(crate) fn drives(hand: Hand) -> bool {
 /// removes it. Called once per frame on the game thread, ahead of the game's update.
 pub(crate) fn frame_tick() {
     if crate::is_shutting_down() || callback::failed() {
+        blows::discard();
         return;
     }
-    let wanted = Config::lock_query(|c| enabled(&c.controllers.physical_hands));
-    if !wanted || !hooks::in_gameplay() {
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    if !enabled(&config) || !hooks::in_gameplay() {
+        blows::discard();
         return;
     }
+    // SAFETY: the game thread, ahead of the game's update.
+    let delivered = unsafe { blows::deliver(&config) };
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
     let registered = unsafe { callback::ensure_registered() };
     if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
@@ -171,7 +189,15 @@ pub(crate) fn frame_tick() {
             unsafe { shutdown() };
         });
     }
-    SHARED.lock().status.registered = registered;
+    let mut shared = SHARED.lock();
+    let status = &mut shared.status;
+    status.registered = registered;
+    status.contacts += delivered.contacts;
+    status.dropped_contacts += delivered.dropped;
+    status.blows += delivered.blows;
+    if delivered.last.is_some() {
+        status.last_blow = delivered.last;
+    }
 }
 
 /// Publish each acting hand's palm pose and velocity for the next step, and take the last step's
@@ -372,6 +398,7 @@ pub(super) unsafe fn step() {
                     },
                     mass_kg: b.mass_kg,
                     system_group: group,
+                    contact_events: b.hits.enabled,
                 };
                 let goal = Goal {
                     position: target.position + target.linear * lead_s,
@@ -570,6 +597,10 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
         push: Vec2::ZERO,
         created: 0,
         destroyed: 0,
+        contacts: 0,
+        dropped_contacts: 0,
+        blows: 0,
+        last_blow: None,
         last_error: None,
     },
 });
@@ -684,8 +715,9 @@ impl Hands {
         let mut created = false;
         if self.bodies[i].is_none() {
             // SAFETY: forwarded from the caller.
-            let body = unsafe { HandBody::create(spec, goal.position, goal.orientation) }?;
+            let body = unsafe { HandBody::create(hand, spec, goal.position, goal.orientation) }?;
             let filter = unsafe { body.filter_info() }.ok();
+            let contact_events = unsafe { body.raises_contact_events() }.ok();
             tracing::info!(
                 hand = hand.label(),
                 body_id = body.body_id(),
@@ -694,6 +726,8 @@ impl Hands {
                 mass_kg = spec.mass_kg,
                 radius_m = spec.capsule.radius_m,
                 half_length_m = spec.capsule.half_length_m,
+                listens = spec.contact_events,
+                contact_events = ?contact_events,
                 "hand bodies: created a hand body"
             );
             self.bodies[i] = Some(body);
@@ -727,7 +761,7 @@ impl Hands {
                     "hand bodies: a hand body's slot no longer holds it; forgetting it"
                 );
                 if let Some(body) = self.bodies[i].take() {
-                    body.abandon();
+                    body.abandon(hand);
                 }
                 self.added[i] = false;
                 self.goals[i] = None;
@@ -748,6 +782,7 @@ impl Hands {
         };
         if (goal.position - motion.position).length() > break_distance_m {
             unsafe { body.place(goal.position, goal.orientation) }?;
+            contact::record_motion(hand, goal.position, Vec3::ZERO);
             self.resets[i] += 1;
             status.resets = self.resets[i];
             self.goals[i] = Some(goal);
@@ -764,6 +799,7 @@ impl Hands {
         }
         let driven = drive(&motion, &goal, tuning, step_s);
         unsafe { body.set_velocities(driven.linear, driven.angular) }?;
+        contact::record_motion(hand, motion.position, driven.linear);
         self.goals[i] = Some(goal);
         status.force_share = driven.force_share;
         status.torque_share = driven.torque_share;
@@ -816,7 +852,7 @@ impl Hands {
             return false;
         };
         let body_id = body.body_id();
-        unsafe { body.destroy() };
+        unsafe { body.destroy(hand) };
         tracing::info!(
             hand = hand.label(),
             body_id,
@@ -849,6 +885,9 @@ fn press_load(lag: Vec3, config: &HandBodiesConfig, scale: f32) -> f32 {
 fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> {
     if existing.system_group != wanted.system_group {
         return Some("the player's collision group changed");
+    }
+    if existing.contact_events != wanted.contact_events {
+        return Some("the hits were switched on or off");
     }
     let close = |a: f32, b: f32| (a - b).abs() <= SPEC_TOLERANCE * a.abs().max(b.abs());
     if !(close(existing.mass_kg, wanted.mass_kg)
