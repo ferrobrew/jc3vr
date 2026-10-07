@@ -647,7 +647,8 @@ impl Character {
     /// [`FINALIZE_POSE_STATE_TASK_RANGE`](crate::character::character::Character::FINALIZE_POSE_STATE_TASK_RANGE) through
     /// [`UpdateStateTasksInRange`](crate::character::character::Character::UpdateStateTasksInRange) (the aim, look-at, grapple-fire
     /// arm, and weapon off-hand IK tasks among them), then drives the [`HumanIK`](crate::character::character::Character::m_HIK) solve
-    /// (the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets), followed by
+    /// (the `MAIN` body pass, gated on [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) and run through
+    /// [`UpdateIKForTargets`](crate::character::character::Character::UpdateIKForTargets), followed by
     /// [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass)), then computes the
     /// model-space pose (`CalculateModelSpacePose`), and finally calls
     /// [`UpdatePropEffects`](crate::character::character::Character::UpdatePropEffects). Effector targets queued before this runs
@@ -663,6 +664,45 @@ impl Character {
                 context: *mut ::std::ffi::c_void,
             ) = ::std::mem::transmute(Self::UpdatePassFinalizePose_Parallel_ADDRESS);
             f(self as *mut Self as _, context)
+        }
+    }
+    pub const UpdateIKForTargets_ADDRESS: usize = 0x14077E040;
+    /// The `MAIN`-pass HumanIK solve, run from
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) once
+    /// [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) reports a queued target. Copies the current pose into the solver
+    /// ([`HumanIK::CharacterToIKState`](crate::animation::ik::HumanIK::CharacterToIKState)), pushes the queued targets and control values
+    /// ([`HumanIK::UpdateEffectorsFromTargets`](crate::animation::ik::HumanIK::UpdateEffectorsFromTargets)), runs the solve ([`HumanIK::Solve`](crate::animation::ik::HumanIK::Solve)), and writes the
+    /// solved state back into the pose ([`HumanIK::IKToCharacterState`](crate::animation::ik::HumanIK::IKToCharacterState)). The IDB mislabels this
+    /// function `CAnimationRuleSystem::GetState`; its body and call site (the sole caller is
+    /// `UpdatePassFinalizePose_Parallel`) identify it as the character's own IK-for-targets solve.
+    pub unsafe fn UpdateIKForTargets(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::UpdateIKForTargets_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const UpdateSecondaryHandIKForTargets_ADDRESS: usize = 0x14077E0C0;
+    /// The `SECONDARY`-pass HumanIK solve, run from
+    /// [`UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass) once that pass has queued a
+    /// target. Runs the same four-step sequence as [`UpdateIKForTargets`](crate::character::character::Character::UpdateIKForTargets),
+    /// except that it skips [`HumanIK::CharacterToIKState`](crate::animation::ik::HumanIK::CharacterToIKState) when `ik_has_run` is already set:
+    /// `UpdateSecondaryHandIKPass` passes through the same flag the `MAIN` pass's gate set this
+    /// frame, so the pose copied into the solver by that earlier solve is reused instead of being
+    /// refetched.
+    pub unsafe fn UpdateSecondaryHandIKForTargets(
+        &mut self,
+        dt: f32,
+        ik_has_run: *mut bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                ik_has_run: *mut bool,
+            ) = ::std::mem::transmute(Self::UpdateSecondaryHandIKForTargets_ADDRESS);
+            f(self as *mut Self as _, dt, ik_has_run)
         }
     }
     pub const UpdateStateTasksInRange_ADDRESS: usize = 0x14075E710;
@@ -742,7 +782,11 @@ impl Character {
     pub const UpdateSecondaryHandIKPass_ADDRESS: usize = 0x1407EF690;
     /// The `SECONDARY` HumanIK pass, called from
     /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) after the `MAIN`
-    /// solve. It is driven entirely by one-frame keys on [`m_Blackboard`](crate::character::character::Character::m_Blackboard).
+    /// solve. It is driven entirely by keys on [`m_Blackboard`](crate::character::character::Character::m_Blackboard); most suppliers
+    /// write theirs fresh every frame, but a key's own persistence class is up to its writer — the
+    /// parachute handle IK task's position and weight keys, for instance, are written once with
+    /// session persistence and left on the blackboard across ticks while the task is active (see
+    /// [`NParachuteHandleIKTask::Update`](crate::input::parachute::NParachuteHandleIKTask::Update)).
     /// For each wrist whose weight key
     /// ([`SECONDARY_HAND_WEIGHT_RIGHT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_RIGHT_ID),
     /// [`SECONDARY_HAND_WEIGHT_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID)) is

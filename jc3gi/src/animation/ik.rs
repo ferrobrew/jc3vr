@@ -516,11 +516,11 @@ impl HumanIK {
     ///
     /// The reach drive branches on the entry's `is_valid` flag:
     ///
-    /// - **Valid** (queued since the last solve): the reach is `SpeedLerp`ed toward the target reach
+    /// - **Valid** (queued since the last solve): the reach is [`SpeedLerp`](crate::animation::ik::SpeedLerp)ed toward the target reach
     ///   when the entry carries the interpolation flag, and snapped to it otherwise. The blend-out
     ///   flag plays no part.
     /// - **Invalid** (a leftover [`ClearTargets`](crate::animation::ik::HumanIK::ClearTargets) has not yet removed): the
-    ///   reach is `SpeedLerp`ed toward zero at the blend-out rate when the entry carries the
+    ///   reach is [`SpeedLerp`](crate::animation::ik::SpeedLerp)ed toward zero at the blend-out rate when the entry carries the
     ///   blend-out flag, and zeroed outright otherwise. The interpolation flag plays no part.
     ///
     /// So an effector's pull is only refreshed in a frame where it carries a positional target, and
@@ -613,7 +613,7 @@ impl HumanIK {
     /// already invalid; every other entry survives with `is_valid` cleared, and
     /// [`UpdateEffectorsFromTargets`](crate::animation::ik::HumanIK::UpdateEffectorsFromTargets) keeps applying it until a
     /// later `ClearTargets` removes it. With the blend-out flag set that takes as long as the reach
-    /// takes to decay (`SpeedLerp` at the blend-out rate); without it,
+    /// takes to decay ([`SpeedLerp`](crate::animation::ik::SpeedLerp) at the blend-out rate); without it,
     /// [`DriveAllCurrentEffectorControlValues`](crate::animation::ik::HumanIK::DriveAllCurrentEffectorControlValues) zeroes
     /// the reach on the next driven frame and the entry dies there.
     pub unsafe fn ClearTargets(&mut self, pass: crate::animation::ik::Pass) -> bool {
@@ -847,5 +847,31 @@ unsafe fn NHandIKTask_Update(
             p2: *mut ::std::ffi::c_void,
         ) = ::std::mem::transmute(NHandIKTask_Update_ADDRESS);
         f(ctx, p1, p2)
+    }
+}
+pub const SpeedLerp_ADDRESS: usize = 0x14003D5B0;
+/// A speed-limited lerp (`SpeedLerp`): moves `from` toward `to` by at most `units_per_second * dt`,
+/// expressed as the fraction of the remaining distance that covers, and applies that fraction to
+/// the straight-line interpolation between the two. With `clamp_to_01` set the fraction is clamped
+/// to `0..1` (an overshoot reaches `to` and stops there); without it the fraction is applied
+/// unclamped, so a large `units_per_second * dt` overshoots past `to`. Used throughout the engine
+/// to ease a value toward a target at a bounded rate,
+/// [`HumanIK::DriveAllCurrentEffectorControlValues`](crate::animation::ik::HumanIK::DriveAllCurrentEffectorControlValues) among them.
+pub unsafe fn SpeedLerp(
+    from: f32,
+    to: f32,
+    units_per_second: f32,
+    dt: f32,
+    clamp_to_01: bool,
+) -> f32 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            from: f32,
+            to: f32,
+            units_per_second: f32,
+            dt: f32,
+            clamp_to_01: bool,
+        ) -> f32 = ::std::mem::transmute(SpeedLerp_ADDRESS);
+        f(from, to, units_per_second, dt, clamp_to_01)
     }
 }

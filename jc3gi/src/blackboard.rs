@@ -62,11 +62,6 @@ impl ObjectBlackboard {
         }
     }
     pub const GetInt_ADDRESS: usize = 0x1405C57E0;
-    /// The `SetBlackboardValue<CVector3f>` template instantiation. `value` is by-value `CVector3f`
-    /// at the C++ level, which the MSVC x64 ABI passes by reference — hence the pointer here.
-    /// `persistence` is recorded when the call creates the key, and is
-    /// [`PERSISTENCE_LOCAL_FRAME`](crate::blackboard::PersistenceType::PERSISTENCE_LOCAL_FRAME) at every observed
-    /// call site; `name` is an optional debug label, null in every observed call.
     /// The `GetBlackboardValue<int>` template instantiation. Returns whether the id was present
     /// with an integer type; the value is written through `value`.
     pub unsafe fn GetInt(&mut self, id: u32, value: *mut i32) -> bool {
@@ -100,6 +95,18 @@ impl ObjectBlackboard {
         }
     }
     pub const SetVector3_ADDRESS: usize = 0x1405C6A70;
+    /// The `SetBlackboardValue<CVector3f>` template instantiation. `value` is by-value `CVector3f`
+    /// at the C++ level, which the MSVC x64 ABI passes by reference — hence the pointer here.
+    /// `persistence` is recorded when the call creates the key; it varies by caller rather than
+    /// being fixed by the function — most writers pass
+    /// [`PERSISTENCE_LOCAL_FRAME`](crate::blackboard::PersistenceType::PERSISTENCE_LOCAL_FRAME), some AI blackboard
+    /// writes pass [`PERSISTENCE_GLOBAL_FRAME`](crate::blackboard::PersistenceType::PERSISTENCE_GLOBAL_FRAME), and the
+    /// parachute handle IK task's `SECONDARY`-pass position keys
+    /// ([`SECONDARY_HAND_POSITION_WS_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_POSITION_WS_LEFT_ID) and its
+    /// right twin) are written with
+    /// [`PERSISTENCE_SESSION`](crate::blackboard::PersistenceType::PERSISTENCE_SESSION) instead (see
+    /// [`NParachuteHandleIKTask::Update`](crate::input::parachute::NParachuteHandleIKTask::Update)); `name`
+    /// is an optional debug label, null in every observed call.
     pub unsafe fn SetVector3(
         &mut self,
         id: u32,
@@ -268,4 +275,19 @@ fn _ValueType_size_check() {
         ::std::mem::transmute::<[u8; 0x1], ValueType>([0u8; 0x1]);
     }
     unreachable!()
+}
+pub const RemoveBlackBoardValue_ADDRESS: usize = 0x1404D86D0;
+/// Removes a key from a blackboard (`RemoveBlackBoardValue`), under
+/// [`ObjectBlackboard::m_BbLock`](crate::blackboard::ObjectBlackboard::m_BbLock). Returns whether the id was present.
+pub unsafe fn RemoveBlackBoardValue(
+    bb: *mut crate::blackboard::ObjectBlackboard,
+    id: u32,
+) -> bool {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            bb: *mut crate::blackboard::ObjectBlackboard,
+            id: u32,
+        ) -> bool = ::std::mem::transmute(RemoveBlackBoardValue_ADDRESS);
+        f(bb, id)
+    }
 }
