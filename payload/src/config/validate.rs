@@ -1,7 +1,7 @@
 //! Range and consistency checks for the settings whose types admit values the subsystems cannot
 //! use: the controller tuning, the per-weapon sight corrections, and the VR turn settings. The
-//! tolerant load ([`crate::config::load`]) runs them on a loaded configuration and resets a subtree
-//! that fails to its defaults.
+//! tolerant load ([`crate::config::load`]) runs them on a loaded configuration and resets the
+//! setting a failure names, or the subtree when that does not make it pass.
 
 use std::fmt;
 
@@ -27,7 +27,8 @@ use crate::{
     headpose::config::VrTurnConfig,
 };
 
-/// A setting that is well-typed but out of range or inconsistent with another.
+/// A setting that is well-typed but out of range or inconsistent with another. The message leads
+/// with the setting's path, relative to the checked subtree, which the tolerant load resets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Invalid(pub String);
 

@@ -181,7 +181,7 @@ fn several_bad_settings_are_each_reset() {
 }
 
 #[test]
-fn an_invalid_controller_setting_resets_the_controller_settings_but_keeps_the_sights() {
+fn an_invalid_controller_setting_is_reset_alone() {
     let mut config = Config::new();
     config.controllers.dominant_hand = Hand::Left;
     config.controllers.aim.sights.set(SightOverride {
@@ -190,16 +190,70 @@ fn an_invalid_controller_setting_resets_the_controller_settings_but_keeps_the_si
         angles_deg: Vec2::new(0.5, 0.0),
     });
     config.controllers.hands.reach_t = 5.0;
+    config.controllers.hands.reach_r = 0.25;
     config.headpose.vr_turn.snap_angle_deg = 45.0;
     let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
-    assert_eq!(config.controllers.dominant_hand, Hand::Right);
+    assert_eq!(config.controllers.dominant_hand, Hand::Left);
     assert_eq!(
         config.controllers.hands.reach_t,
         Config::new().controllers.hands.reach_t
     );
+    assert_eq!(config.controllers.hands.reach_r, 0.25);
     assert!(config.controllers.aim.sights.get(7).is_some());
     assert_eq!(config.headpose.vr_turn.snap_angle_deg, 45.0);
-    assert_eq!(reset_paths(&report), ["controllers"]);
+    assert_eq!(reset_paths(&report), ["controllers.hands.reach_t"]);
+}
+
+#[test]
+fn an_invalid_vector_component_resets_the_vector() {
+    let mut config = Config::new();
+    config.controllers.hands.grip.position_m = Vec3::new(0.0, 99.0, 0.0);
+    config.controllers.hands.grip.rotation_deg = Vec3::new(5.0, 0.0, 0.0);
+    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    assert_eq!(
+        config.controllers.hands.grip.position_m,
+        Config::new().controllers.hands.grip.position_m
+    );
+    assert_eq!(
+        config.controllers.hands.grip.rotation_deg,
+        Vec3::new(5.0, 0.0, 0.0)
+    );
+    assert_eq!(reset_paths(&report), ["controllers.hands.grip.position_m"]);
+}
+
+#[test]
+fn an_inconsistency_the_default_does_not_fix_resets_the_group() {
+    let mut config = Config::new();
+    config.controllers.dominant_hand = Hand::Left;
+    // The far reach keeps its default, which is below this near reach: resetting the setting the
+    // check names does not help, so the group around it is reset.
+    config.controllers.weapons.heft.reach_near_m = 9.0;
+    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    assert_eq!(
+        config.controllers.weapons.heft.reach_near_m,
+        Config::new().controllers.weapons.heft.reach_near_m
+    );
+    assert_eq!(config.controllers.dominant_hand, Hand::Left);
+    assert_eq!(reset_paths(&report), ["controllers.weapons.heft"]);
+}
+
+#[test]
+fn several_invalid_controller_settings_are_each_reset() {
+    let mut config = Config::new();
+    config.controllers.hands.reach_t = 5.0;
+    config.controllers.bindings.move_deadzone = -1.0;
+    let Loaded { config, report } = parse(&toml::to_string(&config).unwrap()).unwrap();
+    assert_eq!(
+        config.controllers.bindings.move_deadzone,
+        Config::new().controllers.bindings.move_deadzone
+    );
+    assert_eq!(
+        reset_paths(&report),
+        [
+            "controllers.bindings.move_deadzone",
+            "controllers.hands.reach_t"
+        ]
+    );
 }
 
 #[test]
@@ -225,7 +279,11 @@ fn invalid_sights_turn_and_body_reset_alone() {
     assert_eq!(config.body, Config::new().body);
     assert_eq!(
         reset_paths(&report),
-        ["controllers.aim.sights", "headpose.vr_turn", "body"]
+        [
+            "controllers.aim.sights",
+            "headpose.vr_turn.deadzone",
+            "body"
+        ]
     );
 }
 

@@ -13,7 +13,9 @@
 //!    removed, when it has none) and the deserialization is tried again, a bounded number of
 //!    times. One bad value costs one setting, not the file.
 //! 3. The settings whose types admit unusable values are validated ([`crate::config::validate`]),
-//!    and a subtree that fails is reset to its defaults.
+//!    The checks name the setting that fails, so that setting is reset to its default (or the
+//!    group around it, when the default fails too) and the check runs again; a subtree is reset
+//!    whole only when that does not make it pass.
 //!
 //! Lists merge element by element when the file's list is as long as the default one (a vector
 //! or a fixed-size array); a list of another length replaces the default whole, so a list that can
@@ -21,6 +23,7 @@
 
 use std::fmt;
 
+use serde::{Serialize, de::DeserializeOwned};
 use toml::{Table, Value};
 
 use crate::{
@@ -273,10 +276,13 @@ fn reset(merged: &mut Value, defaults: &Value, steps: &[Step]) -> Option<String>
     None
 }
 
-/// Reset each validated subtree that fails its checks to its defaults. The sight corrections are
-/// measured rather than chosen, so a failure elsewhere in the controller settings keeps them.
+/// Reset the settings that fail their checks. The controller and VR turn checks name the setting
+/// that fails, so that setting is reset alone (or the group around it, when its default does not
+/// pass either), and the subtree is reset whole only when that does not make it pass. The sight
+/// corrections are measured rather than chosen, so a failure elsewhere in the controller settings
+/// keeps them.
 fn validate_subtrees(config: &mut Config, report: &mut LoadReport) {
-    let mut fail = |path: &str, error: validate::Invalid| {
+    let fail = |report: &mut LoadReport, path: &str, error: validate::Invalid| {
         report.reset.push(Reset {
             path: path.to_owned(),
             reason: error.to_string(),
@@ -284,22 +290,96 @@ fn validate_subtrees(config: &mut Config, report: &mut LoadReport) {
     };
     if let Err(error) = validate::sights(&config.controllers.aim.sights) {
         config.controllers.aim.sights = SightTable::EMPTY;
-        fail("controllers.aim.sights", error);
+        fail(report, "controllers.aim.sights", error);
     }
-    if let Err(error) = validate::controllers(&config.controllers) {
+    if let Err(error) = reset_named(
+        &mut config.controllers,
+        &ControllersConfig::new(),
+        "controllers",
+        validate::controllers,
+        report,
+    ) {
         let sights = config.controllers.aim.sights;
         config.controllers = ControllersConfig::new();
         config.controllers.aim.sights = sights;
-        fail("controllers", error);
+        fail(report, "controllers", error);
     }
-    if let Err(error) = validate::vr_turn(&config.headpose.vr_turn) {
+    if let Err(error) = reset_named(
+        &mut config.headpose.vr_turn,
+        &VrTurnConfig::new(),
+        "headpose.vr_turn",
+        validate::vr_turn,
+        report,
+    ) {
         config.headpose.vr_turn = VrTurnConfig::new();
-        fail("headpose.vr_turn", error);
+        fail(report, "headpose.vr_turn", error);
     }
     if let Err(error) = config.body.validate() {
         config.body = Config::new().body;
-        fail("body", validate::Invalid(error.to_string()));
+        fail(report, "body", validate::Invalid(error.to_string()));
     }
+}
+
+/// Reset the settings of `value` that `check` names, one at a time, until it passes. `prefix` is
+/// `value`'s path in the configuration, and each reset is reported under it. A setting is replaced
+/// by its value in `defaults`, or, when it already has that value, the group enclosing it is
+/// ([`reset`]). Returns the check's error when a failure names no setting that can be reset, or
+/// the resets run out, so that the caller resets `value` whole.
+fn reset_named<T: Serialize + DeserializeOwned>(
+    value: &mut T,
+    defaults: &T,
+    prefix: &str,
+    check: impl Fn(&T) -> Result<(), validate::Invalid>,
+    report: &mut LoadReport,
+) -> Result<(), validate::Invalid> {
+    let Ok(defaults) = Value::try_from(defaults) else {
+        return check(value);
+    };
+    for _ in 0..MAX_RESETS {
+        let Err(error) = check(value) else {
+            return Ok(());
+        };
+        let Ok(mut tree) = Value::try_from(&*value) else {
+            return Err(error);
+        };
+        let Some(path) = reset(&mut tree, &defaults, &named_steps(&error.0)) else {
+            return Err(error);
+        };
+        let Ok(reset_value) = tree.try_into::<T>() else {
+            return Err(error);
+        };
+        *value = reset_value;
+        report.reset.push(Reset {
+            path: format!("{prefix}.{path}"),
+            reason: error.to_string(),
+        });
+    }
+    check(value)
+}
+
+/// The path a validation message leads with ([`validate::Invalid`]), in `a.b[2].c` form. A
+/// message that does not lead with one gives a path that names nothing in the tree, which
+/// [`reset`] does not reset.
+fn named_steps(message: &str) -> Vec<Step> {
+    let Some(token) = message.split_whitespace().next() else {
+        return Vec::new();
+    };
+    let mut steps = Vec::new();
+    for segment in token.trim_end_matches([':', ',']).split('.') {
+        let (key, mut indices) = segment.split_once('[').unwrap_or((segment, ""));
+        if key.is_empty() {
+            return Vec::new();
+        }
+        steps.push(Step::Key(key.to_owned()));
+        while let Some((index, rest)) = indices.split_once(']') {
+            let Ok(index) = index.parse() else {
+                return steps;
+            };
+            steps.push(Step::Index(index));
+            indices = rest.strip_prefix('[').unwrap_or(rest);
+        }
+    }
+    steps
 }
 
 fn child(path: &[Step], step: Step) -> Vec<Step> {
@@ -360,4 +440,35 @@ fn display(steps: &[Step]) -> String {
         }
     }
     path
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    fn key(key: &str) -> Step {
+        Step::Key(key.to_owned())
+    }
+
+    #[test]
+    fn a_validation_message_names_its_setting() {
+        assert_eq!(
+            named_steps("hands.reach_t must be finite and in [0, 1], got 5"),
+            [key("hands"), key("reach_t")]
+        );
+        assert_eq!(
+            named_steps("weapons.grenade.warning_interval_s[2] must be finite"),
+            [
+                key("weapons"),
+                key("grenade"),
+                key("warning_interval_s"),
+                Step::Index(2)
+            ]
+        );
+        assert_eq!(named_steps("a.b: bad"), [key("a"), key("b")]);
+        assert_eq!(named_steps(""), []);
+        assert_eq!(named_steps("..."), []);
+    }
 }
