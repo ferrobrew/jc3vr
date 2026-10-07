@@ -630,7 +630,7 @@ const SCHEME_LABELS: [&str; 3] = ["AUTOMATIC", "CONTROLLERS", "GAMEPAD"];
 const HANDS: [Hand; 2] = [Hand::Left, Hand::Right];
 /// By [`ReloadButton::ALL`].
 const RELOAD_BUTTON_LABELS: [&str; 2] = ["EJECT", "GAME RELOAD"];
-const POUCH_SIDE_LABELS: [&str; 2] = ["DOMINANT SIDE", "OFF-HAND SIDE"];
+const POUCH_SIDE_LABELS: [&str; 2] = ["GUN HAND SIDE", "FREE HAND SIDE"];
 const HAND_LABELS: [&str; 2] = ["LEFT", "RIGHT"];
 
 const DIRECTIONS: [LocomotionDirection; 2] =

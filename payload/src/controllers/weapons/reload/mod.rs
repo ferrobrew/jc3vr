@@ -145,6 +145,8 @@ pub(super) struct BeginInputs<'a> {
     pub config: &'a ControllersConfig,
     pub body_frame: &'a BodyFrame,
     pub dims: &'a crate::controllers::body::BodyDimensions,
+    /// The hand the pouches are laid out around ([`volumes::gun_side`]).
+    pub gun_side: Hand,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub gameplay: bool,
 }
@@ -158,6 +160,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         config,
         body_frame,
         dims,
+        gun_side,
         gameplay,
     } = *inputs;
     let reload = &config.weapons.reload;
@@ -178,13 +181,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let free = Hand::BOTH
         .into_iter()
         .find(|h| !gun_hands[h.index()] && active.hands[h.index()].is_some());
-    let pouch = volumes::magazine_pouch(
-        body_frame,
-        dims,
-        &config.weapons.pouches,
-        config.acting_hand(),
-        free,
-    );
+    let pouch = volumes::magazine_pouch(body_frame, dims, &config.weapons.pouches, gun_side, free);
     if free.is_some() {
         candidates.push(pouch);
     }

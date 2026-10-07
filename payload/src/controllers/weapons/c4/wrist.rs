@@ -1,10 +1,13 @@
-//! The wrist detonator: a button on the inside of the off-hand's wrist that the dominant hand's
-//! index fingertip presses to detonate the placed charges.
+//! The wrist detonator: a button on the inside of one wrist that the other hand's index fingertip
+//! presses to detonate the placed charges. The pressing hand is the hand the guns ride
+//! ([`crate::controllers::weapons::volumes::gun_side`], named by [`TickInputs::presser`]), and the
+//! button is on the other: a gun can ride the hand that is not the player's dominant one, and the
+//! button belongs on the hand that the pouches leave free.
 //!
-//! On each input tick the button is placed on the off-hand where the hand is drawn (its grip in
-//! [`hands::active_hands`], the poses the rendered hands follow), and the dominant fingertip is
+//! On each input tick the button is placed on its hand where the hand is drawn (its grip in
+//! [`hands::active_hands`], the poses the rendered hands follow), and the pressing fingertip is
 //! read from the controller frame (its tracked skeleton, or an estimate from its controller) and
-//! carried with the dominant hand to where that hand is drawn ([`press::carry`]). The press
+//! carried with its hand to where that hand is drawn ([`press::carry`]). The press
 //! detector ([`press`]) and the drawn button therefore share one frame: the finger the player sees
 //! touching the button is the one that presses it, whatever the body-scale remap or the two-handed
 //! pose does to the hands.
@@ -85,6 +88,9 @@ pub fn status() -> WristStatus {
 pub(crate) struct TickInputs {
     /// Whether the detonator may act this tick: its toggle is on and the hands are active.
     pub acting: bool,
+    /// The hand whose fingertip presses the button, which sits on the other hand's wrist: the hand
+    /// the guns ride ([`crate::controllers::weapons::volumes::gun_side`]).
+    pub presser: Hand,
     pub dt: f32,
 }
 
@@ -100,13 +106,13 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         return;
     };
     let tuning = &config.weapons.c4.detonator;
-    let dominant = config.acting_hand();
-    let off = dominant.other();
+    let presser = inputs.presser;
+    let off = presser.other();
     let drawn = active.hands;
     let face = drawn[off.index()].and_then(|hand| press::button_face(off, hand.grip, tuning));
     let tip = frame::with_latest(|frame| {
-        let dom = frame.hand(dominant);
-        let drawn = drawn[dominant.index()]?;
+        let dom = frame.hand(presser);
+        let drawn = drawn[presser.index()]?;
         if !(dom.active && dom.aim.is_valid() && dom.grip.is_valid()) {
             return None;
         }
@@ -120,7 +126,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             Some(j) if j[press::INDEX_TIP_JOINT].valid => FingertipSourceKind::Skeleton,
             _ => FingertipSourceKind::Estimate,
         };
-        let tip = press::fingertip(dominant, source, tuning);
+        let tip = press::fingertip(presser, source, tuning);
         Some((press::carry(tip, dom.grip.pose, drawn.grip), kind))
     })
     .flatten();
@@ -163,7 +169,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             }
         } else {
             tracing::info!(target: "controllers", "wrist detonator: pressed with no charges placed");
-            haptics::pulse(dominant, tuning.empty_pulse, PulseSource::C4);
+            haptics::pulse(presser, tuning.empty_pulse, PulseSource::C4);
         }
     }
     let Some(face) = face.filter(|_| tuning.overlay && config.overlay.enabled) else {

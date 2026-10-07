@@ -91,7 +91,7 @@ impl Default for HolstersConfig {
 }
 
 /// The pouches on the front of the body (see [`crate::controllers::weapons::volumes`]): the
-/// magazine pouch at the front of the belt on the off-hand side, and the grenade and C4 pouches on
+/// magazine pouch at the front of the belt on the free hand's side, and the grenade and C4 pouches on
 /// either side of the chest. Each is placed only while its feature is on: the grenade pouch with
 /// the grenade throw, the C4 pouch with the C4 throw, and the magazine pouch while the true reload
 /// reloads the held weapon. Offsets are given for the right side and mirrored for the left.
@@ -108,7 +108,7 @@ pub struct PouchesConfig {
     pub grenade: VolumeSpec,
     /// The C4 pouch, offset from the chest's front on its side.
     pub c4: VolumeSpec,
-    /// The universal reload pouch, offset from the belt's front on the off-hand side. It hands out
+    /// The universal reload pouch, offset from the belt's front on the free hand's side. It hands out
     /// what the held weapon takes: a magazine, a shell, a rocket, or a pod.
     pub magazine: VolumeSpec,
     /// How far outside a pouch's surface a grip press still takes from it, metres, when the hand
@@ -117,13 +117,15 @@ pub struct PouchesConfig {
     pub reach_margin_m: f32,
 }
 
-/// Which side of the chest a pouch sits on, by the player's hands.
+/// Which side of the chest a pouch sits on, by the player's hands: by the hand the guns ride
+/// ([`crate::controllers::weapons::volumes::gun_side`]), which is the dominant hand unless a gun
+/// rides the other.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PouchSide {
-    /// The dominant hand's side.
+    /// The gun hand's side.
     #[default]
     Dominant,
-    /// The off-hand's side.
+    /// The free hand's side.
     OffHand,
 }
 
@@ -132,8 +134,8 @@ impl PouchSide {
 
     pub const fn label(self) -> &'static str {
         match self {
-            PouchSide::Dominant => "dominant hand's side",
-            PouchSide::OffHand => "off-hand's side",
+            PouchSide::Dominant => "gun hand's side",
+            PouchSide::OffHand => "free hand's side",
         }
     }
 }

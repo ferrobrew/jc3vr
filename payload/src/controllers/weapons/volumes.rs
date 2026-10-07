@@ -22,9 +22,12 @@
 //! - the chest, at the middle of the shoulder joints, for the chest holster;
 //! - the chest's front on each side, below and inside the shoulder joint, for the grenade and C4
 //!   pouches ([`chest_sides`] says which pouch takes which side);
-//! - the belt's front on the off-hand side, for the magazine pouch: above the hip joints, a hand's
-//!   width from the midline, and a few centimetres in front of the eyes' vertical line, where the
-//!   belly is; seated, adjusted like the hips.
+//! - the belt's front on the side of the hand without a gun, for the magazine pouch: above the hip
+//!   joints, a hand's width from the midline, and a few centimetres in front of the eyes' vertical
+//!   line, where the belly is; seated, adjusted like the hips.
+//!
+//! The pouches' sides are laid out around the hand that holds the guns ([`gun_side`]), not the
+//! dominant hand, because the gun can ride the other hand.
 //!
 //! The landmarks of the chest's and the belt's front are on the body's surface, and each pouch's
 //! offset carries it out in front of the surface, where a hand laid on the body closes.
@@ -188,17 +191,28 @@ pub struct ChestSides {
     pub c4: Hand,
 }
 
-/// The chest's sides for a player whose dominant hand is `dominant`: the grenade pouch on the side
-/// `pouches.grenade_side` names, and the C4 pouch on the other, so the two never share a side.
-pub fn chest_sides(pouches: &PouchesConfig, dominant: Hand) -> ChestSides {
+/// The chest's sides for a player whose guns ride `gun_side` (see [`gun_side`]): the grenade pouch
+/// on the side `pouches.grenade_side` names, and the C4 pouch on the other, so the two never share
+/// a side.
+pub fn chest_sides(pouches: &PouchesConfig, gun_side: Hand) -> ChestSides {
     let grenade = match pouches.grenade_side {
-        PouchSide::Dominant => dominant,
-        PouchSide::OffHand => dominant.other(),
+        PouchSide::Dominant => gun_side,
+        PouchSide::OffHand => gun_side.other(),
     };
     ChestSides {
         grenade,
         c4: grenade.other(),
     }
+}
+
+/// The hand the body's pouches are laid out around: the hand holding a gun, `holder`, or with none
+/// drawn, the hand that last held one, `last_holder`, or with none yet, the dominant hand. A
+/// single gun stays on the hand attach bone the game gives it whichever hand is dominant, so a
+/// left-handed player can hold the gun in the right hand, and a layout keyed off the dominant hand
+/// would then put the magazine pouch on the gun's side, out of the free hand's reach. Remembering
+/// the last holder keeps the pouches from changing sides each time a gun is holstered.
+pub fn gun_side(holder: Option<Hand>, last_holder: Option<Hand>, dominant: Hand) -> Hand {
+    holder.or(last_holder).unwrap_or(dominant)
 }
 
 /// The grenade pouch on the front of the chest, a volume either hand may grab (whichever grabs it
@@ -207,9 +221,9 @@ pub fn grenade_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     pouches: &PouchesConfig,
-    dominant: Hand,
+    gun_side: Hand,
 ) -> Candidate {
-    let side = chest_sides(pouches, dominant).grenade;
+    let side = chest_sides(pouches, gun_side).grenade;
     chest_pouch(
         GrabVolume::GrenadePouch,
         frame,
@@ -225,24 +239,24 @@ pub fn c4_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     pouches: &PouchesConfig,
-    dominant: Hand,
+    gun_side: Hand,
 ) -> Candidate {
-    let side = chest_sides(pouches, dominant).c4;
+    let side = chest_sides(pouches, gun_side).c4;
     chest_pouch(GrabVolume::C4Pouch, frame, dims, &pouches.c4, side)
 }
 
-/// The universal reload pouch at the front of the belt on the off-hand side, a volume for
-/// `grabber`, the hand without a gun (see [`crate::controllers::weapons::reload`]), which is the
-/// off-hand while the dominant hand holds the gun. A gun's well pushed onto it reloads in one hand,
-/// so it is placed whether or not a hand is free.
+/// The universal reload pouch at the front of the belt, a volume for `grabber`, the hand without a
+/// gun (see [`crate::controllers::weapons::reload`]), on that hand's side; with no hand free, on the
+/// side away from the guns, `gun_side`. A gun's well pushed onto it reloads in one hand, so it is
+/// placed whether or not a hand is free.
 pub fn magazine_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     pouches: &PouchesConfig,
-    dominant: Hand,
+    gun_side: Hand,
     grabber: Option<Hand>,
 ) -> Candidate {
-    let side = dominant.other();
+    let side = grabber.unwrap_or(gun_side.other());
     place(
         GrabVolume::MagazinePouch,
         belt(frame, dims, side),

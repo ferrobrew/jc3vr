@@ -214,6 +214,33 @@ fn a_left_handed_layout_mirrors_a_right_handed_one() {
 }
 
 #[test]
+fn the_pouches_are_laid_out_around_the_gun_hand_not_the_dominant_hand() {
+    // A left-handed player whose gun rides the right hand: the free hand is the left.
+    let side = gun_side(Some(Hand::Right), None, Hand::Left);
+    assert_eq!(side, Hand::Right);
+    let magazine = magazine_pouch(&STANDING, &DIMS, &POUCHES, side, Some(Hand::Left));
+    assert!(magazine.centre.x < 0.0, "{}", magazine.centre);
+    assert_eq!(magazine.hand, Some(Hand::Left));
+    // The free hand decides the side even against the gun side, and with no hand free the pouch
+    // is on the side away from the guns.
+    let free_right = magazine_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, Some(Hand::Right));
+    assert!(free_right.centre.x > 0.0);
+    let both_held = magazine_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, None);
+    assert!(both_held.centre.x < 0.0);
+    // The grenades go on the gun hand's side by default.
+    let grenade = grenade_pouch(&STANDING, &DIMS, &POUCHES, side);
+    assert!(grenade.centre.x > 0.0);
+    // Holstered, the layout stays where the last gun had it, and falls back on the dominant hand
+    // before any gun is drawn.
+    assert_eq!(gun_side(None, Some(Hand::Right), Hand::Left), Hand::Right);
+    assert_eq!(gun_side(None, None, Hand::Left), Hand::Left);
+    assert_eq!(
+        gun_side(Some(Hand::Left), Some(Hand::Right), Hand::Right),
+        Hand::Left
+    );
+}
+
+#[test]
 fn the_grenade_side_can_be_overridden_and_the_c4_takes_the_other() {
     for dominant in Hand::BOTH {
         let sides = chest_sides(&POUCHES, dominant);

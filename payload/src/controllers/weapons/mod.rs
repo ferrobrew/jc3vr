@@ -262,6 +262,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .map(|w| w.wielded.hands);
 
     let mut state = STATE.lock();
+    let holder = weapon.and_then(|w| w.holder);
+    let gun_side = volumes::gun_side(holder, state.last_holder, config.acting_hand());
+    state.last_holder = holder.or(state.last_holder);
+    state.gun_side = gun_side;
     let geometry = weapon
         .filter(|w| w.two_handed && gameplay)
         .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
@@ -285,16 +289,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 &body_frame,
                 &dims,
                 pouches,
-                config.acting_hand(),
+                gun_side,
             ));
         }
         if config.weapons.c4_throw {
-            candidates.push(volumes::c4_pouch(
-                &body_frame,
-                &dims,
-                pouches,
-                config.acting_hand(),
-            ));
+            candidates.push(volumes::c4_pouch(&body_frame, &dims, pouches, gun_side));
         }
     }
     candidates.extend(reload::begin_tick(&reload::BeginInputs {
@@ -303,6 +302,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         config: &config,
         body_frame: &body_frame,
         dims: &dims,
+        gun_side,
         gameplay,
     }));
     let hold = foregrip::status().hold.filter(|h| h.engaged);
@@ -386,9 +386,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     } = *inputs;
     let config = Config::lock_query(|c| c.controllers);
     let active = hands::active_hands_raw();
-    let (weapon, gameplay) = {
+    let (weapon, gameplay, gun_side) = {
         let state = STATE.lock();
-        (state.weapon, state.gameplay)
+        (state.weapon, state.gameplay, state.gun_side)
     };
 
     let foregrip_grab = grabs
@@ -482,6 +482,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     c4::wrist::input_tick(
         &c4::wrist::TickInputs {
             acting: config.weapons.wrist_detonator && active.is_some(),
+            presser: gun_side,
             dt,
         },
         &config,
@@ -573,6 +574,11 @@ struct State {
     placed: Vec<Candidate>,
     grab_points: [Option<Vec3>; 2],
     last_miss_log: Option<Instant>,
+    /// The hand that last held a gun, kept while none is drawn.
+    last_holder: Option<Hand>,
+    /// The tick's hand the pouches and the wrist detonator are laid out around
+    /// ([`volumes::gun_side`]).
+    gun_side: Hand,
 }
 
 impl State {
@@ -647,6 +653,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     placed: Vec::new(),
     grab_points: [None; 2],
     last_miss_log: None,
+    last_holder: None,
+    gun_side: Hand::Right,
 });
 
 /// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,
