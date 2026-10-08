@@ -27,6 +27,8 @@ pub enum Cause {
     Pickup,
     /// A gun taken out of a living character's hands.
     Steal,
+    /// A weapon taken off a rack, or the copy a rack hands out.
+    Rack,
 }
 
 impl Cause {
@@ -35,6 +37,7 @@ impl Cause {
             Cause::Draw => "draw",
             Cause::Pickup => "pickup",
             Cause::Steal => "taken from a character",
+            Cause::Rack => "rack",
         }
     }
 }
@@ -255,9 +258,9 @@ mod tests {
             Some(Cause::Steal),
             "a handover keeps the origin"
         );
-        h.begin(Hand::Right, Cause::Pickup, None);
+        h.begin(Hand::Right, Cause::Rack, None);
         h.observe(Some(PISTOL), Hand::Right, TICK);
-        assert_eq!(h.origin(), Some(Cause::Pickup));
+        assert_eq!(h.origin(), Some(Cause::Rack));
         h.observe(None, Hand::Right, TICK);
         assert_eq!(
             h.origin(),

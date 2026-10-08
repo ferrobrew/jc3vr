@@ -2858,6 +2858,17 @@ impl WeaponBase {
             f(self as *const Self as _)
         }
     }
+    /// Shows or hides the weapon's guns and their components. Showing with `fade` fades the
+    /// guns' models in. A weapon in the
+    /// [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) state is shown only
+    /// with `force`. Hiding takes effect at once. A hand grenade picked up hides itself this
+    /// way before it despawns, and a placement rule hides a weapon it places invisible.
+    pub unsafe fn SetVisible(&mut self, visible: bool, fade: bool, force: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SetVisible).read();
+            f(self as *mut Self as _, visible, fade, force)
+        }
+    }
 }
 impl WeaponBase {
     /// The offset of the embedded `CGameObject` subobject, which the `CGameObject` overrides
@@ -3211,10 +3222,24 @@ pub struct WeaponBaseVftable {
     pub GetTuningBase: unsafe extern "system" fn(
         this: *const crate::equipment::weapon::WeaponBase,
     ) -> *const ::std::ffi::c_void,
+    _vfunc_58: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+    ),
+    /// Shows or hides the weapon's guns and their components. Showing with `fade` fades the
+    /// guns' models in. A weapon in the
+    /// [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) state is shown only
+    /// with `force`. Hiding takes effect at once. A hand grenade picked up hides itself this
+    /// way before it despawns, and a placement rule hides a weapon it places invisible.
+    pub SetVisible: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+        visible: bool,
+        fade: bool,
+        force: bool,
+    ),
 }
 fn _WeaponBaseVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x1D0], WeaponBaseVftable>([0u8; 0x1D0]);
+        ::std::mem::transmute::<[u8; 0x1E0], WeaponBaseVftable>([0u8; 0x1E0]);
     }
     unreachable!()
 }

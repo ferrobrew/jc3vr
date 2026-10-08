@@ -369,7 +369,12 @@ pub struct Character {
     /// [`HumanIK`](crate::animation::ik::HumanIK) for the per-pass lifecycle.
     pub m_HIK: crate::animation::ik::HumanIK,
     pub m_AnimatedModel: crate::character::character::AnimatedModel,
-    _field_19c0: [u8; 1680],
+    _field_19c0: [u8; 72],
+    /// The character's user side of the interaction system: the interaction graphs near it and
+    /// the entries it could take. Its getter (`CCharacter::GetInteractionUserProxy`) is mislabelled
+    /// `CContextAction::GetSecondaryOccupant` by the disassembler.
+    pub m_InteractionUserProxy: crate::interaction::InteractionUserProxy,
+    _field_1c30: [u8; 1056],
     /// The character's physics-side body instance. The movement actuators drive the character
     /// through it: they write the wanted velocity into its input and its orientation through
     /// [`SetOrientation`](crate::physics::PfxCharacterInstance::SetOrientation).

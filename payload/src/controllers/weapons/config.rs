@@ -643,6 +643,9 @@ pub struct HoldConfig {
     /// go of it and staggers, and the gun goes straight into the grabbing hand. Needs
     /// `direct_pickup`.
     pub steal: bool,
+    /// Take a weapon off a rack with a grab of it: the weapon the rack holds, or for a rack with
+    /// unlimited stock a copy, goes straight into the grabbing hand. Needs `direct_pickup`.
+    pub racks: bool,
     /// The radius of the grab volumes along a gun in a character's hands or on a rack, metres.
     pub take_radius_m: f32,
     /// Slide a gun taken off the ground, out of a character's hands, or off a rack from where it
@@ -664,6 +667,7 @@ impl HoldConfig {
             drop_replaced: true,
             second_weapon: true,
             steal: true,
+            racks: true,
             take_radius_m: 0.1,
             take_slide: true,
         }

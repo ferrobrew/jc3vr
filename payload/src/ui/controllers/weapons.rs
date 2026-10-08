@@ -304,11 +304,12 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         h.origin.map_or("the game's draw", Cause::label)
     ));
     ui.label(format!(
-        "Takes: guns in hands near {} · on racks near {} · taken from hands {} · off racks {} · last refusal: {}",
+        "Takes: guns in hands near {} · on racks near {} · taken from hands {} · off racks {} · rack copies {} · last refusal: {}",
         h.take.held_targets,
         h.take.rack_targets,
         h.take.steals,
         h.take.rack_takes,
+        h.take.rack_copies,
         h.take.last_refusal.as_deref().unwrap_or("none")
     ));
     ui.label(format!(
@@ -734,6 +735,10 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
     ui.add_enabled_ui(h.direct_pickup, |ui| {
         ui.checkbox(&mut h.steal, "Take guns out of characters' hands")
             .on_hover_text("A grab of a gun a character holds takes it; the character staggers.");
+        ui.checkbox(&mut h.racks, "Take weapons off racks")
+            .on_hover_text(
+                "A grab of a weapon on a rack takes it, or the copy the rack hands out.",
+            );
         ui.checkbox(&mut h.take_slide, "Slide taken guns into the hand")
             .on_hover_text("A gun taken from the world slides from where it was into the hand.");
         ui.add(

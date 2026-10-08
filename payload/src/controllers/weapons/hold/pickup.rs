@@ -14,6 +14,10 @@
 //! pickup the animation forbids
 //! ([`Inventory::GetAnimationAllowsPickup`](jc3gi::character::inventory::Inventory::GetAnimationAllowsPickup))
 //! are refused, and the caller falls back to the use-item click.
+//!
+//! A weapon on a rack is taken the same way, after the call that starts the game's own pickup of
+//! it ([`WeaponBase::PickupStart`]), which takes it out of the rack's state and tells the rack it
+//! was picked up; the pickup animation that would complete it is never queued.
 
 use std::fmt;
 
@@ -42,6 +46,8 @@ pub enum Refusal {
     NoCharacter,
     /// The weapon is no longer lying in the world.
     NotDropped,
+    /// The weapon is no longer on its rack.
+    NotOnRack,
     /// The weapon's slot is out of range.
     UnknownSlot,
     /// A hand grenade: the game collects it by proximity.
@@ -67,6 +73,7 @@ impl fmt::Display for Refusal {
         let why = match self {
             Refusal::NoCharacter => "there is no local player",
             Refusal::NotDropped => "the weapon is not lying in the world",
+            Refusal::NotOnRack => "the weapon is not on its rack",
             Refusal::UnknownSlot => "the weapon's slot is out of range",
             Refusal::Grenade => "a hand grenade is collected by the game",
             Refusal::InfinitePickup => "the weapon gives a copy when picked up",
@@ -106,8 +113,11 @@ pub(crate) unsafe fn take(
     options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::NoCharacter)?;
-    if weapon.m_State != WeaponState::E_WS_DROPPED {
-        return Err(Refusal::NotDropped);
+    let from_rack = options.cause == Cause::Rack;
+    match (from_rack, weapon.m_State) {
+        (false, WeaponState::E_WS_DROPPED) | (true, WeaponState::E_WS_WEAPON_RACK) => {}
+        (false, _) => return Err(Refusal::NotDropped),
+        (true, _) => return Err(Refusal::NotOnRack),
     }
     let slot = unsafe { takeable(owner, weapon) }?;
     let address = weapon as *mut WeaponBase as usize;
@@ -126,8 +136,10 @@ pub(crate) unsafe fn take(
     if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
         dual_wield::attach::begin_draw(hand);
     }
-    let activator = (owner as *mut Character as usize + Character::GAME_OBJECT_BASE_OFFSET as usize)
-        as *mut GameObject;
+    let activator = activator(owner);
+    if from_rack {
+        unsafe { weapon.PickupStart(activator) };
+    }
     unsafe { weapon.PickupItem(activator) };
     let wielded = unsafe { gun::held_weapon(owner) }
         .is_some_and(|held| held as *const WeaponBase as usize == address);
@@ -176,6 +188,12 @@ pub(crate) unsafe fn takeable(
         return Err(Refusal::AnimationForbids);
     }
     Ok(slot)
+}
+
+/// `owner`'s game-object subobject, which the pickups take as their activator.
+pub(crate) fn activator(owner: &mut Character) -> *mut GameObject {
+    (owner as *mut Character as usize + Character::GAME_OBJECT_BASE_OFFSET as usize)
+        as *mut GameObject
 }
 
 /// The world pose of `weapon`'s first gun.

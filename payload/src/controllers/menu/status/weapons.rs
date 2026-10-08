@@ -41,6 +41,19 @@ pub(super) fn takes() -> Line {
     ))
 }
 
+pub(super) fn racks() -> Line {
+    if !read_config(|c| c.controllers.weapons.hold.racks) {
+        return Line::off("");
+    }
+    let take = hold::status().take;
+    Line::ok(format_smolstr!(
+        "{} NEAR, {} TAKEN, {} COPIES",
+        take.rack_targets,
+        take.rack_takes,
+        take.rack_copies
+    ))
+}
+
 fn hand(hand: Hand) -> Line {
     if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");
@@ -67,6 +80,8 @@ enum HowHeld {
     Docked,
     PickedUp,
     Stolen,
+    /// Taken off a rack, or a rack's copy.
+    Rack,
     /// Drawn by the game on its own (the weapon wheel, a switch, an automatic draw).
     Game,
     /// Held as the second weapon, taken from its place on the body.
@@ -79,6 +94,7 @@ impl HowHeld {
             HowHeld::Docked => "DOCKED",
             HowHeld::PickedUp => "PICKED UP",
             HowHeld::Stolen => "STOLEN",
+            HowHeld::Rack => "RACK",
             HowHeld::Game => "GAME'S DRAW",
             HowHeld::Second => "SECOND, DOCKED",
         }
@@ -106,6 +122,7 @@ fn in_hand(
             Some(Cause::Draw) => HowHeld::Docked,
             Some(Cause::Pickup) => HowHeld::PickedUp,
             Some(Cause::Steal) => HowHeld::Stolen,
+            Some(Cause::Rack) => HowHeld::Rack,
             None => HowHeld::Game,
         },
     ))

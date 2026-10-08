@@ -36,10 +36,8 @@ impl Weak {
 
     /// A strong reference to the object, while it still lives.
     pub(crate) fn lock(&self) -> Option<Strong> {
-        let mut strong = Strong(null_shared());
         // SAFETY: the weak reference keeps its control block alive.
-        unsafe { self.0.Lock(&mut strong.0) };
-        (!strong.0.px.is_null()).then_some(strong)
+        unsafe { Strong::lock(&self.0) }
     }
 }
 
@@ -60,6 +58,37 @@ pub(crate) struct Strong(SharedPtr<GameObject>);
 // SAFETY: as for `Weak`; the object stays alive while the reference is held, and the mod acts on it
 // only on the threads its own rules allow.
 unsafe impl Send for Strong {}
+
+impl Strong {
+    /// A strong reference to what the engine's weak reference `weak` refers to, while it still
+    /// lives.
+    ///
+    /// # Safety
+    ///
+    /// `weak` must be a live weak reference.
+    pub(crate) unsafe fn lock(weak: &WeakPtrGameObject) -> Option<Self> {
+        let mut strong = Strong(null_shared());
+        unsafe { weak.Lock(&mut strong.0) };
+        (!strong.0.px.is_null()).then_some(strong)
+    }
+
+    /// Take over a strong reference the engine writes through `fill`, which nothing else
+    /// releases.
+    ///
+    /// # Safety
+    ///
+    /// `fill` must leave a strong reference, or a null one, in the pointer it is given.
+    pub(crate) unsafe fn filled(fill: impl FnOnce(*mut SharedPtr<GameObject>)) -> Option<Self> {
+        let mut strong = Strong(null_shared());
+        fill(&mut strong.0);
+        (!strong.0.px.is_null()).then_some(strong)
+    }
+
+    /// The object's `CGameObject` subobject.
+    pub(crate) fn object(&self) -> *mut GameObject {
+        self.0.px
+    }
+}
 
 impl Drop for Strong {
     fn drop(&mut self) {

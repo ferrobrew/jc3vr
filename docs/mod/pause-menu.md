@@ -171,8 +171,9 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | | `FLIP WATCH` | the grip watch's snaps and sweeps since load; a snap fails the row |
 | | `ANIMATED GRIP OFFSET` | how far the clips hold each weight class's gun from the bind pose's grip, in degrees, last seen with the hand on its controller at full weight; a diagnostic for the unverified assumption that the two agree, so it shows numbers rather than a verdict |
 | | `ATTACH BONE CHANGES` | the grip watch's attach-bone changes per hand |
-| `WEAPONS IN HAND` | `LEFT HAND`, `RIGHT HAND` | the weapon's slot in each hand and how it came there: docked, picked up, stolen, the game's draw, or the second weapon ([input/physical-weapons.md](input/physical-weapons.md)) |
+| `WEAPONS IN HAND` | `LEFT HAND`, `RIGHT HAND` | the weapon's slot in each hand and how it came there: docked, picked up, stolen, off a rack, the game's draw, or the second weapon ([input/physical-weapons.md](input/physical-weapons.md)) |
 | | `TAKE FROM HANDS` | the guns in other characters' hands within reach of a grab, and the takes since load |
+| | `TAKE FROM RACKS` | the weapons on racks within reach of a grab, the weapons racks handed over, and the copies asked of racks with unlimited stock |
 | | `LAST REFUSAL` | why the last pickup, take, draw, holster, drop, or second weapon was refused |
 | `HAND BODIES` | `CALLBACK` | whether the pre-simulation callback is registered, has fired, and fires on the game thread (else the thread's id) |
 | | `CALLBACK FIRES` | how many times it has fired |

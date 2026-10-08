@@ -278,6 +278,11 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .steal))
+        .item(config_toggle!("TAKE WEAPONS FROM RACKS", |c| c
+            .controllers
+            .weapons
+            .hold
+            .racks))
         .item(config_toggle!("SLIDE TAKEN GUNS INTO THE HAND", |c| c
             .controllers
             .weapons

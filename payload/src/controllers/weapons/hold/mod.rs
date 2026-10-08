@@ -42,7 +42,7 @@
 //! be drawn and holstered without the game's acts, sliding between its dock and the hand, and let
 //! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]). The free hand can hold
 //! a second weapon, which the mod fires ([`second`]). A free hand can also take a gun out of a
-//! living character's hands ([`steal`]), through the volumes the take places on weapons that have
+//! living character's hands ([`steal`]) or off a rack ([`rack`]), through the volumes the take places on weapons that have
 //! no body in the world ([`take`] and [`world`]).
 
 pub mod act;
@@ -51,6 +51,7 @@ pub mod equip;
 pub mod holder;
 pub mod layout;
 pub mod pickup;
+pub mod rack;
 pub(crate) mod refs;
 pub mod second;
 pub mod steal;
@@ -178,6 +179,16 @@ pub(crate) unsafe fn input_tick(
     let change = tick.holder.observe(address, fallback, dt);
     if settings.is_some() {
         took(change);
+    }
+    if let (
+        Some(Change::Took {
+            hand,
+            cause: Some(Cause::Rack),
+        }),
+        Some(address),
+    ) = (change, address)
+    {
+        rack::arrived(address, hand);
     }
     let owns = settings.is_some() && !pair_owned;
     ENABLED.store(settings.is_some(), Ordering::Relaxed);

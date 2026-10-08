@@ -21,6 +21,8 @@ use crate::controllers::{
 pub enum TargetKind {
     /// In the hands of the living character at this address.
     Held { character: usize },
+    /// On a rack, at this weapon's address.
+    Rack { weapon: usize },
 }
 
 /// A weapon a hand can take.
@@ -155,7 +157,7 @@ mod tests {
     #[test]
     fn the_volumes_line_the_gun_for_the_free_hands_only() {
         let rifle = target(
-            TargetKind::Held { character: 3 },
+            TargetKind::Rack { weapon: 3 },
             Vec3::ZERO,
             Vec3::new(0.0, 0.0, -0.6),
         );

@@ -194,7 +194,9 @@ pub(crate) unsafe fn take(
     target: &WorldTarget,
     options: TakeOptions,
 ) -> Result<WeaponSlot, StealRefusal> {
-    let TargetKind::Held { character } = target.kind;
+    let TargetKind::Held { character } = target.kind else {
+        return Err(StealRefusal::Gone);
+    };
     // Hold the character alive through the take.
     let alive = {
         let seen = SEEN.lock();
@@ -289,8 +291,9 @@ unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)
     .then_some((pointer, slot))
 }
 
-/// The gun's segment in the world and its first gun's pose.
-unsafe fn gun_points(weapon: &WeaponBase) -> Option<([Vec3; 2], Pose)> {
+/// The gun's segment in the world (the holding hand's grip, and the other hand's grip or the
+/// gun's origin) and its first gun's pose.
+pub(crate) unsafe fn gun_points(weapon: &WeaponBase) -> Option<([Vec3; 2], Pose)> {
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
     let matrix = Mat4::from(first.m_WorldMatrixT1);
     let (_, orientation, origin) = matrix.to_scale_rotation_translation();
