@@ -62,6 +62,22 @@ pub(crate) fn ammo_anchor(grip: Vec3, eye: Vec3, clearance: f32, height: f32, pu
     pull_toward(grip + WORLD_UP * (clearance + height * 0.5), eye, pull)
 }
 
+/// Whether the gun is raised to the eye to sight along it: the gun hand's `grip` within
+/// [`SIGHT_REACH_M`] of the `eye`, and the hand's aim `aim_forward` within [`SIGHT_CONE_DEG`] of
+/// the `gaze`. The weapon readout above the hand would then sit in the sight picture.
+pub(crate) fn sighting(grip: Vec3, aim_forward: Vec3, eye: Vec3, gaze: Vec3) -> bool {
+    let (Some(aim), Some(gaze)) = (aim_forward.try_normalize(), gaze.try_normalize()) else {
+        return false;
+    };
+    grip.distance(eye) <= SIGHT_REACH_M && aim.dot(gaze) >= SIGHT_CONE_DEG.to_radians().cos()
+}
+
+/// How near the eye the gun hand's grip is when the gun is raised to sight along it, metres.
+pub(crate) const SIGHT_REACH_M: f32 = 0.4;
+
+/// How far off the gaze the gun may point and still be sighted along, degrees.
+pub(crate) const SIGHT_CONE_DEG: f32 = 15.0;
+
 /// The tether readout's centre for a quad `height` metres tall: `back` metres along the forearm
 /// from the `wrist` (whose +Z points toward the elbow), then straight up in the world until the
 /// quad's lower edge is `clearance` metres above the forearm.
@@ -240,6 +256,20 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
+
+    #[test]
+    fn a_gun_raised_along_the_gaze_is_sighted() {
+        let eye = Vec3::new(0.0, 1.7, 0.0);
+        let gaze = Vec3::NEG_Z;
+        let raised = eye + Vec3::new(0.05, -0.08, -0.25);
+        assert!(sighting(raised, Vec3::NEG_Z, eye, gaze));
+        // Held at the hip, or pointed off to the side, it is not.
+        let hip = eye + Vec3::new(0.2, -0.7, -0.3);
+        assert!(!sighting(hip, Vec3::NEG_Z, eye, gaze));
+        let aside = Vec3::new(1.0, 0.0, -1.0);
+        assert!(!sighting(raised, aside, eye, gaze));
+        assert!(!sighting(raised, Vec3::ZERO, eye, gaze));
+    }
 
     #[test]
     fn the_readout_prefers_the_dominant_gun_hand() {

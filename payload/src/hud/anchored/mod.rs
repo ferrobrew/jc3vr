@@ -52,8 +52,8 @@ use crate::{
             health::{BAR_TEXELS, Bar, BarKey, HealthTrail},
             place::{
                 AmmoHand, Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
-                gun_hand, inner_wrist_pose, pull_toward, stacked_corners, upright_corners,
-                wants_attention, wrist_wanted,
+                gun_hand, inner_wrist_pose, pull_toward, sighting, stacked_corners,
+                upright_corners, wants_attention, wrist_wanted,
             },
         },
         atlas::{self, Part},
@@ -143,6 +143,10 @@ static STATE: Mutex<State> = Mutex::new(State::new());
 /// How far the hand may jump in a frame before the weapon readout snaps instead of easing, metres.
 const SNAP_M: f32 = 0.5;
 
+/// How long the weapon readout takes to fade out as the gun is raised to the eye, and back in,
+/// seconds.
+const SIGHT_FADE_S: f32 = 0.15;
+
 /// The gap between the health bar and the heat readout on the wrist, metres.
 const WRIST_GAP_M: f32 = 0.006;
 
@@ -151,6 +155,8 @@ struct State {
     ammo_hand: AmmoHand,
     ammo_position: Option<Vec3>,
     ammo_corners: Option<[Vec4; 4]>,
+    /// The weapon readout's opacity: faded out while the gun is raised to the eye.
+    ammo_alpha: f32,
     glance: Glance,
     wrist_alpha: f32,
     trail: HealthTrail,
@@ -182,6 +188,7 @@ impl State {
             ammo_hand: AmmoHand::new(),
             ammo_position: None,
             ammo_corners: None,
+            ammo_alpha: 1.0,
             glance: Glance::new(),
             wrist_alpha: 0.0,
             trail: HealthTrail::new(),
@@ -300,8 +307,20 @@ impl State {
             )
             .map(|corners| corners.map(|c| c.extend(1.0)));
             self.status.ammo_hand = Some(hand);
+            let sighted = hands[hand.index()]
+                .map(|h| h.aim.at(dtf))
+                .is_some_and(|aim| {
+                    sighting(
+                        grip.position,
+                        aim.orientation * Vec3::NEG_Z,
+                        head.position,
+                        head.orientation * Vec3::NEG_Z,
+                    )
+                });
+            self.ammo_alpha = fade(self.ammo_alpha, !sighted, dt, SIGHT_FADE_S);
         } else {
             self.ammo_position = None;
+            self.ammo_alpha = 1.0;
         }
 
         // The tether readout, above the off-hand's forearm, where the grapple fires from.
@@ -457,10 +476,16 @@ impl State {
                 )
             });
         }
-        if let Some(corners) = self.ammo_corners {
+        if let Some(corners) = self.ammo_corners.filter(|_| self.ammo_alpha > 0.0) {
             atlas::part_texture(Part::Ammo, |part| {
-                gpu.quad
-                    .draw(context, device, target, part.target.color_srv(), &corners)
+                gpu.quad.draw_faded(
+                    context,
+                    device,
+                    target,
+                    part.target.color_srv(),
+                    &corners,
+                    self.ammo_alpha,
+                )
             });
         }
         if let Some(corners) = self.tether_corners {
