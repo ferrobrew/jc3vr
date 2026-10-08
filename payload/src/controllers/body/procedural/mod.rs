@@ -77,7 +77,9 @@ use crate::{
             },
         },
         hands::ik::deferred_wrist_targets,
-        locomotion::{LocomotionStatus, status as locomotion_status},
+        locomotion::{
+            LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
+        },
     },
     headpose::{body_relative_rotation, query},
 };
@@ -874,9 +876,17 @@ fn solve_input(
     })
 }
 
-/// The player's head in the model space of the root at `world`.
+/// The player's head in the model space of the root at `world`. The view hangs from the root at
+/// its smoothed height on the ground ([`AnchorStatus::height_offset`](crate::controllers::locomotion::anchor::AnchorStatus::height_offset)), so on a stair the head
+/// trails the raw root by what the smoothing hides; that is taken back out, so the solve measures
+/// the head against the same root the view does, and a staircase does not read as a crouch.
 fn head_in_model(world: &Mat4) -> Vec3 {
-    world.inverse().transform_point3(query().position)
+    let anchor = anchor_status();
+    let hidden = anchor.height_offset * anchor.weight;
+    let hidden = if hidden.is_finite() { hidden } else { 0.0 };
+    world
+        .inverse()
+        .transform_point3(query().position - Vec3::Y * hidden)
 }
 
 /// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region
