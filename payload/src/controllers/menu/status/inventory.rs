@@ -25,7 +25,8 @@ pub(super) fn tracked() -> Line {
     let owned = s.entries.iter().filter(|e| e.location.owned()).count();
     let (_, world) = s.world();
     Line::ok(format_smolstr!(
-        "{owned} OWNED, {world} IN THE WORLD, {} RESETS",
+        "{owned} OWNED, {world} IN THE WORLD, {} WITH OTHERS, {} RESETS",
+        s.with_others(),
         s.resets
     ))
 }
@@ -141,6 +142,11 @@ pub(super) fn carried() -> Line {
         "NONE".to_owned()
     } else {
         carried.join(", ")
+    };
+    let list = if s.stashed {
+        format!("STASHED FOR A MISSION: {list}")
+    } else {
+        list
     };
     Line::ok(format_smolstr!(
         "{list}; {} DRAWN, {} PUT AWAY, {} KEPT FROM PICKUPS",

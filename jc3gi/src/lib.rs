@@ -116,6 +116,7 @@ pub mod faction;
 pub mod game;
 pub mod game_world;
 pub mod game_world_object_manager;
+pub mod graph_script;
 pub mod graphics_engine;
 pub mod hash;
 pub mod havok;

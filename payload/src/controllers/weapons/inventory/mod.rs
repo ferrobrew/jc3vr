@@ -11,6 +11,7 @@
 //!   wielded one), putting a held one onto a socket, and carrying the weapon a pickup replaces;
 //! - [`decide`]: what a grab of a socket and the second weapon's release do;
 //! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
+//! - [`missions`]: the carried weapons stashed while a mission holds the player's weapons;
 //! - [`engine`]: the engine reads behind them;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
@@ -25,6 +26,7 @@ pub(crate) mod carry;
 pub mod config;
 pub mod decide;
 pub(crate) mod engine;
+mod missions;
 pub mod persist;
 pub mod pins;
 pub mod registry;
@@ -60,6 +62,7 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(reset::hook_library())
         .with_hook_library(carry::hook_library())
+        .with_hook_library(missions::hook_library())
 }
 
 /// The inventory's readout.
@@ -74,6 +77,8 @@ pub struct InventoryStatus {
     pub forgotten: u64,
     /// The spawn system resets seen since the payload loaded.
     pub resets: u64,
+    /// Whether the carried weapons are stashed while a mission holds the player's weapons.
+    pub stashed: bool,
     /// Carried weapons drawn into a hand, held weapons put onto a socket, and weapons a pickup
     /// replaced that went onto a socket rather than the ground, since the payload loaded.
     pub draws: u64,
@@ -88,6 +93,14 @@ impl InventoryStatus {
             Location::Socket(socket) => Some((e.kind.slot, socket)),
             _ => None,
         })
+    }
+
+    /// How many of the player's weapons another character holds.
+    pub fn with_others(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|e| e.location == Location::Npc)
+            .count()
     }
 
     /// How many weapons in the world are pinned, and how many the registry knows there.
@@ -149,6 +162,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
     state.status.active = true;
     let player = engine::position(owner);
     let slots = unsafe { engine::slots(owner) };
+    unsafe { missions::input_tick(!slots.is_empty()) };
     for (seen, weapon) in &slots {
         if !state.handles.iter().any(|h| h.object == seen.object) {
             state.handles.push(Handle {
@@ -204,6 +218,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
     state.apply_pins(&inputs.settings);
     state.prune();
     state.status.entries = state.registry.entries().to_vec();
+    state.status.stashed = carry::stashed();
 }
 
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
@@ -320,6 +335,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         pins: 0,
         forgotten: 0,
         resets: 0,
+        stashed: false,
         draws: 0,
         stows: 0,
         carried_replaced: 0,

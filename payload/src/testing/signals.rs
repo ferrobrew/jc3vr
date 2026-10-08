@@ -193,6 +193,8 @@ signals! {
     InventoryStows => "inventory.stows", Counter, "Held weapons put onto a free socket.";
     InventoryRestored => "inventory.restored", Counter, "Carried weapons respawned onto their sockets after a reset or a load.";
     InventorySidecarWrites => "inventory.sidecar_writes", Counter, "Save sidecars written.";
+    InventoryStashed => "inventory.stashed", Flag, "The carried weapons are stashed while a mission holds the player's weapons.";
+    InventoryWithOthers => "inventory.with_others", Measure, "Weapons the player let go of that another character holds.";
     InventoryKept => "inventory.kept", Measure, "Weapons lying in the world the inventory keeps from the game's despawn.";
     InventoryPins => "inventory.pins", Counter, "Weapons in the world the inventory started keeping.";
     InventoryResets => "inventory.resets", Counter, "Spawn system resets the inventory saw.";
@@ -362,6 +364,8 @@ impl Signal {
             Signal::InventoryStows => count(inventory::status().stows),
             Signal::InventoryRestored => count(inventory::restore::status().restored),
             Signal::InventorySidecarWrites => count(inventory::restore::status().writes),
+            Signal::InventoryStashed => flag(inventory::status().stashed),
+            Signal::InventoryWithOthers => Value::Number(inventory::status().with_others() as f64),
             Signal::InventoryKept => Value::Number(inventory::status().world().0 as f64),
             Signal::InventoryPins => count(inventory::status().pins),
             Signal::InventoryResets => count(inventory::status().resets),

@@ -7,7 +7,8 @@
 //! until it is past the release radius, so a weapon at the edge does not flicker. At most a set
 //! number are pinned, the nearest first, since a pinned weapon keeps its resources loaded. A
 //! weapon left unpinned and far away, or beyond the most the registry keeps, is forgotten: the
-//! game's own clean-up takes it from there.
+//! game's own clean-up takes it from there. A weapon another character took is never pinned, and
+//! is forgotten once that character is as far away.
 
 use crate::controllers::weapons::inventory::registry::{Entry, EntryId, Location};
 
@@ -39,6 +40,11 @@ pub struct PinPlan {
 
 /// The pins for `entries` under `settings`.
 pub fn plan(entries: &[Entry], settings: &PinSettings) -> PinPlan {
+    let forget_m = finite_or(settings.forget_m, f32::INFINITY);
+    let npc_far = entries.iter().filter(|e| {
+        e.location == Location::Npc && e.distance_m.is_some_and(|d| d.is_finite() && d > forget_m)
+    });
+    let npc_forget: Vec<EntryId> = npc_far.map(|e| e.id).collect();
     let radius = finite_or(settings.radius_m, 0.0).max(0.0);
     let release = finite_or(settings.release_m, radius).max(radius);
     let mut world: Vec<(EntryId, Option<f32>, bool)> = entries
@@ -78,13 +84,14 @@ pub fn plan(entries: &[Entry], settings: &PinSettings) -> PinPlan {
             (false, true) => plan.unpin.push(id),
             _ => {}
         }
-        let far = distance.is_some_and(|d| d > finite_or(settings.forget_m, f32::INFINITY));
+        let far = distance.is_some_and(|d| d > forget_m);
         if !want && (far || tracked >= settings.max_tracked) {
             plan.forget.push(id);
         } else {
             tracked += 1;
         }
     }
+    plan.forget.extend(npc_forget);
     plan
 }
 
@@ -185,6 +192,17 @@ mod tests {
         };
         let p = plan(&[world(1, Some(1.0), true), world(2, None, true)], &off);
         assert_eq!(p.unpin, vec![EntryId(1), EntryId(2)]);
+    }
+
+    #[test]
+    fn a_weapon_another_character_took_is_forgotten_when_far() {
+        let mut taken = world(1, Some(80.0), false);
+        taken.location = Location::Npc;
+        let mut near = world(2, Some(5.0), false);
+        near.location = Location::Npc;
+        let p = plan(&[taken, near], &SETTINGS);
+        assert_eq!(p.forget, vec![EntryId(1)]);
+        assert!(p.pin.is_empty(), "never pinned");
     }
 
     #[test]

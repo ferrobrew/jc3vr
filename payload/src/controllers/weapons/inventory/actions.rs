@@ -119,7 +119,7 @@ pub(crate) unsafe fn socket_points(
     dominant: Hand,
     held: [Option<ObjectKey>; 2],
 ) -> Vec<SocketPoint> {
-    if !(settings.enabled && settings.carry) {
+    if !(settings.enabled && settings.carry) || carry::stashed() {
         return Vec::new();
     }
     let mut out: Vec<SocketPoint> = unsafe { carry::grips() }

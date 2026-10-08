@@ -57,6 +57,14 @@ The game's save stores only the slots, and the spawn system's reset (a load, and
 
 The game keeps one save per user, and the mod cannot name which save a load reads, so the sidecar is not keyed to a save: the fingerprint is what ties it to the save it was written with. A load of an older save, written before the last store, does not match, and nothing extra is carried.
 
+## Other characters and missions
+
+A weapon the player let go of that another character then holds (its holder is that character) is that character's: the registry shows it as with another character (`inventory: a weapon of the two-handed slot is with another character`), never pins it, and forgets it once the character is as far away as `forget_m`. Taken back (a take from the character's hands, or picked up after the character drops it), it is the same entry again.
+
+A mission that takes the player's weapons away caches the slots in a graph script's weapon cache, which forces the slots' weapons out ([`NodeWeaponCache::CacheAllWeaponSlots`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graph_script::NodeWeaponCache##func-CacheAllWeaponSlots), detoured). The carried weapons are then stashed (`inventory::missions`): a carried second weapon goes back to its socket, and every carried weapon is hidden, keeps no grab volume, and stays carried (`inventory: a mission took the player's weapons; the carried weapons are stashed`). The give-back has no seam of its own, since the game inlines it into its callers, so the carried weapons come back when a tracked slot holds a weapon again after the slots were seen empty (`inventory: a slot holds a weapon again; the carried weapons are back`): when the mission gives the slots back, but also when the player picks up any weapon in the meantime. The challenges' own weapon handling, which does not go through the cache, is not seen, and a reset unstashes them.
+
+A weapon an area clean-up takes out of the spawn system while it is carried lives on through the carry set's reference, outside the spawn system, and is recorded and respawned at the next reset as usual.
+
 ## Settings and readout
 
 The settings are `controllers.weapons.inventory`. The debug UI's Controllers tab has a `VR inventory` section listing every entry (its number, slot, tag hash, place, magazine, and distance) and the counts, and its settings under `VR inventory`. The pause menu's `VR: STATUS` page has an `INVENTORY` section: `TRACKED WEAPONS` (the weapons owned and in the world, and the resets), `CARRIED` (each carried weapon and its socket, and the draws, the weapons put away, and the weapons kept from pickups' drops), `SAVE SIDECAR` (the writes and the carried weapons in the last, or a failed write), `LAST LOAD` (what the last load made of the sidecar, and how many weapons the last respawn put back), and `KEPT IN THE WORLD` (the weapons kept of those in the world, the pins since load, and the weapons left to the game). The debug UI also has the socket counts, the socket radius, and each socket's offset. The scenario signals `inventory.kept`, `inventory.pins`, `inventory.resets`, `inventory.carried`, `inventory.draws`, `inventory.stows`, `inventory.restored`, and `inventory.sidecar_writes` read them (`testing/scenarios/inventory_keep_dropped.toml` and `inventory_two_rifles.toml`).
@@ -84,8 +92,12 @@ The settings are `controllers.weapons.inventory`. The debug UI's Controllers tab
 19. Load an older save, from before the extras: `the load carries nothing extra` with `another save's`, and none appear. `LAST LOAD` shows `ANOTHER SAVE'S SIDECAR`.
 20. Edit `inventory.toml` into nonsense and load: a warning names the file, the load is clean, and `LAST LOAD` shows `SIDECAR UNREADABLE`.
 21. With extras carried, die and respawn, and fast travel: note whether the log shows `the spawn system is resetting` for each, and whether the extras come back (`respawning ... origin=Reset`). Start a new game from the menu after a session with extras: none should come with it.
+22. Let a soldier pick up a rifle you dropped, if one does: `... is with another character`, and `TRACKED WEAPONS` counts it with others. Take it back from his hands: it is the same entry (the same number in the debug UI).
+23. Start a mission that takes the player's weapons (identify one first) with extras carried: `the carried weapons are stashed`, they vanish from the body, and their sockets cannot be grabbed. When the mission gives the weapons back: `the carried weapons are back`. Note whether picking up a weapon during the mission brings them back early.
 
 ## Unverified
+
+- Which missions use the graph script's weapon cache to take the player's weapons, whether every such mission removes the slots' weapons through it, and how the challenges strip and restore weapons.
 
 - Which game states pass through the spawn system's reset (a death, a fast travel, the frontend), whether the post-reset event is always handled after the save data's load, and whether a new game loads player save data at all; the two-minute and same-character limits on the reset's record are a guard for the new game, not a finding.
 - On which thread the game stores and loads the save data; the hooks take only the mod's own locks and read what the game's store reads.

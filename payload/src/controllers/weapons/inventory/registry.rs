@@ -108,8 +108,8 @@ pub enum Fate {
         distance_m: Option<f32>,
         magazine: i32,
     },
-    /// Another character holds it.
-    HeldByOther,
+    /// Another character holds it, at this distance from the player when it could be read.
+    HeldByOther { distance_m: Option<f32> },
     /// The object is gone.
     Gone,
 }
@@ -267,8 +267,8 @@ impl Registry {
                         _ => Location::World { pinned: false },
                     }
                 }
-                Fate::HeldByOther => {
-                    entry.distance_m = None;
+                Fate::HeldByOther { distance_m } => {
+                    entry.distance_m = distance_m;
                     Location::Npc
                 }
                 Fate::Gone => {
@@ -541,10 +541,16 @@ mod tests {
             ..Observation::default()
         });
         r.observe(&Observation {
-            fates: vec![(RIFLE, Fate::HeldByOther)],
+            fates: vec![(
+                RIFLE,
+                Fate::HeldByOther {
+                    distance_m: Some(4.0),
+                },
+            )],
             ..Observation::default()
         });
         assert_eq!(location(&r, RIFLE), Some(Location::Npc));
+        assert_eq!(r.find(RIFLE).unwrap().distance_m, Some(4.0));
         assert!(!Location::Npc.owned());
         r.observe(&Observation {
             carried: vec![],

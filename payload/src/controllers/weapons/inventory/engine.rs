@@ -126,11 +126,11 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
     // SAFETY: the strong reference keeps the weapon alive while it is read.
     let weapon = unsafe { &*weapon_of(&strong) };
     let holder = weapon.m_Holder.px as usize;
+    let distance_m = unsafe { origin(weapon) }.map(|at| at.distance(player));
     if weapon.m_State != WeaponState::E_WS_DROPPED && holder != 0 && holder != player_object(owner)
     {
-        return Fate::HeldByOther;
+        return Fate::HeldByOther { distance_m };
     }
-    let distance_m = unsafe { origin(weapon) }.map(|at| at.distance(player));
     Fate::Lying {
         distance_m,
         magazine: weapon.m_MagazineAmmo,

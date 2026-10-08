@@ -158,6 +158,8 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `inventory.carried` | measure | Weapons the VR inventory carries beyond the slots. |
 | `inventory.draws`, `.stows` | counter | Carried weapons drawn off their sockets, and held weapons put onto a free socket. |
 | `inventory.restored`, `.sidecar_writes` | counter | Carried weapons respawned onto their sockets after a reset or a load, and save sidecars written. |
+| `inventory.stashed` | flag | The carried weapons are stashed while a mission holds the player's weapons. |
+| `inventory.with_others` | measure | Weapons the player let go of that another character holds. |
 | `inventory.kept` | measure | Weapons lying in the world the VR inventory keeps from the game's despawn. |
 | `inventory.pins`, `.resets` | counter | Weapons in the world the inventory started keeping, and the spawn system resets it saw. |
 | `ads.sighted`, `.shouldered`, `.welded` | counter | Times a long gun's sights came onto the eye, its stock into the shoulder, and a scope onto the eye. |

@@ -26,7 +26,7 @@
 
 use std::{
     fmt,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use detours_macro::detour;
@@ -166,6 +166,31 @@ pub(crate) fn on_socket(socket: SocketId) -> Option<ObjectKey> {
         .map(|c| c.object)
 }
 
+/// Hide the carried weapons and take their grab volumes away while a mission holds the player's
+/// weapons, or show them again with `false`. Returns whether that changed anything.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn set_stashed(stashed: bool) -> bool {
+    if STASHED.swap(stashed, Ordering::Relaxed) == stashed {
+        return false;
+    }
+    for carried in CARRY.lock().iter() {
+        // SAFETY: the set's strong reference keeps the weapon alive.
+        let weapon = unsafe { &mut *carried.weapon() };
+        if weapon.m_State == WeaponState::E_WS_HOLSTERED {
+            unsafe { weapon.SetVisible(!stashed, !stashed, false) };
+        }
+    }
+    true
+}
+
+/// Whether the carried weapons are stashed for a mission.
+pub(crate) fn stashed() -> bool {
+    STASHED.load(Ordering::Relaxed)
+}
+
 /// How many weapons are carried.
 pub(crate) fn count() -> usize {
     COUNT.load(Ordering::Relaxed)
@@ -185,6 +210,9 @@ pub(crate) fn set_offsets(offset_of: impl Fn(SocketId) -> Vec3) {
 ///
 /// The main thread, outside the world update.
 pub(crate) unsafe fn grips() -> Vec<(SocketId, Vec3)> {
+    if stashed() {
+        return Vec::new();
+    }
     CARRY
         .lock()
         .iter()
@@ -366,6 +394,7 @@ pub(crate) unsafe fn promote(
 pub(crate) fn release_all() -> usize {
     let all = std::mem::take(&mut *CARRY.lock());
     COUNT.store(0, Ordering::Relaxed);
+    STASHED.store(false, Ordering::Relaxed);
     let count = all.len();
     drop(all);
     count
@@ -381,6 +410,7 @@ pub(crate) fn release_all() -> usize {
 pub(crate) unsafe fn drop_all() {
     let all = std::mem::take(&mut *CARRY.lock());
     COUNT.store(0, Ordering::Relaxed);
+    STASHED.store(false, Ordering::Relaxed);
     for carried in &all {
         // SAFETY: the set's strong reference keeps the weapon alive until it is released below.
         let weapon = unsafe { &mut *carried.weapon() };
@@ -482,6 +512,8 @@ impl Carried {
 static CARRY: Mutex<Vec<Carried>> = Mutex::new(Vec::new());
 /// How many weapons are carried: the detours' check before any lock.
 static COUNT: AtomicUsize = AtomicUsize::new(0);
+/// Whether the carried weapons are stashed for a mission.
+static STASHED: AtomicBool = AtomicBool::new(false);
 
 fn push(carried: Carried) {
     let mut carry = CARRY.lock();
@@ -551,6 +583,7 @@ fn update_weapon_visibility(inventory: *mut Inventory, visible: bool) {
     if !ours {
         return;
     }
+    let visible = visible && !stashed();
     for carried in CARRY.lock().iter() {
         // SAFETY: the set's strong reference keeps the weapon alive.
         unsafe { (*carried.weapon()).SetVisible(visible, false, false) };

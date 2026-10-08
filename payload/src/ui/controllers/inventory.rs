@@ -44,11 +44,17 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         s.resets
     ));
     ui.label(format!(
-        "Carried: {} · drawn {} · put away {} · kept from pickups {}",
+        "Carried: {}{} · drawn {} · put away {} · kept from pickups {} · with others {}",
         s.carried().count(),
+        if s.stashed {
+            " (stashed for a mission)"
+        } else {
+            ""
+        },
         s.draws,
         s.stows,
-        s.carried_replaced
+        s.carried_replaced,
+        s.with_others()
     ));
     for entry in &s.entries {
         ui.label(format!(

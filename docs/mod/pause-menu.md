@@ -178,8 +178,8 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | | `LEFT HAND GRIP` | which grip the left hand took for a gun the hold put there (its own, or the right hand's mirrored), and the angle between the two |
 | | `HOLSTERS` | how many holsters were moved onto the guns docked in them on the last tick |
 | | `LAST REFUSAL` | why the last pickup, take, draw, holster, drop, or second weapon was refused |
-| `INVENTORY` | `TRACKED WEAPONS` | how many weapons the VR inventory tracks as the player's and in the world, and the spawn system resets it saw ([input/vr-inventory.md](input/vr-inventory.md)) |
-| | `CARRIED` | each weapon carried beyond the slots and its socket, the carried weapons drawn and the held ones put away since load, and the weapons pickups would have dropped that went onto a socket instead |
+| `INVENTORY` | `TRACKED WEAPONS` | how many weapons the VR inventory tracks as the player's, in the world, and with other characters, and the spawn system resets it saw ([input/vr-inventory.md](input/vr-inventory.md)) |
+| | `CARRIED` | each weapon carried beyond the slots and its socket (and whether they are stashed for a mission), the carried weapons drawn and the held ones put away since load, and the weapons pickups would have dropped that went onto a socket instead |
 | | `SAVE SIDECAR` | how many times the save sidecar has been written and how many carried weapons the last one held, or that the last write failed (the error is logged) |
 | | `LAST LOAD` | what the last load made of the sidecar (matched with the weapons to restore, none, unreadable, or another save's), and how many carried weapons the last respawn put back, from the load or the reset |
 | | `KEPT IN THE WORLD` | how many of the weapons lying in the world are kept from the game's despawn, the pins since load, and the weapons left to the game |
