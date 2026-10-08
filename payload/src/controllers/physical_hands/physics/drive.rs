@@ -2,10 +2,15 @@
 //! the end of the next physics step, within the hand's strength, and the push the hand's lag gives
 //! the player.
 //!
-//! The drive is a velocity target solved once per step: the body is asked to reach its goal in one
-//! step, and the change of velocity that asks for it is capped by the hand's force and twist over
-//! the step. The physics step then integrates the velocities and resolves the body's contacts, so a
-//! hand that meets a wall stops at it, and the next step asks again, no harder than its strength.
+//! The drive is a velocity target solved once per step: the body is asked to close a share of its
+//! error in one step (all of it at a gain of one, which reaches the goal without overshooting or
+//! ringing: the discrete critically damped drive), and the change of velocity that asks for it is
+//! capped by the hand's force and twist over the step. The physics step then integrates the
+//! velocities and resolves the body's contacts, so a hand that meets a wall stops at it, and the
+//! next step asks again, no harder than its strength. A light hand body meets a light prop without
+//! throwing it, since the solver shares a contact's impulse by mass, while the force cap still lets
+//! it shove a heavy one over a few steps; a hand held back by what it meets is driven more softly
+//! ([`contact_gain`]), so it rests on a wall rather than pounding it every step.
 
 use glam::{Mat3, Quat, Vec2, Vec3};
 
@@ -77,11 +82,23 @@ pub fn drive(body: &BodyMotion, goal: &Goal, tuning: &DriveTuning, step_s: f32) 
     }
 }
 
+/// The drive's gain for a hand whose body the last step held back by `press`, the share of its
+/// strength it pressed with (`0..=1`): `gain` for a free hand, falling to `gain` times
+/// `contact_share` for one pressing as hard as it can.
+pub fn contact_gain(gain: f32, contact_share: f32, press: f32) -> f32 {
+    let press = if press.is_finite() {
+        press.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    gain * (1.0 - press * (1.0 - contact_share.clamp(0.0, 1.0)))
+}
+
 /// How a hand's lag pushes the player.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PushTuning {
-    /// The hand body's mass, kilograms.
-    pub hand_mass_kg: f32,
+    /// The stiffness of the spring between a held-back hand and its controller, newtons per metre.
+    pub stiffness_n_per_m: f32,
     /// The strongest pull of the hand, newtons.
     pub max_force_n: f32,
     /// The mass the reaction moves, kilograms.
@@ -96,7 +113,8 @@ pub struct PushTuning {
 /// body is short of the goal it was driven to on the last step, world space. A hand that tracks
 /// freely has no lag; one that a wall or an object too heavy to move stops falls behind its
 /// controller, and it pushes the player the other way as hard as the spring between the body and
-/// the controller pulls, within the hand's strength, over a step of `step_s` seconds. A lag that is
+/// the controller pulls (independent of the hand body's own mass), within the hand's strength,
+/// over a step of `step_s` seconds. A lag that is
 /// mostly vertical (pressing down on a table or the floor) does not push.
 pub fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
     if !(lag.is_finite() && step_s.is_finite() && step_s > 0.0 && tuning.body_mass_kg > 0.0) {
@@ -111,7 +129,7 @@ pub fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
         return Vec2::ZERO;
     }
     let pressed = length - tuning.deadband_m;
-    let force = (tuning.hand_mass_kg * pressed / (step_s * step_s)).min(tuning.max_force_n);
+    let force = (tuning.stiffness_n_per_m.max(0.0) * pressed).min(tuning.max_force_n);
     let speed = force * step_s / tuning.body_mass_kg;
     -horizontal.normalize_or_zero() * speed
 }
@@ -385,11 +403,45 @@ mod tests {
 
     fn push_tuning() -> PushTuning {
         PushTuning {
-            hand_mass_kg: 10.0,
+            stiffness_n_per_m: 9000.0,
             max_force_n: 5000.0,
             body_mass_kg: 90.0,
             deadband_m: 0.02,
             min_horizontal: 0.3,
+        }
+    }
+
+    #[test]
+    fn a_held_back_hand_is_driven_softly() {
+        assert_eq!(contact_gain(1.0, 0.4, 0.0), 1.0);
+        assert!((contact_gain(1.0, 0.4, 1.0) - 0.4).abs() < 1e-6);
+        assert!((contact_gain(1.0, 0.4, 0.5) - 0.7).abs() < 1e-6);
+        assert_eq!(contact_gain(0.8, 0.4, f32::NAN), 0.8);
+    }
+
+    #[test]
+    fn a_light_hand_reaches_its_goal_and_holds_still_there() {
+        // A three-kilogram hand driven at a goal 20 cm away settles on it without overshooting,
+        // however its error is closed.
+        let t = DriveTuning {
+            mass_kg: 3.0,
+            ..tuning()
+        };
+        let goal = goal(Vec3::X * 0.2);
+        for gain in [0.5, 1.0] {
+            let t = DriveTuning {
+                linear_gain: gain,
+                ..t
+            };
+            let mut body = at_rest(Vec3::ZERO);
+            for _ in 0..60 {
+                let d = drive(&body, &goal, &t, STEP);
+                body.linear = d.linear;
+                body.position += d.linear * STEP;
+                assert!(body.position.x <= 0.2 + 1e-5, "overshot at gain {gain}");
+            }
+            assert!((body.position.x - 0.2).abs() < 1e-4);
+            assert!(body.linear.length() < 1e-2);
         }
     }
 

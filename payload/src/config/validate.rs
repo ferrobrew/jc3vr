@@ -938,6 +938,17 @@ fn hand_bodies(b: &HandBodiesConfig) -> Result<(), Invalid> {
         0.0,
         1.0,
     )?;
+    range(
+        "physical_hands.bodies.contact_gain",
+        b.contact_gain,
+        0.0,
+        1.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.push_stiffness_n_per_m",
+        b.push_stiffness_n_per_m,
+        1_000_000.0,
+    )?;
     nonnegative(
         "physical_hands.bodies.max_speed_mps",
         b.max_speed_mps,

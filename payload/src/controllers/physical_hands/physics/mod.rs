@@ -83,7 +83,9 @@ use crate::{
             palm::PalmBox,
             physics::{
                 body::{BodySpec, Capsule, HandBody, player_system_group},
-                drive::{DriveTuning, Goal, PushTuning, lag_push, rig_jumped, smooth_push},
+                drive::{
+                    DriveTuning, Goal, PushTuning, contact_gain, lag_push, rig_jumped, smooth_push,
+                },
                 joint::Joint,
                 lifecycle::{ActRequest, HANDS, RenderTuning},
                 render::RenderOffset,
@@ -451,7 +453,17 @@ pub(super) unsafe fn step() {
         return;
     }
 
-    let (targets, published, world_scale, mut push, holds, rig_moves, park_now, follow_through) = {
+    let (
+        targets,
+        published,
+        world_scale,
+        mut push,
+        holds,
+        rig_moves,
+        park_now,
+        follow_through,
+        pressed,
+    ) = {
         let mut shared = SHARED.lock();
         (
             shared.targets,
@@ -467,6 +479,7 @@ pub(super) unsafe fn step() {
             shared
                 .follow_through
                 .map(|until| until.is_some_and(|at| now < at)),
+            shared.loads,
         )
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
@@ -508,7 +521,7 @@ pub(super) unsafe fn step() {
         max_turn_rad: RENDER_MAX_TURN_RAD,
     };
     let push_tuning = PushTuning {
-        hand_mass_kg: b.mass_kg,
+        stiffness_n_per_m: b.push_stiffness_n_per_m,
         max_force_n: b.force_n(),
         body_mass_kg: b.body_mass_kg,
         deadband_m: b.push_deadband_m * scale,
@@ -570,9 +583,14 @@ pub(super) unsafe fn step() {
                 let goal = grips[i].unwrap_or(palm);
                 let held = holds[i].map_or(0, |h| h.object.get());
                 let mut clear = |from: Vec3, to: Vec3| unsafe { path_clear(from, to, held) };
-                // A hand that just struck hard follows through rather than stopping dead.
-                let soft = DriveTuning {
-                    linear_gain: tuning.linear_gain * b.hits.follow_through_gain.clamp(0.0, 1.0),
+                // A hand held back rests on what holds it, and one that just struck hard follows
+                // through rather than stopping dead.
+                let mut linear_gain = contact_gain(tuning.linear_gain, b.contact_gain, pressed[i]);
+                if follow_through[i] {
+                    linear_gain *= b.hits.follow_through_gain.clamp(0.0, 1.0);
+                }
+                let hand_tuning = DriveTuning {
+                    linear_gain,
                     ..tuning
                 };
                 let request = ActRequest {
@@ -584,7 +602,7 @@ pub(super) unsafe fn step() {
                     anchor: grips[i].map_or(target.position, |g| g.position),
                     clear: &mut clear,
                     break_distance_m: b.break_distance_m * scale,
-                    tuning: if follow_through[i] { &soft } else { &tuning },
+                    tuning: &hand_tuning,
                     step_s,
                 };
                 // SAFETY: forwarded from the caller.

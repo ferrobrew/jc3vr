@@ -86,6 +86,9 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
         ui.add(egui::Slider::new(&mut b.max_force_n, 0.0..=20_000.0).text("Strongest pull (N)"));
         ui.add(egui::Slider::new(&mut b.max_torque_nm, 0.0..=2000.0).text("Strongest twist (N·m)"));
         ui.add(egui::Slider::new(&mut b.linear_gain, 0.0..=1.0).text("Position gain"));
+        ui.add(
+            egui::Slider::new(&mut b.contact_gain, 0.0..=1.0).text("Gain kept pressing (share)"),
+        );
         ui.add(egui::Slider::new(&mut b.angular_gain, 0.0..=1.0).text("Rotation gain"));
         ui.add(egui::Slider::new(&mut b.max_speed_mps, 0.0..=50.0).text("Fastest hand (m/s)"));
         ui.add(
@@ -103,6 +106,10 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
         ui.separator();
         ui.checkbox(&mut b.push, "Push the body off what the hands press");
         ui.add(egui::Slider::new(&mut b.body_mass_kg, 10.0..=300.0).text("Body mass (kg)"));
+        ui.add(
+            egui::Slider::new(&mut b.push_stiffness_n_per_m, 0.0..=30_000.0)
+                .text("Push spring (N/m)"),
+        );
         ui.add(egui::Slider::new(&mut b.push_deadband_m, 0.0..=0.1).text("Push deadband (m)"));
         ui.add(egui::Slider::new(&mut b.max_push_speed_mps, 0.0..=6.0).text("Fastest push (m/s)"));
         ui.add(

@@ -11,8 +11,9 @@ pub struct HandBodiesConfig {
     pub enabled: bool,
     /// The hands' strength, a scale on their force and twist: one is the default "Rico strength".
     pub strength: f32,
-    /// A hand body's mass, kilograms. A heavier hand shoves harder against what it meets, but a
-    /// light prop between two heavy bodies jitters.
+    /// A hand body's mass, kilograms. The hand's strength is its force and twist caps, not its mass:
+    /// a light hand meets a light prop without throwing it, and still shoves a heavy one within its
+    /// strength over a few steps, while a heavy hand makes a prop between it and the world jitter.
     pub mass_kg: f32,
     /// The strongest pull of one hand at a strength of one, newtons.
     pub max_force_n: f32,
@@ -22,6 +23,9 @@ pub struct HandBodiesConfig {
     pub linear_gain: f32,
     /// The share of a hand's rotation error the drive closes in one step, `0..=1`.
     pub angular_gain: f32,
+    /// The share of the drive's gain a hand keeps while it presses as hard as it can into what holds
+    /// it back, `0..=1`; a lighter press keeps more. It rests on a wall rather than pounding it.
+    pub contact_gain: f32,
     /// The fastest a hand body is driven, metres per second, so that a tracking glitch cannot fling
     /// what it touches.
     pub max_speed_mps: f32,
@@ -40,6 +44,9 @@ pub struct HandBodiesConfig {
     /// The mass the hands' reaction moves, kilograms: the lighter, the further a push carries the
     /// player.
     pub body_mass_kg: f32,
+    /// The stiffness of the spring between a held-back hand and its controller that pushes the
+    /// player, newtons per metre of lag past the deadband.
+    pub push_stiffness_n_per_m: f32,
     /// How far a hand body may lag behind its controller before the lag pushes the player, metres,
     /// so that resting a hand on a wall does not drift the body.
     pub push_deadband_m: f32,
@@ -142,11 +149,12 @@ impl HandBodiesConfig {
         Self {
             enabled: true,
             strength: 1.0,
-            mass_kg: 10.0,
+            mass_kg: 3.0,
             max_force_n: 5000.0,
             max_torque_nm: 400.0,
             linear_gain: 1.0,
             angular_gain: 0.8,
+            contact_gain: 0.4,
             max_speed_mps: 20.0,
             max_angular_speed_rps: 30.0,
             radius_m: 0.04,
@@ -155,6 +163,7 @@ impl HandBodiesConfig {
             render_at_body: true,
             push: true,
             body_mass_kg: 90.0,
+            push_stiffness_n_per_m: 9000.0,
             push_deadband_m: 0.02,
             max_push_speed_mps: 2.5,
             min_push_horizontal: 0.3,
