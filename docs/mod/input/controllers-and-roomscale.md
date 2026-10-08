@@ -126,7 +126,7 @@ The starting assignments are as follows.
 | Driving and flying with physical controls | Anchored: the hands on the wheel, handlebars, or sticks | none needed |
 | Mounted guns and turrets | Anchored: the hands on the handles, which aim the gun | none needed |
 | Parachute | Free, or anchored on a handle a hand has taken | the handles: a hand takes the handle above its shoulder with the grip and pulls it down to steer or brake |
-| Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | arm steering (on by default) reads the controllers while the rendered arms stay yielded; anchoring the arms to the wing pose is not built |
+| Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | arm steering (on by default) reads the controllers; the procedural body carries the player's arms over onto the flight pose's ([body/procedural-states.md](../body/procedural-states.md#the-wingsuit)) |
 | Swimming | Yielded | arm-stroke swimming |
 | Interactions (sabotage, planting, using objects) | Yielded | per interaction |
 | Ragdoll, knockdown, death, and cutscenes | Yielded | none planned |
@@ -515,7 +515,7 @@ The settings are under `vehicles`. The description is in [controllers.md, "Vehic
 | Driver weapons by hand | `driver_weapons_by_hand` (on) | Built. The dominant hand aims the driver's weapons by default. |
 | Mounted guns and gunner seats | `mounted.aim_by_hands`, `mounted.anchor_hands`, `mounted.min_lever_m` | Built. |
 | Physical controls | `physical.wheel` (with its lock, response, deadzone, tracking, and return), `physical.handlebars`, `physical.cyclic`, `physical.collective`, `physical.flight_stick`, and `physical.throttle` (each on), `physical.grab_radius_m`, `physical.release_distance_m` | Built. The placement and ranges are untuned. A hand on a control cannot fire the vehicle's weapons with its grip; another fire input while a control is held is not built. |
-| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.min_spread`, `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.full_pitch_m`, `arm_steering.invert_pitch`, `arm_steering.show_guide` (on) | Built for the wingsuit. Its rendered arms stay yielded. |
+| Arm steering | `arm_steering.wingsuit` (on), `arm_steering.min_spread`, `arm_steering.deadzone_m`, `arm_steering.full_bank_m`, `arm_steering.full_pitch_m`, `arm_steering.invert_pitch`, `arm_steering.show_guide` (on) | Built for the wingsuit. The hand tier stays yielded; Rico's arms follow the player's through the procedural body (`body.procedural.wingsuit_arms`). |
 | Parachute handles | `parachute_handles.enabled` (on), `parachute_handles.offset_m`, `parachute_handles.radius_m`, `parachute_handles.full_pull_m`, `parachute_handles.deadzone_m`, `parachute_handles.brake_threshold`, `parachute_handles.release_distance_m` | Built. They replace the parachute's arm steering. The placement and the pull are untuned, and whether the stick-back slow-down the handles brake with is a strong brake depends on shipped tuning that was not read. |
 | The wingsuit's head look-steer removal | `movement.suppress_parachute_look_steer`, outside the `controllers` section | Built. |
 | Weaponized wingsuit guns aimed by the right hand | none | Not built. They aim by the gaze, because the gun aim covers only the wielded slot. |

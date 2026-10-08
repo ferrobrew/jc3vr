@@ -138,6 +138,7 @@ signals! {
     ProceduralOnFoot => "procedural.on_foot", Flag, "The hand-over table's case is on foot.";
     StanceMeasured => "procedural.stance_measured", Flag, "The neutral stance has been measured.";
     ProceduralSeated => "procedural.seated", Flag, "The torso is posed on the seat's hips in a vehicle.";
+    ProceduralWingArms => "procedural.wing_arms", Flag, "Rico's arms follow the player's in the wingsuit, both hands queued.";
     ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";
     Wielded => "weapons.wielded", Flag, "A weapon is wielded.";
     WeaponInLeftHand => "weapons.in_left_hand", Flag, "The wielded weapon's first gun rides the left hand.";
@@ -231,6 +232,10 @@ impl Signal {
             Signal::ProceduralSeated => {
                 let status = procedural::published_status();
                 flag(status.case == Case::Seated && status.on_animated_hips && status.weight > 0.0)
+            }
+            Signal::ProceduralWingArms => {
+                let status = procedural::published_status();
+                flag(status.case == Case::Wingsuit && status.wing_queued == [true, true])
             }
             Signal::ProceduralNeckErrorM => {
                 let status = procedural::published_status();

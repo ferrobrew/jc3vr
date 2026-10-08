@@ -171,6 +171,10 @@ pub struct ProceduralBodyConfig {
     /// follow the player's head and hands over the seat's hips, and the legs keep the seat's
     /// animation. Off, the seat's animation and the body IK's lean pose the torso.
     pub seated_torso: bool,
+    /// Pose Rico's arms in the wingsuit from the player's, carried over as the arm steering reads
+    /// them: the spread, a hand lowered for a bank, a hand swept forward, and the wrists' tilt. The
+    /// body keeps the flight pose.
+    pub wingsuit_arms: bool,
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act, seconds: the game keeps no state for the reaction's length.
     pub hit_reaction_hold_s: f32,
@@ -246,6 +250,7 @@ impl ProceduralBodyConfig {
             landing_dip_s: 0.1,
             twist_bones: true,
             seated_torso: true,
+            wingsuit_arms: true,
             hit_reaction_hold_s: 1.2,
         }
     }

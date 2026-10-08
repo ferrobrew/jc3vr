@@ -266,6 +266,7 @@ fn the_shipped_templates_read() {
         "vehicle_doors.toml",
         "weapon_left_hand.toml",
         "weapon_pickup.toml",
+        "wingsuit_arms.toml",
     ];
     for (name, text) in templates {
         let path = Path::new("C:/scenarios").join(name);

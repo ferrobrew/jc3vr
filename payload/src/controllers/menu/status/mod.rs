@@ -281,6 +281,7 @@ const SECTIONS: &[Section] = &[
             row!("POSE INPUTS", controllers::lower_inputs),
             row!("TWIST BONES", controllers::twist_bones),
             row!("SEATED TORSO", body::seated_torso),
+            row!("WINGSUIT ARMS", body::wingsuit_arms),
         ],
     },
 ];

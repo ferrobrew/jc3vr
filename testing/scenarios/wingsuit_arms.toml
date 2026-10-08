@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/wingsuit_arms.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "Rico's arms follow the player's in the wingsuit"
+description = "Recorded standing, with both controllers tracked, from a jump off a high cliff (procedural-states.md, the wingsuit checklist). Open the wingsuit, spread both arms, lower the left hand for a few seconds, then the right, sweep both hands forward and back, tilt both wrists down and up, then open the parachute."
+recording = "../recordings/wingsuit_arms.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "both arms follow the player's"
+signal = "procedural.wing_arms"
+
+[[expect]]
+log = "procedural body: Rico's arms follow the player's in the wingsuit"
+
+[[expect]]
+status = "WINGSUIT ARMS"
+
+[[expect]]
+name = "and let go under the parachute"
+signal = "procedural.wing_arms"
+check = "at_end"
+is = false

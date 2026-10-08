@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     body::procedural::{
         ArmContext, INITIAL_STATUS, MAX_VERTICAL_MPS, ProceduralStatus, animated_feet,
-        authority::{Case, RegionBlend, Weights},
+        authority::{Case, RegionBlend, WeightFollower, Weights},
         config::ProceduralBodyConfig,
         ground::{GroundCaster, GroundLog},
         joints::{LiveRig, RigCache},
@@ -27,9 +27,11 @@ use crate::controllers::{
             hips_yaw,
             lower::{LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning, SitEnd, SitLegs},
             pose::{RigPose, SolveSwitch},
+            wings::WingTarget,
         },
         state::StateTracker,
         targets::TargetFade,
+        wings::WingQueue,
     },
     hands::ik::deferred_wrist_targets,
 };
@@ -85,6 +87,15 @@ pub(super) struct State {
     pub(super) switch: SolveSwitch,
     /// The case the torso on the animation's hips was last logged for, while it lasts.
     pub(super) on_hips_logged: Option<Case>,
+    /// The wingsuit's arms' weight against the animation.
+    pub(super) wings: WeightFollower,
+    /// The wingsuit's last wrist targets, model space, which fade where they were as the arms ease
+    /// out.
+    pub(super) last_wings: Option<[Option<WingTarget>; 2]>,
+    /// This tick's wingsuit wrist targets, queued once the gate lets go of its state.
+    pub(super) wing_queue: Option<WingQueue>,
+    /// Whether the wingsuit's arms have been logged since they last eased in.
+    pub(super) wing_logged: bool,
     /// The feet the last gate placed, model space.
     pub(super) last_feet: Option<[FootPose; 2]>,
     /// The feet as they left the ground, model space, while the legs are in the air.
@@ -548,6 +559,10 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     fade: TargetFade::new(),
     switch: SolveSwitch::new(),
     on_hips_logged: None,
+    wings: WeightFollower::new(),
+    last_wings: None,
+    wing_queue: None,
+    wing_logged: false,
     last_feet: None,
     takeoff_feet: None,
     fall: None,

@@ -140,6 +140,7 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `procedural.rig_error`, `.on_foot`, `.stance_measured` | flag | The procedural body's rig failed; its case is on foot; the stance is measured. |
 | `procedural.pass_through_error_m`, `.pass_through_error_deg` | measure | The pass-through's largest read-back error. |
 | `procedural.seated` | flag | The torso is posed on the seat's hips in a vehicle ([body/procedural-states.md](../body/procedural-states.md)). |
+| `procedural.wing_arms` | flag | Rico's arms follow the player's in the wingsuit, with both hands queued. |
 | `procedural.neck_error_m` | measure | How far the solved neck is from the point under the player's head, while the procedural body poses the torso. |
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
 | `weapons.second_in_left_hand`, `.second_in_right_hand` | flag | A second weapon is held in that hand. |

@@ -26,7 +26,9 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     controllers::{
         self,
-        body::procedural::{gate_skipped, signals::set_local_character, skeleton, torso_weight},
+        body::procedural::{
+            gate_skipped, signals::set_local_character, skeleton, torso_weight, wings::wing_arms,
+        },
         hands::{self, ik::HandPlan},
         roomscale::stance,
     },
@@ -98,9 +100,13 @@ fn character_update_pass_finalize_pose_parallel(
     let stance_plan = unsafe { stance::plan(character, dt) };
     unsafe {
         controllers::roomscale::sim::complete_movement(character);
+        // The wingsuit's arms queue their own wrist targets at the solve gate, so the body IK does
+        // not pin those wrists to the animation either; their last gate is a tick behind.
+        let driven = plan.as_ref().map_or([false; 2], HandPlan::driven);
+        let wings = wing_arms();
         body_ik::capture_anchors_and_queue_body_ik(
             character,
-            plan.as_ref().map_or([false; 2], HandPlan::driven),
+            [driven[0] || wings[0], driven[1] || wings[1]],
             stance_plan.as_ref().map_or(0.0, |p| p.chest_yaw),
             dt,
         );

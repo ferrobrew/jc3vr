@@ -18,7 +18,9 @@
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
 //! | the grapple's ledge climb | animation | animation |
 //! | swimming | animation | animation |
-//! | wingsuit, parachute, a fall past the jump's grace | animation | animation |
+//! | the wingsuit (the arms follow the player's, `wingsuit_arms`) | animation | animation |
+//! | the parachute | animation | animation |
+//! | a fall past the jump's grace | animation | animation |
 //! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation | animation |
 //! | climbing with the hands | procedural, hanging in the air (animation with `air_legs` off) | procedural |
 //! | a jump, within the grace | procedural, hanging in the air (animation with `air_legs` off) | procedural |
@@ -53,6 +55,10 @@ pub enum Case {
     Traversal,
     LedgeClimb,
     Swimming,
+    /// In the wingsuit, or going into it. The arms follow the player's apart from the regions.
+    Wingsuit,
+    Parachute,
+    /// Falling past the jump's grace.
     Flight,
     HitReaction,
     HandClimb,
@@ -77,7 +83,9 @@ impl Case {
             Self::Traversal => "grapple or stunt traversal",
             Self::LedgeClimb => "grapple ledge climb",
             Self::Swimming => "swimming",
-            Self::Flight => "wingsuit, parachute, or fall",
+            Self::Wingsuit => "wingsuit",
+            Self::Parachute => "parachute",
+            Self::Flight => "a fall past the jump's grace",
             Self::HitReaction => "hit reaction",
             Self::HandClimb => "climbing with the hands",
             Self::Jump => "jump",
@@ -131,7 +139,11 @@ pub struct CharacterState {
     /// Climbing over a ledge at the end of a grapple.
     pub ledge_climb: bool,
     pub swimming: bool,
-    /// In the wingsuit, under the parachute, or falling past the jump's grace.
+    /// In the wingsuit, or going into it.
+    pub wingsuit: bool,
+    /// Under the parachute.
+    pub parachute: bool,
+    /// Falling past the jump's grace.
     pub flight: bool,
     /// Within the hold of a stumble's or a knock-back's act.
     pub hit_reaction: bool,
@@ -169,6 +181,10 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::LedgeClimb
     } else if state.swimming {
         Case::Swimming
+    } else if state.wingsuit {
+        Case::Wingsuit
+    } else if state.parachute {
+        Case::Parachute
     } else if state.flight {
         Case::Flight
     } else if state.hit_reaction {
@@ -243,6 +259,37 @@ impl RegionBlend {
     /// Drop both regions to the animation at once.
     pub fn reset(&mut self) {
         *self = Self::new();
+    }
+}
+
+/// One weight in `0..=1` eased toward its target as a region's is: over `in_s` toward one and the
+/// quicker `out_s` back.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct WeightFollower {
+    spring: Spring,
+}
+
+impl WeightFollower {
+    pub const fn new() -> Self {
+        Self {
+            spring: Spring::new(),
+        }
+    }
+
+    /// Ease toward `target` over `dt` seconds.
+    pub fn step(&mut self, target: f32, dt: f32, in_s: f32, out_s: f32) -> f32 {
+        let target = if target.is_finite() {
+            target.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let time = if target < self.spring.value {
+            out_s
+        } else {
+            in_s
+        };
+        self.spring.step(target, dt, time);
+        self.spring.value
     }
 }
 
@@ -456,6 +503,46 @@ mod tests {
             ..config
         };
         assert_eq!(Case::Seated.targets(&off), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn the_flying_states_are_told_apart() {
+        let flying = |wingsuit, parachute, flight| CharacterState {
+            wingsuit,
+            parachute,
+            flight,
+            ..on_foot()
+        };
+        assert_eq!(classify(&flying(true, false, true)), Case::Wingsuit);
+        assert_eq!(classify(&flying(false, true, true)), Case::Parachute);
+        assert_eq!(classify(&flying(false, false, true)), Case::Flight);
+        let config = ProceduralBodyConfig::new();
+        // The wingsuit's arms are not a region: the body stays the flight pose.
+        assert_eq!(Case::Wingsuit.targets(&config), [0.0, 0.0]);
+        assert_eq!(
+            classify(&CharacterState {
+                swimming: true,
+                ..flying(true, false, false)
+            }),
+            Case::Swimming
+        );
+    }
+
+    #[test]
+    fn a_weight_follower_eases_in_and_out_at_its_own_pace() {
+        let mut follower = WeightFollower::new();
+        let mut last = 0.0;
+        for _ in 0..180 {
+            let w = follower.step(1.0, 1.0 / 60.0, 0.35, 0.2);
+            assert!(w >= last && w <= 1.0);
+            last = w;
+        }
+        assert_eq!(last, 1.0);
+        let out = (0..60)
+            .position(|_| follower.step(0.0, 1.0 / 60.0, 0.35, 0.2) < 0.1)
+            .unwrap();
+        assert!(out < 30, "{out}");
+        assert_eq!(follower.step(f32::NAN, 1.0, 0.35, 0.2), 0.0);
     }
 
     #[test]

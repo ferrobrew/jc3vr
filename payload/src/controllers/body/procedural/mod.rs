@@ -20,6 +20,7 @@
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
 //!   keep.
 //! - [`targets`]: the fade of the HumanIK targets on the owned bones.
+//! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
 //! - [`config`]: the mode and the tuning.
 //!
 //! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
@@ -42,6 +43,7 @@ pub mod solver;
 pub mod state;
 pub mod targets;
 pub mod twist;
+pub mod wings;
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
@@ -81,12 +83,14 @@ use crate::{
                     reach_drop, solve, step_offset,
                 },
                 targets::{Fade, Slot, TargetFade},
+                wings::{WingRequest, read_player_arms},
             },
         },
         frame::Hand,
         locomotion::{
             LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
         },
+        mode::{AirborneVariant, Mode, current as current_mode},
         roomscale::{frame_shared, posture::EffectivePosture},
     },
     headpose::{body_relative_rotation, query},
@@ -145,6 +149,12 @@ pub struct ProceduralStatus {
     pub on_animated_hips: bool,
     /// Whether a switch between the two solves is still fading.
     pub switch_fading: bool,
+    /// The wingsuit's arms' weight against the animation.
+    pub wing_weight: f32,
+    /// Which hands the wingsuit's arms placed a target for, left then right.
+    pub wing_hands: [bool; 2],
+    /// Which hands the wingsuit's arms queued a target for, left then right.
+    pub wing_queued: [bool; 2],
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -235,7 +245,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     if !wrote {
         publish_torso_weight(0.0);
     }
-    let status = {
+    let wing_queue = {
         let mut state = STATE.lock();
         // A gate that wrote no pose holds no pose of the legs either: a sit must not keep holding
         // the stick through a pass that never reached the solve.
@@ -243,6 +253,13 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
             state.lower.reset();
             state.status.lower = state.lower.status();
         }
+        state.wing_queue.take()
+    };
+    // Queued with the gate's state let go: the hand IK takes the configuration lock.
+    let wing_queued = unsafe { wings::queue(character, wing_queue) };
+    let status = {
+        let mut state = STATE.lock();
+        state.status.wing_queued = wing_queued;
         state.status
     };
     *PUBLISHED.lock() = status;
@@ -271,6 +288,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let standing_play = frame_shared()
         .filter(|frame| frame.fresh(now))
         .is_some_and(|frame| frame.posture != EffectivePosture::Seated);
+    // Read before the gate's own state too: it takes the configuration and the controller frame.
+    let player_arms = (current_mode().mode == Mode::Airborne(AirborneVariant::Wingsuit))
+        .then(read_player_arms)
+        .flatten();
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
         dt.clamp(0.0, MAX_STEP_S)
@@ -346,6 +367,15 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let previous_world = Mat4::from(character.m_WorldMatrixT0);
             let vertical = state.vertical_speed(previous_world.w_axis.y, world.w_axis.y, dt);
             state.track_landing(case, vertical, now, &config);
+            let wings = WingRequest {
+                case,
+                player: player_arms.as_ref(),
+                rig,
+                animated: &animated,
+                world: &world,
+                dt,
+            };
+            state.wing_queue = state.step_wings(&wings, &config);
             if !weights.any() {
                 state.reset_under_head();
                 state.clavicles.reset();
@@ -379,8 +409,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
             let legs_procedural = weights.legs > 0.0 || case.targets(&config)[0] > 0.0;
-            let airborne =
-                config.air_legs && matches!(case, Case::Jump | Case::HandClimb | Case::Flight);
+            let airborne = config.air_legs
+                && matches!(
+                    case,
+                    Case::Jump | Case::HandClimb | Case::Flight | Case::Wingsuit | Case::Parachute
+                );
             let head = head_in_model(&world);
             let crouch = crouch_depth(rig, head.y, &config);
             state.status.crouch_depth = crouch;
@@ -733,6 +766,9 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     landing_dip_m: 0.0,
     on_animated_hips: false,
     switch_fading: false,
+    wing_weight: 0.0,
+    wing_hands: [false; 2],
+    wing_queued: [false; 2],
 };
 
 /// The largest position (metres) and rotation (degrees) difference between two poses.

@@ -149,6 +149,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .seated_torso))
+        .item(config_toggle!("ARMS AS WINGS", |c| c
+            .controllers
+            .body
+            .procedural
+            .wingsuit_arms))
         .text("TEST WRITES THE POSE BACK AS IS.")
         .header("ALIGNMENT")
         .item(config_toggle!("BODY FACES YOUR TORSO", |c| c

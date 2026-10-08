@@ -273,6 +273,113 @@ pub(crate) unsafe fn deferred_wrist_targets(character: &Character) -> [Option<(V
     })
 }
 
+/// Queue wrist targets the caller placed in `character`'s model space, each a position and a wrist
+/// frame orientation (the hand pose's convention), with the reaches scaled by `weight` and no
+/// pull: the hands of a pose the controllers do not drive directly, such as the wingsuit's arms
+/// carried over from the player's ([`crate::controllers::body::procedural`]). Returns which hands
+/// were queued.
+///
+/// # Safety
+///
+/// `character` must be the live local character, at the solve gate on the thread running its
+/// pose-finalization pass, where the engine solves what is queued.
+pub(crate) unsafe fn queue_model_wrists(
+    character: &mut Character,
+    targets: [Option<(Vec3, Quat)>; 2],
+    weight: f32,
+) -> [bool; 2] {
+    let cfg = Config::lock_query(|c| c.controllers.hands);
+    let weight = if weight.is_finite() {
+        weight.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mut queued = [false; 2];
+    if weight <= 0.0 {
+        return queued;
+    }
+    for hand in Hand::BOTH {
+        let Some((position, rotation)) = targets[hand.index()] else {
+            continue;
+        };
+        let (effector, wrist_safe) = match hand {
+            Hand::Left => (Effector::LEFT_WRIST as i32, SafeBoneIndex::LEFT_HAND),
+            Hand::Right => (Effector::RIGHT_WRIST as i32, SafeBoneIndex::RIGHT_HAND),
+        };
+        let wrist_bone = unsafe { character.GetSafeIndex(wrist_safe) };
+        if unsafe { character.m_HIK.GetEffectorIdFromBoneIndex(wrist_bone) } != effector {
+            log_once(
+                &UNMAPPED_LOGGED,
+                "a wrist bone does not map to its HumanIK effector",
+            );
+            continue;
+        }
+        let Some(controller) =
+            (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() })
+        else {
+            return queued;
+        };
+        let names = knuckle_names(hand);
+        let (Some(index_bone), Some(middle_bone)) =
+            (unsafe { bone_index(controller, names[0]) }, unsafe {
+                bone_index(controller, names[1])
+            })
+        else {
+            log_once(&KNUCKLES_LOGGED, "the knuckle bones did not resolve");
+            continue;
+        };
+        let (wrist, _) = unsafe { joint(controller, wrist_bone) };
+        let (index, _) = unsafe { joint(controller, index_bone) };
+        let (middle, _) = unsafe { joint(controller, middle_bone) };
+        let Some(animated_frame) = hand_pose::wrist_frame_from_bones(hand, wrist, index, middle)
+        else {
+            continue;
+        };
+        let hik = &mut character.m_HIK;
+        let slot = effector as usize;
+        let target = Vector3 {
+            data: position.to_array(),
+        };
+        unsafe {
+            hik.AddEffectorTargetPosition(
+                effector,
+                &target,
+                SolveStep::UPPER_BODY,
+                Pass::MAIN,
+                false,
+                0.0,
+                false,
+                0.0,
+            );
+        }
+        hik.m_TargetReachT[slot] = (cfg.reach_t * weight).clamp(0.0, 1.0);
+        hik.m_TargetPull[slot] = 0.0;
+        let (axis, angle) = hand_pose::wrist_rotation_delta(rotation, animated_frame);
+        let axis = Vector3 {
+            data: if axis.is_finite() { axis } else { Vec3::Y }.to_array(),
+        };
+        unsafe {
+            hik.AddEffectorTargetRotationVector(
+                effector,
+                angle,
+                &axis,
+                SolveStep::UPPER_BODY,
+                Pass::MAIN,
+                false,
+                0.0,
+                false,
+                0.0,
+            );
+        }
+        hik.m_TargetReachR[slot] = (cfg.reach_r * weight).clamp(0.0, 1.0);
+        // A rotation target promotes the target resist to the live resist, so the slot is always
+        // written, or a past writer's value leaks in.
+        hik.m_TargetResist[slot] = (cfg.resist * weight).clamp(0.0, 1.0);
+        queued[hand.index()] = true;
+    }
+    queued
+}
+
 /// Queue the wrist targets for the hands `plan` drives, switch the `SECONDARY` pass off for them,
 /// and record the tick. Called at the entry of the pose-finalization pass, after the body IK has
 /// published this tick's head anchors, or at the solve gate with `arms` while the procedural body

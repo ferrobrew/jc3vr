@@ -127,6 +127,14 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             right.protraction.to_degrees(),
         ));
         ui.label(format!(
+            "Wingsuit arms {:.2} · targets placed L {} R {} · queued L {} R {}",
+            status.wing_weight,
+            status.wing_hands[0],
+            status.wing_hands[1],
+            status.wing_queued[0],
+            status.wing_queued[1],
+        ));
+        ui.label(format!(
             "Legs in the air {:.2} · vertical speed {:+.2} m/s · reaching for the landing {:.2} · landing dip {:.3} m",
             status.air_weight, status.vertical_mps, status.landing_reach, status.landing_dip_m,
         ));

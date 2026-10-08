@@ -1,6 +1,6 @@
 //! The status page's rows for the procedural body outside standing play: the torso in a vehicle
-//! seat. Each reads the last gate's published status, which the pause stops updating, so a row
-//! shows what the body did just before the menu opened.
+//! seat and the wingsuit's arms. Each reads the last gate's published status, which the pause stops
+//! updating, so a row shows what the body did just before the menu opened.
 
 use smol_str::format_smolstr;
 
@@ -46,6 +46,38 @@ fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
     }
 }
 
+pub(super) fn wingsuit_arms() -> Line {
+    let (enabled, mode) = read_config(|c| {
+        (
+            c.controllers.body.procedural.wingsuit_arms,
+            c.controllers.body.procedural.mode,
+        )
+    });
+    if !enabled || mode != ProceduralMode::Full {
+        return Line::off("");
+    }
+    wings_line(&procedural::published_status())
+}
+
+/// The wingsuit's arms: their weight and the hands they queued targets for.
+fn wings_line(status: &ProceduralStatus) -> Line {
+    if status.case != Case::Wingsuit {
+        return Line::waiting("NOT IN THE WINGSUIT").with_note(status.case.label());
+    }
+    let hands = match status.wing_queued {
+        [true, true] => "BOTH HANDS",
+        [true, false] => "LEFT HAND",
+        [false, true] => "RIGHT HAND",
+        [false, false] => "NO HANDS",
+    };
+    let detail = format_smolstr!("{:.0}%, {hands}", status.wing_weight * 100.0);
+    if status.wing_queued == [true, true] && status.wing_weight >= 1.0 {
+        Line::ok(detail)
+    } else {
+        Line::waiting(detail)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,6 +105,28 @@ mod tests {
         assert_eq!(
             seated_line(&status(Case::Seated, 1.0)).text(),
             "OK, 100%, NECK 3 CM"
+        );
+    }
+
+    #[test]
+    fn the_wingsuit_arms_name_the_hands_they_queued() {
+        let flying = |weight: f32, queued: [bool; 2]| ProceduralStatus {
+            case: Case::Wingsuit,
+            wing_weight: weight,
+            wing_queued: queued,
+            ..procedural::published_status()
+        };
+        assert_eq!(
+            wings_line(&flying(1.0, [true, true])).text(),
+            "OK, 100%, BOTH HANDS"
+        );
+        assert_eq!(
+            wings_line(&flying(1.0, [false, true])).text(),
+            "WAITING, 100%, RIGHT HAND"
+        );
+        assert_eq!(
+            wings_line(&status(Case::Parachute, 0.0)).text(),
+            "WAITING, NOT IN THE WINGSUIT"
         );
     }
 }

@@ -126,10 +126,11 @@ impl StateTracker {
             swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
                 || motion == Character::MOTION_STATE_SWIMMING
                 || has(StateBitFlag::SB_IS_SWIMMING),
-            flight: matches!(
-                detection.mode,
-                Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
-            ) || (airborne && !in_grace),
+            wingsuit: detection.mode == Mode::Airborne(AirborneVariant::Wingsuit)
+                || has(StateBitFlag::SB_IS_WINGSUIT)
+                || has(StateBitFlag::SB_IN_TRANSITION_TO_WINGSUIT),
+            parachute: detection.mode == Mode::Airborne(AirborneVariant::Parachute),
+            flight: airborne && !in_grace,
             // In the air wins over the movement task's stamp: the task can run on the tick a jump
             // or a step off a ledge leaves the ground.
             jump: airborne && in_grace,
