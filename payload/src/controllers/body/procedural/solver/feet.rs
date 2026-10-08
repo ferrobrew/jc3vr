@@ -66,8 +66,11 @@ pub struct FeetInput {
     pub wanted: [FootPose; 2],
     /// The root's height: the wanted places' ground.
     pub root_height: f32,
-    /// The body's horizontal velocity, metres per second.
+    /// The body's horizontal velocity, metres per second: the root's own, which paces the walk.
     pub velocity: Vec3,
+    /// The velocity the body is told to move at, metres per second: where a foot in the air is
+    /// carried ahead to. It leads the root's own while the body speeds up or turns.
+    pub commanded: Vec3,
     /// The walk's tuning while the body moves fast enough to walk, `None` standing.
     pub gait: Option<GaitTuning>,
     /// The tick's step, seconds.
@@ -283,7 +286,7 @@ impl Feet {
                 // The foot lands at the end of its swing and should pass under the hip half a
                 // stance later.
                 let remaining = (1.0 - t).max(0.0) * swing * period;
-                input.velocity * (remaining + gait.duty * period * 0.5)
+                input.commanded * (remaining + gait.duty * period * 0.5)
             };
             match &mut self.feet[i] {
                 Some(Foot::Planted { .. }) if lifted => {
@@ -510,6 +513,7 @@ mod tests {
             wanted,
             root_height: 0.0,
             velocity: Vec3::ZERO,
+            commanded: Vec3::ZERO,
             gait: None,
             dt: DT,
         }
@@ -609,6 +613,7 @@ mod tests {
                 wanted: [at(-0.1, 0.0), at(0.1, 0.0)].map(|p| with_offset(&p, body)),
                 root_height: 0.0,
                 velocity,
+                commanded: velocity,
                 gait: Some(walk()),
                 dt: DT,
             };
@@ -647,6 +652,23 @@ mod tests {
         for count in lifts {
             assert!((4..=5).contains(&count), "{lifts:?}");
         }
+    }
+
+    #[test]
+    fn a_body_held_still_does_not_walk_whatever_it_is_told() {
+        let mut feet = Feet::new();
+        let wanted = [at(-0.1, 0.0), at(0.1, 0.0)];
+        feet.step(&standing(wanted), &tuning(), &mut flat);
+        let pushing_a_wall = FeetInput {
+            commanded: Vec3::new(0.0, 0.0, -3.0),
+            gait: Some(walk()),
+            ..standing(wanted)
+        };
+        for _ in 0..30 {
+            let placed = feet.step(&pushing_a_wall, &tuning(), &mut flat);
+            assert_eq!(placed, wanted);
+        }
+        assert!(feet.phase().is_none());
     }
 
     #[test]

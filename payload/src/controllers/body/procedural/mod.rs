@@ -263,7 +263,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 return;
             }
-            let velocity = body_velocity(&locomotion);
+            let velocity = root_velocity(&previous_world, &world, dt);
+            let commanded = commanded_velocity(&locomotion);
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
@@ -277,6 +278,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
                     animated: &animated,
                     still: locomotion.standing_still(),
                     velocity,
+                    commanded,
                     dt,
                 };
                 let ground_feet = if airborne {
@@ -390,6 +392,10 @@ const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 /// second; anything faster is a teleport.
 const MAX_VERTICAL_MPS: f32 = 60.0;
 
+/// The fastest the root moves horizontally between two ticks and still counts as moving, metres
+/// per second; anything faster is a teleport.
+const MAX_HORIZONTAL_MPS: f32 = 40.0;
+
 /// How long after a jump ends its landing may still dip the hips.
 const LANDING_WINDOW: Duration = Duration::from_millis(300);
 
@@ -464,8 +470,10 @@ struct FeetRequest<'a> {
     animated: &'a RigPose,
     /// Whether Rico stands still: the animated feet stand for the stance until it is measured.
     still: bool,
-    /// The body's horizontal velocity, world space.
+    /// The root's horizontal velocity over the pass, world space: what the walk keeps pace with.
     velocity: Vec3,
+    /// The velocity the body is told to move at, world space: where the next footholds lead.
+    commanded: Vec3,
     dt: f32,
 }
 
@@ -535,6 +543,7 @@ impl State {
             wanted,
             root_height: world.w_axis.y,
             velocity,
+            commanded: request.commanded,
             gait: gait::tuning(velocity.length(), config),
             dt,
         };
@@ -838,9 +847,20 @@ fn round_trip_error(written: &RigPose, read: &RigPose) -> (f32, f32) {
         })
 }
 
-/// The body's horizontal velocity, world space: the stick's commanded velocity, or the movement
-/// task's where the stick does not drive the body.
-fn body_velocity(locomotion: &LocomotionStatus) -> Vec3 {
+/// The root's horizontal velocity over the pass, world space, from the previous tick's root to
+/// this one's: whatever moved it (the stick, the roomscale chase, a push, a wall that stopped it).
+/// A teleport reads as standing still.
+fn root_velocity(previous: &Mat4, current: &Mat4, dt: f32) -> Vec3 {
+    let moved = current.w_axis - previous.w_axis;
+    let horizontal = Vec2::new(moved.x, moved.z);
+    let speed = root_speed(horizontal.length(), dt, MAX_HORIZONTAL_MPS);
+    let velocity = horizontal.normalize_or_zero() * speed;
+    Vec3::new(velocity.x, 0.0, velocity.y)
+}
+
+/// The body's commanded horizontal velocity, world space: the stick's, or the movement task's
+/// where the stick does not drive the body.
+fn commanded_velocity(locomotion: &LocomotionStatus) -> Vec3 {
     let v: Vec2 = locomotion.velocity.unwrap_or(locomotion.task_velocity);
     let velocity = Vec3::new(v.x, 0.0, v.y);
     if velocity.is_finite() {
