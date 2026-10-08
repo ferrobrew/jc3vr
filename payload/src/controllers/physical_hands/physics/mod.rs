@@ -286,8 +286,12 @@ pub(crate) fn frame_tick() {
 /// last.
 pub(crate) fn observe(dt: f32) {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
-    let palms = enabled(&config).then(|| acting_palms(&config)).flatten();
     let now = Instant::now();
+    let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
+    let park_now = acting.as_ref().map(|a| (now, a.park_now));
+    let palms = acting
+        .filter(|a| a.palms.iter().any(Option::is_some))
+        .map(|a| (a.palms, a.world_scale));
     let body_rotation = headpose::xr::body_rotation();
     let recenters = recenter_count();
     let mut loads = [0.0; 2];
@@ -333,6 +337,7 @@ pub(crate) fn observe(dt: f32) {
             }
         }
         shared.targets = targets;
+        shared.park_now = park_now;
         shared.world_scale = world_scale;
         shared.published = palms.is_some().then_some(now);
         let stepped = shared.stepped_lately(now);
@@ -435,7 +440,7 @@ pub(super) unsafe fn step() {
         return;
     }
 
-    let (targets, published, world_scale, mut push, holds, rig_moves) = {
+    let (targets, published, world_scale, mut push, holds, rig_moves, park_now) = {
         let mut shared = SHARED.lock();
         (
             shared.targets,
@@ -444,6 +449,10 @@ pub(super) unsafe fn step() {
             shared.push,
             shared.holds,
             std::mem::take(&mut shared.rig_moves),
+            shared
+                .park_now
+                .filter(|(at, _)| now.saturating_duration_since(*at) <= STALE_AFTER)
+                .map_or([false; 2], |(_, park)| park),
         )
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
@@ -584,14 +593,19 @@ pub(super) unsafe fn step() {
             }
             (_, group) => {
                 let since = *hands.missing_since[i].get_or_insert(now);
+                let park = group.is_none()
+                    || park_now[i]
+                    || now.saturating_duration_since(since) >= PARK_AFTER;
                 let reason = if group.is_none() {
                     "the player has no collision group"
+                } else if park_now[i] {
+                    "the hand took a gun or carries what it holds"
                 } else {
                     "the hand stopped acting"
                 };
                 // SAFETY: forwarded from the caller.
                 joint_lost[i] |= unsafe { hands.unjoin(hand, "the hand stopped acting") };
-                if group.is_none() || now.saturating_duration_since(since) >= PARK_AFTER {
+                if park {
                     // SAFETY: forwarded from the caller.
                     unsafe { hands.park(hand, reason) };
                 } else {
@@ -662,7 +676,8 @@ pub(super) unsafe fn step() {
 const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// How long a hand may stop acting before its body leaves the simulation, so that a moment's lost
-/// tracking does not churn the world.
+/// tracking or a flicker of the mode does not churn the world. A hand that takes a gun or carries
+/// what it grabbed leaves at once.
 const PARK_AFTER: Duration = Duration::from_millis(250);
 
 /// The longest a published pose is carried forward by its velocity, seconds.
@@ -711,6 +726,8 @@ impl Target {
 struct Shared {
     /// Each hand's palm, as last published; `None` for a hand that does not act.
     targets: [Option<Target>; 2],
+    /// Which hands stopped acting on purpose, and park at once, and when that was published.
+    park_now: Option<(Instant, [bool; 2])>,
     /// When the targets were published; `None` while no hand acts.
     published: Option<Instant>,
     world_scale: f32,
@@ -753,6 +770,7 @@ impl Shared {
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     targets: [None; 2],
+    park_now: None,
     published: None,
     world_scale: 1.0,
     trackers: TRACKERS_AT_REST,
@@ -795,7 +813,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
 
 /// The hands' palms when they act, with the VR world scale: on foot on the ground or falling, for
 /// a tracked hand the controllers drive that holds nothing.
-fn acting_palms(config: &PhysicalHandsConfig) -> Option<([Option<PalmBox>; 2], f32)> {
+fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> {
     if !scheme::is_controllers() || !hooks::in_gameplay() {
         return None;
     }
@@ -824,10 +842,25 @@ fn acting_palms(config: &PhysicalHandsConfig) -> Option<([Option<PalmBox>; 2], f
         );
         Some(PalmBox::from_wrist(wrist, active.world_scale, config))
     });
-    palms
-        .iter()
-        .any(Option::is_some)
-        .then_some((palms, active.world_scale))
+    Some(ActingPalms {
+        palms,
+        world_scale: active.world_scale,
+        // A tracked hand that takes a gun or carries what it grabbed has stopped acting on
+        // purpose: its body leaves at once rather than standing frozen in the world.
+        park_now: Hand::BOTH.map(|hand| {
+            let i = hand.index();
+            active.hands[i].is_some() && (!free[i] || carrying[i])
+        }),
+    })
+}
+
+/// The palms' tick's view of the hands.
+struct ActingPalms {
+    /// Each acting hand's palm, world space.
+    palms: [Option<PalmBox>; 2],
+    world_scale: f32,
+    /// Which hands stopped acting on purpose, and park at once.
+    park_now: [bool; 2],
 }
 
 /// Whether nothing solid lies between `from` and `to`, game space, for the aim's ray filter, which
