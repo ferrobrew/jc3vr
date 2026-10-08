@@ -121,6 +121,7 @@ fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut
             TargetKind::Prop { mass_kg } if grasp::can_lift(mass_kg, 1, &config.pickup) => PROP,
             TargetKind::Prop { .. } => TOO_HEAVY,
             TargetKind::Door(_) => DOOR,
+            TargetKind::Articulated { .. } => ARTICULATED,
             TargetKind::Character(_) => CHARACTER,
         };
         prims.push(Primitive::Sprite {
@@ -161,6 +162,7 @@ const PRESSED_OBJECT: Rgba = [0.4, 1.0, 0.4, 0.95];
 const PROP: Rgba = [0.35, 0.85, 1.0, 0.9];
 const WEAPON: Rgba = [1.0, 0.85, 0.3, 0.95];
 const DOOR: Rgba = [0.45, 1.0, 0.55, 0.95];
+const ARTICULATED: Rgba = [0.3, 1.0, 0.85, 0.95];
 const CHARACTER: Rgba = [0.8, 0.45, 1.0, 0.95];
 const TOO_HEAVY: Rgba = [1.0, 0.35, 0.3, 0.9];
 const HELD: Rgba = [0.35, 0.85, 1.0, 0.6];

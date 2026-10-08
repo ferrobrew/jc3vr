@@ -23,6 +23,9 @@ use crate::controllers::{
 pub enum TargetKind {
     /// A loose rigid object, held in the hand, of this mass in kilograms.
     Prop { mass_kg: f32 },
+    /// An object joined to the world or another body by a constraint, such as a hinged gate or a
+    /// lever, of this mass in kilograms, which its constraint carries.
+    Articulated { mass_kg: f32 },
     /// A weapon lying in the world, collected through the game's own pickup.
     Weapon,
     /// A vehicle's door, hood, trunk, or hatch: an open one held as a loose object on its hinge, a
@@ -119,6 +122,20 @@ pub fn can_lift(mass_kg: f32, hands: usize, config: &PickupConfig) -> bool {
 /// Whether a hand may take hold of a body of `mass_kg` at all.
 pub fn can_hold(mass_kg: f32, config: &PickupConfig) -> bool {
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_mass_kg
+}
+
+/// Whether a hand may take hold of an articulated object of `mass_kg`, which its constraint
+/// carries.
+pub fn can_hold_articulated(mass_kg: f32, config: &PickupConfig) -> bool {
+    mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_articulated_mass_kg
+}
+
+/// Whether a hand may take hold of a body of `mass_kg` reached as `kind`.
+pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupConfig) -> bool {
+    match kind {
+        TargetKind::Articulated { .. } => can_hold_articulated(mass_kg, config),
+        _ => can_hold(mass_kg, config),
+    }
 }
 
 /// The mass of a body whose inverse mass is `inverse_mass`, or `None` for an infinite mass.
@@ -325,6 +342,19 @@ mod tests {
         assert!(!can_lift(f32::INFINITY, 2, &config));
         assert!(can_hold(config.max_mass_kg, &config));
         assert!(!can_hold(config.max_mass_kg * 1.01, &config));
+        // A hinged object is taken far heavier, since its hinge carries it.
+        let hinged = TargetKind::Articulated { mass_kg: 0.0 };
+        assert!(can_take(&hinged, config.max_mass_kg * 2.0, &config));
+        assert!(!can_take(
+            &hinged,
+            config.max_articulated_mass_kg * 1.01,
+            &config
+        ));
+        assert!(!can_take(
+            &TargetKind::Weapon,
+            config.max_mass_kg * 2.0,
+            &config
+        ));
         assert_eq!(mass_of(0.5), Some(2.0));
         assert_eq!(mass_of(0.0), None);
     }

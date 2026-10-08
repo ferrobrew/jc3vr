@@ -182,6 +182,11 @@ fn settings_page() -> Page {
             .physical_hands
             .vault
             .enabled))
+        .item(config_toggle!("MOVE HINGED THINGS BY HAND", |c| c
+            .controllers
+            .physical_hands
+            .pickup
+            .articulated))
         .item(config_toggle!("OPEN DOORS BY HAND", |c| c
             .controllers
             .physical_hands

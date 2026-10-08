@@ -11,6 +11,7 @@
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
 //! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door;
+//! - [`articulated`]: whether a body hangs from the world or another body by a constraint;
 //! - [`climb`]: climbing by gripping the static world with a hand its body drives;
 //! - [`vault`]: pushing the body up with the hands pressed down on a surface;
 
@@ -43,6 +44,7 @@
 //! are made only when the aim update runs on the thread the input tick runs on ([`input_tick`]
 //! notes it); otherwise the palms stand down and the readout says why.
 
+pub mod articulated;
 mod bodies;
 pub mod characters;
 pub mod climb;
@@ -405,6 +407,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         pickup: &config.pickup,
         doors: &config.doors,
         characters: &config.characters,
+        hand_bodies: physics::status().hands.map(|h| h.body_id),
     };
     let climb_on = climb::enabled(&config);
     let mut climb_palms = [None; 2];
@@ -777,6 +780,7 @@ impl State {
         status.character_grips += outcome.character_grips;
         status.hijacks += outcome.hijacks;
         status.yanks += outcome.yanks;
+        status.articulated_grips += outcome.articulated_grips;
         status.regrips += outcome.regrips;
         if outcome.door.is_some() {
             status.last_door = outcome.door;
@@ -832,6 +836,7 @@ static STATE: Mutex<State> = Mutex::new(State {
             last_door: None,
             character_grips: 0,
             hijacks: 0,
+            articulated_grips: 0,
             yanks: 0,
             regrips: 0,
             last_error: None,

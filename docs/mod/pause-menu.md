@@ -189,6 +189,7 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | | `CHARACTERS` | the grips taken on characters, the yanks, the knockdowns of the yanks and shoves, the ragdolls dragged, and the occupants pulled out of a seat ([input/character-grabs.md](input/character-grabs.md)) |
 | | `MOVING CLIMBS` | the grips taken on moving bodies, and whether a hand holds on to one ([input/hand-climbing.md](input/hand-climbing.md#moving-bodies)) |
 | | `PUSH UP` | the pushes up with the hands pressed down, the lift while they lift, and the last push's rise ([input/physical-hands.md](input/physical-hands.md#pushing-up)) |
+| | `HINGED THINGS` | the articulated objects the hands took hold of, and whether one is in reach ([input/physical-hands.md](input/physical-hands.md#articulated-objects)) |
 | `GRAPPLE` | `GRAPPLE STATE` | where the grapple is: inactive, firing, in flight, attached, reeling in, hanging, reeled in, or a tether line; waiting while the controllers' input tick does not run |
 | | `ATTACHED TARGET` | an object or a surface, and the distance from the head to the attach point |
 | | `REEL FROM HAND` | the reel's scale from the grapple hand's pull while it drives a reel, whether a yank boosts it, and the reels and boosts since load |

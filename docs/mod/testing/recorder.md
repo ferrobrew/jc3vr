@@ -133,6 +133,7 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `climb.grips`, `.moving_grips`, `.releases`, `.mantles`, `.drops` | counter | The climbing's counts. |
 | `push_up.pushes` | counter | Pushes up with the hands pressed down ([physical-hands.md](../input/physical-hands.md#pushing-up)). |
 | `push_up.lifting` | flag | The hands lift the body. |
+| `articulated.grips` | counter | Articulated objects a hand took hold of ([physical-hands.md](../input/physical-hands.md#articulated-objects)). |
 | `doors.grips`, `.unlatches` | counter | Grips taken on latched vehicle doors, and the latches the hands undid ([vehicle-doors.md](../input/vehicle-doors.md)). |
 | `doors.on_latch` | flag | A hand grips a latched vehicle door. |
 | `characters.grips`, `.yanks`, `.knockdowns`, `.regrips`, `.hijacks` | counter | Grips taken on characters, the yanks, the yanks and shoves that knocked a character down, the fallen characters' ragdolls taken, and the seated characters pulled out through an open door ([character-grabs.md](../input/character-grabs.md)). |

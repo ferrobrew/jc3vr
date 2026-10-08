@@ -76,6 +76,10 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                         },
                         reach.distance * 1000.0
                     ),
+                    TargetKind::Articulated { mass_kg } => format!(
+                        "reaches a {mass_kg:.0} kg articulated object {:.0} mm away",
+                        reach.distance * 1000.0
+                    ),
                     TargetKind::Door(door) => format!(
                         "reaches the {} door ({}) {:.0} mm away",
                         doors::slot_label(door.slot),
@@ -124,8 +128,9 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
     ));
     let p = &status.pickup;
     ui.label(format!(
-        "Pickups: {} holds · {} weapons · {} let go · {} lost{}",
+        "Pickups: {} holds ({} articulated) · {} weapons · {} let go · {} lost{}",
         p.holds,
+        p.articulated_grips,
         p.weapons,
         p.releases,
         p.lost,
@@ -273,6 +278,14 @@ fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
         ui.checkbox(&mut p.show_targets, "Mark what each hand reaches");
         ui.add(egui::Slider::new(&mut p.reach_m, 0.0..=0.4).text("Reach (m)"));
         ui.add(egui::Slider::new(&mut p.max_mass_kg, 0.0..=5000.0).text("Heaviest held (kg)"));
+        ui.checkbox(
+            &mut p.articulated,
+            "Take hinged and jointed objects whatever their weight",
+        );
+        ui.add(
+            egui::Slider::new(&mut p.max_articulated_mass_kg, 0.0..=50_000.0)
+                .text("Heaviest hinged object (kg)"),
+        );
         ui.add(egui::Slider::new(&mut p.hand_force_n, 0.0..=2000.0).text("Hand pull (N)"));
         ui.add(egui::Slider::new(&mut p.hand_torque_nm, 0.0..=200.0).text("Hand twist (N·m)"));
         ui.add(

@@ -1,5 +1,5 @@
 //! The status page's rows for what the empty hands do in the world: vehicle doors, the characters
-//! they take hold of, the moving bodies they climb, and pushing the body up.
+//! they take hold of, the moving bodies they climb, pushing the body up, and articulated objects.
 
 use smol_str::{SmolStr, format_smolstr};
 
@@ -9,7 +9,9 @@ use crate::controllers::{
         status::{Health, Line},
     },
     physical_hands::{
-        self, climb, doors, physics,
+        self, climb, doors,
+        grasp::TargetKind,
+        physics,
         pickup::PickupStatus,
         vault::{self, VaultStatus},
     },
@@ -56,6 +58,32 @@ pub(super) fn push_up() -> Line {
         physics::enabled(p) && p.vault.enabled
     });
     push_up_line(on, vault::status())
+}
+
+pub(super) fn articulated() -> Line {
+    let on = read_config(|c| {
+        let p = &c.controllers.physical_hands;
+        p.enabled && p.pickup.enabled && p.pickup.articulated
+    });
+    let status = physical_hands::status();
+    let reaching = status.hands.iter().any(|h| {
+        matches!(
+            h.reach.map(|r| r.kind),
+            Some(TargetKind::Articulated { .. })
+        )
+    });
+    articulated_line(on, status.pickup.articulated_grips, reaching)
+}
+
+fn articulated_line(on: bool, grips: u64, reaching: bool) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    match (grips, reaching) {
+        (_, true) => Line::ok(format_smolstr!("{grips} GRIPS, ONE IN REACH")),
+        (0, false) => Line::new(Health::Waiting, "NONE TAKEN YET"),
+        _ => Line::ok(format_smolstr!("{grips} GRIPS")),
+    }
 }
 
 fn push_up_line(on: bool, status: VaultStatus) -> Line {
@@ -129,6 +157,17 @@ mod tests {
     use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
+
+    #[test]
+    fn the_articulated_row_counts_grips() {
+        assert_eq!(articulated_line(false, 3, true).health, Health::Off);
+        assert_eq!(articulated_line(true, 0, false).health, Health::Waiting);
+        assert_eq!(
+            articulated_line(true, 2, true).text(),
+            "OK, 2 GRIPS, ONE IN REACH"
+        );
+        assert_eq!(articulated_line(true, 2, false).text(), "OK, 2 GRIPS");
+    }
 
     #[test]
     fn the_push_up_row_says_when_the_hands_lift() {

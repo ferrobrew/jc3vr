@@ -45,7 +45,7 @@ use crate::{
         },
         frame::Hand,
         physical_hands::{
-            STALE_AFTER, STATE, bodies,
+            STALE_AFTER, STATE, articulated, bodies,
             characters::{self, CharactersConfig, Regrip, Seize},
             config::PickupConfig,
             contact::{Surface, SurfaceHit},
@@ -128,6 +128,8 @@ pub struct PickupStatus {
     pub character_grips: u64,
     /// Characters a hand pulled out of a vehicle seat.
     pub hijacks: u64,
+    /// Articulated objects a hand took hold of: bodies joined to the world or another body.
+    pub articulated_grips: u64,
     /// Characters on foot a hand yanked.
     pub yanks: u64,
     /// Fallen characters' ragdolls a hand took hold of after a yank.
@@ -197,7 +199,10 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 state.status.pickup.weapons += 1;
                 pulses.push(hand);
             }
-            TargetKind::Prop { .. } | TargetKind::Door(_) | TargetKind::Character(_) => {
+            TargetKind::Prop { .. }
+            | TargetKind::Articulated { .. }
+            | TargetKind::Door(_)
+            | TargetKind::Character(_) => {
                 state.pickup.requests[i] = Some(Request::Grab(reach));
             }
         }
@@ -352,6 +357,7 @@ pub(super) unsafe fn reach(
         pickup: config,
         doors: door_config,
         characters: character_config,
+        ..
     } = *tuning;
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
     let length = (config.reach_m * world_scale).max(0.0) + 2.0 * palm.half_extents.y;
@@ -404,7 +410,17 @@ pub(super) unsafe fn reach(
             }
 
             // SAFETY: forwarded from the caller; the hit was found this tick.
-            let kind = unsafe { bodies::classify(object, body) }?;
+            let classified = unsafe { bodies::classify(object, body) };
+            // A body joined to the world or another body is taken whatever its weight, since its
+            // constraint carries it.
+            let kind = match classified {
+                Some(TargetKind::Weapon) => TargetKind::Weapon,
+                // SAFETY: forwarded from the caller.
+                other => match unsafe { articulated_kind(object, body, tuning) } {
+                    Some(articulated) => articulated,
+                    None => other?,
+                },
+            };
             if let TargetKind::Prop { mass_kg } = kind
                 && !grasp::can_hold(mass_kg, config)
             {
@@ -422,6 +438,30 @@ pub(super) unsafe fn reach(
     grasp::nearest(reaches)
 }
 
+/// What the object at `object`, reached on its dynamic body `body`, is when the body is joined to
+/// the world or another body by an enabled constraint: an articulated object, light enough for
+/// its constraint to carry. `None` for a vehicle, which its doors' reach handles, and for a body
+/// that is not joined.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step; `object` and `body` must come from a cast this tick.
+unsafe fn articulated_kind(
+    object: NonZeroUsize,
+    body: u32,
+    tuning: &ReachTuning,
+) -> Option<TargetKind> {
+    if !tuning.pickup.articulated || unsafe { doors::engine::vehicle_of(object) }.is_some() {
+        return None;
+    }
+    let mass_kg = unsafe { bodies::read(body, object) }.ok()?.mass_kg?;
+    if !grasp::can_hold_articulated(mass_kg, tuning.pickup) {
+        return None;
+    }
+    unsafe { articulated::joined(body, tuning.hand_bodies) }
+        .map(|_| TargetKind::Articulated { mass_kg })
+}
+
 /// What a hand's reach takes, and how far it reaches.
 #[derive(Copy, Clone)]
 pub(super) struct ReachTuning<'a> {
@@ -430,6 +470,8 @@ pub(super) struct ReachTuning<'a> {
     pub pickup: &'a PickupConfig,
     pub doors: &'a DoorsConfig,
     pub characters: &'a CharactersConfig,
+    /// The hand bodies, whose grip joints do not make what they hold articulated.
+    pub hand_bodies: [Option<u32>; 2],
 }
 
 /// What a pickup tick works from.
@@ -578,7 +620,10 @@ pub(super) unsafe fn tick(
                 }
                 // SAFETY: forwarded from the caller.
                 match unsafe { bodies::read(reach.body, reach.object) } {
-                    Ok(body) => match body.mass_kg.filter(|&m| grasp::can_hold(m, config)) {
+                    Ok(body) => match body
+                        .mass_kg
+                        .filter(|&m| grasp::can_take(&reach.kind, m, config))
+                    {
                         Some(mass_kg) => {
                             state.held[i] = Some(Held {
                                 object: reach.object,
@@ -588,6 +633,16 @@ pub(super) unsafe fn tick(
                                 joined: joints.join[i],
                             });
                             outcome.taken[i] = true;
+                            if matches!(reach.kind, TargetKind::Articulated { .. }) {
+                                tracing::info!(
+                                    hand = hand.label(),
+                                    body = reach.body,
+                                    mass_kg,
+                                    joined = joints.join[i],
+                                    "physical hands: a hand took hold of an articulated object"
+                                );
+                                outcome.articulated_grips += 1;
+                            }
                         }
                         None => {
                             outcome.error = Some(
@@ -777,6 +832,8 @@ pub(super) struct TickOutcome {
     pub character_grips: u64,
     /// Seated characters the hands pulled out this tick.
     pub hijacks: u64,
+    /// Articulated objects the hands took hold of this tick.
+    pub articulated_grips: u64,
     /// Characters on foot the hands yanked this tick.
     pub yanks: u64,
     /// Fallen characters' ragdolls the hands took hold of this tick.

@@ -246,6 +246,7 @@ fn the_shipped_templates_read() {
         };
     }
     let templates = templates![
+        "articulated.toml",
         "character_grab.toml",
         "climb_moving.toml",
         "hand_bodies.toml",

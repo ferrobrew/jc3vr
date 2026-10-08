@@ -205,6 +205,13 @@ pub struct PickupConfig {
     pub throw_scale: f32,
     /// The fastest throw, metres per second.
     pub max_throw_speed_mps: f32,
+    /// Take hold of articulated objects: bodies joined to the world or another body by a
+    /// constraint, such as hinged gates, hatches, and levers, whatever their weight up to
+    /// [`max_articulated_mass_kg`](Self::max_articulated_mass_kg), since the constraint carries
+    /// them.
+    pub articulated: bool,
+    /// The heaviest articulated object a hand takes hold of, kilograms.
+    pub max_articulated_mass_kg: f32,
     /// Mark the object each hand would take, and the held ones, in the world-space overlay.
     pub show_targets: bool,
     /// The pulse of taking hold of an object or picking up a weapon.
@@ -233,6 +240,8 @@ impl PickupConfig {
             break_distance_m: 0.6,
             throw_scale: 1.0,
             max_throw_speed_mps: 25.0,
+            articulated: true,
+            max_articulated_mass_kg: 20_000.0,
             show_targets: false,
             grab_pulse: PulseSpec {
                 amplitude: 0.5,
