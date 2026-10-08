@@ -36,6 +36,8 @@ pub struct GroundTally {
     pub hits: u32,
     /// Hits too steep to stand on.
     pub steep: u32,
+    /// Hits on a game object rather than the world: a prop, a held object, a body, a vehicle.
+    pub objects: u32,
     pub errors: u32,
     /// The largest height of a hit above or below the root, metres, signed.
     pub largest_offset_m: f32,
@@ -47,6 +49,7 @@ impl GroundTally {
             casts: 0,
             hits: 0,
             steep: 0,
+            objects: 0,
             errors: 0,
             largest_offset_m: 0.0,
         }
@@ -56,6 +59,7 @@ impl GroundTally {
         self.casts += other.casts;
         self.hits += other.hits;
         self.steep += other.steep;
+        self.objects += other.objects;
         self.errors += other.errors;
         if other.largest_offset_m.abs() > self.largest_offset_m.abs() {
             self.largest_offset_m = other.largest_offset_m;
@@ -128,6 +132,14 @@ impl GroundCaster {
             self.tally.steep += 1;
             return None;
         }
+        // A foot stands on the world, not on whatever lies about on it: a prop the hands hold or
+        // dropped, a body, or a crate would lift the foot onto it for a tick and drop it again as
+        // the object moves. The foothold keeps the root's height instead, which is the ground the
+        // proxy itself stands on, a vehicle's roof included.
+        if hit.object.is_some() {
+            self.tally.objects += 1;
+            return None;
+        }
         self.tally.hits += 1;
         let offset = hit.position.y - self.root_height;
         if offset.abs() > self.tally.largest_offset_m.abs() {
@@ -168,6 +180,7 @@ impl GroundLog {
                 casts = self.tally.casts,
                 hits = self.tally.hits,
                 steep = self.tally.steep,
+                objects = self.tally.objects,
                 errors = self.tally.errors,
                 largest_offset_m = self.tally.largest_offset_m,
                 "procedural body: ground casts",

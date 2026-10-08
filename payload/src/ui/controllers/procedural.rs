@@ -63,8 +63,13 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         ));
         let ground = &status.ground;
         ui.label(format!(
-            "Ground casts this tick {} · hits {} · too steep {} · errors {} · largest offset {:+.3} m",
-            ground.casts, ground.hits, ground.steep, ground.errors, ground.largest_offset_m,
+            "Ground casts this tick {} · hits {} · too steep {} · on objects {} · errors {} · largest offset {:+.3} m",
+            ground.casts,
+            ground.hits,
+            ground.steep,
+            ground.objects,
+            ground.errors,
+            ground.largest_offset_m,
         ));
         let [left, right] = status.clavicles;
         ui.label(format!(
