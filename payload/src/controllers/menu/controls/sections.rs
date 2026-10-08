@@ -367,6 +367,11 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .inventory
             .pin_world))
+        .item(config_toggle!("CARRY EXTRA WEAPONS", |c| c
+            .controllers
+            .weapons
+            .inventory
+            .carry))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons

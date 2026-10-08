@@ -36,6 +36,7 @@ use crate::controllers::{
         engine::{self, slot_from_raw},
         hold::{self, act, equip, holder::Cause},
         holster::slot_label,
+        inventory,
     },
 };
 
@@ -121,15 +122,22 @@ pub(crate) unsafe fn take(
     }
     let slot = unsafe { takeable(owner, weapon) }?;
     let address = weapon as *mut WeaponBase as usize;
-    if options.drop_replaced {
-        let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
-        if occupant != 0 && occupant != address && unsafe { equip::drop_occupant(owner, slot) } {
-            tracing::info!(
-                target: "controllers",
-                slot = slot_label(slot),
-                "hold: dropped the weapon the pickup replaces"
-            );
-        }
+    let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
+    // The weapon the pickup replaces goes onto a free socket when there is one.
+    let carried = occupant != 0
+        && occupant != address
+        && unsafe { inventory::actions::carry_replaced(owner, slot) };
+    if options.drop_replaced
+        && !carried
+        && occupant != 0
+        && occupant != address
+        && unsafe { equip::drop_occupant(owner, slot) }
+    {
+        tracing::info!(
+            target: "controllers",
+            slot = slot_label(slot),
+            "hold: dropped the weapon the pickup replaces"
+        );
     }
     let from = unsafe { gun_pose(weapon) };
     hold::begin(hand, options.cause, Some(address));

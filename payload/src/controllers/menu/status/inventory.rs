@@ -5,7 +5,7 @@ use smol_str::format_smolstr;
 
 use crate::controllers::{
     menu::{read_config, status::Line},
-    weapons::inventory,
+    weapons::{holster::slot_label, inventory},
 };
 
 pub(super) fn tracked() -> Line {
@@ -37,5 +37,36 @@ pub(super) fn pinned() -> Line {
         "{pinned} OF {world} KEPT, {} PINNED, {} LEFT TO THE GAME",
         s.pins,
         s.forgotten
+    ))
+}
+
+pub(super) fn carried() -> Line {
+    if !read_config(|c| {
+        let inventory = c.controllers.weapons.inventory;
+        inventory.enabled && inventory.carry
+    }) {
+        return Line::off("");
+    }
+    let s = inventory::status();
+    let carried: Vec<String> = s
+        .carried()
+        .map(|(slot, socket)| {
+            format!(
+                "{} ON {}",
+                slot_label(slot).to_uppercase(),
+                socket.label().to_uppercase()
+            )
+        })
+        .collect();
+    let list = if carried.is_empty() {
+        "NONE".to_owned()
+    } else {
+        carried.join(", ")
+    };
+    Line::ok(format_smolstr!(
+        "{list}; {} DRAWN, {} PUT AWAY, {} KEPT FROM PICKUPS",
+        s.draws,
+        s.stows,
+        s.carried_replaced
     ))
 }

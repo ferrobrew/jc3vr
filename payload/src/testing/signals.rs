@@ -185,6 +185,9 @@ signals! {
     AdsWelded => "ads.welded", Counter, "Times a scope came onto the eye.";
     GunContacts => "collide.contacts", Counter, "Times a held long gun came against a wall.";
     GunTouching => "collide.touching", Flag, "A held long gun is against a wall.";
+    InventoryCarried => "inventory.carried", Measure, "Weapons the inventory carries beyond the slots.";
+    InventoryDraws => "inventory.draws", Counter, "Carried weapons drawn off their sockets into a hand.";
+    InventoryStows => "inventory.stows", Counter, "Held weapons put onto a free socket.";
     InventoryKept => "inventory.kept", Measure, "Weapons lying in the world the inventory keeps from the game's despawn.";
     InventoryPins => "inventory.pins", Counter, "Weapons in the world the inventory started keeping.";
     InventoryResets => "inventory.resets", Counter, "Spawn system resets the inventory saw.";
@@ -343,6 +346,9 @@ impl Signal {
             Signal::AdsShouldered => count(ads::status().shouldered),
             Signal::AdsWelded => count(ads::status().welded),
             Signal::GunContacts => count(collide::status().contacts),
+            Signal::InventoryCarried => Value::Number(inventory::status().carried().count() as f64),
+            Signal::InventoryDraws => count(inventory::status().draws),
+            Signal::InventoryStows => count(inventory::status().stows),
             Signal::InventoryKept => Value::Number(inventory::status().world().0 as f64),
             Signal::InventoryPins => count(inventory::status().pins),
             Signal::InventoryResets => count(inventory::status().resets),

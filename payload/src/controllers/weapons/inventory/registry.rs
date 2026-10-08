@@ -11,7 +11,7 @@
 
 use jc3gi::character::inventory::WeaponSlot;
 
-use crate::controllers::frame::Hand;
+use crate::controllers::{frame::Hand, weapons::inventory::sockets::SocketId};
 
 /// An entry's identity, stable for the session.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -44,6 +44,8 @@ pub enum Location {
     MainSlot(WeaponSlot),
     /// In a hand.
     Hand(Hand, Role),
+    /// Carried beyond the slots, docked on a socket of the body.
+    Socket(SocketId),
     /// Lying in the world after the player let go of it; `pinned` while the mod keeps it from the
     /// game's despawn.
     World { pinned: bool },
@@ -55,7 +57,10 @@ impl Location {
     /// Whether the player owns a weapon here: it is kept by a strong reference and has the player
     /// as its holder.
     pub const fn owned(self) -> bool {
-        matches!(self, Location::MainSlot(_) | Location::Hand(..))
+        matches!(
+            self,
+            Location::MainSlot(_) | Location::Hand(..) | Location::Socket(_)
+        )
     }
 
     pub fn label(self) -> String {
@@ -65,6 +70,7 @@ impl Location {
             Location::Hand(hand, Role::Driven) => {
                 format!("in the {} hand, driven by the mod", hand.label())
             }
+            Location::Socket(socket) => format!("carried on the {}", socket.label()),
             Location::World { pinned: true } => "in the world, pinned".to_owned(),
             Location::World { pinned: false } => "in the world".to_owned(),
             Location::Npc => "with another character".to_owned(),
@@ -113,10 +119,20 @@ pub enum Fate {
 pub struct Observation {
     /// The weapons in the inventory slots the registry tracks.
     pub slots: Vec<Seen>,
+    /// The weapons the mod carries beyond the slots, and the socket each is docked on.
+    pub carried: Vec<(Seen, SocketId)>,
     /// The weapon in each hand, by [`Hand::index`], and how it is driven.
     pub hands: [Option<(ObjectKey, Role)>; 2],
     /// The fate of each known weapon that is in no slot, from [`Registry::unplaced`].
     pub fates: Vec<(ObjectKey, Fate)>,
+}
+
+impl Observation {
+    /// Whether `object` is in a slot or carried.
+    fn placed(&self, object: ObjectKey) -> bool {
+        self.slots.iter().any(|s| s.object == object)
+            || self.carried.iter().any(|(s, _)| s.object == object)
+    }
 }
 
 /// Why an entry left the registry.
@@ -190,11 +206,15 @@ impl Registry {
         self.entries.iter().find(|e| e.object == object)
     }
 
-    /// The known weapons that are not among `slots`, whose fate the next observation must say.
-    pub fn unplaced(&self, slots: &[Seen]) -> Vec<ObjectKey> {
+    /// The known weapons that are neither among `slots` nor `carried`, whose fate the next
+    /// observation must say.
+    pub fn unplaced(&self, slots: &[Seen], carried: &[(Seen, SocketId)]) -> Vec<ObjectKey> {
         self.entries
             .iter()
-            .filter(|e| !slots.iter().any(|s| s.object == e.object))
+            .filter(|e| {
+                !slots.iter().any(|s| s.object == e.object)
+                    && !carried.iter().any(|(s, _)| s.object == e.object)
+            })
             .map(|e| e.object)
             .collect()
     }
@@ -216,42 +236,18 @@ impl Registry {
                 Some((hand, role)) => Location::Hand(hand, role),
                 None => Location::MainSlot(seen.kind.slot),
             };
-            match self.entries.iter_mut().find(|e| e.object == seen.object) {
-                Some(entry) => {
-                    entry.kind = seen.kind;
-                    entry.magazine = seen.magazine;
-                    entry.distance_m = None;
-                    if entry.location != to {
-                        out.push(Transition::Moved {
-                            id: entry.id,
-                            kind: entry.kind,
-                            from: entry.location,
-                            to,
-                        });
-                        entry.location = to;
-                    }
-                }
-                None => {
-                    let id = self.allocate();
-                    self.entries.push(Entry {
-                        id,
-                        object: seen.object,
-                        kind: seen.kind,
-                        magazine: seen.magazine,
-                        location: to,
-                        distance_m: None,
-                    });
-                    out.push(Transition::Added {
-                        id,
-                        kind: seen.kind,
-                        to,
-                    });
-                }
-            }
+            out.extend(self.place(*seen, to));
+        }
+        for &(seen, socket) in &observation.carried {
+            let to = match hand_of(seen.object) {
+                Some((hand, _)) => Location::Hand(hand, Role::Driven),
+                None => Location::Socket(socket),
+            };
+            out.extend(self.place(seen, to));
         }
         let mut gone = Vec::new();
         for entry in &mut self.entries {
-            if observation.slots.iter().any(|s| s.object == entry.object) {
+            if observation.placed(entry.object) {
                 continue;
             }
             let fate = observation
@@ -294,6 +290,44 @@ impl Registry {
             out.extend(self.remove(id, GoneWhy::Destroyed));
         }
         out
+    }
+
+    /// Put `seen` at `to`, adding its entry when it is new.
+    fn place(&mut self, seen: Seen, to: Location) -> Option<Transition> {
+        match self.entries.iter_mut().find(|e| e.object == seen.object) {
+            Some(entry) => {
+                entry.kind = seen.kind;
+                entry.magazine = seen.magazine;
+                entry.distance_m = None;
+                if entry.location == to {
+                    return None;
+                }
+                let from = entry.location;
+                entry.location = to;
+                Some(Transition::Moved {
+                    id: entry.id,
+                    kind: entry.kind,
+                    from,
+                    to,
+                })
+            }
+            None => {
+                let id = self.allocate();
+                self.entries.push(Entry {
+                    id,
+                    object: seen.object,
+                    kind: seen.kind,
+                    magazine: seen.magazine,
+                    location: to,
+                    distance_m: None,
+                });
+                Some(Transition::Added {
+                    id,
+                    kind: seen.kind,
+                    to,
+                })
+            }
+        }
     }
 
     /// Pin or unpin the weapon of `id`, when it lies in the world.
@@ -382,6 +416,7 @@ mod tests {
     fn the_slots_are_mirrored_and_the_wielded_weapon_is_in_its_hand() {
         let mut r = Registry::new();
         let t = r.observe(&Observation {
+            carried: vec![],
             slots: vec![
                 seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED),
                 seen(PISTOLS, WeaponSlot::E_SLOT_DUAL_WIELD),
@@ -401,6 +436,7 @@ mod tests {
         );
         // The same view again changes nothing.
         let again = r.observe(&Observation {
+            carried: vec![],
             slots: vec![
                 seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED),
                 seen(PISTOLS, WeaponSlot::E_SLOT_DUAL_WIELD),
@@ -419,6 +455,7 @@ mod tests {
             seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL),
         ];
         r.observe(&Observation {
+            carried: vec![],
             slots: slots.clone(),
             hands: [Some((SNIPER, Role::Driven)), Some((RIFLE, Role::Wielded))],
             fates: vec![],
@@ -428,6 +465,7 @@ mod tests {
             Some(Location::Hand(Hand::Left, Role::Driven))
         );
         let t = r.observe(&Observation {
+            carried: vec![],
             slots,
             hands: [None, Some((RIFLE, Role::Wielded))],
             fates: vec![],
@@ -447,12 +485,14 @@ mod tests {
     fn a_weapon_let_go_of_lies_in_the_world_until_it_is_gone() {
         let mut r = Registry::new();
         r.observe(&Observation {
+            carried: vec![],
             slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED)],
             hands: [None, Some((RIFLE, Role::Wielded))],
             fates: vec![],
         });
-        assert_eq!(r.unplaced(&[]), vec![RIFLE]);
+        assert_eq!(r.unplaced(&[], &[]), vec![RIFLE]);
         r.observe(&Observation {
+            carried: vec![],
             slots: vec![],
             hands: [None; 2],
             fates: vec![(RIFLE, lying(1.5))],
@@ -462,6 +502,7 @@ mod tests {
         assert_eq!(entry.distance_m, Some(1.5));
         assert_eq!(entry.magazine, 12, "the magazine follows the object");
         let t = r.observe(&Observation {
+            carried: vec![],
             slots: vec![],
             hands: [None; 2],
             fates: vec![(RIFLE, Fate::Gone)],
@@ -506,6 +547,7 @@ mod tests {
         assert_eq!(location(&r, RIFLE), Some(Location::Npc));
         assert!(!Location::Npc.owned());
         r.observe(&Observation {
+            carried: vec![],
             slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED)],
             hands: [Some((RIFLE, Role::Wielded)), None],
             fates: vec![],
@@ -545,6 +587,7 @@ mod tests {
     fn a_reset_drops_everything() {
         let mut r = Registry::new();
         r.observe(&Observation {
+            carried: vec![],
             slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED)],
             fates: vec![],
             hands: [None; 2],
@@ -558,5 +601,70 @@ mod tests {
             ..Observation::default()
         });
         assert_eq!(r.find(SNIPER).unwrap().id, EntryId(2));
+    }
+
+    #[test]
+    fn a_carried_weapon_is_on_its_socket_and_in_a_hand_while_driven() {
+        let mut r = Registry::new();
+        let carried = vec![(
+            seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL),
+            SocketId::BackOuter,
+        )];
+        r.observe(&Observation {
+            slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL)],
+            carried: carried.clone(),
+            hands: [None; 2],
+            fates: vec![],
+        });
+        assert_eq!(
+            location(&r, SNIPER),
+            Some(Location::Socket(SocketId::BackOuter))
+        );
+        assert!(Location::Socket(SocketId::BackOuter).owned());
+        assert!(r.unplaced(&[], &carried).contains(&RIFLE));
+        assert!(!r.unplaced(&[], &carried).contains(&SNIPER));
+        r.observe(&Observation {
+            slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL)],
+            carried,
+            hands: [Some((SNIPER, Role::Wielded)), None],
+            fates: vec![],
+        });
+        assert_eq!(
+            location(&r, SNIPER),
+            Some(Location::Hand(Hand::Left, Role::Driven)),
+            "a carried weapon in a hand is the mod's to drive"
+        );
+    }
+
+    #[test]
+    fn a_promotion_swaps_a_slot_and_a_socket_without_losing_either() {
+        let mut r = Registry::new();
+        r.observe(&Observation {
+            slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED)],
+            carried: vec![(
+                seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED),
+                SocketId::BackFirst,
+            )],
+            hands: [None; 2],
+            fates: vec![],
+        });
+        let ids = (r.find(RIFLE).unwrap().id, r.find(SNIPER).unwrap().id);
+        let t = r.observe(&Observation {
+            slots: vec![seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED)],
+            carried: vec![(
+                seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED),
+                SocketId::BackFirst,
+            )],
+            hands: [None, Some((SNIPER, Role::Wielded))],
+            fates: vec![],
+        });
+        assert_eq!(t.len(), 2);
+        assert!(t.iter().all(|t| matches!(t, Transition::Moved { .. })));
+        assert_eq!(r.find(RIFLE).unwrap().id, ids.0);
+        assert_eq!(r.find(SNIPER).unwrap().id, ids.1);
+        assert_eq!(
+            location(&r, RIFLE),
+            Some(Location::Socket(SocketId::BackFirst))
+        );
     }
 }

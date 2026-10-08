@@ -18,7 +18,9 @@
 
 use glam::Vec3;
 
-use crate::controllers::{frame::Hand, vehicles::physical::ControlKind};
+use crate::controllers::{
+    frame::Hand, vehicles::physical::ControlKind, weapons::inventory::sockets::SocketId,
+};
 
 /// A region where a grip press grabs.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -69,6 +71,10 @@ pub enum GrabVolume {
     /// A magazine lying in the world that fits the held gun, for the hand without a gun while the
     /// gun's magazine is out (see [`crate::controllers::weapons::reload::loose`]).
     WorldMagazine,
+    /// A socket on the body for a weapon carried beyond the slots: the carried weapon there, for a
+    /// hand without a gun to draw, or the free socket, for the hand holding a weapon that fits it
+    /// to put it there (see [`crate::controllers::weapons::inventory`]).
+    Socket(SocketId),
 }
 
 impl GrabVolume {
@@ -93,6 +99,7 @@ impl GrabVolume {
             GrabVolume::GrenadePin => "grenade pin",
             GrabVolume::LiveGrenade => "live grenade",
             GrabVolume::WorldMagazine => "magazine in the world",
+            GrabVolume::Socket(socket) => socket.label(),
         }
     }
 }

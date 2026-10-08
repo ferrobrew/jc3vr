@@ -88,6 +88,12 @@ impl Strong {
     pub(crate) fn object(&self) -> *mut GameObject {
         self.0.px
     }
+
+    /// The reference's control block, for a non-owning copy of the reference that the engine
+    /// copies from, valid while this one is held.
+    pub(crate) fn control_block(&self) -> *mut std::ffi::c_void {
+        self.0.pn
+    }
 }
 
 impl Drop for Strong {

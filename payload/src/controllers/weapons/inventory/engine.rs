@@ -10,6 +10,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
     game::GameObject,
     spawn_system::SpawnSystem,
+    types::shared_ptr::SharedPtr,
 };
 
 use crate::controllers::{
@@ -44,6 +45,24 @@ pub(crate) fn weapon_of(strong: &Strong) -> *mut WeaponBase {
 /// `weapon` must be live.
 pub(crate) unsafe fn weak_to(weapon: &WeaponBase) -> Weak {
     unsafe { Weak::of(&weapon.m_WeakThis) }
+}
+
+/// A strong reference to `weapon`, while it lives.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn strong_to(weapon: &WeaponBase) -> Option<Strong> {
+    unsafe { Strong::lock(&weapon.m_WeakThis) }
+}
+
+/// A non-owning `boost::shared_ptr<CWeaponBase>` to the weapon `strong` keeps alive, for the calls
+/// that take one by reference and copy it; valid while `strong` is held.
+pub(crate) fn shared_view(strong: &Strong) -> SharedPtr<WeaponBase> {
+    SharedPtr {
+        px: weapon_of(strong),
+        pn: strong.control_block(),
+    }
 }
 
 /// `weapon`'s slot, read as the raw value: an unset slot is out of the enum's range.

@@ -4,7 +4,7 @@ use egui::Ui;
 
 use crate::controllers::weapons::{
     holster::slot_label,
-    inventory::{InventoryStatus, config::InventoryConfig},
+    inventory::{InventoryStatus, config::InventoryConfig, sockets::SocketId},
 };
 
 pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus) {
@@ -17,6 +17,13 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus) {
         s.pins,
         s.forgotten,
         s.resets
+    ));
+    ui.label(format!(
+        "Carried: {} · drawn {} · put away {} · kept from pickups {}",
+        s.carried().count(),
+        s.draws,
+        s.stows,
+        s.carried_replaced
     ));
     for entry in &s.entries {
         ui.label(format!(
@@ -46,5 +53,28 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
             ui.add(egui::Slider::new(&mut c.max_pinned, 0..=16).text("Most kept at once"));
         });
         ui.add(egui::Slider::new(&mut c.forget_m, 10.0..=200.0).text("Left to the game past (m)"));
+        ui.checkbox(&mut c.carry, "Carry weapons beyond the slots on the body");
+        ui.add_enabled_ui(c.carry, |ui| {
+            ui.add(egui::Slider::new(&mut c.back_sockets, 0..=3).text("Long guns on the back"));
+            ui.add(egui::Slider::new(&mut c.hip_sockets, 0..=2).text("Pistols on the hips"));
+            ui.checkbox(&mut c.chest_socket, "A submachine gun on the chest");
+            ui.add(egui::Slider::new(&mut c.socket_radius_m, 0.03..=0.3).text("Socket radius (m)"));
+            for socket in SocketId::ALL {
+                let offset = match socket {
+                    SocketId::BackFirst => &mut c.offsets.back_first,
+                    SocketId::BackSecond => &mut c.offsets.back_second,
+                    SocketId::BackOuter => &mut c.offsets.back_outer,
+                    SocketId::HipLeft => &mut c.offsets.hip_left,
+                    SocketId::HipRight => &mut c.offsets.hip_right,
+                    SocketId::Chest => &mut c.offsets.chest,
+                };
+                super::vec3_drag(
+                    ui,
+                    &format!("Offset on the {} (m)", socket.label()),
+                    offset,
+                    0.005,
+                );
+            }
+        });
     });
 }

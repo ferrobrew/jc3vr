@@ -83,6 +83,7 @@ use crate::controllers::{
         dual_wield,
         engine::slot_from_raw,
         hold::holder::{Cause, Change, Holder, Pending},
+        inventory,
     },
 };
 
@@ -482,6 +483,8 @@ fn update_attachment_transforms(
         .get()
         .unwrap()
         .call(inventory, character, p3, p4, transform_type);
+    // No inventory places the carried weapons; they follow the slots' weapons.
+    unsafe { inventory::carry::place(inventory, character, p3, p4, transform_type) };
     if let Some(placement) = placement {
         unsafe { grip::after_placement(character, placement) };
     }

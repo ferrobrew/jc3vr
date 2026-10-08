@@ -50,6 +50,7 @@ use crate::controllers::{
             world::{TargetKind, WorldTarget},
         },
         holster::slot_label,
+        inventory,
     },
 };
 
@@ -165,6 +166,13 @@ pub(crate) unsafe fn take(
         return Err(RackRefusal::Pickup(Refusal::AnimationForbids));
     }
     let from = unsafe { pickup::gun_pose(weapon) };
+    // The copy goes into the slot and drops its occupant, so the occupant goes onto a free socket
+    // first when there is one.
+    if !owner.m_Inventory.m_Weapons[slot as usize].px.is_null()
+        && unsafe { inventory::actions::carry_replaced(owner, slot) }
+    {
+        tracing::info!(target: "controllers", slot = slot_label(slot), "hold: carried the weapon the rack's copy replaces");
+    }
     hold::begin(hand, Cause::Rack, None);
     if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
         dual_wield::attach::begin_draw(hand);

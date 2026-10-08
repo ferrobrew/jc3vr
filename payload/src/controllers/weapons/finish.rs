@@ -31,6 +31,10 @@ use crate::{
                 second,
             },
             holster::{self, HolsterAction},
+            inventory::{
+                actions::{self, SocketGrab, SocketRefusal},
+                carry,
+            },
             reload,
             state::STATE,
             types::{GrabEvent, GrabOutcome},
@@ -160,6 +164,28 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 let taken = unsafe { hold::take::finish_grab(hand, &inputs) };
                 GrabOutcome::Take { taken }
             }
+            GrabVolume::Socket(socket) => {
+                let grab = SocketGrab {
+                    hand,
+                    socket,
+                    wielded: weapon.map(|(w, _)| (w.address, w.wielded.hands)),
+                    other_holds_second: second::hand() == Some(hand.other()),
+                    snap_s: config.weapons.hold.snap_s,
+                    independent_pistols: config.weapons.dual_wield.split
+                        && config.weapons.dual_wield.independent_draw,
+                };
+                // SAFETY: the input tick runs on the main thread outside the world update.
+                match unsafe { actions::grab(&grab) } {
+                    Ok(_) => GrabOutcome::Socket { done: true },
+                    // A grip press at a free socket with nothing to put there does nothing.
+                    Err(SocketRefusal::Empty) => continue,
+                    Err(refusal) => {
+                        tracing::debug!(target: "controllers", %refusal, "inventory: the socket grab did nothing");
+                        hold::refused(refusal);
+                        GrabOutcome::Socket { done: false }
+                    }
+                }
+            }
             GrabVolume::VehicleControl(_)
             | GrabVolume::ParachuteHandle(_)
             | GrabVolume::MountedHandle(_)
@@ -187,18 +213,34 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
     if let (Some(hand), Some((w, _))) = (released, weapon) {
         let volumes = STATE.lock().status.volumes;
+        // A free socket the hand opens at takes the gun, before the holster or the drop.
+        let stowed = match volumes[hand.index()] {
+            Some(GrabVolume::Socket(socket)) if carry::on_socket(socket).is_none() => {
+                // SAFETY: the input tick runs on the main thread outside the world update.
+                unsafe { engine::local_player() }.is_some_and(|owner| {
+                    unsafe { actions::stow(owner, hand, socket, w.wielded.hands == [true; 2]) }
+                        .inspect_err(|refusal| {
+                            tracing::debug!(target: "controllers", %refusal, "inventory: the gun was not put onto the socket");
+                        })
+                        .is_ok()
+                })
+            }
+            _ => false,
+        };
         let at_own_holster = matches!(
             volumes[hand.index()],
             Some(GrabVolume::Holster(site))
                 if holster::site_slot(site, config.acting_hand()) == w.wielded.slot
         );
         let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD;
-        release(
-            hand,
-            dock::on_release(at_own_holster, droppable),
-            w.wielded,
-            &config,
-        );
+        if !stowed {
+            release(
+                hand,
+                dock::on_release(at_own_holster, droppable),
+                w.wielded,
+                &config,
+            );
+        }
     }
 
     grenade::input_tick(
@@ -570,5 +612,6 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
         ) | GrabOutcome::Foregrip(Transition::Grabbed)
             | GrabOutcome::Handover { moved: true }
             | GrabOutcome::Take { taken: true }
+            | GrabOutcome::Socket { done: true }
     )
 }

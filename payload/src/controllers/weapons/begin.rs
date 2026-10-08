@@ -22,7 +22,7 @@ use crate::{
             engine::{self, HeldWeapon},
             foregrip, grenade, grip_watch, heft, highlights,
             hold::{self, second},
-            inventory,
+            inventory::{self, actions::SocketPoint},
             reload::{self, focus::ReloadTarget},
             scope,
             state::STATE,
@@ -86,6 +86,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 } else {
                     Vec::new()
                 },
+                sockets: inventory::actions::socket_points(
+                    owner,
+                    &config.weapons.inventory,
+                    config.acting_hand(),
+                    weapon.map(|w| w.address),
+                ),
                 character: Some(Mat4::from(owner.m_WorldMatrixT1)),
             }
         })
@@ -190,6 +196,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let body_points = body_points(&active, &body_frame.anchor);
     let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
     let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
+    if gameplay {
+        candidates.extend(socket_candidates(
+            &ticked,
+            &active,
+            free,
+            weapon.and_then(|w| w.holder),
+            config.weapons.inventory.socket_radius_m,
+        ));
+    }
     if config.weapons.grenade_throw {
         let throwing = grenade::throwing_hand().or(c4::throwing_hand());
         // SAFETY: the input tick runs on the main thread outside the world update.
@@ -323,6 +338,8 @@ struct Ticked {
     second: Option<HeldWeapon>,
     /// The guns docked on the body, at their points in the world.
     docked: Vec<(HolsterSite, Vec3)>,
+    /// The sockets' grab volumes, in the world.
+    sockets: Vec<SocketPoint>,
     /// The character's model-to-world transform.
     character: Option<Mat4>,
 }
@@ -368,6 +385,39 @@ fn follow_docks(
         })
         .collect();
     docks::follow(candidates, &on_character, &guns, docks::MAX_SHIFT_M)
+}
+
+/// The sockets' grab volumes in the cockpit frame: a carried weapon for each hand without a gun,
+/// and a free socket for the hand holding the wielded weapon.
+fn socket_candidates(
+    ticked: &Ticked,
+    active: &ActiveHands,
+    free: [bool; 2],
+    holder: Option<Hand>,
+    radius: f32,
+) -> Vec<Candidate> {
+    let Some(frames) = ticked
+        .character
+        .and_then(|c| docks::cockpit_frames(active, c))
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for point in &ticked.sockets {
+        let centre = frames.world_to_cockpit(point.point);
+        let hands: Vec<Hand> = if point.occupied {
+            Hand::BOTH.into_iter().filter(|h| free[h.index()]).collect()
+        } else {
+            holder.into_iter().collect()
+        };
+        out.extend(hands.into_iter().map(|hand| Candidate {
+            volume: GrabVolume::Socket(point.socket),
+            centre,
+            radius: radius.max(0.0),
+            hand: Some(hand),
+        }));
+    }
+    out
 }
 
 /// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,

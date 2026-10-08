@@ -55,6 +55,11 @@ pub enum GrabOutcome {
     Take {
         taken: bool,
     },
+    /// A grab of a socket for a weapon carried beyond the slots: a carried weapon drawn, or the
+    /// held one put there, when `done`.
+    Socket {
+        done: bool,
+    },
 }
 
 impl GrabOutcome {
@@ -77,6 +82,8 @@ impl GrabOutcome {
             GrabOutcome::C4 => "charge asked for".to_owned(),
             GrabOutcome::Take { taken: true } => "weapon taken".to_owned(),
             GrabOutcome::Take { taken: false } => "weapon not taken".to_owned(),
+            GrabOutcome::Socket { done: true } => "socket used".to_owned(),
+            GrabOutcome::Socket { done: false } => "socket refused".to_owned(),
         }
     }
 }

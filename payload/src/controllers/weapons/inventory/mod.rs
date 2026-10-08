@@ -5,6 +5,10 @@
 //!
 //! - [`registry`]: the weapons and where each is, mirrored from the game's slots each input tick;
 //! - [`pins`]: which weapons lying in the world are kept from the game's despawn;
+//! - [`sockets`]: the places on the body a weapon beyond the slots docks;
+//! - [`carry`]: the weapons carried beyond the slots, their placement and visibility;
+//! - [`actions`]: drawing a carried weapon, putting the held one onto a socket, and carrying the
+//!   weapon a pickup replaces;
 //! - [`engine`]: the engine reads behind them;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
@@ -14,13 +18,19 @@
 //! tick on the main thread outside the world update, except the reset's detour, which takes the
 //! state's lock only for the local player's inventory.
 
+pub(crate) mod actions;
+pub(crate) mod carry;
 pub mod config;
 pub(crate) mod engine;
 pub mod pins;
 pub mod registry;
 mod reset;
+pub mod sockets;
 
-use jc3gi::character::character::Character;
+use jc3gi::{
+    character::{character::Character, inventory::WeaponSlot},
+    equipment::weapon::WeaponBase,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -32,13 +42,16 @@ use crate::controllers::{
         inventory::{
             config::InventoryConfig,
             registry::{Entry, Location, ObjectKey, Observation, Registry, Role, Transition},
+            sockets::SocketId,
         },
     },
 };
 
 /// The inventory's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    reset::hook_library()
+    HookLibrary::new()
+        .with_hook_library(reset::hook_library())
+        .with_hook_library(carry::hook_library())
 }
 
 /// The inventory's readout.
@@ -53,9 +66,22 @@ pub struct InventoryStatus {
     pub forgotten: u64,
     /// The spawn system resets seen since the payload loaded.
     pub resets: u64,
+    /// Carried weapons drawn into a hand, held weapons put onto a socket, and weapons a pickup
+    /// replaced that went onto a socket rather than the ground, since the payload loaded.
+    pub draws: u64,
+    pub stows: u64,
+    pub carried_replaced: u64,
 }
 
 impl InventoryStatus {
+    /// The carried weapons: each one's slot and socket.
+    pub fn carried(&self) -> impl Iterator<Item = (WeaponSlot, SocketId)> + '_ {
+        self.entries.iter().filter_map(|e| match e.location {
+            Location::Socket(socket) => Some((e.kind.slot, socket)),
+            _ => None,
+        })
+    }
+
     /// How many weapons in the world are pinned, and how many the registry knows there.
     pub fn world(&self) -> (usize, usize) {
         let world = self
@@ -96,8 +122,13 @@ pub(crate) unsafe fn input_tick(owner: &Character, inputs: &TickInputs) {
     if !inputs.settings.enabled {
         if state.status.active {
             state.release_all("the inventory is off");
+            drop(state);
+            unsafe { carry::drop_all() };
         }
         return;
+    }
+    if !inputs.settings.carry && carry::count() > 0 {
+        unsafe { carry::drop_all() };
     }
     state.status.active = true;
     let player = engine::position(owner);
@@ -113,6 +144,19 @@ pub(crate) unsafe fn input_tick(owner: &Character, inputs: &TickInputs) {
         }
     }
     let seen: Vec<_> = slots.into_iter().map(|(seen, _)| seen).collect();
+    let offsets = inputs.settings.offsets;
+    carry::set_offsets(|socket| offsets.of(socket));
+    let carried = unsafe { carry::seen() };
+    for (seen, _) in &carried {
+        if !state.handles.iter().any(|h| h.object == seen.object) {
+            state.handles.push(Handle {
+                object: seen.object,
+                // SAFETY: the carry set keeps the weapon alive.
+                weak: unsafe { engine::weak_to(&*(seen.object as *const WeaponBase)) },
+                pin: None,
+            });
+        }
+    }
     let mut hands = [None; 2];
     if let Some((object, Some(hand))) = inputs.wielded {
         hands[hand.index()] = Some((object, Role::Wielded));
@@ -122,7 +166,7 @@ pub(crate) unsafe fn input_tick(owner: &Character, inputs: &TickInputs) {
     }
     let fates = state
         .registry
-        .unplaced(&seen)
+        .unplaced(&seen, &carried)
         .into_iter()
         .map(|object| {
             let fate = match state.handles.iter().find(|h| h.object == object) {
@@ -134,6 +178,7 @@ pub(crate) unsafe fn input_tick(owner: &Character, inputs: &TickInputs) {
         .collect();
     let transitions = state.registry.observe(&Observation {
         slots: seen,
+        carried,
         hands,
         fates,
     });
@@ -151,6 +196,23 @@ fn on_reset() {
     let mut state = STATE.lock();
     state.status.resets += 1;
     state.release_all("the spawn system reset");
+    drop(state);
+    let carried = carry::release_all();
+    if carried > 0 {
+        tracing::info!(target: "controllers", carried, "inventory: released the carried weapons");
+    }
+}
+
+fn count_draw() {
+    STATE.lock().status.draws += 1;
+}
+
+fn count_stow() {
+    STATE.lock().status.stows += 1;
+}
+
+fn count_carried_replaced() {
+    STATE.lock().status.carried_replaced += 1;
 }
 
 /// One weapon the inventory holds references to.
@@ -240,6 +302,9 @@ static STATE: Mutex<State> = Mutex::new(State {
         pins: 0,
         forgotten: 0,
         resets: 0,
+        draws: 0,
+        stows: 0,
+        carried_replaced: 0,
     },
 });
 

@@ -209,6 +209,7 @@ const SECTIONS: &[Section] = &[
         title: "INVENTORY",
         rows: &[
             row!("TRACKED WEAPONS", inventory::tracked),
+            row!("CARRIED", inventory::carried),
             row!("KEPT IN THE WORLD", inventory::pinned),
         ],
     },

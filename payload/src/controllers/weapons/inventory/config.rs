@@ -3,7 +3,13 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::inventory::pins::PinSettings;
+use crate::controllers::{
+    frame::Hand,
+    weapons::inventory::{
+        pins::PinSettings,
+        sockets::{Layout, Offsets},
+    },
+};
 
 /// The VR inventory. Acts only under the controller scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -22,6 +28,20 @@ pub struct InventoryConfig {
     pub max_pinned: usize,
     /// A weapon in the world this far away and not kept is left to the game, metres.
     pub forget_m: f32,
+    /// Carry weapons beyond the slots on the body's sockets: a weapon picked up into a taken slot
+    /// moves the slot's weapon onto a free socket instead of dropping it, a held weapon put to a
+    /// free socket docks there, and a carried weapon grabbed off its socket comes into the hand.
+    pub carry: bool,
+    /// How many long guns the back carries beyond the slots, `0..=3`.
+    pub back_sockets: u8,
+    /// How many pistols the hips carry beyond the slots, `0..=2`.
+    pub hip_sockets: u8,
+    /// Whether the chest carries a submachine gun beyond the slots.
+    pub chest_socket: bool,
+    /// The radius of the grab volume on a carried weapon, and on a free socket, metres.
+    pub socket_radius_m: f32,
+    /// Where each socket's weapon sits relative to its bone.
+    pub offsets: Offsets,
 }
 
 impl InventoryConfig {
@@ -33,6 +53,22 @@ impl InventoryConfig {
             unpin_radius_m: 12.0,
             max_pinned: 6,
             forget_m: 60.0,
+            carry: true,
+            back_sockets: 3,
+            hip_sockets: 2,
+            chest_socket: true,
+            socket_radius_m: 0.12,
+            offsets: Offsets::new(),
+        }
+    }
+
+    /// The sockets these settings give, for `dominant`.
+    pub fn layout(&self, dominant: Hand) -> Layout {
+        Layout {
+            back: self.back_sockets.min(3),
+            hips: self.hip_sockets.min(2),
+            chest: self.chest_socket,
+            dominant,
         }
     }
 
