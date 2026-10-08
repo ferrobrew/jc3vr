@@ -8,8 +8,13 @@ use crate::controllers::{
         read_config,
         status::{Health, Line},
     },
-    mode::VehicleClass,
-    vehicles::{self, VehicleSummary, config::CockpitButtonsConfig, physical::ControlKind},
+    mode::{VehicleClass, VehicleSeat},
+    vehicles::{
+        self, VehicleSummary,
+        config::CockpitButtonsConfig,
+        passenger::{self, PassengerStatus},
+        physical::ControlKind,
+    },
 };
 
 pub(super) fn flight_controls() -> Line {
@@ -18,6 +23,29 @@ pub(super) fn flight_controls() -> Line {
         p.flight_stick.enabled || p.throttle.enabled
     });
     flight_controls_line(on, &vehicles::summary())
+}
+
+pub(super) fn passenger_aim() -> Line {
+    let on = read_config(|c| c.controllers.vehicles.passenger_body_by_hand);
+    let seat = vehicles::summary().seat;
+    passenger_aim_line(on, seat, passenger::status())
+}
+
+fn passenger_aim_line(on: bool, seat: Option<VehicleSeat>, status: PassengerStatus) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    match (seat.is_some_and(|s| !s.driver), status.aiming) {
+        (true, true) => Line::ok(format_smolstr!(
+            "FOLLOWING THE HAND, {} STARTS",
+            status.starts
+        )),
+        (true, false) => Line::new(Health::Waiting, "NO GUN HAND AIMING"),
+        (false, _) if status.starts > 0 => {
+            Line::ok(format_smolstr!("NOT A PASSENGER, {} STARTS", status.starts))
+        }
+        (false, _) => Line::new(Health::Waiting, "NOT A PASSENGER"),
+    }
 }
 
 pub(super) fn cockpit_buttons() -> Line {
@@ -103,7 +131,7 @@ fn flight_controls_line(on: bool, summary: &VehicleSummary) -> Line {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::{mode::VehicleSeat, vehicles::physical::Outputs};
+    use crate::controllers::vehicles::physical::Outputs;
 
     fn flying() -> VehicleSummary {
         VehicleSummary {
@@ -125,6 +153,39 @@ mod tests {
             afterburner_lights: 1,
             button_presses: 2,
         }
+    }
+
+    #[test]
+    fn the_passenger_aim_waits_for_a_seat_and_a_gun_hand() {
+        let passenger = Some(VehicleSeat {
+            class: VehicleClass::Car,
+            driver: false,
+        });
+        let aiming = PassengerStatus {
+            aiming: true,
+            updates: 10,
+            starts: 2,
+        };
+        assert_eq!(
+            passenger_aim_line(false, passenger, aiming).health,
+            Health::Off
+        );
+        assert_eq!(
+            passenger_aim_line(true, passenger, aiming).text(),
+            "OK, FOLLOWING THE HAND, 2 STARTS"
+        );
+        let idle = PassengerStatus {
+            aiming: false,
+            ..aiming
+        };
+        assert_eq!(
+            passenger_aim_line(true, passenger, idle).health,
+            Health::Waiting
+        );
+        assert_eq!(
+            passenger_aim_line(true, None, PassengerStatus::default()).text(),
+            "WAITING, NOT A PASSENGER"
+        );
     }
 
     #[test]

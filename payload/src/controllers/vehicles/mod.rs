@@ -14,6 +14,7 @@
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
 //! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
 //! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand, as an option;
+//! - [`passenger`]: a passenger's seated body turned toward the gun hand's aim;
 //! - [`look_steer`]: the wingsuit's head look-steer removed.
 //!
 //! The stick bindings of every class are the tables' ([`crate::controllers::bindings::tables`]).
@@ -57,6 +58,7 @@ pub mod look_steer;
 pub mod mounted;
 mod mounted_tick;
 pub mod parachute;
+pub mod passenger;
 pub mod physical;
 pub mod steering;
 pub mod wheel;

@@ -62,8 +62,9 @@ pub struct PlayerAimControl {
     _field_149: [u8; 3],
     /// Per slot, the world-space aim position: the direct position, pulled toward the selected
     /// target by aim assist. Slot [`TARGET_WEAPONS`](crate::aim::target::TargetType::TARGET_WEAPONS) is the point every
-    /// weapon aims at, and slot [`TARGET_GRAPPLE`](crate::aim::target::TargetType::TARGET_GRAPPLE) is the grapple aim
-    /// point.
+    /// weapon aims at, and the point the seated upper-body aim blend turns toward
+    /// ([`VehicleAimBlendState::UpdateSamplers`](crate::aim::aim::VehicleAimBlendState::UpdateSamplers)); slot [`TARGET_GRAPPLE`](crate::aim::target::TargetType::TARGET_GRAPPLE)
+    /// is the grapple aim point.
     pub m_AimPos: [crate::types::math::Vector3; 6],
     /// Per slot, [`m_AimPos`](crate::aim::aim::PlayerAimControl::m_AimPos) as of the previous tick. The grapple reticle
     /// interpolates from it toward the current position.
@@ -686,6 +687,49 @@ fn _RayType_size_check() {
         ::std::mem::transmute::<[u8; 0x4], RayType>([0u8; 0x4]);
     }
     unreachable!()
+}
+#[repr(C, align(8))]
+/// The player's upper-body aim blend while seated in a vehicle (`CVehicleAimBlendState`), an
+/// animation-graph state over four directional aim samplers. Its layout is unmapped.
+pub struct VehicleAimBlendState {}
+impl VehicleAimBlendState {
+    pub const UpdateSamplers_ADDRESS: usize = 0x14086F4F0;
+    /// Weights the state's samplers for the character owning `instance` (a
+    /// `NAnimationSystem::CStateMachineInstance`) over `dt`. It reads the weapon aim point of the
+    /// player's aim control ([`Player::m_AimControl`](crate::character::player::Player::m_AimControl), the
+    /// [`TARGET_WEAPONS`](crate::aim::target::TargetType::TARGET_WEAPONS) slot of
+    /// [`m_AimPos`](crate::aim::aim::PlayerAimControl::m_AimPos)), turns its horizontal direction from the
+    /// character into a signed yaw against the character's heading carried by the animation's delta
+    /// rotation, and its direction from the right attach bone (or the head) into a pitch, and blends
+    /// the front, side, and back samplers by the yaw and the up and down ones by the pitch. The
+    /// disassembler labels it `CJumpAimBlendState::UpdateSamplers`; the vehicle aim blend state's
+    /// virtual table points at it.
+    pub unsafe fn UpdateSamplers(
+        &mut self,
+        instance: *mut ::std::ffi::c_void,
+        dt: f32,
+        samplers: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                instance: *mut ::std::ffi::c_void,
+                dt: f32,
+                samplers: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::UpdateSamplers_ADDRESS);
+            f(self as *mut Self as _, instance, dt, samplers)
+        }
+    }
+}
+impl std::convert::AsRef<VehicleAimBlendState> for VehicleAimBlendState {
+    fn as_ref(&self) -> &VehicleAimBlendState {
+        self
+    }
+}
+impl std::convert::AsMut<VehicleAimBlendState> for VehicleAimBlendState {
+    fn as_mut(&mut self) -> &mut VehicleAimBlendState {
+        self
+    }
 }
 pub const NAutoAimToTarget_Update_ADDRESS: usize = 0x140809C60;
 /// The character-state task that overrides the aim direction toward a locked target.

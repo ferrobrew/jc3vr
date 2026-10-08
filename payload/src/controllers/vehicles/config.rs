@@ -22,6 +22,10 @@ pub struct VehiclesConfig {
     /// Aim the driver's vehicle weapons at the dominant hand's aim point instead of the gaze. Off,
     /// they aim along the gaze as the game does.
     pub driver_weapons_by_hand: bool,
+    /// In a passenger or stunt seat, turn the seated body toward the gun hand's aim point instead
+    /// of the gaze's, so the body leans and points the gun where the hand does. Off, the body turns
+    /// toward the gaze as the game's does, while the gun still aims by the hand.
+    pub passenger_body_by_hand: bool,
     /// Mounted guns and gunner seats aimed by the hands on the handles.
     pub mounted: MountedConfig,
     /// The physical controls of the driver's seat.
@@ -38,6 +42,7 @@ impl VehiclesConfig {
     pub const fn new() -> Self {
         Self {
             driver_weapons_by_hand: true,
+            passenger_body_by_hand: true,
             mounted: MountedConfig::new(),
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),

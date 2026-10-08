@@ -105,6 +105,8 @@ signals! {
     ControlCues => "vehicles.control_cues", Counter, "Haptic stops, detents, and gates the held sticks and levers gave.";
     Afterburner => "vehicles.afterburner", Flag, "The plane's throttle is through its afterburner gate.";
     AfterburnerLights => "vehicles.afterburner_lights", Counter, "Times the throttle went through its afterburner gate.";
+    PassengerAiming => "vehicles.passenger_aiming", Flag, "The seated passenger's body turns toward the gun hand's aim.";
+    PassengerAimStarts => "vehicles.passenger_aim_starts", Counter, "Times the seated body started following the gun hand.";
     ButtonPresses => "vehicles.button_presses", Counter, "Cockpit buttons pressed and twist grips twisted by hand.";
     HornByHand => "vehicles.horn", Flag, "A hand presses the horn on the wheel's hub.";
     NitrousByHand => "vehicles.nitrous", Flag, "A hand presses the nitrous button or twists a twist grip.";
@@ -199,6 +201,8 @@ impl Signal {
             Signal::ControlCues => count(vehicles::summary().cues),
             Signal::Afterburner => flag(vehicles::summary().outputs.afterburner),
             Signal::AfterburnerLights => count(vehicles::summary().afterburner_lights),
+            Signal::PassengerAiming => flag(vehicles::passenger::status().aiming),
+            Signal::PassengerAimStarts => count(vehicles::passenger::status().starts),
             Signal::ButtonPresses => count(vehicles::summary().button_presses),
             Signal::HornByHand => flag(vehicles::summary().outputs.horn),
             Signal::NitrousByHand => flag(vehicles::summary().outputs.nitrous),

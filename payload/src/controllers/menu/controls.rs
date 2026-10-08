@@ -529,6 +529,10 @@ fn settings_page() -> Page {
             .controllers
             .vehicles
             .driver_weapons_by_hand))
+        .item(config_toggle!("PASSENGER BODY AIMS BY HAND", |c| c
+            .controllers
+            .vehicles
+            .passenger_body_by_hand))
         .item(config_toggle!("MOUNTED GUNS BY HAND", |c| c
             .controllers
             .vehicles

@@ -110,6 +110,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.roomscale.head_fade.enabled = room;
     c.roomscale.seat_transition = SeatTransition::Ride;
     c.vehicles.driver_weapons_by_hand = vehicles;
+    c.vehicles.passenger_body_by_hand = vehicles;
     c.vehicles.mounted.aim_by_hands = vehicles;
     c.vehicles.mounted.anchor_hands = vehicles;
     c.vehicles.physical.wheel.enabled = vehicles;
@@ -118,6 +119,11 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.physical.collective.enabled = vehicles;
     c.vehicles.physical.flight_stick.enabled = vehicles;
     c.vehicles.physical.throttle.enabled = vehicles;
+    c.vehicles.physical.flight.twist_rudder = vehicles;
+    c.vehicles.physical.flight.afterburner_gate = vehicles;
+    c.vehicles.physical.buttons.horn = vehicles;
+    c.vehicles.physical.buttons.nitrous_button = vehicles;
+    c.vehicles.physical.buttons.twist_nitrous = vehicles;
     c.vehicles.arm_steering.wingsuit = vehicles;
     c.vehicles.driving_view.enabled = vehicles;
     c.vehicles.parachute_handles.enabled = vehicles;

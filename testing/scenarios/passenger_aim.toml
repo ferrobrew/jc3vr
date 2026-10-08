@@ -1,0 +1,15 @@
+# Template: fill testing/recordings/passenger_aim.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "shoot from a passenger seat by hand"
+description = "Recorded standing by a parked modern saloon with a pistol drawn and an ally to drive, or in a vehicle the director sets moving (vehicle-weapons.md, the passenger checklist). Get in a passenger seat, look ahead, point the pistol out of the side window and fire a few shots, then point it ahead and behind, and get out."
+recording = "../recordings/passenger_aim.jc3trk"
+settle_s = 5.0
+
+[[expect]]
+signal = "controllers.in_vehicle"
+
+[[expect]]
+name = "the seated body followed the gun hand"
+signal = "vehicles.passenger_aim_starts"
+
+[[expect]]
+log = "the seated body follows the gun hand's aim"

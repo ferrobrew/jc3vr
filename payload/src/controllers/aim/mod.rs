@@ -58,6 +58,7 @@ use crate::{
         config::ControllersConfig,
         frame::{Hand, Pose},
         hands::{self, ik, late, pose as hand_pose},
+        mode::{self, Mode},
         physical_hands, scheme, vehicles,
         weapons::{c4, collide, grenade, hold::second},
     },
@@ -376,6 +377,22 @@ unsafe fn finish(
     });
     gun::publish(held, gun_targets);
     second::publish_target(second_hand.and_then(|hand| gun_targets[hand.index()]));
+    let seat = match mode::current().mode {
+        Mode::Vehicle(seat) => Some(seat),
+        _ => None,
+    };
+    // SAFETY: the owner is the live local player character, on the simulation thread.
+    let mounted = unsafe { owner.IsInMountedGunState() };
+    let body_point = vehicles::passenger::body_aim_point(&tick.config, seat, mounted, gun_targets);
+    vehicles::passenger::note(body_point.is_some());
+    // SAFETY: the aim control is live for its own update, and the original has run.
+    if let Some(aim) = unsafe { aim.as_mut() }
+        && let Some(point) = body_point
+    {
+        aim.m_AimPos[TargetType::TARGET_WEAPONS as usize] = Vector3 {
+            data: point.to_array(),
+        };
+    }
     sights::tuning::service(
         &cfg.sight_tuning,
         tick.head,
