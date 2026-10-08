@@ -105,13 +105,15 @@ fn posture_inputs(ui: &mut Ui, f: &FrameStatus) {
     if let Some(c) = f.classifier {
         let t = c.thresholds;
         ui.label(format!(
-            "Auto: {:?} ({}) · seated eyes {:.2} m{} · standing eyes {:.2} m · sits below {:.2} m · stands above {:.2} m · dwell {:.1} s",
+            "Auto: {:?} ({}) · seated eyes {:.2} m{} · standing eyes {:.2} m · sits below {:.2} m · floor below {:.2} m{} · stands above {:.2} m · dwell {:.1} s",
             c.detected,
             c.reason.label(),
             t.seated_eye_m,
             if t.seated_estimated { " (estimated)" } else { "" },
             t.standing_eye_m,
             t.sit_below_m,
+            t.floor_below_m,
+            if c.floor_level { " (at floor level)" } else { "" },
             t.stand_above_m,
             c.dwell_s,
         ));
@@ -153,6 +155,14 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
     ui.add(
         egui::Slider::new(&mut r.auto_posture.sit_after_s, 1.0..=120.0)
             .text("Auto: seated after (s)"),
+    );
+    ui.checkbox(
+        &mut r.auto_posture.chair_height_only,
+        "Auto: seated only at a chair's height",
+    )
+    .on_hover_text(
+        "Count the wait only while a standing head is steady at a chair's height: a head at floor \
+         level, or one that bobs, stays standing.",
     );
     let s = &mut r.seated_reference;
     ui.checkbox(&mut s.adaptive, "Adaptive seated eye reference")

@@ -888,6 +888,10 @@ pub struct AutoPostureConfig {
     /// seated, seconds. Long, so that a standing player crouching behind cover keeps the physical
     /// crouch.
     pub sit_after_s: f32,
+    /// Count the sit wait only while a standing player's head is steady at a chair's height: a
+    /// head at floor level (sitting or kneeling on the floor of the play area) or one that bobs
+    /// (a crouch peeking out of cover) stays standing.
+    pub chair_height_only: bool,
 }
 
 impl AutoPostureConfig {
@@ -895,6 +899,7 @@ impl AutoPostureConfig {
         Self {
             stand_after_s: 1.0,
             sit_after_s: 20.0,
+            chair_height_only: true,
         }
     }
 }

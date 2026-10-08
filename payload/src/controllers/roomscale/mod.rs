@@ -137,6 +137,24 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         frame.classifier.reset();
         None
     };
+    if let Some(c) = classifier {
+        let seen = (c.detected, c.floor_level);
+        if frame.classified != Some(seen) {
+            frame.classified = Some(seen);
+            tracing::info!(
+                target: "controllers",
+                detected = ?c.detected,
+                reason = c.reason.label(),
+                floor_level = c.floor_level,
+                head_height_m = ?c.head_height_m,
+                floor_below_m = c.thresholds.floor_below_m,
+                sit_below_m = c.thresholds.sit_below_m,
+                "roomscale: the automatic posture's detection changes",
+            );
+        }
+    } else {
+        frame.classified = None;
+    }
     let detected = classifier.map_or(DetectedPosture::Seated, |c| c.detected);
     let posture = posture::resolve(
         config.posture,
@@ -551,6 +569,8 @@ struct FrameState {
     teleport_rebases: u64,
     seated_crouch: bool,
     classifier: PostureClassifier,
+    /// The automatic posture's last logged detection, and whether the head was at floor level.
+    classified: Option<(DetectedPosture, bool)>,
     seated_reference: SeatedReference,
     crouch: CrouchTracker,
     seat: SeatTracker,
@@ -571,6 +591,7 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     teleport_rebases: 0,
     seated_crouch: false,
     classifier: PostureClassifier::new(),
+    classified: None,
     seated_reference: SeatedReference::new(),
     crouch: CrouchTracker::new(),
     seat: SeatTracker::new(),

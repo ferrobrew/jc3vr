@@ -187,6 +187,8 @@ fn log(r: &HeightReadout) {
         auto_seated_eye_m = thresholds.map(|t| t.seated_eye_m),
         auto_seated_eye_estimated = thresholds.map(|t| t.seated_estimated),
         auto_sit_below_m = thresholds.map(|t| t.sit_below_m),
+        auto_floor_below_m = thresholds.map(|t| t.floor_below_m),
+        auto_floor_level = classifier.map(|c| c.floor_level),
         auto_stand_above_m = thresholds.map(|t| t.stand_above_m),
         seated_reference_m = reference.map(|r| r.height_m),
         seated_reference_source = reference.map(|r| r.source.label()),

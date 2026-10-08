@@ -117,6 +117,9 @@ pub struct ClassifierStatus {
     pub thresholds: Thresholds,
     /// How long the head has been past the threshold that would change the posture, seconds.
     pub dwell_s: f32,
+    /// Whether a standing player's head is at floor level, below a chair's height: sitting or
+    /// kneeling on the floor of the play area, which keeps the standing posture.
+    pub floor_level: bool,
 }
 
 /// The heights the classifier compares the head with, metres above the floor.
@@ -127,8 +130,12 @@ pub struct Thresholds {
     /// Whether [`seated_eye_m`](Self::seated_eye_m) is an estimate.
     pub seated_estimated: bool,
     pub standing_eye_m: f32,
-    /// A standing player whose head stays below this for the sit dwell is seated.
+    /// A standing player whose head stays below this, steady and above
+    /// [`floor_below_m`](Self::floor_below_m), for the sit dwell is seated.
     pub sit_below_m: f32,
+    /// Below this a standing player's head is at floor level, lower than a chair puts it: the
+    /// player sits or kneels on the floor and stays standing.
+    pub floor_below_m: f32,
     /// A seated player whose head stays above this for the stand dwell is standing.
     pub stand_above_m: f32,
     /// The first sample and a recenter classify against this, with no dwell.
@@ -156,6 +163,7 @@ impl Thresholds {
             seated_estimated,
             standing_eye_m,
             sit_below_m: seated_eye_m + SIT_FRACTION * gap,
+            floor_below_m: seated_eye_m - FLOOR_MARGIN_FRACTION * standing_eye_m,
             stand_above_m: seated_eye_m + STAND_FRACTION * gap,
             midpoint_m: seated_eye_m + 0.5 * gap,
         }
@@ -181,12 +189,20 @@ impl Thresholds {
 ///   `stand_after_s`, which a seated player cannot reach without standing up, and a standing player
 ///   sits once the head stays below [`Thresholds::sit_below_m`] for `sit_after_s`, which is long so
 ///   that a crouch behind cover stays a physical crouch.
+/// - The standing player's head must stay at a chair's height for that: steady, within
+///   [`STEADY_BAND_M`] of where the dwell started, and above [`Thresholds::floor_below_m`]. A head
+///   that moves further starts the dwell again from where it is, and a head at floor level does not
+///   count: a standing player who got down onto the floor of the play area (sitting on it, kneeling)
+///   stays standing, so the head keeps its true height and the body sits on the ground under it.
 ///
 /// The controllers' heights are not used: a crouching player's hands sit as low as a seated one's.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PostureClassifier {
     detected: Option<(DetectedPosture, DetectionReason)>,
     dwell_s: f32,
+    /// The head's height when the sit dwell started: the dwell holds while the head stays near it.
+    dwell_from: Option<f32>,
+    floor_level: bool,
 }
 
 impl PostureClassifier {
@@ -194,6 +210,8 @@ impl PostureClassifier {
         Self {
             detected: None,
             dwell_s: 0.0,
+            dwell_from: None,
+            floor_level: false,
         }
     }
 
@@ -206,10 +224,11 @@ impl PostureClassifier {
     ) -> ClassifierStatus {
         let thresholds = Thresholds::new(input.standing_eye_m, input.calibrated_seated_eye_m);
         let head = input.head_height.filter(|h| h.is_finite());
+        self.floor_level = false;
         match (self.detected, head) {
             (None, Some(height)) => {
                 self.detected = Some((thresholds.classify(height), DetectionReason::FirstSample));
-                self.dwell_s = 0.0;
+                self.restart_dwell();
             }
             (Some((detected, _)), Some(height)) => {
                 let (crossing, dwell, next, reason) = match detected {
@@ -219,24 +238,38 @@ impl PostureClassifier {
                         DetectedPosture::Standing,
                         DetectionReason::StoodUp,
                     ),
-                    DetectedPosture::Standing => (
-                        height < thresholds.sit_below_m,
-                        config.sit_after_s,
-                        DetectedPosture::Seated,
-                        DetectionReason::SatDown,
-                    ),
+                    DetectedPosture::Standing => {
+                        self.floor_level =
+                            config.chair_height_only && height < thresholds.floor_below_m;
+                        (
+                            height < thresholds.sit_below_m && !self.floor_level,
+                            config.sit_after_s,
+                            DetectedPosture::Seated,
+                            DetectionReason::SatDown,
+                        )
+                    }
                 };
-                self.dwell_s = if crossing {
-                    self.dwell_s + step(dt)
+                if !crossing {
+                    self.restart_dwell();
+                } else if detected == DetectedPosture::Standing
+                    && config.chair_height_only
+                    && self
+                        .dwell_from
+                        .is_none_or(|from| (height - from).abs() > STEADY_BAND_M)
+                {
+                    // A head that is not steady at a chair's height starts the dwell over from
+                    // where it is.
+                    self.dwell_s = 0.0;
+                    self.dwell_from = Some(height);
                 } else {
-                    0.0
-                };
+                    self.dwell_s += step(dt);
+                }
                 if crossing && self.dwell_s >= dwell.max(0.0) {
                     self.detected = Some((next, reason));
-                    self.dwell_s = 0.0;
+                    self.restart_dwell();
                 }
             }
-            (_, None) => self.dwell_s = 0.0,
+            (_, None) => self.restart_dwell(),
         }
         self.status(head, thresholds)
     }
@@ -248,7 +281,7 @@ impl PostureClassifier {
         let thresholds = Thresholds::new(input.standing_eye_m, input.calibrated_seated_eye_m);
         let detected = thresholds.classify(height);
         self.detected = Some((detected, DetectionReason::Recenter));
-        self.dwell_s = 0.0;
+        self.restart_dwell();
         Some(detected)
     }
 
@@ -264,6 +297,11 @@ impl PostureClassifier {
         *self = Self::new();
     }
 
+    fn restart_dwell(&mut self) {
+        self.dwell_s = 0.0;
+        self.dwell_from = None;
+    }
+
     fn status(&self, head: Option<f32>, thresholds: Thresholds) -> ClassifierStatus {
         let (detected, reason) = self
             .detected
@@ -274,6 +312,7 @@ impl PostureClassifier {
             head_height_m: head,
             thresholds,
             dwell_s: self.dwell_s,
+            floor_level: self.floor_level,
         }
     }
 }
@@ -297,6 +336,15 @@ const SIT_FRACTION: f32 = 0.4;
 
 /// Where between the seated and the standing eye heights the stand threshold sits.
 const STAND_FRACTION: f32 = 0.6;
+
+/// How far below the seated eye height a head is at floor level, as a share of the standing eye
+/// height: about twenty centimetres for a standing eye height of 1.7 m, below the lowest chair and
+/// above a head sitting on the floor.
+const FLOOR_MARGIN_FRACTION: f32 = 0.12;
+
+/// How far a standing player's head may move up or down and still count as steady at a chair's
+/// height, metres: a seated head holds its height, and a crouch behind cover bobs.
+pub const STEADY_BAND_M: f32 = 0.08;
 
 /// The longest frame step the dwell accounts for, seconds, so that a stall does not complete one.
 const MAX_STEP_S: f32 = 0.25;
@@ -582,6 +630,66 @@ mod tests {
         let status = hold(&mut classifier, 1.05, 6.0);
         assert_eq!(status.detected, DetectedPosture::Seated);
         assert_eq!(status.reason, DetectionReason::SatDown);
+    }
+
+    #[test]
+    fn a_standing_player_sitting_on_the_floor_stays_standing() {
+        let mut classifier = PostureClassifier::new();
+        hold(&mut classifier, 1.68, 1.0);
+        // Down to the floor of the play area and staying there, still.
+        let status = hold(&mut classifier, 0.85, 120.0);
+        assert_eq!(status.detected, DetectedPosture::Standing);
+        assert!(status.floor_level);
+        assert_eq!(status.dwell_s, 0.0);
+        // Kneeling upright on the floor puts the head at a chair's height: a long steady kneel is
+        // the classifier's known limit, as a long crouch is.
+        let thresholds = Thresholds::new(LOGGED.standing_eye_m, LOGGED.calibrated_seated_eye_m);
+        assert!(thresholds.floor_below_m < thresholds.seated_eye_m);
+        assert!(thresholds.floor_below_m > 0.9);
+        // Getting up from the floor onto a chair, and sitting there, is seated.
+        let status = hold(&mut classifier, 1.15, 5.0);
+        assert!(!status.floor_level);
+        assert_eq!(status.detected, DetectedPosture::Standing);
+        let status = hold(&mut classifier, 1.15, 20.0);
+        assert_eq!(status.detected, DetectedPosture::Seated);
+        assert_eq!(status.reason, DetectionReason::SatDown);
+        // Switched off, the floor sits after the wait, as any low head does.
+        let config = AutoPostureConfig {
+            chair_height_only: false,
+            ..AutoPostureConfig::new()
+        };
+        let mut classifier = PostureClassifier::new();
+        classifier.update(&at(1.68), FRAME_S, &config);
+        let mut status = classifier.update(&at(0.85), FRAME_S, &config);
+        for _ in 0..(21.0 / FRAME_S) as usize {
+            status = classifier.update(&at(0.85), FRAME_S, &config);
+        }
+        assert!(!status.floor_level);
+        assert_eq!(status.detected, DetectedPosture::Seated);
+    }
+
+    #[test]
+    fn a_head_bobbing_at_a_chairs_height_stays_standing() {
+        let mut classifier = PostureClassifier::new();
+        hold(&mut classifier, 1.68, 1.0);
+        // Crouched behind cover for a minute, rising to peek and ducking again every few seconds.
+        for _ in 0..12 {
+            assert_eq!(
+                hold(&mut classifier, 1.0 + STEADY_BAND_M * 2.0, 2.5).detected,
+                DetectedPosture::Standing
+            );
+            assert_eq!(
+                hold(&mut classifier, 1.03, 2.5).detected,
+                DetectedPosture::Standing
+            );
+        }
+        // Small fidgets within the band still count as steady.
+        let mut status = hold(&mut classifier, 1.10, 1.0);
+        for i in 0..25 {
+            let fidget = if i % 2 == 0 { 0.03 } else { -0.03 };
+            status = hold(&mut classifier, 1.10 + fidget, 1.0);
+        }
+        assert_eq!(status.detected, DetectedPosture::Seated);
     }
 
     #[test]
