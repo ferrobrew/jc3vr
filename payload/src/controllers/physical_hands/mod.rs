@@ -318,6 +318,8 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     let shove_tuning = ShoveTuning::of(&config.shove);
     // SAFETY: forwarded from the caller.
     let melee_impulse = unsafe { engine::melee_impulse(owner) };
+    // SAFETY: forwarded from the caller.
+    let standing_on = unsafe { engine::ground_body(owner) };
 
     let mut state = STATE.lock();
     let now = Instant::now();
@@ -428,6 +430,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                         &body_palm,
                         config.pickup.reach_m * active.world_scale,
                         None,
+                        standing_on,
                         &config.pickup,
                         &mut |from, to| cast(from, to, &reach_options),
                     )
@@ -519,6 +522,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                     &palm,
                     config.pickup.reach_m * active.world_scale,
                     contact.press.map(|(hit, _)| hit),
+                    standing_on,
                     &config.pickup,
                     &mut |from, to| cast(from, to, &reach_options),
                 )
@@ -549,11 +553,13 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         };
     }
 
+    let mut joined = [None; 2];
     if pickup_on {
         let joints = joint_inputs(&config);
         // SAFETY: the simulation phase outside the physics step.
         let outcome =
             unsafe { pickup::tick(&mut state.pickup, palms, space, joints, dt, &config.pickup) };
+        joined = outcome.joints;
         state.record_pickup(outcome, &mut hand_status, &config);
         for hand in Hand::BOTH {
             let i = hand.index();
@@ -585,7 +591,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     state.status.casts = casts;
     state.clamp = clamp;
     state.at = Some(now);
-    physics::publish_holds(state.pickup.joint_targets());
+    physics::publish_holds(joined);
     let snapshot = state.status.hands;
     drop(state);
     climb::observe(

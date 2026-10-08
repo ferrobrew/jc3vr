@@ -202,10 +202,15 @@ pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
 }
 
 /// An object's body a hand's grip holds through a joint.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HoldTarget {
     pub object: NonZeroUsize,
     pub body: u32,
+    /// How far the hand's goal is moved so that the object's centre stays out of the player's
+    /// body, world space.
+    pub keep_out: Vec3,
+    /// Whether both hands hold the object.
+    pub shared: bool,
 }
 
 /// Publish what each hand's grip holds through a joint, for the next step to join. Called from the
@@ -580,7 +585,13 @@ pub(super) unsafe fn step() {
                     orientation: Quat::from_scaled_axis(target.angular * lead_s)
                         * target.orientation,
                 };
-                let goal = grips[i].unwrap_or(palm);
+                // A hand that holds an object through a joint is moved by the keep-out, and pulls
+                // and twists with a holding hand's strength, the same budget as a carried hold.
+                let holding = holds[i];
+                let goal = grips[i].unwrap_or(Goal {
+                    position: palm.position + holding.map_or(Vec3::ZERO, |h| h.keep_out),
+                    ..palm
+                });
                 let held = holds[i].map_or(0, |h| h.object.get());
                 let mut clear = |from: Vec3, to: Vec3| unsafe { path_clear(from, to, held) };
                 // A hand held back rests on what holds it, and one that just struck hard follows
@@ -591,7 +602,7 @@ pub(super) unsafe fn step() {
                 }
                 let hand_tuning = DriveTuning {
                     linear_gain,
-                    ..tuning
+                    ..holding.map_or(tuning, |h| holding_tuning(&tuning, &config, h.shared))
                 };
                 let request = ActRequest {
                     hand,
@@ -903,6 +914,31 @@ struct ActingPalms {
     park_now: [bool; 2],
 }
 
+/// The drive of a hand that holds an object through a joint: a holding hand's pull and twist
+/// ([`PickupConfig::hand_force_n`], [`PickupConfig::hand_torque_nm`]), no stronger than the hand's
+/// own, and with both hands on the object, the twist at
+/// [`PickupConfig::two_hand_angular_share`], so one hand lifts about what it carries and two hands
+/// twice that, and the two grab points set the object's line.
+///
+/// [`PickupConfig::hand_force_n`]: crate::controllers::physical_hands::config::PickupConfig::hand_force_n
+/// [`PickupConfig::hand_torque_nm`]: crate::controllers::physical_hands::config::PickupConfig::hand_torque_nm
+/// [`PickupConfig::two_hand_angular_share`]: crate::controllers::physical_hands::config::PickupConfig::two_hand_angular_share
+fn holding_tuning(tuning: &DriveTuning, config: &PhysicalHandsConfig, shared: bool) -> DriveTuning {
+    let pickup = &config.pickup;
+    let twist_share = if shared {
+        pickup.two_hand_angular_share.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    DriveTuning {
+        max_force_n: tuning.max_force_n.min(pickup.hand_force_n.max(0.0)),
+        max_torque_nm: tuning
+            .max_torque_nm
+            .min(pickup.hand_torque_nm.max(0.0) * twist_share),
+        ..*tuning
+    }
+}
+
 /// Whether nothing solid lies between `from` and `to`, game space, for the aim's ray filter, which
 /// never hits the player nor the hand bodies; `held` is an object a hand holds, also passed
 /// through, or zero. A cast that fails counts as blocked.
@@ -948,4 +984,41 @@ unsafe fn shutdown() {
     let mut shared = SHARED.lock();
     shared.status.registered = false;
     shared.status.destroyed += destroyed;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_joined_hand_holds_with_a_holding_hands_strength() {
+        let config = PhysicalHandsConfig::new();
+        let b = &config.bodies;
+        let tuning = DriveTuning {
+            mass_kg: b.mass_kg,
+            max_force_n: b.force_n(),
+            max_torque_nm: b.torque_nm(),
+            linear_gain: b.linear_gain,
+            angular_gain: b.angular_gain,
+            max_speed_mps: b.max_speed_mps,
+            max_angular_speed_rps: b.max_angular_speed_rps,
+        };
+        let one = holding_tuning(&tuning, &config, false);
+        assert_eq!(one.max_force_n, config.pickup.hand_force_n);
+        assert_eq!(one.max_torque_nm, config.pickup.hand_torque_nm);
+        let two = holding_tuning(&tuning, &config, true);
+        assert_eq!(two.max_force_n, config.pickup.hand_force_n);
+        assert!(
+            (two.max_torque_nm
+                - config.pickup.hand_torque_nm * config.pickup.two_hand_angular_share)
+                .abs()
+                < 1e-5
+        );
+        // Never stronger than the hand itself.
+        let weak = DriveTuning {
+            max_force_n: 10.0,
+            ..tuning
+        };
+        assert_eq!(holding_tuning(&weak, &config, false).max_force_n, 10.0);
+    }
 }

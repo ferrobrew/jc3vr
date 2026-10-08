@@ -99,6 +99,17 @@ pub(super) unsafe fn push_body(body: u32, impulse: Vec3, at: Vec3) -> Result<(),
     Ok(())
 }
 
+/// The body the player's character proxy stands on, as its last update found it, or `None` without
+/// support.
+///
+/// # Safety
+///
+/// `character` must be the live local player character.
+pub(super) unsafe fn ground_body(character: &Character) -> Option<u32> {
+    let proxy = unsafe { character.m_PfxCharacter.px.as_ref() }?;
+    (proxy.m_GroundBodyId != PfxCharacterInstance::INVALID_BODY_ID).then_some(proxy.m_GroundBodyId)
+}
+
 /// The player object behind the player character `character`.
 unsafe fn player_of(character: &Character) -> Option<&Player> {
     if !character.m_IsPlayer || character.m_Avatar.is_null() {

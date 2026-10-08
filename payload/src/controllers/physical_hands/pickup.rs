@@ -210,16 +210,6 @@ impl PickupState {
         self.held[hand.index()].is_some_and(|h| !h.joined)
     }
 
-    /// What each hand holds through a joint.
-    pub(super) fn joint_targets(&self) -> [Option<HoldTarget>; 2] {
-        self.held.map(|h| {
-            h.filter(|h| h.joined).map(|h| HoldTarget {
-                object: h.object,
-                body: h.body,
-            })
-        })
-    }
-
     /// The objects the hands hold, as addresses, zero for none.
     pub(super) fn held_objects(&self) -> [usize; 2] {
         self.held.map(|h| h.map_or(0, |h| h.object.get()))
@@ -234,7 +224,8 @@ impl PickupState {
 
 /// What a hand could take: the nearest grabbable object hit by short rays out of the palm (from the
 /// back of the hand, through the palm, out to `reach_m`), or the object the palm presses into. An
-/// object heavier than [`PickupConfig::max_mass_kg`] is not one. `cast` returns the first hit
+/// object heavier than [`PickupConfig::max_mass_kg`] is not one, nor the body `standing_on` the
+/// player stands on, which a hand would lift from under the player. `cast` returns the first hit
 /// between two points.
 ///
 /// # Safety
@@ -244,6 +235,7 @@ pub(super) unsafe fn reach(
     palm: &PalmBox,
     reach_m: f32,
     press: Option<SurfaceHit>,
+    standing_on: Option<u32>,
     config: &PickupConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<Reach> {
@@ -265,6 +257,9 @@ pub(super) unsafe fn reach(
             else {
                 return None;
             };
+            if standing_on == Some(body) {
+                return None;
+            }
             // SAFETY: forwarded from the caller; the hit was found this tick.
             let kind = unsafe { bodies::classify(object, body) }?;
             if let TargetKind::Prop { mass_kg } = kind
@@ -398,7 +393,20 @@ pub(super) unsafe fn tick(
             };
             let anchor = holder.grip.anchor(body.pose);
             if holder.joined {
-                let target = holder.grip.target(palm.pose).point;
+                let grip_target = holder.grip.target(palm.pose);
+                // The hand's body carries the object through the joint, so the keep-out moves the
+                // hand's goal: the object's centre stays out of the player's body as a carried
+                // one does.
+                let keep_out = space.as_ref().map_or(Vec3::ZERO, |space| {
+                    space.offset(holder.grip.centre_at(grip_target))
+                });
+                let target = grip_target.point + keep_out;
+                outcome.joints[k] = Some(HoldTarget {
+                    object: held.object,
+                    body: held.body,
+                    keep_out,
+                    shared: holding > 1,
+                });
                 let (load, twist) = joints.loads[k];
                 outcome.reports[k] = Some(HeldReport {
                     mass_kg: held.mass_kg,
@@ -477,6 +485,8 @@ pub(super) struct TickOutcome {
     /// Holds lost this tick.
     pub lost: u64,
     pub error: Option<String>,
+    /// What each hand holds through a joint, for the hand bodies to join.
+    pub joints: [Option<HoldTarget>; 2],
 }
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
