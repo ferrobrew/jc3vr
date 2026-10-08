@@ -132,6 +132,29 @@ pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_sp
         .clamp_length_max(max_speed.max(0.0))
 }
 
+/// Whether the rig moved under the hands between two palms' ticks without the hands moving: the
+/// body's facing turned by more than [`RIG_JUMP_RAD`] (a snap turn, not the body turning), or the
+/// recenter count changed. `last` is the facing and the count of the last tick, if there was one.
+pub fn rig_jumped(last: Option<(Quat, u32)>, rotation: Quat, recenters: u32) -> bool {
+    last.is_some_and(|(last_rotation, last_recenters)| {
+        last_recenters != recenters || last_rotation.angle_between(rotation) > RIG_JUMP_RAD
+    })
+}
+
+/// The turn of the body's facing between two palms' ticks past which it is a snap turn.
+pub const RIG_JUMP_RAD: f32 = 0.2;
+
+/// Where a body at `body` goes when the rig carries its hand's palm from `from` to `to` in one
+/// tick: the body keeps its place and turn relative to the palm.
+pub fn rig_carry(body: Goal, from: Goal, to: Goal) -> Goal {
+    let turn = (to.orientation * from.orientation.inverse()).normalize();
+    let carried = Goal {
+        position: to.position + turn * (body.position - from.position),
+        orientation: (turn * body.orientation).normalize(),
+    };
+    if finite_goal(&carried) { carried } else { to }
+}
+
 fn finite(body: &BodyMotion) -> bool {
     body.position.is_finite()
         && body.orientation.is_finite()
@@ -304,6 +327,50 @@ mod tests {
     fn a_rotation_takes_the_shorter_way_round() {
         let v = rotation_vector(-Quat::from_rotation_z(0.3));
         assert!((v - Vec3::Z * 0.3).length() < 1e-4);
+    }
+
+    #[test]
+    fn a_snap_turn_or_a_recenter_is_a_rig_jump() {
+        let facing = Quat::from_rotation_y(0.5);
+        assert!(!rig_jumped(None, facing, 0));
+        assert!(!rig_jumped(
+            Some((facing, 3)),
+            Quat::from_rotation_y(0.52),
+            3
+        ));
+        assert!(rig_jumped(Some((facing, 3)), Quat::from_rotation_y(1.3), 3));
+        assert!(rig_jumped(Some((facing, 3)), facing, 4));
+    }
+
+    #[test]
+    fn the_rig_carries_a_body_with_its_palm() {
+        let from = Goal {
+            position: Vec3::new(0.0, 1.0, -0.5),
+            orientation: Quat::IDENTITY,
+        };
+        // A quarter snap turn about the player at the origin.
+        let snap = Quat::from_rotation_y(FRAC_PI_2);
+        let to = Goal {
+            position: snap * from.position,
+            orientation: snap,
+        };
+        // A body held 10 cm short of its palm along the palm's -Z stays 10 cm short along it.
+        let body = Goal {
+            position: from.position + Vec3::Z * 0.1,
+            orientation: Quat::IDENTITY,
+        };
+        let carried = rig_carry(body, from, to);
+        assert!(
+            carried
+                .position
+                .abs_diff_eq(to.position + snap * Vec3::Z * 0.1, 1e-5)
+        );
+        assert!(carried.orientation.angle_between(snap) < 1e-5);
+        let bad = Goal {
+            position: Vec3::NAN,
+            ..body
+        };
+        assert_eq!(rig_carry(bad, from, to), to);
     }
 
     #[test]

@@ -48,7 +48,10 @@ use crate::{
             },
             contact::{Surface, SurfaceHit},
             palm::PalmBox,
-            physics::{self, drive::Goal},
+            physics::{
+                self,
+                drive::{Goal, rig_jumped},
+            },
             pickup::REACH_DIRECTIONS,
             pulse,
         },
@@ -233,14 +236,10 @@ pub(super) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
         // A recenter or a snap turn moves every palm in the rig at once without the hands moving;
         // the grips are taken afresh from where the body is then, rather than pulling it.
         let recenters = recenter_count();
-        let jumped = state
-            .rotation
-            .is_some_and(|last| last.angle_between(body_rotation) > RIG_JUMP_RAD);
-        if jumped || state.recenters.is_some_and(|last| last != recenters) {
+        if rig_jumped(state.rig, body_rotation, recenters) {
             state.rig_epoch = state.rig_epoch.wrapping_add(1);
         }
-        state.rotation = Some(body_rotation);
-        state.recenters = Some(recenters);
+        state.rig = Some((body_rotation, recenters));
         state.palms = palms;
         state.pressing = pressing.map(|p| p && on);
         state.published = (on && player.is_some()).then(Instant::now);
@@ -598,10 +597,6 @@ const MAX_STALE_STEPS: u32 = 6;
 /// How far below the gripped top feet that stand count as on the ledge, metres.
 const MANTLE_LANDED_BELOW_M: f32 = 0.15;
 
-/// The turn of the body's facing between two palms' ticks past which it is a snap turn rather than
-/// the body turning: a recenter or a snap turn re-takes the grips where the body is.
-const RIG_JUMP_RAD: f32 = 0.2;
-
 /// How many steps a mantle may take before it gives up: three seconds.
 const MAX_MANTLE_STEPS: u32 = 90;
 
@@ -648,8 +643,7 @@ struct State {
     /// Whether each driven hand's body presses into something that holds it back.
     pressing: [bool; 2],
     /// The body's facing and the recenter count the palms were last published with.
-    rotation: Option<Quat>,
-    recenters: Option<u32>,
+    rig: Option<(Quat, u32)>,
     /// Counts the recenters and snap turns that moved the rig under the palms.
     rig_epoch: u64,
     published: Option<Instant>,
@@ -734,8 +728,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     grips: [None; 2],
     palms: [None; 2],
     pressing: [false; 2],
-    rotation: None,
-    recenters: None,
+    rig: None,
     rig_epoch: 0,
     published: None,
     publishes: 0,

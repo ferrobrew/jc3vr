@@ -83,7 +83,7 @@ use crate::{
             palm::PalmBox,
             physics::{
                 body::{BodySpec, Capsule, HandBody, player_system_group},
-                drive::{DriveTuning, Goal, PushTuning, lag_push, smooth_push},
+                drive::{DriveTuning, Goal, PushTuning, lag_push, rig_jumped, smooth_push},
                 joint::Joint,
                 lifecycle::{ActRequest, HANDS, RenderTuning},
                 render::RenderOffset,
@@ -95,6 +95,7 @@ use crate::{
         weapons::haptics::PulseSource,
     },
     headpose, hooks,
+    vr::recenter_count,
 };
 
 /// What a hand body is doing.
@@ -288,6 +289,7 @@ pub(crate) fn observe(dt: f32) {
     let palms = enabled(&config).then(|| acting_palms(&config)).flatten();
     let now = Instant::now();
     let body_rotation = headpose::xr::body_rotation();
+    let recenters = recenter_count();
     let mut loads = [0.0; 2];
     {
         let mut shared = SHARED.lock();
@@ -295,6 +297,14 @@ pub(crate) fn observe(dt: f32) {
             shared.epoch = teleport::epoch();
             shared.trackers = TRACKERS_AT_REST;
         }
+        // A snap turn or a recenter moves every palm at once without the hands moving: the
+        // palms' motion starts afresh, and the next step carries the bodies with the rig.
+        let jumped = rig_jumped(shared.rig, body_rotation, recenters);
+        shared.rig = Some((body_rotation, recenters));
+        if jumped {
+            shared.trackers = TRACKERS_AT_REST;
+        }
+        let previous = shared.targets;
         let world_scale = palms.as_ref().map_or(1.0, |(_, scale)| *scale);
         let mut targets = [None; 2];
         for hand in Hand::BOTH {
@@ -317,6 +327,10 @@ pub(crate) fn observe(dt: f32) {
                 linear,
                 angular,
             });
+            if jumped && let Some(from) = previous[i] {
+                shared.rig_moves[i] =
+                    Some((from.goal(), targets[i].map_or(from.goal(), |t| t.goal())));
+            }
         }
         shared.targets = targets;
         shared.world_scale = world_scale;
@@ -421,14 +435,15 @@ pub(super) unsafe fn step() {
         return;
     }
 
-    let (targets, published, world_scale, mut push, holds) = {
-        let shared = SHARED.lock();
+    let (targets, published, world_scale, mut push, holds, rig_moves) = {
+        let mut shared = SHARED.lock();
         (
             shared.targets,
             shared.published,
             shared.world_scale,
             shared.push,
             shared.holds,
+            std::mem::take(&mut shared.rig_moves),
         )
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
@@ -490,6 +505,16 @@ pub(super) unsafe fn step() {
     });
     // SAFETY: forwarded from the caller; the characters' proxy updates ran before this callback.
     let grips = unsafe { climb::step(poses) };
+    // A gripping hand's body stays on the wall; every other acting body moves with the rig.
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if let Some((from, to)) = rig_moves[i]
+            && grips[i].is_none()
+        {
+            // SAFETY: forwarded from the caller.
+            unsafe { hands.carry(hand, from, to) };
+        }
+    }
     let climbing = grips.iter().any(Option::is_some);
 
     let mut statuses = [HandBodyStatus::default(); 2];
@@ -673,6 +698,15 @@ struct Target {
     angular: Vec3,
 }
 
+impl Target {
+    fn goal(&self) -> Goal {
+        Goal {
+            position: self.position,
+            orientation: self.orientation,
+        }
+    }
+}
+
 /// What the aim update and the step share.
 struct Shared {
     /// Each hand's palm, as last published; `None` for a hand that does not act.
@@ -682,6 +716,10 @@ struct Shared {
     world_scale: f32,
     trackers: [(VelocityTracker, AngularTracker); 2],
     epoch: u64,
+    /// The body's facing and the recenter count of the last palms' tick.
+    rig: Option<(Quat, u32)>,
+    /// Each palm's move with the rig since the last step, from and to, world space.
+    rig_moves: [Option<(Goal, Goal)>; 2],
     /// Each body against its controller's palm, world space.
     world_offsets: [RenderOffset; 2],
     /// The same in the cockpit frame, for drawing the hands.
@@ -719,6 +757,8 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     world_scale: 1.0,
     trackers: TRACKERS_AT_REST,
     epoch: 0,
+    rig: None,
+    rig_moves: [None; 2],
     world_offsets: [RenderOffset::NONE; 2],
     cockpit_offsets: [RenderOffset::NONE; 2],
     loads: [0.0; 2],

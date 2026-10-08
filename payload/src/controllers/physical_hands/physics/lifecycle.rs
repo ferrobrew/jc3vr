@@ -13,7 +13,7 @@ use crate::controllers::{
         BodyPhase, HandBodyStatus, HoldTarget,
         body::{BodyError, BodySpec, HandBody},
         contact,
-        drive::{DriveTuning, Goal, drive},
+        drive::{DriveTuning, Goal, drive, rig_carry},
         joint::Joint,
         render::RenderOffset,
     },
@@ -321,6 +321,35 @@ impl Hands {
         unsafe { end_joint(&mut self.joints[hand.index()], hand, reason) }
     }
 
+    /// Carry a hand's acting body with the rig, which moved its palm from `from` to `to` without
+    /// the hand moving: put it where it keeps its place against the palm, at rest, and ignore its
+    /// contacts for a while, so that a snap turn neither swings it through what is around nor
+    /// strikes with it.
+    pub(super) unsafe fn carry(&mut self, hand: Hand, from: Goal, to: Goal) {
+        let i = hand.index();
+        let Some(body) = self.bodies[i].as_mut().filter(|_| self.added[i]) else {
+            return;
+        };
+        // SAFETY: forwarded from the caller.
+        let Ok(motion) = (unsafe { body.motion() }) else {
+            return;
+        };
+        let carried = rig_carry(
+            Goal {
+                position: motion.position,
+                orientation: motion.orientation,
+            },
+            from,
+            to,
+        );
+        // SAFETY: forwarded from the caller.
+        if unsafe { body.place(carried.position, carried.orientation) }.is_ok() {
+            contact::mute_for(hand, RIG_MUTE_STEPS);
+            self.goals[i] = None;
+            self.palms[i] = None;
+        }
+    }
+
     /// Keep a hand's body where it is for a moment without driving it toward its hand.
     pub(super) unsafe fn hold(&mut self, hand: Hand) {
         let i = hand.index();
@@ -441,6 +470,9 @@ fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> 
 
 /// How many steps a body put somewhere, rather than moved there, ignores its contacts.
 pub(super) const PLACED_MUTE_STEPS: u64 = 3;
+
+/// How many steps a body the rig carried ignores its contacts: a fifth of a second.
+const RIG_MUTE_STEPS: u64 = 6;
 
 /// The relative change in a body's size or mass that remakes it.
 const SPEC_TOLERANCE: f32 = 0.02;
