@@ -45,6 +45,8 @@ pub(super) struct DepthProbe {
     result_uav: ID3D11UnorderedAccessView,
     ring: [Slot; RING_DEPTH],
     frame: usize,
+    /// How many times [`DepthProbe::sample`] has run: once a frame while the markers show.
+    calls: u64,
 }
 
 impl DepthProbe {
@@ -133,6 +135,7 @@ impl DepthProbe {
                     buffer,
                     points: Vec::new(),
                     in_flight: false,
+                    dispatched: 0,
                 })
                 .collect::<Vec<_>>()
                 .try_into()
@@ -147,6 +150,7 @@ impl DepthProbe {
                 result_uav,
                 ring,
                 frame: 0,
+                calls: 0,
             })
         }
     }
@@ -163,6 +167,7 @@ impl DepthProbe {
         viewport: Option<D3D11_VIEWPORT>,
         points: &[DepthPoint],
     ) -> Vec<(u32, Sight)> {
+        self.calls += 1;
         // SAFETY: the depth texture and its SRV belong to the live graphics engine; the buffers
         // are ours; the context is the engine's immediate context under its mutex.
         unsafe {
@@ -272,6 +277,7 @@ impl DepthProbe {
             context.CopyResource(&slot.buffer, &self.result);
             slot.points = queued;
             slot.in_flight = true;
+            slot.dispatched = self.calls;
             self.frame += 1;
         }
     }
@@ -283,6 +289,13 @@ impl DepthProbe {
     unsafe fn read_back(&mut self, context: &ID3D11DeviceContext) -> Vec<(u32, Sight)> {
         let slot = &mut self.ring[self.frame % RING_DEPTH];
         if !slot.in_flight {
+            return Vec::new();
+        }
+        // After a gap in the dispatches (no markers, or the probe not reached for a while) the
+        // oldest slot can hold a dispatch from long ago, which says nothing about the scene now.
+        if is_stale(slot.dispatched, self.calls) {
+            slot.in_flight = false;
+            slot.points.clear();
             return Vec::new();
         }
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
@@ -335,6 +348,10 @@ const MAX_POINTS: usize = 32;
 /// The staging-ring depth: reads happen this many frames behind the dispatch.
 const RING_DEPTH: usize = 3;
 
+/// The oldest a readback may be, in frames since its dispatch, before it is discarded: the ring's
+/// depth, and a couple of frames for a GPU running behind.
+const MAX_RESULT_AGE_CALLS: u64 = RING_DEPTH as u64 + 2;
+
 /// The probe footprint's neighbour spacing, in depth-buffer pixels.
 const SPREAD_PIXELS: f32 = 2.0;
 
@@ -367,6 +384,13 @@ struct Slot {
     buffer: ID3D11Buffer,
     points: Vec<Queued>,
     in_flight: bool,
+    /// The [`DepthProbe::calls`] count of the dispatch whose copy the slot holds.
+    dispatched: u64,
+}
+
+/// Whether a dispatch made on call `dispatched` is too old to use on call `now`.
+fn is_stale(dispatched: u64, now: u64) -> bool {
+    now.saturating_sub(dispatched) > MAX_RESULT_AGE_CALLS
 }
 
 /// What a sampled view depth says about a marker at clip depth `clip_w`, `true_distance` away.
@@ -382,6 +406,14 @@ fn sight(depth: f32, clip_w: f32, true_distance: f32) -> Sight {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_readback_from_before_a_gap_is_stale() {
+        assert!(!is_stale(10, 10 + RING_DEPTH as u64));
+        assert!(!is_stale(10, 10 + MAX_RESULT_AGE_CALLS));
+        assert!(is_stale(10, 11 + MAX_RESULT_AGE_CALLS));
+        assert!(!is_stale(10, 5));
+    }
 
     #[test]
     fn sight_from_depth() {
