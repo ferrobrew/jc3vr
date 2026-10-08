@@ -18,7 +18,7 @@
 //!   by how level the barrel is; held in one hand it sways in pitch about that axis and in yaw
 //!   about the vertical, on two incommensurate sine waves; and the result is
 //!   followed on a damped rotational spring, so the gun trails a fast turn and settles after it.
-//!   The one-handed and the braced weights blend by how far the foregrip is engaged ([`Weight`]).
+//!   The one-handed and the braced weights blend by how far the foregrip is engaged ([`pose::Weight`]).
 //!   While the foregrip is held, the off-hand is turned with the gun, so the gun drives both hands
 //!   and they stay on it; the braced weight's angle is capped small, so the hands never stray far
 //!   from the controllers.
@@ -35,127 +35,34 @@
 //! [`WeaponBase::m_Class`]: jc3gi::equipment::weapon::WeaponBase::m_Class
 //! [`WeaponBase::GetCurrentScatterValue`]: jc3gi::equipment::weapon::WeaponBase::GetCurrentScatterValue
 
+mod class;
+mod pose;
+
 use std::{
-    f32::consts::TAU,
     sync::OnceLock,
     time::{Duration, Instant},
 };
 
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3};
-use jc3gi::equipment::weapon::{WeaponBase, WeaponClass};
+use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+pub use self::class::HeftClass;
+use self::pose::{Weight, clamp_angle, sway, unbraced_share};
 use crate::{
     config::Config,
     controllers::{
         frame::Hand,
         hands::CockpitHand,
         scheme,
-        weapons::{
-            config::{BracedHeftConfig, BracedTuning, HeftConfig, HeftTuning},
-            foregrip,
-            recoil::Motion,
-        },
+        weapons::{config::HeftConfig, foregrip, recoil::Motion},
     },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&GET_CURRENT_SCATTER_VALUE_BINDER)
-}
-
-/// The weight class a weapon's one-handed tuning comes from.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum HeftClass {
-    /// Pistols and revolvers.
-    Sidearm,
-    /// SMGs: a sidearm in one hand, the lightest of the long guns braced.
-    Smg,
-    /// Assault rifles, shotguns, and sniper rifles.
-    Rifle,
-    /// Launchers, miniguns, mortars, mounted-calibre guns, and the special weapons.
-    Heavy,
-}
-
-impl HeftClass {
-    pub const ALL: [HeftClass; 4] = [
-        HeftClass::Sidearm,
-        HeftClass::Smg,
-        HeftClass::Rifle,
-        HeftClass::Heavy,
-    ];
-
-    /// The class's place in [`HeftClass::ALL`].
-    pub const fn index(self) -> usize {
-        self as usize
-    }
-
-    /// The class of a weapon of class `class` (the raw [`WeaponClass`] value, which may be out of
-    /// the enum's range), held in a two-handed slot or not. A weapon whose class is unset or
-    /// unknown is a rifle in a two-handed slot and a sidearm otherwise.
-    pub fn of(class: i32, two_handed: bool) -> Self {
-        const SIDEARMS: [WeaponClass; 2] = [
-            WeaponClass::E_WEAPON_CLASS_PISTOL,
-            WeaponClass::E_WEAPON_CLASS_REVOLVER,
-        ];
-        const RIFLES: [WeaponClass; 3] = [
-            WeaponClass::E_WEAPON_CLASS_ASSAULT_RIFLE,
-            WeaponClass::E_WEAPON_CLASS_SHOTGUN,
-            WeaponClass::E_WEAPON_CLASS_SNIPER,
-        ];
-        const HEAVY: [WeaponClass; 7] = [
-            WeaponClass::E_WEAPON_CLASS_GRENADE_LAUNCHER,
-            WeaponClass::E_WEAPON_CLASS_RPG,
-            WeaponClass::E_WEAPON_CLASS_MINIGUN,
-            WeaponClass::E_WEAPON_CLASS_AA_GUN,
-            WeaponClass::E_WEAPON_CLASS_MORTAR,
-            WeaponClass::E_WEAPON_CLASS_50CAL,
-            WeaponClass::E_WEAPON_CLASS_SPECIAL,
-        ];
-        let is = |set: &[WeaponClass]| set.iter().any(|&c| c as i32 == class);
-        if is(&SIDEARMS) {
-            HeftClass::Sidearm
-        } else if class == WeaponClass::E_WEAPON_CLASS_SMG as i32 {
-            HeftClass::Smg
-        } else if is(&RIFLES) {
-            HeftClass::Rifle
-        } else if is(&HEAVY) {
-            HeftClass::Heavy
-        } else if two_handed {
-            HeftClass::Rifle
-        } else {
-            HeftClass::Sidearm
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            HeftClass::Sidearm => "sidearm",
-            HeftClass::Smg => "SMG",
-            HeftClass::Rifle => "rifle",
-            HeftClass::Heavy => "heavy",
-        }
-    }
-
-    /// This class's one-handed tuning in `config`.
-    pub fn tuning(self, config: &HeftConfig) -> HeftTuning {
-        match self {
-            HeftClass::Sidearm | HeftClass::Smg => config.sidearm,
-            HeftClass::Rifle => config.rifle,
-            HeftClass::Heavy => config.heavy,
-        }
-    }
-
-    /// This class's braced tuning in `config`, before its strength.
-    pub fn braced(self, config: &BracedHeftConfig) -> BracedTuning {
-        match self {
-            HeftClass::Sidearm => BracedTuning::NONE,
-            HeftClass::Smg => config.smg,
-            HeftClass::Rifle => config.rifle,
-            HeftClass::Heavy => config.heavy,
-        }
-    }
 }
 
 /// The weapon the weight acts on, as the input tick saw it.
@@ -244,7 +151,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
         return;
     };
     let t = epoch().elapsed().as_secs_f32();
-    let pose = weighted_pose(
+    let pose = pose::weighted_pose(
         &h,
         head,
         &weight,
@@ -256,16 +163,18 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
         // so the gun follows on from there once the freeze ends.
         let offset = state.offset;
         let held = *state.frozen.get_or_insert(offset);
-        state.spring = Some(RotSpring::at(held * h.grip.orientation));
+        state.spring = Some(pose::RotSpring::at(held * h.grip.orientation));
         held
     } else {
         state.frozen = None;
         let shown = if weight.stiffness > 0.0 && dt <= MAX_GAP.as_secs_f32() {
-            let spring = state.spring.get_or_insert(RotSpring::at(pose.orientation));
+            let spring = state
+                .spring
+                .get_or_insert(pose::RotSpring::at(pose.orientation));
             spring.step(pose.orientation, dt, weight.stiffness, weight.damping_ratio);
             spring.orientation
         } else {
-            state.spring = Some(RotSpring::at(pose.orientation));
+            state.spring = Some(pose::RotSpring::at(pose.orientation));
             pose.orientation
         };
         clamp_angle(
@@ -332,225 +241,14 @@ pub fn spread_scale(weapon: usize) -> f32 {
     lerp(1.0, target.class.tuning(&config).spread_scale, share)
 }
 
-/// The weighted pose of a gun held at `grip`, before the spring.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WeightedPose {
-    /// The sagged and swayed grip orientation.
-    pub orientation: Quat,
-    /// The sag applied, radians.
-    pub sag: f32,
-    /// The hand's reach, `0..=1`.
-    pub reach: f32,
-    /// The sway asked for at full share, pitch and yaw, radians.
-    pub sway: Vec2,
-    /// The share of the sway the reach lets through, `0..=1`.
-    pub sway_reach: f32,
-}
-
-/// What a gun's weight asks of its pose: its one-handed and its braced tunings blended by how
-/// braced it is.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Weight {
-    /// The sag close in, degrees.
-    pub sag_deg: f32,
-    /// The further sag at full reach, degrees.
-    pub reach_sag_deg: f32,
-    /// The sway's amplitude, degrees.
-    pub sway_deg: f32,
-    /// How much of the sway shows, `0..=1`.
-    pub sway_share: f32,
-    /// The spring's stiffness, per second squared; zero follows rigidly.
-    pub stiffness: f32,
-    pub damping_ratio: f32,
-    /// The furthest the gun may turn from where the hands turn it, degrees.
-    pub max_angle_deg: f32,
-}
-
-impl Weight {
-    /// The weight of a gun of `class` with the unbraced `share` (one in one hand, zero braced):
-    /// each of the one-handed and the braced weights, where its switch in `config` is on, blended
-    /// by the share. The sag and the limits blend linearly; the spring blends by its natural
-    /// frequency, a rigid side counting as a very stiff spring, so that the lag shrinks smoothly as
-    /// the foregrip engages.
-    pub fn of(class: HeftClass, config: &HeftConfig, share: f32) -> Self {
-        let one = if config.enabled {
-            class.tuning(config)
-        } else {
-            HeftTuning::NONE
-        };
-        let braced = if config.braced.enabled {
-            class
-                .braced(&config.braced)
-                .at_strength(config.braced.strength)
-        } else {
-            BracedTuning::NONE
-        };
-        Self::blend(&one, &braced, share, config)
-    }
-
-    /// The blend of the one-handed `one` and the braced `braced` by the unbraced `share`.
-    pub fn blend(one: &HeftTuning, braced: &BracedTuning, share: f32, config: &HeftConfig) -> Self {
-        let share = if share.is_finite() {
-            share.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-        let (one_k, braced_k) = (one.lag_stiffness.max(0.0), braced.stiffness.max(0.0));
-        let stiffness = if share >= 1.0 {
-            one_k
-        } else if share <= 0.0 {
-            braced_k
-        } else if one_k == 0.0 && braced_k == 0.0 {
-            0.0
-        } else {
-            let omega = |k: f32| if k > 0.0 { k.sqrt() } else { RIGID_OMEGA };
-            lerp(omega(braced_k), omega(one_k), share).powi(2)
-        };
-        Self {
-            sag_deg: lerp(braced.sag_deg, one.sag_deg, share),
-            reach_sag_deg: one.reach_sag_deg * share,
-            sway_deg: one.sway_deg,
-            sway_share: share,
-            stiffness,
-            damping_ratio: lerp(1.0, one.lag_damping_ratio, share),
-            max_angle_deg: lerp(config.braced.max_angle_deg, config.max_angle_deg, share),
-        }
-    }
-}
-
-/// Sag and sway the grip orientation of a gun held in `hand` with the head at `head`, by its
-/// `weight`. The barrel is the wrist frame's fingers axis (its -Z), along which the hand holds the
-/// gun; the controller's grip -Z runs up the handle instead. The sag turns the barrel down about
-/// the horizontal axis across it, by the sag plus the reach sag as the hand moves out, scaled by
-/// how level the barrel is; `sway` (pitch and yaw, radians, at full share) pitches it about that
-/// same horizontal axis and yaws it about the vertical, so that neither rolls the gun, half of it
-/// close in and all of it at full reach.
-pub fn weighted_pose(
-    hand: &CockpitHand,
-    head: Vec3,
-    weight: &Weight,
-    config: &HeftConfig,
-    sway: Vec2,
-) -> WeightedPose {
-    let grip = hand.grip;
-    let reach = smoothstep(
-        config.reach_near_m,
-        config.reach_far_m,
-        grip.position.distance(head),
-    );
-    let barrel = hand.wrist.orientation * Vec3::NEG_Z;
-    let level = Vec2::new(barrel.x, barrel.z).length().min(1.0);
-    let sag = (weight.sag_deg + weight.reach_sag_deg * reach).to_radians() * level;
-    let across = Vec3::Y.cross(barrel).try_normalize();
-    let droop = across.map_or(Quat::IDENTITY, |axis| Quat::from_axis_angle(axis, sag));
-    // A vertical barrel has no horizontal axis across it; the palm axis is square to the barrel,
-    // and any axis square to it serves for a sway that small.
-    let pitch_axis = across
-        .or_else(|| {
-            (grip.orientation * Vec3::X)
-                .reject_from(barrel)
-                .try_normalize()
-        })
-        .unwrap_or(Vec3::X);
-    let sway_reach = 0.5 + 0.5 * reach;
-    let sway_scaled = sway * weight.sway_share * sway_reach;
-    let wobble =
-        Quat::from_rotation_y(sway_scaled.y) * Quat::from_axis_angle(pitch_axis, sway_scaled.x);
-    WeightedPose {
-        orientation: (wobble * droop * grip.orientation).normalize(),
-        sag: if across.is_some() { sag } else { 0.0 },
-        reach,
-        sway,
-        sway_reach,
-    }
-}
-
-/// The sway at time `t` seconds: a pitch and a yaw of amplitude `amplitude` (radians) at
-/// `hz` and at an incommensurate multiple of it, so the path does not repeat.
-pub fn sway(t: f32, hz: f32, amplitude: f32) -> Vec2 {
-    let phase = TAU * hz.max(0.0) * t;
-    Vec2::new(
-        phase.sin() * amplitude,
-        (phase * YAW_RATIO + YAW_PHASE).sin() * amplitude * YAW_SHARE,
-    )
-}
-
-/// The share of the weight left by a two-hand `grip` on `hand`'s gun: one in one hand, zero with
-/// the foregrip fully engaged.
-pub fn unbraced_share(grip: Option<foregrip::TwoHandGrip>, hand: Hand) -> f32 {
-    1.0 - grip
-        .filter(|g| g.holder == hand)
-        .map_or(0.0, |g| g.weight.clamp(0.0, 1.0))
-}
-
-/// A damped spring on an orientation, pulled toward a target orientation.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RotSpring {
-    pub orientation: Quat,
-    /// The angular velocity, radians per second, as a rotation vector.
-    pub velocity: Vec3,
-}
-
-impl RotSpring {
-    /// At rest at `orientation`.
-    pub fn at(orientation: Quat) -> Self {
-        Self {
-            orientation,
-            velocity: Vec3::ZERO,
-        }
-    }
-
-    /// Advance by `dt` seconds toward `target` with the given stiffness (per second squared) and
-    /// damping ratio, in sub-steps short enough to stay stable at any stiffness the settings allow.
-    pub fn step(&mut self, target: Quat, dt: f32, stiffness: f32, damping_ratio: f32) {
-        if !(dt.is_finite() && dt > 0.0) {
-            return;
-        }
-        let stiffness = stiffness.max(0.0);
-        let damping = 2.0 * damping_ratio.max(0.0) * stiffness.sqrt();
-        let steps = (dt / MAX_SUBSTEP).ceil().max(1.0) as u32;
-        let h = dt / steps as f32;
-        for _ in 0..steps {
-            let error = shortest(target * self.orientation.inverse()).to_scaled_axis();
-            self.velocity += (stiffness * error - damping * self.velocity) * h;
-            self.orientation =
-                (Quat::from_scaled_axis(self.velocity * h) * self.orientation).normalize();
-        }
-        if !(self.orientation.is_finite() && self.velocity.is_finite()) {
-            *self = Self::at(target);
-        }
-    }
-}
-
-/// Limit a rotation to `max` radians, keeping its axis.
-pub fn clamp_angle(rotation: Quat, max: f32) -> Quat {
-    let rotation = shortest(rotation);
-    let (axis, angle) = rotation.to_axis_angle();
-    if angle <= max.max(0.0) || !axis.is_finite() {
-        rotation
-    } else {
-        Quat::from_axis_angle(axis, max.max(0.0))
-    }
-}
-
-/// The natural frequency a rigid side of a blend counts as, radians per second: stiff enough that
-/// its lag cannot be seen, soft enough for the spring's sub-steps.
-const RIGID_OMEGA: f32 = 120.0;
 /// How long a published weapon stays in effect without a new input tick.
 const MAX_AGE: Duration = Duration::from_millis(500);
 /// A gap longer than this between reads puts the spring at rest on its target.
 const MAX_GAP: Duration = Duration::from_millis(250);
-/// The longest sub-step the spring integrates in one go, seconds.
-const MAX_SUBSTEP: f32 = 1.0 / 480.0;
-/// The yaw sway's frequency relative to the pitch sway's, its phase offset, and its share of the
-/// amplitude.
-const YAW_RATIO: f32 = 0.618;
-const YAW_PHASE: f32 = 1.3;
-const YAW_SHARE: f32 = 0.8;
 
 struct State {
     target: Option<(HeftTarget, Instant)>,
-    spring: Option<RotSpring>,
+    spring: Option<pose::RotSpring>,
     at: Option<Instant>,
     /// The turn the weight last put on the gun, relative to the controller's grip.
     offset: Quat,
@@ -598,7 +296,7 @@ fn epoch() -> Instant {
 }
 
 /// The same rotation with a non-negative scalar part, the shorter way round.
-fn shortest(q: Quat) -> Quat {
+pub(super) fn shortest(q: Quat) -> Quat {
     if q.w < 0.0 { -q } else { q }
 }
 
@@ -606,7 +304,7 @@ fn angle(q: Quat) -> f32 {
     shortest(q).to_axis_angle().1
 }
 
-fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+pub(super) fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     if edge1 <= edge0 {
         return if x >= edge1 { 1.0 } else { 0.0 };
     }
@@ -614,7 +312,7 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
+pub(super) fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }
 
@@ -639,8 +337,22 @@ fn get_current_scatter_value(weapon: *const WeaponBase) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::controllers::{config::GripOffset, frame::Pose, hands::pose as hand_pose};
+    use std::time::{Duration, Instant};
+
+    use glam::{Quat, Vec2, Vec3};
+    use jc3gi::equipment::weapon::WeaponClass;
+
+    use super::{HeftClass, HeftTarget, advance_clock, angle, apply, clamp_angle, freeze, observe};
+    use crate::controllers::{
+        config::GripOffset,
+        frame::{Hand, Pose},
+        hands::{CockpitHand, pose as hand_pose},
+        weapons::{
+            config::{BracedTuning, HeftConfig, HeftTuning},
+            foregrip,
+            heft::pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
+        },
+    };
 
     fn config() -> HeftConfig {
         HeftConfig::new()
