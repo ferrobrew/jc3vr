@@ -68,7 +68,7 @@ use crate::{
                     clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
                     feet::{Feet, FeetInput, FootPose, StepTuning},
                     gait::{self, NeutralStance, StanceFoot},
-                    hips_height, hips_horizontal,
+                    hips_height, hips_horizontal, hips_room,
                     pose::RigPose,
                     reach_drop, solve,
                 },
@@ -372,7 +372,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 state.hips.seed(Vec2::new(hips.x, hips.z));
                 let seed =
                     hips_height(rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
-                state.drop.seed(seed.min(hips_room(rig, &config)));
+                state
+                    .drop
+                    .seed(seed.min(hips_room(rig, input.head.y, &config)));
             }
             let place = hips_horizontal(rig, &input, &config);
             input.hips_xz = Some(state.hips.step(place, dt, config.hips_follow_s));
@@ -382,7 +384,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             state.status.reach_drop_m = reach;
             state.status.landing_dip_m = dip;
             // The dip is the hips' alone: the view is anchored to the root, not to them.
-            input.hips_drop = (reach + dip).min(hips_room(rig, &config));
+            input.hips_drop = (reach + dip).min(hips_room(rig, input.head.y, &config));
             let mut solved = solve(rig, &input, &config);
             let turns = unsafe { state.turn_clavicles(character, rig, &solved, dt, &config) };
             for side in Side::BOTH {
@@ -875,11 +877,6 @@ fn solve_input(
 /// The player's head in the model space of the root at `world`.
 fn head_in_model(world: &Mat4) -> Vec3 {
     world.inverse().transform_point3(query().position)
-}
-
-/// The most the hips may drop below where the head puts them: down to their lowest.
-fn hips_room(rig: &Rig, config: &ProceduralBodyConfig) -> f32 {
-    rig.reference(RigBone::Hips).translation.y * (1.0 - config.min_hips_height.clamp(0.1, 1.0))
 }
 
 /// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region

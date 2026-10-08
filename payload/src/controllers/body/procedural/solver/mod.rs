@@ -195,8 +195,7 @@ pub fn reach_drop(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) 
         };
         need = need.max(below);
     }
-    let standing = rig.reference(RigBone::Hips).translation.y;
-    let room = standing * (1.0 - config.min_hips_height.clamp(0.1, 1.0));
+    let room = hips_room(rig, input.head.y, config);
     if need.is_finite() {
         need.clamp(0.0, room)
     } else {
@@ -253,6 +252,15 @@ pub fn hips_height(rig: &Rig, head_height: f32, config: &ProceduralBodyConfig) -
     let standing = reference_hips.y;
     let lowest = standing * config.min_hips_height.clamp(0.1, 1.0);
     (head_height - head_over_hips).clamp(lowest, standing)
+}
+
+/// The most the hips may drop below where a head at `head_height` puts them: down to their lowest,
+/// counted from where the head has already taken them, so a crouch's drop and a stride's do not
+/// add past the floor of a squat.
+pub fn hips_room(rig: &Rig, head_height: f32, config: &ProceduralBodyConfig) -> f32 {
+    let lowest =
+        rig.reference(RigBone::Hips).translation.y * config.min_hips_height.clamp(0.1, 1.0);
+    (hips_height(rig, head_height, config) - lowest).max(0.0)
 }
 
 /// The yaw of the horizontal line from `left` to `right` about +Y, measured from +X: the facing of
@@ -685,6 +693,25 @@ mod tests {
         let next = follower.step(Vec2::ZERO, 0.05, 0.2);
         assert!(next.x > 0.5 && next.x < 1.0);
         assert_eq!(follower.step(Vec2::NAN, 0.05, 0.2), next);
+    }
+
+    #[test]
+    fn a_crouch_leaves_the_hips_less_room_to_drop() {
+        let (rig, mut input, config) = setup();
+        let standing = hips_room(&rig, input.head.y, &config);
+        assert!((standing - 0.5).abs() < 1e-4, "{standing}");
+        input.head.y -= 0.3;
+        assert!((hips_room(&rig, input.head.y, &config) - 0.2).abs() < 1e-4);
+        input.head.y -= 1.0;
+        assert_eq!(hips_room(&rig, input.head.y, &config), 0.0);
+        // A long stride in the crouch drops the hips no lower than their floor.
+        input.head.y += 1.0;
+        input.feet[0].z -= 0.6;
+        input.feet[1].z += 0.6;
+        input.hips_drop = reach_drop(&rig, &input, &config);
+        assert!(input.hips_drop <= 0.2 + 1e-4);
+        let pose = solve(&rig, &input, &config);
+        assert!(pose.position(RigBone::Hips).y >= 0.5 - 1e-3);
     }
 
     #[test]
