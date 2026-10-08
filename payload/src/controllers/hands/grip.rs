@@ -8,10 +8,12 @@
 //! animated"). So before each placement of the local player's weapons
 //! ([`Inventory::UpdateAttachmentTransforms`], whose detour lives in
 //! [`crate::controllers::weapons::dual_wield::attach`]), every gun on a hand attach bone of a hand
-//! the controllers drive this tick has that bone written ([`AnimationController::SetJoint`]) to the
-//! hand's current wrist composed with the hand's canonical grip: the primary attach bone's pose
-//! relative to the wrist in the skeleton's bind pose
-//! ([`AnimationController::GetBindPoseBoneMatrix`]). The placements run after the state tasks,
+//! with a controller weight above zero ([`tiers::weights`]) has that bone written
+//! ([`AnimationController::SetJoint`]) to the hand's current wrist composed with the hand's
+//! canonical grip: the primary attach bone's pose relative to the wrist in the skeleton's bind
+//! pose ([`AnimationController::GetBindPoseBoneMatrix`]). The written pose is blended from the
+//! animated one by the hand's weight ([`blend_pin`]), so the gun settles into the hand as the hand
+//! blends onto its controller and back out as it yields. The placements run after the state tasks,
 //! after the `MAIN` solve, and after the `SECONDARY` solve, so the last one reads the solved wrist
 //! and the gun's cached transform, which the muzzle effects, the gun's model parts, its physics
 //! proxy, the shot origin, and the render-time late update all derive from, is rigid in the hand.
@@ -43,7 +45,7 @@ use crate::{
     controllers::{
         aim::gun,
         frame::{Hand, Pose},
-        hands::ik,
+        hands::{ik, pose as hand_pose, tiers},
     },
 };
 
@@ -142,6 +144,7 @@ pub(crate) unsafe fn before_placement(
     let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() }?;
     let enabled = Config::lock_query(|c| c.controllers.hands.rigid_grip);
     let targets = ik::tick_records().current;
+    let weights = tiers::weights();
     let mut placement = Placement {
         guns: [None; 2],
         targets: targets.map(|t| t.map(|t| (t.wrist, t.weight))),
@@ -161,8 +164,11 @@ pub(crate) unsafe fn before_placement(
             if placement.guns[hand.index()].is_some() {
                 continue;
             }
-            let driven = targets[hand.index()].is_some();
-            let read = unsafe { pin(character, controller, hand, attach, enabled && driven) };
+            // The tier weight, not whether a target was queued: a hand blending back to the
+            // animation has no target on the tick it reaches zero, and a hand blending in has one
+            // at a small weight, so keying the pin on the target switched the grip at a stroke.
+            let weight = if enabled { weights[hand.index()] } else { 0.0 };
+            let read = unsafe { pin(character, controller, hand, attach, weight) };
             let Some(read) = read else {
                 continue;
             };
@@ -274,6 +280,19 @@ pub fn pinned_attach(wrist: Pose, wrist_scale: Vec3, offset: Pose) -> Pose {
     }
 }
 
+/// The attach bone's pose for a hand at `weight` between the animation (`0`) and the controller
+/// (`1`): the `animated` pose carried toward the `pinned` one by the weight, so the gun settles
+/// into the hand as the hand blends onto its controller and back out as it yields, rather than
+/// switching between the two at a stroke.
+pub fn blend_pin(animated: Pose, pinned: Pose, weight: f32) -> Pose {
+    let weight = if weight.is_finite() {
+        weight.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    hand_pose::interp(animated, pinned, weight)
+}
+
 /// The rigid part of `attach` relative to `wrist`, both model-space matrices, or `None` for a
 /// degenerate matrix.
 pub fn relative_pose(wrist: Mat4, attach: Mat4) -> Option<Pose> {
@@ -327,15 +346,16 @@ fn held_weapons<'a>(
     })
 }
 
-/// Read `hand`'s wrist and the gun's attach bone `attach`, and with `apply`, write the attach bone
-/// onto the wrist at the hand's canonical grip. `None` when a bone does not resolve or the
-/// skeleton gives no canonical grip.
+/// Read `hand`'s wrist and the gun's attach bone `attach`, and with a `weight` above zero, write
+/// the attach bone onto the wrist at the hand's canonical grip, blended from the animated pose by
+/// the weight ([`blend_pin`]). `None` when a bone does not resolve or the skeleton gives no
+/// canonical grip.
 unsafe fn pin(
     character: &Character,
     controller: &mut AnimationController,
     hand: Hand,
     attach: SafeBoneIndex,
-    apply: bool,
+    weight: f32,
 ) -> Option<PinRead> {
     let (wrist_safe, primary_safe) = match hand {
         Hand::Left => (SafeBoneIndex::LEFT_HAND, SafeBoneIndex::ATTACH_HAND_LEFT),
@@ -363,8 +383,9 @@ unsafe fn pin(
     let animated_in_wrist = (wrist.orientation.inverse() * animated.orientation).normalize();
     let animated_deviation_deg = angle_deg(animated_in_wrist, offset.orientation);
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
-    let pinned_pose = pinned_attach(wrist, wrist_scale, offset);
-    let pinned = apply && pinned_pose.position.is_finite() && pinned_pose.orientation.is_finite();
+    let pinned_pose = blend_pin(animated, pinned_attach(wrist, wrist_scale, offset), weight);
+    let pinned =
+        weight > 0.0 && pinned_pose.position.is_finite() && pinned_pose.orientation.is_finite();
     if pinned {
         attach_joint.m_Translation.data = pinned_pose.position.to_array();
         attach_joint.m_Orientation.data = pinned_pose.orientation.to_array();
@@ -448,7 +469,6 @@ static READS: [AtomicU8; 2] = [const { AtomicU8::new(0) }; 2];
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::hands::pose as hand_pose;
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
         Pose {
@@ -472,6 +492,30 @@ mod tests {
         let back = hand_pose::mul(hand_pose::inverse(wrist), attach);
         assert!(back.position.distance(offset.position) < 1e-5);
         assert!(angle_deg(back.orientation, offset.orientation) < 1e-2);
+    }
+
+    #[test]
+    fn the_pin_blends_from_the_animation_by_the_hand_weight() {
+        let animated = pose(Vec3::new(0.1, 0.0, 0.0), Quat::from_rotation_y(1.2));
+        let pinned = pose(Vec3::new(0.0, 0.05, 0.0), Quat::from_rotation_x(0.4));
+        let at = |w| blend_pin(animated, pinned, w);
+        assert!(at(0.0).position.distance(animated.position) < 1e-6);
+        assert!(angle_deg(at(0.0).orientation, animated.orientation) < 1e-2);
+        assert!(at(1.0).position.distance(pinned.position) < 1e-6);
+        assert!(angle_deg(at(1.0).orientation, pinned.orientation) < 1e-2);
+        // Part way, the gun is part way between, and the turn grows steadily with the weight.
+        let whole = angle_deg(animated.orientation, pinned.orientation);
+        let mut last = 0.0;
+        for step in 1..=10 {
+            let w = step as f32 / 10.0;
+            let turned = angle_deg(animated.orientation, at(w).orientation);
+            assert!((turned - whole * w).abs() < 0.1, "{w}: {turned}");
+            assert!(turned > last);
+            last = turned;
+        }
+        // Out-of-range and non-finite weights stay within the two poses.
+        assert!(at(2.0).position.distance(pinned.position) < 1e-6);
+        assert!(at(f32::NAN).position.distance(animated.position) < 1e-6);
     }
 
     #[test]
