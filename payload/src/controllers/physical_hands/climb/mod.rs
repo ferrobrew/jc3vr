@@ -121,8 +121,10 @@ pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.climb.enabled && physics::enabled(config)
 }
 
-/// The climb's grab volume for `hand`: [`GrabVolume::Climb`] when the hand's body reaches a static
-/// surface and the hand grips nothing. Called from the input tick.
+/// The climb's grab volume for `hand`: [`GrabVolume::Climb`] when the hand grips nothing and its
+/// body reaches a static surface, or presses into something that holds it back, so that a grip
+/// pressed against a wall is latched to the climb rather than firing the grapple even when no
+/// reach ray finds the surface. Called from the input tick.
 pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     if !enabled(&config) {
@@ -132,8 +134,8 @@ pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
     let i = hand.index();
     (state.fresh(Instant::now())
         && state.grips[i].is_none()
-        && state.status.hands[i].reach.is_some())
-    .then_some(GrabVolume::Climb)
+        && (state.status.hands[i].reach.is_some() || state.pressing[i]))
+        .then_some(GrabVolume::Climb)
 }
 
 /// Act on the input tick's grips: a grip pressed on the climb's grab volume asks the next step to
@@ -197,16 +199,29 @@ pub(super) unsafe fn reach(
         })
 }
 
-/// Publish what the palms' tick found: each driven hand's palm in the rig (its tracking-space
-/// place turned by `body_rotation`, the body's facing, and scaled into world metres) and the static
-/// surface in its reach, with where the player's body is, and pulse the hands for the last step's
-/// grips and releases. Called from the palms' tick, on the game thread outside the physics step.
-pub(super) fn observe(
-    palms: [Option<Vec3>; 2],
-    reaches: [Option<Hold>; 2],
-    body_rotation: Quat,
-    config: &PhysicalHandsConfig,
-) {
+/// What the palms' tick found for the climb, indexed by [`Hand::index`].
+pub(super) struct Observed {
+    /// Each driven hand's palm in the rig: its tracking-space place turned by the body's facing
+    /// and scaled into world metres.
+    pub palms: [Option<Vec3>; 2],
+    /// The static surface in each driven hand's reach.
+    pub reaches: [Option<Hold>; 2],
+    /// Whether each driven hand's body presses into something that holds it back.
+    pub pressing: [bool; 2],
+    /// The body's facing the palms were turned by.
+    pub body_rotation: Quat,
+}
+
+/// Publish what the palms' tick found, with where the player's body is, and pulse the hands for
+/// the last step's grips and releases. Called from the palms' tick, on the game thread outside the
+/// physics step.
+pub(super) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
+    let Observed {
+        palms,
+        reaches,
+        pressing,
+        body_rotation,
+    } = observed;
     let on = enabled(config);
     // SAFETY: the game thread outside the physics step (the palms' tick).
     let player = on.then(|| unsafe { engine::player_place() }.ok()).flatten();
@@ -227,6 +242,7 @@ pub(super) fn observe(
         state.rotation = Some(body_rotation);
         state.recenters = Some(recenters);
         state.palms = palms;
+        state.pressing = pressing.map(|p| p && on);
         state.published = (on && player.is_some()).then(Instant::now);
         state.publishes = state.publishes.wrapping_add(1);
         for hand in Hand::BOTH {
@@ -566,6 +582,7 @@ pub(super) fn stand_down() {
     let mut state = STATE.lock();
     state.requests = [None; 2];
     state.palms = [None; 2];
+    state.pressing = [false; 2];
     state.published = None;
     state.status.hands = [ClimbHandStatus::default(); 2];
 }
@@ -628,6 +645,8 @@ struct State {
     grips: [Option<Grip>; 2],
     /// Each driven hand's palm in the rig, world metres.
     palms: [Option<Vec3>; 2],
+    /// Whether each driven hand's body presses into something that holds it back.
+    pressing: [bool; 2],
     /// The body's facing and the recenter count the palms were last published with.
     rotation: Option<Quat>,
     recenters: Option<u32>,
@@ -714,6 +733,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     requests: [None; 2],
     grips: [None; 2],
     palms: [None; 2],
+    pressing: [false; 2],
     rotation: None,
     recenters: None,
     rig_epoch: 0,

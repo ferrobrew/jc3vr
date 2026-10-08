@@ -361,6 +361,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
 
     let climb_on = climb::enabled(&config);
     let mut climb_palms = [None; 2];
+    let mut climb_pressing = [false; 2];
     let mut climb_reaches = [None; 2];
     let mut touches = Vec::new();
     let mut hand_status = [HandStatus::default(); 2];
@@ -407,15 +408,23 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         }
         if physics::drives(hand) {
             // A hand its body drives does not probe, push, or shove: the body meets the world
-            // itself. It still reaches for what its grip would take.
+            // itself. It still reaches for what its grip would take, from where its body is
+            // rather than the controller, so that it reaches what the body touches: a body held
+            // at a wall is drawn there while the controller is through it.
             state.probes[i].iter_mut().for_each(PointProbe::reset);
             state.pressed[i] = false;
             state.gives[i].reset();
+            let body_palm =
+                physics::body_pose(hand).map_or(palm, |(centre, orientation)| PalmBox {
+                    centre,
+                    orientation,
+                    half_extents: palm.half_extents,
+                });
             let reach = if pickup_on {
                 // SAFETY: the simulation phase outside the physics step.
                 unsafe {
                     pickup::reach(
-                        &palm,
+                        &body_palm,
                         config.pickup.reach_m * active.world_scale,
                         None,
                         &config.pickup,
@@ -430,12 +439,13 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 // palm is, but not carried by the head's world position, which the climb moves.
                 let rig = PalmBox::from_wrist(cockpit.wrist, 1.0, &config).centre;
                 climb_palms[i] = Some(body_rotation * rig * active.world_scale);
+                climb_pressing[i] = physics::pressing(hand);
                 // A loose object in reach wins over the world it rests on.
                 climb_reaches[i] = if reach.is_none() {
                     // SAFETY: the simulation phase outside the physics step.
                     unsafe {
                         climb::reach(
-                            &palm,
+                            &body_palm,
                             config.climb.reach_m * active.world_scale,
                             &mut |from, to| cast(from, to, &probe_options),
                         )
@@ -577,7 +587,15 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     physics::publish_holds(state.pickup.joint_targets());
     let snapshot = state.status.hands;
     drop(state);
-    climb::observe(climb_palms, climb_reaches, body_rotation, &config);
+    climb::observe(
+        climb::Observed {
+            palms: climb_palms,
+            reaches: climb_reaches,
+            pressing: climb_pressing,
+            body_rotation,
+        },
+        &config,
+    );
     draw::submit(&snapshot, &config);
 }
 

@@ -50,7 +50,7 @@ A hand acts on foot, on the ground or falling (so that a hand flung or jumped at
 
 A body made with `bodies.hits.enabled` listens for its contacts from its creation; switching the hits on or off remakes the bodies. The callback is registered once, from the game thread's frame tick ahead of the game's update, so never while the engine walks its callbacks, and removed by the shutdown cleanup, which also destroys the bodies, before the payload unloads. The bodies keep no Havok-space positions: every step converts game space with the world's current shift, so a world recentring needs nothing of them.
 
-A hand its body drives does not probe, push off surfaces through the probes, shove, or knock; it still reaches for what its grip would take, and grabbing a loose object or a weapon works as described below. A hand that carries what it holds has no body, so it never fights the object; one that holds it through a joint ([holding through a joint](#holding-through-a-joint)) keeps its body.
+A hand its body drives does not probe, push off surfaces through the probes, shove, or knock; it still reaches for what its grip would take, casting its reach rays from where its body was before the last step rather than from the controller, so that a hand held at a wall reaches what its body touches and not what lies beyond the wall, and grabbing a loose object or a weapon works as described below. A hand that carries what it holds has no body, so it never fights the object; one that holds it through a joint ([holding through a joint](#holding-through-a-joint)) keeps its body.
 
 ## Probes
 

@@ -221,6 +221,25 @@ pub(crate) fn drives(hand: Hand) -> bool {
         && shared.status.hands[hand.index()].phase == BodyPhase::Acting
 }
 
+/// Where `hand`'s body was before the last step, game space, while it acts: the place its reach
+/// is cast from, so that what the hand reaches is what its body touches.
+pub(crate) fn body_pose(hand: Hand) -> Option<(Vec3, Quat)> {
+    let shared = SHARED.lock();
+    let now = Instant::now();
+    (shared.fresh(now) && shared.stepped_lately(now))
+        .then_some(shared.body_poses[hand.index()])
+        .flatten()
+}
+
+/// Whether `hand`'s body presses into something that holds it back, as the last step found it.
+pub(crate) fn pressing(hand: Hand) -> bool {
+    let shared = SHARED.lock();
+    let now = Instant::now();
+    shared.fresh(now)
+        && shared.stepped_lately(now)
+        && shared.loads[hand.index()] >= MIN_PRESSURE_LOAD
+}
+
 /// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
 /// removes it. Called once per frame on the game thread, ahead of the game's update.
 pub(crate) fn frame_tick() {
@@ -391,6 +410,7 @@ pub(super) unsafe fn step() {
         shared.push = Vec2::ZERO;
         shared.world_offsets = [Vec3::ZERO; 2];
         shared.loads = [0.0; 2];
+        shared.body_poses = [None; 2];
         return;
     }
 
@@ -578,6 +598,7 @@ pub(super) unsafe fn step() {
     }
     shared.world_offsets = offsets;
     shared.loads = loads;
+    shared.body_poses = poses;
     shared.push = push;
     shared.stepped = Some(now);
     let status = &mut shared.status;
@@ -641,6 +662,8 @@ struct Shared {
     cockpit_offsets: [Vec3; 2],
     /// The share of each hand's strength the last step used.
     loads: [f32; 2],
+    /// Each acting body's pose before the last step, game space.
+    body_poses: [Option<(Vec3, Quat)>; 2],
     /// The smoothed push, world `(x, z)` metres per second.
     push: Vec2,
     /// What each hand's grip holds through a joint, as last published.
@@ -673,6 +696,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     world_offsets: [Vec3::ZERO; 2],
     cockpit_offsets: [Vec3::ZERO; 2],
     loads: [0.0; 2],
+    body_poses: [None; 2],
     push: Vec2::ZERO,
     holds: [None; 2],
     joint_lost: [false; 2],
