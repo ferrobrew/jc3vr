@@ -12,7 +12,9 @@
 //! hand that reaches a loose object or a weapon ([`crate::controllers::physical_hands::pickup`]),
 //! and every placed volume wins over it; nor is the climb's, which the physical hands report for
 //! a hand that reaches the static world ([`crate::controllers::physical_hands::climb`]), and which
-//! the pickup volume wins over. The tables latch the answer at the grip's press edge.
+//! the pickup volume wins over; nor is the stunt hold's, which the stunt positions report for
+//! either hand while the player hangs from a helicopter, so that a grip there holds on rather
+//! than firing the grapple. The tables latch the answer at the grip's press edge.
 
 use glam::Vec3;
 
@@ -52,6 +54,9 @@ pub enum GrabVolume {
     /// The static world within the empty hand's reach, to climb (see
     /// [`crate::controllers::physical_hands::climb`]).
     Climb,
+    /// The helicopter the player hangs from, held by either hand's grip (see
+    /// [`crate::controllers::physical_hands::stunt`]).
+    StuntHold,
     /// A weapon without a body in the world for the free hand to take: a gun in a character's
     /// hands, or a weapon on a rack (see [`crate::controllers::weapons::hold::take`]).
     WorldWeapon,
@@ -83,6 +88,7 @@ impl GrabVolume {
             GrabVolume::MountedHandle(Hand::Right) => "mounted gun's right handle",
             GrabVolume::Pickup => "object in reach",
             GrabVolume::Climb => "surface to climb",
+            GrabVolume::StuntHold => "helicopter to hang from",
             GrabVolume::WorldWeapon => "weapon to take",
             GrabVolume::GrenadePin => "grenade pin",
             GrabVolume::LiveGrenade => "live grenade",

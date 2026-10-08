@@ -14,7 +14,8 @@
 //! | ragdoll | animation, at once | animation, at once |
 //! | getting up from a ragdoll | animation | animation |
 //! | seated and riding in a vehicle | animation | procedural on the seat's hips (animation with `seated_torso` off) |
-//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a stunt position) | animation | animation |
+//! | standing in a vehicle's stunt area (a roof, a deck) | animation (the stunt idle's balance) | procedural on the stunt idle's hips (animation with `stunt_torso` off) |
+//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation | animation |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
 //! | the grapple's ledge climb | animation | animation |
 //! | swimming | animation (the kick) | procedural on the swim's hips (animation with `swim_torso` off) |
@@ -51,6 +52,8 @@ pub enum Case {
     GettingUp,
     /// Seated and riding in a vehicle: not entering, leaving, or on a mounted gun.
     Seated,
+    /// Standing in a vehicle's stunt area: a car's roof, a boat's deck, a plane's wing.
+    StuntStanding,
     Vehicle,
     Traversal,
     LedgeClimb,
@@ -79,6 +82,7 @@ impl Case {
             Self::Ragdoll => "ragdoll",
             Self::GettingUp => "getting up",
             Self::Seated => "seated in a vehicle",
+            Self::StuntStanding => "standing on a vehicle",
             Self::Vehicle => "vehicle",
             Self::Traversal => "grapple or stunt traversal",
             Self::LedgeClimb => "grapple ledge climb",
@@ -105,6 +109,7 @@ impl Case {
             Self::Jump | Self::HandClimb if config.air_legs => [1.0, 1.0],
             Self::Jump | Self::HandClimb => [0.0, 1.0],
             Self::Seated if config.seated_torso => [0.0, 1.0],
+            Self::StuntStanding if config.stunt_torso => [0.0, 1.0],
             Self::Parachute if config.parachute_body => [1.0, 1.0],
             Self::Swimming if config.swim_torso => [0.0, 1.0],
             _ => [0.0, 0.0],
@@ -114,7 +119,10 @@ impl Case {
     /// Whether the animation keeps the hips while the torso is procedural: the solve moves the
     /// spine from the clip's hips (`solver::anchored`) instead of building the body under the head.
     pub const fn anchored(self) -> bool {
-        matches!(self, Self::Seated | Self::Parachute | Self::Swimming)
+        matches!(
+            self,
+            Self::Seated | Self::StuntStanding | Self::Parachute | Self::Swimming
+        )
     }
 
     /// Whether the animation takes over at once, with no blend: a ragdoll writes the pose
@@ -137,6 +145,8 @@ pub struct CharacterState {
     pub vehicle: bool,
     /// Seated and riding in the vehicle, not in a stunt position: a narrower [`vehicle`](Self::vehicle).
     pub seated: bool,
+    /// Standing in a vehicle's stunt area, not traversing it: a narrower [`vehicle`](Self::vehicle).
+    pub stunt_standing: bool,
     pub traversal: bool,
     /// Climbing over a ledge at the end of a grapple.
     pub ledge_climb: bool,
@@ -175,6 +185,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::GettingUp
     } else if state.vehicle && state.seated {
         Case::Seated
+    } else if state.vehicle && state.stunt_standing {
+        Case::StuntStanding
     } else if state.vehicle {
         Case::Vehicle
     } else if state.traversal {
@@ -500,6 +512,27 @@ mod tests {
         let config = ProceduralBodyConfig::new();
         assert_eq!(Case::Seated.targets(&config), [0.0, 1.0]);
         assert!(Case::Seated.anchored() && !Case::OnFoot.anchored());
+        let roof = CharacterState {
+            seated: false,
+            stunt_standing: true,
+            ..seated
+        };
+        assert_eq!(classify(&roof), Case::StuntStanding);
+        assert_eq!(Case::StuntStanding.targets(&config), [0.0, 1.0]);
+        assert!(Case::StuntStanding.anchored());
+        let roof_off = ProceduralBodyConfig {
+            stunt_torso: false,
+            ..config
+        };
+        assert_eq!(Case::StuntStanding.targets(&roof_off), [0.0, 0.0]);
+        // A ragdoll thrown off the roof is the ragdoll.
+        assert_eq!(
+            classify(&CharacterState {
+                ragdoll: true,
+                ..roof
+            }),
+            Case::Ragdoll
+        );
         let off = ProceduralBodyConfig {
             seated_torso: false,
             ..config

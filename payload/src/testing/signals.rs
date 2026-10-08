@@ -17,6 +17,7 @@ use crate::{
         physical_hands::{
             self, climb,
             physics::{self, BodyPhase},
+            stunt::{self, solve::StuntKind},
             vault,
         },
         scheme, vehicles,
@@ -132,6 +133,12 @@ signals! {
     ClimbMantles => "climb.mantles", Counter, "Mantles completed.";
     ClimbDrops => "climb.drops", Counter, "Grips ended against the player's wish.";
     ClimbError => "climb.error", Flag, "The climbing holds an error.";
+    StuntHanging => "stunt.hanging", Flag, "The game holds the player hanging from a helicopter.";
+    StuntStanding => "stunt.standing", Flag, "The game holds the player standing in a vehicle's stunt area.";
+    StuntHangEntries => "stunt.hang_entries", Counter, "Helicopter hangs the grips entered.";
+    StuntRoofEntries => "stunt.roof_entries", Counter, "Stunt areas the mantles entered.";
+    StuntReleases => "stunt.releases", Counter, "Hangs let go by opening the grips.";
+    StuntRefusals => "stunt.refusals", Counter, "Stunt position entries the game refused.";
     PushUps => "push_up.pushes", Counter, "Pushes up with the hands pressed down.";
     PushingUp => "push_up.lifting", Flag, "The hands lift the body.";
     ArticulatedGrips => "articulated.grips", Counter, "Articulated objects a hand took hold of.";
@@ -153,6 +160,7 @@ signals! {
     ProceduralParachute => "procedural.parachute", Flag, "The torso is posed on the harness's hips under the parachute, the legs hanging.";
     ProceduralFlare => "procedural.parachute_flare", Measure, "How far the hanging legs swing forward for the parachute's brake, as a share of the full flare, under the parachute.";
     ProceduralSwimming => "procedural.swimming", Flag, "The torso is posed on the swim's hips in the water.";
+    ProceduralRoof => "procedural.roof", Flag, "The torso is posed on the stunt idle's hips on a vehicle's roof.";
     ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";
     Wielded => "weapons.wielded", Flag, "A weapon is wielded.";
     WeaponInLeftHand => "weapons.in_left_hand", Flag, "The wielded weapon's first gun rides the left hand.";
@@ -234,6 +242,12 @@ impl Signal {
             Signal::ClimbMantles => count(climb::status().mantles),
             Signal::ClimbDrops => count(climb::status().drops),
             Signal::ClimbError => flag(climb::status().last_error.is_some()),
+            Signal::StuntHanging => flag(stunt::status().position == Some(StuntKind::Hanging)),
+            Signal::StuntStanding => flag(stunt::status().position == Some(StuntKind::Standing)),
+            Signal::StuntHangEntries => count(stunt::status().hang_entries),
+            Signal::StuntRoofEntries => count(stunt::status().roof_entries),
+            Signal::StuntReleases => count(stunt::status().releases),
+            Signal::StuntRefusals => count(stunt::status().refusals),
             Signal::PushUps => count(vault::status().pushes),
             Signal::PushingUp => flag(vault::status().lifting),
             Signal::ArticulatedGrips => count(physical_hands::status().pickup.articulated_grips),
@@ -282,6 +296,14 @@ impl Signal {
                 let status = procedural::published_status();
                 flag(
                     status.case == Case::Swimming && status.on_animated_hips && status.weight > 0.0,
+                )
+            }
+            Signal::ProceduralRoof => {
+                let status = procedural::published_status();
+                flag(
+                    status.case == Case::StuntStanding
+                        && status.on_animated_hips
+                        && status.weight > 0.0,
                 )
             }
             Signal::ProceduralNeckErrorM => {

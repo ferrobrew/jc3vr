@@ -307,6 +307,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 .then(|| {
                     physical_hands::pickup::volume(hand)
                         .or_else(|| physical_hands::climb::volume(hand))
+                        .or_else(|| physical_hands::stunt::volume(hand))
                 })
                 .flatten()
         })
@@ -445,6 +446,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             });
         }
         physical_hands::climb::finish_tick(finish.grips.map(|g| g.held()), finish.grabs);
+        physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
     } else {
         weapons::wheel::pause();
         physical_hands::pickup::pause();

@@ -1,0 +1,37 @@
+# Template: fill testing/recordings/stunt_positions.jc3trk, then run. See docs/mod/input/stunt-positions.md and docs/mod/testing/recorder.md.
+name = "hang from a helicopter by the grip, let go, and ride a roof"
+description = "Recorded with HOLD STUNT POSITIONS, CLIMB WITH THE HANDS, and CLIMB MOVING THINGS on, empty-handed (stunt-positions.md, checklist items 1 to 6). Climb onto a parked helicopter's skid and hang from it with both grips held until the hang starts, have it lift off and hold on for a few seconds, then open both grips over water. Then grip a parked car's side, climb it, and mantle onto its roof, and stand there with the hands free for a few seconds."
+recording = "../recordings/stunt_positions.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "the grip entered the helicopter's hang"
+signal = "stunt.hang_entries"
+
+[[expect]]
+log = "stunt positions: the grip took the player into the helicopter's hang"
+
+[[expect]]
+signal = "stunt.hanging"
+
+[[expect]]
+name = "opening the grips let go"
+signal = "stunt.releases"
+
+[[expect]]
+name = "the game did not keep the hang after the let-go"
+log = "the game kept the player in the hang"
+at_most = 0
+
+[[expect]]
+name = "the mantle entered the roof's stunt area"
+signal = "stunt.standing"
+
+[[expect]]
+name = "the torso is on the stunt idle's hips on the roof"
+signal = "procedural.roof"
+
+[[expect]]
+name = "the game refused no entry"
+signal = "stunt.refusals"
+at_most = 0

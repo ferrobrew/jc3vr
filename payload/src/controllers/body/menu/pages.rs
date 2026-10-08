@@ -164,6 +164,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .swim_torso))
+        .item(config_toggle!("TORSO ON VEHICLE ROOFS", |c| c
+            .controllers
+            .body
+            .procedural
+            .stunt_torso))
         .text("TEST WRITES THE POSE BACK AS IS.")
         .header("ALIGNMENT")
         .item(config_toggle!("BODY FACES YOUR TORSO", |c| c

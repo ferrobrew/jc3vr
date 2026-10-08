@@ -115,6 +115,8 @@ pub enum TierState {
     GrappleHang,
     /// Stunt traversal: the step-ups and step-downs, and the other traversal animations.
     StuntTraversal,
+    /// Hanging from a helicopter in its stunt position, whose animation holds the airframe.
+    StuntHang,
     /// Entering, exiting, or switching a vehicle seat, and hijacks.
     VehicleTransition,
     /// Seated in a vehicle and riding it.
@@ -142,11 +144,12 @@ pub enum TierState {
 
 impl TierState {
     /// Every state, in the table's order.
-    pub const ALL: [TierState; 15] = [
+    pub const ALL: [TierState; 16] = [
         TierState::OnFoot,
         TierState::GrappleReel,
         TierState::GrappleHang,
         TierState::StuntTraversal,
+        TierState::StuntHang,
         TierState::VehicleTransition,
         TierState::VehicleSeated,
         TierState::MountedGun,
@@ -184,6 +187,7 @@ impl TierState {
             TierState::GrappleReel => "grapple reel-in",
             TierState::GrappleHang => "grapple hang",
             TierState::StuntTraversal => "stunt traversal",
+            TierState::StuntHang => "stunt hang",
             TierState::VehicleTransition => "vehicle entry and exit",
             TierState::VehicleSeated => "vehicle seated",
             TierState::MountedGun => "mounted gun",
@@ -214,6 +218,7 @@ pub struct HandTierTable {
     pub grapple_reel: HandTier,
     pub grapple_hang: HandTier,
     pub stunt_traversal: HandTier,
+    pub stunt_hang: HandTier,
     pub vehicle_transition: HandTier,
     pub vehicle_seated: HandTier,
     pub mounted_gun: HandTier,
@@ -235,6 +240,7 @@ impl HandTierTable {
         grapple_reel: HandTier::Anchored,
         grapple_hang: HandTier::Anchored,
         stunt_traversal: HandTier::Yielded,
+        stunt_hang: HandTier::Yielded,
         vehicle_transition: HandTier::Yielded,
         vehicle_seated: HandTier::Free,
         mounted_gun: HandTier::Anchored,
@@ -287,6 +293,7 @@ impl HandTierTable {
             TierState::GrappleReel => &self.grapple_reel,
             TierState::GrappleHang => &self.grapple_hang,
             TierState::StuntTraversal => &self.stunt_traversal,
+            TierState::StuntHang => &self.stunt_hang,
             TierState::VehicleTransition => &self.vehicle_transition,
             TierState::VehicleSeated => &self.vehicle_seated,
             TierState::MountedGun => &self.mounted_gun,
@@ -307,6 +314,7 @@ impl HandTierTable {
             TierState::GrappleReel => &mut self.grapple_reel,
             TierState::GrappleHang => &mut self.grapple_hang,
             TierState::StuntTraversal => &mut self.stunt_traversal,
+            TierState::StuntHang => &mut self.stunt_hang,
             TierState::VehicleTransition => &mut self.vehicle_transition,
             TierState::VehicleSeated => &mut self.vehicle_seated,
             TierState::MountedGun => &mut self.mounted_gun,
@@ -333,6 +341,8 @@ pub struct TierSignals {
     pub riding_vehicle: bool,
     /// Whether the character is in a stunt traversal.
     pub stunt_traversing: bool,
+    /// Whether the character hangs from a helicopter in its stunt position.
+    pub stunt_hanging: bool,
     /// Whether the character is on a mounted gun.
     pub mounted_gun: bool,
     /// Whether the selected camera is a cinematic one.
@@ -391,6 +401,10 @@ pub fn classify(signals: &TierSignals) -> Option<TierState> {
     }
     if signals.stunt_traversing {
         return Some(TierState::StuntTraversal);
+    }
+    // The hang wins over the grapple's reeled-in states: a reel onto a helicopter ends in it.
+    if signals.stunt_hanging {
+        return Some(TierState::StuntHang);
     }
     if any(&[
         StateBitFlag::SB_IS_WINGSUIT,
@@ -593,6 +607,7 @@ unsafe fn read_signals() -> TierSignals {
     unsafe {
         signals.riding_vehicle = snapshot.vehicle.is_some() && local.IsInRidingInVehicleState();
         signals.stunt_traversing = local.IsStuntTraversing();
+        signals.stunt_hanging = local.IsStuntHanging();
         signals.mounted_gun = local.IsInMountedGunState();
         signals.cinematic_camera =
             GameCameraManager::get().is_some_and(|camera| camera.IsInCinematicCamera());
@@ -630,6 +645,26 @@ mod tests {
     }
 
     const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
+
+    #[test]
+    fn a_helicopter_hang_yields_the_hands_to_its_animation() {
+        let mut hanging = signals(ON_FOOT, &[]);
+        hanging.stunt_hanging = true;
+        assert_eq!(classify(&hanging), Some(TierState::StuntHang));
+        // A reel onto the helicopter that ends in its hang is the hang.
+        hanging.detection.traversal = Some(Traversal::ReeledIn);
+        assert_eq!(classify(&hanging), Some(TierState::StuntHang));
+        // A ragdoll still wins.
+        let thrown = TierSignals {
+            stunt_hanging: true,
+            ..signals(ON_FOOT, &[StateBitFlag::SB_IN_RAGDOLL])
+        };
+        assert_eq!(classify(&thrown), Some(TierState::Ragdoll));
+        assert_eq!(
+            HandTierTable::PLAN.tier(TierState::StuntHang),
+            HandTier::Yielded
+        );
+    }
 
     #[test]
     fn the_procedural_swim_frees_the_swimming_hands() {

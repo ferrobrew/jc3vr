@@ -56,7 +56,7 @@ use crate::{
                 drive::{Goal, rig_jumped},
             },
             pickup::REACH_DIRECTIONS,
-            pulse,
+            pulse, stunt,
         },
         roomscale::teleport,
         weapons::haptics::PulseSource,
@@ -120,10 +120,38 @@ pub fn status() -> ClimbStatus {
 }
 
 /// Whether a hand grips the world, as the last pre-simulation step left it: the procedural body
-/// hangs the legs while one does.
+/// hangs the legs while one does. A grip held while the game holds the player in a stunt position
+/// moves no body, so it is no climb.
 pub fn climbing() -> bool {
     let state = STATE.lock();
-    state.grips.iter().any(Option::is_some) && state.stepped_lately(Instant::now())
+    state.grips.iter().any(Option::is_some)
+        && !state.held_by_game
+        && state.stepped_lately(Instant::now())
+}
+
+/// What each hand grips, as the last pre-simulation step left it, indexed by [`Hand::index`].
+pub(crate) fn gripped() -> [Option<Hold>; 2] {
+    let state = STATE.lock();
+    if !state.stepped_lately(Instant::now()) {
+        return [None; 2];
+    }
+    state.grips.map(|grip| grip.map(|g| g.hold))
+}
+
+/// A mantle that landed on a moving body.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Landing {
+    /// The body whose ledge the mantle carried the player over.
+    pub body: u32,
+    /// Where the feet landed, game space.
+    pub feet: Vec3,
+}
+
+/// The last mantle that landed on a moving body, once: the stunt positions take the player into
+/// a vehicle's stunt area from it. A landing older than a moment is dropped.
+pub(crate) fn take_landing() -> Option<Landing> {
+    let (landing, at) = STATE.lock().landing.take()?;
+    (Instant::now().saturating_duration_since(at) <= STALE_AFTER).then_some(landing)
 }
 
 /// The static body each hand reaches, as the palms' tick last found it: a surface the hands push
@@ -274,7 +302,11 @@ pub(super) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
         }
         state.status.in_air = in_air;
         let climbing = state.grips.iter().any(Option::is_some);
-        if climbing && mode != Mode::OnFoot(OnFootVariant::Ground) && !state.warned_mode {
+        if climbing
+            && !state.held_by_game
+            && mode != Mode::OnFoot(OnFootVariant::Ground)
+            && !state.warned_mode
+        {
             state.warned_mode = true;
             tracing::warn!(
                 ?mode,
@@ -286,7 +318,7 @@ pub(super) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
             state.warned_mode = false;
         }
         // The gripping hands feel the pull while the hands move the body.
-        let strain = climbing.then(|| {
+        let strain = (climbing && !state.held_by_game).then(|| {
             tension(
                 state.status.velocity.length(),
                 config.climb.tension_full_speed_mps,
@@ -335,6 +367,16 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         state.stale_steps = 0;
         state.stepped_publish = state.publishes;
     }
+    // The game holds the player in a stunt position: it moves the player with the vehicle, so the
+    // grips hold the hands where they took hold and move nothing. Grips taken before it did were
+    // taken for a body it has since moved, so they let go.
+    let held_by_game = stunt::game_holds();
+    if held_by_game && !state.held_by_game {
+        state.drop_all("the game took the player into a stunt position");
+        state.carry = None;
+        state.finish_climb();
+    }
+    state.held_by_game = held_by_game;
     let reason = if !enabled(&config) {
         Some("climbing is off")
     } else if teleport::epoch() != state.epoch {
@@ -454,6 +496,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
 
     if state.grips.iter().all(Option::is_none) {
         if let Some(hand) = released_by_grip
+            && !held_by_game
             && state.climbing
             && state.mantle.is_none()
             && config.climb.fling
@@ -483,7 +526,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 }
                 Err(e) => state.status.last_error = Some(e.to_string()),
             }
-        } else if let Some(carry) = state.carry {
+        } else if let Some(carry) = state.carry.filter(|_| !held_by_game) {
             // The game may take a fling's velocity back on the steps after the release, so the
             // fling keeps carrying the body as a throw for a moment, until it stands somewhere.
             let elapsed_s = (carry.steps + 1) as f32 * step_s;
@@ -520,6 +563,10 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             return [None; 2];
         }
     };
+    if held_by_game {
+        // SAFETY: forwarded from the caller.
+        return unsafe { state.hold_only() };
+    }
     if !state.climbing {
         state.climbing = true;
         state.smoothed = Vec3::ZERO;
@@ -606,6 +653,15 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             let landed = stands && place.feet.y >= mantle.top.y - MANTLE_LANDED_BELOW_M;
             let motion = mantle.motion(place.feet, &mantle_tuning);
             if landed || motion == MantleMotion::Arrived {
+                state.landing = state.ledge_grip().filter(|g| g.frame.is_some()).map(|g| {
+                    (
+                        Landing {
+                            body: g.hold.body,
+                            feet: place.feet,
+                        },
+                        Instant::now(),
+                    )
+                });
                 tracing::info!(
                     feet = ?place.feet,
                     stood = landed,
@@ -835,6 +891,10 @@ struct State {
     epoch: u64,
     warned_mode: bool,
     logged_at: Option<Instant>,
+    /// Whether the game held the player in a stunt position on the last step.
+    held_by_game: bool,
+    /// The last mantle that landed on a moving body, and when.
+    landing: Option<(Landing, Instant)>,
     status: ClimbStatus,
 }
 
@@ -851,12 +911,39 @@ impl State {
 
     /// The highest gripped surface that is a ledge's top ([`is_ledge`]).
     fn ledge_top(&self) -> Option<Vec3> {
+        self.ledge_grip().map(|g| g.hold.point)
+    }
+
+    /// The grip on the highest ledge's top.
+    fn ledge_grip(&self) -> Option<Grip> {
         self.grips
             .iter()
             .flatten()
             .filter(|g| g.ledge)
-            .map(|g| g.hold.point)
-            .max_by(|a, b| a.y.total_cmp(&b.y))
+            .max_by(|a, b| a.hold.point.y.total_cmp(&b.hold.point.y))
+            .copied()
+    }
+
+    /// The step's part while the game holds the player in a stunt position: each grip holds its
+    /// hand where it took hold, carried with a moving body, and nothing moves the player.
+    ///
+    /// # Safety
+    ///
+    /// The thread that steps the physics world, outside the step.
+    unsafe fn hold_only(&mut self) -> [Option<Goal>; 2] {
+        self.finish_climb();
+        for hand in Hand::BOTH {
+            self.status.hands[hand.index()].grip = self.grips[hand.index()].map(|g| g.hold);
+        }
+        self.grips.map(|grip| {
+            let grip = grip?;
+            // SAFETY: forwarded from the caller.
+            let (position, orientation) = unsafe { grip.carried() }.map_or(grip.pin, |c| c.pin);
+            Some(Goal {
+                position,
+                orientation,
+            })
+        })
     }
 
     fn drop_hand(&mut self, hand: Hand, reason: &'static str) {
@@ -919,6 +1006,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     epoch: 0,
     warned_mode: false,
     logged_at: None,
+    held_by_game: false,
+    landing: None,
     status: ClimbStatus {
         climbing: false,
         mantling: false,

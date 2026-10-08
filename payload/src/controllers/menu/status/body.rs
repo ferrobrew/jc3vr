@@ -1,6 +1,6 @@
 //! The status page's rows for the procedural body outside standing play: the torso in a vehicle
-//! seat, the wingsuit's arms, the body under the parachute, the torso in the water, and the body
-//! mirror. Each reads the last gate's published status, which the pause stops
+//! seat, the wingsuit's arms, the body under the parachute, the torso in the water, the torso on
+//! a vehicle's roof, and the body mirror. Each reads the last gate's published status, which the pause stops
 //! updating, so a row shows what the body did just before the menu opened.
 
 use std::time::{Duration, Instant};
@@ -136,6 +136,27 @@ pub(super) fn swim_torso() -> Line {
     torso_on_hips_line(&status)
 }
 
+pub(super) fn roof_torso() -> Line {
+    let (enabled, mode) = read_config(|c| {
+        (
+            c.controllers.body.procedural.stunt_torso,
+            c.controllers.body.procedural.mode,
+        )
+    });
+    if !enabled || mode != ProceduralMode::Full {
+        return Line::off("");
+    }
+    roof_line(&procedural::published_status())
+}
+
+/// The torso standing in a vehicle's stunt area.
+fn roof_line(status: &ProceduralStatus) -> Line {
+    if status.case != Case::StuntStanding {
+        return Line::waiting("NOT ON A ROOF").with_note(status.case.label());
+    }
+    torso_on_hips_line(status)
+}
+
 pub(super) fn body_mirror() -> Line {
     if !read_config(|c| c.controllers.overlay.body_mirror) {
         return Line::off("SWITCH ON IN DEBUG UI")
@@ -190,6 +211,18 @@ mod tests {
         );
         assert_eq!(
             seated_line(&status(Case::Seated, 1.0)).text(),
+            "OK, 100%, NECK 3 CM"
+        );
+    }
+
+    #[test]
+    fn the_roof_torso_reads_its_weight_on_a_roof_only() {
+        assert_eq!(
+            roof_line(&status(Case::Vehicle, 0.0)).text(),
+            "WAITING, NOT ON A ROOF"
+        );
+        assert_eq!(
+            roof_line(&status(Case::StuntStanding, 1.0)).text(),
             "OK, 100%, NECK 3 CM"
         );
     }

@@ -187,6 +187,11 @@ fn settings_page() -> Page {
             .physical_hands
             .climb
             .moving))
+        .item(config_toggle!("HOLD STUNT POSITIONS", |c| c
+            .controllers
+            .physical_hands
+            .stunt
+            .enabled))
         .item(config_toggle!("PUSH UP WITH THE HANDS", |c| c
             .controllers
             .physical_hands

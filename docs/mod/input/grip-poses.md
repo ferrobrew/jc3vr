@@ -17,6 +17,7 @@ Each system that puts something in a hand declares it on each of its ticks while
 | Door | the palms' tick: a latched door's handle area, or the door once open | door handle | grip |
 | Hinged object | the palms' tick: an articulated object | 40 mm bar | grip |
 | Loose object | the palms' tick: a loose object, or a flat palm on one the hand cannot lift | wrap (flat palm) | grip |
+| Stunt handhold | the stunt positions' input tick, a hand holding its grip in a helicopter's hang or a climbing grip on a helicopter ([stunt-positions.md](stunt-positions.md)) | 50 mm bar | grip |
 | Climb | the climb's input tick, a hand gripping the world or a moving body | ledge hook | grip |
 | Wheel, handlebars, stick, lever | the vehicles' input tick, a hand on a physical control | 35, 32, 38, and 40 mm bars | held |
 | Parachute handle | the vehicles' input tick | 25 mm bar | held |

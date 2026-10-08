@@ -1,5 +1,6 @@
 //! The status page's rows for what the empty hands do in the world: vehicle doors, the characters
-//! they take hold of, the moving bodies they climb, pushing the body up, and articulated objects.
+//! they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
+//! up, and articulated objects.
 
 use smol_str::{SmolStr, format_smolstr};
 
@@ -13,6 +14,7 @@ use crate::controllers::{
         grasp::TargetKind,
         physics,
         pickup::PickupStatus,
+        stunt::{self, StuntStatus, solve::StuntKind},
         vault::{self, VaultStatus},
     },
 };
@@ -50,6 +52,11 @@ pub(super) fn moving_climbs() -> Line {
         .iter()
         .any(|h| h.grip.is_some_and(|g| g.moving));
     moving_climbs_line(on, status.moving_grips, on_moving)
+}
+
+pub(super) fn stunt_positions() -> Line {
+    let on = read_config(|c| stunt::enabled(&c.controllers.physical_hands));
+    stunt_line(on, &stunt::status())
 }
 
 pub(super) fn push_up() -> Line {
@@ -115,6 +122,40 @@ fn moving_climbs_line(on: bool, grips: u64, on_moving: bool) -> Line {
     }
 }
 
+/// The stunt positions: the one the game holds the player in, whether the grips hold the hang,
+/// and the entries and let-gos counted.
+fn stunt_line(on: bool, status: &StuntStatus) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    let counts = format_smolstr!(
+        "{} HANGS, {} ROOFS, {} LET GO",
+        status.hang_entries,
+        status.roof_entries,
+        status.releases
+    );
+    let line = match status.position {
+        Some(StuntKind::Hanging) if status.holding.iter().any(|&h| h) => {
+            Line::ok(format_smolstr!("HANGING, HOLDING ON, {counts}"))
+        }
+        Some(StuntKind::Hanging) if status.armed => {
+            Line::ok(format_smolstr!("HANGING, LETTING GO, {counts}"))
+        }
+        Some(StuntKind::Hanging) => Line::waiting(format_smolstr!("HANGING, TAKE HOLD, {counts}")),
+        Some(StuntKind::Standing) => Line::ok(format_smolstr!("ON A ROOF, {counts}")),
+        None if status.hang_entries + status.roof_entries + status.releases == 0 => {
+            Line::waiting("NO STUNT POSITION YET")
+        }
+        None => Line::ok(counts),
+    };
+    match (&status.last_error, status.refusals) {
+        (Some(error), refusals) if refusals > 0 => {
+            line.with_note(format!("{refusals} refused, last: {error}"))
+        }
+        _ => line,
+    }
+}
+
 fn characters_line(on: bool, pickup: &PickupStatus, knockdowns: u64) -> Line {
     if !on {
         return Line::off("");
@@ -157,6 +198,37 @@ mod tests {
     use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
+
+    #[test]
+    fn the_stunt_row_says_what_holds_the_player() {
+        let mut status = StuntStatus::default();
+        assert_eq!(stunt_line(false, &status).health, Health::Off);
+        assert_eq!(stunt_line(true, &status).health, Health::Waiting);
+        status.position = Some(StuntKind::Hanging);
+        status.hang_entries = 1;
+        assert_eq!(
+            stunt_line(true, &status).text(),
+            "WAITING, HANGING, TAKE HOLD, 1 HANGS, 0 ROOFS, 0 LET GO"
+        );
+        status.holding = [false, true];
+        status.armed = true;
+        assert_eq!(
+            stunt_line(true, &status).text(),
+            "OK, HANGING, HOLDING ON, 1 HANGS, 0 ROOFS, 0 LET GO"
+        );
+        status.position = Some(StuntKind::Standing);
+        status.roof_entries = 2;
+        assert_eq!(
+            stunt_line(true, &status).text(),
+            "OK, ON A ROOF, 1 HANGS, 2 ROOFS, 0 LET GO"
+        );
+        status.position = None;
+        status.releases = 1;
+        assert_eq!(
+            stunt_line(true, &status).text(),
+            "OK, 1 HANGS, 2 ROOFS, 1 LET GO"
+        );
+    }
 
     #[test]
     fn the_articulated_row_counts_grips() {

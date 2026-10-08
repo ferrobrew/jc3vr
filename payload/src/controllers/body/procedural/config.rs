@@ -183,6 +183,9 @@ pub struct ProceduralBodyConfig {
     /// swim's hips, the arms follow the controllers (the swimming hand tier is free while this is
     /// on), and the legs keep the swim's kick.
     pub swim_torso: bool,
+    /// Pose the torso standing in a vehicle's stunt area (a car's roof, a boat's deck): the spine
+    /// follows the player's head over the stunt idle's hips, and the legs keep the idle's balance.
+    pub stunt_torso: bool,
     /// How far the hanging legs swing forward at a full brake of the parachute's handles, degrees.
     pub parachute_flare_deg: f32,
     /// How quickly the legs follow the brake, seconds: the smoothing time of their follower.
@@ -265,6 +268,7 @@ impl ProceduralBodyConfig {
             wingsuit_arms: true,
             parachute_body: true,
             swim_torso: true,
+            stunt_torso: true,
             parachute_flare_deg: 40.0,
             parachute_flare_s: 0.25,
             hit_reaction_hold_s: 1.2,

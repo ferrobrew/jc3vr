@@ -96,6 +96,12 @@ impl StateTracker {
             || (off_support && self.in_air_s >= IN_AIR_DEBOUNCE_S);
         let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
         let stunt_position = unsafe { character.IsInStuntPosition() };
+        let stunt_traversing = unsafe { character.IsStuntTraversing() };
+        // A roof, a deck, or a wing: not the helicopter's hang, nor a step up or down.
+        let stunt_standing = stunt_position
+            && !stunt_traversing
+            && unsafe { character.IsInStuntArea() }
+            && !unsafe { character.IsStuntHanging() };
         if movement_task && on_ground && !airborne {
             self.grounded_at = Some(now);
         }
@@ -116,8 +122,9 @@ impl StateTracker {
             // entry, an exit, a seat switch, and a mounted gun are not. It lags by up to a frame,
             // as the mode detection does.
             seated: tiers::status().state == Some(TierState::VehicleSeated) && !stunt_position,
+            stunt_standing,
             traversal: detection.traversal.is_some()
-                || unsafe { character.IsStuntTraversing() }
+                || stunt_traversing
                 || unsafe { character.IsGrappleHanging() }
                 || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
             ledge_climb: in_ledge_climb(now),

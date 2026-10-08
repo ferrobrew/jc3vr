@@ -131,6 +131,8 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `hand_bodies.left_in_world`, `.right_in_world`, `.error` | flag | A hand's body is acting in the world; the bodies hold an error. |
 | `climb.climbing`, `.mantling`, `.error` | flag | A hand grips the world; the mantle runs; the climbing holds an error. |
 | `climb.grips`, `.moving_grips`, `.releases`, `.mantles`, `.drops` | counter | The climbing's counts. |
+| `stunt.hanging`, `.standing` | flag | The game holds the player hanging from a helicopter, or standing in a vehicle's stunt area ([stunt-positions.md](../input/stunt-positions.md)). |
+| `stunt.hang_entries`, `.roof_entries`, `.releases`, `.refusals` | counter | The hangs the grips entered, the stunt areas the mantles entered, the hangs let go by opening the grips, and the entries the game refused. |
 | `push_up.pushes` | counter | Pushes up with the hands pressed down ([physical-hands.md](../input/physical-hands.md#pushing-up)). |
 | `push_up.lifting` | flag | The hands lift the body. |
 | `articulated.grips` | counter | Articulated objects a hand took hold of ([physical-hands.md](../input/physical-hands.md#articulated-objects)). |
@@ -144,6 +146,7 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `procedural.parachute` | flag | The torso is posed on the harness's hips under the parachute, the legs hanging. |
 | `procedural.parachute_flare` | measure | How far the hanging legs swing forward for the brake, as a share of the full flare, under the parachute. |
 | `procedural.swimming` | flag | The torso is posed on the swim's hips in the water. |
+| `procedural.roof` | flag | The torso is posed on the stunt idle's hips standing on a vehicle's roof. |
 | `procedural.neck_error_m` | measure | How far the solved neck is from the point under the player's head, while the procedural body poses the torso. |
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
 | `weapons.second_in_left_hand`, `.second_in_right_hand` | flag | A second weapon is held in that hand. |

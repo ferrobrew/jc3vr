@@ -120,6 +120,7 @@ The starting assignments are as follows.
 | Reel-in flight (`GHS_REELING_IN`) | Anchored: the grapple hand holds the line where the controller is | none needed |
 | Grapple hang, upside-down, and stunt positions (`GHS_REELED_*`) | Anchored: the grapple hand holds the line, and its displacement pushes the hanging body, because the game's own stick swing is disabled | none needed |
 | Standing on a vehicle (stunt position) | Free | none needed |
+| Hanging from a helicopter (its stunt position, [`Character::IsStuntHanging`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsStuntHanging)), which wins over the grapple's reeled-in states | Yielded: the hang's animation holds the airframe, where the player's grip holds it ([stunt-positions.md](stunt-positions.md)) | none needed |
 | Ledge grabs, climbs, vaults, stunt step-up and step-down | Yielded | physical climbing, which would be a rebuild of the traversal controller |
 | Vehicle entry, exit, and hijack | Yielded | the seat transitions in "Roomscale design" |
 | Driving and flying with stick bindings | Free: the wheel animates without the hands | none needed |

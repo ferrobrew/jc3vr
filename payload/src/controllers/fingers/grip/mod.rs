@@ -54,6 +54,8 @@ pub enum GripSource {
     Articulated,
     /// A loose object picked up.
     Pickup,
+    /// A stunt handhold: a helicopter's skid, gripped to hang from it, or held in its hang.
+    Stunt,
     /// The world, or a moving body, gripped to climb.
     Climb,
     Wheel,
@@ -72,7 +74,7 @@ pub enum GripSource {
 }
 
 impl GripSource {
-    pub const ALL: [GripSource; 18] = [
+    pub const ALL: [GripSource; 19] = [
         GripSource::Magazine,
         GripSource::Grenade,
         GripSource::C4,
@@ -82,6 +84,7 @@ impl GripSource {
         GripSource::Door,
         GripSource::Articulated,
         GripSource::Pickup,
+        GripSource::Stunt,
         GripSource::Climb,
         GripSource::Wheel,
         GripSource::Handlebars,
@@ -108,6 +111,7 @@ impl GripSource {
             GripSource::Door => "door",
             GripSource::Articulated => "hinged object",
             GripSource::Pickup => "loose object",
+            GripSource::Stunt => "stunt handhold",
             GripSource::Climb => "climb",
             GripSource::Wheel => "wheel",
             GripSource::Handlebars => "handlebars",
@@ -142,6 +146,7 @@ impl GripSource {
             GripSource::Door => GripPose::DoorHandle,
             GripSource::Articulated => GripPose::Cylinder { diameter_m: 0.04 },
             GripSource::Pickup => GripPose::Wrap,
+            GripSource::Stunt => GripPose::Cylinder { diameter_m: 0.05 },
             GripSource::Climb => GripPose::LedgeHook,
             GripSource::Wheel => GripPose::Cylinder { diameter_m: 0.035 },
             GripSource::Handlebars => GripPose::Cylinder { diameter_m: 0.032 },
@@ -164,6 +169,7 @@ impl GripSource {
             | GripSource::Door
             | GripSource::Articulated
             | GripSource::Pickup
+            | GripSource::Stunt
             | GripSource::Climb => Firmness::Grip,
             _ => Firmness::Held,
         }
@@ -403,6 +409,7 @@ mod tests {
         assert_eq!(GripSource::GrappleLine.firmness(), Firmness::Held);
         assert_eq!(GripSource::Pickup.firmness(), Firmness::Grip);
         assert_eq!(GripSource::Climb.firmness(), Firmness::Grip);
+        assert_eq!(GripSource::Stunt.firmness(), Firmness::Grip);
         assert!(GripSource::Foregrip.is_weapon() && !GripSource::Grenade.is_weapon());
         assert_eq!(
             GripSource::of_control(ControlKind::Throttle),

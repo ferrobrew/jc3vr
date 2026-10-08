@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::controllers::{
     physical_hands::{
         characters::CharactersConfig, climb::ClimbConfig, doors::DoorsConfig,
-        physics::HandBodiesConfig, vault::VaultConfig,
+        physics::HandBodiesConfig, stunt::StuntConfig, vault::VaultConfig,
     },
     weapons::config::PulseSpec,
 };
@@ -73,6 +73,8 @@ pub struct PhysicalHandsConfig {
     pub characters: CharactersConfig,
     /// Pushing the body up with the hands pressed down.
     pub vault: VaultConfig,
+    /// Stunt positions on vehicles, entered and let go of with the grip.
+    pub stunt: StuntConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -108,6 +110,7 @@ impl PhysicalHandsConfig {
             doors: DoorsConfig::new(),
             characters: CharactersConfig::new(),
             vault: VaultConfig::new(),
+            stunt: StuntConfig::new(),
         }
     }
 }

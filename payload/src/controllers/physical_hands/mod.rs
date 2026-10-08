@@ -14,7 +14,7 @@
 //! - [`articulated`]: whether a body hangs from the world or another body by a constraint;
 //! - [`climb`]: climbing by gripping the static world with a hand its body drives;
 //! - [`vault`]: pushing the body up with the hands pressed down on a surface;
-
+//! - [`stunt`]: stunt positions on vehicles, entered and let go of with the grip;
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
 //! - [`world`]: the Havok world, lent out for one call at a time;
 //! - [`config`]: the settings.
@@ -61,6 +61,7 @@ pub mod pickup;
 pub mod push;
 pub mod rigid;
 pub mod shove;
+pub mod stunt;
 mod touch;
 pub mod vault;
 mod world;

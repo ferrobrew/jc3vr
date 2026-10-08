@@ -29,6 +29,7 @@ mod semantic;
 mod settings;
 mod sights;
 mod stance;
+mod stunt;
 mod summary;
 mod vehicles;
 mod weapons;
@@ -77,6 +78,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let physical_hands_status = controller_physical_hands::status();
     let hand_bodies_status = controller_physical_hands::physics::status();
     let climb_status = controller_physical_hands::climb::status();
+    let stunt_status = controller_physical_hands::stunt::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
     let stance_status = controller_roomscale::stance::status();
@@ -174,6 +176,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Hand climbing")
             .default_open(true)
             .show(ui, |ui| climb::climb_readout(ui, &climb_status));
+
+        egui::CollapsingHeader::new("Stunt positions")
+            .default_open(true)
+            .show(ui, |ui| stunt::stunt_readout(ui, &stunt_status));
 
         egui::CollapsingHeader::new("Weapon handling")
             .default_open(true)
