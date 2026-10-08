@@ -25,6 +25,7 @@ use crate::{
             config::{ArmPitch, WheelTracking},
         },
         weapons::{
+            ads::config::AimingEye,
             config::{LeftGrip, PouchSide},
             reload::config::ReloadButton,
         },
@@ -356,6 +357,27 @@ fn settings_page() -> Page {
             |c| c.controllers.weapons.heft.braced.strength
         ))
         .item(config_toggle!("SCOPES", |c| c.controllers.weapons.scopes))
+        .item(config_toggle!("SIGHTS TO THE EYE", |c| c
+            .controllers
+            .weapons
+            .ads
+            .enabled))
+        .item(config_choice!(
+            "AIMING EYE",
+            &AimingEye::ALL,
+            &AIMING_EYE_LABELS,
+            |c| c.controllers.weapons.ads.eye
+        ))
+        .item(config_toggle!("STOCK TO THE SHOULDER", |c| c
+            .controllers
+            .weapons
+            .ads
+            .shoulder))
+        .item(config_toggle!("SCOPE CHEEK WELD", |c| c
+            .controllers
+            .weapons
+            .ads
+            .cheek_weld))
         .item(config_toggle!("TRUE RELOAD", |c| c
             .controllers
             .weapons
@@ -775,6 +797,8 @@ const SCHEME_LABELS: [&str; 3] = ["AUTOMATIC", "CONTROLLERS", "GAMEPAD"];
 const HANDS: [Hand; 2] = [Hand::Left, Hand::Right];
 /// By [`ReloadButton::ALL`].
 const RELOAD_BUTTON_LABELS: [&str; 2] = ["EJECT", "GAME RELOAD"];
+/// By [`AimingEye::ALL`].
+const AIMING_EYE_LABELS: [&str; 3] = ["GUN HAND'S SIDE", "LEFT", "RIGHT"];
 const POUCH_SIDE_LABELS: [&str; 2] = ["GUN HAND SIDE", "FREE HAND SIDE"];
 const LEFT_GRIP_LABELS: [&str; 3] = ["AUTOMATIC", "LEFT HAND'S OWN", "RIGHT HAND'S MIRRORED"];
 const HAND_LABELS: [&str; 2] = ["LEFT", "RIGHT"];

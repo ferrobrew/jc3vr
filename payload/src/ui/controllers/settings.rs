@@ -296,6 +296,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
     egui::CollapsingHeader::new("Scopes").show(ui, |ui| {
         let w = &mut c.weapons;
         scope::scope_settings(ui, &mut w.scopes, &mut w.scope);
+        scope::ads_settings(ui, &mut w.ads);
     });
 
     egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {

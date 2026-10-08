@@ -146,6 +146,11 @@ pub(crate) fn input_tick(weapon: Option<usize>) {
     *SCOPED.lock() = scoped.map(|address| (address, Instant::now()));
 }
 
+/// Whether the weapon at `address` is the scoped weapon the last input tick identified.
+pub(crate) fn is_scoped(address: usize) -> bool {
+    SCOPED.lock().is_some_and(|(a, _)| a == address)
+}
+
 /// Plan the frame's lens. Called once per render dispatch at the end of `RenderEngine::PostDraw`,
 /// before the engine's context lock is taken; it acts only on the frame's first eye.
 pub(crate) fn tick(eye: usize) {

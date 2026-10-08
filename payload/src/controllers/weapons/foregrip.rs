@@ -42,8 +42,10 @@ use crate::controllers::{
 pub struct GripGeometry {
     /// Where the off-hand's grip lands.
     pub foregrip: Vec3,
-    /// The barrel's direction, a unit vector.
+    /// The barrel's direction, a unit vector: the direction of the gun's sight line.
     pub barrel: Vec3,
+    /// The sight line's origin.
+    pub sight: Vec3,
     /// Whether the foregrip is the weapon's own grip point rather than the fallback along the
     /// barrel.
     pub native: bool,
@@ -434,6 +436,7 @@ mod tests {
     const RIFLE: GripGeometry = GripGeometry {
         foregrip: Vec3::new(0.0, 0.0, -0.4),
         barrel: Vec3::NEG_Z,
+        sight: Vec3::new(0.0, 0.08, 0.0),
         native: true,
     };
 
@@ -535,6 +538,7 @@ mod tests {
         let geometry = GripGeometry {
             foregrip: Vec3::new(0.0, -0.06, -0.35),
             barrel: Vec3::NEG_Z,
+            sight: Vec3::new(0.0, 0.08, 0.0),
             native: true,
         };
         let pose = two_hand(

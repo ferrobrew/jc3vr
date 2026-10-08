@@ -209,6 +209,10 @@ const SECTIONS: &[Section] = &[
         ],
     },
     Section {
+        title: "AIMING",
+        rows: &[row!("DOWN THE SIGHTS", explosives::down_the_sights)],
+    },
+    Section {
         title: "HAND BODIES",
         rows: &[
             row!("CALLBACK", controllers::callback),

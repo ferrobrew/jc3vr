@@ -24,7 +24,7 @@
 //! Everything here is inert unless the controller scheme is in effect and the hand's controller is
 //! tracked ([`active_hands`]), and each part has its toggle in [`HandsConfig`].
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
         physical_hands, scheme, vehicles,
-        weapons::{foregrip, heft, recoil},
+        weapons::{ads, foregrip, heft, recoil},
     },
     headpose, hooks,
 };
@@ -94,6 +94,15 @@ pub fn active_hands() -> Option<ActiveHands> {
         &mut active.hands,
         active.head.position,
         &active.config.weapons.heft,
+    );
+    let torso = reach::torso_heading(active.head, alignment::shoulder_heading());
+    let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
+    ads::apply(
+        &mut active.hands,
+        active.head,
+        shoulders,
+        torso,
+        &active.config.weapons.ads,
     );
     recoil::apply(&mut active.hands, &active.config.weapons.recoil);
     physical_hands::apply(&mut active.hands);
@@ -156,6 +165,22 @@ pub(crate) fn ik_owned() -> [bool; 2] {
         })
     })
     .unwrap_or([false; 2])
+}
+
+/// Each shoulder joint of the character the hands are drawn on, in the cockpit frame, by
+/// [`Hand::index`]: the remap's shoulder where the hands are remapped, else the player's estimated
+/// shoulders.
+fn shoulder_joints(
+    config: &ControllersConfig,
+    head: Pose,
+    world_scale: f32,
+    torso: Quat,
+) -> [Option<Vec3>; 2] {
+    let remaps = arm_remaps(config, head, world_scale);
+    let estimated = body::shoulder_positions(head.position, torso, &body::player());
+    Hand::BOTH.map(|hand| {
+        Some(remaps[hand.index()].map_or(estimated[hand.index()], |r| r.character_shoulder))
+    })
 }
 
 /// Each hand's remap: about the character's measured shoulder when that is on and the arm is

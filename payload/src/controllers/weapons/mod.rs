@@ -55,6 +55,7 @@
 //! distance from the nearest one. Everything acts only while the bindings inject, which is only
 //! under the controller scheme with a controller active.
 
+pub mod ads;
 pub mod c4;
 mod camera_kick;
 pub mod config;
@@ -336,6 +337,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let geometry = weapon
         .filter(|w| w.two_handed && gameplay)
         .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
+    ads::observe(weapon.zip(geometry).and_then(|(w, g)| {
+        Some(ads::AdsWeapon {
+            holder: w.holder?,
+            sight: ads::solve::WristSight {
+                origin: g.sight,
+                direction: g.barrel,
+            },
+            scoped: scope::is_scoped(w.address),
+        })
+    }));
 
     let mut candidates = Vec::new();
     let stance = state.step_stance();
@@ -764,6 +775,7 @@ pub(crate) fn stand_down() {
     foregrip::clear();
     heft::observe(None);
     heft::freeze(false);
+    ads::observe(None);
     grip_watch::clear();
     recoil::clear();
     grenade::stand_down();

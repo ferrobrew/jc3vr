@@ -111,6 +111,7 @@ pub unsafe fn measure_geometry(
     )?;
     let to_wrist = hand_pose::inverse(target.wrist);
     let barrel = (to_wrist.orientation * barrel_world.direction).try_normalize()?;
+    let sight = (to_wrist.position + to_wrist.orientation * barrel_world.origin) / world_scale;
 
     let grip_hand = match holder.other() {
         Hand::Left => WeaponGripHand::E_WEAPON_GRIP_HAND_LEFT,
@@ -131,9 +132,10 @@ pub unsafe fn measure_geometry(
     } else {
         barrel * foregrip.fallback_distance_m
     };
-    foregrip.is_finite().then_some(GripGeometry {
+    (foregrip.is_finite() && sight.is_finite()).then_some(GripGeometry {
         foregrip,
         barrel,
+        sight,
         native,
     })
 }

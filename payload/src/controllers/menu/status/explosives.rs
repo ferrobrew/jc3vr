@@ -1,12 +1,32 @@
-//! The status page's rows for the explosives and magazines the hands handle as objects: the
-//! grenade's pin and the live grenades within reach of a catch.
+//! The status page's rows for the explosives and magazines the hands handle as objects (the
+//! grenade's pin, the live grenades within reach of a catch, the C4 pressed on, and the magazines
+//! in the world), and for aiming a long gun down its sights.
 
 use smol_str::format_smolstr;
 
 use crate::controllers::{
     menu::{read_config, status::Line},
-    weapons::{c4, grenade, reload::loose},
+    weapons::{ads, c4, grenade, reload::loose},
 };
+
+pub(super) fn down_the_sights() -> Line {
+    if !read_config(|c| c.controllers.weapons.ads.enabled) {
+        return Line::off("");
+    }
+    let s = ads::status();
+    if !s.weapon {
+        return Line::waiting("NO LONG GUN MEASURED");
+    }
+    Line::ok(format_smolstr!(
+        "{}, SIGHTED {}, SHOULDERED {}, WELDED {}{}",
+        if s.scoped { "SCOPED" } else { "IRON SIGHTS" },
+        s.sighted,
+        s.shouldered,
+        s.welded,
+        s.eye_offset_m
+            .map_or(String::new(), |m| format!(", EYE {:.1} CM OFF", m * 100.0))
+    ))
+}
 
 pub(super) fn magazines() -> Line {
     if !read_config(|c| {
