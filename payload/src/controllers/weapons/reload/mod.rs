@@ -55,11 +55,11 @@ use crate::controllers::{
         controls::ButtonControl,
         grab::{Candidate, GrabVolume},
     },
+    body::alignment::measure::Frames,
     config::ControllersConfig,
     frame::{Hand, Pose},
     hands::{ActiveHands, pose::CockpitHand},
     weapons::{
-        body::alignment::measure::Frames,
         docks,
         engine::HeldWeapon,
         reload::{

@@ -1,0 +1,574 @@
+//! The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
+//! throw and the reload, and hold the fire inputs back during a weapon action.
+
+use std::time::{Duration, Instant};
+
+use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
+
+use crate::{
+    config::Config,
+    controllers::{
+        bindings::{
+            controls::ButtonControl,
+            grab::GrabVolume,
+            hold::{Desired, MapKind, Target, Want},
+        },
+        config::ControllersConfig,
+        fingers::grip::{self, Grip, GripSource},
+        frame::Hand,
+        hands::{
+            self,
+            tiers::{self, HandTier, TierState},
+        },
+        haptics::{self, Event},
+        weapons::{
+            c4, dual_wield, engine,
+            foregrip::{self, Inputs, Transition, TwoHandedWeapon},
+            grenade,
+            hold::{
+                self,
+                dock::{self, Release},
+                second,
+            },
+            holster::{self, HolsterAction},
+            reload,
+            state::STATE,
+            types::{GrabEvent, GrabOutcome},
+            volumes::{self, Stance},
+        },
+    },
+};
+
+/// What the bindings hand the second half of the weapon handling's input tick.
+pub(crate) struct FinishInputs {
+    /// The grab volume each hand grabbed this tick, indexed by [`Hand::index`].
+    pub grabs: [Option<GrabVolume>; 2],
+    /// Each hand's grip over the tick.
+    pub grips: [ButtonControl; 2],
+    /// Each hand's trigger press over the tick.
+    pub triggers: [ButtonControl; 2],
+    /// The reload action's press over the tick.
+    pub reload_button: ButtonControl,
+    /// The engine's tick delta, seconds.
+    pub dt: f32,
+}
+
+/// The second half of the weapon handling's input tick: act on the tick's grabs, run the grenade
+/// throw and the reload, and hold the fire inputs back during a weapon action. `desired` is the
+/// tables' output, which a draw adds its slot-select click to.
+pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
+    let FinishInputs {
+        grabs,
+        grips,
+        triggers,
+        reload_button,
+        dt,
+    } = *inputs;
+    let config = Config::lock_query(|c| c.controllers);
+    let active = hands::active_hands_raw();
+    let (weapon, gameplay, gun_side) = {
+        let state = STATE.lock();
+        (state.weapon, state.gameplay, state.gun_side)
+    };
+
+    let foregrip_grab = grabs
+        .iter()
+        .zip(Hand::BOTH)
+        .find(|(g, _)| **g == Some(GrabVolume::Foregrip))
+        .map(|(_, hand)| hand);
+    let two_handed = weapon
+        .filter(|(w, _)| w.two_handed && gameplay)
+        .and_then(|(w, geometry)| {
+            Some(TwoHandedWeapon {
+                holder: w.holder?,
+                address: w.address,
+                geometry,
+            })
+        });
+    let inputs = Inputs {
+        active: config.weapons.foregrip.enabled && active.is_some(),
+        hands: active.as_ref().map_or([None; 2], |a| a.hands),
+        weapon: two_handed,
+        grab_pressed: foregrip_grab
+            .is_some_and(|hand| two_handed.is_some_and(|w| w.holder.other() == hand)),
+        grip_held: two_handed.is_some_and(|w| grips[w.holder.other().index()].held()),
+    };
+    let transition = foregrip::tick(&inputs, dt, &config.weapons.foregrip);
+    // A release pulses the off-hand whatever ended the hold: a press, a move away, or the weapon
+    // leaving the hands.
+    if let (Some(Transition::Released(_)), Some(w)) = (transition, two_handed) {
+        haptics::play(w.holder.other(), Event::VolumeGrab);
+    }
+
+    let mut events = Vec::new();
+    for hand in Hand::BOTH {
+        let Some(volume) = grabs[hand.index()] else {
+            continue;
+        };
+        let outcome = match volume {
+            GrabVolume::Holster(site) => {
+                let wielded = weapon.map(|(w, _)| w.wielded);
+                let independent =
+                    config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
+                let second_weapon = holster::Second {
+                    enabled: config.weapons.hold.either_hand && config.weapons.hold.second_weapon,
+                    held: second::hand().zip(second::slot()),
+                };
+                match holster::decide(
+                    site,
+                    hand,
+                    config.acting_hand(),
+                    wielded,
+                    independent,
+                    second_weapon,
+                ) {
+                    Some(action) => act(action, hand, &config, desired),
+                    None => continue,
+                }
+            }
+            GrabVolume::Handle => {
+                let moved = hold::hand_over(hand);
+                if moved {
+                    // The hand that took the gun let go of the foregrip to take it.
+                    foregrip::clear();
+                }
+                GrabOutcome::Handover { moved }
+            }
+            GrabVolume::Foregrip => match transition {
+                Some(t) => GrabOutcome::Foregrip(t),
+                None => GrabOutcome::ForegripUnmeasured,
+            },
+            GrabVolume::GrenadePouch => GrabOutcome::Pouch,
+            GrabVolume::GrenadePin => GrabOutcome::Pin,
+            GrabVolume::LiveGrenade => GrabOutcome::Catch,
+            GrabVolume::MagazinePouch | GrabVolume::WorldMagazine => GrabOutcome::Magazine,
+            GrabVolume::WeaponAction => GrabOutcome::Action,
+            GrabVolume::C4Pouch => GrabOutcome::C4,
+            GrabVolume::WorldWeapon => {
+                let Some(active) = active.as_ref() else {
+                    continue;
+                };
+                let dual = config.weapons.dual_wield;
+                let inputs = hold::take::TakeInputs {
+                    active,
+                    settings: &config.weapons.hold,
+                    free: [true; 2],
+                    independent_pistols: dual.split && dual.independent_draw,
+                    gameplay,
+                };
+                // SAFETY: the input tick runs on the main thread outside the world update.
+                let taken = unsafe { hold::take::finish_grab(hand, &inputs) };
+                GrabOutcome::Take { taken }
+            }
+            GrabVolume::VehicleControl(_)
+            | GrabVolume::ParachuteHandle(_)
+            | GrabVolume::MountedHandle(_)
+            | GrabVolume::Pickup
+            | GrabVolume::Climb
+            | GrabVolume::StuntHold => {
+                continue;
+            }
+        };
+        tracing::debug!(target: "controllers", ?hand, volume = volume.label(), outcome = %outcome.label(), "grab");
+        if cues_grab(outcome) {
+            haptics::play(hand, Event::VolumeGrab);
+        }
+        events.push(GrabEvent {
+            hand,
+            volume,
+            outcome,
+        });
+    }
+    if gameplay {
+        log_near_misses(&grabs, &grips);
+    }
+    let holder = weapon.and_then(|(w, _)| w.holder);
+    let released = hold::act::release_tick(holder, grips.map(ButtonControl::held))
+        .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
+    if let (Some(hand), Some((w, _))) = (released, weapon) {
+        let volumes = STATE.lock().status.volumes;
+        let at_own_holster = matches!(
+            volumes[hand.index()],
+            Some(GrabVolume::Holster(site))
+                if holster::site_slot(site, config.acting_hand()) == w.wielded.slot
+        );
+        let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD;
+        release(
+            hand,
+            dock::on_release(at_own_holster, droppable),
+            w.wielded,
+            &config,
+        );
+    }
+
+    grenade::input_tick(
+        &grenade::TickInputs {
+            acting: config.weapons.grenade_throw && gameplay && active.is_some(),
+            pouch_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePouch)),
+            pin_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePin)),
+            catch_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::LiveGrenade)),
+            cockpit_grips: active
+                .as_ref()
+                .map_or([None; 2], |a| a.hands.map(|h| h.map(|h| h.grip.position))),
+            triggers,
+            dominant: config.acting_hand(),
+            grips,
+            world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
+            dt,
+        },
+        &config,
+        desired,
+    );
+    c4::input_tick(
+        &c4::TickInputs {
+            acting: config.weapons.c4_throw && gameplay && active.is_some(),
+            pouch_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
+            grips,
+            world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
+        },
+        &config.weapons.c4,
+    );
+    c4::wrist::input_tick(
+        &c4::wrist::TickInputs {
+            acting: config.weapons.wrist_detonator && active.is_some(),
+            presser: gun_side,
+            dt,
+        },
+        &config,
+    );
+    let reload_held = reload::finish_tick(
+        &reload::FinishInputs {
+            grabs,
+            grips,
+            triggers,
+            reload_button,
+            dt,
+        },
+        &config,
+    );
+    // A gun the reload holds cannot fire. The dual-wield split keeps a held pistol's trigger from
+    // the game itself, so the fire input is held back only when no drawn gun may fire.
+    let gun_hands = weapon.map_or([false; 2], |(w, _)| w.wielded.hands);
+    let reload_blocks = gun_hands.contains(&true)
+        && Hand::BOTH
+            .iter()
+            .all(|h| !gun_hands[h.index()] || reload_held[h.index()]);
+
+    second::set_trigger(
+        gameplay && second::hand().is_some_and(|hand| triggers[hand.index()].held()),
+    );
+    let fire_blocked = reload_blocks
+        || hold::act::holstering()
+        || primary_trigger_idle(weapon.map(|(w, _)| w), &triggers)
+        || (config.weapons.block_fire_during_actions
+            && weapon_action_running(weapon.and_then(|(w, _)| w.holder).unwrap_or(gun_side)));
+    if fire_blocked {
+        hold_fire_back(desired);
+    }
+    declare_grips(gun_hands);
+
+    let mut state = STATE.lock();
+    state.status.fire_blocked = fire_blocked;
+    state.status.grabs += events.len() as u64;
+    state.status.events.extend(events);
+    let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
+    state.status.events.drain(..excess);
+}
+
+/// The fire inputs a weapon action holds back.
+const FIRE_ACTIONS: [Action; 2] = [Action::FIRE_RIGHT, Action::R2];
+
+/// How far outside a holster's surface a grip press counts as a near miss, metres.
+const NEAR_MISS_MARGIN_M: f32 = 0.3;
+
+/// The shortest time between two near-miss log lines.
+const NEAR_MISS_LOG_INTERVAL: Duration = Duration::from_secs(1);
+
+/// How many grabs the readout keeps.
+const MAX_EVENTS: usize = 6;
+
+/// Declare what each hand holds of the weapons, for its finger pose: a gun in each hand that holds
+/// one (`gun_hands`, and the second weapon's), the foregrip, a grenade or a charge, and a round for
+/// the reload.
+fn declare_grips(gun_hands: [bool; 2]) {
+    for hand in Hand::BOTH.into_iter().filter(|h| gun_hands[h.index()]) {
+        grip::declare(hand, Grip::new(GripSource::Gun));
+    }
+    if let Some(two) = foregrip::two_hand_grip() {
+        grip::declare(
+            two.holder.other(),
+            Grip::new(GripSource::Foregrip).share(two.weight),
+        );
+    }
+    if let Some(hand) = grenade::throwing_hand() {
+        grip::declare(hand, Grip::new(GripSource::Grenade));
+    }
+    if let Some(hand) = c4::throwing_hand() {
+        grip::declare(hand, Grip::new(GripSource::C4));
+    }
+    if let Some(hand) = reload::holding_hand() {
+        grip::declare(hand, Grip::new(GripSource::Magazine));
+    }
+}
+
+/// Record, and log at most once per [`NEAR_MISS_LOG_INTERVAL`], a grip press this tick that grabbed
+/// nothing within [`NEAR_MISS_MARGIN_M`] of a holster, so that a reach that falls short in the
+/// headset can be read from the log.
+fn log_near_misses(grabs: &[Option<GrabVolume>; 2], grips: &[ButtonControl; 2]) {
+    let mut state = STATE.lock();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if !grips[i].pressed || grabs[i].is_some() {
+            continue;
+        }
+        let Some(point) = state.grab_points[i] else {
+            continue;
+        };
+        let Some(miss) = volumes::near_miss(point, hand, &state.placed, NEAR_MISS_MARGIN_M) else {
+            continue;
+        };
+        state.status.last_miss = Some((hand, miss));
+        let now = Instant::now();
+        if state
+            .last_miss_log
+            .is_some_and(|t| now.saturating_duration_since(t) < NEAR_MISS_LOG_INTERVAL)
+        {
+            continue;
+        }
+        state.last_miss_log = Some(now);
+        tracing::debug!(
+            target: "controllers",
+            ?hand,
+            nearest = miss.volume.label(),
+            outside_m = miss.outside_m,
+            offset_from_centre = ?miss.offset,
+            stance = state.status.stance.map_or("none", Stance::label),
+            "holsters: grip press outside the nearest holster"
+        );
+    }
+}
+
+/// Whether the fire input is held back because no hand holding the wielded weapon pulls its
+/// trigger while another hand's does: the one fire action reaches the weapon from either trigger,
+/// and only a hand holding the weapon may fire it. The other hand is empty, or holds the second
+/// weapon, which its trigger fires instead.
+pub(super) fn primary_trigger_idle(
+    weapon: Option<engine::HeldWeapon>,
+    triggers: &[ButtonControl; 2],
+) -> bool {
+    weapon.is_some_and(|w| {
+        let hands = w.wielded.hands;
+        let pulled = |h: Hand| triggers[h.index()].held();
+        hands.contains(&true)
+            && Hand::BOTH.into_iter().any(pulled)
+            && !Hand::BOTH
+                .into_iter()
+                .any(|h| hands[h.index()] && pulled(h))
+    })
+}
+
+/// Carry out `hand`'s holster decision. With independent pistol draws, a draw of the dual-wield
+/// slot brings out only `hand`'s pistol. With `hold.instant_dock`, a long gun is drawn and
+/// holstered without the game's acts ([`crate::controllers::weapons::hold::act`]), falling back
+/// to the game's when that is refused.
+fn act(
+    action: HolsterAction,
+    hand: Hand,
+    config: &ControllersConfig,
+    desired: &mut Vec<Desired>,
+) -> GrabOutcome {
+    let independent = config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
+    let settings = &config.weapons.hold;
+    let pistols = docks_pistols(config);
+    match action {
+        HolsterAction::Draw { slot, .. } if docks_without_act(config, slot) => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::draw(hand, slot, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the draw falls back to the game's");
+                    return act_with_game(action, hand, independent, desired);
+                }
+            }
+        }
+        HolsterAction::TakeSecond { slot } => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            if let Err(refusal) = unsafe { second::take(hand, slot) } {
+                tracing::debug!(target: "controllers", %refusal, "hold: no second weapon taken");
+            }
+            return GrabOutcome::Holster(action);
+        }
+        HolsterAction::PutBackSecond { .. } => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            unsafe { second::put_back() };
+            return GrabOutcome::Holster(action);
+        }
+        HolsterAction::DrawPistol { hand } if pistols => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::draw_pistol(hand, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the pistol's draw falls back to the layout's");
+                }
+            }
+        }
+        HolsterAction::HolsterPistol { hand } if pistols => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::holster_pistol(hand, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the pistol's holster falls back to the layout's");
+                }
+            }
+        }
+        HolsterAction::Holster { slot } if docks_without_act(config, slot) => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::holster(hand, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the holster falls back to the game's");
+                }
+            }
+        }
+        _ => {}
+    }
+    act_with_game(action, hand, independent, desired)
+}
+
+/// Whether the pistols are drawn and holstered without the game's acts, each sliding between its hip
+/// and its hand: with `hold.pistol_dock`, which needs each hand to draw its own pistol.
+pub(super) fn docks_pistols(config: &ControllersConfig) -> bool {
+    let dual = config.weapons.dual_wield;
+    let hold = config.weapons.hold;
+    hold.either_hand && hold.pistol_dock && dual.split && dual.independent_draw
+}
+
+/// Whether `slot` is drawn and holstered without the game's act: the long guns with
+/// `hold.instant_dock`, and the pistols as [`docks_pistols`] says.
+pub(super) fn docks_without_act(config: &ControllersConfig, slot: WeaponSlot) -> bool {
+    let hold = config.weapons.hold;
+    let long_guns = hold.either_hand && hold.instant_dock && hold::equip::handles(slot);
+    long_guns || (slot == WeaponSlot::E_SLOT_DUAL_WIELD && docks_pistols(config))
+}
+
+/// Carry out `hand`'s holster decision through the game's own draw and holster.
+fn act_with_game(
+    action: HolsterAction,
+    hand: Hand,
+    independent: bool,
+    desired: &mut Vec<Desired>,
+) -> GrabOutcome {
+    match action {
+        HolsterAction::Draw {
+            slot,
+            action: select,
+        } => {
+            if independent && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+                dual_wield::attach::begin_draw(hand);
+            }
+            hold::begin(hand, hold::holder::Cause::Draw, None);
+            // The game acts on a slot select when its input is released, so a one-tick click
+            // selects.
+            desired.push(Desired {
+                target: Target {
+                    map: MapKind::Player,
+                    action: select,
+                },
+                want: Want::Click,
+            });
+        }
+        HolsterAction::Holster { .. } => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { engine::local_player() } {
+                Some(owner) => unsafe { engine::holster(owner) },
+                None => return GrabOutcome::NoCharacter,
+            }
+        }
+        HolsterAction::DrawPistol { hand } => {
+            dual_wield::attach::draw(hand);
+        }
+        HolsterAction::HolsterPistol { hand } => {
+            dual_wield::attach::holster(hand);
+        }
+        HolsterAction::AlreadyDrawn { .. }
+        | HolsterAction::Refused { .. }
+        | HolsterAction::HandFull { .. }
+        | HolsterAction::TakeSecond { .. }
+        | HolsterAction::PutBackSecond { .. } => {}
+    }
+    GrabOutcome::Holster(action)
+}
+
+/// Carry out what opening `hand`'s grip on its gun does: holster it (without the game's act with
+/// `hold.instant_dock`, through the game's holster otherwise), or let it fall.
+fn release(hand: Hand, what: Release, wielded: holster::Wielded, config: &ControllersConfig) {
+    let settings = &config.weapons.hold;
+    let pair_held = wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD && wielded.hands == [true; 2];
+    match what {
+        // One pistol of a pair held in both hands goes back alone.
+        Release::Holster if pair_held => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            let slid = docks_pistols(config)
+                && unsafe { hold::act::holster_pistol(hand, settings.snap_s) }.is_ok();
+            if !slid {
+                dual_wield::attach::holster(hand);
+            }
+        }
+        Release::Holster => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            let instant = docks_without_act(config, wielded.slot)
+                && unsafe { hold::act::holster(hand, settings.snap_s) }.is_ok();
+            if !instant && let Some(owner) = unsafe { engine::local_player() } {
+                unsafe { engine::holster(owner) };
+            }
+        }
+        Release::Drop => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            if let Err(refusal) = unsafe { hold::act::drop_held(hand, settings.max_throw_mps) } {
+                tracing::debug!(target: "controllers", %refusal, "hold: the gun was not let go of");
+            }
+        }
+        Release::Keep => {}
+    }
+}
+
+/// Drop the fire inputs from the tables' output.
+pub(super) fn hold_fire_back(desired: &mut Vec<Desired>) {
+    desired
+        .retain(|d| !(d.target.map == MapKind::Player && FIRE_ACTIONS.contains(&d.target.action)));
+}
+
+/// Whether a reload, a draw, or a holster is playing with `gun_hand`, the hand holding the weapon
+/// (or the hand the last one rode, during a draw), in the action-runs tier.
+fn weapon_action_running(gun_hand: Hand) -> bool {
+    let status = tiers::status();
+    status.state == Some(TierState::WeaponAction)
+        && status.effective[gun_hand.index()] == HandTier::ActionRuns
+}
+
+/// Whether a grab's outcome is one the grab cue pulses: a draw, a holster, or a foregrip grab.
+/// The pouches pulse their own outcomes, and a release pulses from the transition, whatever
+/// caused it.
+pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
+    matches!(
+        outcome,
+        GrabOutcome::Holster(
+            HolsterAction::Draw { .. }
+                | HolsterAction::Holster { .. }
+                | HolsterAction::DrawPistol { .. }
+                | HolsterAction::HolsterPistol { .. }
+                | HolsterAction::TakeSecond { .. }
+                | HolsterAction::PutBackSecond { .. }
+        ) | GrabOutcome::Foregrip(Transition::Grabbed)
+            | GrabOutcome::Handover { moved: true }
+            | GrabOutcome::Take { taken: true }
+    )
+}
