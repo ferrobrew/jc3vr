@@ -90,19 +90,18 @@ pub unsafe fn is_static(body: u32) -> bool {
     unsafe { slot(world.world(), body) }.is_some_and(|slot| slot.m_flags & hknpBody::IS_STATIC != 0)
 }
 
-/// The support the proxy's update found for this step, before anything else wrote it: whether the
-/// proxy stands on a surface whose normal is at least `min_normal_y` upward.
+/// The support the proxy's update found for this step, before anything else wrote it: the upward
+/// share of the normal of the surface the proxy stands on, or `None` when it stands on nothing.
 ///
 /// # Safety
 ///
 /// The thread that steps the physics world, outside the step, after the proxy's update.
-pub unsafe fn stands(min_normal_y: f32) -> bool {
-    let Ok(proxy) = (unsafe { proxy() }) else {
-        return false;
-    };
+pub unsafe fn support() -> Option<f32> {
+    let proxy = unsafe { proxy() }.ok()?;
     let info = &proxy.m_GroundInformation;
-    info.m_supportedState == hknpCharacterSurfaceInfo::SUPPORTED
-        && info.m_surfaceNormal.data[1] >= min_normal_y
+    (info.m_supportedState == hknpCharacterSurfaceInfo::SUPPORTED)
+        .then_some(info.m_surfaceNormal.data[1])
+        .filter(|y| y.is_finite())
 }
 
 /// Hold the player up: give the proxy `velocity` for the coming step, as its own update does, and

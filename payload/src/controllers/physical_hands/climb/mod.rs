@@ -43,8 +43,8 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig,
             climb::solve::{
-                ClimbTuning, Follow, Mantle, MantleTuning, body_target, climb_velocity, fling,
-                mantle_starts, smooth,
+                ClimbTuning, Follow, Mantle, MantleCheck, MantleMotion, MantleTuning, body_target,
+                climb_velocity, fling, is_ledge, mantle_starts, smooth,
             },
             contact::{Surface, SurfaceHit},
             palm::PalmBox,
@@ -293,6 +293,20 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
 
     // SAFETY: forwarded from the caller.
     let place = unsafe { engine::player_place() };
+    // SAFETY: forwarded from the caller; the proxy's update ran before this callback, and found
+    // this support afresh rather than the one the last step wrote.
+    let support = unsafe { engine::support() };
+    let step_s = jc3gi::physics::PhysicsSystem::STEP_SECONDS;
+    let mantle_tuning = MantleTuning {
+        start_m: config.climb.mantle_start_m,
+        clearance_m: config.climb.mantle_clearance_m,
+        forward_m: config.climb.mantle_forward_m,
+        speed_mps: config.climb.mantle_speed_mps,
+        min_speed_mps: config.climb.mantle_min_speed_mps,
+        min_climb_m: config.climb.mantle_min_climb_m,
+        land_past_m: config.climb.mantle_land_past_m,
+        step_s,
+    };
     let rig_epoch = state.rig_epoch;
     let mut released_by_grip = false;
     for hand in Hand::BOTH {
@@ -306,6 +320,14 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                     {
                         Some(Grip {
                             hand,
+                            ledge: is_ledge(
+                                hold.normal.y,
+                                hold.point.y,
+                                place.feet.y,
+                                support.is_some(),
+                                config.climb.min_ledge_normal_y,
+                                &mantle_tuning,
+                            ),
                             hold,
                             body: place.body,
                             palm,
@@ -401,9 +423,9 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     if !state.climbing {
         state.climbing = true;
         state.smoothed = Vec3::ZERO;
+        state.start_feet_y = place.feet.y;
         tracing::info!(feet = ?place.feet, "hand climbing: climbing starts");
     }
-    let step_s = jc3gi::physics::PhysicsSystem::STEP_SECONDS;
     let tuning = ClimbTuning {
         gain: config.climb.gain,
         max_speed_mps: config.climb.max_speed_mps,
@@ -439,19 +461,20 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     }
     let mut velocity = climb_velocity(target, place.body, &tuning);
 
-    // SAFETY: forwarded from the caller; the proxy's update ran before this callback.
-    let stands = unsafe { engine::stands(config.climb.min_ledge_normal_y) };
-    let mantle_tuning = MantleTuning {
-        start_m: config.climb.mantle_start_m,
-        clearance_m: config.climb.mantle_clearance_m,
-        forward_m: config.climb.mantle_forward_m,
-        speed_mps: config.climb.mantle_speed_mps,
-        step_s,
-    };
+    let stands = support.is_some_and(|y| y >= config.climb.min_ledge_normal_y);
     if config.climb.mantle {
         if state.mantle.is_none()
-            && let Some(top) = state.ledge_top(config.climb.min_ledge_normal_y)
-            && mantle_starts(place.feet.y, top.y, velocity.y > 0.0, &mantle_tuning)
+            && let Some(top) = state.ledge_top()
+            && mantle_starts(
+                &MantleCheck {
+                    feet_y: place.feet.y,
+                    top_y: top.y,
+                    rise_mps: state.smoothed.y,
+                    climbed_m: place.feet.y - state.start_feet_y,
+                    supported: support.is_some(),
+                },
+                &mantle_tuning,
+            )
             && let Some(mantle) = Mantle::start(top, place.feet)
         {
             tracing::info!(top = ?top, feet = ?place.feet, "hand climbing: mantling over a ledge");
@@ -461,8 +484,14 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         }
         if let Some(mantle) = state.mantle {
             state.mantle_steps += 1;
-            if stands && place.feet.y >= mantle.top.y - MANTLE_LANDED_BELOW_M {
-                tracing::info!(feet = ?place.feet, "hand climbing: mantled onto the ledge");
+            let landed = stands && place.feet.y >= mantle.top.y - MANTLE_LANDED_BELOW_M;
+            let motion = mantle.motion(place.feet, &mantle_tuning);
+            if landed || motion == MantleMotion::Arrived {
+                tracing::info!(
+                    feet = ?place.feet,
+                    stood = landed,
+                    "hand climbing: mantled onto the ledge"
+                );
                 for hand in Hand::BOTH {
                     if state.grips[hand.index()].take().is_some() {
                         state.events.push((hand, Event::Released));
@@ -476,7 +505,9 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 state.finish_climb();
                 return [None; 2];
             }
-            velocity = mantle.velocity(place.feet, &mantle_tuning);
+            if let MantleMotion::Move(carried) = motion {
+                velocity = carried;
+            }
         }
     }
 
@@ -577,6 +608,9 @@ enum Event {
 struct Grip {
     hand: Hand,
     hold: Hold,
+    /// Whether the gripped surface is a ledge's top a mantle may carry the body over, judged at
+    /// the grip ([`is_ledge`]).
+    ledge: bool,
     /// Where the player's body was when the hand took hold, game space.
     body: Vec3,
     /// Where the palm was in the rig when it took hold, world metres.
@@ -608,6 +642,8 @@ struct State {
     mantle: Option<Mantle>,
     mantle_steps: u32,
     smoothed: Vec3,
+    /// The feet's height when the climb started.
+    start_feet_y: f32,
     events: Vec<(Hand, Event)>,
     epoch: u64,
     warned_mode: bool,
@@ -626,12 +662,12 @@ impl State {
             .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
     }
 
-    /// The highest gripped surface that faces up enough to be a ledge's top.
-    fn ledge_top(&self, min_normal_y: f32) -> Option<Vec3> {
+    /// The highest gripped surface that is a ledge's top ([`is_ledge`]).
+    fn ledge_top(&self) -> Option<Vec3> {
         self.grips
             .iter()
             .flatten()
-            .filter(|g| g.hold.normal.y >= min_normal_y)
+            .filter(|g| g.ledge)
             .map(|g| g.hold.point)
             .max_by(|a, b| a.y.total_cmp(&b.y))
     }
@@ -690,6 +726,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     mantle: None,
     mantle_steps: 0,
     smoothed: Vec3::ZERO,
+    start_feet_y: 0.0,
     events: Vec::new(),
     epoch: 0,
     warned_mode: false,

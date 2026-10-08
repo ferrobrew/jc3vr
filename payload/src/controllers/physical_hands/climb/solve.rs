@@ -100,13 +100,74 @@ pub struct MantleTuning {
     /// How far past the grip the body is carried, metres.
     pub forward_m: f32,
     pub speed_mps: f32,
+    /// The least smoothed upward speed of the climb for the mantle to start, metres per second.
+    pub min_speed_mps: f32,
+    /// How far the feet must have climbed since the climb started for a mantle to start while the
+    /// proxy still stands on something, metres.
+    pub min_climb_m: f32,
+    /// How far past the top the feet must be carried before the mantle lets them down onto it,
+    /// metres: about the proxy capsule's radius, so the whole capsule is over the ledge.
+    pub land_past_m: f32,
     pub step_s: f32,
 }
 
-/// Whether the mantle starts: the feet at `feet_y` have come within `start_m` below the gripped
-/// top at `top_y`, while the hands pull the body up.
-pub fn mantle_starts(feet_y: f32, top_y: f32, pulling_up: bool, tuning: &MantleTuning) -> bool {
-    pulling_up && feet_y.is_finite() && top_y.is_finite() && feet_y >= top_y - tuning.start_m
+/// Whether a gripped surface is a ledge's top a mantle may carry the body over: its normal at
+/// least `min_normal_y` upward, and, for a player who stood on something when the hand took hold,
+/// more than the mantle's start height above the feet then. A floor or a low table gripped while
+/// standing is never a ledge.
+pub fn is_ledge(
+    normal_y: f32,
+    top_y: f32,
+    feet_y: f32,
+    standing: bool,
+    min_normal_y: f32,
+    tuning: &MantleTuning,
+) -> bool {
+    normal_y.is_finite()
+        && normal_y >= min_normal_y
+        && !(standing && top_y - feet_y <= tuning.start_m)
+}
+
+/// What decides whether the mantle starts this step.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct MantleCheck {
+    /// The feet's height, metres.
+    pub feet_y: f32,
+    /// The gripped ledge's top's height, metres.
+    pub top_y: f32,
+    /// The climb's smoothed upward speed, metres per second.
+    pub rise_mps: f32,
+    /// How far the feet have climbed since the climb started, metres.
+    pub climbed_m: f32,
+    /// Whether the proxy's own update found it standing on something this step.
+    pub supported: bool,
+}
+
+/// Whether the mantle starts: the feet have come within `start_m` below the gripped top while the
+/// hands pull the body up steadily, and the feet are off what they stood on, or have climbed far
+/// enough that it is not the ground they started on.
+pub fn mantle_starts(check: &MantleCheck, tuning: &MantleTuning) -> bool {
+    let MantleCheck {
+        feet_y,
+        top_y,
+        rise_mps,
+        climbed_m,
+        supported,
+    } = *check;
+    feet_y.is_finite()
+        && top_y.is_finite()
+        && feet_y >= top_y - tuning.start_m
+        && rise_mps >= tuning.min_speed_mps
+        && (!supported || climbed_m >= tuning.min_climb_m)
+}
+
+/// What the mantle does this step.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum MantleMotion {
+    /// Move the feet at this velocity.
+    Move(Vec3),
+    /// The feet are over the ledge where the mantle carries them: let go.
+    Arrived,
 }
 
 /// A mantle under way: the gripped top, and the horizontal way over it, fixed when it starts.
@@ -135,24 +196,39 @@ impl Mantle {
         )
     }
 
-    /// The velocity that carries feet at `feet` over the ledge: straight up until they clear the
-    /// top, then over it at that height. Each part goes no faster than the mantle's speed, nor
-    /// further in a step than it has left.
-    pub fn velocity(&self, feet: Vec3, tuning: &MantleTuning) -> Vec3 {
+    /// What carries feet at `feet` over the ledge: straight up until they clear the top, then
+    /// over it at that height, and once they are past the top by [`MantleTuning::land_past_m`],
+    /// down onto it as they go on, so that the proxy lands rather than hovers at the clearance.
+    /// Each part goes no faster than the mantle's speed, nor further in a step than it has left;
+    /// feet past the top with no way left to go have arrived.
+    pub fn motion(&self, feet: Vec3, tuning: &MantleTuning) -> MantleMotion {
         if !(feet.is_finite() && tuning.step_s.is_finite() && tuning.step_s > 0.0) {
-            return Vec3::ZERO;
+            return MantleMotion::Move(Vec3::ZERO);
         }
         let destination = self.destination(tuning);
         let speed = tuning.speed_mps.max(0.0);
-        let rise = ((destination.y - feet.y) / tuning.step_s).clamp(-speed, speed);
-        if feet.y < destination.y - tuning.clearance_m * 0.5 {
-            return Vec3::new(0.0, rise, 0.0);
-        }
         let left = Vec2::new(destination.x - feet.x, destination.z - feet.z);
         let across = (left / tuning.step_s).clamp_length_max(speed);
-        Vec3::new(across.x, rise, across.y)
+        let past = Vec2::new(feet.x - self.top.x, feet.z - self.top.z).dot(self.over);
+        if past >= tuning.land_past_m {
+            if left.length() <= ARRIVED_M {
+                return MantleMotion::Arrived;
+            }
+            return MantleMotion::Move(Vec3::new(across.x, -LAND_SPEED_MPS.min(speed), across.y));
+        }
+        let rise = ((destination.y - feet.y) / tuning.step_s).clamp(-speed, speed);
+        if feet.y < destination.y - tuning.clearance_m * 0.5 {
+            return MantleMotion::Move(Vec3::new(0.0, rise, 0.0));
+        }
+        MantleMotion::Move(Vec3::new(across.x, rise, across.y))
     }
 }
+
+/// How close to where the mantle carries them the feet count as there, metres.
+const ARRIVED_M: f32 = 0.05;
+
+/// How fast the mantle lets the feet down onto the ledge once they are over it, metres per second.
+const LAND_SPEED_MPS: f32 = 1.0;
 
 #[cfg(test)]
 mod tests {
@@ -174,7 +250,27 @@ mod tests {
             clearance_m: 0.08,
             forward_m: 0.4,
             speed_mps: 2.0,
+            min_speed_mps: 0.3,
+            min_climb_m: 0.25,
+            land_past_m: 0.3,
             step_s: STEP,
+        }
+    }
+
+    fn check(feet_y: f32, rise_mps: f32, climbed_m: f32, supported: bool) -> MantleCheck {
+        MantleCheck {
+            feet_y,
+            top_y: 10.0,
+            rise_mps,
+            climbed_m,
+            supported,
+        }
+    }
+
+    fn moving(motion: MantleMotion) -> Vec3 {
+        match motion {
+            MantleMotion::Move(v) => v,
+            MantleMotion::Arrived => panic!("arrived"),
         }
     }
 
@@ -294,11 +390,31 @@ mod tests {
     }
 
     #[test]
-    fn the_mantle_starts_near_the_top_while_pulling_up() {
+    fn the_mantle_starts_near_the_top_while_pulling_up_steadily() {
         let tuning = mantle_tuning();
-        assert!(mantle_starts(9.2, 10.0, true, &tuning));
-        assert!(!mantle_starts(9.0, 10.0, true, &tuning));
-        assert!(!mantle_starts(9.5, 10.0, false, &tuning));
+        assert!(mantle_starts(&check(9.2, 1.0, 0.0, false), &tuning));
+        // Too far below the top.
+        assert!(!mantle_starts(&check(9.0, 1.0, 0.0, false), &tuning));
+        // Not pulling up, or only twitching upward.
+        assert!(!mantle_starts(&check(9.5, 0.0, 0.0, false), &tuning));
+        assert!(!mantle_starts(&check(9.5, 0.1, 0.0, false), &tuning));
+        // Still standing on what the climb started from, without having climbed.
+        assert!(!mantle_starts(&check(9.5, 1.0, 0.1, true), &tuning));
+        assert!(mantle_starts(&check(9.5, 1.0, 0.3, true), &tuning));
+    }
+
+    #[test]
+    fn a_surface_near_a_standing_players_feet_is_no_ledge() {
+        let tuning = mantle_tuning();
+        // The floor, and a table top, gripped while standing.
+        assert!(!is_ledge(1.0, 0.0, 0.0, true, 0.7, &tuning));
+        assert!(!is_ledge(1.0, 0.8, 0.0, true, 0.7, &tuning));
+        // A wall's top above the start height is a ledge, standing or hanging.
+        assert!(is_ledge(1.0, 1.4, 0.0, true, 0.7, &tuning));
+        assert!(is_ledge(1.0, 0.8, 0.0, false, 0.7, &tuning));
+        // A wall's face is not a top.
+        assert!(!is_ledge(0.1, 1.4, 0.0, false, 0.7, &tuning));
+        assert!(!is_ledge(f32::NAN, 1.4, 0.0, false, 0.7, &tuning));
     }
 
     #[test]
@@ -308,16 +424,44 @@ mod tests {
         let feet = Vec3::new(0.0, 9.5, 0.6);
         let mantle = Mantle::start(top, feet).unwrap();
         assert!(mantle.over.abs_diff_eq(Vec2::Y, 1e-6));
-        let rising = mantle.velocity(feet, &tuning);
+        let rising = moving(mantle.motion(feet, &tuning));
         assert!(rising.y > 0.0 && rising.x == 0.0 && rising.z == 0.0);
         assert!(rising.y <= tuning.speed_mps + 1e-6);
         // Clear of the top, the body goes over it.
         let clear = Vec3::new(0.0, 10.08, 0.6);
-        let over = mantle.velocity(clear, &tuning);
+        let over = moving(mantle.motion(clear, &tuning));
         assert!(over.z > 0.0 && over.y.abs() < 1e-4);
         let there = mantle.destination(&tuning);
         assert!(there.abs_diff_eq(Vec3::new(0.0, 10.08, 1.4), 1e-5));
         // Right under the top there is no way over.
         assert_eq!(Mantle::start(top, Vec3::new(0.0, 9.5, 1.0)), None);
+    }
+
+    #[test]
+    fn the_mantle_lands_on_the_ledge_instead_of_hovering() {
+        let tuning = mantle_tuning();
+        let top = Vec3::new(0.0, 10.0, 1.0);
+        let mantle = Mantle::start(top, Vec3::new(0.0, 9.5, 0.6)).unwrap();
+        // Past the top by the capsule's radius, the feet are let down as they go on.
+        let over = moving(mantle.motion(Vec3::new(0.0, 10.08, 1.32), &tuning));
+        assert!(over.y < 0.0 && over.z > 0.0, "{over:?}");
+        // At the destination they have arrived, whatever their height.
+        assert_eq!(
+            mantle.motion(Vec3::new(0.0, 10.08, 1.39), &tuning),
+            MantleMotion::Arrived
+        );
+        // Simulated, a mantle that never finds support still arrives within its time.
+        let mut feet = Vec3::new(0.0, 9.5, 0.6);
+        let mut arrived = false;
+        for _ in 0..90 {
+            match mantle.motion(feet, &tuning) {
+                MantleMotion::Move(v) => feet += v * STEP,
+                MantleMotion::Arrived => {
+                    arrived = true;
+                    break;
+                }
+            }
+        }
+        assert!(arrived, "{feet:?}");
     }
 }

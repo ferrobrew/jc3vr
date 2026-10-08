@@ -812,6 +812,21 @@ fn climb(c: &ClimbConfig) -> Result<(), Invalid> {
         c.mantle_speed_mps,
         20.0,
     )?;
+    nonnegative(
+        "physical_hands.climb.mantle_min_speed_mps",
+        c.mantle_min_speed_mps,
+        20.0,
+    )?;
+    nonnegative(
+        "physical_hands.climb.mantle_min_climb_m",
+        c.mantle_min_climb_m,
+        5.0,
+    )?;
+    nonnegative(
+        "physical_hands.climb.mantle_land_past_m",
+        c.mantle_land_past_m,
+        5.0,
+    )?;
     range(
         "physical_hands.climb.min_ledge_normal_y",
         c.min_ledge_normal_y,

@@ -85,6 +85,17 @@ pub(super) fn climb_settings(ui: &mut Ui, c: &mut ClimbConfig) {
         ui.add(egui::Slider::new(&mut c.mantle_forward_m, 0.0..=1.5).text("Over the top (m)"));
         ui.add(egui::Slider::new(&mut c.mantle_speed_mps, 0.1..=6.0).text("Mantle speed (m/s)"));
         ui.add(
+            egui::Slider::new(&mut c.mantle_min_speed_mps, 0.0..=3.0)
+                .text("Least pull to mantle (m/s)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut c.mantle_min_climb_m, 0.0..=1.5)
+                .text("Climb before a standing mantle (m)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut c.mantle_land_past_m, 0.0..=1.0).text("Land past the edge (m)"),
+        );
+        ui.add(
             egui::Slider::new(&mut c.min_ledge_normal_y, 0.0..=1.0)
                 .text("Least upward normal of a ledge"),
         );

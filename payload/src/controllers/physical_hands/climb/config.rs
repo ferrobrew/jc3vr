@@ -42,6 +42,15 @@ pub struct ClimbConfig {
     pub mantle_forward_m: f32,
     /// The mantle's speed, metres per second.
     pub mantle_speed_mps: f32,
+    /// The least smoothed upward climbing speed for the mantle to start, metres per second, so that
+    /// a twitch upward near a ledge does not start one.
+    pub mantle_min_speed_mps: f32,
+    /// How far the feet must have climbed since the climb started for the mantle to start while
+    /// the player still stands on something, metres.
+    pub mantle_min_climb_m: f32,
+    /// How far past the ledge's top the mantle carries the feet before it lets them down onto it,
+    /// metres: about the player capsule's radius.
+    pub mantle_land_past_m: f32,
     /// The least upward share of a gripped surface's normal for it to count as a ledge's top,
     /// `0..=1`.
     pub min_ledge_normal_y: f32,
@@ -68,6 +77,9 @@ impl ClimbConfig {
             mantle_clearance_m: 0.08,
             mantle_forward_m: 0.4,
             mantle_speed_mps: 2.0,
+            mantle_min_speed_mps: 0.3,
+            mantle_min_climb_m: 0.25,
+            mantle_land_past_m: 0.3,
             min_ledge_normal_y: 0.7,
             grab_pulse: PulseSpec {
                 amplitude: 0.6,
