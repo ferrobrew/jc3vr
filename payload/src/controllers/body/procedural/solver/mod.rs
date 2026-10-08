@@ -14,8 +14,9 @@
 //!    head is closer to the hips than the spine is long (a squat past the legs' share), and the
 //!    spine swings so the neck reaches the point under the player's head, the swing shared out
 //!    along the four spine bones.
-//! 3. The legs ([`two_bone::solve`]): each foot goes back to its target, bending the knee in the
-//!    plane it already bent in, and takes the foot's own orientation.
+//! 3. The legs ([`two_bone::solve`]): each foot goes back to its target, the knee bending toward
+//!    the foot's forward blended with the hips', never backward, and takes the foot's own
+//!    orientation.
 //!
 //! The clavicles then turn toward the hands ([`clavicles`]), after the spine has placed them.
 //!
@@ -86,12 +87,19 @@ pub fn solve(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Ri
         torso_yaw.clamp(-chest_limit, chest_limit),
         config,
     );
+    let hips_forward = line_yaw(
+        pose.position(RigBone::LeftUpLeg),
+        pose.position(RigBone::RightUpLeg),
+    )
+    .map_or(Vec3::NEG_Z, |yaw| Quat::from_rotation_y(yaw) * Vec3::NEG_Z);
     for (side, (up, leg, foot)) in LEGS.into_iter().enumerate() {
+        let pole = knee_pole(rig, foot, input.foot_rotations[side], hips_forward);
         place_leg(
             &mut pose,
             [up, leg, foot],
             input.feet[side],
             input.foot_rotations[side],
+            pole,
         );
     }
     if pose.is_finite() {
@@ -425,13 +433,33 @@ fn curl_spine(pose: &mut RigPose, neck_target: Vec3, chest_yaw: f32) -> bool {
     true
 }
 
-/// Bring a leg's foot to `target`, keeping the foot's model-space orientation `foot_rotation`.
-fn place_leg(pose: &mut RigPose, [up, leg, foot]: [RigBone; 3], target: Vec3, foot_rotation: Quat) {
+/// Where a knee points: the foot's forward, from its orientation against the reference pose's
+/// (which faces -Z), blended evenly with the hips' forward, on the ground plane.
+fn knee_pole(rig: &Rig, foot: RigBone, foot_rotation: Quat, hips_forward: Vec3) -> Vec3 {
+    let turn = foot_rotation * rig.reference(foot).rotation.inverse();
+    let foot_forward = turn * Vec3::NEG_Z;
+    let flat = |v: Vec3| Vec3::new(v.x, 0.0, v.z).normalize_or_zero();
+    let pole = flat(foot_forward) + flat(hips_forward);
+    if pole.length_squared() > 1e-6 && pole.is_finite() {
+        pole.normalize()
+    } else {
+        flat(hips_forward)
+    }
+}
+
+/// Bring a leg's foot to `target`, keeping the foot's model-space orientation `foot_rotation`, the
+/// knee bending toward `pole`.
+fn place_leg(
+    pose: &mut RigPose,
+    [up, leg, foot]: [RigBone; 3],
+    target: Vec3,
+    foot_rotation: Quat,
+    pole: Vec3,
+) {
     let root = pose.position(up);
     let middle = pose.position(leg);
     let end = pose.position(foot);
-    let forward = Vec3::NEG_Z;
-    let rotations = two_bone::solve(root, middle, end, target, forward);
+    let rotations = two_bone::solve(root, middle, end, target, pole);
     pose.rotate_about(up, rotations.upper, root);
     let knee = pose.position(leg);
     pose.rotate_about(leg, rotations.lower, knee);
