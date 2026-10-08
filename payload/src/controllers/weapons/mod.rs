@@ -515,7 +515,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 
     let fire_blocked = reload_blocks
         || (config.weapons.block_fire_during_actions
-            && weapon_action_running(config.acting_hand()));
+            && weapon_action_running(weapon.and_then(|(w, _)| w.holder).unwrap_or(gun_side)));
     if fire_blocked {
         hold_fire_back(desired);
     }
@@ -817,12 +817,12 @@ fn hold_fire_back(desired: &mut Vec<Desired>) {
         .retain(|d| !(d.target.map == MapKind::Player && FIRE_ACTIONS.contains(&d.target.action)));
 }
 
-/// Whether a reload, a draw, or a holster is playing with the dominant hand in the action-runs
-/// tier.
-fn weapon_action_running(dominant: Hand) -> bool {
+/// Whether a reload, a draw, or a holster is playing with `gun_hand`, the hand holding the weapon
+/// (or the hand the last one rode, during a draw), in the action-runs tier.
+fn weapon_action_running(gun_hand: Hand) -> bool {
     let status = tiers::status();
     status.state == Some(TierState::WeaponAction)
-        && status.effective[dominant.index()] == HandTier::ActionRuns
+        && status.effective[gun_hand.index()] == HandTier::ActionRuns
 }
 
 /// The tick's volumes and where the hands are among them, for the highlights.
