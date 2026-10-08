@@ -185,9 +185,19 @@ pub fn observe(target: Option<HeftTarget>) {
     let mut state = STATE.lock();
     if state.target.map(|(t, _)| t) != target {
         state.spring = None;
+        state.offset = Quat::IDENTITY;
+        state.frozen = None;
     }
     state.target = target.map(|t| (t, Instant::now()));
     state.status.target = target;
+}
+
+/// Freeze the weight, or let it go again. While frozen, the gun keeps the turn the weight had put
+/// on it relative to the controller's grip, without lagging, sagging further, or swaying, so a
+/// well a round is being carried to, or a foregrip a hand is closing on, moves rigidly with the
+/// hand. Published by the input tick.
+pub fn freeze(on: bool) {
+    STATE.lock().freeze = on;
 }
 
 /// Turn the holding hand's poses by the weight. `hands` are the cockpit-frame hands, already in
@@ -205,6 +215,8 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
         .map(|(t, _)| t);
     let Some(target) = target else {
         state.spring = None;
+        state.offset = Quat::IDENTITY;
+        state.frozen = None;
         state.status = HeftStatus {
             widened_shots: state.status.widened_shots,
             ..HeftStatus::default()
@@ -215,6 +227,8 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
     let weight = Weight::of(target.class, config, share);
     let Some(h) = hands[target.hand.index()] else {
         state.spring = None;
+        state.offset = Quat::IDENTITY;
+        state.frozen = None;
         return;
     };
     let t = epoch().elapsed().as_secs_f32();
@@ -225,18 +239,30 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &HeftConf
         config,
         sway(t, config.sway_hz, weight.sway_deg.to_radians()),
     );
-    let shown = if weight.stiffness > 0.0 && dt <= MAX_GAP.as_secs_f32() {
-        let spring = state.spring.get_or_insert(RotSpring::at(pose.orientation));
-        spring.step(pose.orientation, dt, weight.stiffness, weight.damping_ratio);
-        spring.orientation
+    let rotation = if state.freeze {
+        // The gun keeps the turn it had on the hand, and the spring rests where the gun is shown,
+        // so the gun follows on from there once the freeze ends.
+        let offset = state.offset;
+        let held = *state.frozen.get_or_insert(offset);
+        state.spring = Some(RotSpring::at(held * h.grip.orientation));
+        held
     } else {
-        state.spring = Some(RotSpring::at(pose.orientation));
-        pose.orientation
+        state.frozen = None;
+        let shown = if weight.stiffness > 0.0 && dt <= MAX_GAP.as_secs_f32() {
+            let spring = state.spring.get_or_insert(RotSpring::at(pose.orientation));
+            spring.step(pose.orientation, dt, weight.stiffness, weight.damping_ratio);
+            spring.orientation
+        } else {
+            state.spring = Some(RotSpring::at(pose.orientation));
+            pose.orientation
+        };
+        clamp_angle(
+            shown * h.grip.orientation.inverse(),
+            weight.max_angle_deg.to_radians(),
+        )
     };
-    let rotation = clamp_angle(
-        shown * h.grip.orientation.inverse(),
-        weight.max_angle_deg.to_radians(),
-    );
+    state.offset = rotation;
+    let shown = rotation * h.grip.orientation;
     let sway_shown = pose.sway * weight.sway_share * pose.sway_reach;
     state.status = HeftStatus {
         target: Some(target),
@@ -514,6 +540,11 @@ struct State {
     target: Option<(HeftTarget, Instant)>,
     spring: Option<RotSpring>,
     at: Option<Instant>,
+    /// The turn the weight last put on the gun, relative to the controller's grip.
+    offset: Quat,
+    /// Whether the weight is frozen ([`freeze`]), and the turn it holds while it is.
+    freeze: bool,
+    frozen: Option<Quat>,
     status: HeftStatus,
 }
 
@@ -521,6 +552,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     target: None,
     spring: None,
     at: None,
+    offset: Quat::IDENTITY,
+    freeze: false,
+    frozen: None,
     status: HeftStatus {
         target: None,
         share: 0.0,
@@ -988,6 +1022,35 @@ mod tests {
         // A one-handed SMG stays rigid; only its braced weight springs.
         assert_eq!(Weight::of(HeftClass::Smg, &c, 1.0).stiffness, 0.0);
         assert!(Weight::of(HeftClass::Smg, &c, 0.5).stiffness > 0.0);
+    }
+
+    #[test]
+    fn a_frozen_weight_keeps_its_turn_on_the_hand() {
+        // The only test that drives the shared state.
+        let c = config();
+        observe(Some(HeftTarget {
+            hand: Hand::Right,
+            class: HeftClass::Heavy,
+            weapon: 1,
+        }));
+        let applied = |hand: CockpitHand| {
+            let mut hands = [None, Some(hand)];
+            apply(&mut hands, Vec3::ZERO, &c);
+            hands[1].unwrap().grip.orientation * hand.grip.orientation.inverse()
+        };
+        let still = pistol(Vec3::new(0.0, -0.2, -0.6), 0.0, 0.0);
+        let before = applied(still);
+        assert!(angle(before) > 0.05, "the heavy gun sags");
+        freeze(true);
+        // A quick swing of the hand: frozen, the gun turns with it by the same offset, no lag.
+        let swung = pistol(Vec3::new(0.0, -0.2, -0.6), 0.3, 0.8);
+        let frozen = applied(swung);
+        assert!(angle(frozen * before.inverse()) < 1e-4);
+        freeze(false);
+        let after = applied(swung);
+        // Let go, the spring starts from where the gun was shown rather than jumping.
+        assert!(angle(after * frozen.inverse()) < 0.05);
+        observe(None);
     }
 
     #[test]

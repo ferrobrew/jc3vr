@@ -10,6 +10,7 @@ use crate::controllers::{
     frame::{Hand, Pose},
     hands::{ActiveHands, ik},
     weapons::{
+        self,
         config::PulseSpec,
         engine::HeldWeapon,
         foregrip,
@@ -63,9 +64,9 @@ impl State {
         let split = weapon.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
             && reload.dual_split
             && config.weapons.dual_wield.split;
-        // The two-handed pose turns the gun hand onto the line between the hands.
-        let mut posed = active.hands;
-        foregrip::apply(&mut posed, &config.weapons.foregrip);
+        // The gun as it is shown: turned onto the line between the hands by the two-handed pose
+        // and by its weight, so the well and the handle are where the player sees them.
+        let posed = weapons::weighted_hands(active);
         let targets = ik::tick_records().current;
         let mut guns = [None; 2];
         for hand in Hand::BOTH {

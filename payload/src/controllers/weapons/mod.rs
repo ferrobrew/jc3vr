@@ -94,7 +94,7 @@ use crate::{
         config::ControllersConfig,
         frame::Hand,
         hands::{
-            self, ActiveHands, ik,
+            self, ActiveHands, CockpitHand, ik,
             tiers::{self, HandTier, TierState},
         },
         mode::{AirborneVariant, Mode, OnFootVariant},
@@ -318,7 +318,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     if config.weapons.foregrip.enabled
         && hold.is_none()
         && let (Some(g), Some(w), Some(off)) = (geometry, weapon, foregrip_hand)
-        && let Some(holder) = w.holder.and_then(|h| active.hands[h.index()])
+        && let Some(holder) = w.holder.and_then(|h| weighted_hands(&active)[h.index()])
     {
         candidates.push(Candidate {
             volume: GrabVolume::Foregrip,
@@ -339,6 +339,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
         .or_else(|| volumes::pouch_in_reach(body, hand, &candidates, pouches.reach_margin_m))
     });
+    let closing_on_foregrip = hold.is_none()
+        && foregrip_hand.is_some_and(|h| volumes[h.index()] == Some(GrabVolume::Foregrip));
+    heft::freeze(reload::holding_hand().is_some() || closing_on_foregrip);
 
     state.status.active = true;
     state.status.volumes = volumes;
@@ -532,6 +535,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 pub(crate) fn stand_down() {
     foregrip::clear();
     heft::observe(None);
+    heft::freeze(false);
     grip_watch::clear();
     recoil::clear();
     grenade::stand_down();
@@ -746,6 +750,20 @@ fn log_near_misses(grabs: &[Option<GrabVolume>; 2], grips: &[ButtonControl; 2]) 
             "holsters: grip press outside the nearest holster"
         );
     }
+}
+
+/// The hands as the gun is shown on them before its recoil: the two-handed pose of a held
+/// foregrip, then the weight ([`heft::apply`]). The volumes on a held gun (its foregrip, its well,
+/// and its action) are placed from these, so that they are where the player sees them.
+fn weighted_hands(active: &ActiveHands) -> [Option<CockpitHand>; 2] {
+    let mut hands = active.hands;
+    foregrip::apply(&mut hands, &active.config.weapons.foregrip);
+    heft::apply(
+        &mut hands,
+        active.head.position,
+        &active.config.weapons.heft,
+    );
+    hands
 }
 
 /// The wielded weapon as the dual-wield pair's owned layout has it: a pistol is in a hand only
