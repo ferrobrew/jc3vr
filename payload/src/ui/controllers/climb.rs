@@ -26,8 +26,9 @@ pub(super) fn climb_readout(ui: &mut Ui, status: &ClimbStatus) {
         }
     ));
     ui.label(format!(
-        "{} grips · {} releases · {} mantles · {} dropped{}",
+        "{} grips ({} on moving bodies) · {} releases · {} mantles · {} dropped{}",
         status.grips,
+        status.moving_grips,
         status.releases,
         status.mantles,
         status.drops,
@@ -104,12 +105,25 @@ pub(super) fn climb_settings(ui: &mut Ui, c: &mut ClimbConfig) {
             egui::Slider::new(&mut c.min_ledge_normal_y, 0.0..=1.0)
                 .text("Least upward normal of a ledge"),
         );
+        ui.separator();
+        ui.checkbox(&mut c.moving, "Climb moving bodies (vehicles, platforms)");
+        ui.add_enabled_ui(c.moving, |ui| {
+            ui.add(
+                egui::Slider::new(&mut c.min_moving_mass_kg, 0.0..=5000.0)
+                    .text("Lightest body climbed (kg)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut c.max_carry_speed_mps, 0.0..=200.0)
+                    .text("Fastest carry (m/s)"),
+            );
+        });
     });
 }
 
 fn hold_label(hold: &Hold) -> String {
     format!(
-        "body {} at ({:.1}, {:.1}, {:.1}) facing ({:+.2}, {:+.2}, {:+.2})",
+        "{} body {} at ({:.1}, {:.1}, {:.1}) facing ({:+.2}, {:+.2}, {:+.2})",
+        if hold.moving { "moving" } else { "static" },
         hold.body,
         hold.point.x,
         hold.point.y,

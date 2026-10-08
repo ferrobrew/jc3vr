@@ -10,7 +10,7 @@
 //! where the body or the view is now, so the climb is a plain closed loop on the body's position:
 //! a hand held still holds the body still once it gets there.
 
-use glam::{Vec2, Vec3};
+use glam::{Affine3A, Quat, Vec2, Vec3};
 
 /// One gripping hand: where the body and the palm were when it took hold, and where the palm is
 /// in the rig now.
@@ -80,6 +80,38 @@ pub fn smooth(smoothed: Vec3, velocity: Vec3, dt: f32, smoothing_s: f32) -> Vec3
         1.0
     };
     smoothed.lerp(velocity, blend)
+}
+
+/// Where the point `point` (world space), fixed to a body that has moved from `from` to `to`, is
+/// now.
+pub fn carried(from: Affine3A, to: Affine3A, point: Vec3) -> Vec3 {
+    let moved = (to * from.inverse()).transform_point3(point);
+    if moved.is_finite() { moved } else { point }
+}
+
+/// The turn of a body that has moved from `from` to `to`, world space.
+pub fn carried_turn(from: Affine3A, to: Affine3A) -> Quat {
+    let (_, from_turn, _) = from.to_scale_rotation_translation();
+    let (_, to_turn, _) = to.to_scale_rotation_translation();
+    let turn = (to_turn * from_turn.inverse()).normalize();
+    if turn.is_finite() {
+        turn
+    } else {
+        Quat::IDENTITY
+    }
+}
+
+/// The velocity the gripped bodies carry the climber with: the mean of the velocities of the
+/// points the hands grip, capped at `max_speed_mps`. Zero without a grip.
+pub fn carry_velocity(points: impl IntoIterator<Item = Vec3>, max_speed_mps: f32) -> Vec3 {
+    let (sum, count) = points
+        .into_iter()
+        .filter(|v| v.is_finite())
+        .fold((Vec3::ZERO, 0u32), |(sum, count), v| (sum + v, count + 1));
+    if count == 0 {
+        return Vec3::ZERO;
+    }
+    (sum / count as f32).clamp_length_max(max_speed_mps.max(0.0))
 }
 
 /// The velocity a release keeps: `scale` of the smoothed climbing velocity, capped at `max_speed`.
@@ -291,6 +323,31 @@ mod tests {
             MantleMotion::Move(v) => v,
             MantleMotion::Arrived => panic!("arrived"),
         }
+    }
+
+    #[test]
+    fn a_point_on_a_moving_body_is_carried_with_it() {
+        let from = Affine3A::from_translation(Vec3::new(10.0, 0.0, 0.0));
+        let to = Affine3A::from_rotation_translation(
+            Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            Vec3::new(12.0, 1.0, 0.0),
+        );
+        // A point a metre along the body's +X ends a metre along its turned +X, which is -Z.
+        let point = Vec3::new(11.0, 0.0, 0.0);
+        assert!(carried(from, to, point).abs_diff_eq(Vec3::new(12.0, 1.0, -1.0), 1e-5));
+        let turn = carried_turn(from, to);
+        assert!((turn * Vec3::X).abs_diff_eq(Vec3::NEG_Z, 1e-5));
+        // A body that has not moved carries nothing.
+        assert!(carried(from, from, point).abs_diff_eq(point, 1e-6));
+    }
+
+    #[test]
+    fn the_gripped_bodies_carry_the_climber_at_their_mean_speed() {
+        assert_eq!(carry_velocity([], 50.0), Vec3::ZERO);
+        let v = carry_velocity([Vec3::X * 10.0, Vec3::X * 14.0], 50.0);
+        assert!(v.abs_diff_eq(Vec3::X * 12.0, 1e-5));
+        assert!((carry_velocity([Vec3::Z * 90.0], 50.0).length() - 50.0).abs() < 1e-3);
+        assert!(carry_velocity([Vec3::NAN, Vec3::Y], 50.0).abs_diff_eq(Vec3::Y, 1e-6));
     }
 
     #[test]

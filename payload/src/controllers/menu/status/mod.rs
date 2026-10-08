@@ -234,6 +234,7 @@ const SECTIONS: &[Section] = &[
         rows: &[
             row!("VEHICLE DOORS", hands::doors),
             row!("CHARACTERS", hands::characters),
+            row!("MOVING CLIMBS", hands::moving_climbs),
         ],
     },
     Section {

@@ -492,6 +492,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                         climb::reach(
                             &body_palm,
                             config.climb.reach_m * active.world_scale,
+                            &config.climb,
                             &mut |from, to| cast(from, to, &probe_options),
                         )
                     }

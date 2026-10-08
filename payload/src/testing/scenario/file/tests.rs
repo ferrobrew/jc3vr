@@ -247,6 +247,7 @@ fn the_shipped_templates_read() {
     }
     let templates = templates![
         "character_grab.toml",
+        "climb_moving.toml",
         "hand_bodies.toml",
         "hand_climbing.toml",
         "hand_strike.toml",

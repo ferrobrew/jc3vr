@@ -115,6 +115,7 @@ signals! {
     Climbing => "climb.climbing", Flag, "A hand grips the world.";
     Mantling => "climb.mantling", Flag, "The mantle is carrying the body over a ledge.";
     ClimbGrips => "climb.grips", Counter, "Grips of the world.";
+    ClimbMovingGrips => "climb.moving_grips", Counter, "Grips of moving bodies.";
     ClimbReleases => "climb.releases", Counter, "Grips let go.";
     ClimbMantles => "climb.mantles", Counter, "Mantles completed.";
     ClimbDrops => "climb.drops", Counter, "Grips ended against the player's wish.";
@@ -196,6 +197,7 @@ impl Signal {
             Signal::Climbing => flag(climb::status().climbing),
             Signal::Mantling => flag(climb::status().mantling),
             Signal::ClimbGrips => count(climb::status().grips),
+            Signal::ClimbMovingGrips => count(climb::status().moving_grips),
             Signal::ClimbReleases => count(climb::status().releases),
             Signal::ClimbMantles => count(climb::status().mantles),
             Signal::ClimbDrops => count(climb::status().drops),

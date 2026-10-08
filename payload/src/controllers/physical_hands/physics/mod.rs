@@ -65,6 +65,7 @@ pub use blows::{BlowReport, Shove, ShoveForce, ShoveReport};
 pub use config::{HandBodiesConfig, HandHitsConfig};
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, physics::PhysicsSystem};
+pub(crate) use joint::affine as havok_affine;
 use parking_lot::Mutex;
 
 use crate::{

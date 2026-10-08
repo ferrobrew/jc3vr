@@ -1,6 +1,7 @@
-//! Climbing with the hands: an empty hand whose body touches the static world grips it with the
-//! grip, and while it grips, the player's body moves against the hand's motion, so that pulling a
-//! gripping hand down lifts the body. The design is in `docs/mod/input/hand-climbing.md`, the
+//! Climbing with the hands: an empty hand whose body touches the static world, or a moving body
+//! heavy enough such as a vehicle, grips it with the grip, and while it grips, the player's body
+//! moves against the hand's motion, so that pulling a gripping hand down lifts the body; a grip on
+//! a moving body is held in the body's own frame and carries the player with it. The design is in `docs/mod/input/hand-climbing.md`, the
 //! engine side in `docs/engine/character/hands-locomotion-and-state.md`.
 //!
 //! - [`config`]: the settings;
@@ -31,7 +32,7 @@ pub mod solve;
 use std::time::{Duration, Instant};
 
 pub use config::ClimbConfig;
-use glam::{Quat, Vec3};
+use glam::{Affine3A, Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
@@ -44,7 +45,8 @@ use crate::{
             PhysicalHandsConfig,
             climb::solve::{
                 ClimbTuning, Follow, Mantle, MantleCheck, MantleMotion, MantleTuning, body_target,
-                climb_velocity, fling, fling_carry, is_ledge, mantle_starts, smooth, tension,
+                carried, carried_turn, carry_velocity, climb_velocity, fling, fling_carry,
+                is_ledge, mantle_starts, smooth, tension,
             },
             contact::{Surface, SurfaceHit},
             palm::PalmBox,
@@ -61,15 +63,17 @@ use crate::{
     vr::recenter_count,
 };
 
-/// A static surface a hand can grip.
+/// A surface a hand can grip: the static world, or with [`ClimbConfig::moving`], a moving body.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Hold {
     /// Where the surface is, game space.
     pub point: Vec3,
     /// The surface's normal, toward the hand.
     pub normal: Vec3,
-    /// The surface's static body.
+    /// The surface's body.
     pub body: u32,
+    /// Whether the body moves, keyframed or dynamic, rather than being of the static world.
+    pub moving: bool,
 }
 
 /// One hand's climbing on the last tick, for the readout.
@@ -98,6 +102,8 @@ pub struct ClimbStatus {
     /// ([`jc3gi::character::character::Character::IsInAir`]).
     pub in_air: Option<bool>,
     pub grips: u64,
+    /// Grips on moving bodies.
+    pub moving_grips: u64,
     pub releases: u64,
     pub mantles: u64,
     /// Grips ended against the player's wish.
@@ -166,9 +172,9 @@ pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
     }
 }
 
-/// The static surface `palm` reaches: the nearest hit, on a static body, of the rays a hand reaches
-/// for an object along ([`REACH_DIRECTIONS`]), at most `reach_m` past the palm. Called from
-/// the palms' tick for a hand its body drives.
+/// The surface `palm` reaches: the nearest hit, on a body a hand climbs ([`engine::climbable`]), of
+/// the rays a hand reaches for an object along ([`REACH_DIRECTIONS`]), at most `reach_m` past the
+/// palm. Called from the palms' tick for a hand its body drives.
 ///
 /// # Safety
 ///
@@ -176,6 +182,7 @@ pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
 pub(super) unsafe fn reach(
     palm: &PalmBox,
     reach_m: f32,
+    config: &ClimbConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<Hold> {
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
@@ -189,10 +196,12 @@ pub(super) unsafe fn reach(
                 return None;
             };
             // SAFETY: forwarded from the caller; the hit was found this tick.
-            unsafe { engine::is_static(body) }.then_some(Hold {
+            let frame = unsafe { engine::body_frame(body) }?;
+            engine::climbable(&frame, config.moving, config.min_moving_mass_kg).then_some(Hold {
                 point: hit.position,
                 normal: hit.normal,
                 body,
+                moving: !frame.is_static,
             })
         })
         .min_by(|a, b| {
@@ -351,40 +360,42 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         match state.requests[i].take() {
             Some(Request::Grip(hold)) if state.grips[i].is_none() => {
                 // SAFETY: forwarded from the caller.
-                let grip = match (bodies[i], state.palms[i], place) {
-                    (Some(pin), Some(palm), Ok(place))
-                        if unsafe { engine::is_static(hold.body) } =>
-                    {
-                        Some(Grip {
-                            hand,
-                            ledge: is_ledge(
-                                hold.normal.y,
-                                hold.point.y,
-                                place.feet.y,
-                                support.is_some(),
-                                config.climb.min_ledge_normal_y,
-                                &mantle_tuning,
-                            ),
-                            hold,
-                            body: place.body,
-                            palm,
-                            pin,
-                            rig_epoch,
-                            missing_steps: 0,
-                        })
-                    }
+                let frame = unsafe { engine::body_frame(hold.body) }.filter(|f| {
+                    engine::climbable(f, config.climb.moving, config.climb.min_moving_mass_kg)
+                });
+                let grip = match (bodies[i], state.palms[i], place, frame) {
+                    (Some(pin), Some(palm), Ok(place), Some(frame)) => Some(Grip {
+                        hand,
+                        ledge: is_ledge(
+                            hold.normal.y,
+                            hold.point.y,
+                            place.feet.y,
+                            support.is_some(),
+                            config.climb.min_ledge_normal_y,
+                            &mantle_tuning,
+                        ),
+                        hold,
+                        body: place.body,
+                        palm,
+                        pin,
+                        frame: (!frame.is_static).then_some(frame.transform),
+                        rig_epoch,
+                        missing_steps: 0,
+                    }),
                     _ => None,
                 };
                 if let Some(grip) = grip {
                     tracing::info!(
                         hand = hand.label(),
                         body = hold.body,
+                        moving = grip.frame.is_some(),
                         point = ?hold.point,
                         normal = ?hold.normal,
                         "hand climbing: a hand gripped the world"
                     );
                     state.grips[i] = Some(grip);
                     state.status.grips += 1;
+                    state.status.moving_grips += u64::from(grip.frame.is_some());
                     state.events.push((hand, Event::Gripped));
                 } else {
                     tracing::debug!(
@@ -415,12 +426,13 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 state.drop_hand(hand, "the hand's body stopped acting");
             }
         }
-        // The ground written for the proxy below must stay a static body of the world.
+        // The ground written for the proxy below must stay the body the hand took: a static body
+        // of the world, or a moving body that still exists.
         // SAFETY: forwarded from the caller.
         if let Some(grip) = state.grips[i]
-            && !unsafe { engine::is_static(grip.hold.body) }
+            && !unsafe { grip.body_holds() }
         {
-            state.drop_hand(hand, "the gripped body is gone or no longer static");
+            state.drop_hand(hand, "the gripped body is gone, or no longer static");
         }
     }
 
@@ -506,17 +518,36 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     let palms = state.palms;
     for grip in state.grips.iter_mut().flatten() {
         if grip.rig_epoch != rig_epoch {
-            // The rig moved under the palms: hold the body where it is from here.
+            // The rig moved under the palms: hold the body where it is from here, and carry the
+            // grip with its body from here.
             grip.rig_epoch = rig_epoch;
             grip.body = place.body;
             grip.palm = palms[grip.hand.index()].unwrap_or(grip.palm);
+            // SAFETY: forwarded from the caller.
+            if let Some(carried) = unsafe { grip.carried() } {
+                grip.hold.point = carried.point;
+                grip.pin = carried.pin;
+                grip.frame = Some(carried.frame);
+            }
         }
     }
+    // A grip on a moving body is carried with it: where the hands would have the player moves as
+    // the gripped point does, and the point's own velocity carries the player along.
+    // SAFETY: forwarded from the caller.
+    let carried = state
+        .grips
+        .map(|grip| grip.and_then(|g| unsafe { g.carried() }));
+    let carry = carry_velocity(
+        carried.iter().flatten().map(|c| c.velocity),
+        config.climb.max_carry_speed_mps,
+    );
     let follows = Hand::BOTH.map(|hand| {
-        let grip = state.grips[hand.index()]?;
-        let palm = state.palms[hand.index()]?;
+        let i = hand.index();
+        let grip = state.grips[i]?;
+        let palm = state.palms[i]?;
+        let moved = carried[i].map_or(Vec3::ZERO, |c| c.point - grip.hold.point);
         Some(Follow {
-            body: grip.body,
+            body: grip.body + moved,
             grip: grip.palm,
             palm,
         })
@@ -531,7 +562,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         state.finish_climb();
         return [None; 2];
     }
-    let mut velocity = climb_velocity(target, place.body, &tuning);
+    let mut velocity = climb_velocity(target, place.body, &tuning) + carry;
 
     let stands = support.is_some_and(|y| y >= config.climb.min_ledge_normal_y);
     if config.climb.mantle {
@@ -577,8 +608,8 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 state.finish_climb();
                 return [None; 2];
             }
-            if let MantleMotion::Move(carried) = motion {
-                velocity = carried;
+            if let MantleMotion::Move(over) = motion {
+                velocity = over + carry;
             }
         }
     }
@@ -591,8 +622,8 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         state.finish_climb();
         return [None; 2];
     };
-    // SAFETY: forwarded from the caller; the ground is a static body, checked at the grip.
-    if let Err(e) = unsafe { engine::hold(velocity, ground) } {
+    // SAFETY: forwarded from the caller; the ground is a body the step checked above.
+    if let Err(e) = unsafe { engine::hold(velocity, ground, carry) } {
         state.status.last_error = Some(e.to_string());
         state.drop_all("the player could not be held");
         state.finish_climb();
@@ -625,10 +656,13 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     for hand in Hand::BOTH {
         state.status.hands[hand.index()].grip = state.grips[hand.index()].map(|g| g.hold);
     }
-    state.grips.map(|grip| {
-        grip.map(|g| Goal {
-            position: g.pin.0,
-            orientation: g.pin.1,
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let grip = state.grips[i]?;
+        let (position, orientation) = carried[i].map_or(grip.pin, |c| c.pin);
+        Some(Goal {
+            position,
+            orientation,
         })
     })
 }
@@ -677,6 +711,55 @@ enum Event {
     Flung(f32),
 }
 
+impl Grip {
+    /// Whether the gripped body is still one the step may write as the player's ground: a static
+    /// grip's body still static, a moving grip's body still there.
+    ///
+    /// # Safety
+    ///
+    /// The thread that steps the physics world, outside the step.
+    unsafe fn body_holds(&self) -> bool {
+        match self.frame {
+            None => unsafe { engine::is_static(self.hold.body) },
+            Some(_) => unsafe { engine::body_frame(self.hold.body) }.is_some(),
+        }
+    }
+
+    /// Where a grip on a moving body has been carried since the hand took hold, or `None` for a
+    /// static grip or a body that is gone.
+    ///
+    /// # Safety
+    ///
+    /// The thread that steps the physics world, outside the step.
+    unsafe fn carried(&self) -> Option<Carried> {
+        let from = self.frame?;
+        let now = unsafe { engine::body_frame(self.hold.body) }?;
+        let point = carried(from, now.transform, self.hold.point);
+        Some(Carried {
+            point,
+            pin: (
+                carried(from, now.transform, self.pin.0),
+                carried_turn(from, now.transform) * self.pin.1,
+            ),
+            velocity: now.point_velocity(point),
+            frame: now.transform,
+        })
+    }
+}
+
+/// A grip on a moving body, carried with it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Carried {
+    /// The gripped point, where the body has carried it.
+    point: Vec3,
+    /// The hand body's pin, carried with the body.
+    pin: (Vec3, Quat),
+    /// The gripped point's velocity.
+    velocity: Vec3,
+    /// The body's transform now.
+    frame: Affine3A,
+}
+
 /// A fling still carrying the body after its release.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Carry {
@@ -700,6 +783,8 @@ struct Grip {
     palm: Vec3,
     /// Where the hand's body was when it took hold, where it stays.
     pin: (Vec3, Quat),
+    /// The gripped body's transform when the hand took hold, for a body that moves.
+    frame: Option<Affine3A>,
     /// The rig the grip was taken in ([`State::rig_epoch`]).
     rig_epoch: u64,
     /// How many steps in a row the hand's body has not acted.
@@ -829,6 +914,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         gap_m: 0.0,
         in_air: None,
         grips: 0,
+        moving_grips: 0,
         releases: 0,
         mantles: 0,
         drops: 0,

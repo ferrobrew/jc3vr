@@ -1,5 +1,5 @@
-//! The status page's rows for what the empty hands do in the world: vehicle doors and the
-//! characters they take hold of.
+//! The status page's rows for what the empty hands do in the world: vehicle doors, the characters
+//! they take hold of, and the moving bodies they climb.
 
 use smol_str::format_smolstr;
 
@@ -8,7 +8,7 @@ use crate::controllers::{
         read_config,
         status::{Health, Line},
     },
-    physical_hands::{self, doors, physics, pickup::PickupStatus},
+    physical_hands::{self, climb, doors, physics, pickup::PickupStatus},
 };
 
 pub(super) fn doors() -> Line {
@@ -31,6 +31,30 @@ pub(super) fn characters() -> Line {
         &physical_hands::status().pickup,
         physics::status().knockdowns,
     )
+}
+
+pub(super) fn moving_climbs() -> Line {
+    let on = read_config(|c| {
+        let p = &c.controllers.physical_hands;
+        climb::enabled(p) && p.climb.moving
+    });
+    let status = climb::status();
+    let on_moving = status
+        .hands
+        .iter()
+        .any(|h| h.grip.is_some_and(|g| g.moving));
+    moving_climbs_line(on, status.moving_grips, on_moving)
+}
+
+fn moving_climbs_line(on: bool, grips: u64, on_moving: bool) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    match (grips, on_moving) {
+        (_, true) => Line::ok(format_smolstr!("{grips} GRIPS, HOLDING ON")),
+        (0, false) => Line::new(Health::Waiting, "NO MOVING GRIP YET"),
+        _ => Line::ok(format_smolstr!("{grips} GRIPS")),
+    }
 }
 
 fn characters_line(on: bool, pickup: &PickupStatus, knockdowns: u64) -> Line {
@@ -75,6 +99,17 @@ mod tests {
     use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
+
+    #[test]
+    fn the_moving_climbs_row_says_when_a_hand_holds_on() {
+        assert_eq!(moving_climbs_line(false, 4, true).health, Health::Off);
+        assert_eq!(moving_climbs_line(true, 0, false).health, Health::Waiting);
+        assert_eq!(
+            moving_climbs_line(true, 2, true).text(),
+            "OK, 2 GRIPS, HOLDING ON"
+        );
+        assert_eq!(moving_climbs_line(true, 2, false).text(), "OK, 2 GRIPS");
+    }
 
     #[test]
     fn the_characters_row_counts_grips_and_hijacks() {

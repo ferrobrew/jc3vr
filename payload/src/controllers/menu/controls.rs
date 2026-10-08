@@ -172,6 +172,11 @@ fn settings_page() -> Page {
             .physical_hands
             .climb
             .enabled))
+        .item(config_toggle!("CLIMB MOVING THINGS", |c| c
+            .controllers
+            .physical_hands
+            .climb
+            .moving))
         .item(config_toggle!("OPEN DOORS BY HAND", |c| c
             .controllers
             .physical_hands

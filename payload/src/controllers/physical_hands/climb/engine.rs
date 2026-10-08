@@ -16,7 +16,7 @@
 
 use std::fmt;
 
-use glam::{Mat4, Vec3};
+use glam::{Affine3A, Mat4, Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
     havok::hkSimdFloat32,
@@ -24,7 +24,7 @@ use jc3gi::{
     types::vector_math::AlignedVector3,
 };
 
-use crate::controllers::physical_hands::world::World;
+use crate::controllers::physical_hands::{physics::havok_affine, world::World};
 
 /// Why the player could not be climbed with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -90,6 +90,86 @@ pub unsafe fn is_static(body: u32) -> bool {
     unsafe { slot(world.world(), body) }.is_some_and(|slot| slot.m_flags & hknpBody::IS_STATIC != 0)
 }
 
+/// A body's place and motion, game space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct BodyFrame {
+    /// The body's transform.
+    pub transform: Affine3A,
+    /// Whether the body is static, which never moves.
+    pub is_static: bool,
+    /// Whether the body is keyframed, moved along a set path.
+    pub is_keyframed: bool,
+    /// The body's mass, or `None` for an infinite one.
+    pub mass_kg: Option<f32>,
+    pub centre: Vec3,
+    pub linear: Vec3,
+    pub angular: Vec3,
+}
+
+impl BodyFrame {
+    /// The velocity of the body's point at `at`, world space.
+    pub fn point_velocity(&self, at: Vec3) -> Vec3 {
+        if self.is_static {
+            return Vec3::ZERO;
+        }
+        self.linear + self.angular.cross(at - self.centre)
+    }
+}
+
+/// The place and motion of the body `body`, or `None` for a freed slot or a motion that is not
+/// finite.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub unsafe fn body_frame(body: u32) -> Option<BodyFrame> {
+    let world = unsafe { World::get() }?;
+    let shift = world.shift;
+    let world = world.world();
+    let slot = unsafe { slot(world, body) }?;
+    let mut transform = havok_affine(&slot.m_transform);
+    transform.translation += Vec3A::from(shift);
+    let is_static = slot.m_flags & hknpBody::IS_STATIC != 0;
+    let is_keyframed = slot.m_flags & hknpBody::IS_KEYFRAMED != 0;
+    let (centre, linear, angular, mass_kg) = if is_static || world.m_motions.is_null() {
+        (
+            Vec3::from(transform.translation),
+            Vec3::ZERO,
+            Vec3::ZERO,
+            None,
+        )
+    } else {
+        let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
+        let orientation = Quat::from_array(motion.m_orientation.data).normalize();
+        let inverse_mass = f32::from_bits(u32::from(motion.m_inverseInertia[3]) << 16);
+        (
+            Vec3::from_array(motion.m_centerOfMass.data) + shift,
+            Vec3::from_array(motion.m_linearVelocity.data),
+            orientation * Vec3::from_array(motion.m_angularVelocity.data),
+            (inverse_mass.is_finite() && inverse_mass > 0.0).then(|| 1.0 / inverse_mass),
+        )
+    };
+    let frame = BodyFrame {
+        transform,
+        is_static,
+        is_keyframed,
+        mass_kg,
+        centre,
+        linear,
+        angular,
+    };
+    (transform.is_finite() && centre.is_finite() && linear.is_finite() && angular.is_finite())
+        .then_some(frame)
+}
+
+/// Whether a hand climbs the body `frame`: the static world, and with `moving`, a keyframed body
+/// or a dynamic one at least `min_mass_kg`.
+pub fn climbable(frame: &BodyFrame, moving: bool, min_mass_kg: f32) -> bool {
+    frame.is_static
+        || (moving
+            && (frame.is_keyframed || frame.mass_kg.is_none_or(|m| m >= min_mass_kg.max(0.0))))
+}
+
 /// The support the proxy's update found for this step, before anything else wrote it: the upward
 /// share of the normal of the surface the proxy stands on, or `None` when it stands on nothing.
 ///
@@ -105,21 +185,29 @@ pub unsafe fn support() -> Option<f32> {
 }
 
 /// Hold the player up: give the proxy `velocity` for the coming step, as its own update does, and
-/// write it as supported on the static body `ground`, level, at rest.
+/// write it as supported on the body `ground`, level, moving at `surface_velocity`: at rest on the
+/// static world, carried with a moving body.
 ///
 /// # Safety
 ///
 /// The thread that steps the physics world, outside the step, after the proxy's update; `ground`
-/// must be a static body of the world.
-pub unsafe fn hold(velocity: Vec3, ground: u32) -> Result<(), ClimbEngineError> {
+/// must be a body of the world.
+pub unsafe fn hold(
+    velocity: Vec3,
+    ground: u32,
+    surface_velocity: Vec3,
+) -> Result<(), ClimbEngineError> {
+    if !surface_velocity.is_finite() {
+        return Err(ClimbEngineError::BadVelocity);
+    }
     unsafe { set_velocity(velocity) }?;
     let proxy = unsafe { proxy() }?;
     let info = &mut proxy.m_GroundInformation;
-    info.m_isSurfaceDynamic = false;
+    info.m_isSurfaceDynamic = surface_velocity != Vec3::ZERO;
     info.m_supportedState = hknpCharacterSurfaceInfo::SUPPORTED;
     info.m_surfaceDistanceExcess = 0.0;
     info.m_surfaceNormal = aligned(Vec3::Y);
-    info.m_surfaceVelocity = aligned(Vec3::ZERO);
+    info.m_surfaceVelocity = aligned(surface_velocity);
     proxy.m_GroundBodyId = ground;
     proxy.m_LastValidGroundBodyId = ground;
     Ok(())

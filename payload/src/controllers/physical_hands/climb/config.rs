@@ -68,6 +68,14 @@ pub struct ClimbConfig {
     pub tension_pulse: PulseSpec,
     /// The climbing speed of the strongest tension pulse, metres per second.
     pub tension_full_speed_mps: f32,
+    /// Grip moving bodies as well as the static world: keyframed bodies, and dynamic ones heavy
+    /// enough not to be pulled about, such as vehicles. A grip on one holds in the body's own
+    /// frame, and the body's motion carries the climber.
+    pub moving: bool,
+    /// The lightest dynamic body a hand climbs, kilograms; a lighter one is a loose object.
+    pub min_moving_mass_kg: f32,
+    /// The fastest a gripped body's motion carries the climber, metres per second.
+    pub max_carry_speed_mps: f32,
 }
 
 impl ClimbConfig {
@@ -109,6 +117,9 @@ impl ClimbConfig {
                 duration_s: 0.03,
             },
             tension_full_speed_mps: 3.0,
+            moving: true,
+            min_moving_mass_kg: 300.0,
+            max_carry_speed_mps: 80.0,
         }
     }
 }
