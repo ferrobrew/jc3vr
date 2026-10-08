@@ -135,6 +135,9 @@ pub enum Event {
     BeltSeat,
     /// A full pull of the action.
     Rack,
+    /// The action's part meeting a stop of its travel: home, a bolt turned all the way up or down,
+    /// or a slide caught at the rear.
+    ActionDetent,
     /// A round chambered.
     Chambered,
     /// A grenade primed in the hand.
@@ -207,7 +210,7 @@ pub enum Event {
 }
 
 impl Event {
-    pub const ALL: [Event; 49] = [
+    pub const ALL: [Event; 50] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -225,6 +228,7 @@ impl Event {
         Event::MagazineSeat,
         Event::BeltSeat,
         Event::Rack,
+        Event::ActionDetent,
         Event::Chambered,
         Event::GrenadePrime,
         Event::GrenadePin,
@@ -279,6 +283,7 @@ impl Event {
             Event::MagazineSeat => Cue::new(Primitive::Bump, 0.9, Category::Weapons),
             Event::BeltSeat => Cue::new(Primitive::Thud, 0.75, Category::Weapons),
             Event::Rack => Cue::new(Primitive::Click, 0.9, Category::Weapons),
+            Event::ActionDetent => Cue::new(Primitive::Click, 0.35, Category::Weapons),
             Event::Chambered => Cue::new(Primitive::Click, 0.5, Category::Weapons),
             Event::GrenadePrime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
             Event::GrenadePin => Cue::new(Primitive::Bump, 0.4, Category::Weapons),
@@ -335,6 +340,7 @@ impl Event {
             Event::MagazineSeat => "magazine seat",
             Event::BeltSeat => "belt seat",
             Event::Rack => "rack",
+            Event::ActionDetent => "action detent",
             Event::Chambered => "chambered",
             Event::GrenadePrime => "grenade prime",
             Event::GrenadePin => "grenade pin",

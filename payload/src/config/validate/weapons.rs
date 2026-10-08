@@ -284,5 +284,23 @@ fn reload(r: &ReloadConfig) -> Result<(), Invalid> {
         r.action.default_travel_m,
         1.0,
     )?;
+    positive("weapons.reload.action.spring_s", r.action.spring_s, 5.0)?;
+    range(
+        "weapons.reload.action.bolt_lift_deg",
+        r.action.bolt_lift_deg,
+        1.0,
+        180.0,
+    )?;
+    positive(
+        "weapons.reload.action.bolt_radius_m",
+        r.action.bolt_radius_m,
+        0.5,
+    )?;
+    range(
+        "weapons.reload.action.lift_fraction",
+        r.action.lift_fraction,
+        0.5,
+        1.0,
+    )?;
     Ok(())
 }

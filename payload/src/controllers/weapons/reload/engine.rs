@@ -304,12 +304,12 @@ pub unsafe fn transfer(address: usize, transfer: Transfer) {
 }
 
 /// Tell the weapon at `address` that its action was worked by hand: the bolt rifle's lock cleared
-/// and the gun's own bolt or pump clip played.
+/// and, with `clip`, the gun's own bolt or pump clip played.
 ///
 /// # Safety
 ///
 /// As [`drop_magazine`].
-pub unsafe fn cycled(address: usize, kind: ActionKind) {
+pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
     };
@@ -324,7 +324,7 @@ pub unsafe fn cycled(address: usize, kind: ActionKind) {
         ActionKind::Pump => pump_act(),
         _ => None,
     };
-    let Some(act) = act else {
+    let Some(act) = act.filter(|_| clip) else {
         return;
     };
     let act = act as u32;
@@ -334,6 +334,16 @@ pub unsafe fn cycled(address: usize, kind: ActionKind) {
             unsafe { gun.DoAct(&act) };
         }
     }
+}
+
+/// The address of gun `index` of the weapon at `address`, whose skeleton the action's bone rides.
+///
+/// # Safety
+///
+/// As [`drop_magazine`].
+pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
+    unsafe { gun_mut(address as *const WeaponBase, index) }
+        .map(|gun| gun as *mut WeaponData as usize)
 }
 
 /// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).

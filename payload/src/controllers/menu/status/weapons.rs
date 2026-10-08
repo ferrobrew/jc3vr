@@ -12,7 +12,11 @@ use crate::controllers::{
         self,
         hold::{self, holder::Cause, second},
         holster::slot_label,
-        reload::{self, focus::ReloadTarget},
+        reload::{
+            self,
+            chamber::{ActionKind, Chamber},
+            focus::ReloadTarget,
+        },
     },
 };
 
@@ -22,6 +26,59 @@ pub(super) fn left_hand() -> Line {
 
 pub(super) fn right_hand() -> Line {
     hand(Hand::Right)
+}
+
+pub(super) fn left_action() -> Line {
+    action(Hand::Left)
+}
+
+pub(super) fn right_action() -> Line {
+    action(Hand::Right)
+}
+
+/// The action of `hand`'s gun on its travel: where its part is, whether a hand holds it, and
+/// whether its slide is locked back, with the chamber it loaded.
+fn action(hand: Hand) -> Line {
+    if !read_config(|c| {
+        let reload = c.controllers.weapons.reload;
+        reload.enabled && reload.action.physical
+    }) {
+        return Line::off("");
+    }
+    let status = reload::status();
+    let Some(weapon) = status.weapon else {
+        return Line::waiting("NO WEAPON RELOADED BY HAND");
+    };
+    let Some(travel) = weapon.actions[hand.index()] else {
+        return Line::ok(match weapon.chambers[hand.index()] {
+            Some(_) => "NOTHING TO WORK",
+            None => "NO GUN",
+        });
+    };
+    let kind = weapon.plan.action;
+    let chamber = match weapon.chambers[hand.index()] {
+        Some(Chamber::Empty) => "CHAMBER EMPTY",
+        _ => "CHAMBERED",
+    };
+    let place = if travel.locked_back {
+        "LOCKED BACK".into()
+    } else if kind == ActionKind::Bolt && travel.lift > 0.0 {
+        format_smolstr!(
+            "UP {:.0}%, BACK {:.0}%",
+            travel.lift * 100.0,
+            travel.position * 100.0
+        )
+    } else if travel.position > 0.0 {
+        format_smolstr!("BACK {:.0}%", travel.position * 100.0)
+    } else {
+        SmolStr::new("HOME")
+    };
+    Line::ok(format_smolstr!(
+        "{}: {place}{}, {chamber}, {} WORKED",
+        kind.label().to_uppercase(),
+        if travel.grip.is_some() { ", HELD" } else { "" },
+        status.counts.racks
+    ))
 }
 
 pub(super) fn second_weapon() -> Line {

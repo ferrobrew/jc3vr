@@ -20,7 +20,9 @@
 //! - **Belt.** Pushing a gun's well down onto the pouch reloads it in one hand, swapping a magazine
 //!   still in it, and works its action ([`belt`]).
 //! - **Chamber.** A gun that ran dry fires again only once its action is worked by hand; a bolt
-//!   or a pump is worked after every shot ([`chamber`]).
+//!   or a pump is worked after every shot ([`chamber`]). The action is a part that follows the
+//!   hand through its travel ([`travel`]), drawn on a separate slide part or on the gun's own
+//!   skeleton ([`render`], [`bones`]).
 //! - **Dual-wield.** Each pistol has its own half of the magazine ([`dual`]).
 //!
 //! - **Two weapons.** With a second weapon in the other hand, the reload acts on whichever of the
@@ -29,7 +31,9 @@
 //! What a weapon loads and how is its plan ([`plan`]). The minigun, the mounted guns, and the
 //! special weapons keep the game's reload. With the reload off, every weapon does.
 
+mod action;
 pub mod belt;
+mod bones;
 pub mod chamber;
 pub mod config;
 pub mod dual;
@@ -43,6 +47,7 @@ pub mod loose;
 pub mod plan;
 mod render;
 mod steps;
+pub mod travel;
 pub mod wells;
 
 use glam::Vec3;
@@ -73,6 +78,7 @@ use crate::controllers::{
             frames::GunFrame,
             insert::{Insertion, Well},
             plan::ReloadPlan,
+            travel::ActionTravel,
         },
         volumes::{self, BodyFrame},
     },
@@ -80,7 +86,9 @@ use crate::controllers::{
 
 /// The reload's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    engine::hook_library().with_hook_library(loose::hook_library())
+    engine::hook_library()
+        .with_hook_library(loose::hook_library())
+        .with_hook_library(bones::hook_library())
 }
 
 /// The reload's readout.
@@ -121,6 +129,8 @@ pub struct WeaponReadout {
     pub out: bool,
     /// Each gun hand's chamber, by [`Hand::index`].
     pub chambers: [Option<Chamber>; 2],
+    /// Each gun hand's action on its travel, with the physical action on, by [`Hand::index`].
+    pub actions: [Option<ActionTravel>; 2],
     /// The dual-wield split, when it acts.
     pub split: Option<SplitMagazines>,
 }
@@ -132,6 +142,8 @@ pub struct ReloadCounts {
     pub seats: u64,
     pub belt_reloads: u64,
     pub racks: u64,
+    /// Slides caught at the rear.
+    pub lock_backs: u64,
     pub dry_fires: u64,
     pub empty_pouch: u64,
     /// Reload starts of the game's that the stop refused.
@@ -422,6 +434,8 @@ struct GunTick {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 struct Record {
     chambers: [Chamber; 2],
+    /// Each gun hand's action on its travel.
+    travels: [ActionTravel; 2],
     split: Option<SplitMagazines>,
     /// The game's magazine as of the last tick.
     last_magazine: Option<i32>,
@@ -466,6 +480,7 @@ static STATE: Mutex<State> = Mutex::new(State {
             seats: 0,
             belt_reloads: 0,
             racks: 0,
+            lock_backs: 0,
             dry_fires: 0,
             empty_pouch: 0,
             refused: 0,

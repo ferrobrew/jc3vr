@@ -193,6 +193,11 @@ impl Default for BeltConfig {
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ActionConfig {
+    /// The action is a part that follows the hand through its travel: a slide or a charging handle
+    /// runs home on its spring when let go, a slide catches at the rear on an empty magazine, a
+    /// pump stays where it is left, and a bolt turns up before it slides. Off, the action is a
+    /// gesture: a pull to the pull share and a release or a push home.
+    pub physical: bool,
     /// How close the off-hand's grip must be to the handle to grab it, metres.
     pub grab_radius_m: f32,
     /// The share of the action's travel a pull must reach, `0..=1`.
@@ -204,6 +209,19 @@ pub struct ActionConfig {
     pub release_distance_m: f32,
     /// The travel of an action the wells table gives none for, metres.
     pub default_travel_m: f32,
+    /// How long a released slide or charging handle takes to run home from the rear on its
+    /// spring, seconds.
+    pub spring_s: f32,
+    /// A slide catches at the rear when the magazine in the gun is empty: after the last shot, or
+    /// racked over an empty magazine. It stays back until it is racked again.
+    pub lock_back: bool,
+    /// How far a bolt's handle turns up to unlock it, degrees.
+    pub bolt_lift_deg: f32,
+    /// How far a bolt's handle is from the bolt's axis, metres.
+    pub bolt_radius_m: f32,
+    /// The share of the bolt's turn that counts as turned all the way, `0.5..=1`; the turn down
+    /// counts once it is within the same share of the bottom.
+    pub lift_fraction: f32,
 }
 
 impl ActionConfig {
@@ -214,6 +232,12 @@ impl ActionConfig {
             return_fraction: 0.3,
             release_distance_m: 0.15,
             default_travel_m: 0.06,
+            physical: true,
+            spring_s: 0.05,
+            lock_back: true,
+            bolt_lift_deg: 60.0,
+            bolt_radius_m: 0.03,
+            lift_fraction: 0.85,
         }
     }
 }

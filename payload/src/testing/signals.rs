@@ -22,7 +22,10 @@ use crate::{
         },
         scheme, vehicles,
         weapons::{
-            self, ads, c4, collide, grenade, grip_watch, hold::second, inventory, reload::loose,
+            self, ads, c4, collide, grenade, grip_watch,
+            hold::second,
+            inventory,
+            reload::{self, loose},
         },
     },
     frame_timing,
@@ -190,6 +193,10 @@ signals! {
     MagazinesDropped => "magazines.dropped", Counter, "Magazine props dropped into the world and noted.";
     MagazinesPickedUp => "magazines.picked_up", Counter, "Magazines picked up from the world.";
     MagazinesSeated => "magazines.seated", Counter, "Magazines from the world seated in a gun.";
+    ActionsWorked => "actions.worked", Counter, "Actions worked by hand: a slide, charging handle, bolt, or pump cycled.";
+    ActionsLockedBack => "actions.locked_back", Counter, "Slides caught at the rear on an empty magazine.";
+    ActionHeld => "actions.held", Flag, "A hand holds a gun's action with the physical action on.";
+    ActionTravel => "actions.travel", Measure, "How far back the action of the gun in hand furthest back is, as a share of its travel, with the physical action on.";
     AdsSighted => "ads.sighted", Counter, "Times a long gun's sights came onto the eye.";
     AdsShouldered => "ads.shouldered", Counter, "Times a long gun's stock came into the shoulder.";
     AdsWelded => "ads.welded", Counter, "Times a scope came onto the eye.";
@@ -381,6 +388,23 @@ impl Signal {
             Signal::MagazinesDropped => count(loose::counts().dropped),
             Signal::MagazinesPickedUp => count(loose::counts().picked_up),
             Signal::MagazinesSeated => count(loose::counts().seated),
+            Signal::ActionsWorked => count(reload::status().counts.racks),
+            Signal::ActionsLockedBack => count(reload::status().counts.lock_backs),
+            Signal::ActionHeld => flag(
+                reload::status()
+                    .weapon
+                    .is_some_and(|w| w.actions.iter().flatten().any(|t| t.grip.is_some())),
+            ),
+            Signal::ActionTravel => reload::status()
+                .weapon
+                .and_then(|w| {
+                    w.actions
+                        .into_iter()
+                        .flatten()
+                        .map(|t| t.position)
+                        .reduce(f32::max)
+                })
+                .map_or(Value::Missing, |p| Value::Number(f64::from(p))),
             Signal::AdsSighted => count(ads::status().sighted),
             Signal::AdsShouldered => count(ads::status().shouldered),
             Signal::AdsWelded => count(ads::status().welded),

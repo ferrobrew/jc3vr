@@ -3651,7 +3651,8 @@ pub struct WeaponData {
     /// [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) advances it modulo the fire-point count after each shot.
     pub m_InternalFirePositionCurrentIndex: i32,
     _field_124: [u8; 4],
-    /// The gun's animated model, when it has one; its skinning is updated in the render phase.
+    /// The gun's animated model, when it has one; its pose is computed in
+    /// [`UpdatePreSim`](crate::equipment::weapon::WeaponData::UpdatePreSim) and its skinning is updated in the render phase.
     pub m_AnimatedModel: *mut crate::character::character::AnimatedModel,
     /// The gun's base model instance (an `NModelSystem::CModelInstance`). The render update pushes
     /// the interpolated world matrix to it.
@@ -3764,6 +3765,30 @@ impl WeaponData {
                 Self::GetWorldMatrixT1_ADDRESS,
             );
             f(self as *const Self as _, result)
+        }
+    }
+    pub const UpdatePreSim_ADDRESS: usize = 0x140959160;
+    /// The gun's pre-simulation update (`CWeaponData::UpdatePreSim`), run for each gun by the
+    /// weapon's own pre-simulation update (`CWeaponBase::UpdatePreSim`). When the gun has an
+    /// animated model ([`m_AnimatedModel`](crate::equipment::weapon::WeaponData::m_AnimatedModel)) and the weapon's LOD does not
+    /// switch its animation off, it advances the model's clips, track messages, rule systems, and
+    /// state tasks by the context's step, then computes the model-space pose
+    /// (`CPoseProducer::CalculateModelSpacePose`), which the joint accessors of the model's
+    /// animation controller
+    /// ([`AnimationController::GetJoint`](crate::character::character::AnimationController::GetJoint) and
+    /// [`SetJoint`](crate::character::character::AnimationController::SetJoint)) read and write and which
+    /// the render phase skins. It then measures the gun's velocities from its two cached world
+    /// matrices ([`m_MeasuredWorldVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredWorldVelocity) and
+    /// [`m_MeasuredAngularVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredAngularVelocity)). Returns whether the
+    /// animated model was updated. `context` is the game object update context, whose first field
+    /// is the step in seconds.
+    pub unsafe fn UpdatePreSim(&mut self, context: *mut ::std::ffi::c_void) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *mut ::std::ffi::c_void,
+            ) -> bool = ::std::mem::transmute(Self::UpdatePreSim_ADDRESS);
+            f(self as *mut Self as _, context)
         }
     }
     pub const UpdateAttachmentTransforms_ADDRESS: usize = 0x140986F80;
@@ -3900,6 +3925,15 @@ impl WeaponData {
     pub const NO_MAGAZINE_MODEL_NAME_HASH: u32 = 423049129;
     /// The [`m_MagazineUniqueTag`](crate::equipment::weapon::WeaponData::m_MagazineUniqueTag) of a gun without a magazine prop.
     pub const NO_MAGAZINE_UNIQUE_TAG: i32 = -1;
+    /// The name hash (`hashlittle` of `Pump`) of the pump bone in a pump-action gun's own skeleton,
+    /// the U-Rys 96's: the skeleton's one bone besides its `Reference` root, which carries the pump
+    /// and which the gun's pump clip moves. Resolved to an index through the gun's animation
+    /// controller ([`AnimationController::GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex)).
+    pub const PUMP_BONE_HASH: u32 = 2521734759;
+    /// The name hash (`hashlittle` of `Slider`) of the bolt bone in a bolt-action rifle's own
+    /// skeleton, the CS111 Archangel's and the Final Argument's: the skeleton's one bone besides its
+    /// `Reference` root, which carries the bolt and which the rifle's bolt-action clip moves.
+    pub const SLIDER_BONE_HASH: u32 = 2064990683;
 }
 impl std::convert::AsRef<WeaponData> for WeaponData {
     fn as_ref(&self) -> &WeaponData {

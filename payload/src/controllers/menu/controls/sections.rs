@@ -485,6 +485,12 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .reload
             .manual_action))
+        .item(config_toggle!("PHYSICAL SLIDES AND BOLTS", |c| c
+            .controllers
+            .weapons
+            .reload
+            .action
+            .physical))
         .item(config_toggle!("SHOW POUCHES", |c| c
             .controllers
             .weapons

@@ -23,6 +23,11 @@
 //! measured on the input tick from the gun's last placement and the wrist target it was placed from
 //! ([`GripGeometry`]), and frozen for the length of a hold.
 //!
+//! A pump-action's pump slides along the barrel under the off-hand
+//! ([`crate::controllers::weapons::reload::travel`]): the reload publishes how far back the pump
+//! is ([`set_pump_slide`]), and the foregrip moves back with it, so the drawn off-hand rides the
+//! pump.
+//!
 //! The grip ends when the off-hand lets go of its grip ([`ForegripConfig::hold`], the default), or
 //! with the grip a toggle, on its next grip press; when the off-hand moves further than the release
 //! distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing blend
@@ -145,9 +150,14 @@ pub fn status() -> ForegripStatus {
 /// Put the hands into the two-handed pose of the current hold, if any. `hands` are the
 /// cockpit-frame hands indexed by [`Hand::index`].
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
-    let Some(hold) = STATE.lock().hold else {
+    let Some(mut hold) = STATE.lock().hold else {
         return;
     };
+    if let Some((weapon, back_m)) = *PUMP_SLIDE.lock()
+        && weapon == hold.weapon
+    {
+        hold.geometry.foregrip = slid_foregrip(&hold.geometry, back_m);
+    }
     let (Some(holder), Some(off)) = (
         hands[hold.holder.index()],
         hands[hold.holder.other().index()],
@@ -160,6 +170,17 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
         hands[hold.holder.index()] = Some(pose.holder);
         hands[hold.holder.other().index()] = Some(pose.off);
     }
+}
+
+/// How far back along the barrel the pump of the weapon at `weapon` is, cockpit metres, or `None`
+/// for no pump out. Published by the reload's input tick.
+pub(crate) fn set_pump_slide(slide: Option<(usize, f32)>) {
+    *PUMP_SLIDE.lock() = slide.filter(|(_, m)| m.is_finite());
+}
+
+/// The foregrip moved `back_m` back along the barrel, with the pump.
+pub fn slid_foregrip(geometry: &GripGeometry, back_m: f32) -> Vec3 {
+    geometry.foregrip - geometry.barrel * back_m
 }
 
 /// The foregrip's point in the frame `holder` is given in.
@@ -403,7 +424,12 @@ pub(super) fn clear() {
     let mut state = STATE.lock();
     state.hold = None;
     state.turn = None;
+    drop(state);
+    *PUMP_SLIDE.lock() = None;
 }
+
+/// The pump's slide back along the barrel, by weapon; a leaf slot.
+static PUMP_SLIDE: Mutex<Option<(usize, f32)>> = Mutex::new(None);
 
 static STATE: Mutex<ForegripStatus> = Mutex::new(ForegripStatus {
     hold: None,
@@ -442,6 +468,13 @@ mod tests {
         muzzle: Vec3::new(0.0, 0.05, -0.7),
         native: true,
     };
+
+    #[test]
+    fn a_pump_slides_the_foregrip_back_along_the_barrel() {
+        let slid = slid_foregrip(&RIFLE, 0.08);
+        assert!((slid - Vec3::new(0.0, 0.0, -0.32)).length() < 1e-6);
+        assert_eq!(slid_foregrip(&RIFLE, 0.0), RIFLE.foregrip);
+    }
 
     fn config() -> ForegripConfig {
         ForegripConfig {

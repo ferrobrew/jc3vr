@@ -6,8 +6,10 @@
 //! the manual action on), has an empty chamber, and the trigger only clicks until the action is
 //! worked with rounds in the magazine. A tactical reload keeps the round in the chamber.
 //!
-//! Working the action ([`ActionWork`]) is a grab of its handle followed by a pull back along the
-//! gun's axis to the pull share of its travel. A slide or a charging handle closes when it is let
+//! With the physical action on, the action is a part that follows the hand through its travel
+//! ([`crate::controllers::weapons::reload::travel`]). Off, working the action ([`ActionWork`]) is a
+//! gesture: a grab of its handle followed by a pull back along the gun's axis to the pull share of
+//! its travel. A slide or a charging handle closes when it is let
 //! go or pushed back home; a bolt or a pump has to be pushed back home. The pump is worked by the
 //! hand on the foregrip, which holds it already, so its work starts from the hand's place when the
 //! chamber empties rather than from a grab.

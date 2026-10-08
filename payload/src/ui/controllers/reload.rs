@@ -9,7 +9,7 @@ use crate::{
         weapons::reload::{
             ReloadStatus,
             belt::PushStage,
-            chamber::{Chamber, WorkStage},
+            chamber::{ActionKind, Chamber, WorkStage},
             config::{ActionConfig, BeltConfig, ReloadButton, ReloadConfig},
             insert::InsertStage,
             loose, wells,
@@ -21,13 +21,14 @@ use crate::{
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
     let c = &r.counts;
     ui.label(format!(
-        "True reload: {} · ejects {} · seats {} · belt reloads {} · actions worked {} · dry \
-         fires {} · empty pouch {} · game reloads stopped {}",
+        "True reload: {} · ejects {} · seats {} · belt reloads {} · actions worked {} · slides \
+         locked back {} · dry fires {} · empty pouch {} · game reloads stopped {}",
         if r.active { "acting" } else { "inactive" },
         c.ejects,
         c.seats,
         c.belt_reloads,
         c.racks,
+        c.lock_backs,
         c.dry_fires,
         c.empty_pouch,
         c.refused
@@ -118,6 +119,24 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
             r.insertion.seated,
             r.insertion.dropped
         ));
+        for hand in Hand::BOTH {
+            let Some(t) = w.actions[hand.index()] else {
+                continue;
+            };
+            ui.label(format!(
+                "{} action: {:.0}% back{}{}{}{}",
+                hand.label(),
+                t.position * 100.0,
+                if w.plan.action == ActionKind::Bolt {
+                    format!(", {:.0}% up", t.lift * 100.0)
+                } else {
+                    String::new()
+                },
+                if t.grip.is_some() { " · held" } else { "" },
+                if t.locked_back { " · locked back" } else { "" },
+                if t.pulled { " · racked" } else { "" },
+            ));
+        }
         ui.label(match r.work.stage {
             WorkStage::Idle => format!("action: idle · worked {}", r.work.worked),
             WorkStage::Held { pulled, .. } => format!(
@@ -205,6 +224,17 @@ fn belt_settings(ui: &mut Ui, b: &mut BeltConfig) {
 }
 
 fn action_settings(ui: &mut Ui, a: &mut ActionConfig) {
+    ui.checkbox(&mut a.physical, "Physical action").on_hover_text(
+        "The slide, charging handle, bolt, or pump follows the hand through its travel. Off, the \
+         action is a pull-and-release gesture.",
+    );
+    ui.add_enabled_ui(a.physical, |ui| {
+        ui.add(egui::Slider::new(&mut a.spring_s, 0.01..=0.5).text("Spring return (s)"));
+        ui.checkbox(&mut a.lock_back, "Slide locks back on an empty magazine");
+        ui.add(egui::Slider::new(&mut a.bolt_lift_deg, 10.0..=120.0).text("Bolt lift (°)"));
+        ui.add(egui::Slider::new(&mut a.bolt_radius_m, 0.005..=0.1).text("Bolt handle radius (m)"));
+        ui.add(egui::Slider::new(&mut a.lift_fraction, 0.5..=1.0).text("Bolt lift share"));
+    });
     ui.add(egui::Slider::new(&mut a.grab_radius_m, 0.02..=0.2).text("Action grab radius (m)"));
     ui.add(egui::Slider::new(&mut a.pull_fraction, 0.3..=1.0).text("Action pull share"));
     ui.add(egui::Slider::new(&mut a.return_fraction, 0.0..=0.8).text("Action return share"));
