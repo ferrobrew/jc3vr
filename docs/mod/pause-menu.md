@@ -174,6 +174,7 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | `WEAPONS IN HAND` | `LEFT HAND`, `RIGHT HAND` | the weapon's slot in each hand and how it came there: docked, picked up, stolen, off a rack, the game's draw, or the second weapon ([input/physical-weapons.md](input/physical-weapons.md)) |
 | | `TAKE FROM HANDS` | the guns in other characters' hands within reach of a grab, and the takes since load |
 | | `TAKE FROM RACKS` | the weapons on racks within reach of a grab, the weapons racks handed over, and the copies asked of racks with unlimited stock |
+| | `SECOND WEAPON` | the second weapon's slot and hand, its magazine, and whether the true reload is on it or on the wielded weapon |
 | | `LAST REFUSAL` | why the last pickup, take, draw, holster, drop, or second weapon was refused |
 | `HAND BODIES` | `CALLBACK` | whether the pre-simulation callback is registered, has fired, and fires on the game thread (else the thread's id) |
 | | `CALLBACK FIRES` | how many times it has fired |

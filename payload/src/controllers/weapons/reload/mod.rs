@@ -22,6 +22,9 @@
 //!   or a pump is worked after every shot ([`chamber`]).
 //! - **Dual-wield.** Each pistol has its own half of the magazine ([`dual`]).
 //!
+//! - **Two weapons.** With a second weapon in the other hand, the reload acts on whichever of the
+//!   two is lower ([`focus`]); with both hands full, that is a flick to eject and the belt push.
+//!
 //! What a weapon loads and how is its plan ([`plan`]). The minigun, the mounted guns, and the
 //! special weapons keep the game's reload. With the reload off, every weapon does.
 
@@ -31,6 +34,7 @@ pub mod config;
 pub mod dual;
 pub mod eject;
 mod engine;
+pub mod focus;
 pub mod frames;
 pub(super) mod gate;
 pub mod insert;
@@ -40,6 +44,7 @@ mod steps;
 pub mod wells;
 
 use glam::Vec3;
+use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -60,6 +65,7 @@ use crate::controllers::{
             dual::SplitMagazines,
             eject::{FlickDetector, TapDetector},
             engine::Reading,
+            focus::{Fill, ReloadTarget},
             frames::GunFrame,
             insert::{Insertion, Well},
             plan::ReloadPlan,
@@ -92,6 +98,8 @@ pub struct ReloadStatus {
     pub counts: ReloadCounts,
     /// The most recent reload events, newest last.
     pub events: Vec<String>,
+    /// The weapon the reload acts on while the hands hold two.
+    pub focus: ReloadTarget,
 }
 
 /// The reloaded weapon as the last input tick saw it.
@@ -141,6 +149,8 @@ pub(crate) fn fire_held() -> [bool; 2] {
 /// What the first half of the weapon handling's input tick hands the reload.
 pub(super) struct BeginInputs<'a> {
     pub weapon: Option<&'a HeldWeapon>,
+    /// The hands holding any gun, of this weapon or another, by [`Hand::index`].
+    pub occupied: [bool; 2],
     pub active: &'a ActiveHands,
     pub config: &'a ControllersConfig,
     pub body_frame: &'a BodyFrame,
@@ -158,6 +168,7 @@ pub(super) struct BeginInputs<'a> {
 pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let BeginInputs {
         weapon,
+        occupied,
         active,
         config,
         body_frame,
@@ -181,9 +192,9 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     };
     let mut candidates = Vec::new();
     let gun_hands = weapon.wielded.hands;
-    let free = Hand::BOTH
-        .into_iter()
-        .find(|h| !gun_hands[h.index()] && active.hands[h.index()].is_some());
+    let free = Hand::BOTH.into_iter().find(|h| {
+        !gun_hands[h.index()] && !occupied[h.index()] && active.hands[h.index()].is_some()
+    });
     let pouch = volumes::magazine_pouch(body_frame, dims, &config.weapons.pouches, gun_side, free);
     if free.is_some() {
         candidates.push(pouch);
@@ -239,6 +250,41 @@ pub(super) fn stand_down() {
     STATE.lock().stand_down();
     gate::publish(None);
     render::clear();
+}
+
+/// The weapon the reload acts on this tick, from the wielded weapon's magazine (`primary`) and the
+/// second weapon's (`second`, `None` without one). Logs a turn from one to the other.
+pub(super) fn focus(primary: Option<Fill>, second: Option<Fill>) -> ReloadTarget {
+    let mut state = STATE.lock();
+    let busy = state.status.insert_hands.is_some() || state.belts.iter().any(BeltPush::holds_fire);
+    let current = state.status.focus;
+    let next = focus::choose(current, primary, second, busy);
+    state.status.focus = next;
+    drop(state);
+    if next != current {
+        tracing::info!(
+            target: "controllers",
+            target_weapon = next.label(),
+            "reload: turned to {}",
+            next.label()
+        );
+    }
+    next
+}
+
+/// The magazine of the weapon at `address`, for [`focus`].
+///
+/// # Safety
+///
+/// `address` must be a live weapon read this tick, on the main thread outside the world update.
+pub(super) unsafe fn fill_of(address: usize) -> Option<Fill> {
+    let weapon = unsafe { (address as *const WeaponBase).as_ref() }?;
+    let reading = unsafe { engine::read(weapon) };
+    Some(Fill {
+        magazine: reading.magazine,
+        capacity: reading.capacity,
+        out: reading.out,
+    })
 }
 
 /// The well's mouth and radius to ring while a round is in hand.
@@ -370,6 +416,7 @@ static STATE: Mutex<State> = Mutex::new(State {
             refused: 0,
         },
         events: Vec::new(),
+        focus: ReloadTarget::Primary,
     },
     tick: None,
     pouch: None,

@@ -115,6 +115,7 @@ use crate::{
                 second,
             },
             holster::HolsterAction,
+            reload::focus::ReloadTarget,
             volumes::{ChestGrabbers, HeadDrop, NearMiss, Stance},
         },
     },
@@ -265,16 +266,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         fallback: second_hand.map_or(config.acting_hand(), Hand::other),
     });
     // SAFETY: the input tick runs on the main thread outside the world update.
-    let weapon = unsafe {
-        engine::local_player().and_then(|owner| {
+    let (weapon, second_weapon) = unsafe {
+        engine::local_player().map_or((None, None), |owner| {
             if holding.either_hand && holding.second_weapon && gameplay {
                 second::validate(owner);
             } else {
                 second::stand_down();
             }
+            second::show_magazine(Some(owner), gameplay && holding.magazine_pips);
             let pair = dual_wield::attach::input_tick(owner, settings);
             let holder = hold::input_tick(owner, hold_settings, pair.is_some());
-            engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder))
+            (
+                engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder)),
+                second::held_weapon(owner),
+            )
         })
     };
     scope::input_tick(weapon.map(|w| w.address));
@@ -367,8 +372,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             gameplay,
         })
     });
+    // SAFETY: both weapons were read this tick, on the main thread outside the world update.
+    let reload_target = unsafe {
+        reload::focus(
+            weapon.and_then(|w| reload::fill_of(w.address)),
+            second_weapon.and_then(|w| reload::fill_of(w.address)),
+        )
+    };
+    let reloaded = match reload_target {
+        ReloadTarget::Primary => weapon,
+        ReloadTarget::Second => second_weapon,
+    };
     candidates.extend(reload::begin_tick(&reload::BeginInputs {
-        weapon: weapon.as_ref(),
+        weapon: reloaded.as_ref(),
+        occupied: free.map(|f| !f),
         active: &active,
         config: &config,
         body_frame: &body_frame,
@@ -705,6 +722,7 @@ pub(crate) fn stand_down() {
     hold::clear();
     hold::act::clear();
     hold::take::stand_down();
+    hold::pips::submit(None);
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { second::stand_down() };
     reload::stand_down();

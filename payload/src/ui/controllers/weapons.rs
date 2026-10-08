@@ -720,6 +720,11 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
          own trigger.",
     );
     ui.checkbox(
+        &mut h.magazine_pips,
+        "Show the second gun's magazine over its hand",
+    )
+    .on_hover_text("Pips over the hand holding the second weapon count its rounds.");
+    ui.checkbox(
         &mut h.drop_replaced,
         "A pickup lets the replaced weapon fall",
     )

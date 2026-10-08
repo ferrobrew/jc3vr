@@ -16,12 +16,14 @@
 //!   [`Inventory::UpdateWeapons_Serial`]), the mod updates it the same way, through its
 //!   [`WeaponBase::UpdateFromUserPostSim_Parallel`] and `_Serial` virtuals, with the hand's trigger
 //!   as the fire input while the animation allows shooting
-//!   ([`Inventory::GetAnimationAllowsShooting`]) and the magazine holds a round, and the gun's own
-//!   sight line's aim point.
+//!   ([`Inventory::GetAnimationAllowsShooting`]), the magazine holds a round, and the true reload
+//!   does not hold the gun, and the gun's own sight line's aim point.
 //!
 //! The rigid grip, the gun aim, the per-shot seam, and the render-time late update treat it as a
-//! held weapon ([`is`]). Its magazine is its own; the true reload, the HUD's readout, and the game's
-//! reload act are the selected weapon's only, so the second weapon fires until it is empty. It goes
+//! held weapon ([`is`]). Its magazine is its own, shown in pips over its hand ([`pips`]); the true
+//! reload turns to it when it runs lower than the wielded weapon
+//! ([`crate::controllers::weapons::reload::focus`]), while the HUD's readout and the game's reload
+//! act stay the selected weapon's. It goes
 //! back on its shoulder at a grab of its holster by its hand, and is let go of (left holstered)
 //! when the game wields it, takes it from its slot, or the weapon handling stands down.
 //!
@@ -52,9 +54,11 @@ use crate::controllers::{
     frame::Hand,
     hands::ik,
     weapons::{
-        engine,
-        hold::{self, equip, layout},
-        holster::slot_label,
+        engine::{self, HeldWeapon},
+        heft::HeftClass,
+        hold::{self, equip, layout, pips},
+        holster::{Wielded, slot_label},
+        reload,
     },
 };
 
@@ -102,6 +106,8 @@ pub struct SecondStatus {
     /// The updates the mod gave it since the payload loaded.
     pub updates: u64,
     pub last_refusal: Option<SecondRefusal>,
+    /// Its magazine and the magazine's size as of the last input tick.
+    pub magazine: Option<(i32, i32)>,
 }
 
 pub fn status() -> SecondStatus {
@@ -111,6 +117,7 @@ pub fn status() -> SecondStatus {
         trigger: TRIGGER.load(Ordering::Relaxed),
         updates: UPDATES.load(Ordering::Relaxed),
         last_refusal: state.last_refusal,
+        magazine: state.magazine,
     }
 }
 
@@ -151,6 +158,28 @@ pub(crate) unsafe fn weapon(owner: &Character) -> Option<&'static WeaponBase> {
 /// The slot of the second weapon.
 pub(crate) fn slot() -> Option<WeaponSlot> {
     STATE.lock().held.map(|h| h.slot)
+}
+
+/// The second weapon as the weapon handling sees a weapon in the hands: every gun in its hand.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
+    let held = STATE.lock().held?;
+    let weapon = unsafe { self::weapon(owner) }?;
+    // Read as the raw value: an unset or unknown class is out of the enum's range.
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    Some(HeldWeapon {
+        address: held.weapon,
+        wielded: Wielded {
+            slot: held.slot,
+            hands: Hand::BOTH.map(|h| h == held.hand),
+        },
+        holder: Some(held.hand),
+        two_handed: false,
+        class: HeftClass::of(class, false),
+    })
 }
 
 /// Take `slot`'s holstered long gun into `hand` as the second weapon.
@@ -229,6 +258,28 @@ pub(crate) unsafe fn validate(owner: &mut Character) {
     }
 }
 
+/// Show the second weapon's magazine over its hand, or take it away when there is none or `shown`
+/// is off.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn show_magazine(owner: Option<&Character>, shown: bool) {
+    let readout = owner.and_then(|owner| {
+        let hand = hand()?;
+        let weapon = unsafe { self::weapon(owner) }?;
+        let capacity = unsafe { weapon.GetMagazineSize() };
+        Some((
+            hand,
+            weapon.m_MagazineAmmo,
+            capacity,
+            weapon.m_WeaponIsWithoutMagazine,
+        ))
+    });
+    STATE.lock().magazine = readout.map(|(_, magazine, capacity, _)| (magazine, capacity));
+    pips::submit(readout.filter(|_| shown));
+}
+
 /// Publish the second weapon's hand's trigger for its updates.
 pub(crate) fn set_trigger(pulled: bool) {
     TRIGGER.store(pulled, Ordering::Relaxed);
@@ -303,11 +354,13 @@ struct Held {
 struct State {
     held: Option<Held>,
     last_refusal: Option<SecondRefusal>,
+    magazine: Option<(i32, i32)>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     held: None,
     last_refusal: None,
+    magazine: None,
 });
 /// The second weapon's address, or zero: the detours' check before any lock.
 static ADDRESS: AtomicUsize = AtomicUsize::new(0);
@@ -452,7 +505,10 @@ unsafe fn update_arguments(
         return None;
     }
     let loaded = weapon.m_MagazineAmmo > 0 && !weapon.m_WeaponIsWithoutMagazine;
+    let address = weapon as *const WeaponBase as usize;
+    let held_by_reload = hand().is_some_and(|h| reload::holds_fire(address, h));
     let fire = loaded
+        && !held_by_reload
         && TRIGGER.load(Ordering::Relaxed)
         && unsafe { inventory.GetAnimationAllowsShooting() };
     Some((

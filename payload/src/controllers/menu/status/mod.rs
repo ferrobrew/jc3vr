@@ -192,6 +192,7 @@ const SECTIONS: &[Section] = &[
             row!("RIGHT HAND", weapons::right_hand),
             row!("TAKE FROM HANDS", weapons::takes),
             row!("TAKE FROM RACKS", weapons::racks),
+            row!("SECOND WEAPON", weapons::second_weapon),
             row!("LAST REFUSAL", weapons::last_refusal),
         ],
     },

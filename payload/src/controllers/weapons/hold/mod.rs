@@ -51,6 +51,7 @@ pub mod equip;
 pub mod holder;
 pub mod layout;
 pub mod pickup;
+pub mod pips;
 pub mod rack;
 pub(crate) mod refs;
 pub mod second;

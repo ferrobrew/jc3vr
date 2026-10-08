@@ -288,6 +288,11 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .take_slide))
+        .item(config_toggle!("SECOND GUN'S AMMO OVER ITS HAND", |c| c
+            .controllers
+            .weapons
+            .hold
+            .magazine_pips))
         .item(config_toggle!("PICKUPS DROP THE OLD WEAPON", |c| c
             .controllers
             .weapons

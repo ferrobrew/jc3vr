@@ -71,6 +71,10 @@ The pump-action shotgun's pump is queued on every shot by its do-act component (
 
 With `dual_split` (and the dual-wield split on), each pistol has half the pair's magazine, the dominant hand taking the odd round (`dual.rs`). The game keeps one magazine, so the split keeps a count per hand beside it, and the game's magazine is always their sum; a change the split did not make (the game's own reload while the reload is off) deals the counts again. A shot takes from its hand's count, and a hand at zero is dry while the other still fires. An eject drops that pistol's magazine prop and returns its rounds to the reserve; a load fills only that hand's half from the reserve. The magazine-out flag is not used for a pistol of the pair, since it would stop both.
 
+## Two weapons
+
+With a second weapon in the other hand ([physical-weapons.md, "A second weapon"](physical-weapons.md#a-second-weapon)), the reload still acts on one weapon at a time: its guns, its well, its chamber, the stop on the game's own reload, and the shots it counts. It turns to whichever weapon is lower (`reload::focus`): one whose magazine is out or empty while the other's is not, or one more than a quarter of its magazine lower than the other's, and back the same way. It does not turn while a round is in a hand or a well is pushed into the belt pouch, so a reload is never cut in half, and each weapon's chamber and split are remembered across a turn, as across a weapon change. The pouch is placed only for a hand holding no gun of either weapon, so with a gun in each hand the reload is the flick to eject and the belt push to load. A turn logs `reload: turned to the second weapon` or `reload: turned to the wielded weapon`, and the readout shows which weapon the reload is on.
+
 ## Haptics
 
 `haptics` holds the reload's pulses: the eject on the gun hand, a round taken from the pouch, an empty pouch, a round caught by the well and a seat on both hands, a belt seat on the gun hand, a full pull of the action on the working hand, and a chambered round on the gun hand. The dry fire is `weapons.haptics.dry_fire`.

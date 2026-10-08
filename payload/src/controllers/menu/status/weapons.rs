@@ -11,6 +11,7 @@ use crate::controllers::{
         self,
         hold::{self, holder::Cause, second},
         holster::slot_label,
+        reload::{self, focus::ReloadTarget},
     },
 };
 
@@ -20,6 +21,33 @@ pub(super) fn left_hand() -> Line {
 
 pub(super) fn right_hand() -> Line {
     hand(Hand::Right)
+}
+
+pub(super) fn second_weapon() -> Line {
+    if !read_config(|c| {
+        let hold = c.controllers.weapons.hold;
+        hold.either_hand && hold.second_weapon
+    }) {
+        return Line::off("");
+    }
+    let second = second::status();
+    let focus = reload::status().focus;
+    match second.held {
+        None => Line::ok("NONE"),
+        Some((hand, slot)) => Line::ok(format_smolstr!(
+            "{} IN {}, {}, RELOAD ON {}",
+            slot_label(slot).to_uppercase(),
+            hand.label().to_uppercase(),
+            second.magazine.map_or(
+                "NO MAGAZINE".into(),
+                |(magazine, capacity)| format_smolstr!("{magazine}/{capacity}")
+            ),
+            match focus {
+                ReloadTarget::Primary => "THE WIELDED",
+                ReloadTarget::Second => "IT",
+            }
+        )),
+    }
 }
 
 pub(super) fn last_refusal() -> Line {

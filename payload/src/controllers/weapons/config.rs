@@ -639,6 +639,9 @@ pub struct HoldConfig {
     /// holds a weapon, and fire it with its own trigger: a second weapon, which the game keeps
     /// holstered while the mod drives it. Needs `either_hand`.
     pub second_weapon: bool,
+    /// Show the second weapon's magazine as pips over its hand, since the game's HUD shows only the
+    /// wielded weapon's.
+    pub magazine_pips: bool,
     /// Take a gun out of a living character's hands with a grab of the gun: the character lets
     /// go of it and staggers, and the gun goes straight into the grabbing hand. Needs
     /// `direct_pickup`.
@@ -666,6 +669,7 @@ impl HoldConfig {
             max_throw_mps: 15.0,
             drop_replaced: true,
             second_weapon: true,
+            magazine_pips: true,
             steal: true,
             racks: true,
             take_radius_m: 0.1,
