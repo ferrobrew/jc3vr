@@ -93,10 +93,9 @@ Under the vehicles section the readout shows the wheel's angle and the steering 
 
 - That the travel tracking feels right with the hands drawn on the rim at their own angle, and that the leading hand's pick keeps the wheel with the hand that turns it without a jitter or a drift while both rest.
 - The default lock of 135° and the return rate against the game's own steering ramp.
-
 - The box fit's hub, radius, and tilt in each car, and the override values.
 - That the handlebar grips sit at the fork box's rear and mid-height.
-- The sign of [`m_SteeringTurn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringTurn) (positive is taken as right) and its range.
+- The sign of [`m_SteeringTurn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringTurn) (positive is taken as right) and its range. The drawn wheel follows it under stick steering with `animate_wheel` on, so a wrong sign turns the drawn wheel against the car.
 - That nothing else on the render worker reads the wheel part's root-space transform while the detour holds it turned.
 - That the head pose is composed against the end of the simulation step, so the vehicle's `m_WorldMatrixT1` matches it at speed.
 - That the settle time is long enough for the fallback to be taken with the driver seated.
