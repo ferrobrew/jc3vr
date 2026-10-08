@@ -112,6 +112,10 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [hand-climbing.md](mod/input/hand-climbing.md) — gripping the static world with an empty hand and climbing: the grip, the body moving against the gripping hands, keeping the game on foot by writing the proxy's support, the fling on release, the mantle over a ledge, and the headset checklist.
 - [steering-wheel.md](mod/input/steering-wheel.md) — the physical wheel and handlebars placed from the driven vehicle's parts: the box fit, the override table, the fallback held in the vehicle's space, the handlebars for the ATV, jetski, and duck, the rendered wheel turned in the render update, and the headset checklist.
 
+### testing/
+
+- [recorder.md](mod/testing/recorder.md) — testing without the headset: the tracking recorder and its file format, the replay at the head, controller, and STAGE seams with or without a session, the scenario file and its signals, status rows, and log probes, the PASS and FAIL results, the ways to start the tools, the templates, and the limits of a replay.
+
 ## issues/
 
 - [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md) — HUD overlays and depth (issues #8, #14).
