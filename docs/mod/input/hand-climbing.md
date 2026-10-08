@@ -61,6 +61,11 @@ With `CLIMB WITH THE HANDS` on:
 7. Grip, then draw a gun with the other hand or enter a vehicle: the grip lets go with its reason.
 8. Pause while hanging, resume: the grip still holds.
 
+## Not yet done
+
+- Pushing the body up with the hands: pressing down on a ledge's top, or a vault over a low wall, moves nothing, since the push off a held-back hand ([physical-hands.md](physical-hands.md#pushing-the-player)) is horizontal only and a press down is not a grip. A vertical push, or a vault that carries the body over a low top the hands press on, would build on the mantle.
+- Gripping a moving body: only static bodies are gripped, so a hand cannot hang from a vehicle, a moving platform, or a swinging prop. Following one would need the grip held in the body's own frame and the body's motion added to the climb.
+
 ## Unverified in the headset
 
 - That writing the support keeps Rico out of every falling state; that no animation, sound, or AI reacts oddly to a character standing on a wall.
