@@ -515,31 +515,38 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
     let linearize = matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize);
     let brightness = 1.0 - crate::controllers::roomscale::fade::level();
 
-    let mut guard = VR_BLIT.lock();
-    if guard.is_none() {
-        *guard = Some(VrBlit::new(device)?);
-    }
-    let blit = guard.as_mut().expect("the blit pipeline was just ensured");
-
     // Both eyes' immediate-context work runs under one critical-section hold, serialized with the
-    // engine's render work.
-    unsafe {
-        EnterCriticalSection(context.m_Mutex);
-        blit.set_params(&context.m_Context, linearize, brightness);
-        for (eye, src) in eye_textures.iter().enumerate() {
-            if blitted[eye] {
-                continue;
-            }
-            let (Some(image), Some(src)) = (frame.eye_image(eye), src.as_ref()) else {
-                continue;
-            };
-            if let Err(e) = blit.blit_eye(device, &context.m_Context, &image, src) {
-                tracing::warn!(target: "vr", eye, "eye blit draw failed: {e:#}");
+    // engine's render work. The blit pipeline's lock is taken inside it, as the draw task's direct
+    // route takes it inside the same section (the section, then `DIRECT`, then `VR_BLIT`), so the
+    // two never take them in opposite orders.
+    // SAFETY: the engine's immediate context and its mutex are live for the session.
+    unsafe { EnterCriticalSection(context.m_Mutex) };
+    let blitted_ok = (|| -> anyhow::Result<()> {
+        let mut guard = VR_BLIT.lock();
+        if guard.is_none() {
+            *guard = Some(VrBlit::new(device)?);
+        }
+        let blit = guard.as_mut().expect("the blit pipeline was just ensured");
+        // SAFETY: the context mutex is held; the images stay acquired until the release below.
+        unsafe {
+            blit.set_params(&context.m_Context, linearize, brightness);
+            for (eye, src) in eye_textures.iter().enumerate() {
+                if blitted[eye] {
+                    continue;
+                }
+                let (Some(image), Some(src)) = (frame.eye_image(eye), src.as_ref()) else {
+                    continue;
+                };
+                if let Err(e) = blit.blit_eye(device, &context.m_Context, &image, src) {
+                    tracing::warn!(target: "vr", eye, "eye blit draw failed: {e:#}");
+                }
             }
         }
-        LeaveCriticalSection(context.m_Mutex);
-    }
-    drop(guard);
+        Ok(())
+    })();
+    // SAFETY: entered above on this thread.
+    unsafe { LeaveCriticalSection(context.m_Mutex) };
+    blitted_ok?;
 
     frame
         .release()

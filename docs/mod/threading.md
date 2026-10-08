@@ -39,6 +39,7 @@ The egui state lock is the other long one. The game thread holds it across the d
 4. Take the runtime lock outermost. A thread holding any other lock, the config lock included, must not take it: the holders take those locks under it.
 5. Keep published slots as leaves: hold them briefly, take no other lock under them, and do not wait while holding them.
 6. Do not wait on the draw task while holding the egui state lock. The shutdown path tears the runtime down from the lifecycle cleanups, which run under that lock, so it first calls `vr::wait_for_frame_tail`: with the tail submitted, the draw task it was waiting on is done and no longer needs the egui state lock.
+7. Take the eye blit's locks inside the engine's immediate-context critical section, in one order: the section, then the direct-blit slot (`DIRECT`), then the blit pipeline (`VR_BLIT`), all in `payload/src/vr/blit.rs`. The draw task's direct route reaches them from `PostDraw` with the section already held; the submit, on the frame tail or inline, enters the section before it takes the pipeline, and takes the direct-blit slot only on its own, before either. A holder of `VR_BLIT` outside the section (the end of the frame's view over the back buffer, the teardown) must not enter the section under it.
 
 ## Call sites
 
