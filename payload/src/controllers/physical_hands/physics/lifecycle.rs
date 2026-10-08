@@ -8,13 +8,14 @@ use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    frame::Hand,
+    frame::{Hand, Pose},
     physical_hands::physics::{
         BodyPhase, HandBodyStatus, HoldTarget,
         body::{BodyError, BodySpec, HandBody},
         contact,
         drive::{DriveTuning, Goal, drive},
         joint::Joint,
+        render::RenderOffset,
     },
 };
 
@@ -22,10 +23,22 @@ use crate::controllers::{
 pub(super) struct ActRequest<'a> {
     pub hand: Hand,
     pub spec: BodySpec,
+    /// Where the body is driven: the controller's palm at the end of the step, or a grip's pin.
     pub goal: Goal,
+    /// Where the controller's palm will be at the end of the step, which the hand is drawn
+    /// against.
+    pub palm: Goal,
+    pub render: &'a RenderTuning,
     pub break_distance_m: f32,
     pub tuning: &'a DriveTuning,
     pub step_s: f32,
+}
+
+/// How a hand is drawn at its body.
+pub(super) struct RenderTuning {
+    pub max_shift_m: f32,
+    pub deadband_rad: f32,
+    pub max_turn_rad: f32,
 }
 
 /// What driving one hand did.
@@ -33,6 +46,9 @@ pub(super) struct Acted {
     pub status: HandBodyStatus,
     /// How far the body was short of where it was last sent, world space.
     pub lag: Vec3,
+    /// The offset from the controller's palm, as the last step was sent it, to where the body is
+    /// now: what draws the hand at its body.
+    pub render: RenderOffset,
     pub created: bool,
     pub destroyed: bool,
     /// Whether the body's joint ended against the grip's wish.
@@ -48,6 +64,8 @@ pub(super) struct Hands {
     added: [bool; 2],
     /// Where each body was last sent, world space.
     goals: [Option<Goal>; 2],
+    /// Where each controller's palm was predicted for the end of the last step, world space.
+    palms: [Option<Goal>; 2],
     /// When each hand stopped acting.
     pub missing_since: [Option<Instant>; 2],
     resets: [u64; 2],
@@ -60,6 +78,7 @@ pub(super) static HANDS: Mutex<Hands> = Mutex::new(Hands {
     joints: [None, None],
     added: [false; 2],
     goals: [None; 2],
+    palms: [None; 2],
     missing_since: [None; 2],
     resets: [0; 2],
     steps: 0,
@@ -82,6 +101,8 @@ impl Hands {
             hand,
             spec,
             goal,
+            palm,
+            render,
             break_distance_m,
             tuning,
             step_s,
@@ -127,6 +148,7 @@ impl Hands {
             unsafe { body.add() };
             self.added[i] = true;
             self.goals[i] = None;
+            self.palms[i] = None;
             unsafe { body.place(goal.position, goal.orientation) }?;
             tracing::info!(
                 hand = hand.label(),
@@ -150,11 +172,28 @@ impl Hands {
                 }
                 self.added[i] = false;
                 self.goals[i] = None;
+                self.palms[i] = None;
                 return Err(BodyError::Lost);
             }
             Err(e) => return Err(e),
         };
         let lag = self.goals[i].map_or(Vec3::ZERO, |sent| sent.position - motion.position);
+        let drawn = self.palms[i].map_or(RenderOffset::NONE, |sent| {
+            RenderOffset::between(
+                Pose {
+                    position: sent.position,
+                    orientation: sent.orientation,
+                },
+                Pose {
+                    position: motion.position,
+                    orientation: motion.orientation,
+                },
+                render.max_shift_m,
+                render.deadband_rad,
+                render.max_turn_rad,
+            )
+        });
+        self.palms[i] = Some(palm);
         let mut status = HandBodyStatus {
             phase: BodyPhase::Acting,
             body_id: Some(body.body_id()),
@@ -188,6 +227,7 @@ impl Hands {
             return Ok(Acted {
                 status,
                 lag: Vec3::ZERO,
+                render: RenderOffset::NONE,
                 created,
                 destroyed,
                 joint_lost,
@@ -202,6 +242,7 @@ impl Hands {
         Ok(Acted {
             status,
             lag,
+            render: drawn,
             created,
             destroyed,
             joint_lost: false,
@@ -275,6 +316,7 @@ impl Hands {
             let _ = unsafe { body.set_velocities(Vec3::ZERO, Vec3::ZERO) };
         }
         self.goals[i] = None;
+        self.palms[i] = None;
     }
 
     /// Take a hand's body out of the simulation.
@@ -283,6 +325,7 @@ impl Hands {
         // SAFETY: forwarded from the caller.
         unsafe { self.unjoin(hand, reason) };
         self.goals[i] = None;
+        self.palms[i] = None;
         let Some(body) = self.bodies[i].as_mut() else {
             return;
         };
@@ -306,6 +349,7 @@ impl Hands {
         unsafe { self.unjoin(hand, reason) };
         self.added[i] = false;
         self.goals[i] = None;
+        self.palms[i] = None;
         self.missing_since[i] = None;
         let Some(body) = self.bodies[i].take() else {
             return false;

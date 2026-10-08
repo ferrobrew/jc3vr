@@ -12,6 +12,7 @@
 //!   characters with, as worked out in [`hit`];
 //! - [`drive`]: the drive, pure: the velocities that carry a body to its hand within the hand's
 //!   strength, and the push a held-back hand gives the player;
+//! - [`render`]: the offset that draws a hand where its body is, pure;
 //! - [`joint`]: the fixed constraint that joins a hand body to an object its grip holds, with
 //!   `joint_grabs`;
 //! - [`config`]: the settings.
@@ -51,6 +52,7 @@ pub mod drive;
 pub mod hit;
 mod joint;
 mod lifecycle;
+mod render;
 
 use std::{
     num::NonZeroUsize,
@@ -79,7 +81,8 @@ use crate::{
                 body::{BodySpec, Capsule, HandBody, player_system_group},
                 drive::{DriveTuning, Goal, PushTuning, lag_push, smooth_push},
                 joint::Joint,
-                lifecycle::{ActRequest, HANDS},
+                lifecycle::{ActRequest, HANDS, RenderTuning},
+                render::RenderOffset,
             },
             pulse,
         },
@@ -321,9 +324,9 @@ pub(crate) fn observe(dt: f32) {
         for hand in Hand::BOTH {
             let i = hand.index();
             shared.cockpit_offsets[i] = if show && targets[i].is_some() {
-                body_rotation.inverse() * offsets[i] / scale
+                offsets[i].to_cockpit(body_rotation, scale)
             } else {
-                Vec3::ZERO
+                RenderOffset::NONE
             };
             if stepped && targets[i].is_some() {
                 loads[i] = shared.loads[i];
@@ -346,9 +349,10 @@ pub(crate) fn observe(dt: f32) {
     }
 }
 
-/// Draw each driven hand where its body is, in the cockpit frame. Called by
+/// Draw each driven hand where its body is, in the cockpit frame, turning it about the palm's
+/// centre at `palm_offset` in the wrist frame. Called by
 /// [`crate::controllers::physical_hands::apply`].
-pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
+pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
     let offsets = {
         let shared = SHARED.lock();
         if !shared.fresh(Instant::now()) {
@@ -358,11 +362,9 @@ pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
     };
     for (hand, offset) in cockpit.iter_mut().zip(offsets) {
         if let Some(hand) = hand.as_mut()
-            && offset != Vec3::ZERO
+            && !offset.is_none()
         {
-            hand.wrist.position += offset;
-            hand.grip.position += offset;
-            hand.aim.position += offset;
+            offset.apply(hand, palm_offset);
         }
     }
 }
@@ -408,7 +410,7 @@ pub(super) unsafe fn step() {
         shared.status.hands = [HandBodyStatus::default(); 2];
         shared.status.push = Vec2::ZERO;
         shared.push = Vec2::ZERO;
-        shared.world_offsets = [Vec3::ZERO; 2];
+        shared.world_offsets = [RenderOffset::NONE; 2];
         shared.loads = [0.0; 2];
         shared.body_poses = [None; 2];
         return;
@@ -457,6 +459,11 @@ pub(super) unsafe fn step() {
         max_speed_mps: b.max_speed_mps,
         max_angular_speed_rps: b.max_angular_speed_rps,
     };
+    let render = RenderTuning {
+        max_shift_m: b.break_distance_m * scale,
+        deadband_rad: RENDER_TURN_DEADBAND_RAD,
+        max_turn_rad: RENDER_MAX_TURN_RAD,
+    };
     let push_tuning = PushTuning {
         hand_mass_kg: b.mass_kg,
         max_force_n: b.force_n(),
@@ -481,7 +488,7 @@ pub(super) unsafe fn step() {
     let climbing = grips.iter().any(Option::is_some);
 
     let mut statuses = [HandBodyStatus::default(); 2];
-    let mut offsets = [Vec3::ZERO; 2];
+    let mut offsets = [RenderOffset::NONE; 2];
     let mut loads = [0.0; 2];
     let mut created = 0;
     let mut destroyed = 0;
@@ -502,15 +509,18 @@ pub(super) unsafe fn step() {
                     system_group: group,
                     contact_events: b.hits.enabled,
                 };
-                let goal = grips[i].unwrap_or(Goal {
+                let palm = Goal {
                     position: target.position + target.linear * lead_s,
                     orientation: Quat::from_scaled_axis(target.angular * lead_s)
                         * target.orientation,
-                });
+                };
+                let goal = grips[i].unwrap_or(palm);
                 let request = ActRequest {
                     hand,
                     spec,
                     goal,
+                    palm,
+                    render: &render,
                     break_distance_m: b.break_distance_m * scale,
                     tuning: &tuning,
                     step_s,
@@ -524,7 +534,7 @@ pub(super) unsafe fn step() {
                         joint_lost[i] |= acted.joint_lost || unsafe { hands.join(hand, holds[i]) };
                         statuses[i] = acted.status;
                         statuses[i].joint = hands.joints[i].as_ref().map(Joint::id);
-                        offsets[i] = (-acted.lag).clamp_length_max(b.break_distance_m * scale);
+                        offsets[i] = acted.render;
                         loads[i] = press_load(acted.lag, b, scale);
                         if b.push {
                             hand_push += lag_push(acted.lag, &push_tuning, step_s);
@@ -627,6 +637,13 @@ const MAX_LEAD_S: f32 = 0.1;
 /// How long the palms' velocities are smoothed over, seconds.
 const VELOCITY_SMOOTHING_S: f32 = 0.03;
 
+/// The turn between a body and its controller's palm that is not drawn, radians: a free hand keeps
+/// the controller's own rotation.
+const RENDER_TURN_DEADBAND_RAD: f32 = 0.05;
+
+/// The largest turn a hand is drawn at against its controller, radians.
+const RENDER_MAX_TURN_RAD: f32 = 1.5;
+
 /// The least share of a hand's strength that pulses it.
 const MIN_PRESSURE_LOAD: f32 = 0.1;
 
@@ -656,10 +673,10 @@ struct Shared {
     world_scale: f32,
     trackers: [(VelocityTracker, AngularTracker); 2],
     epoch: u64,
-    /// Each body against where it was last sent, world space.
-    world_offsets: [Vec3; 2],
+    /// Each body against its controller's palm, world space.
+    world_offsets: [RenderOffset; 2],
     /// The same in the cockpit frame, for drawing the hands.
-    cockpit_offsets: [Vec3; 2],
+    cockpit_offsets: [RenderOffset; 2],
     /// The share of each hand's strength the last step used.
     loads: [f32; 2],
     /// Each acting body's pose before the last step, game space.
@@ -693,8 +710,8 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     world_scale: 1.0,
     trackers: TRACKERS_AT_REST,
     epoch: 0,
-    world_offsets: [Vec3::ZERO; 2],
-    cockpit_offsets: [Vec3::ZERO; 2],
+    world_offsets: [RenderOffset::NONE; 2],
+    cockpit_offsets: [RenderOffset::NONE; 2],
     loads: [0.0; 2],
     body_poses: [None; 2],
     push: Vec2::ZERO,

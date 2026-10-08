@@ -191,10 +191,11 @@ pub(crate) fn input_tick() {
 /// Hold each pressed hand at the surface it presses into, in the cockpit frame. Called by
 /// [`crate::controllers::hands::active_hands`].
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
-    physics::apply(cockpit);
-    let enabled = Config::lock_query(|c| {
-        c.controllers.physical_hands.enabled && c.controllers.physical_hands.clamp_hand
+    let (enabled, palm_offset) = Config::lock_query(|c| {
+        let p = &c.controllers.physical_hands;
+        (p.enabled && p.clamp_hand, p.palm_offset_m)
     });
+    physics::apply(cockpit, palm_offset);
     if !enabled {
         return;
     }

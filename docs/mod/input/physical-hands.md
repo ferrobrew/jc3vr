@@ -24,7 +24,7 @@ The default strength is "Rico strength": a ten-kilogram hand pulling at up to fi
 
 ### Drawing the hand at its body
 
-Each step also measures where the last step left the body against the goal it was sent to. With `bodies.render_at_body`, the hand's cockpit poses are moved by that offset ([`apply`](../../../payload/src/controllers/physical_hands/mod.rs)), so the IK targets and the late update put the rendered hand where its body is: on the wall, not through it. The offset is updated at the simulation rate and added to the latest controller pose at the render rate, so a free hand, whose offset is near zero, keeps the controller's latency.
+Each step also measures where the last step left the body against where the controller's palm was predicted for the end of that step: the controller's, not the goal the body was sent to, so a hand whose body a grip pins to a wall is drawn on the wall. The offset is a shift of the palm's centre and a turn about it, so a wrist twisted into a wall is drawn turned as its body is rather than through the wall; a turn within a few hundredths of a radian is not drawn, so a free hand keeps the controller's rotation. With `bodies.render_at_body`, the hand's cockpit poses are moved by that offset ([`apply`](../../../payload/src/controllers/physical_hands/mod.rs)), so the IK targets and the late update put the rendered hand where its body is: on the wall, not through it. The offset is updated at the simulation rate and added to the latest controller pose at the render rate, so a free hand, whose offset is near zero, keeps the controller's latency.
 
 ### Pushing the player
 
