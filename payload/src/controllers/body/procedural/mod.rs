@@ -14,6 +14,8 @@
 //!   and writes.
 //! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
 //! - [`ground`]: the scene rays that find the ground under the footholds.
+//! - [`state`]: what the character is doing, for the hand-over table, and whether the animation
+//!   moves the body.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
 //!   keep.
 //! - [`config`]: the mode and the tuning.
@@ -32,6 +34,7 @@ pub mod rig;
 pub mod signals;
 pub mod skeleton;
 pub mod solver;
+pub mod state;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -42,7 +45,6 @@ use glam::{Mat4, Vec2, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::{AnimationController, Character},
-    state::StateBitFlag,
 };
 use parking_lot::Mutex;
 
@@ -52,12 +54,11 @@ use crate::{
         body::{
             alignment::torso_turn,
             procedural::{
-                authority::{Case, CharacterState, RegionBlend, Weights, classify},
+                authority::{Case, RegionBlend, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
                 ground::{GroundCaster, GroundLog, GroundTally},
                 joints::{LiveRig, RigCache},
                 rig::{Rig, RigBone, RigError},
-                signals::{in_hit_reaction, in_ledge_climb},
                 solver::{
                     DropFollower, SolveInput,
                     air::{AirFollower, AirTuning, DipTuning, LandingDip, air_feet, mix_feet},
@@ -69,15 +70,13 @@ use crate::{
                     pose::RigPose,
                     reach_drop, solve,
                 },
+                state::StateTracker,
             },
         },
         hands::ik::deferred_wrist_targets,
         locomotion::{LocomotionStatus, status as locomotion_status},
-        mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
-        physical_hands::climb,
     },
-    headpose::{Source, body_relative_rotation, query, source},
-    hooks::in_gameplay,
+    headpose::{body_relative_rotation, query},
 };
 
 /// What the procedural body did at its last gate.
@@ -240,7 +239,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
         ProceduralMode::Full => {
             let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
             let case = classify(&unsafe {
-                state.character_state(character, &locomotion, now, dt, jump_grace_s, &config)
+                state
+                    .tracker
+                    .read(character, &locomotion, now, dt, jump_grace_s, &config)
             });
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
@@ -382,10 +383,6 @@ const MAX_STEP_S: f32 = 0.1;
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
-/// How long the proxy must be off its support, with no jump and no fall detected, before the
-/// body counts as in the air, seconds: a stair or a bump lifts it for a tick without a fall.
-const IN_AIR_DEBOUNCE_S: f32 = 0.06;
-
 /// How often the walk is logged while walking.
 const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -432,13 +429,8 @@ struct State {
     rig: RigCache,
     /// The regions' weights against the animation.
     blend: RegionBlend,
-    /// When Rico was last on the ground with the movement task running, for the jump's grace.
-    grounded_at: Option<Instant>,
-    /// When the movement task had last run as of the previous gate, so this gate can tell whether
-    /// it ran since.
-    task_seen_at: Option<Instant>,
-    /// How long the proxy has been off its support without a pause, seconds.
-    in_air_s: f32,
+    /// What the hand-over table reads from the character, with the history it keeps.
+    tracker: StateTracker,
     /// Whether the hand-over case has been logged once.
     case_logged: bool,
     /// The planted feet, world space.
@@ -668,99 +660,6 @@ impl State {
         }
     }
 
-    /// What the character is doing, for the hand-over table, read at the gate. The predicates
-    /// called here walk the character's own rule system and interaction graph, which the engine
-    /// itself reads from this pass (`Character::IsInStuntPosition` and
-    /// `Character::IsGrappleHanging` among them).
-    ///
-    /// # Safety
-    ///
-    /// As [`at_solve_gate`].
-    unsafe fn character_state(
-        &mut self,
-        character: &Character,
-        locomotion: &LocomotionStatus,
-        now: Instant,
-        dt: f32,
-        jump_grace_s: f32,
-        config: &ProceduralBodyConfig,
-    ) -> CharacterState {
-        let detection = current_mode();
-        let bits = unsafe { character.m_ControlParameters.as_ref() }.map(|control| {
-            let vm = &control.m_UserVM;
-            [
-                vm.m_CurrentStateBitFlags0,
-                vm.m_CurrentStateBitFlags1,
-                vm.m_CurrentStateBitFlags2,
-            ]
-        });
-        let has = |flag: StateBitFlag| {
-            let bit = flag as u32 as usize;
-            bits.and_then(|words| words.get(bit / 64).copied())
-                .is_some_and(|word| (word >> (bit % 64)) & 1 != 0)
-        };
-        let motion = character.m_CurrentMotionState;
-        // The movement task runs in the state machines' pass, before this one, on every tick Rico
-        // is on foot on the ground: it ran this tick when its stamp moved since the last gate.
-        let movement_task = locomotion.at.is_some() && locomotion.at != self.task_seen_at;
-        self.task_seen_at = locomotion.at;
-        // The proxy's own support, read where the engine reads it in this pass, catches walking
-        // off a ledge before the mode detection sees the fall.
-        let off_support = unsafe { character.IsInAir() };
-        self.in_air_s = if off_support { self.in_air_s + dt } else { 0.0 };
-        let falling = detection.mode == Mode::Airborne(AirborneVariant::Falling);
-        let airborne = has(StateBitFlag::SB_IS_JUMPING)
-            || falling
-            || (off_support && self.in_air_s >= IN_AIR_DEBOUNCE_S);
-        let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
-        if movement_task && on_ground && !airborne {
-            self.grounded_at = Some(now);
-        }
-        let in_grace = self
-            .grounded_at
-            .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= jump_grace_s);
-        CharacterState {
-            in_headset: source() == Source::Vr,
-            in_gameplay: in_gameplay(),
-            sequence: character.m_InSequence,
-            dead: unsafe { character.GetHealth() } <= 0 || has(StateBitFlag::SB_IS_IN_DEAD_STATE),
-            ragdoll: motion == Character::MOTION_STATE_RAGDOLL || has(StateBitFlag::SB_IN_RAGDOLL),
-            getting_up: has(StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL),
-            vehicle: matches!(detection.mode, Mode::Vehicle(_))
-                || has(StateBitFlag::SB_INSIDE_VEHICLE)
-                || unsafe { character.IsInStuntPosition() },
-            traversal: detection.traversal.is_some()
-                || unsafe { character.IsStuntTraversing() }
-                || unsafe { character.IsGrappleHanging() }
-                || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
-            ledge_climb: in_ledge_climb(now),
-            hit_reaction: in_hit_reaction(now, config.hit_reaction_hold_s),
-            hand_climb: climb::climbing(),
-            swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
-                || motion == Character::MOTION_STATE_SWIMMING
-                || has(StateBitFlag::SB_IS_SWIMMING),
-            flight: matches!(
-                detection.mode,
-                Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
-            ) || (airborne && !in_grace),
-            // In the air wins over the movement task's stamp: the task can run on the tick a jump
-            // or a step off a ledge leaves the ground.
-            jump: airborne && in_grace,
-            authored_motion: [
-                StateBitFlag::SB_IS_LOCO_ONE_OFF,
-                StateBitFlag::SB_IS_LANDING_HARD,
-                StateBitFlag::SB_IN_LOOP_CONTEXT_ACTION,
-                StateBitFlag::SB_IN_FULLBODY_PICKUP,
-                StateBitFlag::SB_IN_COVER_ENTRY,
-                StateBitFlag::SB_IN_COVER,
-                StateBitFlag::SB_IN_COVER_EXIT,
-            ]
-            .into_iter()
-            .any(has),
-            movement_task,
-        }
-    }
-
     /// Log a change of the hand-over table's case, with the weights it leaves.
     fn log_case(&mut self, case: Case, weights: &Weights, config: &ProceduralBodyConfig) {
         if self.status.case == case && self.case_logged {
@@ -809,9 +708,7 @@ impl State {
 static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),
     blend: RegionBlend::new(),
-    grounded_at: None,
-    task_seen_at: None,
-    in_air_s: 0.0,
+    tracker: StateTracker::new(),
     case_logged: false,
     feet: Feet::new(),
     stance: NeutralStance::new(),

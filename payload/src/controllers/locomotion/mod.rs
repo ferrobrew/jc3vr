@@ -37,7 +37,10 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::locomotion::{accel::Rates, speeds::SpeedLog},
+    controllers::{
+        body::procedural::state::animation_moves_body,
+        locomotion::{accel::Rates, speeds::SpeedLog},
+    },
     headpose,
 };
 
@@ -109,7 +112,10 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     state.status.game_speed = game_speed;
     state.status.root_speed = root_speed;
     state.status.task_velocity = task_velocity;
-    if !config.enabled {
+    // While the animation carries the body (an authored one-off, a hit reaction), its root motion
+    // is the motion, and the task's velocity passes through; the integrator picks up from the
+    // body's real velocity when the stick drives it again.
+    if !config.enabled || unsafe { animation_moves_body(character, now) } {
         state.status.target = Vec2::ZERO;
         state.status.velocity = None;
         return;
