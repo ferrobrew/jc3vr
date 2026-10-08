@@ -13,7 +13,7 @@ use glam::{Quat, Vec3};
 
 use crate::controllers::{
     frame::Pose,
-    physical_hands::{config::PickupConfig, rigid::BodyPose},
+    physical_hands::{config::PickupConfig, doors::DoorTarget, rigid::BodyPose},
 };
 
 /// What a reachable object is to a hand.
@@ -23,6 +23,9 @@ pub enum TargetKind {
     Prop { mass_kg: f32 },
     /// A weapon lying in the world, collected through the game's own pickup.
     Weapon,
+    /// A vehicle's door, hood, trunk, or hatch: an open one held as a loose object on its hinge, a
+    /// closed one gripped at its handle area until the latch gives.
+    Door(DoorTarget),
 }
 
 /// An object within a hand's reach.

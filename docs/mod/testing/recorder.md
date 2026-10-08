@@ -131,6 +131,8 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `hand_bodies.left_in_world`, `.right_in_world`, `.error` | flag | A hand's body is acting in the world; the bodies hold an error. |
 | `climb.climbing`, `.mantling`, `.error` | flag | A hand grips the world; the mantle runs; the climbing holds an error. |
 | `climb.grips`, `.releases`, `.mantles`, `.drops` | counter | The climbing's counts. |
+| `doors.grips`, `.unlatches` | counter | Grips taken on latched vehicle doors, and the latches the hands undid ([vehicle-doors.md](../input/vehicle-doors.md)). |
+| `doors.on_latch` | flag | A hand grips a latched vehicle door. |
 | `procedural.rig_error`, `.on_foot`, `.stance_measured` | flag | The procedural body's rig failed; its case is on foot; the stance is measured. |
 | `procedural.pass_through_error_m`, `.pass_through_error_deg` | measure | The pass-through's largest read-back error. |
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |

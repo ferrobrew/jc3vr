@@ -15,7 +15,7 @@ use crate::{
         menu::status::{self as status_page, Health},
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
-            climb,
+            self, climb,
             physics::{self, BodyPhase},
         },
         scheme,
@@ -119,6 +119,9 @@ signals! {
     ClimbMantles => "climb.mantles", Counter, "Mantles completed.";
     ClimbDrops => "climb.drops", Counter, "Grips ended against the player's wish.";
     ClimbError => "climb.error", Flag, "The climbing holds an error.";
+    DoorGrips => "doors.grips", Counter, "Grips taken on a latched vehicle door.";
+    DoorUnlatches => "doors.unlatches", Counter, "Vehicle door latches a hand undid.";
+    DoorOnLatch => "doors.on_latch", Flag, "A hand grips a latched vehicle door.";
     ProceduralRigError => "procedural.rig_error", Flag, "The procedural body could not rig the skeleton.";
     PassThroughErrorM => "procedural.pass_through_error_m", Measure, "The pass-through's largest read-back error, metres.";
     PassThroughErrorDeg => "procedural.pass_through_error_deg", Measure, "The pass-through's largest read-back error, degrees.";
@@ -192,6 +195,9 @@ impl Signal {
             Signal::ClimbMantles => count(climb::status().mantles),
             Signal::ClimbDrops => count(climb::status().drops),
             Signal::ClimbError => flag(climb::status().last_error.is_some()),
+            Signal::DoorGrips => count(physical_hands::status().pickup.door_grips),
+            Signal::DoorUnlatches => count(physical_hands::status().pickup.unlatches),
+            Signal::DoorOnLatch => flag(physical_hands::status().hands.iter().any(|h| h.latched)),
             Signal::ProceduralRigError => flag(procedural::published_status().rig_error.is_some()),
             Signal::PassThroughErrorM => procedural::published_status()
                 .round_trip

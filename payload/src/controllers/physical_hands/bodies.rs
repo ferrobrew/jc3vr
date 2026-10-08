@@ -189,6 +189,39 @@ pub(super) unsafe fn shove(
     Ok(())
 }
 
+/// The object that owns the body `body`, whatever its motion: its engine instance's owner, as a
+/// physics query reports it. `None` for a freed body or one without an owner.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn owner_of(body: u32) -> Option<NonZeroUsize> {
+    let world = unsafe { World::get() }?;
+    let world = world.world();
+    if body == PfxCharacterInstance::INVALID_BODY_ID
+        || body > world.m_peakBodyIndex
+        || world.m_bodies.is_null()
+    {
+        return None;
+    }
+    let slot = unsafe { &*world.m_bodies.add(body as usize) };
+    if slot.m_motionId == hknpBody::INVALID_MOTION_ID {
+        return None;
+    }
+    unsafe { body_owner(world, body) }
+}
+
+/// Whether the physics game object at `object` is of the run-time type `type_id`.
+///
+/// # Safety
+///
+/// `object` must be a live physics game object.
+pub(super) unsafe fn is_type(object: NonZeroUsize, type_id: *const u32) -> bool {
+    let game_object =
+        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    unsafe { (*game_object).IsType(type_id) }
+}
+
 /// The motion of the dynamic body `body`, checked to belong to `owner`.
 unsafe fn owned_motion(
     world: &hknpWorld,

@@ -1,6 +1,6 @@
 # Vehicle parts
 
-A vehicle is built from parts: the body, the doors, the wheels, the mirrors, the steering wheel, and so on, each a separately modelled piece that can deform, loosen, and break off. This covers where the parts are described, how the live parts are reached and drawn, which vehicles have a steering wheel part, and the hinged parts that the engine turns by a vehicle value.
+A vehicle is built from parts: the body, the doors, the wheels, the mirrors, the steering wheel, and so on, each a separately modelled piece that can deform, loosen, and break off. This covers where the parts are described, how the live parts are reached and drawn, which vehicles have a steering wheel part, and the hinged parts that the engine turns by a vehicle value. The doors, which loosen onto their hinges and latch shut, are in [vehicle-doors.md](vehicle-doors.md).
 
 ## The parts resource
 

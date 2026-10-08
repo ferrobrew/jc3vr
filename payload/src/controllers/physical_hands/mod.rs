@@ -11,6 +11,7 @@
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
 //! - [`climb`]: climbing by gripping the static world with a hand its body drives;
+//! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
 //! - [`world`]: the Havok world, lent out for one call at a time;
 //! - [`config`]: the settings.
 //!
@@ -43,6 +44,7 @@ mod bodies;
 pub mod climb;
 pub mod config;
 pub mod contact;
+pub mod doors;
 mod draw;
 mod engine;
 pub mod grasp;
@@ -144,6 +146,8 @@ pub struct HandStatus {
     pub held: Option<HeldReport>,
     /// The palm's shove of the object it presses into.
     pub shove: Option<ShoveReport>,
+    /// Whether the hand grips a latched door.
+    pub latched: bool,
 }
 
 /// One palm's shove of a loose object on a tick, for the readout and the overlay.
@@ -457,10 +461,11 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 unsafe {
                     pickup::reach(
                         &body_palm,
-                        config.pickup.reach_m * active.world_scale,
+                        active.world_scale,
                         None,
                         standing_on,
                         &config.pickup,
+                        &config.doors,
                         &mut |from, to| cast(from, to, &reach_options),
                     )
                 }
@@ -549,10 +554,11 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             unsafe {
                 pickup::reach(
                     &palm,
-                    config.pickup.reach_m * active.world_scale,
+                    active.world_scale,
                     contact.press.map(|(hit, _)| hit),
                     standing_on,
                     &config.pickup,
+                    &config.doors,
                     &mut |from, to| cast(from, to, &reach_options),
                 )
             }
@@ -579,17 +585,38 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             reach,
             held: None,
             shove,
+            latched: false,
         };
     }
 
     let mut joined = [None; 2];
+    let mut pins = [None; 2];
     if pickup_on {
-        let joints = joint_inputs(&config);
+        let inputs = pickup::TickInputs {
+            palms,
+            space,
+            joints: joint_inputs(&config),
+            dt,
+            unlatch_pull_m: config.doors.unlatch_pull_m * active.world_scale,
+        };
         // SAFETY: the simulation phase outside the physics step.
-        let outcome =
-            unsafe { pickup::tick(&mut state.pickup, palms, space, joints, dt, &config.pickup) };
+        let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &config.pickup) };
         joined = outcome.joints;
+        pins = outcome.pins;
         state.record_pickup(outcome, &mut hand_status, &config);
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            hand_status[i].latched = state.pickup.latched(hand);
+            // A hand on a latched door stays at its grab point; a driven hand's body is held
+            // there, and a probed one is drawn there.
+            if let (Some(pin), Some(palm)) = (pins[i], palms[i])
+                && !physics::drives(hand)
+            {
+                let offset =
+                    (pin - palm.pose.position).clamp_length_max(config.pickup.break_distance_m);
+                clamp[i] = (body_rotation.inverse() * offset) / active.world_scale.max(1e-3);
+            }
+        }
         for hand in Hand::BOTH {
             let i = hand.index();
             let Some(held) = hand_status[i].held.filter(|h| !h.joined) else {
@@ -621,6 +648,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     state.clamp = clamp;
     state.at = Some(now);
     physics::publish_holds(joined);
+    physics::publish_pins(pins);
     let snapshot = state.status.hands;
     drop(state);
     climb::observe(
@@ -722,6 +750,22 @@ impl State {
                 );
             }
         }
+        for hand in Hand::BOTH {
+            if outcome.unlatched[hand.index()] {
+                status.unlatches += 1;
+                pulse(
+                    hand,
+                    config.doors.unlatch_pulse,
+                    1.0,
+                    config,
+                    PulseSource::Pickup,
+                );
+            }
+        }
+        status.door_grips += outcome.door_grips;
+        if outcome.door.is_some() {
+            status.last_door = outcome.door;
+        }
         if let Some(speed) = outcome.throw {
             status.last_throw_mps = Some(speed);
         }
@@ -754,6 +798,7 @@ static STATE: Mutex<State> = Mutex::new(State {
             reach: None,
             held: None,
             shove: None,
+            latched: false,
         }; 2],
         push: Vec2::ZERO,
         casts: 0,
@@ -767,6 +812,9 @@ static STATE: Mutex<State> = Mutex::new(State {
             releases: 0,
             last_throw_mps: None,
             lost: 0,
+            door_grips: 0,
+            unlatches: 0,
+            last_door: None,
             last_error: None,
         },
     },
@@ -790,6 +838,8 @@ fn stand_down(idle: Idle) {
     state.reset_probes();
     state.pickup.drop_all();
     physics::publish_holds([None; 2]);
+    physics::publish_pins([None; 2]);
+
     state.last_sample = [None; 2];
     state.clamp = [Vec3::ZERO; 2];
     state.at = None;

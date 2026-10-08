@@ -11,6 +11,7 @@
 mod controllers;
 mod explosives;
 mod grapple;
+mod hands;
 mod system;
 mod weapons;
 
@@ -227,6 +228,10 @@ const SECTIONS: &[Section] = &[
             row!("BLOWS DEALT", controllers::blows),
             row!("GRAB JOINTS", controllers::joints),
         ],
+    },
+    Section {
+        title: "HANDS IN THE WORLD",
+        rows: &[row!("VEHICLE DOORS", hands::doors)],
     },
     Section {
         title: "GRAPPLE",

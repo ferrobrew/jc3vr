@@ -172,6 +172,11 @@ fn settings_page() -> Page {
             .physical_hands
             .climb
             .enabled))
+        .item(config_toggle!("OPEN DOORS BY HAND", |c| c
+            .controllers
+            .physical_hands
+            .doors
+            .enabled))
         .header("GRAPPLE")
         .item(config_toggle!("YANK TO ZIP", |c| c
             .controllers

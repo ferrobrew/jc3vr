@@ -30,7 +30,9 @@
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
-use jc3gi::{equipment::weapon::WeaponBase, input::input_action_map::Action};
+use jc3gi::{
+    equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
+};
 
 use crate::{
     config::Config,
@@ -44,6 +46,7 @@ use crate::{
             STALE_AFTER, STATE, bodies,
             config::PickupConfig,
             contact::{Surface, SurfaceHit},
+            doors::{self, DoorsConfig, Latch, LatchStep},
             grasp::{self, Grip, PalmMotion, Reach, TargetKind},
             hold::{self, HandHold, HoldTuning, PlayerKeepOut},
             palm::PalmBox,
@@ -111,6 +114,12 @@ pub struct PickupStatus {
     pub last_throw_mps: Option<f32>,
     /// Holds lost: the body was freed, changed hands, or was torn away.
     pub lost: u64,
+    /// Grips taken on a latched door.
+    pub door_grips: u64,
+    /// Latches a hand undid.
+    pub unlatches: u64,
+    /// The slot of the last door a hand took.
+    pub last_door: Option<DoorSlot>,
     pub last_error: Option<String>,
 }
 
@@ -163,7 +172,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 state.status.pickup.weapons += 1;
                 pulses.push(hand);
             }
-            TargetKind::Prop { .. } => {
+            TargetKind::Prop { .. } | TargetKind::Door(_) => {
                 state.pickup.requests[i] = Some(Request::Grab(reach));
             }
         }
@@ -241,6 +250,8 @@ pub(crate) fn pause() {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PickupState {
     held: [Option<Held>; 2],
+    /// Each hand's grip on a latched door, before the latch gives.
+    latches: [Option<Latch>; 2],
     requests: [Option<Request>; 2],
     /// When the input tick last acted on the grips.
     input_at: Option<Instant>,
@@ -250,6 +261,7 @@ impl PickupState {
     pub(super) const fn new() -> Self {
         Self {
             held: [None; 2],
+            latches: [None; 2],
             requests: [None; 2],
             input_at: None,
         }
@@ -257,6 +269,11 @@ impl PickupState {
 
     pub(super) fn holding(&self, hand: Hand) -> bool {
         self.held[hand.index()].is_some()
+    }
+
+    /// Whether `hand` grips a latched door.
+    pub(super) fn latched(&self, hand: Hand) -> bool {
+        self.latches[hand.index()].is_some()
     }
 
     /// Whether `hand` carries what it holds, rather than holding it through a joint.
@@ -272,12 +289,14 @@ impl PickupState {
     /// Let go of everything without throwing, and forget the requests.
     pub(super) fn drop_all(&mut self) {
         self.held = [None; 2];
+        self.latches = [None; 2];
         self.requests = [None; 2];
     }
 }
 
 /// What a hand could take: the nearest grabbable object hit by short rays out of the palm (from the
-/// back of the hand, through the palm, out to `reach_m`), or the object the palm presses into. An
+/// back of the hand, through the palm, out to the pickup's reach at the VR world scale
+/// `world_scale`), or the object the palm presses into, or a vehicle's door ([`doors::reach`]). An
 /// object heavier than [`PickupConfig::max_mass_kg`] is not one, nor the body `standing_on` the
 /// player stands on, which a hand would lift from under the player. `cast` returns the first hit
 /// between two points.
@@ -287,14 +306,15 @@ impl PickupState {
 /// Main thread, outside the physics step.
 pub(super) unsafe fn reach(
     palm: &PalmBox,
-    reach_m: f32,
+    world_scale: f32,
     press: Option<SurfaceHit>,
     standing_on: Option<u32>,
     config: &PickupConfig,
+    door_config: &DoorsConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<Reach> {
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
-    let length = reach_m.max(0.0) + 2.0 * palm.half_extents.y;
+    let length = (config.reach_m * world_scale).max(0.0) + 2.0 * palm.half_extents.y;
     let hits = REACH_DIRECTIONS
         .iter()
         .filter_map(|&local| {
@@ -311,9 +331,25 @@ pub(super) unsafe fn reach(
             else {
                 return None;
             };
+            // A vehicle's door, open or at a closed door's handle area, before anything else: the
+            // player may stand on the vehicle whose door they open.
+            // SAFETY: forwarded from the caller; the hit was found this tick.
+            if let Some(door) = unsafe {
+                doors::reach(
+                    object,
+                    body,
+                    &hit,
+                    palm.centre,
+                    door_config.reach_m * world_scale,
+                    door_config,
+                )
+            } {
+                return Some(door);
+            }
             if standing_on == Some(body) {
                 return None;
             }
+
             // SAFETY: forwarded from the caller; the hit was found this tick.
             let kind = unsafe { bodies::classify(object, body) }?;
             if let TargetKind::Prop { mass_kg } = kind
@@ -333,21 +369,36 @@ pub(super) unsafe fn reach(
     grasp::nearest(reaches)
 }
 
-/// The pickups' simulation tick: take hold and let go as the input tick asked, and drive what the
-/// hands carry. `palms` are the acting hands' palms; a hand without one lets go. `space` is the
-/// player's body, which a carried object is kept out of.
+/// What a pickup tick works from.
+pub(super) struct TickInputs {
+    /// The acting hands' palms; a hand without one lets go.
+    pub palms: [Option<PalmMotion>; 2],
+    /// The player's body, which a carried object is kept out of.
+    pub space: Option<PlayerKeepOut>,
+    pub joints: JointInputs,
+    pub dt: f32,
+    /// How far a hand gripping a latched door pulls it before the latch gives, world metres.
+    pub unlatch_pull_m: f32,
+}
+
+/// The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
+/// latched doors, and drive what the hands carry.
 ///
 /// # Safety
 ///
 /// Main thread, outside the physics step.
 pub(super) unsafe fn tick(
     state: &mut PickupState,
-    palms: [Option<PalmMotion>; 2],
-    space: Option<PlayerKeepOut>,
-    joints: JointInputs,
-    dt: f32,
+    inputs: TickInputs,
     config: &PickupConfig,
 ) -> TickOutcome {
+    let TickInputs {
+        palms,
+        space,
+        joints,
+        dt,
+        unlatch_pull_m,
+    } = inputs;
     let mut outcome = TickOutcome::default();
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -372,6 +423,9 @@ pub(super) unsafe fn tick(
         let i = hand.index();
         match state.requests[i].take() {
             Some(Request::Release) => {
+                if state.latches[i].take().is_some() {
+                    outcome.released[i] = true;
+                }
                 if let Some(held) = state.held[i].take() {
                     let shared = state.held[hand.other().index()].is_some_and(|o| o.same(&held));
                     // A joined object leaves with the velocity the hand gave it.
@@ -385,10 +439,37 @@ pub(super) unsafe fn tick(
                     outcome.released[i] = true;
                 }
             }
-            Some(Request::Grab(reach)) => {
+            Some(Request::Grab(reach)) => 'grab: {
                 let Some(palm) = palms[i] else {
-                    continue;
+                    break 'grab;
                 };
+                if let TargetKind::Door(door) = reach.kind {
+                    outcome.door = Some(door.slot);
+                    if door.latched {
+                        // SAFETY: forwarded from the caller; the door's vehicle was reached by
+                        // this tick's casts.
+                        match unsafe { Latch::take(door, reach.point) } {
+                            Some(latch) => {
+                                tracing::info!(
+                                    hand = hand.label(),
+                                    slot = doors::slot_label(door.slot),
+                                    part = door.part_index,
+                                    "physical hands: doors: a hand gripped a latched door"
+                                );
+                                state.latches[i] = Some(latch);
+                                outcome.taken[i] = true;
+                                outcome.door_grips += 1;
+                            }
+                            None => {
+                                outcome.error = Some(
+                                    "physical hands: doors: the door's grip could not be placed"
+                                        .to_owned(),
+                                );
+                            }
+                        }
+                        break 'grab;
+                    }
+                }
                 // SAFETY: forwarded from the caller.
                 match unsafe { bodies::read(reach.body, reach.object) } {
                     Ok(body) => match body.mass_kg.filter(|&m| grasp::can_hold(m, config)) {
@@ -417,6 +498,12 @@ pub(super) unsafe fn tick(
             state.held[i] = None;
             outcome.lost += 1;
         }
+        if state.latches[i].is_some() && palms[i].is_none() {
+            state.latches[i] = None;
+            outcome.lost += 1;
+        }
+        // SAFETY: forwarded from the caller.
+        unsafe { keep_latch(state, hand, palms[i], &joints, unlatch_pull_m, &mut outcome) };
     }
 
     // Drive each carried body once, from every hand that carries it; a joined hold is only
@@ -541,6 +628,14 @@ pub(super) struct TickOutcome {
     pub error: Option<String>,
     /// What each hand holds through a joint, for the hand bodies to join.
     pub joints: [Option<HoldTarget>; 2],
+    /// Where each hand gripping a latched door is held, world space.
+    pub pins: [Option<Vec3>; 2],
+    /// The latches the hands undid this tick.
+    pub unlatched: [bool; 2],
+    /// Grips taken on a latched door this tick.
+    pub door_grips: u64,
+    /// The slot of a door a hand took this tick.
+    pub door: Option<DoorSlot>,
 }
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
@@ -609,6 +704,71 @@ unsafe fn throw(
         )
     }?;
     Ok(point.length())
+}
+
+/// Keep `hand`'s grip on a latched door: hold the hand at the grab point while the latch holds,
+/// and once it gives, hold the door's own body where the hand took it.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+unsafe fn keep_latch(
+    state: &mut PickupState,
+    hand: Hand,
+    palm: Option<PalmMotion>,
+    joints: &JointInputs,
+    unlatch_pull_m: f32,
+    outcome: &mut TickOutcome,
+) {
+    let i = hand.index();
+    let (Some(latch), Some(palm)) = (state.latches[i], palm) else {
+        return;
+    };
+    // SAFETY: forwarded from the caller.
+    match unsafe { latch.step(palm.pose.position, unlatch_pull_m) } {
+        LatchStep::Pin(pin) => outcome.pins[i] = Some(pin),
+        LatchStep::Opened { object, body, grab } => {
+            state.latches[i] = None;
+            // SAFETY: forwarded from the caller; the door's body was found just now.
+            match unsafe { bodies::read(body, object) } {
+                Ok(read) => {
+                    tracing::info!(
+                        hand = hand.label(),
+                        slot = doors::slot_label(latch.door.slot),
+                        part = latch.door.part_index,
+                        body,
+                        joined = joints.join[i],
+                        "physical hands: doors: the latch gave, and the hand holds the door"
+                    );
+                    state.held[i] = Some(Held {
+                        object,
+                        body,
+                        grip: Grip::of(palm.pose, read.pose, grab),
+                        mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
+                        joined: joints.join[i],
+                    });
+                    outcome.unlatched[i] = true;
+                }
+                Err(e) => {
+                    outcome.released[i] = true;
+                    outcome.lost += 1;
+                    outcome.error = Some(e.to_string());
+                }
+            }
+        }
+        LatchStep::Lost(e) => {
+            tracing::info!(
+                hand = hand.label(),
+                slot = doors::slot_label(latch.door.slot),
+                error = %e,
+                "physical hands: doors: a grip on a latched door was lost"
+            );
+            state.latches[i] = None;
+            outcome.released[i] = true;
+            outcome.lost += 1;
+            outcome.error = Some(e.to_string());
+        }
+    }
 }
 
 /// Let go of `held` in every hand that holds it, as a lost hold.

@@ -1,4 +1,145 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(C, align(8))]
+/// `CDoorInfo`: one door part of a vehicle's [`VehicleDoorController`](crate::vehicle::vehicle::VehicleDoorController) and its state. A closed door
+/// is merged into the vehicle's body; opening it loosens the part onto the hinge constraint of the
+/// vehicle's physics prototype, as a body of its own
+/// ([`PartInstance::GetPfxVehiclePartIfAny`](crate::vehicle::parts::PartInstance::GetPfxVehiclePartIfAny))
+/// owned by a [`VehiclePartGameObject`](crate::vehicle::parts::VehiclePartGameObject).
+///
+/// Each post-simulation update, the controller acts on [`m_PendingState`](crate::vehicle::vehicle::DoorInfo::m_PendingState).
+/// An opening request loosens the part
+/// ([`PfxBreakable::EnablePart`](crate::vehicle::parts::PfxBreakable::EnablePart) with
+/// [`PartEventReason::EPER_PartOperated`](crate::vehicle::parts::PartEventReason::EPER_PartOperated)),
+/// and both requests convert the hinge to a powered one whose motor turns it toward the open or the
+/// closed angle. A door that has opened stops its motor, unless it is kept open, and then swings
+/// freely on its hinge. A freely swinging door whose hinge angle above its minimum
+/// ([`PfxBreakable::GetHingeAngleAboveMin`](crate::vehicle::parts::PfxBreakable::GetHingeAngleAboveMin))
+/// falls below a small angle while it swings shut faster than a threshold speed is merged back into
+/// the body (`CPartInstance::MergePart`): a door swung shut hard latches. A door the motor closes
+/// is merged once it reaches its smallest angle. Only some members are bound.
+pub struct DoorInfo {
+    /// The state the controller moves the door to on its next update, or
+    /// [`DoorState::DOOR_CLOSED`](crate::vehicle::vehicle::DoorState::DOOR_CLOSED) when nothing is pending.
+    pub m_PendingState: crate::vehicle::vehicle::DoorState,
+    pub m_State: crate::vehicle::vehicle::DoorState,
+    pub m_DoorSlot: crate::vehicle::vehicle::DoorSlot,
+    _field_c: [u8; 4],
+    /// The door's part instance in the vehicle's physics body.
+    pub m_PartInstance: *mut crate::vehicle::parts::PartInstance,
+    _field_18: [u8; 4],
+    /// The hinge's smallest angle, radians.
+    pub m_HingeMinAngle_Rad: f32,
+    /// The hinge's largest angle, radians.
+    pub m_HingeMaxAngle_Rad: f32,
+    _field_24: [u8; 4],
+    /// The smallest angle a door kept open is held at, radians.
+    pub m_KeepOpenMinAngle_Rad: f32,
+    /// A freely swinging door's hinge angle above its minimum on the controller's last update,
+    /// degrees, from which it measures how fast the door swings shut.
+    pub m_PreviousAngle_Deg: f32,
+    _field_30: [u8; 12],
+    pub m_Flags: u32,
+    _field_40: [u8; 16],
+}
+fn _DoorInfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x50], DoorInfo>([0u8; 0x50]);
+    }
+    unreachable!()
+}
+impl DoorInfo {}
+impl DoorInfo {
+    /// The flag of [`m_Flags`](crate::vehicle::vehicle::DoorInfo::m_Flags) an opening request that keeps the door open sets.
+    pub const FLAG_KEEP_OPEN: u32 = 2;
+}
+impl std::convert::AsRef<DoorInfo> for DoorInfo {
+    fn as_ref(&self) -> &DoorInfo {
+        self
+    }
+}
+impl std::convert::AsMut<DoorInfo> for DoorInfo {
+    fn as_mut(&mut self) -> &mut DoorInfo {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// One node of the red-black tree behind [`VehicleDoorController`](crate::vehicle::vehicle::VehicleDoorController)'s door map
+/// (`std::_Tree_nod<...>::_Node`): a slot and its doors.
+pub struct DoorMapNode {
+    pub m_Left: *mut crate::vehicle::vehicle::DoorMapNode,
+    pub m_Parent: *mut crate::vehicle::vehicle::DoorMapNode,
+    pub m_Right: *mut crate::vehicle::vehicle::DoorMapNode,
+    /// The slot this node holds.
+    pub m_DoorSlot: crate::vehicle::vehicle::DoorSlot,
+    _field_1c: [u8; 4],
+    /// The first of the slot's doors (the vector's `_Myfirst`).
+    pub m_DoorsBegin: *mut crate::vehicle::vehicle::DoorInfo,
+    /// One past the last of the slot's doors (`_Mylast`).
+    pub m_DoorsEnd: *mut crate::vehicle::vehicle::DoorInfo,
+    _field_30: [u8; 17],
+    /// Whether the node is the head, the tree's sentinel, rather than a slot (`_Isnil`).
+    pub m_IsNil: bool,
+    _field_42: [u8; 6],
+}
+fn _DoorMapNode_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x48], DoorMapNode>([0u8; 0x48]);
+    }
+    unreachable!()
+}
+impl DoorMapNode {}
+impl std::convert::AsRef<DoorMapNode> for DoorMapNode {
+    fn as_ref(&self) -> &DoorMapNode {
+        self
+    }
+}
+impl std::convert::AsMut<DoorMapNode> for DoorMapNode {
+    fn as_mut(&mut self) -> &mut DoorMapNode {
+        self
+    }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The door slots of a vehicle (`NVehicle::EDoorSlot`): which opening a [`DoorInfo`](crate::vehicle::vehicle::DoorInfo) is. A slot
+/// may hold several door parts that open together.
+pub enum DoorSlot {
+    FRONT_LEFT = 0isize as _,
+    FRONT_RIGHT = 1isize as _,
+    REAR_LEFT = 2isize as _,
+    REAR_RIGHT = 3isize as _,
+    CENTER_LEFT = 4isize as _,
+    CENTER_RIGHT = 5isize as _,
+    TURRET_DOOR = 6isize as _,
+    TRUNK = 7isize as _,
+    HOOD = 8isize as _,
+    REAR_DOOR = 9isize as _,
+    CARGO_BAY_DOOR = 10isize as _,
+    FOLDING_WING = 11isize as _,
+    MISSILE_HATCH = 12isize as _,
+}
+fn _DoorSlot_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], DoorSlot>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A door's state (`NVehicle::EDoorState`), as [`DoorInfo::m_State`](crate::vehicle::vehicle::DoorInfo::m_State) and
+/// [`DoorInfo::m_PendingState`](crate::vehicle::vehicle::DoorInfo::m_PendingState) hold it.
+pub enum DoorState {
+    DOOR_OPEN = 0isize as _,
+    DOOR_OPENING = 1isize as _,
+    DOOR_CLOSING = 2isize as _,
+    DOOR_MISSING = 3isize as _,
+    DOOR_CLOSED = 4isize as _,
+}
+fn _DoorState_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], DoorState>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// A vehicle seat identifier (`NVehicle::ESeat`): an index into [`Vehicle::m_Seats`](crate::vehicle::vehicle::Vehicle::m_Seats), with the
@@ -46,7 +187,10 @@ pub struct Vehicle {
     /// The seat the local player occupies, or [`Seat::ENoSeatIdentifier`](crate::vehicle::vehicle::Seat::ENoSeatIdentifier). The game's input
     /// contexts test it against [`Seat::EDriverSeat`](crate::vehicle::vehicle::Seat::EDriverSeat) to decide whether driver controls apply.
     pub m_LocalPlayerSeat: crate::vehicle::vehicle::Seat,
-    _field_15e0: [u8; 13908],
+    _field_15e0: [u8; 136],
+    /// The vehicle's doors, hood, trunk, hatches, and other opening parts, and their state.
+    pub m_VehicleDoorController: crate::vehicle::vehicle::VehicleDoorController,
+    _field_1690: [u8; 13732],
     /// The world-space point the vehicle's weapons aim at, written by
     /// [`SetAimTargetPosition`](crate::vehicle::vehicle::Vehicle::SetAimTargetPosition).
     pub m_AimingTargetPosition: crate::types::math::Vector3,
@@ -73,6 +217,56 @@ fn _Vehicle_size_check() {
     unreachable!()
 }
 impl Vehicle {
+    pub const TYPE_ID_ADDRESS: usize = 0x14060F3F0;
+    /// `CVehicle::TYPE_ID`: the run-time type id of `CVehicle`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const OpenDoor_ADDRESS: usize = 0x140FC7320;
+    /// Asks every door of `slot` to open: makes sure the vehicle's physics body is in the world
+    /// and the vehicle is in the update, then sets each [`DoorInfo`](crate::vehicle::vehicle::DoorInfo) of the slot's
+    /// [`m_PendingState`](crate::vehicle::vehicle::DoorInfo::m_PendingState) to [`DoorState::DOOR_OPENING`](crate::vehicle::vehicle::DoorState::DOOR_OPENING) and clears its
+    /// [`m_Flags`](crate::vehicle::vehicle::DoorInfo::m_Flags). With `keep_open`, the door is held open at least
+    /// `keep_open_angle_deg` below its hinge's largest angle and reopens when pushed back
+    /// ([`DoorInfo::FLAG_KEEP_OPEN`](crate::vehicle::vehicle::DoorInfo::FLAG_KEEP_OPEN)). The door controller acts on the request in the vehicle's
+    /// post-simulation update (`CVehicle::UpdatePostSim_Doors`), which loosens the part onto its
+    /// hinge ([`PfxBreakable::EnablePart`](crate::vehicle::parts::PfxBreakable::EnablePart)) and turns
+    /// the hinge with a motor to the open angle.
+    pub unsafe fn OpenDoor(
+        &mut self,
+        slot: crate::vehicle::vehicle::DoorSlot,
+        keep_open: bool,
+        keep_open_angle_deg: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::vehicle::vehicle::DoorSlot,
+                keep_open: bool,
+                keep_open_angle_deg: f32,
+            ) = ::std::mem::transmute(Self::OpenDoor_ADDRESS);
+            f(self as *mut Self as _, slot, keep_open, keep_open_angle_deg)
+        }
+    }
+    pub const CloseDoor_ADDRESS: usize = 0x140FC72B0;
+    /// Asks every door of `slot` to close, the same way [`OpenDoor`](crate::vehicle::vehicle::Vehicle::OpenDoor) asks it to
+    /// open: the door controller turns the hinge's motor back to its smallest angle and merges the
+    /// part into the body there.
+    pub unsafe fn CloseDoor(&mut self, slot: crate::vehicle::vehicle::DoorSlot) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::vehicle::vehicle::DoorSlot,
+            ) = ::std::mem::transmute(Self::CloseDoor_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
     pub const SetAimTargetPosition_ADDRESS: usize = 0x140F24B00;
     /// Sets [`m_AimingTargetPosition`](crate::vehicle::vehicle::Vehicle::m_AimingTargetPosition) and refreshes
     /// [`m_AIVehicleWeaponAimTimeout`](crate::vehicle::vehicle::Vehicle::m_AIVehicleWeaponAimTimeout).
@@ -194,6 +388,36 @@ impl std::convert::AsRef<Vehicle> for Vehicle {
 }
 impl std::convert::AsMut<Vehicle> for Vehicle {
     fn as_mut(&mut self) -> &mut Vehicle {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// `CVehicleDoorController`: a vehicle's doors ([`DoorInfo`](crate::vehicle::vehicle::DoorInfo)), kept in a
+/// `std::map<NVehicle::EDoorSlot, std::vector<CDoorInfo>>` keyed by [`DoorSlot`](crate::vehicle::vehicle::DoorSlot), and updated from
+/// the vehicle's post-simulation update. Only some members are bound.
+pub struct VehicleDoorController {
+    _field_0: [u8; 8],
+    /// The map's head node (`_Myhead`): its [`m_Parent`](crate::vehicle::vehicle::DoorMapNode::m_Parent) is the tree's
+    /// root, and the tree's leaf links point back at it.
+    pub m_DoorMapHead: *mut crate::vehicle::vehicle::DoorMapNode,
+    _field_10: [u8; 16],
+    /// The vehicle the doors belong to.
+    pub m_Vehicle: *mut crate::vehicle::vehicle::Vehicle,
+}
+fn _VehicleDoorController_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x28], VehicleDoorController>([0u8; 0x28]);
+    }
+    unreachable!()
+}
+impl VehicleDoorController {}
+impl std::convert::AsRef<VehicleDoorController> for VehicleDoorController {
+    fn as_ref(&self) -> &VehicleDoorController {
+        self
+    }
+}
+impl std::convert::AsMut<VehicleDoorController> for VehicleDoorController {
+    fn as_mut(&mut self) -> &mut VehicleDoorController {
         self
     }
 }

@@ -4,7 +4,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
-    physical_hands::{climb::ClimbConfig, physics::HandBodiesConfig},
+    physical_hands::{climb::ClimbConfig, doors::DoorsConfig, physics::HandBodiesConfig},
     weapons::config::PulseSpec,
 };
 
@@ -64,6 +64,8 @@ pub struct PhysicalHandsConfig {
     pub bodies: HandBodiesConfig,
     /// Climbing by gripping the static world with a hand its body drives.
     pub climb: ClimbConfig,
+    /// Opening vehicle doors by hand.
+    pub doors: DoorsConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -96,6 +98,7 @@ impl PhysicalHandsConfig {
             pickup: PickupConfig::new(),
             bodies: HandBodiesConfig::new(),
             climb: ClimbConfig::new(),
+            doors: DoorsConfig::new(),
         }
     }
 }

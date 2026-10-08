@@ -79,6 +79,21 @@ impl std::convert::AsMut<Part> for Part {
         self
     }
 }
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// Why a breakable body's part changed (`NPfxBreakable::EPartEventReason`), passed to
+/// [`PfxBreakable::EnablePart`](crate::vehicle::parts::PfxBreakable::EnablePart) and on to the part's loosened and broken-off events.
+pub enum PartEventReason {
+    EPER_PartDamaged = 0isize as _,
+    EPER_PartOperated = 1isize as _,
+    EPER_PartInitialState = 2isize as _,
+}
+fn _PartEventReason_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], PartEventReason>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// `CPartInstance`: the live state of one [`Part`](crate::vehicle::parts::Part) of a breakable physics body
 /// ([`PfxBreakable`](crate::vehicle::parts::PfxBreakable)). The instances are stored contiguously, indexed by the part index. Only some
@@ -86,7 +101,10 @@ impl std::convert::AsMut<Part> for Part {
 pub struct PartInstance {
     /// The part this one hangs from, or null for the root part.
     pub m_ParentPart: *mut crate::vehicle::parts::PartInstance,
-    _field_8: [u8; 40],
+    _field_8: [u8; 24],
+    /// The part's index in its body's part instances, the same as its [`Part::m_part_index`](crate::vehicle::parts::Part::m_part_index).
+    pub m_PartInstanceIndex: u32,
+    _field_24: [u8; 12],
     /// The owner the part reports damage to (`IDamagePartOwner*`). For a vehicle's part this is
     /// the vehicle's damage-part-owner interface; the vehicle's render update only draws parts
     /// whose owner it is.
@@ -128,6 +146,35 @@ impl PartInstance {
                 Self::BrokeOffOrAncestorBrokeOff_ADDRESS,
             );
             f(self as *const Self as _)
+        }
+    }
+    pub const IsConstraintActive_ADDRESS: usize = 0x1401DF050;
+    /// Whether the part hangs from its parent by its own constraint: the part's constraint id is
+    /// valid and the world's constraint is enabled. A loosened part, such as an open door, does; a
+    /// part merged into the body, or one that broke off, does not.
+    pub unsafe fn IsConstraintActive(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsConstraintActive_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetPfxVehiclePartIfAny_ADDRESS: usize = 0x1401F0810;
+    /// The part's own body, a `CPfxVehiclePart` (a [`PfxRigidBody`](crate::physics::PfxRigidBody)), when
+    /// the part has been loosened or broken off into one; null while the part is merged into its
+    /// body's own rigid body. It reads the part's world-collision rigid body and keeps it only when
+    /// its type test says it is a vehicle part.
+    pub unsafe fn GetPfxVehiclePartIfAny(
+        &mut self,
+    ) -> *mut crate::physics::PfxRigidBody {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::physics::PfxRigidBody = ::std::mem::transmute(
+                Self::GetPfxVehiclePartIfAny_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
 }
@@ -181,6 +228,41 @@ impl PfxBreakable {
             f(self as *mut Self as _, index)
         }
     }
+    pub const EnablePart_ADDRESS: usize = 0x140237DE0;
+    /// Loosens the merged part `part` into a body of its own (`CPartInstance::EnablePart`): the
+    /// part's owner spawns its physical part (for a vehicle, `CVehicle::SpawnPhysicalPart`, which
+    /// makes a [`VehiclePartGameObject`](crate::vehicle::parts::VehiclePartGameObject) and its body), and with `keep_constraint` the part's
+    /// constraint from the physics prototype is cloned to hang it from its parent, such as a door
+    /// on its hinge; otherwise the part breaks off. A part already hanging by its constraint
+    /// ([`PartInstance::IsConstraintActive`](crate::vehicle::parts::PartInstance::IsConstraintActive)) is left alone with `keep_constraint`, and broken off
+    /// without it. Runs synchronously on the calling thread, outside the physics step.
+    pub unsafe fn EnablePart(
+        &mut self,
+        part: *mut crate::vehicle::parts::PartInstance,
+        reason: crate::vehicle::parts::PartEventReason,
+        keep_constraint: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                part: *mut crate::vehicle::parts::PartInstance,
+                reason: crate::vehicle::parts::PartEventReason,
+                keep_constraint: bool,
+            ) = ::std::mem::transmute(Self::EnablePart_ADDRESS);
+            f(self as *mut Self as _, part, reason, keep_constraint)
+        }
+    }
+    pub const GetHingeAngleAboveMin_ADDRESS: usize = 0x14024C170;
+    /// The hinge angle of the part at index `index` above the hinge's smallest angle, radians, from
+    /// the world's constraint of a part that hangs by an enabled hinge; zero for a part without one.
+    pub unsafe fn GetHingeAngleAboveMin(&mut self, index: i32) -> f32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, index: i32) -> f32 = ::std::mem::transmute(
+                Self::GetHingeAngleAboveMin_ADDRESS,
+            );
+            f(self as *mut Self as _, index)
+        }
+    }
 }
 impl std::convert::AsRef<PfxBreakable> for PfxBreakable {
     fn as_ref(&self) -> &PfxBreakable {
@@ -189,6 +271,47 @@ impl std::convert::AsRef<PfxBreakable> for PfxBreakable {
 }
 impl std::convert::AsMut<PfxBreakable> for PfxBreakable {
     fn as_mut(&mut self) -> &mut PfxBreakable {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// `CVehiclePartGameObject`: the rigid object (`CRigidObject`) a vehicle spawns for a part that
+/// loosens or breaks off (`CVehicle::SpawnPhysicalPart`), such as an open door: it owns the part's
+/// own body and draws the part. Only some members are bound.
+pub struct VehiclePartGameObject {}
+impl VehiclePartGameObject {
+    pub const TYPE_ID_ADDRESS: usize = 0x140733650;
+    /// `CVehiclePartGameObject::TYPE_ID`: the run-time type id of `CVehiclePartGameObject`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const GetVehicle_ADDRESS: usize = 0x140C544F0;
+    /// The vehicle the part came from, through the object's weak reference to it; null once the
+    /// vehicle is gone.
+    pub unsafe fn GetVehicle(&mut self) -> *mut crate::vehicle::vehicle::Vehicle {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::vehicle::vehicle::Vehicle = ::std::mem::transmute(
+                Self::GetVehicle_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<VehiclePartGameObject> for VehiclePartGameObject {
+    fn as_ref(&self) -> &VehiclePartGameObject {
+        self
+    }
+}
+impl std::convert::AsMut<VehiclePartGameObject> for VehiclePartGameObject {
+    fn as_mut(&mut self) -> &mut VehiclePartGameObject {
         self
     }
 }

@@ -219,6 +219,13 @@ pub(crate) fn publish_holds(holds: [Option<HoldTarget>; 2]) {
     SHARED.lock().holds = holds;
 }
 
+/// Publish where each hand that grips something it cannot move yet is held, world space: a latched
+/// door's grab point. The next step holds the hand's body there instead of driving it to its
+/// controller. Called from the player aim control's post-simulation update.
+pub(crate) fn publish_pins(pins: [Option<Vec3>; 2]) {
+    SHARED.lock().pins = pins;
+}
+
 /// Take which hands lost the joint their grip held since the last call: the joint could not be
 /// made, the object's body went away, or the hand's body stopped.
 pub(crate) fn take_joint_losses() -> [bool; 2] {
@@ -463,7 +470,7 @@ pub(super) unsafe fn step() {
         published,
         world_scale,
         mut push,
-        holds,
+        (holds, pins),
         rig_moves,
         park_now,
         follow_through,
@@ -475,7 +482,7 @@ pub(super) unsafe fn step() {
             shared.published,
             shared.world_scale,
             shared.push,
-            shared.holds,
+            (shared.holds, shared.pins),
             std::mem::take(&mut shared.rig_moves),
             shared
                 .park_now
@@ -488,6 +495,7 @@ pub(super) unsafe fn step() {
         )
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
+    let pins = if fresh { pins } else { [None; 2] };
     let mut joint_lost = [false; 2];
     let holds = if !fresh {
         [None; 2]
@@ -545,7 +553,20 @@ pub(super) unsafe fn step() {
         Some((motion.position, motion.orientation))
     });
     // SAFETY: forwarded from the caller; the characters' proxy updates ran before this callback.
-    let grips = unsafe { climb::step(poses) };
+    let climbs = unsafe { climb::step(poses) };
+    // A hand gripping what it cannot move yet, a latched door, is held at its grab point as a
+    // climbing hand is held on the wall.
+    let grips = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        climbs[i].or_else(|| {
+            let pin = pins[i]?;
+            let orientation = poses[i].map_or(Quat::IDENTITY, |(_, o)| o);
+            Some(Goal {
+                position: pin,
+                orientation,
+            })
+        })
+    });
     // A gripping hand's body stays on the wall; every other acting body moves with the rig.
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -556,7 +577,7 @@ pub(super) unsafe fn step() {
             unsafe { hands.carry(hand, from, to) };
         }
     }
-    let climbing = grips.iter().any(Option::is_some);
+    let climbing = climbs.iter().any(Option::is_some);
 
     let mut statuses = [HandBodyStatus::default(); 2];
     let mut offsets = [RenderOffset::NONE; 2];
@@ -797,6 +818,8 @@ struct Shared {
     push: Vec2,
     /// What each hand's grip holds through a joint, as last published.
     holds: [Option<HoldTarget>; 2],
+    /// Where each hand that grips what it cannot move yet is held, as last published.
+    pins: [Option<Vec3>; 2],
     /// Which hands lost their joint since the aim update last took it.
     joint_lost: [bool; 2],
     /// Until when each hand follows through a hard blow with a softened drive.
@@ -833,7 +856,9 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     body_poses: [None; 2],
     push: Vec2::ZERO,
     holds: [None; 2],
+    pins: [None; 2],
     joint_lost: [false; 2],
+
     follow_through: [None; 2],
     stepped: None,
     status: HandBodiesStatus {

@@ -257,6 +257,7 @@ fn the_shipped_templates_read() {
         "second_long_gun.toml",
         "steering_wheel.toml",
         "stick_locomotion.toml",
+        "vehicle_doors.toml",
         "weapon_left_hand.toml",
         "weapon_pickup.toml",
     ];

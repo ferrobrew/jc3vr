@@ -9,6 +9,7 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig, PhysicalHandsStatus,
             config::{PickupConfig, ShoveConfig},
+            doors::{self, DoorsConfig},
             grasp::TargetKind,
         },
     },
@@ -64,8 +65,17 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                         "reaches a {mass_kg:.1} kg object {:.0} mm away",
                         reach.distance * 1000.0
                     ),
+                    TargetKind::Door(door) => format!(
+                        "reaches the {} door ({}) {:.0} mm away",
+                        doors::slot_label(door.slot),
+                        if door.latched { "latched" } else { "open" },
+                        reach.distance * 1000.0
+                    ),
                 },
             });
+            if s.latched {
+                ui.label("grips a latched door");
+            }
             ui.label(match s.press {
                 None => "in the open".to_owned(),
                 Some((depth, object)) => format!(
@@ -99,6 +109,15 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
         p.lost,
         p.last_throw_mps
             .map_or(String::new(), |v| format!(" · last throw {v:.1} m/s"))
+    ));
+    ui.label(format!(
+        "Doors: {} latched grips · {} unlatched{}",
+        p.door_grips,
+        p.unlatches,
+        p.last_door.map_or(String::new(), |slot| format!(
+            " · last {}",
+            doors::slot_label(slot)
+        ))
     ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
@@ -151,6 +170,20 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         pulse_settings(ui, "Pressure pulse (full load)", &mut p.pressure_pulse);
         ui.separator();
         pickup_settings(ui, &mut p.pickup);
+        ui.separator();
+        doors_settings(ui, &mut p.doors);
+    });
+}
+
+fn doors_settings(ui: &mut Ui, d: &mut DoorsConfig) {
+    ui.checkbox(&mut d.enabled, "Open vehicle doors by hand");
+    ui.add_enabled_ui(d.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut d.reach_m, 0.0..=0.3).text("Door reach (m)"));
+        ui.add(
+            egui::Slider::new(&mut d.handle_share, 0.0..=1.0).text("Handle area from the hinge"),
+        );
+        ui.add(egui::Slider::new(&mut d.unlatch_pull_m, 0.0..=0.3).text("Pull to unlatch (m)"));
+        pulse_settings(ui, "Unlatch pulse", &mut d.unlatch_pulse);
     });
 }
 

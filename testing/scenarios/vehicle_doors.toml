@@ -1,0 +1,27 @@
+# Template: fill testing/recordings/vehicle_doors.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "open and shut a car door by hand"
+description = "Recorded with OPEN DOORS BY HAND on, empty-handed, beside the driver's door of a parked, empty car (vehicle-doors.md, checklist items 1 to 5). Grip the door's handle area, pull it open, swing it wide, let go, then shove it shut."
+recording = "../recordings/vehicle_doors.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+signal = "doors.on_latch"
+
+[[expect]]
+name = "the latch gave to the pull"
+signal = "doors.unlatches"
+at_least = 1
+
+[[expect]]
+name = "the hand holds the door after the latch gives"
+log = "the latch gave, and the hand holds the door"
+
+[[expect]]
+name = "no grip on a latched door was lost"
+log = "a grip on a latched door was lost"
+at_most = 0
+
+[[expect]]
+name = "the player is still on foot at the end"
+signal = "controllers.on_foot"
+check = "at_end"
