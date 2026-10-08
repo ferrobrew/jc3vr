@@ -53,6 +53,7 @@ fn step_held(
             orientations: [None; 2],
             held,
             grabs,
+            stick_steers: false,
             dt: DT,
         },
         &mut events,
@@ -481,4 +482,67 @@ fn only_the_seat_class_s_controls_are_offered() {
     let mut off = PhysicalControlsConfig::new();
     off.wheel.enabled = false;
     assert!(!ControlKind::Wheel.enabled(&off));
+}
+
+#[test]
+fn at_the_lock_the_hand_stays_on_the_stopped_wheel_and_must_come_back() {
+    let p = placement(|c| c.wheel.enabled = true);
+    let wheel = p.wheel;
+    let kinds = [ControlKind::Wheel];
+    let lock = p.config.wheel.lock_deg.to_radians();
+    let mut state = ControlState::default();
+    let start = 0.3;
+    step_with(
+        &mut state,
+        &p,
+        &kinds,
+        [None, Some(wheel.rim_point(start))],
+        [None, Some(ControlKind::Wheel)],
+    );
+    // The hand runs on past the lock in small steps; the wheel stops there, with a bump once.
+    let mut cues = Vec::new();
+    let mut at = start;
+    while at < start + lock + 0.3 {
+        at += 0.05;
+        let grips = [None, Some(wheel.rim_point(at))];
+        let (out, _) = step_with(&mut state, &p, &kinds, grips, [None; 2]);
+        cues.extend(out.wheel_cue);
+    }
+    assert_eq!(state.wheel_angle, lock);
+    assert_eq!(cues, [steering::WheelCue::Stop]);
+    let hold = state.holds[1].unwrap();
+    let grips = [None, Some(wheel.rim_point(at))];
+    let drawn = anchor_point(&state, &p, hold, Hand::Right, grips).unwrap();
+    assert!(drawn.distance(wheel.rim_point(start + lock)) < 1e-4);
+    // Coming back by less than the overshoot leaves the wheel at the stop.
+    at -= 0.1;
+    let grips = [None, Some(wheel.rim_point(at))];
+    step_with(&mut state, &p, &kinds, grips, [None; 2]);
+    assert_eq!(state.wheel_angle, lock);
+}
+
+#[test]
+fn the_stick_takes_the_steering_back_from_a_returning_wheel() {
+    let p = placement(|c| c.wheel.enabled = true);
+    let kinds = [ControlKind::Wheel];
+    let mut state = ControlState {
+        wheel_angle: 1.0,
+        ..ControlState::default()
+    };
+    let mut events = Vec::new();
+    let mut inputs = StepInputs {
+        kinds: &kinds,
+        grips: [None; 2],
+        orientations: [None; 2],
+        held: [false; 2],
+        grabs: [None; 2],
+        stick_steers: false,
+        dt: DT,
+    };
+    let out = step(&mut state, &p, &inputs, &mut events);
+    assert!(out.steer.is_some_and(|s| s > 0.0));
+    inputs.stick_steers = true;
+    let out = step(&mut state, &p, &inputs, &mut events);
+    assert_eq!(out.steer, None);
+    assert_eq!(state.wheel_angle, 0.0);
 }

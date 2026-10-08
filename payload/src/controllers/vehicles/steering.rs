@@ -15,7 +15,20 @@
 //! Only the change since the last tick counts, from where the hand took hold, so grabbing never
 //! jumps the wheel, and the turns accumulate ([`advance`]): each tick's change is unwrapped, so the
 //! wheel goes past half a turn either way, a hand let go and taken again further round carries on
-//! from the wheel's angle (a hand-over), and the wheel stops at its lock, as a car's does.
+//! from the wheel's angle (a hand-over), and the wheel stops at its lock, as a car's does. The
+//! hands' turn past the lock is kept, and turning back first takes it up, so the wheel moves off
+//! the stop only once the hands are back where they reached it.
+//!
+//! Each hand's turn is measured against the wheel as it was when the hand took hold. The wheel is
+//! fitted to the vehicle and carried into the cockpit frame, which rides the character's animated
+//! head, so the fitted wheel sways in that frame with the driving animation while the player's
+//! hands, tracked in it, stay still; measured against the live wheel, the sway would turn it. The
+//! hand's place on the rim relative to the wheel's angle is kept too ([`WheelGrip::rim_angle`]),
+//! for drawing the hand where the wheel carries it.
+//!
+//! At the stop and on passing centre the wheel gives the holding hands a haptic cue ([`cue`]),
+//! each re-armed only once the wheel has left it by a margin, so a hand resting at either does not
+//! buzz.
 //!
 //! Two hands turn it as one rigid wheel would ([`combine`]): by the turn of the hand that turned it
 //! furthest, held back by the other only when that one turns the other way. A relaxed hand that
@@ -36,22 +49,59 @@ use crate::controllers::vehicles::{
     wheel::WheelFrame,
 };
 
-/// A hand on the wheel: where it was on the last tick.
+/// A hand on the wheel: the wheel as it took hold, and where the hand was on the last tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WheelGrip {
+    /// The wheel as the hand took it, which the hand's turns are measured against for the hold.
+    frame: WheelFrame,
+    /// The hand's place on the rim less the wheel's angle when it took hold, radians clockwise;
+    /// `None` for a hand that took hold at the hub.
+    rim_offset: Option<f32>,
+    /// Where the hand was on the last tick.
+    last: Sample,
+}
+
+/// A hand's place on the wheel on one tick.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Sample {
     /// The hand's angle around the hub, clockwise from the top, `None` at the hub.
     angle: Option<f32>,
+    /// How much the hand's travel around the hub counts there ([`position_weight`]).
+    weight: f32,
     /// The hand's orientation in the cockpit frame, `None` without one.
     orientation: Option<Quat>,
 }
 
-impl WheelGrip {
-    /// A hand taking the wheel at `position` with `orientation`.
-    pub fn new(frame: &WheelFrame, position: Vec3, orientation: Option<Quat>) -> Self {
+impl Sample {
+    fn at(frame: &WheelFrame, position: Vec3, orientation: Option<Quat>) -> Self {
         Self {
             angle: frame.hand_angle(position),
+            weight: position_weight(frame, position),
             orientation: orientation.filter(|q| q.is_finite()),
         }
+    }
+}
+
+impl WheelGrip {
+    /// A hand taking `frame`'s wheel, turned to `wheel_angle`, at `position` with `orientation`.
+    pub fn new(
+        frame: &WheelFrame,
+        position: Vec3,
+        orientation: Option<Quat>,
+        wheel_angle: f32,
+    ) -> Self {
+        let last = Sample::at(frame, position, orientation);
+        Self {
+            frame: *frame,
+            rim_offset: last.angle.map(|angle| angle - wheel_angle),
+            last,
+        }
+    }
+
+    /// Where the hand holds the rim with the wheel turned to `wheel_angle`: its place when it took
+    /// hold, carried round with the wheel. `None` for a hand that took hold at the hub.
+    pub fn rim_angle(&self, wheel_angle: f32) -> Option<f32> {
+        self.rim_offset.map(|offset| offset + wheel_angle)
     }
 
     /// How far the hand, now at `position` with `orientation`, turned the wheel since the last
@@ -59,21 +109,24 @@ impl WheelGrip {
     /// last place.
     pub fn turn(
         &mut self,
-        frame: &WheelFrame,
         tracking: WheelTracking,
         position: Vec3,
         orientation: Option<Quat>,
     ) -> Option<Turn> {
-        let now = Self::new(frame, position, orientation);
-        let last = std::mem::replace(self, now);
+        let frame = &self.frame;
+        let now = Sample::at(frame, position, orientation);
+        let last = std::mem::replace(&mut self.last, now);
         let twist = match (last.orientation, now.orientation) {
             (Some(last), Some(now)) => Some(clockwise_twist(now * last.inverse(), frame.normal())),
             _ => None,
         };
+        // A hand that crossed the hub's unstable middle between two ticks counts by the smaller
+        // of its two places' weights, so a swing past the hub turns nothing by its travel.
         let travel = match (last.angle, now.angle) {
-            (Some(last), Some(now)) => {
-                Some((wrap_angle(now - last), position_weight(frame, position)))
-            }
+            (Some(last_angle), Some(now_angle)) => Some((
+                wrap_angle(now_angle - last_angle),
+                last.weight.min(now.weight),
+            )),
             _ => None,
         };
         match (tracking, travel, twist) {
@@ -137,11 +190,83 @@ pub fn combine(turns: [Option<Turn>; 2]) -> Option<f32> {
     }
 }
 
-/// The wheel at `angle` turned by `turn`, stopped at the lock either way.
-pub fn advance(angle: f32, turn: f32, spec: &WheelSpec) -> f32 {
+/// The held wheel's angle, and how far the holding hands have turned it past its lock.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct WheelTravel {
+    /// Radians clockwise, within the lock.
+    pub angle: f32,
+    /// The hands' turn past the lock, radians clockwise; zero within it.
+    pub past_lock: f32,
+}
+
+/// The wheel at `travel` turned by `turn`, stopped at the lock either way. A turn past the lock is
+/// kept as [`WheelTravel::past_lock`], and a turn back takes it up before the wheel moves.
+pub fn advance(travel: WheelTravel, turn: f32, spec: &WheelSpec) -> WheelTravel {
     let lock = lock(spec);
-    let turned = angle + if turn.is_finite() { turn } else { 0.0 };
-    turned.clamp(-lock, lock)
+    let turn = if turn.is_finite() { turn } else { 0.0 };
+    let reached = travel.angle + travel.past_lock + turn;
+    let angle = reached.clamp(-lock, lock);
+    WheelTravel {
+        angle,
+        past_lock: reached - angle,
+    }
+}
+
+/// A haptic cue the held wheel gives the hands holding it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum WheelCue {
+    /// The wheel reached its lock.
+    Stop,
+    /// The wheel passed centre.
+    Centre,
+}
+
+/// Which cues may fire: each is disarmed when it fires and re-armed once the wheel has left it by
+/// a margin.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CueArming {
+    stop: bool,
+    centre: bool,
+}
+
+impl CueArming {
+    /// The arming of a wheel at centre: the stop may fire, centre once the wheel has left it.
+    pub const fn new() -> Self {
+        Self {
+            stop: true,
+            centre: false,
+        }
+    }
+}
+
+impl Default for CueArming {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The cue the held wheel gives on turning from `before` to `after`, radians clockwise, if any.
+pub fn cue(arming: &mut CueArming, before: f32, after: f32, spec: &WheelSpec) -> Option<WheelCue> {
+    if !before.is_finite() || !after.is_finite() {
+        return None;
+    }
+    let lock = lock(spec);
+    if after.abs() < lock - CUE_REARM_DEG.to_radians() {
+        arming.stop = true;
+    }
+    if after.abs() > CUE_REARM_DEG.to_radians() {
+        arming.centre = true;
+    }
+    if arming.stop && after.abs() >= lock {
+        arming.stop = false;
+        return Some(WheelCue::Stop);
+    }
+    let crossed = before != 0.0 && (after == 0.0 || before.signum() != after.signum());
+    if arming.centre && crossed {
+        arming.centre = false;
+        return Some(WheelCue::Centre);
+    }
+    None
 }
 
 /// The released wheel at `angle` after `dt` seconds of returning to centre: at the return rate,
@@ -190,6 +315,9 @@ const RETURN_EASE_FLOOR: f32 = 0.2;
 
 /// A returning wheel this close to centre is at centre, degrees.
 const SETTLED_DEG: f32 = 0.25;
+
+/// How far the wheel must leave its stop or centre before that cue may fire again, degrees.
+const CUE_REARM_DEG: f32 = 5.0;
 
 /// A hand closer to the hub than this share of the radius turns nothing by its travel; one past
 /// twice it counts fully.
@@ -260,19 +388,98 @@ mod tests {
         Quat::from_axis_angle(frame.normal(), -angle) * base
     }
 
+    /// The wheel at `angle`, with no turn past the lock, turned by `turn`.
+    fn advance_angle(angle: f32, turn: f32, spec: &WheelSpec) -> f32 {
+        let travel = WheelTravel {
+            angle,
+            past_lock: 0.0,
+        };
+        advance(travel, turn, spec).angle
+    }
+
+    #[test]
+    fn past_the_lock_the_hands_must_come_back_before_the_wheel_moves() {
+        let spec = spec();
+        let lock = spec.lock_deg.to_radians();
+        let mut travel = WheelTravel::default();
+        travel = advance(travel, lock + 0.3, &spec);
+        assert_eq!(travel.angle, lock);
+        assert!((travel.past_lock - 0.3).abs() < 1e-5);
+        // Turning back by less than the overshoot leaves the wheel at the stop.
+        travel = advance(travel, -0.2, &spec);
+        assert_eq!(travel.angle, lock);
+        // Past it, the wheel unwinds by the rest.
+        travel = advance(travel, -0.2, &spec);
+        assert!((travel.angle - (lock - 0.1)).abs() < 1e-5);
+        assert_eq!(travel.past_lock, 0.0);
+    }
+
+    #[test]
+    fn the_stop_and_centre_cue_once_until_the_wheel_leaves_them() {
+        let spec = spec();
+        let lock = spec.lock_deg.to_radians();
+        let mut arming = CueArming::new();
+        // Leaving centre gives nothing; reaching the lock bumps once.
+        assert_eq!(cue(&mut arming, 0.0, 0.5, &spec), None);
+        assert_eq!(cue(&mut arming, 0.5, lock, &spec), Some(WheelCue::Stop));
+        assert_eq!(cue(&mut arming, lock, lock, &spec), None);
+        // Backing off a little and returning does not bump again; backing off past the margin does.
+        assert_eq!(cue(&mut arming, lock, lock - 0.01, &spec), None);
+        assert_eq!(cue(&mut arming, lock - 0.01, lock, &spec), None);
+        assert_eq!(cue(&mut arming, lock, lock - 0.2, &spec), None);
+        assert_eq!(
+            cue(&mut arming, lock - 0.2, lock, &spec),
+            Some(WheelCue::Stop)
+        );
+        // Passing centre gives the detent once, and a wobble about it nothing more.
+        assert_eq!(cue(&mut arming, 0.3, -0.01, &spec), Some(WheelCue::Centre));
+        assert_eq!(cue(&mut arming, -0.01, 0.01, &spec), None);
+        assert_eq!(cue(&mut arming, 0.01, -0.01, &spec), None);
+        assert_eq!(cue(&mut arming, f32::NAN, 0.1, &spec), None);
+    }
+
+    #[test]
+    fn the_wheel_swaying_under_still_hands_turns_nothing() {
+        let frame = frame();
+        let at = frame.rim_point(FRAC_PI_2);
+        let mut grip = WheelGrip::new(&frame, at, Some(Quat::IDENTITY), 0.0);
+        // The live wheel sways sideways and round in the cockpit frame; the hand stays put. The
+        // grip measures against the wheel it took, so the hand reads no turn.
+        let turn = grip
+            .turn(WheelTracking::Position, at, Some(Quat::IDENTITY))
+            .unwrap();
+        assert!(turn.radians.abs() < 1e-5, "{turn:?}");
+    }
+
+    #[test]
+    fn a_hand_keeps_its_place_on_the_rim_as_the_wheel_turns() {
+        let frame = frame();
+        let grip = WheelGrip::new(&frame, frame.rim_point(0.4), None, 0.1);
+        assert!((grip.rim_angle(0.1).unwrap() - 0.4).abs() < 1e-5);
+        assert!((grip.rim_angle(0.6).unwrap() - 0.9).abs() < 1e-5);
+        let hub = WheelGrip::new(&frame, frame.centre, None, 0.0);
+        assert_eq!(hub.rim_angle(0.3), None);
+    }
+
+    #[test]
+    fn a_swing_from_the_rim_past_the_hub_counts_by_the_hub_s_weight() {
+        let frame = frame();
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None, 0.0);
+        // From the rim straight to just past the hub on the other side: its angle jumps by half
+        // a turn, but the place it lands at counts for nothing.
+        let past = frame.centre - frame.up * 0.01;
+        let turn = grip.turn(WheelTracking::Position, past, None).unwrap();
+        assert_eq!(turn.weight, 0.0, "{turn:?}");
+    }
+
     #[test]
     fn a_twist_about_the_axis_turns_the_wheel_by_as_much() {
         let frame = frame();
         let base = Quat::from_rotation_x(-0.4);
         let at = frame.rim_point(-FRAC_PI_2);
-        let mut grip = WheelGrip::new(&frame, at, Some(base));
+        let mut grip = WheelGrip::new(&frame, at, Some(base), 0.0);
         let turn = grip
-            .turn(
-                &frame,
-                WheelTracking::Twist,
-                at,
-                Some(turned(&frame, base, 0.3)),
-            )
+            .turn(WheelTracking::Twist, at, Some(turned(&frame, base, 0.3)))
             .unwrap();
         assert!((turn.radians - 0.3).abs() < 1e-4, "{turn:?}");
         assert_eq!(turn.weight, 1.0);
@@ -282,12 +489,11 @@ mod tests {
     fn a_twist_ignores_the_hand_s_place_and_a_swing_off_the_axis() {
         let frame = frame();
         let base = Quat::IDENTITY;
-        let mut grip = WheelGrip::new(&frame, frame.centre, Some(base));
+        let mut grip = WheelGrip::new(&frame, frame.centre, Some(base), 0.0);
         // The hand sits on the hub and swings about the wheel's right axis: no turn.
         let swung = Quat::from_axis_angle(frame.right, 0.5) * base;
         let turn = grip
             .turn(
-                &frame,
                 WheelTracking::Twist,
                 frame.centre + frame.up * 0.01,
                 Some(swung),
@@ -299,20 +505,18 @@ mod tests {
     #[test]
     fn travel_around_the_hub_turns_the_wheel_and_counts_less_near_it() {
         let frame = frame();
-        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None);
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None, 0.0);
         let turn = grip
-            .turn(&frame, WheelTracking::Position, frame.rim_point(0.2), None)
+            .turn(WheelTracking::Position, frame.rim_point(0.2), None)
             .unwrap();
         assert!((turn.radians - 0.2).abs() < 1e-4 && turn.weight == 1.0);
         let near = frame.centre + (frame.rim_point(0.4) - frame.centre) * 0.3;
-        let turn = grip
-            .turn(&frame, WheelTracking::Position, near, None)
-            .unwrap();
+        let turn = grip.turn(WheelTracking::Position, near, None).unwrap();
         assert!(turn.weight < 0.5, "{turn:?}");
         // Without an orientation, the twist falls back to the travel.
-        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None);
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None, 0.0);
         let turn = grip
-            .turn(&frame, WheelTracking::Twist, frame.rim_point(0.1), None)
+            .turn(WheelTracking::Twist, frame.rim_point(0.1), None)
             .unwrap();
         assert!((turn.radians - 0.1).abs() < 1e-4);
     }
@@ -322,28 +526,27 @@ mod tests {
         let mut spec = spec();
         spec.lock_deg = 270.0;
         let frame = frame();
-        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), Some(Quat::IDENTITY));
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), Some(Quat::IDENTITY), 0.0);
         let mut angle = 0.0;
         let mut orientation = Quat::IDENTITY;
         for _ in 0..40 {
             orientation = turned(&frame, orientation, 0.1);
             let turn = grip
                 .turn(
-                    &frame,
                     WheelTracking::Twist,
                     frame.rim_point(0.0),
                     Some(orientation),
                 )
                 .unwrap();
-            angle = advance(angle, turn.radians, &spec);
+            angle = advance_angle(angle, turn.radians, &spec);
         }
         assert!((angle - 4.0).abs() < 1e-3, "{}", angle.to_degrees());
         for _ in 0..20 {
-            angle = advance(angle, 0.1, &spec);
+            angle = advance_angle(angle, 0.1, &spec);
         }
         assert!((angle - 270f32.to_radians()).abs() < 1e-5);
         // Turning back unwinds straight away from the stop.
-        assert!(advance(angle, -0.1, &spec) < angle);
+        assert!(advance_angle(angle, -0.1, &spec) < angle);
     }
 
     #[test]
@@ -352,37 +555,39 @@ mod tests {
         let frame = frame();
         let mut angle = 0.0;
         // The right hand turns the wheel a quarter turn.
-        let mut grip = WheelGrip::new(&frame, frame.rim_point(FRAC_PI_2), Some(Quat::IDENTITY));
+        let mut grip = WheelGrip::new(
+            &frame,
+            frame.rim_point(FRAC_PI_2),
+            Some(Quat::IDENTITY),
+            0.0,
+        );
         let turn = grip
             .turn(
-                &frame,
                 WheelTracking::Twist,
                 frame.rim_point(FRAC_PI_2),
                 Some(turned(&frame, Quat::IDENTITY, FRAC_PI_2)),
             )
             .unwrap();
-        angle = advance(angle, turn.radians, &spec);
+        angle = advance_angle(angle, turn.radians, &spec);
         // It lets go and takes the wheel again with its hand turned back: no jump.
-        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), Some(Quat::IDENTITY));
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), Some(Quat::IDENTITY), 0.0);
         let still = grip
             .turn(
-                &frame,
                 WheelTracking::Twist,
                 frame.rim_point(0.0),
                 Some(Quat::IDENTITY),
             )
             .unwrap();
-        angle = advance(angle, still.radians, &spec);
+        angle = advance_angle(angle, still.radians, &spec);
         assert!((angle - FRAC_PI_2).abs() < 1e-4);
         let more = grip
             .turn(
-                &frame,
                 WheelTracking::Twist,
                 frame.rim_point(0.0),
                 Some(turned(&frame, Quat::IDENTITY, 0.5)),
             )
             .unwrap();
-        angle = advance(angle, more.radians, &spec);
+        angle = advance_angle(angle, more.radians, &spec);
         assert!((angle - (FRAC_PI_2 + 0.5)).abs() < 1e-4);
     }
 
@@ -428,14 +633,14 @@ mod tests {
         let wrist = Some(Quat::from_rotation_x(-0.4));
         let start = [-FRAC_PI_2, FRAC_PI_2];
         for (tracking, expected) in [(WheelTracking::Position, 0.6), (WheelTracking::Twist, 0.0)] {
-            let mut grips = start.map(|a| WheelGrip::new(&frame, frame.rim_point(a), wrist));
+            let mut grips = start.map(|a| WheelGrip::new(&frame, frame.rim_point(a), wrist, 0.0));
             let mut angle = 0.0;
             for step in 1..=6 {
                 let turns = [0, 1].map(|i| {
                     let at = frame.rim_point(start[i] + 0.1 * step as f32);
-                    grips[i].turn(&frame, tracking, at, wrist)
+                    grips[i].turn(tracking, at, wrist)
                 });
-                angle = advance(angle, combine(turns).unwrap(), &spec);
+                angle = advance_angle(angle, combine(turns).unwrap(), &spec);
             }
             assert!((angle - expected).abs() < 1e-4, "{tracking:?} {angle}");
         }
@@ -446,14 +651,14 @@ mod tests {
         let mut spec = spec();
         spec.lock_deg = 540.0;
         let frame = frame();
-        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None);
+        let mut grip = WheelGrip::new(&frame, frame.rim_point(0.0), None, 0.0);
         let mut angle = 0.0;
         // A turn and a quarter clockwise, crossing the bottom of the rim where the hand's angle
         // wraps from a half turn to minus a half turn.
         for step in 1..=50 {
             let at = frame.rim_point(step as f32 * TAU * 1.25 / 50.0);
-            let turn = grip.turn(&frame, WheelTracking::Position, at, None);
-            angle = advance(angle, combine([turn, None]).unwrap(), &spec);
+            let turn = grip.turn(WheelTracking::Position, at, None);
+            angle = advance_angle(angle, combine([turn, None]).unwrap(), &spec);
         }
         assert!((angle - TAU * 1.25).abs() < 1e-3, "{}", angle.to_degrees());
     }
@@ -463,12 +668,11 @@ mod tests {
         let frame = frame();
         let base = Quat::IDENTITY;
         let at = frame.centre + frame.up * 0.01;
-        let mut grip = WheelGrip::new(&frame, at, Some(base));
+        let mut grip = WheelGrip::new(&frame, at, Some(base), 0.0);
         // The hand swings across the hub, where its angle jumps, while its wrist turns a little.
         let across = frame.centre - frame.up * 0.01;
         let turn = grip
             .turn(
-                &frame,
                 WheelTracking::Position,
                 across,
                 Some(turned(&frame, base, 0.1)),

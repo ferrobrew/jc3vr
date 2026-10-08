@@ -91,6 +91,8 @@ pub enum PulseSource {
     Pickup,
     /// The weapon wheel opened, its choice changed, or its release committed a weapon.
     WeaponWheel,
+    /// The held steering wheel reached its lock or passed centre.
+    SteeringWheel,
 }
 
 impl PulseSource {
@@ -111,6 +113,7 @@ impl PulseSource {
             PulseSource::C4 => "C4",
             PulseSource::Pickup => "pickup",
             PulseSource::WeaponWheel => "weapon wheel",
+            PulseSource::SteeringWheel => "steering wheel",
         }
     }
 }

@@ -90,8 +90,13 @@ use crate::{
             mounted::{MountedGun, MountedTarget, Reference},
             parachute::{HandleEvent, HandleHold, HandleState},
             physical::{ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement},
+            steering::WheelCue,
             wheel::{CockpitTransform, WheelFrame},
             wheel_render::RenderWheel,
+        },
+        weapons::{
+            config::PulseSpec,
+            haptics::{self, PulseSource},
         },
     },
     headpose,
@@ -394,11 +399,16 @@ pub(crate) fn finish_tick(
             orientations,
             held,
             grabs,
+            stick_steers: axis_wanted(desired, TURN_LEFT, TURN_RIGHT),
             dt,
         },
         &mut events,
     );
     write_outputs(&outputs, desired);
+    let wheel_holders = state
+        .controls
+        .holds
+        .map(|h| h.is_some_and(|h| h.kind == ControlKind::Wheel));
     let rendered = state.render.map(|target| {
         let angle = rendered_angle(&state.controls, &placement.config, state.steering_turn);
         (target, angle)
@@ -463,6 +473,40 @@ pub(crate) fn finish_tick(
     drop(state);
     *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout);
     log_handle_events(&handle_events);
+    if let Some(cue) = outputs.wheel_cue {
+        let spec = match cue {
+            WheelCue::Stop => STOP_PULSE,
+            WheelCue::Centre => CENTRE_PULSE,
+        };
+        for hand in Hand::BOTH.into_iter().filter(|h| wheel_holders[h.index()]) {
+            haptics::pulse(hand, spec, PulseSource::SteeringWheel);
+        }
+    }
+}
+
+/// The bump the held wheel gives at its lock.
+const STOP_PULSE: PulseSpec = PulseSpec {
+    amplitude: 0.5,
+    duration_s: 0.03,
+};
+
+/// The light detent the held wheel gives on passing centre.
+const CENTRE_PULSE: PulseSpec = PulseSpec {
+    amplitude: 0.15,
+    duration_s: 0.012,
+};
+
+/// Whether the tables wrote either half of the axis `negative`/`positive` this tick: their stick
+/// is out of its deadzone.
+fn axis_wanted(desired: &[Desired], negative: Action, positive: Action) -> bool {
+    desired.iter().any(|d| {
+        d.target.map == MapKind::Player
+            && (d.target.action == negative || d.target.action == positive)
+            && match d.want {
+                Want::Analog(v) | Want::Hold(v) => v > 0.0,
+                Want::Click => true,
+            }
+    })
 }
 
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings

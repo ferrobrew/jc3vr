@@ -10,7 +10,8 @@
 //! passes through a control, or rests there with the grip open, takes nothing. While held:
 //!
 //! - the wheel turns by the holding hands' turns ([`crate::controllers::vehicles::steering`]), and
-//!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes;
+//!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes,
+//!   until the stick steers. The holding hands stay where they took the rim as it turns;
 //! - the handlebars pivot about their middle: their turn in the horizontal plane steers and their
 //!   roll leans. With one hand on them, the other end mirrors it through the middle. They move by
 //!   the grips' change since the hands holding them last changed, so a grab does not jump them;
@@ -49,7 +50,7 @@ use crate::controllers::{
             held_wheel::step_wheel,
             sticks::{deflection3, step_lever, step_stick},
         },
-        steering::WheelGrip,
+        steering::{CueArming, WheelCue, WheelGrip},
         wheel::{BarsFrame, WheelFrame},
     },
 };
@@ -157,8 +158,13 @@ pub struct ControlState {
     pub holds: [Option<Hold>; 2],
     /// The wheel's angle, radians, positive clockwise as the driver sees it.
     pub wheel_angle: f32,
-    /// Each holding hand's place on the wheel on the last tick.
+    /// Each holding hand's hold on the wheel: the wheel it took, its place on the rim, and where
+    /// it was on the last tick.
     wheel_grips: [Option<WheelGrip>; 2],
+    /// How far the holding hands have turned the wheel past its lock, radians clockwise.
+    wheel_past_lock: f32,
+    /// Which of the wheel's haptic cues may fire.
+    wheel_cues: CueArming,
     /// The handlebars' turn and roll, radians.
     pub bars: Vec2,
     /// The bars and the grips' measure of them when the hands holding them last changed.
@@ -175,6 +181,8 @@ impl ControlState {
             holds: [None; 2],
             wheel_angle: 0.0,
             wheel_grips: [None; 2],
+            wheel_past_lock: 0.0,
+            wheel_cues: CueArming::new(),
             bars: Vec2::ZERO,
             bars_latch: None,
             stick: Vec2::ZERO,
@@ -199,6 +207,8 @@ pub struct Outputs {
     pub flight_stick: Option<Vec2>,
     /// `-1..=1`, positive accelerating.
     pub throttle: Option<f32>,
+    /// The cue the held wheel gives the hands holding it this tick.
+    pub wheel_cue: Option<WheelCue>,
 }
 
 impl Outputs {
@@ -209,6 +219,7 @@ impl Outputs {
         collective: None,
         flight_stick: None,
         throttle: None,
+        wheel_cue: None,
     };
 }
 
@@ -329,6 +340,8 @@ pub struct StepInputs<'a> {
     pub held: [bool; 2],
     /// The control each hand's grip press latched as a grab this tick.
     pub grabs: [Option<ControlKind>; 2],
+    /// Whether the stick's turn axis is out of its deadzone this tick.
+    pub stick_steers: bool,
     pub dt: f32,
 }
 
@@ -390,7 +403,15 @@ pub fn step(
         let holding = held_by(state, kind);
         match kind {
             ControlKind::Wheel => {
-                out.steer = step_wheel(state, placement, holding, inputs.orientations, dt);
+                let (steer, cue) = step_wheel(
+                    state,
+                    placement,
+                    holding,
+                    (inputs.orientations, inputs.stick_steers),
+                    dt,
+                );
+                out.steer = steer;
+                out.wheel_cue = cue;
             }
             ControlKind::Handlebars => {
                 if let Some((steer, lean)) = step_bars(state, placement, holding) {
@@ -449,8 +470,12 @@ pub fn anchor_point(
 ) -> Option<Vec3> {
     let point = grips[hand.index()]?;
     match hold.kind {
+        // The hand stays where it took the rim as the wheel turns, so at the lock it stays on the
+        // stopped wheel rather than running on round the rim.
         ControlKind::Wheel => {
-            let angle = placement.wheel.hand_angle(point)?;
+            let angle = state.wheel_grips[hand.index()]
+                .and_then(|grip| grip.rim_angle(state.wheel_angle))
+                .or_else(|| placement.wheel.hand_angle(point))?;
             Some(placement.wheel.rim_point(angle))
         }
         ControlKind::Handlebars => {
@@ -494,8 +519,12 @@ fn grab(
             .map_or(Vec3::ZERO, |handle| point - handle),
     };
     if kind == ControlKind::Wheel {
-        state.wheel_grips[hand.index()] =
-            Some(WheelGrip::new(&placement.wheel, point, orientation));
+        state.wheel_grips[hand.index()] = Some(WheelGrip::new(
+            &placement.wheel,
+            point,
+            orientation,
+            state.wheel_angle,
+        ));
     }
     state.holds[hand.index()] = Some(Hold { kind, offset });
     events.push(ControlEvent::Grabbed(hand, kind));
