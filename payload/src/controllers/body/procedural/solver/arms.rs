@@ -8,9 +8,10 @@
 //!
 //! An elbow hint is where an arm's elbow naturally sits for a wrist target: at the middle of the
 //! shoulder-to-wrist line, out along a pole that points down, out to the arm's side, and a little
-//! back, as far as the arm's length bends it.
+//! back, as far as the arm's length bends it. The side and the back are the chest's, so a chest
+//! turned toward the player's torso carries the elbows round with it.
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::body::procedural::{rig::RigBone, solver::pose::RigPose};
 
@@ -136,8 +137,14 @@ impl Side {
 }
 
 /// The elbow hint for an arm of `length` (upper arm and forearm together) from `shoulder` to the
-/// wrist target `wrist`, on `side`.
-pub fn elbow_hint(shoulder: Vec3, wrist: Vec3, length: f32, side: Side) -> Option<Vec3> {
+/// wrist target `wrist`, on `side`, for a chest turned `chest_yaw` radians about +Y.
+pub fn elbow_hint(
+    shoulder: Vec3,
+    wrist: Vec3,
+    length: f32,
+    side: Side,
+    chest_yaw: f32,
+) -> Option<Vec3> {
     let reach = wrist - shoulder;
     let distance = reach.length();
     if !(distance > 1e-4 && length > 1e-4 && reach.is_finite()) {
@@ -148,7 +155,12 @@ pub fn elbow_hint(shoulder: Vec3, wrist: Vec3, length: f32, side: Side) -> Optio
         Side::Left => Vec3::NEG_X,
         Side::Right => Vec3::X,
     };
-    let pole = Vec3::NEG_Y * POLE_DOWN + out * POLE_OUT + Vec3::Z * POLE_BACK;
+    let chest = Quat::from_rotation_y(if chest_yaw.is_finite() {
+        chest_yaw
+    } else {
+        0.0
+    });
+    let pole = Vec3::NEG_Y * POLE_DOWN + chest * (out * POLE_OUT + Vec3::Z * POLE_BACK);
     let pole = (pole - along * pole.dot(along))
         .try_normalize()
         .unwrap_or(out);
@@ -223,7 +235,7 @@ mod tests {
     fn the_elbow_hangs_down_and_out_and_keeps_the_arm_length() {
         let shoulder = Vec3::new(0.2, 1.45, 0.0);
         let wrist = Vec3::new(0.2, 1.3, -0.4);
-        let hint = elbow_hint(shoulder, wrist, 0.6, Side::Right).unwrap();
+        let hint = elbow_hint(shoulder, wrist, 0.6, Side::Right, 0.0).unwrap();
         assert!(hint.y < (shoulder.y + wrist.y) * 0.5);
         assert!(hint.x > 0.2);
         assert!(((hint - shoulder).length() - 0.3).abs() < 1e-3);
@@ -233,10 +245,28 @@ mod tests {
             wrist * Vec3::new(-1.0, 1.0, 1.0),
             0.6,
             Side::Left,
+            0.0,
         )
         .unwrap();
         assert!(left.x < -0.2);
-        assert!(elbow_hint(shoulder, shoulder, 0.6, Side::Left).is_none());
+        assert!(elbow_hint(shoulder, shoulder, 0.6, Side::Left, 0.0).is_none());
+    }
+
+    #[test]
+    fn the_elbow_turns_with_the_chest() {
+        let shoulder = Vec3::new(0.2, 1.45, 0.0);
+        let wrist = Vec3::new(0.2, 1.0, -0.2);
+        let square = elbow_hint(shoulder, wrist, 0.6, Side::Right, 0.0).unwrap();
+        // The chest turned a quarter left (+Y): its right side faces -Z.
+        let turned = elbow_hint(
+            shoulder,
+            wrist,
+            0.6,
+            Side::Right,
+            std::f32::consts::FRAC_PI_2,
+        )
+        .unwrap();
+        assert!(turned.z < square.z, "{square} -> {turned}");
     }
 
     /// The horizontal distance of a point from the test torso's axis, which is vertical at the

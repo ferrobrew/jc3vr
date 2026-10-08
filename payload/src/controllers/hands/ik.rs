@@ -647,7 +647,14 @@ unsafe fn queue_hand(
                 Hand::Left => Side::Left,
                 Hand::Right => Side::Right,
             };
-            let hint = elbow_hint(arm.shoulder_model, target_position, arm.length, side)?;
+            let chest_yaw = torso.map_or(0.0, |t| t.chest_yaw);
+            let hint = elbow_hint(
+                arm.shoulder_model,
+                target_position,
+                arm.length,
+                side,
+                chest_yaw,
+            )?;
             Some((reach, keep_out.map_or(hint, |k| k.push_out(hint))))
         });
     if let Some((reach, hint)) = elbow {

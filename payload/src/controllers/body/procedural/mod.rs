@@ -68,7 +68,7 @@ use crate::{
                     clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
                     feet::{Feet, FeetInput, FootPose, StepTuning},
                     gait::{self, NeutralStance, StanceFoot},
-                    hips_height, hips_horizontal, hips_room,
+                    hips_height, hips_horizontal, hips_room, line_yaw,
                     pose::RigPose,
                     reach_drop, solve,
                 },
@@ -133,6 +133,8 @@ pub struct ArmContext {
     pub keep_out: Option<TorsoKeepOut>,
     /// The elbow hints' reach, already scaled by the procedural pose's weight.
     pub elbow_reach: Option<f32>,
+    /// The written chest's turn about +Y from Rico's facing, radians: the elbow hints turn with it.
+    pub chest_yaw: f32,
 }
 
 /// The arm context of this tick's gate, `None` when the procedural body did not pose the torso.
@@ -412,6 +414,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 elbow_reach: config
                     .elbow_hints
                     .then_some(config.elbow_hint_reach * weights.torso),
+                chest_yaw: line_yaw(
+                    pose.position(RigBone::LeftShoulder),
+                    pose.position(RigBone::RightShoulder),
+                )
+                .unwrap_or(0.0),
             });
             if config.neutralize_targets {
                 neutralize_owned_targets(&mut character.m_HIK, &weights, &mut state.fade);
