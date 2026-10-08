@@ -54,7 +54,10 @@ use crate::{
         weapons::{
             self, FinishInputs,
             haptics::PulseSource,
-            hold::pickup::{Refusal, TakeOptions},
+            hold::{
+                holder::Cause,
+                pickup::{Refusal, TakeOptions},
+            },
         },
     },
 };
@@ -173,6 +176,12 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             let options = TakeOptions {
                 independent_pistols: dual.split && dual.independent_draw,
                 drop_replaced: holding.drop_replaced,
+                slide_s: if holding.take_slide {
+                    holding.snap_s
+                } else {
+                    0.0
+                },
+                cause: Cause::Pickup,
             };
             // SAFETY: the input tick runs on the main thread outside the world update.
             let refusal = unsafe { take_weapon(hand, reach, options) }.err();

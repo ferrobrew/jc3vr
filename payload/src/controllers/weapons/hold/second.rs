@@ -53,7 +53,7 @@ use crate::controllers::{
     hands::ik,
     weapons::{
         engine,
-        hold::{equip, layout},
+        hold::{self, equip, layout},
         holster::slot_label,
     },
 };
@@ -184,6 +184,8 @@ pub(crate) unsafe fn take(hand: Hand, slot: WeaponSlot) -> Result<(), SecondRefu
         }
         Err(refusal) => {
             state.last_refusal = Some(refusal);
+            drop(state);
+            hold::refused(refusal);
             Err(refusal)
         }
     }

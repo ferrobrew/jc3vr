@@ -639,6 +639,15 @@ pub struct HoldConfig {
     /// holds a weapon, and fire it with its own trigger: a second weapon, which the game keeps
     /// holstered while the mod drives it. Needs `either_hand`.
     pub second_weapon: bool,
+    /// Take a gun out of a living character's hands with a grab of the gun: the character lets
+    /// go of it and staggers, and the gun goes straight into the grabbing hand. Needs
+    /// `direct_pickup`.
+    pub steal: bool,
+    /// The radius of the grab volumes along a gun in a character's hands or on a rack, metres.
+    pub take_radius_m: f32,
+    /// Slide a gun taken off the ground, out of a character's hands, or off a rack from where it
+    /// was into the hand over `snap_s`, rather than have it appear there.
+    pub take_slide: bool,
 }
 
 impl HoldConfig {
@@ -654,6 +663,9 @@ impl HoldConfig {
             max_throw_mps: 15.0,
             drop_replaced: true,
             second_weapon: true,
+            steal: true,
+            take_radius_m: 0.1,
+            take_slide: true,
         }
     }
 }

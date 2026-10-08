@@ -9,6 +9,10 @@
 //! switches where the two poses meet. A draw switches at its start and slides toward the hand; a
 //! holster slides toward the dock and switches at its end.
 //!
+//! A gun taken from the world (off the ground, out of a character's hands, or off a rack) slides
+//! the same way from where it was in the world ([`SnapFrom::World`]), so it is seen to leave its
+//! place rather than appear in the hand.
+//!
 //! With the grip held to hold a gun, [`ReleaseWatch`] reports the holding hand's grip opening
 //! after it took the gun by a grab, and [`on_release`] decides what the release does.
 
@@ -32,6 +36,20 @@ impl SnapKind {
     }
 }
 
+/// Where the far end of a snap is: the place the gun slides from (a draw) or to (a holster).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum SnapFrom {
+    /// A dock bone on the body.
+    Dock {
+        /// The dock bone (an `NBone::ESafeBoneIndex`) the gun sits on while docked.
+        bone: u32,
+        /// The gun's pose relative to the dock bone while docked, in the skeleton's model space.
+        offset: Pose,
+    },
+    /// A fixed pose in the world, where the gun was before a hand took it.
+    World(Pose),
+}
+
 /// A gun moving between a dock and a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Snap {
@@ -39,29 +57,18 @@ pub struct Snap {
     /// The weapon's address.
     pub weapon: usize,
     pub hand: Hand,
-    /// The dock bone (an `NBone::ESafeBoneIndex`) the gun sits on while docked.
-    pub dock: u32,
-    /// The gun's pose relative to the dock bone while docked, in the skeleton's model space.
-    pub offset: Pose,
+    pub from: SnapFrom,
     elapsed_s: f32,
     duration_s: f32,
 }
 
 impl Snap {
-    pub fn new(
-        kind: SnapKind,
-        weapon: usize,
-        hand: Hand,
-        dock: u32,
-        offset: Pose,
-        duration_s: f32,
-    ) -> Self {
+    pub fn new(kind: SnapKind, weapon: usize, hand: Hand, from: SnapFrom, duration_s: f32) -> Self {
         Self {
             kind,
             weapon,
             hand,
-            dock,
-            offset,
+            from,
             elapsed_s: 0.0,
             duration_s: if duration_s.is_finite() {
                 duration_s.max(0.0)
@@ -176,7 +183,13 @@ mod tests {
     use super::*;
 
     fn snap(kind: SnapKind, duration_s: f32) -> Snap {
-        Snap::new(kind, 0x1000, Hand::Left, 0, Pose::IDENTITY, duration_s)
+        Snap::new(
+            kind,
+            0x1000,
+            Hand::Left,
+            SnapFrom::World(Pose::IDENTITY),
+            duration_s,
+        )
     }
 
     #[test]

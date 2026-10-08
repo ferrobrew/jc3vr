@@ -48,6 +48,9 @@ pub enum GrabVolume {
     /// The static world within the empty hand's reach, to climb (see
     /// [`crate::controllers::physical_hands::climb`]).
     Climb,
+    /// A weapon without a body in the world for the free hand to take: a gun in a character's
+    /// hands, or a weapon on a rack (see [`crate::controllers::weapons::hold::take`]).
+    WorldWeapon,
 }
 
 impl GrabVolume {
@@ -65,6 +68,7 @@ impl GrabVolume {
             GrabVolume::ParachuteHandle(Hand::Right) => "right parachute handle",
             GrabVolume::Pickup => "object in reach",
             GrabVolume::Climb => "surface to climb",
+            GrabVolume::WorldWeapon => "weapon to take",
         }
     }
 }

@@ -41,7 +41,9 @@
 //! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). A long gun can
 //! be drawn and holstered without the game's acts, sliding between its dock and the hand, and let
 //! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]). The free hand can hold
-//! a second weapon, which the mod fires ([`second`]).
+//! a second weapon, which the mod fires ([`second`]). A free hand can also take a gun out of a
+//! living character's hands ([`steal`]), through the volumes the take places on weapons that have
+//! no body in the world ([`take`] and [`world`]).
 
 pub mod act;
 pub mod dock;
@@ -49,7 +51,11 @@ pub mod equip;
 pub mod holder;
 pub mod layout;
 pub mod pickup;
+pub(crate) mod refs;
 pub mod second;
+pub mod steal;
+pub mod take;
+pub mod world;
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
@@ -99,6 +105,8 @@ pub struct HoldStatus {
     pub owned: bool,
     /// The hand holding the wielded weapon.
     pub holder: Option<Hand>,
+    /// What brought the wielded weapon into the hands, or `None` for the game's own draw.
+    pub origin: Option<Cause>,
     /// A hand waiting for the game to wield a weapon.
     pub pending: Option<Pending>,
     /// Handovers, direct pickups, and pickups left to the game's use-item action since the payload
@@ -111,13 +119,18 @@ pub struct HoldStatus {
     /// Table writes and snapped placements since the payload loaded.
     pub writes: u64,
     pub snaps: u64,
+    /// The takes of weapons that have no body in the world.
+    pub take: take::TakeStatus,
 }
 
 pub fn status() -> HoldStatus {
+    // Read before the tick's lock: the status page takes one lock at a time.
+    let take = take::status();
     let tick = TICK.lock();
     HoldStatus {
         owned: OWNED.load(Ordering::Relaxed) != 0,
         holder: tick.holder.hand(),
+        origin: tick.holder.origin(),
         pending: tick.holder.pending(),
         handovers: tick.handovers,
         pickups: tick.pickups,
@@ -125,6 +138,7 @@ pub fn status() -> HoldStatus {
         last_pickup_refusal: tick.last_pickup_refusal.clone(),
         writes: WRITES.load(Ordering::Relaxed),
         snaps: SNAPS.load(Ordering::Relaxed),
+        take,
     }
 }
 
@@ -329,9 +343,22 @@ pub(crate) fn record_pickup(refusal: Option<String>) {
         None => tick.pickups += 1,
         Some(refusal) => {
             tick.pickup_fallbacks += 1;
-            tick.last_pickup_refusal = Some(refusal);
+            tick.last_pickup_refusal = Some(refusal.clone());
+            drop(tick);
+            refused(refusal);
         }
     }
+}
+
+/// Note why the last thing the hands tried with a weapon (a pickup, a take, a draw, a holster, a
+/// drop, or a second weapon) did not happen, for the readout.
+pub(crate) fn refused(why: impl ToString) {
+    *LAST_REFUSAL.lock() = Some(why.to_string());
+}
+
+/// Why the last thing the hands tried with a weapon did not happen.
+pub fn last_refusal() -> Option<String> {
+    LAST_REFUSAL.lock().clone()
 }
 
 /// Log a weapon coming into a hand, and arm the grip watch when a grab put it there.
@@ -377,6 +404,7 @@ static TICK: Mutex<Tick> = Mutex::new(Tick {
     last_pickup_refusal: None,
 });
 static PLACED: Mutex<Option<Placed>> = Mutex::new(None);
+static LAST_REFUSAL: Mutex<Option<String>> = Mutex::new(None);
 /// The owned weapon's address, or zero: the detours' check before any lock.
 static OWNED: AtomicUsize = AtomicUsize::new(0);
 /// The holding hand ([`hand_code`]).
@@ -458,4 +486,6 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
         unsafe { apply(weapon, false) };
     }
     unsafe { second::apply_owned(inventory) };
+    // The guns are placed for the pass, so another character's gun is where it is drawn.
+    unsafe { steal::observe(inventory) };
 }

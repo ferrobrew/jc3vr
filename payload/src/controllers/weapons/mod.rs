@@ -170,6 +170,11 @@ pub enum GrabOutcome {
     Action,
     /// A C4-pouch grab: a charge is asked for.
     C4,
+    /// A grab of a weapon without a body in the world (in a character's hands, or on a rack),
+    /// which went into the hand when `taken`.
+    Take {
+        taken: bool,
+    },
 }
 
 impl GrabOutcome {
@@ -188,6 +193,8 @@ impl GrabOutcome {
             GrabOutcome::Magazine => "reload pouch".to_owned(),
             GrabOutcome::Action => "action grabbed".to_owned(),
             GrabOutcome::C4 => "charge asked for".to_owned(),
+            GrabOutcome::Take { taken: true } => "weapon taken".to_owned(),
+            GrabOutcome::Take { taken: false } => "weapon not taken".to_owned(),
         }
     }
 }
@@ -348,6 +355,18 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         }
     }
     let body_points = body_points(&active, &body_frame.anchor);
+    let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
+    let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    candidates.extend(unsafe {
+        hold::take::begin_tick(&hold::take::TakeInputs {
+            active: &active,
+            settings: &holding,
+            free,
+            independent_pistols: dual.split && dual.independent_draw,
+            gameplay,
+        })
+    });
     candidates.extend(reload::begin_tick(&reload::BeginInputs {
         weapon: weapon.as_ref(),
         active: &active,
@@ -550,6 +569,22 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             GrabVolume::MagazinePouch => GrabOutcome::Magazine,
             GrabVolume::WeaponAction => GrabOutcome::Action,
             GrabVolume::C4Pouch => GrabOutcome::C4,
+            GrabVolume::WorldWeapon => {
+                let Some(active) = active.as_ref() else {
+                    continue;
+                };
+                let dual = config.weapons.dual_wield;
+                let inputs = hold::take::TakeInputs {
+                    active,
+                    settings: &config.weapons.hold,
+                    free: [true; 2],
+                    independent_pistols: dual.split && dual.independent_draw,
+                    gameplay,
+                };
+                // SAFETY: the input tick runs on the main thread outside the world update.
+                let taken = unsafe { hold::take::finish_grab(hand, &inputs) };
+                GrabOutcome::Take { taken }
+            }
             GrabVolume::VehicleControl(_)
             | GrabVolume::ParachuteHandle(_)
             | GrabVolume::Pickup
@@ -669,6 +704,7 @@ pub(crate) fn stand_down() {
     dual_wield::attach::clear();
     hold::clear();
     hold::act::clear();
+    hold::take::stand_down();
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { second::stand_down() };
     reload::stand_down();
@@ -1108,6 +1144,7 @@ fn cues_grab(outcome: GrabOutcome) -> bool {
                 | HolsterAction::PutBackSecond { .. }
         ) | GrabOutcome::Foregrip(Transition::Grabbed)
             | GrabOutcome::Handover { moved: true }
+            | GrabOutcome::Take { taken: true }
     )
 }
 

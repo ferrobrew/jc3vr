@@ -47,7 +47,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::{ik, pose as hand_pose, tiers},
         weapons::hold::{
-            act::{self, SnapView},
+            act::{self, SnapStart, SnapView},
             second,
         },
     },
@@ -298,16 +298,15 @@ pub fn blend_pin(animated: Pose, pinned: Pose, weight: f32) -> Pose {
     hand_pose::interp(animated, pinned, weight)
 }
 
-/// The attach bone's pose part of the way, `toward_hand`, from where the gun sits on its dock (the
-/// dock bone `dock` composed with the gun's pose on it, `offset`) to the hand's grip `held`, all in
-/// model space.
-pub fn docked_grip(dock: Pose, offset: Pose, held: Pose, toward_hand: f32) -> Pose {
+/// The attach bone's pose part of the way, `toward_hand`, from where the gun was (`start`: on its
+/// dock, or where a hand took it in the world) to the hand's grip `held`, both in model space.
+pub fn slide_grip(start: Pose, held: Pose, toward_hand: f32) -> Pose {
     let toward_hand = if toward_hand.is_finite() {
         toward_hand.clamp(0.0, 1.0)
     } else {
         1.0
     };
-    hand_pose::interp(hand_pose::mul(dock, offset), held, toward_hand)
+    hand_pose::interp(start, held, toward_hand)
 }
 
 /// The rigid part of `attach` relative to `wrist`, both model-space matrices, or `None` for a
@@ -420,9 +419,9 @@ unsafe fn pin(
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
     let mut held = pinned_attach(wrist, wrist_scale, offset);
     if let Some(snap) = snap
-        && let Some(dock) = unsafe { bone_model_pose(character, snap.dock) }
+        && let Some(start) = unsafe { snap_start(character, snap.start) }
     {
-        held = docked_grip(dock, snap.offset, held, snap.toward_hand);
+        held = slide_grip(start, held, snap.toward_hand);
     }
     let pinned_pose = blend_pin(animated, held, weight);
     let pinned =
@@ -439,6 +438,21 @@ unsafe fn pin(
         animated_deviation_deg,
         animated_in_wrist,
     })
+}
+
+/// Where a snap's far end is in `character`'s model space: the gun's pose on its dock bone as the
+/// skeleton has it now, or a pose in the world carried into the model.
+unsafe fn snap_start(character: &Character, start: SnapStart) -> Option<Pose> {
+    match start {
+        SnapStart::Dock { dock, offset } => {
+            let bone = unsafe { bone_model_pose(character, dock) }?;
+            Some(hand_pose::mul(bone, offset))
+        }
+        SnapStart::World(world) => relative_pose(
+            Mat4::from(character.m_WorldMatrixT1),
+            Mat4::from_rotation_translation(world.orientation, world.position),
+        ),
+    }
 }
 
 /// `hand`'s canonical grip: its primary attach bone's pose relative to its wrist in the skeleton's
@@ -576,12 +590,12 @@ mod tests {
     }
 
     #[test]
-    fn a_docked_grip_slides_from_the_dock_to_the_hand() {
+    fn a_grip_slides_from_where_the_gun_was_to_the_hand() {
         let dock = pose(Vec3::new(0.2, 1.2, -0.1), Quat::from_rotation_z(0.6));
         let offset = pose(Vec3::new(0.0, 0.1, 0.0), Quat::from_rotation_x(0.3));
         let held = pose(Vec3::new(0.4, 1.0, 0.3), Quat::from_rotation_y(1.0));
         let on_dock = hand_pose::mul(dock, offset);
-        let at = |t| docked_grip(dock, offset, held, t);
+        let at = |t| slide_grip(on_dock, held, t);
         assert!(at(0.0).position.distance(on_dock.position) < 1e-5);
         assert!(angle_deg(at(0.0).orientation, on_dock.orientation) < 1e-2);
         assert!(at(1.0).position.distance(held.position) < 1e-5);

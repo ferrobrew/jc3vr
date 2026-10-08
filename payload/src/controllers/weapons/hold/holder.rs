@@ -25,6 +25,8 @@ pub enum Cause {
     Draw,
     /// A weapon taken off the ground.
     Pickup,
+    /// A gun taken out of a living character's hands.
+    Steal,
 }
 
 impl Cause {
@@ -32,6 +34,7 @@ impl Cause {
         match self {
             Cause::Draw => "draw",
             Cause::Pickup => "pickup",
+            Cause::Steal => "taken from a character",
         }
     }
 }
@@ -52,6 +55,8 @@ pub struct Holder {
     /// The wielded weapon's address, while one is wielded.
     weapon: Option<usize>,
     hand: Option<Hand>,
+    /// What brought the wielded weapon into the hands, or `None` for the game's own draw.
+    origin: Option<Cause>,
     pending: Option<Pending>,
 }
 
@@ -69,6 +74,7 @@ impl Holder {
         Self {
             weapon: None,
             hand: None,
+            origin: None,
             pending: None,
         }
     }
@@ -88,6 +94,7 @@ impl Holder {
         self.weapon = wielded;
         let Some(address) = wielded else {
             self.hand = None;
+            self.origin = None;
             return Some(Change::Left);
         };
         let pending = self
@@ -98,6 +105,7 @@ impl Holder {
         }
         let hand = pending.map_or(fallback, |p| p.hand);
         self.hand = Some(hand);
+        self.origin = pending.map(|p| p.cause);
         Some(Change::Took {
             hand,
             cause: pending.map(|p| p.cause),
@@ -131,6 +139,11 @@ impl Holder {
 
     pub fn pending(&self) -> Option<Pending> {
         self.pending
+    }
+
+    /// What brought the wielded weapon into the hands, or `None` for the game's own draw.
+    pub fn origin(&self) -> Option<Cause> {
+        self.origin
     }
 }
 
@@ -228,6 +241,31 @@ mod tests {
         let mut h = Holder::new();
         assert!(!h.hand_over(Hand::Left));
         assert_eq!(h.hand(), None);
+    }
+
+    #[test]
+    fn the_origin_follows_what_brought_the_weapon() {
+        let mut h = Holder::new();
+        h.begin(Hand::Left, Cause::Steal, Some(RIFLE));
+        h.observe(Some(RIFLE), Hand::Right, TICK);
+        assert_eq!(h.origin(), Some(Cause::Steal));
+        assert!(h.hand_over(Hand::Right));
+        assert_eq!(
+            h.origin(),
+            Some(Cause::Steal),
+            "a handover keeps the origin"
+        );
+        h.begin(Hand::Right, Cause::Pickup, None);
+        h.observe(Some(PISTOL), Hand::Right, TICK);
+        assert_eq!(h.origin(), Some(Cause::Pickup));
+        h.observe(None, Hand::Right, TICK);
+        assert_eq!(
+            h.origin(),
+            None,
+            "a weapon that left the hands forgets its origin"
+        );
+        h.observe(Some(RIFLE), Hand::Right, TICK);
+        assert_eq!(h.origin(), None, "the game's own draw has no origin");
     }
 
     #[test]

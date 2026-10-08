@@ -44,6 +44,27 @@ impl WeakPtrGameObject {
             f(self as *mut Self as _, other)
         }
     }
+    pub const Lock_ADDRESS: usize = 0x14044CC90;
+    /// `boost::weak_ptr<CGameObject>::lock`: writes into `result` a strong reference to the
+    /// object, taken by raising the control block's strong count with an atomic compare-and-swap
+    /// while that count is above zero, and returns `result`. An object whose strong count already
+    /// reached zero (one that is being or has been destroyed), or a null pointer, yields a null
+    /// `result`. The strong reference keeps the object alive until it is released with
+    /// [`ReleaseSharedPtrGameObject`](crate::types::shared_ptr::ReleaseSharedPtrGameObject).
+    pub unsafe fn Lock(
+        &self,
+        result: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+    ) -> *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject> {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                result: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+            ) -> *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject> = ::std::mem::transmute(
+                Self::Lock_ADDRESS,
+            );
+            f(self as *const Self as _, result)
+        }
+    }
 }
 impl std::convert::AsRef<WeakPtrGameObject> for WeakPtrGameObject {
     fn as_ref(&self) -> &WeakPtrGameObject {
@@ -53,6 +74,20 @@ impl std::convert::AsRef<WeakPtrGameObject> for WeakPtrGameObject {
 impl std::convert::AsMut<WeakPtrGameObject> for WeakPtrGameObject {
     fn as_mut(&mut self) -> &mut WeakPtrGameObject {
         self
+    }
+}
+pub const ReleaseSharedPtrGameObject_ADDRESS: usize = 0x14043E940;
+/// `boost::shared_ptr<CGameObject>::~shared_ptr`: releases the strong reference `ptr` holds. When
+/// it was the last strong reference the object is disposed, and when no weak reference remains
+/// either the control block is destroyed too. `ptr` itself is not cleared.
+pub unsafe fn ReleaseSharedPtrGameObject(
+    ptr: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ptr: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+        ) = ::std::mem::transmute(ReleaseSharedPtrGameObject_ADDRESS);
+        f(ptr)
     }
 }
 #[allow(dead_code)]

@@ -11,6 +11,7 @@
 mod controllers;
 mod grapple;
 mod system;
+mod weapons;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -182,6 +183,15 @@ const SECTIONS: &[Section] = &[
             row!("FLIP WATCH", controllers::flip_watch),
             row!("ANIMATED GRIP OFFSET", controllers::animated_deviation),
             row!("ATTACH BONE CHANGES", controllers::bone_changes),
+        ],
+    },
+    Section {
+        title: "WEAPONS IN HAND",
+        rows: &[
+            row!("LEFT HAND", weapons::left_hand),
+            row!("RIGHT HAND", weapons::right_hand),
+            row!("TAKE FROM HANDS", weapons::takes),
+            row!("LAST REFUSAL", weapons::last_refusal),
         ],
     },
     Section {

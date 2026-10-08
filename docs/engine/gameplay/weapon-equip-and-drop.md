@@ -49,3 +49,17 @@ The inventory's drop of a slot ([`Inventory::DropWeapon`](https://ferrobrew.gith
 - still wielding or dual-wielding (a heavy weapon, which stopping does not holster): the first gun's measured velocity and angular velocity, set on its body ([`WeaponData::m_PfxInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_PfxInstance)) ([`WeaponData::m_MeasuredWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_MeasuredWorldVelocity) and `m_MeasuredAngularVelocity`).
 
 Since the inventory's drop stops using the weapon first, a held weapon other than a heavy one is dropped as if from its holster, with the holder's motion and not the hand's. A swimming character's pickup calls the drop virtual on the slot's occupant directly, which drops it at once with the slot still holding it. The deferral does nothing to a weapon already in the dropped state, so a weapon dropped that way and then removed through the inventory's drop is dropped once. The deferral is unbound.
+
+The deferral reads the weapon's state when the inventory's drop runs, not when the drop is carried out: a weapon not yet dropped is marked for the drop and added to the pre-simulation updates, and a weapon already dropped is left unmarked. So a weapon dropped through its drop virtual and then let go of by the inventory is not dropped a second time later, even when something picks it up in between.
+
+## A character that loses its gun
+
+The game takes a gun from a living character only by dropping it: the character's death drops its best weapon through the inventory, and an animation state task can drop a configured slot. There is no disarm as such. What a character does once a gun leaves its hands is the game's ordinary handling of a character with nothing wielded:
+
+- the inventory's drop with its selection on selects another weapon the character carries when the dropped slot was the selected one;
+- the weapon-equip state task, when its character wields nothing, switches to the first weapon that still has ammunition ([`Inventory::TryToSwitchToValidWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-TryToSwitchToValidWeapon));
+- the AI's perception keeps a sense of weapons lying in the world whose pickup interaction is live, sorted by distance, and the behaviour trees can reserve one of them for a character to fetch (unverified: read from the symbol dump, unbound).
+
+A hit reaction ([`Character::HitReaction`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-HitReaction)) of an impulse between the character's stumble and knockdown thresholds staggers it without a ragdoll.
+
+A character is held alive across frames through its weak reference to itself ([`Character::m_WeakThis`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_WeakThis)): a copy of it keeps only the control block, and locking it ([`WeakPtrGameObject::Lock`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/types::shared_ptr::WeakPtrGameObject##func-Lock)) yields a strong reference only while the character has not been destroyed, which holds it until released ([`ReleaseSharedPtrGameObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/types::shared_ptr##func-ReleaseSharedPtrGameObject)).

@@ -23,7 +23,7 @@ use crate::controllers::{
         engine,
         hold::{
             self,
-            dock::{ReleaseWatch, Snap, SnapKind},
+            dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
             equip::{self, DockRefusal, Thrown},
             holder::Cause,
             layout,
@@ -34,11 +34,18 @@ use crate::controllers::{
 /// A snap as the rigid grip sees it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SnapView {
-    pub dock: SafeBoneIndex,
-    /// The gun's pose relative to the dock bone, model space.
-    pub offset: Pose,
-    /// How far the gun is from the dock toward the hand, `0..=1`.
+    pub start: SnapStart,
+    /// How far the gun is from the far end toward the hand, `0..=1`.
     pub toward_hand: f32,
+}
+
+/// The far end of a snap, as the rigid grip places it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum SnapStart {
+    /// The gun's pose `offset` on the dock bone `dock`, model space.
+    Dock { dock: SafeBoneIndex, offset: Pose },
+    /// A pose in the world.
+    World(Pose),
 }
 
 /// The docking's readout.
@@ -80,6 +87,8 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
         Ok(docked) => docked,
         Err(refusal) => {
             state.status.last_refusal = Some(refusal);
+            drop(state);
+            hold::refused(refusal);
             return Err(refusal);
         }
     };
@@ -91,8 +100,10 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
                 SnapKind::Draw,
                 docked.weapon,
                 hand,
-                docked.dock,
-                offset,
+                SnapFrom::Dock {
+                    bone: docked.dock,
+                    offset,
+                },
                 snap_s,
             ));
         }
@@ -120,6 +131,7 @@ pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal>
         Ok(target) => target,
         Err(refusal) => {
             STATE.lock().status.last_refusal = Some(refusal);
+            hold::refused(refusal);
             return Err(refusal);
         }
     };
@@ -132,8 +144,10 @@ pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal>
             SnapKind::Holster,
             target.weapon,
             hand,
-            target.dock,
-            offset,
+            SnapFrom::Dock {
+                bone: target.dock,
+                offset,
+            },
             snap_s,
         ));
         return Ok(());
@@ -168,9 +182,26 @@ pub(crate) unsafe fn drop_held(hand: Hand, max_speed_mps: f32) -> Result<Thrown,
         }
         Err(refusal) => {
             state.status.last_refusal = Some(refusal);
+            drop(state);
+            hold::refused(refusal);
             Err(refusal)
         }
     }
+}
+
+/// Slide the gun of `weapon` in `hand` into the hand from `from`, its pose in the world before the
+/// hand took it, over `snap_s` seconds. Nothing slides for a zero or bad time.
+pub(crate) fn slide_in(weapon: usize, hand: Hand, from: Pose, snap_s: f32) {
+    if !(snap_s.is_finite() && snap_s > 0.0) {
+        return;
+    }
+    STATE.lock().snap = Some(Snap::new(
+        SnapKind::Draw,
+        weapon,
+        hand,
+        SnapFrom::World(from),
+        snap_s,
+    ));
 }
 
 /// `hand` took the gun by a grab: with the grip holding guns, its grip holds this one once it is
@@ -206,9 +237,15 @@ pub(crate) fn snap_view(weapon: usize, hand: Hand) -> Option<SnapView> {
     if snap.weapon != weapon || snap.hand != hand {
         return None;
     }
+    let start = match snap.from {
+        SnapFrom::Dock { bone, offset } => SnapStart::Dock {
+            dock: layout::dock_bone(bone)?,
+            offset,
+        },
+        SnapFrom::World(pose) => SnapStart::World(pose),
+    };
     Some(SnapView {
-        dock: layout::dock_bone(snap.dock)?,
-        offset: snap.offset,
+        start,
         toward_hand: snap.toward_hand(),
     })
 }
@@ -305,7 +342,11 @@ unsafe fn finish_holster(owner: &Character, weapon: usize) -> Result<(), DockRef
             drop(state);
             tracing::info!(target: "controllers", "hold: holstered the weapon without the game's holster");
         }
-        Err(refusal) => state.status.last_refusal = Some(refusal),
+        Err(refusal) => {
+            state.status.last_refusal = Some(refusal);
+            drop(state);
+            hold::refused(refusal);
+        }
     }
     result
 }

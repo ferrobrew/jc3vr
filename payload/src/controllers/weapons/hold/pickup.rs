@@ -17,6 +17,7 @@
 
 use std::fmt;
 
+use glam::Mat4;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
@@ -25,11 +26,11 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::gun,
-    frame::Hand,
+    frame::{Hand, Pose},
     weapons::{
         dual_wield,
         engine::{self, slot_from_raw},
-        hold::{self, equip, holder::Cause},
+        hold::{self, act, equip, holder::Cause},
         holster::slot_label,
     },
 };
@@ -79,21 +80,26 @@ impl fmt::Display for Refusal {
 impl std::error::Error for Refusal {}
 
 /// How a direct pickup treats the weapons around it.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TakeOptions {
     /// A dual-wield pair taken this way draws only the grabbing hand's pistol.
     pub independent_pistols: bool,
     /// A weapon already in the slot is dropped to the ground first, rather than dropped or
     /// despawned by the game's inventory add.
     pub drop_replaced: bool,
+    /// How long the gun slides from where it was into the hand, seconds; zero puts it there at
+    /// once.
+    pub slide_s: f32,
+    /// What took the weapon, for the holding hand's readout.
+    pub cause: Cause,
 }
 
 /// Pick `weapon` up into `hand` directly. Returns the slot the weapon went into.
 ///
 /// # Safety
 ///
-/// `weapon` must be a live weapon (its body checked to belong to it this tick), on the main thread
-/// outside the world update.
+/// `weapon` must be a live weapon (its body checked to belong to it this tick, or its holder held
+/// alive), on the main thread outside the world update.
 pub(crate) unsafe fn take(
     hand: Hand,
     weapon: &mut WeaponBase,
@@ -103,18 +109,7 @@ pub(crate) unsafe fn take(
     if weapon.m_State != WeaponState::E_WS_DROPPED {
         return Err(Refusal::NotDropped);
     }
-    // Read as the raw value: an unset slot is out of the enum's range.
-    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
-    let slot = slot_from_raw(slot).ok_or(Refusal::UnknownSlot)?;
-    if slot == WeaponSlot::E_SLOT_HAND_GRENADE {
-        return Err(Refusal::Grenade);
-    }
-    if weapon.m_InfinitePickup {
-        return Err(Refusal::InfinitePickup);
-    }
-    if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
-        return Err(Refusal::AnimationForbids);
-    }
+    let slot = unsafe { takeable(owner, weapon) }?;
     let address = weapon as *mut WeaponBase as usize;
     if options.drop_replaced {
         let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
@@ -126,7 +121,8 @@ pub(crate) unsafe fn take(
             );
         }
     }
-    hold::begin(hand, Cause::Pickup, Some(address));
+    let from = unsafe { gun_pose(weapon) };
+    hold::begin(hand, options.cause, Some(address));
     if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
         dual_wield::attach::begin_draw(hand);
     }
@@ -141,12 +137,54 @@ pub(crate) unsafe fn take(
     if slot != WeaponSlot::E_SLOT_DUAL_WIELD {
         hold::adopt(address, hand);
     }
+    if let Some(from) = from {
+        act::slide_in(address, hand, from, options.slide_s);
+    }
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
         slot = slot_label(slot),
+        cause = options.cause.label(),
         "hold: picked the weapon up into the {} hand",
         hand.label()
     );
     Ok(slot)
+}
+
+/// Whether `owner` can take `weapon` into a hand by a direct pickup, whatever its state: its slot
+/// is one the inventory holds it in, it is not a hand grenade or a weapon that gives a copy, and
+/// the animation allows a pickup. Returns its slot.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character and `weapon` live, on the main thread outside
+/// the world update.
+pub(crate) unsafe fn takeable(
+    owner: &Character,
+    weapon: &WeaponBase,
+) -> Result<WeaponSlot, Refusal> {
+    // Read as the raw value: an unset slot is out of the enum's range.
+    let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+    let slot = slot_from_raw(slot).ok_or(Refusal::UnknownSlot)?;
+    if slot == WeaponSlot::E_SLOT_HAND_GRENADE {
+        return Err(Refusal::Grenade);
+    }
+    if weapon.m_InfinitePickup {
+        return Err(Refusal::InfinitePickup);
+    }
+    if !unsafe { owner.m_Inventory.GetAnimationAllowsPickup() } {
+        return Err(Refusal::AnimationForbids);
+    }
+    Ok(slot)
+}
+
+/// The world pose of `weapon`'s first gun.
+pub(crate) unsafe fn gun_pose(weapon: &WeaponBase) -> Option<Pose> {
+    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+    let (_, orientation, position) =
+        Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
+    (position.is_finite() && orientation.is_finite()).then(|| Pose {
+        position,
+        orientation: orientation.normalize(),
+    })
 }

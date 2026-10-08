@@ -273,6 +273,16 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .second_weapon))
+        .item(config_toggle!("TAKE GUNS FROM HANDS", |c| c
+            .controllers
+            .weapons
+            .hold
+            .steal))
+        .item(config_toggle!("SLIDE TAKEN GUNS INTO THE HAND", |c| c
+            .controllers
+            .weapons
+            .hold
+            .take_slide))
         .item(config_toggle!("PICKUPS DROP THE OLD WEAPON", |c| c
             .controllers
             .weapons
