@@ -210,7 +210,10 @@ const SECTIONS: &[Section] = &[
     },
     Section {
         title: "AIMING",
-        rows: &[row!("DOWN THE SIGHTS", explosives::down_the_sights)],
+        rows: &[
+            row!("DOWN THE SIGHTS", explosives::down_the_sights),
+            row!("GUN AGAINST WALLS", explosives::gun_against_walls),
+        ],
     },
     Section {
         title: "HAND BODIES",

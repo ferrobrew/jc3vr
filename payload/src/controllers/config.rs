@@ -30,6 +30,7 @@ use crate::{
         vehicles::config::VehiclesConfig,
         weapons::{
             ads::config::AdsConfig,
+            collide::config::CollideConfig,
             config::{
                 C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
                 HeftConfig, HoldConfig, HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
@@ -730,6 +731,8 @@ pub struct WeaponsConfig {
     /// Aiming a long gun down its sights: the sights onto the eye, the stock into the shoulder,
     /// and a scope's cheek weld.
     pub ads: AdsConfig,
+    /// Held long guns stop at walls: turned aside and pulled back into the hands.
+    pub collide: CollideConfig,
 }
 
 impl WeaponsConfig {
@@ -756,6 +759,7 @@ impl WeaponsConfig {
             fire_draws_weapon: false,
             wheel: WheelConfig::new(),
             ads: AdsConfig::new(),
+            collide: CollideConfig::new(),
         }
     }
 }

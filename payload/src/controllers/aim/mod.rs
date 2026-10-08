@@ -59,7 +59,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::{self, ik, late, pose as hand_pose},
         physical_hands, scheme, vehicles,
-        weapons::{c4, grenade, hold::second},
+        weapons::{c4, collide, grenade, hold::second},
     },
     frame_timing::{self, Slot},
     headpose, hooks,
@@ -213,6 +213,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         // SAFETY: the owner is the live local player, in the simulation phase outside the physics
         // step.
         unsafe { c4::stick::probe(owner, &tick.config) };
+        // SAFETY: as above.
+        unsafe { collide::probe(owner) };
     }
 
     let off = tick.config.acting_hand().other();

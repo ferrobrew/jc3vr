@@ -46,6 +46,8 @@ pub struct GripGeometry {
     pub barrel: Vec3,
     /// The sight line's origin.
     pub sight: Vec3,
+    /// The first gun's muzzle: its current fire point.
+    pub muzzle: Vec3,
     /// Whether the foregrip is the weapon's own grip point rather than the fallback along the
     /// barrel.
     pub native: bool,
@@ -437,6 +439,7 @@ mod tests {
         foregrip: Vec3::new(0.0, 0.0, -0.4),
         barrel: Vec3::NEG_Z,
         sight: Vec3::new(0.0, 0.08, 0.0),
+        muzzle: Vec3::new(0.0, 0.05, -0.7),
         native: true,
     };
 
@@ -539,6 +542,7 @@ mod tests {
             foregrip: Vec3::new(0.0, -0.06, -0.35),
             barrel: Vec3::NEG_Z,
             sight: Vec3::new(0.0, 0.08, 0.0),
+            muzzle: Vec3::new(0.0, 0.05, -0.7),
             native: true,
         };
         let pose = two_hand(

@@ -297,6 +297,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         let w = &mut c.weapons;
         scope::scope_settings(ui, &mut w.scopes, &mut w.scope);
         scope::ads_settings(ui, &mut w.ads);
+        scope::collide_settings(ui, &mut w.collide);
     });
 
     egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {

@@ -58,6 +58,7 @@
 pub mod ads;
 pub mod c4;
 mod camera_kick;
+pub mod collide;
 pub mod config;
 pub mod docks;
 pub mod dual_wield;
@@ -345,6 +346,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 direction: g.barrel,
             },
             scoped: scope::is_scoped(w.address),
+        })
+    }));
+    collide::observe(weapon.zip(geometry).and_then(|(w, g)| {
+        Some(collide::CollideWeapon {
+            holder: w.holder?,
+            muzzle: g.muzzle,
+            barrel: g.barrel,
         })
     }));
 
@@ -776,6 +784,7 @@ pub(crate) fn stand_down() {
     heft::observe(None);
     heft::freeze(false);
     ads::observe(None);
+    collide::observe(None);
     grip_watch::clear();
     recoil::clear();
     grenade::stand_down();

@@ -11,6 +11,7 @@ use crate::{
                 self, AdsStatus,
                 config::{AdsConfig, AimingEye},
             },
+            collide::{self, config::CollideConfig},
             config::{LensPath, LensSource, ScopeConfig},
             scope::{
                 self, ScopeStatus,
@@ -47,6 +48,19 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         suppressing,
         ads,
     } = readout;
+    let c = collide::status();
+    ui.label(format!(
+        "Against walls: {} · turned {:.0}° · pulled back {:.1} cm · contacts {} · probes {}",
+        match (c.weapon, c.touching) {
+            (false, _) => "no long gun measured",
+            (true, false) => "clear",
+            (true, true) => "against a wall",
+        },
+        c.turn_deg,
+        c.retract_m * 100.0,
+        c.contacts,
+        c.casts
+    ));
     ui.label(format!(
         "Down the sights: {} · stock {:.0}% · sights {:.0}% · weld {:.0}% · eye off the line {} · \
          sighted {} · shouldered {} · welded {}",
@@ -190,5 +204,16 @@ pub(super) fn ads_settings(ui: &mut Ui, a: &mut AdsConfig) {
         ui.checkbox(&mut a.cheek_weld, "Cheek weld for scopes");
         ui.add(egui::Slider::new(&mut a.weld_engage_m, 0.01..=0.15).text("Weld engage (m)"));
         ui.add(egui::Slider::new(&mut a.weld_lock_m, 0.0..=0.1).text("Weld lock (m)"));
+    });
+}
+
+/// The settings of held guns against walls.
+pub(super) fn collide_settings(ui: &mut Ui, c: &mut CollideConfig) {
+    ui.checkbox(&mut c.enabled, "Held long guns stop at walls");
+    ui.add_enabled_ui(c.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut c.tip_margin_m, 0.0..=0.15).text("Past the muzzle (m)"));
+        ui.add(egui::Slider::new(&mut c.max_turn_deg, 0.0..=90.0).text("Furthest turn (°)"));
+        ui.add(egui::Slider::new(&mut c.max_retract_m, 0.0..=0.6).text("Furthest pull back (m)"));
+        ui.add(egui::Slider::new(&mut c.keep_s, 0.0..=1.0).text("Wall kept for (s)"));
     });
 }

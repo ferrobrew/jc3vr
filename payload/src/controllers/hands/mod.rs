@@ -35,7 +35,7 @@ use crate::{
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
         physical_hands, scheme, vehicles,
-        weapons::{ads, foregrip, heft, recoil},
+        weapons::{ads, collide, foregrip, heft, recoil},
     },
     headpose, hooks,
 };
@@ -105,6 +105,12 @@ pub fn active_hands() -> Option<ActiveHands> {
         &active.config.weapons.ads,
     );
     recoil::apply(&mut active.hands, &active.config.weapons.recoil);
+    collide::apply(
+        &mut active.hands,
+        active.head,
+        active.world_scale,
+        &active.config.weapons.collide,
+    );
     physical_hands::apply(&mut active.hands);
     anchor::apply(&mut active.hands, active.head, active.world_scale);
     Some(active)

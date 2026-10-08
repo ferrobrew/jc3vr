@@ -136,6 +136,8 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
 | `weapons.second_in_left_hand`, `.second_in_right_hand` | flag | A second weapon is held in that hand. |
 | `weapons.grabs`, `grip.flips`, `grip.pins` | counter | Weapon grabs, guns snapping on the wrist, and attach bones pinned. |
+| `collide.contacts` | counter | Times a held long gun came against a wall. |
+| `collide.touching` | flag | A held long gun is against a wall. |
 | `ads.sighted`, `.shouldered`, `.welded` | counter | Times a long gun's sights came onto the eye, its stock into the shoulder, and a scope onto the eye. |
 | `magazines.dropped`, `.picked_up`, `.seated` | counter | Magazine props dropped and noted, magazines picked up from the world, and those seated. |
 | `c4.thrown`, `.stuck` | counter | Charges thrown or pressed on from the pouch, and those pressed onto a surface by hand. |

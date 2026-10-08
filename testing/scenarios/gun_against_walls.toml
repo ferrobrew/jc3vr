@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/gun_against_walls.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a held rifle stopped at a wall"
+description = "Recorded right-handed on foot facing a wall a few metres away, with a rifle drawn and braced on the foregrip (physical-weapons.md, the walls checklist). Walk up to the wall with the rifle raised until the muzzle is against it, push it along the wall to the left, then straight into it, and step back."
+recording = "../recordings/gun_against_walls.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+signal = "collide.contacts"
+
+[[expect]]
+name = "the rifle is against the wall at some point"
+signal = "collide.touching"
+
+[[expect]]
+name = "and clear once stepped back"
+signal = "collide.touching"
+check = "at_end"
+is = false
+
+[[expect]]
+status = "GUN AGAINST WALLS"

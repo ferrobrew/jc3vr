@@ -6,8 +6,36 @@ use smol_str::format_smolstr;
 
 use crate::controllers::{
     menu::{read_config, status::Line},
-    weapons::{ads, c4, grenade, reload::loose},
+    weapons::{ads, c4, collide, grenade, reload::loose},
 };
+
+pub(super) fn gun_against_walls() -> Line {
+    if !read_config(|c| c.controllers.weapons.collide.enabled) {
+        return Line::off("");
+    }
+    let s = collide::status();
+    if !s.weapon {
+        return Line::waiting("NO LONG GUN MEASURED");
+    }
+    Line::ok(format_smolstr!(
+        "{}, {} CONTACTS{}",
+        if s.touching {
+            "AGAINST A WALL"
+        } else {
+            "CLEAR"
+        },
+        s.contacts,
+        if s.touching {
+            format!(
+                ", TURNED {:.0} DEG, PULLED BACK {:.0} CM",
+                s.turn_deg,
+                s.retract_m * 100.0
+            )
+        } else {
+            String::new()
+        }
+    ))
+}
 
 pub(super) fn down_the_sights() -> Line {
     if !read_config(|c| c.controllers.weapons.ads.enabled) {

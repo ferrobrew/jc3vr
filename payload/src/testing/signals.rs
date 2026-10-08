@@ -19,7 +19,7 @@ use crate::{
             physics::{self, BodyPhase},
         },
         scheme,
-        weapons::{self, ads, c4, grenade, grip_watch, hold::second, reload::loose},
+        weapons::{self, ads, c4, collide, grenade, grip_watch, hold::second, reload::loose},
     },
     frame_timing,
     testing::replay,
@@ -143,6 +143,8 @@ signals! {
     AdsSighted => "ads.sighted", Counter, "Times a long gun's sights came onto the eye.";
     AdsShouldered => "ads.shouldered", Counter, "Times a long gun's stock came into the shoulder.";
     AdsWelded => "ads.welded", Counter, "Times a scope came onto the eye.";
+    GunContacts => "collide.contacts", Counter, "Times a held long gun came against a wall.";
+    GunTouching => "collide.touching", Flag, "A held long gun is against a wall.";
     GripFlips => "grip.flips", Counter, "Snaps of a gun on the wrist.";
     GripPins => "grip.pins", Counter, "Attach bones pinned.";
     StickSpeed => "locomotion.stick_speed_mps", Measure, "The speed the stick drives the body at, metres per second.";
@@ -222,6 +224,8 @@ impl Signal {
             Signal::AdsSighted => count(ads::status().sighted),
             Signal::AdsShouldered => count(ads::status().shouldered),
             Signal::AdsWelded => count(ads::status().welded),
+            Signal::GunContacts => count(collide::status().contacts),
+            Signal::GunTouching => flag(collide::status().touching),
             Signal::GripFlips => count(grip_watch::status().flips.iter().sum()),
             Signal::GripPins => count(grip::status().pins),
             Signal::StickSpeed => locomotion::status()

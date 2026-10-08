@@ -378,6 +378,11 @@ fn settings_page() -> Page {
             .weapons
             .ads
             .cheek_weld))
+        .item(config_toggle!("GUNS STOP AT WALLS", |c| c
+            .controllers
+            .weapons
+            .collide
+            .enabled))
         .item(config_toggle!("TRUE RELOAD", |c| c
             .controllers
             .weapons
