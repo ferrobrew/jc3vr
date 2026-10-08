@@ -92,7 +92,7 @@ use crate::{
                 lifecycle::{ActRequest, HANDS, RenderTuning},
                 render::RenderOffset,
             },
-            pulse,
+            pulse, vault,
         },
         roomscale::teleport,
         scheme,
@@ -470,6 +470,7 @@ pub(super) unsafe fn step() {
     if let Some(reason) = reason {
         // SAFETY: forwarded from the caller; no hand body acts, so every grip lets go.
         unsafe { climb::step([None; 2]) };
+        vault::stand_down();
         let destroyed = unsafe { hands.destroy_all(reason) };
         let mut shared = SHARED.lock();
         shared.status.destroyed += destroyed;
@@ -604,6 +605,7 @@ pub(super) unsafe fn step() {
     let mut destroyed = 0;
     let mut error = None;
     let mut hand_push = Vec2::ZERO;
+    let mut press_lags = [None; 2];
     for hand in Hand::BOTH {
         let i = hand.index();
         let target = targets[i].filter(|_| fresh);
@@ -666,6 +668,10 @@ pub(super) unsafe fn step() {
                         statuses[i].joint = hands.joints[i].as_ref().map(Joint::id);
                         offsets[i] = acted.render;
                         loads[i] = press_load(acted.lag, b, scale);
+                        // A hand that grips or holds something does not push the body up.
+                        if grips[i].is_none() && holds[i].is_none() {
+                            press_lags[i] = Some(acted.lag);
+                        }
                         if b.push {
                             hand_push += lag_push(acted.lag, &push_tuning, step_s);
                         }
@@ -703,6 +709,17 @@ pub(super) unsafe fn step() {
                 statuses[i].body_id = hands.bodies[i].as_ref().map(HandBody::body_id);
             }
         }
+    }
+    // The hands pressed down on what does not give push the body up, unless they climb.
+    if !climbing {
+        let press = vault::Press {
+            lags: press_lags,
+            supports: climb::static_reaches(),
+            scale,
+        };
+        // SAFETY: forwarded from the caller; the characters' proxy updates ran before this
+        // callback.
+        unsafe { vault::step(press, &config.vault) };
     }
     push = if b.push && !climbing {
         smooth_push(

@@ -125,6 +125,17 @@ pub fn climbing() -> bool {
     state.grips.iter().any(Option::is_some) && state.stepped_lately(Instant::now())
 }
 
+/// The static body each hand reaches, as the palms' tick last found it: a surface the hands push
+/// the body up from may be written as its support ([`crate::controllers::physical_hands::vault`]).
+pub(crate) fn static_reaches() -> [Option<u32>; 2] {
+    let state = STATE.lock();
+    let fresh = state.fresh(Instant::now());
+    state
+        .status
+        .hands
+        .map(|h| h.reach.filter(|r| fresh && !r.moving).map(|r| r.body))
+}
+
 /// Whether the climbing is on: its switch, under the hand bodies, which it needs.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.climb.enabled && physics::enabled(config)

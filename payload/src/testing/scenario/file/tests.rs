@@ -256,6 +256,7 @@ fn the_shipped_templates_read() {
         "parachute_handles.toml",
         "procedural_full_body.toml",
         "procedural_pass_through.toml",
+        "push_up.toml",
         "recenter.toml",
         "second_long_gun.toml",
         "steering_wheel.toml",

@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/push_up.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "push up onto a low wall"
+description = "Recorded with PUSH UP WITH THE HANDS on, empty-handed, facing a waist-high wall (physical-hands.md, the checklist with the hand bodies on, item 4). Put both hands on the wall's top, press down hard, walk forward onto the top with the stick, and stand there."
+recording = "../recordings/push_up.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "the hands pushed the body up"
+signal = "push_up.pushes"
+
+[[expect]]
+signal = "push_up.lifting"
+
+[[expect]]
+name = "the push up started"
+log = "the hands push the body up"
+
+[[expect]]
+name = "the player stands on foot at the end"
+signal = "controllers.on_foot"
+check = "at_end"

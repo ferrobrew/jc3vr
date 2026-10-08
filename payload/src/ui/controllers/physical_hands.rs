@@ -12,6 +12,7 @@ use crate::{
             config::{PickupConfig, ShoveConfig},
             doors::{self, DoorsConfig},
             grasp::TargetKind,
+            vault::{self, VaultConfig},
         },
     },
     ui::controllers::{vec3_drag, weapons::pulse_settings},
@@ -144,6 +145,18 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
         "Characters: {} grips · {} yanked · {} ragdolls taken · {} pulled out of a seat",
         p.character_grips, p.yanks, p.regrips, p.hijacks
     ));
+    let v = vault::status();
+    ui.label(format!(
+        "Push up: {} pushes{}{}",
+        v.pushes,
+        if v.lifting {
+            format!(" · lifting {:.2} m/s", v.lift_mps)
+        } else {
+            String::new()
+        },
+        v.last_rise_m
+            .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
+    ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
     }
@@ -199,6 +212,22 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         doors_settings(ui, &mut p.doors);
         ui.separator();
         characters_settings(ui, &mut p.characters);
+        ui.separator();
+        vault_settings(ui, &mut p.vault);
+    });
+}
+
+fn vault_settings(ui: &mut Ui, v: &mut VaultConfig) {
+    ui.checkbox(
+        &mut v.enabled,
+        "Push the body up with the hands pressed down",
+    );
+    ui.add_enabled_ui(v.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut v.deadband_m, 0.0..=0.2).text("Press left alone (m)"));
+        ui.add(egui::Slider::new(&mut v.stiffness_per_s, 0.0..=40.0).text("Lift stiffness (1/s)"));
+        ui.add(egui::Slider::new(&mut v.max_lift_mps, 0.0..=8.0).text("Fastest lift (m/s)"));
+        ui.add(egui::Slider::new(&mut v.min_vertical, 0.0..=1.0).text("Least downward press"));
+        ui.add(egui::Slider::new(&mut v.max_rise_m, 0.0..=3.0).text("Highest rise (m)"));
     });
 }
 

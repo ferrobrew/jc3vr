@@ -67,10 +67,6 @@ With `CLIMB WITH THE HANDS` on:
 9. With `CLIMB MOVING THINGS` on, grip the side of a parked truck: `a hand gripped the world` with `moving=true`, and climb onto its roof. Have it driven off while hanging from it: the player travels with it, the rendered hands stay on it, and `MOVING CLIMBS` says `HOLDING ON`. Let go at speed: the player leaves with the truck's speed.
 10. Grip a helicopter's skid as it lifts off: the player is carried up with it.
 
-## Not yet done
-
-- Pushing the body up with the hands: pressing down on a ledge's top, or a vault over a low wall, moves nothing, since the push off a held-back hand ([physical-hands.md](physical-hands.md#pushing-the-player)) is horizontal only and a press down is not a grip. A vertical push, or a vault that carries the body over a low top the hands press on, would build on the mantle.
-
 ## Unverified in the headset
 
 - That writing the support keeps Rico out of every falling state; that no animation, sound, or AI reacts oddly to a character standing on a wall.

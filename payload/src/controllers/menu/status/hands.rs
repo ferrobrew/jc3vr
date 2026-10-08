@@ -1,14 +1,18 @@
 //! The status page's rows for what the empty hands do in the world: vehicle doors, the characters
-//! they take hold of, and the moving bodies they climb.
+//! they take hold of, the moving bodies they climb, and pushing the body up.
 
-use smol_str::format_smolstr;
+use smol_str::{SmolStr, format_smolstr};
 
 use crate::controllers::{
     menu::{
         read_config,
         status::{Health, Line},
     },
-    physical_hands::{self, climb, doors, physics, pickup::PickupStatus},
+    physical_hands::{
+        self, climb, doors, physics,
+        pickup::PickupStatus,
+        vault::{self, VaultStatus},
+    },
 };
 
 pub(super) fn doors() -> Line {
@@ -44,6 +48,32 @@ pub(super) fn moving_climbs() -> Line {
         .iter()
         .any(|h| h.grip.is_some_and(|g| g.moving));
     moving_climbs_line(on, status.moving_grips, on_moving)
+}
+
+pub(super) fn push_up() -> Line {
+    let on = read_config(|c| {
+        let p = &c.controllers.physical_hands;
+        physics::enabled(p) && p.vault.enabled
+    });
+    push_up_line(on, vault::status())
+}
+
+fn push_up_line(on: bool, status: VaultStatus) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    let rise = status
+        .last_rise_m
+        .map_or_else(SmolStr::default, |r| format_smolstr!(", LAST {:.2} M", r));
+    match (status.pushes, status.lifting) {
+        (_, true) => Line::ok(format_smolstr!(
+            "{} PUSHES, LIFTING {:.1} M/S{rise}",
+            status.pushes,
+            status.lift_mps
+        )),
+        (0, false) => Line::new(Health::Waiting, "NO PUSH YET"),
+        (pushes, false) => Line::ok(format_smolstr!("{pushes} PUSHES{rise}")),
+    }
 }
 
 fn moving_climbs_line(on: bool, grips: u64, on_moving: bool) -> Line {
@@ -99,6 +129,26 @@ mod tests {
     use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
+
+    #[test]
+    fn the_push_up_row_says_when_the_hands_lift() {
+        let mut status = VaultStatus::default();
+        assert_eq!(push_up_line(false, status).health, Health::Off);
+        assert_eq!(push_up_line(true, status).health, Health::Waiting);
+        status.pushes = 2;
+        status.lifting = true;
+        status.lift_mps = 1.25;
+        status.last_rise_m = Some(0.4);
+        assert_eq!(
+            push_up_line(true, status).text(),
+            "OK, 2 PUSHES, LIFTING 1.2 M/S, LAST 0.40 M"
+        );
+        status.lifting = false;
+        assert_eq!(
+            push_up_line(true, status).text(),
+            "OK, 2 PUSHES, LAST 0.40 M"
+        );
+    }
 
     #[test]
     fn the_moving_climbs_row_says_when_a_hand_holds_on() {

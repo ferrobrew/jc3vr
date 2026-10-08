@@ -233,6 +233,27 @@ pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
     Ok(())
 }
 
+/// The velocity of the local player's proxy body, as its motion holds it.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
+pub unsafe fn proxy_velocity() -> Result<Vec3, ClimbEngineError> {
+    let proxy = unsafe { proxy() }?;
+    let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
+    let slot = unsafe { proxy_slot(world.world(), proxy) }?;
+    let motions = world.world().m_motions;
+    if motions.is_null() {
+        return Err(ClimbEngineError::NoPlayer);
+    }
+    let motion = unsafe { &*motions.add(slot.m_motionId as usize) };
+    let velocity = Vec3::from_array(motion.m_linearVelocity.data);
+    velocity
+        .is_finite()
+        .then_some(velocity)
+        .ok_or(ClimbEngineError::BadVelocity)
+}
+
 /// Whether the local player is in the air as the game judges it ([`Character::IsInAir`]).
 ///
 /// # Safety

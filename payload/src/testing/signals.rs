@@ -17,6 +17,7 @@ use crate::{
         physical_hands::{
             self, climb,
             physics::{self, BodyPhase},
+            vault,
         },
         scheme,
         weapons::{self, ads, c4, collide, grenade, grip_watch, hold::second, reload::loose},
@@ -120,6 +121,8 @@ signals! {
     ClimbMantles => "climb.mantles", Counter, "Mantles completed.";
     ClimbDrops => "climb.drops", Counter, "Grips ended against the player's wish.";
     ClimbError => "climb.error", Flag, "The climbing holds an error.";
+    PushUps => "push_up.pushes", Counter, "Pushes up with the hands pressed down.";
+    PushingUp => "push_up.lifting", Flag, "The hands lift the body.";
     DoorGrips => "doors.grips", Counter, "Grips taken on a latched vehicle door.";
     DoorUnlatches => "doors.unlatches", Counter, "Vehicle door latches a hand undid.";
     DoorOnLatch => "doors.on_latch", Flag, "A hand grips a latched vehicle door.";
@@ -202,6 +205,8 @@ impl Signal {
             Signal::ClimbMantles => count(climb::status().mantles),
             Signal::ClimbDrops => count(climb::status().drops),
             Signal::ClimbError => flag(climb::status().last_error.is_some()),
+            Signal::PushUps => count(vault::status().pushes),
+            Signal::PushingUp => flag(vault::status().lifting),
             Signal::DoorGrips => count(physical_hands::status().pickup.door_grips),
             Signal::DoorUnlatches => count(physical_hands::status().pickup.unlatches),
             Signal::DoorOnLatch => flag(physical_hands::status().hands.iter().any(|h| h.latched)),
