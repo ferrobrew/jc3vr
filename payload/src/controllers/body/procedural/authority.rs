@@ -17,7 +17,7 @@
 //! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a stunt position) | animation | animation |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
 //! | the grapple's ledge climb | animation | animation |
-//! | swimming | animation | animation |
+//! | swimming | animation (the kick) | procedural on the swim's hips (animation with `swim_torso` off) |
 //! | the wingsuit (the arms follow the player's, `wingsuit_arms`) | animation | animation |
 //! | the parachute | procedural, hanging from the harness (animation with `parachute_body` off) | procedural on the harness's hips (animation with `parachute_body` off) |
 //! | a fall past the jump's grace | animation | animation |
@@ -106,6 +106,7 @@ impl Case {
             Self::Jump | Self::HandClimb => [0.0, 1.0],
             Self::Seated if config.seated_torso => [0.0, 1.0],
             Self::Parachute if config.parachute_body => [1.0, 1.0],
+            Self::Swimming if config.swim_torso => [0.0, 1.0],
             _ => [0.0, 0.0],
         }
     }
@@ -113,7 +114,7 @@ impl Case {
     /// Whether the animation keeps the hips while the torso is procedural: the solve moves the
     /// spine from the clip's hips (`solver::anchored`) instead of building the body under the head.
     pub const fn anchored(self) -> bool {
-        matches!(self, Self::Seated | Self::Parachute)
+        matches!(self, Self::Seated | Self::Parachute | Self::Swimming)
     }
 
     /// Whether the animation takes over at once, with no blend: a ragdoll writes the pose
@@ -528,6 +529,14 @@ mod tests {
             ..config
         };
         assert_eq!(Case::Parachute.targets(&off), [0.0, 0.0]);
+        // Swimming, the torso is on the swim's hips and the legs keep the kick.
+        assert_eq!(Case::Swimming.targets(&config), [0.0, 1.0]);
+        assert!(Case::Swimming.anchored());
+        let dry = ProceduralBodyConfig {
+            swim_torso: false,
+            ..config
+        };
+        assert_eq!(Case::Swimming.targets(&dry), [0.0, 0.0]);
         assert_eq!(
             classify(&CharacterState {
                 swimming: true,

@@ -141,6 +141,7 @@ signals! {
     ProceduralWingArms => "procedural.wing_arms", Flag, "Rico's arms follow the player's in the wingsuit, both hands queued.";
     ProceduralParachute => "procedural.parachute", Flag, "The torso is posed on the harness's hips under the parachute, the legs hanging.";
     ProceduralFlare => "procedural.parachute_flare", Measure, "How far the hanging legs swing forward for the parachute's brake, as a share of the full flare, under the parachute.";
+    ProceduralSwimming => "procedural.swimming", Flag, "The torso is posed on the swim's hips in the water.";
     ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";
     Wielded => "weapons.wielded", Flag, "A weapon is wielded.";
     WeaponInLeftHand => "weapons.in_left_hand", Flag, "The wielded weapon's first gun rides the left hand.";
@@ -254,6 +255,12 @@ impl Signal {
                 } else {
                     Value::Missing
                 }
+            }
+            Signal::ProceduralSwimming => {
+                let status = procedural::published_status();
+                flag(
+                    status.case == Case::Swimming && status.on_animated_hips && status.weight > 0.0,
+                )
             }
             Signal::ProceduralNeckErrorM => {
                 let status = procedural::published_status();

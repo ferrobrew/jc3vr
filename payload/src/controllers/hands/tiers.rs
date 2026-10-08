@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::Config,
     controllers::{
+        body::procedural::config::ProceduralMode,
         config::HandsConfig,
         frame::Hand,
         mode::{
@@ -246,6 +247,20 @@ impl HandTierTable {
         ragdoll: HandTier::Yielded,
         cutscene: HandTier::Yielded,
     };
+
+    /// The table with the swimming hands free while the procedural body poses the torso in the
+    /// water (`swim_arms`): the arms follow the controllers on the torso it writes. Otherwise the
+    /// table as it is.
+    pub const fn with_swim_arms(self, swim_arms: bool) -> HandTierTable {
+        if swim_arms {
+            HandTierTable {
+                swimming: HandTier::Free,
+                ..self
+            }
+        } else {
+            self
+        }
+    }
 
     /// The tier assigned to `state`.
     pub fn tier(&self, state: TierState) -> HandTier {
@@ -458,13 +473,16 @@ pub fn weights() -> [f32; 2] {
 /// Classify this input tick and advance the blends. Called from the input tick after the mode
 /// detector, while the controllers are enabled.
 pub(crate) fn tick(dt: f32) {
-    let (hands, dominant, mounted_anchor) = Config::lock_query(|c| {
+    let (mut hands, dominant, mounted_anchor, swim_arms) = Config::lock_query(|c| {
+        let procedural = &c.controllers.body.procedural;
         (
             c.controllers.hands,
             c.controllers.acting_hand(),
             c.controllers.vehicles.mounted.anchor_hands,
+            procedural.swim_torso && procedural.mode == ProceduralMode::Full,
         )
     });
+    hands.tiers = hands.tiers.with_swim_arms(swim_arms);
     // SAFETY: the input tick runs on the main thread outside the world update, as the mode
     // detector's own reads require.
     let signals = unsafe { read_signals() };
@@ -612,6 +630,21 @@ mod tests {
     }
 
     const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
+
+    #[test]
+    fn the_procedural_swim_frees_the_swimming_hands() {
+        assert_eq!(
+            HandTierTable::PLAN.tier(TierState::Swimming),
+            HandTier::Yielded
+        );
+        let freed = HandTierTable::PLAN.with_swim_arms(true);
+        assert_eq!(freed.tier(TierState::Swimming), HandTier::Free);
+        assert_eq!(freed.tier(TierState::Wingsuit), HandTier::Yielded);
+        assert_eq!(
+            HandTierTable::PLAN.with_swim_arms(false),
+            HandTierTable::PLAN
+        );
+    }
 
     #[test]
     fn plain_on_foot_is_free() {

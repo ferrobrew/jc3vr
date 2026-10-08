@@ -1,5 +1,5 @@
 //! The status page's rows for the procedural body outside standing play: the torso in a vehicle
-//! seat, the wingsuit's arms, and the body under the parachute. Each reads the last gate's published status, which the pause stops
+//! seat, the wingsuit's arms, the body under the parachute, and the torso in the water. Each reads the last gate's published status, which the pause stops
 //! updating, so a row shows what the body did just before the menu opened.
 
 use smol_str::format_smolstr;
@@ -111,6 +111,23 @@ fn parachute_line(status: &ProceduralStatus) -> Line {
     } else {
         Line::waiting(detail)
     }
+}
+
+pub(super) fn swim_torso() -> Line {
+    let (enabled, mode) = read_config(|c| {
+        (
+            c.controllers.body.procedural.swim_torso,
+            c.controllers.body.procedural.mode,
+        )
+    });
+    if !enabled || mode != ProceduralMode::Full {
+        return Line::off("");
+    }
+    let status = procedural::published_status();
+    if status.case != Case::Swimming {
+        return Line::waiting("NOT SWIMMING").with_note(status.case.label());
+    }
+    torso_on_hips_line(&status)
 }
 
 #[cfg(test)]

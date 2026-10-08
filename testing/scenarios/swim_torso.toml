@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/swim_torso.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "the torso and arms follow the player while swimming"
+description = "Recorded standing on a beach, with both controllers tracked (procedural-states.md, the swimming checklist). Walk into the sea until Rico swims, swim ahead with the stick for a few seconds, then stop, reach both hands forward and sweep them back as a stroke a few times, look left and right, and walk back out onto the beach."
+recording = "../recordings/swim_torso.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the torso is on the swim's hips"
+signal = "procedural.swimming"
+
+[[expect]]
+log = "procedural body: the torso follows the head on the animation's hips"
+
+[[expect]]
+status = "SWIM TORSO"
+
+[[expect]]
+name = "and handed back on the beach"
+signal = "procedural.swimming"
+check = "at_end"
+is = false

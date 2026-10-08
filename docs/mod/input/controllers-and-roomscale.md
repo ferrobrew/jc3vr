@@ -127,7 +127,7 @@ The starting assignments are as follows.
 | Mounted guns and turrets | Anchored: the hands on the handles, which aim the gun | none needed |
 | Parachute | Free, or anchored on a handle a hand has taken | the handles: a hand takes the handle above its shoulder with the grip and pulls it down to steer or brake |
 | Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | arm steering (on by default) reads the controllers; the procedural body carries the player's arms over onto the flight pose's ([body/procedural-states.md](../body/procedural-states.md#the-wingsuit)) |
-| Swimming | Yielded | arm-stroke swimming |
+| Swimming | Yielded, or free while the procedural body poses the torso in the water ([body/procedural-states.md](../body/procedural-states.md#swimming)) | arm-stroke swimming |
 | Interactions (sabotage, planting, using objects) | Yielded | per interaction |
 | Ragdoll, knockdown, death, and cutscenes | Yielded | none planned |
 

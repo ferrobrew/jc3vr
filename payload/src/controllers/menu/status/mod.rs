@@ -283,6 +283,7 @@ const SECTIONS: &[Section] = &[
             row!("SEATED TORSO", body::seated_torso),
             row!("WINGSUIT ARMS", body::wingsuit_arms),
             row!("PARACHUTE BODY", body::parachute_body),
+            row!("SWIM TORSO", body::swim_torso),
         ],
     },
 ];

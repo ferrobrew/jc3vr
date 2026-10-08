@@ -263,6 +263,7 @@ fn the_shipped_templates_read() {
         "seated_torso.toml",
         "second_long_gun.toml",
         "steering_wheel.toml",
+        "swim_torso.toml",
         "stick_locomotion.toml",
         "vehicle_doors.toml",
         "weapon_left_hand.toml",
