@@ -13,9 +13,10 @@ use crate::{
         hands::ActiveHands,
         mode::VehicleSeat,
         vehicles::{
-            MountedReadout, STATE,
             mounted::{self, MountedTarget},
             physical::ControlKind,
+            state::STATE,
+            types::MountedReadout,
         },
     },
     headpose,

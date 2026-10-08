@@ -8,10 +8,10 @@ use crate::controllers::{
     hands::ActiveHands,
     mode::{AirborneVariant, Mode},
     vehicles::{
-        ArmReadout,
         arm_steering::{self as arm, ArmBody, ArmHand},
         axis_output::write_move,
-        body_dimensions,
+        begin::body_dimensions,
+        types::ArmReadout,
     },
 };
 
