@@ -19,8 +19,8 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HeftTuning, HoldConfig, HolsterAnchor, HolstersConfig, PouchSide,
-                PouchesConfig, PulseSpec, RecoilConfig, VolumeSpec,
+                HeftConfig, HeftTuning, HoldConfig, HolsterAnchor, HolstersConfig, LeftGrip,
+                PouchSide, PouchesConfig, PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -718,6 +718,17 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
     .on_hover_text(
         "The free hand takes a long gun of another slot off its shoulder and fires it with its \
          own trigger.",
+    );
+    ui.horizontal(|ui| {
+        ui.label("Left hand gun grip:");
+        for grip in LeftGrip::ALL {
+            ui.selectable_value(&mut h.left_grip, grip, grip.label());
+        }
+    })
+    .response
+    .on_hover_text(
+        "The grip a gun held in the left hand takes on the wrist: the left hand's own bind-pose \
+         grip, the right hand's mirrored, or the left's unless it is turned far from the mirror.",
     );
     ui.checkbox(
         &mut h.magazine_pips,

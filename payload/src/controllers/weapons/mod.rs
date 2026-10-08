@@ -977,7 +977,10 @@ fn with_holder(mut weapon: HeldWeapon, holder: Option<Hand>) -> HeldWeapon {
     if let Some(holder) = holder.filter(|_| hold::owned_holder(weapon.address).is_some())
         && weapon.wielded.hands.contains(&true)
     {
-        weapon.wielded.hands = Hand::BOTH.map(|h| h == holder);
+        // A weapon with a gun in each hand keeps both; the layout only mirrors it.
+        if weapon.wielded.hands != [true; 2] {
+            weapon.wielded.hands = Hand::BOTH.map(|h| h == holder);
+        }
         weapon.holder = Some(holder);
     }
     weapon

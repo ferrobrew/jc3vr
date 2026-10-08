@@ -6,6 +6,7 @@ use smol_str::{SmolStr, format_smolstr};
 
 use crate::controllers::{
     frame::Hand,
+    hands::grip,
     menu::{read_config, status::Line},
     weapons::{
         self,
@@ -46,6 +47,20 @@ pub(super) fn second_weapon() -> Line {
                 ReloadTarget::Primary => "THE WIELDED",
                 ReloadTarget::Second => "IT",
             }
+        )),
+    }
+}
+
+pub(super) fn left_grip() -> Line {
+    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
+        return Line::off("");
+    }
+    match grip::left_grip_read() {
+        None => Line::waiting("NO GUN IN THE LEFT HAND YET"),
+        Some(read) => Line::ok(format_smolstr!(
+            "{}, OWN {:.0} DEG FROM MIRRORED",
+            if read.mirrored { "MIRRORED" } else { "OWN" },
+            read.angle_deg
         )),
     }
 }

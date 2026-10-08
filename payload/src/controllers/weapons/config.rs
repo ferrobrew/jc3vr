@@ -639,6 +639,8 @@ pub struct HoldConfig {
     /// holds a weapon, and fire it with its own trigger: a second weapon, which the game keeps
     /// holstered while the mod drives it. Needs `either_hand`.
     pub second_weapon: bool,
+    /// Which grip a gun held in the left hand takes on the wrist.
+    pub left_grip: LeftGrip,
     /// Show the second weapon's magazine as pips over its hand, since the game's HUD shows only the
     /// wielded weapon's.
     pub magazine_pips: bool,
@@ -669,11 +671,38 @@ impl HoldConfig {
             max_throw_mps: 15.0,
             drop_replaced: true,
             second_weapon: true,
+            left_grip: LeftGrip::Auto,
             magazine_pips: true,
             steal: true,
             racks: true,
             take_radius_m: 0.1,
             take_slide: true,
+        }
+    }
+}
+
+/// Which grip a gun the hold puts in the left hand takes on the wrist (see
+/// [`crate::controllers::hands::grip`]). The dual-wield pistols keep the left hand's own grip.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum LeftGrip {
+    /// The left hand's own grip, unless it is turned far from the right hand's grip mirrored, which
+    /// is then taken instead.
+    #[default]
+    Auto,
+    /// The left hand's own grip: its attach bone's pose on its wrist in the bind pose.
+    BindPose,
+    /// The right hand's grip mirrored across the body onto the left wrist.
+    MirroredRight,
+}
+
+impl LeftGrip {
+    pub const ALL: [LeftGrip; 3] = [LeftGrip::Auto, LeftGrip::BindPose, LeftGrip::MirroredRight];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            LeftGrip::Auto => "automatic",
+            LeftGrip::BindPose => "the left hand's own",
+            LeftGrip::MirroredRight => "the right hand's mirrored",
         }
     }
 }

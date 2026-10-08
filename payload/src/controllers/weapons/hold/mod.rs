@@ -294,7 +294,7 @@ pub(crate) unsafe fn apply(weapon: &mut WeaponBase, snap: bool) {
             if let Some(entry) = data
                 .m_lBoneAttachementPerWeaponState
                 .get_mut(wielding as usize)
-                && let Some(bone) = layout::held_bone(*entry, holder)
+                && let Some(bone) = layout::placed_bone(*entry, holder, index, count)
             {
                 *entry = bone;
                 wrote = true;

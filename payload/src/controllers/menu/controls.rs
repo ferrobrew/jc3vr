@@ -24,7 +24,10 @@ use crate::{
             self,
             config::{ArmPitch, WheelTracking},
         },
-        weapons::{config::PouchSide, reload::config::ReloadButton},
+        weapons::{
+            config::{LeftGrip, PouchSide},
+            reload::config::ReloadButton,
+        },
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
@@ -288,6 +291,12 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .take_slide))
+        .item(config_choice!(
+            "LEFT HAND GUN GRIP",
+            &LeftGrip::ALL,
+            &LEFT_GRIP_LABELS,
+            |c| c.controllers.weapons.hold.left_grip
+        ))
         .item(config_toggle!("SECOND GUN'S AMMO OVER ITS HAND", |c| c
             .controllers
             .weapons
@@ -733,6 +742,7 @@ const HANDS: [Hand; 2] = [Hand::Left, Hand::Right];
 /// By [`ReloadButton::ALL`].
 const RELOAD_BUTTON_LABELS: [&str; 2] = ["EJECT", "GAME RELOAD"];
 const POUCH_SIDE_LABELS: [&str; 2] = ["GUN HAND SIDE", "FREE HAND SIDE"];
+const LEFT_GRIP_LABELS: [&str; 3] = ["AUTOMATIC", "LEFT HAND'S OWN", "RIGHT HAND'S MIRRORED"];
 const HAND_LABELS: [&str; 2] = ["LEFT", "RIGHT"];
 
 const DIRECTIONS: [LocomotionDirection; 2] =
