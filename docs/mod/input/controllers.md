@@ -233,6 +233,7 @@ The overlay's own producers run once per rendered frame on the render thread:
 - `gun_readout`: nothing by default (`None`), a dot at the hit point (`Dot`), or a line from the sight to the hit point (`Laser`);
 - `ghost_hands`: a translucent ghost at the controller of each yielded hand, drawn at `xray_alpha` where the scene is in front of it;
 - `debug_gizmos` (on by default): each hand's grip and aim axes;
+- `body_mirror` (off by default), submitted from the pose-finalization pass rather than the render thread: Rico's solved skeleton reflected in a mirror ahead of him, with the targets it was posed toward ([body/procedural-states.md](../body/procedural-states.md#the-body-mirror));
 - the sight tuning marker, while the tuning tool is on and its marker is placed: a ring and a dot at the marker, and a dot where the dominant hand's sight line passes closest to it, all over the scene.
 
 The grapple and gun producers submit only when the aim has run since their last submission; the ghost hands and gizmos follow the render-time hand poses and submit every frame. The grab-volume highlights are submitted by the weapon handling and the physical vehicle controls, at the input tick's rate (see "Holsters, grab volumes, the foregrip, and the action-runs tier"). The debug panel's controller pointer submits its laser at the input tick's rate too, whatever the control scheme, with both ends anchored to the pointing hand's aim pose ([hud.md, "Pointing at the debug panel with the controllers"](../hud.md#pointing-at-the-debug-panel-with-the-controllers)).

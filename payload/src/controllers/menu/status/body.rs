@@ -1,11 +1,17 @@
 //! The status page's rows for the procedural body outside standing play: the torso in a vehicle
-//! seat, the wingsuit's arms, the body under the parachute, and the torso in the water. Each reads the last gate's published status, which the pause stops
+//! seat, the wingsuit's arms, the body under the parachute, the torso in the water, and the body
+//! mirror. Each reads the last gate's published status, which the pause stops
 //! updating, so a row shows what the body did just before the menu opened.
+
+use std::time::{Duration, Instant};
 
 use smol_str::format_smolstr;
 
 use crate::controllers::{
-    body::procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
+    body::{
+        mirror::{self, MirrorStatus},
+        procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
+    },
     menu::{read_config, status::Line},
 };
 
@@ -130,6 +136,34 @@ pub(super) fn swim_torso() -> Line {
     torso_on_hips_line(&status)
 }
 
+pub(super) fn body_mirror() -> Line {
+    if !read_config(|c| c.controllers.overlay.body_mirror) {
+        return Line::off("SWITCH ON IN DEBUG UI")
+            .with_note("the Controllers tab's overlay section, Body mirror");
+    }
+    mirror_line(&mirror::status(), Instant::now())
+}
+
+/// The body mirror: the bones it found, and whether it drew recently. The pause stops the pass, so
+/// a mirror that drew before the menu opened still reads as drawing.
+fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
+    match (status.bones, status.at) {
+        (Some(0), _) => Line::failed("NO BONES FOUND"),
+        (Some(bones), Some(at)) => {
+            let detail = format_smolstr!("{bones} BONES");
+            if now.saturating_duration_since(at) < MIRROR_STALE {
+                Line::ok(detail)
+            } else {
+                Line::waiting(detail).with_note("not drawn since the menu opened or the pass ran")
+            }
+        }
+        _ => Line::waiting("NOT DRAWN YET"),
+    }
+}
+
+/// How long after its last pass the mirror reads as drawing.
+const MIRROR_STALE: Duration = Duration::from_secs(30);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,6 +212,32 @@ mod tests {
         assert_eq!(
             parachute_line(&status(Case::Flight, 0.0)).text(),
             "WAITING, NOT UNDER THE CANOPY"
+        );
+    }
+
+    #[test]
+    fn the_mirror_reads_its_bones() {
+        let now = Instant::now();
+        let drawn = MirrorStatus {
+            at: Some(now),
+            bones: Some(21),
+            primitives: 30,
+        };
+        assert_eq!(mirror_line(&drawn, now).text(), "OK, 21 BONES");
+        assert_eq!(
+            mirror_line(
+                &MirrorStatus {
+                    bones: Some(0),
+                    ..drawn
+                },
+                now
+            )
+            .text(),
+            "FAILED, NO BONES FOUND"
+        );
+        assert_eq!(
+            mirror_line(&MirrorStatus::default(), now).text(),
+            "WAITING, NOT DRAWN YET"
         );
     }
 

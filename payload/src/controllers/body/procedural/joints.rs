@@ -139,7 +139,7 @@ fn fits(rig: &Rig, bones: usize) -> bool {
     rig.bones.iter().all(|&index| index < bones)
 }
 
-pub(super) fn from_joint(joint: &Joint) -> Transform {
+pub(crate) fn from_joint(joint: &Joint) -> Transform {
     let [x, y, z, w] = joint.m_Orientation.data;
     Transform {
         translation: Vec3::from_array(joint.m_Translation.data),

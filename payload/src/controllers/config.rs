@@ -619,6 +619,12 @@ pub struct OverlayConfig {
     pub grab_volumes: bool,
     /// Draw axes at the controllers' grip and aim poses, for debugging.
     pub debug_gizmos: bool,
+    /// Draw Rico's solved skeleton reflected in a mirror ahead of him, with the targets it was
+    /// posed toward, for checking the body's alignment ([`crate::controllers::body::mirror`]). A
+    /// diagnostic, off by default.
+    pub body_mirror: bool,
+    /// How far ahead of Rico the body mirror stands, metres.
+    pub body_mirror_distance_m: f32,
     /// How far behind the scene's depth, in metres, a primitive still counts as visible, so that a
     /// marker on a surface is not hidden by that surface.
     pub depth_tolerance_m: f32,
@@ -642,6 +648,8 @@ impl OverlayConfig {
             ghost_hands: false,
             grab_volumes: false,
             debug_gizmos: false,
+            body_mirror: false,
+            body_mirror_distance_m: 1.2,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,
             min_line_px: 1.5,

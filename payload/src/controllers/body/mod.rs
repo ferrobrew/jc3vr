@@ -48,6 +48,7 @@
 pub mod alignment;
 pub mod calibration;
 pub(crate) mod menu;
+pub mod mirror;
 pub mod procedural;
 pub mod torso;
 

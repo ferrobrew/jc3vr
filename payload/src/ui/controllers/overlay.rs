@@ -50,6 +50,15 @@ pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {
         ui.checkbox(&mut o.grab_volumes, "Grab-volume highlights")
             .on_hover_text("Ring the holster, foregrip, or pouch each hand is in.");
         ui.checkbox(&mut o.debug_gizmos, "Controller gizmos");
+        ui.checkbox(&mut o.body_mirror, "Body mirror").on_hover_text(
+            "Draw Rico's skeleton reflected in a mirror ahead of him, with rings at the head and \
+             wrist targets, for checking that his body lines up with yours.",
+        );
+        ui.add_enabled(
+            o.body_mirror,
+            egui::Slider::new(&mut o.body_mirror_distance_m, 0.5..=4.0)
+                .text("Body mirror distance (m)"),
+        );
         ui.add(egui::Slider::new(&mut o.depth_tolerance_m, 0.0..=0.5).text("Depth tolerance (m)"));
         ui.add(
             egui::Slider::new(&mut o.depth_tolerance_rel, 0.0..=0.05)

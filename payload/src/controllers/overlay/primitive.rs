@@ -39,10 +39,12 @@ pub enum Source {
     PhysicalHands,
     /// The second weapon's magazine, over its hand.
     MagazinePips,
+    /// The body mirror's reflection of Rico's skeleton.
+    BodyMirror,
 }
 
 impl Source {
-    pub const COUNT: usize = 13;
+    pub const COUNT: usize = 14;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -59,6 +61,7 @@ impl Source {
         Source::WristDetonator,
         Source::PhysicalHands,
         Source::MagazinePips,
+        Source::BodyMirror,
     ];
 
     pub const fn index(self) -> usize {
@@ -76,6 +79,7 @@ impl Source {
             Source::WristDetonator => 10,
             Source::PhysicalHands => 11,
             Source::MagazinePips => 12,
+            Source::BodyMirror => 13,
         }
     }
 
@@ -94,6 +98,7 @@ impl Source {
             Source::WristDetonator => "wrist detonator",
             Source::PhysicalHands => "physical hands",
             Source::MagazinePips => "second weapon's magazine",
+            Source::BodyMirror => "body mirror",
         }
     }
 }

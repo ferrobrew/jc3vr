@@ -213,6 +213,7 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | | `WINGSUIT ARMS` | in the full mode with `ARMS AS WINGS` on, the wingsuit's arms' weight and the hands queued; `OK` with both at full weight, `NOT IN THE WINGSUIT` otherwise |
 | | `PARACHUTE BODY` | in the full mode with `BODY UNDER THE PARACHUTE` on, the torso's weight under the parachute and how far the legs flare for the handles' brake; `OK` at full weight, `NOT UNDER THE CANOPY` otherwise |
 | | `SWIM TORSO` | in the full mode with `TORSO AND ARMS SWIMMING` on, the torso's weight in the water and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SWIMMING` otherwise |
+| | `BODY MIRROR` | the body mirror, a diagnostic switched on in the debug UI: how many of its stick figure's bones it found; `NO BONES FOUND` fails it |
 | | `SEATED TORSO` | in the full mode with `TORSO IN VEHICLES` on, the seated torso's weight and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SEATED` outside a seat |
 
 The values refresh every frame while the page is shown, as every readout does. Each time the page opens it also logs the whole page once at info, as one line starting `status:`, each row as `label: value` and sections separated by `|`; where a value is cut short for its row (the full fingerprint, an error's text, the hand-over case's full name), the log line adds the whole of it in parentheses. A rebuild while the page is shown does not log it again.
