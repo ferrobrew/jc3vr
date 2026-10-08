@@ -402,6 +402,25 @@ fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
             f.total_s
         ));
     }
+    ui.label(format!(
+        "  pin {} · pulled {}{}",
+        g.pin.map_or("none", |p| p.label()),
+        g.pins_pulled,
+        g.last_puller
+            .map_or(String::new(), |p| format!(", last by {}", p.label()))
+    ));
+    ui.label(format!(
+        "  live grenades {} · in reach {} · caught {} · thrown on {} · lost in the hand {}{}",
+        g.catch.tracked,
+        g.catch.in_reach,
+        g.catch.caught,
+        g.catch.thrown,
+        g.catch.lost,
+        g.caught_hand.map_or(String::new(), |h| format!(
+            " · holding one in the {} hand",
+            h.label()
+        ))
+    ));
     if let Some(v) = g.last_release {
         ui.label(format!(
             "  last release {} ({:.1} m/s)",
@@ -609,6 +628,32 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
     );
     pulse_settings(ui, "Prime pulse", &mut g.prime_pulse);
     pulse_settings(ui, "Refused pulse", &mut g.refused_pulse);
+    ui.checkbox(&mut g.pin.enabled, "Pull the pin to start the fuse")
+        .on_hover_text(
+            "A grenade from the pouch comes out with its fuse held until the other hand grabs its \
+             pin or its own trigger pulls it; then it cooks in the hand.",
+        );
+    ui.add_enabled_ui(g.pin.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut g.pin.radius_m, 0.02..=0.2).text("Pin radius (m)"));
+        ui.checkbox(
+            &mut g.pin.trigger,
+            "The holding hand's trigger pulls the pin",
+        );
+        pulse_settings(ui, "Pin pulse", &mut g.pin.pulse);
+    });
+    ui.checkbox(&mut g.catch.enabled, "Catch live grenades")
+        .on_hover_text("A grip press at a live grenade near the player catches it; opening the grip throws it.");
+    ui.add_enabled_ui(g.catch.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut g.catch.radius_m, 0.05..=0.5).text("Catch radius (m)"));
+        ui.add(egui::Slider::new(&mut g.catch.range_m, 1.0..=10.0).text("Catch range (m)"));
+        ui.add(
+            egui::Slider::new(&mut g.catch.own_grace_s, 0.0..=2.0).text("Own throw's grace (s)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut g.catch.max_carry_mps, 1.0..=60.0).text("Fastest carry (m/s)"),
+        );
+        pulse_settings(ui, "Catch pulse", &mut g.catch.pulse);
+    });
 }
 
 fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {

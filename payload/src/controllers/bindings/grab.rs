@@ -2,8 +2,9 @@
 //! performing the grip's default action (the off-hand's grapple). Pure.
 //!
 //! The volumes are the body holsters, a two-handed weapon's foregrip, the held gun's grip, the
-//! grenade pouch, the reload pouch, a gun's action, the C4 pouch, the vehicle controls, the
-//! parachute's handles, and an object or a surface to climb in the physical hands' reach. The
+//! grenade pouch, the held grenade's pin, a live grenade to catch, the reload pouch, a gun's action,
+//! the C4 pouch, the vehicle controls, the parachute's handles, and an object or a surface to climb
+//! in the physical hands' reach. The
 //! subsystem that owns a volume places it each input tick as a [`Candidate`] (the weapons in
 //! [`crate::controllers::weapons`], the vehicle controls and the parachute's handles in
 //! [`crate::controllers::vehicles`]), and [`grab_volume`] picks the one a
@@ -51,6 +52,12 @@ pub enum GrabVolume {
     /// A weapon without a body in the world for the free hand to take: a gun in a character's
     /// hands, or a weapon on a rack (see [`crate::controllers::weapons::hold::take`]).
     WorldWeapon,
+    /// The pin of the grenade the other hand holds (see
+    /// [`crate::controllers::weapons::grenade::pin`]).
+    GrenadePin,
+    /// A live grenade in flight or on the ground near a free hand, to catch (see
+    /// [`crate::controllers::weapons::grenade::catch`]).
+    LiveGrenade,
 }
 
 impl GrabVolume {
@@ -69,6 +76,8 @@ impl GrabVolume {
             GrabVolume::Pickup => "object in reach",
             GrabVolume::Climb => "surface to climb",
             GrabVolume::WorldWeapon => "weapon to take",
+            GrabVolume::GrenadePin => "grenade pin",
+            GrabVolume::LiveGrenade => "live grenade",
         }
     }
 }

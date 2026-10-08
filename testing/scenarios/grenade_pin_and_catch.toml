@@ -1,0 +1,30 @@
+# Template: fill testing/recordings/grenade_pin_and_catch.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a grenade pinned, cooked, thrown, caught, and thrown on"
+description = "Recorded right-handed on foot near soldiers who throw grenades (physical-weapons.md, the grenade checklist). Take a grenade from the pouch with the right hand, pull its pin with the left hand, hold it a second, and throw it. Take another, pull its pin with the right trigger, and throw it at once. Then catch a grenade a soldier throws near you with a free hand and throw it back."
+recording = "../recordings/grenade_pin_and_catch.jc3trk"
+settle_s = 4.0
+
+[[expect]]
+name = "both pins come out"
+signal = "grenade.pins_pulled"
+at_least = 2
+
+[[expect]]
+signal = "grenade.thrown"
+at_least = 2
+
+[[expect]]
+name = "a live grenade is caught"
+signal = "grenade.caught"
+
+[[expect]]
+name = "and thrown on"
+signal = "grenade.thrown_on"
+
+[[expect]]
+name = "no grenade goes off in the hand"
+log = "the caught grenade is gone from the hand"
+at_most = 0
+
+[[expect]]
+status = "GRENADE PIN"

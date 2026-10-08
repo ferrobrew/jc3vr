@@ -5,11 +5,11 @@
 /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) sets up for the physics body to apply later.
 pub struct Explosive {
     _field_0: [u8; 1208],
-    /// The explosive's physics body (`CPfxRigidBody`, the pointer of a shared pointer), or null
-    /// until the first `UpdatePostSimFromManager` after the explosive spawns creates it.
+    /// The explosive's physics body (the pointer of a shared pointer), or null until the first
+    /// `UpdatePostSimFromManager` after the explosive spawns creates it.
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) and [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)
     /// do nothing without it.
-    pub m_PfxInstance: *mut ::std::ffi::c_void,
+    pub m_PfxInstance: *mut crate::physics::PfxRigidBody,
     _field_4c0: [u8; 128],
     /// The explosive's world matrix as of the current simulation tick. Its translation row is the
     /// launch start position [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) solves from. The `CGameObject`
@@ -181,7 +181,13 @@ pub struct Grenade {
     /// The target position the grenade was thrown at, recorded by
     /// [`PropelToward`](crate::equipment::explosive::Grenade::PropelToward).
     pub m_InitialLandingPos: crate::types::math::Vector3,
-    _field_72c: [u8; 4],
+    _field_72c: [u8; 2],
+    /// What the grenade's override of the virtual `ShouldTickDetonationTimer` returns, so whether
+    /// its post-simulation update counts [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) down. The constructor
+    /// sets it, so a hand grenade's fuse runs from the moment it spawns, primed in the hand or
+    /// thrown; the beacon weapon clears it on the beacon it primes, whose timer then never runs.
+    pub m_ShouldTickDetonationTimer: bool,
+    _field_72f: [u8; 1],
 }
 fn _Grenade_size_check() {
     unsafe {
@@ -190,6 +196,18 @@ fn _Grenade_size_check() {
     unreachable!()
 }
 impl Grenade {
+    pub const TYPE_ID_ADDRESS: usize = 0x14060FD60;
+    /// `CGrenade::TYPE_ID`: the run-time type id of `CGrenade`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use. The thrown
+    /// grenade weapon checks its primed object against it before treating it as a grenade.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
     pub const PropelToward_ADDRESS: usize = 0x14091F5C0;
     /// The [`Explosive::PropelToward`](crate::equipment::explosive::Explosive::PropelToward) override: calls it, records `target_position` in
     /// [`m_InitialLandingPos`](crate::equipment::explosive::Grenade::m_InitialLandingPos), plays the extra trail effects, and, with

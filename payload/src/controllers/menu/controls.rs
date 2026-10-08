@@ -391,6 +391,18 @@ fn settings_page() -> Page {
             .controllers
             .weapons
             .grenade_throw))
+        .item(config_toggle!("PULL THE GRENADE PIN", |c| c
+            .controllers
+            .weapons
+            .grenade
+            .pin
+            .enabled))
+        .item(config_toggle!("CATCH LIVE GRENADES", |c| c
+            .controllers
+            .weapons
+            .grenade
+            .catch
+            .enabled))
         .item(config_choice!(
             "GRENADE POUCH",
             &PouchSide::ALL,

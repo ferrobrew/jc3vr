@@ -9,6 +9,7 @@
 //! take one lock at a time.
 
 mod controllers;
+mod explosives;
 mod grapple;
 mod system;
 mod weapons;
@@ -196,6 +197,13 @@ const SECTIONS: &[Section] = &[
             row!("LEFT HAND GRIP", weapons::left_grip),
             row!("HOLSTERS", weapons::docks),
             row!("LAST REFUSAL", weapons::last_refusal),
+        ],
+    },
+    Section {
+        title: "EXPLOSIVES AND MAGAZINES",
+        rows: &[
+            row!("GRENADE PIN", explosives::grenade_pin),
+            row!("LIVE GRENADES", explosives::live_grenades),
         ],
     },
     Section {

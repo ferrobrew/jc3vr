@@ -19,7 +19,7 @@ use crate::{
             physics::{self, BodyPhase},
         },
         scheme,
-        weapons::{self, grip_watch, hold::second},
+        weapons::{self, grenade, grip_watch, hold::second},
     },
     frame_timing,
     testing::replay,
@@ -131,6 +131,10 @@ signals! {
     SecondInLeftHand => "weapons.second_in_left_hand", Flag, "A second weapon is held in the left hand.";
     SecondInRightHand => "weapons.second_in_right_hand", Flag, "A second weapon is held in the right hand.";
     WeaponGrabs => "weapons.grabs", Counter, "Grabs the weapon handling saw.";
+    GrenadePins => "grenade.pins_pulled", Counter, "Pins pulled from grenades taken from the pouch.";
+    GrenadesThrown => "grenade.thrown", Counter, "Grenades thrown from the pouch.";
+    GrenadesCaught => "grenade.caught", Counter, "Live grenades caught.";
+    GrenadesThrownOn => "grenade.thrown_on", Counter, "Caught grenades thrown on.";
     GripFlips => "grip.flips", Counter, "Snaps of a gun on the wrist.";
     GripPins => "grip.pins", Counter, "Attach bones pinned.";
     StickSpeed => "locomotion.stick_speed_mps", Measure, "The speed the stick drives the body at, metres per second.";
@@ -198,6 +202,10 @@ impl Signal {
             Signal::SecondInLeftHand => flag(second::hand() == Some(Hand::Left)),
             Signal::SecondInRightHand => flag(second::hand() == Some(Hand::Right)),
             Signal::WeaponGrabs => count(weapons::status().grabs),
+            Signal::GrenadePins => count(grenade::status().pins_pulled),
+            Signal::GrenadesThrown => count(grenade::status().thrown),
+            Signal::GrenadesCaught => count(grenade::status().catch.caught),
+            Signal::GrenadesThrownOn => count(grenade::status().catch.thrown),
             Signal::GripFlips => count(grip_watch::status().flips.iter().sum()),
             Signal::GripPins => count(grip::status().pins),
             Signal::StickSpeed => locomotion::status()

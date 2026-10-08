@@ -6,6 +6,8 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
+use crate::controllers::weapons::grenade::config::{GrenadeCatchConfig, GrenadePinConfig};
+
 /// The body holsters (see [`crate::controllers::weapons`]). They act only under the controller
 /// scheme, so they default on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -759,6 +761,10 @@ pub struct GrenadeConfig {
     /// A buzz on the hand that grabbed the pouch when the game refuses it a grenade: none are
     /// left, grenades are not allowed now, or the game's own throw holds one.
     pub refused_pulse: PulseSpec,
+    /// The pin of a grenade taken from the pouch.
+    pub pin: GrenadePinConfig,
+    /// Catching live grenades.
+    pub catch: GrenadeCatchConfig,
 }
 
 impl GrenadeConfig {
@@ -786,6 +792,8 @@ impl GrenadeConfig {
                 amplitude: 0.5,
                 duration_s: 0.15,
             },
+            pin: GrenadePinConfig::new(),
+            catch: GrenadeCatchConfig::new(),
         }
     }
 }

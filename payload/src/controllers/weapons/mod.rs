@@ -168,6 +168,10 @@ pub enum GrabOutcome {
     ForegripUnmeasured,
     /// A grenade-pouch grab: a grenade is asked for.
     Pouch,
+    /// A grab of the held grenade's pin.
+    Pin,
+    /// A grab of a live grenade, to catch it.
+    Catch,
     /// A reload-pouch grab: a round is taken for the reload.
     Magazine,
     /// A grab of a gun's slide, charging handle, or bolt.
@@ -194,6 +198,8 @@ impl GrabOutcome {
             GrabOutcome::Handover { moved: false } => "gun not handed over".to_owned(),
             GrabOutcome::ForegripUnmeasured => "foregrip not measured yet".to_owned(),
             GrabOutcome::Pouch => "grenade asked for".to_owned(),
+            GrabOutcome::Pin => "grenade pin grabbed".to_owned(),
+            GrabOutcome::Catch => "live grenade grabbed".to_owned(),
             GrabOutcome::Magazine => "reload pouch".to_owned(),
             GrabOutcome::Action => "action grabbed".to_owned(),
             GrabOutcome::C4 => "charge asked for".to_owned(),
@@ -376,6 +382,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let body_points = body_points(&active, &body_frame.anchor);
     let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
     let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
+    if config.weapons.grenade_throw {
+        let throwing = grenade::throwing_hand().or(c4::throwing_hand());
+        // SAFETY: the input tick runs on the main thread outside the world update.
+        candidates.extend(unsafe {
+            grenade::begin_tick(
+                &grenade::BeginInputs {
+                    active: &active,
+                    free: Hand::BOTH.map(|h| free[h.index()] && throwing != Some(h)),
+                    acting: gameplay,
+                },
+                &config.weapons.grenade,
+            )
+        });
+    }
     // SAFETY: the input tick runs on the main thread outside the world update.
     candidates.extend(unsafe {
         hold::take::begin_tick(&hold::take::TakeInputs {
@@ -597,6 +617,8 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 None => GrabOutcome::ForegripUnmeasured,
             },
             GrabVolume::GrenadePouch => GrabOutcome::Pouch,
+            GrabVolume::GrenadePin => GrabOutcome::Pin,
+            GrabVolume::LiveGrenade => GrabOutcome::Catch,
             GrabVolume::MagazinePouch => GrabOutcome::Magazine,
             GrabVolume::WeaponAction => GrabOutcome::Action,
             GrabVolume::C4Pouch => GrabOutcome::C4,
@@ -661,6 +683,17 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePouch)),
+            pin_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::GrenadePin)),
+            catch_grab: Hand::BOTH
+                .into_iter()
+                .find(|h| grabs[h.index()] == Some(GrabVolume::LiveGrenade)),
+            cockpit_grips: active
+                .as_ref()
+                .map_or([None; 2], |a| a.hands.map(|h| h.map(|h| h.grip.position))),
+            triggers,
+            dominant: config.acting_hand(),
             grips,
             world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
             dt,
