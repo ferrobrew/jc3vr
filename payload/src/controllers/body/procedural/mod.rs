@@ -74,7 +74,7 @@ use crate::{
                     hips_height, hips_horizontal, hips_room, line_yaw,
                     lower::LowerStatus,
                     pose::RigPose,
-                    reach_drop, solve,
+                    reach_drop, solve, step_offset,
                 },
                 targets::{Fade, Slot, TargetFade},
             },
@@ -120,6 +120,8 @@ pub struct ProceduralStatus {
     pub crouch_depth: f32,
     /// The lower body's pose and what it was picked from.
     pub lower: LowerStatus,
+    /// How far the stance has stepped under the player's head, metres.
+    pub step_offset_m: f32,
     /// Whether the neutral stance the feet stand around has been measured.
     pub stance_measured: bool,
     /// The last gate's ground casts.
@@ -340,6 +342,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 state.dip.reset();
                 state.takeoff_feet = None;
                 state.lower.reset();
+                state.step.reset();
                 state.status.lower = state.lower.status();
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 state.fade.forget();
@@ -353,9 +356,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let legs_procedural = weights.legs > 0.0 || case.targets(config.air_legs)[0] > 0.0;
             let airborne =
                 config.air_legs && matches!(case, Case::Jump | Case::HandClimb | Case::Flight);
-            let crouch = crouch_depth(rig, head_in_model(&world).y, &config);
+            let head = head_in_model(&world);
+            let crouch = crouch_depth(rig, head.y, &config);
             state.status.crouch_depth = crouch;
-            let request = FeetRequest {
+            let mut request = FeetRequest {
                 world: &world,
                 rig,
                 animated: &animated,
@@ -363,9 +367,23 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 velocity,
                 commanded,
                 crouch,
+                step_offset: Vec2::ZERO,
                 dt,
             };
             let stance = state.stance_feet(&request);
+            // The stance steps under a head that has gone further than a lean, so the feet follow
+            // a player walking about the room instead of the body stretching after the head.
+            let wanted_step = if config.step_under_head {
+                let (_, rotation, _) = world.to_scale_rotation_translation();
+                let limit = config.pelvis_turn_limit_deg.max(0.0).to_radians();
+                let yaw = torso_turn(rotation).map_or(0.0, |y| y.clamp(-limit, limit));
+                let middle = (stance[0].position + stance[1].position) * 0.5;
+                step_offset(rig, head, middle, yaw, config.lean_allowance_m)
+            } else {
+                Vec2::ZERO
+            };
+            request.step_offset = state.step.step(wanted_step, dt, STEP_UNDER_S);
+            state.status.step_offset_m = request.step_offset.length();
             let feet = if legs_procedural {
                 let ground_feet = if airborne {
                     // The feet leave the ground with the body; the landing plants them afresh
@@ -413,7 +431,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let Some(mut input) = solve_input(character, &animated, feet) else {
                 return false;
             };
-            input.support = (stance[0].position + stance[1].position) * 0.5;
+            input.support = (stance[0].position + stance[1].position) * 0.5
+                + Vec3::new(request.step_offset.x, 0.0, request.step_offset.y);
             (input.planted, input.heel_lifts) = if legs_procedural && !airborne {
                 (state.feet.planted(), state.feet.heel_lifts())
             } else {
@@ -506,6 +525,10 @@ const MAX_STEP_S: f32 = 0.1;
 /// velocity has reached yet.
 const MOVING_STICK: f32 = 0.3;
 
+/// How quickly the stance follows its step under the head, seconds: the time constant of its
+/// follower, so a head that crosses the allowance for a moment does not jerk the feet's places.
+const STEP_UNDER_S: f32 = 0.15;
+
 /// How long a gate's sit holds the stick after it, at most: past this the gate has stopped
 /// running, and the stick walks again.
 const SAT_STALE_AFTER: Duration = Duration::from_millis(200);
@@ -575,6 +598,7 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     gait_phase: None,
     crouch_depth: 0.0,
     lower: LowerStatus::new(),
+    step_offset_m: 0.0,
     stance_measured: false,
     ground: GroundTally::new(),
     clavicles: [ClavicleTurn::ZERO; 2],

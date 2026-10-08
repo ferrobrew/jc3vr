@@ -43,8 +43,10 @@ const LANDING_WINDOW: Duration = Duration::from_millis(300);
 pub(super) struct State {
     /// The rig of the skeleton the animation controller holds.
     pub(super) rig: RigCache,
-    /// The lower body's pose: standing, crouching, or a held kneel.
+    /// The lower body's pose: standing, crouching, or a held kneel or sit.
     pub(super) lower: LowerBody,
+    /// The stance's step under the player's head, model space `(x, z)`.
+    pub(super) step: HipsFollower,
     /// The regions' weights against the animation.
     pub(super) blend: RegionBlend,
     /// What the hand-over table reads from the character, with the history it keeps.
@@ -96,6 +98,9 @@ pub(super) struct FeetRequest<'a> {
     pub(super) commanded: Vec3,
     /// How far the head has taken the hips toward their lowest, `0..=1`: the crouch gait's depth.
     pub(super) crouch: f32,
+    /// How far the stance steps under the player's head, model space `(x, z)`: the feet are
+    /// wanted this far from the stance the root carries.
+    pub(super) step_offset: Vec2,
     pub(super) dt: f32,
 }
 
@@ -238,7 +243,11 @@ impl State {
             self.feet.reset();
             return animated_feet(animated);
         }
-        let model = self.stance_feet(request);
+        let shift = Vec3::new(request.step_offset.x, 0.0, request.step_offset.y);
+        let model = self.stance_feet(request).map(|f| FootPose {
+            position: f.position + shift,
+            rotation: f.rotation,
+        });
         let (_, rotation, _) = world.to_scale_rotation_translation();
         let inverse = world.inverse();
         let wanted = model.map(|f| FootPose {
@@ -432,6 +441,7 @@ impl State {
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),
     lower: LowerBody::new(),
+    step: HipsFollower::new(),
     blend: RegionBlend::new(),
     tracker: StateTracker::new(),
     case_logged: false,

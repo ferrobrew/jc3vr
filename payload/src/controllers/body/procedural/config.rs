@@ -47,6 +47,12 @@ pub struct ProceduralBodyConfig {
     pub step_duration_s: f32,
     /// How high a step lifts the foot, metres.
     pub step_height_m: f32,
+    /// Step the feet under the player's head when it has gone further from the stance than a lean
+    /// (`lean_allowance_m`): a player who walks about the room, or leans far over one foot, has the
+    /// feet step under them rather than the body stretching after the head.
+    pub step_under_head: bool,
+    /// How far the head may lean from over the stance before the feet step under it, metres.
+    pub lean_allowance_m: f32,
     /// Walk the feet while the body moves (phase-driven steps matched to the body's velocity),
     /// instead of leaving the moving body to the animation.
     pub gait: bool,
@@ -175,6 +181,8 @@ impl ProceduralBodyConfig {
             step_turn_deg: 35.0,
             step_duration_s: 0.3,
             step_height_m: 0.06,
+            step_under_head: true,
+            lean_allowance_m: 0.2,
             gait: true,
             gait_speed_mps: 0.3,
             walk_speed_mps: 1.5,
@@ -250,6 +258,7 @@ impl ProceduralBodyConfig {
             ("step_turn_deg", self.step_turn_deg, 1.0, 180.0),
             ("step_duration_s", self.step_duration_s, 0.05, 2.0),
             ("step_height_m", self.step_height_m, 0.0, 0.5),
+            ("lean_allowance_m", self.lean_allowance_m, 0.0, 1.0),
             ("gait_speed_mps", self.gait_speed_mps, 0.05, 5.0),
             ("walk_speed_mps", self.walk_speed_mps, 0.1, 20.0),
             ("walk_stride_m", self.walk_stride_m, 0.1, 3.0),

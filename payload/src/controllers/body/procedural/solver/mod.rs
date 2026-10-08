@@ -43,7 +43,7 @@ pub mod two_bone;
 use glam::{Quat, Vec2, Vec3};
 pub use hips::{
     DropFollower, HipsFollower, crouch_depth, hips_height, hips_horizontal, hips_room, hips_yaw,
-    reach_drop,
+    reach_drop, step_offset,
 };
 
 use crate::controllers::body::procedural::{

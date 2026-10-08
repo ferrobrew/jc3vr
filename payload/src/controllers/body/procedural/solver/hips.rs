@@ -38,8 +38,35 @@ pub fn hips_horizontal(rig: &Rig, input: &SolveInput, config: &ProceduralBodyCon
     if place.is_finite() { place } else { support }
 }
 
+/// How far the stance moves to step under the player's head, model space `(x, z)`, as an offset
+/// from the stance the root carries (`support`, its middle): the head's lean past `allowance`
+/// metres from where a neutral head would stand over the stance, its hips turned `yaw`. A lean
+/// within the allowance is the hips' to take, as a hinge, and the feet stay; a head further out
+/// (a player who walked off across the room, or leaned far over one foot) has the feet follow it to
+/// within the allowance. Under the roomscale chase the root follows the head too, which leaves less
+/// of the lean each tick, so the offset goes back to nothing as the root arrives.
+pub fn step_offset(rig: &Rig, head: Vec3, support: Vec3, yaw: f32, allowance: f32) -> Vec2 {
+    let reference_hips = rig.reference(RigBone::Hips).translation;
+    let head_over_hips = rig.reference(RigBone::Head).translation - reference_hips;
+    let neutral = Quat::from_rotation_y(yaw) * Vec3::new(head_over_hips.x, 0.0, head_over_hips.z);
+    let lean = Vec2::new(
+        head.x - support.x - neutral.x,
+        head.z - support.z - neutral.z,
+    );
+    let length = lean.length();
+    let allowance = if allowance.is_finite() {
+        allowance.max(0.0)
+    } else {
+        0.0
+    };
+    if !length.is_finite() || length <= allowance {
+        return Vec2::ZERO;
+    }
+    lean * (1.0 - allowance / length)
+}
+
 /// Follows the hips' horizontal place with a time constant, so a quick lean bends the spine before
-/// the hips go with it.
+/// the hips go with it. It follows the stance's step under the head the same way.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HipsFollower {
     current: Option<Vec2>,
@@ -273,6 +300,29 @@ pub(super) fn place_hips(
 mod tests {
     use super::*;
     use crate::controllers::body::procedural::rig::tests::skeleton;
+
+    #[test]
+    fn the_stance_steps_under_a_head_that_has_walked_off_but_not_under_a_lean() {
+        let rig = Rig::from_skeleton(&skeleton()).unwrap();
+        let head = rig.reference(RigBone::Head).translation;
+        let support = Vec3::ZERO;
+        // Standing over the stance, and a lean within the allowance, leave the feet.
+        assert_eq!(step_offset(&rig, head, support, 0.0, 0.2), Vec2::ZERO);
+        let lean = head + Vec3::new(0.0, -0.1, -0.18);
+        assert_eq!(step_offset(&rig, lean, support, 0.0, 0.2), Vec2::ZERO);
+        // A metre off to the right: the stance follows to within the allowance of the head.
+        let walked = head + Vec3::new(1.0, 0.0, 0.0);
+        let offset = step_offset(&rig, walked, support, 0.0, 0.2);
+        assert!(offset.abs_diff_eq(Vec2::new(0.8, 0.0), 1e-5), "{offset}");
+        // Once the stance is there, nothing more.
+        let moved = Vec3::new(offset.x, 0.0, offset.y);
+        assert!(step_offset(&rig, walked, moved, 0.0, 0.2).length() < 1e-5);
+        // Without an allowance the feet go right under the head; a head that is not a number
+        // leaves them.
+        let under = step_offset(&rig, walked, support, 0.0, 0.0);
+        assert!(under.abs_diff_eq(Vec2::new(1.0, 0.0), 1e-5));
+        assert_eq!(step_offset(&rig, Vec3::NAN, support, 0.0, 0.2), Vec2::ZERO);
+    }
 
     #[test]
     fn the_crouch_depth_runs_from_standing_to_the_squats_floor() {
