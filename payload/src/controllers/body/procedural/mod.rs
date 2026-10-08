@@ -62,13 +62,13 @@ use crate::{
                 joints::{LiveRig, RigCache},
                 rig::{Rig, RigBone, RigError},
                 solver::{
-                    DropFollower, SolveInput,
+                    DropFollower, HipsFollower, SolveInput,
                     air::{AirFollower, AirTuning, DipTuning, LandingDip, air_feet, mix_feet},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
                     feet::{Feet, FeetInput, FootPose, StepTuning},
                     gait::{self, NeutralStance, StanceFoot},
-                    hips_height,
+                    hips_height, hips_horizontal,
                     pose::RigPose,
                     reach_drop, solve,
                 },
@@ -282,6 +282,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             if !weights.any() {
                 state.feet.reset();
                 state.drop.reset();
+                state.hips.reset();
                 state.clavicles.reset();
                 state.air.reset();
                 state.dip.reset();
@@ -298,16 +299,17 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let legs_procedural = weights.legs > 0.0 || case.targets(config.air_legs)[0] > 0.0;
             let airborne =
                 config.air_legs && matches!(case, Case::Jump | Case::HandClimb | Case::Flight);
+            let request = FeetRequest {
+                world: &world,
+                rig,
+                animated: &animated,
+                still: locomotion.standing_still(),
+                velocity,
+                commanded,
+                dt,
+            };
+            let stance = state.stance_feet(&request);
             let feet = if legs_procedural {
-                let request = FeetRequest {
-                    world: &world,
-                    rig,
-                    animated: &animated,
-                    still: locomotion.standing_still(),
-                    velocity,
-                    commanded,
-                    dt,
-                };
                 let ground_feet = if airborne {
                     // The feet leave the ground with the body; the landing plants them afresh
                     // where they are wanted.
@@ -333,7 +335,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                         toe_drop: config.air_toe_drop_deg.to_radians(),
                     };
                     let hips = hips_height(rig, head_in_model(&world).y, &config);
-                    let stance = state.stance_feet(&request);
                     let air = air_feet(rig, stance, hips, vertical, &tuning);
                     mix_feet(ground_feet, air, air_weight)
                 } else {
@@ -355,13 +356,23 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let Some(mut input) = solve_input(character, &animated, feet) else {
                 return false;
             };
+            input.support = (stance[0].position + stance[1].position) * 0.5;
+            input.planted = if legs_procedural && !airborne {
+                state.feet.planted()
+            } else {
+                [true; 2]
+            };
             // The torso comes back from the animation with the hips where it left them, and rises
-            // from there at the reach drop's pace.
+            // from there at the reach drop's pace and moves over the stance at the follower's.
             if previous.torso <= 0.0 {
+                let hips = animated.position(RigBone::Hips);
+                state.hips.seed(Vec2::new(hips.x, hips.z));
                 let seed =
                     hips_height(rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
                 state.drop.seed(seed.min(hips_room(rig, &config)));
             }
+            let place = hips_horizontal(rig, &input, &config);
+            input.hips_xz = Some(state.hips.step(place, dt, config.hips_follow_s));
             let need = reach_drop(rig, &input, &config);
             let reach = state.drop.step(need, dt, config.reach_drop_s);
             let dip = state.dip.step(dt, config.landing_dip_s);
@@ -479,6 +490,8 @@ struct State {
     stance: NeutralStance,
     /// The hips' drop for the legs' reach.
     drop: DropFollower,
+    /// The hips' place over the stance.
+    hips: HipsFollower,
     /// The clavicles' turns toward the hands.
     clavicles: ClavicleFollower,
     /// The legs' mix of the air's feet against the ground's.
@@ -755,6 +768,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     feet: Feet::new(),
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
+    hips: HipsFollower::new(),
     clavicles: ClavicleFollower::new(),
     air: AirFollower::new(),
     dip: LandingDip::new(),
@@ -845,6 +859,9 @@ fn solve_input(
         torso_yaw: torso_turn(rotation),
         feet: feet.map(|f| f.position),
         foot_rotations: feet.map(|f| f.rotation),
+        support: (feet[0].position + feet[1].position) * 0.5,
+        planted: [true; 2],
+        hips_xz: None,
         hips_drop: 0.0,
     })
 }

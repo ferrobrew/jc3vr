@@ -138,6 +138,11 @@ impl Feet {
         self.phase
     }
 
+    /// Which feet are planted on the ground, left then right.
+    pub fn planted(&self) -> [bool; 2] {
+        self.feet.map(|f| matches!(f, Some(Foot::Planted { .. })))
+    }
+
     /// Whether the feet are in the world, rather than lifted out by [`reset`](Self::reset).
     pub fn placed(&self) -> bool {
         self.feet.iter().all(Option::is_some)
