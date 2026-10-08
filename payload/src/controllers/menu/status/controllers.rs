@@ -21,7 +21,7 @@ use crate::controllers::{
         status::{Health, Line},
     },
     physical_hands::physics::{self, BodyPhase, CallbackStatus, HandBodyStatus},
-    weapons::grip_watch,
+    weapons::{grip_watch, heft::HeftClass},
 };
 
 pub(super) fn rigid_grip() -> Line {
@@ -47,6 +47,10 @@ pub(super) fn flip_watch() -> Line {
     } else {
         Line::ok(detail)
     }
+}
+
+pub(super) fn animated_deviation() -> Line {
+    animated_deviation_line(grip_watch::status().by_class)
 }
 
 pub(super) fn bone_changes() -> Line {
@@ -259,6 +263,28 @@ fn canonical_grip_line(reads: [Option<GripRead>; 2]) -> Line {
     }
 }
 
+/// The animated deviation seen for each weight class, in degrees, the classes seen so far only.
+/// A diagnostic for whether the bind-pose grip is the pose the aiming clips hold each kind of gun
+/// in, which is unverified; it shows numbers rather than a verdict.
+fn animated_deviation_line(by_class: [Option<f32>; 4]) -> Line {
+    let mut detail = SmolStr::default();
+    for (class, deviation) in HeftClass::ALL.iter().zip(by_class) {
+        let Some(deviation) = deviation else {
+            continue;
+        };
+        let separator = if detail.is_empty() { "" } else { ", " };
+        detail = format_smolstr!(
+            "{detail}{separator}{} {deviation:.0}°",
+            class.label().to_uppercase()
+        );
+    }
+    if detail.is_empty() {
+        Line::waiting("NO GUN YET")
+    } else {
+        Line::ok(detail)
+    }
+}
+
 fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
     if !status.registered {
         return if enabled {
@@ -421,6 +447,18 @@ mod tests {
 
     use super::*;
     use crate::controllers::locomotion::view::Neutral;
+
+    #[test]
+    fn the_animated_deviation_lists_the_classes_seen() {
+        assert_eq!(
+            animated_deviation_line([Some(12.4), None, Some(31.6), None]).text(),
+            "OK, SIDEARM 12°, RIFLE 32°"
+        );
+        assert_eq!(
+            animated_deviation_line([None; 4]).text(),
+            "WAITING, NO GUN YET"
+        );
+    }
 
     #[test]
     fn the_rigid_grip_names_the_pinned_hands() {

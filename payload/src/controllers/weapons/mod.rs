@@ -242,8 +242,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     };
     scope::input_tick(weapon.map(|w| w.address));
     // SAFETY: the weapon was read this tick, on the main thread outside the world update.
-    if let Some(base) = weapon.and_then(|w| unsafe { (w.address as *const WeaponBase).as_ref() }) {
-        unsafe { grip_watch::observe(base) };
+    if let Some(w) = weapon
+        && let Some(base) = unsafe { (w.address as *const WeaponBase).as_ref() }
+    {
+        unsafe { grip_watch::observe(base, w.class) };
     }
     heft::observe(weapon.filter(|_| gameplay).and_then(|w| {
         Some(heft::HeftTarget {

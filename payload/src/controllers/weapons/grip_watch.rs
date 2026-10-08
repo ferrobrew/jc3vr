@@ -36,6 +36,7 @@ use crate::{
             grip::{self, HandGrip},
             tiers,
         },
+        weapons::heft::HeftClass,
     },
     hooks::animation,
 };
@@ -59,6 +60,10 @@ pub struct GripWatchStatus {
     /// attach bone from the canonical grip, degrees.
     pub pinned: [Option<bool>; 2],
     pub animated_deviation_deg: [Option<f32>; 2],
+    /// The animated deviation last seen for each weight class, by [`HeftClass::index`], from a
+    /// hand on its controller at full weight: how far the clips hold each kind of gun from the
+    /// bind pose's grip, which the sight corrections were tuned against.
+    pub by_class: [Option<f32>; 4],
 }
 
 pub fn status() -> GripWatchStatus {
@@ -83,7 +88,7 @@ pub fn change_deg(previous: Quat, current: Quat) -> f32 {
 /// # Safety
 ///
 /// `weapon` must be live, read on the main thread outside the world update.
-pub(super) unsafe fn observe(weapon: &WeaponBase) {
+pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
     let now = Instant::now();
     let records = grip::status().hands;
     let address = weapon as *const WeaponBase as usize;
@@ -105,6 +110,9 @@ pub(super) unsafe fn observe(weapon: &WeaponBase) {
         status.from_grab_deg[hand.index()] = events.from_grab_deg;
         status.pinned[hand.index()] = record.map(|r| r.pinned);
         status.animated_deviation_deg[hand.index()] = record.map(|r| r.animated_deviation_deg);
+        if let Some(deviation) = record.and_then(at_full_weight) {
+            status.by_class[class.index()] = Some(deviation);
+        }
         let Some(record) = record else {
             continue;
         };
@@ -363,6 +371,19 @@ fn log_context(context: &Context, record: &HandGrip, events: &Events) {
     );
 }
 
+/// The record's animated deviation when its hand was on the controller at full weight, where the
+/// clip holds the gun as it aims rather than mid draw or blending.
+fn at_full_weight(record: HandGrip) -> Option<f32> {
+    record
+        .weight
+        .filter(|&w| w >= FULL_WEIGHT)
+        .map(|_| record.animated_deviation_deg)
+        .filter(|d| d.is_finite())
+}
+
+/// The IK weight that counts as full for [`at_full_weight`].
+const FULL_WEIGHT: f32 = 0.999;
+
 /// A record older than this is from a placement that no longer runs.
 const MAX_AGE: Duration = Duration::from_millis(250);
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -383,6 +404,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         last_flip: None,
         pinned: [None; 2],
         animated_deviation_deg: [None; 2],
+        by_class: [None; 4],
     },
 });
 

@@ -79,6 +79,18 @@ pub enum HeftClass {
 }
 
 impl HeftClass {
+    pub const ALL: [HeftClass; 4] = [
+        HeftClass::Sidearm,
+        HeftClass::Smg,
+        HeftClass::Rifle,
+        HeftClass::Heavy,
+    ];
+
+    /// The class's place in [`HeftClass::ALL`].
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
     /// The class of a weapon of class `class` (the raw [`WeaponClass`] value, which may be out of
     /// the enum's range), held in a two-handed slot or not. A weapon whose class is unset or
     /// unknown is a rifle in a two-handed slot and a sidearm otherwise.

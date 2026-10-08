@@ -162,6 +162,7 @@ const SECTIONS: &[Section] = &[
             row!("RIGID GRIP", controllers::rigid_grip),
             row!("CANONICAL GRIP", controllers::canonical_grip),
             row!("FLIP WATCH", controllers::flip_watch),
+            row!("ANIMATED GRIP OFFSET", controllers::animated_deviation),
             row!("ATTACH BONE CHANGES", controllers::bone_changes),
         ],
     },

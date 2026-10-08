@@ -169,6 +169,7 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | `GUN IN HAND` | `RIGID GRIP` | which hands' guns were pinned to the canonical grip at their last placement, and the pins since load |
 | | `CANONICAL GRIP` | whether each hand's canonical grip was read, or why not (bones missing, an unusable bind pose) |
 | | `FLIP WATCH` | the grip watch's snaps and sweeps since load; a snap fails the row |
+| | `ANIMATED GRIP OFFSET` | how far the clips hold each weight class's gun from the bind pose's grip, in degrees, last seen with the hand on its controller at full weight; a diagnostic for the unverified assumption that the two agree, so it shows numbers rather than a verdict |
 | | `ATTACH BONE CHANGES` | the grip watch's attach-bone changes per hand |
 | `HAND BODIES` | `CALLBACK` | whether the pre-simulation callback is registered, has fired, and fires on the game thread (else the thread's id) |
 | | `CALLBACK FIRES` | how many times it has fired |
