@@ -223,6 +223,11 @@ impl Handover {
 /// The anchors of the neutral pose carried by the root: `world_t0` and `world_t1` are the
 /// character's previous- and current-tick world matrices, and `height` the smoothed root heights
 /// that replace theirs.
+///
+/// Only the neutral head's and neck's heights ride the root; they sit straight above it. Their
+/// small horizontal offset from the root would swing around it whenever the body turns under the
+/// view (the torso follow), which moves the view sideways with nothing the player did; the
+/// recenter takes up the constant offset instead.
 pub fn stable_anchors(
     neutral: &Neutral,
     world_t0: Mat4,
@@ -232,10 +237,11 @@ pub fn stable_anchors(
     let lift = |world: Mat4, smoothed: f32| Vec3::Y * (smoothed - world.w_axis.y);
     let lift_t1 = lift(world_t1, height.current);
     let lift_t0 = lift(world_t0, height.previous);
+    let above = |point: Vec3| Vec3::Y * point.y;
     Anchors {
-        head: world_t1.transform_point3(neutral.head) + lift_t1,
-        head_prev: world_t0.transform_point3(neutral.head) + lift_t0,
-        neck: world_t1.transform_point3(neutral.neck) + lift_t1,
+        head: world_t1.transform_point3(above(neutral.head)) + lift_t1,
+        head_prev: world_t0.transform_point3(above(neutral.head)) + lift_t0,
+        neck: world_t1.transform_point3(above(neutral.neck)) + lift_t1,
         eye_arm: neutral.eyes - neutral.neck,
     }
 }
@@ -408,8 +414,14 @@ mod tests {
         assert!(
             anchors
                 .head
-                .abs_diff_eq(t1.transform_point3(neutral().head), 1e-5)
+                .abs_diff_eq(Vec3::new(3.0, 10.0 + neutral().head.y, -2.0), 1e-5)
         );
+        // Turning the body in place leaves the anchors where they were.
+        let turned =
+            Mat4::from_rotation_translation(Quat::from_rotation_y(1.9), Vec3::new(3.0, 10.0, -2.0));
+        let after = stable_anchors(&neutral(), t0, turned, height);
+        assert!(after.head.abs_diff_eq(anchors.head, 1e-5));
+        assert!(after.neck.abs_diff_eq(anchors.neck, 1e-5));
         assert!((anchors.head - anchors.head_prev).abs_diff_eq(Vec3::new(0.1, 0.0, 0.0), 1e-5));
         let smoothed = HeightPair {
             previous: 9.9,
