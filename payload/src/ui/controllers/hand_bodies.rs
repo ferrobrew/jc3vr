@@ -1,11 +1,15 @@
-//! Hand bodies: each hand body's phase and drive, the push they give the player, and their
-//! settings.
+//! Hand bodies: each hand body's phase and drive, the push they give the player, the held guns'
+//! bodies, and their settings.
 
 use egui::Ui;
 
 use crate::controllers::{
     frame::Hand,
-    physical_hands::physics::{BodyPhase, HandBodiesConfig, HandBodiesStatus, HandHitsConfig},
+    physical_hands::physics::{
+        BodyPhase, HandBodiesConfig, HandBodiesStatus, HandHitsConfig,
+        config::{GunClassValues, HeldGunsConfig},
+        guns,
+    },
 };
 
 pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
@@ -76,6 +80,43 @@ pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
     if let Some(error) = &status.last_error {
         ui.label(format!("Last error: {error}"));
     }
+    guns_readout(ui, &guns::status());
+}
+
+fn guns_readout(ui: &mut Ui, status: &guns::GunsStatus) {
+    ui.label(format!(
+        "Gun bodies: {} made · {} destroyed · {} put back · {} shots · contacts L {} R {}",
+        status.made,
+        status.destroyed,
+        status.reseats,
+        status.shots,
+        status.contacts[0],
+        status.contacts[1]
+    ));
+    for hand in Hand::BOTH {
+        let Some(g) = &status.hands[hand.index()] else {
+            continue;
+        };
+        ui.label(format!(
+            "{} gun: body {} · {} · {:.2} kg from {} · held {} · braced {} · {:.0} mm, {:.1}° off its \
+             seat · {:.2} m/s",
+            hand.label(),
+            g.body_id,
+            if g.in_world { "in world" } else { "out of world" },
+            g.mass_kg,
+            g.mass_source.label(),
+            g.holder_joint
+                .map_or_else(|| "no".to_owned(), |c| format!("by {c}")),
+            g.brace_joint
+                .map_or_else(|| "no".to_owned(), |c| format!("by {c}")),
+            g.deviation_m * 1000.0,
+            g.deviation_rad.to_degrees(),
+            g.speed_mps
+        ));
+    }
+    if let Some(error) = &status.last_error {
+        ui.label(format!("Last gun error: {error}"));
+    }
 }
 
 pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
@@ -122,7 +163,51 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
         );
         ui.separator();
         hits_settings(ui, &mut b.hits);
+        ui.separator();
+        guns_settings(ui, &mut b.guns);
     });
+}
+
+fn guns_settings(ui: &mut Ui, g: &mut HeldGunsConfig) {
+    ui.checkbox(&mut g.enabled, "Held guns are bodies joined to the hands");
+    ui.add_enabled_ui(g.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut g.min_mass_kg, 0.1..=10.0).text("Lightest gun (kg)"));
+        ui.add(egui::Slider::new(&mut g.max_mass_kg, 1.0..=60.0).text("Heaviest gun (kg)"));
+        class_sliders(
+            ui,
+            "Mass without its own (kg)",
+            &mut g.fallback_mass_kg,
+            0.1..=30.0,
+        );
+        class_sliders(
+            ui,
+            "Shot impulse (N·s)",
+            &mut g.recoil_impulse_ns,
+            0.0..=30.0,
+        );
+        ui.add(egui::Slider::new(&mut g.muzzle_rise, 0.0..=1.0).text("Muzzle rise (share)"));
+        ui.add(
+            egui::Slider::new(&mut g.break_distance_m, 0.05..=1.0)
+                .text("Stray before it is put back (m)"),
+        );
+    });
+}
+
+fn class_sliders(
+    ui: &mut Ui,
+    label: &str,
+    values: &mut GunClassValues,
+    range: std::ops::RangeInclusive<f32>,
+) {
+    ui.label(label);
+    for (value, class) in [
+        (&mut values.sidearm, "sidearm"),
+        (&mut values.smg, "SMG"),
+        (&mut values.rifle, "rifle"),
+        (&mut values.heavy, "heavy"),
+    ] {
+        ui.add(egui::Slider::new(value, range.clone()).text(class));
+    }
 }
 
 fn hits_settings(ui: &mut Ui, h: &mut HandHitsConfig) {

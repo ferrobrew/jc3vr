@@ -1,6 +1,8 @@
 //! The hand bodies' own state, owned by the pre-simulation step: each hand's body, whether it is in
-//! the simulation, where it was last sent, and its joint, and the transitions between them: made,
-//! added, driven, held in place, parked, and destroyed.
+//! the simulation, where it was last sent, its joint, and the gun body it holds, and the
+//! transitions between them: made, added, driven, held in place, parked, and destroyed. A hand's
+//! body never stops, parks, or goes while a gun body hangs from it: the gun's joints, and with a
+//! holding hand the gun body, go first ([`drop_hand`]).
 
 use std::time::Instant;
 
@@ -11,9 +13,10 @@ use crate::controllers::{
     frame::{Hand, Pose},
     physical_hands::physics::{
         BodyPhase, HandBodyStatus, HoldTarget,
-        body::{BodyError, BodySpec, HandBody},
+        body::{BodyError, BodyShape, BodySpec, HandBody},
         contact,
         drive::{DriveTuning, Goal, drive, rig_carry},
+        guns::step::{GunSlot, drop_hand},
         joint::Joint,
         render::RenderOffset,
     },
@@ -66,6 +69,11 @@ pub(super) struct Hands {
     pub bodies: [Option<HandBody>; 2],
     /// Each body's joint to what its grip holds.
     pub joints: [Option<Joint>; 2],
+    /// Each holding hand's gun body.
+    pub guns: [Option<GunSlot>; 2],
+    /// Which bodies were put somewhere this step rather than driven there (added, put back on
+    /// their hand, or carried by the rig), so a gun hanging from one is put back on its seat.
+    pub placed: [bool; 2],
     /// Whether each body is in the simulation.
     added: [bool; 2],
     /// Where each body was last sent, world space.
@@ -82,6 +90,8 @@ pub(super) struct Hands {
 pub(super) static HANDS: Mutex<Hands> = Mutex::new(Hands {
     bodies: [None, None],
     joints: [None, None],
+    guns: [None, None],
+    placed: [false; 2],
     added: [false; 2],
     goals: [None; 2],
     palms: [None; 2],
@@ -138,8 +148,7 @@ impl Hands {
                     filter_info = ?filter.map(|f| format!("{f:#010x}")),
                     system_group = spec.system_group,
                     mass_kg = spec.mass_kg,
-                    radius_m = spec.capsule.radius_m,
-                    half_length_m = spec.capsule.half_length_m,
+                    shape = ?spec.shape,
                     listens = spec.contact_events,
                     contact_events = ?contact_events,
                     "hand bodies: created a hand body"
@@ -159,6 +168,7 @@ impl Hands {
             self.palms[i] = None;
             unsafe { body.place(goal.position, goal.orientation) }?;
             contact::mute_for(hand, PLACED_MUTE_STEPS);
+            self.placed[i] = true;
             tracing::info!(
                 hand = hand.label(),
                 body_id = body.body_id(),
@@ -176,8 +186,9 @@ impl Hands {
                 );
                 // SAFETY: forwarded from the caller.
                 unsafe { self.unjoin(hand, "the hand body was lost") };
+                unsafe { drop_hand(&mut self.guns, hand, "the hand body was lost") };
                 if let Some(body) = self.bodies[i].take() {
-                    body.abandon(hand);
+                    body.abandon();
                 }
                 self.added[i] = false;
                 self.goals[i] = None;
@@ -231,6 +242,7 @@ impl Hands {
             unsafe { body.place(goal.position, goal.orientation) }?;
             contact::mute_for(hand, PLACED_MUTE_STEPS);
             contact::record_motion(hand, goal.position, Vec3::ZERO);
+            self.placed[i] = true;
             self.resets[i] += 1;
             status.resets = self.resets[i];
             self.goals[i] = Some(goal);
@@ -268,7 +280,7 @@ impl Hands {
     pub(super) unsafe fn join(&mut self, hand: Hand, wanted: Option<HoldTarget>) -> bool {
         let i = hand.index();
         if let Some(joint) = &self.joints[i] {
-            let same = wanted.is_some_and(|w| joint.target() == (w.object, w.body));
+            let same = wanted.is_some_and(|w| joint.target() == (Some(w.object), w.body));
             // SAFETY: forwarded from the caller.
             if same && unsafe { joint.intact() } {
                 return false;
@@ -345,6 +357,7 @@ impl Hands {
         // SAFETY: forwarded from the caller.
         if unsafe { body.place(carried.position, carried.orientation) }.is_ok() {
             contact::mute_for(hand, RIG_MUTE_STEPS);
+            self.placed[i] = true;
             self.goals[i] = None;
             self.palms[i] = None;
         }
@@ -353,6 +366,9 @@ impl Hands {
     /// Keep a hand's body where it is for a moment without driving it toward its hand.
     pub(super) unsafe fn hold(&mut self, hand: Hand) {
         let i = hand.index();
+        // A gun does not hang from a body held still.
+        // SAFETY: forwarded from the caller.
+        unsafe { drop_hand(&mut self.guns, hand, "the hand stopped acting") };
         if let Some(body) = self.bodies[i].as_mut()
             && self.added[i]
         {
@@ -369,6 +385,7 @@ impl Hands {
         let i = hand.index();
         // SAFETY: forwarded from the caller.
         unsafe { self.unjoin(hand, reason) };
+        unsafe { drop_hand(&mut self.guns, hand, reason) };
         self.goals[i] = None;
         self.palms[i] = None;
         let Some(body) = self.bodies[i].as_mut() else {
@@ -392,6 +409,7 @@ impl Hands {
         let i = hand.index();
         // SAFETY: forwarded from the caller.
         unsafe { self.unjoin(hand, reason) };
+        unsafe { drop_hand(&mut self.guns, hand, reason) };
         self.added[i] = false;
         self.goals[i] = None;
         self.palms[i] = None;
@@ -401,7 +419,7 @@ impl Hands {
         };
         let body_id = body.body_id();
         // SAFETY: forwarded from the caller.
-        if unsafe { body.destroy(hand) } {
+        if unsafe { body.destroy() } {
             tracing::info!(
                 hand = hand.label(),
                 body_id,
@@ -459,10 +477,13 @@ fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> 
         return Some("the hits were switched on or off");
     }
     let close = |a: f32, b: f32| (a - b).abs() <= SPEC_TOLERANCE * a.abs().max(b.abs());
-    if !(close(existing.mass_kg, wanted.mass_kg)
-        && close(existing.capsule.radius_m, wanted.capsule.radius_m)
-        && close(existing.capsule.half_length_m, wanted.capsule.half_length_m))
-    {
+    let same_shape = match (existing.shape, wanted.shape) {
+        (BodyShape::Capsule(a), BodyShape::Capsule(b)) => {
+            close(a.radius_m, b.radius_m) && close(a.half_length_m, b.half_length_m)
+        }
+        (a, b) => a == b,
+    };
+    if !(close(existing.mass_kg, wanted.mass_kg) && same_shape) {
         return Some("the hand's size or mass changed");
     }
     None

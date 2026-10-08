@@ -67,6 +67,81 @@ pub struct HandBodiesConfig {
     /// destroyed, so an object broken apart inside a step leaves the joint on a dead body until
     /// the next pre-simulation step ends it (`docs/mod/input/physical-hands.md`).
     pub joint_grabs: bool,
+    /// A held gun as a body of its own, joined to the hand bodies that hold it.
+    pub guns: HeldGunsConfig,
+}
+
+/// Held guns as physics bodies (see [`crate::controllers::physical_hands::physics::guns`]): a gun
+/// in a hand whose body acts is a body of the gun's own shape and mass, joined to the holding
+/// hand's body (and to the bracing hand's on its foregrip), so its weight drags the hands, it
+/// collides along its whole length, and it strikes what it is swung into.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HeldGunsConfig {
+    /// Make each held gun a body joined to the hands; off, a held gun has no body, and the
+    /// kinematic weight, recoil, and wall probe act instead.
+    pub enabled: bool,
+    /// The lightest a gun body is made, kilograms.
+    pub min_mass_kg: f32,
+    /// The heaviest a gun body is made, kilograms.
+    pub max_mass_kg: f32,
+    /// The mass of a gun whose own body gives none, by weight class, kilograms.
+    pub fallback_mass_kg: GunClassValues,
+    /// The impulse a shot gives the gun body back along its barrel, by weight class, newton
+    /// seconds.
+    pub recoil_impulse_ns: GunClassValues,
+    /// The share of a shot's impulse that also lifts the muzzle, `0..=1`.
+    pub muzzle_rise: f32,
+    /// How far a gun body may stray from its place in the holding hand before it is put back
+    /// there, metres.
+    pub break_distance_m: f32,
+}
+
+/// One value per gun weight class.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GunClassValues {
+    pub sidearm: f32,
+    pub smg: f32,
+    pub rifle: f32,
+    pub heavy: f32,
+}
+
+impl GunClassValues {
+    pub const fn new(sidearm: f32, smg: f32, rifle: f32, heavy: f32) -> Self {
+        Self {
+            sidearm,
+            smg,
+            rifle,
+            heavy,
+        }
+    }
+}
+
+impl Default for GunClassValues {
+    fn default() -> Self {
+        Self::new(1.0, 1.0, 1.0, 1.0)
+    }
+}
+
+impl HeldGunsConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            min_mass_kg: 0.5,
+            max_mass_kg: 25.0,
+            fallback_mass_kg: GunClassValues::new(1.0, 2.5, 4.0, 9.0),
+            recoil_impulse_ns: GunClassValues::new(1.5, 1.5, 3.0, 6.0),
+            muzzle_rise: 0.4,
+            break_distance_m: 0.4,
+        }
+    }
+}
+
+impl Default for HeldGunsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// A hand body's hits (see [`crate::controllers::physical_hands::physics::hit`]): each contact a
@@ -167,6 +242,7 @@ impl HandBodiesConfig {
             pressure_full_lag_m: 0.1,
             hits: HandHitsConfig::new(),
             joint_grabs: true,
+            guns: HeldGunsConfig::new(),
         }
     }
 

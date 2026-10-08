@@ -50,6 +50,19 @@ pub fn blow_impulse(approach: Approach, config: &HandHitsConfig) -> Option<f32> 
         .then(|| config.blow_mass_kg.max(0.0) * approach.hand_mps)
 }
 
+/// The hits' settings for a blow struck with a held gun of `gun_mass_kg`: the gun's mass swung with
+/// the arm's, so a rifle swung into a character strikes harder than a fist at the same speed.
+/// `config` unchanged for a hand's own blow, or a mass that is not finite and positive.
+pub fn striking_with(config: &HandHitsConfig, gun_mass_kg: Option<f32>) -> HandHitsConfig {
+    match gun_mass_kg.filter(|m| m.is_finite() && *m > 0.0) {
+        Some(mass) => HandHitsConfig {
+            blow_mass_kg: config.blow_mass_kg.max(0.0) + mass,
+            ..*config
+        },
+        None => *config,
+    }
+}
+
 /// `plan` restrained to at most `max_strength` of a knockdown, and to no damage: the blow a
 /// character the player is not hostile to takes, so that a swing at an ally, an escort, or a
 /// bystander staggers at most and never hurts.
@@ -219,6 +232,21 @@ mod tests {
             Blow::Strikes(plan) => plan,
             other => panic!("{impulse}: {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_gun_swings_its_mass_with_the_arm() {
+        let with_rifle = striking_with(&CONFIG, Some(4.0));
+        assert_eq!(with_rifle.blow_mass_kg, CONFIG.blow_mass_kg + 4.0);
+        assert_eq!(striking_with(&CONFIG, None), CONFIG);
+        assert_eq!(striking_with(&CONFIG, Some(f32::NAN)), CONFIG);
+        assert_eq!(striking_with(&CONFIG, Some(-1.0)), CONFIG);
+        // The same swing strikes harder with the gun.
+        let swing = Approach {
+            hand_mps: 4.0,
+            victim_mps: 0.0,
+        };
+        assert!(blow_impulse(swing, &with_rifle).unwrap() > blow_impulse(swing, &CONFIG).unwrap());
     }
 
     #[test]

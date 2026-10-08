@@ -1,5 +1,5 @@
-//! One hand body in the game's physics world: its creation, its place in the simulation, its
-//! state, and its teardown, as the engine's own free bodies do it.
+//! One hand body, or one held gun's body, in the game's physics world: its creation, its place in
+//! the simulation, its state, and its teardown, as the engine's own free bodies do it.
 //!
 //! A hand body is built the way the grappling hook's hang proxy (`CGrapplingHangPhysicsProxy::Init`)
 //! builds its free capsule: a capsule shape ([`hknpCapsuleShape::createCapsuleShape`]), a body and a
@@ -9,6 +9,10 @@
 //! null, as the proxy's is). The wrapper then sets the body's collision layer and system group and
 //! turns its gravity off. Deleting the wrapper ([`PfxRigidBody::Destruct`]) removes and destroys
 //! the body.
+//!
+//! A held gun's body is made the same way from the shape of the gun's own body
+//! ([`hknpBody::m_shape`]), which the new body takes a reference of its own to, so the gun's body
+//! and the mod's share one shape and neither outlives the other's use of it; its gravity stays on.
 //!
 //! Every function here changes the physics world, so it runs only on the thread that steps it,
 //! outside the step: from the pre-simulation callback, or from the shutdown cleanup on the game
@@ -24,7 +28,7 @@ use std::{
 use glam::{Mat3, Mat4, Quat, Vec3};
 use jc3gi::{
     character::character::Character,
-    havok::{hkReferencedObject, hknpBodyCinfo, hknpCapsuleShape, hknpMotionCinfo},
+    havok::{hkReferencedObject, hknpBodyCinfo, hknpCapsuleShape, hknpMotionCinfo, hknpShape},
     memory::{MemoryFree, OperatorNew},
     physics::{
         CustomGroupCollisionFilter, PfxCharacterInstance, PfxInstance, PfxLayer, PfxRigidBody,
@@ -36,15 +40,12 @@ use jc3gi::{
     },
 };
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::{
-        physics::{
-            contact::{self, ContactError},
-            drive::BodyMotion,
-        },
-        world::World,
+use crate::controllers::physical_hands::{
+    physics::{
+        contact::{self, ContactError, Source},
+        drive::BodyMotion,
     },
+    world::World,
 };
 
 /// Why a hand body could not be made, read, or driven.
@@ -90,23 +91,38 @@ pub struct Capsule {
     pub radius_m: f32,
 }
 
-/// What a hand body is made with.
+/// A body's shape.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum BodyShape {
+    /// A capsule made for the body.
+    Capsule(Capsule),
+    /// Another body's shape, which the new body takes a reference of its own to. The address
+    /// must be a live shape when the body is made.
+    Shared(NonNull<hknpShape>),
+}
+
+/// What a hand body, or a held gun's body, is made with.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BodySpec {
-    pub capsule: Capsule,
+    pub shape: BodyShape,
     pub mass_kg: f32,
     /// The collision system group it shares with the player's character proxy, so that it never
     /// collides with the player.
     pub system_group: u32,
     /// Whether the body's contacts are listened for ([`contact`]).
     pub contact_events: bool,
+    /// Whether gravity acts on the body: a hand's is off, so the drive does not fight it, and a
+    /// gun's is on, so its weight hangs from the hands.
+    pub gravity: bool,
 }
 
-/// A hand body: the engine wrapper this module allocated, which owns the Havok body.
+/// A hand body or a held gun's body: the engine wrapper this module allocated, which owns the
+/// Havok body.
 pub struct HandBody {
     wrapper: NonNull<PfxRigidBody>,
     body_id: u32,
     spec: BodySpec,
+    source: Source,
 }
 
 // SAFETY: the wrapper is only touched on the thread that steps the physics world, outside the
@@ -121,11 +137,12 @@ impl HandBody {
     ///
     /// The thread that steps the physics world, outside the step.
     pub unsafe fn create(
-        hand: Hand,
+        source: impl Into<Source>,
         spec: BodySpec,
         position: Vec3,
         orientation: Quat,
     ) -> Result<Self, BodyError> {
+        let source = source.into();
         let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
         // The wrapper's memory first: it is the one allocation a failure after the body is made
         // could not return without destroying the body. A failure before then frees it.
@@ -135,9 +152,17 @@ impl HandBody {
         // SAFETY: the memory came from `OperatorNew` above and nothing else holds it.
         let free_memory = || unsafe { MemoryFree(memory.as_ptr().cast()) };
 
-        let a = aligned(Vec3::NEG_Z * spec.capsule.half_length_m);
-        let b = aligned(Vec3::Z * spec.capsule.half_length_m);
-        let shape = unsafe { hknpCapsuleShape::createCapsuleShape(&a, &b, spec.capsule.radius_m) };
+        // A made capsule comes with one reference, the caller's; a shared shape lends none.
+        let (shape, owned) = match spec.shape {
+            BodyShape::Capsule(capsule) => {
+                let a = aligned(Vec3::NEG_Z * capsule.half_length_m);
+                let b = aligned(Vec3::Z * capsule.half_length_m);
+                let shape =
+                    unsafe { hknpCapsuleShape::createCapsuleShape(&a, &b, capsule.radius_m) };
+                (shape, true)
+            }
+            BodyShape::Shared(shape) => (shape.as_ptr(), false),
+        };
         if shape.is_null() {
             free_memory();
             return Err(BodyError::NoShape);
@@ -175,7 +200,9 @@ impl HandBody {
             )
         };
         // The body holds its own reference to the shape.
-        unsafe { release(shape.cast::<hkReferencedObject>()) };
+        if owned {
+            unsafe { release(shape.cast::<hkReferencedObject>()) };
+        }
         if body_id == PfxCharacterInstance::INVALID_BODY_ID {
             free_memory();
             return Err(BodyError::NoBodyId);
@@ -187,17 +214,20 @@ impl HandBody {
             wrapper.Construct(&body_id, &no_data, false);
             wrapper.SetCollisionLayer(PfxLayer::WEAPONS as u32);
             wrapper.SetCollisionSystemGroup(spec.system_group);
-            wrapper.SetGravityFactor(0.0);
+            if !spec.gravity {
+                wrapper.SetGravityFactor(0.0);
+            }
         }
         let body = Self {
             wrapper: memory,
             body_id,
             spec,
+            source,
         };
         if spec.contact_events
-            && let Err(e) = unsafe { contact::listen(memory, hand) }
+            && let Err(e) = unsafe { contact::listen(memory, source) }
         {
-            unsafe { body.destroy(hand) };
+            unsafe { body.destroy() };
             return Err(BodyError::Contacts(e));
         }
         Ok(body)
@@ -346,21 +376,41 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn destroy(self, hand: Hand) -> bool {
+    pub unsafe fn destroy(self) -> bool {
         let held = unsafe { World::get() }
             .is_some_and(|world| unsafe { self.slot(world.world()) }.is_ok());
         if !held {
-            self.abandon(hand);
+            self.abandon();
             return false;
         }
-        contact::forget(hand);
+        contact::forget(self.source);
         unsafe { (*self.wrapper.as_ptr()).Destruct(PfxRigidBody::DESTRUCT_FREE) };
         true
     }
 
     /// Forget the wrapper without touching the engine: for a body whose slot no longer holds it.
-    pub fn abandon(self, hand: Hand) {
-        contact::abandon(hand);
+    pub fn abandon(self) {
+        contact::abandon(self.source);
+    }
+
+    /// Give the body an impulse `impulse` at the game-space point `at`, world space.
+    ///
+    /// # Safety
+    ///
+    /// As [`HandBody::create`].
+    pub unsafe fn apply_impulse(&mut self, impulse: Vec3, at: Vec3) -> Result<(), BodyError> {
+        if !(impulse.is_finite() && at.is_finite()) {
+            return Err(BodyError::BadMotion);
+        }
+        let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        unsafe { self.slot(world.world()) }?;
+        let at = aligned(at - world.shift);
+        unsafe {
+            world
+                .world_mut()
+                .applyBodyImpulseAt(self.body_id, &aligned(impulse), &at)
+        };
+        Ok(())
     }
 
     /// The body's slot, checked to still hold this wrapper's body: the id has a slot with a
@@ -454,7 +504,7 @@ pub(super) unsafe fn release(object: *mut hkReferencedObject) {
 }
 
 /// A Havok `hkHalf`: the upper 16 bits of an `f32`.
-fn half_to_f32(half: u16) -> f32 {
+pub(super) fn half_to_f32(half: u16) -> f32 {
     f32::from_bits(u32::from(half) << 16)
 }
 

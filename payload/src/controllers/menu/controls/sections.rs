@@ -147,6 +147,12 @@ pub(super) fn hands_and_aim_section(page: Page) -> Page {
             .physical_hands
             .bodies
             .enabled))
+        .item(config_toggle!("PHYSICAL GUNS", |c| c
+            .controllers
+            .physical_hands
+            .bodies
+            .guns
+            .enabled))
         .item(config_slider!(
             "HAND STRENGTH",
             STRENGTH_RANGE,

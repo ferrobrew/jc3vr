@@ -12,7 +12,9 @@
 //!   offset ([`crate::controllers::weapons::recoil`]), by the class's one-handed kick scale for a
 //!   long gun in one hand ([`crate::controllers::weapons::heft`]), the dual-wield split learns which
 //!   hand fired ([`crate::controllers::weapons::dual_wield`]), and the reload learns the shot's hand
-//!   and the rounds left ([`crate::controllers::weapons::reload`]). A weapon without a fire rumble of its own
+//!   and the rounds left ([`crate::controllers::weapons::reload`]). A gun whose body the hands
+//!   hold is kicked by an impulse on that body instead of the offset
+//!   ([`crate::controllers::physical_hands::physics::guns`]). A weapon without a fire rumble of its own
 //!   still pulses the hand with the kick alone.
 
 use std::cell::Cell;
@@ -28,6 +30,7 @@ use crate::{
         frame::Hand,
         hands::late,
         haptics::rumble,
+        physical_hands::physics::guns,
         scheme, vehicles,
         weapons::{dual_wield, heft, hold::second, recoil, reload},
     },
@@ -109,6 +112,9 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
         return;
     };
     let (pitch, yaw) = shot.kick(w);
+    // A gun whose body the hands hold takes the shot's kick as an impulse on that body; the step
+    // drops the shot for a gun without one, whose hands the recoil offset below moves instead.
+    guns::queue_shot(hand, weapon as usize);
     recoil::kick(
         hand,
         pitch,

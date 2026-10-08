@@ -14,7 +14,8 @@
 //!   strength, and the push a held-back hand gives the player;
 //! - [`render`]: the offset that draws a hand where its body is, pure;
 //! - [`joint`]: the fixed constraint that joins a hand body to an object its grip holds, with
-//!   `joint_grabs`;
+//!   `joint_grabs`, or to a held gun's body;
+//! - [`guns`]: a held gun as a body of its own, joined to the hand bodies that hold it;
 //! - [`state`]: the shared state the tick's two halves and the rest of the controllers read, and
 //!   the small readers over it;
 //! - [`config`]: the settings.
@@ -51,6 +52,7 @@ mod callback;
 pub mod config;
 mod contact;
 pub mod drive;
+pub mod guns;
 pub mod hit;
 mod joint;
 mod lifecycle;

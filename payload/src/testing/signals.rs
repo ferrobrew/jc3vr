@@ -16,7 +16,7 @@ use crate::{
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
             self, climb,
-            physics::{self, BodyPhase},
+            physics::{self, BodyPhase, guns},
             stunt::{self, solve::StuntKind},
             vault,
         },
@@ -127,6 +127,13 @@ signals! {
     HandBodiesDroppedContacts => "hand_bodies.dropped_contacts", Counter, "Contacts dropped because the queue was full.";
     HandBlows => "hand_bodies.blows", Counter, "Blows the hands dealt to characters.";
     HandBodiesError => "hand_bodies.error", Flag, "The hand bodies hold an error.";
+    GunBodiesMade => "guns.made", Counter, "Held guns' bodies made.";
+    GunHeld => "guns.held", Flag, "A held gun's body is joined to its hand.";
+    GunBraced => "guns.braced", Flag, "A held gun's body is joined to the bracing hand too.";
+    GunShots => "guns.shots", Counter, "Shots whose kick a gun body took.";
+    GunBodyContacts => "guns.contacts", Counter, "Contacts the held guns' bodies started.";
+    GunReseats => "guns.reseats", Counter, "Gun bodies put back on their seat in the hand.";
+    GunError => "guns.error", Flag, "The held guns hold an error.";
     Climbing => "climb.climbing", Flag, "A hand grips the world.";
     Mantling => "climb.mantling", Flag, "The mantle is carrying the body over a ledge.";
     ClimbGrips => "climb.grips", Counter, "Grips of the world.";
@@ -249,6 +256,25 @@ impl Signal {
             Signal::HandBodiesDroppedContacts => count(physics::status().dropped_contacts),
             Signal::HandBlows => count(physics::status().blows),
             Signal::HandBodiesError => flag(physics::status().last_error.is_some()),
+            Signal::GunBodiesMade => count(guns::status().made),
+            Signal::GunHeld => flag(
+                guns::status()
+                    .hands
+                    .iter()
+                    .flatten()
+                    .any(|g| g.holder_joint.is_some()),
+            ),
+            Signal::GunBraced => flag(
+                guns::status()
+                    .hands
+                    .iter()
+                    .flatten()
+                    .any(|g| g.brace_joint.is_some()),
+            ),
+            Signal::GunShots => count(guns::status().shots),
+            Signal::GunBodyContacts => count(guns::status().contacts.iter().sum()),
+            Signal::GunReseats => count(guns::status().reseats),
+            Signal::GunError => flag(guns::status().last_error.is_some()),
             Signal::Climbing => flag(climb::status().climbing),
             Signal::Mantling => flag(climb::status().mantling),
             Signal::ClimbGrips => count(climb::status().grips),

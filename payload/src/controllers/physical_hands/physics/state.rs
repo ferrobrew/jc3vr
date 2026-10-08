@@ -25,6 +25,7 @@ use crate::{
                 config::HandBodiesConfig,
                 contact,
                 drive::{DriveTuning, Goal},
+                guns,
                 render::RenderOffset,
                 types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
             },
@@ -265,7 +266,8 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
 });
 
 /// The hands' palms when they act, with the VR world scale: on foot on the ground or falling, for
-/// a tracked hand the controllers drive that holds nothing.
+/// a tracked hand the controllers drive that holds nothing, or that holds or braces a gun whose
+/// body it holds ([`guns::acting_hands`]).
 pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> {
     if !scheme::is_controllers() || !hooks::in_gameplay() {
         return None;
@@ -283,9 +285,10 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         let state = STATE.lock();
         Hand::BOTH.map(|hand| state.pickup.carrying(hand))
     };
+    let on_gun = guns::acting_hands(config);
     let palms = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let cockpit = active.hands[i].filter(|_| free[i] && !carrying[i])?;
+        let cockpit = active.hands[i].filter(|_| (free[i] && !carrying[i]) || on_gun[i])?;
         let wrist = hand_pose::compose_world(
             head.position,
             body_rotation,
@@ -298,11 +301,11 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
     Some(ActingPalms {
         palms,
         world_scale: active.world_scale,
-        // A tracked hand that takes a gun or carries what it grabbed has stopped acting on
-        // purpose: its body leaves at once rather than standing frozen in the world.
+        // A tracked hand that takes a gun without a body or carries what it grabbed has stopped
+        // acting on purpose: its body leaves at once rather than standing frozen in the world.
         park_now: Hand::BOTH.map(|hand| {
             let i = hand.index();
-            active.hands[i].is_some() && (!free[i] || carrying[i])
+            active.hands[i].is_some() && !on_gun[i] && (!free[i] || carrying[i])
         }),
     })
 }

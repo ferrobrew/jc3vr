@@ -1,5 +1,5 @@
 //! The pre-simulation half of the hand bodies' tick: make, add, park, and drive the bodies toward
-//! where their palms will be at the end of the step.
+//! where their palms will be at the end of the step, then keep the held guns' bodies on them.
 
 use std::time::Instant;
 
@@ -17,9 +17,10 @@ use crate::{
         physical_hands::{
             climb,
             physics::{
-                body::{BodySpec, Capsule, HandBody, player_system_group},
+                body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
                 contact,
                 drive::{DriveTuning, Goal, PushTuning, contact_gain, lag_push, smooth_push},
+                guns::{self, step::GunStep},
                 joint::Joint,
                 lifecycle::{ActRequest, HANDS, RenderTuning},
                 render::RenderOffset,
@@ -47,6 +48,7 @@ pub(crate) unsafe fn step() {
     contact::step_tick();
     let mut hands = HANDS.lock();
     hands.steps += 1;
+    hands.placed = [false; 2];
     let reason = if !enabled(&config) {
         Some("the hand bodies are off")
     } else if !hooks::in_gameplay() {
@@ -61,6 +63,7 @@ pub(crate) unsafe fn step() {
         unsafe { climb::step([None; 2]) };
         vault::stand_down();
         let destroyed = unsafe { hands.destroy_all(reason) };
+        guns::step::stand_down();
         let mut shared = SHARED.lock();
         shared.status.destroyed += destroyed;
         shared.status.steps = hands.steps;
@@ -104,6 +107,14 @@ pub(crate) unsafe fn step() {
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
     let pins = if fresh { pins } else { [None; 2] };
+    // The hands on a gun act to hold it, with a holding hand's strength.
+    let gun_holds = if fresh {
+        guns::holds_for_step(&config)
+    } else {
+        guns::GunHolds::default()
+    };
+    let on_gun = gun_holds.hands();
+    let both_on_gun = on_gun.iter().all(|&h| h);
     let mut joint_lost = [false; 2];
     let holds = if !fresh {
         [None; 2]
@@ -141,6 +152,11 @@ pub(crate) unsafe fn step() {
         deadband_rad: RENDER_TURN_DEADBAND_RAD,
         max_turn_rad: RENDER_MAX_TURN_RAD,
     };
+    // A hand on a gun is drawn turned exactly as its body is, since the drawn gun follows the hand.
+    let render_on_gun = RenderTuning {
+        deadband_rad: 0.0,
+        ..render
+    };
     let push_tuning = PushTuning {
         stiffness_n_per_m: b.push_stiffness_n_per_m,
         max_force_n: b.force_n(),
@@ -152,7 +168,8 @@ pub(crate) unsafe fn step() {
     // The climb takes its grips where the acting bodies are now, and pins the gripping hands there.
     let poses = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let acting = fresh && group.is_some() && targets[i].is_some();
+        // A hand on a gun neither climbs nor reaches.
+        let acting = fresh && group.is_some() && targets[i].is_some() && !on_gun[i];
         let body = hands.bodies[i]
             .as_ref()
             .filter(|_| acting && hands.phase(hand) == BodyPhase::Acting)?;
@@ -202,13 +219,14 @@ pub(crate) unsafe fn step() {
             (Some(target), Some(group)) => {
                 hands.missing_since[i] = None;
                 let spec = BodySpec {
-                    capsule: Capsule {
+                    shape: BodyShape::Capsule(Capsule {
                         half_length_m: b.half_length_m * scale,
                         radius_m: b.radius_m * scale,
-                    },
+                    }),
                     mass_kg: b.mass_kg,
                     system_group: group,
                     contact_events: b.hits.enabled,
+                    gravity: false,
                 };
                 let palm = Goal {
                     position: target.position + target.linear * lead_s,
@@ -230,16 +248,21 @@ pub(crate) unsafe fn step() {
                 if follow_through[i] {
                     linear_gain *= b.hits.follow_through_gain.clamp(0.0, 1.0);
                 }
+                let held_tuning = if on_gun[i] {
+                    holding_tuning(&tuning, &config, both_on_gun)
+                } else {
+                    holding.map_or(tuning, |h| holding_tuning(&tuning, &config, h.shared))
+                };
                 let hand_tuning = DriveTuning {
                     linear_gain,
-                    ..holding.map_or(tuning, |h| holding_tuning(&tuning, &config, h.shared))
+                    ..held_tuning
                 };
                 let request = ActRequest {
                     hand,
                     spec,
                     goal,
                     palm,
-                    render: &render,
+                    render: if on_gun[i] { &render_on_gun } else { &render },
                     anchor: grips[i].map_or(target.position, |g| g.position),
                     clear: &mut clear,
                     break_distance_m: b.break_distance_m * scale,
@@ -258,7 +281,7 @@ pub(crate) unsafe fn step() {
                         offsets[i] = acted.render;
                         loads[i] = press_load(acted.lag, b, scale);
                         // A hand that grips or holds something does not push the body up.
-                        if grips[i].is_none() && holds[i].is_none() {
+                        if grips[i].is_none() && holds[i].is_none() && !on_gun[i] {
                             press_lags[i] = Some(acted.lag);
                         }
                         if b.push {
@@ -299,6 +322,19 @@ pub(crate) unsafe fn step() {
             }
         }
     }
+    // SAFETY: forwarded from the caller; the hands acted above, so a gun hangs only from a body
+    // that acts.
+    unsafe {
+        guns::step::step(
+            &mut hands,
+            GunStep {
+                holds: gun_holds,
+                config: &b.guns,
+                contact_events: b.hits.enabled,
+                group,
+            },
+        )
+    };
     // The hands pressed down on what does not give push the body up, unless they climb.
     if !climbing {
         let press = vault::Press {

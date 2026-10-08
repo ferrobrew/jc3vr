@@ -34,7 +34,8 @@ use crate::{
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
-        physical_hands, scheme, vehicles,
+        physical_hands::{self, physics::guns},
+        scheme, vehicles,
         weapons::{ads, collide, foregrip, heft, recoil},
     },
     headpose, hooks,
@@ -82,19 +83,25 @@ pub struct ActiveHands {
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
 /// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
 /// ([`foregrip::apply`]); a long gun held in one hand sags, trails, and sways ([`heft::apply`]); a
-/// gun hand carries its recoil offset ([`recoil::apply`]); a palm pressed into a surface is held
-/// at it ([`physical_hands::apply`]); an anchored
+/// gun hand carries its recoil offset ([`recoil::apply`]); a hand on a gun whose body the hands
+/// hold takes none of the two-handed pose, the weight, the recoil offset, or the wall probe's
+/// push, since its body carries them ([`guns::physical_hands`]); a palm pressed into a surface is
+/// held at it, and a hand body's hand is drawn at its body ([`physical_hands::apply`]); an
+/// anchored
 /// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
 /// mounted gun's handle holds it ([`vehicles::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
     vehicles::apply(&mut active.hands);
+    let physical = guns::physical_hands();
+    let unweighted = active.hands;
     foregrip::apply(&mut active.hands, &active.config.weapons.foregrip);
     heft::apply(
         &mut active.hands,
         active.head.position,
         &active.config.weapons.heft,
     );
+    keep_physical(&mut active.hands, &unweighted, physical);
     let torso = reach::torso_heading(active.head, alignment::shoulder_heading());
     let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
     ads::apply(
@@ -104,6 +111,7 @@ pub fn active_hands() -> Option<ActiveHands> {
         torso,
         &active.config.weapons.ads,
     );
+    let sighted = active.hands;
     recoil::apply(&mut active.hands, &active.config.weapons.recoil);
     collide::apply(
         &mut active.hands,
@@ -111,6 +119,7 @@ pub fn active_hands() -> Option<ActiveHands> {
         active.world_scale,
         &active.config.weapons.collide,
     );
+    keep_physical(&mut active.hands, &sighted, physical);
     physical_hands::apply(&mut active.hands);
     anchor::apply(&mut active.hands, active.head, active.world_scale);
     Some(active)
@@ -171,6 +180,20 @@ pub(crate) fn ik_owned() -> [bool; 2] {
         })
     })
     .unwrap_or([false; 2])
+}
+
+/// Put back each hand on a gun whose body the hands hold (`physical`, by [`Hand::index`]) as it
+/// was in `before`: the kinematic poses between are the gun body's to give.
+fn keep_physical(
+    hands: &mut [Option<CockpitHand>; 2],
+    before: &[Option<CockpitHand>; 2],
+    physical: [bool; 2],
+) {
+    for (i, kept) in physical.into_iter().enumerate() {
+        if kept {
+            hands[i] = before[i];
+        }
+    }
 }
 
 /// Each shoulder joint of the character the hands are drawn on, in the cockpit frame, by

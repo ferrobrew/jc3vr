@@ -1,6 +1,6 @@
 //! A grip's joint: a fixed constraint between a hand body and the body of a loose object the hand
-//! holds, made the way the magnet weapon makes its own (`docs/engine/physics/havok-bodies.md`,
-//! "Joining bodies with a fixed constraint").
+//! holds, or of the gun it holds, made the way the magnet weapon makes its own
+//! (`docs/engine/physics/havok-bodies.md`, "Joining bodies with a fixed constraint").
 //!
 //! The constraint's data comes from the calling thread's Havok heap ([`hkMemoryRouter::m_heap`]),
 //! is constructed with one reference, the joint's, and is given the two bodies' frames: the
@@ -74,7 +74,9 @@ pub struct Joint {
     id: u32,
     hand_body: u32,
     object_body: u32,
-    object: NonZeroUsize,
+    /// The object that owns the other body, which must still own it; `None` for a body of the
+    /// mod's own, a held gun's.
+    object: Option<NonZeroUsize>,
     /// The constraint's data, as an address, which the world's slot must still hold.
     data: usize,
 }
@@ -93,6 +95,24 @@ impl Joint {
         object: NonZeroUsize,
     ) -> Result<Self, JointError> {
         unsafe { bodies::read(object_body, object) }.map_err(JointError::Object)?;
+        unsafe { Self::join(hand, object_body, Some(object)) }
+    }
+
+    /// Join the hand body `hand` to the body `body`, one of the mod's own, in their present
+    /// relative pose.
+    ///
+    /// # Safety
+    ///
+    /// As [`Joint::create`]; `body` must be a live body in the simulation.
+    pub unsafe fn create_between(hand: u32, body: u32) -> Result<Self, JointError> {
+        unsafe { Self::join(hand, body, None) }
+    }
+
+    unsafe fn join(
+        hand: u32,
+        object_body: u32,
+        object: Option<NonZeroUsize>,
+    ) -> Result<Self, JointError> {
         let mut world = unsafe { World::get() }.ok_or(JointError::NoPhysicsWorld)?;
         let hand_frame = affine(&unsafe { slot(world.world(), hand) }?.m_transform);
         let object_frame = affine(&unsafe { slot(world.world(), object_body) }?.m_transform);
@@ -136,8 +156,8 @@ impl Joint {
         self.id
     }
 
-    /// The object and the body the joint holds.
-    pub fn target(&self) -> (NonZeroUsize, u32) {
+    /// The object and the body the joint holds; no object for a body of the mod's own.
+    pub fn target(&self) -> (Option<NonZeroUsize>, u32) {
         (self.object, self.object_body)
     }
 
@@ -151,7 +171,9 @@ impl Joint {
             return false;
         };
         unsafe { self.entry(world.world()) }.is_some()
-            && unsafe { bodies::read(self.object_body, self.object) }.is_ok()
+            && self
+                .object
+                .is_none_or(|object| unsafe { bodies::read(self.object_body, object) }.is_ok())
     }
 
     /// Destroy the joint's constraint, if the world's slot still holds it. Returns whether it did.

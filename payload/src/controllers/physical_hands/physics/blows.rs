@@ -44,9 +44,10 @@ use crate::controllers::{
         physics::{
             HandHitsConfig, body,
             contact::{self, Contact},
+            guns,
             hit::{
                 ANY_HAND, Blow, BlowPlan, HitGate, VictimTuning, approach, blow, blow_impulse,
-                pulse_share, restrain,
+                pulse_share, restrain, striking_with,
             },
         },
         sounds::{self, Impact, ImpactKind},
@@ -96,7 +97,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
     if contacts.is_empty() {
         return delivered;
     }
-    let hits = &config.bodies.hits;
+    let own_hits = &config.bodies.hits;
     let attacker = unsafe { Character::GetLocalPlayerCharacter().as_mut() };
     let mut gate = GATE.lock();
     let now_s = gate
@@ -105,6 +106,12 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         .elapsed()
         .as_secs_f64();
     for contact in contacts {
+        // A held gun strikes with its mass on the arm's.
+        let gun_mass = contact.gun.then(|| guns::mass(contact.hand)).flatten();
+        if contact.gun {
+            guns::count_contact(contact.hand);
+        }
+        let hits = &striking_with(own_hits, gun_mass);
         // Harder the faster the hand met it: a punch, not a shove.
         let met = hits.blow_mass_kg.max(0.0) * contact.hand_velocity.length();
         let share = pulse_share(met, hits.full_pulse_impulse_ns);
@@ -202,6 +209,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let dealt = unsafe { strike(attacker, victim, contact.hand_position, direction, &plan) };
         tracing::info!(
             hand = contact.hand.label(),
+            with_gun = contact.gun,
             impulse_ns,
             hand_mps = closing.hand_mps,
             victim_mps = closing.victim_mps,

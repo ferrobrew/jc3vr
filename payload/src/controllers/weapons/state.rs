@@ -13,6 +13,7 @@ use crate::controllers::{
     frame::Hand,
     hands::ik,
     overlay::{primitive::Source, store},
+    physical_hands::physics::guns,
     roomscale::{self, posture::EffectivePosture},
     weapons::{
         ads, c4, collide, dual_wield,
@@ -36,6 +37,7 @@ pub fn status() -> WeaponsStatus {
 /// do not inject.
 pub(crate) fn stand_down() {
     foregrip::clear();
+    guns::publish(guns::GunHolds::default());
     heft::observe(None);
     heft::freeze(false);
     ads::observe(None);

@@ -28,7 +28,10 @@ use crate::controllers::{
         read_config,
         status::{Health, Line},
     },
-    physical_hands::physics::{self, BodyPhase, CallbackStatus, HandBodyStatus},
+    physical_hands::physics::{
+        self, BodyPhase, CallbackStatus, HandBodyStatus,
+        guns::{self, GunBodyStatus},
+    },
     weapons::{grip_watch, heft::HeftClass},
 };
 
@@ -358,6 +361,53 @@ fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
     }
 }
 
+pub(super) fn left_gun_body() -> Line {
+    gun_body(Hand::Left)
+}
+
+pub(super) fn right_gun_body() -> Line {
+    gun_body(Hand::Right)
+}
+
+fn gun_body(hand: Hand) -> Line {
+    let enabled = read_config(|c| guns::enabled(&c.controllers.physical_hands));
+    let status = guns::status();
+    gun_body_line(
+        enabled,
+        status.hands[hand.index()],
+        status.contacts[hand.index()],
+    )
+}
+
+/// One hand's gun body: whether it is in the world, its mass, its joints, and its contacts.
+fn gun_body_line(enabled: bool, status: Option<GunBodyStatus>, contacts: u64) -> Line {
+    if !enabled {
+        return Line::off("");
+    }
+    let Some(gun) = status else {
+        return Line::waiting("NO GUN BODY");
+    };
+    let joints = match (gun.holder_joint, gun.brace_joint) {
+        (Some(_), Some(_)) => "HELD+BRACED",
+        (Some(_), None) => "HELD",
+        (None, _) => return Line::failed("NOT JOINED"),
+    };
+    if !gun.in_world {
+        return Line::failed("NOT IN WORLD");
+    }
+    Line::ok(format_smolstr!(
+        "#{} {:.1} KG, {joints}, {contacts} HITS",
+        gun.body_id,
+        gun.mass_kg
+    ))
+    .with_note(format!(
+        "mass from {}, {:.0} mm and {:.1} degrees off its seat",
+        gun.mass_source.label(),
+        gun.deviation_m * 1000.0,
+        gun.deviation_rad.to_degrees()
+    ))
+}
+
 fn body(hand: Hand) -> Line {
     let enabled = read_config(|c| physics::enabled(&c.controllers.physical_hands));
     body_line(enabled, &physics::status().hands[hand.index()])
@@ -561,6 +611,52 @@ mod tests {
 
     use super::*;
     use crate::controllers::locomotion::view::Neutral;
+
+    #[test]
+    fn a_gun_body_shows_its_mass_joints_and_hits() {
+        let gun = GunBodyStatus {
+            weapon: 1,
+            body_id: 812,
+            in_world: true,
+            mass_kg: 3.96,
+            mass_source: guns::MassSource::Body,
+            holder_joint: Some(4),
+            brace_joint: Some(5),
+            deviation_m: 0.004,
+            deviation_rad: 0.01,
+            speed_mps: 0.0,
+        };
+        assert_eq!(
+            gun_body_line(true, Some(gun), 3).text(),
+            "OK, #812 4.0 KG, HELD+BRACED, 3 HITS"
+        );
+        let one_hand = GunBodyStatus {
+            brace_joint: None,
+            ..gun
+        };
+        assert_eq!(
+            gun_body_line(true, Some(one_hand), 0).text(),
+            "OK, #812 4.0 KG, HELD, 0 HITS"
+        );
+        let loose = GunBodyStatus {
+            holder_joint: None,
+            ..gun
+        };
+        assert_eq!(
+            gun_body_line(true, Some(loose), 0).text(),
+            "FAILED, NOT JOINED"
+        );
+        let out = GunBodyStatus {
+            in_world: false,
+            ..gun
+        };
+        assert_eq!(
+            gun_body_line(true, Some(out), 0).text(),
+            "FAILED, NOT IN WORLD"
+        );
+        assert_eq!(gun_body_line(true, None, 0).text(), "WAITING, NO GUN BODY");
+        assert_eq!(gun_body_line(false, Some(gun), 0).text(), "OFF");
+    }
 
     #[test]
     fn the_animated_deviation_lists_the_classes_seen() {

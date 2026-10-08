@@ -15,6 +15,7 @@ use crate::{
         hands::{self, ActiveHands, CockpitHand},
         haptics::{self, Event},
         mode::{AirborneVariant, Mode, OnFootVariant},
+        physical_hands::physics::guns,
         weapons::{
             ads, c4, collide,
             config::HolsterAnchor,
@@ -75,6 +76,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             let weapon =
                 engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder));
             let second = second::held_weapon(owner);
+            // The guns the hands hold, for their bodies.
+            guns::publish(if gameplay {
+                guns::read_holds([
+                    weapon.map(|w| (w.address, w.class)),
+                    second.map(|w| (w.address, w.class)),
+                ])
+            } else {
+                guns::GunHolds::default()
+            });
             inventory::input_tick(
                 owner,
                 &inventory::TickInputs {

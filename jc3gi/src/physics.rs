@@ -1813,7 +1813,12 @@ pub struct hknpBody {
     /// The body's collision-filter word, read by the world's collision filter; see
     /// [`CustomGroupCollisionFilter`](crate::physics::CustomGroupCollisionFilter) for its fields.
     pub m_collisionFilterInfo: u32,
-    _field_48: [u8; 32],
+    /// The body's collision shape, in body space. The body holds a reference of its own to it,
+    /// taken from the construction info's shape
+    /// ([`hknpBodyCinfo::m_shape`](crate::havok::hknpBodyCinfo::m_shape)) when the body is created
+    /// and released when it is destroyed, so several bodies may share one shape.
+    pub m_shape: *mut crate::havok::hknpShape,
+    _field_50: [u8; 24],
     /// The body's motion in [`hknpWorld::m_motions`](crate::physics::hknpWorld::m_motions); bodies attached to one another share it.
     pub m_motionId: u32,
     _field_6c: [u8; 36],

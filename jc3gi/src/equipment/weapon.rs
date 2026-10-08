@@ -3729,6 +3729,24 @@ fn _WeaponData_size_check() {
     unreachable!()
 }
 impl WeaponData {
+    pub const AddToWorld_ADDRESS: usize = 0x140959570;
+    /// Puts the gun's own body ([`m_PfxInstance`](crate::equipment::weapon::WeaponData::m_PfxInstance)) into the physics world
+    /// (`CWeaponData::AddToWorld`, which the disassembler names `CPfxVehicle::OnStoppedTrailing`).
+    /// It keeps the body's collision system group, or takes a fresh one when the group is zero,
+    /// sets its collision layer for the owning weapon's state, makes it dynamic, and places it at
+    /// the gun's world matrix ([`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1)), so the body's frame is
+    /// the gun's model frame and its shape is in that frame. The weapon's own world addition
+    /// calls it for each gun but a dual-wielded weapon's second (`CWeaponBase::AddToWorld`, which
+    /// the disassembler names `CWeaponBase::RemoveFromWorld`; the disassembler's
+    /// `CWeaponBase::AddToWorld` is the removal).
+    pub unsafe fn AddToWorld(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::AddToWorld_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const GetWorldMatrixT1_ADDRESS: usize = 0x1409601E0;
     /// Returns [`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1), scaled by
     /// [`m_HolsteredScaleValue`](crate::equipment::weapon::WeaponData::m_HolsteredScaleValue) when the owning weapon is

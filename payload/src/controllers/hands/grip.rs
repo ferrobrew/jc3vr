@@ -24,7 +24,11 @@
 //! instead ([`LeftGrip`]): the left attach bone's bind pose is the one the game's left-hand pistol
 //! uses, and a long gun on it may sit turned. The automatic choice keeps the left hand's own grip
 //! unless it is turned far from the mirrored one, and the readout reports the angle between the two
-//! ([`left_grip_read`]). A gun on a holster or back bone, and a hand the
+//! ([`left_grip_read`]). A gun whose body the hand bodies hold
+//! ([`crate::controllers::physical_hands::physics::guns`]) is pinned where that body is: the
+//! canonical grip carried by how far the gun body strays from its seat on the holding hand's body
+//! ([`seat_on_body`]), so the drawn gun, and everything that derives from its placement, follows the
+//! gun body while the hand is drawn at its own. A gun on a holster or back bone, and a hand the
 //! controllers do not drive, are left to the game. Each placement also records how the hand's
 //! animated attach bone sat relative to the canonical grip before the pin, and how the gun sits on
 //! the wrist after the placement, for [`crate::controllers::weapons::grip_watch`].
@@ -51,6 +55,7 @@ use crate::{
         aim::gun,
         frame::{Hand, Pose},
         hands::{ik, pose as hand_pose, tiers},
+        physical_hands::physics::guns,
         weapons::{
             config::LeftGrip,
             hold::{
@@ -268,10 +273,16 @@ pub(crate) unsafe fn before_placement(
             // under its own layout keeps the left hand's own, which suits its pistols.
             let held_by_hold =
                 hold::owned_holder(address) == Some(Hand::Left) || second::is(address);
+            // A sliding gun is not in the hand yet, so it has no body to follow.
+            let deviation = snap
+                .is_none()
+                .then(|| guns::deviation(hand, address))
+                .flatten();
             let grip = PinGrip {
                 left: (hand == Hand::Left && held_by_hold).then_some(left_grip),
                 weight,
                 snap,
+                deviation,
             };
             let read = unsafe { pin(character, controller, hand, attach, grip) };
             let Some(read) = read else {
@@ -385,6 +396,13 @@ pub fn pinned_attach(wrist: Pose, wrist_scale: Vec3, offset: Pose) -> Pose {
     }
 }
 
+/// The attach bone's pose `held` on the wrist carried by `deviation`, the gun body's stray from
+/// its seat on the holding hand's body, in the gun's own frame: where the gun body is, drawn on the
+/// hand.
+pub fn seat_on_body(held: Pose, deviation: Pose) -> Pose {
+    hand_pose::mul(held, deviation)
+}
+
 /// The attach bone's pose for a hand at `weight` between the animation (`0`) and the controller
 /// (`1`): the `animated` pose carried toward the `pinned` one by the weight, so the gun settles
 /// into the hand as the hand blends onto its controller and back out as it yields, rather than
@@ -493,6 +511,9 @@ struct PinGrip {
     weight: f32,
     /// A snap moving the gun between where it was and the hand.
     snap: Option<SnapView>,
+    /// The gun body's stray from its seat on the holding hand's body, in the gun's own frame, when
+    /// the hand bodies hold the gun.
+    deviation: Option<Pose>,
 }
 
 /// Read `hand`'s wrist and the gun's attach bone `attach`, and with a weight above zero, write the
@@ -507,7 +528,12 @@ unsafe fn pin(
     attach: SafeBoneIndex,
     grip: PinGrip,
 ) -> Option<PinRead> {
-    let PinGrip { left, weight, snap } = grip;
+    let PinGrip {
+        left,
+        weight,
+        snap,
+        deviation,
+    } = grip;
     let (wrist_safe, primary_safe) = match hand {
         Hand::Left => (SafeBoneIndex::LEFT_HAND, SafeBoneIndex::ATTACH_HAND_LEFT),
         Hand::Right => (SafeBoneIndex::RIGHT_HAND, SafeBoneIndex::ATTACH_HAND_RIGHT),
@@ -541,6 +567,9 @@ unsafe fn pin(
     let animated_deviation_deg = angle_deg(animated_in_wrist, offset.orientation);
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
     let mut held = pinned_attach(wrist, wrist_scale, offset);
+    if let Some(deviation) = deviation {
+        held = seat_on_body(held, deviation);
+    }
     if let Some(snap) = snap
         && let Some(start) = unsafe { snap_start(character, snap.start) }
     {
@@ -725,6 +754,20 @@ mod tests {
         let back = hand_pose::mul(hand_pose::inverse(wrist), attach);
         assert!(back.position.distance(offset.position) < 1e-5);
         assert!(angle_deg(back.orientation, offset.orientation) < 1e-2);
+    }
+
+    #[test]
+    fn a_gun_on_a_body_is_drawn_where_its_body_strays() {
+        let held = pose(Vec3::new(0.2, 1.1, -0.3), Quat::from_rotation_y(1.0));
+        assert_eq!(seat_on_body(held, Pose::IDENTITY), held);
+        // A gun body sagging 2 cm along its own down axis is drawn 2 cm down that axis.
+        let sag = pose(Vec3::new(0.0, -0.02, 0.0), Quat::from_rotation_x(-0.05));
+        let drawn = seat_on_body(held, sag);
+        assert!(drawn.position.abs_diff_eq(
+            held.position + held.orientation * Vec3::new(0.0, -0.02, 0.0),
+            1e-6
+        ));
+        assert!(angle_deg(drawn.orientation, held.orientation) > 2.0);
     }
 
     #[test]

@@ -1,5 +1,6 @@
-//! The hand bodies' contact events: each contact a hand body starts, with the impulse the solver
-//! applied at it and what it met, as the physics system's collision listener reports it.
+//! The hand bodies' contact events: each contact a hand body or a held gun's body starts, with the
+//! impulse the solver applied at it and what it met, as the physics system's collision listener
+//! reports it.
 //!
 //! The listener (`CHavokCollisionListener`) hands a contact-impulse event
 //! ([`hknpContactImpulseEvent`]) to the engine instance of each of the contact's bodies whose
@@ -45,10 +46,50 @@ use crate::controllers::{
     physical_hands::physics::{callback, hit::contact_impulse},
 };
 
-/// A contact a hand body started.
+/// A body whose contacts are listened for: a hand's own, or the body of the gun a hand holds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Source {
+    Hand(Hand),
+    /// The gun the hand holds.
+    Gun(Hand),
+}
+
+impl Source {
+    /// The hand whose body, or whose gun's body, this is.
+    pub const fn hand(self) -> Hand {
+        match self {
+            Source::Hand(hand) | Source::Gun(hand) => hand,
+        }
+    }
+
+    const fn index(self) -> usize {
+        match self {
+            Source::Hand(hand) => hand.index(),
+            Source::Gun(hand) => 2 + hand.index(),
+        }
+    }
+
+    const ALL: [Source; SOURCES] = [
+        Source::Hand(Hand::Left),
+        Source::Hand(Hand::Right),
+        Source::Gun(Hand::Left),
+        Source::Gun(Hand::Right),
+    ];
+}
+
+impl From<Hand> for Source {
+    fn from(hand: Hand) -> Self {
+        Source::Hand(hand)
+    }
+}
+
+/// A contact a hand body, or a held gun's body, started.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Contact {
+    /// The hand whose body, or whose gun's body, met something.
     pub hand: Hand,
+    /// Whether it was the gun's body.
+    pub gun: bool,
     /// The impulse the solver applied at the contact over the step, newton seconds.
     pub impulse_ns: f32,
     /// The other body's id.
@@ -57,9 +98,9 @@ pub struct Contact {
     pub other_instance: usize,
     /// The other instance's owner, as an address; zero for none.
     pub other_object: usize,
-    /// Where the hand body was before the step, game space.
+    /// Where the body was before the step, game space.
     pub hand_position: Vec3,
-    /// The velocity the hand body was driven at for the step, world space.
+    /// The velocity the body was driven at, or moved at, for the step, world space.
     pub hand_velocity: Vec3,
 }
 
@@ -83,7 +124,7 @@ impl fmt::Display for ContactError {
 
 impl std::error::Error for ContactError {}
 
-/// Listen for the contacts of `hand`'s body, whose wrapper `wrapper` was just constructed.
+/// Listen for the contacts of `source`'s body, whose wrapper `wrapper` was just constructed.
 ///
 /// # Safety
 ///
@@ -91,7 +132,7 @@ impl std::error::Error for ContactError {}
 /// engine's constructor made.
 pub(super) unsafe fn listen(
     wrapper: NonNull<PfxRigidBody>,
-    hand: Hand,
+    source: Source,
 ) -> Result<(), ContactError> {
     // SAFETY: the wrapper's first word is its virtual table pointer.
     let slot = wrapper.as_ptr().cast::<*const PfxRigidBodyVftable>();
@@ -107,7 +148,7 @@ pub(super) unsafe fn listen(
         table.OnContactImpulseEvent = on_contact_impulse;
         HookedTable { type_info, table }
     });
-    WRAPPERS[hand.index()].store(wrapper.as_ptr() as usize, Ordering::Release);
+    WRAPPERS[source.index()].store(wrapper.as_ptr() as usize, Ordering::Release);
     unsafe {
         slot.write(&table.table);
         (*wrapper.as_ptr()).SetContactImpulseEventActive(true);
@@ -115,31 +156,32 @@ pub(super) unsafe fn listen(
     Ok(())
 }
 
-/// Stop attributing contacts to `hand`'s body: before its wrapper is destroyed.
-pub(super) fn forget(hand: Hand) {
-    WRAPPERS[hand.index()].store(0, Ordering::Release);
-    MOTION.lock()[hand.index()] = None;
+/// Stop attributing contacts to `source`'s body: before its wrapper is destroyed.
+pub(super) fn forget(source: Source) {
+    WRAPPERS[source.index()].store(0, Ordering::Release);
+    MOTION.lock()[source.index()] = None;
 }
 
-/// Stop attributing contacts to `hand`'s body, whose wrapper is forgotten without being destroyed.
-/// A wrapper that listened keeps pointing at the payload's copy of its table, and whether the
-/// engine still reaches it is unknown, so the payload's image is pinned rather than unmapped under
-/// it.
-pub(super) fn abandon(hand: Hand) {
-    if listening(hand) {
+/// Stop attributing contacts to `source`'s body, whose wrapper is forgotten without being
+/// destroyed. A wrapper that listened keeps pointing at the payload's copy of its table, and
+/// whether the engine still reaches it is unknown, so the payload's image is pinned rather than
+/// unmapped under it.
+pub(super) fn abandon(source: Source) {
+    if listening(source) {
         tracing::warn!(
-            hand = hand.label(),
-            "hand bodies: a forgotten hand body still points at the payload's virtual table; \
-             pinning the payload"
+            hand = source.hand().label(),
+            gun = matches!(source, Source::Gun(_)),
+            "hand bodies: a forgotten body still points at the payload's virtual table; pinning \
+             the payload"
         );
         crate::module::pin();
     }
-    forget(hand);
+    forget(source);
 }
 
-/// Whether `hand`'s body has contact events on: its wrapper is hooked for them.
-pub(super) fn listening(hand: Hand) -> bool {
-    WRAPPERS[hand.index()].load(Ordering::Acquire) != 0
+/// Whether `source`'s body has contact events on: its wrapper is hooked for them.
+pub(super) fn listening(source: impl Into<Source>) -> bool {
+    WRAPPERS[source.into().index()].load(Ordering::Acquire) != 0
 }
 
 /// Count a pre-simulation step, which ends the mutes ([`mute_for`]) that run out with it. Called
@@ -151,14 +193,15 @@ pub(super) fn step_tick() {
 /// Ignore `hand`'s contacts for the next `steps` steps: after its body is put somewhere rather
 /// than moved there (made, added, placed, or carried by the rig), where it may start inside what
 /// it meets and the contact would be a blow it never swung, and while it is held in place.
-pub(super) fn mute_for(hand: Hand, steps: u64) {
+pub(super) fn mute_for(source: impl Into<Source>, steps: u64) {
     let until = STEP.load(Ordering::Relaxed).saturating_add(steps);
-    MUTED_UNTIL[hand.index()].fetch_max(until, Ordering::Relaxed);
+    MUTED_UNTIL[source.into().index()].fetch_max(until, Ordering::Relaxed);
 }
 
-/// Note where `hand`'s body is and the velocity it is driven at for the coming step.
-pub(super) fn record_motion(hand: Hand, position: Vec3, velocity: Vec3) {
-    MOTION.lock()[hand.index()] = Some((position, velocity));
+/// Note where `source`'s body is and the velocity it is driven at, or moves at, for the coming
+/// step.
+pub(super) fn record_motion(source: impl Into<Source>, position: Vec3, velocity: Vec3) {
+    MOTION.lock()[source.into().index()] = Some((position, velocity));
 }
 
 /// Take the contacts recorded since the last call, and how many were dropped because the queue was
@@ -178,17 +221,20 @@ struct HookedTable {
 
 static TABLE: OnceLock<HookedTable> = OnceLock::new();
 
-/// Each hand's wrapper, as an address; zero for none.
-static WRAPPERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
+/// How many bodies' contacts are listened for: each hand's own and its gun's.
+const SOURCES: usize = 4;
 
-/// Each hand body's position and driven velocity for the coming step.
-static MOTION: Mutex<[Option<(Vec3, Vec3)>; 2]> = Mutex::new([None; 2]);
+/// Each source's wrapper, as an address; zero for none.
+static WRAPPERS: [AtomicUsize; SOURCES] = [const { AtomicUsize::new(0) }; SOURCES];
+
+/// Each source body's position and velocity for the coming step.
+static MOTION: Mutex<[Option<(Vec3, Vec3)>; SOURCES]> = Mutex::new([None; SOURCES]);
 
 /// The pre-simulation steps counted so far.
 static STEP: AtomicU64 = AtomicU64::new(0);
 
-/// The step until which each hand's contacts are ignored.
-static MUTED_UNTIL: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+/// The step until which each source's contacts are ignored.
+static MUTED_UNTIL: [AtomicU64; SOURCES] = [const { AtomicU64::new(0) }; SOURCES];
 
 static QUEUE: Mutex<Vec<Contact>> = Mutex::new(Vec::new());
 static DROPPED: AtomicU64 = AtomicU64::new(0);
@@ -225,13 +271,13 @@ unsafe fn record(
         return;
     }
     let this = this as usize;
-    let Some(hand) = Hand::BOTH
+    let Some(source) = Source::ALL
         .into_iter()
-        .find(|hand| this != 0 && WRAPPERS[hand.index()].load(Ordering::Acquire) == this)
+        .find(|source| this != 0 && WRAPPERS[source.index()].load(Ordering::Acquire) == this)
     else {
         return;
     };
-    if STEP.load(Ordering::Relaxed) < MUTED_UNTIL[hand.index()].load(Ordering::Relaxed) {
+    if STEP.load(Ordering::Relaxed) < MUTED_UNTIL[source.index()].load(Ordering::Relaxed) {
         return;
     }
     let points = if event.m_contactJacobian.is_null() {
@@ -271,14 +317,15 @@ unsafe fn record(
         None => (0, 0),
     };
     let (hand_position, hand_velocity) =
-        MOTION.lock()[hand.index()].unwrap_or((Vec3::ZERO, Vec3::ZERO));
+        MOTION.lock()[source.index()].unwrap_or((Vec3::ZERO, Vec3::ZERO));
     let mut queue = QUEUE.lock();
     if queue.len() >= QUEUE_CAPACITY {
         DROPPED.fetch_add(1, Ordering::Relaxed);
         return;
     }
     queue.push(Contact {
-        hand,
+        hand: source.hand(),
+        gun: matches!(source, Source::Gun(_)),
         impulse_ns,
         other_body,
         other_instance,
