@@ -15,7 +15,9 @@
 //!   ([`NStateTask_GrapplingHangTask::Update`]) measures the grapple hand's horizontal displacement
 //!   from where it was when the hang began, relative to the head, and pushes the hang body at the
 //!   hips with an impulse against it ([`swing_impulse`]), scaled against the game's own continuous
-//!   swing so that the feel matches what the designers tuned.
+//!   swing so that the feel matches what the designers tuned. The hand's motion pumps the swing on
+//!   top ([`crate::grapple::physical::swing`]): while the hand moves relative to the head, the body
+//!   is pushed against the motion, and the hold and the pump together are capped per hang tick.
 //!
 //! The line's attach point is read once per input tick ([`input_tick`]), which also pulses the
 //! grapple hand when the hook leaves the gauntlet and when it attaches.
@@ -48,6 +50,7 @@ use crate::{
         scheme,
         weapons::haptics::{self, PulseSource},
     },
+    grapple::physical::swing,
     headpose,
     hooks::input::locomotion::character_from_context,
 };
@@ -172,10 +175,14 @@ pub struct AnchorStatus {
     pub wire: bool,
     /// The grapple hand's displacement driving the hang, metres, while hanging.
     pub displacement: Option<Vec2>,
-    /// The last swing impulse applied.
+    /// The last swing impulse applied, the hold and the pump together.
     pub impulse: Vec2,
+    /// The pump's part of the last swing impulse.
+    pub pump: Vec2,
     /// Hang ticks that applied an impulse.
     pub swings: u64,
+    /// Hang ticks whose impulse the hand's motion pumped.
+    pub pumps: u64,
 }
 
 pub fn status() -> AnchorStatus {
@@ -227,6 +234,10 @@ struct State {
     /// Where the grapple hand held the line, relative to the head, when the hang began.
     hang_reference: Option<Vec2>,
     hang_at: Option<Instant>,
+    /// The grapple hand's offset from the head on the last hang tick, for the pump's velocity.
+    hang_offset: Option<Vec2>,
+    /// The grapple hand's smoothed velocity relative to the head, metres per second.
+    hang_velocity: Vec2,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -235,11 +246,15 @@ static STATE: Mutex<State> = Mutex::new(State {
         wire: false,
         displacement: None,
         impulse: Vec2::ZERO,
+        pump: Vec2::ZERO,
         swings: 0,
+        pumps: 0,
     },
     anchor_at: None,
     hang_reference: None,
     hang_at: None,
+    hang_offset: None,
+    hang_velocity: Vec2::ZERO,
 });
 
 /// The line's attach point, while it is current.
@@ -272,16 +287,17 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     }
 }
 
-/// Push the local player's hang body by the grapple hand's displacement.
+/// Push the local player's hang body by the grapple hand's displacement and motion.
 unsafe fn swing(character: &mut Character) {
     let config = Config::lock_query(|c| c.controllers);
     let anchor = config.hands.anchor;
+    let pump = config.grapple.swing;
     let hand = config.acting_hand().other();
     let now = Instant::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
     let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;
     let offset = hands::active_hands_raw()
-        .filter(|_| anchor.enabled && anchor.hang_swing && anchored)
+        .filter(|_| anchor.enabled && (anchor.hang_swing || pump.pump) && anchored)
         .and_then(|active| {
             let grip = active.hands[hand.index()]?.grip.position;
             let offset = grip - active.head.position;
@@ -290,24 +306,42 @@ unsafe fn swing(character: &mut Character) {
     let body_rotation = headpose::xr::body_rotation();
 
     let mut state = STATE.lock();
-    if state
+    let dt = state
         .hang_at
-        .is_none_or(|at| now.duration_since(at) > HANG_GAP)
-    {
+        .map(|at| now.duration_since(at))
+        .filter(|gap| *gap <= HANG_GAP);
+    if dt.is_none() {
         state.hang_reference = None;
+        state.hang_offset = None;
+        state.hang_velocity = Vec2::ZERO;
     }
     state.hang_at = Some(now);
     let Some(offset) = offset else {
         state.hang_reference = None;
+        state.hang_offset = None;
+        state.hang_velocity = Vec2::ZERO;
         state.status.displacement = None;
         return;
     };
     let reference = *state.hang_reference.get_or_insert(offset);
     let displacement = offset - reference;
     state.status.displacement = Some(displacement);
+    if let (Some(previous), Some(dt)) = (state.hang_offset, dt.map(|d| d.as_secs_f32()))
+        && dt > f32::EPSILON
+    {
+        state.hang_velocity =
+            swing::smooth_velocity(state.hang_velocity, (offset - previous) / dt, dt, &pump);
+    }
+    state.hang_offset = Some(offset);
 
     let full = unsafe { *get_GrapplingHangTask_SmallImpulseSwingMagnitude() };
-    let impulse = swing_impulse(displacement, full, &anchor);
+    let hold = if anchor.hang_swing {
+        swing_impulse(displacement, full, &anchor)
+    } else {
+        Vec2::ZERO
+    };
+    let pumped = swing::pump_impulse(state.hang_velocity, full, &pump);
+    let impulse = swing::combine(hold, pumped, full, &pump);
     if impulse == Vec2::ZERO {
         return;
     }
@@ -329,7 +363,11 @@ unsafe fn swing(character: &mut Character) {
     };
     unsafe { body.ApplyImpulse(&world, &hips, IMPULSE_DEBUG_SCALE) };
     state.status.impulse = impulse;
+    state.status.pump = pumped;
     state.status.swings += 1;
+    if pumped != Vec2::ZERO {
+        state.status.pumps += 1;
+    }
 }
 
 /// The debug-display scale the hang task passes with its own impulses.

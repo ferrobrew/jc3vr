@@ -52,6 +52,7 @@ use jc3gi::{character::character::Character, equipment::grappling_hook::Grapplin
 use parking_lot::Mutex;
 
 pub mod config;
+pub mod physical;
 pub mod telemetry;
 
 pub use config::{GrappleComfortConfig, GrappleComfortMode};

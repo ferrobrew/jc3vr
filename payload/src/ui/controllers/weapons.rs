@@ -341,6 +341,23 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         ),
         None => format!("Hang: not swinging · swings {}", a.swings),
     });
+    ui.label(format!(
+        "Hang pump: ({:+.1}, {:+.1}) · pumped {}",
+        a.pump.x, a.pump.y, a.pumps
+    ));
+    let g = crate::grapple::physical::status();
+    ui.label(format!(
+        "Physical grapple: {} · pull {:.2} m/s, {:.2} m deep · reel {} · tethers {} · retract {} · \
+         haptic {:.2}",
+        g.phase.label(),
+        g.pull.speed_mps,
+        g.pull.depth_m,
+        g.reel_scale
+            .map_or("game's own".to_owned(), |s| format!("{s:.2}x")),
+        g.tethers,
+        g.retract.map_or("none".to_owned(), |v| format!("{v:.2}")),
+        g.haptic
+    ));
     ui.label(match last {
         Some(y) => format!(
             "Yanks: {yanks} · last {:.2} m at {:.1} m/s",

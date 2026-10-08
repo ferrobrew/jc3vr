@@ -168,6 +168,43 @@ fn settings_page() -> Page {
             .physical_hands
             .climb
             .enabled))
+        .header("GRAPPLE")
+        .item(config_toggle!("YANK TO ZIP", |c| c
+            .controllers
+            .bindings
+            .yank
+            .enabled))
+        .item(config_toggle!("PULL TO SPEED THE REEL", |c| c
+            .controllers
+            .grapple
+            .reel
+            .enabled))
+        .item(config_slider!(
+            "FASTEST PULLED REEL",
+            REEL_SCALE_RANGE,
+            SliderFormat::new(2, "X"),
+            |c| c.controllers.grapple.reel.max_scale
+        ))
+        .item(config_toggle!("PULL TO TIGHTEN TETHERS", |c| c
+            .controllers
+            .grapple
+            .tether
+            .enabled))
+        .item(config_toggle!("SWING FROM THE LINE BY HAND", |c| c
+            .controllers
+            .hands
+            .anchor
+            .hang_swing))
+        .item(config_toggle!("PUMP THE SWING", |c| c
+            .controllers
+            .grapple
+            .swing
+            .pump))
+        .item(config_toggle!("LINE TENSION HAPTICS", |c| c
+            .controllers
+            .grapple
+            .haptics
+            .enabled))
         .header("CONTROLS SUMMARY")
         .item(config_toggle!("CONTROLS ON WRIST", |c| c
             .controllers
@@ -731,6 +768,8 @@ const TILT_RANGE: SliderRange = SliderRange::new(10.0, 60.0, 50);
 const REACH_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
 /// The hands' strength scale, in twentieths.
 const STRENGTH_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
+/// The pulled reel's top scale, in twentieths.
+const REEL_SCALE_RANGE: SliderRange = SliderRange::new(1.0, 2.5, 30);
 
 /// The switches of the six physical vehicle controls.
 fn physical_controls(c: &Config) -> [&bool; 6] {

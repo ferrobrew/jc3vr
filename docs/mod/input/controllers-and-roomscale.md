@@ -196,7 +196,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Fire the dominant-hand weapon (`FIRE_RIGHT`) | R trigger |
 | Fire the left pistol while dual-wielding | L trigger (see "Dual-wield") |
 | Fire grapple (`FIRE_GRAPPLE`: fire; tap while attached to zip; hold to tether) | L grip outside grab volumes; the yank gesture also zips |
-| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol |
+| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol; with tethers attached, pulling the grapple hand back (a gesture) |
 | Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | Y |
 | Jump, stunt, open parachute | A |
 | Use item, enter vehicle (hold: gunner seat), open wingsuit | B |
@@ -291,7 +291,7 @@ The grapple slot, index [`TargetType::TARGET_GRAPPLE`](https://ferrobrew.github.
 
 The game's grapple reticle pins to the centre of the screen when the aim uses a direct position, so it cannot show a hand ray, and it is hidden while the grapple aims by hand. The grapple readout is drawn by the world-space overlay layer instead: a highlight on the surface or object the grapple would attach to, shown only when the target is valid and in range, with a distinct style for targets that support tethering, and a gauntlet beam from the wrist to the target point. Each is configurable.
 
-The yank gesture is a sharp pull of the left hand back toward the body while a line is attached. It issues the same `FIRE_GRAPPLE` tap that zips.
+The yank gesture is a sharp pull of the left hand back toward the body while a line is attached. It issues the same `FIRE_GRAPPLE` tap that zips. The physical grapple builds on the pull: it speeds the reel, boosts it on a yank during the reel, tightens attached tethers, and pumps the hang swing ([physical-grapple.md](physical-grapple.md)).
 
 ### Dual-wield
 

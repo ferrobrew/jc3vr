@@ -122,6 +122,10 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.driving_view.enabled = vehicles;
     c.vehicles.parachute_handles.enabled = vehicles;
     c.fingers.enabled = hands;
+    c.grapple.reel.enabled = hands;
+    c.grapple.tether.enabled = hands;
+    c.grapple.swing.pump = hands;
+    c.grapple.haptics.enabled = weapons;
 }
 
 /// Whether applying the preset changes any of its owned switches.

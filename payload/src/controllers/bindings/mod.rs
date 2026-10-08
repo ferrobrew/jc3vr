@@ -49,7 +49,7 @@ use crate::{
         bindings::{
             controls::{ButtonControl, Controls, yaw_of},
             grab::GrabVolume,
-            hold::{ActionWrite, DevicePoll, HoldTracker, MapKind, Phase},
+            hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Phase, Target, Want},
             inject::{Landing, Outcome},
             intents::SemanticInput,
             panel_chord::{ChordInput, ChordTick, PanelChord},
@@ -69,7 +69,7 @@ use crate::{
             haptics::{self, PulseSource},
         },
     },
-    headpose,
+    grapple, headpose,
     hud::{
         egui_panel,
         pointer::{clear_controller, owns_menu_trigger, update_controller, update_egui_controller},
@@ -150,6 +150,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         semantic_frame::take();
         weapons::stand_down();
         vehicles::stand_down();
+        grapple::physical::stand_down();
         return InputTickOutput::default();
     }
     let detection = mode::tick();
@@ -211,6 +212,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         state.publish_recovery();
         weapons::stand_down();
         vehicles::stand_down();
+        grapple::physical::stand_down();
         state.report = TickReport {
             detection,
             idle,
@@ -227,6 +229,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         reported = state.stand_down(poll);
         weapons::stand_down();
         vehicles::stand_down();
+        grapple::physical::stand_down();
         edges = Default::default();
         semantic_edges = Default::default();
     }
@@ -362,9 +365,10 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         }),
     }));
     let grapple_hand = dominant.other();
+    let grapple_distance = grapple_hand_distance(grapple_hand, &config.bindings.yank);
     let yank = state.yank.step(
         dt,
-        grapple_hand_distance(grapple_hand, &config.bindings.yank),
+        grapple_distance,
         yank_armed(&detection),
         &config.bindings.yank,
     );
@@ -379,6 +383,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             );
         }
     }
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    let physical_grapple = unsafe {
+        grapple::physical::input_tick(&grapple::physical::TickInput {
+            dt,
+            distance: grapple_distance,
+            detection: &detection,
+            config: &config,
+        })
+    };
     let mut step = state.bindings.step(
         detection.mode,
         &controls,
@@ -422,6 +435,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         }
         vehicles::finish_tick(detection.mode, step.grabs, &controls, &mut step.desired, dt);
         physical_hands::pickup::finish_tick(&finish, &mut step.desired);
+        if let Some(value) = physical_grapple.retract {
+            step.desired.push(Desired {
+                target: Target {
+                    map: MapKind::Player,
+                    action: Action::RETRACT_GRAPPLE,
+                },
+                want: Want::Analog(value),
+            });
+        }
         physical_hands::climb::finish_tick(finish.grips.map(|g| g.held()), finish.grabs);
     } else {
         weapons::wheel::pause();

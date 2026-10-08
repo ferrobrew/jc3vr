@@ -9,6 +9,7 @@
 //! take one lock at a time.
 
 mod controllers;
+mod grapple;
 mod system;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -177,6 +178,17 @@ const SECTIONS: &[Section] = &[
             row!("CONTACT EVENTS", controllers::contact_events),
             row!("BLOWS DEALT", controllers::blows),
             row!("GRAB JOINTS", controllers::joints),
+        ],
+    },
+    Section {
+        title: "GRAPPLE",
+        rows: &[
+            row!("GRAPPLE STATE", grapple::state),
+            row!("ATTACHED TARGET", grapple::target),
+            row!("REEL FROM HAND", grapple::reel),
+            row!("TETHERS", grapple::tethers),
+            row!("HANG SWING", grapple::swing),
+            row!("LINE HAPTICS", grapple::haptics),
         ],
     },
     Section {

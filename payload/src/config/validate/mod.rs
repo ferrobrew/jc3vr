@@ -9,6 +9,7 @@
 
 mod aim;
 mod fingers;
+mod grapple;
 mod input;
 mod physical_hands;
 mod roomscale;
@@ -58,7 +59,8 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     roomscale::roomscale(&c.roomscale)?;
     vehicles::vehicles(&c.vehicles)?;
     fingers::fingers(&c.fingers)?;
-    physical_hands::physical_hands(&c.physical_hands)
+    physical_hands::physical_hands(&c.physical_hands)?;
+    grapple::grapple(&c.grapple)
 }
 
 /// Check the per-weapon sight corrections: finite, in range, and at most one per weapon.

@@ -156,6 +156,51 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
                 );
             });
         });
+        let g = &mut c.grapple;
+        ui.label("Physical grapple");
+        ui.indent("physical_grapple", |ui| {
+            ui.add(
+                egui::Slider::new(&mut g.pull.speed_hold_s, 0.0..=3.0)
+                    .text("Pull speed memory (s)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut g.pull.relax_mps, 0.0..=1.0)
+                    .text("Pull depth relax (m/s)"),
+            );
+            ui.checkbox(&mut g.reel.enabled, "Pull to speed the reel");
+            ui.add(egui::Slider::new(&mut g.reel.min_scale, 0.5..=1.5).text("Reel scale, no pull"));
+            ui.add(egui::Slider::new(&mut g.reel.max_scale, 1.0..=2.5).text("Reel scale, full pull"));
+            ui.add(
+                egui::Slider::new(&mut g.reel.full_speed_mps, 0.5..=5.0)
+                    .text("Full pull speed (m/s)"),
+            );
+            ui.add(egui::Slider::new(&mut g.reel.boost_s, 0.0..=2.0).text("Yank boost (s)"));
+            ui.checkbox(
+                &mut g.reel.boost_needs_upgrade,
+                "Boost needs the retract boost upgrade",
+            );
+            ui.checkbox(&mut g.tether.enabled, "Pull to tighten tethers");
+            ui.add(
+                egui::Slider::new(&mut g.tether.deadzone_m, 0.0..=0.3).text("Tether pull deadzone (m)"),
+            );
+            ui.add(egui::Slider::new(&mut g.tether.full_m, 0.1..=0.8).text("Tether full pull (m)"));
+            ui.checkbox(&mut g.swing.pump, "Pump the hang swing");
+            ui.add(
+                egui::Slider::new(&mut g.swing.deadzone_mps, 0.0..=1.5)
+                    .text("Pump deadzone (m/s)"),
+            );
+            ui.add(egui::Slider::new(&mut g.swing.full_mps, 0.2..=4.0).text("Pump full speed (m/s)"));
+            ui.add(egui::Slider::new(&mut g.swing.scale, -3.0..=3.0).text("Pump strength"));
+            ui.add(egui::Slider::new(&mut g.swing.max_scale, 0.0..=4.0).text("Swing cap"));
+            ui.checkbox(&mut g.haptics.enabled, "Line tension haptics");
+            ui.add(
+                egui::Slider::new(&mut g.haptics.tension_amplitude, 0.0..=1.0)
+                    .text("Tension amplitude"),
+            );
+            ui.add(
+                egui::Slider::new(&mut g.haptics.reel_amplitude, 0.0..=1.0).text("Reel amplitude"),
+            );
+        });
         ui.add(egui::Slider::new(&mut c.mode.debounce_ticks, 1..=6).text("Mode debounce (ticks)"));
     });
 

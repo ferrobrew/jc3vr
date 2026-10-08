@@ -74,6 +74,10 @@ pub enum PulseSource {
     GrappleFire,
     GrappleAttach,
     Yank,
+    /// The grapple hand's continuous vibration: the tethers' tension and the reel's speed.
+    GrappleTension,
+    /// The tethers starting to retract under the grapple hand's pull.
+    TetherRetract,
     /// A grenade primed in the hand, and the warning as its fuse runs down.
     GrenadeFuse,
     /// A grab at a pouch that gave nothing: the game refused a grenade or a charge.
@@ -107,6 +111,8 @@ impl PulseSource {
             PulseSource::GrappleFire => "grapple fire",
             PulseSource::GrappleAttach => "grapple attach",
             PulseSource::Yank => "yank",
+            PulseSource::GrappleTension => "grapple tension",
+            PulseSource::TetherRetract => "tether retract",
             PulseSource::GrenadeFuse => "grenade fuse",
             PulseSource::PouchRefused => "pouch refused",
             PulseSource::Reload => "reload",

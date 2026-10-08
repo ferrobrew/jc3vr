@@ -37,6 +37,7 @@ use crate::{
             wheel::config::WheelConfig,
         },
     },
+    grapple::physical::PhysicalGrappleConfig,
     vr::input::layout::{FloatInput, Input, provides},
 };
 
@@ -90,6 +91,9 @@ pub struct ControllersConfig {
     pub physical_hands: PhysicalHandsConfig,
     /// The controls summary, and the game's own button hints.
     pub summary: SummaryConfig,
+    /// The physical grapple: the reel, the tether retract, and the hang swing worked by the grapple
+    /// hand.
+    pub grapple: PhysicalGrappleConfig,
 }
 
 impl ControllersConfig {
@@ -124,6 +128,7 @@ impl ControllersConfig {
             fingers: FingersConfig::new(),
             physical_hands: PhysicalHandsConfig::new(),
             summary: SummaryConfig::new(),
+            grapple: PhysicalGrappleConfig::new(),
         }
     }
 }
