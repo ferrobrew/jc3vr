@@ -199,6 +199,17 @@ impl SpawnSystem {
     /// [`GetBFBCFrustumParamsForCameraAndTime`](crate::graphics_engine::graphics_engine::OccluderCollectionManager::GetBFBCFrustumParamsForCameraAndTime),
     /// storing the result in [`m_SpawnBFBCParams`](crate::spawn_system::SpawnSystem::m_SpawnBFBCParams) and
     /// [`m_SpawnBFBCState`](crate::spawn_system::SpawnSystem::m_SpawnBFBCState) for the factory's visibility gate.
+    ///
+    /// The despawn ranking visits every spawned object of every resource definition. An object
+    /// whose own weak reference's control block (for a weapon,
+    /// [`WeaponBase::m_WeakThis`](crate::equipment::weapon::WeaponBase::m_WeakThis)) has a strong count
+    /// other than one, the spawn system's own reference, is held by something else: it is given
+    /// rank zero and is never queued for despawn, nor chosen when its pool is over budget. Any
+    /// other object is ranked by `CalcDespawnRank` from its position, whether it is dead, and its
+    /// interest; its mission-critical flag protects it only while a mission or an encounter is
+    /// active, and is cleared otherwise. An object whose rank exceeds its pool's despawn threshold
+    /// is queued for despawn; otherwise the pool's highest-ranked object is remembered and queued
+    /// when the pool's instance count is over its limit.
     pub unsafe fn Update(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -256,6 +267,79 @@ impl SpawnSystem {
                 userdata: *mut u8,
             ) = ::std::mem::transmute(Self::Spawn_ADDRESS);
             f(self as *mut Self as _, tags, transform, flags, callback, userdata)
+        }
+    }
+    pub const SpawnTagIndex_ADDRESS: usize = 0x140E97EE0;
+    /// Queues an asynchronous spawn request for the spawn tag `tag_index`, a type as
+    /// [`GameObject::GetUniqueSpawnTagIndex`](crate::game::GameObject::GetUniqueSpawnTagIndex) names it
+    /// (the tag-index overload of `CSpawnSystem::Spawn`). The request is queued under the system's
+    /// request lock and serviced on a later frame, as for [`Spawn`](crate::spawn_system::SpawnSystem::Spawn), and `callback`
+    /// then fires with the spawned objects and `userdata`. The inventory's respawn of a slot
+    /// passes [`FF_HIGH_PRIO_SPAWN_CHECKS`](crate::spawn_system::SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS) for the player and
+    /// [`FF_SECONDARY_SPAWN_CHECKS`](crate::spawn_system::SpawnSystem::FF_SECONDARY_SPAWN_CHECKS) otherwise, the character's
+    /// transform, and `-1` for `p7`.
+    pub unsafe fn SpawnTagIndex(
+        &mut self,
+        tag_index: i32,
+        transform: *const crate::types::math::Matrix4,
+        flags: u32,
+        callback: *const u8,
+        userdata: *mut u8,
+        p7: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tag_index: i32,
+                transform: *const crate::types::math::Matrix4,
+                flags: u32,
+                callback: *const u8,
+                userdata: *mut u8,
+                p7: i32,
+            ) = ::std::mem::transmute(Self::SpawnTagIndex_ADDRESS);
+            f(
+                self as *mut Self as _,
+                tag_index,
+                transform,
+                flags,
+                callback,
+                userdata,
+                p7,
+            )
+        }
+    }
+    pub const GetTagHashFromTagIndex_ADDRESS: usize = 0x140E0D2C0;
+    /// The hash of the spawn tag `tag_index`, or zero for an index out of range.
+    pub unsafe fn GetTagHashFromTagIndex(&self, tag_index: i32) -> u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self, tag_index: i32) -> u32 = ::std::mem::transmute(
+                Self::GetTagHashFromTagIndex_ADDRESS,
+            );
+            f(self as *const Self as _, tag_index)
+        }
+    }
+    pub const GetTagIndexFromTagHash_ADDRESS: usize = 0x140E5D5A0;
+    /// The index of the spawn tag whose hash is `tag_hash`, or `-1` when no loaded tag has it.
+    pub unsafe fn GetTagIndexFromTagHash(&self, tag_hash: u32) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self, tag_hash: u32) -> i32 = ::std::mem::transmute(
+                Self::GetTagIndexFromTagHash_ADDRESS,
+            );
+            f(self as *const Self as _, tag_hash)
+        }
+    }
+    pub const ResetSystem_ADDRESS: usize = 0x140ECC450;
+    /// Resets the system: waits for its spawn job, sends `spawn.reset_all_spawn_rules` at once,
+    /// destroys every pending spawn request and its factory, releases the system's references to
+    /// every spawned object of every resource definition and every object queued for despawn, and
+    /// posts `spawn.post_reset_all_spawn_rules`, which its receivers handle later. An object that
+    /// something else still holds a strong reference to outlives the reset, outside the system.
+    pub unsafe fn ResetSystem(&mut self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) -> i32 = ::std::mem::transmute(
+                Self::ResetSystem_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
 }

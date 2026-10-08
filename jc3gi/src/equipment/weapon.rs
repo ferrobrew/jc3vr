@@ -1697,7 +1697,14 @@ impl std::convert::AsMut<WeapoIsTryingToFireCondition> for WeapoIsTryingToFireCo
 /// pointer.
 pub struct WeaponBase {
     vftable: *const crate::equipment::weapon::WeaponBaseVftable,
-    _field_8: [u8; 336],
+    _field_8: [u8; 96],
+    /// A weak reference to the weapon itself (`m_WeakThis` of its `CGameObject` subobject),
+    /// referring to that subobject. The spawn system's per-frame despawn ranking
+    /// ([`SpawnSystem::Update`](crate::spawn_system::SpawnSystem::Update)) reads the strong count of its
+    /// control block, and the weapon hands out references to itself from it (the HUD's pickup
+    /// display, the pickup hint).
+    pub m_WeakThis: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_78: [u8; 224],
     /// Whether the current shot is the first of a trigger pull; first shots use the tuning's
     /// first-shot recoil scale.
     pub m_IsFirstShot: bool,
@@ -1903,7 +1910,13 @@ pub struct WeaponBase {
     /// The character using the weapon (a `boost::weak_ptr<CCharacter>`: object pointer and weak
     /// control block).
     pub m_User: [*mut ::std::ffi::c_void; 2],
-    _field_508: [u8; 17],
+    /// The object holding the weapon (`m_Holder`, a weak reference to its `CGameObject`
+    /// subobject): a character or a vehicle. [`OnPickup`](crate::equipment::weapon::WeaponBase::OnPickup) sets it and
+    /// [`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop) clears it. The weapon's placement
+    /// ([`UpdateAttachmentTransforms`](crate::equipment::weapon::WeaponBase::UpdateAttachmentTransforms)) places its guns on the
+    /// holder's bones.
+    pub m_Holder: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_518: [u8; 1],
     /// Whether the weapon's user is the local player. The trigger's semi-automatic rule, the fire
     /// rumble ([`RumbleFire`](crate::equipment::weapon::WeaponBase::RumbleFire)), and the fire camera shake apply only while it is
     /// set.
@@ -2869,6 +2882,25 @@ impl WeaponBase {
             f(self as *mut Self as _, visible, fade, force)
         }
     }
+    /// Places the weapon's guns for its state: the base implementation
+    /// (`CWeaponBase::UpdateAttachmentTransforms`) locks the holder
+    /// ([`m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder)) and runs
+    /// [`WeaponData::UpdateAttachmentTransforms`](crate::equipment::weapon::WeaponData::UpdateAttachmentTransforms) for every gun with it, then places the
+    /// weapon's components. `p2` and `p3` are the snow and water factors the gun placement
+    /// takes, and `transform_type` its update type. The inventory's placement
+    /// ([`Inventory::UpdateAttachmentTransforms`](crate::character::inventory::Inventory::UpdateAttachmentTransforms))
+    /// calls it for each slot's weapon.
+    pub unsafe fn UpdateAttachmentTransforms(
+        &mut self,
+        p2: f32,
+        p3: f32,
+        transform_type: u32,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).UpdateAttachmentTransforms).read();
+            f(self as *mut Self as _, p2, p3, transform_type)
+        }
+    }
 }
 impl WeaponBase {
     /// The offset of the embedded `CGameObject` subobject, which the `CGameObject` overrides
@@ -3236,10 +3268,27 @@ pub struct WeaponBaseVftable {
         fade: bool,
         force: bool,
     ),
+    _vfunc_60: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+    ),
+    /// Places the weapon's guns for its state: the base implementation
+    /// (`CWeaponBase::UpdateAttachmentTransforms`) locks the holder
+    /// ([`m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder)) and runs
+    /// [`WeaponData::UpdateAttachmentTransforms`](crate::equipment::weapon::WeaponData::UpdateAttachmentTransforms) for every gun with it, then places the
+    /// weapon's components. `p2` and `p3` are the snow and water factors the gun placement
+    /// takes, and `transform_type` its update type. The inventory's placement
+    /// ([`Inventory::UpdateAttachmentTransforms`](crate::character::inventory::Inventory::UpdateAttachmentTransforms))
+    /// calls it for each slot's weapon.
+    pub UpdateAttachmentTransforms: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+        p2: f32,
+        p3: f32,
+        transform_type: u32,
+    ),
 }
 fn _WeaponBaseVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x1E0], WeaponBaseVftable>([0u8; 0x1E0]);
+        ::std::mem::transmute::<[u8; 0x1F0], WeaponBaseVftable>([0u8; 0x1F0]);
     }
     unreachable!()
 }

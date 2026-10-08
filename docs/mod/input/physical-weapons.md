@@ -191,11 +191,11 @@ The holding hand rides the gun, and the hand on its foregrip with it, so both ha
 
 ## More weapons than slots
 
-Not built: carrying a weapon beyond the inventory's slots, such as a second rifle on the back, has no clean ownership model yet. This section says why, and what one would need.
+Not built yet: carrying a weapon beyond the inventory's slots, such as a second rifle on the back. The engine side it needs is now read ([weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md)): a weapon is kept by any strong reference, it moves into and out of a slot without a drop, and a load replaces the slots' weapons by type. This section says what the game's model is, and what an inventory for more weapons needs.
 
 The inventory holds one weapon per slot ([`Inventory::m_Weapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_Weapons)), and that shared reference is the only thing that keeps a carried weapon the character's. Every other weapon object belongs to the spawn system that spawned it: a weapon dropped or let fall is a spawned object in the dropped state, and the code that removes spawned objects (the spawn rules, despawn volumes, the hand-grenade pickup, which despawns the grenade it collects, the inventory's own clean-up) does it through the spawn system's despawn, not through the last reference going away. An extra weapon the mod kept would therefore be an object it holds a reference to but does not own:
 
-- A strong reference the mod takes and releases (the weak reference's lock and the strong reference's release are bound) keeps the object's memory, not the object in the game: a despawn still takes it out of the world and the update while the mod holds it, and what such an object does when drawn or picked up again is undefined. When the spawn system despawns a dropped weapon on its own (by time, by distance from its spawn, or as its streaming cell unloads) has not been read; dropped weapons appear not to be in the physics despawn pool that clears debris (unverified), which leaves the spawn rules.
+- A strong reference the mod takes keeps the object in the game, not only its memory: the spawn system's despawn ranking skips any object it does not hold alone, and a dropped weapon is otherwise removed by that ranking (its distance from the player and the view), not by time. A reset (a load) releases the spawn system's references, and an object the mod still holds survives it outside the spawn system.
 - A dropped weapon keeps its pickup interaction, so the game's use-item would collect a carried extra weapon from the player's back, and the character's AI pickups look for dropped weapons.
 - It would be placed by the mod alone: in the dropped state with its bodies out of the world, nothing should write its world matrix but the mod (unverified), and the weapon's state setter and its body removal, which the mod would need to put it there, are not bound.
 - Saves and loadouts know only the slots: an extra weapon is lost at every load, and the game's loadout screens never show it.
@@ -241,7 +241,6 @@ The settings are `controllers.weapons.hold`, and `controllers.weapons.holsters.f
 - Whether the swimming pickup's call behaves the same on land: the act the swimming path queues afterwards is not played.
 - Whether the pair equipped without the draw act and with one pistol out takes the one-pistol upper-body pose the layout's independent draws expect.
 - How the animation graph copes with a weapon equipped or unequipped without the draw or holster act, which the game does on land only for a pickup it then plays an act for.
-- Whether a dropped weapon lies in the world for long, or the spawn system cleans it up by time or distance.
 - How the HUD and the weapon selection treat a slot left empty by a drop.
 - Whether a weapon updated in the holstered state fires at all, plays its effects and sounds, heats, and alerts the AI, and whether anything else resets a holstered weapon that has a user.
 - Whether the weapon's camera hint, which starting to use it adds, changes anything under the mod's camera.

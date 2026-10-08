@@ -1,4 +1,18 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// How [`Inventory::AddWeapon`](crate::character::inventory::Inventory::AddWeapon) equips the weapon it adds (`CInventory::EEquipMode`).
+pub enum EquipMode {
+    E_DONT_EQUIP = 0isize as _,
+    E_EQUIP = 1isize as _,
+    E_EQUIP_IF_IN_SELECTED_SLOT = 2isize as _,
+}
+fn _EquipMode_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], EquipMode>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// The character's equipment inventory (`CInventory`), embedded in `CCharacter`
 /// ([`Character::m_Inventory`](crate::character::character::Character::m_Inventory)). Only some members
@@ -17,7 +31,19 @@ pub struct Inventory {
     pub m_GrapplingHook: crate::types::shared_ptr::SharedPtr<
         crate::equipment::grappling_hook::GrapplingHook,
     >,
-    _field_d0: [u8; 180],
+    _field_d0: [u8; 24],
+    /// The respawn table's weapon type for each slot (`m_WeaponToSpawn`), indexed by
+    /// [`WeaponSlot`](crate::character::inventory::WeaponSlot): a spawn tag index
+    /// ([`GameObject::GetUniqueSpawnTagIndex`](crate::game::GameObject::GetUniqueSpawnTagIndex)), or zero
+    /// for none. The spawn system's pre-reset event
+    /// ([`m_SpawnSystemPreReset`](crate::character::inventory::Inventory::m_SpawnSystemPreReset)) records each occupied slot's
+    /// weapon type here when the slot has no entry yet, the player save data's load
+    /// ([`LoadPlayerSaveData`](crate::save::LoadPlayerSaveData)) writes the saved types here, and the
+    /// post-reset event ([`m_SpawnSystemPostReset`](crate::character::inventory::Inventory::m_SpawnSystemPostReset)) requests a spawn
+    /// of each entry; each spawned weapon replaces the slot's occupant through the character's
+    /// pickup.
+    pub m_WeaponToSpawn: [i32; 8],
+    _field_108: [u8; 124],
     /// Whether the current animation permits shooting; one half of
     /// [`GetAnimationAllowsShooting`](crate::character::inventory::Inventory::GetAnimationAllowsShooting).
     pub m_DoesAnimationAllowShooting: bool,
@@ -109,7 +135,19 @@ pub struct Inventory {
     _field_238: [u8; 424],
     /// The character that owns the inventory.
     pub m_Character: *mut crate::character::character::Character,
-    _field_3e8: [u8; 12],
+    /// The subscription to the spawn system's `spawn.reset_all_spawn_rules` event, sent at once
+    /// when the spawn system resets ([`ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)),
+    /// before it releases its references to the spawned objects.
+    /// [`HandleEvent`](crate::character::inventory::Inventory::HandleEvent) then records the slots' weapons into the respawn table
+    /// ([`m_WeaponToSpawn`](crate::character::inventory::Inventory::m_WeaponToSpawn)) and the selected slot, and refreshes the HUD's
+    /// weapon list.
+    pub m_SpawnSystemPreReset: crate::event::ReceiveEvent,
+    /// The subscription to the spawn system's `spawn.post_reset_all_spawn_rules` event, posted at
+    /// the end of the reset and so handled later. [`HandleEvent`](crate::character::inventory::Inventory::HandleEvent) then marks
+    /// every slot's occupant for removal, clears the character's next selected slot, and requests a
+    /// spawn of every slot's respawn entry and of the grappling device.
+    pub m_SpawnSystemPostReset: crate::event::ReceiveEvent,
+    _field_3f0: [u8; 4],
     /// The slot the weapon selection commits when every slot-select input is released, or
     /// [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE). While a slot-select input is held,
     /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) rewrites it every frame with the winning
@@ -536,6 +574,91 @@ impl Inventory {
                 Self::UpdateAttachmentEffects_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const RemoveWeapon_ADDRESS: usize = 0x1408ECE00;
+    /// Takes the weapon out of `slot` without dropping it (`CInventory::RemoveWeapon`): clears the
+    /// slot's reference and releases it, and clears the character's next selected slot when it was
+    /// `slot`. The weapon's state, holder
+    /// ([`WeaponBase::m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder)), and user are left as
+    /// they were, so a weapon that has another strong reference stays as it
+    /// is, holstered on the character, outside the inventory.
+    pub unsafe fn RemoveWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) = ::std::mem::transmute(Self::RemoveWeapon_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const AddWeapon_ADDRESS: usize = 0x1409328B0;
+    /// Puts `weapon` into its slot
+    /// ([`WeaponBase::m_EquipSlot`](crate::equipment::weapon::WeaponBase::m_EquipSlot))
+    /// (`CInventory::AddWeapon`). A different weapon already in the slot is dropped through
+    /// [`DropWeapon`](crate::character::inventory::Inventory::DropWeapon) when the slot's drop-old flag of the respawn table is set,
+    /// and despawned otherwise. The slot then takes a reference to `weapon`, and the weapon's
+    /// [`OnPickup`](crate::equipment::weapon::WeaponBase::OnPickup) runs with the character's
+    /// `CGameObject` subobject as its holder. With [`E_EQUIP`](crate::character::inventory::EquipMode::E_EQUIP), or
+    /// [`E_EQUIP_IF_IN_SELECTED_SLOT`](crate::character::inventory::EquipMode::E_EQUIP_IF_IN_SELECTED_SLOT) on the selected
+    /// slot, the wielded weapon is unequipped
+    /// ([`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip)), `weapon` is equipped
+    /// ([`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip)), and the HUD shows it as selected for
+    /// a locally controlled character. A hand grenade, a planted explosive, or a beacon is started
+    /// in use. The weapon's visibility is set to the character's. A weapon in the mounted state
+    /// only takes the slot and becomes the selected slot. Adding the slot's own occupant again does
+    /// nothing.
+    pub unsafe fn AddWeapon(
+        &mut self,
+        weapon: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::weapon::WeaponBase,
+        >,
+        mode: crate::character::inventory::EquipMode,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::weapon::WeaponBase,
+                >,
+                mode: crate::character::inventory::EquipMode,
+            ) = ::std::mem::transmute(Self::AddWeapon_ADDRESS);
+            f(self as *mut Self as _, weapon, mode)
+        }
+    }
+    pub const HandleEvent_ADDRESS: usize = 0x1409425D0;
+    /// The inventory's event handler (`CInventory::HandleEvent`), reached through its event
+    /// handler's vtable for the events it subscribes: the spawn system's pre-reset
+    /// ([`m_SpawnSystemPreReset`](crate::character::inventory::Inventory::m_SpawnSystemPreReset)) and post-reset
+    /// ([`m_SpawnSystemPostReset`](crate::character::inventory::Inventory::m_SpawnSystemPostReset)) events, told apart with
+    /// [`EventMatches`](crate::event::EventMatches).
+    pub unsafe fn HandleEvent(
+        &mut self,
+        event: *const crate::event::EventImpl,
+        data: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                event: *const crate::event::EventImpl,
+                data: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::HandleEvent_ADDRESS);
+            f(self as *mut Self as _, event, data)
+        }
+    }
+    pub const UpdateWeaponVisibility_ADDRESS: usize = 0x1408C6D50;
+    /// Shows or hides every slot's weapon: calls each one's
+    /// [`SetVisible`](crate::equipment::weapon::WeaponBase::SetVisible) with `visible` and neither fade nor
+    /// force. The character calls it when its own visibility changes.
+    pub unsafe fn UpdateWeaponVisibility(&mut self, visible: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, visible: bool) = ::std::mem::transmute(
+                Self::UpdateWeaponVisibility_ADDRESS,
+            );
+            f(self as *mut Self as _, visible)
         }
     }
 }

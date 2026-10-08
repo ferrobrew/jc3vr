@@ -102,6 +102,39 @@ impl HUDUI {
     }
 }
 impl HUDUI {
+    pub const InitWeapons_ADDRESS: usize = 0x140E4AD30;
+    /// Rebuilds the weapon selection's list from the local player's inventory: each slot's weapon
+    /// icon and name, or none for an empty slot, then shows the selected weapon. The inventory's
+    /// pre-reset event handler calls it while the HUD is up.
+    pub unsafe fn InitWeapons(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::InitWeapons_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const OnPickupWeapon_ADDRESS: usize = 0x140E2A460;
+    /// Shows `weapon` in its slot's entry of the weapon selection: the weapon's icon, slot, and
+    /// name ([`WeaponBase::m_WeaponNameHash`](crate::equipment::weapon::WeaponBase::m_WeaponNameHash)).
+    /// [`WeaponBase::OnPickup`](crate::equipment::weapon::WeaponBase::OnPickup) calls it when a locally
+    /// controlled character takes a weapon.
+    pub unsafe fn OnPickupWeapon(
+        &mut self,
+        weapon: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::weapon::WeaponBase,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::weapon::WeaponBase,
+                >,
+            ) = ::std::mem::transmute(Self::OnPickupWeapon_ADDRESS);
+            f(self as *mut Self as _, weapon)
+        }
+    }
     pub const Update_ADDRESS: usize = 0x140F11D40;
     /// The per-frame HUD update: refreshes [`m_State`](crate::ui::hud_ui::HUDUI::m_State) through `UpdateState`, then,
     /// unless the state hides the HUD, updates the reticles, health, vehicle, wingsuit, points of

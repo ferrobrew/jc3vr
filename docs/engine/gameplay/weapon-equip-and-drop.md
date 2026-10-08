@@ -1,6 +1,6 @@
 # Weapon equip, pickup, and drop
 
-How a weapon object moves between the world, the inventory, the hands, and the body: what completing a pickup does, what equipping and unequipping do, and how a weapon is dropped. Picking a weapon up through the use input is in [item-pickup.md](item-pickup.md#picking-up-a-weapon), the magazine and the reserve in [weapon-ammo-and-reload.md](weapon-ammo-and-reload.md), and the attach bones in [hands-locomotion-and-state.md](../character/hands-locomotion-and-state.md).
+How a weapon object moves between the world, the inventory, the hands, and the body: what completing a pickup does, what equipping and unequipping do, and how a weapon is dropped. Picking a weapon up through the use input is in [item-pickup.md](item-pickup.md#picking-up-a-weapon), the magazine and the reserve in [weapon-ammo-and-reload.md](weapon-ammo-and-reload.md), and the attach bones in [hands-locomotion-and-state.md](../character/hands-locomotion-and-state.md), and what keeps a weapon alive, the spawn reset, and the save in [weapon-ownership-and-despawn.md](weapon-ownership-and-despawn.md).
 
 ## One object for its whole life
 
@@ -23,7 +23,7 @@ Two kinds of weapon are not put into the inventory by it. A hand grenade is left
 
 ## The inventory's add
 
-The inventory's add reads the incoming weapon's slot ([`m_EquipSlot`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_EquipSlot)). When the slot already holds another weapon, that weapon is dropped when the inventory's per-slot drop flag is set, and otherwise removed, which despawns it (a mounted gun is only released). Then the new weapon is stored and picked up, and with the equipping mode the wielded weapon is unequipped and the new one equipped. The grenade, planted-explosive, and beacon slots are put into use at once. The add is unbound.
+The inventory's add reads the incoming weapon's slot ([`m_EquipSlot`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_EquipSlot)). When the slot already holds another weapon, that weapon is dropped when the inventory's per-slot drop flag is set, and otherwise removed, which despawns it (a mounted gun is only released). Then the new weapon is stored and picked up, and with the equipping mode the wielded weapon is unequipped and the new one equipped. The grenade, planted-explosive, and beacon slots are put into use at once. The add is [`Inventory::AddWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-AddWeapon), and its counterpart that takes a weapon out of its slot without dropping it is `RemoveWeapon` ([weapon-ownership-and-despawn.md](weapon-ownership-and-despawn.md#into-and-out-of-a-slot-without-a-drop)).
 
 ## Equip and unequip
 

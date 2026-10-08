@@ -128,6 +128,7 @@ pub mod physics;
 pub mod profile_manager;
 pub mod resource_loader;
 pub mod rumble_manager;
+pub mod save;
 pub mod settings_manager;
 pub mod slow_motion;
 pub mod spawn_system;

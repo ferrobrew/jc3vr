@@ -165,6 +165,21 @@ impl GameObject {
     pub fn vftable(&self) -> *const crate::game::GameObjectVftable {
         self.vftable as *const crate::game::GameObjectVftable
     }
+    pub const GetUniqueSpawnTagIndex_ADDRESS: usize = 0x1404CCF60;
+    /// The object's spawn tag index (`CGameObject::GetUniqueSpawnTagIndex`): the index of the
+    /// spawn tag the spawn system spawned it from, which identifies its type. The spawn system
+    /// converts it to the tag's hash, the persistent form, with
+    /// [`GetTagHashFromTagIndex`](crate::spawn_system::SpawnSystem::GetTagHashFromTagIndex). The player
+    /// save data stores each inventory weapon's type this way, and the inventory's respawn table
+    /// ([`Inventory::m_WeaponToSpawn`](crate::character::inventory::Inventory::m_WeaponToSpawn)) holds it.
+    pub unsafe fn GetUniqueSpawnTagIndex(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetUniqueSpawnTagIndex_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     /// `CRtti::IsType`: whether the object is of the class `type_id` names or derives from it.
     /// `type_id` points at the class's run-time type id, as a class's `TYPE_ID` function
     /// returns it (such as [`Character::TYPE_ID`](crate::character::character::Character::TYPE_ID)).
