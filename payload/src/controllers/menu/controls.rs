@@ -266,6 +266,11 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .instant_dock))
+        .item(config_toggle!("DRAW PISTOLS WITHOUT ANIMATION", |c| c
+            .controllers
+            .weapons
+            .hold
+            .pistol_dock))
         .item(config_toggle!("HOLD GRIP TO HOLD GUNS", |c| c
             .controllers
             .weapons

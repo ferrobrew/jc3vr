@@ -633,7 +633,12 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 if holster::site_slot(site, config.acting_hand()) == w.wielded.slot
         );
         let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD;
-        release(hand, dock::on_release(at_own_holster, droppable), &config);
+        release(
+            hand,
+            dock::on_release(at_own_holster, droppable),
+            w.wielded,
+            &config,
+        );
     }
 
     grenade::input_tick(
@@ -1014,9 +1019,9 @@ fn act(
 ) -> GrabOutcome {
     let independent = config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
     let settings = &config.weapons.hold;
-    let instant = settings.either_hand && settings.instant_dock;
+    let pistols = docks_pistols(config);
     match action {
-        HolsterAction::Draw { slot, .. } if instant && hold::equip::handles(slot) => {
+        HolsterAction::Draw { slot, .. } if docks_without_act(config, slot) => {
             // SAFETY: the input tick runs on the main thread outside the world update.
             match unsafe { hold::act::draw(hand, slot, settings.snap_s) } {
                 Ok(()) => return GrabOutcome::Holster(action),
@@ -1038,7 +1043,25 @@ fn act(
             unsafe { second::put_back() };
             return GrabOutcome::Holster(action);
         }
-        HolsterAction::Holster { slot } if instant && hold::equip::handles(slot) => {
+        HolsterAction::DrawPistol { hand } if pistols => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::draw_pistol(hand, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the pistol's draw falls back to the layout's");
+                }
+            }
+        }
+        HolsterAction::HolsterPistol { hand } if pistols => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::holster_pistol(hand, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the pistol's holster falls back to the layout's");
+                }
+            }
+        }
+        HolsterAction::Holster { slot } if docks_without_act(config, slot) => {
             // SAFETY: the input tick runs on the main thread outside the world update.
             match unsafe { hold::act::holster(hand, settings.snap_s) } {
                 Ok(()) => return GrabOutcome::Holster(action),
@@ -1050,6 +1073,22 @@ fn act(
         _ => {}
     }
     act_with_game(action, hand, independent, desired)
+}
+
+/// Whether the pistols are drawn and holstered without the game's acts, each sliding between its hip
+/// and its hand: with `hold.pistol_dock`, which needs each hand to draw its own pistol.
+fn docks_pistols(config: &ControllersConfig) -> bool {
+    let dual = config.weapons.dual_wield;
+    let hold = config.weapons.hold;
+    hold.either_hand && hold.pistol_dock && dual.split && dual.independent_draw
+}
+
+/// Whether `slot` is drawn and holstered without the game's act: the long guns with
+/// `hold.instant_dock`, and the pistols as [`docks_pistols`] says.
+fn docks_without_act(config: &ControllersConfig, slot: WeaponSlot) -> bool {
+    let hold = config.weapons.hold;
+    let long_guns = hold.either_hand && hold.instant_dock && hold::equip::handles(slot);
+    long_guns || (slot == WeaponSlot::E_SLOT_DUAL_WIELD && docks_pistols(config))
 }
 
 /// Carry out `hand`'s holster decision through the game's own draw and holster.
@@ -1102,12 +1141,22 @@ fn act_with_game(
 
 /// Carry out what opening `hand`'s grip on its gun does: holster it (without the game's act with
 /// `hold.instant_dock`, through the game's holster otherwise), or let it fall.
-fn release(hand: Hand, what: Release, config: &ControllersConfig) {
+fn release(hand: Hand, what: Release, wielded: holster::Wielded, config: &ControllersConfig) {
     let settings = &config.weapons.hold;
+    let pair_held = wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD && wielded.hands == [true; 2];
     match what {
+        // One pistol of a pair held in both hands goes back alone.
+        Release::Holster if pair_held => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            let slid = docks_pistols(config)
+                && unsafe { hold::act::holster_pistol(hand, settings.snap_s) }.is_ok();
+            if !slid {
+                dual_wield::attach::holster(hand);
+            }
+        }
         Release::Holster => {
             // SAFETY: the input tick runs on the main thread outside the world update.
-            let instant = settings.instant_dock
+            let instant = docks_without_act(config, wielded.slot)
                 && unsafe { hold::act::holster(hand, settings.snap_s) }.is_ok();
             if !instant && let Some(owner) = unsafe { engine::local_player() } {
                 unsafe { engine::holster(owner) };
@@ -1268,6 +1317,29 @@ mod tests {
         pair.wielded.hands = [true; 2];
         assert!(!primary_trigger_idle(Some(pair), &triggers(true, false)));
         assert!(!primary_trigger_idle(None, &triggers(true, true)));
+    }
+
+    #[test]
+    fn pistols_dock_only_when_each_hand_draws_its_own() {
+        let mut config = ControllersConfig::new();
+        let pistols = WeaponSlot::E_SLOT_DUAL_WIELD;
+        let rifle = WeaponSlot::E_SLOT_TWO_HANDED;
+        assert!(docks_without_act(&config, pistols));
+        assert!(docks_without_act(&config, rifle));
+        config.weapons.dual_wield.independent_draw = false;
+        assert!(!docks_without_act(&config, pistols));
+        assert!(docks_without_act(&config, rifle));
+        config.weapons.dual_wield.independent_draw = true;
+        config.weapons.hold.pistol_dock = false;
+        assert!(!docks_without_act(&config, pistols));
+        config.weapons.hold.pistol_dock = true;
+        config.weapons.hold.instant_dock = false;
+        assert!(
+            docks_without_act(&config, pistols),
+            "the switches are separate"
+        );
+        assert!(!docks_without_act(&config, rifle));
+        assert!(!docks_without_act(&config, WeaponSlot::E_SLOT_HEAVY));
     }
 
     #[test]

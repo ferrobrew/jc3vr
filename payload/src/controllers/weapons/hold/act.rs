@@ -8,6 +8,10 @@
 //! weapon, so that a holster can slide the gun to where it will sit. A weapon never drawn this way
 //! holsters at once, without the slide.
 //!
+//! The dual-wield pistols dock the same way, each hand its own pistol ([`draw_pistol`] and
+//! [`holster_pistol`]): a pistol slides between its hip and its hand, and the pair is equipped or
+//! unequipped only by the first draw and the last holster.
+//!
 //! The rigid grip reads the snap in the placement detour ([`snap_view`]) to place the gun's attach
 //! bone between the dock and the hand.
 
@@ -20,11 +24,11 @@ use parking_lot::Mutex;
 use crate::controllers::{
     frame::{Hand, Pose},
     weapons::{
-        engine,
+        dual_wield, engine,
         hold::{
             self,
             dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
-            equip::{self, DockRefusal, Thrown},
+            equip::{self, DockRefusal, Docked, Thrown},
             holder::Cause,
             layout,
         },
@@ -81,7 +85,15 @@ pub fn status() -> DockStatus {
 pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(), DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
     hold::begin(hand, Cause::Draw, None);
-    let result = unsafe { equip::draw(owner, slot) };
+    let pistols = slot == WeaponSlot::E_SLOT_DUAL_WIELD;
+    let gun = if pistols {
+        // Only this hand's pistol comes out; the layout shows the other on its hip.
+        dual_wield::attach::begin_draw(hand);
+        dual_wield::attach::gun_of(hand).ok_or(DockRefusal::Unsupported)?
+    } else {
+        0
+    };
+    let result = unsafe { equip::draw(owner, slot, gun) };
     let mut state = STATE.lock();
     let docked = match result {
         Ok(docked) => docked,
@@ -93,23 +105,12 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
         }
     };
     state.status.draws += 1;
-    if let Some(offset) = docked.offset {
-        state.remember(docked.weapon, docked.dock, offset);
-        if snap_s > 0.0 {
-            state.snap = Some(Snap::new(
-                SnapKind::Draw,
-                docked.weapon,
-                hand,
-                SnapFrom::Dock {
-                    bone: docked.dock,
-                    offset,
-                },
-                snap_s,
-            ));
-        }
-    }
+    state.slide_out(&docked, hand, snap_s);
     drop(state);
-    hold::adopt(docked.weapon, hand);
+    // The pistols' own layout owns the pair's bones.
+    if !pistols {
+        hold::adopt(docked.weapon, hand);
+    }
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
@@ -117,6 +118,67 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
         hand.label()
     );
     Ok(())
+}
+
+/// Draw `hand`'s pistol of the wielded pair off its hip, sliding it into the hand over `snap_s`
+/// seconds.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn draw_pistol(hand: Hand, snap_s: f32) -> Result<(), DockRefusal> {
+    let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
+    let docked = unsafe { equip::pistol_dock(owner, hand) };
+    let result = match docked {
+        Ok(docked) if dual_wield::attach::draw(hand) => Ok(docked),
+        Ok(_) => Err(DockRefusal::NotHolstered),
+        Err(refusal) => Err(refusal),
+    };
+    let mut state = STATE.lock();
+    let docked = match result {
+        Ok(docked) => docked,
+        Err(refusal) => {
+            state.status.last_refusal = Some(refusal);
+            drop(state);
+            hold::refused(refusal);
+            return Err(refusal);
+        }
+    };
+    state.status.draws += 1;
+    state.slide_out(&docked, hand, snap_s);
+    drop(state);
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        "hold: drew the {} pistol off its hip",
+        hand.label()
+    );
+    Ok(())
+}
+
+/// Holster `hand`'s pistol of the wielded pair on its hip while the other hand keeps its own,
+/// sliding it there over `snap_s` seconds first when its pose there is known.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn holster_pistol(hand: Hand, snap_s: f32) -> Result<(), DockRefusal> {
+    let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
+    let target = unsafe { equip::pistol_hip(owner, hand) };
+    let target = match target {
+        Ok(target) => target,
+        Err(refusal) => {
+            STATE.lock().status.last_refusal = Some(refusal);
+            hold::refused(refusal);
+            return Err(refusal);
+        }
+    };
+    let mut state = STATE.lock();
+    if state.slide_back(&target, hand, snap_s, Finish::HolsterPistol(hand)) {
+        return Ok(());
+    }
+    drop(state);
+    finish_holster_pistol(hand)
 }
 
 /// Holster the weapon `hand` holds without the game's act, sliding it onto its dock over `snap_s`
@@ -127,7 +189,8 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
 /// The main thread, outside the world update.
 pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
-    let target = match unsafe { equip::holster_target(owner) } {
+    let gun = dual_wield::attach::gun_of(hand).unwrap_or(0);
+    let target = match unsafe { equip::holster_target(owner, gun) } {
         Ok(target) => target,
         Err(refusal) => {
             STATE.lock().status.last_refusal = Some(refusal);
@@ -137,19 +200,7 @@ pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal>
     };
     let mut state = STATE.lock();
     state.release.disarm();
-    if let Some(offset) = state.offset_of(target.weapon, target.dock)
-        && snap_s > 0.0
-    {
-        state.snap = Some(Snap::new(
-            SnapKind::Holster,
-            target.weapon,
-            hand,
-            SnapFrom::Dock {
-                bone: target.dock,
-                offset,
-            },
-            snap_s,
-        ));
+    if state.slide_back(&target, hand, snap_s, Finish::Unequip) {
         return Ok(());
     }
     drop(state);
@@ -195,13 +246,15 @@ pub(crate) fn slide_in(weapon: usize, hand: Hand, from: Pose, snap_s: f32) {
     if !(snap_s.is_finite() && snap_s > 0.0) {
         return;
     }
-    STATE.lock().snap = Some(Snap::new(
+    let mut state = STATE.lock();
+    state.snap = Some(Snap::new(
         SnapKind::Draw,
         weapon,
         hand,
         SnapFrom::World(from),
         snap_s,
     ));
+    state.finish = Finish::Nothing;
 }
 
 /// `hand` took the gun by a grab: with the grip holding guns, its grip holds this one once it is
@@ -223,12 +276,11 @@ pub(crate) fn release_tick(holder: Option<Hand>, grips: [bool; 2]) -> Option<Han
     state.release.observe(holder, grips)
 }
 
-/// Whether a snap is moving a gun: a holster's holds the weapon back from firing.
+/// Whether a holster's snap is moving the wielded weapon onto its dock, which holds it back from
+/// firing. A pistol going back to its hip while the other hand keeps its own holds nothing back.
 pub(crate) fn holstering() -> bool {
-    STATE
-        .lock()
-        .snap
-        .is_some_and(|s| s.kind == SnapKind::Holster)
+    let state = STATE.lock();
+    state.snap.is_some_and(|s| s.kind == SnapKind::Holster) && state.finish == Finish::Unequip
 }
 
 /// The snap of `weapon`'s gun in `hand`, for the rigid grip.
@@ -257,7 +309,7 @@ pub(crate) fn snap_view(weapon: usize, hand: Hand) -> Option<SnapView> {
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
 pub(crate) unsafe fn tick(owner: &Character, wielded: Option<usize>, dt: f32) {
-    let finished = {
+    let (finished, finish) = {
         let mut state = STATE.lock();
         let Some(snap) = &mut state.snap else {
             return;
@@ -272,11 +324,16 @@ pub(crate) unsafe fn tick(owner: &Character, wielded: Option<usize>, dt: f32) {
         }
         let snap = *snap;
         state.snap = None;
-        snap
+        (snap, state.finish)
     };
-    if finished.kind == SnapKind::Holster {
-        let _ = unsafe { finish_holster(owner, finished.weapon) };
+    if finished.kind != SnapKind::Holster {
+        return;
     }
+    let _ = match finish {
+        Finish::Unequip => unsafe { finish_holster(owner, finished.weapon) },
+        Finish::HolsterPistol(hand) => finish_holster_pistol(hand),
+        Finish::Nothing => Ok(()),
+    };
 }
 
 /// Stop the snap and the grip watch.
@@ -290,8 +347,21 @@ pub(crate) fn clear() {
 /// The most weapons whose dock pose is kept.
 const MAX_OFFSETS: usize = 8;
 
+/// What the end of a holster's snap does.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Finish {
+    /// Unequip the weapon.
+    Unequip,
+    /// Put this hand's pistol back on its hip, the other hand keeping its own.
+    HolsterPistol(Hand),
+    /// Nothing: a draw's snap.
+    Nothing,
+}
+
 struct State {
     snap: Option<Snap>,
+    /// What the snap's end does.
+    finish: Finish,
     /// Each weapon's gun pose on its dock bone, from its last draw: weapon, dock bone, pose.
     offsets: Vec<(usize, u32, Pose)>,
     release: ReleaseWatch,
@@ -300,8 +370,54 @@ struct State {
 }
 
 impl State {
+    /// Start a draw's snap of `docked`'s gun out of its dock into `hand`, remembering how it sat
+    /// there for its holster.
+    fn slide_out(&mut self, docked: &Docked, hand: Hand, snap_s: f32) {
+        let Some(offset) = docked.offset else {
+            return;
+        };
+        self.remember(docked.weapon, docked.dock, offset);
+        if snap_s > 0.0 {
+            self.snap = Some(Snap::new(
+                SnapKind::Draw,
+                docked.weapon,
+                hand,
+                SnapFrom::Dock {
+                    bone: docked.dock,
+                    offset,
+                },
+                snap_s,
+            ));
+            self.finish = Finish::Nothing;
+        }
+    }
+
+    /// Start a holster's snap of `target`'s gun from `hand` onto its dock, ending in `finish`, when
+    /// the gun's pose on the dock is known. Returns whether it started.
+    fn slide_back(&mut self, target: &Docked, hand: Hand, snap_s: f32, finish: Finish) -> bool {
+        let Some(offset) = self
+            .offset_of(target.weapon, target.dock)
+            .filter(|_| snap_s > 0.0)
+        else {
+            return false;
+        };
+        self.snap = Some(Snap::new(
+            SnapKind::Holster,
+            target.weapon,
+            hand,
+            SnapFrom::Dock {
+                bone: target.dock,
+                offset,
+            },
+            snap_s,
+        ));
+        self.finish = finish;
+        true
+    }
+
     fn remember(&mut self, weapon: usize, dock: u32, offset: Pose) {
-        self.offsets.retain(|&(w, _, _)| w != weapon);
+        self.offsets
+            .retain(|&(w, d, _)| !(w == weapon && d == dock));
         if self.offsets.len() >= MAX_OFFSETS {
             self.offsets.remove(0);
         }
@@ -318,6 +434,7 @@ impl State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     snap: None,
+    finish: Finish::Nothing,
     offsets: Vec::new(),
     release: ReleaseWatch::new(),
     arm_pending: None,
@@ -331,6 +448,26 @@ static STATE: Mutex<State> = Mutex::new(State {
         last_refusal: None,
     },
 });
+
+/// Put `hand`'s pistol back on its hip now, counting and logging the holster.
+fn finish_holster_pistol(hand: Hand) -> Result<(), DockRefusal> {
+    let mut state = STATE.lock();
+    if !dual_wield::attach::holster(hand) {
+        state.status.last_refusal = Some(DockRefusal::NotDone);
+        drop(state);
+        hold::refused(DockRefusal::NotDone);
+        return Err(DockRefusal::NotDone);
+    }
+    state.status.holsters += 1;
+    drop(state);
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        "hold: holstered the {} pistol on its hip",
+        hand.label()
+    );
+    Ok(())
+}
 
 /// Unequip `weapon` now, counting and logging the holster.
 unsafe fn finish_holster(owner: &Character, weapon: usize) -> Result<(), DockRefusal> {

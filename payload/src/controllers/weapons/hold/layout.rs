@@ -47,6 +47,14 @@ pub fn hand_bone(hand: Hand) -> u32 {
     }
 }
 
+/// The hip holster bone on `hand`'s side.
+pub fn hip_bone(hand: Hand) -> u32 {
+    match hand {
+        Hand::Left => SafeBoneIndex::LEFT_HOLSTER as u32,
+        Hand::Right => SafeBoneIndex::RIGHT_HOLSTER as u32,
+    }
+}
+
 /// The dock bone a holstered gun on `bone` sits on: a hip holster or a back attach bone.
 pub fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
     DOCK_BONES.into_iter().find(|&safe| safe as u32 == bone)
@@ -87,6 +95,7 @@ const HAND_BONES: [(Hand, SafeBoneIndex, SafeBoneIndex); 4] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::dual_wield::draw;
 
     const RIGHT: u32 = SafeBoneIndex::ATTACH_HAND_RIGHT as u32;
     const RIGHT2: u32 = SafeBoneIndex::ATTACH_HAND_RIGHT2 as u32;
@@ -129,6 +138,20 @@ mod tests {
             None,
             "a pistol on the hip stays there"
         );
+    }
+
+    #[test]
+    fn a_pistol_goes_back_to_the_hip_it_waits_on() {
+        for dominant in Hand::BOTH {
+            for by_handedness in [false, true] {
+                let gun_hands = draw::gun_hands(dominant, by_handedness);
+                let waiting = draw::bones(gun_hands, [false; 2]);
+                for (gun, hand) in gun_hands.into_iter().enumerate() {
+                    assert_eq!(hip_bone(hand), waiting[gun], "{hand:?}");
+                    assert!(dock_bone(hip_bone(hand)).is_some());
+                }
+            }
+        }
     }
 
     #[test]

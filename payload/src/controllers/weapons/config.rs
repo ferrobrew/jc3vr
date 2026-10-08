@@ -623,6 +623,10 @@ pub struct HoldConfig {
     /// animations: the gun slides between its place on the body and the hand over `snap_s`, and is
     /// the same object throughout. Off, a holster grab plays the game's draw or holster.
     pub instant_dock: bool,
+    /// Draw and holster each dual-wield pistol at its hip without the game's draw and holster
+    /// animations, sliding between the hip and the hand as the long guns do. Needs each hand to
+    /// draw its own pistol.
+    pub pistol_dock: bool,
     /// How long a draw or a holster without the game's animation slides the gun, seconds.
     pub snap_s: f32,
     /// Hold a gun taken by a grab (a draw at a holster, a pickup, or a handover) only while its
@@ -666,6 +670,7 @@ impl HoldConfig {
             handle_radius_m: 0.07,
             direct_pickup: true,
             instant_dock: true,
+            pistol_dock: true,
             snap_s: 0.12,
             grip_to_hold: true,
             max_throw_mps: 15.0,

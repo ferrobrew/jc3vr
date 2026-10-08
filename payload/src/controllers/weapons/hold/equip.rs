@@ -29,10 +29,10 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::gun,
-    frame::Pose,
+    frame::{Hand, Pose},
     hands::{grip, pose as hand_pose},
     physical_hands,
-    weapons::{engine::slot_from_raw, hold::layout},
+    weapons::{dual_wield, engine::slot_from_raw, hold::layout},
 };
 
 /// Why a dock or a drop was not done.
@@ -81,7 +81,7 @@ pub struct Docked {
     pub offset: Option<Pose>,
 }
 
-/// The slots a draw or a holster without the game's act handles: the long guns on the shoulders.
+/// The long guns on the shoulders: the slots a second weapon is taken from.
 pub fn handles(slot: WeaponSlot) -> bool {
     matches!(
         slot,
@@ -89,14 +89,24 @@ pub fn handles(slot: WeaponSlot) -> bool {
     )
 }
 
-/// Equip `slot`'s holstered weapon at once, unequipping the wielded one first. Returns where the
-/// weapon was docked.
+/// The slots a draw or a holster without the game's act handles: the long guns on the shoulders
+/// and the pistols on the hips.
+pub fn docks(slot: WeaponSlot) -> bool {
+    handles(slot) || slot == WeaponSlot::E_SLOT_DUAL_WIELD
+}
+
+/// Equip `slot`'s holstered weapon at once, unequipping the wielded one first. Returns where its
+/// gun `gun` (the drawing hand's pistol of the pair, or a long gun's only gun) was docked.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn draw(owner: &mut Character, slot: WeaponSlot) -> Result<Docked, DockRefusal> {
-    if !handles(slot) {
+pub(crate) unsafe fn draw(
+    owner: &mut Character,
+    slot: WeaponSlot,
+    gun: usize,
+) -> Result<Docked, DockRefusal> {
+    if !docks(slot) {
         return Err(DockRefusal::Unsupported);
     }
     if !unsafe { owner.m_Inventory.GetAnimationAllowsDrawing() } {
@@ -107,11 +117,12 @@ pub(crate) unsafe fn draw(owner: &mut Character, slot: WeaponSlot) -> Result<Doc
         return Err(DockRefusal::NotHolstered);
     }
     let address = weapon as *mut WeaponBase as usize;
-    let docked = unsafe { dock_of(owner, weapon) }.unwrap_or(Docked {
-        weapon: address,
-        dock: 0,
-        offset: None,
-    });
+    let docked =
+        unsafe { dock_of(owner, weapon, gun, WeaponState::E_WS_HOLSTERED) }.unwrap_or(Docked {
+            weapon: address,
+            dock: 0,
+            offset: None,
+        });
     if let Some(held) = unsafe { wielded_mut(owner) } {
         unsafe { held.OnUnequip() };
         unsafe { skip_interpolation(held) };
@@ -125,23 +136,29 @@ pub(crate) unsafe fn draw(owner: &mut Character, slot: WeaponSlot) -> Result<Doc
     Ok(docked)
 }
 
-/// Where the wielded weapon docks, for a holster's snap: its holstered bone, and no offset (the
-/// caller knows it from the draw, when there was one).
+/// Where the wielded weapon's gun `gun` docks, for a holster's snap: its holstered bone, and no
+/// offset (the caller knows it from the draw, when there was one). A long gun has one gun; for the
+/// pistols it is the holstering hand's.
 ///
 /// # Safety
 ///
 /// As [`draw`].
-pub(crate) unsafe fn holster_target(owner: &Character) -> Result<Docked, DockRefusal> {
+pub(crate) unsafe fn holster_target(owner: &Character, gun: usize) -> Result<Docked, DockRefusal> {
     if !unsafe { owner.m_Inventory.GetAnimationAllowsHolstering() } {
         return Err(DockRefusal::AnimationForbids);
     }
     let weapon = unsafe { gun::held_weapon(owner) }.ok_or(DockRefusal::NothingHeld)?;
     let slot = unsafe { slot_of(weapon) }.ok_or(DockRefusal::Unsupported)?;
-    if !handles(slot) {
+    if !docks(slot) {
         return Err(DockRefusal::Unsupported);
     }
+    let gun = if slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+        gun
+    } else {
+        0
+    };
     let dock = unsafe { gun::guns(weapon) }
-        .next()
+        .nth(gun)
         .flatten()
         .and_then(|gun| {
             gun.m_lBoneAttachementPerWeaponState
@@ -152,6 +169,37 @@ pub(crate) unsafe fn holster_target(owner: &Character) -> Result<Docked, DockRef
     Ok(Docked {
         weapon: weapon as *const WeaponBase as usize,
         dock,
+        offset: None,
+    })
+}
+
+/// Where `hand`'s pistol of the wielded pair sits on its hip, while the pair is wielded and the
+/// pistol is not drawn: the pistol's current bone and its pose there, for a draw's snap.
+///
+/// # Safety
+///
+/// As [`draw`].
+pub(crate) unsafe fn pistol_dock(owner: &Character, hand: Hand) -> Result<Docked, DockRefusal> {
+    let (weapon, gun) = unsafe { pair_gun(owner, hand) }?;
+    let docked =
+        unsafe { dock_of(owner, weapon, gun, weapon.m_State) }.ok_or(DockRefusal::NotDone)?;
+    if layout::dock_bone(docked.dock).is_none() {
+        return Err(DockRefusal::NotHolstered);
+    }
+    Ok(docked)
+}
+
+/// The hip `hand`'s pistol of the wielded pair goes back to while the other hand keeps its own,
+/// for a holster's snap: the hip holster bone on the hand's side, and no offset.
+///
+/// # Safety
+///
+/// As [`draw`].
+pub(crate) unsafe fn pistol_hip(owner: &Character, hand: Hand) -> Result<Docked, DockRefusal> {
+    let (weapon, _) = unsafe { pair_gun(owner, hand) }?;
+    Ok(Docked {
+        weapon: weapon as *const WeaponBase as usize,
+        dock: layout::hip_bone(hand),
         offset: None,
     })
 }
@@ -279,12 +327,26 @@ unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
     slot_from_raw(unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() })
 }
 
-/// The holstered weapon's dock: its first gun's bone and its pose on that bone.
-unsafe fn dock_of(owner: &Character, weapon: &WeaponBase) -> Option<Docked> {
-    let gun = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let dock = *gun
-        .m_lBoneAttachementPerWeaponState
-        .get(WeaponState::E_WS_HOLSTERED as usize)?;
+/// The wielded pair and the index of `hand`'s pistol.
+unsafe fn pair_gun(owner: &Character, hand: Hand) -> Result<(&WeaponBase, usize), DockRefusal> {
+    let weapon = unsafe { gun::held_weapon(owner) }.ok_or(DockRefusal::NothingHeld)?;
+    if unsafe { slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD) {
+        return Err(DockRefusal::Unsupported);
+    }
+    let gun = dual_wield::attach::gun_of(hand).ok_or(DockRefusal::Unsupported)?;
+    Ok((weapon, gun))
+}
+
+/// Gun `index` of the weapon on its dock: the bone its table names for `state`, and its pose on
+/// that bone.
+unsafe fn dock_of(
+    owner: &Character,
+    weapon: &WeaponBase,
+    index: usize,
+    state: WeaponState,
+) -> Option<Docked> {
+    let gun = unsafe { gun::guns(weapon) }.nth(index).flatten()?;
+    let dock = *gun.m_lBoneAttachementPerWeaponState.get(state as usize)?;
     let offset = layout::dock_bone(dock).and_then(|safe| {
         let bone = unsafe { grip::bone_model_pose(owner, safe) }?;
         let in_model = grip::relative_pose(

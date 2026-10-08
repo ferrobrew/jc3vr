@@ -700,6 +700,11 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
             "Draw and holster long guns without the game's animation",
         )
         .on_hover_text("The gun slides between the shoulder and the hand as one object.");
+        ui.checkbox(
+            &mut h.pistol_dock,
+            "Draw and holster pistols without the game's animation",
+        )
+        .on_hover_text("Each pistol slides between its hip and its hand; needs independent draws.");
         ui.add(egui::Slider::new(&mut h.snap_s, 0.0..=0.5).text("Slide time (s)"));
         ui.checkbox(&mut h.grip_to_hold, "Hold the grip to hold a gun")
             .on_hover_text(
