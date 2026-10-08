@@ -118,9 +118,14 @@ pub(crate) unsafe fn stabilize(
         state.capture.interrupt();
     }
 
+    // The smoothing holds only while the proxy stands on the ground this tick: the movement
+    // task's stamp outlives a takeoff by a few ticks, and following a jump's rise for those would
+    // hold the view down and then let it go at once.
+    // SAFETY: the pass's entry, on the thread running it.
+    let supported = on_ground && !unsafe { character.IsInAir() };
     let height = state
         .height
-        .step(world_t1.w_axis.y, dt, eligible && grounded, &config);
+        .step(world_t1.w_axis.y, dt, eligible && supported, &config);
     let measured = state.neutral.is_some();
     let weight = state
         .handover

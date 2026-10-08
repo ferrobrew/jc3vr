@@ -90,8 +90,22 @@ impl NeutralCapture {
 /// A critically damped follower of the root's height.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HeightFilter {
-    /// The smoothed height and its rate, while following.
-    state: Option<(f32, f32)>,
+    state: HeightState,
+    /// The height the last step returned.
+    last: Option<f32>,
+}
+
+/// What the height filter is doing.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+enum HeightState {
+    /// Not following: the height is the root's.
+    #[default]
+    Idle,
+    /// Following the root on the ground: the smoothed height and its rate.
+    Following { height: f32, rate: f32 },
+    /// Off the ground, winding what the smoothing still hid down to nothing: the offset from the
+    /// root and how fast it shrinks, metres per second.
+    Releasing { offset: f32, rate: f32 },
 }
 
 /// The smoothed height at the previous and the current tick.
@@ -103,50 +117,76 @@ pub struct HeightPair {
 
 impl HeightFilter {
     pub const fn new() -> Self {
-        Self { state: None }
+        Self {
+            state: HeightState::Idle,
+            last: None,
+        }
     }
 
-    /// Follow the root height `raw` for one tick of `dt` seconds. `grounded` says the body is on
-    /// the ground; off it, or after a change beyond the snap distance, the filter takes the root's
-    /// height as it is.
+    /// Follow the root height `raw` for one tick of `dt` seconds. `supported` says the body stands
+    /// on the ground this tick. Off it, what the smoothing still hides winds down to nothing over
+    /// [`RELEASE_S`], so leaving the ground never jumps the view; a change beyond the snap distance
+    /// (a drop, a teleport) passes at once.
     pub fn step(
         &mut self,
         raw: f32,
         dt: f32,
-        grounded: bool,
+        supported: bool,
         config: &StableViewConfig,
     ) -> HeightPair {
-        let previous = self.state.map_or(raw, |(y, _)| y);
-        let follow = grounded
-            && config.height_smoothing_s > 0.0
-            && dt.is_finite()
-            && dt > 0.0
-            && raw.is_finite()
-            && self
-                .state
-                .is_some_and(|(y, _)| (raw - y).abs() <= config.height_snap_m);
-        if !follow {
-            self.state = raw.is_finite().then_some((raw, 0.0));
-            return HeightPair {
-                previous,
-                current: raw,
+        let previous = self.last.unwrap_or(raw);
+        let current = self.advance(raw, dt, supported, config);
+        self.last = Some(current);
+        HeightPair { previous, current }
+    }
+
+    fn advance(&mut self, raw: f32, dt: f32, supported: bool, config: &StableViewConfig) -> f32 {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if !raw.is_finite() {
+            self.state = HeightState::Idle;
+            return raw;
+        }
+        let smoothed = match self.state {
+            HeightState::Idle => raw,
+            HeightState::Following { height, .. } => height,
+            HeightState::Releasing { offset, .. } => raw + offset,
+        };
+        if (smoothed - raw).abs() > config.height_snap_m {
+            self.state = HeightState::Idle;
+            return raw;
+        }
+        if supported && config.height_smoothing_s > 0.0 {
+            let rate = match self.state {
+                HeightState::Following { rate, .. } => rate,
+                _ => 0.0,
             };
+            let (mut y, mut rate) =
+                smooth_critically_damped(smoothed, rate, raw, config.height_smoothing_s, dt);
+            let lag = config.max_height_lag_m.max(0.0);
+            if (y - raw).abs() > lag {
+                y = raw + (y - raw).clamp(-lag, lag);
+                rate = 0.0;
+            }
+            self.state = HeightState::Following { height: y, rate };
+            return y;
         }
-        let (y, rate) = self.state.unwrap_or((raw, 0.0));
-        let (mut y, mut rate) =
-            smooth_critically_damped(y, rate, raw, config.height_smoothing_s, dt);
-        let lag = config.max_height_lag_m.max(0.0);
-        if (y - raw).abs() > lag {
-            y = raw + (y - raw).clamp(-lag, lag);
-            rate = 0.0;
-        }
-        self.state = Some((y, rate));
-        HeightPair {
-            previous,
-            current: y,
-        }
+        let (offset, rate) = match self.state {
+            HeightState::Releasing { offset, rate } => (offset, rate),
+            _ => (smoothed - raw, (smoothed - raw).abs() / RELEASE_S),
+        };
+        let offset = offset - offset.signum() * (rate * dt).min(offset.abs());
+        self.state = if offset == 0.0 {
+            HeightState::Idle
+        } else {
+            HeightState::Releasing { offset, rate }
+        };
+        raw + offset
     }
 }
+
+/// How long the offset the smoothing hid takes to wind down once the body leaves the ground,
+/// seconds.
+pub const RELEASE_S: f32 = 0.1;
 
 /// The handover between the animated anchor (`0`) and the stable one (`1`).
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -307,11 +347,37 @@ mod tests {
     }
 
     #[test]
-    fn airborne_heights_pass_through() {
+    fn leaving_the_ground_winds_the_hidden_offset_down_without_a_jump() {
         let config = StableViewConfig::new();
         let mut filter = HeightFilter::new();
         filter.step(0.0, DT, true, &config);
-        assert_eq!(filter.step(0.3, DT, false, &config).current, 0.3);
+        // A jump's first tick still on the ground: the smoothing trails the rising root.
+        let mut root = 0.1;
+        let trailing = filter.step(root, DT, true, &config).current;
+        assert!(trailing < root);
+        let mut last_gap = f32::INFINITY;
+        let mut last = trailing;
+        for _ in 0..10 {
+            root += 0.1;
+            let pair = filter.step(root, DT, false, &config);
+            // Continuous with the last tick, rising with the root, and closing on it without
+            // passing it.
+            assert_eq!(pair.previous, last);
+            assert!(pair.current >= last);
+            let gap = root - pair.current;
+            assert!(
+                (0.0..=last_gap + 1e-6).contains(&gap),
+                "{gap} after {last_gap}"
+            );
+            last_gap = gap;
+            last = pair.current;
+        }
+        assert_eq!(last, root);
+        // With nothing hidden, the air's heights pass through.
+        assert_eq!(
+            filter.step(root + 0.3, DT, false, &config).current,
+            root + 0.3
+        );
     }
 
     #[test]
