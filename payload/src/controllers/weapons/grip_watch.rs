@@ -3,12 +3,15 @@
 //! The rigid grip ([`crate::controllers::hands::grip`]) holds a gun in a controller-driven hand at
 //! a fixed pose on the solved wrist, and records at each placement how the gun sits on that wrist.
 //! On every input tick the watch reads each hand's last record and compares the gun's rotation on
-//! the wrist with two references:
+//! the solved wrist, and relative to the wrist's target (the controller's pose for it, which a
+//! wrist the solve leaves behind turns the gun away from), with two references, taking the larger
+//! change:
 //!
 //! - the previous tick's: a change past [`FLIP_DEG`] is a snap;
-//! - the rotation the gun had when the hand took it (a grab, kept across attach-bone changes): a
-//!   departure past [`SWEEP_DEG`] held for [`SWEEP_HOLD`] is a sweep, which catches a turn the
-//!   animation blends over several ticks.
+//! - the rotation the gun had when the hand took it (a grab, started afresh when the gun moves to
+//!   another attach bone or the pin takes hold or lets go, across which the rotation is expected to
+//!   change): a departure past [`SWEEP_DEG`] held for [`SWEEP_HOLD`] is a sweep, which catches a
+//!   turn the animation blends over several ticks.
 //!
 //! A move to another attach bone is logged too. Each warning carries what tells the causes apart:
 //! the attach bone and the weapon state, whether the bone was pinned, how far the animation had put
@@ -194,16 +197,22 @@ impl HandWatch {
             return Events::default();
         };
         let same_gun = |g: &HandGrip| g.weapon == record.weapon && g.gun == record.gun;
-        let grab = match self
-            .grab
-            .filter(|g| g.weapon == record.weapon && g.gun == record.gun)
-        {
+        // A new gun, a move to another attach bone, or the pin taking hold or letting go each
+        // start a new baseline: the gun's rotation on the wrist is expected to change across them.
+        let grab = match self.grab.filter(|g| {
+            g.weapon == record.weapon
+                && g.gun == record.gun
+                && g.bone == record.bone
+                && g.pinned == record.pinned
+        }) {
             Some(grab) => grab,
             None => {
                 self.away_since = None;
                 Grab {
                     weapon: record.weapon,
                     gun: record.gun,
+                    bone: record.bone,
+                    pinned: record.pinned,
                     gun_in_wrist: record.gun_in_wrist,
                     wrist_in_target: record.wrist_in_target,
                 }
@@ -213,8 +222,21 @@ impl HandWatch {
         let previous = self.previous.filter(same_gun);
         self.previous = Some(record);
 
-        let tick_change = previous.map(|p| change_deg(p.gun_in_wrist, record.gun_in_wrist));
-        let from_grab_deg = change_deg(grab.gun_in_wrist, record.gun_in_wrist);
+        // The gun can turn on the solved wrist, or with the wrist away from its target; either is
+        // the gun turning in the hand the player holds still, so the larger of the two counts.
+        let tick_change = previous.map(|p| {
+            change_deg(p.gun_in_wrist, record.gun_in_wrist).max(
+                gun_in_target(&p)
+                    .zip(gun_in_target(&record))
+                    .map_or(0.0, |(a, b)| change_deg(a, b)),
+            )
+        });
+        let from_grab_deg = change_deg(grab.gun_in_wrist, record.gun_in_wrist).max(
+            grab.wrist_in_target
+                .map(|w| w * grab.gun_in_wrist)
+                .zip(gun_in_target(&record))
+                .map_or(0.0, |(a, b)| change_deg(a, b)),
+        );
         let bone_change = previous.filter(|p| p.bone != record.bone).map(|p| p.bone);
         let wrist_drift_deg = grab
             .wrist_in_target
@@ -251,8 +273,18 @@ impl HandWatch {
 struct Grab {
     weapon: usize,
     gun: usize,
+    bone: u32,
+    pinned: bool,
     gun_in_wrist: Quat,
     wrist_in_target: Option<Quat>,
+}
+
+/// The gun's rotation relative to the tick's wrist target, the controller's pose for the wrist,
+/// when the hand had one.
+fn gun_in_target(record: &HandGrip) -> Option<Quat> {
+    record
+        .wrist_in_target
+        .map(|w| (w * record.gun_in_wrist).normalize())
 }
 
 /// Allows one log line per [`LOG_INTERVAL`], counting the ones it holds back.
@@ -423,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn a_snap_and_a_bone_change_are_reported_and_keep_the_grab() {
+    fn a_snap_and_a_bone_change_are_reported_and_start_a_new_grab() {
         let mut watch = HandWatch::new();
         let start = Instant::now();
         watch.observe(Some(record(start, Quat::IDENTITY, 1)), start);
@@ -432,7 +464,42 @@ mod tests {
         let events = watch.observe(Some(record(at, flipped, 2)), at);
         assert!(events.snap.is_some_and(|c| c > FLIP_DEG));
         assert_eq!(events.bone_change, Some(1));
-        assert!(events.from_grab_deg.is_some_and(|d| d > 160.0));
+        // The gun sits differently on the new bone, which is not a sweep away from the grab.
+        assert!(events.from_grab_deg.is_some_and(|d| d < 1e-3));
+    }
+
+    #[test]
+    fn the_pin_taking_hold_starts_a_new_grab() {
+        let mut watch = HandWatch::new();
+        let start = Instant::now();
+        watch.observe(Some(record(start, Quat::from_rotation_x(1.2), 1)), start);
+        let at = start + TICK;
+        let pinned = HandGrip {
+            pinned: true,
+            ..record(at, Quat::IDENTITY, 1)
+        };
+        let events = watch.observe(Some(pinned), at);
+        assert!(events.from_grab_deg.is_some_and(|d| d < 1e-3));
+    }
+
+    #[test]
+    fn a_gun_turned_with_a_wrist_left_behind_its_target_is_seen() {
+        let mut watch = HandWatch::new();
+        let start = Instant::now();
+        // The gun holds still on the solved wrist, but the wrist turns away from the controller's
+        // target over a few ticks, which turns the gun in the hand the player holds still.
+        let mut events = Vec::new();
+        for tick in 0..12u32 {
+            let at = start + TICK * tick;
+            let drift = Quat::from_rotation_z((25.0 * tick.min(4) as f32).to_radians());
+            let r = HandGrip {
+                wrist_in_target: Some(drift),
+                ..record(at, Quat::IDENTITY, 1)
+            };
+            events.push(watch.observe(Some(r), at));
+        }
+        assert_eq!(events.iter().filter(|e| e.sweep.is_some()).count(), 1);
+        assert!(events.iter().all(|e| e.snap.is_none()));
     }
 
     #[test]
