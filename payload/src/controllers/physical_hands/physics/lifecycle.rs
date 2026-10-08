@@ -29,7 +29,13 @@ pub(super) struct ActRequest<'a> {
     /// against.
     pub palm: Goal,
     pub render: &'a RenderTuning,
+    /// Where the body is measured against for [`break_distance_m`](Self::break_distance_m): the
+    /// controller's palm now, without the lead of the goal, or a grip's pin.
+    pub anchor: Vec3,
     pub break_distance_m: f32,
+    /// Whether nothing solid lies between two points, game space: a body put back on its hand
+    /// must not pass through a wall or a character to get there.
+    pub clear: &'a mut dyn FnMut(Vec3, Vec3) -> bool,
     pub tuning: &'a DriveTuning,
     pub step_s: f32,
 }
@@ -103,7 +109,9 @@ impl Hands {
             goal,
             palm,
             render,
+            anchor,
             break_distance_m,
+            clear,
             tuning,
             step_s,
         } = request;
@@ -150,6 +158,7 @@ impl Hands {
             self.goals[i] = None;
             self.palms[i] = None;
             unsafe { body.place(goal.position, goal.orientation) }?;
+            contact::mute_for(hand, PLACED_MUTE_STEPS);
             tracing::info!(
                 hand = hand.label(),
                 body_id = body.body_id(),
@@ -205,7 +214,11 @@ impl Hands {
             resets: self.resets[i],
             joint: None,
         };
-        if (goal.position - motion.position).length() > break_distance_m {
+        // A body far from its hand is put back on it only along a clear path; one held back by
+        // a wall or a character keeps pressing into it, so it never passes through.
+        if (anchor - motion.position).length() > break_distance_m
+            && clear(motion.position, goal.position)
+        {
             // A body put back on its hand would drag what it is joined to with it.
             // SAFETY: forwarded from the caller.
             let joint_lost = unsafe {
@@ -216,6 +229,7 @@ impl Hands {
                 )
             };
             unsafe { body.place(goal.position, goal.orientation) }?;
+            contact::mute_for(hand, PLACED_MUTE_STEPS);
             contact::record_motion(hand, goal.position, Vec3::ZERO);
             self.resets[i] += 1;
             status.resets = self.resets[i];
@@ -315,6 +329,8 @@ impl Hands {
         {
             let _ = unsafe { body.set_velocities(Vec3::ZERO, Vec3::ZERO) };
         }
+        // A body held in place deals no blows: it is not swung.
+        contact::mute_for(hand, 1);
         self.goals[i] = None;
         self.palms[i] = None;
     }
@@ -422,6 +438,9 @@ fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> 
     }
     None
 }
+
+/// How many steps a body put somewhere, rather than moved there, ignores its contacts.
+pub(super) const PLACED_MUTE_STEPS: u64 = 3;
 
 /// The relative change in a body's size or mass that remakes it.
 const SPEC_TOLERANCE: f32 = 0.02;

@@ -63,12 +63,16 @@ use std::{
 pub use blows::BlowReport;
 pub use config::{HandBodiesConfig, HandHitsConfig};
 use glam::{Quat, Vec2, Vec3};
-use jc3gi::physics::PhysicsSystem;
+use jc3gi::{character::character::Character, physics::PhysicsSystem};
 use parking_lot::Mutex;
 
 use crate::{
     config::Config,
     controllers::{
+        aim::{
+            ray::Ray,
+            raycast::{self, CastOptions},
+        },
         frame::Hand,
         hands::{self, CockpitHand, pose as hand_pose},
         mode,
@@ -389,6 +393,7 @@ pub(crate) fn push() -> Vec2 {
 pub(super) unsafe fn step() {
     let now = Instant::now();
     let config = Config::lock_query(|c| c.controllers.physical_hands);
+    contact::step_tick();
     let mut hands = HANDS.lock();
     hands.steps += 1;
     let reason = if !enabled(&config) {
@@ -515,12 +520,16 @@ pub(super) unsafe fn step() {
                         * target.orientation,
                 };
                 let goal = grips[i].unwrap_or(palm);
+                let held = holds[i].map_or(0, |h| h.object.get());
+                let mut clear = |from: Vec3, to: Vec3| unsafe { path_clear(from, to, held) };
                 let request = ActRequest {
                     hand,
                     spec,
                     goal,
                     palm,
                     render: &render,
+                    anchor: grips[i].map_or(target.position, |g| g.position),
+                    clear: &mut clear,
                     break_distance_m: b.break_distance_m * scale,
                     tuning: &tuning,
                     step_s,
@@ -779,6 +788,30 @@ fn acting_palms(config: &PhysicalHandsConfig) -> Option<([Option<PalmBox>; 2], f
         .iter()
         .any(Option::is_some)
         .then_some((palms, active.world_scale))
+}
+
+/// Whether nothing solid lies between `from` and `to`, game space, for the aim's ray filter, which
+/// never hits the player nor the hand bodies; `held` is an object a hand holds, also passed
+/// through, or zero. A cast that fails counts as blocked.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
+unsafe fn path_clear(from: Vec3, to: Vec3, held: usize) -> bool {
+    let Some(ray) = Ray::new(from, to - from) else {
+        return true;
+    };
+    let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
+    let options = CastOptions {
+        ignore: [player, held],
+        see_through: false,
+    };
+    // SAFETY: forwarded from the caller; the ignored objects are the live player and a held
+    // object the pickups checked this tick, or zero.
+    matches!(
+        unsafe { raycast::cast(&ray, from.distance(to), &options) },
+        Ok(None)
+    )
 }
 
 /// How hard a hand presses into what holds it back, `0..=1`: its lag past the push deadband, as a

@@ -20,7 +20,7 @@ The pre-simulation callback ([`PfxPreSimulationCallback`](https://ferrobrew.gith
 
 The step then integrates the velocities and resolves the body's contacts. A free hand reaches its goal; a hand against a wall stops at it, and the next step asks again, no harder than its strength; a hand against a crate pushes it, and a crate too heavy for the hand's strength holds it back. The math is in `physics/drive.rs` with its tests.
 
-The default strength is "Rico strength": a ten-kilogram hand pulling at up to five kilonewtons and twisting at up to four hundred newton metres, exaggerated but bounded so that a tracking glitch cannot fling what the hand touches. A body that falls more than `bodies.break_distance_m` behind its goal (a teleport, a hand pulled through a wall) is put back on it at rest.
+The default strength is "Rico strength": a ten-kilogram hand pulling at up to five kilonewtons and twisting at up to four hundred newton metres, exaggerated but bounded so that a tracking glitch cannot fling what the hand touches. A body that falls more than `bodies.break_distance_m` behind its controller's palm (measured against the palm now, without the goal's lead, or against a grip's pin) is put back on its goal at rest, but only when a ray from the body to the goal, through the aim's filter, meets nothing: a hand pulled through a wall or a character keeps pressing at the surface rather than passing through it, and is put back once the controller comes back to a clear path. A body put somewhere rather than moved there (made, added, or put back) ignores its contacts for a few steps, so that a body that starts inside something does not strike it, and a body held in place ignores them while it is held.
 
 ### Drawing the hand at its body
 

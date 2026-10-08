@@ -142,6 +142,20 @@ pub(super) fn listening(hand: Hand) -> bool {
     WRAPPERS[hand.index()].load(Ordering::Acquire) != 0
 }
 
+/// Count a pre-simulation step, which ends the mutes ([`mute_for`]) that run out with it. Called
+/// at the top of each step.
+pub(super) fn step_tick() {
+    STEP.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Ignore `hand`'s contacts for the next `steps` steps: after its body is put somewhere rather
+/// than moved there (made, added, placed, or carried by the rig), where it may start inside what
+/// it meets and the contact would be a blow it never swung, and while it is held in place.
+pub(super) fn mute_for(hand: Hand, steps: u64) {
+    let until = STEP.load(Ordering::Relaxed).saturating_add(steps);
+    MUTED_UNTIL[hand.index()].fetch_max(until, Ordering::Relaxed);
+}
+
 /// Note where `hand`'s body is and the velocity it is driven at for the coming step.
 pub(super) fn record_motion(hand: Hand, position: Vec3, velocity: Vec3) {
     MOTION.lock()[hand.index()] = Some((position, velocity));
@@ -169,6 +183,12 @@ static WRAPPERS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 
 /// Each hand body's position and driven velocity for the coming step.
 static MOTION: Mutex<[Option<(Vec3, Vec3)>; 2]> = Mutex::new([None; 2]);
+
+/// The pre-simulation steps counted so far.
+static STEP: AtomicU64 = AtomicU64::new(0);
+
+/// The step until which each hand's contacts are ignored.
+static MUTED_UNTIL: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
 
 static QUEUE: Mutex<Vec<Contact>> = Mutex::new(Vec::new());
 static DROPPED: AtomicU64 = AtomicU64::new(0);
@@ -211,6 +231,9 @@ unsafe fn record(
     else {
         return;
     };
+    if STEP.load(Ordering::Relaxed) < MUTED_UNTIL[hand.index()].load(Ordering::Relaxed) {
+        return;
+    }
     let points = if event.m_contactJacobian.is_null() {
         0
     } else {
