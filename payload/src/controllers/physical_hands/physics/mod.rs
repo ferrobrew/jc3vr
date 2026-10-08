@@ -60,7 +60,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub use blows::BlowReport;
+pub(crate) use blows::queue_shove;
+pub use blows::{BlowReport, Shove, ShoveForce, ShoveReport};
 pub use config::{HandBodiesConfig, HandHitsConfig};
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, physics::PhysicsSystem};
@@ -164,6 +165,11 @@ pub struct HandBodiesStatus {
     /// Blows dealt to characters.
     pub blows: u64,
     pub last_blow: Option<BlowReport>,
+    /// Shoves and yanks the hands gave characters they held.
+    pub shoves: u64,
+    /// Those that reached a knockdown.
+    pub knockdowns: u64,
+    pub last_shove: Option<ShoveReport>,
     pub last_error: Option<String>,
 }
 
@@ -270,6 +276,17 @@ pub(crate) fn frame_tick() {
         return;
     }
     let config = Config::lock_query(|c| c.controllers.physical_hands);
+    if hooks::in_gameplay() {
+        // The shoves come from the pickups, which hold characters with or without the bodies.
+        // SAFETY: the game thread, ahead of the game's update.
+        let shoves = unsafe { blows::deliver_shoves(&config) };
+        if shoves.shoves > 0 {
+            let mut shared = SHARED.lock();
+            shared.status.shoves += shoves.shoves;
+            shared.status.knockdowns += shoves.knockdowns;
+            shared.status.last_shove = shoves.last;
+        }
+    }
     if !enabled(&config) || !hooks::in_gameplay() {
         blows::discard();
         return;
@@ -883,6 +900,9 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
         dropped_contacts: 0,
         blows: 0,
         last_blow: None,
+        shoves: 0,
+        knockdowns: 0,
+        last_shove: None,
         last_error: None,
     },
 });

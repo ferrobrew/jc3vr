@@ -141,8 +141,8 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
         ))
     ));
     ui.label(format!(
-        "Characters: {} grips · {} pulled out of a seat",
-        p.character_grips, p.hijacks
+        "Characters: {} grips · {} yanked · {} ragdolls taken · {} pulled out of a seat",
+        p.character_grips, p.yanks, p.regrips, p.hijacks
     ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
@@ -203,6 +203,15 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
 }
 
 fn characters_settings(ui: &mut Ui, c: &mut CharactersConfig) {
+    ui.checkbox(&mut c.grab, "Take hold of characters on foot");
+    ui.add_enabled_ui(c.grab, |ui| {
+        ui.add(egui::Slider::new(&mut c.yank_strength, 0.0..=3.0).text("Yank (× knockdown)"));
+        ui.add(egui::Slider::new(&mut c.regrip_s, 0.0..=5.0).text("Look for the ragdoll (s)"));
+        ui.add(
+            egui::Slider::new(&mut c.shove_min_speed_mps, 0.0..=8.0)
+                .text("Slowest shove on letting go (m/s)"),
+        );
+    });
     ui.checkbox(&mut c.hijack, "Pull occupants out through open doors");
     ui.add(egui::Slider::new(&mut c.yank_m, 0.02..=0.6).text("Yank past (m)"));
     ui.add_enabled_ui(c.hijack, |ui| {

@@ -605,6 +605,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             unlatch_pull_m: config.doors.unlatch_pull_m * active.world_scale,
             world_scale: active.world_scale,
             characters: config.characters,
+            reaches: hand_status.map(|h| h.reach),
         };
         // SAFETY: the simulation phase outside the physics step.
         let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &config.pickup) };
@@ -772,6 +773,8 @@ impl State {
         status.door_grips += outcome.door_grips;
         status.character_grips += outcome.character_grips;
         status.hijacks += outcome.hijacks;
+        status.yanks += outcome.yanks;
+        status.regrips += outcome.regrips;
         if outcome.door.is_some() {
             status.last_door = outcome.door;
         }
@@ -826,6 +829,8 @@ static STATE: Mutex<State> = Mutex::new(State {
             last_door: None,
             character_grips: 0,
             hijacks: 0,
+            yanks: 0,
+            regrips: 0,
             last_error: None,
         },
     },

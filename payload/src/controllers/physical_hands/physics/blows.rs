@@ -37,9 +37,11 @@ use parking_lot::Mutex;
 use crate::controllers::{
     frame::Hand,
     physical_hands::{
-        PhysicalHandsConfig, engine,
+        PhysicalHandsConfig,
+        bodies::owner_of,
+        engine,
         physics::{
-            body,
+            HandHitsConfig, body,
             contact::{self, Contact},
             hit::{
                 ANY_HAND, Blow, BlowPlan, HitGate, VictimTuning, approach, blow, blow_impulse,
@@ -222,11 +224,141 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
     delivered
 }
 
-/// Forget the contacts recorded since the last frame tick and the characters struck lately.
+/// Forget the contacts recorded since the last frame tick, the characters struck lately, and the
+/// shoves queued.
 pub(super) fn discard() {
     let _ = contact::take();
     GATE.lock().0.clear();
+    SHOVES.lock().clear();
 }
+
+/// A push a hand gives a character it holds: the yank that throws the character off its feet, or
+/// the shove of a hand that lets go of it moving.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Shove {
+    pub hand: Hand,
+    pub character: NonZeroUsize,
+    /// The character's body the hand held, which must still belong to it.
+    pub body: u32,
+    /// Where the hand pushes, world space.
+    pub at: Vec3,
+    /// The push's direction, a unit vector.
+    pub direction: Vec3,
+    pub force: ShoveForce,
+}
+
+/// How hard a [`Shove`] pushes.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum ShoveForce {
+    /// A yank, at this share of the knockdown blow.
+    Yank { strength: f32 },
+    /// A shove from a hand moving at this speed, as a blow of the arm's momentum.
+    Push { speed_mps: f32 },
+}
+
+/// A shove dealt, for the readout.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ShoveReport {
+    pub hand: Hand,
+    /// The shove as a share of the knockdown impulse.
+    pub strength: f32,
+    pub hostile: bool,
+    pub yank: bool,
+}
+
+/// What a frame tick's shoves did.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct ShovesDelivered {
+    pub shoves: u64,
+    /// Shoves that reached a knockdown.
+    pub knockdowns: u64,
+    pub last: Option<ShoveReport>,
+}
+
+/// Queue `shove` for the next frame tick. Called from the palms' tick.
+pub(crate) fn queue_shove(shove: Shove) {
+    let mut shoves = SHOVES.lock();
+    if shoves.len() < MAX_SHOVES {
+        shoves.push(shove);
+    }
+}
+
+/// Deal the shoves queued since the last frame tick through each character's own hit reaction, as
+/// a blow without damage. A character the player is not hostile to is staggered at most.
+///
+/// # Safety
+///
+/// The game thread, outside the game's update.
+pub(super) unsafe fn deliver_shoves(config: &PhysicalHandsConfig) -> ShovesDelivered {
+    let shoves = std::mem::take(&mut *SHOVES.lock());
+    let mut delivered = ShovesDelivered::default();
+    let Some(attacker) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+        return delivered;
+    };
+    let hits = HandHitsConfig {
+        damage: false,
+        min_impulse_ns: 0.0,
+        ..config.bodies.hits
+    };
+    for shove in shoves {
+        // SAFETY: forwarded from the caller; the body's owner proves the character alive.
+        let alive = unsafe { owner_of(shove.body) } == Some(shove.character)
+            && unsafe { engine::is_character(shove.character) };
+        if !alive || shove.character.get() == attacker as *const Character as usize {
+            continue;
+        }
+        // SAFETY: a live character, checked above.
+        let victim = unsafe { &mut *(shove.character.get() as *mut Character) };
+        let impulse_ns = match shove.force {
+            ShoveForce::Yank { strength } => strength.max(0.0) * hits.knockdown_impulse_ns,
+            ShoveForce::Push { speed_mps } => hits.blow_mass_kg.max(0.0) * speed_mps.max(0.0),
+        };
+        let tuning = VictimTuning {
+            type_scale: victim
+                .m_HitReaction_DamageImpulseScale
+                .get(melee_type_index())
+                .copied()
+                .unwrap_or(0.0),
+            knockdown_threshold: victim.m_HitReaction_ImpulseRagdollThreshold,
+        };
+        let Blow::Strikes(mut plan) = blow(impulse_ns, tuning, 0, &hits) else {
+            continue;
+        };
+        // SAFETY: both characters are live.
+        let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
+        let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
+        if !hostile {
+            plan = restrain(plan, NOT_HOSTILE_MAX_STRENGTH);
+        }
+        plan.damage = None;
+        let yank = matches!(shove.force, ShoveForce::Yank { .. });
+        // SAFETY: forwarded from the caller; both characters are live.
+        unsafe { strike(attacker, victim, shove.at, shove.direction, &plan) };
+        tracing::info!(
+            hand = shove.hand.label(),
+            yank,
+            hostile,
+            strength = plan.strength,
+            reaction_impulse = plan.reaction_impulse,
+            "physical hands: characters: a hand threw a character"
+        );
+        delivered.shoves += 1;
+        delivered.knockdowns += u64::from(plan.strength >= 1.0);
+        delivered.last = Some(ShoveReport {
+            hand: shove.hand,
+            strength: plan.strength,
+            hostile,
+            yank,
+        });
+    }
+    delivered
+}
+
+/// The most shoves queued between two frame ticks.
+const MAX_SHOVES: usize = 8;
+
+/// The shoves queued since the last frame tick.
+static SHOVES: Mutex<Vec<Shove>> = Mutex::new(Vec::new());
 
 /// How far above a character's root its chest is, metres: where a blow aims.
 const CHEST_HEIGHT_M: f32 = 1.2;

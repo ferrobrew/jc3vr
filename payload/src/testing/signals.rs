@@ -124,6 +124,9 @@ signals! {
     DoorOnLatch => "doors.on_latch", Flag, "A hand grips a latched vehicle door.";
     CharacterGrips => "characters.grips", Counter, "Grips taken on characters.";
     Hijacks => "characters.hijacks", Counter, "Seated characters a hand pulled out through an open door.";
+    CharacterYanks => "characters.yanks", Counter, "Characters on foot a hand yanked.";
+    CharacterRegrips => "characters.regrips", Counter, "Fallen characters' ragdolls a hand took hold of after a yank.";
+    CharacterKnockdowns => "characters.knockdowns", Counter, "Yanks and shoves that knocked a character down.";
     ProceduralRigError => "procedural.rig_error", Flag, "The procedural body could not rig the skeleton.";
     PassThroughErrorM => "procedural.pass_through_error_m", Measure, "The pass-through's largest read-back error, metres.";
     PassThroughErrorDeg => "procedural.pass_through_error_deg", Measure, "The pass-through's largest read-back error, degrees.";
@@ -202,6 +205,9 @@ impl Signal {
             Signal::DoorOnLatch => flag(physical_hands::status().hands.iter().any(|h| h.latched)),
             Signal::CharacterGrips => count(physical_hands::status().pickup.character_grips),
             Signal::Hijacks => count(physical_hands::status().pickup.hijacks),
+            Signal::CharacterYanks => count(physical_hands::status().pickup.yanks),
+            Signal::CharacterRegrips => count(physical_hands::status().pickup.regrips),
+            Signal::CharacterKnockdowns => count(physics::status().knockdowns),
             Signal::ProceduralRigError => flag(procedural::published_status().rig_error.is_some()),
             Signal::PassThroughErrorM => procedural::published_status()
                 .round_trip

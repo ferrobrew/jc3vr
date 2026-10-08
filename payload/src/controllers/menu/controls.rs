@@ -177,6 +177,11 @@ fn settings_page() -> Page {
             .physical_hands
             .doors
             .enabled))
+        .item(config_toggle!("GRAB CHARACTERS", |c| c
+            .controllers
+            .physical_hands
+            .characters
+            .grab))
         .item(config_toggle!("PULL OCCUPANTS OUT BY HAND", |c| c
             .controllers
             .physical_hands

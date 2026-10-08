@@ -8,7 +8,7 @@ use crate::controllers::{
         read_config,
         status::{Health, Line},
     },
-    physical_hands::{self, doors, pickup::PickupStatus},
+    physical_hands::{self, doors, physics, pickup::PickupStatus},
 };
 
 pub(super) fn doors() -> Line {
@@ -22,20 +22,27 @@ pub(super) fn doors() -> Line {
 }
 
 pub(super) fn characters() -> Line {
-    let (on, hijack) = read_config(|c| {
+    let on = read_config(|c| {
         let p = &c.controllers.physical_hands;
-        (p.enabled && p.pickup.enabled, p.characters.hijack)
+        p.enabled && p.pickup.enabled && (p.characters.grab || p.characters.hijack)
     });
-    characters_line(on && hijack, &physical_hands::status().pickup)
+    characters_line(
+        on,
+        &physical_hands::status().pickup,
+        physics::status().knockdowns,
+    )
 }
 
-fn characters_line(on: bool, pickup: &PickupStatus) -> Line {
+fn characters_line(on: bool, pickup: &PickupStatus, knockdowns: u64) -> Line {
     if !on {
         return Line::off("");
     }
     let detail = format_smolstr!(
-        "{} GRIPS, {} PULLED OUT",
+        "{} GRIPS, {} YANKED, {} DOWN, {} DRAGGED, {} PULLED OUT",
         pickup.character_grips,
+        pickup.yanks,
+        knockdowns,
+        pickup.regrips,
         pickup.hijacks
     );
     if pickup.character_grips == 0 {
@@ -72,13 +79,15 @@ mod tests {
     #[test]
     fn the_characters_row_counts_grips_and_hijacks() {
         let mut pickup = PickupStatus::default();
-        assert_eq!(characters_line(false, &pickup).health, Health::Off);
-        assert_eq!(characters_line(true, &pickup).health, Health::Waiting);
+        assert_eq!(characters_line(false, &pickup, 0).health, Health::Off);
+        assert_eq!(characters_line(true, &pickup, 0).health, Health::Waiting);
         pickup.character_grips = 3;
+        pickup.yanks = 2;
+        pickup.regrips = 1;
         pickup.hijacks = 1;
         assert_eq!(
-            characters_line(true, &pickup).text(),
-            "OK, 3 GRIPS, 1 PULLED OUT"
+            characters_line(true, &pickup, 2).text(),
+            "OK, 3 GRIPS, 2 YANKED, 2 DOWN, 1 DRAGGED, 1 PULLED OUT"
         );
     }
 

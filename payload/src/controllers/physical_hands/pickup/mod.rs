@@ -27,6 +27,8 @@
 //! world swings about its hinge. A hand that holds something does not probe, push off surfaces, or
 //! strike.
 
+mod grips;
+
 use std::{num::NonZeroUsize, time::Instant};
 
 use glam::Vec3;
@@ -44,14 +46,15 @@ use crate::{
         frame::Hand,
         physical_hands::{
             STALE_AFTER, STATE, bodies,
-            characters::{self, CharactersConfig, Seize, SeizeStep},
+            characters::{self, CharactersConfig, Regrip, Seize},
             config::PickupConfig,
             contact::{Surface, SurfaceHit},
-            doors::{self, DoorsConfig, Latch, LatchStep},
+            doors::{self, DoorsConfig, Latch},
             grasp::{self, Grip, PalmMotion, Reach, TargetKind},
             hold::{self, HandHold, HoldTuning, PlayerKeepOut},
             palm::PalmBox,
             physics::HoldTarget,
+            pickup::grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
             pulse,
             rigid::Velocities,
         },
@@ -125,6 +128,10 @@ pub struct PickupStatus {
     pub character_grips: u64,
     /// Characters a hand pulled out of a vehicle seat.
     pub hijacks: u64,
+    /// Characters on foot a hand yanked.
+    pub yanks: u64,
+    /// Fallen characters' ragdolls a hand took hold of after a yank.
+    pub regrips: u64,
     pub last_error: Option<String>,
 }
 
@@ -272,6 +279,8 @@ pub(super) struct PickupState {
     latches: [Option<Latch>; 2],
     /// Each hand's grip on a character.
     seizes: [Option<Seize>; 2],
+    /// Each hand waiting to take hold of a character it yanked off its feet.
+    regrips: [Option<Regrip>; 2],
     /// The hands that yanked a seated character, for the input tick to click the vehicle entry.
     hijack_clicks: [bool; 2],
     requests: [Option<Request>; 2],
@@ -285,6 +294,7 @@ impl PickupState {
             held: [None; 2],
             latches: [None; 2],
             seizes: [None; 2],
+            regrips: [None; 2],
             hijack_clicks: [false; 2],
             requests: [None; 2],
             input_at: None,
@@ -315,6 +325,7 @@ impl PickupState {
         self.held = [None; 2];
         self.latches = [None; 2];
         self.seizes = [None; 2];
+        self.regrips = [None; 2];
         self.requests = [None; 2];
     }
 }
@@ -434,6 +445,9 @@ pub(super) struct TickInputs {
     /// The VR world scale.
     pub world_scale: f32,
     pub characters: CharactersConfig,
+    /// What each hand reaches this tick, from which a hand that yanked a character takes hold of
+    /// its ragdoll.
+    pub reaches: [Option<Reach>; 2],
 }
 
 /// The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
@@ -455,6 +469,7 @@ pub(super) unsafe fn tick(
         unlatch_pull_m,
         world_scale,
         characters: character_config,
+        reaches,
     } = inputs;
     let mut outcome = TickOutcome::default();
     for hand in Hand::BOTH {
@@ -483,7 +498,13 @@ pub(super) unsafe fn tick(
                 if state.latches[i].take().is_some() {
                     outcome.released[i] = true;
                 }
-                if state.seizes[i].take().is_some() {
+                if let Some(seize) = state.seizes[i].take() {
+                    outcome.released[i] = true;
+                    if let Some(palm) = palms[i] {
+                        shove_on_release(hand, &seize, &palm, &character_config);
+                    }
+                }
+                if state.regrips[i].take().is_some() {
                     outcome.released[i] = true;
                 }
                 if let Some(held) = state.held[i].take() {
@@ -530,7 +551,9 @@ pub(super) unsafe fn tick(
                         break 'grab;
                     }
                 }
-                if let TargetKind::Character(target) = reach.kind {
+                if let TargetKind::Character(target) = reach.kind
+                    && !target.ragdoll
+                {
                     // SAFETY: forwarded from the caller; the character was reached by this
                     // tick's casts.
                     match unsafe { Seize::take(target, reach.point) } {
@@ -589,6 +612,22 @@ pub(super) unsafe fn tick(
             state.seizes[i] = None;
             outcome.lost += 1;
         }
+        if state.regrips[i].is_some() && palms[i].is_none() {
+            state.regrips[i] = None;
+            outcome.lost += 1;
+        }
+        // SAFETY: forwarded from the caller.
+        unsafe {
+            keep_regrip(
+                state,
+                hand,
+                palms[i],
+                reaches[i],
+                &joints,
+                config,
+                &mut outcome,
+            )
+        };
         // SAFETY: forwarded from the caller.
         unsafe {
             keep_seize(
@@ -738,6 +777,10 @@ pub(super) struct TickOutcome {
     pub character_grips: u64,
     /// Seated characters the hands pulled out this tick.
     pub hijacks: u64,
+    /// Characters on foot the hands yanked this tick.
+    pub yanks: u64,
+    /// Fallen characters' ragdolls the hands took hold of this tick.
+    pub regrips: u64,
 }
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
@@ -806,131 +849,6 @@ unsafe fn throw(
         )
     }?;
     Ok(point.length())
-}
-
-/// Keep `hand`'s grip on a latched door: hold the hand at the grab point while the latch holds,
-/// and once it gives, hold the door's own body where the hand took it.
-///
-/// # Safety
-///
-/// Main thread, outside the physics step.
-unsafe fn keep_latch(
-    state: &mut PickupState,
-    hand: Hand,
-    palm: Option<PalmMotion>,
-    joints: &JointInputs,
-    unlatch_pull_m: f32,
-    outcome: &mut TickOutcome,
-) {
-    let i = hand.index();
-    let (Some(latch), Some(palm)) = (state.latches[i], palm) else {
-        return;
-    };
-    // SAFETY: forwarded from the caller.
-    match unsafe { latch.step(palm.pose.position, unlatch_pull_m) } {
-        LatchStep::Pin(pin) => outcome.pins[i] = Some(pin),
-        LatchStep::Opened { object, body, grab } => {
-            state.latches[i] = None;
-            // SAFETY: forwarded from the caller; the door's body was found just now.
-            match unsafe { bodies::read(body, object) } {
-                Ok(read) => {
-                    tracing::info!(
-                        hand = hand.label(),
-                        slot = doors::slot_label(latch.door.slot),
-                        part = latch.door.part_index,
-                        body,
-                        joined = joints.join[i],
-                        "physical hands: doors: the latch gave, and the hand holds the door"
-                    );
-                    state.held[i] = Some(Held {
-                        object,
-                        body,
-                        grip: Grip::of(palm.pose, read.pose, grab),
-                        mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
-                        joined: joints.join[i],
-                    });
-                    outcome.unlatched[i] = true;
-                }
-                Err(e) => {
-                    outcome.released[i] = true;
-                    outcome.lost += 1;
-                    outcome.error = Some(e.to_string());
-                }
-            }
-        }
-        LatchStep::Lost(e) => {
-            tracing::info!(
-                hand = hand.label(),
-                slot = doors::slot_label(latch.door.slot),
-                error = %e,
-                "physical hands: doors: a grip on a latched door was lost"
-            );
-            state.latches[i] = None;
-            outcome.released[i] = true;
-            outcome.lost += 1;
-            outcome.error = Some(e.to_string());
-        }
-    }
-}
-
-/// Keep `hand`'s grip on a character: hold the hand at the grab point, and act on a yank. A yank on
-/// a seated character, through a door still open beside the hand, has the input tick click the
-/// vehicle entry, which hijacks the seat; the grip lets go either way.
-///
-/// # Safety
-///
-/// Main thread, outside the physics step.
-unsafe fn keep_seize(
-    state: &mut PickupState,
-    hand: Hand,
-    palm: Option<PalmMotion>,
-    world_scale: f32,
-    config: &CharactersConfig,
-    outcome: &mut TickOutcome,
-) {
-    let i = hand.index();
-    let (Some(seize), Some(palm)) = (state.seizes[i], palm) else {
-        return;
-    };
-    let palm = palm.pose.position;
-    // SAFETY: forwarded from the caller.
-    match unsafe { seize.step(palm, config.yank_m * world_scale) } {
-        SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
-        SeizeStep::Yank { direction, .. } => {
-            state.seizes[i] = None;
-            outcome.released[i] = true;
-            let Some(seated) = seize.target.seated else {
-                return;
-            };
-            // SAFETY: forwarded from the caller; the character, and with it its vehicle, was
-            // checked alive by the step.
-            match unsafe { characters::door_still_open(&seated, palm, world_scale, config) } {
-                Some((door, open_deg)) => {
-                    tracing::info!(
-                        hand = hand.label(),
-                        door = doors::slot_label(door),
-                        open_deg,
-                        ?direction,
-                        "physical hands: hijack: a hand pulled an occupant out through the open door"
-                    );
-                    state.hijack_clicks[i] = true;
-                    outcome.hijacks += 1;
-                }
-                None => {
-                    tracing::info!(
-                        hand = hand.label(),
-                        "physical hands: hijack: the door beside the hand closed before the yank"
-                    );
-                }
-            }
-        }
-        SeizeStep::Lost => {
-            state.seizes[i] = None;
-            outcome.released[i] = true;
-            outcome.lost += 1;
-            outcome.error = Some("physical hands: characters: the character is gone".to_owned());
-        }
-    }
 }
 
 /// Let go of `held` in every hand that holds it, as a lost hold.
