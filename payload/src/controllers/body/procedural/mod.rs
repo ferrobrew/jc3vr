@@ -240,7 +240,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
         ProceduralMode::Full => {
             let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
             let case = classify(&unsafe {
-                state.character_state(character, &locomotion, now, jump_grace_s, &config)
+                state.character_state(character, &locomotion, now, dt, jump_grace_s, &config)
             });
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
@@ -382,8 +382,9 @@ const MAX_STEP_S: f32 = 0.1;
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
-/// How long after the movement task last ran it still counts as running: a tick or two.
-const MOVEMENT_TASK_GAP: Duration = Duration::from_millis(100);
+/// How long the proxy must be off its support, with no jump and no fall detected, before the
+/// body counts as in the air, seconds: a stair or a bump lifts it for a tick without a fall.
+const IN_AIR_DEBOUNCE_S: f32 = 0.06;
 
 /// How often the walk is logged while walking.
 const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
@@ -433,6 +434,11 @@ struct State {
     blend: RegionBlend,
     /// When Rico was last on the ground with the movement task running, for the jump's grace.
     grounded_at: Option<Instant>,
+    /// When the movement task had last run as of the previous gate, so this gate can tell whether
+    /// it ran since.
+    task_seen_at: Option<Instant>,
+    /// How long the proxy has been off its support without a pause, seconds.
+    in_air_s: f32,
     /// Whether the hand-over case has been logged once.
     case_logged: bool,
     /// The planted feet, world space.
@@ -675,6 +681,7 @@ impl State {
         character: &Character,
         locomotion: &LocomotionStatus,
         now: Instant,
+        dt: f32,
         jump_grace_s: f32,
         config: &ProceduralBodyConfig,
     ) -> CharacterState {
@@ -693,17 +700,25 @@ impl State {
                 .is_some_and(|word| (word >> (bit % 64)) & 1 != 0)
         };
         let motion = character.m_CurrentMotionState;
-        let movement_task = locomotion
-            .at
-            .is_some_and(|at| now.saturating_duration_since(at) <= MOVEMENT_TASK_GAP);
+        // The movement task runs in the state machines' pass, before this one, on every tick Rico
+        // is on foot on the ground: it ran this tick when its stamp moved since the last gate.
+        let movement_task = locomotion.at.is_some() && locomotion.at != self.task_seen_at;
+        self.task_seen_at = locomotion.at;
+        // The proxy's own support, read where the engine reads it in this pass, catches walking
+        // off a ledge before the mode detection sees the fall.
+        let off_support = unsafe { character.IsInAir() };
+        self.in_air_s = if off_support { self.in_air_s + dt } else { 0.0 };
+        let falling = detection.mode == Mode::Airborne(AirborneVariant::Falling);
+        let airborne = has(StateBitFlag::SB_IS_JUMPING)
+            || falling
+            || (off_support && self.in_air_s >= IN_AIR_DEBOUNCE_S);
         let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
-        if movement_task && on_ground {
+        if movement_task && on_ground && !airborne {
             self.grounded_at = Some(now);
         }
         let in_grace = self
             .grounded_at
             .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= jump_grace_s);
-        let falling = detection.mode == Mode::Airborne(AirborneVariant::Falling);
         CharacterState {
             in_headset: source() == Source::Vr,
             in_gameplay: in_gameplay(),
@@ -727,8 +742,10 @@ impl State {
             flight: matches!(
                 detection.mode,
                 Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
-            ) || (falling && !in_grace),
-            jump: (falling || has(StateBitFlag::SB_IS_JUMPING)) && in_grace && !movement_task,
+            ) || (airborne && !in_grace),
+            // In the air wins over the movement task's stamp: the task can run on the tick a jump
+            // or a step off a ledge leaves the ground.
+            jump: airborne && in_grace,
             authored_motion: [
                 StateBitFlag::SB_IS_LOCO_ONE_OFF,
                 StateBitFlag::SB_IS_LANDING_HARD,
@@ -793,6 +810,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),
     blend: RegionBlend::new(),
     grounded_at: None,
+    task_seen_at: None,
+    in_air_s: 0.0,
     case_logged: false,
     feet: Feet::new(),
     stance: NeutralStance::new(),

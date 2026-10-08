@@ -116,10 +116,11 @@ pub struct CharacterState {
     pub hit_reaction: bool,
     /// Hanging from a hand that grips the world.
     pub hand_climb: bool,
-    /// In the air within the jump's grace.
+    /// In the air within the jump's grace: a jump, a fall, or the proxy off its support. It wins
+    /// over a movement task that ran this tick, which it can on the tick the body leaves the ground.
     pub jump: bool,
     pub authored_motion: bool,
-    /// Whether the on-foot movement task ran this tick or the one before.
+    /// Whether the on-foot movement task ran since the last gate.
     pub movement_task: bool,
 }
 
@@ -325,6 +326,14 @@ mod tests {
                 ..on_foot()
             }),
             Case::AuthoredMotion
+        );
+        // Leaving the ground wins over the movement task that ran on the same tick.
+        assert_eq!(
+            classify(&CharacterState {
+                jump: true,
+                ..on_foot()
+            }),
+            Case::Jump
         );
         // The climb carries the body itself, and wins over the jump its start looks like.
         assert_eq!(
