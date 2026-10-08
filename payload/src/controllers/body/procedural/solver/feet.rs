@@ -297,6 +297,13 @@ impl Feet {
                 let remaining = (1.0 - t).max(0.0) * duration;
                 input.commanded * (remaining + gait.duty * period * 0.5)
             };
+            // A strafe leads the swinging foot sideways, toward or past the other one; it lands
+            // no closer to the other's side than the gap.
+            let other = self.feet[1 - i].map(|f| f.foothold().position);
+            let place = |ahead: FootPose| match other {
+                Some(other) => beside(ahead, i, other, &input.wanted),
+                None => ahead,
+            };
             match &mut self.feet[i] {
                 Some(Foot::Planted { .. }) if lifted => {
                     let step = Lift {
@@ -315,7 +322,7 @@ impl Feet {
                     {
                         // The tick that lifts it is already part of the way into the swing.
                         *t = (now / swing).clamp(0.0, 1.0);
-                        let ahead = with_offset(&input.wanted[i], lead(*t, *duration));
+                        let ahead = place(with_offset(&input.wanted[i], lead(*t, *duration)));
                         (*to, *to_normal) = grounded(&ahead, input.root_height, ground);
                     }
                 }
@@ -346,7 +353,7 @@ impl Feet {
                         self.feet[i] = Some(landed);
                         continue;
                     }
-                    let ahead = with_offset(&input.wanted[i], lead(*t, *duration));
+                    let ahead = place(with_offset(&input.wanted[i], lead(*t, *duration)));
                     (*to, *to_normal) = grounded(&ahead, input.root_height, ground);
                 }
                 _ => {}
@@ -398,6 +405,14 @@ impl Foot {
         }
     }
 
+    /// Where the foot stands or is about to: its plant, or the end of its step.
+    fn foothold(&self) -> FootPose {
+        match *self {
+            Foot::Planted { pose, .. } => pose,
+            Foot::Stepping { to, .. } => to,
+        }
+    }
+
     fn is_finite(&self) -> bool {
         let pose = self.pose();
         pose.position.is_finite() && pose.rotation.is_finite()
@@ -429,6 +444,24 @@ const LIFT_EPSILON: f32 = 1e-4;
 
 /// The shortest swing a standing step finishing at the walk's pace takes, seconds.
 const MIN_SWING_S: f32 = 0.05;
+
+/// The least sideways gap between the feet a walking step keeps, metres.
+const MIN_GAP_M: f32 = 0.1;
+
+/// `ahead`, the foothold of foot `i`, moved out to its own side of `other`, the other foot, by at
+/// least [`MIN_GAP_M`] along the line between the wanted places (the stance's sideways axis).
+fn beside(ahead: FootPose, i: usize, other: Vec3, wanted: &[FootPose; 2]) -> FootPose {
+    let across = wanted[1].position - wanted[0].position;
+    let Some(axis) = Vec3::new(across.x, 0.0, across.z).try_normalize() else {
+        return ahead;
+    };
+    let side = if i == 0 { -1.0 } else { 1.0 };
+    let gap = (ahead.position - other).dot(axis) * side;
+    if gap >= MIN_GAP_M || !gap.is_finite() {
+        return ahead;
+    }
+    with_offset(&ahead, axis * side * (MIN_GAP_M - gap))
+}
 
 /// `pose` moved horizontally by `offset`.
 fn with_offset(pose: &FootPose, offset: Vec3) -> FootPose {
@@ -726,6 +759,37 @@ mod tests {
         let (t1, same) = progress(&feet).expect("the foot landed early");
         assert_eq!(same, duration);
         assert!((t1 - t0 - DT / duration).abs() < 1e-5, "{t0} -> {t1}");
+    }
+
+    #[test]
+    fn strafing_never_crosses_the_feet() {
+        let mut feet = Feet::new();
+        feet.step(
+            &standing([at(-0.1, 0.0), at(0.1, 0.0)]),
+            &tuning(),
+            &mut flat,
+        );
+        // Strafing right (+X) at a walk.
+        let velocity = Vec3::new(1.5, 0.0, 0.0);
+        let mut body = Vec3::ZERO;
+        for _ in 0..120 {
+            body += velocity * DT;
+            let input = FeetInput {
+                wanted: [at(-0.1, 0.0), at(0.1, 0.0)].map(|p| with_offset(&p, body)),
+                root_height: 0.0,
+                velocity,
+                commanded: velocity,
+                gait: Some(walk()),
+                dt: DT,
+            };
+            let placed = feet.step(&input, &tuning(), &mut flat);
+            let footholds = feet.feet.map(|f| f.unwrap().foothold().position);
+            assert!(
+                footholds[1].x - footholds[0].x >= MIN_GAP_M - 1e-4,
+                "the footholds crossed: {footholds:?}"
+            );
+            assert!(placed[0].position.is_finite());
+        }
     }
 
     #[test]
