@@ -96,6 +96,8 @@ pub(super) struct State {
     pub(super) wing_queue: Option<WingQueue>,
     /// Whether the wingsuit's arms have been logged since they last eased in.
     pub(super) wing_logged: bool,
+    /// The hanging legs' swing forward for the parachute's brake.
+    pub(super) flare: WeightFollower,
     /// The feet the last gate placed, model space.
     pub(super) last_feet: Option<[FootPose; 2]>,
     /// The feet as they left the ground, model space, while the legs are in the air.
@@ -563,6 +565,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     last_wings: None,
     wing_queue: None,
     wing_logged: false,
+    flare: WeightFollower::new(),
     last_feet: None,
     takeoff_feet: None,
     fall: None,

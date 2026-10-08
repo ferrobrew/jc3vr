@@ -1,0 +1,27 @@
+# Template: fill testing/recordings/parachute_body.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "the body hangs under the parachute and flares for the brake"
+description = "Recorded standing, with both controllers tracked, from a jump off a high cliff (procedural-states.md, the parachute checklist). Open the parachute, take both handles, lean and look around for a few seconds, pull both handles all the way down and hold them for two seconds, let them back up, and land."
+recording = "../recordings/parachute_body.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the torso is on the harness's hips with the legs hanging"
+signal = "procedural.parachute"
+
+[[expect]]
+name = "the legs swing forward for the brake"
+signal = "procedural.parachute_flare"
+check = "eventually"
+above = 0.8
+
+[[expect]]
+log = "procedural body: the torso follows the head on the animation's hips"
+
+[[expect]]
+status = "PARACHUTE BODY"
+
+[[expect]]
+name = "and handed back on landing"
+signal = "procedural.parachute"
+check = "at_end"
+is = false

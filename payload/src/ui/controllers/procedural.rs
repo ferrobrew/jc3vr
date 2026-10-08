@@ -126,6 +126,7 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             right.elevation.to_degrees(),
             right.protraction.to_degrees(),
         ));
+        ui.label(format!("Parachute flare {:.2}", status.flare));
         ui.label(format!(
             "Wingsuit arms {:.2} · targets placed L {} R {} · queued L {} R {}",
             status.wing_weight,

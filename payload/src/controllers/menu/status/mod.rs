@@ -282,6 +282,7 @@ const SECTIONS: &[Section] = &[
             row!("TWIST BONES", controllers::twist_bones),
             row!("SEATED TORSO", body::seated_torso),
             row!("WINGSUIT ARMS", body::wingsuit_arms),
+            row!("PARACHUTE BODY", body::parachute_body),
         ],
     },
 ];

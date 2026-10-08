@@ -175,6 +175,14 @@ pub struct ProceduralBodyConfig {
     /// them: the spread, a hand lowered for a bank, a hand swept forward, and the wrists' tilt. The
     /// body keeps the flight pose.
     pub wingsuit_arms: bool,
+    /// Pose the body under the parachute: the torso follows the player's head over the harness's
+    /// hips, and the legs hang from them (`air_hang`, `air_toe_drop_deg`), swinging forward for the
+    /// handles' two-handed brake.
+    pub parachute_body: bool,
+    /// How far the hanging legs swing forward at a full brake of the parachute's handles, degrees.
+    pub parachute_flare_deg: f32,
+    /// How quickly the legs follow the brake, seconds: the smoothing time of their follower.
+    pub parachute_flare_s: f32,
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act, seconds: the game keeps no state for the reaction's length.
     pub hit_reaction_hold_s: f32,
@@ -251,6 +259,9 @@ impl ProceduralBodyConfig {
             twist_bones: true,
             seated_torso: true,
             wingsuit_arms: true,
+            parachute_body: true,
+            parachute_flare_deg: 40.0,
+            parachute_flare_s: 0.25,
             hit_reaction_hold_s: 1.2,
         }
     }
@@ -339,6 +350,8 @@ impl ProceduralBodyConfig {
             ),
             ("landing_dip_s", self.landing_dip_s, 0.02, 1.0),
             ("hit_reaction_hold_s", self.hit_reaction_hold_s, 0.0, 5.0),
+            ("parachute_flare_deg", self.parachute_flare_deg, 0.0, 80.0),
+            ("parachute_flare_s", self.parachute_flare_s, 0.0, 2.0),
         ];
         for (name, value, min, max) in checks {
             if !(min..=max).contains(&value) {

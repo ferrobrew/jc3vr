@@ -154,6 +154,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .wingsuit_arms))
+        .item(config_toggle!("BODY UNDER THE PARACHUTE", |c| c
+            .controllers
+            .body
+            .procedural
+            .parachute_body))
         .text("TEST WRITES THE POSE BACK AS IS.")
         .header("ALIGNMENT")
         .item(config_toggle!("BODY FACES YOUR TORSO", |c| c

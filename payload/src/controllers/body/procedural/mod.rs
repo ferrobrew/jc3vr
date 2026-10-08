@@ -63,7 +63,7 @@ use crate::{
         body::{
             alignment::torso_turn,
             procedural::{
-                authority::{Case, Weights, classify},
+                authority::{Case, WeightFollower, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
                 gate_state::{FeetRequest, Landing, LowerRequest, STATE, State},
                 ground::{GroundCaster, GroundTally},
@@ -71,7 +71,7 @@ use crate::{
                 solver::{
                     SolveInput,
                     air::{AirTuning, air_feet, mix_feet},
-                    anchored::{solve_anchored, upright_share},
+                    anchored::{HangTuning, hang_feet, solve_anchored, upright_share},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
                     crouch_depth,
@@ -92,6 +92,7 @@ use crate::{
         },
         mode::{AirborneVariant, Mode, current as current_mode},
         roomscale::{frame_shared, posture::EffectivePosture},
+        vehicles::parachute_brake,
     },
     headpose::{body_relative_rotation, query},
 };
@@ -155,6 +156,8 @@ pub struct ProceduralStatus {
     pub wing_hands: [bool; 2],
     /// Which hands the wingsuit's arms queued a target for, left then right.
     pub wing_queued: [bool; 2],
+    /// How far the hanging legs swing forward under the parachute, as a share of the full flare.
+    pub flare: f32,
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -289,9 +292,15 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         .filter(|frame| frame.fresh(now))
         .is_some_and(|frame| frame.posture != EffectivePosture::Seated);
     // Read before the gate's own state too: it takes the configuration and the controller frame.
-    let player_arms = (current_mode().mode == Mode::Airborne(AirborneVariant::Wingsuit))
+    let mode = current_mode().mode;
+    let player_arms = (mode == Mode::Airborne(AirborneVariant::Wingsuit))
         .then(read_player_arms)
         .flatten();
+    let brake = if mode == Mode::Airborne(AirborneVariant::Parachute) {
+        parachute_brake()
+    } else {
+        0.0
+    };
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
         dt.clamp(0.0, MAX_STEP_S)
@@ -381,6 +390,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 state.clavicles.reset();
                 state.switch.reset();
                 state.on_hips_logged = None;
+                state.flare = WeightFollower::new();
+                state.status.flare = 0.0;
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 state.fade.forget();
                 return false;
@@ -391,6 +402,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     animated: &animated,
                     case,
                     weights,
+                    brake,
                     dt,
                 };
                 let Some(pose) =
@@ -576,12 +588,15 @@ struct AnchoredGate<'a> {
     animated: &'a RigPose,
     case: Case,
     weights: Weights,
+    /// How far the parachute's handles brake, `0..=1`.
+    brake: f32,
     dt: f32,
 }
 
-/// The pose to write where the animation keeps the hips (a vehicle seat): the torso solved on the
-/// clip's hips toward the player's head, the clavicles turned toward the hands, and the legs left
-/// to the animation. `None` when the head is not known.
+/// The pose to write where the animation keeps the hips (a vehicle seat, the parachute's harness):
+/// the torso solved on the clip's hips toward the player's head, the clavicles turned toward the
+/// hands, and the legs left to the animation, or hanging from the harness under the parachute and
+/// swinging forward as the handles brake. `None` when the head is not known.
 ///
 /// # Safety
 ///
@@ -595,7 +610,26 @@ unsafe fn pose_on_animated_hips(
     // The body under the head starts afresh from the animation when it comes back.
     state.reset_under_head();
     let input = solve_input(gate.character, gate.animated, animated_feet(gate.animated))?;
-    let mut solved = solve_anchored(&input, config);
+    let flare = state.flare.step(
+        if gate.case == Case::Parachute {
+            gate.brake
+        } else {
+            0.0
+        },
+        gate.dt,
+        config.parachute_flare_s,
+        config.parachute_flare_s,
+    );
+    state.status.flare = flare;
+    let legs = (gate.case == Case::Parachute).then(|| {
+        let tuning = HangTuning {
+            share: config.air_hang,
+            flare: config.parachute_flare_deg.to_radians(),
+            toe_drop: config.air_toe_drop_deg.to_radians(),
+        };
+        hang_feet(rig, gate.animated, flare, &tuning)
+    });
+    let mut solved = solve_anchored(rig, &input, legs, config);
     let turns = unsafe { state.turn_clavicles(gate.character, rig, &solved, gate.dt, config) };
     for side in Side::BOTH {
         clavicles::apply(&mut solved, rig, side, turns[side.index()]);
@@ -769,6 +803,7 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     wing_weight: 0.0,
     wing_hands: [false; 2],
     wing_queued: [false; 2],
+    flare: 0.0,
 };
 
 /// The largest position (metres) and rotation (degrees) difference between two poses.

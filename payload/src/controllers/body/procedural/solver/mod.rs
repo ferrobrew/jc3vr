@@ -171,7 +171,7 @@ pub fn line_yaw(left: Vec3, right: Vec3) -> Option<f32> {
 }
 
 /// The legs' bones, left then right: the thigh, the shin, and the foot.
-const LEGS: [(RigBone, RigBone, RigBone); 2] = [
+pub(super) const LEGS: [(RigBone, RigBone, RigBone); 2] = [
     (RigBone::LeftUpLeg, RigBone::LeftLeg, RigBone::LeftFoot),
     (RigBone::RightUpLeg, RigBone::RightLeg, RigBone::RightFoot),
 ];

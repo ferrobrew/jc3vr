@@ -19,7 +19,7 @@
 //! | the grapple's ledge climb | animation | animation |
 //! | swimming | animation | animation |
 //! | the wingsuit (the arms follow the player's, `wingsuit_arms`) | animation | animation |
-//! | the parachute | animation | animation |
+//! | the parachute | procedural, hanging from the harness (animation with `parachute_body` off) | procedural on the harness's hips (animation with `parachute_body` off) |
 //! | a fall past the jump's grace | animation | animation |
 //! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation | animation |
 //! | climbing with the hands | procedural, hanging in the air (animation with `air_legs` off) | procedural |
@@ -105,6 +105,7 @@ impl Case {
             Self::Jump | Self::HandClimb if config.air_legs => [1.0, 1.0],
             Self::Jump | Self::HandClimb => [0.0, 1.0],
             Self::Seated if config.seated_torso => [0.0, 1.0],
+            Self::Parachute if config.parachute_body => [1.0, 1.0],
             _ => [0.0, 0.0],
         }
     }
@@ -112,7 +113,7 @@ impl Case {
     /// Whether the animation keeps the hips while the torso is procedural: the solve moves the
     /// spine from the clip's hips (`solver::anchored`) instead of building the body under the head.
     pub const fn anchored(self) -> bool {
-        matches!(self, Self::Seated)
+        matches!(self, Self::Seated | Self::Parachute)
     }
 
     /// Whether the animation takes over at once, with no blend: a ragdoll writes the pose
@@ -519,6 +520,14 @@ mod tests {
         let config = ProceduralBodyConfig::new();
         // The wingsuit's arms are not a region: the body stays the flight pose.
         assert_eq!(Case::Wingsuit.targets(&config), [0.0, 0.0]);
+        // Under the parachute the torso is on the harness's hips and the legs hang.
+        assert_eq!(Case::Parachute.targets(&config), [1.0, 1.0]);
+        assert!(Case::Parachute.anchored());
+        let off = ProceduralBodyConfig {
+            parachute_body: false,
+            ..config
+        };
+        assert_eq!(Case::Parachute.targets(&off), [0.0, 0.0]);
         assert_eq!(
             classify(&CharacterState {
                 swimming: true,

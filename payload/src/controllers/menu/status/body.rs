@@ -1,5 +1,5 @@
 //! The status page's rows for the procedural body outside standing play: the torso in a vehicle
-//! seat and the wingsuit's arms. Each reads the last gate's published status, which the pause stops
+//! seat, the wingsuit's arms, and the body under the parachute. Each reads the last gate's published status, which the pause stops
 //! updating, so a row shows what the body did just before the menu opened.
 
 use smol_str::format_smolstr;
@@ -78,6 +78,41 @@ fn wings_line(status: &ProceduralStatus) -> Line {
     }
 }
 
+pub(super) fn parachute_body() -> Line {
+    let (enabled, mode) = read_config(|c| {
+        (
+            c.controllers.body.procedural.parachute_body,
+            c.controllers.body.procedural.mode,
+        )
+    });
+    if !enabled || mode != ProceduralMode::Full {
+        return Line::off("");
+    }
+    parachute_line(&procedural::published_status())
+}
+
+/// The body under the parachute: the torso's weight, and how far the legs swing forward for the
+/// brake.
+fn parachute_line(status: &ProceduralStatus) -> Line {
+    if status.case != Case::Parachute {
+        return Line::waiting("NOT UNDER THE CANOPY").with_note(status.case.label());
+    }
+    let detail = format_smolstr!(
+        "{:.0}%, FLARE {:.0}%",
+        status.weight * 100.0,
+        status.flare * 100.0
+    );
+    if status.on_animated_hips
+        && status.weight >= 1.0
+        && status.legs_weight >= 1.0
+        && !status.switch_fading
+    {
+        Line::ok(detail)
+    } else {
+        Line::waiting(detail)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +140,27 @@ mod tests {
         assert_eq!(
             seated_line(&status(Case::Seated, 1.0)).text(),
             "OK, 100%, NECK 3 CM"
+        );
+    }
+
+    #[test]
+    fn the_parachute_reads_the_weights_and_the_flare() {
+        let hanging = |weight: f32, flare: f32| ProceduralStatus {
+            legs_weight: weight,
+            flare,
+            ..status(Case::Parachute, weight)
+        };
+        assert_eq!(
+            parachute_line(&hanging(1.0, 0.25)).text(),
+            "OK, 100%, FLARE 25%"
+        );
+        assert_eq!(
+            parachute_line(&hanging(0.4, 0.0)).text(),
+            "WAITING, 40%, FLARE 0%"
+        );
+        assert_eq!(
+            parachute_line(&status(Case::Flight, 0.0)).text(),
+            "WAITING, NOT UNDER THE CANOPY"
         );
     }
 

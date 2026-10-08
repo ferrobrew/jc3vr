@@ -139,6 +139,8 @@ signals! {
     StanceMeasured => "procedural.stance_measured", Flag, "The neutral stance has been measured.";
     ProceduralSeated => "procedural.seated", Flag, "The torso is posed on the seat's hips in a vehicle.";
     ProceduralWingArms => "procedural.wing_arms", Flag, "Rico's arms follow the player's in the wingsuit, both hands queued.";
+    ProceduralParachute => "procedural.parachute", Flag, "The torso is posed on the harness's hips under the parachute, the legs hanging.";
+    ProceduralFlare => "procedural.parachute_flare", Measure, "How far the hanging legs swing forward for the parachute's brake, as a share of the full flare, under the parachute.";
     ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";
     Wielded => "weapons.wielded", Flag, "A weapon is wielded.";
     WeaponInLeftHand => "weapons.in_left_hand", Flag, "The wielded weapon's first gun rides the left hand.";
@@ -236,6 +238,22 @@ impl Signal {
             Signal::ProceduralWingArms => {
                 let status = procedural::published_status();
                 flag(status.case == Case::Wingsuit && status.wing_queued == [true, true])
+            }
+            Signal::ProceduralParachute => {
+                let status = procedural::published_status();
+                flag(
+                    status.case == Case::Parachute
+                        && status.on_animated_hips
+                        && status.weight > 0.0,
+                )
+            }
+            Signal::ProceduralFlare => {
+                let status = procedural::published_status();
+                if status.case == Case::Parachute {
+                    Value::Number(f64::from(status.flare))
+                } else {
+                    Value::Missing
+                }
             }
             Signal::ProceduralNeckErrorM => {
                 let status = procedural::published_status();
