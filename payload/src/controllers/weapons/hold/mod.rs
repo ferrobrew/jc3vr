@@ -41,7 +41,9 @@
 //! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). A long gun can
 //! be drawn and holstered without the game's acts, sliding between its dock and the hand, and let
 //! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]). The free hand can hold
-//! a second weapon, which the mod fires ([`second`]). A free hand can also take a gun out of a
+//! a second weapon, a slot's or one the VR inventory carries beyond the slots, which the mod fires
+//! ([`second`]); the weapons beyond the slots are the VR inventory's
+//! ([`crate::controllers::weapons::inventory`]). A free hand can also take a gun out of a
 //! living character's hands ([`steal`]) or off a rack ([`rack`]), through the volumes the take places on weapons that have
 //! no body in the world ([`take`] and [`world`]).
 

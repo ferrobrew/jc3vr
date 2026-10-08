@@ -1,7 +1,8 @@
 //! The second weapon's magazine, shown as pips over its hand.
 //!
 //! The game's HUD reads out only the selected weapon's magazine, and the second weapon is never
-//! selected ([`crate::controllers::weapons::hold::second`]). So while it is held, a row of pips
+//! selected ([`crate::controllers::weapons::hold::second`]): a slot's long gun or any weapon the VR
+//! inventory carries, which is in no slot at all. So while it is held, a row of pips
 //! floats above the hand holding it on the overlay, anchored to that hand's grip so that it rides
 //! the controller at frame rate: a filled pip for each share of the magazine left, a ring for each
 //! share spent, and the whole row red when the magazine is empty or out.

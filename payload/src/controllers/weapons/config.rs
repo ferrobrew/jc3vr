@@ -551,10 +551,12 @@ pub struct HoldConfig {
     /// The fastest a let-go gun leaves the hand, metres per second, against tracking glitches.
     pub max_throw_mps: f32,
     /// Before a direct pickup into a slot that already holds a weapon, let that weapon fall to the
-    /// ground, rather than have the game drop or despawn it.
+    /// ground, rather than have the game drop or despawn it. The VR inventory carries it on a free
+    /// socket instead when one is free; this is what happens when none is.
     pub drop_replaced: bool,
-    /// Let the free hand take a long gun of another slot off its shoulder while the other hand
-    /// holds a weapon, and fire it with its own trigger: a second weapon, which the game keeps
+    /// Let the free hand take a long gun of another slot off its shoulder, or a weapon the VR
+    /// inventory carries off its socket, while the other hand holds a weapon, and fire it with its
+    /// own trigger: a second weapon, which the game keeps
     /// holstered while the mod drives it. Needs `either_hand`.
     pub second_weapon: bool,
     /// Which grip a gun held in the left hand takes on the wrist.
