@@ -22,6 +22,14 @@ pub fn held_bone(bone: u32, holder: Hand) -> Option<u32> {
     (hand != holder).then_some(mirror as u32)
 }
 
+/// The primary attach bone of `hand`.
+pub fn hand_bone(hand: Hand) -> u32 {
+    match hand {
+        Hand::Left => SafeBoneIndex::ATTACH_HAND_LEFT as u32,
+        Hand::Right => SafeBoneIndex::ATTACH_HAND_RIGHT as u32,
+    }
+}
+
 /// The dock bone a holstered gun on `bone` sits on: a hip holster or a back attach bone.
 pub fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
     DOCK_BONES.into_iter().find(|&safe| safe as u32 == bone)

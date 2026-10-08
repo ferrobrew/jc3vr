@@ -33,6 +33,7 @@ use crate::{
                 self, HoldStatus,
                 act::{self, DockStatus},
                 dock::SnapKind,
+                second::{self, SecondStatus},
             },
             holster::slot_label,
             recoil::{self, RecoilStatus},
@@ -57,6 +58,7 @@ pub(super) struct WeaponsReadout {
     dual_wield: DualWieldStatus,
     hold: HoldStatus,
     dock: DockStatus,
+    second: SecondStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
     grenade: GrenadeStatus,
@@ -80,6 +82,7 @@ impl WeaponsReadout {
             dual_wield: dual_wield::status(),
             hold: hold::status(),
             dock: act::status(),
+            second: second::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
             grenade: grenade::status(),
@@ -163,6 +166,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     });
     dual_wield_readout(ui, &readout.dual_wield);
     hold_readout(ui, &readout.hold, &readout.dock);
+    second_readout(ui, &readout.second);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
     explosives_readout(ui, &readout.explosives);
@@ -307,6 +311,20 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         d.last_throw_mps
             .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s")),
         d.last_refusal.map_or("none".to_owned(), |r| r.to_string())
+    ));
+}
+
+fn second_readout(ui: &mut Ui, s: &SecondStatus) {
+    ui.label(format!(
+        "Second weapon: {} · trigger {} · updates {} · last refusal: {}",
+        s.held.map_or("none".to_owned(), |(hand, slot)| format!(
+            "{} in the {} hand",
+            slot_label(slot),
+            hand.label()
+        )),
+        if s.trigger { "pulled" } else { "up" },
+        s.updates,
+        s.last_refusal.map_or("none".to_owned(), |r| r.to_string())
     ));
 }
 
@@ -662,6 +680,17 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
             );
         ui.add(egui::Slider::new(&mut h.max_throw_mps, 0.0..=30.0).text("Fastest throw (m/s)"));
     });
+    ui.add_enabled(
+        h.either_hand,
+        egui::Checkbox::new(
+            &mut h.second_weapon,
+            "Hold a second long gun in the free hand",
+        ),
+    )
+    .on_hover_text(
+        "The free hand takes a long gun of another slot off its shoulder and fires it with its \
+         own trigger.",
+    );
     ui.checkbox(
         &mut h.drop_replaced,
         "A pickup lets the replaced weapon fall",

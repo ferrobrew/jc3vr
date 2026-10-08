@@ -59,7 +59,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::{self, ik, late, pose as hand_pose},
         physical_hands, scheme, vehicles,
-        weapons::{c4, grenade},
+        weapons::{c4, grenade, hold::second},
     },
     frame_timing::{self, Slot},
     headpose, hooks,
@@ -304,13 +304,25 @@ unsafe fn finish(
         .gun
         .then(|| unsafe { gun::held_weapon(owner) })
         .flatten();
-    let (held, gun_rays) = match weapon {
+    let (held, mut gun_rays) = match weapon {
         Some(weapon) => {
             let (held, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
             (Some(held), rays)
         }
         None => (None, [None; 2]),
     };
+    // The second weapon in the free hand aims along its own sight line too.
+    let second_hand = cfg
+        .gun
+        .then(|| unsafe { second::weapon(owner) })
+        .flatten()
+        .zip(second::hand())
+        .filter(|&(_, hand)| gun_rays[hand.index()].is_none())
+        .map(|(weapon, hand)| {
+            let (_, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
+            gun_rays[hand.index()] = rays[hand.index()];
+            hand
+        });
 
     let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
     let options = CastOptions {
@@ -356,6 +368,7 @@ unsafe fn finish(
         }
     });
     gun::publish(held, gun_targets);
+    second::publish_target(second_hand.and_then(|hand| gun_targets[hand.index()]));
     sights::tuning::service(
         &cfg.sight_tuning,
         tick.head,

@@ -635,6 +635,10 @@ pub struct HoldConfig {
     /// Before a direct pickup into a slot that already holds a weapon, let that weapon fall to the
     /// ground, rather than have the game drop or despawn it.
     pub drop_replaced: bool,
+    /// Let the free hand take a long gun of another slot off its shoulder while the other hand
+    /// holds a weapon, and fire it with its own trigger: a second weapon, which the game keeps
+    /// holstered while the mod drives it. Needs `either_hand`.
+    pub second_weapon: bool,
 }
 
 impl HoldConfig {
@@ -649,6 +653,7 @@ impl HoldConfig {
             grip_to_hold: false,
             max_throw_mps: 15.0,
             drop_replaced: false,
+            second_weapon: false,
         }
     }
 }

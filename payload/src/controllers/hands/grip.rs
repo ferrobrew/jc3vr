@@ -46,7 +46,10 @@ use crate::{
         aim::gun,
         frame::{Hand, Pose},
         hands::{ik, pose as hand_pose, tiers},
-        weapons::hold::act::{self, SnapView},
+        weapons::hold::{
+            act::{self, SnapView},
+            second,
+        },
     },
 };
 
@@ -360,19 +363,19 @@ struct PinRead {
     animated_in_wrist: Quat,
 }
 
-/// The local player's weapons wielded in the hands: a slot weapon in a wielding state whose user is
-/// `character`.
+/// The local player's weapons in the hands: a slot weapon in a wielding state, or the second weapon
+/// ([`second`]), whose user is `character`.
 fn held_weapons<'a>(
     inventory: &'a Inventory,
     character: &'a Character,
 ) -> impl Iterator<Item = &'a WeaponBase> + 'a {
     inventory.m_Weapons.iter().filter_map(move |slot| {
         let weapon = unsafe { slot.px.as_ref() }?;
-        (matches!(
+        let held = matches!(
             weapon.m_State,
             WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-        ) && std::ptr::eq(weapon.m_User[0].cast::<Character>(), character))
-        .then_some(weapon)
+        ) || second::is(weapon as *const WeaponBase as usize);
+        (held && std::ptr::eq(weapon.m_User[0].cast::<Character>(), character)).then_some(weapon)
     })
 }
 

@@ -28,7 +28,7 @@ use crate::{
         frame::Hand,
         hands::late,
         scheme,
-        weapons::{dual_wield, haptics, heft, recoil, reload},
+        weapons::{dual_wield, haptics, heft, hold::second, recoil, reload},
     },
 };
 
@@ -109,14 +109,16 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
         &config.weapons.recoil,
         heft::one_hand_kick(hand),
     );
-    dual_wield::on_shot(hand);
+    if !second::is(weapon as usize) {
+        dual_wield::on_shot(hand);
+    }
     reload::on_shot(weapon as usize, hand, w.m_MagazineAmmo);
     if !shot.rumbled {
         haptics::kick_pulse(hand, pitch.hypot(yaw));
     }
 }
 
-/// The hand the firing gun rides, when the weapon is wielded in the hands.
+/// The hand the firing gun rides, when the weapon is wielded in the hands or is the second weapon.
 ///
 /// # Safety
 ///
@@ -125,7 +127,8 @@ pub(super) unsafe fn gun_hand(weapon: &WeaponBase, gun_data: *const WeaponData) 
     if !matches!(
         weapon.m_State,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    ) {
+    ) && !second::is(weapon as *const WeaponBase as usize)
+    {
         return None;
     }
     let gun = unsafe { gun_data.as_ref() }.or_else(|| {

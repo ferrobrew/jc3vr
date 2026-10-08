@@ -40,7 +40,8 @@
 //!
 //! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). A long gun can
 //! be drawn and holstered without the game's acts, sliding between its dock and the hand, and let
-//! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]).
+//! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]). The free hand can hold
+//! a second weapon, which the mod fires ([`second`]).
 
 pub mod act;
 pub mod dock;
@@ -48,6 +49,7 @@ pub mod equip;
 pub mod holder;
 pub mod layout;
 pub mod pickup;
+pub mod second;
 
 use std::{
     sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
@@ -80,6 +82,7 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_ATTACHMENT_TRANSFORMS_BINDER)
         .with_static_binder(&UPDATE_INVENTORY_POST_FINALIZE_POSE_BINDER)
+        .with_hook_library(second::hook_library())
 }
 
 /// The settings the holding hand acts on.
@@ -432,6 +435,7 @@ fn update_attachment_transforms(
     if let Some(weapon) = unsafe { owned_in(inventory) } {
         unsafe { apply(weapon, true) };
     }
+    unsafe { second::apply_owned(inventory) };
     // The rigid grip pins the attach bones after the layouts above have chosen them.
     let placement = unsafe { grip::before_placement(inventory, character) };
     UPDATE_ATTACHMENT_TRANSFORMS
@@ -453,4 +457,5 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
     if let Some(weapon) = unsafe { owned_in(inventory) } {
         unsafe { apply(weapon, false) };
     }
+    unsafe { second::apply_owned(inventory) };
 }

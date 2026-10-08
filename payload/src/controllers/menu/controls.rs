@@ -231,6 +231,11 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .grip_to_hold))
+        .item(config_toggle!("SECOND GUN IN THE FREE HAND", |c| c
+            .controllers
+            .weapons
+            .hold
+            .second_weapon))
         .item(config_toggle!("PICKUPS DROP THE OLD WEAPON", |c| c
             .controllers
             .weapons

@@ -20,6 +20,10 @@
 //!   holsters it, the last pistol through the game's holster. A hip grab while the pistols are not
 //!   wielded draws the slot as any other holster does, and the draw brings out only that hand's
 //!   pistol.
+//! - With second weapons ([`crate::controllers::weapons::hold::second`]), the hand without a gun
+//!   takes a long gun of another slot off its shoulder as the second weapon instead of being
+//!   refused, and a hand holding the second weapon puts it back at its own holster and draws
+//!   nothing else.
 
 use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
 
@@ -49,6 +53,21 @@ pub enum HolsterAction {
     DrawPistol { hand: Hand },
     /// Holster the grabbing hand's own pistol, the other hand keeping its own.
     HolsterPistol { hand: Hand },
+    /// Take `slot`'s long gun into the grabbing hand as the second weapon.
+    TakeSecond { slot: WeaponSlot },
+    /// Put the second weapon, of `slot`, back on its holster.
+    PutBackSecond { slot: WeaponSlot },
+    /// A grab of `slot`'s holster by a hand that holds the second weapon of another slot.
+    HandFull { slot: WeaponSlot },
+}
+
+/// The second weapon, as the holsters see it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct Second {
+    /// Whether the free hand may take a second weapon.
+    pub enabled: bool,
+    /// The hand holding the second weapon and its slot.
+    pub held: Option<(Hand, WeaponSlot)>,
 }
 
 impl HolsterAction {
@@ -64,6 +83,18 @@ impl HolsterAction {
             }
             HolsterAction::DrawPistol { hand } => format!("draw {} pistol", hand.label()),
             HolsterAction::HolsterPistol { hand } => format!("holster {} pistol", hand.label()),
+            HolsterAction::TakeSecond { slot } => {
+                format!("take {} as the second weapon", slot_label(slot))
+            }
+            HolsterAction::PutBackSecond { slot } => {
+                format!("put the second weapon ({}) back", slot_label(slot))
+            }
+            HolsterAction::HandFull { slot } => {
+                format!(
+                    "{} not drawn: the hand holds the second weapon",
+                    slot_label(slot)
+                )
+            }
         }
     }
 }
@@ -91,23 +122,37 @@ pub const fn select_action(slot: WeaponSlot) -> Option<Action> {
     }
 }
 
-/// What `hand`'s grab at `site` does, with `wielded` in the hands. With `independent_pistols`,
-/// each hand draws and holsters its own pistol of the dual-wield slot.
+/// What `hand`'s grab at `site` does, with `wielded` in the hands and `second` the second weapon.
+/// With `independent_pistols`, each hand draws and holsters its own pistol of the dual-wield slot.
 pub fn decide(
     site: HolsterSite,
     hand: Hand,
     dominant: Hand,
     wielded: Option<Wielded>,
     independent_pistols: bool,
+    second: Second,
 ) -> Option<HolsterAction> {
     let slot = site_slot(site, dominant);
+    if let Some((holding, second_slot)) = second.held
+        && holding == hand
+    {
+        return Some(if second_slot == slot {
+            HolsterAction::PutBackSecond { slot }
+        } else {
+            HolsterAction::HandFull { slot }
+        });
+    }
     let per_hand = independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD;
     // The hand without the gun is the one that reaches for the pouches, and a press of it that
     // lands in a holster must not switch away from the gun the other hand holds.
     let other_hand_armed =
         wielded.is_some_and(|w| !w.hands[hand.index()] && w.hands.contains(&true));
     let action = decide_for(slot, hand, wielded, per_hand)?;
+    let second_free = second.enabled && second.held.is_none() && is_long_gun(slot);
     Some(match action {
+        HolsterAction::Draw { slot, .. } if other_hand_armed && second_free => {
+            HolsterAction::TakeSecond { slot }
+        }
         HolsterAction::Draw { slot, .. } if other_hand_armed => HolsterAction::Refused { slot },
         action => action,
     })
@@ -135,6 +180,14 @@ fn decide_for(
         }),
         _ => select_action(slot).map(|action| HolsterAction::Draw { slot, action }),
     }
+}
+
+/// Whether `slot` is a long gun's on a shoulder holster: the two-handed and special slots.
+pub const fn is_long_gun(slot: WeaponSlot) -> bool {
+    matches!(
+        slot,
+        WeaponSlot::E_SLOT_TWO_HANDED | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
+    )
 }
 
 pub const fn slot_label(slot: WeaponSlot) -> &'static str {
@@ -178,7 +231,14 @@ mod tests {
     #[test]
     fn an_empty_hand_draws() {
         assert_eq!(
-            decide(HolsterSite::Chest, Hand::Right, Hand::Right, None, false),
+            decide(
+                HolsterSite::Chest,
+                Hand::Right,
+                Hand::Right,
+                None,
+                false,
+                Second::default()
+            ),
             Some(HolsterAction::Draw {
                 slot: WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE,
                 action: Action::SELECT_EXPLOSIVES
@@ -191,13 +251,27 @@ mod tests {
         let rifle = wielded(WeaponSlot::E_SLOT_TWO_HANDED, RIGHT_ONLY);
         let site = HolsterSite::Shoulder(Hand::Right);
         assert_eq!(
-            decide(site, Hand::Right, Hand::Right, rifle, false),
+            decide(
+                site,
+                Hand::Right,
+                Hand::Right,
+                rifle,
+                false,
+                Second::default()
+            ),
             Some(HolsterAction::Holster {
                 slot: WeaponSlot::E_SLOT_TWO_HANDED
             })
         );
         assert_eq!(
-            decide(site, Hand::Left, Hand::Right, rifle, false),
+            decide(
+                site,
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                false,
+                Second::default()
+            ),
             Some(HolsterAction::AlreadyDrawn {
                 slot: WeaponSlot::E_SLOT_TWO_HANDED
             })
@@ -214,7 +288,8 @@ mod tests {
                     Hand::Right,
                     Hand::Right,
                     rifle,
-                    independent
+                    independent,
+                    Second::default()
                 ),
                 Some(HolsterAction::Draw {
                     action: Action::SELECT_DUEL_WIELD,
@@ -229,7 +304,14 @@ mod tests {
             ] {
                 assert!(
                     matches!(
-                        decide(site, Hand::Left, Hand::Right, rifle, independent),
+                        decide(
+                            site,
+                            Hand::Left,
+                            Hand::Right,
+                            rifle,
+                            independent,
+                            Second::default()
+                        ),
                         Some(HolsterAction::Refused { .. })
                     ),
                     "{site:?} {independent}"
@@ -238,7 +320,14 @@ mod tests {
         }
         // With nothing wielded, either hand draws.
         assert!(matches!(
-            decide(HolsterSite::Chest, Hand::Left, Hand::Right, None, false),
+            decide(
+                HolsterSite::Chest,
+                Hand::Left,
+                Hand::Right,
+                None,
+                false,
+                Second::default()
+            ),
             Some(HolsterAction::Draw { .. })
         ));
     }
@@ -248,7 +337,14 @@ mod tests {
         let pistols = wielded(WeaponSlot::E_SLOT_DUAL_WIELD, [true, true]);
         for hand in Hand::BOTH {
             assert_eq!(
-                decide(HolsterSite::Hip(hand), hand, Hand::Right, pistols, false),
+                decide(
+                    HolsterSite::Hip(hand),
+                    hand,
+                    Hand::Right,
+                    pistols,
+                    false,
+                    Second::default()
+                ),
                 Some(HolsterAction::Holster {
                     slot: WeaponSlot::E_SLOT_DUAL_WIELD
                 })
@@ -263,15 +359,29 @@ mod tests {
         // Either hip carries the pair; the grabbing hand decides which pistol.
         for site in Hand::BOTH.map(HolsterSite::Hip) {
             assert_eq!(
-                decide(site, Hand::Right, Hand::Right, left_only, true),
+                decide(
+                    site,
+                    Hand::Right,
+                    Hand::Right,
+                    left_only,
+                    true,
+                    Second::default()
+                ),
                 Some(HolsterAction::DrawPistol { hand: Hand::Right })
             );
             assert_eq!(
-                decide(site, Hand::Left, Hand::Right, both, true),
+                decide(site, Hand::Left, Hand::Right, both, true, Second::default()),
                 Some(HolsterAction::HolsterPistol { hand: Hand::Left })
             );
             assert_eq!(
-                decide(site, Hand::Left, Hand::Right, left_only, true),
+                decide(
+                    site,
+                    Hand::Left,
+                    Hand::Right,
+                    left_only,
+                    true,
+                    Second::default()
+                ),
                 Some(HolsterAction::Holster {
                     slot: WeaponSlot::E_SLOT_DUAL_WIELD
                 }),
@@ -285,7 +395,14 @@ mod tests {
         let rifle = wielded(WeaponSlot::E_SLOT_TWO_HANDED, RIGHT_ONLY);
         let site = HolsterSite::Shoulder(Hand::Right);
         assert_eq!(
-            decide(site, Hand::Left, Hand::Right, rifle, true),
+            decide(
+                site,
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                true,
+                Second::default()
+            ),
             Some(HolsterAction::AlreadyDrawn {
                 slot: WeaponSlot::E_SLOT_TWO_HANDED
             })
@@ -296,13 +413,126 @@ mod tests {
                 Hand::Right,
                 Hand::Right,
                 rifle,
-                true
+                true,
+                Second::default()
             ),
             Some(HolsterAction::Draw {
                 slot: WeaponSlot::E_SLOT_DUAL_WIELD,
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn the_free_hand_takes_a_second_long_gun() {
+        let rifle = wielded(WeaponSlot::E_SLOT_TWO_HANDED, RIGHT_ONLY);
+        let on = Second {
+            enabled: true,
+            held: None,
+        };
+        let special = HolsterSite::Shoulder(Hand::Left);
+        assert_eq!(
+            decide(special, Hand::Left, Hand::Right, rifle, false, on),
+            Some(HolsterAction::TakeSecond {
+                slot: WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
+            })
+        );
+        // A pistol or the explosive is never a second weapon, and the rifle's own holster draws
+        // nothing new.
+        assert!(matches!(
+            decide(
+                HolsterSite::Chest,
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                false,
+                on
+            ),
+            Some(HolsterAction::Refused { .. })
+        ));
+        assert!(matches!(
+            decide(
+                HolsterSite::Hip(Hand::Left),
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                false,
+                on
+            ),
+            Some(HolsterAction::Refused { .. })
+        ));
+        assert!(matches!(
+            decide(
+                HolsterSite::Shoulder(Hand::Right),
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                false,
+                on
+            ),
+            Some(HolsterAction::AlreadyDrawn { .. })
+        ));
+        // Off, the free hand is refused as before.
+        assert!(matches!(
+            decide(
+                special,
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                false,
+                Second::default()
+            ),
+            Some(HolsterAction::Refused { .. })
+        ));
+    }
+
+    #[test]
+    fn the_second_weapon_s_hand_puts_it_back_and_draws_nothing_else() {
+        let rifle = wielded(WeaponSlot::E_SLOT_TWO_HANDED, RIGHT_ONLY);
+        let held = Second {
+            enabled: true,
+            held: Some((Hand::Left, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL)),
+        };
+        assert_eq!(
+            decide(
+                HolsterSite::Shoulder(Hand::Left),
+                Hand::Left,
+                Hand::Right,
+                rifle,
+                false,
+                held
+            ),
+            Some(HolsterAction::PutBackSecond {
+                slot: WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
+            })
+        );
+        assert_eq!(
+            decide(
+                HolsterSite::Chest,
+                Hand::Left,
+                Hand::Right,
+                None,
+                false,
+                held
+            ),
+            Some(HolsterAction::HandFull {
+                slot: WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE
+            })
+        );
+        // The other hand acts as before.
+        assert_eq!(
+            decide(
+                HolsterSite::Shoulder(Hand::Right),
+                Hand::Right,
+                Hand::Right,
+                rifle,
+                false,
+                held
+            ),
+            Some(HolsterAction::Holster {
+                slot: WeaponSlot::E_SLOT_TWO_HANDED
+            })
+        );
     }
 
     #[test]
@@ -315,7 +545,14 @@ mod tests {
             HolsterSite::Chest,
         ] {
             assert!(matches!(
-                decide(site, Hand::Right, Hand::Right, heavy, false),
+                decide(
+                    site,
+                    Hand::Right,
+                    Hand::Right,
+                    heavy,
+                    false,
+                    Second::default()
+                ),
                 Some(HolsterAction::Draw { .. })
             ));
         }

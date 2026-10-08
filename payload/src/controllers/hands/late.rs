@@ -61,6 +61,7 @@ use crate::{
             pose as hand_pose,
             reach::{self, ReachConfig},
         },
+        weapons::hold::second,
     },
     headpose,
 };
@@ -574,7 +575,8 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     if !matches!(
         state,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    ) {
+    ) && !second::is(weapon as *const WeaponBase as usize)
+    {
         return;
     }
     let dtf = context.m_Dtf;

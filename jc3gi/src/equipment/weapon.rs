@@ -2066,6 +2066,29 @@ impl WeaponBase {
             f(self as *mut Self as _, activator)
         }
     }
+    pub const StartUsing_ADDRESS: usize = 0x140982600;
+    /// Starts `character` using the weapon: sets the user ([`m_User`](crate::equipment::weapon::WeaponBase::m_User)) and
+    /// [`m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer) and
+    /// [`m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer), adds the weapon's camera hint for the locally
+    /// controlled character, and records the use in the statistics. A mounted gun is also put into
+    /// the user's inventory. For the player it leaves precision aim when the weapon does not
+    /// support it ([`m_SupportsPrecisionAim`](crate::equipment::weapon::WeaponBase::m_SupportsPrecisionAim)), and hands the
+    /// player's aim mode to the weapon ([`SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode)). It does not change the
+    /// weapon's state. The equip virtual ([`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip)) calls it, and the inventory's
+    /// add calls it for the hand grenade, the planted explosive, and the beacon, which are in use
+    /// without being wielded.
+    pub unsafe fn StartUsing(
+        &mut self,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::StartUsing_ADDRESS);
+            f(self as *mut Self as _, character)
+        }
+    }
     pub const GetGripPosition_ADDRESS: usize = 0x140966840;
     /// Writes the world transform of the weapon's grip point for `hand` into `matrix`: the
     /// weapon's grip-table entry for that hand (the entry for the mounted state while
