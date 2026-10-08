@@ -359,10 +359,53 @@ fn a_hand_just_outside_a_pouch_reaches_it() {
     assert_eq!(pouch_in_reach(near, Hand::Left, &c, 0.0), None);
 }
 
+/// A head at `position` looking level, with no previous tick.
+fn level(position: Vec3) -> HeadDrop {
+    HeadDrop {
+        position,
+        pitch_down: 0.0,
+        previous_y: None,
+    }
+}
+
+#[test]
+fn bending_over_to_look_at_the_belt_does_not_move_the_pouches() {
+    let upright = Anchor::Body { yaw: 0.0 };
+    let y = |position: Vec3, pitch_deg: f32, previous_y| {
+        body_frame(
+            HeadDrop {
+                position,
+                pitch_down: pitch_deg.to_radians(),
+                previous_y,
+            },
+            Stance::Standing,
+            0.15,
+            upright,
+        )
+        .origin
+        .y
+    };
+    let bent = Vec3::new(0.0, -0.4, -0.15);
+    // Looking well down at the belt, the head drops past the deadband but the frame holds.
+    assert_eq!(y(bent, 55.0, Some(0.0)), 0.0);
+    // Looking level, the same drop is a crouch.
+    assert!((y(bent, 0.0, Some(0.0)) + 0.25).abs() < 1e-6);
+    // In between, it follows part of the way.
+    let part = y(bent, 30.0, Some(0.0));
+    assert!(part < 0.0 && part > -0.25, "{part}");
+    // Crouched, then looking down at the belt: the frame stays at the crouch.
+    assert!((y(Vec3::new(0.0, -0.6, 0.0), 60.0, Some(-0.45)) + 0.45).abs() < 1e-6);
+    // Standing up while still looking down: the frame rises with the head at once.
+    assert_eq!(y(Vec3::new(0.0, -0.05, 0.0), 60.0, Some(-0.45)), 0.0);
+    // The first tick, and a non-finite pitch, follow the head.
+    assert!((y(bent, 55.0, None) + 0.25).abs() < 1e-6);
+    assert!((y(bent, f32::NAN, Some(0.0)) + 0.25).abs() < 1e-6);
+}
+
 #[test]
 fn the_body_drops_only_past_the_deadband() {
     let upright = Anchor::Body { yaw: 0.0 };
-    let origin = |head, stance| body_frame(head, stance, 0.15, upright).origin;
+    let origin = |head, stance| body_frame(level(head), stance, 0.15, upright).origin;
     for stance in [Stance::Standing, Stance::Seated] {
         assert_eq!(origin(Vec3::new(0.3, -0.1, 0.2), stance), Vec3::ZERO);
         assert_eq!(origin(Vec3::new(0.0, 0.2, 0.0), stance), Vec3::ZERO);
@@ -370,11 +413,11 @@ fn the_body_drops_only_past_the_deadband() {
         assert!((crouched.y + 0.35).abs() < 1e-6);
         assert_eq!(origin(Vec3::NAN, stance), Vec3::ZERO);
     }
-    assert!(body_frame(Vec3::ZERO, Stance::Seated, 0.15, upright).seated);
-    assert!(!body_frame(Vec3::ZERO, Stance::Standing, 0.15, upright).seated);
+    assert!(body_frame(level(Vec3::ZERO), Stance::Seated, 0.15, upright).seated);
+    assert!(!body_frame(level(Vec3::ZERO), Stance::Standing, 0.15, upright).seated);
     assert_eq!(
         body_frame(
-            Vec3::ZERO,
+            level(Vec3::ZERO),
             Stance::Standing,
             0.15,
             Anchor::Body { yaw: f32::NAN }

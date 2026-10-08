@@ -105,7 +105,7 @@ use crate::{
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             holster::HolsterAction,
-            volumes::{ChestGrabbers, NearMiss, Stance},
+            volumes::{ChestGrabbers, HeadDrop, NearMiss, Stance},
         },
     },
 };
@@ -270,12 +270,18 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
 
     let mut candidates = Vec::new();
     let stance = state.step_stance();
+    let looking = active.head.orientation * Vec3::NEG_Z;
     let body_frame = volumes::body_frame(
-        active.head.position,
+        HeadDrop {
+            position: active.head.position,
+            pitch_down: (-looking.y).clamp(-1.0, 1.0).asin(),
+            previous_y: state.body_y,
+        },
         stance,
         config.weapons.holsters.crouch_deadband_m,
         volume_anchor(&config, &active),
     );
+    state.body_y = Some(body_frame.origin.y);
     let dims = body_dimensions(&config, &body_frame.anchor);
     let pouches = &config.weapons.pouches;
     if gameplay {
@@ -553,6 +559,7 @@ pub(crate) fn stand_down() {
     state.status.stance = None;
     state.placed.clear();
     state.grab_points = [None; 2];
+    state.body_y = None;
     store::clear(Source::GrabVolumes);
 }
 
@@ -584,6 +591,8 @@ struct State {
     last_miss_log: Option<Instant>,
     /// The hand that last held a gun, kept while none is drawn.
     last_holder: Option<Hand>,
+    /// The body frame's height on the last tick ([`volumes::body_frame`]).
+    body_y: Option<f32>,
     /// The tick's hand the pouches and the wrist detonator are laid out around
     /// ([`volumes::gun_side`]).
     gun_side: Hand,
@@ -662,6 +671,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     grab_points: [None; 2],
     last_miss_log: None,
     last_holder: None,
+    body_y: None,
     gun_side: Hand::Right,
 });
 

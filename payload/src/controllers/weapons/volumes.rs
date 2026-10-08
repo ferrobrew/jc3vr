@@ -9,7 +9,9 @@
 //! roomscale chase moves it.
 //!
 //! Vertically, the body frame follows the head down once the head drops further than a deadband
-//! below its upright height, so a crouch carries the holsters down while glancing at one does not.
+//! below its upright height, so a crouch carries the holsters down while glancing at one does not,
+//! and a head that drops while it looks well down, bending over to look at the belt, does not move
+//! them ([`body_frame`]).
 //!
 //! Each volume sits at an offset from a body landmark estimated from the body dimensions and the
 //! body's [`Stance`]:
@@ -114,18 +116,50 @@ impl Anchor {
     }
 }
 
-/// The body frame for a head at `head` in `stance`, riding `anchor`: the eyes at the cockpit
+/// The head as the body frame follows it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HeadDrop {
+    /// The head's cockpit position.
+    pub position: Vec3,
+    /// How far the head is pitched down from level, radians (negative looking up).
+    pub pitch_down: f32,
+    /// The body frame's height on the last tick, when there was one.
+    pub previous_y: Option<f32>,
+}
+
+/// The body frame for the head `head` in `stance`, riding `anchor`: the eyes at the cockpit
 /// frame's origin, until the head drops more than `crouch_deadband` below it.
-pub fn body_frame(head: Vec3, stance: Stance, crouch_deadband: f32, anchor: Anchor) -> BodyFrame {
+///
+/// A head that drops while it looks well down is bending over to look at the body, not crouching,
+/// and the pouches must stay where the hand is reaching for them: from [`LOOK_DOWN_START`] to
+/// [`LOOK_DOWN_FULL`] of pitch, the frame follows a drop less and less, holding the last tick's
+/// height at full pitch. A head that rises is followed at once, so standing up while looking down
+/// never leaves the pouches low.
+pub fn body_frame(
+    head: HeadDrop,
+    stance: Stance,
+    crouch_deadband: f32,
+    anchor: Anchor,
+) -> BodyFrame {
     let deadband = if crouch_deadband.is_finite() {
         crouch_deadband.max(0.0)
     } else {
         0.0
     };
-    let y = if head.y.is_finite() {
-        (head.y + deadband).min(0.0)
+    let target = if head.position.y.is_finite() {
+        (head.position.y + deadband).min(0.0)
     } else {
         0.0
+    };
+    let pitch = if head.pitch_down.is_finite() {
+        head.pitch_down
+    } else {
+        0.0
+    };
+    let follow = 1.0 - smoothstep(LOOK_DOWN_START, LOOK_DOWN_FULL, pitch);
+    let y = match head.previous_y.filter(|y| y.is_finite()) {
+        Some(previous) if target < previous => previous + (target - previous) * follow,
+        _ => target,
     };
     let anchor = match anchor {
         Anchor::Body { yaw } if !yaw.is_finite() => Anchor::Body { yaw: 0.0 },
@@ -408,6 +442,12 @@ pub fn near_miss(
 /// adults.
 pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 
+/// The head's downward pitch past which a drop of the head counts less and less as a crouch,
+/// radians: a crouching player looks about level, a player looking at the belt well down.
+pub const LOOK_DOWN_START: f32 = 20.0 * std::f32::consts::PI / 180.0;
+/// The head's downward pitch at which a drop of the head no longer moves the body frame, radians.
+pub const LOOK_DOWN_FULL: f32 = 40.0 * std::f32::consts::PI / 180.0;
+
 /// How far up the torso, from the hip joints toward the shoulder joints and as a fraction of that
 /// length, a seated player's hands reach for the hips: the belt line at the side of the waist, above
 /// the seat. A best guess.
@@ -589,6 +629,14 @@ fn place(
         radius: spec.radius_m.max(0.0),
         hand,
     }
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    if edge1 <= edge0 {
+        return if x >= edge1 { 1.0 } else { 0.0 };
+    }
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 fn side_sign(side: Hand) -> f32 {
