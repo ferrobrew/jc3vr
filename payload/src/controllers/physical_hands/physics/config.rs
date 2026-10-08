@@ -173,7 +173,7 @@ impl HandBodiesConfig {
             pressure_haptics: true,
             pressure_full_lag_m: 0.1,
             hits: HandHitsConfig::new(),
-            joint_grabs: false,
+            joint_grabs: true,
         }
     }
 

@@ -73,7 +73,7 @@ pub struct ClimbConfig {
 impl ClimbConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             reach_m: 0.05,
             gain: 0.8,
             max_speed_mps: 6.0,

@@ -139,9 +139,7 @@ pub struct ProceduralBodyConfig {
 impl ProceduralBodyConfig {
     pub const fn new() -> Self {
         Self {
-            // Off until the gate is confirmed in the headset: the pose written there has not yet
-            // been seen to reach the solve and the hit shapes.
-            mode: ProceduralMode::Off,
+            mode: ProceduralMode::Full,
             blend_s: 0.35,
             blend_out_s: 0.2,
             counterbalance: 0.3,

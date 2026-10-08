@@ -648,12 +648,12 @@ impl HoldConfig {
             handover: true,
             handle_radius_m: 0.07,
             direct_pickup: true,
-            instant_dock: false,
+            instant_dock: true,
             snap_s: 0.12,
-            grip_to_hold: false,
+            grip_to_hold: true,
             max_throw_mps: 15.0,
-            drop_replaced: false,
-            second_weapon: false,
+            drop_replaced: true,
+            second_weapon: true,
         }
     }
 }

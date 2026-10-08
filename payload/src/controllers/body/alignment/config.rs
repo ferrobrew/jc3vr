@@ -42,13 +42,13 @@ impl AlignmentConfig {
         Self {
             estimate: true,
             torso: TorsoConfig::new(),
-            root_follow: false,
+            root_follow: true,
             follow_deadband_deg: 10.0,
-            drive_chest: false,
+            drive_chest: true,
             chest_weight: 1.0,
             chest_limit_deg: 45.0,
             stance_turn_share: 1.0,
-            torso_shoulders: false,
+            torso_shoulders: true,
         }
     }
 }

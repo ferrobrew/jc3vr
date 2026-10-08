@@ -2,7 +2,7 @@
 
 Rico's body has been the game's animation with corrections on top: HumanIK targets for the head, the torso, and the hands, a crouch that lowers the hips, and a stance that squares the feet ([head-and-body.md](head-and-body.md), [alignment.md](alignment.md)). The pelvis, the legs, and the shape of the spine stayed the clip's, so the player's waist and Rico's disagreed by whatever the clip did, and a hand on the player's hip landed beside Rico's. The procedural body builds the pose from the player instead. The code is in `payload/src/controllers/body/procedural/`, its settings are `controllers.body.procedural`, and the pause menu's `VR: BODY` page has the switch (`BODY FROM YOUR HEAD`).
 
-It is off by default. The write seam has not been seen working in the headset yet; see the last section.
+It is on by default (`FULL`). The write seam has not been seen working in the headset yet; see the last section, and set `BODY FROM YOUR HEAD` to `OFF` on the `VR: BODY` page if it misbehaves.
 
 ## Where the pose is written
 
