@@ -35,6 +35,8 @@ use crate::controllers::body::procedural::config::ProceduralBodyConfig;
 pub enum Case {
     #[default]
     NotInHeadset,
+    /// The procedural body is switched off and blends back to the animation.
+    SwitchedOff,
     NotInGameplay,
     Sequence,
     Dead,
@@ -57,6 +59,7 @@ impl Case {
     pub const fn label(self) -> &'static str {
         match self {
             Self::NotInHeadset => "not in the headset",
+            Self::SwitchedOff => "switched off",
             Self::NotInGameplay => "not in gameplay",
             Self::Sequence => "scripted sequence",
             Self::Dead => "dead",
@@ -431,6 +434,21 @@ mod tests {
         let arrive = ticks_to(Case::Vehicle, Case::OnFoot, |w| w.torso > 0.9);
         let leave = ticks_to(Case::OnFoot, Case::Vehicle, |w| w.torso < 0.1);
         assert!(leave < arrive, "{leave} >= {arrive}");
+    }
+
+    #[test]
+    fn switching_off_blends_back_rather_than_snapping() {
+        let config = ProceduralBodyConfig::new();
+        let mut blend = RegionBlend::new();
+        for _ in 0..60 {
+            blend.step(Case::OnFoot, 1.0 / 30.0, &config);
+        }
+        let w = blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
+        assert!(w.torso > 0.0 && w.torso < 1.0);
+        for _ in 0..60 {
+            blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
+        }
+        assert!(!blend.weights().any());
     }
 
     #[test]

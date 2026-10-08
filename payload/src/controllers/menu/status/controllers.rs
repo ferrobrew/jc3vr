@@ -386,6 +386,7 @@ fn pass_through_line(round_trip: Option<(f32, f32)>) -> Line {
 fn hand_over_line(case: Case) -> Line {
     let word = match case {
         Case::NotInHeadset => "NO HEADSET",
+        Case::SwitchedOff => "SWITCHED OFF",
         Case::NotInGameplay => "NOT IN GAMEPLAY",
         Case::Sequence => "SEQUENCE",
         Case::Dead => "DEAD",

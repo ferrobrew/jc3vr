@@ -225,7 +225,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.at = Some(now);
     state.status.mode = config.mode;
     state.arms = None;
-    if config.mode == ProceduralMode::Off {
+    // Switched off, the body blends back to the animation before the gate stops acting.
+    if config.mode == ProceduralMode::Off && !state.blend.weights().any() {
         state.blend.reset();
         state.status.weight = 0.0;
         state.status.legs_weight = 0.0;
@@ -246,7 +247,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
     state.observe_stance(&animated, rig, locomotion.standing_still() && !aiming, dt);
     match config.mode {
-        ProceduralMode::Off => false,
         ProceduralMode::PassThrough => {
             unsafe { live.write(controller, &animated) };
             let read_back = unsafe { live.read(controller) };
@@ -267,13 +267,18 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             }
             false
         }
-        ProceduralMode::Full => {
+        ProceduralMode::Off | ProceduralMode::Full => {
             let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
-            let case = classify(&unsafe {
+            let read = unsafe {
                 state
                     .tracker
                     .read(character, &locomotion, now, dt, jump_grace_s, &config)
-            });
+            };
+            let case = if config.mode == ProceduralMode::Off {
+                Case::SwitchedOff
+            } else {
+                classify(&read)
+            };
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
             state.log_case(case, &weights, &config);

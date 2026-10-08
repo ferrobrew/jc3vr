@@ -18,7 +18,7 @@ The body drives the hips, the pelvis, both legs down to the foot, the four spine
 
 ## Modes
 
-- `Off`: nothing happens at the gate.
+- `Off`: nothing happens at the gate. Switching to it from `FULL` first blends the body back to the animation at the hand-back's pace (`blend_out_s`), with the case `switched off`.
 - `PassThrough` (`TEST` in the menu): the animated pose of the driven bones is read and written back unchanged, then read again. Every five seconds it logs `procedural body: pass-through wrote the animated pose back` with the largest read-back error in metres and degrees, which should be zero. Nothing on screen should change; if anything does (a twitch, a weapon off the hand, the head override fighting), the write path is wrong.
 - `Full` (`FULL`): the body, below, standing and moving. Settings saved while this mode was named `Body` load as `Full`.
 
