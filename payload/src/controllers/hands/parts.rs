@@ -30,7 +30,6 @@ use jc3gi::{
     character::character::SafeBoneIndex,
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
     game::GameObjectRenderContext,
-    graphics_engine::model_instance::ModelInstance,
     types::math::Matrix4,
 };
 use parking_lot::Mutex;
@@ -157,8 +156,7 @@ unsafe fn late_update_part(
         return;
     };
     let dtf = context.m_Dtf;
-    let Some(instance) = (unsafe { part.m_BaseModelInstance.cast::<ModelInstance>().as_mut() })
-    else {
+    let Some(instance) = (unsafe { part.m_BaseModelInstance.as_mut() }) else {
         return;
     };
     let interpolated = late::lerp_transform(

@@ -46,7 +46,7 @@ use jc3gi::{
     character::character::{AnimationController, SafeBoneIndex},
     equipment::weapon::{WeaponBase, WeaponState},
     game::GameObjectRenderContext,
-    graphics_engine::{model_instance::ModelInstance, render_block::Matrix3x4},
+    graphics_engine::render_block::Matrix3x4,
     types::math::Matrix4,
 };
 use parking_lot::Mutex;
@@ -595,7 +595,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
             continue;
         };
         let (Some(d), Some(instance)) = (frame.hand_delta(hand, dtf), unsafe {
-            gun.m_BaseModelInstance.cast::<ModelInstance>().as_mut()
+            gun.m_BaseModelInstance.as_mut()
         }) else {
             continue;
         };

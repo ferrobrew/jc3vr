@@ -445,8 +445,8 @@ pub struct ModelAttachementWeaponComponent {
     /// The part's world matrix as of the previous placement, which the render update interpolates
     /// from toward [`m_WorldMatrix`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WorldMatrix).
     pub m_WorldMatrixSaved: crate::types::math::Matrix4,
-    /// The part's model instance (an `NModelSystem::CModelInstance`), or null.
-    pub m_BaseModelInstance: *mut ::std::ffi::c_void,
+    /// The part's model instance, or null.
+    pub m_BaseModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
 }
 fn _ModelAttachementWeaponComponent_size_check() {
     unsafe {
@@ -3654,9 +3654,11 @@ pub struct WeaponData {
     /// The gun's animated model, when it has one; its pose is computed in
     /// [`UpdatePreSim`](crate::equipment::weapon::WeaponData::UpdatePreSim) and its skinning is updated in the render phase.
     pub m_AnimatedModel: *mut crate::character::character::AnimatedModel,
-    /// The gun's base model instance (an `NModelSystem::CModelInstance`). The render update pushes
-    /// the interpolated world matrix to it.
-    pub m_BaseModelInstance: *mut ::std::ffi::c_void,
+    /// The gun's base model instance. The render update pushes the interpolated world matrix to
+    /// it ([`ModelInstance::UpdateMatrix`](crate::graphics_engine::model_instance::ModelInstance::UpdateMatrix)), scaled by the holstered scale while holstered, so the
+    /// model's own space ([`ModelInstance::GetModelSpaceBoundingBox`](crate::graphics_engine::model_instance::ModelInstance::GetModelSpaceBoundingBox)) is the frame of
+    /// [`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1).
+    pub m_BaseModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
     /// The gun's own rigid body. It is in the physics world only while the weapon's state keeps
     /// the weapon's bodies there (dropped, mounted, or turret; see [`WeaponState`](crate::equipment::weapon::WeaponState)), and its id
     /// ([`PfxRigidBody::m_BodyId`](crate::physics::PfxRigidBody::m_BodyId)) stays the same while it is out.
