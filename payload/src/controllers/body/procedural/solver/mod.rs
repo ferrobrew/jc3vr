@@ -3,6 +3,10 @@
 //!
 //! The solve starts from the animated pose and changes it in order:
 //!
+//! 0. The clip's own shape is settled out ([`settle`]): the hips' pitch and roll, which a run
+//!    swings with every step, and most of the spine's bend, which the clip's posture carries,
+//!    give way to the reference pose's, so the body's shape is the player's rather than the
+//!    clip's. The walk's sway comes from the hips' draw toward the planted foot instead.
 //! 1. The hips ([`place_hips`]): their height follows the head down (the legs take a drop first,
 //!    to a deep squat), and they sit over the stance the root carries ([`hips_horizontal`]), not
 //!    over the feet, which leave it with every step, pulled back as the head leans forward so a
@@ -10,10 +14,12 @@
 //!    other swings. The caller follows that place over time. They turn to the player's torso,
 //!    within a limit. They drop further when a foot is out of the legs' reach ([`reach_drop`]): a
 //!    stride, a slope, a stair.
-//! 2. The spine ([`bend_spine`]): the chest twists to the torso, the spine curls forward when the
-//!    head is closer to the hips than the spine is long (a squat past the legs' share), and the
-//!    spine swings so the neck reaches the point under the player's head, the swing shared out
-//!    along the four spine bones.
+//! 2. The spine ([`bend_spine`]): the chest twists to the torso and pitches forward by a share of
+//!    the head's look down (so looking at the belt shows the belt), the spine curls forward when
+//!    the head is closer to the hips than the spine is long (a squat past the legs' share), and
+//!    the spine swings so the neck reaches the point under the player's head, the swing shared out
+//!    along the four spine bones. The neck then takes a share of the head's turn against the chest
+//!    ([`turn_neck`]), so a nod or a look aside bends the neck as well as the head.
 //! 3. The legs ([`two_bone::solve`]): each foot goes back to its target, the knee bending toward
 //!    the foot's forward blended with the hips', never backward, and takes the foot's own
 //!    orientation.
@@ -71,6 +77,7 @@ pub struct SolveInput {
 pub fn solve(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> RigPose {
     let mut pose = input.animated;
     let torso_yaw = input.torso_yaw.filter(|y| y.is_finite()).unwrap_or(0.0);
+    settle(rig, &mut pose);
     place_hips(
         rig,
         &mut pose,
@@ -81,12 +88,13 @@ pub fn solve(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Ri
         + input.head_rotation
             * (input.animated.position(RigBone::Neck) - input.animated.position(RigBone::Head));
     let chest_limit = config.chest_turn_limit_deg.max(0.0).to_radians();
-    bend_spine(
-        &mut pose,
-        neck_target,
-        torso_yaw.clamp(-chest_limit, chest_limit),
-        config,
-    );
+    let chest_yaw = torso_yaw.clamp(-chest_limit, chest_limit);
+    let chest = ChestTurn {
+        yaw: chest_yaw,
+        pitch: chest_pitch(input.head_rotation),
+    };
+    bend_spine(&mut pose, neck_target, chest, config);
+    turn_neck(rig, &mut pose, input.head_rotation);
     let hips_forward = line_yaw(
         pose.position(RigBone::LeftUpLeg),
         pose.position(RigBone::RightUpLeg),
@@ -131,7 +139,10 @@ pub fn hips_horizontal(rig: &Rig, input: &SolveInput, config: &ProceduralBodyCon
         let foot = input.feet[i];
         Vec2::new(foot.x - support.x, 0.0) * PLANTED_BIAS
     });
-    let place = support - lean * counterbalance + bias;
+    // A squat sends the hips back over the heels as they go down, as a person's do to balance.
+    let squat = (reference_hips.y - hips_height(rig, input.head.y, config)).max(0.0);
+    let back = Quat::from_rotation_y(yaw) * Vec3::Z * (squat * SQUAT_BACK);
+    let place = support - lean * counterbalance + bias + Vec2::new(back.x, back.z);
     if place.is_finite() { place } else { support }
 }
 
@@ -286,6 +297,9 @@ const RISE_SLOWDOWN: f32 = 3.0;
 /// the hips should hinge back from.
 pub const MAX_LEAN_M: f32 = 0.5;
 
+/// How far back the hips go per metre they drop below standing.
+pub const SQUAT_BACK: f32 = 0.3;
+
 /// How far toward the one foot on the ground the hips are drawn while the other swings, as a share
 /// of that foot's sideways offset from the stance's middle: a walk's small sway over the stance
 /// foot.
@@ -351,9 +365,10 @@ fn place_hips(rig: &Rig, pose: &mut RigPose, input: &HipsInput, config: &Procedu
 fn bend_spine(
     pose: &mut RigPose,
     neck_target: Vec3,
-    chest_yaw: f32,
+    chest: ChestTurn,
     config: &ProceduralBodyConfig,
 ) {
+    let chest_yaw = chest.yaw;
     if let Some(current) = line_yaw(
         pose.position(RigBone::LeftShoulder),
         pose.position(RigBone::RightShoulder),
@@ -376,7 +391,21 @@ fn bend_spine(
     }
     // The curl moves the neck off the line the swing found, so the whole chain turns back onto
     // it about its base, keeping the curl's shape: a distributed swing would straighten it.
-    if curl_spine(pose, neck_target, chest_yaw)
+    let curled = curl_spine(pose, neck_target, chest_yaw);
+    // The chest's pitch bends the upper spine, and like the curl, the whole chain then turns back
+    // onto the neck's line about its base, so the bend stays in the chest.
+    if chest.pitch > 0.0 {
+        let axis = Quat::from_rotation_y(chest_yaw) * Vec3::NEG_X;
+        for (bone, share) in SPINE.iter().zip(PITCH_SHARES) {
+            let pivot = pose.position(*bone);
+            pose.rotate_about(
+                *bone,
+                Quat::from_axis_angle(axis, chest.pitch * share),
+                pivot,
+            );
+        }
+    }
+    if (curled || chest.pitch > 0.0)
         && let Some((axis, angle)) = swing_toward(pose, neck_target, limit)
     {
         let base = pose.position(RigBone::Spine);
@@ -475,6 +504,99 @@ fn place_leg(
     placed.rotation = foot_rotation;
     pose.set(foot, placed);
 }
+
+/// The chest's turn the spine bends to: its yaw toward the torso, and its pitch forward.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct ChestTurn {
+    /// Radians about +Y.
+    yaw: f32,
+    /// Radians forward, zero or more.
+    pitch: f32,
+}
+
+/// Settle the clip's own shape out of `pose`: the hips' pitch and roll go entirely, keeping their
+/// turn about +Y, and the spine and the neck go [`SPINE_SETTLE`] of the way to the reference pose's
+/// shape on the hips, so a run's bob and the idle's slouch are not the body's.
+fn settle(rig: &Rig, pose: &mut RigPose) {
+    let hips = *pose.get(RigBone::Hips);
+    let delta = hips.rotation * rig.reference(RigBone::Hips).rotation.inverse();
+    let swing = delta * yaw_part(delta).inverse();
+    if swing.is_finite() {
+        pose.rotate_about(RigBone::Hips, swing.inverse(), hips.translation);
+    }
+    for bone in [
+        RigBone::Spine,
+        RigBone::Spine1,
+        RigBone::Spine2,
+        RigBone::Sternum,
+        RigBone::Neck,
+    ] {
+        let Some(parent) = bone.parent() else {
+            continue;
+        };
+        let reference_local =
+            rig.reference(parent).rotation.inverse() * rig.reference(bone).rotation;
+        let wanted = pose.get(parent).rotation * reference_local;
+        let current = pose.get(bone).rotation;
+        let full = (wanted * current.inverse()).normalize();
+        let part = Quat::IDENTITY.slerp(full, SPINE_SETTLE);
+        if part.is_finite() {
+            let pivot = pose.position(bone);
+            pose.rotate_about(bone, part, pivot);
+        }
+    }
+}
+
+/// The turn of `rotation` about +Y alone: the twist part of its swing-twist split.
+fn yaw_part(rotation: Quat) -> Quat {
+    let length = (rotation.y * rotation.y + rotation.w * rotation.w).sqrt();
+    if length > 1e-6 && length.is_finite() {
+        Quat::from_xyzw(0.0, rotation.y / length, 0.0, rotation.w / length)
+    } else {
+        Quat::IDENTITY
+    }
+}
+
+/// How far the chest pitches forward for a head turned by `head_rotation` (body-relative): a share
+/// of how far the head looks down, at most [`MAX_CHEST_PITCH`]. Looking up leaves it.
+fn chest_pitch(head_rotation: Quat) -> f32 {
+    let forward = head_rotation * Vec3::NEG_Z;
+    let down = (-forward.y).clamp(-1.0, 1.0).asin();
+    if down.is_finite() && down > 0.0 {
+        (down * CHEST_PITCH_SHARE).min(MAX_CHEST_PITCH)
+    } else {
+        0.0
+    }
+}
+
+/// Turn the neck by [`NECK_SHARE`] of the head's turn against the chest, so the head is not the
+/// only bone that moves for a look. The head override sets the head itself after the solve.
+fn turn_neck(rig: &Rig, pose: &mut RigPose, head_rotation: Quat) {
+    let chest =
+        pose.get(RigBone::Sternum).rotation * rig.reference(RigBone::Sternum).rotation.inverse();
+    let relative = chest.inverse() * head_rotation;
+    let share = Quat::IDENTITY.slerp(relative.normalize(), NECK_SHARE);
+    let turn = (chest * share * chest.inverse()).normalize();
+    if turn.is_finite() {
+        let pivot = pose.position(RigBone::Neck);
+        pose.rotate_about(RigBone::Neck, turn, pivot);
+    }
+}
+
+/// How much of the reference pose's spine shape the clip's gives way to.
+const SPINE_SETTLE: f32 = 0.8;
+
+/// The share of the head's look down the chest pitches by.
+const CHEST_PITCH_SHARE: f32 = 0.35;
+
+/// The furthest the chest pitches forward for a look down, radians: about twenty-five degrees.
+const MAX_CHEST_PITCH: f32 = 0.44;
+
+/// Each spine bone's share of the chest's pitch: the upper back takes it.
+const PITCH_SHARES: [f32; 4] = [0.0, 0.2, 0.4, 0.4];
+
+/// The share of the head's turn against the chest the neck takes.
+const NECK_SHARE: f32 = 0.3;
 
 /// The spine bones the bend is shared along, from the base.
 const SPINE: [RigBone; 4] = [
@@ -712,6 +834,75 @@ mod tests {
         assert!(input.hips_drop <= 0.2 + 1e-4);
         let pose = solve(&rig, &input, &config);
         assert!(pose.position(RigBone::Hips).y >= 0.5 - 1e-3);
+    }
+
+    #[test]
+    fn looking_down_pitches_the_chest_and_the_neck_takes_a_share() {
+        let (rig, input, config) = setup();
+        let level = solve(&rig, &input, &config);
+        let mut down = input;
+        down.head_rotation = Quat::from_rotation_x(-0.8);
+        let looking = solve(&rig, &down, &config);
+        // The chest bends forward against the lower back.
+        let bend = |pose: &RigPose| {
+            let chest = (pose.position(RigBone::Neck) - pose.position(RigBone::Spine2)).normalize();
+            let lower =
+                (pose.position(RigBone::Spine1) - pose.position(RigBone::Spine)).normalize();
+            chest.z - lower.z
+        };
+        assert!(
+            bend(&looking) < bend(&level) - 0.05,
+            "the chest did not pitch forward: {} vs {}",
+            bend(&looking),
+            bend(&level)
+        );
+        let neck_turn = looking
+            .get(RigBone::Neck)
+            .rotation
+            .angle_between(level.get(RigBone::Neck).rotation);
+        assert!(neck_turn > 0.1, "{neck_turn}");
+        // Looking up leaves the chest.
+        assert_eq!(chest_pitch(Quat::from_rotation_x(0.6)), 0.0);
+    }
+
+    #[test]
+    fn a_squat_sends_the_hips_back() {
+        let (rig, mut input, config) = setup();
+        let standing = hips_horizontal(&rig, &input, &config);
+        input.head.y -= 0.4;
+        let squatting = hips_horizontal(&rig, &input, &config);
+        assert!(
+            (squatting.y - standing.y - 0.4 * SQUAT_BACK).abs() < 1e-4,
+            "{squatting}"
+        );
+    }
+
+    #[test]
+    fn the_clips_hip_pitch_and_spine_bend_are_settled_out() {
+        let (rig, mut input, config) = setup();
+        let hips = input.animated.position(RigBone::Hips);
+        input
+            .animated
+            .rotate_about(RigBone::Hips, Quat::from_rotation_x(0.3), hips);
+        let spine = input.animated.position(RigBone::Spine1);
+        input
+            .animated
+            .rotate_about(RigBone::Spine1, Quat::from_rotation_x(0.4), spine);
+        let mut pose = input.animated;
+        settle(&rig, &mut pose);
+        let hips_tilt = pose
+            .get(RigBone::Hips)
+            .rotation
+            .angle_between(rig.reference(RigBone::Hips).rotation);
+        assert!(hips_tilt < 1e-4, "{hips_tilt}");
+        let bend = pose
+            .get(RigBone::Spine1)
+            .rotation
+            .angle_between(pose.get(RigBone::Spine).rotation);
+        assert!(bend < 0.4 * (1.0 - SPINE_SETTLE) + 1e-3, "{bend}");
+        // The solve from it still stands the reference pose up.
+        let solved = solve(&rig, &input, &config);
+        assert!(solved.is_finite());
     }
 
     #[test]
