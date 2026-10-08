@@ -51,6 +51,19 @@ pub(super) fn second_weapon() -> Line {
     }
 }
 
+pub(super) fn docks() -> Line {
+    if !read_config(|c| {
+        let holsters = c.controllers.weapons.holsters;
+        holsters.enabled && holsters.follow_docks
+    }) {
+        return Line::off("");
+    }
+    Line::ok(format_smolstr!(
+        "{} ON THEIR GUNS",
+        weapons::status().docks_followed
+    ))
+}
+
 pub(super) fn left_grip() -> Line {
     if !read_config(|c| c.controllers.weapons.hold.either_hand) {
         return Line::off("");

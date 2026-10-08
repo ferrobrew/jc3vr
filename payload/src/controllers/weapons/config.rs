@@ -34,6 +34,9 @@ pub struct HolstersConfig {
     pub show_volumes: bool,
     /// Which body the holsters and pouches ride.
     pub anchor: HolsterAnchor,
+    /// Move a holster with a gun docked in it to where the gun is on the character's body, so a
+    /// hand reaches where the gun is seen (see [`crate::controllers::weapons::docks`]).
+    pub follow_docks: bool,
 }
 
 /// Which body the holsters and pouches ride (see [`crate::controllers::weapons::volumes`]).
@@ -80,6 +83,7 @@ impl HolstersConfig {
             crouch_deadband_m: 0.15,
             show_volumes: false,
             anchor: HolsterAnchor::Body,
+            follow_docks: true,
         }
     }
 }

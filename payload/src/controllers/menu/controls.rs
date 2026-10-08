@@ -223,6 +223,11 @@ fn settings_page() -> Page {
             .weapons
             .holsters
             .enabled))
+        .item(config_toggle!("HOLSTERS FOLLOW THE GUNS", |c| c
+            .controllers
+            .weapons
+            .holsters
+            .follow_docks))
         .item(config_toggle!("STICK CLICK CYCLES WEAPONS", |c| c
             .controllers
             .weapons

@@ -4,6 +4,7 @@
 //! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, the reload pouch, and
 //!   the C4 pouch), placed from the player's body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
+//! - [`docks`]: the holsters moved onto the guns docked in them;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
 //! - [`heft`]: the one-handed weight of a long gun: sag, lag, sway, a stronger kick, and a wider
@@ -57,6 +58,7 @@
 pub mod c4;
 mod camera_kick;
 pub mod config;
+pub mod docks;
 pub mod dual_wield;
 pub mod empty;
 mod engine;
@@ -78,7 +80,7 @@ pub mod wheel;
 
 use std::time::{Duration, Instant};
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
     input::input_action_map::Action,
@@ -91,7 +93,7 @@ use crate::{
     controllers::{
         bindings::{
             controls::ButtonControl,
-            grab::{Candidate, GrabVolume},
+            grab::{Candidate, GrabVolume, HolsterSite},
             hold::{Desired, MapKind, Target, Want},
         },
         body::{self, BodyDimensions, alignment},
@@ -106,6 +108,7 @@ use crate::{
         roomscale::{self, posture::EffectivePosture},
         weapons::{
             config::HolsterAnchor,
+            docks::DockedGun,
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             haptics::PulseSource,
@@ -116,7 +119,7 @@ use crate::{
             },
             holster::HolsterAction,
             reload::focus::ReloadTarget,
-            volumes::{ChestGrabbers, HeadDrop, NearMiss, Stance},
+            volumes::{BodyFrame, ChestGrabbers, HeadDrop, NearMiss, Stance},
         },
     },
 };
@@ -235,6 +238,8 @@ pub struct WeaponsStatus {
     pub grabs: u64,
     /// The last grip press near but outside a holster.
     pub last_miss: Option<(Hand, NearMiss)>,
+    /// How many holsters were moved onto their docked guns on the last tick.
+    pub docks_followed: usize,
 }
 
 pub fn status() -> WeaponsStatus {
@@ -266,8 +271,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         fallback: second_hand.map_or(config.acting_hand(), Hand::other),
     });
     // SAFETY: the input tick runs on the main thread outside the world update.
-    let (weapon, second_weapon) = unsafe {
-        engine::local_player().map_or((None, None), |owner| {
+    let ticked = unsafe {
+        engine::local_player().map_or(Ticked::default(), |owner| {
             if holding.either_hand && holding.second_weapon && gameplay {
                 second::validate(owner);
             } else {
@@ -276,12 +281,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             second::show_magazine(Some(owner), gameplay && holding.magazine_pips);
             let pair = dual_wield::attach::input_tick(owner, settings);
             let holder = hold::input_tick(owner, hold_settings, pair.is_some());
-            (
-                engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder)),
-                second::held_weapon(owner),
-            )
+            Ticked {
+                weapon: engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder)),
+                second: second::held_weapon(owner),
+                docked: if config.weapons.holsters.follow_docks {
+                    docks::docked_guns(owner, config.acting_hand())
+                } else {
+                    Vec::new()
+                },
+                character: Some(Mat4::from(owner.m_WorldMatrixT1)),
+            }
         })
     };
+    let (weapon, second_weapon) = (ticked.weapon, ticked.second);
     scope::input_tick(weapon.map(|w| w.address));
     // SAFETY: the weapon was read this tick, on the main thread outside the world update.
     if let Some(w) = weapon
@@ -338,6 +350,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     if gameplay {
         if config.weapons.holsters.enabled {
             candidates = volumes::holster_candidates(&body_frame, &dims, &config.weapons.holsters);
+            state.status.docks_followed =
+                follow_docks(&mut candidates, &ticked, &body_frame, &config, &active);
         }
         let grabbers = ChestGrabbers::for_guns(weapon.map_or([false; 2], |w| w.wielded.hands));
         if config.weapons.grenade_throw {
@@ -847,6 +861,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         grabs: 0,
         last_miss: None,
         stance: None,
+        docks_followed: 0,
     },
     weapon: None,
     gameplay: false,
@@ -859,6 +874,59 @@ static STATE: Mutex<State> = Mutex::new(State {
     last_volumes: [None; 2],
     gun_side: Hand::Right,
 });
+
+/// What the weapon handling read of the local player on the input tick.
+#[derive(Default)]
+struct Ticked {
+    weapon: Option<HeldWeapon>,
+    second: Option<HeldWeapon>,
+    /// The guns docked on the body, at their points in the world.
+    docked: Vec<(HolsterSite, Vec3)>,
+    /// The character's model-to-world transform.
+    character: Option<Mat4>,
+}
+
+/// Move the holsters with guns docked in them onto the guns ([`docks`]), by the guns'
+/// displacement from the holsters placed on the character's skeleton. Returns how many moved.
+fn follow_docks(
+    candidates: &mut [Candidate],
+    ticked: &Ticked,
+    body_frame: &BodyFrame,
+    config: &ControllersConfig,
+    active: &ActiveHands,
+) -> usize {
+    if ticked.docked.is_empty() {
+        return 0;
+    }
+    let Some(frames) = ticked
+        .character
+        .and_then(|c| docks::cockpit_frames(active, c))
+    else {
+        return 0;
+    };
+    let Some(skeleton) = alignment::skeleton_in_cockpit(active.head.position, active.world_scale)
+    else {
+        return 0;
+    };
+    let anchor = volumes::Anchor::Skeleton(skeleton);
+    let on_character = volumes::holster_candidates(
+        &BodyFrame {
+            anchor,
+            ..*body_frame
+        },
+        &body_dimensions(config, &anchor),
+        &config.weapons.holsters,
+    );
+    let guns: Vec<DockedGun> = ticked
+        .docked
+        .iter()
+        .map(|&(site, point)| DockedGun {
+            site,
+            point: frames.world_to_cockpit(point),
+        })
+        .collect();
+    docks::follow(candidates, &on_character, &guns, docks::MAX_SHIFT_M)
+}
 
 /// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,
 /// where the grips are free. In vehicles and the wingsuit the grips fire their weapons, and

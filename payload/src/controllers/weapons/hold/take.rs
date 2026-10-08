@@ -1,38 +1,33 @@
 //! The input tick's side of taking a weapon that has no body for the hands' reach (a gun in a
 //! character's hands, [`crate::controllers::weapons::hold::steal`], or a weapon on a rack,
-//! [`crate::controllers::weapons::hold::rack`]): it gathers the targets ([`crate::controllers::weapons::hold::world`]), places their grab volumes for the free
-//! hands ([`begin_tick`]), and carries out a grab of one ([`finish_tick`]).
+//! [`crate::controllers::weapons::hold::rack`]): it gathers the targets
+//! ([`crate::controllers::weapons::hold::world`]), places their grab volumes for the free hands
+//! ([`begin_tick`]), and carries out a grab of one ([`finish_grab`]).
 //!
 //! The targets come from the world in world space and are carried into the cockpit frame the grab
-//! volumes live in, through the head's pose in both frames and the view frame the cockpit composes
-//! with, the way the body's alignment carries the skeleton
-//! ([`crate::controllers::body::alignment::measure::Frames`]).
+//! volumes live in ([`crate::controllers::weapons::docks::cockpit_frames`]).
 
 use std::fmt;
 
 use glam::{Mat4, Vec3};
 use parking_lot::Mutex;
 
-use crate::{
-    controllers::{
-        bindings::grab::Candidate,
-        body::alignment::measure::Frames,
-        frame::Hand,
-        hands::ActiveHands,
-        weapons::{
-            config::HoldConfig,
-            engine,
-            hold::{
-                self,
-                holder::Cause,
-                pickup::TakeOptions,
-                rack::{self, RackRefusal},
-                steal::{self, StealRefusal},
-                world::{self, TargetKind, WorldTarget},
-            },
+use crate::controllers::{
+    bindings::grab::Candidate,
+    frame::Hand,
+    hands::ActiveHands,
+    weapons::{
+        config::HoldConfig,
+        docks, engine,
+        hold::{
+            self,
+            holder::Cause,
+            pickup::TakeOptions,
+            rack::{self, RackRefusal},
+            steal::{self, StealRefusal},
+            world::{self, TargetKind, WorldTarget},
         },
     },
-    headpose,
 };
 
 /// What taking weapons from the world did, for the readout.
@@ -95,16 +90,9 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     let Some(player) = player else {
         return Vec::new();
     };
-    let frames = Frames {
-        head_world: headpose::query().position,
-        head_cockpit: inputs.active.head.position,
-        view: headpose::xr::body_rotation(),
-        world_scale: inputs.active.world_scale,
-        character: player,
-    };
-    if !frames.is_usable() {
+    let Some(frames) = docks::cockpit_frames(inputs.active, player) else {
         return Vec::new();
-    }
+    };
     let to_cockpit = |p: Vec3| frames.world_to_cockpit(p);
     if settings.steal {
         state.targets.extend(steal::targets(to_cockpit));
