@@ -607,7 +607,7 @@ impl State {
             root_height: world.w_axis.y,
             velocity,
             commanded: request.commanded,
-            gait: gait::tuning(velocity.length(), config),
+            gait: gait::tuning(velocity.length(), self.feet.phase().is_some(), config),
             dt,
         };
         // SAFETY: the gate runs with the local character live.
@@ -756,7 +756,7 @@ impl State {
         }
         self.gait_logged_at = Some(now);
         let speed = self.status.speed_mps;
-        let tuning = gait::tuning(speed, config);
+        let tuning = gait::tuning(speed, true, config);
         tracing::debug!(
             target: "body",
             speed_mps = speed,

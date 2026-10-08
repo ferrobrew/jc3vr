@@ -10,9 +10,16 @@ use crate::controllers::body::procedural::{
     config::ProceduralBodyConfig, solver::feet::GaitTuning,
 };
 
-/// The walk's tuning at `speed` metres per second, or `None` below the speed the feet walk at.
-pub fn tuning(speed: f32, config: &ProceduralBodyConfig) -> Option<GaitTuning> {
-    if !(config.gait && speed.is_finite() && speed >= config.gait_speed_mps) {
+/// The walk's tuning at `speed` metres per second, or `None` below the speed the feet walk at. A
+/// walk under way (`walking`) goes on down to [`STOP_SHARE`] of that speed, so a speed hovering
+/// at the threshold does not switch between walking and standing every few ticks.
+pub fn tuning(speed: f32, walking: bool, config: &ProceduralBodyConfig) -> Option<GaitTuning> {
+    let threshold = if walking {
+        config.gait_speed_mps * STOP_SHARE
+    } else {
+        config.gait_speed_mps
+    };
+    if !(config.gait && speed.is_finite() && speed >= threshold) {
         return None;
     }
     let span = (config.run_speed_mps - config.walk_speed_mps).max(1e-3);
@@ -116,6 +123,9 @@ impl NeutralStance {
     }
 }
 
+/// The share of the walking threshold a walk under way goes on down to.
+pub const STOP_SHARE: f32 = 0.7;
+
 /// How long the feet stand still before the stance is measured, seconds.
 pub const SETTLE_S: f32 = 0.5;
 
@@ -145,16 +155,16 @@ mod tests {
     #[test]
     fn faster_walks_take_longer_strides_and_less_ground() {
         let config = ProceduralBodyConfig::new();
-        assert!(tuning(config.gait_speed_mps * 0.5, &config).is_none());
-        let walk = tuning(config.walk_speed_mps, &config).unwrap();
-        let run = tuning(config.run_speed_mps, &config).unwrap();
-        let sprint = tuning(config.run_speed_mps * 2.0, &config).unwrap();
+        assert!(tuning(config.gait_speed_mps * 0.5, false, &config).is_none());
+        let walk = tuning(config.walk_speed_mps, false, &config).unwrap();
+        let run = tuning(config.run_speed_mps, false, &config).unwrap();
+        let sprint = tuning(config.run_speed_mps * 2.0, false, &config).unwrap();
         assert!((walk.stride_m - config.walk_stride_m).abs() < 1e-4);
         assert!(run.stride_m > walk.stride_m);
         assert!(run.duty < 0.5 && walk.duty > 0.5);
         assert_eq!(run, sprint);
         // The cadence rises with the speed.
-        let cadence = |speed: f32| speed / tuning(speed, &config).unwrap().stride_m;
+        let cadence = |speed: f32| speed / tuning(speed, false, &config).unwrap().stride_m;
         let mut last = 0.0;
         for i in 1..=40 {
             let speed = config.gait_speed_mps + i as f32 * 0.15;
@@ -162,6 +172,15 @@ mod tests {
             assert!(c >= last - 1e-4, "cadence fell at {speed}");
             last = c;
         }
+    }
+
+    #[test]
+    fn a_walk_under_way_goes_on_a_little_below_the_speed_it_starts_at() {
+        let config = ProceduralBodyConfig::new();
+        let between = config.gait_speed_mps * (1.0 + STOP_SHARE) * 0.5;
+        assert!(tuning(between, false, &config).is_none());
+        assert!(tuning(between, true, &config).is_some());
+        assert!(tuning(config.gait_speed_mps * STOP_SHARE * 0.9, true, &config).is_none());
     }
 
     #[test]
