@@ -61,7 +61,7 @@ Pushing a gun's well down onto the pouch reloads it in one hand (`belt.rs`), for
 
 The game has no chambered round; a gun fires while its magazine has rounds. The chamber is the mod's (`chamber.rs`). With `chamber` on, a gun that fires its last round has an empty chamber, and a gun that is reloaded while its chamber is empty stays empty until its action is worked: the trigger only clicks. A tactical reload, of a gun with rounds left, keeps the round in the chamber. There is no slide-release button; the belt reload chambers by itself.
 
-The action is worked with the hand without a gun:
+The action is worked with the hand without a gun. With `action.physical` on (the default, the pause menu's `PHYSICAL SLIDES AND BOLTS`), the action is a part that follows the hand through its travel (see "The physical action"). Off, it is a gesture:
 
 - A slide or a charging handle: a grip press at the handle (a grab volume while the chamber waits, so the press does not fire the grapple), a pull back along the gun's axis to `action.pull_fraction` of its travel, and a release or a push back home.
 - A bolt: the same, but it has to be pushed back home.
@@ -69,7 +69,7 @@ The action is worked with the hand without a gun:
 
 The handle's place and travel come from the wells table; a weapon whose handle the table does not place is never held for its chamber.
 
-With `manual_action` on, a bolt-action rifle and a pump-action shotgun empty their chamber after every shot, whether or not `chamber` is on, and the game's own cycling is suppressed (see "The bolt and the pump"). A worked action loads the chamber when the magazine is in and holds a round. While a pistol's chamber is empty its slide is drawn back, and while it is worked it follows the hand: the game moves a slide back along its own axis after each shot and all the way while the magazine is empty ([`BarrelRecoilWeaponComponent::m_RecoilMaxLength`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::BarrelRecoilWeaponComponent##field-m_RecoilMaxLength)), and the late update of the gun's parts adds the rest (`render.rs`, through `hands/parts.rs`).
+With `manual_action` on, a bolt-action rifle and a pump-action shotgun empty their chamber after every shot, whether or not `chamber` is on, and the game's own cycling is suppressed (see "The bolt and the pump"). A worked action loads the chamber when the magazine is in and holds a round. With the action a gesture, while a pistol's chamber is empty its slide is drawn back, and while it is worked it follows the hand: the game moves a slide back along its own axis after each shot and all the way while the magazine is empty ([`BarrelRecoilWeaponComponent::m_RecoilMaxLength`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::BarrelRecoilWeaponComponent##field-m_RecoilMaxLength)), and the late update of the gun's parts adds the rest (`render.rs`, through `hands/parts.rs`).
 
 A gun held by its chamber, by a magazine out, or by the belt cannot fire: the input tick keeps its trigger from the game and plays `Event::DryFire` ([haptics.md](haptics.md)) at the pull's press edge, and the ammunition check clears the gun's shot as well against a buffered one (`empty.rs`). With the dual-wield split a held pistol's trigger is kept from the split, so the other pistol still fires.
 
@@ -78,6 +78,28 @@ A gun held by its chamber, by a magazine out, or by the belt cannot fire: the in
 The sniper rifle keeps its own bolt lock ([`SniperWeapon::m_HasFiredThisInput`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::SniperWeapon##field-m_HasFiredThisInput)), set by each shot, which blocks fire until the bolt animation runs. With `manual_action`, the rifle's update runs with its bolt-action setting cleared, so the game never queues the bolt act, and the lock keeps the rifle from firing until the player works the bolt; the worked bolt clears the lock. A reload by hand does not raise the reloading state that would clear the lock, so a rifle reloaded after running dry still needs its bolt worked.
 
 The pump-action shotgun's pump is queued on every shot by its do-act component ([`DoActWeaponComponent::Fire_Start`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::DoActWeaponComponent##func-Fire_Start)), on the holder and on the gun's own skeleton. With `manual_action` the component's fire start is skipped for the local player, and nothing in the game stops the next shot, so the chamber does. The worked pump plays the gun's pump clip ([`WeaponData::DoAct`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-DoAct)).
+
+## The physical action
+
+With `action.physical` on, each gun's action is a part on its travel (`travel.rs`, worked in `action.rs`): a place from home to the rear as a share of its travel, and for a bolt a turn up as a share of its lift. Each gun keeps its own, remembered with its chamber across weapon changes.
+
+- Taking it. The handle is the grab volume `GrabVolume::WeaponAction` at the handle's place, which rides the part, so a slide held back is taken where it is. It is placed for the hand without a gun while the chamber waits for the action or the part is out of battery, so a bolt left open can always be closed; a gun whose chamber is loaded and whose action is closed offers nothing to take. The pump is taken by the hand on the foregrip, and only while its chamber waits: a fired pump-action unlocks its pump, a loaded one holds it forward. The volume is the reload's own; the grab regions on the gun's model (the plan's grab-anywhere) are a separate module, and the handle's region moves there if that module defines one.
+- Following the hand. Held, the part follows the hand along the gun's axis from wherever along it the hand took hold, between home and the rear: it never jumps to the hand, and the hand can pull no further than the travel. A hand that strays more than `action.release_distance_m` off the axis, or lets go of its grip (of the foregrip, for the pump), lets go of the part.
+- Let go. A slide or a charging handle runs home on its spring, over `action.spring_s` from the rear. A pump stays where it is let go, and settles home once forward of `action.return_fraction`. A bolt stays where it is.
+- The bolt. A bolt is turned up about its axis (`action.bolt_lift_deg`, the handle `action.bolt_radius_m` from the axis, on the side the table places it) before it slides; it counts as up past `action.lift_fraction` of the turn. It cannot be turned down until it is home, and a bolt not turned down is out of battery.
+- The rack. The part reaching `action.pull_fraction` of its travel is the rack (`Event::Rack` on the working hand). Coming home after one, forward of `action.return_fraction` (and for a bolt, turned down), cycles the action: the chamber loads from the magazine when it is in and holds a round, the bolt rifle's lock clears, and `Event::Chambered` plays on the gun hand. The gun's own pump or bolt clip is not played, since the hand moved the part already. A short pull runs home without cycling.
+- The slide's catch. With `action.lock_back` on, the shot that empties a pistol's magazine leaves its slide caught at the rear, as does a weapon first seen with an empty magazine, and a slide pulled to the rear and let go over a magazine that is in and empty catches there too. A caught slide stays back through an eject and a fresh magazine; taking it frees it from the catch, and letting go runs it home, which chambers from the new magazine (a rack). With no magazine in, the slide does not catch. The game holds a pistol's slide back on its own while the magazine is empty, so a slide that the travel has home is drawn home against that hold. There is no slide-release button: every button of the gun hand is taken on foot, so the slide is released by a rack, and the belt reload closes the action by itself.
+- Out of battery. A gun whose part is back past `action.return_fraction`, or whose bolt is turned up, does not fire, whatever its chamber.
+
+The part is drawn where the travel has it:
+
+- A separate part (the pistols' slides, and the U-SV 45's `ejection_port`): the late update of the gun's parts moves it back along its own axis by its share of the game's own travel for it ([`BarrelRecoilWeaponComponent::m_RecoilMaxLength`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::BarrelRecoilWeaponComponent##field-m_RecoilMaxLength)), less what the game holds it back by on an empty magazine ([`BarrelRecoilWeaponComponent::m_MaxRecoilOnEmptyAmmo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::BarrelRecoilWeaponComponent##field-m_MaxRecoilOnEmptyAmmo)), so the game's kick after a shot still shows. The U-SV 45's part is a cover beside the bore, so it slides with the bolt's travel but does not turn.
+- A bone of the gun's skeleton (the U-Rys 96's pump, [`WeaponData::PUMP_BONE_HASH`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData), and the CS111 Archangel's and the Final Argument's bolt, [`WeaponData::SLIDER_BONE_HASH`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData)): a post-call detour on the gun's pre-simulation update ([`WeaponData::UpdatePreSim`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-UpdatePreSim)) moves the bone's model-space joint back along the model's +Z by its share of the table's travel and turns it about the model's Z by the bolt's lift, over the pose the gun's clips gave it (`bones.rs`). The update runs on the simulation's workers for every character's guns; anything but the reloaded weapon's guns is turned away before a lock. A part at home is left to the clips.
+- Nothing (the SMGs' and rifles' charging handles, part of the body mesh): the travel, its stops, and its rack act, and nothing on the gun moves.
+
+While the pump is back, the foregrip moves back along the barrel with it (`foregrip::set_pump_slide`), so the drawn off-hand rides the pump. With the hand bodies and `PHYSICAL GUNS` on, the off-hand on the foregrip is drawn at its body, joined to the gun body where it took the foregrip, so the drawn hand stays at the brace while the pump moves.
+
+The log has, at info level, `reload: the action cycled` with the action, the gun hand, and whether a round was chambered; `reload: the last shot locked the slide back`; `reload: the slide caught at the rear on an empty magazine`; and `reload: took the slide off its catch`. At debug level, `reload: took the action's handle`. `VR: STATUS` shows `LEFT ACTION` and `RIGHT ACTION` under `WEAPONS IN HAND`: the action and where its part is (`HOME`, `BACK 40%`, `UP 100%, BACK 30%`, or `LOCKED BACK`), `HELD` while a hand holds it, the chamber, and the actions worked. The scenario signals are `actions.worked`, `actions.locked_back`, `actions.held`, and `actions.travel` (`testing/scenarios/physical_actions.toml`).
 
 ## Dual-wield
 
@@ -89,11 +111,11 @@ With a second weapon in the other hand ([physical-weapons.md, "A second weapon"]
 
 ## Haptics
 
-Each step plays a cue of the weapons category ([haptics.md](haptics.md)): the eject on the gun hand (`Event::Eject`), a round taken from the pouch (`Event::PouchTake`), an empty pouch (`Event::PouchEmpty`), a round caught by the well and a seat on both hands (`Event::WellCatch`, `Event::MagazineSeat`), a belt seat on the gun hand (`Event::BeltSeat`), a full pull of the action on the working hand (`Event::Rack`), and a chambered round on the gun hand (`Event::Chambered`). The dry fire is `Event::DryFire`.
+Each step plays a cue of the weapons category ([haptics.md](haptics.md)): the eject on the gun hand (`Event::Eject`), a round taken from the pouch (`Event::PouchTake`), an empty pouch (`Event::PouchEmpty`), a round caught by the well and a seat on both hands (`Event::WellCatch`, `Event::MagazineSeat`), a belt seat on the gun hand (`Event::BeltSeat`), a full pull of the action on the working hand (`Event::Rack`), the physical action's part meeting a stop (home, a bolt turned all the way up or down) on the working hand, or on the gun hand for a slide run home by its spring or caught at the rear (`Event::ActionDetent`), and a chambered round on the gun hand (`Event::Chambered`). The dry fire is `Event::DryFire`.
 
 ## The readout
 
-The Controllers tab's weapon section shows the reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve, each gun hand's chamber, split magazine, belt push, fire hold, and turning speed, the round in hand and its distance from the mouth, the action's work, the recent reload events, and the counters (ejects, seats, belt reloads, actions worked, dry fires, empty pouch grabs, and the game's reload starts refused).
+The Controllers tab's weapon section shows the reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve, each gun hand's chamber, split magazine, belt push, fire hold, and turning speed, the round in hand and its distance from the mouth, each gun hand's physical action (how far back, a bolt's turn, held, locked back, racked) or the gesture's work, the recent reload events, and the counters (ejects, seats, belt reloads, actions worked, slides locked back, dry fires, empty pouch grabs, and the game's reload starts refused). The physical action's settings are beside the gesture's.
 
 ## In the headset: magazines in the world
 
@@ -103,6 +125,24 @@ The Controllers tab's weapon section shows the reloaded weapon's name hash, its 
 4. Pick one up and open the hand away from the gun: it falls and can be picked up again.
 5. Kill a soldier mid-reload or watch one reload, then pick up his dropped magazine with a gun of the same kind: it seats with the rounds his held.
 6. Walk away 300 seconds or more and come back: the old magazines are forgotten, and the counts fall.
+
+## In the headset: the physical action
+
+With `CHAMBER BY HAND`, `MANUAL BOLT AND PUMP`, and `PHYSICAL SLIDES AND BOLTS` on, `RIGHT ACTION` on `VR: STATUS` open, and the hand bodies off for the first pass:
+
+1. Draw a pistol and fire it dry: the last shot leaves the slide back, `reload: the last shot locked the slide back`, and `RIGHT ACTION` reads `SLIDE: LOCKED BACK, CHAMBER EMPTY`. The trigger only clicks.
+2. Eject and seat a fresh magazine from the pouch: the slide stays back. Reach to the slide's rear with the left hand and press the grip: `reload: took the slide off its catch`, `HELD`. Ease the slide forward a little and back: it follows the hand and stops at the rear, with a click at the rear. Let go: it slams home with a tick in the gun hand, `reload: the action cycled` with `chambered=true`, a click on the gun hand, and the pistol fires.
+3. Take the slide again with the gun loaded: nothing is taken (the action is closed and chambered). Fire it to a few rounds, then grab the slide: still nothing.
+4. Fire it dry again, eject, and with no magazine in take the slide, pull it to the rear, and let go: it runs home without catching, and the chamber stays empty. Seat a magazine with the slide home; rack it (pull to the rear, let go): chambered.
+5. Fire it dry, take the slide, and pull it only halfway before letting go: it runs home, nothing is chambered, and `RIGHT ACTION` reads `HOME`. Pull it all the way and let go: chambered.
+6. Watch the slide while doing the above: it is drawn where the hand has it, never jumps to the hand when taken, and does not run past the rear. With the magazine empty and the slide home in the travel, it is drawn home, not held back by the game.
+7. Draw the pump shotgun and fire once: the pump unlocks. With the left hand on the foregrip, pull back: the pump (and the drawn left hand) slides back along the barrel, with a click at the rear; push forward: `reload: the action cycled`, a tick, and the shotgun fires again. Let go of the foregrip halfway back: the pump stays there and the gun does not fire; take the foregrip again and push it home.
+8. With the shotgun loaded, pull back on the foregrip: the pump does not move.
+9. Draw the CS111 Archangel (or the Final Argument) and fire once. Take the bolt's handle on the right of the receiver: turn it up (a tick at the top), pull it back (a click at the rear), push it forward, and turn it down (a tick): `chambered=true`. Check that the bolt is drawn turning and sliding with the hand, and that it cannot be pulled back before it is turned up, or turned down before it is home. Let go with the bolt open: it stays open, the rifle does not fire, and the handle can be taken again to close it.
+10. Draw the U-SV 45 and fire once: work its bolt the same way. Its moving cover beside the bore slides with the travel but does not turn.
+11. Draw an assault rifle and fire it dry: after a fresh magazine, take the charging handle on the right of the receiver, pull it back, and let go: it chambers. Nothing on the rifle moves.
+12. Do 2 and 7 again with the hand bodies and `PHYSICAL GUNS` on: the slide and the bolt work as before; the pump moves but the drawn left hand stays at the brace.
+13. Switch `PHYSICAL SLIDES AND BOLTS` off: the action is the gesture again (a pull to the pull share and a release), and the slide is drawn back while the chamber is empty.
 
 ## Unverified
 
@@ -117,4 +157,10 @@ None of this has been run in the headset. In particular:
 - the wells table's points, the grab radius of the handles, and the flick speed;
 - that a hidden magazine part shows again when a magazine seats, and that the held magazine looks right;
 - that clearing the sniper rifle's bolt-action setting for its update skips the act and nothing else, and that skipping the pump's do-act start leaves nothing else waiting on it;
-- that the animation's reads of the magazine-out flag pick no visibly different idle or draw clips while the magazine is out.
+- that the animation's reads of the magazine-out flag pick no visibly different idle or draw clips while the magazine is out;
+- that the skeletons' pump and bolt bones move the pump and the bolt back along the model's +Z, that the bolt bone's origin lies on the bolt's axis (so turning the bone turns the handle about the axis), and that its handle turns up about +Z on the right: none was read from the skeletons or the clips;
+- that a joint written after the gun's pre-simulation update is the one the render phase skins, as the character's are, and that the gun's pose is not computed again later in the tick;
+- that writing a gun's joint from the detour, on a simulation worker, races nothing that reads the gun's pose on another thread;
+- that the U-SV 45's `ejection_port` is the piece to move for its bolt, and that the game's travel for it suits the table's;
+- that skipping the gun's pump and bolt clips on a hand-worked cycle loses no sound worth keeping;
+- the spring time, the bolt's lift and radius, and the handle's grab radius for a part held back.

@@ -73,6 +73,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::MagazineSeat` | a magazine seats, on both hands | bump | 0.9 | weapons | `weapons::reload::steps` |
 | `Event::BeltSeat` | a belt seats | thud | 0.75 | weapons | `weapons::reload::steps` |
 | `Event::Rack` | a full pull of the action, on the working hand | click | 0.9 | weapons | `weapons::reload::steps` |
+| `Event::ActionDetent` | the action's part meeting a stop of its travel (home, a bolt turned all the way up or down, a slide caught at the rear), on the working hand | click | 0.35 | weapons | `weapons::reload::steps` |
 | `Event::Chambered` | a round is chambered, on the gun hand | click | 0.5 | weapons | `weapons::reload::steps` |
 | `Event::GrenadePrime` | a grenade is primed in the hand | click | 0.4 | weapons | `weapons::grenade` |
 | `Event::GrenadePin` | a grenade's pin is pulled, on both hands | bump | 0.4 | weapons | `weapons::grenade` |

@@ -174,6 +174,7 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | `WEAPONS IN HAND` | `LEFT HAND`, `RIGHT HAND` | the weapon's slot in each hand and how it came there: docked, picked up, stolen, off a rack, the game's draw, or the second weapon ([input/physical-weapons.md](input/physical-weapons.md)) |
 | | `TAKE FROM HANDS` | the guns in other characters' hands within reach of a grab, and the takes since load |
 | | `TAKE FROM RACKS` | the weapons on racks within reach of a grab, the weapons racks handed over, and the copies asked of racks with unlimited stock |
+| | `LEFT ACTION`, `RIGHT ACTION` | with the physical action on, each held gun's action on its travel: how far its part is back (and a bolt's turn up), whether a hand holds it or the slide is locked back, the chamber, and the actions worked since load ([input/reload.md](input/reload.md#the-physical-action)) |
 | | `SECOND WEAPON` | the second weapon's slot and hand, its magazine, and whether the true reload is on it or on the wielded weapon |
 | | `LEFT HAND GRIP` | which grip the left hand took for a gun the hold put there (its own, or the right hand's mirrored), and the angle between the two |
 | | `HOLSTERS` | how many holsters were moved onto the guns docked in them on the last tick |

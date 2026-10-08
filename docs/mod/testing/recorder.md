@@ -164,6 +164,9 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `inventory.pins`, `.resets` | counter | Weapons in the world the inventory started keeping, and the spawn system resets it saw. |
 | `ads.sighted`, `.shouldered`, `.welded` | counter | Times a long gun's sights came onto the eye, its stock into the shoulder, and a scope onto the eye. |
 | `magazines.dropped`, `.picked_up`, `.seated` | counter | Magazine props dropped and noted, magazines picked up from the world, and those seated. |
+| `actions.worked`, `.locked_back` | counter | Actions worked by hand (a slide, charging handle, bolt, or pump cycled), and slides caught at the rear on an empty magazine. |
+| `actions.held` | flag | A hand holds a gun's action, with the physical action on. |
+| `actions.travel` | measure | How far back the action of the gun in hand furthest back is, as a share of its travel, with the physical action on. |
 | `c4.thrown`, `.stuck` | counter | Charges thrown or pressed on from the pouch, and those pressed onto a surface by hand. |
 | `grenade.pins_pulled`, `.thrown`, `.caught`, `.thrown_on` | counter | Grenade pins pulled, grenades thrown from the pouch, live grenades caught, and caught grenades thrown on. |
 | `locomotion.stick_speed_mps` | measure | The speed the stick drives the body at. |
