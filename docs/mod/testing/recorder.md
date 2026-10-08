@@ -155,6 +155,8 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `weapons.grabs`, `grip.flips`, `grip.pins` | counter | Weapon grabs, guns snapping on the wrist, and attach bones pinned. |
 | `collide.contacts` | counter | Times a held long gun came against a wall. |
 | `collide.touching` | flag | A held long gun is against a wall. |
+| `regions.carries`, `.braces`, `.grips_taken`, `.let_go` | counter | Long guns taken by a part other than the grip, braced where the second hand closed on them, grips taken from a carrying hand or slid along to, and long guns left carried in the bracing hand when the holding hand let go ([physical-guns.md](../input/physical-guns.md#grabbing-a-gun-anywhere)). |
+| `regions.carrying` | flag | A hand carries the wielded gun by a part other than its grip. |
 | `inventory.carried` | measure | Weapons the VR inventory carries beyond the slots. |
 | `inventory.draws`, `.stows` | counter | Carried weapons drawn off their sockets, and held weapons put onto a free socket. |
 | `inventory.restored`, `.sidecar_writes` | counter | Carried weapons respawned onto their sockets after a reset or a load, and save sidecars written. |

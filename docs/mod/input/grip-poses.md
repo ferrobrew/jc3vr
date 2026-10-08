@@ -11,8 +11,8 @@ Each system that puts something in a hand declares it on each of its ticks while
 | Magazine | the weapon handling's input tick, a round in hand for the reload | magazine pinch | held |
 | Grenade | the same, a grenade in hand or caught | grenade palm | held |
 | C4 | the same, a charge in hand | charge pinch | held |
-| Gun | the same, each hand with a gun of the wielded weapon and the second weapon's hand | pistol grip | held |
-| Foregrip | the same, the off-hand on the foregrip, at the two-handed grip's weight | foregrip | held |
+| Gun | the same, each hand with a gun of the wielded weapon and the second weapon's hand | pistol grip, or the pose of the part a hand carries a long gun by | held |
+| Foregrip | the same, the off-hand on the foregrip, at the two-handed grip's weight | the pose of the part it braces the gun at: foregrip on the handguard | held |
 | Character | the palms' tick: a character held, or its ragdoll | collar grab | grip |
 | Door | the palms' tick: a latched door's handle area, or the door once open | door handle | grip |
 | Hinged object | the palms' tick: an articulated object | 40 mm bar | grip |
@@ -29,7 +29,7 @@ A held hold (the weapons, the vehicles' controls, the grapple line) stays in the
 
 ## The poses
 
-Each pose (`catalogue.rs`) gives every finger a curl, a splay, and a hook, and the thumb an opposition and a spread. The hook moves a finger's bend along it: a positive hook straightens the knuckle and bends the outer joints further, as over a ledge, and a negative one bends the knuckle and keeps the outer joints straight, as in a flat pinch. The opposition turns the open thumb out of the palm's plane toward the palm side, up to `max_opposition_deg`, so the thumb meets the fingers round a grip. A bar's pose follows its diameter: the fingers' curl is interpolated between judged points, from a fist round a rope to an open hand round a beam, and never closes further on a thicker bar.
+Each pose (`catalogue.rs`) gives every finger a curl, a splay, and a hook, and the thumb an opposition and a spread. The hook moves a finger's bend along it: a positive hook straightens the knuckle and bends the outer joints further, as over a ledge, and a negative one bends the knuckle and keeps the outer joints straight, as in a flat pinch. The opposition turns the open thumb out of the palm's plane toward the palm side, up to `max_opposition_deg`, so the thumb meets the fingers round a grip. A hand on a long gun takes the pose of the part it holds ([physical-guns.md, "Grabbing a gun anywhere"](physical-guns.md#grabbing-a-gun-anywhere)): the pistol grip on the grip, the foregrip on the handguard, a 30 mm bar on the barrel, a 45 mm bar on the stock, the magazine cup (the palm under the magazine, the fingers cupped round it) on the magazine, and the slide pinch (the thumb against the bent index and middle fingers, the others tucked) on the action. A bar's pose follows its diameter: the fingers' curl is interpolated between judged points, from a fist round a rope to an open hand round a beam, and never closes further on a thicker bar.
 
 Every finger plays one of three parts in a pose:
 
@@ -69,6 +69,7 @@ The settings are `controllers.fingers.grip`: `enabled`, `weapons`, and `contact_
 1. Draw a pistol. The fingers wrap its grip and the thumb crosses over them; touching the trigger rests the index finger on it, pulling closes it a little, and lifting off points it. `LEFT GRIP POSE` or `RIGHT GRIP POSE` reads `PISTOL GRIP FROM GUN, 100%`, and the log has one `grip source changed` line for the draw.
 2. Turn `FINGERS WRAP GUNS` off: the gun takes the game's grip, the row reads `GAME'S GRIP`, and only the trigger finger moves. Turn it back on.
 3. Take a rifle's foregrip with the off-hand: the off-hand wraps the handguard with the thumb along its side, blending in with the two-handed grip.
+   With `GRAB GUNS ANYWHERE`, brace the rifle on its barrel, magazine, action, and stock in turn: a tight wrap round the barrel, a cup under the magazine, a pinch on the action, and a looser wrap round the stock; `LEFT GRIP POSE` names each pose from `FOREGRIP`. Carry the rifle by its barrel alone: that hand's row names the bar from `GUN`.
 4. Take a round or a magazine from the pouch: a pinch between the thumb and the first fingers. A grenade sits in a spread palm; a C4 charge between the thumb and straight fingers.
 5. Pick up a small loose object and squeeze lightly, then hard: the fingers close onto it as the squeeze grows, and the row counts the fitted fingers within a few ticks. Fingers that sit in the air rather than on the object point at a wrong wrist or proportions.
 6. Grab a heavy crate one hand cannot lift: the palm lies flat on it. Press a palm into a wall with the hand empty: the palm flattens.

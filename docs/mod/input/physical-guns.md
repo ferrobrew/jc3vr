@@ -40,12 +40,54 @@ Each shot of a gun whose body the hands hold kicks that body: an impulse back al
 
 The gun body is made, kept, and destroyed only in the pre-simulation step, on the game thread outside the physics step, like the hand bodies. Its joints always go before either body they join:
 
-- The gun body goes, its brace and its holder's joint first, when the gun leaves the hand (holstered, docked, dropped, handed over, moved between slots or onto a socket, sliding, or no longer published), when its own body is back in the world (a drop or a mount since the input tick), when the gun is gone, when its joint went away, when the player's collision group changes, or when the hits are switched on or off.
+- The gun body goes, its brace and its holder's joint first, when the gun leaves the hand (holstered, docked, dropped, handed over, moved between slots or onto a socket, sliding, or no longer published), when the hand starts or stops holding it by a part other than its grip ([below](#grabbing-a-gun-anywhere)), when its own body is back in the world (a drop or a mount since the input tick), when the gun is gone, when its joint went away, when the player's collision group changes, or when the hits are switched on or off.
 - Every path that stops a hand's body first destroys the gun hanging from it and ends the brace it holds: the hand parked or held in place (a vehicle, a swim, the parachute, a lost controller), its body forgotten or destroyed (the game leaving gameplay for a load or the menu, the hand bodies switched off, a new character after a death), and the shutdown cleanup.
 
 The weapon itself is never touched by the gun body: if the game destroys the weapon before the next step finds it gone, the gun body is a body of the mod's own with the mod's own joints, destroyed at that step.
 
 A heavy weapon's own body stays in the world while it is wielded, so such a gun gets no gun body and keeps the kinematic weight and recoil.
+
+## Grabbing a gun anywhere
+
+With `weapons.regions.enabled` (on; the pause menu's `GRAB GUNS ANYWHERE`, on the `VR: CONTROLS` page beside `HAND GUNS OVER AT THE GRIP`), a long gun (the two-handed, special, and heavy slots) is taken wherever the hand closes on it, in the hands, on a shoulder, or lying in the world, with or without the gun bodies above. A pistol keeps its grip. The code is `payload/src/controllers/weapons/regions/`.
+
+### The regions
+
+Each gun's regions are worked out in its own frame, the frame of [`WeaponData::m_WorldMatrixT1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_WorldMatrixT1) (+Y up, -Z toward the muzzle, its origin the attach point in the palm of the hand on the pistol grip), from:
+
+- the model's box: the first gun's model instance ([`WeaponData::m_BaseModelInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_BaseModelInstance)), whose model space is that frame, gives it ([`ModelInstance::GetModelSpaceBoundingBox`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-GetModelSpaceBoundingBox));
+- the muzzle: the first gun's current fire point;
+- the foregrip: the other hand's grip point ([`WeaponBase::GetGripPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-GetGripPosition)), when the gun has one;
+- the magazine well and the action's handle: the wells table's ([reload.md](reload.md)), when its entry is trusted.
+
+A hand touches the gun when its grip point is within `reach_m` (0.05 m) of the box. It is then in the nearest of the parts with a point of their own, within each one's size: the pistol grip (within `grip_radius_m`, 0.07 m, of the line from the attach point down the grip), the action (a sphere at its handle), and on a long gun the magazine (the length a magazine hangs below its well). Otherwise it is in a region along the bore: the stock behind the grip, the handguard (the receiver and on to past the foregrip, or most of the way to the muzzle without one), and the barrel out to the muzzle. The point the hand closes on, the anchor, is the part's own point (the attach point for the grip), or for the stock, the handguard, and the barrel, the point nearest the hand on the line the region runs along: back from the grip, through the foregrip, and through the muzzle, never past the gun's ends.
+
+### What each hand does
+
+- The hand on the grip holds the gun as before, and it is the only hand that fires it: the fire inputs are held back while the gun is carried by any other part.
+- A second hand on any other part braces the gun there: the foregrip hold ([physical-weapons.md](physical-weapons.md)) takes the anchor in place of the gun's own foregrip point, so the two-handed pose puts the hand where it closed on the gun, the brace joint of a gun body joins it there, and the fingers take that part's pose. A brace ahead of the grip (the handguard, the barrel, the magazine, or the action) steers the gun as the foregrip does; a hand on the stock holds the gun without turning it. While the hand stays on the handguard or the barrel, the brace slides along them with it, except while the reload has a pump out, which sets where the hand is.
+- A lone hand on any part but the grip carries the gun: the rigid grip pins it so that the anchor sits in the palm, where the grip's attach point sits, turned on the wrist as the hand took it (`regions::carry_offset`), so it does not jump when taken. It is not aimed: its trigger fires nothing, and the sights do not come onto the eye.
+- A hand that takes the grip of a carried gun (the handover volume on the gun's grip, wherever the gun is), or a bracing hand that slides onto it, becomes the firing hand, and the hand it took the gun from braces it where it carried it, while its grip stays held. The brace waits for the gun to be placed on its new hand and measured there, for up to `rebrace_s` (1 s).
+- With `grip_to_hold`, the holding hand letting go while the other braces leaves the gun carried by the bracing hand at its brace, rather than dropping it. At the gun's own holster, it holsters as before.
+
+A gun is taken by a part other than its grip from the world and from the shoulder too:
+
+- a direct pickup ([physical-weapons.md, "Picking a weapon up into the hand"](physical-weapons.md#picking-a-weapon-up-into-the-hand)) classifies where the hand reached the gun, with the gun's pose before the pickup and the hand's wrist rotation, and with the take's slide the gun slides from where it lay to its anchor in the palm;
+- a long gun docked on a shoulder has a volume on whatever part a free hand touches, which draws it as the shoulder's holster does, and the gun comes into the hand at that part (a draw waits up to `draw_wait_s`, 3 s, for the gun to arrive).
+
+A gun taken out of a character's hands or off a rack comes into the hand at its grip.
+
+The carry ends when the gun leaves the hands, goes to the other hand, or another gun is wielded, and with the regions switched off or out of gameplay; the gun is then at its grip again. With the gun bodies on, every change of the holding hand remakes the gun body on its new seat, so a carried gun's body is joined where the hand holds it.
+
+The action's region is also where the reload places the action's handle while the chamber waits on it (`regions::action_volume`): a grip press there works the action, and anywhere else on the action it braces the gun.
+
+The fingers take each region's pose ([grip-poses.md](grip-poses.md)): the pistol grip on the grip, the foregrip's wrap on the handguard, a wrap round a thin bar on the barrel and a thicker one on the stock, a cup under the magazine, and a pinch on the action.
+
+### Its settings, readout, and log
+
+The settings are `controllers.weapons.regions` (`enabled`, `reach_m`, `grip_radius_m`, `rebrace_s`, `draw_wait_s`), under the hold's in the debug UI's Controllers tab, with a readout of each hand's region and role, the counts, and the wielded long gun's shape (its length and which known points it has). The `VR: STATUS` page's `WEAPONS IN HAND` section has `LEFT HAND ON GUN` and `RIGHT HAND ON GUN`: the region, `FIRING`, `BRACING`, or `CARRYING, CANNOT FIRE`, and the counts, with the gun's length and known points in the log's note; `NOT ON A GUN` while waiting, and `GUN'S SHAPE NOT READ` fails. The recorder's signals are `regions.carries`, `regions.braces`, `regions.grips_taken`, `regions.let_go`, and `regions.carrying`, and the template is `testing/scenarios/grab_anywhere.toml`.
+
+The log has, at info level, `regions: the left hand took the gun by its barrel` (or right, and the region) with the cause (`pickup`, `draw`, or `the holding hand let go`) and the anchor; `regions: the gun is no longer carried by its barrel` with the reason; `regions: the left hand braced the gun at its handguard`; and `regions: the left hand took the gun's grip; the other braces it at its stock`.
 
 ## Settings and readout
 
@@ -74,6 +116,24 @@ With the hand bodies and `PHYSICAL GUNS` on:
 13. Switch `PHYSICAL GUNS` off with a rifle in hand and resume: the gun body goes, the hand's body leaves the world, and the rifle sags and sways as before.
 14. Hold a rocket launcher: no gun body (`NO GUN BODY`), and its kinematic weight and recoil act.
 
+With `GRAB GUNS ANYWHERE` on, once with `PHYSICAL GUNS` off and once with it on:
+
+15. Draw a rifle and look at `RIGHT HAND ON GUN`: `GRIP, FIRING`, with the gun's length and its known points in the note. A rifle without a foregrip, a magazine well, or an action in the note still has its handguard and barrel.
+16. Take the rifle's handguard with the left hand behind the native foregrip, then well ahead of it near the muzzle: each time `regions: the left hand braced the gun at its handguard` (then `barrel`), the hand stays where it closed on the gun rather than jumping to the foregrip, the rifle points along the line between the hands, and `LEFT HAND ON GUN` reads `HANDGUARD, BRACING` (then `BARREL`). The fingers wrap the handguard, then close tighter round the barrel.
+17. Slide the left hand along the handguard and the barrel while bracing: the drawn hand follows along the gun, staying on it. With `PHYSICAL GUNS` on, the drawn hand stays where the brace joint holds it.
+18. Brace on the magazine and on the stock: `MAGAZINE, BRACING` with a cupped hand, and `STOCK, BRACING` with the rifle not turning toward the left hand.
+19. With `grip_to_hold` on, brace the barrel and let go with the right hand: `regions: the left hand took the gun by its barrel` with `cause="the holding hand let go"`, the rifle hangs from the left hand where it held it without jumping, `LEFT HAND ON GUN` reads `BARREL, CARRYING, CANNOT FIRE`, and the left trigger fires nothing. The muzzle effects and the sight line follow the carried rifle.
+20. Take the carried rifle's pistol grip with the right hand: `regions: the right hand took the gun's grip; the other braces it at its barrel`, then `braced the gun at its barrel`; the right trigger fires again, and the left hand stays on the barrel where it was.
+21. Carry the rifle by the barrel in the left hand, take the barrel with the right, and slide the right hand back onto the pistol grip: it becomes the firing hand the same way.
+22. Kill a soldier and pick his rifle up off the ground by the barrel: `took the gun by its barrel` with `cause="pickup"`; the rifle slides from the ground with the barrel into the palm, and cannot fire until the other hand takes the grip. Pick another up by its grip: no carry, and it fires.
+23. With a rifle on the back, reach over the shoulder and grab its barrel or stock rather than the grip: the rifle draws into the hand at that part (`cause="draw"`), with and without `DRAW LONG GUNS WITHOUT ANIMATION`. Grab it at the grip: it draws at the grip.
+24. With the gun bodies on, carry a rifle by the barrel and swing its stock into a soldier: the blow counts with the gun, and `RIGHT GUN BODY` (or left) shows the carrying hand's gun body.
+25. Holster and drop a carried rifle: `the gun is no longer carried` with `the gun left the hands`; draw it again at the grip: `GRIP, FIRING`.
+26. Empty a rifle that needs its charging handle worked, then grab the handle with the free hand while the chamber waits: the action is worked as before, not braced. Grab the same handle with the chamber loaded: `braced the gun at its action`, with a pinch.
+27. Pump a shotgun braced on its handguard: the pump moves with the hand as before, and the brace does not slide while the pump is out.
+28. Hold a pistol: `GRIP, FIRING`, and no part of it but the grip takes it.
+29. Switch `GRAB GUNS ANYWHERE` off while carrying a rifle by the barrel: it goes back to the grip, and the foregrip braces only at its own point again.
+
 ## Unverified
 
 - That the gun's own body's motion keeps a real mass while the weapon is held, and what masses the game gives its guns; the readout's mass source says, and the class fallbacks are guesses.
@@ -82,3 +142,8 @@ With the hand bodies and `PHYSICAL GUNS` on:
 - Whether the impulse defaults feel like recoil, and whether a full-auto burst walks the gun off the hands; the gun is put back on its seat if it strays.
 - Whether the engine's listeners do anything with a weapons-layer body of no owner meeting a character, as for the hand bodies.
 - Whether the fire point's axis is the barrel for every gun (a gun whose fire point is turned kicks off its barrel).
+- Whether the model's box fits each gun closely enough for its regions: a box that takes in a scope, a bipod, or a launcher under the barrel moves the handguard and the barrel's line, and the region sizes are judged, not measured.
+- Whether the attach point sits in the palm closely enough that a carried gun's anchor lands in the hand, and whether a gun turned on the wrist as the hand took it reads as held rather than stuck to the hand at an odd angle.
+- Whether the animation graph and the gun aim cope with a long gun carried by its barrel or stock on the hand's attach bone: the weapon is still wielded, so the upper body may hold an aiming pose with the gun pointing elsewhere.
+- Whether a brace sliding along the barrel reads as sliding with the gun bodies' brace joint holding the hand where it took hold, and whether the regions of a gun docked on the back line up with where the player reaches when the volumes ride the player's body rather than the character's.
+- Whether a pump worked from a brace on the barrel rather than the handguard behaves, since the reload takes any brace for the hand on the pump.
