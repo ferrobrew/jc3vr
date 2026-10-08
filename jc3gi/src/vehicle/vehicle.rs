@@ -192,6 +192,32 @@ fn _DoorState_size_check() {
     }
     unreachable!()
 }
+#[repr(C, align(8))]
+/// A helicopter (`CHelicopter`): a [`Vehicle`](crate::vehicle::vehicle::Vehicle) flown by its rotors. Only its run-time type is bound.
+pub struct Helicopter {}
+impl Helicopter {
+    pub const TYPE_ID_ADDRESS: usize = 0x140610050;
+    /// `CHelicopter::TYPE_ID`: the run-time type id of `CHelicopter`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<Helicopter> for Helicopter {
+    fn as_ref(&self) -> &Helicopter {
+        self
+    }
+}
+impl std::convert::AsMut<Helicopter> for Helicopter {
+    fn as_mut(&mut self) -> &mut Helicopter {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// A vehicle seat identifier (`NVehicle::ESeat`): an index into [`Vehicle::m_Seats`](crate::vehicle::vehicle::Vehicle::m_Seats), with the
@@ -256,7 +282,12 @@ pub struct Vehicle {
     /// [`UpdateLandingGearVariables`](crate::vehicle::vehicle::Vehicle::UpdateLandingGearVariables) rewrites it on every update;
     /// otherwise it keeps the value the AI steering last set.
     pub m_DesiredLandingGearState: bool,
-    _field_181e: [u8; 13334],
+    _field_181e: [u8; 18],
+    /// The vehicle's stunt areas: where a character in a stunt position stands on it. A
+    /// helicopter's stunt position is a hang from the airframe instead, entered through the
+    /// vehicle's interaction context rather than an area.
+    pub m_StuntAreas: crate::vehicle::stunt_areas::StuntAreas,
+    _field_4938: [u8; 764],
     /// The world-space point the vehicle's weapons aim at, written by
     /// [`SetAimTargetPosition`](crate::vehicle::vehicle::Vehicle::SetAimTargetPosition).
     pub m_AimingTargetPosition: crate::types::math::Vector3,
