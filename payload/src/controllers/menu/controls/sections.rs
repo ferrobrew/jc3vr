@@ -307,6 +307,11 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .hold
             .handover))
+        .item(config_toggle!("GRAB GUNS ANYWHERE", |c| c
+            .controllers
+            .weapons
+            .regions
+            .enabled))
         .item(config_toggle!("PICK WEAPONS UP INTO THE HAND", |c| c
             .controllers
             .weapons

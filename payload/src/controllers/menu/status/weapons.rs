@@ -12,6 +12,7 @@ use crate::controllers::{
         self,
         hold::{self, holder::Cause, second},
         holster::slot_label,
+        regions::{self, HandRole},
         reload::{
             self,
             chamber::{ActionKind, Chamber},
@@ -79,6 +80,53 @@ fn action(hand: Hand) -> Line {
         if travel.grip.is_some() { ", HELD" } else { "" },
         status.counts.racks
     ))
+}
+
+pub(super) fn left_hand_on_gun() -> Line {
+    hand_on_gun(Hand::Left)
+}
+
+pub(super) fn right_hand_on_gun() -> Line {
+    hand_on_gun(Hand::Right)
+}
+
+/// Where `hand` holds the wielded gun, and what it does there: fires it from the grip, braces it,
+/// or carries it by another part, unable to fire.
+fn hand_on_gun(hand: Hand) -> Line {
+    if !read_config(|c| c.controllers.weapons.regions.enabled) {
+        return Line::off("");
+    }
+    let status = regions::status();
+    let shape = status.shape.map(|s| {
+        format!(
+            "the gun is {:.0} cm long{}{}{}",
+            s.length_m * 100.0,
+            if s.foregrip { ", with a foregrip" } else { "" },
+            if s.magazine { ", a magazine well" } else { "" },
+            if s.action { ", an action" } else { "" },
+        )
+    });
+    let Some(on) = status.hands[hand.index()] else {
+        if status.unread {
+            return Line::failed("GUN'S SHAPE NOT READ");
+        }
+        return Line::waiting("NOT ON A GUN");
+    };
+    let role = match on.role {
+        HandRole::Carrying => "CARRYING, CANNOT FIRE".to_owned(),
+        role => role.label().to_uppercase(),
+    };
+    let line = Line::ok(format_smolstr!(
+        "{}, {role}, {} CARRIES, {} BRACES, {} GRIPS TAKEN",
+        on.region.label().to_uppercase(),
+        status.carries,
+        status.braces,
+        status.grips_taken
+    ));
+    match shape {
+        Some(shape) => line.with_note(shape),
+        None => line,
+    }
 }
 
 pub(super) fn second_weapon() -> Line {

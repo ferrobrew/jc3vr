@@ -37,6 +37,7 @@ use crate::{
             },
             holster::slot_label,
             recoil::{self, RecoilStatus},
+            regions::{self, RegionsStatus, config::RegionsConfig},
             reload::{self, ReloadStatus},
             unarmed_fire::{self, UnarmedFireStatus},
         },
@@ -56,6 +57,7 @@ pub(super) struct WeaponsReadout {
     recoil: RecoilStatus,
     dual_wield: DualWieldStatus,
     hold: HoldStatus,
+    regions: RegionsStatus,
     dock: DockStatus,
     second: SecondStatus,
     anchor: AnchorStatus,
@@ -79,6 +81,7 @@ impl WeaponsReadout {
             recoil: recoil::status(),
             dual_wield: dual_wield::status(),
             hold: hold::status(),
+            regions: regions::status(),
             dock: act::status(),
             second: second::status(),
             anchor: anchor::status(),
@@ -164,6 +167,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     });
     dual_wield_readout(ui, &readout.dual_wield);
     hold_readout(ui, &readout.hold, &readout.dock);
+    regions_readout(ui, &readout.regions);
     second_readout(ui, &readout.second);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
@@ -319,6 +323,35 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
             .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s")),
         d.last_refusal.map_or("none".to_owned(), |r| r.to_string())
     ));
+}
+
+fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
+    let hand = |hand: Hand| {
+        r.hands[hand.index()].map_or("off the gun".to_owned(), |on| {
+            format!("{} ({})", on.region.label(), on.role.label())
+        })
+    };
+    ui.label(format!(
+        "Grab anywhere: left {} · right {} · carries {} · braces {} · grips taken {} · left in the brace {} · slides {}",
+        hand(Hand::Left),
+        hand(Hand::Right),
+        r.carries,
+        r.braces,
+        r.grips_taken,
+        r.let_go,
+        r.slides
+    ));
+    match r.shape {
+        Some(s) => ui.label(format!(
+            "Gun shape: {:.2} m long · foregrip {} · magazine well {} · action {}",
+            s.length_m,
+            yes_no(s.foregrip),
+            yes_no(s.magazine),
+            yes_no(s.action)
+        )),
+        None if r.unread => ui.label("Gun shape: not read for the wielded long gun"),
+        None => ui.label("Gun shape: no long gun wielded"),
+    };
 }
 
 fn second_readout(ui: &mut Ui, s: &SecondStatus) {
@@ -557,6 +590,21 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     });
     dual_wield_settings(ui, &mut w.dual_wield);
     hold_settings(ui, &mut w.hold);
+    regions_settings(ui, &mut w.regions);
+}
+
+fn regions_settings(ui: &mut Ui, r: &mut RegionsConfig) {
+    ui.checkbox(&mut r.enabled, "Grab long guns anywhere")
+        .on_hover_text(
+            "A hand takes a long gun where it closes on it: the grip fires it, the handguard or \
+             barrel braces it, and a lone hand anywhere but the grip carries it unable to fire.",
+        );
+    ui.add_enabled_ui(r.enabled, |ui| {
+        ui.add(egui::Slider::new(&mut r.reach_m, 0.0..=0.15).text("Reach beyond the gun (m)"));
+        ui.add(egui::Slider::new(&mut r.grip_radius_m, 0.02..=0.15).text("Grip radius (m)"));
+        ui.add(egui::Slider::new(&mut r.rebrace_s, 0.0..=3.0).text("Brace waits for (s)"));
+        ui.add(egui::Slider::new(&mut r.draw_wait_s, 0.0..=6.0).text("Draw waits for (s)"));
+    });
 }
 
 /// The settings of the grenade throw, the C4 throw and the wrist detonator, and the true reload.

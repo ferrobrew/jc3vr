@@ -14,6 +14,7 @@ use crate::controllers::{
         self,
         engine::HeldWeapon,
         foregrip::set_pump_slide,
+        regions::{action_back, action_volume},
         reload::{
             FinishInputs, GunTick, MAX_EVENTS, MAX_RECORDS, Record, State, Tick, WeaponReadout,
             action::locks_back,
@@ -145,18 +146,19 @@ impl State {
         let gun = tick.guns[gun_hand.index()]?;
         let (handle, rearward) = gun.handle?;
         // The handle rides the part, so a slide held back is taken where it is.
-        let centre = if action.physical {
+        let back = if action.physical {
             let travel = &record.travels[gun_hand.index()];
-            handle + rearward * (travel.position * tick.plan.travel_m / tick.world_scale)
+            action_back(travel.position, tick.plan.travel_m, tick.world_scale)
         } else {
-            handle
+            0.0
         };
-        Some(Candidate {
-            volume: GrabVolume::WeaponAction,
-            centre,
-            radius: action.grab_radius_m,
-            hand: Some(free),
-        })
+        Some(action_volume(
+            handle,
+            rearward,
+            back,
+            action.grab_radius_m,
+            free,
+        ))
     }
 
     pub(super) fn record(&mut self, tick: &Tick) -> &mut Record {

@@ -74,6 +74,14 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
         if let Some(slot) = hands.guns[i].take() {
             let reason = if !acting {
                 Some("the holding hand's body stopped")
+            } else if wanted.is_some_and(|w| {
+                HeldGun {
+                    carry: slot.held.carry,
+                    ..w
+                } == slot.held
+            }) && wanted != Some(slot.held)
+            {
+                Some("the hand holds the gun by another part")
             } else if wanted != Some(slot.held) {
                 Some("the gun left the hand")
             } else if Some(slot.body.spec().system_group) != input.group {

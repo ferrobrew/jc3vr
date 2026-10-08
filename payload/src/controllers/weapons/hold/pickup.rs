@@ -37,6 +37,7 @@ use crate::controllers::{
         hold::{self, act, equip, holder::Cause},
         holster::slot_label,
         inventory,
+        regions::{self, CarryCause, WorldTouch},
     },
 };
 
@@ -100,6 +101,9 @@ pub struct TakeOptions {
     pub slide_s: f32,
     /// What took the weapon, for the holding hand's readout.
     pub cause: Cause,
+    /// Where the hand closed on the weapon, when a long gun is taken where the hand touched it
+    /// ([`crate::controllers::weapons::regions`]); without one, it comes into the hand at its grip.
+    pub touch: Option<WorldTouch>,
 }
 
 /// Pick `weapon` up into `hand` directly. Returns the slot the weapon went into.
@@ -140,6 +144,12 @@ pub(crate) unsafe fn take(
         );
     }
     let from = unsafe { gun_pose(weapon) };
+    let carry = from
+        .zip(options.touch)
+        .filter(|_| slot != WeaponSlot::E_SLOT_DUAL_WIELD)
+        .and_then(|(gun, touch)| unsafe {
+            regions::engine::world_carry(weapon, hand, gun, &touch)
+        });
     hold::begin(hand, options.cause, Some(address));
     if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
         dual_wield::attach::begin_draw(hand);
@@ -156,6 +166,9 @@ pub(crate) unsafe fn take(
     }
     if slot != WeaponSlot::E_SLOT_DUAL_WIELD {
         hold::adopt(address, hand);
+    }
+    if let Some(carry) = carry {
+        regions::begin_carry(address, hand, carry, CarryCause::Pickup);
     }
     if let Some(from) = from {
         act::slide_in(address, hand, from, options.slide_s);

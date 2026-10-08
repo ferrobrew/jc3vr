@@ -45,6 +45,7 @@ use crate::{
         },
         fingers::grip::GripSource,
         frame::Hand,
+        hands::ik,
         haptics::{self, Event},
         physical_hands::{
             STALE_AFTER, STATE, articulated, bodies,
@@ -65,6 +66,7 @@ use crate::{
                 holder::Cause,
                 pickup::{Refusal, TakeOptions},
             },
+            regions::WorldTouch,
         },
     },
 };
@@ -207,8 +209,14 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         }
     }
     drop(state);
-    let (holding, dual) =
-        Config::lock_query(|c| (c.controllers.weapons.hold, c.controllers.weapons.dual_wield));
+    let (holding, dual, regions) = Config::lock_query(|c| {
+        (
+            c.controllers.weapons.hold,
+            c.controllers.weapons.dual_wield,
+            c.controllers.weapons.regions,
+        )
+    });
+    let targets = ik::tick_records().current;
     for (hand, reach) in weapons {
         let refusal = if holding.direct_pickup {
             let options = TakeOptions {
@@ -220,6 +228,15 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                     0.0
                 },
                 cause: Cause::Pickup,
+                // A long gun is taken where the hand closed on it.
+                touch: targets[hand.index()]
+                    .filter(|_| regions.enabled)
+                    .map(|target| WorldTouch {
+                        point: reach.point,
+                        wrist: target.wrist.orientation,
+                        grip_radius: regions.grip_radius_m,
+                        reach: regions.reach_m,
+                    }),
             };
             // SAFETY: the input tick runs on the main thread outside the world update.
             let refusal = unsafe { take_weapon(hand, reach, options) }.err();

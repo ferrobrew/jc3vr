@@ -63,6 +63,9 @@ pub struct HeldGun {
     /// The gun's own body's id.
     pub body: u32,
     pub class: HeftClass,
+    /// The carry the hand holds the gun by, when it holds it by a part other than its grip
+    /// ([`crate::controllers::weapons::regions::carry_mark`]): the seat is the carry's.
+    pub carry: Option<u32>,
 }
 
 /// The guns in the hands on one input tick, indexed by [`Hand::index`].
@@ -272,6 +275,7 @@ mod tests {
             wrapper: NonZeroUsize::new(at + 16).unwrap(),
             body: 7,
             class: HeftClass::Rifle,
+            carry: None,
         }
     }
 

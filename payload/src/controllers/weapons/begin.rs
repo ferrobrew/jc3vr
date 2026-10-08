@@ -1,6 +1,8 @@
 //! The first half of the weapon handling's input tick: read the wielded weapon, place the grab
 //! volumes and the pistols, and report which volume each hand's grab point is in.
 
+use std::time::{Duration, Instant};
+
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 
@@ -11,8 +13,8 @@ use crate::{
         bindings::grab::{Candidate, GrabVolume, HolsterSite},
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
-        frame::Hand,
-        hands::{self, ActiveHands, CockpitHand},
+        frame::{Hand, Pose},
+        hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
         haptics::{self, Event},
         mode::{AirborneVariant, Mode, OnFootVariant},
         physical_hands::physics::guns,
@@ -25,9 +27,14 @@ use crate::{
             foregrip, grenade, grip_watch, heft, highlights,
             hold::{self, second},
             inventory::{self, actions::SocketPoint},
+            regions::{
+                self, Carry, GunRegion, GunShape, Observed,
+                config::RegionsConfig,
+                engine::{self as region_engine, DockedLongGun},
+            },
             reload::{self, focus::ReloadTarget},
             scope,
-            state::STATE,
+            state::{DockTouch, OffTouch, STATE, State},
             types::{TickStart, WieldedReadout},
             volumes::{self, Anchor, BodyFrame, ChestGrabbers, HeadDrop},
         },
@@ -109,6 +116,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                     held_by_hand(weapon, second),
                 ),
                 character: Some(Mat4::from(owner.m_WorldMatrixT1)),
+                docked_long: if config.weapons.regions.enabled
+                    && config.weapons.holsters.enabled
+                    && gameplay
+                {
+                    region_engine::docked_long_guns(owner, config.acting_hand())
+                } else {
+                    Vec::new()
+                },
             }
         })
     };
@@ -149,16 +164,39 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let geometry = weapon
         .filter(|w| w.two_handed && gameplay)
         .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
-    ads::observe(weapon.zip(geometry).and_then(|(w, g)| {
-        Some(ads::AdsWeapon {
-            holder: w.holder?,
-            sight: ads::solve::WristSight {
-                origin: g.sight,
-                direction: g.barrel,
-            },
-            scoped: scope::is_scoped(w.address),
-        })
-    }));
+    let regions_config = config.weapons.regions;
+    let long = weapon.filter(|w| regions_config.enabled && gameplay && w.two_handed);
+    // SAFETY: the weapon was read this tick, on the main thread outside the world update.
+    let shape = long.and_then(|w| unsafe {
+        region_engine::shape(
+            (w.address as *const WeaponBase).as_ref()?,
+            w.holder.unwrap_or(config.acting_hand()),
+        )
+    });
+    regions::observe(&Observed {
+        weapon: weapon.map(|w| (w.address, w.holder)),
+        long: long.is_some(),
+        shape,
+        now: Instant::now(),
+        draw_wait: seconds(regions_config.draw_wait_s),
+    });
+    // A gun carried by a part other than its grip is not aimed.
+    let carried = weapon.and_then(|w| regions::carrying(w.address));
+    ads::observe(
+        weapon
+            .zip(geometry)
+            .filter(|_| carried.is_none())
+            .and_then(|(w, g)| {
+                Some(ads::AdsWeapon {
+                    holder: w.holder?,
+                    sight: ads::solve::WristSight {
+                        origin: g.sight,
+                        direction: g.barrel,
+                    },
+                    scoped: scope::is_scoped(w.address),
+                })
+            }),
+    );
     collide::observe(weapon.zip(geometry).and_then(|(w, g)| {
         Some(collide::CollideWeapon {
             holder: w.holder?,
@@ -212,6 +250,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let body_points = body_points(&active, &body_frame.anchor);
     let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
     let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
+    state.docked_touch = [None; 2];
+    if gameplay {
+        candidates.extend(docked_candidates(
+            &mut state,
+            &ticked,
+            &active,
+            body_points,
+            free,
+            &regions_config,
+        ));
+    }
     if gameplay {
         candidates.extend(socket_candidates(
             &ticked,
@@ -272,31 +321,90 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .and_then(|w| w.holder)
         .map(Hand::other)
         .filter(|&h| second_hand != Some(h));
-    if config.weapons.foregrip.enabled
-        && hold.is_none()
-        && let (Some(g), Some(w), Some(off)) = (geometry, weapon, foregrip_hand)
-        && let Some(holder) = w.holder.and_then(|h| weighted_hands(&active)[h.index()])
-    {
-        candidates.push(Candidate {
-            volume: GrabVolume::Foregrip,
-            centre: foregrip::foregrip_point(&holder, &g),
-            radius: config.weapons.foregrip.radius_m,
-            hand: Some(off),
-        });
-    }
-    if holding.handover
+    let handover_allowed = holding.handover
         && gameplay
-        && let Some(w) = weapon
-        && let Some(holder) = hold::owned_holder(w.address)
-        && second_hand != Some(holder.other())
-        && let Some(grip) = weighted_hands(&active)[holder.index()]
-    {
-        candidates.push(Candidate {
-            volume: GrabVolume::Handle,
-            centre: grip.grip.position,
-            radius: holding.handle_radius_m,
-            hand: Some(holder.other()),
+        && weapon.is_some_and(|w| {
+            hold::owned_holder(w.address).is_some_and(|holder| second_hand != Some(holder.other()))
         });
+    let on_gun = match (long, geometry, shape) {
+        (Some(w), Some(g), Some(shape)) => w.holder.and_then(|holder| {
+            Some(GunOnHand {
+                hand: weighted_hands(&active)[holder.index()]?,
+                geometry: g,
+                shape,
+            })
+        }),
+        _ => None,
+    };
+    state.touch = None;
+    state.slide = None;
+    state.promote = None;
+    match on_gun {
+        Some(gun) => {
+            let touch = foregrip_hand
+                .filter(|_| hold.is_none())
+                .and_then(|off| off_touch(&gun, off, &active, &regions_config));
+            state.touch = touch.map(|(touch, _)| touch);
+            match touch {
+                Some((touch, centre)) if touch.hit.region == GunRegion::Grip => {
+                    if handover_allowed {
+                        candidates.push(Candidate {
+                            volume: GrabVolume::Handle,
+                            centre,
+                            radius: gun_volume_radius(touch.hit.distance)
+                                .max(holding.handle_radius_m),
+                            hand: Some(touch.hand),
+                        });
+                    }
+                }
+                Some((touch, centre)) if config.weapons.foregrip.enabled => {
+                    candidates.push(Candidate {
+                        volume: GrabVolume::Foregrip,
+                        centre,
+                        radius: gun_volume_radius(touch.hit.distance),
+                        hand: Some(touch.hand),
+                    });
+                }
+                _ => {}
+            }
+            if let Some(h) = hold.filter(|h| weapon.is_some_and(|w| w.address == h.weapon)) {
+                let carrying = carried.is_some();
+                match brace_moves(&gun, h.holder.other(), &active, &regions_config, carrying) {
+                    Some(BraceMove::OntoGrip) => state.promote = Some(h.holder.other()),
+                    // A pump the reload has out sets where the hand is along the barrel.
+                    Some(BraceMove::Slide(point, region)) if !foregrip::pumping(h.weapon) => {
+                        state.slide = Some((point, region));
+                    }
+                    Some(BraceMove::Slide(..)) | None => {}
+                }
+            }
+        }
+        None => {
+            if config.weapons.foregrip.enabled
+                && hold.is_none()
+                && let (Some(g), Some(w), Some(off)) = (geometry, weapon, foregrip_hand)
+                && let Some(holder) = w.holder.and_then(|h| weighted_hands(&active)[h.index()])
+            {
+                candidates.push(Candidate {
+                    volume: GrabVolume::Foregrip,
+                    centre: foregrip::foregrip_point(&holder, &g),
+                    radius: config.weapons.foregrip.radius_m,
+                    hand: Some(off),
+                });
+            }
+            if handover_allowed
+                && let Some(w) = weapon
+                && let Some(holder) = hold::owned_holder(w.address)
+                && let Some(grip) = weighted_hands(&active)[holder.index()]
+            {
+                candidates.push(Candidate {
+                    volume: GrabVolume::Handle,
+                    centre: grip.grip.position,
+                    radius: holding.handle_radius_m,
+                    hand: Some(holder.other()),
+                });
+            }
+        }
     }
 
     let volumes = Hand::BOTH.map(|hand| {
@@ -358,6 +466,168 @@ struct Ticked {
     sockets: Vec<SocketPoint>,
     /// The character's model-to-world transform.
     character: Option<Mat4>,
+    /// The long guns docked on the shoulders, for a draw at any part of one.
+    docked_long: Vec<DockedLongGun>,
+}
+
+/// The wielded long gun on its holding hand, as the regions place it.
+struct GunOnHand {
+    /// The holding hand as the gun is shown on it.
+    hand: CockpitHand,
+    geometry: foregrip::GripGeometry,
+    shape: GunShape,
+}
+
+impl GunOnHand {
+    /// The gun's own frame in the cockpit frame, with the position in cockpit metres.
+    fn pose(&self) -> Pose {
+        hand_pose::mul(self.hand.wrist, self.geometry.gun)
+    }
+}
+
+/// Where `hand` (the hand without the gun) touches the gun, and the centre of its volume in the
+/// cockpit frame.
+fn off_touch(
+    gun: &GunOnHand,
+    hand: Hand,
+    active: &ActiveHands,
+    config: &RegionsConfig,
+) -> Option<(OffTouch, Vec3)> {
+    let point = active.hands[hand.index()]?.grip.position;
+    let scale = active.world_scale;
+    let pose = gun.pose();
+    let hit = regions::classify(
+        &gun.shape,
+        regions::into_gun(pose, point, scale),
+        config.grip_radius_m,
+        config.reach_m,
+    )?;
+    let touch = OffTouch {
+        hand,
+        hit,
+        anchor_in_wrist: regions::out_of_gun(gun.geometry.gun, hit.anchor, scale),
+    };
+    Some((touch, regions::out_of_gun(pose, hit.anchor, scale)))
+}
+
+/// How a bracing hand moved along the gun.
+enum BraceMove {
+    /// Onto the grip of a gun the other hand carries.
+    OntoGrip,
+    /// Along the handguard or the barrel, to this point in the holding wrist's frame.
+    Slide(Vec3, GunRegion),
+}
+
+/// How the bracing hand `hand` has moved along the gun, from where its controller is: a hand that
+/// reaches the grip of a gun the holding hand carries takes it, and one on the handguard or the
+/// barrel slides along them.
+fn brace_moves(
+    gun: &GunOnHand,
+    hand: Hand,
+    active: &ActiveHands,
+    config: &RegionsConfig,
+    carrying: bool,
+) -> Option<BraceMove> {
+    let point = active.hands[hand.index()]?.grip.position;
+    let hit = regions::classify(
+        &gun.shape,
+        regions::into_gun(gun.pose(), point, active.world_scale),
+        config.grip_radius_m,
+        config.reach_m,
+    )?;
+    if hit.region == GunRegion::Grip {
+        return carrying.then_some(BraceMove::OntoGrip);
+    }
+    hit.region.slides().then(|| {
+        BraceMove::Slide(
+            regions::out_of_gun(gun.geometry.gun, hit.anchor, active.world_scale),
+            hit.region,
+        )
+    })
+}
+
+/// The radius of a volume on a gun centred where a hand `distance` away closes on it: the hand is
+/// just inside it, so any volume the hand is well inside of wins over the gun (the action's, while
+/// the chamber waits on it).
+fn gun_volume_radius(distance: f32) -> f32 {
+    (distance.max(0.0) + GUN_VOLUME_MARGIN_M) / GUN_VOLUME_DEPTH
+}
+
+/// How far past the hand a volume on a gun reaches, metres.
+const GUN_VOLUME_MARGIN_M: f32 = 0.01;
+/// How deep in a volume on a gun the hand is, as a share of its radius.
+const GUN_VOLUME_DEPTH: f32 = 0.95;
+
+/// The volumes on the long guns docked on the shoulders, for each free hand that touches one at a
+/// part other than its grip: a grab there draws the gun from its shoulder as the holster does, and
+/// the hand takes it where it touched it ([`regions::pend_draw`]). Notes each touch in `state`.
+fn docked_candidates(
+    state: &mut State,
+    ticked: &Ticked,
+    active: &ActiveHands,
+    body_points: [Option<Vec3>; 2],
+    free: [bool; 2],
+    config: &RegionsConfig,
+) -> Vec<Candidate> {
+    let mut out = Vec::new();
+    if ticked.docked_long.is_empty() {
+        return out;
+    }
+    let Some(frames) = ticked
+        .character
+        .and_then(|c| docks::cockpit_frames(active, c))
+    else {
+        return out;
+    };
+    let targets = ik::tick_records().current;
+    for hand in Hand::BOTH.into_iter().filter(|h| free[h.index()]) {
+        let (Some(point), Some(cockpit)) = (body_points[hand.index()], active.hands[hand.index()])
+        else {
+            continue;
+        };
+        let world = frames.cockpit_to_world(point);
+        let wrist = targets[hand.index()].map_or(frames.view * cockpit.wrist.orientation, |t| {
+            t.wrist.orientation
+        });
+        let touched = ticked
+            .docked_long
+            .iter()
+            .filter_map(|gun| {
+                let hit = regions::classify(
+                    &gun.shape,
+                    regions::into_gun(gun.pose, world, 1.0),
+                    config.grip_radius_m,
+                    config.reach_m,
+                )?;
+                Some((gun, hit))
+            })
+            .filter(|(_, hit)| hit.region != GunRegion::Grip)
+            .min_by(|a, b| a.1.distance.total_cmp(&b.1.distance));
+        let Some((gun, hit)) = touched else {
+            continue;
+        };
+        state.docked_touch[hand.index()] = Some(DockTouch {
+            site: gun.site,
+            weapon: gun.weapon,
+            carry: Carry {
+                region: hit.region,
+                anchor: hit.anchor,
+                turn: regions::turn_on_wrist(wrist, gun.pose.orientation),
+            },
+        });
+        out.push(Candidate {
+            volume: GrabVolume::Holster(gun.site),
+            centre: frames.world_to_cockpit(regions::out_of_gun(gun.pose, hit.anchor, 1.0)),
+            radius: gun_volume_radius(hit.distance / active.world_scale.max(f32::EPSILON)),
+            hand: Some(hand),
+        });
+    }
+    out
+}
+
+/// A duration of `s` seconds, zero for a value that is not a finite positive number.
+fn seconds(s: f32) -> Duration {
+    Duration::try_from_secs_f32(s).unwrap_or(Duration::ZERO)
 }
 
 /// Move the holsters with guns docked in them onto the guns ([`crate::controllers::weapons::docks`]),

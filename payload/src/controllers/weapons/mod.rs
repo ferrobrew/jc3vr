@@ -16,6 +16,8 @@
 //!   trigger;
 //! - [`hold`]: which hand holds the wielded weapon (the hand that drew it, took it off the
 //!   ground, or was handed it), the attach bones that put it there, and the direct pickup;
+//! - [`regions`]: a long gun's parts, derived from its model's box and its known points, and a
+//!   gun taken, braced, or carried by whichever part the hand closes on;
 //! - [`inventory`]: every weapon the player owns, holds, or let go of nearby, and the ones it
 //!   keeps from the game's despawn;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
@@ -77,6 +79,7 @@ pub mod hold;
 pub mod holster;
 pub mod inventory;
 pub mod recoil;
+pub mod regions;
 pub mod reload;
 pub mod scope;
 mod state;

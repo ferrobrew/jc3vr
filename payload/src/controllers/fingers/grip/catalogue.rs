@@ -18,6 +18,11 @@ pub enum GripPose {
     Foregrip,
     /// A magazine or a round held between the thumb and the first fingers.
     MagazinePinch,
+    /// A gun held by the magazine in its well: the palm under it and the fingers cupped round it.
+    MagazineCup,
+    /// A gun held by its slide or charging handle: pinched between the thumb and the bent index
+    /// and middle fingers, the others tucked.
+    SlidePinch,
     /// A grenade in the palm: every finger round a ball, spread a little.
     GrenadePalm,
     /// A C4 charge: a flat brick held between the thumb and straight fingers bent at the knuckles.
@@ -45,6 +50,8 @@ impl GripPose {
             GripPose::PistolGrip => "pistol grip",
             GripPose::Foregrip => "foregrip",
             GripPose::MagazinePinch => "magazine pinch",
+            GripPose::MagazineCup => "magazine cup",
+            GripPose::SlidePinch => "slide pinch",
             GripPose::GrenadePalm => "grenade palm",
             GripPose::ChargePinch => "charge pinch",
             GripPose::LedgeHook => "ledge hook",
@@ -90,6 +97,22 @@ impl GripPose {
                 hook: [0.0, -0.4, -0.3, 0.0, 0.0],
                 opposition: 1.0,
                 thumb_spread_deg: Some(35.0),
+                roles: [Posed; 5],
+            },
+            GripPose::MagazineCup => PoseShape {
+                curl: [0.45, 0.55, 0.6, 0.62, 0.65],
+                splay: [0.0, 0.04, 0.0, -0.04, -0.08],
+                hook: [0.0, 0.25, 0.25, 0.25, 0.25],
+                opposition: 0.6,
+                thumb_spread_deg: Some(40.0),
+                roles: [Posed; 5],
+            },
+            GripPose::SlidePinch => PoseShape {
+                curl: [0.45, 0.55, 0.6, 0.85, 0.9],
+                splay: [0.0, 0.0, 0.0, -0.03, -0.06],
+                hook: [0.0, -0.5, -0.4, 0.0, 0.0],
+                opposition: 1.0,
+                thumb_spread_deg: Some(30.0),
                 roles: [Posed; 5],
             },
             GripPose::GrenadePalm => PoseShape {

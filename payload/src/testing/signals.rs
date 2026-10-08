@@ -24,7 +24,7 @@ use crate::{
         weapons::{
             self, ads, c4, collide, grenade, grip_watch,
             hold::second,
-            inventory,
+            inventory, regions,
             reload::{self, loose},
         },
     },
@@ -202,6 +202,11 @@ signals! {
     AdsWelded => "ads.welded", Counter, "Times a scope came onto the eye.";
     GunContacts => "collide.contacts", Counter, "Times a held long gun came against a wall.";
     GunTouching => "collide.touching", Flag, "A held long gun is against a wall.";
+    RegionCarries => "regions.carries", Counter, "Long guns taken by a part other than the grip.";
+    RegionBraces => "regions.braces", Counter, "Long guns braced at the point the second hand closed on.";
+    RegionGripsTaken => "regions.grips_taken", Counter, "Grips taken from a carrying hand or slid along to.";
+    RegionLetGo => "regions.let_go", Counter, "Long guns left carried in the bracing hand when the holding hand let go.";
+    RegionCarrying => "regions.carrying", Flag, "A hand carries the wielded gun by a part other than its grip.";
     InventoryCarried => "inventory.carried", Measure, "Weapons the inventory carries beyond the slots.";
     InventoryDraws => "inventory.draws", Counter, "Carried weapons drawn off their sockets into a hand.";
     InventoryStows => "inventory.stows", Counter, "Held weapons put onto a free socket.";
@@ -420,6 +425,17 @@ impl Signal {
             Signal::InventoryPins => count(inventory::status().pins),
             Signal::InventoryResets => count(inventory::status().resets),
             Signal::GunTouching => flag(collide::status().touching),
+            Signal::RegionCarries => count(regions::status().carries),
+            Signal::RegionBraces => count(regions::status().braces),
+            Signal::RegionGripsTaken => count(regions::status().grips_taken),
+            Signal::RegionLetGo => count(regions::status().let_go),
+            Signal::RegionCarrying => flag(
+                regions::status()
+                    .hands
+                    .iter()
+                    .flatten()
+                    .any(|h| h.role == regions::HandRole::Carrying),
+            ),
             Signal::GripFlips => count(grip_watch::status().flips.iter().sum()),
             Signal::GripPins => count(grip::status().pins),
             Signal::StickSpeed => locomotion::status()

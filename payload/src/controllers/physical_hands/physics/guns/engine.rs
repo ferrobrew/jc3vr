@@ -24,7 +24,7 @@ use crate::controllers::{
         },
         world::World,
     },
-    weapons::{foregrip, heft::HeftClass, hold::act},
+    weapons::{foregrip, heft::HeftClass, hold::act, regions},
 };
 
 /// Read the guns in the hands: each hand whose gun the rigid grip pinned lately, of one of
@@ -56,7 +56,11 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
             continue;
         }
         // SAFETY: forwarded from the caller; the weapon was read live this tick.
-        holds.guns[hand.index()] = unsafe { held_gun(weapon, placed.gun, class) };
+        holds.guns[hand.index()] =
+            unsafe { held_gun(weapon, placed.gun, class) }.map(|gun| HeldGun {
+                carry: regions::carry_mark(weapon, hand),
+                ..gun
+            });
     }
     if let Some(hold) = foregrip::status().hold.filter(|h| h.engaged) {
         let off = hold.holder.other();
@@ -201,5 +205,6 @@ unsafe fn held_gun(weapon: usize, index: usize, class: HeftClass) -> Option<Held
         wrapper: NonZeroUsize::new(data.m_PfxInstance as usize)?,
         body: wrapper.m_BodyId,
         class,
+        carry: None,
     })
 }

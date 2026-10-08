@@ -39,7 +39,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     frame::{Hand, Pose},
     hands::{CockpitHand, pose as hand_pose},
-    weapons::config::ForegripConfig,
+    weapons::{config::ForegripConfig, regions::GunRegion},
 };
 
 /// The weapon's geometry in the holding hand's wrist frame.
@@ -56,6 +56,9 @@ pub struct GripGeometry {
     /// Whether the foregrip is the weapon's own grip point rather than the fallback along the
     /// barrel.
     pub native: bool,
+    /// The first gun's own frame: its pose on the wrist, with the position in the wrist frame's
+    /// units.
+    pub gun: Pose,
 }
 
 /// A two-handed hold, engaged or blending out.
@@ -66,6 +69,8 @@ pub struct Hold {
     /// The held weapon's address, which ends the hold when it changes.
     pub weapon: usize,
     pub geometry: GripGeometry,
+    /// The part of the gun the off-hand holds; the foregrip's point is where it closes on it.
+    pub region: GunRegion,
     /// Whether the off-hand holds the foregrip; false while the hold blends out.
     pub engaged: bool,
     /// The share of the two-handed pose, `0..=1`.
@@ -129,6 +134,8 @@ pub struct TwoHandGrip {
     pub holder: Hand,
     /// The share of the two-handed pose, `0..=1`: one once the grip has fully engaged.
     pub weight: f32,
+    /// The part of the gun the off-hand holds.
+    pub region: GunRegion,
 }
 
 /// The engaged two-hand grip, or `None` while the weapon is held in one hand.
@@ -140,6 +147,7 @@ pub fn two_hand_grip() -> Option<TwoHandGrip> {
         .map(|h| TwoHandGrip {
             holder: h.holder,
             weight: h.weight,
+            region: h.region,
         })
 }
 
@@ -164,7 +172,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], config: &ForegripConfig) {
     ) else {
         return;
     };
-    let pose = two_hand(holder, off, &hold.geometry, hold.weight, config);
+    let pose = hold_pose(&hold, holder, off, config);
     STATE.lock().turn = pose.map(|p| p.turn);
     if let Some(pose) = pose {
         hands[hold.holder.index()] = Some(pose.holder);
@@ -178,9 +186,34 @@ pub(crate) fn set_pump_slide(slide: Option<(usize, f32)>) {
     *PUMP_SLIDE.lock() = slide.filter(|(_, m)| m.is_finite());
 }
 
+/// Whether the reload has the pump of the weapon at `weapon` out, so the pump sets where the
+/// off-hand is along the barrel.
+pub(crate) fn pumping(weapon: usize) -> bool {
+    PUMP_SLIDE.lock().is_some_and(|(w, _)| w == weapon)
+}
+
 /// The foregrip moved `back_m` back along the barrel, with the pump.
 pub fn slid_foregrip(geometry: &GripGeometry, back_m: f32) -> Vec3 {
     geometry.foregrip - geometry.barrel * back_m
+}
+
+/// The hands in the pose of `hold`: the two-handed pose for an off-hand that steers the gun, and
+/// for one that does not (on the stock), the off-hand moved onto its point on the gun with the
+/// holding hand as it is.
+pub fn hold_pose(
+    hold: &Hold,
+    holder: CockpitHand,
+    off: CockpitHand,
+    config: &ForegripConfig,
+) -> Option<TwoHandPose> {
+    if hold.region.steers() {
+        return two_hand(holder, off, &hold.geometry, hold.weight, config);
+    }
+    Some(TwoHandPose {
+        holder,
+        off: onto_foregrip(&holder, off, &hold.geometry, hold.weight),
+        turn: Turn::default(),
+    })
 }
 
 /// The foregrip's point in the frame `holder` is given in.
@@ -249,21 +282,32 @@ pub fn two_hand(
         grip: rotate(holder.grip),
         aim: rotate(holder.aim),
     };
-    let shift = (foregrip_point(&holder, geometry) - off.grip.position) * weight;
-    let moved = |p: Pose| Pose {
-        position: p.position + shift,
-        orientation: p.orientation,
-    };
-    let off = CockpitHand {
-        wrist: moved(off.wrist),
-        grip: moved(off.grip),
-        aim: moved(off.aim),
-    };
+    let off = onto_foregrip(&holder, off, geometry, weight);
     Some(TwoHandPose {
         holder,
         off,
         turn: turn_info,
     })
+}
+
+/// The off-hand moved `weight` of the way onto the foregrip of the gun on `holder`, keeping its
+/// rotation.
+pub fn onto_foregrip(
+    holder: &CockpitHand,
+    off: CockpitHand,
+    geometry: &GripGeometry,
+    weight: f32,
+) -> CockpitHand {
+    let shift = (foregrip_point(holder, geometry) - off.grip.position) * weight.clamp(0.0, 1.0);
+    let moved = |p: Pose| Pose {
+        position: p.position + shift,
+        orientation: p.orientation,
+    };
+    CockpitHand {
+        wrist: moved(off.wrist),
+        grip: moved(off.grip),
+        aim: moved(off.aim),
+    }
 }
 
 /// The share of the two-handed pose a span of `span` metres between the grips lets through: none
@@ -290,6 +334,9 @@ pub struct Inputs {
     /// Whether the off-hand's grip is held, which keeps a hold under
     /// [`ForegripConfig::hold`].
     pub grip_held: bool,
+    /// Where an engaged hold's off-hand has slid to along the gun, in the holding wrist's frame,
+    /// and the region it is in there: a hold on a region the hand slides along follows it.
+    pub slide: Option<(Vec3, GunRegion)>,
 }
 
 /// A two-handed weapon in the hands.
@@ -297,8 +344,11 @@ pub struct Inputs {
 pub struct TwoHandedWeapon {
     pub holder: Hand,
     pub address: usize,
-    /// `None` until the geometry has been measured.
+    /// `None` until the geometry has been measured. Its foregrip is where a grab this tick closes
+    /// on the gun.
     pub geometry: Option<GripGeometry>,
+    /// The part of the gun a grab this tick closes on.
+    pub region: GunRegion,
 }
 
 /// What a tick did to the hold.
@@ -320,6 +370,7 @@ pub fn step(
     } else {
         1.0
     };
+    let hold = hold.map(|h| slid(h, inputs.slide));
     let release = match (hold.filter(|h| h.engaged), inputs.weapon) {
         (Some(_), _) if !inputs.active => Some(Release::HandsGone),
         (Some(h), Some(w)) if w.address != h.weapon || w.holder != h.holder => {
@@ -361,6 +412,7 @@ pub fn step(
             holder: weapon.holder,
             weapon: weapon.address,
             geometry,
+            region: weapon.region,
             engaged: true,
             weight: (weight + rate).min(1.0),
         };
@@ -377,9 +429,33 @@ fn moved_away(
     off: CockpitHand,
     config: &ForegripConfig,
 ) -> Option<Release> {
-    let holder = two_hand(holder, off, &hold.geometry, 1.0, config).map_or(holder, |p| p.holder);
+    let holder = if hold.region.steers() {
+        two_hand(holder, off, &hold.geometry, 1.0, config).map_or(holder, |p| p.holder)
+    } else {
+        holder
+    };
     let distance = foregrip_point(&holder, &hold.geometry).distance(off.grip.position);
     (distance > config.release_distance_m).then_some(Release::MovedAway)
+}
+
+/// An engaged hold on a region the hand slides along, moved to where the hand has slid to while it
+/// stays on such a region.
+fn slid(hold: Hold, slide: Option<(Vec3, GunRegion)>) -> Hold {
+    match slide {
+        Some((point, region))
+            if hold.engaged && hold.region.slides() && region.slides() && point.is_finite() =>
+        {
+            Hold {
+                geometry: GripGeometry {
+                    foregrip: point,
+                    ..hold.geometry
+                },
+                region,
+                ..hold
+            }
+        }
+        _ => hold,
+    }
 }
 
 /// A released hold blending out, dropped once its weight reaches zero.
@@ -467,6 +543,7 @@ mod tests {
         sight: Vec3::new(0.0, 0.08, 0.0),
         muzzle: Vec3::new(0.0, 0.05, -0.7),
         native: true,
+        gun: Pose::IDENTITY,
     };
 
     #[test]
@@ -495,9 +572,11 @@ mod tests {
                 holder: Hand::Right,
                 address: 0x1000,
                 geometry: Some(RIFLE),
+                region: GunRegion::Handguard,
             }),
             grab_pressed: grab,
             grip_held: true,
+            slide: None,
         }
     }
 
@@ -577,6 +656,7 @@ mod tests {
             sight: Vec3::new(0.0, 0.08, 0.0),
             muzzle: Vec3::new(0.0, 0.05, -0.7),
             native: true,
+            gun: Pose::IDENTITY,
         };
         let pose = two_hand(
             hand(Vec3::ZERO),
@@ -716,5 +796,52 @@ mod tests {
         assert!((hold.weight - 0.5).abs() < 1e-5);
         let (hold, _) = step(Some(hold), &inputs(near, false), 0.05, &config);
         assert_eq!(hold, None);
+    }
+
+    #[test]
+    fn a_hold_slides_along_the_handguard_and_barrel_but_not_off_them() {
+        let config = config();
+        let near = Vec3::new(0.0, 0.0, -0.4);
+        let (hold, _) = step(None, &inputs(near, true), DT, &config);
+        assert_eq!(hold.unwrap().region, GunRegion::Handguard);
+        let further = Vec3::new(0.0, 0.0, -0.55);
+        let slide = |point, region| Inputs {
+            slide: Some((point, region)),
+            ..inputs(further, false)
+        };
+        let (hold, t) = step(hold, &slide(further, GunRegion::Barrel), DT, &config);
+        assert_eq!(t, None);
+        let hold = hold.unwrap();
+        assert_eq!(hold.region, GunRegion::Barrel);
+        assert!(close(hold.geometry.foregrip, further));
+        // A hand that slides onto the magazine keeps its hold where it was.
+        let (kept, _) = step(
+            Some(hold),
+            &slide(Vec3::new(0.0, -0.1, -0.2), GunRegion::Magazine),
+            DT,
+            &config,
+        );
+        assert!(close(kept.unwrap().geometry.foregrip, further));
+    }
+
+    #[test]
+    fn a_hand_on_the_stock_holds_the_gun_without_steering_it() {
+        let c = config();
+        let stock = Vec3::new(0.0, 0.0, 0.25);
+        let geometry = GripGeometry {
+            foregrip: stock,
+            ..RIFLE
+        };
+        let hold = Hold {
+            holder: Hand::Right,
+            weapon: 0x1000,
+            geometry,
+            region: GunRegion::Stock,
+            engaged: true,
+            weight: 1.0,
+        };
+        let pose = hold_pose(&hold, hand(Vec3::ZERO), hand(Vec3::new(0.05, 0.0, 0.3)), &c).unwrap();
+        assert_eq!(pose.holder.wrist.orientation, Quat::IDENTITY);
+        assert!(close(pose.off.grip.position, stock));
     }
 }

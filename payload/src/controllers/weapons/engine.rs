@@ -136,12 +136,31 @@ pub unsafe fn measure_geometry(
     } else {
         barrel * foregrip.fallback_distance_m
     };
-    (foregrip.is_finite() && sight.is_finite() && muzzle.is_finite()).then_some(GripGeometry {
+    let (_, gun_rotation, gun_position) =
+        Mat4::from(first.m_WorldMatrixT1).to_scale_rotation_translation();
+    let gun = hand_pose::mul(
+        to_wrist,
+        Pose {
+            position: gun_position,
+            orientation: gun_rotation.normalize(),
+        },
+    );
+    let gun = Pose {
+        position: gun.position / world_scale,
+        orientation: gun.orientation,
+    };
+    let finite = foregrip.is_finite()
+        && sight.is_finite()
+        && muzzle.is_finite()
+        && gun.position.is_finite()
+        && gun.orientation.is_finite();
+    finite.then_some(GripGeometry {
         foregrip,
         barrel,
         sight,
         muzzle,
         native,
+        gun,
     })
 }
 

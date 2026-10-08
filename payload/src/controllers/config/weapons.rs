@@ -10,6 +10,7 @@ use crate::controllers::weapons::{
         HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
     },
     inventory::config::InventoryConfig,
+    regions::config::RegionsConfig,
     reload::config::ReloadConfig,
     wheel::config::WheelConfig,
 };
@@ -38,6 +39,9 @@ pub struct WeaponsConfig {
     pub dual_wield: DualWieldConfig,
     /// Which hand holds the weapon: the hand that drew it, picked it up, or was handed it.
     pub hold: HoldConfig,
+    /// A long gun grabbed anywhere along it: held where the hand closed on it, braced there by a
+    /// second hand, and fired only from its grip.
+    pub regions: RegionsConfig,
     /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
     /// game's timed reload.
     pub reload: ReloadConfig,
@@ -93,6 +97,7 @@ impl WeaponsConfig {
             heft: HeftConfig::new(),
             dual_wield: DualWieldConfig::new(),
             hold: HoldConfig::new(),
+            regions: RegionsConfig::new(),
             reload: ReloadConfig::new(),
             grenade_throw: true,
             grenade: GrenadeConfig::new(),

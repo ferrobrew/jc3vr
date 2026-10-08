@@ -139,6 +139,8 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
                     TargetKind::Held { .. } => Cause::Steal,
                     TargetKind::Rack { .. } => Cause::Rack,
                 },
+                // A gun taken from a character's hands or a rack comes into the hand at its grip.
+                touch: None,
             };
             match target.kind {
                 TargetKind::Held { .. } => {

@@ -351,6 +351,7 @@ mod tests {
             config::{BracedTuning, HeftConfig, HeftTuning},
             foregrip,
             heft::pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
+            regions::GunRegion,
         },
     };
 
@@ -576,6 +577,7 @@ mod tests {
             Some(foregrip::TwoHandGrip {
                 holder: Hand::Right,
                 weight,
+                region: GunRegion::Handguard,
             })
         };
         assert_eq!(unbraced_share(grip_on(1.0), Hand::Right), 0.0);
