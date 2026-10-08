@@ -15,6 +15,7 @@ use crate::controllers::{
             arms::Side,
             lower::{LowerPose, LowerStatus, SitLegs},
         },
+        twist::TwistStatus,
     },
     frame::Hand,
     hands::grip::{self, GripRead},
@@ -232,6 +233,38 @@ pub(super) fn stance() -> Line {
         Line::ok("MEASURED")
     } else {
         Line::waiting("STAND STILL")
+    }
+}
+
+pub(super) fn twist_bones() -> Line {
+    let (enabled, mode) = read_config(|c| {
+        (
+            c.controllers.body.procedural.twist_bones,
+            c.controllers.body.procedural.mode,
+        )
+    });
+    if !enabled || mode != ProceduralMode::Full {
+        return Line::off("");
+    }
+    twist_line(&procedural::twist::status())
+}
+
+/// The twist bones found and the largest twist they carried on the last pass.
+fn twist_line(status: &TwistStatus) -> Line {
+    match status.bones {
+        None => Line::waiting("NOT READ"),
+        Some((0, _)) => Line::failed("NONE FOUND"),
+        Some((bones, segments)) => {
+            let detail = format_smolstr!(
+                "{bones} ON {segments}, {:.0}°",
+                status.largest_twist.to_degrees()
+            );
+            if status.wrote {
+                Line::ok(detail)
+            } else {
+                Line::waiting(detail)
+            }
+        }
     }
 }
 
@@ -621,6 +654,19 @@ mod tests {
         );
         assert_eq!(text(status(0.0, true, false, 0.0)), "WAITING, STAND STILL");
         assert_eq!(text(status(0.0, false, true, 0.0)), "OK, IDLE");
+    }
+
+    #[test]
+    fn the_twist_bones_line_counts_them_and_names_the_twist() {
+        let mut status = TwistStatus::default();
+        assert_eq!(twist_line(&status).text(), "WAITING, NOT READ");
+        status.bones = Some((0, 0));
+        assert_eq!(twist_line(&status).text(), "FAILED, NONE FOUND");
+        status.bones = Some((4, 4));
+        status.largest_twist = 1.0;
+        assert_eq!(twist_line(&status).text(), "WAITING, 4 ON 4, 57°");
+        status.wrote = true;
+        assert_eq!(twist_line(&status).text(), "OK, 4 ON 4, 57°");
     }
 
     #[test]

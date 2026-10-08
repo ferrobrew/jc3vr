@@ -167,5 +167,6 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         hands::ik::after_solve(character);
         controllers::fingers::after_solve(character);
         controllers::body::alignment::after_solve(character);
+        controllers::body::procedural::twist::after_solve(character);
     }
 }

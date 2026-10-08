@@ -164,6 +164,9 @@ pub struct ProceduralBodyConfig {
     pub landing_dip_min_speed_mps: f32,
     /// How long after landing the dip is deepest, seconds; it recovers over a few times that.
     pub landing_dip_s: f32,
+    /// Share each limb's twist out over its twist bones after the solve, so a large twist of a
+    /// hand or a foot does not wring the skin at one joint.
+    pub twist_bones: bool,
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act, seconds: the game keeps no state for the reaction's length.
     pub hit_reaction_hold_s: f32,
@@ -237,6 +240,7 @@ impl ProceduralBodyConfig {
             landing_dip_max_m: 0.15,
             landing_dip_min_speed_mps: 1.5,
             landing_dip_s: 0.1,
+            twist_bones: true,
             hit_reaction_hold_s: 1.2,
         }
     }

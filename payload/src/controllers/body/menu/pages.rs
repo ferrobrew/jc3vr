@@ -139,6 +139,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .clavicles))
+        .item(config_toggle!("SPREAD THE LIMB TWIST", |c| c
+            .controllers
+            .body
+            .procedural
+            .twist_bones))
         .text("TEST WRITES THE POSE BACK AS IS.")
         .header("ALIGNMENT")
         .item(config_toggle!("BODY FACES YOUR TORSO", |c| c

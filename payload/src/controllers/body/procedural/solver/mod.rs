@@ -38,6 +38,7 @@ pub mod hips;
 pub mod lower;
 pub mod pose;
 pub mod spine;
+pub mod twist;
 pub mod two_bone;
 
 use glam::{Quat, Vec2, Vec3};
