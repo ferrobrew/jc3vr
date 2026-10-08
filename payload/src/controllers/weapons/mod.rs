@@ -106,7 +106,7 @@ use crate::{
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             holster::HolsterAction,
-            volumes::{NearMiss, Stance},
+            volumes::{ChestGrabbers, NearMiss, Stance},
         },
     },
     headpose,
@@ -284,16 +284,24 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         if config.weapons.holsters.enabled {
             candidates = volumes::holster_candidates(&body_frame, &dims, &config.weapons.holsters);
         }
+        let grabbers = ChestGrabbers::for_guns(weapon.map_or([false; 2], |w| w.wielded.hands));
         if config.weapons.grenade_throw {
-            candidates.push(volumes::grenade_pouch(
+            candidates.extend(volumes::grenade_pouch(
                 &body_frame,
                 &dims,
                 pouches,
                 gun_side,
+                grabbers,
             ));
         }
         if config.weapons.c4_throw {
-            candidates.push(volumes::c4_pouch(&body_frame, &dims, pouches, gun_side));
+            candidates.extend(volumes::c4_pouch(
+                &body_frame,
+                &dims,
+                pouches,
+                gun_side,
+                grabbers,
+            ));
         }
     }
     candidates.extend(reload::begin_tick(&reload::BeginInputs {

@@ -215,34 +215,70 @@ pub fn gun_side(holder: Option<Hand>, last_holder: Option<Hand>, dominant: Hand)
     holder.or(last_holder).unwrap_or(dominant)
 }
 
-/// The grenade pouch on the front of the chest, a volume either hand may grab (whichever grabs it
-/// throws).
+/// The hands that may take from the chest pouches.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ChestGrabbers {
+    Either,
+    Only(Hand),
+    /// No hand is free: the pouches are not placed.
+    Neither,
+}
+
+impl ChestGrabbers {
+    /// The hands that may take from the chest pouches while `gun_hands` (by [`Hand::index`]) hold
+    /// guns: either hand with no gun drawn, the free hand while one hand holds a gun, and neither
+    /// while both do. A gun hand that took a grenade or a charge would prime it in the gun's hand.
+    pub fn for_guns(gun_hands: [bool; 2]) -> Self {
+        match gun_hands {
+            [false, false] => ChestGrabbers::Either,
+            [true, true] => ChestGrabbers::Neither,
+            [true, false] => ChestGrabbers::Only(Hand::Right),
+            [false, true] => ChestGrabbers::Only(Hand::Left),
+        }
+    }
+
+    /// The candidate's hand, or `None` for a pouch that is not placed.
+    fn hand(self) -> Option<Option<Hand>> {
+        match self {
+            ChestGrabbers::Either => Some(None),
+            ChestGrabbers::Only(hand) => Some(Some(hand)),
+            ChestGrabbers::Neither => None,
+        }
+    }
+}
+
+/// The grenade pouch on the front of the chest, a volume for `grabbers` (whichever grabs it
+/// throws), or `None` while no hand may take from it.
 pub fn grenade_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     pouches: &PouchesConfig,
     gun_side: Hand,
-) -> Candidate {
+    grabbers: ChestGrabbers,
+) -> Option<Candidate> {
     let side = chest_sides(pouches, gun_side).grenade;
-    chest_pouch(
+    let pouch = chest_pouch(
         GrabVolume::GrenadePouch,
         frame,
         dims,
         &pouches.grenade,
         side,
-    )
+    );
+    grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
 
-/// The C4 pouch on the front of the chest, on the side the grenade pouch leaves, a volume either
-/// hand may grab (whichever grabs it throws).
+/// The C4 pouch on the front of the chest, on the side the grenade pouch leaves, a volume for
+/// `grabbers` (whichever grabs it throws), or `None` while no hand may take from it.
 pub fn c4_pouch(
     frame: &BodyFrame,
     dims: &BodyDimensions,
     pouches: &PouchesConfig,
     gun_side: Hand,
-) -> Candidate {
+    grabbers: ChestGrabbers,
+) -> Option<Candidate> {
     let side = chest_sides(pouches, gun_side).c4;
-    chest_pouch(GrabVolume::C4Pouch, frame, dims, &pouches.c4, side)
+    let pouch = chest_pouch(GrabVolume::C4Pouch, frame, dims, &pouches.c4, side);
+    grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
 
 /// The universal reload pouch at the front of the belt, a volume for `grabber`, the hand without a

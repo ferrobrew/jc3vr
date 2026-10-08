@@ -43,8 +43,20 @@ fn every_volume_for(
     dominant: Hand,
 ) -> Vec<Candidate> {
     let mut c = holsters(frame, dims);
-    c.push(grenade_pouch(frame, dims, pouches, dominant));
-    c.push(c4_pouch(frame, dims, pouches, dominant));
+    c.extend(grenade_pouch(
+        frame,
+        dims,
+        pouches,
+        dominant,
+        ChestGrabbers::Either,
+    ));
+    c.extend(c4_pouch(
+        frame,
+        dims,
+        pouches,
+        dominant,
+        ChestGrabbers::Either,
+    ));
     c.push(magazine_pouch(
         frame,
         dims,
@@ -241,7 +253,7 @@ fn the_pouches_are_laid_out_around_the_gun_hand_not_the_dominant_hand() {
     let both_held = magazine_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, None);
     assert!(both_held.centre.x < 0.0);
     // The grenades go on the gun hand's side by default.
-    let grenade = grenade_pouch(&STANDING, &DIMS, &POUCHES, side);
+    let grenade = grenade_pouch(&STANDING, &DIMS, &POUCHES, side, ChestGrabbers::Either).unwrap();
     assert!(grenade.centre.x > 0.0);
     // Holstered, the layout stays where the last gun had it, and falls back on the dominant hand
     // before any gun is drawn.
@@ -558,5 +570,52 @@ fn a_pouch_wins_over_a_holster_that_also_holds_the_hand() {
     assert_eq!(
         grab_volume_by(Hand::Left, &c, |_| Vec3::new(1.0, 0.0, 0.0)),
         None
+    );
+}
+
+#[test]
+fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
+    assert_eq!(ChestGrabbers::for_guns([false; 2]), ChestGrabbers::Either);
+    assert_eq!(
+        ChestGrabbers::for_guns([false, true]),
+        ChestGrabbers::Only(Hand::Left)
+    );
+    assert_eq!(
+        ChestGrabbers::for_guns([true, false]),
+        ChestGrabbers::Only(Hand::Right)
+    );
+    assert_eq!(ChestGrabbers::for_guns([true; 2]), ChestGrabbers::Neither);
+    let only_left = ChestGrabbers::Only(Hand::Left);
+    for pouch in [
+        grenade_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, only_left).unwrap(),
+        c4_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, only_left).unwrap(),
+    ] {
+        assert_eq!(pouch.hand, Some(Hand::Left));
+        let c = [pouch];
+        assert_eq!(grab_volume(pouch.centre, Hand::Right, &c), None);
+        assert_eq!(
+            grab_volume(pouch.centre, Hand::Left, &c),
+            Some(pouch.volume)
+        );
+    }
+    assert!(
+        grenade_pouch(
+            &STANDING,
+            &DIMS,
+            &POUCHES,
+            Hand::Right,
+            ChestGrabbers::Neither
+        )
+        .is_none()
+    );
+    assert!(
+        c4_pouch(
+            &STANDING,
+            &DIMS,
+            &POUCHES,
+            Hand::Right,
+            ChestGrabbers::Neither
+        )
+        .is_none()
     );
 }
