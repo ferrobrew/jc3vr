@@ -45,7 +45,7 @@ use crate::{
         frame::Hand,
         hands::late,
         vehicles,
-        weapons::dual_wield,
+        weapons::{dual_wield, hold},
     },
 };
 
@@ -165,14 +165,15 @@ pub(super) fn publish(held: Option<HeldWeapon>, targets: [Option<Vec3>; 2]) {
     });
 }
 
-/// The dominant hand's current aim point, for the character-level aim point: every other reader
-/// of the player's weapon aim (weapons the per-weapon update is not handed a point for, and the
-/// character's shared aim state) follows the gun hand too. `None` when the gun aim is not acting.
+/// The gun hand's current aim point, for the character-level aim point: every other reader of the
+/// player's weapon aim (weapons the per-weapon update is not handed a point for, and the
+/// character's shared aim state) follows the gun hand too. The dominant hand's point while it holds
+/// a gun, else the other hand's. `None` when the gun aim is not acting.
 pub fn character_aim_point(dominant: Hand) -> Option<Vec3> {
     SNAPSHOT
         .lock()
         .filter(Snapshot::fresh)
-        .and_then(|s| s.targets[dominant.index()])
+        .and_then(|s| s.targets[dominant.index()].or(s.targets[dominant.other().index()]))
 }
 
 /// The weapons' per-tick update from their user, handed the aiming hand's point for the player's
@@ -199,6 +200,9 @@ fn update_from_user_post_sim(
     if !(w.m_IsUserLocalPlayer || vehicles::is_mounted_weapon(weapon as usize)) {
         return original(aim_position, input);
     }
+    // The shot's hand and the gun aim read the attach bones, which a state task may have moved
+    // since the hold last wrote them.
+    unsafe { hold::before_update(w) };
     let split = unsafe { input.as_ref() }
         .filter(|_| Config::lock_query(|c| c.controllers.weapons.dual_wield.split))
         .and_then(|i| unsafe { dual_wield::before_update(w, i) });

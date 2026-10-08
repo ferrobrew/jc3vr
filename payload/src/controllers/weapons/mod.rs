@@ -14,6 +14,8 @@
 //! - [`highlights`]: the grab-volume highlights on the overlay;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
+//! - [`hold`]: which hand holds the wielded weapon (the hand that drew it, took it off the
+//!   ground, or was handed it), the attach bones that put it there, and the direct pickup;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
 //! - [`grenade`]: the physical grenade throw;
 //! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
@@ -38,7 +40,8 @@
 //!    grapple. A hand holding the foregrip is always in it, so that its next grip press lets go
 //!    rather than firing the grapple.
 //! 2. [`finish_tick`] acts on the grabs the tables report: a holster grab draws or holsters, a
-//!    foregrip grab engages or releases the two-handed grip, a grenade-pouch grab primes a grenade
+//!    grab of the held gun's grip by the free hand hands the gun over, a foregrip grab engages or
+//!    releases the two-handed grip, a grenade-pouch grab primes a grenade
 //!    for the throw, a C4-pouch grab primes a charge, and a reload-pouch grab takes a round for the
 //!    reload. It runs the throws, the wrist detonator, and the reload, and
 //!    holds the fire inputs back while a reload, a draw, or a holster plays (the action-runs hand
@@ -64,6 +67,7 @@ pub mod grip_watch;
 pub mod haptics;
 pub mod heft;
 mod highlights;
+pub mod hold;
 pub mod holster;
 pub mod recoil;
 pub mod reload;
@@ -105,6 +109,7 @@ use crate::{
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             haptics::PulseSource,
+            hold::holder::Cause,
             holster::HolsterAction,
             volumes::{ChestGrabbers, HeadDrop, NearMiss, Stance},
         },
@@ -120,7 +125,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(grenade::hook_library())
         .with_hook_library(c4::hook_library())
         .with_hook_library(scope::hook_library())
-        .with_hook_library(dual_wield::hook_library())
+        .with_hook_library(hold::hook_library())
         .with_hook_library(empty::hook_library())
         .with_hook_library(heft::hook_library())
         .with_hook_library(reload::hook_library())
@@ -135,6 +140,9 @@ pub struct TickStart {
     /// The hands holding a pistol of the dual-wield slot while the dual-wield split acts (with the
     /// split on, a pistol in at least one hand, in any mode), indexed by [`Hand::index`].
     pub dual_wield: Option<[bool; 2]>,
+    /// The hands holding a gun of the wielded weapon while the hold puts it in either hand,
+    /// indexed by [`Hand::index`]: a hand's trigger fires the gun it holds, and only that hand's.
+    pub held: Option<[bool; 2]>,
 }
 
 /// What a grab did, for the debug UI.
@@ -144,6 +152,10 @@ pub enum GrabOutcome {
     /// A holster grab with no local player to act on.
     NoCharacter,
     Foregrip(Transition),
+    /// A grab of the held gun's grip by the free hand, which took the gun when `moved`.
+    Handover {
+        moved: bool,
+    },
     /// A foregrip grab that could not engage: the weapon's geometry is not measured yet.
     ForegripUnmeasured,
     /// A grenade-pouch grab: a grenade is asked for.
@@ -165,6 +177,8 @@ impl GrabOutcome {
             GrabOutcome::Foregrip(Transition::Released(r)) => {
                 format!("foregrip released ({})", r.label())
             }
+            GrabOutcome::Handover { moved: true } => "gun handed over".to_owned(),
+            GrabOutcome::Handover { moved: false } => "gun not handed over".to_owned(),
             GrabOutcome::ForegripUnmeasured => "foregrip not measured yet".to_owned(),
             GrabOutcome::Pouch => "grenade asked for".to_owned(),
             GrabOutcome::Magazine => "reload pouch".to_owned(),
@@ -233,11 +247,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             by_handedness: dual.place_by_handedness,
         },
     );
+    let holding = config.weapons.hold;
+    let hold_settings = holding.either_hand.then_some(hold::Settings {
+        fallback: config.acting_hand(),
+    });
     // SAFETY: the input tick runs on the main thread outside the world update.
     let weapon = unsafe {
         engine::local_player().and_then(|owner| {
             let pair = dual_wield::attach::input_tick(owner, settings);
-            engine::held_weapon(owner).map(|w| with_pair(w, pair))
+            let holder = hold::input_tick(owner, hold_settings, pair.is_some());
+            engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder))
         })
     };
     scope::input_tick(weapon.map(|w| w.address));
@@ -260,6 +279,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 && w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
                 && w.wielded.hands.contains(&true)
         })
+        .map(|w| w.wielded.hands);
+    let held = weapon
+        .filter(|w| hold::owned_holder(w.address).is_some())
         .map(|w| w.wielded.hands);
 
     let mut state = STATE.lock();
@@ -336,6 +358,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             hand: Some(off),
         });
     }
+    if holding.handover
+        && gameplay
+        && let Some(w) = weapon
+        && let Some(holder) = hold::owned_holder(w.address)
+        && let Some(grip) = weighted_hands(&active)[holder.index()]
+    {
+        candidates.push(Candidate {
+            volume: GrabVolume::Handle,
+            centre: grip.grip.position,
+            radius: holding.handle_radius_m,
+            hand: Some(holder.other()),
+        });
+    }
 
     let volumes = Hand::BOTH.map(|hand| {
         if hold.is_some_and(|h| h.holder.other() == hand) {
@@ -383,6 +418,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     TickStart {
         volumes,
         dual_wield,
+        held,
     }
 }
 
@@ -468,6 +504,14 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                     None => continue,
                 }
             }
+            GrabVolume::Handle => {
+                let moved = hold::hand_over(hand);
+                if moved {
+                    // The hand that took the gun let go of the foregrip to take it.
+                    foregrip::clear();
+                }
+                GrabOutcome::Handover { moved }
+            }
             GrabVolume::Foregrip => match transition {
                 Some(t) => GrabOutcome::Foregrip(t),
                 None => GrabOutcome::ForegripUnmeasured,
@@ -548,6 +592,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             .all(|h| !gun_hands[h.index()] || reload_held[h.index()]);
 
     let fire_blocked = reload_blocks
+        || dominant_trigger_unarmed(weapon.map(|(w, _)| w), config.acting_hand(), &triggers)
         || (config.weapons.block_fire_during_actions
             && weapon_action_running(weapon.and_then(|(w, _)| w.holder).unwrap_or(gun_side)));
     if fire_blocked {
@@ -575,6 +620,7 @@ pub(crate) fn stand_down() {
     c4::wrist::stand_down();
     dual_wield::observe_triggers(None);
     dual_wield::attach::clear();
+    hold::clear();
     reload::stand_down();
     wheel::stand_down();
     let mut state = STATE.lock();
@@ -821,6 +867,35 @@ fn with_pair(mut weapon: HeldWeapon, pair: Option<dual_wield::attach::Pair>) -> 
     weapon
 }
 
+/// The wielded weapon as the hold has it: every gun in the holding hand, which holds the weapon.
+/// The table follows on the next placement; this is the hold's current layout.
+fn with_holder(mut weapon: HeldWeapon, holder: Option<Hand>) -> HeldWeapon {
+    if let Some(holder) = holder.filter(|_| hold::owned_holder(weapon.address).is_some())
+        && weapon.wielded.hands.contains(&true)
+    {
+        weapon.wielded.hands = Hand::BOTH.map(|h| h == holder);
+        weapon.holder = Some(holder);
+    }
+    weapon
+}
+
+/// Whether the fire input is held back because only the dominant hand's trigger asks for it while
+/// the gun is in the other hand: the one fire action reaches the weapon from either trigger, and
+/// only the hand holding the gun may fire it.
+fn dominant_trigger_unarmed(
+    weapon: Option<HeldWeapon>,
+    dominant: Hand,
+    triggers: &[ButtonControl; 2],
+) -> bool {
+    weapon.is_some_and(|w| {
+        let hands = w.wielded.hands;
+        hands[dominant.other().index()]
+            && !hands[dominant.index()]
+            && triggers[dominant.index()].held()
+            && !triggers[dominant.other().index()].held()
+    })
+}
+
 /// Carry out `hand`'s holster decision. With `independent` pistol draws, a draw of the dual-wield
 /// slot brings out only `hand`'s pistol.
 fn act(
@@ -837,6 +912,7 @@ fn act(
             if independent && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
                 dual_wield::attach::begin_draw(hand);
             }
+            hold::begin(hand, Cause::Draw, None);
             // The game acts on a slot select when its input is released, so a one-tick click
             // selects.
             desired.push(Desired {
@@ -904,6 +980,7 @@ fn cues_grab(outcome: GrabOutcome) -> bool {
                 | HolsterAction::DrawPistol { .. }
                 | HolsterAction::HolsterPistol { .. }
         ) | GrabOutcome::Foregrip(Transition::Grabbed)
+            | GrabOutcome::Handover { moved: true }
     )
 }
 
@@ -964,6 +1041,59 @@ mod tests {
             slot: WeaponSlot::E_SLOT_TWO_HANDED
         })));
         assert!(!cues_grab(GrabOutcome::Magazine));
+    }
+
+    fn rifle_in(hand: Hand) -> HeldWeapon {
+        HeldWeapon {
+            address: 0x1000,
+            wielded: holster::Wielded {
+                slot: WeaponSlot::E_SLOT_TWO_HANDED,
+                hands: Hand::BOTH.map(|h| h == hand),
+            },
+            holder: Some(hand),
+            two_handed: true,
+            class: heft::HeftClass::of(0, true),
+        }
+    }
+
+    fn triggers(left: bool, right: bool) -> [ButtonControl; 2] {
+        let pulled = |down| ButtonControl {
+            down,
+            ..ButtonControl::default()
+        };
+        [pulled(left), pulled(right)]
+    }
+
+    #[test]
+    fn only_the_hand_holding_the_gun_fires_it() {
+        let dominant = Hand::Right;
+        let left_rifle = Some(rifle_in(Hand::Left));
+        // The dominant trigger alone fires nothing while the gun is in the other hand.
+        assert!(dominant_trigger_unarmed(
+            left_rifle,
+            dominant,
+            &triggers(false, true)
+        ));
+        // The holding hand's trigger fires it, with or without the other trigger.
+        assert!(!dominant_trigger_unarmed(
+            left_rifle,
+            dominant,
+            &triggers(true, false)
+        ));
+        assert!(!dominant_trigger_unarmed(
+            left_rifle,
+            dominant,
+            &triggers(true, true)
+        ));
+        // A gun in the dominant hand, or no gun, is the game's as before.
+        for pulled in [triggers(false, true), triggers(true, true)] {
+            assert!(!dominant_trigger_unarmed(
+                Some(rifle_in(Hand::Right)),
+                dominant,
+                &pulled
+            ));
+            assert!(!dominant_trigger_unarmed(None, dominant, &pulled));
+        }
     }
 
     #[test]

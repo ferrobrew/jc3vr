@@ -206,6 +206,21 @@ fn settings_page() -> Page {
             .weapons
             .dual_wield
             .split))
+        .item(config_toggle!("HOLD WEAPONS IN EITHER HAND", |c| c
+            .controllers
+            .weapons
+            .hold
+            .either_hand))
+        .item(config_toggle!("HAND GUNS OVER AT THE GRIP", |c| c
+            .controllers
+            .weapons
+            .hold
+            .handover))
+        .item(config_toggle!("PICK WEAPONS UP INTO THE HAND", |c| c
+            .controllers
+            .weapons
+            .hold
+            .direct_pickup))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons

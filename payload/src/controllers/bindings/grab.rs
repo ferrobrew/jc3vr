@@ -1,11 +1,12 @@
 //! The grab-volume query: whether a hand is inside a region where a grip press grabs rather than
 //! performing the grip's default action (the off-hand's grapple). Pure.
 //!
-//! The volumes are the body holsters, a two-handed weapon's foregrip, the grenade pouch, the
-//! reload pouch, a gun's action, the C4 pouch, the vehicle controls, the parachute's handles, and
-//! an object or a surface to climb in the physical hands' reach. The subsystem that owns a volume places it each input tick as a
-//! [`Candidate`] (the weapons in [`crate::controllers::weapons`], the vehicle controls and the
-//! parachute's handles in [`crate::controllers::vehicles`]), and [`grab_volume`] picks the one a
+//! The volumes are the body holsters, a two-handed weapon's foregrip, the held gun's grip, the
+//! grenade pouch, the reload pouch, a gun's action, the C4 pouch, the vehicle controls, the
+//! parachute's handles, and an object or a surface to climb in the physical hands' reach. The
+//! subsystem that owns a volume places it each input tick as a [`Candidate`] (the weapons in
+//! [`crate::controllers::weapons`], the vehicle controls and the parachute's handles in
+//! [`crate::controllers::vehicles`]), and [`grab_volume`] picks the one a
 //! hand's grab point is in. The pickup volume is not placed: the physical hands report it for a
 //! hand that reaches a loose object or a weapon ([`crate::controllers::physical_hands::pickup`]),
 //! and every placed volume wins over it; nor is the climb's, which the physical hands report for
@@ -23,6 +24,9 @@ pub enum GrabVolume {
     Holster(HolsterSite),
     /// The held two-handed weapon's foregrip.
     Foregrip,
+    /// The held gun's grip, for the hand without the gun, which takes the gun from the other hand
+    /// (see [`crate::controllers::weapons::hold`]).
+    Handle,
     /// The grenade pouch.
     GrenadePouch,
     /// The universal reload pouch on the belt, for the hand without a gun, while the true reload
@@ -51,6 +55,7 @@ impl GrabVolume {
         match self {
             GrabVolume::Holster(site) => site.label(),
             GrabVolume::Foregrip => "foregrip",
+            GrabVolume::Handle => "gun grip",
             GrabVolume::GrenadePouch => "grenade pouch",
             GrabVolume::MagazinePouch => "reload pouch",
             GrabVolume::WeaponAction => "weapon action",

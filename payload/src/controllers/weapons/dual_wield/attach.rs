@@ -3,41 +3,23 @@
 //! hand's side otherwise ([`draw::bones`]). The engine side is in
 //! `docs/engine/character/hands-locomotion-and-state.md`.
 //!
-//! The game rewrites every gun's attach-bone table at the end of the character's
-//! pose-finalization pass ([`WeaponBase::UpdatePostFinalizePose`]), and the character's state
-//! tasks move single guns between bones earlier in the same pass, so a table written once does not
-//! stay. The table is therefore written at three points, from the layout the input tick publishes
-//! ([`input_tick`]):
-//!
-//! - before each placement of the inventory's weapons
-//!   ([`Inventory::UpdateAttachmentTransforms`]), so the guns are placed on the mod's bones
-//!   whatever the state tasks wrote; a pistol whose bone changed since its last placement skips
-//!   its render interpolation for that placement
-//!   ([`WeaponBase::SkipRenderInterpolationForOneFrame`]), so it snaps between hand and hip
-//!   rather than streaking;
-//! - after the end-of-pass rewrite ([`Inventory::UpdateInventoryPostFinalizePose`]), so every
-//!   reader between two passes (the input tick, the gun aim, the shot's hand, and the render-time
-//!   late update) sees the mod's bones;
-//! - at the weapon's own per-tick update ([`crate::controllers::weapons::dual_wield::before_update`]),
-//!   just before it fires.
+//! The tables are written at the three points the hold describes
+//! ([`crate::controllers::weapons::hold`]), from the layout the input tick publishes
+//! ([`input_tick`]): before each placement and after the end-of-pass rewrite ([`apply_owned`],
+//! from the hold's detours), and at the weapon's own per-tick update
+//! ([`crate::controllers::weapons::dual_wield::before_update`]). A pistol whose bone changed since
+//! its last placement skips its render interpolation for that placement, so it snaps between hand
+//! and hip rather than streaking.
 //!
 //! Both the wielding and the dual-wielding entries are written, so a state task that flips the
 //! weapon between the two keeps the mod's layout. Nothing changes the weapon's state: the game
 //! still has the pair dual-wielded, so its body animation, magazine, and reload are the pair's.
-//!
-//! The placement detour also runs the rigid grip around the original
-//! ([`crate::controllers::hands::grip`]), for every weapon the local player holds.
-//!
-//! The detours run on the simulation's worker threads for every character, so they compare the
-//! inventory's weapon against the owned weapon's address before taking any lock, and they never
-//! touch the VR state.
 
 use std::{
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
     time::Instant,
 };
 
-use detours_macro::detour;
 use jc3gi::{
     character::{
         character::Character,
@@ -46,20 +28,12 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
 };
 use parking_lot::Mutex;
-use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
     frame::Hand,
-    hands::grip,
     weapons::dual_wield::draw::{self, Holding},
 };
-
-pub(crate) fn hook_library() -> HookLibrary {
-    HookLibrary::new()
-        .with_static_binder(&UPDATE_ATTACHMENT_TRANSFORMS_BINDER)
-        .with_static_binder(&UPDATE_INVENTORY_POST_FINALIZE_POSE_BINDER)
-}
 
 /// The settings the layout is built from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -177,6 +151,17 @@ pub(crate) fn guns_by_hand(weapon: &WeaponBase) -> Option<[Option<usize>; 2]> {
         .lock()
         .filter(|l| l.weapon == address)
         .map(|l| l.guns)
+}
+
+/// Write the owned layout into the owned pair's attach-bone table, when `inventory` holds it.
+///
+/// # Safety
+///
+/// `inventory` must be null or live, on the thread updating its owner.
+pub(crate) unsafe fn apply_owned(inventory: *mut Inventory, snap: bool) {
+    if let Some(weapon) = unsafe { owned_in(inventory) } {
+        unsafe { apply(weapon, snap) };
+    }
 }
 
 /// Write the owned layout into `weapon`'s attach-bone table, when `weapon` is the owned pair and
@@ -336,37 +321,4 @@ unsafe fn owned_in(inventory: *mut Inventory) -> Option<&'static mut WeaponBase>
     }
     let weapon = unsafe { dual_weapon(inventory.as_ref()?) }?;
     (weapon as *mut WeaponBase as usize == owned).then_some(weapon)
-}
-
-#[detour(address = jc3gi::character::inventory::Inventory::UpdateAttachmentTransforms_ADDRESS)]
-fn update_attachment_transforms(
-    inventory: *mut Inventory,
-    character: *const Character,
-    p3: f32,
-    p4: f32,
-    transform_type: u32,
-) {
-    if let Some(weapon) = unsafe { owned_in(inventory) } {
-        unsafe { apply(weapon, true) };
-    }
-    // The rigid grip pins the attach bones after the layout above has chosen them.
-    let placement = unsafe { grip::before_placement(inventory, character) };
-    UPDATE_ATTACHMENT_TRANSFORMS
-        .get()
-        .unwrap()
-        .call(inventory, character, p3, p4, transform_type);
-    if let Some(placement) = placement {
-        unsafe { grip::after_placement(character, placement) };
-    }
-}
-
-#[detour(address = jc3gi::character::inventory::Inventory::UpdateInventoryPostFinalizePose_ADDRESS)]
-fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
-    UPDATE_INVENTORY_POST_FINALIZE_POSE
-        .get()
-        .unwrap()
-        .call(inventory);
-    if let Some(weapon) = unsafe { owned_in(inventory) } {
-        unsafe { apply(weapon, false) };
-    }
 }

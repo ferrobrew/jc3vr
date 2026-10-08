@@ -198,7 +198,7 @@ fn marker(at: Vec3, world_scale: f32, color: Rgba) -> Primitive {
 fn colour(volume: GrabVolume) -> Rgba {
     match volume {
         GrabVolume::Holster(_) => HOLSTER,
-        GrabVolume::Foregrip => FOREGRIP,
+        GrabVolume::Foregrip | GrabVolume::Handle => FOREGRIP,
         GrabVolume::GrenadePouch
         | GrabVolume::VehicleControl(_)
         | GrabVolume::ParachuteHandle(_)

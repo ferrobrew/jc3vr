@@ -353,8 +353,10 @@ impl Inventory {
     /// pickup track message completes it
     /// ([`WeaponBase::PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem)).
     /// A swimming character instead takes the first weapon among its interaction user proxy's
-    /// valid entries (or the weapon of a weapon placement rule among them), picks it up at once
-    /// with `PickupItem`, and queues `ACT_PICKUP_WEAPON_PARTIAL`.
+    /// valid entries (or the weapon of a weapon placement rule among them), drops the weapon
+    /// already in that weapon's slot through the occupant's drop virtual, picks it up at once with
+    /// `PickupItem`, and queues `ACT_PICKUP_WEAPON_PARTIAL` after cancelling the reload (or, in a
+    /// state that forbids drawing, unequips it again).
     pub unsafe fn UpdateWeaponHandling(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(

@@ -1760,7 +1760,15 @@ pub struct WeaponBase {
     _field_1a8: [u8; 4],
     /// Shots remaining that use the spread ring; decremented once per shot.
     pub m_ProjectileOffsetFireCount: i32,
-    _field_1b0: [u8; 113],
+    _field_1b0: [u8; 103],
+    /// Whether picking the weapon up gives the character a copy rather than the weapon itself.
+    /// [`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart) then calls `CInventory::GivePlayerWeapon` with the
+    /// weapon's spawn tag, and [`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem) puts nothing into the inventory:
+    /// it only plays the pickup vocal and clears
+    /// [`m_StoredNonMagazineAmmo`](crate::equipment::weapon::WeaponBase::m_StoredNonMagazineAmmo). The weapon's pickup handling
+    /// leaves its pickup interaction enabled while it is set.
+    pub m_InfinitePickup: bool,
+    _field_218: [u8; 9],
     /// Whether the magazine is out of the weapon. Only the throw-away-magazine track message
     /// ([`TRACK_MESSAGE_THROW_AWAY_MAGAZINE`](crate::equipment::weapon::WeaponBase::TRACK_MESSAGE_THROW_AWAY_MAGAZINE)) sets it,
     /// and only [`Reload`](crate::equipment::weapon::WeaponBase::Reload) clears it. While it is set the ammunition check
@@ -2038,8 +2046,15 @@ impl WeaponBase {
     pub const PickupItem_ADDRESS: usize = 0x1409798C0;
     /// Completes a pickup for `activator` (a character's `CGameObject` subobject): unequips the
     /// wielded weapon, puts this one into the inventory and equips it, selects its slot, adds its
-    /// stored ammunition to the inventory, and plays the pickup vocal. A hand grenade is left to
-    /// [`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart). Called by the weapon's pickup track message, and
+    /// stored ammunition to the inventory, and plays the pickup vocal. It does not refill the
+    /// magazine. Putting the weapon into the inventory runs its pickup virtual (the holder is set,
+    /// the state becomes holstered, which takes its bodies out of the physics world, and its pickup
+    /// interaction is disabled) and its equip virtual (the state becomes wielding, or
+    /// dual-wielding for the player's dual-wield slot), with no animation act. A weapon already in
+    /// the slot is dropped or despawned by the inventory's add. A hand grenade is left to
+    /// [`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart), and a weapon with
+    /// [`m_InfinitePickup`](crate::equipment::weapon::WeaponBase::m_InfinitePickup) set is not put into the inventory at all; both
+    /// still lose their stored ammunition. Called by the weapon's pickup track message, and
     /// directly by [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)
     /// for a swimming character.
     pub unsafe fn PickupItem(&mut self, activator: *mut crate::game::GameObject) {

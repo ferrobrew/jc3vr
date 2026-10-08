@@ -58,7 +58,6 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponInputs, WeaponState},
 };
 use parking_lot::Mutex;
-use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
@@ -66,11 +65,6 @@ use crate::controllers::{
     hands::late,
     mode::{AirborneVariant, Mode},
 };
-
-/// The dual-wield hooks, aggregated by [`crate::controllers::weapons::hook_library`].
-pub(crate) fn hook_library() -> HookLibrary {
-    attach::hook_library()
-}
 
 /// One hand's trigger at an input tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

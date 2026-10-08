@@ -602,6 +602,42 @@ impl Default for DualWieldConfig {
     }
 }
 
+/// Which hand holds the weapon (see [`crate::controllers::weapons::hold`]). Acts only under the
+/// controller scheme.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HoldConfig {
+    /// Hold the wielded weapon in the hand that drew it, picked it up, or was handed it, rather
+    /// than always in the right hand. Only that hand's trigger fires it.
+    pub either_hand: bool,
+    /// Pass the held gun to the free hand with a grip press at the gun's grip. Needs
+    /// `either_hand`.
+    pub handover: bool,
+    /// The radius of the gun's grip volume the free hand grabs to take the gun, metres.
+    pub handle_radius_m: f32,
+    /// Take a weapon off the ground straight into the grabbing hand, as the game picks a weapon
+    /// up while swimming, with its magazine as it was and no pickup animation. Off, a grab clicks
+    /// the game's use-item action and the game picks the weapon up its own way.
+    pub direct_pickup: bool,
+}
+
+impl HoldConfig {
+    pub const fn new() -> Self {
+        Self {
+            either_hand: true,
+            handover: true,
+            handle_radius_m: 0.07,
+            direct_pickup: true,
+        }
+    }
+}
+
+impl Default for HoldConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The physical grenade throw (see [`crate::controllers::weapons::grenade`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

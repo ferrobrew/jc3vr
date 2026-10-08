@@ -7,7 +7,7 @@
 //! `docs/engine/character/hands-locomotion-and-state.md`, "The gun's pose in the hand is
 //! animated"). So before each placement of the local player's weapons
 //! ([`Inventory::UpdateAttachmentTransforms`], whose detour lives in
-//! [`crate::controllers::weapons::dual_wield::attach`]), every gun on a hand attach bone of a hand
+//! [`crate::controllers::weapons::hold`]), every gun on a hand attach bone of a hand
 //! with a controller weight above zero ([`tiers::weights`]) has that bone written
 //! ([`AnimationController::SetJoint`]) to the hand's current wrist composed with the hand's
 //! canonical grip: the primary attach bone's pose relative to the wrist in the skeleton's bind

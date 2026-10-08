@@ -31,7 +31,7 @@ use crate::{
         weapons::{
             config::{
                 C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
+                HeftConfig, HoldConfig, HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
             },
             reload::config::ReloadConfig,
             wheel::config::WheelConfig,
@@ -685,6 +685,8 @@ pub struct WeaponsConfig {
     /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
     /// own hand.
     pub dual_wield: DualWieldConfig,
+    /// Which hand holds the weapon: the hand that drew it, picked it up, or was handed it.
+    pub hold: HoldConfig,
     /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
     /// game's timed reload.
     pub reload: ReloadConfig,
@@ -732,6 +734,7 @@ impl WeaponsConfig {
             heft: HeftConfig::new(),
             haptics: HapticsConfig::new(),
             dual_wield: DualWieldConfig::new(),
+            hold: HoldConfig::new(),
             reload: ReloadConfig::new(),
             grenade_throw: true,
             grenade: GrenadeConfig::new(),

@@ -337,11 +337,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
     // The hands whose triggers fire a pistol: those holding one, in a mode whose triggers fire.
+    let fires_guns = dual_wield::triggers_fire_pistols(detection.mode);
     let pistols = start
         .dual_wield
-        .filter(|_| dual_wield::triggers_fire_pistols(detection.mode))
+        .filter(|_| fires_guns)
         .unwrap_or([false; 2]);
-    controls.dual_wield = pistols[dominant.other().index()];
+    // The off-hand's trigger fires the gun it holds: a pistol of the pair, or a weapon the hold
+    // put in that hand.
+    let held = start.held.filter(|_| fires_guns).unwrap_or([false; 2]);
+    controls.dual_wield = pistols[dominant.other().index()] || held[dominant.other().index()];
     // A pistol the reload holds (its chamber or its magazine empty) fires nothing, so the split
     // never picks it; its trigger only clicks.
     let reload_held = weapons::reload::fire_held();

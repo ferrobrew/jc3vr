@@ -240,11 +240,11 @@ pub fn chest_sides(pouches: &PouchesConfig, gun_side: Hand) -> ChestSides {
 }
 
 /// The hand the body's pouches are laid out around: the hand holding a gun, `holder`, or with none
-/// drawn, the hand that last held one, `last_holder`, or with none yet, the dominant hand. A
-/// single gun stays on the hand attach bone the game gives it whichever hand is dominant, so a
-/// left-handed player can hold the gun in the right hand, and a layout keyed off the dominant hand
-/// would then put the magazine pouch on the gun's side, out of the free hand's reach. Remembering
-/// the last holder keeps the pouches from changing sides each time a gun is holstered.
+/// drawn, the hand that last held one, `last_holder`, or with none yet, the dominant hand. A gun
+/// may be in either hand whichever hand is dominant ([`crate::controllers::weapons::hold`]), and a
+/// layout keyed off the dominant hand would then put the magazine pouch on the gun's side, out of
+/// the free hand's reach. Remembering the last holder keeps the pouches from changing sides each
+/// time a gun is holstered.
 pub fn gun_side(holder: Option<Hand>, last_holder: Option<Hand>, dominant: Hand) -> Hand {
     holder.or(last_holder).unwrap_or(dominant)
 }

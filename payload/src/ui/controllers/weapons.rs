@@ -19,8 +19,8 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HeftTuning, HolsterAnchor, HolstersConfig, PouchSide, PouchesConfig,
-                PulseSpec, RecoilConfig, VolumeSpec,
+                HeftConfig, HeftTuning, HoldConfig, HolsterAnchor, HolstersConfig, PouchSide,
+                PouchesConfig, PulseSpec, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -29,6 +29,7 @@ use crate::{
             grip_watch::{self, GripWatchStatus},
             haptics::{self, HapticsStatus},
             heft::{self, HeftStatus},
+            hold::{self, HoldStatus},
             holster::slot_label,
             recoil::{self, RecoilStatus},
             reload::{self, ReloadStatus},
@@ -50,6 +51,7 @@ pub(super) struct WeaponsReadout {
     recoil: RecoilStatus,
     haptics: HapticsStatus,
     dual_wield: DualWieldStatus,
+    hold: HoldStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
     grenade: GrenadeStatus,
@@ -71,6 +73,7 @@ impl WeaponsReadout {
             recoil: recoil::status(),
             haptics: haptics::status(),
             dual_wield: dual_wield::status(),
+            hold: hold::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
             grenade: grenade::status(),
@@ -153,6 +156,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         }
     });
     dual_wield_readout(ui, &readout.dual_wield);
+    hold_readout(ui, &readout.hold);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
     explosives_readout(ui, &readout.explosives);
@@ -264,6 +268,28 @@ fn dual_wield_readout(ui: &mut Ui, d: &DualWieldStatus) {
         a.pending.map_or("none", Hand::label),
         a.writes,
         a.snaps
+    ));
+}
+
+fn hold_readout(ui: &mut Ui, h: &HoldStatus) {
+    ui.label(format!(
+        "Hold: weapon in {} · bones owned {} · waiting {} · handovers {} · writes {} · snaps {}",
+        h.holder.map_or("no hand", Hand::label),
+        yes_no(h.owned),
+        h.pending.map_or("nothing".to_owned(), |p| format!(
+            "{} for the {} hand",
+            p.cause.label(),
+            p.hand.label()
+        )),
+        h.handovers,
+        h.writes,
+        h.snaps
+    ));
+    ui.label(format!(
+        "Direct pickups: {} · left to the game {} · last refusal: {}",
+        h.pickups,
+        h.pickup_fallbacks,
+        h.last_pickup_refusal.as_deref().unwrap_or("none")
     ));
 }
 
@@ -464,6 +490,7 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         ui.indent("haptics", |ui| haptics_settings(ui, &mut w.haptics));
     });
     dual_wield_settings(ui, &mut w.dual_wield);
+    hold_settings(ui, &mut w.hold);
 }
 
 /// The settings of the grenade throw, the C4 throw and the wrist detonator, and the true reload.
@@ -590,6 +617,27 @@ fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
             &mut d.place_by_handedness,
             "First pistol in the dominant hand",
         ),
+    );
+}
+
+fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
+    ui.checkbox(&mut h.either_hand, "Hold weapons in either hand")
+        .on_hover_text(
+            "A weapon rides the hand that drew it, took it off the ground, or was handed it; only \
+             that hand's trigger fires it.",
+        );
+    ui.add_enabled_ui(h.either_hand, |ui| {
+        ui.checkbox(&mut h.handover, "Hand the gun over at its grip")
+            .on_hover_text("A grip press by the free hand at the held gun's grip takes the gun.");
+        ui.add(egui::Slider::new(&mut h.handle_radius_m, 0.02..=0.2).text("Gun grip radius (m)"));
+    });
+    ui.checkbox(
+        &mut h.direct_pickup,
+        "Pick weapons up straight into the hand",
+    )
+    .on_hover_text(
+        "A grab of a weapon on the ground takes that weapon at once, with no pickup \
+             animation; off, the grab presses the game's pickup action.",
     );
 }
 
