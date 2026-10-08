@@ -1,0 +1,36 @@
+# Template: fill testing/recordings/hand_climbing.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "climb a wall with the hands"
+description = "Recorded with CLIMB WITH THE HANDS on, empty-handed, a step from a climbable wall with a ledge above reach (hand-climbing.md, checklist items 1 to 5). Put a hand flat on the wall and grip, pull down hand over hand, grip the ledge's top with both hands, push down to mantle, and stand on the top."
+recording = "../recordings/hand_climbing.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+signal = "climb.climbing"
+
+[[expect]]
+name = "at least two grips took"
+signal = "climb.grips"
+at_least = 2
+
+[[expect]]
+signal = "climb.mantles"
+
+[[expect]]
+name = "no grip ended against the player's wish"
+signal = "climb.drops"
+at_most = 0
+
+[[expect]]
+name = "the game stays on foot while a hand grips"
+log = "the game left on foot"
+at_most = 0
+
+[[expect]]
+name = "the climbing holds no error"
+signal = "climb.error"
+check = "never"
+
+[[expect]]
+name = "the player stands on the ledge at the end"
+signal = "controllers.on_foot"
+check = "at_end"

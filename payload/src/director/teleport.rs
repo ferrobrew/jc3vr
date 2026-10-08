@@ -118,6 +118,15 @@ pub fn player_position() -> Option<[f32; 3]> {
     player_transform().map(|t| [t[12], t[13], t[14]])
 }
 
+/// Whether a jump is queued or the game world is in the middle of one. Main thread.
+pub(crate) fn in_flight() -> bool {
+    if PENDING.lock().is_some() {
+        return true;
+    }
+    // SAFETY: the game world singleton is main-thread data, read from the main thread.
+    unsafe { GameWorld::get().is_some_and(|world| world.IsTeleporting()) }
+}
+
 /// Run the queued jump, if any. Main thread: both teleport entry points assert it.
 pub(super) fn service_pending() {
     let Some(request) = PENDING.lock().take() else {
@@ -239,8 +248,9 @@ fn path() -> Option<PathBuf> {
     crate::config::paths::file("teleports.toml")
 }
 
-/// The player's current world matrix (`m_WorldMatrixT1`, what `GetTransform` returns).
-fn player_transform() -> Option<[f32; 16]> {
+/// The player's current world matrix (`m_WorldMatrixT1`, what `GetTransform` returns). Main
+/// thread.
+pub(crate) fn player_transform() -> Option<[f32; 16]> {
     // SAFETY: read-only access to game-thread data from the main thread.
     unsafe {
         Character::GetLocalPlayerCharacter()

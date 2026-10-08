@@ -31,6 +31,12 @@ pub fn stage() -> StageInfo {
     *STAGE.lock()
 }
 
+/// Publish a replay's recorded STAGE information in place of the located one. Called by the frame
+/// loop after it located the head, while a replay plays.
+pub(super) fn publish_replayed(info: StageInfo) {
+    *STAGE.lock() = info;
+}
+
 /// Create the session's STAGE space, or `None` (logged) when the runtime does not offer one.
 pub(super) fn create_space(session: &xr::Session<xr::D3D11>) -> Option<xr::Space> {
     let offered = match session.enumerate_reference_spaces() {

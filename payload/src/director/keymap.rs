@@ -8,6 +8,10 @@
 //! in the game or the mod uses it, and it is findable by touch under a headset. Controller chords
 //! are not bound here yet; the in-headset debug panel covers the controller-only case for now.
 //!
+//! A saved map keeps its own list, so an action added after it was saved would have no key. An
+//! action the saved map does not bind at all therefore takes its default chord, unless the saved
+//! map binds that chord to something else ([`Keymap::effective`]).
+//!
 //! [`DirectorConfig::keymap`]: crate::director::DirectorConfig::keymap
 
 use std::borrow::Cow;
@@ -42,6 +46,9 @@ pub enum Action {
     ClearHeat,
     Spawn,
     ToggleRecording,
+    ToggleTrackingRecording,
+    ToggleReplay,
+    ToggleScenario,
 }
 impl Action {
     /// A short label for the debug tab.
@@ -62,6 +69,9 @@ impl Action {
             Action::ClearHeat => "Clear heat",
             Action::Spawn => "Spawn the configured tags",
             Action::ToggleRecording => "Start or stop recording",
+            Action::ToggleTrackingRecording => "Start or stop a tracking recording",
+            Action::ToggleReplay => "Replay the last tracking recording, or stop the replay",
+            Action::ToggleScenario => "Run the last scenario again, or stop it",
         }
     }
 }
@@ -84,6 +94,13 @@ impl Chord {
             ctrl: false,
             shift: false,
             alt: false,
+        }
+    }
+
+    const fn ctrl(key: u16) -> Self {
+        Self {
+            ctrl: true,
+            ..Self::plain(key)
         }
     }
 
@@ -125,11 +142,22 @@ impl Keymap {
         }
     }
 
+    /// The bindings in force: the map's own, then the default binding of each action the map
+    /// does not bind, unless the map binds its chord to something else.
+    pub fn effective(&self) -> impl Iterator<Item = &Binding> {
+        let defaults = DEFAULT_BINDINGS.iter().filter(|default| {
+            !self
+                .bindings
+                .iter()
+                .any(|b| b.action == default.action || b.chord == default.chord)
+        });
+        self.bindings.iter().chain(defaults)
+    }
+
     /// The action bound to `key` under the live modifier state, if any. A chord with modifiers
     /// takes precedence over a plain binding of the same key.
     fn resolve(&self, key: u16, ctrl: bool, shift: bool, alt: bool) -> Option<Action> {
-        self.bindings
-            .iter()
+        self.effective()
             .filter(|b| {
                 b.chord.key == key
                     && (!b.chord.ctrl || ctrl)
@@ -200,11 +228,14 @@ pub fn run(action: Action) {
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),
         Action::ToggleRecording => crate::recorder::toggle(),
+        Action::ToggleTrackingRecording => crate::recorder::tracking::toggle(),
+        Action::ToggleReplay => crate::testing::toggle_replay(),
+        Action::ToggleScenario => crate::testing::toggle_scenario(),
     }
 }
 
 /// The stock layout [`Keymap::new`] borrows.
-const DEFAULT_BINDINGS: [Binding; 15] = [
+const DEFAULT_BINDINGS: [Binding; 18] = [
     Binding {
         action: Action::ToggleCinematic,
         chord: Chord::plain(VK_NUMPAD0.0),
@@ -264,6 +295,18 @@ const DEFAULT_BINDINGS: [Binding; 15] = [
     Binding {
         action: Action::ToggleRecording,
         chord: Chord::plain(VK_DIVIDE.0),
+    },
+    Binding {
+        action: Action::ToggleTrackingRecording,
+        chord: Chord::ctrl(VK_DIVIDE.0),
+    },
+    Binding {
+        action: Action::ToggleReplay,
+        chord: Chord::ctrl(VK_MULTIPLY.0),
+    },
+    Binding {
+        action: Action::ToggleScenario,
+        chord: Chord::ctrl(VK_SUBTRACT.0),
     },
 ];
 
@@ -326,7 +369,41 @@ mod tests {
             map.resolve(VK_NUMPAD3.0, true, false, false),
             Some(Action::ClearHeat)
         );
-        assert_eq!(map.resolve(VK_NUMPAD4.0, true, false, false), None);
+        // A key nothing binds, saved or by default.
+        assert_eq!(map.resolve(u16::from(b'Q'), true, false, false), None);
+    }
+
+    #[test]
+    fn an_action_the_saved_map_lacks_takes_its_default_unless_its_chord_is_taken() {
+        let saved = |bindings: Vec<Binding>| Keymap {
+            bindings: Cow::Owned(bindings),
+        };
+        // A map saved before the tracking recorder's binding existed.
+        let old = saved(
+            DEFAULT_BINDINGS
+                .iter()
+                .copied()
+                .filter(|b| b.action != Action::ToggleTrackingRecording)
+                .collect(),
+        );
+        assert_eq!(
+            old.resolve(VK_DIVIDE.0, true, false, false),
+            Some(Action::ToggleTrackingRecording)
+        );
+        // The same chord rebound to something else keeps its new action.
+        let rebound = saved(vec![Binding {
+            action: Action::TakeMarker,
+            chord: Chord::ctrl(VK_DIVIDE.0),
+        }]);
+        assert_eq!(
+            rebound.resolve(VK_DIVIDE.0, true, false, false),
+            Some(Action::TakeMarker)
+        );
+        assert!(
+            rebound
+                .effective()
+                .all(|b| b.action != Action::ToggleTrackingRecording)
+        );
     }
 
     #[test]

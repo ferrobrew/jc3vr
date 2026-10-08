@@ -102,6 +102,12 @@ pub(super) fn install() {
                         .with_filter(file_filter)
                 }),
         )
+        // The scenario runner's log probes, at the file's floor whatever the filter says, so a
+        // probe matches what a default log file holds. Inert unless a scenario runs.
+        .with(
+            crate::testing::log_tap::TapLayer
+                .with_filter(tracing_subscriber::filter::LevelFilter::INFO),
+        )
         .init();
 
     // The handles are stored as type-erased closures: `reload::Handle` is generic over the layered

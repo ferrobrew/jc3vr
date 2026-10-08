@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/second_long_gun.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a second long gun in the free hand"
+description = "Recorded right-handed with two long guns in the shoulder slots (controllers.md, the weapon handling). Draw one long gun with the right hand, draw the other from the left shoulder with the left hand, fire each with its own trigger, then holster both."
+recording = "../recordings/second_long_gun.jc3trk"
+
+[[expect]]
+signal = "weapons.in_right_hand"
+
+[[expect]]
+signal = "weapons.second_in_left_hand"
+
+[[expect]]
+name = "both guns are put away at the end"
+signal = "weapons.second_in_left_hand"
+check = "at_end"
+is = false
+
+[[expect]]
+name = "the guns never snap on the wrist"
+signal = "grip.flips"
+at_most = 0

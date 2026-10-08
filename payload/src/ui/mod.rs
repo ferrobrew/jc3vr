@@ -22,6 +22,7 @@ pub mod hud;
 pub mod performance;
 pub mod previews;
 pub mod render;
+pub mod testing;
 mod util;
 pub mod vr;
 
@@ -40,11 +41,12 @@ pub enum Tab {
     Vr,
     Director,
     Controllers,
+    Testing,
 }
 
 impl Tab {
     /// Every tab, in the order the default layout lists them.
-    const ALL: [Tab; 11] = [
+    const ALL: [Tab; 12] = [
         Tab::Performance,
         Tab::Render,
         Tab::Previews,
@@ -56,6 +58,7 @@ impl Tab {
         Tab::Vr,
         Tab::Director,
         Tab::Controllers,
+        Tab::Testing,
     ];
 }
 
@@ -89,6 +92,7 @@ impl egui_dock::TabViewer for TabBodies<'_> {
             Tab::Vr => vr::egui_debug_vr(ui),
             Tab::Director => director::render(ui),
             Tab::Controllers => controllers::egui_debug_controllers(ui),
+            Tab::Testing => testing::render(ui),
         }
     }
 

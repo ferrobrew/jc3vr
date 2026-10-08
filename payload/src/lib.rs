@@ -43,6 +43,7 @@ mod recorder;
 mod screenshot;
 mod session;
 mod stereo;
+mod testing;
 mod thread_role;
 
 #[unsafe(no_mangle)]
@@ -142,6 +143,14 @@ fn shutdown_startup() {
     // And for the recorder's writer thread, which streams frames to the host and appends the pose
     // sidecar: stop the recording and wait for the drain, on the same argument.
     if !recorder::shutdown() {
+        module::pin();
+    }
+
+    // And for the tracking recorder's writer and a replay's loader.
+    if !recorder::tracking::shutdown() {
+        module::pin();
+    }
+    if !testing::shutdown() {
         module::pin();
     }
 
@@ -282,6 +291,11 @@ fn update() {
         // spawns) runs before the debug UI so a hotkey and a panel click in the same frame land in
         // one pass, and before the game's own update consumes the state they set.
         director::update();
+
+        // The test tools, after the director's pass, which services a replay's teleport to its
+        // start.
+        recorder::tracking::frame_tick();
+        testing::update();
 
         // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
         // registering it never races the engine's walk over the callbacks.

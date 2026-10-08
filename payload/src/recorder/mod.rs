@@ -38,6 +38,7 @@ use crate::stereo::{far_phase, single_pass::collapse_active};
 
 pub mod convert;
 pub mod stream;
+pub(crate) mod tracking;
 
 /// The recorder's settings. Read at the start of a recording; changes apply to the next one.
 #[derive(Clone, Serialize, Deserialize)]

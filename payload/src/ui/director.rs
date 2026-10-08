@@ -437,7 +437,7 @@ fn markers_ui(ui: &mut egui::Ui) {
 fn keymap_ui(ui: &mut egui::Ui) {
     let map = keymap::current();
     egui::Grid::new("director_keymap").show(ui, |ui| {
-        for binding in map.bindings.iter() {
+        for binding in map.effective() {
             ui.label(binding.chord.describe());
             if ui.button(binding.action.label()).clicked() {
                 keymap::run(binding.action);

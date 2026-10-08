@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/procedural_pass_through.jc3trk, then run. See
+# docs/mod/testing/recorder.md.
+name = "procedural body pass-through"
+description = "Recorded and replayed with BODY FROM YOUR HEAD on TEST (the pass-through), on foot (procedural-body.md). Stand still for a few seconds, walk a few steps with the stick, turn, and look around; the pass-through must write the animation's pose back unchanged."
+recording = "../recordings/procedural_pass_through.jc3trk"
+
+[[expect]]
+signal = "procedural.pass_through_error_m"
+below = 0.001
+
+[[expect]]
+signal = "procedural.pass_through_error_deg"
+below = 0.1
+
+[[expect]]
+status = "PASS-THROUGH ERROR"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"

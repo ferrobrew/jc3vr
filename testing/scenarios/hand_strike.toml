@@ -1,0 +1,11 @@
+# Template: fill testing/recordings/hand_strike.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a hand strikes a soldier"
+description = "Recorded with PHYSICAL HANDS on, god mode on, empty-handed, beside a standing soldier (physical-hands.md, the checklist with the hand bodies on, item 9). Swing a hand hard into the soldier once. The soldier's reaction differs from run to run; the blow must land."
+recording = "../recordings/hand_strike.jc3trk"
+
+[[expect]]
+name = "a blow landed"
+signal = "hand_bodies.blows"
+
+[[expect]]
+log = "a hand struck a character"

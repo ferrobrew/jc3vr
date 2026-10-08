@@ -1,0 +1,18 @@
+# Template: fill testing/recordings/stick_locomotion.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "walking and turning with the stick"
+description = "Recorded on foot on open level ground (controllers-and-roomscale.md, checklist item 4). Walk forward with the stick, strafe both ways, smooth turn, snap turn, jump once, and stop."
+recording = "../recordings/stick_locomotion.jc3trk"
+
+[[expect]]
+name = "the stick drives the body"
+signal = "locomotion.stick_speed_mps"
+check = "eventually"
+above = 1.0
+
+[[expect]]
+status = "STICK VELOCITY"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "at_end"

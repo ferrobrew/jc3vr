@@ -137,7 +137,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         };
         #[cfg(feature = "profiler")]
         drop(vr_update_scope);
-        crate::headpose::set_source(if vr_running {
+        // A playing replay stages its recorded frames for this frame, before anything reads the
+        // head or the controllers, and drives the VR headpose source with or without a session.
+        let replay_driving = crate::testing::replay::begin_frame();
+        crate::headpose::set_source(if vr_running || replay_driving {
             crate::headpose::Source::Vr
         } else {
             crate::headpose::Source::Sim
@@ -188,6 +191,12 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         match vr_frame.as_ref() {
             Some(frame) if frame.should_render() => crate::vr::begin_render_frame(frame, &vr_cfg),
             _ => crate::vr::clear_render_params(),
+        }
+        if replay_driving {
+            crate::vr::drive_replay_frame(
+                vr_frame.as_ref().is_some_and(|frame| frame.should_render()),
+                &vr_cfg,
+            );
         }
         // Snapshot the render-time hand poses against the head pose pair just published, before
         // the engine's render update runs the weapons' render updates and the draws follow.

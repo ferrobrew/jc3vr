@@ -26,6 +26,7 @@ use crate::{
             active_action_set,
             haptics::{self, HapticPulse},
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
+            replay,
             self_check::CheckFrame,
             semantic::{
                 SemanticSet,
@@ -70,6 +71,16 @@ impl InputState {
         };
         if self.refresh_profiles(session) {
             self.sources.mark_stale();
+        }
+
+        // A replay's recorded frames stand in for the sampled ones. The actions are still synced,
+        // which keeps the session's input healthy, and the haptics still reach the controllers.
+        if replay::publish_replayed(cfg) {
+            match self.flush_haptics(session, cfg) {
+                Ok(()) => self.note_success(),
+                Err(e) => self.note_failure(&e),
+            }
+            return;
         }
 
         let sampling = Sampling {

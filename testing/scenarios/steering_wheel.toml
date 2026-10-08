@@ -1,0 +1,16 @@
+# Template: fill testing/recordings/steering_wheel.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "drive a car with the wheel"
+description = "Recorded standing at the driver's door of a parked modern saloon, with the physical wheel on (steering-wheel.md, checklist item 1). Get in, take the wheel with both hands, drive forward turning left and right with the wheel, stop, and get out."
+recording = "../recordings/steering_wheel.jc3trk"
+settle_s = 5.0
+
+[[expect]]
+signal = "controllers.in_vehicle"
+
+[[expect]]
+log = "driving position"
+
+[[expect]]
+name = "back on foot at the end"
+signal = "controllers.on_foot"
+check = "at_end"

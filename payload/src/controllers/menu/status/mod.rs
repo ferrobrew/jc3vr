@@ -102,6 +102,23 @@ impl Line {
     }
 }
 
+/// Every row's label, top to bottom: the names the scenario runner's status-row probes use.
+pub(crate) fn row_labels() -> impl Iterator<Item = &'static str> {
+    SECTIONS
+        .iter()
+        .flat_map(|section| section.rows.iter().map(|row| row.label))
+}
+
+/// The line of the row labelled `label`, read now, or `None` when no row has that label. The rows
+/// read only published slots, so any thread may ask, as the page's own refresh does.
+pub(crate) fn read_row(label: &str) -> Option<Line> {
+    SECTIONS
+        .iter()
+        .flat_map(|section| section.rows.iter())
+        .find(|row| row.label == label)
+        .map(|row| (row.read)())
+}
+
 /// A section of the page: a header over its rows.
 struct Section {
     title: &'static str,

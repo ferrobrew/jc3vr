@@ -122,6 +122,24 @@ pub fn clear_render_params() {
 /// held guard); publishes through the headpose state and the [`RENDER_PARAMS`] slot, both
 /// independently locked.
 pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
+    render_frame(
+        [frame.eye_view(0), frame.eye_view(1)],
+        Some(frame.predicted_display_time()),
+        cfg,
+    );
+}
+
+/// Drive a frame from a replay's recorded views with no VR frame rendering: publish the head pose
+/// they compose to, as [`begin_render_frame`] does, and leave the per-eye render parameters
+/// cleared, so the desktop renders the recorded head's view. See [`crate::vr::drive_replay_frame`].
+pub(super) fn begin_replay_frame(eyes: [EyeView; 2], cfg: &VrConfig) {
+    render_frame(eyes, None, cfg);
+}
+
+/// The body of [`begin_render_frame`], over the frame's views. `display_time` is the VR frame's
+/// predicted display time, or `None` for a replay's views with no VR frame, which publishes the
+/// head pose only.
+fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &VrConfig) {
     // Cockpit-pose freeze diagnostic: reuse the first captured pose -- eye views plus the sim-driven
     // body frame and anchor -- so the head contributes the same thing every frame, isolating
     // per-frame-input-driven artifacts (pose noise, head-bone idle animation) from intrinsic render
@@ -133,7 +151,7 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
     let frozen = if cfg.freeze_mode == FreezeMode::CockpitPose {
         Some(pose_control::frozen_frame(|| {
             (
-                [frame.eye_view(0), frame.eye_view(1)],
+                views,
                 headpose::xr::body_rotation(),
                 headpose::anchor().unwrap_or(Vec3::ZERO),
             )
@@ -146,7 +164,7 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
         }
         None
     };
-    let [eye0, eye1] = frozen.map_or_else(|| [frame.eye_view(0), frame.eye_view(1)], |f| f.eyes);
+    let [eye0, eye1] = frozen.map_or(views, |f| f.eyes);
 
     // Advance the grapple reel-in filter at frame cadence, before the body frame and anchor below
     // are read through it: the engine rotates the body the instant a reel begins, and the ~33 Hz
@@ -237,6 +255,12 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
         // The raw anchor, so a capture shows the landing snap against the eased `position`.
         anchor: anchor_raw,
     });
+
+    // Without a VR frame there is nothing to render per eye: the replay's head is published, and
+    // the camera hook renders the desktop view from it.
+    let Some(display_time) = display_time else {
+        return;
+    };
 
     // The symmetric union-FOV cull projection: a single centred frustum that contains both eyes'
     // off-axis frusta. Each eye is laterally offset by ~IPD/2 and has its own asymmetric FOV, so the
@@ -352,11 +376,8 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
         ],
     };
     *CAPTURE_VIEWS.lock() = Some(CaptureViews {
-        predicted_display_time_ns: frame.predicted_display_time().as_nanos(),
-        eyes: [
-            capture_eye(&frame.eye_view(0)),
-            capture_eye(&frame.eye_view(1)),
-        ],
+        predicted_display_time_ns: display_time.as_nanos(),
+        eyes: [capture_eye(&views[0]), capture_eye(&views[1])],
     });
 }
 

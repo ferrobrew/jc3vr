@@ -1,0 +1,25 @@
+# Template: fill testing/recordings/procedural_full_body.jc3trk, then run. See
+# docs/mod/testing/recorder.md.
+name = "procedural full body on foot"
+description = "Recorded and replayed with BODY FROM YOUR HEAD on FULL, on foot on level ground (procedural-body.md). Stand still until the stance is measured, take a few real steps, crouch, stand, and walk with the stick."
+recording = "../recordings/procedural_full_body.jc3trk"
+
+[[expect]]
+status = "MODE"
+
+[[expect]]
+signal = "procedural.on_foot"
+
+[[expect]]
+signal = "procedural.stance_measured"
+
+[[expect]]
+name = "the ground casts never fail"
+status = "GROUND CASTS"
+health = "failed"
+check = "never"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"

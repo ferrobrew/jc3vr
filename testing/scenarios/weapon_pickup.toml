@@ -1,0 +1,11 @@
+# Template: fill testing/recordings/weapon_pickup.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a dropped weapon picked up into the hand"
+description = "Recorded with PHYSICAL HANDS on and a dropped rifle on the ground within reach, empty-handed (physical-hands.md, the checklist with the hand bodies off, item 15). Reach for the rifle until its gold ring shows, grip, and hold it up."
+recording = "../recordings/weapon_pickup.jc3trk"
+
+[[expect]]
+signal = "weapons.wielded"
+
+[[expect]]
+name = "a grab took the weapon"
+signal = "weapons.grabs"

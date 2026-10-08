@@ -16,7 +16,7 @@ use crate::{
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig, pose_control,
         recenter::mid_pose,
-        stage,
+        replay, stage,
         state::{VrState, lock_state},
         swapchain::Swapchain,
     },
@@ -281,6 +281,8 @@ impl VrState {
         }; 2];
 
         let mut head_pose = None;
+        let mut head_tracked = false;
+        let mut located = false;
         if frame_state.should_render {
             let (view_flags, views) = session
                 .handle
@@ -297,6 +299,7 @@ impl VrState {
             let tracked = view_flags.contains(
                 xr::ViewStateFlags::POSITION_VALID | xr::ViewStateFlags::ORIENTATION_VALID,
             );
+            head_tracked = tracked;
             if HEAD_TRACKED.swap(tracked, Ordering::Relaxed) != tracked {
                 if tracked {
                     tracing::info!(target: "vr", "head tracking: the view pose is valid again");
@@ -335,7 +338,11 @@ impl VrState {
                         ),
                     };
                 }
+                located = true;
             }
+        }
+        if located {
+            replay::replace_located_head(&mut eyes);
         }
 
         if let Some(p) = head_pose {
@@ -348,6 +355,9 @@ impl VrState {
             frame_state.predicted_display_time,
             head_pose,
         );
+        if let Some(info) = crate::testing::replay::stage() {
+            stage::publish_replayed(info);
+        }
 
         // The controllers are sampled at the same predicted display time and re-based against the
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.
@@ -362,6 +372,14 @@ impl VrState {
                 &controllers,
             );
         }
+
+        // After the controllers, so the frame records what the input update published.
+        crate::recorder::tracking::capture(replay::capture_sample(
+            frame_state.predicted_display_time,
+            frame_state.should_render,
+            head_tracked,
+            located.then_some(&eyes),
+        ));
 
         Ok(FrameData {
             predicted_display_time: frame_state.predicted_display_time,

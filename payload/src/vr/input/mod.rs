@@ -61,6 +61,7 @@
 pub(crate) mod actions;
 mod haptics;
 pub(crate) mod layout;
+mod replay;
 pub mod restart;
 mod sample;
 pub(crate) mod self_check;
@@ -73,6 +74,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 pub use haptics::{HapticPulse, request as request_haptic};
 use parking_lot::Mutex;
+pub(crate) use replay::publish_replayed;
 pub(crate) use stash::clear as clear_stash;
 pub(crate) use state::InputState;
 

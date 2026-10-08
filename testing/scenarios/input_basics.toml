@@ -1,0 +1,20 @@
+# Template: fill testing/recordings/input_basics.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "controller input and scheme"
+description = "Recorded on foot, both controllers on (controllers-and-roomscale.md, checklist items 1 and 2). Press every button, pull each trigger and grip, move each stick and trackpad, and wave both hands."
+recording = "../recordings/input_basics.jc3trk"
+
+[[expect]]
+signal = "controllers.frame_fresh"
+check = "always"
+
+[[expect]]
+signal = "controllers.scheme"
+
+[[expect]]
+status = "CONTROLLER ACTIONS"
+
+[[expect]]
+name = "no warning while the input replays"
+log = ""
+level = "warn"
+at_most = 0

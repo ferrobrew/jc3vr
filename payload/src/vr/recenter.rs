@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
+    recorder::tracking::format::RecenterEvent,
     vr::{is_running, state::lock_state},
 };
 
@@ -100,18 +101,32 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
             drop(state);
             // The cockpit frame turns by the yaw change: new frame from old.
             let turn = previous.map_or(glam::Quat::IDENTITY, |p| fresh.yaw.conjugate() * p.yaw);
-            crate::controllers::roomscale::on_recenter(kind, turn, cause);
-            // The head's forward becomes the body's: any turn of the body under the view is spent,
-            // and the torso estimate turns with the frame.
-            crate::headpose::xr::on_recenter();
-            crate::controllers::body::alignment::on_recenter(turn);
-            RECENTERS.fetch_add(1, Ordering::Relaxed);
+            rebased(kind, cause, turn);
+            crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
             tracing::info!(target: "vr", ?kind, ?cause, "recentered the cockpit baseline");
         }
         None => {
             tracing::warn!(target: "vr", "recenter requested before any head pose was located");
         }
     }
+}
+
+/// Apply a recenter a replay recorded: everything a recenter does besides re-basing the baseline,
+/// which the recorded poses already carry. Game thread, at the top of the frame, like a live
+/// recenter.
+pub(crate) fn apply_replayed_recenter(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
+    rebased(kind, cause, turn);
+    tracing::info!(target: "vr", ?kind, ?cause, "replayed a recenter of the cockpit baseline");
+}
+
+/// What follows a re-base of the baseline: the cockpit frame turned by `turn`, new frame from old.
+fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
+    crate::controllers::roomscale::on_recenter(kind, turn, cause);
+    // The head's forward becomes the body's: any turn of the body under the view is spent, and
+    // the torso estimate turns with the frame.
+    crate::headpose::xr::on_recenter();
+    crate::controllers::body::alignment::on_recenter(turn);
+    RECENTERS.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Service a recenter asked for through [`request_recenter`]. Called at the top of
@@ -205,7 +220,9 @@ const REQUEST_POSTURE: u8 = 1 << 3;
 /// transitions such as exiting a vehicle keep a live character, so they never re-arm and never fire.
 /// See [`crate::vr::VrConfig::auto_recenter_on_gameplay`].
 pub fn auto_recenter_tick() {
-    if !is_running() {
+    // A replay's poses are re-based already, and it applies the recenters it recorded; a live one
+    // would turn the body and the torso estimate under them.
+    if !is_running() || crate::testing::replay::is_driving() {
         PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
         return;
     }
