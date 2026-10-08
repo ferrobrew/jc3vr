@@ -50,6 +50,23 @@ impl SocketId {
         }
     }
 
+    /// The stable name the save sidecar uses.
+    pub const fn key(self) -> &'static str {
+        match self {
+            SocketId::BackFirst => "back_first",
+            SocketId::BackSecond => "back_second",
+            SocketId::BackOuter => "back_outer",
+            SocketId::HipLeft => "hip_left",
+            SocketId::HipRight => "hip_right",
+            SocketId::Chest => "chest",
+        }
+    }
+
+    /// The socket a sidecar's `key` names.
+    pub fn from_key(key: &str) -> Option<SocketId> {
+        SocketId::ALL.into_iter().find(|s| s.key() == key)
+    }
+
     /// The bone the socket's weapon is placed on.
     pub const fn bone(self) -> SafeBoneIndex {
         match self {
@@ -279,6 +296,14 @@ mod tests {
         assert_eq!(two.choices(Fit::LongGun).len(), 2);
         let none = Layout { back: 0, ..FULL };
         assert_eq!(none.choose(Fit::LongGun, &[]), None);
+    }
+
+    #[test]
+    fn the_keys_round_trip() {
+        for socket in SocketId::ALL {
+            assert_eq!(SocketId::from_key(socket.key()), Some(socket));
+        }
+        assert_eq!(SocketId::from_key("shoulder"), None);
     }
 
     #[test]

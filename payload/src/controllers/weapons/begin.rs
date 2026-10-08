@@ -79,6 +79,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 owner,
                 &inventory::TickInputs {
                     settings: config.weapons.inventory,
+                    dominant: config.acting_hand(),
                     wielded: weapon.map(|w| (w.address, w.holder)),
                     driven: second.and_then(|w| Some((w.address, w.holder?))),
                 },

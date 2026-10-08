@@ -180,6 +180,8 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | | `LAST REFUSAL` | why the last pickup, take, draw, holster, drop, or second weapon was refused |
 | `INVENTORY` | `TRACKED WEAPONS` | how many weapons the VR inventory tracks as the player's and in the world, and the spawn system resets it saw ([input/vr-inventory.md](input/vr-inventory.md)) |
 | | `CARRIED` | each weapon carried beyond the slots and its socket, the carried weapons drawn and the held ones put away since load, and the weapons pickups would have dropped that went onto a socket instead |
+| | `SAVE SIDECAR` | how many times the save sidecar has been written and how many carried weapons the last one held, or that the last write failed (the error is logged) |
+| | `LAST LOAD` | what the last load made of the sidecar (matched with the weapons to restore, none, unreadable, or another save's), and how many carried weapons the last respawn put back, from the load or the reset |
 | | `KEPT IN THE WORLD` | how many of the weapons lying in the world are kept from the game's despawn, the pins since load, and the weapons left to the game |
 | `HAND BODIES` | `CALLBACK` | whether the pre-simulation callback is registered, has fired, and fires on the game thread (else the thread's id) |
 | | `CALLBACK FIRES` | how many times it has fired |

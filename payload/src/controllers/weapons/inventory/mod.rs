@@ -10,6 +10,7 @@
 //! - [`actions`]: drawing a carried weapon (into its slot, or as the second weapon beside the
 //!   wielded one), putting a held one onto a socket, and carrying the weapon a pickup replaces;
 //! - [`decide`]: what a grab of a socket and the second weapon's release do;
+//! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
 //! - [`engine`]: the engine reads behind them;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
@@ -24,9 +25,11 @@ pub(crate) mod carry;
 pub mod config;
 pub mod decide;
 pub(crate) mod engine;
+pub mod persist;
 pub mod pins;
 pub mod registry;
 mod reset;
+pub mod restore;
 pub mod sockets;
 
 use jc3gi::{
@@ -39,7 +42,10 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     frame::Hand,
     weapons::{
-        hold::refs::{Strong, Weak},
+        hold::{
+            refs::{Strong, Weak},
+            second,
+        },
         holster::slot_label,
         inventory::{
             config::InventoryConfig,
@@ -108,6 +114,8 @@ pub fn status() -> InventoryStatus {
 /// What the weapon handling hands the inventory each input tick.
 pub(crate) struct TickInputs {
     pub settings: InventoryConfig,
+    /// The dominant hand, whose hip takes a pistol first.
+    pub dominant: Hand,
     /// The wielded weapon and the hand holding it.
     pub wielded: Option<(ObjectKey, Option<Hand>)>,
     /// The weapon the mod drives in a hand, and that hand.
@@ -119,17 +127,23 @@ pub(crate) struct TickInputs {
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn input_tick(owner: &Character, inputs: &TickInputs) {
+pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
+    if inputs.settings.enabled {
+        unsafe { restore::input_tick(owner, &inputs.settings, inputs.dominant) };
+    }
     let mut state = STATE.lock();
     if !inputs.settings.enabled {
         if state.status.active {
             state.release_all("the inventory is off");
             drop(state);
+            second::carry_released();
             unsafe { carry::drop_all() };
+            restore::clear();
         }
         return;
     }
     if !inputs.settings.carry && carry::count() > 0 {
+        second::carry_released();
         unsafe { carry::drop_all() };
     }
     state.status.active = true;
@@ -195,10 +209,12 @@ pub(crate) unsafe fn input_tick(owner: &Character, inputs: &TickInputs) {
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
 /// since the reset removes the weapons in the world and replaces the slots' weapons.
 fn on_reset() {
+    restore::on_pre_reset(carry::records());
     let mut state = STATE.lock();
     state.status.resets += 1;
     state.release_all("the spawn system reset");
     drop(state);
+    second::carry_released();
     let carried = carry::release_all();
     if carried > 0 {
         tracing::info!(target: "controllers", carried, "inventory: released the carried weapons");

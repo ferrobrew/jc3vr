@@ -157,6 +157,7 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `collide.touching` | flag | A held long gun is against a wall. |
 | `inventory.carried` | measure | Weapons the VR inventory carries beyond the slots. |
 | `inventory.draws`, `.stows` | counter | Carried weapons drawn off their sockets, and held weapons put onto a free socket. |
+| `inventory.restored`, `.sidecar_writes` | counter | Carried weapons respawned onto their sockets after a reset or a load, and save sidecars written. |
 | `inventory.kept` | measure | Weapons lying in the world the VR inventory keeps from the game's despawn. |
 | `inventory.pins`, `.resets` | counter | Weapons in the world the inventory started keeping, and the spawn system resets it saw. |
 | `ads.sighted`, `.shouldered`, `.welded` | counter | Times a long gun's sights came onto the eye, its stock into the shoulder, and a scope onto the eye. |

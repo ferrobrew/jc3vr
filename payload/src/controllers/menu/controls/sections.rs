@@ -377,6 +377,11 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .inventory
             .carry))
+        .item(config_toggle!("SAVE CARRIED WEAPONS", |c| c
+            .controllers
+            .weapons
+            .inventory
+            .persist))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons

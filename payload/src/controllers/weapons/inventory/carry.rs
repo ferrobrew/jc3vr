@@ -37,6 +37,7 @@ use jc3gi::{
         inventory::{EquipMode, Inventory, WeaponSlot},
     },
     equipment::weapon::{WeaponBase, WeaponState},
+    game::GameObject,
     types::math::Matrix4,
     ui::hud_ui::HUDUI,
 };
@@ -52,6 +53,7 @@ use crate::controllers::{
         holster::slot_label,
         inventory::{
             engine::{self as inventory_engine, kind_of, shared_view, strong_to},
+            persist::Record,
             registry::{ObjectKey, Seen},
             sockets::SocketId,
         },
@@ -243,6 +245,71 @@ pub(crate) unsafe fn carry_from_slot(
         socket.label()
     );
     Ok(object)
+}
+
+/// Take the weapon `strong` keeps alive, which no inventory holds, into the carry set on `socket`:
+/// the weapon's pickup ([`WeaponBase::OnPickup`]) makes the player its holder and holsters it, and
+/// the HUD's weapon list, which the pickup shows the weapon in, is rebuilt from the slots.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn carry_loose(
+    owner: &mut Character,
+    strong: Strong,
+    socket: SocketId,
+    offset: Vec3,
+) -> Result<ObjectKey, CarryRefusal> {
+    let pointer = inventory_engine::weapon_of(&strong);
+    // SAFETY: the strong reference keeps the weapon alive.
+    let weapon = unsafe { &mut *pointer };
+    if unsafe { inventory_engine::slot_of(weapon) }
+        .is_none_or(|slot| !inventory_engine::TRACKED_SLOTS.contains(&slot))
+    {
+        return Err(CarryRefusal::Unsupported);
+    }
+    let holder = inventory_engine::player_object(owner) as *mut GameObject;
+    unsafe { weapon.OnPickup(holder) };
+    if weapon.m_State != WeaponState::E_WS_HOLSTERED
+        || weapon.m_Holder.px as usize != inventory_engine::player_object(owner)
+    {
+        return Err(CarryRefusal::NotDone);
+    }
+    unsafe { skip_interpolation(weapon) };
+    let object = pointer as ObjectKey;
+    push(Carried {
+        object,
+        strong,
+        socket,
+        offset,
+        in_hand: None,
+    });
+    unsafe { refresh_hud() };
+    tracing::info!(
+        target: "controllers",
+        socket = socket.label(),
+        "inventory: took a weapon into the carry set on the {}",
+        socket.label()
+    );
+    Ok(object)
+}
+
+/// The carried weapons as the save sidecar records them: each one's type, magazine, and socket.
+pub(crate) fn records() -> Vec<Record> {
+    CARRY
+        .lock()
+        .iter()
+        .filter_map(|c| {
+            // SAFETY: the set's strong reference keeps the weapon alive.
+            let weapon = unsafe { &*c.weapon() };
+            let kind = unsafe { kind_of(weapon) }?;
+            Some(Record {
+                tag_hash: kind.tag_hash,
+                magazine: weapon.m_MagazineAmmo,
+                socket: c.socket,
+            })
+        })
+        .collect()
 }
 
 /// Move the carried weapon `object` into its slot and equip it: the slot's occupant comes into the

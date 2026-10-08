@@ -191,6 +191,8 @@ signals! {
     InventoryCarried => "inventory.carried", Measure, "Weapons the inventory carries beyond the slots.";
     InventoryDraws => "inventory.draws", Counter, "Carried weapons drawn off their sockets into a hand.";
     InventoryStows => "inventory.stows", Counter, "Held weapons put onto a free socket.";
+    InventoryRestored => "inventory.restored", Counter, "Carried weapons respawned onto their sockets after a reset or a load.";
+    InventorySidecarWrites => "inventory.sidecar_writes", Counter, "Save sidecars written.";
     InventoryKept => "inventory.kept", Measure, "Weapons lying in the world the inventory keeps from the game's despawn.";
     InventoryPins => "inventory.pins", Counter, "Weapons in the world the inventory started keeping.";
     InventoryResets => "inventory.resets", Counter, "Spawn system resets the inventory saw.";
@@ -358,6 +360,8 @@ impl Signal {
             Signal::InventoryCarried => Value::Number(inventory::status().carried().count() as f64),
             Signal::InventoryDraws => count(inventory::status().draws),
             Signal::InventoryStows => count(inventory::status().stows),
+            Signal::InventoryRestored => count(inventory::restore::status().restored),
+            Signal::InventorySidecarWrites => count(inventory::restore::status().writes),
             Signal::InventoryKept => Value::Number(inventory::status().world().0 as f64),
             Signal::InventoryPins => count(inventory::status().pins),
             Signal::InventoryResets => count(inventory::status().resets),

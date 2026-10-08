@@ -50,7 +50,7 @@ pub(crate) mod load;
 pub(crate) mod paths;
 mod persist;
 pub(crate) mod validate;
-mod write;
+pub(crate) mod write;
 
 use std::ops::{Deref, DerefMut};
 

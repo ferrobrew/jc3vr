@@ -403,6 +403,16 @@ pub(crate) unsafe fn validate(owner: &mut Character) {
     }
 }
 
+/// The carry set is letting its weapons go: a carried second weapon is forgotten at once, without
+/// touching it, since the carry set's reference was what kept it alive. Called from the spawn
+/// system's reset, on whatever thread runs it, and when carrying is switched off.
+pub(crate) fn carry_released() {
+    if CARRIED.load(Ordering::Relaxed) {
+        forget();
+        tracing::info!(target: "controllers", "hold: the carried second weapon was let go of with the carry set");
+    }
+}
+
 /// Show the second weapon's magazine over its hand, or take it away when there is none or `shown`
 /// is off.
 ///

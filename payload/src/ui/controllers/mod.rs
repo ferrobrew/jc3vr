@@ -96,6 +96,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     );
     let weapons_readout = weapons::WeaponsReadout::read();
     let inventory_status = controller_inventory::status();
+    let restore_status = controller_inventory::restore::status();
     let haptics_status = controller_haptics::status();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
@@ -193,7 +194,9 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
 
         egui::CollapsingHeader::new("VR inventory")
             .default_open(true)
-            .show(ui, |ui| inventory::inventory_readout(ui, &inventory_status));
+            .show(ui, |ui| {
+                inventory::inventory_readout(ui, &inventory_status, &restore_status)
+            });
 
         egui::CollapsingHeader::new("Haptics")
             .default_open(true)

@@ -42,6 +42,9 @@ pub struct InventoryConfig {
     pub socket_radius_m: f32,
     /// Where each socket's weapon sits relative to its bone.
     pub offsets: Offsets,
+    /// Keep the carried weapons across saves and loads, in a sidecar file beside the settings,
+    /// tied to the save by a fingerprint of its slots and reserves.
+    pub persist: bool,
 }
 
 impl InventoryConfig {
@@ -59,6 +62,7 @@ impl InventoryConfig {
             chest_socket: true,
             socket_radius_m: 0.12,
             offsets: Offsets::new(),
+            persist: true,
         }
     }
 

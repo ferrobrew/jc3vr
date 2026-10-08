@@ -4,10 +4,35 @@ use egui::Ui;
 
 use crate::controllers::weapons::{
     holster::slot_label,
-    inventory::{InventoryStatus, config::InventoryConfig, sockets::SocketId},
+    inventory::{
+        InventoryStatus, config::InventoryConfig, restore::RestoreStatus, sockets::SocketId,
+    },
 };
 
-pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus) {
+pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreStatus) {
+    ui.label(format!(
+        "Save sidecar: {} · writes {} · carried in the last {} · last write error: {}",
+        r.path
+            .as_ref()
+            .map_or("no configuration directory".to_owned(), |p| p
+                .display()
+                .to_string()),
+        r.writes,
+        r.last_written,
+        r.last_write_error.as_deref().unwrap_or("none")
+    ));
+    ui.label(format!(
+        "Last load: {} · last respawn: {} · restored {} · spawning {}",
+        r.last_load
+            .as_ref()
+            .map_or("none".to_owned(), ToString::to_string),
+        r.last_respawn.map_or("none".to_owned(), |o| format!(
+            "{:?}, {} of {} restored, {} failed",
+            o.origin, o.restored, o.requested, o.failed
+        )),
+        r.restored,
+        r.spawning
+    ));
     let (pinned, world) = s.world();
     ui.label(format!(
         "Active: {} · {} weapons · {pinned} of {world} in the world kept · pins {} · left to the \
@@ -54,6 +79,10 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
         });
         ui.add(egui::Slider::new(&mut c.forget_m, 10.0..=200.0).text("Left to the game past (m)"));
         ui.checkbox(&mut c.carry, "Carry weapons beyond the slots on the body");
+        ui.checkbox(
+            &mut c.persist,
+            "Keep the carried weapons across saves and loads",
+        );
         ui.add_enabled_ui(c.carry, |ui| {
             ui.add(egui::Slider::new(&mut c.back_sockets, 0..=3).text("Long guns on the back"));
             ui.add(egui::Slider::new(&mut c.hip_sockets, 0..=2).text("Pistols on the hips"));

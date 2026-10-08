@@ -5,7 +5,13 @@ use smol_str::format_smolstr;
 
 use crate::controllers::{
     menu::{read_config, status::Line},
-    weapons::{holster::slot_label, inventory},
+    weapons::{
+        holster::slot_label,
+        inventory::{
+            self,
+            restore::{self, LoadOutcome, Origin},
+        },
+    },
 };
 
 pub(super) fn tracked() -> Line {
@@ -38,6 +44,79 @@ pub(super) fn pinned() -> Line {
         s.pins,
         s.forgotten
     ))
+}
+
+pub(super) fn sidecar() -> Line {
+    if !read_config(|c| {
+        let inventory = c.controllers.weapons.inventory;
+        inventory.enabled && inventory.carry && inventory.persist
+    }) {
+        return Line::off("");
+    }
+    let s = restore::status();
+    if s.path.is_none() {
+        return Line::failed("NO CONFIGURATION DIRECTORY");
+    }
+    if let Some(error) = s.last_write_error {
+        return Line::failed("LAST WRITE FAILED, SEE LOG").with_note(error);
+    }
+    if s.writes == 0 {
+        return Line::waiting("NOT WRITTEN YET, WAITING FOR A SAVE");
+    }
+    Line::ok(format_smolstr!(
+        "{} WRITES, {} CARRIED IN THE LAST",
+        s.writes,
+        s.last_written
+    ))
+}
+
+pub(super) fn last_load() -> Line {
+    if !read_config(|c| {
+        let inventory = c.controllers.weapons.inventory;
+        inventory.enabled && inventory.carry && inventory.persist
+    }) {
+        return Line::off("");
+    }
+    let s = restore::status();
+    let load = match &s.last_load {
+        None => "NO LOAD YET".to_owned(),
+        Some(LoadOutcome::Accepted { carried, unknown }) => {
+            format!("SIDECAR MATCHED, {carried} TO RESTORE, {unknown} UNKNOWN")
+        }
+        Some(LoadOutcome::Missing) => "NO SIDECAR".to_owned(),
+        Some(LoadOutcome::Unreadable(_)) => "SIDECAR UNREADABLE".to_owned(),
+        Some(LoadOutcome::Rejected(_)) => "ANOTHER SAVE'S SIDECAR".to_owned(),
+        Some(LoadOutcome::NoCharacter) => "NO CHARACTER".to_owned(),
+    };
+    let respawn = s.last_respawn.map_or(String::new(), |r| {
+        format!(
+            "; RESPAWNED {} OF {} FROM THE {}{}",
+            r.restored,
+            r.requested,
+            match r.origin {
+                Some(Origin::Load) => "LOAD",
+                _ => "RESET",
+            },
+            if r.failed > 0 {
+                format!(", {} FAILED", r.failed)
+            } else {
+                String::new()
+            }
+        )
+    });
+    let note = match &s.last_load {
+        Some(LoadOutcome::Unreadable(why) | LoadOutcome::Rejected(why)) => Some(why.clone()),
+        _ => None,
+    };
+    let line = if matches!(s.last_load, Some(LoadOutcome::Unreadable(_))) {
+        Line::failed(format_smolstr!("{load}{respawn}"))
+    } else {
+        Line::ok(format_smolstr!("{load}{respawn}"))
+    };
+    match note {
+        Some(note) => line.with_note(note),
+        None => line,
+    }
 }
 
 pub(super) fn carried() -> Line {
