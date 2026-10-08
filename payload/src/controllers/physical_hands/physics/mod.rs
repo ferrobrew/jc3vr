@@ -271,6 +271,17 @@ pub(crate) fn frame_tick() {
         });
     }
     let mut shared = SHARED.lock();
+    let now = Instant::now();
+    let follow_through = Duration::from_secs_f32(config.bodies.hits.follow_through_s.max(0.0));
+    for (until, struck) in shared
+        .follow_through
+        .iter_mut()
+        .zip(delivered.follow_through)
+    {
+        if struck {
+            *until = Some(now + follow_through);
+        }
+    }
     let status = &mut shared.status;
     status.registered = registered;
     status.contacts += delivered.contacts;
@@ -440,7 +451,7 @@ pub(super) unsafe fn step() {
         return;
     }
 
-    let (targets, published, world_scale, mut push, holds, rig_moves, park_now) = {
+    let (targets, published, world_scale, mut push, holds, rig_moves, park_now, follow_through) = {
         let mut shared = SHARED.lock();
         (
             shared.targets,
@@ -453,6 +464,9 @@ pub(super) unsafe fn step() {
                 .park_now
                 .filter(|(at, _)| now.saturating_duration_since(*at) <= STALE_AFTER)
                 .map_or([false; 2], |(_, park)| park),
+            shared
+                .follow_through
+                .map(|until| until.is_some_and(|at| now < at)),
         )
     };
     let fresh = published.is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
@@ -556,6 +570,11 @@ pub(super) unsafe fn step() {
                 let goal = grips[i].unwrap_or(palm);
                 let held = holds[i].map_or(0, |h| h.object.get());
                 let mut clear = |from: Vec3, to: Vec3| unsafe { path_clear(from, to, held) };
+                // A hand that just struck hard follows through rather than stopping dead.
+                let soft = DriveTuning {
+                    linear_gain: tuning.linear_gain * b.hits.follow_through_gain.clamp(0.0, 1.0),
+                    ..tuning
+                };
                 let request = ActRequest {
                     hand,
                     spec,
@@ -565,7 +584,7 @@ pub(super) unsafe fn step() {
                     anchor: grips[i].map_or(target.position, |g| g.position),
                     clear: &mut clear,
                     break_distance_m: b.break_distance_m * scale,
-                    tuning: &tuning,
+                    tuning: if follow_through[i] { &soft } else { &tuning },
                     step_s,
                 };
                 // SAFETY: forwarded from the caller.
@@ -751,6 +770,8 @@ struct Shared {
     holds: [Option<HoldTarget>; 2],
     /// Which hands lost their joint since the aim update last took it.
     joint_lost: [bool; 2],
+    /// Until when each hand follows through a hard blow with a softened drive.
+    follow_through: [Option<Instant>; 2],
     /// When the last step ran.
     stepped: Option<Instant>,
     status: HandBodiesStatus,
@@ -784,6 +805,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     push: Vec2::ZERO,
     holds: [None; 2],
     joint_lost: [false; 2],
+    follow_through: [None; 2],
     stepped: None,
     status: HandBodiesStatus {
         registered: false,

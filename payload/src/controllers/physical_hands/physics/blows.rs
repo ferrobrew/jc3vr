@@ -1,14 +1,17 @@
 //! The hand bodies' blows: the contacts the physics step reported ([`contact`]), dealt on the game
 //! thread's frame tick, outside the game's update.
 //!
-//! Each contact pulses its hand by its impulse. A contact with a character, other than the player,
-//! is a blow ([`hit`]): the character reacts through its own hit reaction
+//! Each contact pulses its hand by how fast the hand met it. A contact with a character, other than
+//! the player, that the hand swung into is a blow ([`hit`]): the character reacts through its own
+//! hit reaction
 //! ([`Character::HitReaction`]) as to a melee blow ([`DamageFlags::DMG_TYPE_MELEE`]) of the
 //! contact's impulse along the hand's travel, which staggers it or knocks it down against its own
 //! thresholds and carries the blow's momentum into the ragdoll it falls as. A blow hard enough to
 //! deal damage is a melee damage message ([`DamageMsg`]) to the character's damage virtual
 //! ([`PhysicsGameObject::OnDamage`]) instead, which takes the health and runs the same hit reaction
-//! from the message's impulse.
+//! from the message's impulse. Only a character the player's faction is hostile to
+//! ([`GetRelation`]) takes damage or a knockdown: an ally, an escort, or a bystander is staggered
+//! at most, so that a careless swing cannot kill a mission's own characters.
 //!
 //! The character is found again from the contact's body when the blow is dealt: the body's engine
 //! instance must still be the one the event named, and its owner the same object, so a character
@@ -21,9 +24,11 @@ use std::{mem::MaybeUninit, num::NonZeroUsize, time::Instant};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
+    aim::target::FactionRelation,
     animation::symbol_table::RagdollRBGroupId,
     character::character::Character,
     damage::{DamageFlags, DamageMsg},
+    faction::GetRelation,
     physics::{PfxInstance, PhysicsGameObject},
     types::math::Vector3,
 };
@@ -36,7 +41,10 @@ use crate::controllers::{
         physics::{
             body,
             contact::{self, Contact},
-            hit::{Blow, BlowPlan, HitGate, VictimTuning, blow, pulse_share},
+            hit::{
+                ANY_HAND, Blow, BlowPlan, HitGate, VictimTuning, approach, blow, blow_impulse,
+                pulse_share, restrain,
+            },
         },
         pulse,
         world::World,
@@ -48,7 +56,10 @@ use crate::controllers::{
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BlowReport {
     pub hand: Hand,
+    /// The blow's impulse: the arm's momentum at the hand's speed into the character.
     pub impulse_ns: f32,
+    /// Whether the player's faction is hostile to the character.
+    pub hostile: bool,
     /// The blow as a share of the knockdown impulse.
     pub strength: f32,
     /// The damage the blow carried, if it carried any.
@@ -64,6 +75,8 @@ pub struct Delivered {
     pub dropped: u64,
     pub blows: u64,
     pub last: Option<BlowReport>,
+    /// The hands that struck hard enough to follow through.
+    pub follow_through: [bool; 2],
 }
 
 /// Deal the blows of the contacts recorded since the last frame tick, and pulse their hands.
@@ -91,7 +104,9 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         .as_secs_f64();
     for contact in contacts {
         if hits.haptics {
-            let share = pulse_share(contact.impulse_ns, hits.full_pulse_impulse_ns);
+            // Harder the faster the hand met it: a punch, not a shove.
+            let met = hits.blow_mass_kg.max(0.0) * contact.hand_velocity.length();
+            let share = pulse_share(met, hits.full_pulse_impulse_ns);
             if share >= MIN_PULSE_SHARE {
                 pulse(
                     contact.hand,
@@ -112,16 +127,28 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let Some(victim) = (unsafe { victim(&contact, attacker) }) else {
             continue;
         };
+        // SAFETY: a live character, found again above.
+        let victim = unsafe { &mut *victim };
+        let victim_at = Mat4::from(victim.m_WorldMatrixT1).w_axis.truncate();
+        let toward = victim_at + Vec3::Y * CHEST_HEIGHT_M - contact.hand_position;
+        let closing = approach(
+            contact.hand_velocity,
+            Vec3::from_array(victim.m_MeasuredWorldVelocity.data),
+            toward,
+        );
+        // A hand that did not swing into the character, resting on it or met by it, strikes
+        // nothing.
+        let Some(impulse_ns) = blow_impulse(closing, hits) else {
+            continue;
+        };
         if !gate.0.admit(
             contact.hand.index(),
-            victim as usize,
+            victim as *mut Character as usize,
             now_s,
             hits.cooldown_s,
         ) {
             continue;
         }
-        // SAFETY: a live character, found again above.
-        let victim = unsafe { &mut *victim };
         let tuning = VictimTuning {
             type_scale: victim
                 .m_HitReaction_DamageImpulseScale
@@ -131,7 +158,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
             knockdown_threshold: victim.m_HitReaction_ImpulseRagdollThreshold,
         };
         let melee_damage = unsafe { engine::melee_damage(attacker) }.unwrap_or(0);
-        let plan = match blow(contact.impulse_ns, tuning, melee_damage, hits) {
+        let mut plan = match blow(impulse_ns, tuning, melee_damage, hits) {
             Blow::Strikes(plan) => plan,
             Blow::TooWeak => continue,
             Blow::Uncalibrated => {
@@ -143,26 +170,50 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
                 continue;
             }
         };
-        let victim_at = Mat4::from(victim.m_WorldMatrixT1).w_axis.truncate();
+        // SAFETY: both characters are live.
+        let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
+        let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
+        if !hostile {
+            plan = restrain(plan, NOT_HOSTILE_MAX_STRENGTH);
+        }
+        // One damaging blow per character a while, from either hand.
+        if plan.damage.is_some()
+            && !gate.0.admit(
+                ANY_HAND,
+                victim as *mut Character as usize,
+                now_s,
+                hits.damage_cooldown_s,
+            )
+        {
+            plan.damage = None;
+        }
         let direction = blow_direction(contact.hand_velocity, victim_at - contact.hand_position);
+        // Read before the strike, which may free the character's tuning with its ragdoll.
+        let stagger_threshold = victim.m_HitReaction_ImpulseStumbleThreshold;
         // SAFETY: forwarded from the caller; both characters are live.
         let dealt = unsafe { strike(attacker, victim, contact.hand_position, direction, &plan) };
         tracing::info!(
             hand = contact.hand.label(),
-            impulse_ns = contact.impulse_ns,
+            impulse_ns,
+            hand_mps = closing.hand_mps,
+            victim_mps = closing.victim_mps,
+            contact_impulse_ns = contact.impulse_ns,
+            hostile,
             strength = plan.strength,
             reaction_impulse = plan.reaction_impulse,
             damage = plan.damage,
             dealt,
-            stagger_threshold = victim.m_HitReaction_ImpulseStumbleThreshold,
+            stagger_threshold,
             knockdown_threshold = tuning.knockdown_threshold,
             type_scale = tuning.type_scale,
             "hand bodies: a hand struck a character"
         );
         delivered.blows += 1;
+        delivered.follow_through[contact.hand.index()] |= plan.strength >= FOLLOW_THROUGH_STRENGTH;
         delivered.last = Some(BlowReport {
             hand: contact.hand,
-            impulse_ns: contact.impulse_ns,
+            impulse_ns,
+            hostile,
             strength: plan.strength,
             damage: plan.damage,
             dealt,
@@ -176,6 +227,15 @@ pub(super) fn discard() {
     let _ = contact::take();
     GATE.lock().0.clear();
 }
+
+/// How far above a character's root its chest is, metres: where a blow aims.
+const CHEST_HEIGHT_M: f32 = 1.2;
+
+/// The strongest blow a character the player is not hostile to takes, as a share of a knockdown.
+const NOT_HOSTILE_MAX_STRENGTH: f32 = 0.9;
+
+/// The share of a knockdown from which a blow follows through.
+const FOLLOW_THROUGH_STRENGTH: f32 = 0.5;
 
 /// The least share of the strongest hit pulse that pulses a hand.
 const MIN_PULSE_SHARE: f32 = 0.05;

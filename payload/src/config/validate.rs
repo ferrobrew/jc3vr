@@ -1011,6 +1011,32 @@ fn hand_hits(h: &HandHitsConfig) -> Result<(), Invalid> {
         100.0,
     )?;
     nonnegative("physical_hands.bodies.hits.cooldown_s", h.cooldown_s, 60.0)?;
+    nonnegative(
+        "physical_hands.bodies.hits.damage_cooldown_s",
+        h.damage_cooldown_s,
+        60.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.hits.min_approach_speed_mps",
+        h.min_approach_speed_mps,
+        50.0,
+    )?;
+    positive(
+        "physical_hands.bodies.hits.blow_mass_kg",
+        h.blow_mass_kg,
+        1000.0,
+    )?;
+    nonnegative(
+        "physical_hands.bodies.hits.follow_through_s",
+        h.follow_through_s,
+        5.0,
+    )?;
+    range(
+        "physical_hands.bodies.hits.follow_through_gain",
+        h.follow_through_gain,
+        0.0,
+        1.0,
+    )?;
     positive(
         "physical_hands.bodies.hits.full_pulse_impulse_ns",
         h.full_pulse_impulse_ns,

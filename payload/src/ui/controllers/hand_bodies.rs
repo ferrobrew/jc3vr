@@ -29,9 +29,14 @@ pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
     ));
     if let Some(blow) = status.last_blow {
         ui.label(format!(
-            "Last blow: {} hand · {:.1} N·s · {:.0}% of a knockdown · {}",
+            "Last blow: {} hand · {:.1} N·s · {} · {:.0}% of a knockdown · {}",
             blow.hand.label(),
             blow.impulse_ns,
+            if blow.hostile {
+                "hostile"
+            } else {
+                "not hostile"
+            },
             blow.strength * 100.0,
             match blow.damage {
                 Some(damage) => format!("{damage} damage, {} dealt", blow.dealt),
@@ -129,7 +134,21 @@ fn hits_settings(ui: &mut Ui, h: &mut HandHitsConfig) {
                 .text("Knockdown blow (N·s)"),
         );
         ui.add(egui::Slider::new(&mut h.cooldown_s, 0.0..=2.0).text("One blow per character (s)"));
+        ui.add(
+            egui::Slider::new(&mut h.min_approach_speed_mps, 0.0..=6.0)
+                .text("Slowest swing that strikes (m/s)"),
+        );
+        ui.add(egui::Slider::new(&mut h.blow_mass_kg, 1.0..=30.0).text("Arm mass of a blow (kg)"));
+        ui.add(egui::Slider::new(&mut h.follow_through_s, 0.0..=0.5).text("Follow-through (s)"));
+        ui.add(
+            egui::Slider::new(&mut h.follow_through_gain, 0.0..=1.0)
+                .text("Drive kept in a follow-through"),
+        );
         ui.checkbox(&mut h.damage, "Hard blows deal damage");
+        ui.add(
+            egui::Slider::new(&mut h.damage_cooldown_s, 0.0..=3.0)
+                .text("One damaging blow per character (s)"),
+        );
         ui.add(
             egui::Slider::new(&mut h.damage_impulse_ns, 0.0..=300.0)
                 .text("Weakest damaging blow (N·s)"),

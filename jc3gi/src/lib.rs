@@ -112,6 +112,7 @@ pub mod damage;
 pub mod environment;
 pub mod equipment;
 pub mod event;
+pub mod faction;
 pub mod game;
 pub mod game_world;
 pub mod game_world_object_manager;

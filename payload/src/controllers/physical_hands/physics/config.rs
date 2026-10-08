@@ -89,9 +89,23 @@ pub struct HandHitsConfig {
     /// How long a character struck by a hand ignores that hand's further contacts, seconds, so that
     /// one blow is one hit.
     pub cooldown_s: f32,
-    /// Pulse a hand when its body starts a contact, harder the harder the contact.
+    /// How long a character a blow damaged takes no further damage from either hand, seconds.
+    pub damage_cooldown_s: f32,
+    /// The slowest a hand must move toward a character before the contact for it to be a blow,
+    /// metres per second: a hand resting on a character or pushing it slowly strikes nothing.
+    pub min_approach_speed_mps: f32,
+    /// The mass of the arm a blow carries, kilograms: a blow's impulse is this at the hand's speed
+    /// into the character.
+    pub blow_mass_kg: f32,
+    /// How long a hand's drive is softened after a blow of at least half a knockdown, seconds, so
+    /// that the hand follows through rather than stopping dead on the character.
+    pub follow_through_s: f32,
+    /// The share of the drive's gain a hand keeps while it follows through, `0..=1`.
+    pub follow_through_gain: f32,
+    /// Pulse a hand when its body starts a contact, harder the faster the hand met it.
     pub haptics: bool,
-    /// The contact impulse of the strongest hit pulse, newton seconds.
+    /// The impulse of the strongest hit pulse, newton seconds: an arm of
+    /// [`blow_mass_kg`](Self::blow_mass_kg) at the hand's speed into what it met.
     pub full_pulse_impulse_ns: f32,
 }
 
@@ -106,6 +120,11 @@ impl HandHitsConfig {
             damage_impulse_ns: 35.0,
             damage_scale: 1.0,
             cooldown_s: 0.5,
+            damage_cooldown_s: 1.0,
+            min_approach_speed_mps: 1.5,
+            blow_mass_kg: 10.0,
+            follow_through_s: 0.15,
+            follow_through_gain: 0.3,
             haptics: true,
             full_pulse_impulse_ns: 50.0,
         }
