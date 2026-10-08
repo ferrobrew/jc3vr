@@ -9,6 +9,7 @@ use jc3gi::character::character::Character;
 use crate::{
     controllers::{
         config::ControllersConfig,
+        frame::Hand,
         hands::ActiveHands,
         mode::VehicleSeat,
         vehicles::{
@@ -25,18 +26,28 @@ pub(super) struct MountedTick {
     pub(super) readout: Option<MountedReadout>,
     pub(super) target: Option<MountedTarget>,
     pub(super) handles: Option<[Option<Vec3>; 2]>,
+    /// The gun's handles in the cockpit frame, where it places them, for their grab volumes.
+    pub(super) handle_points: [Option<Vec3>; 2],
+    /// The barrel's direction in the cockpit frame, for the recoil's kick.
+    pub(super) barrel: Option<Vec3>,
 }
 
-/// Read the mounted gun and derive its aim from the hands.
-pub(super) fn mounted_tick(active: &ActiveHands) -> MountedTick {
+/// Read the mounted gun and derive its aim from the hands in `aiming`, indexed by
+/// [`Hand::index`](crate::controllers::frame::Hand::index). With the grip on the handles and no hand
+/// aiming, the gun keeps the direction the hands last gave it, in the body frame.
+pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTick {
     let config = &active.config;
     let none = MountedTick {
         readout: None,
         target: None,
         handles: None,
+        handle_points: [None; 2],
+        barrel: None,
     };
     if !(config.vehicles.mounted.aim_by_hands || config.vehicles.mounted.anchor_hands) {
-        STATE.lock().mounted_reference = None;
+        let mut state = STATE.lock();
+        state.mounted_reference = None;
+        state.mounted_last = None;
         return none;
     }
     // SAFETY: the input tick runs on the main thread outside the world update.
@@ -45,7 +56,9 @@ pub(super) fn mounted_tick(active: &ActiveHands) -> MountedTick {
             .as_ref()
             .and_then(|owner| mounted::read(owner))
     }) else {
-        STATE.lock().mounted_reference = None;
+        let mut state = STATE.lock();
+        state.mounted_reference = None;
+        state.mounted_last = None;
         return none;
     };
     let head = headpose::query();
@@ -56,9 +69,10 @@ pub(super) fn mounted_tick(active: &ActiveHands) -> MountedTick {
     };
     let handles = gun.handles.map(|h| h.map(to_cockpit));
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
+    let grips = Hand::BOTH.map(|hand| grips[hand.index()].filter(|_| aiming[hand.index()]));
 
     let aim = config.vehicles.mounted.aim_by_hands;
-    let direction = mounted::hands_midpoint(grips)
+    let from_hands = mounted::hands_midpoint(grips)
         .filter(|_| aim)
         .and_then(|(mid, tracked)| {
             let mut state = STATE.lock();
@@ -84,6 +98,20 @@ pub(super) fn mounted_tick(active: &ActiveHands) -> MountedTick {
             drop(state);
             mounted::aim_direction(&reference?, mid).map(|d| body * d)
         });
+    let direction = {
+        let mut state = STATE.lock();
+        match from_hands {
+            Some(d) => {
+                state.mounted_last = Some((gun.address, body.inverse() * d));
+                Some(d)
+            }
+            None if aim && config.vehicles.mounted.grip_handles => state
+                .mounted_last
+                .filter(|(weapon, _)| *weapon == gun.address)
+                .map(|(_, d)| body * d),
+            None => None,
+        }
+    };
     let target = direction.map(|d| MountedTarget {
         weapon: gun.address,
         point: gun.pivot + d * config.aim.max_distance_m.max(1.0),
@@ -97,6 +125,8 @@ pub(super) fn mounted_tick(active: &ActiveHands) -> MountedTick {
         }),
         target,
         handles: config.vehicles.mounted.anchor_hands.then_some(handles),
+        handle_points: handles,
+        barrel: Some(body.inverse() * gun.barrel),
     }
 }
 

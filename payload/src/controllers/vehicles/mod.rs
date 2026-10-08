@@ -11,6 +11,7 @@
 //! - [`driving_view`]: the driver's view moved per vehicle to a standard place behind the wheel;
 //! - [`wheel_render`]: the vehicle's rendered steering wheel turned with the steering;
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
+//!   [`mounted_grip`] takes the handles with the grip, and [`mounted_recoil`] kicks them;
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
 //! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
 //! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand, as an option;
@@ -56,6 +57,8 @@ mod handle_tick;
 mod highlights;
 pub mod look_steer;
 pub mod mounted;
+pub mod mounted_grip;
+pub mod mounted_recoil;
 mod mounted_tick;
 pub mod parachute;
 pub mod passenger;
@@ -97,9 +100,10 @@ use crate::{
         overlay::{primitive::Source, store},
         vehicles::{
             arm_steering::{self as arm, ArmPose, PitchInput},
-            config::{ParachuteHandlesConfig, PhysicalControlsConfig},
+            config::{MountedConfig, ParachuteHandlesConfig, PhysicalControlsConfig},
             fit::{FitInputs, FitReadout, VehicleLatch},
             mounted::{MountedGun, MountedTarget, Reference},
+            mounted_grip::{MountedGrip, MountedGripEvent},
             parachute::{HandleEvent, HandleHold, HandleState},
             physical::{
                 ControlCue, ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement,
@@ -108,6 +112,7 @@ use crate::{
             wheel::{CockpitTransform, WheelFrame},
             wheel_render::RenderWheel,
         },
+        weapons::haptics::{self, PulseSource},
     },
     headpose,
 };
@@ -225,6 +230,10 @@ pub struct VehiclesStatus {
     pub afterburner_lights: u64,
     /// How many times a hand pressed a cockpit button or twisted a twist grip.
     pub button_presses: u64,
+    /// How many times a hand took or let go of a mounted gun's handle.
+    pub mounted_grip_events: u64,
+    /// Whether each hand holds its mounted gun's handle, indexed by [`Hand::index`].
+    pub mounted_holds: [bool; 2],
 }
 
 pub fn status() -> VehiclesStatus {
@@ -260,6 +269,10 @@ pub struct VehicleSummary {
     pub cues: u64,
     pub afterburner_lights: u64,
     pub button_presses: u64,
+    /// Whether a mounted gun is manned, and whether each hand holds its handle.
+    pub mounted: bool,
+    pub mounted_holds: [bool; 2],
+    pub mounted_grip_events: u64,
 }
 
 pub fn summary() -> VehicleSummary {
@@ -274,6 +287,9 @@ pub fn summary() -> VehicleSummary {
         cues: s.cues,
         afterburner_lights: s.afterburner_lights,
         button_presses: s.button_presses,
+        mounted: s.mounted.is_some(),
+        mounted_holds: s.mounted_holds,
+        mounted_grip_events: s.mounted_grip_events,
     }
 }
 
@@ -340,7 +356,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         ..Placement::new(physical_config, config.acting_hand())
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
-    let mounted = mounted_tick(&active);
+    let mounted_config = config.vehicles.mounted;
+    let aiming = STATE
+        .lock()
+        .mounted_grip
+        .aiming(&mounted_config, grips.map(|g| g.is_some()));
+    let mounted = mounted_tick(&active, aiming);
     let handles_on = handles_act(mode, &config);
     let handles_config = config.vehicles.parachute_handles;
 
@@ -356,6 +377,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         state.handles_torso = None;
     }
     let mut candidates = physical::candidates(&placement, &state.controls, offered, grips);
+    candidates.extend(mounted_grip::candidates(
+        &mounted_config,
+        mounted.handle_points,
+    ));
     let mut reach = Vec::new();
     let mut marks = None;
     if handles_on {
@@ -401,6 +426,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             grip::declare(hand, Grip::new(GripSource::ParachuteHandle));
             return Some(GrabVolume::ParachuteHandle(hand));
         }
+        if state.mounted_grip.holds[i] {
+            return Some(GrabVolume::MountedHandle(hand));
+        }
         grab::grab_volume(grips[i]?, hand, &candidates)
     });
     let reach = Hand::BOTH.map(|hand| {
@@ -418,7 +446,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     state.mounted_target = mounted.target;
     MOUNTED_WEAPON.store(mounted.target.map_or(0, |t| t.weapon), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
-    declare_mounted_grips(mounted.handles);
+    state.mounted_handle_points = mounted.handle_points;
+    state.mounted_config = mounted_config;
+    state.mounted_barrel = mounted.barrel;
+    declare_mounted_grips(mounted.handles, state.mounted_grip.shares(&mounted_config));
     state.status.active = true;
     state.status.seat = seat;
     state.status.offered = offered;
@@ -462,15 +493,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     TickVolumes { volumes, reach }
 }
 
-/// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share.
-fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>) {
+/// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share
+/// times the hand's hold on its handle, `shares`.
+fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2]) {
     let tiers = tiers::status();
     let Some(handles) = handles.filter(|_| tiers.state == Some(tiers::TierState::MountedGun))
     else {
         return;
     };
     for hand in Hand::BOTH {
-        let weight = tiers.anchor_weights[hand.index()];
+        let weight = tiers.anchor_weights[hand.index()] * shares[hand.index()];
         if handles[hand.index()].is_some() && weight > 0.0 {
             grip::declare(hand, Grip::new(GripSource::MountedGun).share(weight));
         }
@@ -495,6 +527,7 @@ pub(crate) fn finish_tick(
     let orientations = active.hands.map(|h| h.map(|h| h.grip.orientation));
     let held = Hand::BOTH.map(|hand| controls.hand(hand).grip.held());
     let handle_grabs = grabs.map(|g| matches!(g, Some(GrabVolume::ParachuteHandle(_))));
+    let mounted_grabs = grabs.map(|g| matches!(g, Some(GrabVolume::MountedHandle(_))));
     let grabs = grabs.map(|g| match g {
         Some(GrabVolume::VehicleControl(kind)) => Some(kind),
         _ => None,
@@ -503,6 +536,29 @@ pub(crate) fn finish_tick(
     let mut events = Vec::new();
     let mut handle_events = Vec::new();
     let mut state = STATE.lock();
+    let mut mounted_events = Vec::new();
+    let mounted_handles = state.mounted_handle_points;
+    mounted_grip::step(
+        &mut state.mounted_grip,
+        &mounted_grip::GripStep {
+            config: &config.vehicles.mounted,
+            handles: mounted_handles,
+            grips,
+            held,
+            grabs: mounted_grabs,
+            dt,
+            blend_s: config.hands.anchor.blend_s,
+        },
+        &mut mounted_events,
+    );
+    mounted_recoil::set_holds(
+        Hand::BOTH.map(|h| state.mounted_grip.shares(&config.vehicles.mounted)[h.index()] > 0.0),
+    );
+    state.status.mounted_holds = state.mounted_grip.holds;
+    if !mounted_events.is_empty() {
+        state.status.mounted_grip_events += mounted_events.len() as u64;
+        log_mounted_events(&mounted_events, &config);
+    }
     let Some(placement) = state.placement else {
         return;
     };
@@ -638,6 +694,11 @@ pub(crate) fn stand_down() {
     state.anchor_weights = [0.0; 2];
     state.mounted_reference = None;
     state.mounted_target = None;
+    state.mounted_last = None;
+    state.mounted_grip = MountedGrip::new();
+    state.mounted_barrel = None;
+    state.mounted_handle_points = [None; 2];
+    mounted_recoil::set_holds([false; 2]);
     MOUNTED_WEAPON.store(0, Ordering::Relaxed);
     state.mounted_handles = None;
     state.placement = None;
@@ -676,7 +737,14 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
         Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
     );
     let grips = hands.map(|h| h.map(|h| h.grip.position));
+    let kick_offset = mounted_recoil::offset();
     let state = STATE.lock();
+    let kick = state
+        .mounted_barrel
+        .filter(|_| state.mounted_config.recoil)
+        .map_or(Vec3::ZERO, |barrel| {
+            mounted_recoil::handle_shift(kick_offset, barrel)
+        });
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some(h) = hands[i] else {
@@ -699,7 +767,10 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
             .mounted_handles
             .and_then(|handles| handles[i])
             .filter(|_| !grapple)
-            .map(|point| (point, tier_status.anchor_weights[i]))
+            .map(|point| {
+                let share = state.mounted_grip.shares(&state.mounted_config)[i];
+                (point + kick, tier_status.anchor_weights[i] * share)
+            })
             .filter(|(_, weight)| *weight > 0.0);
         if let Some((point, weight)) = control.or(handle).or(mounted) {
             hands[i] = Some(move_grip(h, point, weight));
@@ -729,6 +800,17 @@ struct State {
     handles_torso: Option<(Quat, Instant)>,
     mounted_reference: Option<Reference>,
     mounted_target: Option<MountedTarget>,
+    /// The gun the hands last aimed and the direction they gave it, in the body frame, which it
+    /// keeps while no hand holds a handle.
+    mounted_last: Option<(usize, Vec3)>,
+    /// The hands' hold on the mounted gun's handles.
+    mounted_grip: MountedGrip,
+    /// The mounted gun's barrel in the cockpit frame, for the recoil's kick.
+    mounted_barrel: Option<Vec3>,
+    /// The mounted gun's handles in the cockpit frame, where it places them, for the hold.
+    mounted_handle_points: [Option<Vec3>; 2],
+    /// The mounted-gun settings as the last tick read them, for the hands at every rate.
+    mounted_config: MountedConfig,
     /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
     mounted_handles: Option<[Option<Vec3>; 2]>,
     /// What the fit keeps for the driven vehicle.
@@ -761,6 +843,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         cues: 0,
         afterburner_lights: 0,
         button_presses: 0,
+        mounted_grip_events: 0,
+        mounted_holds: [false; 2],
     },
     controls: ControlState::new(),
     placement: None,
@@ -773,6 +857,11 @@ static STATE: Mutex<State> = Mutex::new(State {
     handles_torso: None,
     mounted_reference: None,
     mounted_target: None,
+    mounted_last: None,
+    mounted_grip: MountedGrip::new(),
+    mounted_barrel: None,
+    mounted_handle_points: [None; 2],
+    mounted_config: MountedConfig::new(),
     mounted_handles: None,
     latch: None,
     render: None,
@@ -786,6 +875,21 @@ static ARM_PANEL: Mutex<Option<ArmReadout>> = Mutex::new(None);
 /// The address of the weapon in [`State::mounted_target`], or zero: a lock-free copy for
 /// [`is_mounted_weapon`].
 static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
+
+/// Log the hands taking and letting go of the mounted gun's handles, and pulse a taking hand.
+fn log_mounted_events(events: &[MountedGripEvent], config: &ControllersConfig) {
+    for event in events {
+        match *event {
+            MountedGripEvent::Grabbed(hand) => {
+                tracing::info!(target: "controllers", hand = hand.label(), "the hand took the mounted gun's handle");
+                haptics::pulse(hand, config.weapons.haptics.grab, PulseSource::GrabVolume);
+            }
+            MountedGripEvent::Released(hand) => {
+                tracing::info!(target: "controllers", hand = hand.label(), "the hand let go of the mounted gun's handle");
+            }
+        }
+    }
+}
 
 fn log_handle_events(events: &[HandleEvent]) {
     for event in events {

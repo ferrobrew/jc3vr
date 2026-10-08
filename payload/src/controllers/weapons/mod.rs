@@ -660,6 +660,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
             GrabVolume::VehicleControl(_)
             | GrabVolume::ParachuteHandle(_)
+            | GrabVolume::MountedHandle(_)
             | GrabVolume::Pickup
             | GrabVolume::Climb => {
                 continue;

@@ -266,6 +266,7 @@ const SECTIONS: &[Section] = &[
             row!("FLIGHT CONTROLS", vehicles::flight_controls),
             row!("COCKPIT BUTTONS", vehicles::cockpit_buttons),
             row!("PASSENGER AIM", vehicles::passenger_aim),
+            row!("MOUNTED GUN", vehicles::mounted_gun),
         ],
     },
     Section {

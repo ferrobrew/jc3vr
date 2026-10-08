@@ -175,6 +175,13 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
                 m.direction.map_or("nothing".to_owned(), vec3),
                 m.target.map_or("nothing".to_owned(), vec3),
             ));
+            ui.label(format!(
+                "Handles held: left {} · right {} · grabs and releases {} · kicks {}",
+                status.mounted_holds[0],
+                status.mounted_holds[1],
+                status.mounted_grip_events,
+                vehicles::mounted_recoil::shots(),
+            ));
         }
         None => {
             ui.label("Mounted gun: none");
@@ -399,6 +406,29 @@ fn mounted_settings(ui: &mut Ui, m: &mut MountedConfig) {
             .text("minimum lever (m)")
             .fixed_decimals(2),
     );
+    ui.checkbox(&mut m.grip_handles, "Take the handles with the grip");
+    ui.add(
+        egui::Slider::new(&mut m.grab_radius_m, 0.03..=0.3)
+            .text("handle grab radius (m)")
+            .fixed_decimals(2),
+    );
+    ui.add(
+        egui::Slider::new(&mut m.release_distance_m, 0.1..=0.6)
+            .text("handle release distance (m)")
+            .fixed_decimals(2),
+    );
+    ui.checkbox(&mut m.recoil, "Kick the handles with each shot");
+    ui.add(
+        egui::Slider::new(&mut m.kick_back_m, 0.0..=0.08)
+            .text("kick back (m)")
+            .fixed_decimals(3),
+    );
+    ui.add(
+        egui::Slider::new(&mut m.kick_dip_m, 0.0..=0.04)
+            .text("kick down (m)")
+            .fixed_decimals(3),
+    );
+    ui.add(egui::Slider::new(&mut m.kick_haptics, 0.0..=1.0).text("kick pulse"));
 }
 
 fn physical_settings(ui: &mut Ui, p: &mut PhysicalControlsConfig) {

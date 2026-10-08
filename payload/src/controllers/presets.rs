@@ -113,6 +113,8 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.passenger_body_by_hand = vehicles;
     c.vehicles.mounted.aim_by_hands = vehicles;
     c.vehicles.mounted.anchor_hands = vehicles;
+    c.vehicles.mounted.grip_handles = vehicles;
+    c.vehicles.mounted.recoil = vehicles;
     c.vehicles.physical.wheel.enabled = vehicles;
     c.vehicles.physical.handlebars.enabled = vehicles;
     c.vehicles.physical.cyclic.enabled = vehicles;

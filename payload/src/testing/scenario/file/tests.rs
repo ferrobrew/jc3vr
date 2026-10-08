@@ -256,6 +256,7 @@ fn the_shipped_templates_read() {
         "hand_strike.toml",
         "hijack.toml",
         "input_basics.toml",
+        "mounted_gun.toml",
         "parachute_body.toml",
         "parachute_handles.toml",
         "passenger_aim.toml",

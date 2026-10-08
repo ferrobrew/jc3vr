@@ -43,6 +43,9 @@ pub enum GrabVolume {
     VehicleControl(ControlKind),
     /// The parachute's handle on that side (see [`crate::controllers::vehicles::parachute`]).
     ParachuteHandle(Hand),
+    /// The mounted gun's handle for that hand (see
+    /// [`crate::controllers::vehicles::mounted_grip`]).
+    MountedHandle(Hand),
     /// An object within the empty hand's reach (see
     /// [`crate::controllers::physical_hands::pickup`]).
     Pickup,
@@ -76,6 +79,8 @@ impl GrabVolume {
             GrabVolume::VehicleControl(kind) => kind.label(),
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
             GrabVolume::ParachuteHandle(Hand::Right) => "right parachute handle",
+            GrabVolume::MountedHandle(Hand::Left) => "mounted gun's left handle",
+            GrabVolume::MountedHandle(Hand::Right) => "mounted gun's right handle",
             GrabVolume::Pickup => "object in reach",
             GrabVolume::Climb => "surface to climb",
             GrabVolume::WorldWeapon => "weapon to take",

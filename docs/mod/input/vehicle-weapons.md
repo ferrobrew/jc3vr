@@ -1,6 +1,6 @@
 # Weapons in vehicles
 
-Out of the driver's seat the hands fire the weapons they hold, or the mounted gun they man. The driver's built-in vehicle weapons are in [controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight). This covers shooting from a passenger or stunt seat by the hand's aim. The code is in `payload/src/controllers/vehicles/`: `passenger.rs`, with its call in the aim update (`controllers::aim`).
+Out of the driver's seat the hands fire the weapons they hold, or the mounted gun they man. The driver's built-in vehicle weapons are in [controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight). This covers shooting from a passenger or stunt seat by the hand's aim, and manning a mounted gun with both hands on its handles. The code is in `payload/src/controllers/vehicles/`: `passenger.rs`, with its call in the aim update (`controllers::aim`), and `mounted.rs`, `mounted_tick.rs`, `mounted_grip.rs`, and `mounted_recoil.rs`, with the shot's call in the per-shot seam (`controllers::weapons::fire`).
 
 ## Passenger and stunt seats
 
@@ -8,15 +8,29 @@ In a passenger seat, and on a stunt position, the weapon in the hands is the pla
 
 With `vehicles.passenger_body_by_hand` (on), after the aim control's post-simulation update, in a vehicle seat other than the driver's and off a mounted gun, while a gun hand aims, the weapon slot of that point is set to the gun hand's aim point: the acting hand's, or the other hand's when only it holds a gun. The game copies the slot into the control parameters and the character's weapon point right after, in the post-camera update, so the blend, the weapon point, and everything that reads them follow the hand, and the body leans and points the gun where the hand does, as it does toward the gaze for the gamepad. The point is the same one the gun is handed, so the drawn gun and the shot agree. With no gun in the hands, or with the option off, the game's point stands. Off, the gun still aims by the hand; only the body follows the gaze.
 
+## Mounted guns
+
+A mounted gun, standalone or in a vehicle's gunner seat, aims by its handles as a gun on a pivot does ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)): when the hands take the gun, a reference is taken from their midpoint, the lever from the handles to the pivot, and the barrel, and from then on the barrel points from the hands' midpoint through the pivot. That part is unchanged.
+
+### Taking the handles
+
+With `vehicles.mounted.grip_handles` (on), each hand takes its own handle like a physical control. A grip press with the hand's grip within `grab_radius_m` (12 cm) of its handle takes it (the handle is a grab volume, `GrabVolume::MountedHandle`, so the press is latched as a grab and does nothing else), and releasing the grip, or moving further than `release_distance_m` (30 cm) from the handle, lets go. Only a holding hand is drawn on its handle, blending on and off over the anchored tier's blend time, and only the holding hands aim: two hands aim from their midpoint, one from itself, and a change of hands takes a new reference, so taking or letting go of a handle never jumps the gun. With both hands off, the gun keeps the direction they last gave it, held in the body frame, so a gunner can let go to throw a grenade or look around and find the gun where they left it. The hands' finger pose on the handles follows their hold. Off, both hands sit on the handles and aim the gun whenever the character mans it, as before. Before, a hand could not leave the gun: the anchored tier held both hands on the handles for as long as the character manned it.
+
+### Recoil in the handles
+
+With `vehicles.mounted.recoil` (on), each shot of the mounted gun the hands aim kicks a damped spring by `kick_back_m` (2 cm) back along the barrel and `kick_dip_m` (8 mm) down, as the breech jumps back and the muzzle climbs about the pivot. The spring's offset moves the handles the hands are drawn on, so the drawn hands ride the kick, and each shot pulses the hands holding the handles at `kick_haptics` (0.5). The spring is stiff, so one shot settles within a tenth of a second, and its kick is limited to three shots' worth, so a minigun holds the handles back and shakes them rather than driving them off. The aim is left alone: the game's own gun takes its recoil about its pivot. The shots are seen by the per-shot seam on [`WeaponBase::Fire_ProjectileBase`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-Fire_ProjectileBase), which before let a mounted gun's shot through untouched, since it rides no hand; the game's own fire rumble still reaches the hands through the continuous rumble ([controllers.md, "Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand)).
+
 ## Settings, logs, and readouts
 
-The pause menu's `VR: CONTROLS` page has `PASSENGER BODY AIMS BY HAND` under VEHICLES. The aim update logs `the seated body follows the gun hand's aim` when it starts and `the seated body stops following the gun hand's aim` when it stops, at info level. The `VR: STATUS` page's VEHICLES section has a PASSENGER AIM row: `FOLLOWING THE HAND` with the number of starts while it acts, `WAITING, NO GUN HAND AIMING` in a passenger seat with no gun aimed, and `WAITING, NOT A PASSENGER` elsewhere. The recorder's signals are `vehicles.passenger_aiming` and `vehicles.passenger_aim_starts`, and `testing/scenarios/passenger_aim.toml` is the template.
+The pause menu's `VR: CONTROLS` page has `PASSENGER BODY AIMS BY HAND`, `GRIP MOUNTED GUN HANDLES`, and `MOUNTED GUN RECOIL` under VEHICLES; the debug UI's Controllers tab has the handles' grab radius and release distance and the kick's sizes. Taking a handle logs `the hand took the mounted gun's handle` and pulses that hand, and letting go logs `the hand let go of the mounted gun's handle`, at info level. The VEHICLES section's MOUNTED GUN row shows which hands are on the handles (`HANDS OFF, GUN HELD` with neither), the count of grabs and releases, and the count of kicks; off a mounted gun it reads `WAITING, NOT ON A MOUNTED GUN`. The recorder's signals are `vehicles.mounted_hands_on`, `vehicles.mounted_grips`, and `vehicles.mounted_kicks`, and `testing/scenarios/mounted_gun.toml` is the template. For the passenger: The aim update logs `the seated body follows the gun hand's aim` when it starts and `the seated body stops following the gun hand's aim` when it stops, at info level. The `VR: STATUS` page's VEHICLES section has a PASSENGER AIM row: `FOLLOWING THE HAND` with the number of starts while it acts, `WAITING, NO GUN HAND AIMING` in a passenger seat with no gun aimed, and `WAITING, NOT A PASSENGER` elsewhere. The recorder's signals are `vehicles.passenger_aiming` and `vehicles.passenger_aim_starts`, and `testing/scenarios/passenger_aim.toml` is the template.
 
 ## Unverified
 
 - That the vehicle aim blend turns the seated body toward the hand's point without a fight with the passenger's lean-out animation, and how far round it turns before the game's blend runs out of samplers.
 - Whether a stunt position runs the same blend; on it the gun aims by the hand either way.
 - Whether the game refuses a passenger's shot that points into the vehicle; if it does, the hand's point now decides that, rather than the gaze.
+- That the per-shot seam sees every mounted gun's shot, the turrets' included, and the kick's size and the spring's feel against the guns' rates of fire.
+- That the grip press on a mounted gun is free for the handle grab in every gunner seat.
 
 ## Headset checklist
 
@@ -25,3 +39,7 @@ The pause menu's `VR: CONTROLS` page has `PASSENGER BODY AIMS BY HAND` under VEH
 3. With `PASSENGER BODY AIMS BY HAND` off: the body turns toward the gaze again, and the shots still go where the hand points.
 4. On a stunt position on a car's roof: the gun aims and fires by the hand.
 5. Driving, and on a mounted gun: the row reads `NOT A PASSENGER`, and nothing changes.
+6. Man a standalone mounted gun: the hands stay free until each grip closes near its handle, then the hand is drawn on the handle with a click and the VR: STATUS MOUNTED GUN row reads `BOTH HANDS ON`. Swing the hands: the gun follows with no jump at the grab.
+7. Let go with one hand: the gun keeps aiming by the other. Let go with both: the gun stays where it was, the row reads `HANDS OFF, GUN HELD`, and taking the handles again carries on from there without a jump.
+8. Fire: each shot kicks the drawn hands back and a little down and pulses the holding hands; a long burst holds them back and shakes them without drifting away; the aim does not wander from the kick.
+9. With `GRIP MOUNTED GUN HANDLES` off, the hands sit on the handles as soon as the gun is manned, as before; with `MOUNTED GUN RECOIL` off, the shots do not move the hands.

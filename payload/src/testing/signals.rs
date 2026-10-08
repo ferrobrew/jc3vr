@@ -107,6 +107,9 @@ signals! {
     AfterburnerLights => "vehicles.afterburner_lights", Counter, "Times the throttle went through its afterburner gate.";
     PassengerAiming => "vehicles.passenger_aiming", Flag, "The seated passenger's body turns toward the gun hand's aim.";
     PassengerAimStarts => "vehicles.passenger_aim_starts", Counter, "Times the seated body started following the gun hand.";
+    MountedHandsOn => "vehicles.mounted_hands_on", Flag, "A hand holds the mounted gun's handle.";
+    MountedGrips => "vehicles.mounted_grips", Counter, "Grabs and releases of the mounted gun's handles.";
+    MountedKicks => "vehicles.mounted_kicks", Counter, "Shots of the mounted gun that kicked its handles.";
     ButtonPresses => "vehicles.button_presses", Counter, "Cockpit buttons pressed and twist grips twisted by hand.";
     HornByHand => "vehicles.horn", Flag, "A hand presses the horn on the wheel's hub.";
     NitrousByHand => "vehicles.nitrous", Flag, "A hand presses the nitrous button or twists a twist grip.";
@@ -203,6 +206,9 @@ impl Signal {
             Signal::AfterburnerLights => count(vehicles::summary().afterburner_lights),
             Signal::PassengerAiming => flag(vehicles::passenger::status().aiming),
             Signal::PassengerAimStarts => count(vehicles::passenger::status().starts),
+            Signal::MountedHandsOn => flag(vehicles::summary().mounted_holds.contains(&true)),
+            Signal::MountedGrips => count(vehicles::summary().mounted_grip_events),
+            Signal::MountedKicks => count(vehicles::mounted_recoil::shots()),
             Signal::ButtonPresses => count(vehicles::summary().button_presses),
             Signal::HornByHand => flag(vehicles::summary().outputs.horn),
             Signal::NitrousByHand => flag(vehicles::summary().outputs.nitrous),

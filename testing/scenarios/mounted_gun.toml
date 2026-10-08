@@ -1,0 +1,20 @@
+# Template: fill testing/recordings/mounted_gun.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "man a mounted gun with both hands"
+description = "Recorded beside a standalone mounted gun with the grip on the handles and the recoil on (vehicle-weapons.md, the mounted gun checklist). Man the gun, take both handles with the grips, swing the gun left and right and fire bursts, let go with one hand and fire with the other, let go with both and look around, and get off."
+recording = "../recordings/mounted_gun.jc3trk"
+settle_s = 5.0
+
+[[expect]]
+name = "the hands took the handles"
+signal = "vehicles.mounted_grips"
+
+[[expect]]
+signal = "vehicles.mounted_hands_on"
+check = "eventually"
+
+[[expect]]
+name = "the shots kicked the handles"
+signal = "vehicles.mounted_kicks"
+
+[[expect]]
+log = "the hand took the mounted gun's handle"

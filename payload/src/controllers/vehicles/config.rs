@@ -112,6 +112,24 @@ pub struct MountedConfig {
     /// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the
     /// game does not place, or places at the pivot, swings about a pivot this far ahead of them.
     pub min_lever_m: f32,
+    /// Take the handles with the grip (see [`crate::controllers::vehicles::mounted_grip`]): only a
+    /// hand holding its handle is drawn on it and aims the gun, and with both let go the gun
+    /// stays where they left it. Off, both hands sit on the handles and aim the gun whenever the
+    /// character mans it.
+    pub grip_handles: bool,
+    /// How far from a handle a hand's grip may be for a grip press to take it, metres.
+    pub grab_radius_m: f32,
+    /// How far a holding hand may move from its handle before it lets go, metres.
+    pub release_distance_m: f32,
+    /// Kick the handles, and the hands on them, with each shot, and pulse the holding hands (see
+    /// [`crate::controllers::vehicles::mounted_recoil`]).
+    pub recoil: bool,
+    /// How far a shot kicks the handles back along the barrel, metres.
+    pub kick_back_m: f32,
+    /// How far a shot kicks the handles down as the muzzle climbs, metres.
+    pub kick_dip_m: f32,
+    /// The strength of a shot's pulse in the holding hands, `0..=1`.
+    pub kick_haptics: f32,
 }
 
 impl MountedConfig {
@@ -120,6 +138,13 @@ impl MountedConfig {
             aim_by_hands: true,
             anchor_hands: true,
             min_lever_m: 0.4,
+            grip_handles: true,
+            grab_radius_m: 0.12,
+            release_distance_m: 0.3,
+            recoil: true,
+            kick_back_m: 0.02,
+            kick_dip_m: 0.008,
+            kick_haptics: 0.5,
         }
     }
 }

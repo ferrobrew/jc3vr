@@ -1,5 +1,5 @@
-//! The status page's rows for the vehicles: the plane's flight stick and throttle, and the cockpit
-//! buttons.
+//! The status page's rows for the vehicles: the plane's flight stick and throttle, the cockpit
+//! buttons, the passenger's aim, and the mounted gun.
 
 use smol_str::format_smolstr;
 
@@ -11,7 +11,8 @@ use crate::controllers::{
     mode::{VehicleClass, VehicleSeat},
     vehicles::{
         self, VehicleSummary,
-        config::CockpitButtonsConfig,
+        config::{CockpitButtonsConfig, MountedConfig},
+        mounted_recoil,
         passenger::{self, PassengerStatus},
         physical::ControlKind,
     },
@@ -23,6 +24,36 @@ pub(super) fn flight_controls() -> Line {
         p.flight_stick.enabled || p.throttle.enabled
     });
     flight_controls_line(on, &vehicles::summary())
+}
+
+pub(super) fn mounted_gun() -> Line {
+    let config = read_config(|c| c.controllers.vehicles.mounted);
+    mounted_gun_line(&config, &vehicles::summary(), mounted_recoil::shots())
+}
+
+fn mounted_gun_line(config: &MountedConfig, summary: &VehicleSummary, shots: u64) -> Line {
+    if !(config.aim_by_hands || config.anchor_hands) {
+        return Line::off("");
+    }
+    if !summary.mounted {
+        return Line::new(Health::Waiting, "NOT ON A MOUNTED GUN");
+    }
+    let hands = match (config.grip_handles, summary.mounted_holds) {
+        (false, _) => "HANDS ALWAYS ON",
+        (true, [true, true]) => "BOTH HANDS ON",
+        (true, [true, false]) => "LEFT HAND ON",
+        (true, [false, true]) => "RIGHT HAND ON",
+        (true, [false, false]) => "HANDS OFF, GUN HELD",
+    };
+    let recoil = if config.recoil {
+        format_smolstr!(", {shots} KICKS")
+    } else {
+        "".into()
+    };
+    Line::ok(format_smolstr!(
+        "{hands}, {} GRABS AND RELEASES{recoil}",
+        summary.mounted_grip_events
+    ))
 }
 
 pub(super) fn passenger_aim() -> Line {
@@ -152,7 +183,38 @@ mod tests {
             cues: 3,
             afterburner_lights: 1,
             button_presses: 2,
+            mounted: false,
+            mounted_holds: [false; 2],
+            mounted_grip_events: 0,
         }
+    }
+
+    #[test]
+    fn the_mounted_gun_names_the_hands_on_it() {
+        let config = MountedConfig::new();
+        assert_eq!(
+            mounted_gun_line(&config, &flying(), 0).text(),
+            "WAITING, NOT ON A MOUNTED GUN"
+        );
+        let manned = VehicleSummary {
+            mounted: true,
+            mounted_holds: [true, false],
+            mounted_grip_events: 3,
+            ..flying()
+        };
+        assert_eq!(
+            mounted_gun_line(&config, &manned, 12).text(),
+            "OK, LEFT HAND ON, 3 GRABS AND RELEASES, 12 KICKS"
+        );
+        let off = MountedConfig {
+            grip_handles: false,
+            recoil: false,
+            ..config
+        };
+        assert_eq!(
+            mounted_gun_line(&off, &manned, 12).text(),
+            "OK, HANDS ALWAYS ON, 3 GRABS AND RELEASES"
+        );
     }
 
     #[test]

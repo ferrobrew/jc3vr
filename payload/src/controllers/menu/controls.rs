@@ -538,6 +538,16 @@ fn settings_page() -> Page {
             .vehicles
             .mounted
             .aim_by_hands))
+        .item(config_toggle!("GRIP MOUNTED GUN HANDLES", |c| c
+            .controllers
+            .vehicles
+            .mounted
+            .grip_handles))
+        .item(config_toggle!("MOUNTED GUN RECOIL", |c| c
+            .controllers
+            .vehicles
+            .mounted
+            .recoil))
         .item(Toggle {
             label: "PHYSICAL VEHICLE CONTROLS".into(),
             get: || read_config(|c| physical_controls(c).iter().all(|&&enabled| enabled)),
