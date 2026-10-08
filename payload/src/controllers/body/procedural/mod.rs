@@ -18,6 +18,7 @@
 //!   moves the body.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
 //!   keep.
+//! - [`targets`]: the fade of the HumanIK targets on the owned bones.
 //! - [`config`]: the mode and the tuning.
 //!
 //! [`at_solve_gate`] runs the mode: `PassThrough` writes the animated pose back unchanged and logs
@@ -35,9 +36,10 @@ pub mod signals;
 pub mod skeleton;
 pub mod solver;
 pub mod state;
+pub mod targets;
 
 use std::{
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
     time::{Duration, Instant},
 };
 
@@ -71,6 +73,7 @@ use crate::{
                     reach_drop, solve,
                 },
                 state::StateTracker,
+                targets::{Fade, Slot, TargetFade},
             },
         },
         hands::ik::deferred_wrist_targets,
@@ -157,10 +160,29 @@ pub fn published_status() -> ProceduralStatus {
     *PUBLISHED.lock()
 }
 
-/// Whether the procedural body poses the torso and legs: the pre-solve IK that would pose them
-/// stands down while it does.
+/// Whether the procedural body poses the torso at all: the wrist targets wait for the gate while
+/// it does, so they are queued on the torso it writes.
 pub fn owns_body() -> bool {
-    OWNS_BODY.load(Ordering::Relaxed)
+    torso_weight() > 0.0
+}
+
+/// The torso's weight of the procedural pose at the last gate, `0..=1`. The pre-solve IK that
+/// would pose the same bones (the body IK's torso, the roomscale crouch, the squared stance) is
+/// queued while it is below one, and the gate fades the reach and pull of those targets by what is
+/// left of it ([`neutralize_owned_targets`]), so the hand-over is as gradual as the blend.
+pub fn torso_weight() -> f32 {
+    f32::from_bits(TORSO_WEIGHT.load(Ordering::Relaxed))
+}
+
+/// Hand the body back after a pass whose solve gate did not run (the HumanIK switched off for the
+/// character, or its reduced level of detail): nothing wrote the procedural pose, so the pre-solve
+/// IK must not stand down for it, and the blend starts over when the gate runs again.
+pub(crate) fn gate_skipped() {
+    publish_torso_weight(0.0);
+    let mut state = STATE.lock();
+    state.blend.reset();
+    state.status.weight = 0.0;
+    state.status.legs_weight = 0.0;
 }
 
 /// Run the pose authority for the local player, at the `MAIN` pass's solve gate. `dt` is the
@@ -171,19 +193,25 @@ pub fn owns_body() -> bool {
 ///
 /// `character` must be the live local character, inside its pose-finalization pass, on the thread
 /// running it.
-pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) {
+/// Returns whether it wrote a procedural pose, which the weapons must be placed on.
+pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     // SAFETY: forwarded from the caller.
-    unsafe { run_gate(character, dt) };
+    let wrote = unsafe { run_gate(character, dt) };
+    if !wrote {
+        publish_torso_weight(0.0);
+    }
     let status = STATE.lock().status;
     *PUBLISHED.lock() = status;
+    wrote
 }
 
-/// The gate itself; [`at_solve_gate`] publishes its status after it.
+/// The gate itself; [`at_solve_gate`] publishes its status after it. Returns whether it wrote a
+/// procedural pose; every path that does not leaves the torso's published weight at zero.
 ///
 /// # Safety
 ///
 /// As [`at_solve_gate`].
-unsafe fn run_gate(character: &mut Character, dt: f32) {
+unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let config = Config::lock_query(|c| c.controllers.body.procedural);
     let now = Instant::now();
     let mut state = STATE.lock();
@@ -199,25 +227,22 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
         state.blend.reset();
         state.status.weight = 0.0;
         state.status.legs_weight = 0.0;
-        OWNS_BODY.store(false, Ordering::Relaxed);
-        return;
+        return false;
     }
     let Some(controller) = (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() })
     else {
-        return;
+        return false;
     };
     let Some(live) = (unsafe { state.rig_for(controller) }) else {
-        OWNS_BODY.store(false, Ordering::Relaxed);
-        return;
+        return false;
     };
     let rig = &live.rig;
     let animated = unsafe { live.read(controller) };
     let locomotion = locomotion_status();
     state.observe_stance(&animated, &locomotion, dt);
     match config.mode {
-        ProceduralMode::Off => {}
+        ProceduralMode::Off => false,
         ProceduralMode::PassThrough => {
-            OWNS_BODY.store(false, Ordering::Relaxed);
             unsafe { live.write(controller, &animated) };
             let read_back = unsafe { live.read(controller) };
             let error = round_trip_error(&animated, &read_back);
@@ -235,6 +260,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
                     "procedural body: pass-through wrote the animated pose back",
                 );
             }
+            false
         }
         ProceduralMode::Full => {
             let jump_grace_s = Config::lock_query(|c| c.controllers.locomotion.view.jump_grace_s);
@@ -246,7 +272,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
             let previous = state.blend.weights();
             let weights = state.blend.step(case, dt, &config);
             state.log_case(case, &weights, &config);
-            OWNS_BODY.store(weights.torso > 0.0, Ordering::Relaxed);
             state.status.case = case;
             state.status.weight = weights.torso;
             state.status.legs_weight = weights.legs;
@@ -262,7 +287,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
                 state.dip.reset();
                 state.takeoff_feet = None;
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
-                return;
+                state.fade.forget();
+                return false;
             }
             let velocity = root_velocity(&previous_world, &world, dt);
             let commanded = commanded_velocity(&locomotion);
@@ -327,7 +353,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
             state.status.speed_mps = velocity.length();
             state.status.gait_phase = state.feet.phase();
             let Some(mut input) = solve_input(character, &animated, feet) else {
-                return;
+                return false;
             };
             // The torso comes back from the animation with the hips where it left them, and rises
             // from there at the reach drop's pace.
@@ -350,6 +376,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
             }
             let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
             unsafe { live.write(controller, &pose) };
+            publish_torso_weight(weights.torso);
             state.arms = (weights.torso > 0.0).then(|| ArmContext {
                 keep_out: config.keep_out.then(|| {
                     TorsoKeepOut::around(
@@ -364,7 +391,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
                     .then_some(config.elbow_hint_reach * weights.torso),
             });
             if config.neutralize_targets {
-                neutralize_owned_targets(&mut character.m_HIK, &weights);
+                neutralize_owned_targets(&mut character.m_HIK, &weights, &mut state.fade);
+            } else {
+                state.fade.forget();
             }
             state.status.hips_drop_m =
                 animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
@@ -373,6 +402,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) {
                     * (animated.position(RigBone::Neck) - animated.position(RigBone::Head));
             state.status.neck_error_m = solved.position(RigBone::Neck).distance(neck_target);
             state.log_gait(now, &config);
+            true
         }
     }
 }
@@ -418,7 +448,17 @@ const LEG_EFFECTORS: [Effector; 8] = [
     Effector::RIGHT_FOOT,
 ];
 
-static OWNS_BODY: AtomicBool = AtomicBool::new(false);
+/// The torso's weight [`torso_weight`] returns, as its bits.
+static TORSO_WEIGHT: AtomicU32 = AtomicU32::new(0);
+
+fn publish_torso_weight(weight: f32) {
+    let weight = if weight.is_finite() {
+        weight.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    TORSO_WEIGHT.store(weight.to_bits(), Ordering::Relaxed);
+}
 
 /// The status [`published_status`] returns. Taken only after the gate releases [`STATE`], and
 /// nothing is locked under it.
@@ -445,6 +485,8 @@ struct State {
     air: AirFollower,
     /// The hips' landing dip.
     dip: LandingDip,
+    /// The fade of the owned bones' IK targets.
+    fade: TargetFade,
     /// The feet the last gate placed, model space.
     last_feet: Option<[FootPose; 2]>,
     /// The feet as they left the ground, model space, while the legs are in the air.
@@ -716,6 +758,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     clavicles: ClavicleFollower::new(),
     air: AirFollower::new(),
     dip: LandingDip::new(),
+    fade: TargetFade::new(),
     last_feet: None,
     takeoff_feet: None,
     fall: None,
@@ -817,18 +860,30 @@ fn hips_room(rig: &Rig, config: &ProceduralBodyConfig) -> f32 {
 }
 
 /// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region
-/// by its weight, so the solve after the gate leaves them where the pose put them.
-fn neutralize_owned_targets(hik: &mut HumanIK, weights: &Weights) {
-    let torso = TORSO_EFFECTORS.map(|e| (e as usize, weights.torso));
-    let legs = LEG_EFFECTORS.map(|e| (e as usize, weights.legs));
-    for (i, weight) in torso.into_iter().chain(legs) {
-        let keep = (1.0 - weight).clamp(0.0, 1.0);
-        hik.m_TargetReachT[i] *= keep;
-        hik.m_TargetReachR[i] *= keep;
-        hik.m_ReachT[i] *= keep;
-        hik.m_ReachR[i] *= keep;
-        hik.m_TargetPull[i] *= keep;
-        hik.m_Pull[i] *= keep;
+/// by its weight, so the solve after the gate leaves them where the pose put them: in proportion
+/// to the weight, whatever was queued this tick ([`TargetFade`]). The head's target keeps its
+/// reach, so it still closes the gap to the player's head, but loses its pull by the torso's
+/// weight, so it cannot drag the procedural spine and hips after it.
+fn neutralize_owned_targets(hik: &mut HumanIK, weights: &Weights, fade: &mut TargetFade) {
+    let torso = TORSO_EFFECTORS.map(|e| (e as usize, weights.torso, Fade::All));
+    let legs = LEG_EFFECTORS.map(|e| (e as usize, weights.legs, Fade::All));
+    let head = [(Effector::HEAD as usize, weights.torso, Fade::Pull)];
+    for (i, weight, kind) in torso.into_iter().chain(legs).chain(head) {
+        let slot = Slot {
+            target_reach_t: hik.m_TargetReachT[i],
+            target_reach_r: hik.m_TargetReachR[i],
+            target_pull: hik.m_TargetPull[i],
+            reach_t: hik.m_ReachT[i],
+            reach_r: hik.m_ReachR[i],
+            pull: hik.m_Pull[i],
+        };
+        let faded = fade.fade(i, slot, 1.0 - weight, kind);
+        hik.m_TargetReachT[i] = faded.target_reach_t;
+        hik.m_TargetReachR[i] = faded.target_reach_r;
+        hik.m_TargetPull[i] = faded.target_pull;
+        hik.m_ReachT[i] = faded.reach_t;
+        hik.m_ReachR[i] = faded.reach_r;
+        hik.m_Pull[i] = faded.pull;
     }
 }
 

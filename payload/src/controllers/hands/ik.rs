@@ -408,6 +408,19 @@ pub(crate) unsafe fn before_secondary(character: *mut Character) {
 /// grip solves for the other.
 const SECONDARY_HOLD_REACH: f32 = 0.5;
 
+/// Queue the plan [`queue_or_defer`] kept for a solve gate that did not run, with no procedural
+/// torso, so the hands' status and records say what became of this tick's targets. Called at the
+/// end of the pass.
+///
+/// # Safety
+///
+/// As [`queue`].
+pub(crate) unsafe fn flush_deferred(character: *mut Character) {
+    if let Some(plan) = DEFERRED.take() {
+        unsafe { queue(character, &plan, None) };
+    }
+}
+
 /// Forget this thread's `SECONDARY` plan, and a plan kept for a solve gate that did not run, at the
 /// end of a pose-finalization pass, so that a pass whose solve did not run (HumanIK switched off)
 /// leaves nothing for a later one.

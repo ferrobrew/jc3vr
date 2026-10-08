@@ -764,9 +764,10 @@ impl Character {
     /// with the character's snow and water factors and `transform_type`, unless a character flag
     /// beside [`m_LodFlags`](crate::character::character::Character::m_LodFlags) (unmapped) switches the placement off.
     /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) makes the same
-    /// call inline twice: with the advancing placement (`transform_type` 2) after the finalize
-    /// state tasks, and with `transform_type` 1 after the `MAIN` HumanIK solve, which runs only
-    /// when [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) reports a queued target.
+    /// call inline twice: with [`PROP_TRANSFORM_ADVANCE`](crate::character::character::Character::PROP_TRANSFORM_ADVANCE) after the
+    /// finalize state tasks, and with
+    /// [`PROP_TRANSFORM_AFTER_SOLVE`](crate::character::character::Character::PROP_TRANSFORM_AFTER_SOLVE) after the `MAIN` HumanIK
+    /// solve, which runs only when [`HumanIK::HasTargets`](crate::animation::ik::HumanIK::HasTargets) reports a queued target.
     pub unsafe fn UpdatePropTransforms(&mut self, transform_type: u32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, transform_type: u32) = ::std::mem::transmute(
@@ -1969,6 +1970,14 @@ impl Character {
     /// which it writes the proxy's wanted velocity, and leaves the value alone when it returns
     /// early because the character is attached to a vehicle.
     pub const MOTION_STATE_TASK_DEFINED: u32 = 25;
+    /// The `transform_type` of the advancing weapon placement, which copies each weapon's current
+    /// world matrix into its previous-tick matrix before placing it: the first placement in
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel).
+    pub const PROP_TRANSFORM_ADVANCE: u32 = 2;
+    /// The `transform_type` of the weapons' placement after the `MAIN` HumanIK solve in
+    /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel): it places the
+    /// weapons on the solved pose without advancing their previous-tick matrices.
+    pub const PROP_TRANSFORM_AFTER_SOLVE: u32 = 1;
 }
 impl std::convert::AsRef<Character> for Character {
     fn as_ref(&self) -> &Character {

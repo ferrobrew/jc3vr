@@ -26,7 +26,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     controllers::{
         self,
-        body::procedural::{owns_body, signals::set_local_character, skeleton},
+        body::procedural::{gate_skipped, signals::set_local_character, skeleton, torso_weight},
         hands::{self, ik::HandPlan},
         roomscale::stance,
     },
@@ -109,8 +109,9 @@ fn character_update_pass_finalize_pose_parallel(
         if let Some(plan) = plan {
             hands::ik::queue_or_defer(character, plan);
         }
-        // The procedural body poses the hips and legs itself at the solve gate.
-        if !owns_body() {
+        // The procedural body poses the hips and legs itself at the solve gate. Below its full
+        // weight these are queued as before, and the gate fades them by what is left of it.
+        if torso_weight() < 1.0 {
             controllers::roomscale::queue_crouch_ik(character);
             if let Some(stance_plan) = stance_plan.as_ref() {
                 stance::queue(character, stance_plan);
@@ -124,7 +125,12 @@ fn character_update_pass_finalize_pose_parallel(
         .unwrap()
         .call(character, context);
     let _timing = frame_timing::scope(Slot::CharacterPose);
-    gate::end_pass();
+    if gate::end_pass() == Some(false) {
+        // Nothing wrote the procedural pose this pass, so nothing may go on standing down for it,
+        // and the wrist targets kept for the gate are queued now.
+        gate_skipped();
+        unsafe { hands::ik::flush_deferred(character) };
+    }
     hands::ik::end_finalize();
 }
 
