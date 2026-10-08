@@ -11,6 +11,7 @@
 //! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
 //! - [`grip_watch`]: a diagnostic watch on how each held gun sits in its hand;
 //! - [`haptics`]: the game's rumbles and the grapple's pulses routed to the hands;
+//! - [`highlights`]: the grab-volume highlights on the overlay;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
@@ -45,7 +46,7 @@
 //!
 //! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights, each
 //! placed pouch (faint, and brighter while a hand is within reach, with `pouches.show`), and, with
-//! `holsters.show_volumes`, every body volume are submitted to the overlay's [`Source::GrabVolumes`]
+//! slot ([`highlights`]). A grip press that grabs nothing near a holster is logged with its
 //! slot. A grip press that grabs nothing near a holster is logged with its
 //! distance from the nearest one. Everything acts only while the bindings inject, which is only
 //! under the controller scheme with a controller active.
@@ -62,6 +63,7 @@ pub mod grenade;
 pub mod grip_watch;
 pub mod haptics;
 pub mod heft;
+mod highlights;
 pub mod holster;
 pub mod recoil;
 pub mod reload;
@@ -72,7 +74,7 @@ pub mod wheel;
 
 use std::time::{Duration, Instant};
 
-use glam::{Quat, Vec3};
+use glam::Vec3;
 use jc3gi::{
     character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
     input::input_action_map::Action,
@@ -90,16 +92,13 @@ use crate::{
         },
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
-        frame::{Hand, Pose},
+        frame::Hand,
         hands::{
-            self, ActiveHands, ik, pose as hand_pose,
+            self, ActiveHands, ik,
             tiers::{self, HandTier, TierState},
         },
         mode::{AirborneVariant, Mode, OnFootVariant},
-        overlay::{
-            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
-            store,
-        },
+        overlay::{primitive::Source, store},
         roomscale::{self, posture::EffectivePosture},
         weapons::{
             config::HolsterAnchor,
@@ -109,7 +108,6 @@ use crate::{
             volumes::{ChestGrabbers, NearMiss, Stance},
         },
     },
-    headpose,
 };
 
 /// The weapon handling's hooks, aggregated by [`crate::controllers::hook_library`].
@@ -352,10 +350,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.gameplay = gameplay;
     drop(state);
 
-    submit_highlights(
+    highlights::submit(
         &config,
         &active,
-        &Reach {
+        &highlights::Reach {
             candidates: &candidates,
             volumes,
             body_points,
@@ -564,9 +562,6 @@ const NEAR_MISS_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How many grabs the readout keeps.
 const MAX_EVENTS: usize = 6;
-
-/// The highlights are submitted at the input tick's rate, so they live a little past one tick.
-const HIGHLIGHT_TTL: Duration = Duration::from_millis(150);
 
 struct State {
     status: WeaponsStatus,
@@ -825,144 +820,6 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
         && status.effective[gun_hand.index()] == HandTier::ActionRuns
 }
 
-/// The tick's volumes and where the hands are among them, for the highlights.
-struct Reach<'a> {
-    candidates: &'a [Candidate],
-    /// The volume each hand is in, by [`Hand::index`].
-    volumes: [Option<GrabVolume>; 2],
-    /// Each hand's point for the body's volumes, by [`Hand::index`].
-    body_points: [Option<Vec3>; 2],
-}
-
-impl Reach<'_> {
-    /// Whether a hand that may grab `c` is within reach of it: inside it, or within the pouches'
-    /// reach margin of its surface.
-    fn within(&self, c: &Candidate, margin: f32) -> bool {
-        Hand::BOTH.into_iter().any(|hand| {
-            c.hand.is_none_or(|h| h == hand)
-                && self.body_points[hand.index()]
-                    .is_some_and(|p| p.distance(c.centre) <= c.radius + margin.max(0.0))
-        })
-    }
-}
-
-/// Submit a highlight for the volume each hand is in, every placed pouch (faint, and brighter
-/// while a hand is within reach of it), and a marker on a held foregrip.
-fn submit_highlights(config: &ControllersConfig, active: &ActiveHands, reach: &Reach) {
-    let Reach {
-        candidates,
-        volumes,
-        ..
-    } = *reach;
-    let show_all = config.weapons.holsters.show_volumes;
-    let pouches = &config.weapons.pouches;
-    if !(config.overlay.enabled && (config.overlay.grab_volumes || show_all || pouches.show)) {
-        store::clear(Source::GrabVolumes);
-        return;
-    }
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let to_world = |point: Vec3| {
-        hand_pose::compose_world(
-            head.position,
-            body,
-            active.head.position,
-            Pose {
-                position: point,
-                orientation: Quat::IDENTITY,
-            },
-            active.world_scale,
-        )
-        .position
-    };
-    let mut prims = Vec::new();
-    for c in candidates
-        .iter()
-        .filter(|c| is_body_volume(c.volume) && !volumes.contains(&Some(c.volume)))
-    {
-        let pouch = volumes::is_pouch(c.volume) && pouches.show;
-        let alpha = if pouch && reach.within(c, pouches.reach_margin_m) {
-            REACH_ALPHA
-        } else if pouch || show_all {
-            SHOWN_ALPHA
-        } else {
-            continue;
-        };
-        let [r, g, b, _] = colour(c.volume);
-        prims.push(ring(
-            to_world(c.centre),
-            c.radius * active.world_scale,
-            [r, g, b, alpha],
-        ));
-    }
-    let highlight = |volume: GrabVolume| {
-        config.overlay.grab_volumes || show_all || (pouches.show && volumes::is_pouch(volume))
-    };
-    for volume in volumes.iter().flatten().filter(|v| highlight(**v)) {
-        if let Some(c) = candidates.iter().find(|c| c.volume == *volume) {
-            prims.push(ring(
-                to_world(c.centre),
-                c.radius * active.world_scale,
-                colour(*volume),
-            ));
-        }
-    }
-    if let Some((centre, radius)) = reload::well_ring(&config.weapons.reload) {
-        prims.push(ring(
-            to_world(centre),
-            radius * active.world_scale,
-            MAGAZINE,
-        ));
-    }
-    if let Some(hand) = reload::holding_hand()
-        && let Some(held) = active.hands[hand.index()]
-    {
-        prims.push(marker(
-            to_world(held.grip.position),
-            active.world_scale,
-            MAGAZINE,
-        ));
-    }
-    if let Some(hold) = foregrip::status().hold.filter(|h| h.engaged) {
-        let mut posed = active.hands;
-        foregrip::apply(&mut posed, &config.weapons.foregrip);
-        if let Some(off) = posed[hold.holder.other().index()] {
-            prims.push(marker(
-                to_world(off.grip.position),
-                active.world_scale,
-                FOREGRIP,
-            ));
-        }
-    }
-    store::submit(Source::GrabVolumes, &mut prims, HIGHLIGHT_TTL);
-}
-
-fn ring(centre: Vec3, radius: f32, color: Rgba) -> Primitive {
-    Primitive::Sprite {
-        at: Anchor::World(centre),
-        size: SpriteSize::World(radius * 2.0),
-        facing: Facing::Billboard,
-        shape: Shape::Ring { thickness: 0.15 },
-        color,
-        depth: DepthMode::XRay {
-            occluded_alpha: 0.4,
-        },
-    }
-}
-
-fn marker(at: Vec3, world_scale: f32, color: Rgba) -> Primitive {
-    Primitive::Sprite {
-        at: Anchor::World(at),
-        size: SpriteSize::World(0.03 * world_scale),
-        facing: Facing::Billboard,
-        shape: Shape::Disc,
-        color,
-        depth: DepthMode::XRay {
-            occluded_alpha: 0.4,
-        },
-    }
-}
-
 /// Whether `volume` is placed on the body: a holster or a pouch.
 fn is_body_volume(volume: GrabVolume) -> bool {
     matches!(
@@ -973,31 +830,6 @@ fn is_body_volume(volume: GrabVolume) -> bool {
             | GrabVolume::C4Pouch
     )
 }
-
-fn colour(volume: GrabVolume) -> Rgba {
-    match volume {
-        GrabVolume::Holster(_) => HOLSTER,
-        GrabVolume::Foregrip => FOREGRIP,
-        GrabVolume::GrenadePouch
-        | GrabVolume::VehicleControl(_)
-        | GrabVolume::ParachuteHandle(_)
-        | GrabVolume::Pickup
-        | GrabVolume::Climb => POUCH,
-        GrabVolume::MagazinePouch | GrabVolume::WeaponAction => MAGAZINE,
-        GrabVolume::C4Pouch => C4,
-    }
-}
-
-const HOLSTER: Rgba = [1.0, 0.75, 0.25, 0.8];
-const FOREGRIP: Rgba = [0.35, 0.85, 1.0, 0.8];
-const POUCH: Rgba = [0.5, 1.0, 0.45, 0.8];
-const MAGAZINE: Rgba = [0.85, 0.55, 1.0, 0.8];
-const C4: Rgba = [1.0, 0.4, 0.3, 0.8];
-/// The opacity of a body volume drawn with `show_volumes`, or of a pouch, that no hand is in or
-/// near: faint, so that it shows where the pouch is without drawing the eye.
-const SHOWN_ALPHA: f32 = 0.2;
-/// The opacity of a pouch a hand is within reach of but not in.
-const REACH_ALPHA: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
