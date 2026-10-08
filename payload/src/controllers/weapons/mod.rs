@@ -104,6 +104,7 @@ use crate::{
             config::HolsterAnchor,
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
+            haptics::PulseSource,
             holster::HolsterAction,
             volumes::{ChestGrabbers, HeadDrop, NearMiss, Stance},
         },
@@ -358,8 +359,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
     state.gameplay = gameplay;
+    let entered = entered_body_volumes(state.last_volumes, volumes);
+    state.last_volumes = volumes;
     drop(state);
 
+    let haptics = &config.weapons.haptics;
+    if haptics.volume_cues {
+        for hand in Hand::BOTH.into_iter().filter(|h| entered[h.index()]) {
+            haptics::pulse(hand, haptics.volume_enter, PulseSource::GrabVolume);
+        }
+    }
     highlights::submit(
         &config,
         &active,
@@ -429,6 +438,17 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             .is_some_and(|hand| two_handed.is_some_and(|w| w.holder.other() == hand)),
     };
     let transition = foregrip::tick(&inputs, dt, &config.weapons.foregrip);
+    // A release pulses the off-hand whatever ended the hold: a press, a move away, or the weapon
+    // leaving the hands.
+    if let (Some(Transition::Released(_)), Some(w)) = (transition, two_handed)
+        && config.weapons.haptics.volume_cues
+    {
+        haptics::pulse(
+            w.holder.other(),
+            config.weapons.haptics.grab,
+            PulseSource::GrabVolume,
+        );
+    }
 
     let mut events = Vec::new();
     for hand in Hand::BOTH {
@@ -461,6 +481,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
         };
         tracing::debug!(target: "controllers", ?hand, volume = volume.label(), outcome = %outcome.label(), "grab");
+        if config.weapons.haptics.volume_cues && cues_grab(outcome) {
+            haptics::pulse(hand, config.weapons.haptics.grab, PulseSource::GrabVolume);
+        }
         events.push(GrabEvent {
             hand,
             volume,
@@ -560,6 +583,7 @@ pub(crate) fn stand_down() {
     state.placed.clear();
     state.grab_points = [None; 2];
     state.body_y = None;
+    state.last_volumes = [None; 2];
     store::clear(Source::GrabVolumes);
 }
 
@@ -593,6 +617,8 @@ struct State {
     last_holder: Option<Hand>,
     /// The body frame's height on the last tick ([`volumes::body_frame`]).
     body_y: Option<f32>,
+    /// The volume each hand was in on the last tick, for the cue on entering one.
+    last_volumes: [Option<GrabVolume>; 2],
     /// The tick's hand the pouches and the wrist detonator are laid out around
     /// ([`volumes::gun_side`]).
     gun_side: Hand,
@@ -672,6 +698,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     last_miss_log: None,
     last_holder: None,
     body_y: None,
+    last_volumes: [None; 2],
     gun_side: Hand::Right,
 });
 
@@ -849,6 +876,34 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
         && status.effective[gun_hand.index()] == HandTier::ActionRuns
 }
 
+/// Which hands entered a body volume this tick, by [`Hand::index`]: a hand in a holster or a pouch
+/// that it was not in on the last tick. Moving straight from one body volume to another counts as
+/// entering the new one.
+fn entered_body_volumes(
+    previous: [Option<GrabVolume>; 2],
+    now: [Option<GrabVolume>; 2],
+) -> [bool; 2] {
+    Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        now[i].is_some_and(|v| is_body_volume(v) && previous[i] != Some(v))
+    })
+}
+
+/// Whether a grab's outcome is one the grab cue pulses: a draw, a holster, or a foregrip grab.
+/// The pouches pulse their own outcomes, and a release pulses from the transition, whatever
+/// caused it.
+fn cues_grab(outcome: GrabOutcome) -> bool {
+    matches!(
+        outcome,
+        GrabOutcome::Holster(
+            HolsterAction::Draw { .. }
+                | HolsterAction::Holster { .. }
+                | HolsterAction::DrawPistol { .. }
+                | HolsterAction::HolsterPistol { .. }
+        ) | GrabOutcome::Foregrip(Transition::Grabbed)
+    )
+}
+
 /// Whether `volume` is placed on the body: a holster or a pouch.
 fn is_body_volume(volume: GrabVolume) -> bool {
     matches!(
@@ -863,6 +918,7 @@ fn is_body_volume(volume: GrabVolume) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::bindings::grab::HolsterSite;
 
     #[test]
     fn the_grips_are_free_only_on_foot_and_under_the_parachute() {
@@ -871,6 +927,40 @@ mod tests {
         assert!(!gameplay(Mode::Airborne(AirborneVariant::Wingsuit)));
         assert!(!gameplay(Mode::OnFoot(OnFootVariant::Swimming)));
         assert!(!gameplay(Mode::Ui));
+    }
+
+    #[test]
+    fn a_hand_entering_a_holster_or_a_pouch_is_cued_once() {
+        let hip = Some(GrabVolume::Holster(HolsterSite::Hip(Hand::Right)));
+        let pouch = Some(GrabVolume::MagazinePouch);
+        let foregrip = Some(GrabVolume::Foregrip);
+        assert_eq!(
+            entered_body_volumes([None, None], [pouch, hip]),
+            [true, true]
+        );
+        // Staying in a volume is not entering it again.
+        assert_eq!(
+            entered_body_volumes([pouch, hip], [pouch, hip]),
+            [false, false]
+        );
+        // Moving from one body volume straight into another is.
+        assert_eq!(
+            entered_body_volumes([hip, None], [pouch, None]),
+            [true, false]
+        );
+        // The foregrip is not on the body; its grab is cued instead.
+        assert_eq!(
+            entered_body_volumes([None; 2], [foregrip, None]),
+            [false, false]
+        );
+        assert!(cues_grab(GrabOutcome::Foregrip(Transition::Grabbed)));
+        assert!(cues_grab(GrabOutcome::Holster(HolsterAction::Holster {
+            slot: WeaponSlot::E_SLOT_TWO_HANDED
+        })));
+        assert!(!cues_grab(GrabOutcome::Holster(HolsterAction::Refused {
+            slot: WeaponSlot::E_SLOT_TWO_HANDED
+        })));
+        assert!(!cues_grab(GrabOutcome::Magazine));
     }
 
     #[test]

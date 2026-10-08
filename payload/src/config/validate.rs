@@ -260,6 +260,8 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     pulse("weapons.haptics.grapple_attach", &w.haptics.grapple_attach)?;
     pulse("weapons.haptics.yank", &w.haptics.yank)?;
     pulse("weapons.haptics.dry_fire", &w.haptics.dry_fire)?;
+    pulse("weapons.haptics.volume_enter", &w.haptics.volume_enter)?;
+    pulse("weapons.haptics.grab", &w.haptics.grab)?;
     range("weapons.haptics.intensity", w.haptics.intensity, 0.0, 1.0)?;
     nonnegative(
         "weapons.haptics.kick_amplitude_per_rad",

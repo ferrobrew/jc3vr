@@ -93,6 +93,8 @@ pub enum PulseSource {
     WeaponWheel,
     /// The held steering wheel reached its lock or passed centre.
     SteeringWheel,
+    /// A hand entering a holster or a pouch, a draw, a holster, or a foregrip grab or release.
+    GrabVolume,
 }
 
 impl PulseSource {
@@ -114,6 +116,7 @@ impl PulseSource {
             PulseSource::Pickup => "pickup",
             PulseSource::WeaponWheel => "weapon wheel",
             PulseSource::SteeringWheel => "steering wheel",
+            PulseSource::GrabVolume => "grab volume",
         }
     }
 }

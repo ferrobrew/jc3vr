@@ -306,6 +306,11 @@ fn settings_page() -> Page {
             .weapons
             .haptics
             .game_rumble))
+        .item(config_toggle!("HOLSTER AND POUCH CUES", |c| c
+            .controllers
+            .weapons
+            .haptics
+            .volume_cues))
         .item(config_toggle!("ALSO RUMBLE GAMEPAD", |c| c
             .controllers
             .weapons

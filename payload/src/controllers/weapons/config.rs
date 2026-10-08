@@ -501,6 +501,13 @@ pub struct HapticsConfig {
     pub yank: PulseSpec,
     /// Pulse the hand whose gun is pulled while it is empty and cannot reload, once per pull.
     pub dry_fire: PulseSpec,
+    /// Cue the grab volumes on the hands: a tick as a hand enters a holster or a pouch, and a
+    /// firmer pulse on a draw, a holster, and a foregrip grab or release.
+    pub volume_cues: bool,
+    /// The tick as a hand enters a holster or a pouch.
+    pub volume_enter: PulseSpec,
+    /// The pulse on a draw, a holster, and a foregrip grab or release.
+    pub grab: PulseSpec,
 }
 
 impl HapticsConfig {
@@ -529,6 +536,15 @@ impl HapticsConfig {
             dry_fire: PulseSpec {
                 amplitude: 0.3,
                 duration_s: 0.015,
+            },
+            volume_cues: true,
+            volume_enter: PulseSpec {
+                amplitude: 0.12,
+                duration_s: 0.008,
+            },
+            grab: PulseSpec {
+                amplitude: 0.35,
+                duration_s: 0.025,
             },
         }
     }

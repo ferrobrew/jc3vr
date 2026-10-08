@@ -558,6 +558,9 @@ fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
     pulse_settings(ui, "Grapple attach", &mut h.grapple_attach);
     pulse_settings(ui, "Yank", &mut h.yank);
     pulse_settings(ui, "Dry fire", &mut h.dry_fire);
+    ui.checkbox(&mut h.volume_cues, "Cue grab volumes");
+    pulse_settings(ui, "Entering a holster or pouch", &mut h.volume_enter);
+    pulse_settings(ui, "Draw, holster, or foregrip", &mut h.grab);
 }
 
 pub(super) fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
