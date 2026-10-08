@@ -36,6 +36,8 @@ The grappling hook's hang proxy (`CGrapplingHangPhysicsProxy::Init`) makes a dyn
 
 Shapes and other Havok heap objects come from the Havok memory router of the calling thread (a thread-local), which the game thread and the physics workers have. The steps above run on the game thread outside the step.
 
+A body's shape is [`hknpBody::m_shape`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpBody##field-m_shape). Creating a body takes a reference of its own to the shape in its construction info (`hknpBody::initialize`), so another body's shape can be given to a new one without releasing anything afterwards, and the two share it: the shape lives as long as either body does.
+
 ### The wrapper's lifecycle
 
 The wrapper's virtual table carries the rest of the body's life:

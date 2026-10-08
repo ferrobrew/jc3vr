@@ -8,6 +8,8 @@ A weapon is one [`WeaponBase`](https://ferrobrew.github.io/pyxis/#/JustCause3_St
 
 The weapon's bodies are in the physics world only in the dropped, mounted, and turret states (and a heavy weapon's while wielded). Every other state, holstered and wielded included, takes them out, and dropped also wakes them.
 
+Each gun has a body of its own ([`WeaponData::m_PfxInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_PfxInstance)). Taken out of the world, it keeps its id, its shape ([`hknpBody::m_shape`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::hknpBody##field-m_shape)), and its motion, mass included. Putting it back ([`WeaponData::AddToWorld`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-AddToWorld)) keeps its collision system group or takes a fresh one, sets its layer for the weapon's state, makes it dynamic, and places it at the gun's world matrix ([`WeaponData::m_WorldMatrixT1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_WorldMatrixT1)), so the body's frame is the gun's model frame and its shape is given in that frame.
+
 ## Completing a pickup
 
 [`WeaponBase::PickupItem`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-PickupItem) takes the character's game-object subobject ([`Character::GAME_OBJECT_BASE_OFFSET`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##const-GAME_OBJECT_BASE_OFFSET)) and ignores any other activator. It:
