@@ -98,12 +98,15 @@ enum Foot {
         to_normal: Vec3,
         /// The progress through the step, `0..1`.
         t: f32,
+        /// How long the whole step takes, seconds: fixed when the foot lifts, so the foot keeps
+        /// its own pace through the swing whatever the speed does meanwhile.
+        duration: f32,
         height: f32,
         kind: StepKind,
     },
 }
 
-/// What paces a step: its own clock standing, the walk's phase walking.
+/// What started a step: the standing steps, or the walk's phase.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum StepKind {
     Standing,
@@ -212,17 +215,13 @@ impl Feet {
         ground: &mut impl FnMut(Vec3) -> Option<Ground>,
     ) {
         self.phase = None;
-        let advance = if tuning.duration_s > 0.0 {
-            dt / tuning.duration_s
-        } else {
-            1.0
-        };
         let mut stepping = false;
         for (i, foot) in self.feet.iter_mut().enumerate() {
             if let Some(Foot::Stepping {
                 to,
                 to_normal,
                 t,
+                duration,
                 kind,
                 ..
             }) = foot
@@ -231,7 +230,7 @@ impl Feet {
                 *kind = StepKind::Standing;
                 // The wanted place moves on while the foot is in the air; the step lands there.
                 (*to, *to_normal) = grounded(&input.wanted[i], input.root_height, ground);
-                *t += advance;
+                *t += advance(dt, *duration);
                 if *t >= 1.0 {
                     *foot = Some(Foot::Planted {
                         pose: *to,
@@ -251,7 +250,12 @@ impl Feet {
         });
         let worse = if errors[0] >= errors[1] { 0 } else { 1 };
         if errors[worse] > 1.0 {
-            self.lift(worse, input, tuning.height_m, StepKind::Standing, ground);
+            let step = Lift {
+                height: tuning.height_m,
+                duration: tuning.duration_s,
+                kind: StepKind::Standing,
+            };
+            self.lift(worse, input, step, ground);
         }
     }
 
@@ -282,21 +286,31 @@ impl Feet {
             let before = (previous + offset).rem_euclid(1.0);
             let now = (phase + offset).rem_euclid(1.0);
             let lifted = now < before;
-            let lead = |t: f32| {
-                // The foot lands at the end of its swing and should pass under the hip half a
-                // stance later.
-                let remaining = (1.0 - t).max(0.0) * swing * period;
+            // The foot lands at the end of its swing, `remaining` seconds away, and should pass
+            // under the hip half a stance later.
+            let lead = |t: f32, duration: f32| {
+                let remaining = (1.0 - t).max(0.0) * duration;
                 input.commanded * (remaining + gait.duty * period * 0.5)
             };
             match &mut self.feet[i] {
                 Some(Foot::Planted { .. }) if lifted => {
-                    self.lift(i, input, gait.height_m, StepKind::Walking, ground);
+                    let step = Lift {
+                        height: gait.height_m,
+                        duration: swing * period,
+                        kind: StepKind::Walking,
+                    };
+                    self.lift(i, input, step, ground);
                     if let Some(Foot::Stepping {
-                        t, to, to_normal, ..
+                        t,
+                        duration,
+                        to,
+                        to_normal,
+                        ..
                     }) = &mut self.feet[i]
                     {
+                        // The tick that lifts it is already part of the way into the swing.
                         *t = (now / swing).clamp(0.0, 1.0);
-                        let ahead = with_offset(&input.wanted[i], lead(*t));
+                        let ahead = with_offset(&input.wanted[i], lead(*t, *duration));
                         (*to, *to_normal) = grounded(&ahead, input.root_height, ground);
                     }
                 }
@@ -304,38 +318,30 @@ impl Feet {
                     to,
                     to_normal,
                     t,
+                    duration,
                     kind,
                     height,
                     ..
                 }) => {
-                    match kind {
-                        StepKind::Walking => {
-                            if lifted || now >= swing {
-                                let landed = Foot::Planted {
-                                    pose: *to,
-                                    normal: *to_normal,
-                                };
-                                self.feet[i] = Some(landed);
-                                continue;
-                            }
-                            *t = (now / swing).clamp(0.0, 1.0);
-                        }
-                        // A standing step under way when the walk starts finishes on its own
-                        // clock, at the walk's pace.
-                        StepKind::Standing => {
-                            *t += dt / (swing * period).max(MIN_SWING_S);
-                            *height = height.max(gait.height_m);
-                            if *t >= 1.0 {
-                                let landed = Foot::Planted {
-                                    pose: *to,
-                                    normal: *to_normal,
-                                };
-                                self.feet[i] = Some(landed);
-                                continue;
-                            }
-                        }
+                    if *kind == StepKind::Standing {
+                        // A standing step under way when the walk starts finishes at the walk's
+                        // pace, if that is quicker.
+                        *duration = duration.min((swing * period).max(MIN_SWING_S));
+                        *height = height.max(gait.height_m);
                     }
-                    let ahead = with_offset(&input.wanted[i], lead(*t));
+                    *t += advance(dt, *duration);
+                    // A walking foot whose turn to lift comes round again before it lands (the
+                    // walk sped up a lot) lands at once.
+                    let overtaken = *kind == StepKind::Walking && lifted;
+                    if *t >= 1.0 || overtaken {
+                        let landed = Foot::Planted {
+                            pose: *to,
+                            normal: *to_normal,
+                        };
+                        self.feet[i] = Some(landed);
+                        continue;
+                    }
+                    let ahead = with_offset(&input.wanted[i], lead(*t, *duration));
                     (*to, *to_normal) = grounded(&ahead, input.root_height, ground);
                 }
                 _ => {}
@@ -360,8 +366,7 @@ impl Feet {
         &mut self,
         i: usize,
         input: &FeetInput,
-        height: f32,
-        kind: StepKind,
+        step: Lift,
         ground: &mut impl FnMut(Vec3) -> Option<Ground>,
     ) {
         if let Some(Foot::Planted { pose, normal }) = self.feet[i] {
@@ -372,8 +377,9 @@ impl Feet {
                 to,
                 to_normal,
                 t: 0.0,
-                height,
-                kind,
+                duration: step.duration,
+                height: step.height,
+                kind: step.kind,
             });
         }
     }
@@ -391,6 +397,20 @@ impl Foot {
         let pose = self.pose();
         pose.position.is_finite() && pose.rotation.is_finite()
     }
+}
+
+/// How a foot lifts: how high, over how long, and for what.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Lift {
+    height: f32,
+    duration: f32,
+    kind: StepKind,
+}
+
+/// The share of a step of `duration` seconds that `dt` seconds cover: all of it for a step with no
+/// length.
+fn advance(dt: f32, duration: f32) -> f32 {
+    if duration > 0.0 { dt / duration } else { 1.0 }
 }
 
 /// How far a foot may be from its wanted place before it counts as lost, metres.
@@ -669,6 +689,38 @@ mod tests {
             assert_eq!(placed, wanted);
         }
         assert!(feet.phase().is_none());
+    }
+
+    #[test]
+    fn a_swing_keeps_its_own_pace_when_the_speed_changes() {
+        let mut feet = Feet::new();
+        feet.step(
+            &standing([at(-0.1, 0.0), at(0.1, 0.0)]),
+            &tuning(),
+            &mut flat,
+        );
+        let moving = |speed: f32, z: f32| FeetInput {
+            wanted: [at(-0.1, z), at(0.1, z)],
+            root_height: 0.0,
+            velocity: Vec3::new(0.0, 0.0, -speed),
+            commanded: Vec3::new(0.0, 0.0, -speed),
+            gait: Some(walk()),
+            dt: DT,
+        };
+        // The first tick lifts the leading foot.
+        feet.step(&moving(1.5, 0.0), &tuning(), &mut flat);
+        let progress = |feet: &Feet| {
+            feet.feet.iter().find_map(|f| match f {
+                Some(Foot::Stepping { t, duration, .. }) => Some((*t, *duration)),
+                _ => None,
+            })
+        };
+        let (t0, duration) = progress(&feet).expect("no foot lifted");
+        // The body nearly stops: the swing still advances by its own clock.
+        feet.step(&moving(0.35, -0.05), &tuning(), &mut flat);
+        let (t1, same) = progress(&feet).expect("the foot landed early");
+        assert_eq!(same, duration);
+        assert!((t1 - t0 - DT / duration).abs() < 1e-5, "{t0} -> {t1}");
     }
 
     #[test]
