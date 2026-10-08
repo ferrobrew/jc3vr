@@ -74,8 +74,8 @@ impl RestartReason {
                                                until then."
                 .to_owned(),
             RestartReason::HandChanged { suggested } => format!(
-                "The buttons stay laid out for a {}-handed player until the game restarts. \
-                 Change the dominant hand back to keep that layout.",
+                "The buttons and the hands' roles stay laid out for a {}-handed player until the \
+                 game restarts. Change the dominant hand back to keep that layout.",
                 hand_word(suggested)
             ),
         }

@@ -42,7 +42,7 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
     let (config, dominant, grapple_origin, sight_tuning) = Config::lock_query(|c| {
         (
             c.controllers.overlay,
-            c.controllers.dominant_hand,
+            c.controllers.acting_hand(),
             c.controllers.aim.grapple_origin_m,
             c.controllers.aim.sight_tuning.enabled,
         )

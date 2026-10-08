@@ -134,13 +134,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 &c.controllers.input,
                 &c.controllers.bindings,
                 &c.headpose.vr_turn,
-                c.controllers.dominant_hand,
+                c.controllers.acting_hand(),
             ),
         )
     });
     if !config.enabled {
         clear_controller();
-        update_egui_controller(None, config.dominant_hand);
+        update_egui_controller(None, config.acting_hand());
         let mut state = STATE.lock();
         state.observe_poll(poll);
         state.stand_down(poll);
@@ -196,7 +196,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     });
     update_egui_controller(
         panel_input.as_ref().map(|(frame, edges)| (frame, edges)),
-        config.dominant_hand,
+        config.acting_hand(),
     );
 
     let mut state = STATE.lock();
@@ -262,12 +262,12 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             Some(&frame),
             &edges,
             detection.mode == Mode::Ui,
-            config.dominant_hand,
-            state.recovery.ready(config.dominant_hand),
+            config.acting_hand(),
+            state.recovery.ready(config.acting_hand()),
         );
     }
 
-    let dominant = config.dominant_hand;
+    let dominant = config.acting_hand();
     let move_rotation = match config.locomotion.direction {
         LocomotionDirection::Head => 0.0,
         LocomotionDirection::OffHand => off_hand_rotation(&frame, dominant.other()),

@@ -100,7 +100,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         return;
     };
     let tuning = &config.weapons.c4.detonator;
-    let dominant = config.dominant_hand;
+    let dominant = config.acting_hand();
     let off = dominant.other();
     let drawn = active.hands;
     let face = drawn[off.index()].and_then(|hand| press::button_face(off, hand.grip, tuning));

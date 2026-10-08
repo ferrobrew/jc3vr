@@ -229,7 +229,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let dual = config.weapons.dual_wield;
     let settings = (dual.split && (dual.independent_draw || dual.place_by_handedness)).then_some(
         dual_wield::attach::Settings {
-            dominant: config.dominant_hand,
+            dominant: config.acting_hand(),
             independent: dual.independent_draw,
             by_handedness: dual.place_by_handedness,
         },
@@ -285,7 +285,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 &body_frame,
                 &dims,
                 pouches,
-                config.dominant_hand,
+                config.acting_hand(),
             ));
         }
         if config.weapons.c4_throw {
@@ -293,7 +293,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 &body_frame,
                 &dims,
                 pouches,
-                config.dominant_hand,
+                config.acting_hand(),
             ));
         }
     }
@@ -424,7 +424,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 let wielded = weapon.map(|(w, _)| w.wielded);
                 let independent =
                     config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
-                match holster::decide(site, hand, config.dominant_hand, wielded, independent) {
+                match holster::decide(site, hand, config.acting_hand(), wielded, independent) {
                     Some(action) => act(action, hand, independent, desired),
                     None => continue,
                 }
@@ -506,7 +506,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 
     let fire_blocked = reload_blocks
         || (config.weapons.block_fire_during_actions
-            && weapon_action_running(config.dominant_hand));
+            && weapon_action_running(config.acting_hand()));
     if fire_blocked {
         hold_fire_back(desired);
     }

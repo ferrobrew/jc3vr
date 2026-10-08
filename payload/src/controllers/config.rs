@@ -53,7 +53,8 @@ pub struct ControllersConfig {
     pub scheme: SchemeSetting,
     /// The hand that holds and fires the guns. The other hand fires the grapple. Mirroring swaps the
     /// bindings and the dual-wield pistols' attach bones; a single gun stays on the model's right
-    /// hand, and the grapple gauntlet on the model's left arm.
+    /// hand, and the grapple gauntlet on the model's left arm. The hand roles follow
+    /// [`ControllersConfig::acting_hand`], which differs from this until a restart after a change.
     pub dominant_hand: Hand,
     /// Pin the game's "the gamepad is the active input device" setting to the gamepad while the
     /// controller scheme is in effect, so that the game applies its gamepad rules (aim assist,
@@ -92,6 +93,16 @@ pub struct ControllersConfig {
 }
 
 impl ControllersConfig {
+    /// The dominant hand the mod's hand roles follow: the gun hand, the grapple's ray, the
+    /// readouts on the wrists, the mirrored sticks and levers, and the bindings' reading of the
+    /// buttons. While controller bindings are attached it is the hand they were suggested for,
+    /// since OpenXR keeps those until the game restarts and the buttons stay laid out for it; a
+    /// change of [`ControllersConfig::dominant_hand`] takes effect for the roles at the same
+    /// restart as for the buttons, so the two never disagree.
+    pub fn acting_hand(&self) -> Hand {
+        acting_hand(self.dominant_hand, crate::vr::input::bound_hand())
+    }
+
     pub const fn new() -> Self {
         Self {
             enabled: true,
@@ -1078,9 +1089,22 @@ pub enum SeatTransition {
     Ride,
 }
 
+/// The hand the roles follow for a configured `dominant` hand and the hand the attached bindings
+/// were suggested for, `bound`, if any.
+fn acting_hand(dominant: Hand, bound: Option<Hand>) -> Hand {
+    bound.unwrap_or(dominant)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_roles_follow_the_bound_hand_until_a_restart() {
+        assert_eq!(acting_hand(Hand::Left, None), Hand::Left);
+        assert_eq!(acting_hand(Hand::Left, Some(Hand::Right)), Hand::Right);
+        assert_eq!(acting_hand(Hand::Right, Some(Hand::Right)), Hand::Right);
+    }
 
     #[test]
     fn the_sight_table_keys_by_weapon_hash() {

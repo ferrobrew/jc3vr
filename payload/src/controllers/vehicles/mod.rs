@@ -263,7 +263,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let placement = Placement {
         wheel: fit.wheel,
         bars: fit.bars,
-        ..Placement::new(physical_config, config.dominant_hand)
+        ..Placement::new(physical_config, config.acting_hand())
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let mounted = mounted_tick(&active);

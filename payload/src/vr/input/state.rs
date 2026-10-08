@@ -15,7 +15,7 @@ use crate::{
         layout::{self, HandsAction, Profile},
         restart::{self, NeedsRestart, RestartReason},
         self_check::SelfCheck,
-        semantic,
+        semantic, set_bound_hand,
         sources::{self, SourcesRefresh},
         stash::{self, InputStash},
     },
@@ -85,6 +85,7 @@ impl InputState {
                     profiles: [InteractionProfile::None; 2],
                     hand_tracking: state.hand_tracking_status(instance),
                 };
+                set_bound_hand(Some(state.dominant));
             }
             Err(e) => {
                 let restart = restart::of_error(e);
@@ -96,6 +97,7 @@ impl InputState {
                     restart,
                     ..InputStatus::default()
                 };
+                set_bound_hand(None);
             }
         }
         result.map(|(state, _)| state)
@@ -150,6 +152,7 @@ impl InputState {
         semantic::frame::clear();
         sources::clear();
         let _ = crate::vr::input::haptics::take();
+        set_bound_hand(None);
         let mut status = STATUS.lock();
         status.attached = false;
         status.profiles = [InteractionProfile::None; 2];

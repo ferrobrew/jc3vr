@@ -145,6 +145,26 @@ pub fn status() -> InputStatus {
     STATUS.lock().clone()
 }
 
+/// The dominant hand the attached actions' bindings were suggested for, `None` while none are
+/// attached. Lock-free, so that any thread, holding any lock, may ask.
+pub fn bound_hand() -> Option<Hand> {
+    match BOUND_HAND.load(Ordering::Relaxed) {
+        BOUND_LEFT => Some(Hand::Left),
+        BOUND_RIGHT => Some(Hand::Right),
+        _ => None,
+    }
+}
+
+/// Publish the hand the attached bindings were suggested for ([`bound_hand`]).
+fn set_bound_hand(hand: Option<Hand>) {
+    let value = match hand {
+        None => BOUND_NONE,
+        Some(Hand::Left) => BOUND_LEFT,
+        Some(Hand::Right) => BOUND_RIGHT,
+    };
+    BOUND_HAND.store(value, Ordering::Relaxed);
+}
+
 /// Note that the runtime changed a hand's interaction profile, so the next frame re-queries it.
 /// Called from the event pump.
 pub(crate) fn mark_profiles_dirty() {
@@ -152,6 +172,12 @@ pub(crate) fn mark_profiles_dirty() {
 }
 
 static ACTIVE_SET: AtomicU8 = AtomicU8::new(0);
+
+/// [`bound_hand`]'s value: one of the `BOUND_` constants.
+static BOUND_HAND: AtomicU8 = AtomicU8::new(BOUND_NONE);
+const BOUND_NONE: u8 = 0;
+const BOUND_LEFT: u8 = 1;
+const BOUND_RIGHT: u8 = 2;
 
 /// Whether the profiles need re-querying. Starts set so the first frame queries them.
 static PROFILES_DIRTY: AtomicBool = AtomicBool::new(true);

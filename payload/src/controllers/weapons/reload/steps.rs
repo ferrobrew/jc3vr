@@ -105,7 +105,7 @@ impl State {
         Some(Tick {
             weapon: weapon.address,
             holder,
-            dominant: config.dominant_hand,
+            dominant: config.acting_hand(),
             split,
             plan,
             from_table: entry.is_some(),
@@ -163,7 +163,7 @@ impl State {
         config: &ControllersConfig,
     ) -> [bool; 2] {
         let reload = &config.weapons.reload;
-        let dominant = config.dominant_hand;
+        let dominant = config.acting_hand();
         let gun_hands = tick.guns.map(|g| g.is_some());
         let dt = if inputs.dt.is_finite() {
             inputs.dt.max(0.0)
@@ -627,7 +627,7 @@ impl State {
         let unlimited = tick.reading.unlimited;
         let reserve = tick.reserve;
         let capacity = tick.reading.capacity;
-        let dominant = config.dominant_hand;
+        let dominant = config.acting_hand();
         let record = self.record(tick);
         // SAFETY (each engine call): main thread, outside the world update; the weapon was read
         // this tick.

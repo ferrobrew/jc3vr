@@ -54,7 +54,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
         let (enabled, dominant, config) = Config::lock_query(|c| {
             (
                 c.controllers.enabled && c.controllers.summary.enabled,
-                c.controllers.dominant_hand,
+                c.controllers.acting_hand(),
                 c.controllers.summary,
             )
         });

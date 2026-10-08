@@ -205,7 +205,7 @@ pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
     if !(haptics.grapple && scheme::is_controllers()) {
         return;
     }
-    let hand = config.dominant_hand.other();
+    let hand = config.acting_hand().other();
     if fired {
         haptics::pulse(hand, haptics.grapple_fire, PulseSource::GrappleFire);
     }
@@ -276,7 +276,7 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 unsafe fn swing(character: &mut Character) {
     let config = Config::lock_query(|c| c.controllers);
     let anchor = config.hands.anchor;
-    let hand = config.dominant_hand.other();
+    let hand = config.acting_hand().other();
     let now = Instant::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
     let anchored = tiers::status().effective[hand.index()] == tiers::HandTier::Anchored;

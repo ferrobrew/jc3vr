@@ -92,7 +92,7 @@ pub(crate) unsafe fn sample_status(cfg: &HudConfig) {
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
     if eye == 0 {
-        let (cfg, dominant) = Config::lock_query(|c| (c.hud, c.controllers.dominant_hand));
+        let (cfg, dominant) = Config::lock_query(|c| (c.hud, c.controllers.acting_hand()));
         let active = cfg.atlas.enabled
             && cfg.redirect
             && cfg.quad

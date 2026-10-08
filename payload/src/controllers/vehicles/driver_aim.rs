@@ -64,7 +64,7 @@ fn hand_point() -> Option<Vec3> {
         (
             c.controllers.enabled,
             c.controllers.vehicles.driver_weapons_by_hand,
-            c.controllers.dominant_hand,
+            c.controllers.acting_hand(),
         )
     });
     if !(enabled && on && scheme::is_controllers()) {

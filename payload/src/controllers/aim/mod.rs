@@ -156,7 +156,7 @@ pub fn status() -> AimStatus {
 /// `None` when neither aim is acting. The aim-state hook writes it after the game's own point is
 /// set, so the point still counts as set this frame.
 pub fn character_aim_point() -> Option<Vec3> {
-    let dominant = Config::lock_query(|c| c.controllers.dominant_hand);
+    let dominant = Config::lock_query(|c| c.controllers.acting_hand());
     gun::character_aim_point(dominant).or_else(vehicles::mounted_aim_point)
 }
 
@@ -210,7 +210,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     grenade::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
     c4::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
 
-    let off = tick.config.dominant_hand.other();
+    let off = tick.config.acting_hand().other();
     let grapple_ray = tick
         .config
         .aim
@@ -360,10 +360,10 @@ unsafe fn finish(
         &cfg.sight_tuning,
         tick.head,
         held.as_ref(),
-        tick.config.dominant_hand,
+        tick.config.acting_hand(),
     );
 
-    let dominant = tick.config.dominant_hand;
+    let dominant = tick.config.acting_hand();
     // SAFETY: the aim control is live for its own update, and the original has run.
     if let Some(aim) = unsafe { aim.as_mut() }
         && let Some(point) =

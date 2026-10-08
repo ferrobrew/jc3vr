@@ -461,7 +461,7 @@ pub(crate) fn tick(dt: f32) {
     let (hands, dominant, mounted_anchor) = Config::lock_query(|c| {
         (
             c.controllers.hands,
-            c.controllers.dominant_hand,
+            c.controllers.acting_hand(),
             c.controllers.vehicles.mounted.anchor_hands,
         )
     });

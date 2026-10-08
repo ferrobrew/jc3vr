@@ -182,7 +182,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         body_frame,
         dims,
         &config.weapons.pouches,
-        config.dominant_hand,
+        config.acting_hand(),
         free,
     );
     if free.is_some() {
