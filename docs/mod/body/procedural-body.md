@@ -117,6 +117,8 @@ The Controllers tab's "Procedural body" section shows the mode, the weight, whet
 
 ## Not yet
 
+- The standing steps aim at the stance the root carries, not at the ground under the player's head: a player who leans far over one foot without moving the root shifts the hips but does not step under the lean.
+- A landing plants the feet where the stance wants them on the ground under them; the legs do not reach for the ground ahead of the landing, so a landing on a slope or a step plants without first stretching toward it.
 - A hit reaction's length is a fixed hold, not the stumble's own: the game keeps nothing that says when the stumble ends. A short stumble hands back late, and a long one early.
 
 ## What needs confirming in the headset
