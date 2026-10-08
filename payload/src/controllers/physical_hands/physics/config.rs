@@ -66,7 +66,9 @@ pub struct HandBodiesConfig {
     pub hits: HandHitsConfig,
     /// Hold what a hand's grip takes by joining the hand's body to it with a fixed constraint, so
     /// that a held object has mass and the hand's strength carries it, in place of driving the
-    /// object toward the hand.
+    /// object toward the hand. Off by default: the world does not end a constraint whose body is
+    /// destroyed, so an object broken apart inside a step leaves the joint on a dead body until
+    /// the next pre-simulation step ends it (`docs/mod/input/physical-hands.md`).
     pub joint_grabs: bool,
 }
 
