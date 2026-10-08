@@ -29,7 +29,7 @@ use crate::controllers::{
     weapons::{
         dual_wield,
         engine::{self, slot_from_raw},
-        hold::{self, holder::Cause},
+        hold::{self, equip, holder::Cause},
         holster::slot_label,
     },
 };
@@ -78,8 +78,17 @@ impl fmt::Display for Refusal {
 
 impl std::error::Error for Refusal {}
 
-/// Pick `weapon` up into `hand` directly. With `independent_pistols`, a dual-wield pair taken this
-/// way draws only the grabbing hand's pistol. Returns the slot the weapon went into.
+/// How a direct pickup treats the weapons around it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TakeOptions {
+    /// A dual-wield pair taken this way draws only the grabbing hand's pistol.
+    pub independent_pistols: bool,
+    /// A weapon already in the slot is dropped to the ground first, rather than dropped or
+    /// despawned by the game's inventory add.
+    pub drop_replaced: bool,
+}
+
+/// Pick `weapon` up into `hand` directly. Returns the slot the weapon went into.
 ///
 /// # Safety
 ///
@@ -88,7 +97,7 @@ impl std::error::Error for Refusal {}
 pub(crate) unsafe fn take(
     hand: Hand,
     weapon: &mut WeaponBase,
-    independent_pistols: bool,
+    options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::NoCharacter)?;
     if weapon.m_State != WeaponState::E_WS_DROPPED {
@@ -107,8 +116,18 @@ pub(crate) unsafe fn take(
         return Err(Refusal::AnimationForbids);
     }
     let address = weapon as *mut WeaponBase as usize;
+    if options.drop_replaced {
+        let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
+        if occupant != 0 && occupant != address && unsafe { equip::drop_occupant(owner, slot) } {
+            tracing::info!(
+                target: "controllers",
+                slot = slot_label(slot),
+                "hold: dropped the weapon the pickup replaces"
+            );
+        }
+    }
     hold::begin(hand, Cause::Pickup, Some(address));
-    if independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+    if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
         dual_wield::attach::begin_draw(hand);
     }
     let activator = (owner as *mut Character as usize + Character::GAME_OBJECT_BASE_OFFSET as usize)
@@ -118,6 +137,9 @@ pub(crate) unsafe fn take(
         .is_some_and(|held| held as *const WeaponBase as usize == address);
     if !wielded {
         return Err(Refusal::NotWielded);
+    }
+    if slot != WeaponSlot::E_SLOT_DUAL_WIELD {
+        hold::adopt(address, hand);
     }
     tracing::info!(
         target: "controllers",

@@ -4,7 +4,8 @@
 //! gun between that hand's two attach bones. A weapon held in the left hand rides the left hand's
 //! counterpart of whatever bone the game chose, so the game's moves within a hand are kept and only
 //! the side changes. A gun on any other bone (a holster or back bone, or one the game moves off the
-//! hands) is left where the game put it.
+//! hands) is left where the game put it. A holstered gun docks on one of the hip holster or back
+//! attach bones ([`dock_bone`]).
 
 use jc3gi::character::character::SafeBoneIndex;
 
@@ -20,6 +21,19 @@ pub fn held_bone(bone: u32, holder: Hand) -> Option<u32> {
         .map(|(hand, _, mirror)| (hand, mirror))?;
     (hand != holder).then_some(mirror as u32)
 }
+
+/// The dock bone a holstered gun on `bone` sits on: a hip holster or a back attach bone.
+pub fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
+    DOCK_BONES.into_iter().find(|&safe| safe as u32 == bone)
+}
+
+/// The bones a holstered gun docks on.
+const DOCK_BONES: [SafeBoneIndex; 4] = [
+    SafeBoneIndex::RIGHT_HOLSTER,
+    SafeBoneIndex::LEFT_HOLSTER,
+    SafeBoneIndex::BACK_ATTACH,
+    SafeBoneIndex::BACK_ATTACH_2,
+];
 
 /// Each hand attach bone, its hand, and its counterpart on the other hand.
 const HAND_BONES: [(Hand, SafeBoneIndex, SafeBoneIndex); 4] = [
@@ -80,6 +94,8 @@ mod tests {
             for hand in Hand::BOTH {
                 assert_eq!(held_bone(bone as u32, hand), None, "{bone:?}");
             }
+            assert_eq!(dock_bone(bone as u32), Some(bone));
         }
+        assert_eq!(dock_bone(RIGHT), None, "a hand is not a dock");
     }
 }

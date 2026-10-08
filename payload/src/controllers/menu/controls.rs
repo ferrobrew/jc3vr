@@ -221,6 +221,21 @@ fn settings_page() -> Page {
             .weapons
             .hold
             .direct_pickup))
+        .item(config_toggle!("DRAW LONG GUNS WITHOUT ANIMATION", |c| c
+            .controllers
+            .weapons
+            .hold
+            .instant_dock))
+        .item(config_toggle!("HOLD GRIP TO HOLD GUNS", |c| c
+            .controllers
+            .weapons
+            .hold
+            .grip_to_hold))
+        .item(config_toggle!("PICKUPS DROP THE OLD WEAPON", |c| c
+            .controllers
+            .weapons
+            .hold
+            .drop_replaced))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons

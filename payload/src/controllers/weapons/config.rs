@@ -619,6 +619,22 @@ pub struct HoldConfig {
     /// up while swimming, with its magazine as it was and no pickup animation. Off, a grab clicks
     /// the game's use-item action and the game picks the weapon up its own way.
     pub direct_pickup: bool,
+    /// Draw and holster the long guns on the shoulders without the game's draw and holster
+    /// animations: the gun slides between its place on the body and the hand over `snap_s`, and is
+    /// the same object throughout. Off, a holster grab plays the game's draw or holster.
+    pub instant_dock: bool,
+    /// How long a draw or a holster without the game's animation slides the gun, seconds.
+    pub snap_s: f32,
+    /// Hold a gun taken by a grab (a draw at a holster, a pickup, or a handover) only while its
+    /// grip is held: opening the grip at the gun's own holster holsters it, and anywhere else lets
+    /// it fall, with the hand's motion. The dual-wield pistols stay in the hands. Off, guns are
+    /// sticky: a gun stays in the hand until it is holstered.
+    pub grip_to_hold: bool,
+    /// The fastest a let-go gun leaves the hand, metres per second, against tracking glitches.
+    pub max_throw_mps: f32,
+    /// Before a direct pickup into a slot that already holds a weapon, let that weapon fall to the
+    /// ground, rather than have the game drop or despawn it.
+    pub drop_replaced: bool,
 }
 
 impl HoldConfig {
@@ -628,6 +644,11 @@ impl HoldConfig {
             handover: true,
             handle_radius_m: 0.07,
             direct_pickup: true,
+            instant_dock: false,
+            snap_s: 0.12,
+            grip_to_hold: false,
+            max_throw_mps: 15.0,
+            drop_replaced: false,
         }
     }
 }

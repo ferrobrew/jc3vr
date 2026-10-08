@@ -38,14 +38,19 @@
 //! inventory's weapons against the owned weapon's address before taking any lock, and they never
 //! touch the VR state.
 //!
-//! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]).
+//! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). A long gun can
+//! be drawn and holstered without the game's acts, sliding between its dock and the hand, and let
+//! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]).
 
+pub mod act;
+pub mod dock;
+pub mod equip;
 pub mod holder;
 pub mod layout;
 pub mod pickup;
 
 use std::{
-    sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
     time::Instant,
 };
 
@@ -153,21 +158,15 @@ pub(crate) unsafe fn input_tick(
         .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
     tick.last = Some(now);
     let fallback = settings.map_or(Hand::Right, |s| s.fallback);
-    match tick.holder.observe(address, fallback, dt) {
-        Some(Change::Took { hand, cause }) if settings.is_some() => {
-            tracing::info!(
-                target: "controllers",
-                hand = hand.label(),
-                cause = cause.map_or("the game's draw", Cause::label),
-                "hold: the weapon is in the {} hand",
-                hand.label()
-            );
-        }
-        _ => {}
+    let change = tick.holder.observe(address, fallback, dt);
+    if settings.is_some() {
+        took(change);
     }
     let owns = settings.is_some() && !pair_owned;
+    ENABLED.store(settings.is_some(), Ordering::Relaxed);
     let holder = tick.holder.hand().filter(|_| settings.is_some());
     drop(tick);
+    unsafe { act::tick(owner, address, dt) };
     match (address, holder) {
         (Some(address), Some(hand)) if owns => {
             HOLDER.store(hand_code(Some(hand)), Ordering::Relaxed);
@@ -183,6 +182,23 @@ pub(crate) fn begin(hand: Hand, cause: Cause, weapon: Option<usize>) {
     TICK.lock().holder.begin(hand, cause, weapon);
 }
 
+/// The weapon at `weapon` came into the hands by a call the mod made (an equip or a pickup): follow
+/// it at once, rather than at the next input tick, so that the next placement already puts it in
+/// its hand. Only while the hold is on, and never for the dual-wield pair, whose own layout owns
+/// its bones.
+pub(crate) fn adopt(weapon: usize, fallback: Hand) {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let mut tick = TICK.lock();
+    let change = tick.holder.observe(Some(weapon), fallback, 0.0);
+    took(change);
+    if let Some(hand) = tick.holder.hand() {
+        HOLDER.store(hand_code(Some(hand)), Ordering::Relaxed);
+        OWNED.store(weapon, Ordering::Relaxed);
+    }
+}
+
 /// Hand the wielded weapon to `hand`. Returns whether it moved.
 pub(crate) fn hand_over(hand: Hand) -> bool {
     let mut tick = TICK.lock();
@@ -190,6 +206,7 @@ pub(crate) fn hand_over(hand: Hand) -> bool {
         return false;
     }
     tick.handovers += 1;
+    act::arm(hand);
     if OWNED.load(Ordering::Relaxed) != 0 {
         HOLDER.store(hand_code(Some(hand)), Ordering::Relaxed);
     }
@@ -314,6 +331,23 @@ pub(crate) fn record_pickup(refusal: Option<String>) {
     }
 }
 
+/// Log a weapon coming into a hand, and arm the grip watch when a grab put it there.
+fn took(change: Option<Change>) {
+    let Some(Change::Took { hand, cause }) = change else {
+        return;
+    };
+    if cause.is_some() {
+        act::arm(hand);
+    }
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        cause = cause.map_or("the game's draw", Cause::label),
+        "hold: the weapon is in the {} hand",
+        hand.label()
+    );
+}
+
 /// The input tick's side.
 struct Tick {
     holder: Holder,
@@ -344,6 +378,8 @@ static PLACED: Mutex<Option<Placed>> = Mutex::new(None);
 static OWNED: AtomicUsize = AtomicUsize::new(0);
 /// The holding hand ([`hand_code`]).
 static HOLDER: AtomicU8 = AtomicU8::new(0);
+/// Whether the last input tick had the hold on.
+static ENABLED: AtomicBool = AtomicBool::new(false);
 static WRITES: AtomicU64 = AtomicU64::new(0);
 static SNAPS: AtomicU64 = AtomicU64::new(0);
 

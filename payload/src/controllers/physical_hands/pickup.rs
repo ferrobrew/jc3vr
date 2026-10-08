@@ -51,7 +51,11 @@ use crate::{
             pulse,
             rigid::Velocities,
         },
-        weapons::{self, FinishInputs, haptics::PulseSource, hold::pickup::Refusal},
+        weapons::{
+            self, FinishInputs,
+            haptics::PulseSource,
+            hold::pickup::{Refusal, TakeOptions},
+        },
     },
 };
 
@@ -162,13 +166,16 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         }
     }
     drop(state);
-    let (hold, dual) =
+    let (holding, dual) =
         Config::lock_query(|c| (c.controllers.weapons.hold, c.controllers.weapons.dual_wield));
     for (hand, reach) in weapons {
-        let refusal = if hold.direct_pickup {
-            let independent = dual.split && dual.independent_draw;
+        let refusal = if holding.direct_pickup {
+            let options = TakeOptions {
+                independent_pistols: dual.split && dual.independent_draw,
+                drop_replaced: holding.drop_replaced,
+            };
             // SAFETY: the input tick runs on the main thread outside the world update.
-            let refusal = unsafe { take_weapon(hand, reach, independent) }.err();
+            let refusal = unsafe { take_weapon(hand, reach, options) }.err();
             weapons::hold::record_pickup(refusal.map(|r| r.to_string()));
             if let Some(refusal) = refusal {
                 tracing::debug!(target: "controllers", ?hand, %refusal, "physical hands: direct weapon pickup refused");
@@ -177,7 +184,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         } else {
             None
         };
-        if !hold.direct_pickup || refusal.is_some_and(Refusal::falls_back) {
+        if !holding.direct_pickup || refusal.is_some_and(Refusal::falls_back) {
             desired.push(Desired {
                 target: Target {
                     map: MapKind::Player,
@@ -205,14 +212,14 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 /// # Safety
 ///
 /// Main thread, outside the world update.
-unsafe fn take_weapon(hand: Hand, reach: Reach, independent: bool) -> Result<(), Refusal> {
+unsafe fn take_weapon(hand: Hand, reach: Reach, options: TakeOptions) -> Result<(), Refusal> {
     // A weapon's body leaves the world when it is picked up or despawned, so a body that still
     // belongs to the reached object proves the object is alive.
     if unsafe { bodies::read(reach.body, reach.object) }.is_err() {
         return Err(Refusal::NotDropped);
     }
     let weapon = unsafe { &mut *(reach.object.get() as *mut WeaponBase) };
-    unsafe { weapons::hold::pickup::take(hand, weapon, independent) }.map(|_| ())
+    unsafe { weapons::hold::pickup::take(hand, weapon, options) }.map(|_| ())
 }
 
 /// Keep what the hands hold through a game menu: the grips are not read there, and a release is

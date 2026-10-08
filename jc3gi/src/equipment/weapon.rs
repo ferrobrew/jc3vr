@@ -2576,6 +2576,77 @@ impl WeaponBase {
             f(self as *mut Self as _, weapon_data)
         }
     }
+    /// Takes the weapon into `holder`'s keeping (a character's or vehicle's `CGameObject`
+    /// subobject): sets the holder, and for a weapon outside the heavy slot sets the holstered
+    /// state (holstered-invisible for the hand grenade, the planted explosive, and the beacon),
+    /// which takes its bodies out of the physics world. Unless
+    /// [`m_InfinitePickup`](crate::equipment::weapon::WeaponBase::m_InfinitePickup) is set it disables the weapon's pickup
+    /// interaction and its pickup hint, and for the locally controlled character it sets the
+    /// avatar's mental state to
+    /// [`E_READY_FOR_COMBAT`](crate::character::avatar::MentalState::E_READY_FOR_COMBAT) and shows
+    /// the pickup on the HUD. The inventory's add
+    /// calls it when the weapon goes into a slot.
+    pub unsafe fn OnPickup(&mut self, holder: *mut crate::game::GameObject) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnPickup).read();
+            f(self as *mut Self as _, holder)
+        }
+    }
+    /// Equips the weapon for `character`, which must hold it: shows it, runs its components'
+    /// equip, selects its slot, starts using it (the user becomes `character`), puts the
+    /// locally controlled character's avatar into
+    /// [`E_COMBAT`](crate::character::avatar::MentalState::E_COMBAT) and shows the weapon on the HUD, and
+    /// sets the wielding state, or dual-wielding for the dual-wield slot of a player. It plays
+    /// no act: the draw animation comes from the character's draw, not from here. It does
+    /// nothing for a dead character. The inventory's add calls it with the equipping mode.
+    pub unsafe fn OnEquip(
+        &mut self,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnEquip).read();
+            f(self as *mut Self as _, character)
+        }
+    }
+    /// Unequips the weapon from its user: cancels the user's reload, sets the holstered state
+    /// (which takes its bodies out of the physics world) unless it is mounted, drops it through
+    /// the user's inventory instead when it is in the heavy slot, and then stops using it
+    /// ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)). It does nothing without a user.
+    pub unsafe fn OnUnequip(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnUnequip).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Drops the weapon into the world, run by the deferred drop on the weapon's next
+    /// pre-simulation update and directly by a swimming character's pickup on the occupant of
+    /// the slot it picks into. A weapon still wielded or dual-wielded is unequipped first
+    /// ([`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip)), leaving the player's precision aim. It then sets the
+    /// dropped state, adds the bodies to the physics world and wakes them, and sets the first
+    /// gun's body velocity ([`WeaponData::m_PfxInstance`](crate::equipment::weapon::WeaponData::m_PfxInstance)) from the state the weapon was in by
+    /// then: from holstered, with a character holder, the holder's velocity plus its forward
+    /// direction scaled by the slot (forward for the two-handed slot, backward for the special
+    /// slot, none for the others); from wielding or dual-wielding, the first gun's
+    /// [`m_MeasuredWorldVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredWorldVelocity) and
+    /// [`m_MeasuredAngularVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredAngularVelocity). A non-player
+    /// holder's weapon first gets stored ammunition from the holder's dropped-magazine range.
+    /// It clears the holder and enables the weapon's pickup interaction.
+    pub unsafe fn OnDrop(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).OnDrop).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Stops the user using the weapon: stops its fire, its effects, and its components, clears
+    /// the user, and, when the weapon is wielding or dual-wielding outside the heavy slot, sets
+    /// the holstered state. A mounted gun also leaves its user's inventory, which then selects
+    /// another weapon.
+    pub unsafe fn StopUsing(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).StopUsing).read();
+            f(self as *mut Self as _)
+        }
+    }
     /// The ammunition the weapon can still use: its magazine plus the holder's inventory stock
     /// of its ammunition type. The thrown grenade weapon adds one while it holds a primed
     /// grenade ([`ThrownGrenadeWeapon::m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade)).
@@ -2900,19 +2971,59 @@ pub struct WeaponBaseVftable {
     _vfunc_31: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_32: unsafe extern "system" fn(
+    /// Takes the weapon into `holder`'s keeping (a character's or vehicle's `CGameObject`
+    /// subobject): sets the holder, and for a weapon outside the heavy slot sets the holstered
+    /// state (holstered-invisible for the hand grenade, the planted explosive, and the beacon),
+    /// which takes its bodies out of the physics world. Unless
+    /// [`m_InfinitePickup`](crate::equipment::weapon::WeaponBase::m_InfinitePickup) is set it disables the weapon's pickup
+    /// interaction and its pickup hint, and for the locally controlled character it sets the
+    /// avatar's mental state to
+    /// [`E_READY_FOR_COMBAT`](crate::character::avatar::MentalState::E_READY_FOR_COMBAT) and shows
+    /// the pickup on the HUD. The inventory's add
+    /// calls it when the weapon goes into a slot.
+    pub OnPickup: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+        holder: *mut crate::game::GameObject,
+    ),
+    /// Equips the weapon for `character`, which must hold it: shows it, runs its components'
+    /// equip, selects its slot, starts using it (the user becomes `character`), puts the
+    /// locally controlled character's avatar into
+    /// [`E_COMBAT`](crate::character::avatar::MentalState::E_COMBAT) and shows the weapon on the HUD, and
+    /// sets the wielding state, or dual-wielding for the dual-wield slot of a player. It plays
+    /// no act: the draw animation comes from the character's draw, not from here. It does
+    /// nothing for a dead character. The inventory's add calls it with the equipping mode.
+    pub OnEquip: unsafe extern "system" fn(
+        this: *mut crate::equipment::weapon::WeaponBase,
+        character: *mut crate::character::character::Character,
+    ),
+    /// Unequips the weapon from its user: cancels the user's reload, sets the holstered state
+    /// (which takes its bodies out of the physics world) unless it is mounted, drops it through
+    /// the user's inventory instead when it is in the heavy slot, and then stops using it
+    /// ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)). It does nothing without a user.
+    pub OnUnequip: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_33: unsafe extern "system" fn(
+    /// Drops the weapon into the world, run by the deferred drop on the weapon's next
+    /// pre-simulation update and directly by a swimming character's pickup on the occupant of
+    /// the slot it picks into. A weapon still wielded or dual-wielded is unequipped first
+    /// ([`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip)), leaving the player's precision aim. It then sets the
+    /// dropped state, adds the bodies to the physics world and wakes them, and sets the first
+    /// gun's body velocity ([`WeaponData::m_PfxInstance`](crate::equipment::weapon::WeaponData::m_PfxInstance)) from the state the weapon was in by
+    /// then: from holstered, with a character holder, the holder's velocity plus its forward
+    /// direction scaled by the slot (forward for the two-handed slot, backward for the special
+    /// slot, none for the others); from wielding or dual-wielding, the first gun's
+    /// [`m_MeasuredWorldVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredWorldVelocity) and
+    /// [`m_MeasuredAngularVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredAngularVelocity). A non-player
+    /// holder's weapon first gets stored ammunition from the holder's dropped-magazine range.
+    /// It clears the holder and enables the weapon's pickup interaction.
+    pub OnDrop: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
-    _vfunc_34: unsafe extern "system" fn(
-        this: *mut crate::equipment::weapon::WeaponBase,
-    ),
-    _vfunc_35: unsafe extern "system" fn(
-        this: *mut crate::equipment::weapon::WeaponBase,
-    ),
-    _vfunc_36: unsafe extern "system" fn(
+    /// Stops the user using the weapon: stops its fire, its effects, and its components, clears
+    /// the user, and, when the weapon is wielding or dual-wielding outside the heavy slot, sets
+    /// the holstered state. A mounted gun also leaves its user's inventory, which then selects
+    /// another weapon.
+    pub StopUsing: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
     _vfunc_37: unsafe extern "system" fn(
@@ -3448,7 +3559,13 @@ pub struct WeaponData {
     /// The gun's base model instance (an `NModelSystem::CModelInstance`). The render update pushes
     /// the interpolated world matrix to it.
     pub m_BaseModelInstance: *mut ::std::ffi::c_void,
-    _field_138: [u8; 16],
+    /// The gun's own rigid body. It is in the physics world only while the weapon's state keeps
+    /// the weapon's bodies there (dropped, mounted, or turret; see [`WeaponState`](crate::equipment::weapon::WeaponState)), and its id
+    /// ([`PfxRigidBody::m_BodyId`](crate::physics::PfxRigidBody::m_BodyId)) stays the same while it is out.
+    /// The weapon's drop virtual ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) sets the first gun's velocity on
+    /// it, and gives every gun's a fresh collision system group when the holder was a vehicle.
+    pub m_PfxInstance: *mut crate::physics::PfxRigidBody,
+    _field_140: [u8; 8],
     /// The gun's spare magazine: a disabled [`RigidObject`](crate::physics::RigidObject) that
     /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) turns into the dropped magazine,
     /// or null. [`SpawnMagazineObject`](crate::equipment::weapon::WeaponData::SpawnMagazineObject) requests it from the spawn

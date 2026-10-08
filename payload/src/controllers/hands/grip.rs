@@ -46,6 +46,7 @@ use crate::{
         aim::gun,
         frame::{Hand, Pose},
         hands::{ik, pose as hand_pose, tiers},
+        weapons::hold::act::{self, SnapView},
     },
 };
 
@@ -168,7 +169,8 @@ pub(crate) unsafe fn before_placement(
             // animation has no target on the tick it reaches zero, and a hand blending in has one
             // at a small weight, so keying the pin on the target switched the grip at a stroke.
             let weight = if enabled { weights[hand.index()] } else { 0.0 };
-            let read = unsafe { pin(character, controller, hand, attach, weight) };
+            let snap = act::snap_view(weapon as *const WeaponBase as usize, hand);
+            let read = unsafe { pin(character, controller, hand, attach, weight, snap) };
             let Some(read) = read else {
                 continue;
             };
@@ -293,6 +295,18 @@ pub fn blend_pin(animated: Pose, pinned: Pose, weight: f32) -> Pose {
     hand_pose::interp(animated, pinned, weight)
 }
 
+/// The attach bone's pose part of the way, `toward_hand`, from where the gun sits on its dock (the
+/// dock bone `dock` composed with the gun's pose on it, `offset`) to the hand's grip `held`, all in
+/// model space.
+pub fn docked_grip(dock: Pose, offset: Pose, held: Pose, toward_hand: f32) -> Pose {
+    let toward_hand = if toward_hand.is_finite() {
+        toward_hand.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    hand_pose::interp(hand_pose::mul(dock, offset), held, toward_hand)
+}
+
 /// The rigid part of `attach` relative to `wrist`, both model-space matrices, or `None` for a
 /// degenerate matrix.
 pub fn relative_pose(wrist: Mat4, attach: Mat4) -> Option<Pose> {
@@ -308,6 +322,22 @@ pub fn angle_deg(a: Quat, b: Quat) -> f32 {
     let delta = (a.inverse() * b).normalize();
     let delta = if delta.w < 0.0 { -delta } else { delta };
     delta.to_axis_angle().1.to_degrees()
+}
+
+/// The model-space pose of `character`'s skeleton bone `bone`, as its animation controller has it
+/// now, or `None` when the bone does not resolve.
+///
+/// # Safety
+///
+/// `character` must be live, read on the thread updating it or outside the world update.
+pub(crate) unsafe fn bone_model_pose(character: &Character, bone: SafeBoneIndex) -> Option<Pose> {
+    let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() }?;
+    let index = unsafe { character.GetSafeIndex(bone) };
+    if index == 0 {
+        return None;
+    }
+    let pose = unsafe { joint_pose(controller, index) };
+    (pose.position.is_finite() && pose.orientation.is_finite()).then_some(pose)
 }
 
 /// One gun a placement covers.
@@ -348,14 +378,16 @@ fn held_weapons<'a>(
 
 /// Read `hand`'s wrist and the gun's attach bone `attach`, and with a `weight` above zero, write
 /// the attach bone onto the wrist at the hand's canonical grip, blended from the animated pose by
-/// the weight ([`blend_pin`]). `None` when a bone does not resolve or the skeleton gives no
-/// canonical grip.
+/// the weight ([`blend_pin`]). While a `snap` moves the gun between its dock and the hand, the grip
+/// is first carried from the gun's pose on the dock bone toward the hand by the snap's progress.
+/// `None` when a bone does not resolve or the skeleton gives no canonical grip.
 unsafe fn pin(
     character: &Character,
     controller: &mut AnimationController,
     hand: Hand,
     attach: SafeBoneIndex,
     weight: f32,
+    snap: Option<SnapView>,
 ) -> Option<PinRead> {
     let (wrist_safe, primary_safe) = match hand {
         Hand::Left => (SafeBoneIndex::LEFT_HAND, SafeBoneIndex::ATTACH_HAND_LEFT),
@@ -383,7 +415,13 @@ unsafe fn pin(
     let animated_in_wrist = (wrist.orientation.inverse() * animated.orientation).normalize();
     let animated_deviation_deg = angle_deg(animated_in_wrist, offset.orientation);
     let wrist_scale = Vec3::from_array(wrist_joint.m_Scale.data);
-    let pinned_pose = blend_pin(animated, pinned_attach(wrist, wrist_scale, offset), weight);
+    let mut held = pinned_attach(wrist, wrist_scale, offset);
+    if let Some(snap) = snap
+        && let Some(dock) = unsafe { bone_model_pose(character, snap.dock) }
+    {
+        held = docked_grip(dock, snap.offset, held, snap.toward_hand);
+    }
+    let pinned_pose = blend_pin(animated, held, weight);
     let pinned =
         weight > 0.0 && pinned_pose.position.is_finite() && pinned_pose.orientation.is_finite();
     if pinned {
@@ -532,6 +570,22 @@ mod tests {
                 in_wrist(turned, c).orientation
             ) < 1e-2
         );
+    }
+
+    #[test]
+    fn a_docked_grip_slides_from_the_dock_to_the_hand() {
+        let dock = pose(Vec3::new(0.2, 1.2, -0.1), Quat::from_rotation_z(0.6));
+        let offset = pose(Vec3::new(0.0, 0.1, 0.0), Quat::from_rotation_x(0.3));
+        let held = pose(Vec3::new(0.4, 1.0, 0.3), Quat::from_rotation_y(1.0));
+        let on_dock = hand_pose::mul(dock, offset);
+        let at = |t| docked_grip(dock, offset, held, t);
+        assert!(at(0.0).position.distance(on_dock.position) < 1e-5);
+        assert!(angle_deg(at(0.0).orientation, on_dock.orientation) < 1e-2);
+        assert!(at(1.0).position.distance(held.position) < 1e-5);
+        let half = at(0.5).position;
+        assert!(half.distance((on_dock.position + held.position) / 2.0) < 1e-5);
+        // A bad progress puts the gun in the hand.
+        assert!(at(f32::NAN).position.distance(held.position) < 1e-5);
     }
 
     #[test]

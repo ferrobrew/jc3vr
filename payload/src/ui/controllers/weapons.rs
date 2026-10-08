@@ -29,7 +29,11 @@ use crate::{
             grip_watch::{self, GripWatchStatus},
             haptics::{self, HapticsStatus},
             heft::{self, HeftStatus},
-            hold::{self, HoldStatus},
+            hold::{
+                self, HoldStatus,
+                act::{self, DockStatus},
+                dock::SnapKind,
+            },
             holster::slot_label,
             recoil::{self, RecoilStatus},
             reload::{self, ReloadStatus},
@@ -52,6 +56,7 @@ pub(super) struct WeaponsReadout {
     haptics: HapticsStatus,
     dual_wield: DualWieldStatus,
     hold: HoldStatus,
+    dock: DockStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
     grenade: GrenadeStatus,
@@ -74,6 +79,7 @@ impl WeaponsReadout {
             haptics: haptics::status(),
             dual_wield: dual_wield::status(),
             hold: hold::status(),
+            dock: act::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
             grenade: grenade::status(),
@@ -156,7 +162,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         }
     });
     dual_wield_readout(ui, &readout.dual_wield);
-    hold_readout(ui, &readout.hold);
+    hold_readout(ui, &readout.hold, &readout.dock);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
     explosives_readout(ui, &readout.explosives);
@@ -271,7 +277,7 @@ fn dual_wield_readout(ui: &mut Ui, d: &DualWieldStatus) {
     ));
 }
 
-fn hold_readout(ui: &mut Ui, h: &HoldStatus) {
+fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
     ui.label(format!(
         "Hold: weapon in {} · bones owned {} · waiting {} · handovers {} · writes {} · snaps {}",
         h.holder.map_or("no hand", Hand::label),
@@ -290,6 +296,17 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus) {
         h.pickups,
         h.pickup_fallbacks,
         h.last_pickup_refusal.as_deref().unwrap_or("none")
+    ));
+    ui.label(format!(
+        "Docking: sliding {} · grip holds the gun in {} · draws {} · holsters {} · drops {} · last throw {} · last refusal: {}",
+        d.snapping.map_or("nothing", SnapKind::label),
+        d.grip_holds.map_or("no hand", Hand::label),
+        d.draws,
+        d.holsters,
+        d.drops,
+        d.last_throw_mps
+            .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s")),
+        d.last_refusal.map_or("none".to_owned(), |r| r.to_string())
     ));
 }
 
@@ -631,6 +648,25 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
             .on_hover_text("A grip press by the free hand at the held gun's grip takes the gun.");
         ui.add(egui::Slider::new(&mut h.handle_radius_m, 0.02..=0.2).text("Gun grip radius (m)"));
     });
+    ui.add_enabled_ui(h.either_hand, |ui| {
+        ui.checkbox(
+            &mut h.instant_dock,
+            "Draw and holster long guns without the game's animation",
+        )
+        .on_hover_text("The gun slides between the shoulder and the hand as one object.");
+        ui.add(egui::Slider::new(&mut h.snap_s, 0.0..=0.5).text("Slide time (s)"));
+        ui.checkbox(&mut h.grip_to_hold, "Hold the grip to hold a gun")
+            .on_hover_text(
+                "Opening the grip on a gun taken by a grab holsters it at its own holster and \
+                 lets it fall anywhere else.",
+            );
+        ui.add(egui::Slider::new(&mut h.max_throw_mps, 0.0..=30.0).text("Fastest throw (m/s)"));
+    });
+    ui.checkbox(
+        &mut h.drop_replaced,
+        "A pickup lets the replaced weapon fall",
+    )
+    .on_hover_text("The weapon a direct pickup replaces in its slot falls to the ground.");
     ui.checkbox(
         &mut h.direct_pickup,
         "Pick weapons up straight into the hand",

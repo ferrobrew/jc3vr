@@ -109,7 +109,10 @@ use crate::{
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
             haptics::PulseSource,
-            hold::holder::Cause,
+            hold::{
+                dock::{self, Release},
+                holder::Cause,
+            },
             holster::HolsterAction,
             volumes::{ChestGrabbers, HeadDrop, NearMiss, Stance},
         },
@@ -500,7 +503,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 let independent =
                     config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
                 match holster::decide(site, hand, config.acting_hand(), wielded, independent) {
-                    Some(action) => act(action, hand, independent, desired),
+                    Some(action) => act(action, hand, &config, desired),
                     None => continue,
                 }
             }
@@ -539,6 +542,19 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     }
     if gameplay {
         log_near_misses(&grabs, &grips);
+    }
+    let holder = weapon.and_then(|(w, _)| w.holder);
+    let released = hold::act::release_tick(holder, grips.map(ButtonControl::held))
+        .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
+    if let (Some(hand), Some((w, _))) = (released, weapon) {
+        let volumes = STATE.lock().status.volumes;
+        let at_own_holster = matches!(
+            volumes[hand.index()],
+            Some(GrabVolume::Holster(site))
+                if holster::site_slot(site, config.acting_hand()) == w.wielded.slot
+        );
+        let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD;
+        release(hand, dock::on_release(at_own_holster, droppable), &config);
     }
 
     grenade::input_tick(
@@ -592,6 +608,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             .all(|h| !gun_hands[h.index()] || reload_held[h.index()]);
 
     let fire_blocked = reload_blocks
+        || hold::act::holstering()
         || dominant_trigger_unarmed(weapon.map(|(w, _)| w), config.acting_hand(), &triggers)
         || (config.weapons.block_fire_during_actions
             && weapon_action_running(weapon.and_then(|(w, _)| w.holder).unwrap_or(gun_side)));
@@ -621,6 +638,7 @@ pub(crate) fn stand_down() {
     dual_wield::observe_triggers(None);
     dual_wield::attach::clear();
     hold::clear();
+    hold::act::clear();
     reload::stand_down();
     wheel::stand_down();
     let mut state = STATE.lock();
@@ -896,9 +914,46 @@ fn dominant_trigger_unarmed(
     })
 }
 
-/// Carry out `hand`'s holster decision. With `independent` pistol draws, a draw of the dual-wield
-/// slot brings out only `hand`'s pistol.
+/// Carry out `hand`'s holster decision. With independent pistol draws, a draw of the dual-wield
+/// slot brings out only `hand`'s pistol. With `hold.instant_dock`, a long gun is drawn and
+/// holstered without the game's acts ([`hold::act`]), falling back to the game's when that is
+/// refused.
 fn act(
+    action: HolsterAction,
+    hand: Hand,
+    config: &ControllersConfig,
+    desired: &mut Vec<Desired>,
+) -> GrabOutcome {
+    let independent = config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
+    let settings = &config.weapons.hold;
+    let instant = settings.either_hand && settings.instant_dock;
+    match action {
+        HolsterAction::Draw { slot, .. } if instant && hold::equip::handles(slot) => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::draw(hand, slot, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the draw falls back to the game's");
+                    return act_with_game(action, hand, independent, desired);
+                }
+            }
+        }
+        HolsterAction::Holster { slot } if instant && hold::equip::handles(slot) => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            match unsafe { hold::act::holster(hand, settings.snap_s) } {
+                Ok(()) => return GrabOutcome::Holster(action),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the holster falls back to the game's");
+                }
+            }
+        }
+        _ => {}
+    }
+    act_with_game(action, hand, independent, desired)
+}
+
+/// Carry out `hand`'s holster decision through the game's own draw and holster.
+fn act_with_game(
     action: HolsterAction,
     hand: Hand,
     independent: bool,
@@ -939,6 +994,29 @@ fn act(
         HolsterAction::AlreadyDrawn { .. } | HolsterAction::Refused { .. } => {}
     }
     GrabOutcome::Holster(action)
+}
+
+/// Carry out what opening `hand`'s grip on its gun does: holster it (without the game's act with
+/// `hold.instant_dock`, through the game's holster otherwise), or let it fall.
+fn release(hand: Hand, what: Release, config: &ControllersConfig) {
+    let settings = &config.weapons.hold;
+    match what {
+        Release::Holster => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            let instant = settings.instant_dock
+                && unsafe { hold::act::holster(hand, settings.snap_s) }.is_ok();
+            if !instant && let Some(owner) = unsafe { engine::local_player() } {
+                unsafe { engine::holster(owner) };
+            }
+        }
+        Release::Drop => {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            if let Err(refusal) = unsafe { hold::act::drop_held(hand, settings.max_throw_mps) } {
+                tracing::debug!(target: "controllers", %refusal, "hold: the gun was not let go of");
+            }
+        }
+        Release::Keep => {}
+    }
 }
 
 /// Drop the fire inputs from the tables' output.

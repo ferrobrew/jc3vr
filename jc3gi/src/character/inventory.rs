@@ -54,7 +54,16 @@ pub struct Inventory {
     /// without the planted-explosives ability. One half of
     /// [`GetAnimationAllowsTriggeringExplosives`](crate::character::inventory::Inventory::GetAnimationAllowsTriggeringExplosives).
     pub m_DoesAnimationAllowTriggeringExplosives: bool,
-    _field_18c: [u8; 6],
+    _field_18c: [u8; 1],
+    /// Whether the current animation permits holstering the wielded weapon; one half of
+    /// [`GetAnimationAllowsHolstering`](crate::character::inventory::Inventory::GetAnimationAllowsHolstering).
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) holsters on the holster input only
+    /// while it is set, and defers the holster otherwise.
+    pub m_DoesAnimationAllowHolstering: bool,
+    /// Whether the current animation permits drawing a weapon; one half of
+    /// [`GetAnimationAllowsDrawing`](crate::character::inventory::Inventory::GetAnimationAllowsDrawing).
+    pub m_DoesAnimationAllowDrawing: bool,
+    _field_18f: [u8; 3],
     /// Whether the current animation permits the weapon-selection input; one half of
     /// [`GetAnimationAllowsSwitchWeaponGUI`](crate::character::inventory::Inventory::GetAnimationAllowsSwitchWeaponGUI).
     pub m_DoesAnimationAllowSwitchWeaponGUI: bool,
@@ -378,6 +387,33 @@ impl Inventory {
             f(self as *const Self as _)
         }
     }
+    pub const GetAnimationAllowsDrawing_ADDRESS: usize = 0x1408BB840;
+    /// Whether the character may draw a weapon:
+    /// [`m_DoesAnimationAllowDrawing`](crate::character::inventory::Inventory::m_DoesAnimationAllowDrawing) is set and the owner's
+    /// [`SB_DISABLE_DRAW_WEAPON`](crate::state::StateBitFlag::SB_DISABLE_DRAW_WEAPON) state bit is clear.
+    /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) commits a slot selection with nothing
+    /// wielded only while it holds.
+    pub unsafe fn GetAnimationAllowsDrawing(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsDrawing_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetAnimationAllowsHolstering_ADDRESS: usize = 0x1408BB870;
+    /// Whether the character may holster the wielded weapon:
+    /// [`m_DoesAnimationAllowHolstering`](crate::character::inventory::Inventory::m_DoesAnimationAllowHolstering) is set and the
+    /// owner's [`SB_DISABLE_HOLSTER_WEAPON`](crate::state::StateBitFlag::SB_DISABLE_HOLSTER_WEAPON) state
+    /// bit is clear.
+    pub unsafe fn GetAnimationAllowsHolstering(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetAnimationAllowsHolstering_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const GetAnimationAllowsSwitchWeaponGUI_ADDRESS: usize = 0x1408BB750;
     /// Whether the weapon-selection input is read:
     /// [`m_DoesAnimationAllowSwitchWeaponGUI`](crate::character::inventory::Inventory::m_DoesAnimationAllowSwitchWeaponGUI) is set
@@ -466,6 +502,29 @@ impl Inventory {
                 Self::UpdateInventoryPostFinalizePose_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const DropWeapon_ADDRESS: usize = 0x140932710;
+    /// Drops the weapon in `slot` into the world: clears the slot at once, stops using the weapon
+    /// when it is wielding or dual-wielding ([`WeaponBase::StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing),
+    /// which holsters any weapon but a heavy one), and defers the drop itself
+    /// ([`WeaponBase::OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) to the weapon's next
+    /// pre-simulation update. With `select_valid` set and `slot` selected, it then selects another
+    /// weapon. An empty slot is left as it is. The inventory's add drops the
+    /// occupant of a slot this way when the slot's drop flag is set, and the character drops a
+    /// heavy weapon this way when its holster or cancel input is clicked.
+    pub unsafe fn DropWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+        select_valid: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+                select_valid: bool,
+            ) = ::std::mem::transmute(Self::DropWeapon_ADDRESS);
+            f(self as *mut Self as _, slot, select_valid)
         }
     }
     pub const UpdateAttachmentEffects_ADDRESS: usize = 0x1408C6D30;

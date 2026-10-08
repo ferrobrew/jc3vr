@@ -57,10 +57,12 @@ mod touch;
 mod world;
 
 use std::{
+    num::NonZeroUsize,
     sync::atomic::{AtomicU32, Ordering},
     time::{Duration, Instant},
 };
 
+pub use bodies::BodyError;
 pub use config::PhysicalHandsConfig;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
@@ -225,6 +227,21 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
 ///
 /// `character` must be the live local player character, after the locomotion task wrote its
 /// velocity.
+/// Give the dynamic body `body` the velocities `linear` and `angular`, world space, after checking
+/// it still belongs to `owner`: a dropped weapon leaving the hand with the hand's motion.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn set_body_velocities(
+    body: u32,
+    owner: NonZeroUsize,
+    linear: Vec3,
+    angular: Vec3,
+) -> Result<(), BodyError> {
+    unsafe { bodies::drive(body, owner, rigid::Velocities { linear, angular }) }
+}
+
 pub(crate) unsafe fn push_body(character: &mut Character) {
     let enabled = Config::lock_query(|c| {
         c.controllers.physical_hands.enabled && c.controllers.physical_hands.push
