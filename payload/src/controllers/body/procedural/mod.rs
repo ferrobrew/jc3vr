@@ -46,7 +46,7 @@ use std::{
 use glam::{Mat4, Vec2, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
-    character::character::{AnimationController, Character},
+    character::character::{AimState, AnimationController, Character},
 };
 use parking_lot::Mutex;
 
@@ -239,7 +239,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let rig = &live.rig;
     let animated = unsafe { live.read(controller) };
     let locomotion = locomotion_status();
-    state.observe_stance(&animated, &locomotion, dt);
+    let aiming = character
+        .m_AimFlags
+        .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
+    state.observe_stance(&animated, rig, locomotion.standing_still() && !aiming, dt);
     match config.mode {
         ProceduralMode::Off => false,
         ProceduralMode::PassThrough => {
@@ -542,13 +545,16 @@ impl State {
         lookup.rig
     }
 
-    /// Measure the neutral stance from the animated feet once Rico has stood still for a moment.
-    fn observe_stance(&mut self, animated: &RigPose, locomotion: &LocomotionStatus, dt: f32) {
-        let feet = [RigBone::LeftFoot, RigBone::RightFoot].map(|bone| StanceFoot {
+    /// Measure the neutral stance from the animated feet once Rico has stood still, not aiming,
+    /// for a moment.
+    fn observe_stance(&mut self, animated: &RigPose, rig: &Rig, still: bool, dt: f32) {
+        let bones = [RigBone::LeftFoot, RigBone::RightFoot];
+        let feet = bones.map(|bone| StanceFoot {
             position: animated.position(bone),
             rotation: animated.get(bone).rotation,
         });
-        if let Some(stance) = self.stance.observe(feet, locomotion.standing_still(), dt) {
+        let reference = bones.map(|bone| rig.reference(bone).rotation);
+        if let Some(stance) = self.stance.observe(feet, reference, still, dt) {
             tracing::info!(
                 target: "body",
                 left = ?stance[0].position,

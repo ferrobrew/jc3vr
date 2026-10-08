@@ -75,7 +75,7 @@ A crouch is the head going down: the hips follow it to `min_hips_height`, the kn
 
 The feet's places come from `solver::feet` (with `plant_feet`, the default). Each foot holds its place and orientation in the world while the body moves and turns above it, so the roomscale chase moving the root, the body turning to follow the torso, and the idle's own foot shuffle never slide it.
 
-The feet stand around a neutral stance: the animated feet once Rico has stood still for half a second, measured once per rig and made symmetric about the root (`procedural body: measured the neutral stance (model space)`, info level). Until then, the animated feet stand in for it while standing, and the reference pose's while moving. A foot's wanted place is the stance carried by the root.
+The feet stand around a neutral stance: the animated feet once Rico has stood still, not aiming, on level ground (the feet within a few centimetres of each other's height) for half a second, measured once per rig and made symmetric about the root. The feet's turns are kept only as a toe-out mirrored about the root, measured against the reference pose's feet, so an idle's twist of one foot and a slope's tilt do not stay in the stance (`procedural body: measured the neutral stance (model space)`, info level). Until then, the animated feet stand in for it while standing, and the reference pose's while moving. A foot's wanted place is the stance carried by the root.
 
 Standing, a foot steps to its wanted place once it is more than `step_threshold_m` away horizontally or `step_turn_deg` turned. One foot steps at a time, the worse one first, over `step_duration_s` on an eased arc lifted `step_height_m` at its middle, and lands wherever its wanted place has moved to meanwhile.
 
