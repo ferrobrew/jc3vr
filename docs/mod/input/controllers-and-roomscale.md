@@ -25,7 +25,7 @@ The following decisions are settled and the rest of the plan assumes them.
 - Handedness is configurable. A `dominant_hand` setting mirrors the gun and grapple hands, the bindings, and the weapon attach bones. The grapple gauntlet stays on Rico's left arm model in the mirrored layout, so the grapple fires from the gauntlet on the non-dominant arm cosmetically.
 - The aim state is pinned clear for the local player (see "The aim-state pin").
 - The combat mental state keeps running for the AI, and its effects on the player's body are removed: no automatic draw and no automatic holster.
-- Guns are sticky. A drawn gun stays in the hand until the player holsters it. Grip inputs differ between controllers (an analog grip on Touch, a force-sensing grip on Index, a binary grip button on older wands), and holding a grip for minutes is tiring on all of them, so the grip is used only as an edge: press to grab, press to grapple.
+- Guns are sticky. A drawn gun stays in the hand until the player holsters it. Grip inputs differ between controllers (an analog grip on Touch, a force-sensing grip on Index, a binary grip button on older wands), and holding a grip for minutes is tiring on all of them, so the grip is used only as an edge: press to grab, press to grapple. The foregrip is the one exception, held while the grip is held as a real foregrip is (a setting restores the edge).
 - The left grip fires the grapple, except inside a grab volume (a foregrip, a holster, a wheel), where it grabs. The grapple keeps the game's native tap and hold semantics, and a yank gesture on the left hand is an alternate zip trigger.
 - Two-handed weapons are held by the dominant hand alone. The off-hand can grab the foregrip, and the line between the two hands then sets the weapon's direction.
 - Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its own hand.
@@ -327,7 +327,7 @@ The holsters are grab volumes on the body: the hips for pistols, over the should
 
 ### Two-handed weapons
 
-A two-handed weapon rides the dominant hand's attach bone and aims by that hand alone. The foregrip is a grab volume for the off-hand. While the off-hand holds the foregrip, the weapon's direction is the line from the dominant hand to the off-hand, the off-hand's wrist is IK-pinned to the foregrip, and the recoil spring stiffens. The off-hand releases the foregrip with a grip press or by moving well away from it. The engine's own secondary-hand grip IK (`UpdateSecondaryHandIKPass`) is suppressed for the off-hand, so that the engine does not pull the hand onto the foregrip on its own.
+A two-handed weapon rides the dominant hand's attach bone and aims by that hand alone. The foregrip is a grab volume for the off-hand. While the off-hand holds the foregrip, the weapon's direction is the line from the dominant hand to the off-hand, the off-hand's wrist is IK-pinned to the foregrip, and the recoil spring stiffens. The off-hand holds the foregrip while its grip is held and releases it by opening the grip (or, with the grip a toggle, by a second press), or by moving well away from it. This is the one hold of the grip: a foregrip is held the way a real one is, and letting go of it is the natural release. The engine's own secondary-hand grip IK (`UpdateSecondaryHandIKPass`) is suppressed for the off-hand, so that the engine does not pull the hand onto the foregrip on its own.
 
 ### Reloads
 
@@ -496,7 +496,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Part | Settings | State |
 |---|---|---|
 | Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.12 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.09 m), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `overlay.grab_volumes`; the pouches under `pouches`: `grenade` and `c4` (0.075 m, on either side of the chest, for either hand with no gun drawn and the free hand otherwise; `grenade_side` picks the grenades' side by the gun hand), `magazine` (0.075 m, at the front of the free hand's hip, for the free hand), `reach_margin_m` (0.05 m), and `show` (on) | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
-| The two-handed foregrip | `foregrip.enabled`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
+| The two-handed foregrip | `foregrip.enabled`, `foregrip.hold`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.game_rumble`, `haptics.grapple` | Built. |

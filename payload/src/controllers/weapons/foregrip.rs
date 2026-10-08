@@ -23,8 +23,9 @@
 //! measured on the input tick from the gun's last placement and the wrist target it was placed from
 //! ([`GripGeometry`]), and frozen for the length of a hold.
 //!
-//! The grip ends on the off-hand's next grip press, when the off-hand moves further than the release
-//! distance from the foregrip, or when the weapon leaves the hands. Engaging and releasing blend
+//! The grip ends when the off-hand lets go of its grip ([`ForegripConfig::hold`], the default), or
+//! with the grip a toggle, on its next grip press; when the off-hand moves further than the release
+//! distance from the foregrip; or when the weapon leaves the hands. Engaging and releasing blend
 //! over the configured time.
 
 use glam::{Quat, Vec3};
@@ -65,8 +66,10 @@ pub struct Hold {
 /// Why a hold ended.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Release {
-    /// The off-hand pressed its grip again.
+    /// The off-hand pressed its grip again, with the grip a toggle.
     GripPress,
+    /// The off-hand let go of its grip, with the grip held to hold ([`ForegripConfig::hold`]).
+    GripLetGo,
     /// The off-hand moved away from the foregrip.
     MovedAway,
     /// The weapon left the hands, or another weapon was drawn.
@@ -79,6 +82,7 @@ impl Release {
     pub const fn label(self) -> &'static str {
         match self {
             Release::GripPress => "grip press",
+            Release::GripLetGo => "grip let go",
             Release::MovedAway => "moved away",
             Release::WeaponGone => "weapon gone",
             Release::HandsGone => "hands gone",
@@ -258,6 +262,9 @@ pub struct Inputs {
     pub weapon: Option<TwoHandedWeapon>,
     /// Whether the off-hand pressed its grip in the foregrip volume this tick.
     pub grab_pressed: bool,
+    /// Whether the off-hand's grip is held, which keeps a hold under
+    /// [`ForegripConfig::hold`].
+    pub grip_held: bool,
 }
 
 /// A two-handed weapon in the hands.
@@ -298,7 +305,8 @@ pub fn step(
             inputs.hands[h.holder.index()],
             inputs.hands[h.holder.other().index()],
         ) {
-            _ if inputs.grab_pressed => Some(Release::GripPress),
+            _ if config.hold && !inputs.grip_held => Some(Release::GripLetGo),
+            _ if !config.hold && inputs.grab_pressed => Some(Release::GripPress),
             (Some(holder), Some(off)) => moved_away(h, holder, off, config),
             _ => Some(Release::HandsGone),
         },
@@ -432,6 +440,7 @@ mod tests {
     fn config() -> ForegripConfig {
         ForegripConfig {
             blend_s: 0.0,
+            hold: false,
             ..ForegripConfig::new()
         }
     }
@@ -449,6 +458,7 @@ mod tests {
                 geometry: Some(RIFLE),
             }),
             grab_pressed: grab,
+            grip_held: true,
         }
     }
 
@@ -579,6 +589,34 @@ mod tests {
     }
 
     #[test]
+    fn a_held_grip_holds_and_letting_go_releases() {
+        let config = ForegripConfig {
+            hold: true,
+            ..config()
+        };
+        let near = Vec3::new(0.0, 0.0, -0.4);
+        let held = |grab, grip_held| Inputs {
+            grip_held,
+            ..inputs(near, grab)
+        };
+        let (hold, t) = step(None, &held(true, true), DT, &config);
+        assert_eq!(t, Some(Transition::Grabbed));
+        // Held, the hold stays, and a press while held (a re-squeeze) does not let go.
+        let (hold, t) = step(hold, &held(false, true), DT, &config);
+        assert_eq!(t, None);
+        let (hold, t) = step(hold, &held(true, true), DT, &config);
+        assert_eq!(t, None);
+        assert!(hold.unwrap().engaged);
+        // Opening the hand lets go.
+        let (gone, t) = step(hold, &held(false, false), DT, &config);
+        assert_eq!(t, Some(Transition::Released(Release::GripLetGo)));
+        assert_eq!(gone, None);
+        // A grip that is not held never keeps a hold, and a grab needs a press.
+        let (none, t) = step(None, &held(false, true), DT, &config);
+        assert_eq!((none, t), (None, None));
+    }
+
+    #[test]
     fn sliding_along_the_barrel_holds_until_the_release_distance() {
         let config = config();
         let near = Vec3::new(0.0, 0.0, -0.4);
@@ -624,7 +662,7 @@ mod tests {
     fn the_grip_blends_in_and_out() {
         let config = ForegripConfig {
             blend_s: 0.1,
-            ..ForegripConfig::new()
+            ..config()
         };
         let near = Vec3::new(0.0, 0.0, -0.4);
         let (hold, _) = step(None, &inputs(near, true), 0.05, &config);

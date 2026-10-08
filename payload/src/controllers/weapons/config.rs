@@ -202,6 +202,9 @@ pub struct ForegripConfig {
     /// the foregrip, and the hold lets go once that passes the release distance, so an off-hand
     /// that crosses behind the holding hand cannot spin the weapon round.
     pub max_turn_deg: f32,
+    /// Hold the foregrip only while the off-hand's grip is held, letting go when it opens, as a
+    /// real foregrip is held. Off, the grip is a toggle: a press grabs and the next press lets go.
+    pub hold: bool,
 }
 
 impl ForegripConfig {
@@ -214,6 +217,7 @@ impl ForegripConfig {
             fallback_distance_m: 0.32,
             min_span_m: 0.08,
             max_turn_deg: 70.0,
+            hold: true,
         }
     }
 }

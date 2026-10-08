@@ -671,6 +671,7 @@ fn foregrip_settings(ui: &mut Ui, f: &mut ForegripConfig) {
     );
     ui.add(egui::Slider::new(&mut f.min_span_m, 0.0..=0.3).text("Shortest span (m)"));
     ui.add(egui::Slider::new(&mut f.max_turn_deg, 10.0..=180.0).text("Largest turn (°)"));
+    ui.checkbox(&mut f.hold, "Hold the grip to hold the foregrip");
 }
 
 fn heft_settings(ui: &mut Ui, h: &mut HeftConfig) {

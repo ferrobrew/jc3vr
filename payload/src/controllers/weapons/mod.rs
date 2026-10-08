@@ -436,6 +436,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         weapon: two_handed,
         grab_pressed: foregrip_grab
             .is_some_and(|hand| two_handed.is_some_and(|w| w.holder.other() == hand)),
+        grip_held: two_handed.is_some_and(|w| grips[w.holder.other().index()].held()),
     };
     let transition = foregrip::tick(&inputs, dt, &config.weapons.foregrip);
     // A release pulses the off-hand whatever ended the hold: a press, a move away, or the weapon

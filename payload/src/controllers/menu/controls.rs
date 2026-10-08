@@ -211,6 +211,11 @@ fn settings_page() -> Page {
             .weapons
             .foregrip
             .enabled))
+        .item(config_toggle!("HOLD GRIP TO HOLD FOREGRIP", |c| c
+            .controllers
+            .weapons
+            .foregrip
+            .hold))
         .item(config_toggle!("RECOIL", |c| c
             .controllers
             .weapons
