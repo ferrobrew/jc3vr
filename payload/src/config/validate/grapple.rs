@@ -1,7 +1,7 @@
 //! Checks for the physical grapple.
 
 use crate::{
-    config::validate::{Invalid, nonnegative, positive, pulse, range},
+    config::validate::{Invalid, nonnegative, positive, range},
     grapple::physical::PhysicalGrappleConfig,
 };
 
@@ -35,20 +35,7 @@ pub(super) fn grapple(c: &PhysicalGrappleConfig) -> Result<(), Invalid> {
     range("grapple.swing.scale", c.swing.scale, -10.0, 10.0)?;
     nonnegative("grapple.swing.max_scale", c.swing.max_scale, 10.0)?;
     nonnegative("grapple.swing.smoothing_s", c.swing.smoothing_s, 10.0)?;
-    range(
-        "grapple.haptics.tension_amplitude",
-        c.haptics.tension_amplitude,
-        0.0,
-        1.0,
-    )?;
-    range(
-        "grapple.haptics.reel_amplitude",
-        c.haptics.reel_amplitude,
-        0.0,
-        1.0,
-    )?;
-    positive("grapple.haptics.pulse_s", c.haptics.pulse_s, 1.0)?;
-    pulse("grapple.haptics.retract", &c.haptics.retract)
+    Ok(())
 }
 
 #[cfg(test)]

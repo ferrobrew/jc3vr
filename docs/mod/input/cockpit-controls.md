@@ -24,11 +24,11 @@ The plane has no nitrous input of its own: its input reader ([`AirPlane::UpdateV
 
 ## Haptic cues
 
-The held sticks and levers give their hand a cue (`PulseSource::VehicleControl`), each firing once as the control reaches it and re-armed only once the control has left it by a tenth of its travel, so a hand resting at a stop or wobbling about neutral does not buzz:
+The held sticks and levers give their hand a cue of the vehicles category ([haptics.md](haptics.md)), each firing once as the control reaches it and re-armed only once the control has left it by a tenth of its travel, so a hand resting at a stop or wobbling about neutral does not buzz:
 
-- a bump when a stick reaches its full deflection or a lever the end of its travel;
-- a light detent when a lever comes back to neutral or passes it: the throttle's idle and the collective's middle;
-- a firm click when the throttle goes into its gate and when it comes back out, with a little hysteresis on the way out.
+- a bump (`Event::ControlStop`) when a stick reaches its full deflection or a lever the end of its travel;
+- a tick (`Event::ControlNeutral`) when a lever comes back to neutral or passes it: the throttle's idle and the collective's middle;
+- a firm bump (`Event::ThrottleGate`) when the throttle goes into its gate and when it comes back out, with a little hysteresis on the way out.
 
 One cue fires a tick. A lever that passes neutral on the tick it leaves the gate cues neutral on the next.
 
@@ -75,7 +75,7 @@ Each press of a button and each twist that burns the nitrous logs `the hand work
 
 ## Headset checklist
 
-1. In a plane's driver's seat, take the throttle and push it forward: the thrust rises, and near the front a firm click marks the gate. Through it, with the nitrous upgrade, the afterburner lights; the log has `the throttle went through its afterburner gate`. Pull back out: a click, and the afterburner goes out. Push on to the stop: a bump.
+1. In a plane's driver's seat, take the throttle and push it forward: the thrust rises, and near the front a firm bump marks the gate. Through it, with the nitrous upgrade, the afterburner lights; the log has `the throttle went through its afterburner gate`. Pull back out: a click, and the afterburner goes out. Push on to the stop: a bump.
 2. Let go of the throttle at half: the plane keeps that thrust. Press the right trigger: the trigger flies the plane; let go of the trigger and the throttle's thrust comes back. Pull the throttle back through idle into the brake: a light click at idle.
 3. Take the stick off-centre and fly: no jump at the grab; a small tremor does not move the plane; full deflection gives a bump. Let go mid-roll: the stick and the plane come back level over a fraction of a second. Take the stick again while it returns: no jump.
 4. Twist the held stick to the right: the plane yaws right, and the VR: STATUS row shows a positive rudder. With `TWIST FLIGHT STICK FOR RUDDER` off, twisting does nothing and the thumbstick's rudder works.

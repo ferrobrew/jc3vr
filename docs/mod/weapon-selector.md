@@ -22,11 +22,11 @@ At the open, the steering hand's pose is recorded. Each tick its deflection from
 
 An arm stays chosen until the hand is `hysteresis_deg` past the line to the next one. An arm whose slot the game does not offer counts as the centre: the cross draws no arm there, and the game would record nothing for it. The offer comes from the selection the game last pushed to its HUD ([`HUDUI::m_LastWeaponSelectionParams`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##field-m_LastWeaponSelectionParams)), since the planted explosive's offer depends on more than its slot holding a weapon.
 
-The wheel holds exactly one slot-select action from the open to the close, and switches which one within a single tick, so no tick has all four at zero (which the game reads as a release). In the centre it holds the resting slot: the wielded weapon's arm when the game offers it, which the game records as no change; with nothing on the cross wielded, the selected slot's arm, or the first offered one. A trackpad quadrant's arm is chosen in the centre until the hand first leaves it. Each change of choice pulses the steering hand with `tick`, as does the open.
+The wheel holds exactly one slot-select action from the open to the close, and switches which one within a single tick, so no tick has all four at zero (which the game reads as a release). In the centre it holds the resting slot: the wielded weapon's arm when the game offers it, which the game records as no change; with nothing on the cross wielded, the selected slot's arm, or the first offered one. A trackpad quadrant's arm is chosen in the centre until the hand first leaves it. Each change of choice plays `Event::WheelTick` on the steering hand ([input/haptics.md](input/haptics.md)), as does the open.
 
 ## Closing
 
-Releasing the opener stops the hold. On an arm other than the wielded weapon's, the game commits: it switches or draws on its next update, or keeps the selection pending and retries while the animation forbids a switch. The commit pulses the steering hand with `commit`.
+Releasing the opener stops the hold. On an arm other than the wielded weapon's, the game commits: it switches or draws on its next update, or keeps the selection pending and retries while the animation forbids a switch. The commit plays `Event::WheelCommit` on the steering hand.
 
 Anything else cancels: a release in the centre or on the wielded weapon's arm, the game's input closing while open, a change of mode (a vehicle, the wingsuit, swimming), a game menu, or the bindings standing down. A release in the centre with nothing wielded would draw the resting slot, and a menu or a closing input would let the game commit the pending selection when its input reads zero again, so a cancel clears the game's pending selection ([`Inventory::m_SlotToSelectOnRelease`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_SlotToSelectOnRelease)) on that input tick and the next few, in case the game read a select input that was still held on its next update. The input tick runs before the game's update, so the clear lands before the commit check.
 
@@ -40,7 +40,7 @@ With the HUD atlas on (`hud.atlas.enabled` and `hud.atlas.cross.enabled`), the c
 
 ## Settings
 
-`controllers.weapons.wheel`: `enabled`, `trackpad`, `stick`, `stick_open`, `stick_release`, `steer`, `point_leave_deg`, `point_return_deg`, `offset_leave_m`, `offset_return_m`, `hysteresis_deg`, `place_at_hand`, `tick`, and `commit`. The controls summary lists the wheel on each opener ("HOLD" on the trackpad, "HOLD UP" on the stick) where it acts.
+`controllers.weapons.wheel`: `enabled`, `trackpad`, `stick`, `stick_open`, `stick_release`, `steer`, `point_leave_deg`, `point_return_deg`, `offset_leave_m`, `offset_return_m`, `hysteresis_deg`, and `place_at_hand`. The controls summary lists the wheel on each opener ("HOLD" on the trackpad, "HOLD UP" on the stick) where it acts.
 
 ## In-game unknowns
 

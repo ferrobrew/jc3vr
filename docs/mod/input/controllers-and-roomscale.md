@@ -500,7 +500,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | The two-handed foregrip | `foregrip.enabled`, `foregrip.hold`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |
-| Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.game_rumble`, `haptics.grapple` | Built. |
+| Haptics | `haptics.enabled`, `haptics.intensity`, `haptics.categories`, `haptics.game_rumble` ([haptics.md](haptics.md)) | Built. |
 | The dual-wield split | `dual_wield.split`, `dual_wield.place_by_handedness`, `dual_wield.independent_draw` | Built. Independent draws are untested in the headset. |
 | The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, `hands.anchor.hang_swing`, and the swing tuning under `hands.anchor` | Built for the reel and hang states. A grapple hand that holds a gun stays free. |
 | The yank gesture | `bindings.yank.enabled` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |

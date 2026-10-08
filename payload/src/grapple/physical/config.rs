@@ -4,8 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// All of the physical grapple's settings.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -18,8 +16,6 @@ pub struct PhysicalGrappleConfig {
     pub tether: TetherConfig,
     /// The hang swing pumped by the grapple hand's motion.
     pub swing: SwingConfig,
-    /// The grapple hand's continuous vibration and the tether retract's pulse.
-    pub haptics: GrappleHapticsConfig,
 }
 
 impl PhysicalGrappleConfig {
@@ -29,7 +25,6 @@ impl PhysicalGrappleConfig {
             reel: ReelConfig::new(),
             tether: TetherConfig::new(),
             swing: SwingConfig::new(),
-            haptics: GrappleHapticsConfig::new(),
         }
     }
 }
@@ -172,46 +167,6 @@ impl SwingConfig {
 }
 
 impl Default for SwingConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The grapple hand's vibration ([`crate::grapple::physical::haptics`]), on top of the fire,
-/// attach, and yank pulses of
-/// [`HapticsConfig`](crate::controllers::weapons::config::HapticsConfig).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GrappleHapticsConfig {
-    /// Vibrate the grapple hand with the line's tension and the reel's speed, and pulse it when the
-    /// tethers start to retract.
-    pub enabled: bool,
-    /// The amplitude at full tether tension.
-    pub tension_amplitude: f32,
-    /// The amplitude at the reel's top speed.
-    pub reel_amplitude: f32,
-    /// How long each continuous pulse plays before the next input tick refreshes it, seconds.
-    pub pulse_s: f32,
-    /// The pulse as the tethers start to retract.
-    pub retract: PulseSpec,
-}
-
-impl GrappleHapticsConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            tension_amplitude: 0.45,
-            reel_amplitude: 0.25,
-            pulse_s: 0.06,
-            retract: PulseSpec {
-                amplitude: 0.6,
-                duration_s: 0.05,
-            },
-        }
-    }
-}
-
-impl Default for GrappleHapticsConfig {
     fn default() -> Self {
         Self::new()
     }

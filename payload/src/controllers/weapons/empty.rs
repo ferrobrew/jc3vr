@@ -22,9 +22,9 @@
 //! weapon can reload. Both dual-wielded pistols share one magazine, so they run dry together and
 //! both stay in the hands.
 //!
-//! A pull at the press edge that the check found empty pulses the hand whose gun was pulled with
-//! `weapons.haptics.dry_fire`, since the gun gives no recoil to feel: one that tried the switch,
-//! whether or not the switch is suppressed, and one of an empty magazine with ammunition left,
+//! A pull at the press edge that the check found empty plays [`Event::DryFire`] on the hand whose
+//! gun was pulled, since the gun gives no recoil to feel: one that tried the switch, whether or
+//! not the switch is suppressed, and one of an empty magazine with ammunition left,
 //! whose reload the true reload stops ([`crate::controllers::weapons::reload`]). A gun the true
 //! reload holds from firing (its chamber empty or its magazine out) has its shot cleared here as
 //! well; its trigger already clicks at the input tick.
@@ -44,8 +44,9 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
+        haptics::{self, Event},
         scheme,
-        weapons::{fire, haptics, reload},
+        weapons::{fire, reload},
     },
 };
 
@@ -177,8 +178,7 @@ fn check_if_reload_should_be_triggered_base(
     }
     DRY_FIRES.fetch_add(1, Ordering::Relaxed);
     if let Some(hand) = hand {
-        let spec = Config::lock_query(|c| c.controllers.weapons.haptics.dry_fire);
-        haptics::pulse(hand, spec, haptics::PulseSource::DryFire);
+        haptics::play(hand, Event::DryFire);
     }
 }
 

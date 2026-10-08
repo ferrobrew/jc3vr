@@ -57,9 +57,6 @@ pub struct HandBodiesConfig {
     pub min_push_horizontal: f32,
     /// How long the push is smoothed over, seconds.
     pub push_smoothing_s: f32,
-    /// Pulse a hand while it presses into something that holds it back, harder the further it is
-    /// held back.
-    pub pressure_haptics: bool,
     /// How far past the push deadband a hand is held back for the strongest pressure pulse, metres.
     pub pressure_full_lag_m: f32,
     /// What a hand body's contacts do: the pulse of a hit, and a character's reaction to it.
@@ -111,8 +108,6 @@ pub struct HandHitsConfig {
     pub follow_through_s: f32,
     /// The share of the drive's gain a hand keeps while it follows through, `0..=1`.
     pub follow_through_gain: f32,
-    /// Pulse a hand when its body starts a contact, harder the faster the hand met it.
-    pub haptics: bool,
     /// The impulse of the strongest hit pulse, newton seconds: an arm of
     /// [`blow_mass_kg`](Self::blow_mass_kg) at the hand's speed into what it met.
     pub full_pulse_impulse_ns: f32,
@@ -134,7 +129,6 @@ impl HandHitsConfig {
             blow_mass_kg: 10.0,
             follow_through_s: 0.15,
             follow_through_gain: 0.3,
-            haptics: true,
             full_pulse_impulse_ns: 50.0,
         }
     }
@@ -170,7 +164,6 @@ impl HandBodiesConfig {
             max_push_speed_mps: 2.5,
             min_push_horizontal: 0.3,
             push_smoothing_s: 0.1,
-            pressure_haptics: true,
             pressure_full_lag_m: 0.1,
             hits: HandHitsConfig::new(),
             joint_grabs: true,

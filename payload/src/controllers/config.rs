@@ -23,6 +23,7 @@ use crate::{
         fingers::config::FingersConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+        haptics::HapticsConfig,
         locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig},
         physical_hands::PhysicalHandsConfig,
         roomscale::stance::StanceConfig,
@@ -32,8 +33,8 @@ use crate::{
             ads::config::AdsConfig,
             collide::config::CollideConfig,
             config::{
-                C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HoldConfig, HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
+                C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig,
+                HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
             },
             reload::config::ReloadConfig,
             wheel::config::WheelConfig,
@@ -96,6 +97,9 @@ pub struct ControllersConfig {
     /// The physical grapple: the reel, the tether retract, and the hang swing worked by the grapple
     /// hand.
     pub grapple: PhysicalGrappleConfig,
+    /// Controller vibration: the master switch and strength, the category switches, and the
+    /// game's rumble.
+    pub haptics: HapticsConfig,
 }
 
 impl ControllersConfig {
@@ -131,6 +135,7 @@ impl ControllersConfig {
             physical_hands: PhysicalHandsConfig::new(),
             summary: SummaryConfig::new(),
             grapple: PhysicalGrappleConfig::new(),
+            haptics: HapticsConfig::new(),
         }
     }
 }
@@ -695,8 +700,6 @@ pub struct WeaponsConfig {
     /// The one-handed weight of long guns: sag, lag, sway, a stronger kick, and a wider spread,
     /// all gone while the off-hand braces the weapon on its foregrip.
     pub heft: HeftConfig,
-    /// Controller vibration.
-    pub haptics: HapticsConfig,
     /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
     /// own hand.
     pub dual_wield: DualWieldConfig,
@@ -752,7 +755,6 @@ impl WeaponsConfig {
             block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
             heft: HeftConfig::new(),
-            haptics: HapticsConfig::new(),
             dual_wield: DualWieldConfig::new(),
             hold: HoldConfig::new(),
             reload: ReloadConfig::new(),

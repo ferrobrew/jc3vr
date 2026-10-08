@@ -1,5 +1,5 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
-//! did, the foregrip, the hand tiers, the recoil, the haptics, the dual-wield split, the grapple
+//! did, the foregrip, the hand tiers, the recoil, the dual-wield split, the grapple
 //! line and yank, the grenade throw, the C4 throw and the wrist detonator, the true reload, the empty weapon, the one-handed weight, the gun-in-hand watch, the fire
 //! input with empty hands, per-hand aim assist, and the weapon-handling settings.
 
@@ -18,16 +18,15 @@ use crate::{
         weapons::{
             self, WeaponsStatus,
             config::{
-                BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HapticsConfig,
-                HeftConfig, HeftTuning, HoldConfig, HolsterAnchor, HolstersConfig, LeftGrip,
-                PouchSide, PouchesConfig, PulseSpec, RecoilConfig, VolumeSpec,
+                BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HeftConfig,
+                HeftTuning, HoldConfig, HolsterAnchor, HolstersConfig, LeftGrip, PouchSide,
+                PouchesConfig, RecoilConfig, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
             foregrip::{self, ForegripStatus},
             grenade::{self, GrenadeStatus},
             grip_watch::{self, GripWatchStatus},
-            haptics::{self, HapticsStatus},
             heft::{self, HeftStatus},
             hold::{
                 self, HoldStatus,
@@ -55,7 +54,6 @@ pub(super) struct WeaponsReadout {
     foregrip: ForegripStatus,
     tiers: TierStatus,
     recoil: RecoilStatus,
-    haptics: HapticsStatus,
     dual_wield: DualWieldStatus,
     hold: HoldStatus,
     dock: DockStatus,
@@ -79,7 +77,6 @@ impl WeaponsReadout {
             foregrip: foregrip::status(),
             tiers: tiers::status(),
             recoil: recoil::status(),
-            haptics: haptics::status(),
             dual_wield: dual_wield::status(),
             hold: hold::status(),
             dock: act::status(),
@@ -180,7 +177,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         readout.unarmed_fire.held_back
     ));
     assist_readout(ui, &readout.aim);
-    haptics_readout(ui, &readout.haptics);
     match &status.wielded {
         Some(w) => {
             let hands = Hand::BOTH
@@ -507,22 +503,6 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
     ));
 }
 
-fn haptics_readout(ui: &mut Ui, h: &HapticsStatus) {
-    ui.label(format!("Haptic pulses: {}", h.routed));
-    for event in h.events.iter().rev() {
-        let amplitude = |hand: Hand| {
-            event.amplitudes[hand.index()].map_or("-".to_owned(), |a| format!("{a:.2}"))
-        };
-        ui.label(format!(
-            "  {}: left {} right {} for {:.0} ms",
-            event.source.label(),
-            amplitude(Hand::Left),
-            amplitude(Hand::Right),
-            event.duration_s * 1000.0
-        ));
-    }
-}
-
 pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.holsters.enabled, "Holsters")
         .on_hover_text("Draw and holster weapons with a grip press at the body holsters.");
@@ -566,10 +546,6 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         ui.indent("braced heft", |ui| {
             braced_heft_settings(ui, &mut w.heft.braced)
         });
-    });
-    ui.checkbox(&mut w.haptics.enabled, "Haptics");
-    ui.add_enabled_ui(w.haptics.enabled, |ui| {
-        ui.indent("haptics", |ui| haptics_settings(ui, &mut w.haptics));
     });
     dual_wield_settings(ui, &mut w.dual_wield);
     hold_settings(ui, &mut w.hold);
@@ -619,15 +595,12 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
     ui.add(egui::Slider::new(&mut g.warning_s, 0.0..=5.0).text("Fuse warning (s)"));
     ui.checkbox(&mut g.warning_overlay, "Fuse warning ring");
     ui.checkbox(&mut g.warning_haptics, "Fuse warning pulses");
-    pulse_settings(ui, "Warning pulse", &mut g.warning_pulse);
     ui.add(
         egui::Slider::new(&mut g.warning_interval_s[0], 0.05..=1.0).text("Slowest pulse gap (s)"),
     );
     ui.add(
         egui::Slider::new(&mut g.warning_interval_s[1], 0.02..=1.0).text("Fastest pulse gap (s)"),
     );
-    pulse_settings(ui, "Prime pulse", &mut g.prime_pulse);
-    pulse_settings(ui, "Refused pulse", &mut g.refused_pulse);
     ui.checkbox(&mut g.pin.enabled, "Pull the pin to start the fuse")
         .on_hover_text(
             "A grenade from the pouch comes out with its fuse held until the other hand grabs its \
@@ -639,7 +612,6 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
             &mut g.pin.trigger,
             "The holding hand's trigger pulls the pin",
         );
-        pulse_settings(ui, "Pin pulse", &mut g.pin.pulse);
     });
     ui.checkbox(&mut g.catch.enabled, "Catch live grenades")
         .on_hover_text("A grip press at a live grenade near the player catches it; opening the grip throws it.");
@@ -652,7 +624,6 @@ fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
         ui.add(
             egui::Slider::new(&mut g.catch.max_carry_mps, 1.0..=60.0).text("Fastest carry (m/s)"),
         );
-        pulse_settings(ui, "Catch pulse", &mut g.catch.pulse);
     });
 }
 
@@ -670,40 +641,6 @@ fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
         egui::Slider::new(&mut r.two_hand_stiffness_scale, 1.0..=5.0).text("Two-hand stiffness"),
     );
     ui.add(egui::Slider::new(&mut r.two_hand_kick_scale, 0.0..=1.0).text("Two-hand kick"));
-}
-
-fn haptics_settings(ui: &mut Ui, h: &mut HapticsConfig) {
-    ui.add(egui::Slider::new(&mut h.intensity, 0.0..=1.0).text("Intensity"));
-    ui.checkbox(&mut h.game_rumble, "Game rumbles")
-        .on_hover_text(
-            "Weapon fire, damage, impacts, landings, vehicles, and the game's other rumbles.",
-        );
-    ui.checkbox(&mut h.gamepad_rumble, "Also rumble the gamepad")
-        .on_hover_text("Let the physical gamepad rumble too, instead of staying silent.");
-    ui.add(
-        egui::Slider::new(&mut h.kick_amplitude_per_rad, 0.0..=20.0)
-            .text("Kick amplitude (per rad)"),
-    );
-    ui.add(egui::Slider::new(&mut h.max_pulse_s, 0.02..=2.0).text("Longest one-off pulse (s)"));
-    ui.add(
-        egui::Slider::new(&mut h.continuous_pulse_s, 0.02..=0.5).text("Continuous pulse hold (s)"),
-    );
-    ui.checkbox(&mut h.grapple, "Grapple pulses");
-    pulse_settings(ui, "Grapple fire", &mut h.grapple_fire);
-    pulse_settings(ui, "Grapple attach", &mut h.grapple_attach);
-    pulse_settings(ui, "Yank", &mut h.yank);
-    pulse_settings(ui, "Dry fire", &mut h.dry_fire);
-    ui.checkbox(&mut h.volume_cues, "Cue grab volumes");
-    pulse_settings(ui, "Entering a holster or pouch", &mut h.volume_enter);
-    pulse_settings(ui, "Draw, holster, or foregrip", &mut h.grab);
-}
-
-pub(super) fn pulse_settings(ui: &mut Ui, label: &str, p: &mut PulseSpec) {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        ui.add(egui::Slider::new(&mut p.amplitude, 0.0..=1.0).text("amplitude"));
-        ui.add(egui::Slider::new(&mut p.duration_s, 0.0..=0.5).text("s"));
-    });
 }
 
 fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {

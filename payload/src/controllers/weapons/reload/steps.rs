@@ -9,12 +9,11 @@ use crate::controllers::{
     config::ControllersConfig,
     frame::{Hand, Pose},
     hands::{ActiveHands, ik},
+    haptics::{self, Event},
     weapons::{
         self,
-        config::PulseSpec,
         engine::HeldWeapon,
         foregrip,
-        haptics::{self, PulseSource},
         reload::{
             FinishInputs, GunTick, MAX_EVENTS, MAX_RECORDS, Record, State, Tick, WeaponReadout,
             belt::{self, BeltPush, PushInputs},
@@ -222,7 +221,7 @@ impl State {
         for hand in Hand::BOTH {
             if held[hand.index()] && inputs.triggers[hand.index()].pressed {
                 self.status.counts.dry_fires += 1;
-                haptics::pulse(hand, config.weapons.haptics.dry_fire, PulseSource::DryFire);
+                haptics::play(hand, Event::DryFire);
             }
         }
         held
@@ -350,11 +349,7 @@ impl State {
         if ejected {
             self.status.counts.ejects += 1;
             self.event(format!("{hand:?} ejected"));
-            haptics::pulse(
-                hand,
-                config.weapons.reload.haptics.eject,
-                PulseSource::Reload,
-            );
+            haptics::play(hand, Event::Eject);
         }
         ejected
     }
@@ -388,7 +383,7 @@ impl State {
                 "{hand:?} took a magazine of {} from the world",
                 sighting.magazine.rounds
             ));
-            haptics::pulse(hand, reload.haptics.pouch_take, PulseSource::Reload);
+            haptics::play(hand, Event::PouchTake);
         } else if let Some(hand) = taker.filter(|_| !self.status.insertion.holding()) {
             if has_ammo {
                 let gun_hand = if tick.guns[hand.other().index()].is_some() {
@@ -398,10 +393,10 @@ impl State {
                 };
                 self.status.insert_hands = Some((hand, gun_hand));
                 taken = true;
-                haptics::pulse(hand, reload.haptics.pouch_take, PulseSource::Reload);
+                haptics::play(hand, Event::PouchTake);
             } else {
                 self.status.counts.empty_pouch += 1;
-                haptics::pulse(hand, reload.haptics.pouch_empty, PulseSource::Reload);
+                haptics::play(hand, Event::PouchEmpty);
             }
         }
         let Some((hand, gun_hand)) = self.status.insert_hands else {
@@ -468,7 +463,7 @@ impl State {
         }
         match event {
             Some(InsertEvent::Captured) => {
-                pulse_both(reload.haptics.capture);
+                pulse_both(Event::WellCatch);
             }
             Some(InsertEvent::Seated) => {
                 // SAFETY (both): main thread, outside the world update; the weapon was read this
@@ -486,7 +481,7 @@ impl State {
                 if loaded {
                     self.status.counts.seats += 1;
                     self.event(format!("{gun_hand:?} seated"));
-                    pulse_both(reload.haptics.seat);
+                    pulse_both(Event::MagazineSeat);
                 }
             }
             Some(InsertEvent::Dropped) => {
@@ -561,7 +556,7 @@ impl State {
                 self.event(format!("{hand:?} belt reload"));
                 let record = self.record(tick);
                 record.chambers[i] = Chamber::Chambered;
-                haptics::pulse(hand, reload.haptics.belt_seat, PulseSource::Reload);
+                haptics::play(hand, Event::BeltSeat);
             }
         }
     }
@@ -616,7 +611,7 @@ impl State {
         match event {
             Some(WorkEvent::Pulled) => {
                 if let Some(worker) = worker {
-                    haptics::pulse(worker, reload.haptics.rack, PulseSource::Reload);
+                    haptics::play(worker, Event::Rack);
                 }
             }
             Some(WorkEvent::Worked) => {
@@ -635,7 +630,7 @@ impl State {
                 // SAFETY: main thread, outside the world update; the weapon was read this tick.
                 unsafe { engine::cycled(tick.weapon, kind) };
                 if chamber == Chamber::Chambered {
-                    haptics::pulse(gun_hand, reload.haptics.chambered, PulseSource::Reload);
+                    haptics::play(gun_hand, Event::Chambered);
                 }
             }
             _ => {}
@@ -789,8 +784,8 @@ pub(super) fn chambering(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
     workable && (reload.chamber || (reload.manual_action && plan.action.manual()))
 }
 
-fn pulse_both(spec: PulseSpec) {
+fn pulse_both(event: Event) {
     for hand in Hand::BOTH {
-        haptics::pulse(hand, spec, PulseSource::Reload);
+        haptics::play(hand, event);
     }
 }

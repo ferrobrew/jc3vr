@@ -48,8 +48,7 @@ use crate::{
         fingers::grip::{self, Grip, GripSource},
         frame::{Hand, Pose},
         hands::{self, CockpitHand, pose as hand_pose, tiers},
-        scheme,
-        weapons::haptics::{self, PulseSource},
+        haptics::{self, Event},
     },
     grapple::physical::swing,
     headpose,
@@ -210,16 +209,12 @@ pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
     drop(state);
     declare_line_grip(config.acting_hand().other());
 
-    let haptics = &config.weapons.haptics;
-    if !(haptics.grapple && scheme::is_controllers()) {
-        return;
-    }
     let hand = config.acting_hand().other();
     if fired {
-        haptics::pulse(hand, haptics.grapple_fire, PulseSource::GrappleFire);
+        haptics::play(hand, Event::GrappleFire);
     }
     if attached {
-        haptics::pulse(hand, haptics.grapple_attach, PulseSource::GrappleAttach);
+        haptics::play(hand, Event::GrappleAttach);
     }
 }
 

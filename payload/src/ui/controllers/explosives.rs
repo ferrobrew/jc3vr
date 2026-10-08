@@ -14,7 +14,7 @@ use crate::{
             config::{C4Config, WristDetonatorConfig},
         },
     },
-    ui::controllers::{vec3, vec3_drag, weapons::pulse_settings, yes_no},
+    ui::controllers::{vec3, vec3_drag, yes_no},
 };
 
 /// Everything the C4 readout shows, read before the config is locked for editing.
@@ -145,10 +145,6 @@ fn c4_settings(ui: &mut Ui, c: &mut C4Config) {
     ui.add(egui::Slider::new(&mut c.release_peak_span_s, 0.0..=0.05).text("Release peak span (s)"));
     ui.add(egui::Slider::new(&mut c.velocity_scale, 0.25..=3.0).text("Velocity scale"));
     ui.add(egui::Slider::new(&mut c.max_speed_mps, 5.0..=60.0).text("Fastest throw (m/s)"));
-    pulse_settings(ui, "Prime pulse", &mut c.prime_pulse);
-    pulse_settings(ui, "Throw pulse", &mut c.throw_pulse);
-    pulse_settings(ui, "Refused pulse", &mut c.refused_pulse);
-    pulse_settings(ui, "Detonation pulse", &mut c.detonate_pulse);
 }
 
 fn detonator_settings(ui: &mut Ui, d: &mut WristDetonatorConfig) {
@@ -178,6 +174,4 @@ fn detonator_settings(ui: &mut Ui, d: &mut WristDetonatorConfig) {
         0.002,
     );
     ui.checkbox(&mut d.overlay, "Draw the button");
-    pulse_settings(ui, "Press pulse", &mut d.pulse);
-    pulse_settings(ui, "No charges pulse", &mut d.empty_pulse);
 }

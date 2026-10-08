@@ -29,6 +29,7 @@ use crate::{
         config::ControllersConfig,
         frame::{self, Hand},
         hands,
+        haptics::{self, Event},
         overlay::{
             primitive::{
                 Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
@@ -41,7 +42,6 @@ use crate::{
                 press::{self, FingertipSource, PressDetector, PressPhase, PressReading},
             },
             config::WristDetonatorConfig,
-            haptics::{self, PulseSource},
         },
     },
     headpose,
@@ -165,11 +165,11 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             tracing::info!(target: "controllers", charges, "wrist detonator: detonating");
             c4::request_detonation(DetonationSource::WristButton);
             for hand in Hand::BOTH {
-                haptics::pulse(hand, tuning.pulse, PulseSource::C4);
+                haptics::play(hand, Event::DetonatorPress);
             }
         } else {
             tracing::info!(target: "controllers", "wrist detonator: pressed with no charges placed");
-            haptics::pulse(presser, tuning.empty_pulse, PulseSource::C4);
+            haptics::play(presser, Event::DetonatorEmpty);
         }
     }
     let Some(face) = face.filter(|_| tuning.overlay && config.overlay.enabled) else {

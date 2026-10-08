@@ -249,11 +249,6 @@ fn settings_page() -> Page {
             .grapple
             .swing
             .pump))
-        .item(config_toggle!("LINE TENSION HAPTICS", |c| c
-            .controllers
-            .grapple
-            .haptics
-            .enabled))
         .header("CONTROLS SUMMARY")
         .item(config_toggle!("CONTROLS ON WRIST", |c| c
             .controllers
@@ -502,32 +497,50 @@ fn settings_page() -> Page {
             .weapons
             .wrist_detonator))
         .header("HAPTICS")
-        .item(config_toggle!("HAPTICS", |c| c
-            .controllers
-            .weapons
-            .haptics
-            .enabled))
+        .item(config_toggle!("HAPTICS", |c| c.controllers.haptics.enabled))
         .item(config_slider!(
             "HAPTIC STRENGTH",
             UNIT_RANGE,
             SliderFormat::new(2, ""),
-            |c| c.controllers.weapons.haptics.intensity
+            |c| c.controllers.haptics.intensity
         ))
+        .item(config_toggle!("CONTACT HAPTICS", |c| c
+            .controllers
+            .haptics
+            .categories
+            .contact))
+        .item(config_toggle!("WEAPON HAPTICS", |c| c
+            .controllers
+            .haptics
+            .categories
+            .weapons))
+        .item(config_toggle!("VEHICLE HAPTICS", |c| c
+            .controllers
+            .haptics
+            .categories
+            .vehicles))
+        .item(config_toggle!("TRAVERSAL HAPTICS", |c| c
+            .controllers
+            .haptics
+            .categories
+            .traversal))
+        .item(config_toggle!("CHORD HAPTICS", |c| c
+            .controllers
+            .haptics
+            .categories
+            .interface))
         .item(config_toggle!("GAME RUMBLE", |c| c
             .controllers
-            .weapons
             .haptics
             .game_rumble))
-        .item(config_toggle!("HOLSTER AND POUCH CUES", |c| c
-            .controllers
-            .weapons
-            .haptics
-            .volume_cues))
         .item(config_toggle!("ALSO RUMBLE GAMEPAD", |c| c
             .controllers
-            .weapons
             .haptics
-            .gamepad_rumble));
+            .gamepad_rumble))
+        .item(config_toggle!("PER-CUE FREQUENCIES", |c| c
+            .controllers
+            .haptics
+            .frequencies));
     let page = page
         .header("VEHICLES")
         .item(config_toggle!("VEHICLE WEAPONS BY HAND", |c| c

@@ -49,7 +49,7 @@ pub(super) fn swing() -> Line {
 }
 
 pub(super) fn haptics() -> Line {
-    if !read_config(|c| c.controllers.grapple.haptics.enabled) {
+    if !read_config(|c| c.controllers.haptics.categories.traversal) {
         return Line::off("");
     }
     let status = physical::status();

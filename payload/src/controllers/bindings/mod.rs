@@ -60,13 +60,12 @@ use crate::{
         config::LocomotionDirection,
         frame::{self, ControllerFrame, Hand},
         hands::{self, tiers},
+        haptics::{self, Event},
         mode::{self, Detection, Mode},
         physical_hands, roomscale, scheme, summary, vehicles,
         weapons::{
             self,
-            config::PulseSpec,
             dual_wield::{self, TriggerInput, TriggerTick},
-            haptics::{self, PulseSource},
         },
     },
     grapple, headpose,
@@ -376,13 +375,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     if let Some(yank) = yank {
         controls.yank = true;
         tracing::debug!(target: "controllers", ?yank, "yank");
-        if config.weapons.haptics.grapple {
-            haptics::pulse(
-                grapple_hand,
-                config.weapons.haptics.yank,
-                haptics::PulseSource::Yank,
-            );
-        }
+        haptics::play(grapple_hand, Event::Yank);
     }
     // SAFETY: the input tick runs on the main thread outside the world update.
     let physical_grapple = unsafe {
@@ -505,14 +498,9 @@ fn panel_chord_tick(input: ChordInput, dt: f32, window_s: f32) -> ChordTick {
 /// The short pulse that confirms a chord, on each of `hands`.
 fn chord_pulse(hands: impl IntoIterator<Item = Hand>) {
     for hand in hands {
-        haptics::pulse(hand, CHORD_PULSE, PulseSource::Chord);
+        haptics::play(hand, Event::Chord);
     }
 }
-
-const CHORD_PULSE: PulseSpec = PulseSpec {
-    amplitude: 0.5,
-    duration_s: 0.05,
-};
 
 /// The debug panel chord's latches, apart from [`STATE`] so that standing the bindings down does
 /// not reset them.

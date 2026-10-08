@@ -128,8 +128,6 @@ pub struct MountedConfig {
     pub kick_back_m: f32,
     /// How far a shot kicks the handles down as the muzzle climbs, metres.
     pub kick_dip_m: f32,
-    /// The strength of a shot's pulse in the holding hands, `0..=1`.
-    pub kick_haptics: f32,
 }
 
 impl MountedConfig {
@@ -144,7 +142,6 @@ impl MountedConfig {
             recoil: true,
             kick_back_m: 0.02,
             kick_dip_m: 0.008,
-            kick_haptics: 0.5,
         }
     }
 }

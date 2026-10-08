@@ -1,14 +1,14 @@
 //! The live controller frame: each hand's poses, inputs, and hand-tracking joints.
 
-use std::time::Duration;
-
 use egui::Ui;
 use glam::Vec3;
 
 use crate::{
-    controllers::frame::{self, Hand, HandFrame, TrackedPose},
+    controllers::{
+        frame::{self, Hand, HandFrame, TrackedPose},
+        haptics::{self, vocabulary::Primitive},
+    },
     ui::controllers::{euler_deg, profile_label, vec3, yes_no},
-    vr::input::{self as vr_input, HapticPulse},
 };
 
 pub(super) fn live_frame(ui: &mut Ui, frame: Option<&frame::ControllerFrame>) {
@@ -67,16 +67,14 @@ fn hand_readout(ui: &mut Ui, hand: Hand, h: &HandFrame) {
         ),
         None => "joints: none".to_owned(),
     });
-    if ui.button("Test pulse").clicked() {
-        vr_input::request_haptic(
-            hand,
-            HapticPulse {
-                duration: Duration::from_millis(80),
-                frequency_hz: None,
-                amplitude: 0.6,
-            },
-        );
-    }
+    ui.horizontal(|ui| {
+        ui.label("Test:");
+        for primitive in Primitive::ALL {
+            if ui.button(primitive.label()).clicked() {
+                haptics::test(hand, primitive);
+            }
+        }
+    });
 }
 
 fn pose_readout(ui: &mut Ui, name: &str, p: &TrackedPose) {

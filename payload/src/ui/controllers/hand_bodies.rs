@@ -116,7 +116,6 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
             egui::Slider::new(&mut b.min_push_horizontal, 0.0..=1.0).text("Least horizontal lag"),
         );
         ui.add(egui::Slider::new(&mut b.push_smoothing_s, 0.0..=0.5).text("Push smoothing (s)"));
-        ui.checkbox(&mut b.pressure_haptics, "Pressure pulses");
         ui.add(
             egui::Slider::new(&mut b.pressure_full_lag_m, 0.01..=0.5)
                 .text("Lag of the strongest pulse (m)"),
@@ -129,7 +128,6 @@ pub(super) fn hand_bodies_settings(ui: &mut Ui, b: &mut HandBodiesConfig) {
 fn hits_settings(ui: &mut Ui, h: &mut HandHitsConfig) {
     ui.checkbox(&mut h.enabled, "Listen for the hands' contacts");
     ui.add_enabled_ui(h.enabled, |ui| {
-        ui.checkbox(&mut h.haptics, "Hit pulses");
         ui.add(
             egui::Slider::new(&mut h.full_pulse_impulse_ns, 1.0..=200.0)
                 .text("Impulse of the strongest pulse (N·s)"),

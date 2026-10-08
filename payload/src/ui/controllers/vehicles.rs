@@ -428,7 +428,6 @@ fn mounted_settings(ui: &mut Ui, m: &mut MountedConfig) {
             .text("kick down (m)")
             .fixed_decimals(3),
     );
-    ui.add(egui::Slider::new(&mut m.kick_haptics, 0.0..=1.0).text("kick pulse"));
 }
 
 fn physical_settings(ui: &mut Ui, p: &mut PhysicalControlsConfig) {

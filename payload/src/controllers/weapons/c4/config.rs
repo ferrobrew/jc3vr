@@ -4,8 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// Pressing a held charge onto a surface sticks it there. Acts only under the controller scheme,
 /// so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -24,8 +22,6 @@ pub struct C4StickConfig {
     /// How long after a charge comes out of the pouch before it sticks, seconds, so that the body
     /// the pouch is on is not mistaken for a surface as the hand leaves it.
     pub after_prime_s: f32,
-    /// A pulse on the hand that sticks a charge.
-    pub pulse: PulseSpec,
 }
 
 impl C4StickConfig {
@@ -36,10 +32,6 @@ impl C4StickConfig {
             standoff_m: 0.03,
             push_mps: 1.5,
             after_prime_s: 0.3,
-            pulse: PulseSpec {
-                amplitude: 0.5,
-                duration_s: 0.05,
-            },
         }
     }
 }

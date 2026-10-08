@@ -20,13 +20,15 @@
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
 //! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
 //!   update;
+//! - [`haptics`]: the controllers' vibration: one vocabulary of cues for every source, the mixer
+//!   that folds them into what each hand plays, and the game's rumble forwarded;
 //! - [`fingers`]: finger curls on the rendered hands, from hand tracking or estimated from the
 //!   inputs;
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
 //!   off-hand's ray;
 //! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye;
 //! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
-//!   foregrip, the weapon actions that run with the hands on the controllers, recoil, haptics, and
+//!   foregrip, the weapon actions that run with the hands on the controllers, recoil, and
 //!   the dual-wield split;
 //! - [`physical_hands`]: each empty hand's palm colliding with the world: pushing the body off
 //!   surfaces, holding the hand at them, and striking characters and objects;
@@ -57,6 +59,7 @@ pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
 pub mod hands;
+pub mod haptics;
 pub mod locomotion;
 pub mod map;
 pub(crate) mod menu;
@@ -83,5 +86,6 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(map::hook_library())
         .with_hook_library(roomscale::hook_library())
         .with_hook_library(weapons::hook_library())
+        .with_hook_library(haptics::hook_library())
         .with_hook_library(vehicles::hook_library())
 }

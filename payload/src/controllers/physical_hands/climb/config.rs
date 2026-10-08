@@ -2,8 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// Climbing with the hands (see [`crate::controllers::physical_hands::climb`]): an empty hand whose
 /// body touches the static world grips it with the grip, and the player's body moves against the
 /// hands' motion. It needs the hand bodies.
@@ -54,18 +52,9 @@ pub struct ClimbConfig {
     /// The least upward share of a gripped surface's normal for it to count as a ledge's top,
     /// `0..=1`.
     pub min_ledge_normal_y: f32,
-    /// The pulse of a hand gripping the world.
-    pub grab_pulse: PulseSpec,
-    /// The pulse of a hand letting go of the world.
-    pub release_pulse: PulseSpec,
     /// How long a fling keeps carrying the body after the release, seconds, as a throw under
     /// gravity, until the player stands on something or grips again.
     pub fling_carry_s: f32,
-    /// The pulse of a fling at its fastest; a slower fling pulses in proportion.
-    pub fling_pulse: PulseSpec,
-    /// The pulse of a gripping hand while the hands move the body, every tick, in proportion to the
-    /// climbing speed.
-    pub tension_pulse: PulseSpec,
     /// The climbing speed of the strongest tension pulse, metres per second.
     pub tension_full_speed_mps: f32,
     /// Grip moving bodies as well as the static world: keyframed bodies, and dynamic ones heavy
@@ -99,23 +88,7 @@ impl ClimbConfig {
             mantle_min_climb_m: 0.25,
             mantle_land_past_m: 0.3,
             min_ledge_normal_y: 0.7,
-            grab_pulse: PulseSpec {
-                amplitude: 0.6,
-                duration_s: 0.04,
-            },
-            release_pulse: PulseSpec {
-                amplitude: 0.25,
-                duration_s: 0.02,
-            },
             fling_carry_s: 0.2,
-            fling_pulse: PulseSpec {
-                amplitude: 0.9,
-                duration_s: 0.06,
-            },
-            tension_pulse: PulseSpec {
-                amplitude: 0.3,
-                duration_s: 0.03,
-            },
             tension_full_speed_mps: 3.0,
             moving: true,
             min_moving_mass_kg: 300.0,

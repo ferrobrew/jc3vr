@@ -11,6 +11,7 @@
 mod body;
 mod controllers;
 mod explosives;
+mod feedback;
 mod fingers;
 mod grapple;
 mod hands;
@@ -242,6 +243,10 @@ const SECTIONS: &[Section] = &[
             row!("PUSH UP", hands::push_up),
             row!("HINGED THINGS", hands::articulated),
         ],
+    },
+    Section {
+        title: "FEEDBACK",
+        rows: &[row!("HAPTIC CUES", feedback::haptic_cues)],
     },
     Section {
         title: "FINGERS",

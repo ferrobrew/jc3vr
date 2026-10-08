@@ -7,7 +7,6 @@
 //! - [`tether`] turns the pull's depth into the game's retract input while tethers are attached;
 //! - [`swing`] is the hang swing's pump, which the hang task's detour applies
 //!   ([`crate::controllers::hands::anchor`]);
-//! - [`haptics`] is the grapple hand's continuous vibration.
 //!
 //! The yank that starts a reel along an attached line is the bindings' own gesture
 //! ([`crate::controllers::bindings::yank`]); the point-and-fire of a tether is the grapple's hand
@@ -22,7 +21,6 @@
 //! `VR: STATUS` page.
 
 pub mod config;
-pub mod haptics;
 pub mod pull;
 pub mod reel;
 pub mod swing;
@@ -42,16 +40,11 @@ use crate::{
     controllers::{
         bindings::yank::{YankConfig, YankDetector},
         config::ControllersConfig,
-        frame::Hand,
         hands::anchor,
+        haptics::{self, Event, Sustain},
         mode::{Detection, Traversal},
-        weapons::{
-            config::PulseSpec,
-            haptics::{self as hand_haptics, PulseSource},
-        },
     },
     grapple::physical::{
-        haptics::HapticInputs,
         pull::{PullReading, PullTracker},
         reel::ReelDrive,
         tether::TetherTick,
@@ -154,7 +147,8 @@ pub struct GrappleStatus {
     pub squeezing: bool,
     /// The highest tether tension fraction.
     pub tension: f32,
-    /// The grapple hand's continuous vibration amplitude.
+    /// The grapple hand's line vibration: the stronger of the tension's and the reel's level,
+    /// `0..=1`.
     pub haptic: f32,
 }
 
@@ -206,9 +200,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
             speed_mps = yank.speed_mps,
             "physical grapple: a yank boosts the reel"
         );
-        if input.config.weapons.haptics.grapple {
-            pulses.push((input.config.weapons.haptics.yank, PulseSource::Yank));
-        }
+        pulses.push(Event::Yank);
     }
     let boosted = drive_reel && state.boost_until.is_some_and(|until| now < until);
     let drive = drive_reel.then(|| ReelDrive {
@@ -274,9 +266,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
                 value,
                 "physical grapple: the hand retracts the tethers"
             );
-            if config.haptics.enabled {
-                pulses.push((config.haptics.retract, PulseSource::TetherRetract));
-            }
+            pulses.push(Event::TetherRetract);
         }
         (Some(value), Some(peak)) => state.retract_peak = Some(peak.max(value)),
         (None, Some(peak)) => {
@@ -315,26 +305,17 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     let squeezing = hook.is_some_and(|h| h.squeezing);
     let tension = hook.map_or(0.0, |h| h.tension);
     let readout = reel::readout();
-    let haptic = haptics::amplitude(
-        HapticInputs {
-            squeeze_tension: if squeezing { tension } else { 0.0 },
-            reel_fraction: if drive.is_some() {
-                readout.speed_fraction
-            } else {
-                0.0
-            },
+    // The line's vibration: the tethers' tension while they are squeezed, and the reel's speed
+    // while the line carries the character.
+    let line = [
+        if squeezing { unit(tension) } else { 0.0 },
+        if drive.is_some() {
+            unit(readout.speed_fraction)
+        } else {
+            0.0
         },
-        &config.haptics,
-    );
-    if haptic > haptics::MIN_AMPLITUDE {
-        pulses.push((
-            PulseSpec {
-                amplitude: haptic,
-                duration_s: config.haptics.pulse_s,
-            },
-            PulseSource::GrappleTension,
-        ));
-    }
+    ];
+    let haptic = line[0].max(line[1]);
 
     state.status = GrappleStatus {
         live: true,
@@ -361,9 +342,11 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     *STATUS.lock() = (state.status, Some(now));
     drop(state);
 
-    for (spec, source) in pulses {
-        send(hand, spec, source);
+    for event in pulses {
+        haptics::play(hand, event);
     }
+    haptics::sustain(hand, Sustain::GrappleTension, line[0]);
+    haptics::sustain(hand, Sustain::GrappleReel, line[1]);
     TickOutput { retract }
 }
 
@@ -528,9 +511,13 @@ fn phase(
     }
 }
 
-/// Pulse the grapple hand.
-fn send(hand: Hand, spec: PulseSpec, source: PulseSource) {
-    hand_haptics::pulse(hand, spec, source);
+/// `value` as a share, `0..=1`, with a non-finite value as none.
+fn unit(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 #[cfg(test)]

@@ -10,12 +10,12 @@ use crate::{
             ReloadStatus,
             belt::PushStage,
             chamber::{Chamber, WorkStage},
-            config::{ActionConfig, BeltConfig, ReloadButton, ReloadConfig, ReloadHaptics},
+            config::{ActionConfig, BeltConfig, ReloadButton, ReloadConfig},
             insert::InsertStage,
             loose, wells,
         },
     },
-    ui::controllers::{vec3_drag, weapons::pulse_settings},
+    ui::controllers::vec3_drag,
 };
 
 pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
@@ -190,7 +190,6 @@ fn settings(ui: &mut Ui, r: &mut ReloadConfig) {
         ui.add(egui::Slider::new(&mut l.max_carry_mps, 1.0..=60.0).text("Fastest carry (m/s)"));
         ui.add(egui::Slider::new(&mut l.keep_s, 10.0..=1200.0).text("Remembered for (s)"));
     });
-    haptics_settings(ui, &mut r.haptics);
 }
 
 fn belt_settings(ui: &mut Ui, b: &mut BeltConfig) {
@@ -214,15 +213,4 @@ fn action_settings(ui: &mut Ui, a: &mut ActionConfig) {
             .text("Action release distance (m)"),
     );
     ui.add(egui::Slider::new(&mut a.default_travel_m, 0.01..=0.2).text("Default travel (m)"));
-}
-
-fn haptics_settings(ui: &mut Ui, h: &mut ReloadHaptics) {
-    pulse_settings(ui, "Eject pulse", &mut h.eject);
-    pulse_settings(ui, "Pouch pulse", &mut h.pouch_take);
-    pulse_settings(ui, "Empty pouch pulse", &mut h.pouch_empty);
-    pulse_settings(ui, "Catch pulse", &mut h.capture);
-    pulse_settings(ui, "Seat pulse", &mut h.seat);
-    pulse_settings(ui, "Belt seat pulse", &mut h.belt_seat);
-    pulse_settings(ui, "Rack pulse", &mut h.rack);
-    pulse_settings(ui, "Chambered pulse", &mut h.chambered);
 }

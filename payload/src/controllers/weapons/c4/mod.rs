@@ -71,6 +71,7 @@ use crate::{
         aim::targets::weak_target,
         bindings::controls::ButtonControl,
         frame::{Hand, Pose},
+        haptics::{self, Event},
         motion::{self, ReleaseEstimate},
         scheme,
         weapons::{
@@ -78,9 +79,8 @@ use crate::{
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
                 stick::{self as stick_by_hand, StickAt},
             },
-            config::{C4Config, PulseSpec},
+            config::C4Config,
             grenade::stage::Release,
-            haptics::{self, PulseSource},
         },
     },
     headpose,
@@ -413,7 +413,7 @@ fn update_from_user_serial(
             let (next, action, outcome) = stage::before_update(state.stage, reading.view);
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
-                pulses.extend(outcome_pulse(hand, outcome, &tuning));
+                pulses.extend(outcome_pulse(hand, outcome));
             }
             let grip = hand.and_then(|h| {
                 state.grips[h.index()].map(|g| held_matrix(g, hold_offset(h, &tuning)))
@@ -435,7 +435,7 @@ fn update_from_user_serial(
             state.status.stage = next;
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
-                pulses.extend(outcome_pulse(hand, outcome, &tuning));
+                pulses.extend(outcome_pulse(hand, outcome));
                 if outcome == Outcome::Primed {
                     state.held_since = Some(Instant::now());
                 }
@@ -444,7 +444,7 @@ fn update_from_user_serial(
                     state.status.stuck_on_objects += u64::from(at.on_object);
                     tracing::info!(target: "controllers", ?hand, on_object = at.on_object, "c4: stuck the charge where it was pressed");
                     if let Some(hand) = hand {
-                        pulses.push((hand, tuning.stick.pulse, PulseSource::C4));
+                        pulses.push((hand, Event::C4Stick));
                     }
                 }
             }
@@ -479,34 +479,30 @@ fn update_from_user_serial(
         settle_detonation(&mut state, started, reading.live, dt);
     }
     drop(state);
-    for (hand, spec, source) in pulses {
-        haptics::pulse(hand, spec, source);
+    for (hand, event) in pulses {
+        haptics::play(hand, event);
     }
     if started {
         wrist::note_detonation();
         for hand in Hand::BOTH {
-            haptics::pulse(hand, tuning.detonate_pulse, PulseSource::C4);
+            haptics::play(hand, Event::C4Detonate);
         }
     }
 }
 
 /// The pulse a throw step's `outcome` gives the throwing `hand`: a prime and a throw pulse it, and
 /// a refusal buzzes it and is logged at info level.
-fn outcome_pulse(
-    hand: Option<Hand>,
-    outcome: Outcome,
-    tuning: &C4Config,
-) -> Option<(Hand, PulseSpec, PulseSource)> {
-    let (spec, source) = match outcome {
-        Outcome::Primed => (tuning.prime_pulse, PulseSource::C4),
-        Outcome::Thrown(_) => (tuning.throw_pulse, PulseSource::C4),
+fn outcome_pulse(hand: Option<Hand>, outcome: Outcome) -> Option<(Hand, Event)> {
+    let event = match outcome {
+        Outcome::Primed => Event::C4Prime,
+        Outcome::Thrown(_) => Event::C4Throw,
         Outcome::Refused(_) | Outcome::SpawnFailed => {
             tracing::info!(target: "controllers", ?hand, outcome = %outcome.label(), "c4 pouch");
-            (tuning.refused_pulse, PulseSource::PouchRefused)
+            Event::PouchRefused
         }
         Outcome::Gone | Outcome::Cancelled => return None,
     };
-    Some((hand?, spec, source))
+    Some((hand?, event))
 }
 
 /// The character's detonate input's slot in its weapon inputs.

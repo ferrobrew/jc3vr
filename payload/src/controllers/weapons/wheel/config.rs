@@ -3,8 +3,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// The weapon wheel (see [`crate::controllers::weapons::wheel`]). It acts only under the controller
 /// scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -43,10 +41,6 @@ pub struct WheelConfig {
     /// Move the game's cross on the floating panel to where the steering hand was, seen from the
     /// head, when the wheel opened, instead of over the character's hips.
     pub place_at_hand: bool,
-    /// The pulse on the steering hand when the wheel opens and whenever the choice changes.
-    pub tick: PulseSpec,
-    /// The pulse on the steering hand when a release commits a weapon.
-    pub commit: PulseSpec,
 }
 
 impl WheelConfig {
@@ -64,14 +58,6 @@ impl WheelConfig {
             offset_return_m: 0.025,
             hysteresis_deg: 10.0,
             place_at_hand: true,
-            tick: PulseSpec {
-                amplitude: 0.2,
-                duration_s: 0.015,
-            },
-            commit: PulseSpec {
-                amplitude: 0.45,
-                duration_s: 0.03,
-            },
         }
     }
 

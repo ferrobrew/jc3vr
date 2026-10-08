@@ -45,6 +45,7 @@ use crate::{
         },
         fingers::grip::GripSource,
         frame::Hand,
+        haptics::{self, Event},
         physical_hands::{
             STALE_AFTER, STATE, articulated, bodies,
             characters::{self, CharactersConfig, Regrip, Seize},
@@ -56,12 +57,10 @@ use crate::{
             palm::PalmBox,
             physics::HoldTarget,
             pickup::grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
-            pulse,
             rigid::Velocities,
         },
         weapons::{
             self, FinishInputs,
-            haptics::PulseSource,
             hold::{
                 holder::Cause,
                 pickup::{Refusal, TakeOptions},
@@ -159,7 +158,6 @@ pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
 /// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
 /// of it, and a released grip asks it to let go. Called from the input tick after the tables.
 pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
     let mut state = STATE.lock();
     state.pickup.input_at = Some(Instant::now());
     let fresh = state.fresh(Instant::now());
@@ -245,13 +243,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         }
     }
     for hand in pulses {
-        pulse(
-            hand,
-            config.pickup.grab_pulse,
-            1.0,
-            &config,
-            PulseSource::Pickup,
-        );
+        haptics::play(hand, Event::Take);
     }
 }
 

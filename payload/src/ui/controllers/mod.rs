@@ -15,6 +15,7 @@ mod fingers;
 mod frame;
 mod hand_bodies;
 mod hands;
+mod haptics;
 mod locomotion;
 mod map;
 mod mode;
@@ -46,9 +47,10 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
-        overlay as controller_overlay, physical_hands as controller_physical_hands,
-        roomscale as controller_roomscale, scheme, summary as controller_summary,
+        haptics as controller_haptics, locomotion as controller_locomotion, map as controller_map,
+        mode as controller_mode, overlay as controller_overlay,
+        physical_hands as controller_physical_hands, roomscale as controller_roomscale, scheme,
+        summary as controller_summary,
     },
     hud::{pointer, summary_panel},
     vr::input::{self as vr_input, ActionsOrigin},
@@ -91,6 +93,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         controller_locomotion::anchor::status(),
     );
     let weapons_readout = weapons::WeaponsReadout::read();
+    let haptics_status = controller_haptics::status();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
     let summary_status = controller_summary::status();
@@ -184,6 +187,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Weapon handling")
             .default_open(true)
             .show(ui, |ui| weapons::weapons_readout(ui, &weapons_readout));
+
+        egui::CollapsingHeader::new("Haptics")
+            .default_open(true)
+            .show(ui, |ui| haptics::haptics_readout(ui, &haptics_status));
 
         egui::CollapsingHeader::new("Scopes")
             .default_open(true)

@@ -2,7 +2,7 @@
 //! objects, and the simulated hand bodies' hits.
 
 use crate::{
-    config::validate::{Invalid, nonnegative, positive, pulse, range, vec3},
+    config::validate::{Invalid, nonnegative, positive, range, vec3},
     controllers::physical_hands::{
         PhysicalHandsConfig,
         climb::ClimbConfig,
@@ -52,8 +52,6 @@ pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
         50.0,
     )?;
     nonnegative("physical_hands.object_impulse", p.object_impulse, 100.0)?;
-    pulse("physical_hands.contact_pulse", &p.contact_pulse)?;
-    pulse("physical_hands.pressure_pulse", &p.pressure_pulse)?;
     shove(&p.shove)?;
     pickup(&p.pickup)?;
     hand_bodies(&p.bodies)?;
@@ -117,11 +115,7 @@ fn climb(c: &ClimbConfig) -> Result<(), Invalid> {
         0.0,
         1.0,
     )?;
-    pulse("physical_hands.climb.grab_pulse", &c.grab_pulse)?;
-    pulse("physical_hands.climb.release_pulse", &c.release_pulse)?;
     nonnegative("physical_hands.climb.fling_carry_s", c.fling_carry_s, 5.0)?;
-    pulse("physical_hands.climb.fling_pulse", &c.fling_pulse)?;
-    pulse("physical_hands.climb.tension_pulse", &c.tension_pulse)?;
     positive(
         "physical_hands.climb.tension_full_speed_mps",
         c.tension_full_speed_mps,
@@ -206,8 +200,7 @@ fn pickup(p: &PickupConfig) -> Result<(), Invalid> {
         p.max_throw_speed_mps,
         500.0,
     )?;
-    pulse("physical_hands.pickup.grab_pulse", &p.grab_pulse)?;
-    pulse("physical_hands.pickup.release_pulse", &p.release_pulse)
+    Ok(())
 }
 
 fn hand_bodies(b: &HandBodiesConfig) -> Result<(), Invalid> {

@@ -1,8 +1,8 @@
 //! The per-frame input update: sync the actions, read every raw input, locate the controller
 //! spaces and hand joints at the predicted display time, re-base them into the cockpit frame,
 //! publish the [`ControllerFrame`], read and publish the active semantic actions
-//! ([`SemanticFrame`]), run the self-check and the bound-source refresh, and flush the haptics
-//! queue.
+//! ([`SemanticFrame`]), run the self-check and the bound-source refresh, and play what the
+//! haptics mixer gives each hand.
 
 use std::{ptr, sync::atomic::Ordering, time::Instant};
 
@@ -17,6 +17,7 @@ use crate::{
             self, ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs,
             HandJoint, InteractionProfile, Pose, TrackedPose, derive_buttons,
         },
+        haptics::{self, mixer::HapticPulse},
         scheme,
     },
     vr::{
@@ -24,7 +25,6 @@ use crate::{
             PROFILES_DIRTY, STATUS,
             actions::SetId,
             active_action_set,
-            haptics::{self, HapticPulse},
             layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
             replay,
             self_check::CheckFrame,
@@ -53,7 +53,7 @@ impl InputState {
         if !cfg.enabled {
             frame::clear();
             semantic_frame::clear();
-            let _ = haptics::take();
+            haptics::clear();
             self.previous_buttons = [ButtonSet::EMPTY; 2];
             return;
         }
@@ -349,17 +349,19 @@ impl InputState {
         Ok((frame, joints_error))
     }
 
-    /// Play the queued pulses, scaled by the haptics intensity, or drop them with haptics off.
+    /// Play what the haptics mixer gives each hand, scaled by the haptics intensity, or forget
+    /// everything it holds with the haptics off.
     fn flush_haptics(
         &self,
         session: &xr::Session<xr::D3D11>,
         cfg: &ControllersConfig,
     ) -> anyhow::Result<()> {
-        let pending = haptics::take();
-        let haptics_cfg = cfg.weapons.haptics;
+        let haptics_cfg = cfg.haptics;
         if !haptics_cfg.enabled {
+            haptics::clear();
             return Ok(());
         }
+        let pending = haptics::mix(Instant::now(), &haptics_cfg.mix);
         for hand in Hand::BOTH {
             if let Some(pulse) = pending[hand.index()] {
                 let vibration = vibration(pulse, haptics_cfg.intensity);

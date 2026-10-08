@@ -41,6 +41,7 @@ use crate::{
         bindings::grab::GrabVolume,
         fingers::grip::{self, Grip as FingerGrip, GripSource},
         frame::Hand,
+        haptics::{self, Sustain},
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
             PhysicalHandsConfig,
@@ -56,10 +57,9 @@ use crate::{
                 drive::{Goal, rig_jumped},
             },
             pickup::REACH_DIRECTIONS,
-            pulse, stunt,
+            stunt,
         },
         roomscale::teleport,
-        weapons::haptics::PulseSource,
     },
     vr::recenter_count,
 };
@@ -329,22 +329,15 @@ pub(super) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
     };
     let (events, strain, gripping) = events;
     for (hand, event) in events {
-        let (spec, scale) = match event {
-            Event::Gripped => (config.climb.grab_pulse, 1.0),
-            Event::Released => (config.climb.release_pulse, 1.0),
-            Event::Flung(share) => (config.climb.fling_pulse, share),
-        };
-        pulse(hand, spec, scale, config, PulseSource::Pickup);
+        match event {
+            Event::Gripped => haptics::play(hand, haptics::Event::ClimbGrip),
+            Event::Released => haptics::play(hand, haptics::Event::ClimbRelease),
+            Event::Flung(share) => haptics::play_scaled(hand, haptics::Event::ClimbFling, share),
+        }
     }
     if let Some(strain) = strain.filter(|&s| s >= MIN_TENSION) {
         for hand in Hand::BOTH.into_iter().filter(|h| gripping[h.index()]) {
-            pulse(
-                hand,
-                config.climb.tension_pulse,
-                strain,
-                config,
-                PulseSource::Pickup,
-            );
+            haptics::sustain(hand, Sustain::ClimbStrain, strain);
         }
     }
 }

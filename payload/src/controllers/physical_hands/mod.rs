@@ -94,6 +94,7 @@ use crate::{
         },
         frame::{Hand, Pose},
         hands::{self, CockpitHand, pose as hand_pose, reach, tiers},
+        haptics::{self, Event},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         motion,
         physical_hands::{
@@ -103,16 +104,11 @@ use crate::{
             palm::{PROBE_POINTS, PalmBox},
             pickup::{HeldReport, JointInputs, PickupState, PickupStatus},
             shove::{Give, ShoveTuning},
-            touch::{ShoveInput, Touch, pressure_pulses},
+            touch::{ShoveInput, Touch, pressure_haptics},
         },
         roomscale::teleport,
         scheme,
-        weapons::{
-            self, c4,
-            config::PulseSpec,
-            foregrip, grenade,
-            haptics::{self, PulseSource},
-        },
+        weapons::{self, c4, foregrip, grenade},
     },
     headpose, hooks,
 };
@@ -625,7 +621,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &config.pickup) };
         joined = outcome.joints;
         pins = outcome.pins;
-        state.record_pickup(outcome, &mut hand_status, &config);
+        state.record_pickup(outcome, &mut hand_status);
         for hand in Hand::BOTH {
             let i = hand.index();
             hand_status[i].latched = state.pickup.latched(hand);
@@ -657,7 +653,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     declare_grips(&state.pickup, &hand_status, wrists, &mut |from, to| {
         cast(from, to, &reach_options)
     });
-    pressure_pulses(&hand_status, &config);
+    pressure_haptics(&hand_status);
     let push = push::combine(hand_status.map(|h| h.push), &config);
     for touch in touches {
         // SAFETY: forwarded from the caller; the touches' objects were found by this tick's casts.
@@ -797,47 +793,24 @@ impl State {
     }
 
     /// Fold a pickup tick into the readout, and pulse the hands that took hold or let go.
-    fn record_pickup(
-        &mut self,
-        outcome: pickup::TickOutcome,
-        hand_status: &mut [HandStatus; 2],
-        config: &PhysicalHandsConfig,
-    ) {
+    fn record_pickup(&mut self, outcome: pickup::TickOutcome, hand_status: &mut [HandStatus; 2]) {
         let status = &mut self.status.pickup;
         for hand in Hand::BOTH {
             let i = hand.index();
             hand_status[i].held = outcome.reports[i];
             if outcome.taken[i] {
                 status.holds += 1;
-                pulse(
-                    hand,
-                    config.pickup.grab_pulse,
-                    1.0,
-                    config,
-                    PulseSource::Pickup,
-                );
+                haptics::play(hand, Event::Take);
             }
             if outcome.released[i] {
                 status.releases += 1;
-                pulse(
-                    hand,
-                    config.pickup.release_pulse,
-                    1.0,
-                    config,
-                    PulseSource::Pickup,
-                );
+                haptics::play(hand, Event::LetGo);
             }
         }
         for hand in Hand::BOTH {
             if outcome.unlatched[hand.index()] {
                 status.unlatches += 1;
-                pulse(
-                    hand,
-                    config.doors.unlatch_pulse,
-                    1.0,
-                    config,
-                    PulseSource::Pickup,
-                );
+                haptics::play(hand, Event::Unlatch);
             }
         }
         status.door_grips += outcome.door_grips;
@@ -971,25 +944,4 @@ fn free_hands() -> [bool; 2] {
             && !throwing.contains(&Some(hand))
             && weights[hand.index()] > 0.0
     })
-}
-
-/// Pulse `hand` with `spec` scaled by `scale`.
-fn pulse(
-    hand: Hand,
-    spec: PulseSpec,
-    scale: f32,
-    config: &PhysicalHandsConfig,
-    source: PulseSource,
-) {
-    if !config.haptics {
-        return;
-    }
-    haptics::pulse(
-        hand,
-        PulseSpec {
-            amplitude: (spec.amplitude * scale).clamp(0.0, 1.0),
-            duration_s: spec.duration_s,
-        },
-        source,
-    );
 }

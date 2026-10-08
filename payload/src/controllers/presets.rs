@@ -84,9 +84,10 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.block_fire_during_actions = weapons;
     c.weapons.recoil.enabled = weapons;
     c.weapons.recoil.suppress_camera_kick = weapons;
-    c.weapons.haptics.enabled = weapons;
-    c.weapons.haptics.game_rumble = weapons;
-    c.weapons.haptics.grapple = weapons;
+    c.haptics.enabled = weapons;
+    c.haptics.game_rumble = weapons;
+    c.haptics.categories.weapons = weapons;
+    c.haptics.categories.traversal = weapons;
     c.weapons.dual_wield.split = weapons;
     c.weapons.dual_wield.place_by_handedness = weapons;
     c.weapons.dual_wield.independent_draw = weapons;
@@ -133,7 +134,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.grapple.reel.enabled = hands;
     c.grapple.tether.enabled = hands;
     c.grapple.swing.pump = hands;
-    c.grapple.haptics.enabled = weapons;
 }
 
 /// Whether applying the preset changes any of its owned switches.

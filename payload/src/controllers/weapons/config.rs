@@ -1,5 +1,5 @@
 //! The weapon-handling settings (the holsters, the pouches, the foregrip, the recoil, the weight,
-//! the haptics, the dual-wield split, the grenade throw, the C4 throw, and the scopes), held in
+//! the dual-wield split, the grenade throw, the C4 throw, and the scopes), held in
 //! [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other weapon-handling
 //! subsystems' toggles. The reload's are in [`crate::controllers::weapons::reload::config`].
 
@@ -482,101 +482,6 @@ impl Default for HeftTuning {
     }
 }
 
-/// Controller vibration (see [`crate::controllers::weapons::haptics`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HapticsConfig {
-    /// Off, every queued pulse is dropped.
-    pub enabled: bool,
-    /// Scales every pulse's amplitude, `0..=1`.
-    pub intensity: f32,
-    /// Forward every game rumble (weapon fire, damage, impacts, landings, vehicles, and the rest)
-    /// to the controllers: a weapon's own fire rumble goes to the hand holding that gun, and the
-    /// game's continuous left and right motor strength otherwise goes to the hands by side.
-    pub game_rumble: bool,
-    /// Also let the physical gamepad rumble under the controller scheme, instead of silencing it
-    /// so only the controllers vibrate.
-    pub gamepad_rumble: bool,
-    /// How much a shot's recoil kick adds to its pulse's amplitude, per radian of kick.
-    pub kick_amplitude_per_rad: f32,
-    /// The longest pulse a one-off game rumble plays for, seconds: the game's rumbles can last long
-    /// enough to blur into one another on a controller.
-    pub max_pulse_s: f32,
-    /// How long each continuous rumble's forwarded pulse plays before the next frame refreshes it,
-    /// seconds: long enough to bridge a frame hitch without a gap, short enough to stop quickly once
-    /// the game's rumble does.
-    pub continuous_pulse_s: f32,
-    /// Pulse the grapple hand when the grapple fires and when its hook attaches.
-    pub grapple: bool,
-    pub grapple_fire: PulseSpec,
-    pub grapple_attach: PulseSpec,
-    /// Pulse the grapple hand when a yank is detected.
-    pub yank: PulseSpec,
-    /// Pulse the hand whose gun is pulled while it is empty and cannot reload, once per pull.
-    pub dry_fire: PulseSpec,
-    /// Cue the grab volumes on the hands: a tick as a hand enters a holster or a pouch, and a
-    /// firmer pulse on a draw, a holster, and a foregrip grab or release.
-    pub volume_cues: bool,
-    /// The tick as a hand enters a holster or a pouch.
-    pub volume_enter: PulseSpec,
-    /// The pulse on a draw, a holster, and a foregrip grab or release.
-    pub grab: PulseSpec,
-}
-
-impl HapticsConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            intensity: 1.0,
-            game_rumble: true,
-            gamepad_rumble: false,
-            kick_amplitude_per_rad: 6.0,
-            max_pulse_s: 0.4,
-            continuous_pulse_s: 0.1,
-            grapple: true,
-            grapple_fire: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.04,
-            },
-            grapple_attach: PulseSpec {
-                amplitude: 0.7,
-                duration_s: 0.06,
-            },
-            yank: PulseSpec {
-                amplitude: 0.5,
-                duration_s: 0.05,
-            },
-            dry_fire: PulseSpec {
-                amplitude: 0.3,
-                duration_s: 0.015,
-            },
-            volume_cues: true,
-            volume_enter: PulseSpec {
-                amplitude: 0.12,
-                duration_s: 0.008,
-            },
-            grab: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.025,
-            },
-        }
-    }
-}
-
-impl Default for HapticsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// One fixed haptic pulse.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PulseSpec {
-    /// `0..=1`.
-    pub amplitude: f32,
-    pub duration_s: f32,
-}
-
 /// Dual-wielded pistols (see [`crate::controllers::weapons::dual_wield`]). Acts only under the
 /// controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -755,15 +660,9 @@ pub struct GrenadeConfig {
     pub warning_overlay: bool,
     /// Pulse the throwing hand as the fuse runs down, faster toward the end.
     pub warning_haptics: bool,
-    pub warning_pulse: PulseSpec,
     /// The gap between warning pulses when the warning starts, and when the fuse is about to run
     /// out, seconds.
     pub warning_interval_s: [f32; 2],
-    /// A pulse on the throwing hand when the grenade is primed in it.
-    pub prime_pulse: PulseSpec,
-    /// A buzz on the hand that grabbed the pouch when the game refuses it a grenade: none are
-    /// left, grenades are not allowed now, or the game's own throw holds one.
-    pub refused_pulse: PulseSpec,
     /// The pin of a grenade taken from the pouch.
     pub pin: GrenadePinConfig,
     /// Catching live grenades.
@@ -782,19 +681,7 @@ impl GrenadeConfig {
             warning_s: 2.0,
             warning_overlay: true,
             warning_haptics: true,
-            warning_pulse: PulseSpec {
-                amplitude: 0.45,
-                duration_s: 0.03,
-            },
             warning_interval_s: [0.5, 0.08],
-            prime_pulse: PulseSpec {
-                amplitude: 0.3,
-                duration_s: 0.04,
-            },
-            refused_pulse: PulseSpec {
-                amplitude: 0.5,
-                duration_s: 0.15,
-            },
             pin: GrenadePinConfig::new(),
             catch: GrenadeCatchConfig::new(),
         }
@@ -824,16 +711,6 @@ pub struct C4Config {
     pub velocity_scale: f32,
     /// The fastest a charge may leave the hand, metres per second, against tracking glitches.
     pub max_speed_mps: f32,
-    /// A pulse on the hand a charge is primed in.
-    pub prime_pulse: PulseSpec,
-    /// A pulse on the hand that throws a charge, as it leaves the hand.
-    pub throw_pulse: PulseSpec,
-    /// A buzz on the hand that grabbed the pouch when the game refuses it a charge: as many are
-    /// placed as may be, or planting is not allowed now.
-    pub refused_pulse: PulseSpec,
-    /// A pulse on both hands when the placed charges detonate, from the wrist button or the stick
-    /// click alike.
-    pub detonate_pulse: PulseSpec,
     /// The detonator button on the off-hand's wrist.
     pub detonator: WristDetonatorConfig,
     /// Pressing a held charge onto a surface sticks it there.
@@ -848,22 +725,6 @@ impl C4Config {
             release_peak_span_s: 0.015,
             velocity_scale: 1.0,
             max_speed_mps: 25.0,
-            prime_pulse: PulseSpec {
-                amplitude: 0.3,
-                duration_s: 0.04,
-            },
-            throw_pulse: PulseSpec {
-                amplitude: 0.4,
-                duration_s: 0.03,
-            },
-            refused_pulse: PulseSpec {
-                amplitude: 0.5,
-                duration_s: 0.15,
-            },
-            detonate_pulse: PulseSpec {
-                amplitude: 1.0,
-                duration_s: 0.25,
-            },
             detonator: WristDetonatorConfig::new(),
             stick: C4StickConfig::new(),
         }
@@ -916,10 +777,6 @@ pub struct WristDetonatorConfig {
     /// Draw the button on the wrist, facing out of it: dim with no charges placed, lit with a pip
     /// beside it for each placed charge, and flashing on a press and on the detonation.
     pub overlay: bool,
-    /// A click on both hands when the button presses with charges placed.
-    pub pulse: PulseSpec,
-    /// A buzz on the pressing hand when the button presses with no charges placed.
-    pub empty_pulse: PulseSpec,
 }
 
 impl WristDetonatorConfig {
@@ -936,14 +793,6 @@ impl WristDetonatorConfig {
             fingertip_pointing_m: Vec3::new(0.0, -0.02, -0.04),
             fingertip_resting_m: Vec3::new(0.0, -0.04, 0.02),
             overlay: true,
-            pulse: PulseSpec {
-                amplitude: 0.6,
-                duration_s: 0.03,
-            },
-            empty_pulse: PulseSpec {
-                amplitude: 0.25,
-                duration_s: 0.12,
-            },
         }
     }
 }

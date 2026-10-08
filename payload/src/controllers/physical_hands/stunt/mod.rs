@@ -41,16 +41,15 @@ use crate::{
         },
         fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
         frame::Hand,
+        haptics::{self, Event, Sustain},
         physical_hands::{
             PhysicalHandsConfig,
             climb::{self, engine::player_place},
-            pulse,
             stunt::{
                 engine::Entry,
                 solve::{Decision, StuntKind, Tick, Tracker, Tuning},
             },
         },
-        weapons::haptics::PulseSource,
     },
 };
 
@@ -161,7 +160,8 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
     } else {
         [false; 2]
     };
-    let mut pulses: Vec<(Hand, f32, bool)> = Vec::new();
+    let mut pulses: Vec<(Hand, Event)> = Vec::new();
+    let mut strains: Vec<(Hand, f32)> = Vec::new();
     match decision {
         Decision::Hold => {}
         Decision::EnterHang(hand) => {
@@ -179,7 +179,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
                         Hand::BOTH
                             .into_iter()
                             .filter(|h| held[h.index()])
-                            .map(|h| (h, 1.0, true)),
+                            .map(|h| (h, Event::StuntEnter)),
                     );
                 }
             }
@@ -194,7 +194,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
                         distance_m = ?distance,
                         "stunt positions: the mantle took the player into the vehicle's stunt area"
                     );
-                    pulses.extend(Hand::BOTH.map(|h| (h, 1.0, true)));
+                    pulses.extend(Hand::BOTH.map(|h| (h, Event::StuntEnter)));
                 }
             }
         }
@@ -208,7 +208,7 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
             });
             state.status.releases += 1;
             tracing::info!("stunt positions: every grip opened, so the hang lets go");
-            pulses.extend(Hand::BOTH.map(|h| (h, 1.0, false)));
+            pulses.extend(Hand::BOTH.map(|h| (h, Event::StuntRelease)));
         }
         Decision::LetGoIgnored => {
             tracing::warn!(
@@ -227,17 +227,15 @@ pub(crate) fn finish_tick(held: [bool; 2], desired: &mut Vec<Desired>) {
             grip::declare(hand, Grip::new(GripSource::Stunt).pose(skid));
         }
         if in_hang && strain >= MIN_STRAIN {
-            pulses.push((hand, strain, false));
+            strains.push((hand, strain));
         }
     }
     drop(state);
-    for (hand, scale, entry) in pulses {
-        let spec = match (entry, decision) {
-            (true, _) => config.stunt.enter_pulse,
-            (false, Decision::LetGo) => config.stunt.release_pulse,
-            (false, _) => config.stunt.hold_pulse,
-        };
-        pulse(hand, spec, scale, &config, PulseSource::Pickup);
+    for (hand, event) in pulses {
+        haptics::play(hand, event);
+    }
+    for (hand, strain) in strains {
+        haptics::sustain(hand, Sustain::StuntHang, strain);
     }
 }
 

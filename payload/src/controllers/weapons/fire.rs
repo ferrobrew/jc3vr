@@ -7,7 +7,7 @@
 //! - before the shot, it notes the gun's hand and the weapon's per-tick recoil
 //!   ([`WeaponBase::m_RecoilPitch`] and [`WeaponBase::m_RecoilYaw`]), and marks the shot on the
 //!   thread so that the fire rumble spawned inside it goes to that hand
-//!   ([`crate::controllers::weapons::haptics`]);
+//!   ([`crate::controllers::haptics::rumble`]);
 //! - after the shot, the change in the recoil is the shot's kick, which kicks the hand's recoil
 //!   offset ([`crate::controllers::weapons::recoil`]), by the class's one-handed kick scale for a
 //!   long gun in one hand ([`crate::controllers::weapons::heft`]), the dual-wield split learns which
@@ -27,8 +27,9 @@ use crate::{
         aim::gun,
         frame::Hand,
         hands::late,
+        haptics::rumble,
         scheme, vehicles,
-        weapons::{dual_wield, haptics, heft, hold::second, recoil, reload},
+        weapons::{dual_wield, heft, hold::second, recoil, reload},
     },
 };
 
@@ -38,7 +39,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// The hand of the shot in progress on this thread and the recoil kick so far, radians, when a
 /// shot of a gun held in a hand is in progress.
-pub(super) fn rumble_in_shot() -> Option<(Hand, f32)> {
+pub(crate) fn rumble_in_shot() -> Option<(Hand, f32)> {
     let shot = SHOT.get()?;
     let hand = shot.hand?;
     SHOT.set(Some(Shot {
@@ -120,7 +121,7 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     }
     reload::on_shot(weapon as usize, hand, w.m_MagazineAmmo);
     if !shot.rumbled {
-        haptics::kick_pulse(hand, pitch.hypot(yaw));
+        rumble::kick(hand, pitch.hypot(yaw));
     }
 }
 

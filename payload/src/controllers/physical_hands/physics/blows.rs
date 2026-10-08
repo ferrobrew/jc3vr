@@ -36,6 +36,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::Hand,
+    haptics::{self, Event},
     physical_hands::{
         PhysicalHandsConfig,
         bodies::owner_of,
@@ -48,10 +49,8 @@ use crate::controllers::{
                 pulse_share, restrain,
             },
         },
-        pulse,
         world::World,
     },
-    weapons::haptics::PulseSource,
 };
 
 /// A blow a hand dealt, for the readout.
@@ -105,19 +104,11 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         .elapsed()
         .as_secs_f64();
     for contact in contacts {
-        if hits.haptics {
-            // Harder the faster the hand met it: a punch, not a shove.
-            let met = hits.blow_mass_kg.max(0.0) * contact.hand_velocity.length();
-            let share = pulse_share(met, hits.full_pulse_impulse_ns);
-            if share >= MIN_PULSE_SHARE {
-                pulse(
-                    contact.hand,
-                    config.contact_pulse,
-                    share,
-                    config,
-                    PulseSource::Collision,
-                );
-            }
+        // Harder the faster the hand met it: a punch, not a shove.
+        let met = hits.blow_mass_kg.max(0.0) * contact.hand_velocity.length();
+        let share = pulse_share(met, hits.full_pulse_impulse_ns);
+        if share >= MIN_PULSE_SHARE {
+            haptics::play_scaled(contact.hand, Event::HandStrike, share);
         }
         if !hits.reactions {
             continue;

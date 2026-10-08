@@ -5,8 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// The grenade's pin: a grenade from the pouch comes out with its fuse held until the pin is
 /// pulled. Acts only under the controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -19,8 +17,6 @@ pub struct GrenadePinConfig {
     pub radius_m: f32,
     /// Let the trigger of the hand holding the grenade pull the pin, for a throw with one hand.
     pub trigger: bool,
-    /// A pulse on both hands when the pin comes out.
-    pub pulse: PulseSpec,
 }
 
 impl GrenadePinConfig {
@@ -29,10 +25,6 @@ impl GrenadePinConfig {
             enabled: true,
             radius_m: 0.08,
             trigger: true,
-            pulse: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.05,
-            },
         }
     }
 }
@@ -60,8 +52,6 @@ pub struct GrenadeCatchConfig {
     pub own_grace_s: f32,
     /// The fastest a caught grenade is moved toward the hand, metres per second.
     pub max_carry_mps: f32,
-    /// A pulse on the hand that catches a grenade.
-    pub pulse: PulseSpec,
 }
 
 impl GrenadeCatchConfig {
@@ -72,10 +62,6 @@ impl GrenadeCatchConfig {
             range_m: 4.0,
             own_grace_s: 0.4,
             max_carry_mps: 25.0,
-            pulse: PulseSpec {
-                amplitude: 0.6,
-                duration_s: 0.06,
-            },
         }
     }
 }

@@ -10,6 +10,7 @@
 mod aim;
 mod fingers;
 mod grapple;
+mod haptics;
 mod input;
 mod physical_hands;
 mod roomscale;
@@ -25,7 +26,7 @@ use crate::{
         config::{ControllersConfig, SightTable},
         frame::PressThresholds,
         locomotion::config::validate as locomotion,
-        weapons::config::{PulseSpec, VolumeSpec},
+        weapons::config::VolumeSpec,
     },
     headpose::config::VrTurnConfig,
 };
@@ -60,7 +61,8 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     vehicles::vehicles(&c.vehicles)?;
     fingers::fingers(&c.fingers)?;
     physical_hands::physical_hands(&c.physical_hands)?;
-    grapple::grapple(&c.grapple)
+    grapple::grapple(&c.grapple)?;
+    haptics::haptics(&c.haptics)
 }
 
 /// Check the per-weapon sight corrections: finite, in range, and at most one per weapon.
@@ -122,11 +124,6 @@ fn vec3(name: &str, value: Vec3, max: f32) -> Result<(), Invalid> {
 fn volume(name: &str, value: &VolumeSpec) -> Result<(), Invalid> {
     vec3(&format!("{name}.offset_m"), value.offset_m, 10.0)?;
     positive(&format!("{name}.radius_m"), value.radius_m, 10.0)
-}
-
-fn pulse(name: &str, value: &PulseSpec) -> Result<(), Invalid> {
-    range(&format!("{name}.amplitude"), value.amplitude, 0.0, 1.0)?;
-    nonnegative(&format!("{name}.duration_s"), value.duration_s, 60.0)
 }
 
 fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {

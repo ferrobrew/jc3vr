@@ -71,7 +71,7 @@ The handle's place and travel come from the wells table; a weapon whose handle t
 
 With `manual_action` on, a bolt-action rifle and a pump-action shotgun empty their chamber after every shot, whether or not `chamber` is on, and the game's own cycling is suppressed (see "The bolt and the pump"). A worked action loads the chamber when the magazine is in and holds a round. While a pistol's chamber is empty its slide is drawn back, and while it is worked it follows the hand: the game moves a slide back along its own axis after each shot and all the way while the magazine is empty ([`BarrelRecoilWeaponComponent::m_RecoilMaxLength`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::BarrelRecoilWeaponComponent##field-m_RecoilMaxLength)), and the late update of the gun's parts adds the rest (`render.rs`, through `hands/parts.rs`).
 
-A gun held by its chamber, by a magazine out, or by the belt cannot fire: the input tick keeps its trigger from the game and pulses `weapons.haptics.dry_fire` at the pull's press edge, and the ammunition check clears the gun's shot as well against a buffered one (`empty.rs`). With the dual-wield split a held pistol's trigger is kept from the split, so the other pistol still fires.
+A gun held by its chamber, by a magazine out, or by the belt cannot fire: the input tick keeps its trigger from the game and plays `Event::DryFire` ([haptics.md](haptics.md)) at the pull's press edge, and the ammunition check clears the gun's shot as well against a buffered one (`empty.rs`). With the dual-wield split a held pistol's trigger is kept from the split, so the other pistol still fires.
 
 ## The bolt and the pump
 
@@ -89,7 +89,7 @@ With a second weapon in the other hand ([physical-weapons.md, "A second weapon"]
 
 ## Haptics
 
-`haptics` holds the reload's pulses: the eject on the gun hand, a round taken from the pouch, an empty pouch, a round caught by the well and a seat on both hands, a belt seat on the gun hand, a full pull of the action on the working hand, and a chambered round on the gun hand. The dry fire is `weapons.haptics.dry_fire`.
+Each step plays a cue of the weapons category ([haptics.md](haptics.md)): the eject on the gun hand (`Event::Eject`), a round taken from the pouch (`Event::PouchTake`), an empty pouch (`Event::PouchEmpty`), a round caught by the well and a seat on both hands (`Event::WellCatch`, `Event::MagazineSeat`), a belt seat on the gun hand (`Event::BeltSeat`), a full pull of the action on the working hand (`Event::Rack`), and a chambered round on the gun hand (`Event::Chambered`). The dry fire is `Event::DryFire`.
 
 ## The readout
 

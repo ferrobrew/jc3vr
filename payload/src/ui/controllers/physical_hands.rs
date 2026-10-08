@@ -15,7 +15,7 @@ use crate::{
             vault::{self, VaultConfig},
         },
     },
-    ui::controllers::{vec3_drag, weapons::pulse_settings},
+    ui::controllers::vec3_drag,
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
@@ -208,10 +208,6 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
             egui::Slider::new(&mut p.object_impulse, 0.0..=4.0).text("Object impulse (× melee)"),
         );
         ui.separator();
-        ui.checkbox(&mut p.haptics, "Contact pulses");
-        pulse_settings(ui, "Contact pulse", &mut p.contact_pulse);
-        pulse_settings(ui, "Pressure pulse (full load)", &mut p.pressure_pulse);
-        ui.separator();
         pickup_settings(ui, &mut p.pickup);
         ui.separator();
         doors_settings(ui, &mut p.doors);
@@ -267,7 +263,6 @@ fn doors_settings(ui: &mut Ui, d: &mut DoorsConfig) {
             egui::Slider::new(&mut d.handle_share, 0.0..=1.0).text("Handle area from the hinge"),
         );
         ui.add(egui::Slider::new(&mut d.unlatch_pull_m, 0.0..=0.3).text("Pull to unlatch (m)"));
-        pulse_settings(ui, "Unlatch pulse", &mut d.unlatch_pulse);
     });
 }
 
@@ -315,8 +310,6 @@ fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
         ui.add(
             egui::Slider::new(&mut p.max_throw_speed_mps, 0.0..=80.0).text("Fastest throw (m/s)"),
         );
-        pulse_settings(ui, "Grab pulse", &mut p.grab_pulse);
-        pulse_settings(ui, "Release pulse", &mut p.release_pulse);
     });
 }
 

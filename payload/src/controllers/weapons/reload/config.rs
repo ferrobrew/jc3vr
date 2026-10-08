@@ -4,8 +4,6 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// The true reload. Acts only under the controller scheme, so it defaults on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -56,7 +54,6 @@ pub struct ReloadConfig {
     /// Give each dual-wielded pistol its own magazine: half the weapon's, run dry, ejected, and
     /// reloaded on its own.
     pub dual_split: bool,
-    pub haptics: ReloadHaptics,
     /// Ejected magazines that stay in the world with their rounds.
     pub loose: LooseMagazineConfig,
 }
@@ -82,7 +79,6 @@ impl ReloadConfig {
             manual_action: true,
             action: ActionConfig::new(),
             dual_split: true,
-            haptics: ReloadHaptics::new(),
             loose: LooseMagazineConfig::new(),
         }
     }
@@ -223,73 +219,6 @@ impl ActionConfig {
 }
 
 impl Default for ActionConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The reload's pulses.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ReloadHaptics {
-    /// On the gun hand at an eject.
-    pub eject: PulseSpec,
-    /// On the hand that takes a magazine from the pouch.
-    pub pouch_take: PulseSpec,
-    /// Twice on a hand that reaches into the pouch with no ammunition left.
-    pub pouch_empty: PulseSpec,
-    /// On both hands when a magazine catches the well.
-    pub capture: PulseSpec,
-    /// On both hands when a magazine seats.
-    pub seat: PulseSpec,
-    /// On the gun hand when a belt push seats a magazine.
-    pub belt_seat: PulseSpec,
-    /// On the working hand when a pull reaches the action's travel.
-    pub rack: PulseSpec,
-    /// On the gun hand when the action closes on a round.
-    pub chambered: PulseSpec,
-}
-
-impl ReloadHaptics {
-    pub const fn new() -> Self {
-        Self {
-            eject: PulseSpec {
-                amplitude: 0.4,
-                duration_s: 0.02,
-            },
-            pouch_take: PulseSpec {
-                amplitude: 0.25,
-                duration_s: 0.02,
-            },
-            pouch_empty: PulseSpec {
-                amplitude: 0.2,
-                duration_s: 0.012,
-            },
-            capture: PulseSpec {
-                amplitude: 0.3,
-                duration_s: 0.015,
-            },
-            seat: PulseSpec {
-                amplitude: 0.7,
-                duration_s: 0.04,
-            },
-            belt_seat: PulseSpec {
-                amplitude: 0.85,
-                duration_s: 0.05,
-            },
-            rack: PulseSpec {
-                amplitude: 0.5,
-                duration_s: 0.025,
-            },
-            chambered: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.02,
-            },
-        }
-    }
-}
-
-impl Default for ReloadHaptics {
     fn default() -> Self {
         Self::new()
     }

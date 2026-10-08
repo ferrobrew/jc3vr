@@ -96,6 +96,7 @@ use crate::{
         fingers::grip::{self, Grip, GripSource},
         frame::{Hand, Pose},
         hands::{self, CockpitHand, tiers},
+        haptics::{self, Event},
         mode::{Mode, VehicleSeat},
         overlay::{primitive::Source, store},
         vehicles::{
@@ -112,7 +113,6 @@ use crate::{
             wheel::{CockpitTransform, WheelFrame},
             wheel_render::RenderWheel,
         },
-        weapons::haptics::{self, PulseSource},
     },
     headpose,
 };
@@ -557,7 +557,7 @@ pub(crate) fn finish_tick(
     state.status.mounted_holds = state.mounted_grip.holds;
     if !mounted_events.is_empty() {
         state.status.mounted_grip_events += mounted_events.len() as u64;
-        log_mounted_events(&mounted_events, &config);
+        log_mounted_events(&mounted_events);
     }
     let Some(placement) = state.placement else {
         return;
@@ -877,12 +877,12 @@ static ARM_PANEL: Mutex<Option<ArmReadout>> = Mutex::new(None);
 static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
 
 /// Log the hands taking and letting go of the mounted gun's handles, and pulse a taking hand.
-fn log_mounted_events(events: &[MountedGripEvent], config: &ControllersConfig) {
+fn log_mounted_events(events: &[MountedGripEvent]) {
     for event in events {
         match *event {
             MountedGripEvent::Grabbed(hand) => {
                 tracing::info!(target: "controllers", hand = hand.label(), "the hand took the mounted gun's handle");
-                haptics::pulse(hand, config.weapons.haptics.grab, PulseSource::GrabVolume);
+                haptics::play(hand, Event::HandleGrab);
             }
             MountedGripEvent::Released(hand) => {
                 tracing::info!(target: "controllers", hand = hand.label(), "the hand let go of the mounted gun's handle");

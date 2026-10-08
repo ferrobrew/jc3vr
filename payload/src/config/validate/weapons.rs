@@ -1,8 +1,8 @@
-//! Checks for physical weapon handling: holsters, pouches, the foregrip, recoil, heft, haptics,
+//! Checks for physical weapon handling: holsters, pouches, the foregrip, recoil, heft,
 //! the grenade and C4 throws, the scope, and the true reload.
 
 use crate::{
-    config::validate::{Invalid, nonnegative, positive, pulse, range, vec3, volume},
+    config::validate::{Invalid, nonnegative, positive, range, vec3, volume},
     controllers::{
         config::WeaponsConfig,
         weapons::{config::HeftConfig, reload::config::ReloadConfig},
@@ -80,19 +80,6 @@ pub(super) fn weapons(w: &WeaponsConfig) -> Result<(), Invalid> {
         180.0,
     )?;
     heft(&w.heft)?;
-    pulse("weapons.haptics.grapple_fire", &w.haptics.grapple_fire)?;
-    pulse("weapons.haptics.grapple_attach", &w.haptics.grapple_attach)?;
-    pulse("weapons.haptics.yank", &w.haptics.yank)?;
-    pulse("weapons.haptics.dry_fire", &w.haptics.dry_fire)?;
-    pulse("weapons.haptics.volume_enter", &w.haptics.volume_enter)?;
-    pulse("weapons.haptics.grab", &w.haptics.grab)?;
-    range("weapons.haptics.intensity", w.haptics.intensity, 0.0, 1.0)?;
-    nonnegative(
-        "weapons.haptics.kick_amplitude_per_rad",
-        w.haptics.kick_amplitude_per_rad,
-        100.0,
-    )?;
-    nonnegative("weapons.haptics.max_pulse_s", w.haptics.max_pulse_s, 60.0)?;
     vec3(
         "weapons.grenade.hold_offset_m",
         w.grenade.hold_offset_m,
@@ -119,7 +106,6 @@ pub(super) fn weapons(w: &WeaponsConfig) -> Result<(), Invalid> {
         1_000.0,
     )?;
     nonnegative("weapons.grenade.warning_s", w.grenade.warning_s, 60.0)?;
-    pulse("weapons.grenade.warning_pulse", &w.grenade.warning_pulse)?;
     for (index, value) in w.grenade.warning_interval_s.into_iter().enumerate() {
         positive(
             &format!("weapons.grenade.warning_interval_s[{index}]"),
@@ -127,8 +113,6 @@ pub(super) fn weapons(w: &WeaponsConfig) -> Result<(), Invalid> {
             60.0,
         )?;
     }
-    pulse("weapons.grenade.prime_pulse", &w.grenade.prime_pulse)?;
-    pulse("weapons.grenade.refused_pulse", &w.grenade.refused_pulse)?;
     let c4 = &w.c4;
     vec3("weapons.c4.hold_offset_m", c4.hold_offset_m, 5.0)?;
     positive("weapons.c4.release_window_s", c4.release_window_s, 60.0)?;
@@ -139,10 +123,6 @@ pub(super) fn weapons(w: &WeaponsConfig) -> Result<(), Invalid> {
     )?;
     nonnegative("weapons.c4.velocity_scale", c4.velocity_scale, 100.0)?;
     nonnegative("weapons.c4.max_speed_mps", c4.max_speed_mps, 1_000.0)?;
-    pulse("weapons.c4.prime_pulse", &c4.prime_pulse)?;
-    pulse("weapons.c4.throw_pulse", &c4.throw_pulse)?;
-    pulse("weapons.c4.refused_pulse", &c4.refused_pulse)?;
-    pulse("weapons.c4.detonate_pulse", &c4.detonate_pulse)?;
     let d = &c4.detonator;
     vec3("weapons.c4.detonator.offset_m", d.offset_m, 5.0)?;
     vec3("weapons.c4.detonator.normal", d.normal, 5.0)?;
@@ -171,8 +151,6 @@ pub(super) fn weapons(w: &WeaponsConfig) -> Result<(), Invalid> {
         d.fingertip_resting_m,
         5.0,
     )?;
-    pulse("weapons.c4.detonator.pulse", &d.pulse)?;
-    pulse("weapons.c4.detonator.empty_pulse", &d.empty_pulse)?;
     reload(&w.reload)?;
     positive("weapons.scope.zoom", w.scope.zoom, 100.0)?;
     positive("weapons.scope.lens_radius_m", w.scope.lens_radius_m, 10.0)?;
@@ -306,18 +284,5 @@ fn reload(r: &ReloadConfig) -> Result<(), Invalid> {
         r.action.default_travel_m,
         1.0,
     )?;
-    let h = &r.haptics;
-    for (name, spec) in [
-        ("weapons.reload.haptics.eject", &h.eject),
-        ("weapons.reload.haptics.pouch_take", &h.pouch_take),
-        ("weapons.reload.haptics.pouch_empty", &h.pouch_empty),
-        ("weapons.reload.haptics.capture", &h.capture),
-        ("weapons.reload.haptics.seat", &h.seat),
-        ("weapons.reload.haptics.belt_seat", &h.belt_seat),
-        ("weapons.reload.haptics.rack", &h.rack),
-        ("weapons.reload.haptics.chambered", &h.chambered),
-    ] {
-        pulse(name, spec)?;
-    }
     Ok(())
 }

@@ -11,8 +11,8 @@ use crate::{
     },
     headpose::config::VrTurnMode,
     ui::controllers::{
-        aim, alignment, climb, fingers, hand_bodies, hands, overlay, physical_hands, roomscale,
-        scope, stunt, summary, vehicles, weapons,
+        aim, alignment, climb, fingers, hand_bodies, hands, haptics, overlay, physical_hands,
+        roomscale, scope, stunt, summary, vehicles, weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -192,14 +192,6 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
             ui.add(egui::Slider::new(&mut g.swing.full_mps, 0.2..=4.0).text("Pump full speed (m/s)"));
             ui.add(egui::Slider::new(&mut g.swing.scale, -3.0..=3.0).text("Pump strength"));
             ui.add(egui::Slider::new(&mut g.swing.max_scale, 0.0..=4.0).text("Swing cap"));
-            ui.checkbox(&mut g.haptics.enabled, "Line tension haptics");
-            ui.add(
-                egui::Slider::new(&mut g.haptics.tension_amplitude, 0.0..=1.0)
-                    .text("Tension amplitude"),
-            );
-            ui.add(
-                egui::Slider::new(&mut g.haptics.reel_amplitude, 0.0..=1.0).text("Reel amplitude"),
-            );
         });
         ui.add(egui::Slider::new(&mut c.mode.debounce_ticks, 1..=6).text("Mode debounce (ticks)"));
     });
@@ -296,6 +288,9 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         weapons::weapons_settings(ui, w);
         weapons::breadth_settings(ui, w);
     });
+
+    egui::CollapsingHeader::new("Haptics")
+        .show(ui, |ui| haptics::haptics_settings(ui, &mut c.haptics));
 
     egui::CollapsingHeader::new("Scopes").show(ui, |ui| {
         let w = &mut c.weapons;

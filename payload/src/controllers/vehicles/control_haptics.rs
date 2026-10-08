@@ -1,29 +1,27 @@
 //! The haptic cues the physical controls give the hands holding them: the wheel's stop and centre,
-//! and the sticks' and levers' stops, the levers' neutral, and the throttle's afterburner gate.
+//! the sticks' and levers' stops, the levers' neutral, the throttle's afterburner gate, and the
+//! cockpit buttons.
 
 use crate::controllers::{
     frame::Hand,
+    haptics::{self, Event},
     vehicles::{
         physical::{ControlCue, ControlKind, Outputs, buttons::ButtonEvent},
         steering::WheelCue,
     },
-    weapons::{
-        config::PulseSpec,
-        haptics::{self, PulseSource},
-    },
 };
 
-/// Pulse the hands holding the controls whose cues fired this tick, and the hands that pressed or
-/// let go of a cockpit button or a twist grip. `holds` is the control each hand holds, indexed by
-/// [`Hand::index`].
+/// Play the cues of the controls whose cues fired this tick on the hands holding them, and the
+/// cues of the hands that pressed or let go of a cockpit button or a twist grip. `holds` is the
+/// control each hand holds, indexed by [`Hand::index`].
 pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2], buttons: &[ButtonEvent]) {
     for event in buttons {
-        let spec = if event.engages() {
-            PRESS_PULSE
+        let cue = if event.engages() {
+            Event::ButtonPress
         } else {
-            CENTRE_PULSE
+            Event::ButtonRelease
         };
-        haptics::pulse(event.hand(), spec, PulseSource::VehicleControl);
+        haptics::play(event.hand(), cue);
     }
     let holding = |kinds: &[ControlKind]| -> Vec<Hand> {
         Hand::BOTH
@@ -32,12 +30,12 @@ pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2], buttons:
             .collect()
     };
     if let Some(cue) = outputs.wheel_cue {
-        let spec = match cue {
-            WheelCue::Stop => STOP_PULSE,
-            WheelCue::Centre => CENTRE_PULSE,
+        let cue = match cue {
+            WheelCue::Stop => Event::SteeringStop,
+            WheelCue::Centre => Event::SteeringCentre,
         };
         for hand in holding(&[ControlKind::Wheel]) {
-            haptics::pulse(hand, spec, PulseSource::SteeringWheel);
+            haptics::play(hand, cue);
         }
     }
     let cues = [
@@ -55,38 +53,17 @@ pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2], buttons:
             continue;
         };
         for hand in holding(&kinds) {
-            haptics::pulse(hand, control_pulse(cue), PulseSource::VehicleControl);
+            haptics::play(hand, control_cue(cue));
         }
     }
 }
 
-/// The bump the held wheel gives at its lock.
-const STOP_PULSE: PulseSpec = PulseSpec {
-    amplitude: 0.5,
-    duration_s: 0.03,
-};
-
-/// The click of a cockpit button pressed, or a twist grip twisted far enough to act.
-const PRESS_PULSE: PulseSpec = PulseSpec {
-    amplitude: 0.45,
-    duration_s: 0.025,
-};
-
-/// The light detent the held wheel gives on passing centre.
-const CENTRE_PULSE: PulseSpec = PulseSpec {
-    amplitude: 0.15,
-    duration_s: 0.012,
-};
-
-/// The pulse a stick's or a lever's cue gives: a bump at a stop, a light detent at neutral, and a
-/// firm click at the afterburner gate, which the hand has to find without looking.
-const fn control_pulse(cue: ControlCue) -> PulseSpec {
+/// The cue a stick's or a lever's cue plays: a bump at a stop, a tick at neutral, and a firm bump
+/// at the afterburner gate, which the hand has to find without looking.
+const fn control_cue(cue: ControlCue) -> Event {
     match cue {
-        ControlCue::Stop => STOP_PULSE,
-        ControlCue::Neutral => CENTRE_PULSE,
-        ControlCue::Gate => PulseSpec {
-            amplitude: 0.7,
-            duration_s: 0.04,
-        },
+        ControlCue::Stop => Event::ControlStop,
+        ControlCue::Neutral => Event::ControlNeutral,
+        ControlCue::Gate => Event::ThrottleGate,
     }
 }

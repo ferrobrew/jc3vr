@@ -70,6 +70,7 @@ use crate::{
         config::ControllersConfig,
         frame::{Hand, Pose},
         hands::ActiveHands,
+        haptics::{self, Event},
         motion::{self, ReleaseEstimate},
         overlay::{
             primitive::{
@@ -86,7 +87,6 @@ use crate::{
                 pin::{FuseWrite, Pin, Puller},
                 stage::{InputEvent, Outcome, Refusal, Release, Stage, WeaponAction, WeaponView},
             },
-            haptics::{self, PulseSource},
         },
     },
     headpose,
@@ -267,7 +267,7 @@ pub(super) fn input_tick(
                 state.status.last_puller = Some(puller);
                 tracing::info!(target: "controllers", ?hand, puller = puller.label(), "grenade: pulled the pin");
                 for h in Hand::BOTH {
-                    haptics::pulse(h, tuning.pin.pulse, PulseSource::GrenadeFuse);
+                    haptics::play(h, Event::GrenadePin);
                 }
             }
         }
@@ -327,7 +327,7 @@ pub(super) fn input_tick(
         store::submit(Source::GrenadeWarning, &mut prims, WARNING_TTL);
     }
     if let Some(hand) = pulse {
-        haptics::pulse(hand, tuning.warning_pulse, PulseSource::GrenadeFuse);
+        haptics::play(hand, Event::GrenadeWarning);
     }
 }
 
@@ -531,12 +531,12 @@ fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
 
 /// Record a step's outcome. A refused grab buzzes the hand that reached into the pouch, so that the
 /// player knows the pouch is empty or closed rather than missed.
-fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome, tuning: &GrenadeConfig) {
+fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome) {
     match outcome {
         Outcome::Refused(_) | Outcome::PoolFull => {
             tracing::info!(target: "controllers", ?hand, outcome = %outcome.label(), "grenade pouch");
             if let Some(hand) = hand {
-                haptics::pulse(hand, tuning.refused_pulse, PulseSource::PouchRefused);
+                haptics::play(hand, Event::PouchRefused);
             }
         }
         _ => tracing::debug!(target: "controllers", ?hand, outcome = %outcome.label(), "grenade"),
@@ -587,7 +587,7 @@ fn update_from_user(
     let (next, action, outcome) = stage::before_update(state.stage, view);
     state.stage = next;
     if let Some(outcome) = outcome {
-        report(&mut state, hand, outcome, &tuning);
+        report(&mut state, hand, outcome);
     }
     let (pin, write) = pin::before_update(state.pin, matches!(action, WeaponAction::Fire(_)));
     state.pin = pin;
@@ -630,11 +630,11 @@ fn update_from_user(
     state.stage = next;
     state.status.stage = next;
     if let Some(outcome) = outcome {
-        report(&mut state, hand, outcome, &tuning);
+        report(&mut state, hand, outcome);
         if outcome == Outcome::Primed
             && let Some(hand) = hand
         {
-            haptics::pulse(hand, tuning.prime_pulse, PulseSource::GrenadeFuse);
+            haptics::play(hand, Event::GrenadePrime);
             let (pin, write) = pin::on_primed(tuning.pin.enabled);
             // SAFETY: the grenade was primed by the update that just ran, on this thread.
             let held = write.is_some_and(|write| unsafe { write_fuse(w, write) });
@@ -829,7 +829,7 @@ fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeConfig) 
                 body: s.body,
                 owner: s.owner,
             }));
-            haptics::pulse(hand, tuning.catch.pulse, PulseSource::GrenadeFuse);
+            haptics::play(hand, Event::GrenadeCatch);
             tracing::info!(target: "controllers", ?hand, "grenade: caught a live grenade");
         }
         None => {

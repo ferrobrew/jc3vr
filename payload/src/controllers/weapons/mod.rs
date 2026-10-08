@@ -11,7 +11,6 @@
 //!   spread, gone while it is braced on the foregrip;
 //! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
 //! - [`grip_watch`]: a diagnostic watch on how each held gun sits in its hand;
-//! - [`haptics`]: the game's rumbles and the grapple's pulses routed to the hands;
 //! - [`highlights`]: the grab-volume highlights on the overlay;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
@@ -64,11 +63,10 @@ pub mod docks;
 pub mod dual_wield;
 pub mod empty;
 mod engine;
-mod fire;
+pub(crate) mod fire;
 pub mod foregrip;
 pub mod grenade;
 pub mod grip_watch;
-pub mod haptics;
 pub mod heft;
 mod highlights;
 pub mod hold;
@@ -106,6 +104,7 @@ use crate::{
             self, ActiveHands, CockpitHand, ik,
             tiers::{self, HandTier, TierState},
         },
+        haptics::{self, Event},
         mode::{AirborneVariant, Mode, OnFootVariant},
         overlay::{primitive::Source, store},
         roomscale::{self, posture::EffectivePosture},
@@ -114,7 +113,6 @@ use crate::{
             docks::DockedGun,
             engine::HeldWeapon,
             foregrip::{GripGeometry, Inputs, Transition, TwoHandedWeapon},
-            haptics::PulseSource,
             hold::{
                 dock::{self, Release},
                 holder::Cause,
@@ -131,7 +129,6 @@ use crate::{
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(fire::hook_library())
-        .with_hook_library(haptics::hook_library())
         .with_hook_library(camera_kick::hook_library())
         .with_hook_library(grenade::hook_library())
         .with_hook_library(c4::hook_library())
@@ -509,11 +506,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.last_volumes = volumes;
     drop(state);
 
-    let haptics = &config.weapons.haptics;
-    if haptics.volume_cues {
-        for hand in Hand::BOTH.into_iter().filter(|h| entered[h.index()]) {
-            haptics::pulse(hand, haptics.volume_enter, PulseSource::GrabVolume);
-        }
+    for hand in Hand::BOTH.into_iter().filter(|h| entered[h.index()]) {
+        haptics::play(hand, Event::VolumeEnter);
     }
     highlights::submit(
         &config,
@@ -588,14 +582,8 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let transition = foregrip::tick(&inputs, dt, &config.weapons.foregrip);
     // A release pulses the off-hand whatever ended the hold: a press, a move away, or the weapon
     // leaving the hands.
-    if let (Some(Transition::Released(_)), Some(w)) = (transition, two_handed)
-        && config.weapons.haptics.volume_cues
-    {
-        haptics::pulse(
-            w.holder.other(),
-            config.weapons.haptics.grab,
-            PulseSource::GrabVolume,
-        );
+    if let (Some(Transition::Released(_)), Some(w)) = (transition, two_handed) {
+        haptics::play(w.holder.other(), Event::VolumeGrab);
     }
 
     let mut events = Vec::new();
@@ -668,8 +656,8 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
         };
         tracing::debug!(target: "controllers", ?hand, volume = volume.label(), outcome = %outcome.label(), "grab");
-        if config.weapons.haptics.volume_cues && cues_grab(outcome) {
-            haptics::pulse(hand, config.weapons.haptics.grab, PulseSource::GrabVolume);
+        if cues_grab(outcome) {
+            haptics::play(hand, Event::VolumeGrab);
         }
         events.push(GrabEvent {
             hand,

@@ -25,12 +25,9 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::Hand,
+    haptics::{self, Event},
     vehicles::config::MountedConfig,
-    weapons::{
-        config::PulseSpec,
-        haptics::{self, PulseSource},
-        recoil::Spring,
-    },
+    weapons::recoil::Spring,
 };
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
@@ -52,14 +49,7 @@ pub(crate) fn on_shot(config: &MountedConfig) {
     let holds = HOLDS.load(Ordering::Relaxed);
     for hand in Hand::BOTH {
         if holds & (1 << hand.index()) != 0 {
-            haptics::pulse(
-                hand,
-                PulseSpec {
-                    amplitude: config.kick_haptics,
-                    duration_s: PULSE_S,
-                },
-                PulseSource::Kick,
-            );
+            haptics::play(hand, Event::MountedKick);
         }
     }
 }
@@ -118,8 +108,6 @@ const STIFFNESS: f32 = 900.0;
 const DAMPING_RATIO: f32 = 0.6;
 /// How many shots' kick the handles can carry at once.
 const MAX_SHOTS: f32 = 3.0;
-/// How long each shot's pulse lasts, seconds.
-const PULSE_S: f32 = 0.03;
 
 fn advance(kick: &mut Kick, now: Instant) {
     if let Some(at) = kick.at {

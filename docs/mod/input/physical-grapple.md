@@ -41,7 +41,7 @@ The hang task's detour already pushes a hanging body against the grapple hand's 
 
 ## Haptics
 
-The fire, the attach (the snap as the hook takes hold), and the yank pulse the grapple hand as before ([controllers.md](controllers.md)). On top, every input tick sends the grapple hand a short pulse whose amplitude is the stronger of the tethers' highest tension ([`GrapplingHook::GetHighestWireTension`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetHighestWireTension)) times `haptics.tension_amplitude` while the game squeezes the tethers ([`GrapplingHook::m_IsSqueezingDualTethers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##field-m_IsSqueezingDualTethers)), and the reel's speed over its top speed times `haptics.reel_amplitude` while the hand drives the reel. A retract the pull starts pulses `haptics.retract` once. The game's own rumble for the squeeze and the reel still reaches the hands through the forwarded motors.
+The fire, the attach (the snap as the hook takes hold), and the yank play their cues on the grapple hand (`Event::GrappleFire`, `Event::GrappleAttach`, and `Event::Yank`, [haptics.md](haptics.md)). On top, every input tick sends the grapple hand two levels: `Sustain::GrappleTension`, the tethers' highest tension ([`GrapplingHook::GetHighestWireTension`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetHighestWireTension)) while the game squeezes the tethers ([`GrapplingHook::m_IsSqueezingDualTethers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##field-m_IsSqueezingDualTethers)), and `Sustain::GrappleReel`, the reel's speed over its top speed while the hand drives the reel, each zero otherwise; the mixer sums them. A retract the pull starts plays `Event::TetherRetract` once. The game's own rumble for the squeeze and the reel still reaches the hands through the forwarded motors.
 
 ## Threading
 
@@ -49,7 +49,7 @@ The input tick (the game thread, outside the world update) reads the hook, steps
 
 ## Settings and readouts
 
-The switches are on `VR: CONTROLS` under `GRAPPLE`: `YANK TO ZIP` (`bindings.yank.enabled`), `PULL TO SPEED THE REEL` and `FASTEST PULLED REEL` (`grapple.reel.enabled` and `max_scale`), `PULL TO TIGHTEN TETHERS` (`grapple.tether.enabled`), `SWING FROM THE LINE BY HAND` (`hands.anchor.hang_swing`), `PUMP THE SWING` (`grapple.swing.pump`), and `LINE TENSION HAPTICS` (`grapple.haptics.enabled`). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
+The switches are on `VR: CONTROLS` under `GRAPPLE`: `YANK TO ZIP` (`bindings.yank.enabled`), `PULL TO SPEED THE REEL` and `FASTEST PULLED REEL` (`grapple.reel.enabled` and `max_scale`), `PULL TO TIGHTEN TETHERS` (`grapple.tether.enabled`), `SWING FROM THE LINE BY HAND` (`hands.anchor.hang_swing`), and `PUMP THE SWING` (`grapple.swing.pump`); the line's vibration is behind `TRAVERSAL HAPTICS` under HAPTICS ([haptics.md](haptics.md)). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
 
 `VR: STATUS` has a `GRAPPLE` section:
 
@@ -58,7 +58,7 @@ The switches are on `VR: CONTROLS` under `GRAPPLE`: `YANK TO ZIP` (`bindings.yan
 - `REEL FROM HAND`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
 - `TETHERS`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.
 - `HANG SWING`: the hang ticks that swung, and how many the pump added to.
-- `LINE HAPTICS`: the grapple hand's continuous amplitude.
+- `LINE HAPTICS`: the grapple hand's line level, the stronger of the tension's and the reel's.
 
 The log has, at info level under the `grapple` target, `physical grapple: the line attaches` with the target kind and distance, `the hand drives the reel` with the scale and the pull, `a yank boosts the reel`, `the reel ends` with the peak scale, `the hand retracts the tethers` with the count and value, `the tether retract ends` with the peak value, and `the tether count changes`.
 

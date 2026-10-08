@@ -77,6 +77,7 @@ use crate::{
         },
         frame::Hand,
         hands::{self, CockpitHand, pose as hand_pose},
+        haptics::{self, Sustain},
         mode,
         physical_hands::{
             PhysicalHandsConfig, STATE, climb, free_hands,
@@ -92,11 +93,10 @@ use crate::{
                 lifecycle::{ActRequest, HANDS, RenderTuning},
                 render::RenderOffset,
             },
-            pulse, vault,
+            vault,
         },
         roomscale::teleport,
         scheme,
-        weapons::haptics::PulseSource,
     },
     headpose, hooks,
     vr::recenter_count,
@@ -399,18 +399,10 @@ pub(crate) fn observe(dt: f32) {
             }
         }
     }
-    if config.bodies.pressure_haptics {
-        for hand in Hand::BOTH {
-            let load = loads[hand.index()];
-            if load >= MIN_PRESSURE_LOAD {
-                pulse(
-                    hand,
-                    config.pressure_pulse,
-                    load,
-                    &config,
-                    PulseSource::Collision,
-                );
-            }
+    for hand in Hand::BOTH {
+        let load = loads[hand.index()];
+        if load >= MIN_PRESSURE_LOAD {
+            haptics::sustain(hand, Sustain::BodyPressure, load);
         }
     }
 }

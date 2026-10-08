@@ -3,12 +3,9 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::{
-    physical_hands::{
-        characters::CharactersConfig, climb::ClimbConfig, doors::DoorsConfig,
-        physics::HandBodiesConfig, stunt::StuntConfig, vault::VaultConfig,
-    },
-    weapons::config::PulseSpec,
+use crate::controllers::physical_hands::{
+    characters::CharactersConfig, climb::ClimbConfig, doors::DoorsConfig,
+    physics::HandBodiesConfig, stunt::StuntConfig, vault::VaultConfig,
 };
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
@@ -51,14 +48,6 @@ pub struct PhysicalHandsConfig {
     pub min_object_speed_mps: f32,
     /// The impulse a full-speed hit gives an object, as a share of the player's melee impulse.
     pub object_impulse: f32,
-    /// Pulse a hand when its palm meets a surface, presses, or pulls.
-    pub haptics: bool,
-    /// The pulse of a palm meeting a surface at the full-strength hit speed; slower contacts are
-    /// weaker.
-    pub contact_pulse: PulseSpec,
-    /// The pulse of a hand pressing or pulling as hard as it can, repeated each tick it does;
-    /// lighter loads are weaker, and below a tenth of its strength there is none.
-    pub pressure_pulse: PulseSpec,
     /// Draw the palm boxes and their contacts in the world-space overlay.
     pub show_boxes: bool,
     /// Picking up and holding loose objects with an empty hand's grip.
@@ -94,15 +83,6 @@ impl PhysicalHandsConfig {
             object_impulses: true,
             min_object_speed_mps: 1.0,
             object_impulse: 1.0,
-            haptics: true,
-            contact_pulse: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.025,
-            },
-            pressure_pulse: PulseSpec {
-                amplitude: 0.3,
-                duration_s: 0.03,
-            },
             show_boxes: false,
             pickup: PickupConfig::new(),
             bodies: HandBodiesConfig::new(),
@@ -217,10 +197,6 @@ pub struct PickupConfig {
     pub max_articulated_mass_kg: f32,
     /// Mark the object each hand would take, and the held ones, in the world-space overlay.
     pub show_targets: bool,
-    /// The pulse of taking hold of an object or picking up a weapon.
-    pub grab_pulse: PulseSpec,
-    /// The pulse of letting go.
-    pub release_pulse: PulseSpec,
 }
 
 impl PickupConfig {
@@ -246,14 +222,6 @@ impl PickupConfig {
             articulated: true,
             max_articulated_mass_kg: 20_000.0,
             show_targets: false,
-            grab_pulse: PulseSpec {
-                amplitude: 0.5,
-                duration_s: 0.04,
-            },
-            release_pulse: PulseSpec {
-                amplitude: 0.25,
-                duration_s: 0.02,
-            },
         }
     }
 }

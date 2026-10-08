@@ -47,14 +47,11 @@ use crate::{
         bindings::hold::{Desired, MapKind, Target, Want},
         frame::Hand,
         hands,
+        haptics::{self, Event},
         mode::Mode,
         weapons::{
             engine, gameplay,
-            haptics::{self, PulseSource},
-            wheel::{
-                config::WheelConfig,
-                select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
-            },
+            wheel::select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
         },
     },
 };
@@ -134,17 +131,17 @@ pub(crate) fn input_tick(inputs: &TickInputs, desired: &mut Vec<Desired>) -> Whe
             })
             .flatten();
         tracing::debug!(target: "controllers", ?opener, ?hand, chosen = ?out.chosen, "weapon wheel: opened");
-        pulse(hand, &config, false);
+        pulse(hand, false);
     } else if out.changed
         && let Some(hand) = out.steering
     {
-        pulse(hand, &config, false);
+        pulse(hand, false);
     }
     match out.closed {
         Some(Close::Commit(arm)) => {
             tracing::debug!(target: "controllers", ?arm, "weapon wheel: committed");
             if let Some(hand) = shell.steering.take() {
-                pulse(hand, &config, true);
+                pulse(hand, true);
             }
         }
         Some(Close::Cancel) => {
@@ -295,9 +292,13 @@ fn drop_table_selects(desired: &mut Vec<Desired>) {
     });
 }
 
-fn pulse(hand: Hand, config: &WheelConfig, commit: bool) {
-    let spec = if commit { config.commit } else { config.tick };
-    haptics::pulse(hand, spec, PulseSource::WeaponWheel);
+fn pulse(hand: Hand, commit: bool) {
+    let event = if commit {
+        Event::WheelCommit
+    } else {
+        Event::WheelTick
+    };
+    haptics::play(hand, event);
 }
 
 fn close_as_cancel() {

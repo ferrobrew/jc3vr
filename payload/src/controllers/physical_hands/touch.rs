@@ -1,5 +1,5 @@
-//! What the palms' contacts do to the world: a knock and a shove of a loose object, and the pulses
-//! of a hand that presses or pulls hard.
+//! What the palms' contacts do to the world: a knock and a shove of a loose object, and the
+//! vibration of a hand that presses or pulls hard.
 //!
 //! Every function here changes engine state that is the main thread's, and runs from the palms'
 //! tick ([`crate::controllers::physical_hands::after_aim`]) only on that thread.
@@ -8,13 +8,13 @@ use glam::Vec3;
 
 use crate::controllers::{
     frame::Hand,
+    haptics::{self, Event, Sustain},
     physical_hands::{
         HandStatus, PhysicalHandsConfig, ShoveReport, State, bodies,
         contact::{Surface, SurfaceHit},
-        engine, pulse,
+        engine,
         shove::{self, ShoveTuning},
     },
-    weapons::haptics::PulseSource,
 };
 
 /// A palm meeting a solid surface on a tick.
@@ -57,13 +57,7 @@ impl State {
         } = touch;
         let impact = impact_speed(velocity, hit.normal);
         let share = (impact / config.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
-        pulse(
-            hand,
-            config.contact_pulse,
-            0.25 + 0.75 * share,
-            config,
-            PulseSource::Collision,
-        );
+        haptics::play_scaled(hand, Event::PalmTouch, 0.25 + 0.75 * share);
         let Surface::Solid {
             object: Some(_),
             body,
@@ -156,21 +150,21 @@ impl State {
     }
 }
 
-/// Pulse each hand that presses or pulls hard, in proportion to its load: the shove of what its
+/// Vibrate each hand that presses or pulls hard, in proportion to its load: the shove of what its
 /// palm presses into, or the pull and twist of what it holds.
-pub(super) fn pressure_pulses(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
+pub(super) fn pressure_haptics(hands: &[HandStatus; 2]) {
     for hand in Hand::BOTH {
         let status = &hands[hand.index()];
         let (load, source) = match (status.held, status.shove) {
-            (Some(held), _) => (held.load.max(held.twist), PulseSource::Pickup),
+            (Some(held), _) => (held.load.max(held.twist), Sustain::HeldLoad),
             (None, Some(shove)) => (
                 shove.load.max(shove.resistance * 0.5),
-                PulseSource::Collision,
+                Sustain::PalmPressure,
             ),
             (None, None) => continue,
         };
         if load >= MIN_PRESSURE_LOAD {
-            pulse(hand, config.pressure_pulse, load, config, source);
+            haptics::sustain(hand, source, load);
         }
     }
 }

@@ -2,8 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::config::PulseSpec;
-
 /// Stunt positions held by the player's grip (see
 /// [`crate::controllers::physical_hands::stunt`]): a helicopter gripped by the hands takes the
 /// player into its hang, a mantle onto a vehicle's roof takes the player into its stunt area,
@@ -33,13 +31,6 @@ pub struct StuntConfig {
     pub release_grace_s: f32,
     /// How long to wait after an entry the game refused before trying again, seconds.
     pub retry_s: f32,
-    /// The pulse of each gripping hand when the game takes the player into a stunt position.
-    pub enter_pulse: PulseSpec,
-    /// The pulse of each hand when the hang lets go.
-    pub release_pulse: PulseSpec,
-    /// The pulse of each gripping hand in the hang, every tick, in proportion to the helicopter's
-    /// speed: the wind and the airframe's pull.
-    pub hold_pulse: PulseSpec,
     /// The helicopter's speed of the strongest hold pulse, metres per second.
     pub hold_full_speed_mps: f32,
     /// The diameter of the bar the fingers close round on a helicopter's skid, metres.
@@ -58,18 +49,6 @@ impl StuntConfig {
             let_go: true,
             release_grace_s: 0.2,
             retry_s: 1.0,
-            enter_pulse: PulseSpec {
-                amplitude: 0.8,
-                duration_s: 0.08,
-            },
-            release_pulse: PulseSpec {
-                amplitude: 0.35,
-                duration_s: 0.03,
-            },
-            hold_pulse: PulseSpec {
-                amplitude: 0.2,
-                duration_s: 0.03,
-            },
             hold_full_speed_mps: 40.0,
             skid_diameter_m: 0.05,
         }
