@@ -5,8 +5,26 @@ use smol_str::format_smolstr;
 
 use crate::controllers::{
     menu::{read_config, status::Line},
-    weapons::grenade,
+    weapons::{c4, grenade},
 };
+
+pub(super) fn c4_by_hand() -> Line {
+    if !read_config(|c| c.controllers.weapons.c4_throw) {
+        return Line::off("");
+    }
+    let status = c4::status();
+    Line::ok(format_smolstr!(
+        "{} THROWN, {} PRESSED ON, {} ON OBJECTS{}",
+        status.thrown - status.stuck.min(status.thrown),
+        status.stuck,
+        status.stuck_on_objects,
+        if read_config(|c| c.controllers.weapons.c4.stick.enabled) {
+            ""
+        } else {
+            ", PRESSING OFF"
+        }
+    ))
+}
 
 pub(super) fn grenade_pin() -> Line {
     if !read_config(|c| {

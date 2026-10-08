@@ -1,0 +1,22 @@
+# Template: fill testing/recordings/c4_by_hand.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "C4 pressed onto a wall and a car, and one thrown"
+description = "Recorded right-handed on foot beside a wall and a parked car (physical-weapons.md, the C4 checklist). Take a charge from the C4 pouch and press it onto the wall, take another and press it onto the car's door, take a third and throw it into the open, then press the wrist detonator."
+recording = "../recordings/c4_by_hand.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "two charges are pressed on"
+signal = "c4.stuck"
+at_least = 2
+
+[[expect]]
+name = "and three leave the hand"
+signal = "c4.thrown"
+at_least = 3
+
+[[expect]]
+log = "c4: stuck the charge where it was pressed"
+at_least = 2
+
+[[expect]]
+status = "C4 BY HAND"

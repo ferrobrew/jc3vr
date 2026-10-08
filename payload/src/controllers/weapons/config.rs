@@ -6,7 +6,10 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::grenade::config::{GrenadeCatchConfig, GrenadePinConfig};
+use crate::controllers::weapons::{
+    c4::config::C4StickConfig,
+    grenade::config::{GrenadeCatchConfig, GrenadePinConfig},
+};
 
 /// The body holsters (see [`crate::controllers::weapons`]). They act only under the controller
 /// scheme, so they default on.
@@ -833,6 +836,8 @@ pub struct C4Config {
     pub detonate_pulse: PulseSpec,
     /// The detonator button on the off-hand's wrist.
     pub detonator: WristDetonatorConfig,
+    /// Pressing a held charge onto a surface sticks it there.
+    pub stick: C4StickConfig,
 }
 
 impl C4Config {
@@ -860,6 +865,7 @@ impl C4Config {
                 duration_s: 0.25,
             },
             detonator: WristDetonatorConfig::new(),
+            stick: C4StickConfig::new(),
         }
     }
 }

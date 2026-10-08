@@ -34,15 +34,23 @@
 //! request times out. The stick click's `DETONATE_EXPLOSIVE` reaches the same input through the
 //! game's own hold rule.
 //!
+//! A held charge pressed onto a surface sticks there instead of being thrown ([`stick`]): it is
+//! made live the same way, and placed just off the surface and pushed onto it, so that its own
+//! collision sticks it.
+//!
 //! Every step is felt: a primed charge pulses its hand, a thrown one pulses the hand it leaves, a
 //! grab the game refuses buzzes the grabbing hand (and is logged at info level), and a detonation
 //! the weapon starts, from either source, pulses both hands and flashes the wrist button.
 //!
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
 
+pub mod config;
 pub mod press;
 pub mod stage;
+pub mod stick;
 pub mod wrist;
+
+use std::time::Instant;
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -66,7 +74,10 @@ use crate::{
         motion::{self, ReleaseEstimate},
         scheme,
         weapons::{
-            c4::stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
+            c4::{
+                stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
+                stick::{self as stick_by_hand, StickAt},
+            },
             config::{C4Config, PulseSpec},
             grenade::stage::Release,
             haptics::{self, PulseSource},
@@ -134,6 +145,10 @@ pub struct C4Status {
     pub last_release: Option<Vec3>,
     pub primed: u64,
     pub thrown: u64,
+    /// Charges pressed onto a surface by hand, of the thrown ones, and how many of those onto an
+    /// object rather than the world's geometry.
+    pub stuck: u64,
+    pub stuck_on_objects: u64,
     /// The most recent throw steps, newest last.
     pub events: Vec<C4Event>,
     /// Whether a detonation request waits for the weapon.
@@ -154,6 +169,41 @@ pub fn charges() -> Option<i32> {
 /// The hand a throw holds, from the grab at the pouch until the charge leaves it.
 pub fn throwing_hand() -> Option<Hand> {
     STATE.lock().stage.hand()
+}
+
+/// The hand holding a charge that may be pressed onto a surface now, with the hand's grip in the
+/// world: the charge is held, has been out of the pouch long enough, and the hand has not opened.
+pub(crate) fn stick_candidate(tuning: &C4Config) -> Option<(Hand, Pose)> {
+    let state = STATE.lock();
+    let Stage::Held { hand, release } = state.stage else {
+        return None;
+    };
+    let held_s = state.held_since?.elapsed().as_secs_f32();
+    stick_by_hand::may_stick(held_s, release.is_some(), &tuning.stick)
+        .then(|| state.grips[hand.index()].map(|grip| (hand, grip)))
+        .flatten()
+}
+
+/// Press the charge `hand` holds onto a surface: the next weapon update places it at `at` and
+/// pushes it on, as a release that throws it would. Nothing happens if the hand no longer holds a
+/// charge it has not let go of.
+pub(crate) fn press(hand: Hand, at: StickAt) {
+    let mut state = STATE.lock();
+    if state.stage
+        != (Stage::Held {
+            hand,
+            release: None,
+        })
+    {
+        return;
+    }
+    state.stage = stage::on_input(
+        state.stage,
+        InputEvent::Release(hand, Release { velocity: at.push }),
+    );
+    state.status.stage = state.stage;
+    state.stick = Some(at);
+    tracing::info!(target: "controllers", ?hand, on_object = at.on_object, "c4: pressed the charge onto a surface");
 }
 
 /// Ask the weapon to detonate every placed charge, as the game's own detonation does.
@@ -239,6 +289,10 @@ struct State {
     detonation: Option<PendingDetonation>,
     /// Whether the weapon had started a detonation on its last update.
     was_detonating: bool,
+    /// When the held charge came out of the pouch.
+    held_since: Option<Instant>,
+    /// Where a charge pressed onto a surface leaves from, until it is placed.
+    stick: Option<StickAt>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -253,6 +307,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         last_release: None,
         primed: 0,
         thrown: 0,
+        stuck: 0,
+        stuck_on_objects: 0,
         events: Vec::new(),
         detonation_pending: false,
         detonations: 0,
@@ -261,6 +317,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     grips: [None; 2],
     detonation: None,
     was_detonating: false,
+    held_since: None,
+    stick: None,
 });
 
 /// The release of a throw by `hand`: the velocity of the held charge's point over the samples just
@@ -285,7 +343,7 @@ fn release(hand: Hand, world_scale: f32, tuning: &C4Config) -> Option<Release> {
 
 /// The held charge's offset in `hand`'s grip frame: the configured right-hand offset, mirrored for
 /// the left.
-fn hold_offset(hand: Hand, tuning: &C4Config) -> Vec3 {
+pub(crate) fn hold_offset(hand: Hand, tuning: &C4Config) -> Vec3 {
     let o = tuning.hold_offset_m;
     match hand {
         Hand::Left => Vec3::new(-o.x, o.y, o.z),
@@ -360,6 +418,17 @@ fn update_from_user_serial(
             let grip = hand.and_then(|h| {
                 state.grips[h.index()].map(|g| held_matrix(g, hold_offset(h, &tuning)))
             });
+            // A charge pressed onto a surface leaves from just off it, turned as the hand holds it.
+            let stick = state
+                .stick
+                .filter(|_| matches!(action, WeaponAction::Throw(_)));
+            let grip = match (stick, grip) {
+                (Some(at), Some(grip)) => Some(with_translation(grip, at.position)),
+                (Some(at), None) => {
+                    Some(with_translation(Matrix4::from(Mat4::IDENTITY), at.position))
+                }
+                (None, grip) => grip,
+            };
             let primed = act(w, user, action, grip);
             let (next, outcome) = stage::after_action(next, action, primed);
             state.stage = next;
@@ -367,6 +436,21 @@ fn update_from_user_serial(
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
                 pulses.extend(outcome_pulse(hand, outcome, &tuning));
+                if outcome == Outcome::Primed {
+                    state.held_since = Some(Instant::now());
+                }
+                if let (Outcome::Thrown(_), Some(at)) = (outcome, stick) {
+                    state.status.stuck += 1;
+                    state.status.stuck_on_objects += u64::from(at.on_object);
+                    tracing::info!(target: "controllers", ?hand, on_object = at.on_object, "c4: stuck the charge where it was pressed");
+                    if let Some(hand) = hand {
+                        pulses.push((hand, tuning.stick.pulse, PulseSource::C4));
+                    }
+                }
+            }
+            if !next.charge_in_hand() {
+                state.stick = None;
+                state.held_since = None;
             }
         }
         // The detonate input is raised for the weapon's update only, and the game's own value is
@@ -648,6 +732,13 @@ unsafe fn throw(
     }
 }
 
+/// `matrix` with its translation replaced by `position`.
+fn with_translation(matrix: Matrix4, position: Vec3) -> Matrix4 {
+    let mut m = Mat4::from(matrix);
+    m.w_axis = position.extend(1.0);
+    Matrix4::from(m)
+}
+
 /// Put a held charge's in-hand model and its transform at `matrix`.
 ///
 /// # Safety
@@ -706,6 +797,8 @@ mod tests {
             grips: [None; 2],
             detonation: None,
             was_detonating: false,
+            held_since: None,
+            stick: None,
         }
     }
 

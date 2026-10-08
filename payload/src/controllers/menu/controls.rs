@@ -413,6 +413,12 @@ fn settings_page() -> Page {
             .controllers
             .weapons
             .c4_throw))
+        .item(config_toggle!("PRESS C4 ONTO SURFACES", |c| c
+            .controllers
+            .weapons
+            .c4
+            .stick
+            .enabled))
         .item(config_toggle!("WRIST DETONATOR", |c| c
             .controllers
             .weapons

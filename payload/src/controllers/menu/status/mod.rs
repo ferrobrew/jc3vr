@@ -204,6 +204,7 @@ const SECTIONS: &[Section] = &[
         rows: &[
             row!("GRENADE PIN", explosives::grenade_pin),
             row!("LIVE GRENADES", explosives::live_grenades),
+            row!("C4 BY HAND", explosives::c4_by_hand),
         ],
     },
     Section {
