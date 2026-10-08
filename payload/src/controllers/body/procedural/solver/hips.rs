@@ -207,6 +207,8 @@ pub(super) struct HipsInput {
     pub(super) horizontal: Vec2,
     pub(super) yaw: f32,
     pub(super) drop: f32,
+    /// Where a held pose puts the hips, and how much of it to take.
+    pub(super) held: Option<(Vec3, f32)>,
 }
 
 pub(super) fn hips_input(
@@ -223,11 +225,15 @@ pub(super) fn hips_input(
             .unwrap_or_else(|| hips_horizontal(rig, input, config)),
         yaw: hips_yaw(input, config),
         drop: if drop.is_finite() { drop.max(0.0) } else { 0.0 },
+        held: input
+            .lower
+            .map(|held| (held.hips, held.weight.clamp(0.0, 1.0)))
+            .filter(|(hips, _)| hips.is_finite()),
     }
 }
 
 /// The hips' turn toward the player's torso, within its limit.
-pub(super) fn hips_yaw(input: &SolveInput, config: &ProceduralBodyConfig) -> f32 {
+pub fn hips_yaw(input: &SolveInput, config: &ProceduralBodyConfig) -> f32 {
     let torso_yaw = input.torso_yaw.filter(|y| y.is_finite()).unwrap_or(0.0);
     let pelvis_limit = config.pelvis_turn_limit_deg.max(0.0).to_radians();
     torso_yaw.clamp(-pelvis_limit, pelvis_limit)
@@ -245,9 +251,11 @@ pub(super) fn place_hips(
         horizontal,
         yaw,
         drop,
+        held,
     } = *input;
     let height = hips_height(rig, head.y, config) - drop;
-    let target = Vec3::new(horizontal.x, height, horizontal.y);
+    let own = Vec3::new(horizontal.x, height, horizontal.y);
+    let target = held.map_or(own, |(hips, weight)| own.lerp(hips, weight));
 
     let hips = pose.position(RigBone::Hips);
     pose.translate(RigBone::Hips, target - hips);

@@ -7,7 +7,14 @@ use smol_str::{SmolStr, format_smolstr};
 
 use crate::controllers::{
     body::procedural::{
-        self, ProceduralStatus, authority::Case, config::ProceduralMode, ground::GroundTally,
+        self, ProceduralStatus,
+        authority::Case,
+        config::ProceduralMode,
+        ground::GroundTally,
+        solver::{
+            arms::Side,
+            lower::{LowerPose, LowerStatus},
+        },
     },
     frame::Hand,
     hands::grip::{self, GripRead},
@@ -228,6 +235,22 @@ pub(super) fn stance() -> Line {
     }
 }
 
+pub(super) fn lower_body() -> Line {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+        return Line::off("");
+    }
+    let status = procedural::published_status();
+    lower_body_line(status.case, &status.lower)
+}
+
+pub(super) fn lower_inputs() -> Line {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+        return Line::off("");
+    }
+    let status = procedural::published_status();
+    lower_inputs_line(&status.lower, status.crouch_depth)
+}
+
 /// The largest pass-through error that still proves the write path: metres, then degrees.
 const PASS_THROUGH_TOLERANCE: (f32, f32) = (0.001, 0.1);
 
@@ -412,6 +435,41 @@ fn hand_over_line(case: Case) -> Line {
     Line::new(health, word).with_note(case.label())
 }
 
+/// The lower body's pose: what the legs are doing on foot, and the kneel's side and weight.
+fn lower_body_line(case: Case, lower: &LowerStatus) -> Line {
+    if case != Case::OnFoot {
+        return Line::waiting("NOT ON FOOT");
+    }
+    match lower.pose {
+        LowerPose::Stand => Line::ok("STAND"),
+        LowerPose::Crouch => Line::ok("CROUCH"),
+        LowerPose::Kneel => Line::ok(format_smolstr!(
+            "KNEEL {}, {:.0}%",
+            lower.kneel_side.map_or("?", side_letter),
+            lower.kneel_weight * 100.0
+        )),
+    }
+}
+
+/// What the lower body's pose is picked from: the hips' height the head asks for against the
+/// squat's floor, the crouch's depth, and whether the body is told to move.
+fn lower_inputs_line(lower: &LowerStatus, crouch: f32) -> Line {
+    let moving = if lower.moving { ", MOVING" } else { "" };
+    Line::ok(format_smolstr!(
+        "HIPS {:.2} M, FLOOR {:.2} M, CROUCH {:.2}{moving}",
+        lower.wanted_hips_m,
+        lower.floor_m,
+        crouch
+    ))
+}
+
+fn side_letter(side: Side) -> &'static str {
+    match side {
+        Side::Left => "L",
+        Side::Right => "R",
+    }
+}
+
 fn ground_line(tally: GroundTally) -> Line {
     let detail = format_smolstr!("{}/{} HIT", tally.hits, tally.casts);
     if tally.errors > 0 {
@@ -545,6 +603,30 @@ mod tests {
         );
         assert_eq!(text(status(0.0, true, false, 0.0)), "WAITING, STAND STILL");
         assert_eq!(text(status(0.0, false, true, 0.0)), "OK, IDLE");
+    }
+
+    #[test]
+    fn the_lower_body_names_the_pose_and_its_inputs() {
+        let mut lower = LowerStatus::new();
+        assert_eq!(
+            lower_body_line(Case::Jump, &lower).text(),
+            "WAITING, NOT ON FOOT"
+        );
+        assert_eq!(lower_body_line(Case::OnFoot, &lower).text(), "OK, STAND");
+        lower.pose = LowerPose::Kneel;
+        lower.kneel_side = Some(Side::Right);
+        lower.kneel_weight = 0.5;
+        assert_eq!(
+            lower_body_line(Case::OnFoot, &lower).text(),
+            "OK, KNEEL R, 50%"
+        );
+        lower.wanted_hips_m = 0.42;
+        lower.floor_m = 0.5;
+        lower.moving = true;
+        assert_eq!(
+            lower_inputs_line(&lower, 1.0).text(),
+            "OK, HIPS 0.42 M, FLOOR 0.50 M, CROUCH 1.00, MOVING"
+        );
     }
 
     #[test]

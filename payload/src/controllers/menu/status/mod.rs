@@ -226,6 +226,8 @@ const SECTIONS: &[Section] = &[
             row!("HAND-OVER CASE", controllers::hand_over),
             row!("GROUND CASTS", controllers::ground_casts),
             row!("STANCE", controllers::stance),
+            row!("LOWER BODY", controllers::lower_body),
+            row!("POSE INPUTS", controllers::lower_inputs),
         ],
     },
 ];

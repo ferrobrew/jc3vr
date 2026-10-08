@@ -78,6 +78,11 @@ pub struct ProceduralBodyConfig {
     pub crouch_lift_share: f32,
     /// The least share of a cycle each foot spends on the ground at the hips' lowest.
     pub crouch_duty: f32,
+    /// Kneel on one knee when the head goes below the floor of a squat and stays there, still and
+    /// not moving: the trailing foot's knee down, or the off hand's side.
+    pub kneel: bool,
+    /// How long the kneel takes to ease in or out, seconds.
+    pub kneel_blend_s: f32,
     /// Find the ground under each foothold with a scene ray, so the feet stand on slopes and
     /// stairs, instead of taking the root's height.
     pub ground_casts: bool,
@@ -177,6 +182,8 @@ impl ProceduralBodyConfig {
             crouch_stride_share: 0.55,
             crouch_lift_share: 0.6,
             crouch_duty: 0.7,
+            kneel: true,
+            kneel_blend_s: 0.35,
             ground_casts: true,
             max_step_up_m: 0.5,
             max_step_down_m: 0.6,
@@ -245,6 +252,7 @@ impl ProceduralBodyConfig {
             ("crouch_stride_share", self.crouch_stride_share, 0.1, 1.0),
             ("crouch_lift_share", self.crouch_lift_share, 0.0, 1.0),
             ("crouch_duty", self.crouch_duty, 0.2, 0.9),
+            ("kneel_blend_s", self.kneel_blend_s, 0.0, 3.0),
             ("max_step_up_m", self.max_step_up_m, 0.0, 2.0),
             ("max_step_down_m", self.max_step_down_m, 0.0, 2.0),
             ("ankle_tilt_limit_deg", self.ankle_tilt_limit_deg, 0.0, 60.0),

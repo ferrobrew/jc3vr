@@ -60,7 +60,7 @@ use crate::{
             procedural::{
                 authority::{Case, Weights, classify},
                 config::ProceduralMode,
-                gate_state::{FeetRequest, STATE},
+                gate_state::{FeetRequest, LowerRequest, STATE},
                 ground::{GroundCaster, GroundTally},
                 rig::{RigBone, RigError},
                 solver::{
@@ -70,13 +70,16 @@ use crate::{
                     clavicles::{self, ClavicleTurn},
                     crouch_depth,
                     feet::FootPose,
+                    gait::STOP_SHARE,
                     hips_height, hips_horizontal, hips_room, line_yaw,
+                    lower::LowerStatus,
                     pose::RigPose,
                     reach_drop, solve,
                 },
                 targets::{Fade, Slot, TargetFade},
             },
         },
+        frame::Hand,
         locomotion::{
             LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
         },
@@ -114,6 +117,8 @@ pub struct ProceduralStatus {
     /// How far the head has taken the hips toward their lowest, `0..=1`: what the crouch gait
     /// scales the steps by.
     pub crouch_depth: f32,
+    /// The lower body's pose and what it was picked from.
+    pub lower: LowerStatus,
     /// Whether the neutral stance the feet stand around has been measured.
     pub stance_measured: bool,
     /// The last gate's ground casts.
@@ -219,7 +224,16 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let config = Config::lock_query(|c| c.controllers.body.procedural);
+    let (config, off_hand) = Config::lock_query(|c| {
+        (
+            c.controllers.body.procedural,
+            c.controllers.acting_hand().other(),
+        )
+    });
+    let off_side = match off_hand {
+        Hand::Left => Side::Left,
+        Hand::Right => Side::Right,
+    };
     let now = Instant::now();
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
@@ -302,6 +316,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 state.air.reset();
                 state.dip.reset();
                 state.takeoff_feet = None;
+                state.lower.reset();
+                state.status.lower = state.lower.status();
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 state.fade.forget();
                 return false;
@@ -393,6 +409,20 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             }
             let place = hips_horizontal(rig, &input, &config);
             input.hips_xz = Some(state.hips.step(place, dt, config.hips_follow_s));
+            let lower = LowerRequest {
+                world: &world,
+                rig,
+                stance,
+                crouch,
+                grounded: case == Case::OnFoot && legs_procedural && !airborne,
+                moving: commanded.length() > config.gait_speed_mps * STOP_SHARE
+                    || locomotion.stick.length() > MOVING_STICK,
+                off_side,
+                dt,
+            };
+            if let Some(targets) = state.step_lower(&lower, &input, &config) {
+                input.hold(targets);
+            }
             let need = reach_drop(rig, &input, &config);
             let reach = state.drop.step(need, dt, config.reach_drop_s);
             let dip = state.dip.step(dt, config.landing_dip_s);
@@ -445,6 +475,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
 
 /// The longest step the body takes, seconds: a hitch is not a long blend.
 const MAX_STEP_S: f32 = 0.1;
+
+/// How far the move stick must be pushed for the body to count as told to move, whatever the
+/// velocity has reached yet.
+const MOVING_STICK: f32 = 0.3;
 
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -510,6 +544,7 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     speed_mps: 0.0,
     gait_phase: None,
     crouch_depth: 0.0,
+    lower: LowerStatus::new(),
     stance_measured: false,
     ground: GroundTally::new(),
     clavicles: [ClavicleTurn::ZERO; 2],
@@ -576,6 +611,7 @@ fn solve_input(
         heel_lifts: [0.0; 2],
         hips_xz: None,
         hips_drop: 0.0,
+        lower: None,
     })
 }
 

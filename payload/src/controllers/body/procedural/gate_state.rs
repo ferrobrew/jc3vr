@@ -4,7 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use jc3gi::character::character::{AnimationController, Character};
 use parking_lot::Mutex;
 
@@ -18,12 +18,14 @@ use crate::controllers::{
         rig::{Rig, RigBone},
         root_speed,
         solver::{
-            DropFollower, HipsFollower,
+            DropFollower, HipsFollower, SolveInput,
             air::{AirFollower, DipTuning, LandingDip},
             arms::Side,
             clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
             feet::{Feet, FeetInput, FootPose, StepTuning},
             gait::{self, CrouchGait, NeutralStance, StanceFoot},
+            hips_yaw,
+            lower::{LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning},
             pose::RigPose,
         },
         state::StateTracker,
@@ -41,6 +43,8 @@ const LANDING_WINDOW: Duration = Duration::from_millis(300);
 pub(super) struct State {
     /// The rig of the skeleton the animation controller holds.
     pub(super) rig: RigCache,
+    /// The lower body's pose: standing, crouching, or a held kneel.
+    pub(super) lower: LowerBody,
     /// The regions' weights against the animation.
     pub(super) blend: RegionBlend,
     /// What the hand-over table reads from the character, with the history it keeps.
@@ -95,7 +99,81 @@ pub(super) struct FeetRequest<'a> {
     pub(super) dt: f32,
 }
 
+/// What the lower body's pose is picked from, besides the solve's input.
+pub(super) struct LowerRequest<'a> {
+    /// The root's world transform.
+    pub(super) world: &'a Mat4,
+    pub(super) rig: &'a Rig,
+    /// The neutral stance's feet, model space.
+    pub(super) stance: [FootPose; 2],
+    /// How far the head has taken the hips toward the squat's floor, `0..=1`.
+    pub(super) crouch: f32,
+    /// Whether the body is on foot on the ground with the procedural legs under it.
+    pub(super) grounded: bool,
+    /// Whether the body is told to move.
+    pub(super) moving: bool,
+    /// The off hand's side.
+    pub(super) off_side: Side,
+    pub(super) dt: f32,
+}
+
 impl State {
+    /// Pick the lower body's pose, log a change of it, and return a held pose's targets for the
+    /// solve. A held pose that has fully taken the feet plants the walking feet where it holds
+    /// them, so the feet step on from there when it lets go.
+    pub(super) fn step_lower(
+        &mut self,
+        request: &LowerRequest<'_>,
+        solve: &SolveInput,
+        config: &ProceduralBodyConfig,
+    ) -> Option<LowerTargets> {
+        let rig = LowerRig::measure(request.rig, config);
+        let input = LowerInput {
+            world: *request.world,
+            head: solve.head,
+            crouch: request.crouch,
+            hips_xz: solve
+                .hips_xz
+                .unwrap_or(Vec2::new(solve.support.x, solve.support.z)),
+            hips_yaw: hips_yaw(solve, config),
+            feet: [0, 1].map(|i| FootPose {
+                position: solve.feet[i],
+                rotation: solve.foot_rotations[i],
+            }),
+            stance: request.stance,
+            grounded: request.grounded,
+            moving: request.moving,
+            off_side: request.off_side,
+            dt: request.dt,
+        };
+        let change = self.lower.update(&rig, &input, &LowerTuning::of(config));
+        let status = self.lower.status();
+        if let Some(change) = change {
+            tracing::info!(
+                target: "body",
+                from = change.from.label(),
+                to = change.to.label(),
+                wanted_hips_m = status.wanted_hips_m,
+                floor_m = status.floor_m,
+                crouch = request.crouch,
+                kneel_side = status.kneel_side.map_or("none", Side::label),
+                moving = status.moving,
+                "procedural body: the lower body's pose changes",
+            );
+        }
+        self.status.lower = status;
+        let targets = self.lower.targets(&rig, &input)?;
+        if targets.weight >= 1.0 {
+            let world = request.world;
+            let (_, rotation, _) = world.to_scale_rotation_translation();
+            self.feet.plant(targets.feet.map(|f| FootPose {
+                position: world.transform_point3(f.position),
+                rotation: (rotation * f.rotation).normalize(),
+            }));
+        }
+        Some(targets)
+    }
+
     /// The rig of `controller`'s skeleton, checked against it. A new skeleton forgets the stance
     /// measured on the last one.
     pub(super) unsafe fn rig_for(&mut self, controller: &AnimationController) -> Option<LiveRig> {
@@ -339,6 +417,7 @@ impl State {
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),
+    lower: LowerBody::new(),
     blend: RegionBlend::new(),
     tracker: StateTracker::new(),
     case_logged: false,

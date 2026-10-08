@@ -35,13 +35,15 @@ pub mod clavicles;
 pub mod feet;
 pub mod gait;
 pub mod hips;
+pub mod lower;
 pub mod pose;
 pub mod spine;
 pub mod two_bone;
 
 use glam::{Quat, Vec2, Vec3};
 pub use hips::{
-    DropFollower, HipsFollower, crouch_depth, hips_height, hips_horizontal, hips_room, reach_drop,
+    DropFollower, HipsFollower, crouch_depth, hips_height, hips_horizontal, hips_room, hips_yaw,
+    reach_drop,
 };
 
 use crate::controllers::body::procedural::{
@@ -49,6 +51,7 @@ use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
     solver::{
         hips::{hips_input, place_hips},
+        lower::LowerTargets,
         pose::RigPose,
         spine::{ChestTurn, bend_spine, chest_pitch, turn_neck},
     },
@@ -82,6 +85,25 @@ pub struct SolveInput {
     /// How far the hips drop below where the head puts them so the legs reach the feet, metres:
     /// [`reach_drop`], followed over time by [`DropFollower`].
     pub hips_drop: f32,
+    /// A held pose of the lower body (a kneel), mixed over the hips and the knees by its weight;
+    /// [`SolveInput::hold`] mixes its feet into [`feet`](Self::feet).
+    pub lower: Option<LowerTargets>,
+}
+
+impl SolveInput {
+    /// Take the held pose `targets` by its weight: its feet replace the feet by the weight now, and
+    /// the solve mixes its hips and knees by the same. A held foot does not roll onto its toes.
+    pub fn hold(&mut self, targets: LowerTargets) {
+        let w = targets.weight.clamp(0.0, 1.0);
+        for side in 0..2 {
+            self.feet[side] = self.feet[side].lerp(targets.feet[side].position, w);
+            self.foot_rotations[side] = self.foot_rotations[side]
+                .slerp(targets.feet[side].rotation, w)
+                .normalize();
+            self.heel_lifts[side] *= 1.0 - w;
+        }
+        self.lower = Some(targets);
+    }
 }
 
 /// Solve the body.
@@ -112,7 +134,12 @@ pub fn solve(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Ri
     )
     .map_or(Vec3::NEG_Z, |yaw| Quat::from_rotation_y(yaw) * Vec3::NEG_Z);
     for (side, (up, leg, foot)) in LEGS.into_iter().enumerate() {
-        let pole = knee_pole(rig, foot, input.foot_rotations[side], hips_forward);
+        let own = knee_pole(rig, foot, input.foot_rotations[side], hips_forward);
+        let pole = input.lower.map_or(own, |held| {
+            own.lerp(held.poles[side], held.weight.clamp(0.0, 1.0))
+                .try_normalize()
+                .unwrap_or(own)
+        });
         let lift = heel_lift(
             rig,
             side,
@@ -307,6 +334,7 @@ mod tests {
             heel_lifts: [0.0; 2],
             hips_xz: None,
             hips_drop: 0.0,
+            lower: None,
         };
         (rig, input, ProceduralBodyConfig::new())
     }

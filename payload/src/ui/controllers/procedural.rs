@@ -62,6 +62,19 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
                 "not measured yet"
             },
         ));
+        let lower = &status.lower;
+        ui.label(format!(
+            "Lower body: {} · hips wanted at {:.3} m against the floor at {:.3} m · low {:.2} s · kneel {:.2}{} · {}",
+            lower.pose.label(),
+            lower.wanted_hips_m,
+            lower.floor_m,
+            lower.low_s,
+            lower.kneel_weight,
+            lower
+                .kneel_side
+                .map_or_else(String::new, |side| format!(" ({} knee)", side.label())),
+            if lower.moving { "moving" } else { "still" },
+        ));
         let ground = &status.ground;
         ui.label(format!(
             "Ground casts this tick {} · hits {} · too steep {} · on objects {} · errors {} · largest offset {:+.3} m",
