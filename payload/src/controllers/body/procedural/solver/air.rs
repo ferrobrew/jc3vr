@@ -63,6 +63,76 @@ pub fn air_feet(
     })
 }
 
+/// How the legs reach for a landing.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ReachTuning {
+    /// How long before touching down the legs reach fully for the ground, seconds; they start
+    /// reaching twice as long before.
+    pub time_s: f32,
+}
+
+/// The feet in the air (`air`, model space) reaching for the ground below them as Rico falls:
+/// each foot with ground below it (`ground`, its height in model space) goes down toward it by how
+/// soon the fall at `vertical_mps` (up positive) reaches it, all the way when it is
+/// `tuning.time_s` or less away, and as far as its leg reaches straight from the hips at
+/// `hips_height`; its toes come level as it does. `stance` gives the ankle's height over the
+/// ground. Rising, or with no ground below, a foot hangs as it was. Returns the feet, and how far
+/// the further-reaching one has gone toward the ground, `0..=1`.
+pub fn reach_for_landing(
+    rig: &Rig,
+    air: [FootPose; 2],
+    stance: [FootPose; 2],
+    hips_height: f32,
+    ground: [Option<f32>; 2],
+    vertical_mps: f32,
+    tuning: &ReachTuning,
+) -> ([FootPose; 2], f32) {
+    let fall = -vertical_mps;
+    if !(fall.is_finite() && fall > 0.0 && tuning.time_s > 0.0 && hips_height.is_finite()) {
+        return (air, 0.0);
+    }
+    let hips = rig.reference(RigBone::Hips).translation.y;
+    let legs = [
+        (RigBone::LeftUpLeg, RigBone::LeftFoot),
+        (RigBone::RightUpLeg, RigBone::RightFoot),
+    ];
+    let mut reached: f32 = 0.0;
+    let feet = [0, 1].map(|i| {
+        let Some(ground) = ground[i].filter(|g| g.is_finite()) else {
+            return air[i];
+        };
+        let (up, foot) = legs[i];
+        let hip_joint = hips_height - (hips - rig.reference(up).translation.y);
+        let leg = rig.reference(up).translation.y - rig.reference(foot).translation.y;
+        let lowest = hip_joint - leg * REACH_EXTENSION;
+        let touch = ground + stance[i].position.y;
+        let hanging = air[i].position.y;
+        let until = (hanging - touch).max(0.0) / fall;
+        let w = (1.0 - (until - tuning.time_s) / tuning.time_s).clamp(0.0, 1.0);
+        let w = w * w * (3.0 - 2.0 * w);
+        if w <= 0.0 {
+            return air[i];
+        }
+        // A foot already below its landing (the ground came up under it) waits for the landing
+        // rather than being pulled up through the tuck.
+        let target = touch.max(lowest).min(hanging);
+        reached = reached.max(w);
+        FootPose {
+            position: Vec3::new(
+                air[i].position.x,
+                hanging + (target - hanging) * w,
+                air[i].position.z,
+            ),
+            rotation: air[i].rotation.slerp(stance[i].rotation, w).normalize(),
+        }
+    });
+    (feet, reached)
+}
+
+/// The share of the leg's length a foot reaching for a landing stretches to: a leg never locks
+/// quite straight.
+const REACH_EXTENSION: f32 = 0.97;
+
 /// The feet mixed from `ground` toward `air` by `weight`.
 pub fn mix_feet(ground: [FootPose; 2], air: [FootPose; 2], weight: f32) -> [FootPose; 2] {
     let w = weight.clamp(0.0, 1.0);
@@ -270,6 +340,50 @@ mod tests {
         let mut dip = LandingDip::new();
         assert_eq!(dip.land(40.0, &tuning), tuning.max_m);
         assert_eq!(dip.land(f32::NAN, &tuning), 0.0);
+    }
+
+    #[test]
+    fn falling_legs_reach_for_the_ground_as_it_nears() {
+        let (rig, stance, tuning) = setup();
+        let reach = ReachTuning { time_s: 0.25 };
+        // Hips a metre and a half up, falling at four metres a second: the hanging ankles are
+        // about 0.7 m up.
+        let hips = 1.5;
+        let air = air_feet(&rig, stance, hips, -4.0, &tuning);
+        let ankle = stance[0].position.y;
+        // Far above the ground, the legs hang.
+        let (far, w) = reach_for_landing(&rig, air, stance, hips, [Some(-5.0); 2], -4.0, &reach);
+        assert_eq!(far, air);
+        assert_eq!(w, 0.0);
+        // Within the reach time, the feet go down toward it, at most as far as the legs reach.
+        let (near, w) = reach_for_landing(&rig, air, stance, hips, [Some(0.0); 2], -4.0, &reach);
+        assert_eq!(w, 1.0);
+        let hip_joint = hips - 0.08;
+        let lowest = hip_joint - 0.84 * REACH_EXTENSION;
+        for foot in near {
+            assert!(
+                (foot.position.y - lowest.max(ankle)).abs() < 1e-4,
+                "{foot:?}"
+            );
+        }
+        // The toes come level for the landing.
+        assert!(near[0].rotation.angle_between(stance[0].rotation) < 1e-3);
+        // Between, part of the way, more of it nearer.
+        let between =
+            |g: f32| reach_for_landing(&rig, air, stance, hips, [Some(g); 2], -4.0, &reach).1;
+        let (a, b) = (between(-1.2), between(-0.9));
+        assert!(a > 0.0 && a < b && b < 1.0, "{a} {b}");
+        // Rising, or without ground under one foot, that foot hangs.
+        assert_eq!(
+            reach_for_landing(&rig, air, stance, hips, [Some(0.0); 2], 2.0, &reach).0,
+            air
+        );
+        let (one, _) = reach_for_landing(&rig, air, stance, hips, [None, Some(0.0)], -4.0, &reach);
+        assert_eq!(one[0], air[0]);
+        assert_ne!(one[1], air[1]);
+        // Ground above the hanging foot (the tuck reaches the ledge) does not pull it up.
+        let (high, _) = reach_for_landing(&rig, air, stance, hips, [Some(1.2); 2], -4.0, &reach);
+        assert!(high[0].position.y <= air[0].position.y + 1e-6);
     }
 
     #[test]

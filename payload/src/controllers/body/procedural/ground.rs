@@ -97,11 +97,34 @@ impl GroundCaster {
     ///
     /// Called from the solve gate, with the caster's character live.
     pub unsafe fn ground(&mut self, point: Vec3) -> Option<Ground> {
+        let from = Vec3::new(point.x, self.root_height + self.up_m, point.z);
+        // SAFETY: forwarded from the caller.
+        unsafe { self.cast_down(from, self.up_m + self.down_m) }
+    }
+
+    /// The ground below `point`, as far as `depth` metres under it, or `None` without ground there
+    /// that a foot can stand on: what a falling foot reaches for.
+    ///
+    /// # Safety
+    ///
+    /// As [`ground`](Self::ground).
+    pub unsafe fn ground_below(&mut self, point: Vec3, depth: f32) -> Option<Ground> {
+        if !(depth.is_finite() && depth > 0.0) {
+            return None;
+        }
+        // SAFETY: forwarded from the caller.
+        unsafe { self.cast_down(point, depth) }
+    }
+
+    /// Cast straight down from `from` for `length` metres.
+    ///
+    /// # Safety
+    ///
+    /// As [`ground`](Self::ground).
+    unsafe fn cast_down(&mut self, from: Vec3, length: f32) -> Option<Ground> {
         if !self.enabled {
             return None;
         }
-        let from = Vec3::new(point.x, self.root_height + self.up_m, point.z);
-        let length = self.up_m + self.down_m;
         let ray = Ray::new(from, Vec3::NEG_Y)?;
         let options = CastOptions {
             ignore: [self.character, 0],

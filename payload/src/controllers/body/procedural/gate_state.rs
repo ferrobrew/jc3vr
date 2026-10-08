@@ -19,7 +19,7 @@ use crate::controllers::{
         root_speed,
         solver::{
             DropFollower, HipsFollower, SolveInput,
-            air::{AirFollower, DipTuning, LandingDip},
+            air::{AirFollower, DipTuning, LandingDip, ReachTuning, reach_for_landing},
             arms::Side,
             clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
             feet::{Feet, FeetInput, FootPose, StepTuning},
@@ -39,6 +39,17 @@ const GAIT_LOG_INTERVAL: Duration = Duration::from_secs(2);
 
 /// How long after a jump ends its landing may still dip the hips.
 const LANDING_WINDOW: Duration = Duration::from_millis(300);
+
+/// How far below a falling foot its ray looks beyond what the fall covers in the reach's time,
+/// metres: the ankle's height and the landing's own slack.
+const REACH_SLACK_M: f32 = 0.5;
+
+/// How far above a falling foot its ray starts, metres, so a foot already at the ground finds it.
+const REACH_CAST_ABOVE_M: f32 = 0.1;
+
+/// The longest a falling foot's ray is, metres: a fall faster than this covers in the reach's time
+/// is past the jump's grace and the animation's.
+const MAX_REACH_CAST_M: f32 = 10.0;
 
 pub(super) struct State {
     /// The rig of the skeleton the animation controller holds.
@@ -104,6 +115,19 @@ pub(super) struct FeetRequest<'a> {
     pub(super) dt: f32,
 }
 
+/// What the legs reach for a landing from, besides the feet in the air.
+pub(super) struct Landing<'a> {
+    /// The root's world transform.
+    pub(super) world: &'a Mat4,
+    pub(super) rig: &'a Rig,
+    /// The neutral stance's feet, model space.
+    pub(super) stance: [FootPose; 2],
+    /// The hips' height the head puts them at, model space.
+    pub(super) hips: f32,
+    /// The root's vertical speed, metres per second, up positive.
+    pub(super) vertical: f32,
+}
+
 /// What the lower body's pose is picked from, besides the solve's input.
 pub(super) struct LowerRequest<'a> {
     /// The root's world transform.
@@ -129,6 +153,55 @@ pub(super) struct LowerRequest<'a> {
 }
 
 impl State {
+    /// Reach the falling feet in the air (`air`, model space) for the ground below them: a ray
+    /// straight down under each, as far as the fall covers in twice the reach's time and a little
+    /// more, and the feet go down toward what it finds as it nears. The first reach of a fall is
+    /// logged at debug level.
+    ///
+    /// # Safety
+    ///
+    /// The gate runs with the local character live, as [`GroundCaster::ground`] needs.
+    pub(super) unsafe fn reach_for_landing(
+        &mut self,
+        landing: &Landing<'_>,
+        air: [FootPose; 2],
+        caster: &mut GroundCaster,
+        config: &ProceduralBodyConfig,
+    ) -> [FootPose; 2] {
+        let world = landing.world;
+        let to_model = world.inverse();
+        let depth =
+            (REACH_SLACK_M - landing.vertical * config.landing_reach_s * 2.0).min(MAX_REACH_CAST_M);
+        let ground = air.map(|foot| {
+            let at = world.transform_point3(foot.position);
+            // SAFETY: forwarded from the caller.
+            unsafe { caster.ground_below(at + Vec3::Y * REACH_CAST_ABOVE_M, depth) }
+                .map(|g| to_model.transform_point3(Vec3::new(at.x, g.height, at.z)).y)
+        });
+        let tuning = ReachTuning {
+            time_s: config.landing_reach_s,
+        };
+        let (feet, reached) = reach_for_landing(
+            landing.rig,
+            air,
+            landing.stance,
+            landing.hips,
+            ground,
+            landing.vertical,
+            &tuning,
+        );
+        if reached > 0.0 && self.status.landing_reach <= 0.0 {
+            tracing::debug!(
+                target: "body",
+                fall_mps = -landing.vertical,
+                ground_below_m = ?ground.map(|g| g.map(|g| air[0].position.y - g)),
+                "procedural body: the legs reach for the landing",
+            );
+        }
+        self.status.landing_reach = reached;
+        feet
+    }
+
     /// Pick the lower body's pose, log a change of it, and return a held pose's targets for the
     /// solve. A held pose that has fully taken the feet plants the walking feet where it holds
     /// them, so the feet step on from there when it lets go.

@@ -60,7 +60,7 @@ use crate::{
             procedural::{
                 authority::{Case, Weights, classify},
                 config::ProceduralMode,
-                gate_state::{FeetRequest, LowerRequest, STATE},
+                gate_state::{FeetRequest, Landing, LowerRequest, STATE},
                 ground::{GroundCaster, GroundTally},
                 rig::{RigBone, RigError},
                 solver::{
@@ -122,6 +122,8 @@ pub struct ProceduralStatus {
     pub lower: LowerStatus,
     /// How far the stance has stepped under the player's head, metres.
     pub step_offset_m: f32,
+    /// How far the falling legs have reached for the ground below, `0..=1`.
+    pub landing_reach: f32,
     /// Whether the neutral stance the feet stand around has been measured.
     pub stance_measured: bool,
     /// The last gate's ground casts.
@@ -409,10 +411,24 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                         fall_speed_mps: config.air_fall_speed_mps,
                         toe_drop: config.air_toe_drop_deg.to_radians(),
                     };
-                    let hips = hips_height(rig, head_in_model(&world).y, &config);
+                    let hips = hips_height(rig, head.y, &config);
                     let air = air_feet(rig, stance, hips, vertical, &tuning);
+                    let air = if config.landing_reach && airborne && vertical < 0.0 {
+                        let landing = Landing {
+                            world: &world,
+                            rig,
+                            stance,
+                            hips,
+                            vertical,
+                        };
+                        unsafe { state.reach_for_landing(&landing, air, &mut caster, &config) }
+                    } else {
+                        state.status.landing_reach = 0.0;
+                        air
+                    };
                     mix_feet(ground_feet, air, air_weight)
                 } else {
+                    state.status.landing_reach = 0.0;
                     ground_feet
                 }
             } else {
@@ -599,6 +615,7 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     crouch_depth: 0.0,
     lower: LowerStatus::new(),
     step_offset_m: 0.0,
+    landing_reach: 0.0,
     stance_measured: false,
     ground: GroundTally::new(),
     clavicles: [ClavicleTurn::ZERO; 2],

@@ -147,6 +147,12 @@ pub struct ProceduralBodyConfig {
     pub air_fall_speed_mps: f32,
     /// How far the toes point down with the legs let down, degrees.
     pub air_toe_drop_deg: f32,
+    /// Reach the legs down for the ground below while falling in a jump, so a landing meets the
+    /// ground with the legs already stretched toward it.
+    pub landing_reach: bool,
+    /// How long before touching down the legs reach fully for the ground, seconds; they start
+    /// reaching twice as long before.
+    pub landing_reach_s: f32,
     /// Dip the hips on landing from a jump or a short fall, by the speed of the fall.
     pub landing_dip: bool,
     /// How deep the landing dip goes per metre per second of falling speed past
@@ -224,6 +230,8 @@ impl ProceduralBodyConfig {
             air_hang: 0.94,
             air_fall_speed_mps: 4.0,
             air_toe_drop_deg: 20.0,
+            landing_reach: true,
+            landing_reach_s: 0.25,
             landing_dip: true,
             landing_dip_per_mps: 0.02,
             landing_dip_max_m: 0.15,
@@ -306,6 +314,7 @@ impl ProceduralBodyConfig {
             ("air_hang", self.air_hang, 0.4, 1.0),
             ("air_fall_speed_mps", self.air_fall_speed_mps, 0.1, 50.0),
             ("air_toe_drop_deg", self.air_toe_drop_deg, 0.0, 60.0),
+            ("landing_reach_s", self.landing_reach_s, 0.02, 1.0),
             ("landing_dip_per_mps", self.landing_dip_per_mps, 0.0, 0.2),
             ("landing_dip_max_m", self.landing_dip_max_m, 0.0, 0.5),
             (

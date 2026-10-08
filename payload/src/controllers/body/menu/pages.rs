@@ -124,6 +124,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .air_legs))
+        .item(config_toggle!("LEGS REACH FOR LANDINGS", |c| c
+            .controllers
+            .body
+            .procedural
+            .landing_reach))
         .item(config_toggle!("HANDS OUT OF THE BODY", |c| c
             .controllers
             .body
