@@ -47,6 +47,7 @@ pub mod arm_steering;
 mod arm_tick;
 mod axis_output;
 pub mod config;
+mod control_haptics;
 pub mod driver_aim;
 pub mod driving_view;
 pub mod fit;
@@ -74,7 +75,7 @@ use re_utilities::hook_library::HookLibrary;
 pub use self::axis_output::write_outputs;
 use self::{
     arm_tick::{arm_tick, arms_act},
-    axis_output::axis_wanted,
+    axis_output::{axis_wanted, lever_axes_wanted, stick_axes_wanted},
     handle_tick::{handles_act, handles_tick},
     mounted_tick::{mounted_tick, offered},
 };
@@ -98,14 +99,11 @@ use crate::{
             fit::{FitInputs, FitReadout, VehicleLatch},
             mounted::{MountedGun, MountedTarget, Reference},
             parachute::{HandleEvent, HandleHold, HandleState},
-            physical::{ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement},
-            steering::WheelCue,
+            physical::{
+                ControlCue, ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement,
+            },
             wheel::{CockpitTransform, WheelFrame},
             wheel_render::RenderWheel,
-        },
-        weapons::{
-            config::PulseSpec,
-            haptics::{self, PulseSource},
         },
     },
     headpose,
@@ -217,6 +215,11 @@ pub struct VehiclesStatus {
     pub wheel: Option<WheelFrame>,
     /// The angle the rendered wheel is turned to, radians, while it is turned.
     pub rendered_angle: Option<f32>,
+    /// The stick's or lever's cue that fired last, and how many have fired.
+    pub last_cue: Option<ControlCue>,
+    pub cues: u64,
+    /// How many times the throttle went through its afterburner gate.
+    pub afterburner_lights: u64,
 }
 
 pub fn status() -> VehiclesStatus {
@@ -238,6 +241,32 @@ pub fn parachute_brake() -> f32 {
         brake.clamp(0.0, 1.0)
     } else {
         0.0
+    }
+}
+
+/// What the status page shows of the vehicles: [`status`] without its event list.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct VehicleSummary {
+    pub active: bool,
+    pub seat: Option<VehicleSeat>,
+    pub offered: &'static [ControlKind],
+    pub holds: [Option<ControlKind>; 2],
+    pub outputs: Outputs,
+    pub cues: u64,
+    pub afterburner_lights: u64,
+}
+
+pub fn summary() -> VehicleSummary {
+    let state = STATE.lock();
+    let s = &state.status;
+    VehicleSummary {
+        active: s.active,
+        seat: s.seat,
+        offered: s.offered,
+        holds: s.holds,
+        outputs: s.outputs,
+        cues: s.cues,
+        afterburner_lights: s.afterburner_lights,
     }
 }
 
@@ -468,15 +497,15 @@ pub(crate) fn finish_tick(
             held,
             grabs,
             stick_steers: axis_wanted(desired, TURN_LEFT, TURN_RIGHT),
+            stick_moves: stick_axes_wanted(desired),
+            lever_moves: lever_axes_wanted(desired),
             dt,
         },
         &mut events,
     );
     write_outputs(&outputs, desired);
-    let wheel_holders = state
-        .controls
-        .holds
-        .map(|h| h.is_some_and(|h| h.kind == ControlKind::Wheel));
+    let holds_now = state.controls.holds.map(|h| h.map(|h| h.kind));
+    let afterburner_was = std::mem::replace(&mut state.afterburner, outputs.afterburner);
     let rendered = state.render.map(|target| {
         let angle = rendered_angle(&state.controls, &placement.config, state.steering_turn);
         (target, angle)
@@ -535,34 +564,27 @@ pub(crate) fn finish_tick(
     state.status.holds = state.controls.holds.map(|h| h.map(|h| h.kind));
     state.status.controls = state.controls;
     state.status.outputs = outputs;
+    if let Some(cue) = outputs.stick_cue.or(outputs.lever_cue) {
+        state.status.last_cue = Some(cue);
+        state.status.cues += 1;
+    }
+    state.status.afterburner_lights += u64::from(outputs.afterburner && !afterburner_was);
     state.status.arms = arms;
     state.status.handles = handles;
     push_events(&mut state.status, events);
     drop(state);
     *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout);
     log_handle_events(&handle_events);
-    if let Some(cue) = outputs.wheel_cue {
-        let spec = match cue {
-            WheelCue::Stop => STOP_PULSE,
-            WheelCue::Centre => CENTRE_PULSE,
-        };
-        for hand in Hand::BOTH.into_iter().filter(|h| wheel_holders[h.index()]) {
-            haptics::pulse(hand, spec, PulseSource::SteeringWheel);
-        }
+    control_haptics::pulse(&outputs, holds_now);
+    if outputs.afterburner != afterburner_was {
+        tracing::info!(
+            target: "controllers",
+            lit = outputs.afterburner,
+            "the throttle {} its afterburner gate",
+            if outputs.afterburner { "went through" } else { "came back out of" }
+        );
     }
 }
-
-/// The bump the held wheel gives at its lock.
-const STOP_PULSE: PulseSpec = PulseSpec {
-    amplitude: 0.5,
-    duration_s: 0.03,
-};
-
-/// The light detent the held wheel gives on passing centre.
-const CENTRE_PULSE: PulseSpec = PulseSpec {
-    amplitude: 0.15,
-    duration_s: 0.012,
-};
 
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
 /// do not inject.
@@ -587,6 +609,7 @@ pub(crate) fn stand_down() {
     driving_view::publish(None);
     state.render = None;
     state.steering_turn = None;
+    state.afterburner = false;
     wheel_render::publish(None);
     state.status.active = false;
     state.status.seat = None;
@@ -678,6 +701,8 @@ struct State {
     render: Option<RenderWheel>,
     /// The driven vehicle's own steering, as the last fit read it.
     steering_turn: Option<f32>,
+    /// Whether the throttle was through its afterburner gate on the last tick.
+    afterburner: bool,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -696,6 +721,9 @@ static STATE: Mutex<State> = Mutex::new(State {
         fit: None,
         wheel: None,
         rendered_angle: None,
+        last_cue: None,
+        cues: 0,
+        afterburner_lights: 0,
     },
     controls: ControlState::new(),
     placement: None,
@@ -712,6 +740,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     latch: None,
     render: None,
     steering_turn: None,
+    afterburner: false,
 });
 
 /// The arm steering's readout for the headset panel ([`arm_panel`]).
@@ -887,6 +916,7 @@ mod tests {
         controls.holds[1] = Some(Hold {
             kind: ControlKind::Wheel,
             offset: Vec3::ZERO,
+            orientation: None,
         });
         assert_eq!(rendered_angle(&controls, &config, Some(0.5)), 0.4);
     }

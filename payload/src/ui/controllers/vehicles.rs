@@ -13,9 +13,9 @@ use crate::{
             self, VehiclesStatus,
             arm_steering::PitchInput,
             config::{
-                ArmPitch, ArmSteeringConfig, DrivingViewConfig, HandlebarsSpec, LeverAxis,
-                LeverSpec, MountedConfig, ParachuteHandlesConfig, PhysicalControlsConfig,
-                StickSpec, VehiclesConfig, WheelSpec, WheelTracking,
+                ArmPitch, ArmSteeringConfig, DrivingViewConfig, FlightControlsConfig,
+                HandlebarsSpec, LeverAxis, LeverSpec, MountedConfig, ParachuteHandlesConfig,
+                PhysicalControlsConfig, StickSpec, VehiclesConfig, WheelSpec, WheelTracking,
             },
             driver_aim,
             driving_view::{self, DrivingViewStatus},
@@ -114,13 +114,21 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         })
     };
     ui.label(format!(
-        "Written: steer {} · lean {} · cyclic {} · collective {} · flight stick {} · throttle {}",
+        "Written: steer {} · lean {} · cyclic {} · collective {} · flight stick {} · rudder {} · throttle {}{}",
         axis(o.steer),
         axis(o.lean),
         pair(o.cyclic),
         axis(o.collective),
         pair(o.flight_stick),
+        axis(o.rudder),
         axis(o.throttle),
+        if o.afterburner { " (afterburner)" } else { "" },
+    ));
+    ui.label(format!(
+        "Stick and lever cues {} (last {}) · afterburner gate passed {}",
+        status.cues,
+        status.last_cue.map_or("none", |c| c.label()),
+        status.afterburner_lights,
     ));
     wheel_readout(ui, status, readout.wheel_turns);
     driving_view_readout(ui, &readout.driving_view);
@@ -408,6 +416,20 @@ fn physical_settings(ui: &mut Ui, p: &mut PhysicalControlsConfig) {
     egui::CollapsingHeader::new("Flight stick (plane)")
         .show(ui, |ui| stick(ui, &mut p.flight_stick));
     egui::CollapsingHeader::new("Throttle (plane)").show(ui, |ui| lever(ui, &mut p.throttle));
+    egui::CollapsingHeader::new("Rudder and afterburner (plane)")
+        .show(ui, |ui| flight(ui, &mut p.flight));
+}
+
+fn flight(ui: &mut Ui, f: &mut FlightControlsConfig) {
+    ui.checkbox(&mut f.twist_rudder, "Twist the stick for the rudder");
+    ui.add(egui::Slider::new(&mut f.twist_deadzone_deg, 0.0..=20.0).text("twist deadzone (°)"));
+    ui.add(egui::Slider::new(&mut f.twist_full_deg, 10.0..=90.0).text("full rudder twist (°)"));
+    ui.checkbox(&mut f.afterburner_gate, "Afterburner gate on the throttle");
+    ui.add(
+        egui::Slider::new(&mut f.gate_at, 0.5..=0.98)
+            .text("gate starts at (share of forward travel)")
+            .fixed_decimals(2),
+    );
 }
 
 fn wheel(ui: &mut Ui, w: &mut WheelSpec) {
@@ -445,6 +467,12 @@ fn stick(ui: &mut Ui, s: &mut StickSpec) {
     ui.add(
         egui::Slider::new(&mut s.max_deflection_m, 0.03..=0.3)
             .text("full deflection (m)")
+            .fixed_decimals(2),
+    );
+    ui.add(egui::Slider::new(&mut s.deadzone, 0.0..=0.3).text("deadzone"));
+    ui.add(
+        egui::Slider::new(&mut s.return_s, 0.0..=1.0)
+            .text("centring time constant (s)")
             .fixed_decimals(2),
     );
 }

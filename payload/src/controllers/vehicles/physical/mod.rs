@@ -16,28 +16,38 @@
 //!   roll leans. With one hand on them, the other end mirrors it through the middle. They move by
 //!   the grips' change since the hands holding them last changed, so a grab does not jump them;
 //! - a stick's top follows the hand across the horizontal plane, and its deflection over the full
-//!   deflection drives both of its axes; let go, it springs back to centre;
+//!   deflection, past a small deadzone, drives both of its axes; let go, a centring spring returns
+//!   it, still flying the vehicle on its way. The flight stick's twist about its shaft works the
+//!   rudder;
 //! - a lever's handle follows the hand along its axis, and its position over half the travel is its
-//!   output, with a detent around neutral. The throttle stays where it is let go.
+//!   output, with a detent around neutral. The throttle stays where it is let go, and has an
+//!   afterburner gate at the top of its travel.
+//!
+//! The sticks and levers give the holding hand a haptic cue at the ends of their travel, the
+//! levers at neutral, and the throttle going into and out of its gate ([`cues`]).
 //!
 //! The holding hand is drawn on the control (the anchored tier): [`anchor_point`] gives where its
 //! grip sits on the control for the hand's current position, which the hands compose at every rate
 //! from the latest controller pose.
 //!
-//! The wheel's motion is in [`held_wheel`], the handlebars' in [`handlebars`], and the sticks' and
-//! levers' in [`sticks`].
+//! The wheel's motion is in [`held_wheel`], the handlebars' in [`handlebars`], the sticks' in
+//! [`sticks`], and the levers' in [`levers`].
 
+pub mod cues;
 mod handlebars;
 mod held_wheel;
-mod sticks;
+pub mod levers;
+pub mod sticks;
 #[cfg(test)]
 mod tests;
 
 use glam::{Quat, Vec2, Vec3};
 
 pub use crate::controllers::vehicles::physical::{
+    cues::ControlCue,
     handlebars::bar_ends,
-    sticks::{lever_handle, lever_value, stick_deflection},
+    levers::{lever_handle, lever_value},
+    sticks::stick_deflection,
 };
 use crate::controllers::{
     bindings::grab::{Candidate, GrabVolume},
@@ -46,9 +56,11 @@ use crate::controllers::{
     vehicles::{
         config::{LeverSpec, PhysicalControlsConfig, StickSpec},
         physical::{
+            cues::TravelCues,
             handlebars::{BarsLatch, bars_now, step_bars},
             held_wheel::step_wheel,
-            sticks::{deflection3, step_lever, step_stick},
+            levers::step_lever,
+            sticks::{deflection3, step_stick},
         },
         steering::{CueArming, WheelCue, WheelGrip},
         wheel::{BarsFrame, WheelFrame},
@@ -118,6 +130,8 @@ pub struct Hold {
     /// The hand's grip relative to the control's handle when it grabbed, for the sticks and levers,
     /// so that a hand that grabs off-centre does not snap the control to itself.
     pub offset: Vec3,
+    /// The hand's grip orientation when it grabbed, for the flight stick's twist.
+    pub orientation: Option<Quat>,
 }
 
 /// Why a hand let go of a control.
@@ -173,6 +187,10 @@ pub struct ControlState {
     pub stick: Vec2,
     /// The collective's and the throttle's positions, `-1..=1`.
     pub levers: [f32; 2],
+    /// Which of the stick's cues may fire.
+    stick_cues: TravelCues,
+    /// Which of each lever's cues may fire, indexed as [`levers`](Self::levers).
+    lever_cues: [TravelCues; 2],
 }
 
 impl ControlState {
@@ -187,6 +205,8 @@ impl ControlState {
             bars_latch: None,
             stick: Vec2::ZERO,
             levers: [0.0; 2],
+            stick_cues: TravelCues::new(),
+            lever_cues: [TravelCues::new(); 2],
         }
     }
 }
@@ -205,10 +225,18 @@ pub struct Outputs {
     pub collective: Option<f32>,
     /// The flight stick: +X rolls right, +Y pushes forward (nose down).
     pub flight_stick: Option<Vec2>,
+    /// The flight stick's twist: `-1..=1`, positive yawing right.
+    pub rudder: Option<f32>,
     /// `-1..=1`, positive accelerating.
     pub throttle: Option<f32>,
+    /// Whether the throttle is through its afterburner gate.
+    pub afterburner: bool,
     /// The cue the held wheel gives the hands holding it this tick.
     pub wheel_cue: Option<WheelCue>,
+    /// The cue the held stick gives its hand this tick.
+    pub stick_cue: Option<ControlCue>,
+    /// The cue the held lever gives its hand this tick.
+    pub lever_cue: Option<ControlCue>,
 }
 
 impl Outputs {
@@ -218,8 +246,12 @@ impl Outputs {
         cyclic: None,
         collective: None,
         flight_stick: None,
+        rudder: None,
         throttle: None,
+        afterburner: false,
         wheel_cue: None,
+        stick_cue: None,
+        lever_cue: None,
     };
 }
 
@@ -265,6 +297,16 @@ impl Placement {
             ControlKind::Throttle => Some((1, self.config.throttle)),
             _ => None,
         }
+    }
+
+    /// Where `kind`'s afterburner gate starts along its positive half, for the throttle with the
+    /// gate on: past its detent, short of the stop.
+    pub(super) fn gate(&self, kind: ControlKind) -> Option<f32> {
+        let flight = &self.config.flight;
+        (kind == ControlKind::Throttle && flight.afterburner_gate).then(|| {
+            let detent = self.config.throttle.detent.clamp(0.0, 0.9);
+            flight.gate_at.clamp(detent + 0.05, 0.98)
+        })
     }
 
     /// The point `hand`'s grip grabs `kind` at, given the hand's grip `point`: the nearest point on
@@ -342,6 +384,11 @@ pub struct StepInputs<'a> {
     pub grabs: [Option<ControlKind>; 2],
     /// Whether the stick's turn axis is out of its deadzone this tick.
     pub stick_steers: bool,
+    /// Whether the tables write the cyclic's or the flight stick's axes this tick: the thumbstick
+    /// is out of its deadzone.
+    pub stick_moves: bool,
+    /// Whether the tables write the collective's or the throttle's axis this tick.
+    pub lever_moves: bool,
     pub dt: f32,
 }
 
@@ -420,19 +467,31 @@ pub fn step(
                 }
             }
             ControlKind::Cyclic | ControlKind::FlightStick => {
-                let value = step_stick(state, placement, kind, holding);
+                let stick = step_stick(
+                    state,
+                    placement,
+                    kind,
+                    holding,
+                    (inputs.orientations, inputs.stick_moves),
+                    dt,
+                );
+                out.stick_cue = stick.cue;
                 if kind == ControlKind::Cyclic {
-                    out.cyclic = value;
+                    out.cyclic = stick.value;
                 } else {
-                    out.flight_stick = value;
+                    out.flight_stick = stick.value;
+                    out.rudder = stick.rudder;
                 }
             }
             ControlKind::Collective | ControlKind::Throttle => {
-                let value = step_lever(state, placement, kind, holding);
+                let lever = step_lever(state, placement, kind, holding, inputs.lever_moves);
+                out.lever_cue = lever.cue;
                 if kind == ControlKind::Collective {
-                    out.collective = value;
+                    out.collective = lever.value;
                 } else {
-                    out.throttle = value;
+                    out.throttle = lever.value;
+                    out.afterburner =
+                        placement.gate(kind).is_some() && lever.value.is_some_and(|v| v >= 1.0);
                 }
             }
         }
@@ -508,6 +567,7 @@ fn grab(
     (point, orientation): (Vec3, Option<Quat>),
     events: &mut Vec<ControlEvent>,
 ) {
+    let orientation = orientation.filter(|q| q.is_finite());
     let other = hand.other();
     if !kind.two_handed() && state.holds[other.index()].is_some_and(|h| h.kind == kind) {
         release(state, other, Release::TakenOver, events);
@@ -526,7 +586,11 @@ fn grab(
             state.wheel_angle,
         ));
     }
-    state.holds[hand.index()] = Some(Hold { kind, offset });
+    state.holds[hand.index()] = Some(Hold {
+        kind,
+        offset,
+        orientation,
+    });
     events.push(ControlEvent::Grabbed(hand, kind));
 }
 

@@ -15,6 +15,7 @@ mod fingers;
 mod grapple;
 mod hands;
 mod system;
+mod vehicles;
 mod weapons;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -258,6 +259,10 @@ const SECTIONS: &[Section] = &[
             row!("HANG SWING", grapple::swing),
             row!("LINE HAPTICS", grapple::haptics),
         ],
+    },
+    Section {
+        title: "VEHICLES",
+        rows: &[row!("FLIGHT CONTROLS", vehicles::flight_controls)],
     },
     Section {
         title: "LOCOMOTION",

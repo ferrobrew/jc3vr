@@ -1,11 +1,14 @@
-//! Tests for the physical controls.
+//! Tests for the physical controls: the wheel, the handlebars, and the common grab and release here,
+//! the plane's flight stick and throttle in [`flight`].
+
+mod flight;
 
 use std::f32::consts::FRAC_PI_2;
 
 use super::*;
 use crate::controllers::vehicles::{
     config::LeverAxis,
-    physical::{handlebars::bar_angles, sticks::detent},
+    physical::{handlebars::bar_angles, levers::detent, sticks},
     steering,
 };
 
@@ -54,6 +57,8 @@ fn step_held(
             held,
             grabs,
             stick_steers: false,
+            stick_moves: false,
+            lever_moves: false,
             dt: DT,
         },
         &mut events,
@@ -330,8 +335,10 @@ fn a_stick_follows_the_hand_within_its_travel_and_springs_back() {
     let pushed = grip + Vec3::new(0.0, 0.0, -0.06);
     let (out, _) = step_with(&mut state, &p, &kinds, [None, Some(pushed)], [None; 2]);
     let cyclic = out.cyclic.unwrap();
+    let expected = sticks::stick_value(&p.config.cyclic, Vec2::new(0.0, -0.06)).y;
+    assert!(expected > 0.4 && expected < 0.5, "{expected}");
     assert!(
-        (cyclic.y - 0.5).abs() < 1e-4 && cyclic.x.abs() < 1e-5,
+        (cyclic.y - expected).abs() < 1e-4 && cyclic.x.abs() < 1e-5,
         "{cyclic}"
     );
     let far = grip + Vec3::new(0.2, 0.0, 0.0);
@@ -352,8 +359,15 @@ fn a_stick_follows_the_hand_within_its_travel_and_springs_back() {
         [None; 2],
         [false; 2],
     );
-    assert_eq!(out.cyclic, None);
+    // Let go, the spring brings the stick back, still flying the vehicle on its way.
+    let returning = out.cyclic.unwrap();
+    assert!(returning.y > 0.0 && returning.y < cyclic.y, "{returning}");
+    for _ in 0..60 {
+        step_held(&mut state, &p, &kinds, [None; 2], [None; 2], [false; 2]);
+    }
     assert_eq!(state.stick, Vec2::ZERO);
+    let (out, _) = step_held(&mut state, &p, &kinds, [None; 2], [None; 2], [false; 2]);
+    assert_eq!(out.cyclic, None);
 }
 
 #[test]
@@ -537,6 +551,8 @@ fn the_stick_takes_the_steering_back_from_a_returning_wheel() {
         held: [false; 2],
         grabs: [None; 2],
         stick_steers: false,
+        stick_moves: false,
+        lever_moves: false,
         dt: DT,
     };
     let out = step(&mut state, &p, &inputs, &mut events);

@@ -560,6 +560,29 @@ fn settings_page() -> Page {
             SliderFormat::new(2, ""),
             |c| c.controllers.vehicles.physical.wheel.response
         ))
+        .item(config_slider!(
+            "FLIGHT STICK THROW",
+            STICK_THROW_RANGE,
+            SliderFormat::new(2, " M"),
+            |c| c
+                .controllers
+                .vehicles
+                .physical
+                .flight_stick
+                .max_deflection_m
+        ))
+        .item(config_toggle!("TWIST FLIGHT STICK FOR RUDDER", |c| c
+            .controllers
+            .vehicles
+            .physical
+            .flight
+            .twist_rudder))
+        .item(config_toggle!("THROTTLE AFTERBURNER GATE", |c| c
+            .controllers
+            .vehicles
+            .physical
+            .flight
+            .afterburner_gate))
         .item(config_toggle!("WINGSUIT ARM STEERING", |c| c
             .controllers
             .vehicles
@@ -893,6 +916,8 @@ const FULL_PULL_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
 const HANDLE_HEIGHT_RANGE: SliderRange = SliderRange::new(0.0, 0.4, 40);
 /// The steering wheel's full lock either way, degrees, in degrees: at most half a turn.
 const WHEEL_LOCK_RANGE: SliderRange = SliderRange::new(60.0, 180.0, 120);
+/// The flight stick's full deflection, metres, in half centimetres.
+const STICK_THROW_RANGE: SliderRange = SliderRange::new(0.05, 0.2, 30);
 /// The steering wheel's response exponent, in twentieths.
 const WHEEL_RESPONSE_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 /// The wingsuit's full pitch by wrist tilt, degrees, in degrees.

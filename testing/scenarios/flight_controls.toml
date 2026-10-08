@@ -1,0 +1,19 @@
+# Template: fill testing/recordings/flight_controls.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "fly a plane with the stick and throttle"
+description = "Recorded seated in a parked plane with the physical flight stick and throttle on and the afterburner gate on (steering-wheel.md, the flight stick and throttle checklist). Take the throttle and push it to the stop through the gate, take the stick and fly, twisting it for the rudder, let go of the stick to watch it centre, bring the throttle back to idle, and land or bail out."
+recording = "../recordings/flight_controls.jc3trk"
+settle_s = 5.0
+
+[[expect]]
+signal = "controllers.in_vehicle"
+
+[[expect]]
+name = "the throttle went through its gate"
+signal = "vehicles.afterburner_lights"
+
+[[expect]]
+name = "the stick and throttle gave their cues"
+signal = "vehicles.control_cues"
+
+[[expect]]
+log = "the throttle went through its afterburner gate"

@@ -270,6 +270,12 @@ Interaction legend ([`ButtonInteraction`](https://ferrobrew.github.io/pyxis/#/Ju
 | `MAPPING_STUNT_JUMP_PLANE` | tap | `STUNT_JUMP` | |
 | `MAPPING_NITROUS_PLANE` | hold | `PLANE_INC_TRUST` | upgrade `air_vehicle_nitrous_unlock` |
 
+### The plane's thrust and nitrous
+
+The plane's input reader, [`AirPlane::UpdateVehicleInputsFromActionMap`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::AirPlane##func-UpdateVehicleInputsFromActionMap), runs on top of the vehicle's own each tick unless the plane is destroyed, its driver is knocked out or dead, an AI's input has gone stale, or it is under an EMP. It reads the turn from `PLANE_TURN_LEFT` and `PLANE_TURN_RIGHT`, the roll from `PLANE_ROLL_LEFT` and `PLANE_ROLL_RIGHT`, the pitch from `PLANE_PITCH_UP` and `PLANE_PITCH_DOWN`, and the throttle as the `PLANE_INC_TRUST` value less the `PLANE_DEC_TRUST` value into [`Vehicle::m_SteeringAcceleration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringAcceleration), with the `PLANE_DEC_TRUST` value alone as the brake ([`Vehicle::m_SteeringBrake`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringBrake)). Both are values, not rates: the thrust is where the trigger is.
+
+The nitrous is not an input of its own. With a living driver and the plane in control, a `PLANE_INC_TRUST` value above [`AirPlane::NITROUS_THRUST_THRESHOLD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::AirPlane) raises [`Vehicle::m_NitrousInput`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_NitrousInput) to it, and otherwise the nitrous input is left as it is. `MAPPING_NITROUS_PLANE`'s hold describes the button hint; the reader tests the value, not a hold time.
+
 ### UI
 
 All UI mappings are tap and `m_Customizable = false`.

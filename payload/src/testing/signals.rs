@@ -19,7 +19,7 @@ use crate::{
             physics::{self, BodyPhase},
             vault,
         },
-        scheme,
+        scheme, vehicles,
         weapons::{self, ads, c4, collide, grenade, grip_watch, hold::second, reload::loose},
     },
     frame_timing,
@@ -102,6 +102,9 @@ signals! {
     OnFoot => "controllers.on_foot", Flag, "The mode detector has the player on foot on the ground.";
     Swimming => "controllers.swimming", Flag, "The mode detector has the player swimming.";
     InVehicle => "controllers.in_vehicle", Flag, "The mode detector has the player in a vehicle seat.";
+    ControlCues => "vehicles.control_cues", Counter, "Haptic stops, detents, and gates the held sticks and levers gave.";
+    Afterburner => "vehicles.afterburner", Flag, "The plane's throttle is through its afterburner gate.";
+    AfterburnerLights => "vehicles.afterburner_lights", Counter, "Times the throttle went through its afterburner gate.";
     Airborne => "controllers.airborne", Flag, "The mode detector has the player falling, in the wingsuit, or under the parachute.";
     HandBodiesRegistered => "hand_bodies.registered", Flag, "The hand bodies' pre-simulation callback is registered.";
     HandBodiesOnGameThread => "hand_bodies.on_game_thread", Flag, "The callback has fired, on the thread that registered it.";
@@ -190,6 +193,9 @@ impl Signal {
             Signal::OnFoot => flag(mode::current().mode == Mode::OnFoot(OnFootVariant::Ground)),
             Signal::Swimming => flag(mode::current().mode == Mode::OnFoot(OnFootVariant::Swimming)),
             Signal::InVehicle => flag(matches!(mode::current().mode, Mode::Vehicle(_))),
+            Signal::ControlCues => count(vehicles::summary().cues),
+            Signal::Afterburner => flag(vehicles::summary().outputs.afterburner),
+            Signal::AfterburnerLights => count(vehicles::summary().afterburner_lights),
             Signal::Airborne => flag(matches!(mode::current().mode, Mode::Airborne(_))),
             Signal::HandBodiesRegistered => flag(physics::callback_status().registered),
             Signal::HandBodiesOnGameThread => {

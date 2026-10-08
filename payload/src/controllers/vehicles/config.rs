@@ -143,6 +143,9 @@ pub struct PhysicalControlsConfig {
     pub flight_stick: StickSpec,
     /// The plane's throttle, by the off-hand hip.
     pub throttle: LeverSpec,
+    /// What the plane's flight stick and throttle add to a plain stick and lever: the stick's
+    /// twist for the rudder and the throttle's afterburner gate.
+    pub flight: FlightControlsConfig,
     /// How far from a control a hand's grip may be for a grip press to grab it, metres.
     pub grab_radius_m: f32,
     /// How far a holding hand may move from the control before it lets go, metres.
@@ -182,6 +185,8 @@ impl PhysicalControlsConfig {
                 enabled: true,
                 top_m: Vec3::new(0.12, -0.78, -0.30),
                 max_deflection_m: 0.12,
+                deadzone: 0.05,
+                return_s: 0.12,
             },
             collective: LeverSpec {
                 enabled: true,
@@ -194,7 +199,9 @@ impl PhysicalControlsConfig {
             flight_stick: StickSpec {
                 enabled: true,
                 top_m: Vec3::new(0.10, -0.75, -0.32),
-                max_deflection_m: 0.12,
+                max_deflection_m: 0.10,
+                deadzone: 0.05,
+                return_s: 0.12,
             },
             throttle: LeverSpec {
                 enabled: true,
@@ -204,6 +211,7 @@ impl PhysicalControlsConfig {
                 detent: 0.1,
                 hold_on_release: true,
             },
+            flight: FlightControlsConfig::new(),
             grab_radius_m: 0.09,
             release_distance_m: 0.25,
             from_vehicle: true,
@@ -300,7 +308,7 @@ pub struct HandlebarsSpec {
     pub max_lean_deg: f32,
 }
 
-/// A joystick whose top moves in the horizontal plane.
+/// A joystick whose top moves in the horizontal plane. Let go, a spring returns it to centre.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StickSpec {
     pub enabled: bool,
@@ -308,6 +316,50 @@ pub struct StickSpec {
     pub top_m: Vec3,
     /// How far the top moves for a full deflection, metres.
     pub max_deflection_m: f32,
+    /// The share of the full deflection around centre that outputs nothing, `0..1`, so that a
+    /// resting hand's tremor does not fly the vehicle.
+    pub deadzone: f32,
+    /// The released stick's centring spring: the time constant it returns to centre with, seconds.
+    /// Zero snaps it back.
+    pub return_s: f32,
+}
+
+/// The plane's flight stick and throttle beyond a plain stick and lever (see
+/// [`crate::controllers::vehicles::physical`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FlightControlsConfig {
+    /// Twist the held flight stick about its shaft to work the rudder: turning the top to the
+    /// right yaws right.
+    pub twist_rudder: bool,
+    /// Twists within this of where the hand took the stick work nothing, degrees.
+    pub twist_deadzone_deg: f32,
+    /// The twist that gives a full rudder, degrees.
+    pub twist_full_deg: f32,
+    /// Give the throttle a gate at the top of its travel: below it the throttle stops short of the
+    /// thrust that lights the afterburner, and pushed through it, the throttle is full and the
+    /// afterburner burns where the game allows it. Off, the throttle runs straight to full.
+    pub afterburner_gate: bool,
+    /// Where the gate starts, as a share of the throttle's forward travel, `0..1`.
+    pub gate_at: f32,
+}
+
+impl FlightControlsConfig {
+    pub const fn new() -> Self {
+        Self {
+            twist_rudder: true,
+            twist_deadzone_deg: 6.0,
+            twist_full_deg: 35.0,
+            afterburner_gate: true,
+            gate_at: 0.85,
+        }
+    }
+}
+
+impl Default for FlightControlsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// A lever that slides along one axis.

@@ -1,5 +1,57 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
+/// A plane (`CAirPlane`): a [`Vehicle`](crate::vehicle::vehicle::Vehicle) with fixed wings. Only some members are bound.
+pub struct AirPlane {
+    /// The plane's vehicle base.
+    pub vehicle: crate::vehicle::vehicle::Vehicle,
+}
+fn _AirPlane_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x53A8], AirPlane>([0u8; 0x53A8]);
+    }
+    unreachable!()
+}
+impl AirPlane {
+    pub const UpdateVehicleInputsFromActionMap_ADDRESS: usize = 0x141060950;
+    /// The plane's per-tick input reader, on top of the vehicle's own. Unless the plane is
+    /// destroyed, its driver is knocked out or dead, an AI's input is stale, or it is under an EMP,
+    /// it reads `action_map` (a `CActionMap`): the turn from `PLANE_TURN_LEFT` and
+    /// `PLANE_TURN_RIGHT`, the roll from `PLANE_ROLL_LEFT` and `PLANE_ROLL_RIGHT`, the pitch from
+    /// `PLANE_PITCH_UP` and `PLANE_PITCH_DOWN`, and the throttle into
+    /// [`Vehicle::m_SteeringAcceleration`](crate::vehicle::vehicle::Vehicle::m_SteeringAcceleration) and [`Vehicle::m_SteeringBrake`](crate::vehicle::vehicle::Vehicle::m_SteeringBrake) (no acceleration while
+    /// the movement is locked). With a living driver and the plane in control, a `PLANE_INC_TRUST`
+    /// value above [`NITROUS_THRUST_THRESHOLD`](crate::vehicle::vehicle::AirPlane::NITROUS_THRUST_THRESHOLD) raises
+    /// [`Vehicle::m_NitrousInput`](crate::vehicle::vehicle::Vehicle::m_NitrousInput) to it; otherwise the nitrous input is kept.
+    pub unsafe fn UpdateVehicleInputsFromActionMap(
+        &mut self,
+        action_map: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                action_map: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::UpdateVehicleInputsFromActionMap_ADDRESS);
+            f(self as *mut Self as _, action_map)
+        }
+    }
+}
+impl AirPlane {
+    /// The thrust input above which a plane's input reader feeds the nitrous
+    /// ([`Vehicle::m_NitrousInput`](crate::vehicle::vehicle::Vehicle::m_NitrousInput)): the plane's nitrous is a full `PLANE_INC_TRUST` rather than an
+    /// input of its own.
+    pub const NITROUS_THRUST_THRESHOLD: f32 = 0.9;
+}
+impl std::convert::AsRef<AirPlane> for AirPlane {
+    fn as_ref(&self) -> &AirPlane {
+        self
+    }
+}
+impl std::convert::AsMut<AirPlane> for AirPlane {
+    fn as_mut(&mut self) -> &mut AirPlane {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// `CDoorInfo`: one door part of a vehicle's [`VehicleDoorController`](crate::vehicle::vehicle::VehicleDoorController) and its state. A closed door
 /// is merged into the vehicle's body; opening it loosens the part onto the hinge constraint of the
 /// vehicle's physics prototype, as a body of its own
@@ -164,7 +216,16 @@ fn _Seat_size_check() {
 /// ([`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)),
 /// and the vtable there serves RTTI and the transform virtuals. Only some members are bound.
 pub struct Vehicle {
-    _field_0: [u8; 1108],
+    _field_0: [u8; 1088],
+    /// The signed throttle the vehicle's input reader last applied (`m_SteeringValues.Acceleration`).
+    /// A plane's reader ([`AirPlane::UpdateVehicleInputsFromActionMap`](crate::vehicle::vehicle::AirPlane::UpdateVehicleInputsFromActionMap)) sets it to the
+    /// `PLANE_INC_TRUST` value less the `PLANE_DEC_TRUST` value, so it is negative while braking.
+    /// [`UpdateLandingGearVariables`](crate::vehicle::vehicle::Vehicle::UpdateLandingGearVariables) reads it.
+    pub m_SteeringAcceleration: f32,
+    /// The brake the vehicle's input reader last applied (`m_SteeringValues.Brake`), `0..=1`: a
+    /// plane's is the `PLANE_DEC_TRUST` value.
+    pub m_SteeringBrake: f32,
+    _field_448: [u8; 12],
     /// The signed steering amount the vehicle's controller last applied
     /// (`m_SteeringValues.Turn`). It is the value of the vehicle's `steering_turn` variable, which
     /// value-driven effects and hinged parts can be driven by.
@@ -190,11 +251,20 @@ pub struct Vehicle {
     _field_15e0: [u8; 136],
     /// The vehicle's doors, hood, trunk, hatches, and other opening parts, and their state.
     pub m_VehicleDoorController: crate::vehicle::vehicle::VehicleDoorController,
-    _field_1690: [u8; 13732],
+    _field_1690: [u8; 397],
+    /// Whether the landing gear should be down. While the local player drives,
+    /// [`UpdateLandingGearVariables`](crate::vehicle::vehicle::Vehicle::UpdateLandingGearVariables) rewrites it on every update;
+    /// otherwise it keeps the value the AI steering last set.
+    pub m_DesiredLandingGearState: bool,
+    _field_181e: [u8; 13334],
     /// The world-space point the vehicle's weapons aim at, written by
     /// [`SetAimTargetPosition`](crate::vehicle::vehicle::Vehicle::SetAimTargetPosition).
     pub m_AimingTargetPosition: crate::types::math::Vector3,
-    _field_4c40: [u8; 264],
+    _field_4c40: [u8; 140],
+    /// The nitrous input, `0..=1`: a plane's input reader raises it to the thrust input while that
+    /// is above [`AirPlane::NITROUS_THRUST_THRESHOLD`](crate::vehicle::vehicle::AirPlane::NITROUS_THRUST_THRESHOLD).
+    pub m_NitrousInput: f32,
+    _field_4cd0: [u8; 120],
     /// How long, in seconds, AI-controlled vehicle weapons keep an externally supplied aim target.
     /// [`SetAimTargetPosition`](crate::vehicle::vehicle::Vehicle::SetAimTargetPosition) sets it to `-1` when the local player
     /// drives and to `2` otherwise.
@@ -374,6 +444,26 @@ impl Vehicle {
                 Self::IsRocketBoat_ADDRESS,
             );
             f(self as *const Self as _)
+        }
+    }
+    pub const UpdateLandingGearVariables_ADDRESS: usize = 0x140F6F1D0;
+    /// Moves the landing gear and its hatches toward
+    /// [`m_DesiredLandingGearState`](crate::vehicle::vehicle::Vehicle::m_DesiredLandingGearState), and plays the gear's attached
+    /// effects as they open, close, and lock. While the local player drives, it first chooses the
+    /// desired state itself: down while the vehicle is low over the ground, slower than a deploy
+    /// speed that the throttle in [`m_SteeringAcceleration`](crate::vehicle::vehicle::Vehicle::m_SteeringAcceleration) moves
+    /// between the vehicle's take-off and landing speeds, and not tilted past the vehicle's landing
+    /// tilt in the air; up otherwise while airborne. There is no player input for the gear.
+    pub unsafe fn UpdateLandingGearVariables(
+        &mut self,
+        context: *const crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *const crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdateLandingGearVariables_ADDRESS);
+            f(self as *mut Self as _, context)
         }
     }
 }
