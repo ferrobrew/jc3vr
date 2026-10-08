@@ -86,6 +86,11 @@ use crate::{
             raycast::{self, CastOptions},
         },
         body,
+        fingers::grip::{
+            self, Grip, GripSource,
+            catalogue::GripPose,
+            contact::{self as finger_contact, CastHit, FitTarget},
+        },
         frame::{Hand, Pose},
         hands::{self, CockpitHand, pose as hand_pose, reach, tiers},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
@@ -417,6 +422,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     let mut hand_status = [HandStatus::default(); 2];
     let mut clamp = [Vec3::ZERO; 2];
     let mut palms = [None; 2];
+    let mut wrists = [None; 2];
     for hand in Hand::BOTH {
         let i = hand.index();
         let velocity = state.hand_velocity(hand);
@@ -443,6 +449,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 .update(palm.orientation, dt, VELOCITY_SMOOTHING_S),
         };
         palms[i] = Some(motion);
+        wrists[i] = Some(compose(cockpit.wrist));
         if state.pickup.holding(hand) {
             // A holding hand neither probes nor pushes: its palm is around the object.
             state.probes[i].iter_mut().for_each(PointProbe::reset);
@@ -646,6 +653,9 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             }
         }
     }
+    declare_grips(&state.pickup, &hand_status, wrists, &mut |from, to| {
+        cast(from, to, &reach_options)
+    });
     pressure_pulses(&hand_status, &config);
     let push = push::combine(hand_status.map(|h| h.push), &config);
     for touch in touches {
@@ -675,6 +685,59 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         &config,
     );
     draw::submit(&snapshot, &config);
+}
+
+/// Declare what each hand holds, for its finger pose, with the contact fit's curls for a held body
+/// where the fingers would close onto it: each finger's sweep casts with `cast` against the body,
+/// from the rendered wrist (`wrists`, moved as the rendered hand is to the grab point). An empty
+/// palm pressed on a surface is declared flat on it.
+fn declare_grips(
+    pickup: &PickupState,
+    hands: &[HandStatus; 2],
+    wrists: [Option<Pose>; 2],
+    cast: &mut dyn FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+) {
+    let fingers = Config::lock_query(|c| c.controllers.fingers);
+    let fit_on = fingers.enabled && fingers.grip.enabled && fingers.grip.contact_fit;
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let Some((source, body)) = pickup.grip(hand) else {
+            if hands[i].press.is_some() || physics::pressing(hand) {
+                grip::declare(hand, Grip::new(GripSource::Surface));
+            }
+            continue;
+        };
+        // One hand on what it cannot lift lays its palm on it, as on a crate it drags.
+        let pose = match hands[i].held {
+            Some(held) if source == GripSource::Pickup && !held.liftable => GripPose::FlatPalm,
+            _ => source.pose(),
+        };
+        let fit = body
+            .zip(wrists[i])
+            .filter(|_| fit_on)
+            .and_then(|(body, wrist)| {
+                let drawn = hands[i].held.map_or(Vec3::ZERO, |h| h.anchor - h.target);
+                let target = FitTarget {
+                    body,
+                    wrist: Pose {
+                        position: wrist.position + drawn,
+                        orientation: wrist.orientation,
+                    },
+                    pose,
+                };
+                finger_contact::fit_contacts(hand, target, &fingers, &mut |from, to| {
+                    let hit = cast(from, to)?;
+                    let (Surface::Solid { body, .. } | Surface::Character { body, .. }) =
+                        hit.surface;
+                    let length = from.distance(to).max(1e-6);
+                    Some(CastHit {
+                        fraction: from.distance(hit.position) / length,
+                        body,
+                    })
+                })
+            });
+        grip::declare(hand, Grip::new(source).pose(pose).fitted(fit));
+    }
 }
 
 /// Whether the hands act in the mode `detection`: on foot on the ground, or falling, so that a

@@ -150,6 +150,16 @@ fn settings_page() -> Page {
             .overlay
             .hide_game_reticle))
         .item(config_toggle!("FINGERS", |c| c.controllers.fingers.enabled))
+        .item(config_toggle!("FINGERS WRAP WHAT THE HAND HOLDS", |c| c
+            .controllers
+            .fingers
+            .grip
+            .enabled))
+        .item(config_toggle!("FINGERS WRAP GUNS", |c| c
+            .controllers
+            .fingers
+            .grip
+            .weapons))
         .item(config_toggle!("PHYSICAL HANDS", |c| c
             .controllers
             .physical_hands

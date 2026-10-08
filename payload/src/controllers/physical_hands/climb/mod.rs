@@ -39,6 +39,7 @@ use crate::{
     config::Config,
     controllers::{
         bindings::grab::GrabVolume,
+        fingers::grip::{self, Grip as FingerGrip, GripSource},
         frame::Hand,
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
@@ -163,9 +164,13 @@ pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
 /// after the tables, with each hand's held grip and the grab volume its press latched.
 pub(crate) fn finish_tick(held: [bool; 2], grabs: [Option<GrabVolume>; 2]) {
     let mut state = STATE.lock();
-    let fresh = state.fresh(Instant::now());
+    let now = Instant::now();
+    let fresh = state.fresh(now);
     for hand in Hand::BOTH {
         let i = hand.index();
+        if state.grips[i].is_some() && state.stepped_lately(now) {
+            grip::declare(hand, FingerGrip::new(GripSource::Climb));
+        }
         if !held[i] {
             if state.grips[i].is_some() || matches!(state.requests[i], Some(Request::Grip(_))) {
                 state.requests[i] = Some(Request::Release);

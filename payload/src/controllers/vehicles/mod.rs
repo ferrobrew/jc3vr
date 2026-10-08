@@ -87,6 +87,7 @@ use crate::{
         },
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
+        fingers::grip::{self, Grip, GripSource},
         frame::{Hand, Pose},
         hands::{self, CockpitHand, tiers},
         mode::{Mode, VehicleSeat},
@@ -339,9 +340,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let volumes = Hand::BOTH.map(|hand| {
         let i = hand.index();
         if let Some(hold) = state.controls.holds[i] {
+            grip::declare(hand, Grip::new(GripSource::of_control(hold.kind)));
             return Some(GrabVolume::VehicleControl(hold.kind));
         }
         if state.handles.holds[i].is_some() {
+            grip::declare(hand, Grip::new(GripSource::ParachuteHandle));
             return Some(GrabVolume::ParachuteHandle(hand));
         }
         grab::grab_volume(grips[i]?, hand, &candidates)
@@ -361,6 +364,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     state.mounted_target = mounted.target;
     MOUNTED_WEAPON.store(mounted.target.map_or(0, |t| t.weapon), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
+    declare_mounted_grips(mounted.handles);
     state.status.active = true;
     state.status.seat = seat;
     state.status.offered = offered;
@@ -389,6 +393,21 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         &xf,
     );
     TickVolumes { volumes, reach }
+}
+
+/// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share.
+fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>) {
+    let tiers = tiers::status();
+    let Some(handles) = handles.filter(|_| tiers.state == Some(tiers::TierState::MountedGun))
+    else {
+        return;
+    };
+    for hand in Hand::BOTH {
+        let weight = tiers.anchor_weights[hand.index()];
+        if handles[hand.index()].is_some() && weight > 0.0 {
+            grip::declare(hand, Grip::new(GripSource::MountedGun).share(weight));
+        }
+    }
 }
 
 /// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,

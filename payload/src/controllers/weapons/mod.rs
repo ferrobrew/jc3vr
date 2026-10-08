@@ -100,6 +100,7 @@ use crate::{
         },
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
+        fingers::grip::{self, Grip, GripSource},
         frame::Hand,
         hands::{
             self, ActiveHands, CockpitHand, ik,
@@ -768,6 +769,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     if fire_blocked {
         hold_fire_back(desired);
     }
+    declare_grips(gun_hands);
 
     let mut state = STATE.lock();
     state.status.fire_blocked = fire_blocked;
@@ -775,6 +777,33 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     state.status.events.extend(events);
     let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
     state.status.events.drain(..excess);
+}
+
+/// Declare what each hand holds of the weapons, for its finger pose: a gun in each hand that holds
+/// one (`gun_hands`, and the second weapon's), the foregrip, a grenade or a charge, and a round for
+/// the reload.
+fn declare_grips(gun_hands: [bool; 2]) {
+    for hand in Hand::BOTH.into_iter().filter(|h| gun_hands[h.index()]) {
+        grip::declare(hand, Grip::new(GripSource::Gun));
+    }
+    if let Some(hand) = second::hand() {
+        grip::declare(hand, Grip::new(GripSource::Gun));
+    }
+    if let Some(two) = foregrip::two_hand_grip() {
+        grip::declare(
+            two.holder.other(),
+            Grip::new(GripSource::Foregrip).share(two.weight),
+        );
+    }
+    if let Some(hand) = grenade::throwing_hand() {
+        grip::declare(hand, Grip::new(GripSource::Grenade));
+    }
+    if let Some(hand) = c4::throwing_hand() {
+        grip::declare(hand, Grip::new(GripSource::C4));
+    }
+    if let Some(hand) = reload::holding_hand() {
+        grip::declare(hand, Grip::new(GripSource::Magazine));
+    }
 }
 
 /// Stop acting: drop the foregrip hold and forget the tick's weapon. Called whenever the bindings

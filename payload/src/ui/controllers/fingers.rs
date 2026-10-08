@@ -6,7 +6,7 @@ use crate::{
     controllers::{
         fingers::{
             HandFingersStatus,
-            config::{FingerSource, FingersConfig},
+            config::{FingerSource, FingersConfig, GripPosesConfig},
             curl::Finger,
         },
         frame::Hand,
@@ -34,6 +34,25 @@ pub(super) fn fingers_readout(ui: &mut Ui, status: &[HandFingersStatus; 2], conf
                 s.weight,
                 if s.holding { " · holding" } else { "" }
             ));
+            match s.grip {
+                Some(grip) => {
+                    ui.label(format!(
+                        "holds: {} · {} · {} · share {:.2}{}",
+                        grip.source.label(),
+                        grip.pose.label(),
+                        grip.mode.label(),
+                        grip.share,
+                        if grip.fitted > 0 {
+                            format!(" · {} fitted", grip.fitted)
+                        } else {
+                            String::new()
+                        }
+                    ));
+                }
+                None => {
+                    ui.label("holds nothing");
+                }
+            }
             if s.unresolved {
                 ui.label("finger bones unresolved");
             } else if !s.applied {
@@ -42,10 +61,11 @@ pub(super) fn fingers_readout(ui: &mut Ui, status: &[HandFingersStatus; 2], conf
             for finger in Finger::ALL {
                 let i = finger.index();
                 ui.label(format!(
-                    "{:<6} curl {:.2} · splay {:+.0}°{}",
+                    "{:<6} curl {:.2} · splay {:+.0}° · hook {:+.2}{}",
                     finger.label(),
-                    s.curls.curl[i],
-                    s.curls.splay[i].to_degrees(),
+                    s.shape.curl[i],
+                    s.shape.splay[i].to_degrees(),
+                    s.shape.hook[i],
                     if s.driven[i] { "" } else { " · animated" }
                 ));
             }
@@ -108,14 +128,40 @@ pub(super) fn fingers_settings(ui: &mut Ui, f: &mut FingersConfig) {
         ui.add(egui::Slider::new(&mut f.splay_scale, 0.0..=2.0).text("Splay share"));
         ui.add(egui::Slider::new(&mut f.max_splay_deg, 0.0..=45.0).text("Largest splay (°)"));
         ui.add(egui::Slider::new(&mut f.smoothing_s, 0.0..=0.3).text("Smoothing (s)"));
+        grip_settings(ui, &mut f.grip);
         if ui.button("Reset finger tuning").clicked() {
             *f = FingersConfig {
                 enabled: f.enabled,
                 source: f.source,
                 drive_all_when_holding: f.drive_all_when_holding,
+                grip: GripPosesConfig {
+                    enabled: f.grip.enabled,
+                    weapons: f.grip.weapons,
+                    contact_fit: f.grip.contact_fit,
+                    ..GripPosesConfig::new()
+                },
                 ..FingersConfig::new()
             };
         }
+    });
+}
+
+fn grip_settings(ui: &mut Ui, g: &mut GripPosesConfig) {
+    ui.checkbox(&mut g.enabled, "Grip poses")
+        .on_hover_text("Wrap the fingers round what the hand holds.");
+    ui.add_enabled_ui(g.enabled, |ui| {
+        ui.checkbox(&mut g.weapons, "Grip poses on guns")
+            .on_hover_text("Off, a gun keeps the game's grip and only the trigger finger moves.");
+        ui.checkbox(&mut g.contact_fit, "Close the fingers onto held objects");
+        ui.add(egui::Slider::new(&mut g.light_share, 0.0..=1.0).text("Pose share at a light grip"));
+        ui.add(
+            egui::Slider::new(&mut g.firm_squeeze, 0.05..=1.0).text("Squeeze for the full pose"),
+        );
+        ui.add(egui::Slider::new(&mut g.blend_s, 0.0..=0.5).text("Pose blend (s)"));
+        ui.add(
+            egui::Slider::new(&mut g.max_opposition_deg, 0.0..=90.0)
+                .text("Thumb opposition at most (°)"),
+        );
     });
 }
 

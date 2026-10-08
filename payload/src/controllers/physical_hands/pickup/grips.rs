@@ -13,7 +13,7 @@ use crate::controllers::{
         doors::{self, LatchStep},
         grasp::{self, Grip, PalmMotion, Reach},
         physics::{self, Shove, ShoveForce},
-        pickup::{Held, JointInputs, PickupState, TickOutcome},
+        pickup::{Held, HeldKind, JointInputs, PickupState, TickOutcome},
     },
 };
 
@@ -57,6 +57,7 @@ pub(super) unsafe fn keep_latch(
                         grip: Grip::of(palm.pose, read.pose, grab),
                         mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
                         joined: joints.join[i],
+                        kind: HeldKind::Door,
                     });
                     outcome.unlatched[i] = true;
                 }
@@ -236,6 +237,7 @@ pub(super) unsafe fn keep_regrip(
                     grip: Grip::of(palm.pose, body.pose, reach.point),
                     mass_kg: body.mass_kg.unwrap_or(f32::INFINITY),
                     joined: joints.join[i],
+                    kind: HeldKind::Ragdoll,
                 });
                 outcome.regrips += 1;
             }

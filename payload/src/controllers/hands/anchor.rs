@@ -45,6 +45,7 @@ use crate::{
     config::Config,
     controllers::{
         config::ControllersConfig,
+        fingers::grip::{self, Grip, GripSource},
         frame::{Hand, Pose},
         hands::{self, CockpitHand, pose as hand_pose, tiers},
         scheme,
@@ -207,6 +208,7 @@ pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
     state.status.anchor = anchor;
     state.anchor_at = anchor.map(|_| Instant::now());
     drop(state);
+    declare_line_grip(config.acting_hand().other());
 
     let haptics = &config.weapons.haptics;
     if !(haptics.grapple && scheme::is_controllers()) {
@@ -218,6 +220,20 @@ pub(crate) unsafe fn input_tick(config: &ControllersConfig) {
     }
     if attached {
         haptics::pulse(hand, haptics.grapple_attach, PulseSource::GrappleAttach);
+    }
+}
+
+/// Declare the grapple hand's grip on the line while the grapple states anchor it, for its finger
+/// pose, at the anchor's share.
+fn declare_line_grip(hand: Hand) {
+    let status = tiers::status();
+    let grapple = matches!(
+        status.state,
+        Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
+    );
+    let weight = status.anchor_weights[hand.index()];
+    if grapple && status.effective[hand.index()] == tiers::HandTier::Anchored && weight > 0.0 {
+        grip::declare(hand, Grip::new(GripSource::GrappleLine).share(weight));
     }
 }
 

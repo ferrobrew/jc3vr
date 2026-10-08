@@ -43,6 +43,7 @@ use crate::{
             grab::GrabVolume,
             hold::{Desired, MapKind, Target, Want},
         },
+        fingers::grip::GripSource,
         frame::Hand,
         physical_hands::{
             STALE_AFTER, STATE, articulated, bodies,
@@ -318,6 +319,20 @@ impl PickupState {
     /// Whether `hand` carries what it holds, rather than holding it through a joint.
     pub(super) fn carrying(&self, hand: Hand) -> bool {
         self.held[hand.index()].is_some_and(|h| !h.joined)
+    }
+
+    /// What `hand` holds, for its finger pose: the grip's source, and the held body when the hand
+    /// holds one rather than gripping a latched door or a character.
+    pub(super) fn grip(&self, hand: Hand) -> Option<(GripSource, Option<u32>)> {
+        let i = hand.index();
+        if let Some(held) = self.held[i] {
+            return Some((held.kind.source(), Some(held.body)));
+        }
+        if self.latches[i].is_some() {
+            return Some((GripSource::Door, None));
+        }
+        (self.seizes[i].is_some() || self.regrips[i].is_some())
+            .then_some((GripSource::Character, None))
     }
 
     /// The objects the hands hold, as addresses, zero for none.
@@ -631,6 +646,7 @@ pub(super) unsafe fn tick(
                                 grip: Grip::of(palm.pose, body.pose, reach.point),
                                 mass_kg,
                                 joined: joints.join[i],
+                                kind: HeldKind::of(&reach.kind),
                             });
                             outcome.taken[i] = true;
                             if matches!(reach.kind, TargetKind::Articulated { .. }) {
@@ -859,11 +875,45 @@ struct Held {
     mass_kg: f32,
     /// Whether the hand holds the object through a joint rather than carrying it.
     joined: bool,
+    kind: HeldKind,
 }
 
 impl Held {
     fn same(&self, other: &Held) -> bool {
         self.object == other.object && self.body == other.body
+    }
+}
+
+/// What a held body is to the hand, for its finger pose.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum HeldKind {
+    /// A loose object.
+    Prop,
+    /// An object hinged to the world or another body.
+    Articulated,
+    /// A vehicle's door, held once open.
+    Door,
+    /// A body of a character's ragdoll.
+    Ragdoll,
+}
+
+impl HeldKind {
+    fn of(kind: &TargetKind) -> Self {
+        match kind {
+            TargetKind::Articulated { .. } => HeldKind::Articulated,
+            TargetKind::Door(_) => HeldKind::Door,
+            TargetKind::Character(_) => HeldKind::Ragdoll,
+            TargetKind::Prop { .. } | TargetKind::Weapon => HeldKind::Prop,
+        }
+    }
+
+    const fn source(self) -> GripSource {
+        match self {
+            HeldKind::Prop => GripSource::Pickup,
+            HeldKind::Articulated => GripSource::Articulated,
+            HeldKind::Door => GripSource::Door,
+            HeldKind::Ragdoll => GripSource::Character,
+        }
     }
 }
 

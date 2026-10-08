@@ -1,10 +1,13 @@
 //! Finger curls on the rendered hands: the plan of record's finger curls
-//! (`docs/mod/input/controllers-and-roomscale.md`).
+//! (`docs/mod/input/controllers-and-roomscale.md`), and the grip poses that wrap the fingers round
+//! what the hand holds (`docs/mod/input/grip-poses.md`).
 //!
 //! - [`curl`]: each finger's curl and splay, from the tracked hand joints
 //!   (`XR_EXT_hand_tracking`, located with the controller-conforming motion range when the runtime
 //!   offers `XR_EXT_hand_joints_motion_range`) or estimated from the inputs the fingers rest on;
-//! - [`pose`]: the curls turned into joint angles and the angles into model-space finger joints;
+//! - [`grip`]: what each hand holds, as its sources declare it, and the pose for it;
+//! - [`target`]: a hand's target shape for the tick, from its curls and its grip;
+//! - [`pose`]: the shape turned into joint angles and the angles into model-space finger joints;
 //! - [`config`]: the finger-curl settings.
 //!
 //! The curls are written once per sim tick, at the end of the pose-finalization pass (the post-call
@@ -20,17 +23,19 @@
 //!
 //! A hand is curled only while the controllers drive it: its wrist target was queued this tick, and
 //! its fingers go from the animated pose to the curled one by the same tier weight, so a yielded
-//! hand blends back to the animated fingers. A hand that holds a weapon (a gun in its attach bone, or the off-hand on the foregrip)
-//! drives only its trigger finger unless
+//! hand blends back to the animated fingers. A hand that holds something its source declared
+//! ([`grip::declare`]) takes that thing's grip pose, blended in by how firmly it grips; with the
+//! grip poses off, or for a weapon when they leave weapons to the game, the earlier behaviour
+//! holds: a hand holding a weapon drives only its trigger finger unless
 //! [`drive_all_when_holding`](config::FingersConfig::drive_all_when_holding) is set, because the
-//! game's grip animation already wraps the other fingers round the weapon. A hand that grips
-//! something through a sticky grab (the grapple line, a mounted gun's handles, or a physical
-//! vehicle control) is curled closed: the grab outlasts the grip press, so the grip value no longer
-//! says whether the hand is closed.
+//! game's grip animation already wraps the other fingers round the weapon, and a hand on a sticky
+//! grab is curled closed, since the grab outlasts the grip press.
 
 pub mod config;
 pub mod curl;
+pub mod grip;
 pub mod pose;
+pub mod target;
 
 use std::time::Instant;
 
@@ -42,29 +47,32 @@ use crate::{
     config::Config,
     controllers::{
         fingers::{
-            curl::{CurlSource, Finger, FingerCurls},
-            pose::{BoneJoint, PalmFrame},
+            curl::{CurlSource, Finger},
+            grip::{
+                SourceLog,
+                contact::{self, HandGeometry},
+            },
+            pose::{BoneJoint, HandShape, PalmFrame},
+            target::{GripMemory, GripReport, TargetInputs},
         },
         frame::{self, Hand},
-        hands::{
-            ik,
-            tiers::{self, HandTier},
-        },
-        scheme, vehicles,
-        weapons::{self, foregrip},
+        hands::ik,
+        scheme,
     },
 };
 
-/// One hand's finger curls on the last tick, for the debug UI.
+/// One hand's finger curls on the last tick, for the debug UI and the status page.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HandFingersStatus {
     /// Where the curls came from; `None` when the hand was not curled.
     pub source: Option<CurlSource>,
-    /// The smoothed curls.
-    pub curls: FingerCurls,
+    /// The smoothed shape the fingers were bent to.
+    pub shape: HandShape,
     /// The tier weight the pose was blended by.
     pub weight: f32,
-    /// Whether the hand held a weapon, so only its trigger finger was driven.
+    /// What the hand held and how its fingers took it.
+    pub grip: Option<GripReport>,
+    /// Whether the hand held a weapon the game's grip wraps, so only its trigger finger was driven.
     pub holding: bool,
     /// Which fingers were driven, indexed by [`Finger::index`].
     pub driven: [bool; 5],
@@ -74,9 +82,10 @@ pub struct HandFingersStatus {
     pub unresolved: bool,
 }
 
-/// The last tick's per-hand finger curls, indexed by [`Hand::index`].
+/// The last tick's per-hand finger curls, indexed by [`Hand::index`]. A leaf slot of its own, so
+/// that any thread (the status page's, on the UI capture thread) may read it.
 pub fn status() -> [HandFingersStatus; 2] {
-    STATE.lock().status
+    *PUBLISHED.lock()
 }
 
 /// Curl the local player's fingers. Called at the end of the pose-finalization pass, after the
@@ -94,6 +103,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let mut state = STATE.lock();
     if !config.enabled || !enabled || !scheme::is_controllers() {
         *state = FingerState::EMPTY;
+        *PUBLISHED.lock() = state.status;
         return;
     }
 
@@ -107,62 +117,66 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         .current
         .map(|target| target.map(|t| t.weight).filter(|&w| w > 0.0));
     let targets = frame::with_latest(|frame| {
-        Hand::BOTH.map(|hand| curl::select(config.source, hand, frame.hand(hand)))
+        Hand::BOTH.map(|hand| {
+            let f = frame.hand(hand);
+            curl::select(config.source, hand, f).map(|curls| (curls, f.inputs))
+        })
     })
     .unwrap_or([None; 2]);
-    let holding = holding_hands();
-    let gripping = gripping_hands();
+    let max_age = grip::max_age(dt);
     let mut controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() };
 
     for hand in Hand::BOTH {
         let i = hand.index();
-        let (Some(weight), Some((source, target))) = (weights[i], targets[i]) else {
+        let declared = grip::current(hand, now, max_age);
+        if let Some(change) = state.logs[i].observe(now, declared.map(|g| g.source)) {
+            tracing::info!(
+                hand = hand.label(),
+                from = change.from.map_or("nothing", |s| s.label()),
+                to = change.to.map_or("nothing", |s| s.label()),
+                pose = declared.map_or("open", |g| g.pose.label()),
+                unlogged = change.unlogged,
+                "fingers: the hand's grip source changed"
+            );
+        }
+        let (Some(weight), Some(((source, measured), inputs))) = (weights[i], targets[i]) else {
             state.smoothed[i] = None;
+            state.memory[i] = GripMemory::EMPTY;
             state.status[i] = HandFingersStatus::default();
             continue;
         };
-        let target = curl::gripping_target(target, gripping[i]);
-        let curls = state.smoothed[i].map_or(target, |previous| {
-            curl::smooth(previous, target, dt, config.smoothing_s)
+        let target = target::hand_target(
+            &TargetInputs {
+                config: &config,
+                declared,
+                measured: &measured,
+                source,
+                inputs: &inputs,
+                dt,
+            },
+            &mut state.memory[i],
+        );
+        let shape = state.smoothed[i].map_or(target.shape, |previous| {
+            previous.smooth(target.shape, dt, config.smoothing_s)
         });
-        state.smoothed[i] = Some(curls);
-        let bend = pose::hand_bend(&curls, &config, weight, holding[i]);
+        state.smoothed[i] = Some(shape);
+        let bend = pose::hand_bend(&shape, &config, weight, target.driven);
         let outcome = match controller.as_deref_mut() {
             Some(controller) => unsafe { apply_hand(controller, hand, &bend) },
             None => ApplyOutcome::NoController,
         };
         state.status[i] = HandFingersStatus {
             source: Some(source),
-            curls,
+            shape,
             weight,
-            holding: holding[i],
+            grip: target.grip,
+            holding: target.holding,
             driven: bend.driven,
             applied: outcome == ApplyOutcome::Applied,
             unresolved: outcome == ApplyOutcome::Unresolved,
         };
     }
-}
-
-/// The hands that hold a weapon, indexed by [`Hand::index`]: each hand with a gun in its attach
-/// bone while the weapon handling runs, and the off-hand while it holds the foregrip.
-fn holding_hands() -> [bool; 2] {
-    let weapons = weapons::status();
-    let mut holding = weapons
-        .wielded
-        .filter(|_| weapons.active)
-        .map_or([false; 2], |w| w.weapon.wielded.hands);
-    if let Some(hold) = foregrip::status().hold.filter(|h| h.engaged) {
-        holding[hold.holder.other().index()] = true;
-    }
-    holding
-}
-
-/// The hands that grip through a sticky grab, indexed by [`Hand::index`]: each anchored hand (on
-/// the grapple line or a mounted gun's handles) and each hand on a physical vehicle control.
-fn gripping_hands() -> [bool; 2] {
-    let anchored = tiers::status().effective.map(|t| t == HandTier::Anchored);
-    let holds = vehicles::status().holds;
-    Hand::BOTH.map(|hand| anchored[hand.index()] || holds[hand.index()].is_some())
+    *PUBLISHED.lock() = state.status;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -174,9 +188,10 @@ enum ApplyOutcome {
     NoController,
 }
 
-/// Write one hand's bent fingers over the finalized pose. Each finger's joints are read before any
-/// is written and written root outward, so the result does not depend on whether a write carries
-/// the bones beyond it along.
+/// Write one hand's bent fingers over the finalized pose, and publish the hand's proportions for
+/// the contact fit. Every finger's joints are read before any is written, and each finger's are
+/// written root outward, so the result does not depend on whether a write carries the bones beyond
+/// it along.
 unsafe fn apply_hand(
     controller: &mut AnimationController,
     hand: Hand,
@@ -195,7 +210,9 @@ unsafe fn apply_hand(
             chains[finger.index()][k] = index;
         }
     }
-    let knuckle = |finger: Finger| unsafe { read_joint(controller, chains[finger.index()][0]) }.1;
+    let read = chains.map(|chain| chain.map(|b| unsafe { read_joint(controller, b) }));
+    let joints = read.map(|chain| chain.map(|(_, j)| j));
+    let knuckle = |finger: Finger| joints[finger.index()][0];
     let Some(palm) = PalmFrame::from_bones(
         hand,
         unsafe { read_joint(controller, wrist) }.1.position,
@@ -205,18 +222,23 @@ unsafe fn apply_hand(
     ) else {
         return ApplyOutcome::Degenerate;
     };
+    if let Some(geometry) = HandGeometry::measure(&palm, &joints) {
+        contact::publish_geometry(hand, geometry);
+    }
 
     for finger in Finger::ALL.into_iter().filter(|f| bend.driven[f.index()]) {
         let i = finger.index();
-        let read = chains[i].map(|b| unsafe { read_joint(controller, b) });
-        let joints = read.map(|(_, j)| j);
         let bent = match finger {
-            Finger::Thumb => {
-                pose::bend_thumb(joints, &palm, bend.bend[i], bend.thumb_spread, bend.weight)
-            }
-            _ => pose::bend_finger(joints, &palm, bend.bend[i], bend.splay[i], bend.weight),
+            Finger::Thumb => pose::bend_thumb(
+                joints[i],
+                &palm,
+                bend.bend[i],
+                (bend.thumb_spread, bend.thumb_opposition),
+                bend.weight,
+            ),
+            _ => pose::bend_finger(joints[i], &palm, bend.bend[i], bend.splay[i], bend.weight),
         };
-        for ((&index, (mut joint, _)), new) in chains[i].iter().zip(read).zip(bent) {
+        for ((&index, (mut joint, _)), new) in chains[i].iter().zip(read[i]).zip(bent) {
             joint.m_Translation.data = new.position.to_array();
             joint.m_Orientation.data = new.orientation.to_array();
             unsafe { controller.SetJoint(index, &mut joint) };
@@ -241,7 +263,9 @@ unsafe fn read_joint(controller: &AnimationController, bone: u32) -> (Joint, Bon
 }
 
 struct FingerState {
-    smoothed: [Option<FingerCurls>; 2],
+    smoothed: [Option<HandShape>; 2],
+    memory: [GripMemory; 2],
+    logs: [SourceLog; 2],
     last_tick: Option<Instant>,
     status: [HandFingersStatus; 2],
 }
@@ -249,14 +273,20 @@ struct FingerState {
 impl FingerState {
     const EMPTY: FingerState = FingerState {
         smoothed: [None; 2],
+        memory: [GripMemory::EMPTY; 2],
+        logs: [SourceLog::NEW; 2],
         last_tick: None,
         status: [HandFingersStatus {
             source: None,
-            curls: FingerCurls {
+            shape: HandShape {
                 curl: [0.0; 5],
                 splay: [0.0; 5],
+                hook: [0.0; 5],
+                opposition: 0.0,
+                thumb_spread: 0.0,
             },
             weight: 0.0,
+            grip: None,
             holding: false,
             driven: [false; 5],
             applied: false,
@@ -266,6 +296,9 @@ impl FingerState {
 }
 
 static STATE: Mutex<FingerState> = Mutex::new(FingerState::EMPTY);
+
+/// The last tick's status, published for any thread.
+static PUBLISHED: Mutex<[HandFingersStatus; 2]> = Mutex::new(FingerState::EMPTY.status);
 
 /// The wrist bone per side.
 const WRIST_NAMES: [&str; 2] = ["LeftHand", "RightHand"];

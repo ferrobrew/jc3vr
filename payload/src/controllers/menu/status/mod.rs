@@ -10,6 +10,7 @@
 
 mod controllers;
 mod explosives;
+mod fingers;
 mod grapple;
 mod hands;
 mod system;
@@ -237,6 +238,13 @@ const SECTIONS: &[Section] = &[
             row!("MOVING CLIMBS", hands::moving_climbs),
             row!("PUSH UP", hands::push_up),
             row!("HINGED THINGS", hands::articulated),
+        ],
+    },
+    Section {
+        title: "FINGERS",
+        rows: &[
+            row!("LEFT GRIP POSE", fingers::left_grip),
+            row!("RIGHT GRIP POSE", fingers::right_grip),
         ],
     },
     Section {

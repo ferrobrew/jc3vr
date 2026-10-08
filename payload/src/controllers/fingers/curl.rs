@@ -180,36 +180,6 @@ pub fn estimate(inputs: &HandInputs, profile: InteractionProfile) -> FingerCurls
     }
 }
 
-/// The curls of a hand that grips something (`gripping`): a closed fist whatever the fingers
-/// report, since the grab holds after the grip is let go. Otherwise `target` unchanged.
-pub fn gripping_target(target: FingerCurls, gripping: bool) -> FingerCurls {
-    if gripping {
-        FingerCurls {
-            curl: [1.0; 5],
-            splay: [0.0; 5],
-        }
-    } else {
-        target
-    }
-}
-
-/// Follow `target` from `previous` over `dt` seconds with the time constant `time_constant_s`.
-pub fn smooth(
-    previous: FingerCurls,
-    target: FingerCurls,
-    dt: f32,
-    time_constant_s: f32,
-) -> FingerCurls {
-    if time_constant_s <= 0.0 || !dt.is_finite() {
-        return target;
-    }
-    let t = 1.0 - (-dt.max(0.0) / time_constant_s).exp();
-    FingerCurls {
-        curl: std::array::from_fn(|i| lerp(previous.curl[i], target.curl[i], t)),
-        splay: std::array::from_fn(|i| lerp(previous.splay[i], target.splay[i], t)),
-    }
-}
-
 /// The sum of a finger's knuckle, middle, and last joint flexions at a full fist.
 const FINGER_FULL_FLEX_RAD: f32 = (90.0 + 105.0 + 75.0) * std::f32::consts::PI / 180.0;
 /// The sum of the thumb's two outer flexions at a full bend.
@@ -306,18 +276,6 @@ mod tests {
             }
         }
         joints
-    }
-
-    #[test]
-    fn a_gripping_hand_closes_whatever_the_fingers_report() {
-        let open = FingerCurls {
-            curl: [0.1; 5],
-            splay: [0.2; 5],
-        };
-        assert_eq!(gripping_target(open, false), open);
-        let closed = gripping_target(open, true);
-        assert_eq!(closed.curl, [1.0; 5]);
-        assert_eq!(closed.splay, [0.0; 5]);
     }
 
     #[test]
@@ -432,17 +390,5 @@ mod tests {
         );
         frame.active = false;
         assert!(select(FingerSource::Estimate, Hand::Right, &frame).is_none());
-    }
-
-    #[test]
-    fn smoothing_approaches_the_target() {
-        let open = FingerCurls::default();
-        let closed = FingerCurls {
-            curl: [1.0; 5],
-            splay: [0.1; 5],
-        };
-        let step = smooth(open, closed, 0.04, 0.04);
-        assert!((step.curl[2] - (1.0 - (-1.0f32).exp())).abs() < 1e-5);
-        assert_eq!(smooth(open, closed, 0.04, 0.0), closed);
     }
 }

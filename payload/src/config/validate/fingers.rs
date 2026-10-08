@@ -1,5 +1,5 @@
 //! Checks for the finger-curl mapping: the curl ranges, the per-joint bend and rest-offset tables,
-//! and the splay.
+//! the splay, and the grip poses' blend.
 
 use crate::{
     config::validate::{Invalid, nonnegative, range},
@@ -56,5 +56,14 @@ pub(super) fn fingers(c: &FingersConfig) -> Result<(), Invalid> {
     )?;
     nonnegative("fingers.splay_scale", c.splay_scale, 10.0)?;
     range("fingers.max_splay_deg", c.max_splay_deg, 0.0, 180.0)?;
-    nonnegative("fingers.smoothing_s", c.smoothing_s, 60.0)
+    nonnegative("fingers.smoothing_s", c.smoothing_s, 60.0)?;
+    range("fingers.grip.light_share", c.grip.light_share, 0.0, 1.0)?;
+    range("fingers.grip.firm_squeeze", c.grip.firm_squeeze, 0.01, 1.0)?;
+    nonnegative("fingers.grip.blend_s", c.grip.blend_s, 10.0)?;
+    range(
+        "fingers.grip.max_opposition_deg",
+        c.grip.max_opposition_deg,
+        0.0,
+        90.0,
+    )
 }
