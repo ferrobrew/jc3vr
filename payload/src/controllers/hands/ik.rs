@@ -137,6 +137,9 @@ pub struct HandIkStatus {
     pub secondary_wrist_off: bool,
     /// Whether the weapon off-hand grip was switched off this tick.
     pub secondary_grip_off: bool,
+    /// Whether the wrist was held by a weak `SECONDARY` target while the weapon off-hand grip
+    /// solved for the other wrist.
+    pub secondary_wrist_held: bool,
     /// Whether a game system held a live `MAIN` target on the wrist, which the controller target
     /// replaced.
     pub overrode_live_target: bool,
@@ -374,13 +377,36 @@ pub(crate) unsafe fn before_secondary(character: *mut Character) {
             secondary::release_wrist(&mut character.m_HIK, hand);
         }
     }
+    // A grip the switch left running solves for its own wrist and pulls the body with it; the
+    // released driven wrists are held weakly where the controllers put them meanwhile.
+    let mut held = [false; 2];
+    if let Some(grip) = unsafe { secondary::weapon_grip_target(&mut character.m_Blackboard) } {
+        let targets = TICKS.lock().current;
+        for hand in Hand::BOTH.into_iter().filter(|h| *h != grip) {
+            if let Some(target) = targets[hand.index()].filter(|_| driven[hand.index()]) {
+                held[hand.index()] = unsafe {
+                    secondary::hold_wrist(
+                        &mut character.m_Blackboard,
+                        hand,
+                        target.wrist.position,
+                        SECONDARY_HOLD_REACH,
+                    )
+                };
+            }
+        }
+    }
     let mut status = STATUS.lock();
     for hand in Hand::BOTH {
         let s = &mut status[hand.index()];
         s.secondary_wrist_off = switched[hand.index()].wrist_target;
         s.secondary_grip_off = switched[hand.index()].weapon_grip;
+        s.secondary_wrist_held = held[hand.index()];
     }
 }
+
+/// The reach of the weak `SECONDARY` target that holds a driven wrist while the weapon off-hand
+/// grip solves for the other.
+const SECONDARY_HOLD_REACH: f32 = 0.5;
 
 /// Forget this thread's `SECONDARY` plan, and a plan kept for a solve gate that did not run, at the
 /// end of a pose-finalization pass, so that a pass whose solve did not run (HumanIK switched off)
@@ -754,6 +780,7 @@ static STATUS: Mutex<[HandIkStatus; 2]> = Mutex::new(
         shoulder_yield: 0.0,
         secondary_wrist_off: false,
         secondary_grip_off: false,
+        secondary_wrist_held: false,
         overrode_live_target: false,
         at_gate: false,
         kept_out_m: 0.0,

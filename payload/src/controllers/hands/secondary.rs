@@ -24,10 +24,18 @@
 //! entry, after the `MAIN` solve has used it, so the pass's own clearing drops any such entry that
 //! frame and a `SECONDARY` solve leaves the wrist where the controller put it. The next `MAIN` pass
 //! drives the reach back up from its target.
+//!
+//! A wrist with no reach is not held either, though: when the game's weapon off-hand grip still
+//! runs as a `SECONDARY` target for the other hand, its solve pulls the body, and the released
+//! wrist rides along off the controller. So while the grip runs, [`hold_wrist`] queues the driven
+//! wrist a weak `SECONDARY` target of its own at the `MAIN` target's position, through the same
+//! keys the game's wrist targets use, which the pass reads after this entry.
 
+use glam::Vec3;
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
     blackboard::{ObjectBlackboard, PersistenceType},
+    types::math::Vector3,
 };
 
 use crate::controllers::frame::Hand;
@@ -84,6 +92,65 @@ pub fn release_wrist(hik: &mut HumanIK, hand: Hand) {
     };
     if let Some(reach) = hik.m_ReachT.get_mut(effector as usize) {
         *reach = 0.0;
+    }
+}
+
+/// The hand the weapon off-hand grip targets on the `SECONDARY` pass this frame: its weight key
+/// present and positive, after the switch.
+///
+/// # Safety
+///
+/// As [`switch_off`].
+pub unsafe fn weapon_grip_target(blackboard: &mut ObjectBlackboard) -> Option<Hand> {
+    let mut weight = 0.0f32;
+    let present =
+        unsafe { blackboard.GetFloat(ObjectBlackboard::OFFHAND_IK_WEIGHT_ID, &mut weight) };
+    if !present || weight <= 0.0 {
+        return None;
+    }
+    unsafe { weapon_grip_hand(blackboard) }
+}
+
+/// Queue `hand`'s wrist a `SECONDARY` target at the world-space `position` with `reach`, for this
+/// frame. Returns whether both keys were written.
+///
+/// # Safety
+///
+/// As [`switch_off`].
+pub unsafe fn hold_wrist(
+    blackboard: &mut ObjectBlackboard,
+    hand: Hand,
+    position: Vec3,
+    reach: f32,
+) -> bool {
+    if !position.is_finite() || !reach.is_finite() || reach <= 0.0 {
+        return false;
+    }
+    let (weight_key, position_key) = match hand {
+        Hand::Left => (
+            ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID,
+            ObjectBlackboard::SECONDARY_HAND_POSITION_WS_LEFT_ID,
+        ),
+        Hand::Right => (
+            ObjectBlackboard::SECONDARY_HAND_WEIGHT_RIGHT_ID,
+            ObjectBlackboard::SECONDARY_HAND_POSITION_WS_RIGHT_ID,
+        ),
+    };
+    let value = Vector3 {
+        data: position.to_array(),
+    };
+    // The position goes first, so the weight never stands without it.
+    unsafe {
+        blackboard.SetVector3(
+            position_key,
+            &value,
+            PersistenceType::PERSISTENCE_LOCAL_FRAME,
+            std::ptr::null(),
+        ) && blackboard.SetFloat(
+            weight_key,
+            reach.min(1.0),
+            PersistenceType::PERSISTENCE_LOCAL_FRAME,
+        )
     }
 }
 

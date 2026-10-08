@@ -57,9 +57,14 @@ pub(super) fn hands_readout(
                 ),
             });
             ui.label(format!(
-                "secondary off: wrist {} · grip {}{}",
+                "secondary off: wrist {} · grip {}{}{}",
                 yes_no(s.secondary_wrist_off),
                 yes_no(s.secondary_grip_off),
+                if s.secondary_wrist_held {
+                    " · wrist held"
+                } else {
+                    ""
+                },
                 if s.overrode_live_target {
                     " · overrode a game target"
                 } else {
