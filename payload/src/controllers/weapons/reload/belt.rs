@@ -24,7 +24,20 @@ pub enum PushStage {
     Spent,
 }
 
-/// One tick's inputs for one gun, in the cockpit frame.
+/// The point `point` of a gun held in a hand drawn with its grip at `drawn_grip`, carried into the
+/// frame the body's pouches are reached in, where the same hand's grip is at `body_grip`. On the
+/// player's body the pouches are reached by the player's own hand, before the body-scale remap
+/// shifts the drawn hand, and the gun rides the drawn hand; the remap shifts without turning, so
+/// undoing its shift carries the gun back onto the player's hand. Without a body grip the point
+/// stays where it is.
+pub fn into_body_frame(point: Vec3, drawn_grip: Vec3, body_grip: Option<Vec3>) -> Vec3 {
+    match body_grip {
+        Some(body) if body.is_finite() && drawn_grip.is_finite() => point - (drawn_grip - body),
+        _ => point,
+    }
+}
+
+/// One tick's inputs for one gun, in the frame the pouch is placed in.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PushInputs {
     pub mouth: Vec3,
@@ -149,5 +162,32 @@ mod tests {
         assert!(!b.step(at(0.0, -0.8), &CONFIG));
         assert!(!b.step(None, &CONFIG));
         assert_eq!(b.stage, PushStage::Outside);
+    }
+
+    #[test]
+    fn a_remapped_gun_is_carried_back_onto_the_players_hand() {
+        // The player's hand is on the belt; the remap draws it 6 cm further out and 2 cm lower.
+        let body_grip = Vec3::new(0.15, -0.55, -0.1);
+        let drawn_grip = body_grip + Vec3::new(0.06, -0.02, 0.0);
+        let mouth = drawn_grip + Vec3::new(0.0, -0.08, -0.03);
+        let carried = into_body_frame(mouth, drawn_grip, Some(body_grip));
+        assert!(carried.distance(body_grip + Vec3::new(0.0, -0.08, -0.03)) < 1e-6);
+        // A push the player makes onto the pouch on their own belt counts, whatever the remap.
+        let mut b = BeltPush::new();
+        let push = |height: f32| {
+            at(height, -0.8).map(|i| PushInputs {
+                mouth: into_body_frame(
+                    i.mouth + (drawn_grip - body_grip),
+                    drawn_grip,
+                    Some(body_grip),
+                ),
+                ..i
+            })
+        };
+        b.step(push(0.08), &CONFIG);
+        assert!(b.step(push(0.0), &CONFIG));
+        // Without the player's grip, the point stays put.
+        assert_eq!(into_body_frame(mouth, drawn_grip, None), mouth);
+        assert_eq!(into_body_frame(mouth, drawn_grip, Some(Vec3::NAN)), mouth);
     }
 }

@@ -16,7 +16,7 @@ use crate::controllers::{
         haptics::{self, PulseSource},
         reload::{
             FinishInputs, GunTick, MAX_EVENTS, MAX_RECORDS, Record, State, Tick, WeaponReadout,
-            belt::{BeltPush, PushInputs},
+            belt::{self, BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber, WorkEvent, WorkInputs},
             config::{ReloadButton, ReloadConfig},
             dual::{self, SplitMagazines},
@@ -42,6 +42,7 @@ impl State {
         weapon: &HeldWeapon,
         active: &ActiveHands,
         config: &ControllersConfig,
+        body_points: [Option<Vec3>; 2],
     ) -> Option<Tick> {
         let reload = &config.weapons.reload;
         let base = unsafe { (weapon.address as *const WeaponBase).as_ref() }?;
@@ -100,6 +101,8 @@ impl State {
                 frame,
                 well,
                 handle,
+                drawn_grip: active.hands[i].map_or(cockpit.grip.position, |h| h.grip.position),
+                body_grip: body_points[i],
             });
         }
         Some(Tick {
@@ -430,7 +433,14 @@ impl State {
         let has_ammo = tick.reading.unlimited || tick.reserve > 0;
         for hand in Hand::BOTH {
             let i = hand.index();
-            let well = tick.guns[i].and_then(|g| g.well);
+            // The pouch is placed where the player's own hand reaches it, and the gun rides the
+            // drawn hand, so the mouth is carried back by the remap's shift before they meet.
+            let well = tick.guns[i].and_then(|g| {
+                g.well.map(|w| Well {
+                    mouth: belt::into_body_frame(w.mouth, g.drawn_grip, g.body_grip),
+                    ..w
+                })
+            });
             let velocity = match (well, self.last_mouths[i]) {
                 (Some(w), Some(last)) if dt > 1e-4 => (w.mouth - last) / dt,
                 _ => Vec3::ZERO,

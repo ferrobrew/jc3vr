@@ -147,6 +147,8 @@ pub(super) struct BeginInputs<'a> {
     pub dims: &'a crate::controllers::body::BodyDimensions,
     /// The hand the pouches are laid out around ([`volumes::gun_side`]).
     pub gun_side: Hand,
+    /// Each hand's point for the body's volumes, by [`Hand::index`].
+    pub body_points: [Option<Vec3>; 2],
     /// Whether the tick's mode is one the weapon handling acts in.
     pub gameplay: bool,
 }
@@ -161,6 +163,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         body_frame,
         dims,
         gun_side,
+        body_points,
         gameplay,
     } = *inputs;
     let reload = &config.weapons.reload;
@@ -172,7 +175,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     };
     // SAFETY: the input tick runs on the main thread outside the world update, and the weapon was
     // read this tick.
-    let Some(tick) = (unsafe { state.read_tick(weapon, active, config) }) else {
+    let Some(tick) = (unsafe { state.read_tick(weapon, active, config, body_points) }) else {
         state.clear_tick();
         return Vec::new();
     };
@@ -312,6 +315,10 @@ struct GunTick {
     well: Option<Well>,
     /// The action's handle and the gun's rearward axis.
     handle: Option<(Vec3, Vec3)>,
+    /// The gun hand's grip as drawn, and where the same hand reaches the body's pouches
+    /// ([`belt::into_body_frame`]).
+    drawn_grip: Vec3,
+    body_grip: Option<Vec3>,
 }
 
 /// What the reload remembers about a weapon.

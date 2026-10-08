@@ -302,6 +302,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             ));
         }
     }
+    let body_points = body_points(&active, &body_frame.anchor);
     candidates.extend(reload::begin_tick(&reload::BeginInputs {
         weapon: weapon.as_ref(),
         active: &active,
@@ -309,6 +310,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         body_frame: &body_frame,
         dims: &dims,
         gun_side,
+        body_points,
         gameplay,
     }));
     let hold = foregrip::status().hold.filter(|h| h.engaged);
@@ -326,7 +328,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         });
     }
 
-    let body_points = body_points(&active, &body_frame.anchor);
     let volumes = Hand::BOTH.map(|hand| {
         if hold.is_some_and(|h| h.holder.other() == hand) {
             return Some(GrabVolume::Foregrip);
