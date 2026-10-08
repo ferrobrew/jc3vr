@@ -221,6 +221,10 @@ pub struct WorldMarkersConfig {
     /// How far a surface-placed marker is pulled toward the eye from the surface, in metres, so it
     /// is not coplanar with it.
     pub surface_pull_m: f32,
+    /// Surfaces nearer the eye than this are ignored for the placement, in metres: the player's
+    /// own gun and hands, and foliage brushing the head, would otherwise pull every marker behind
+    /// them onto them.
+    pub surface_min_m: f32,
     /// The halflife of the placement distance's smoothing, in seconds, so a flickering occluder
     /// does not make the marker pop.
     pub depth_halflife_s: f32,
@@ -245,6 +249,7 @@ impl WorldMarkersConfig {
             surface_placement: true,
             ray_fallback: true,
             surface_pull_m: 0.3,
+            surface_min_m: 1.2,
             depth_halflife_s: 0.15,
             probe_stage_safe_area: false,
         }

@@ -415,6 +415,10 @@ fn world_markers_ui(ui: &mut egui::Ui) {
                             .text("Pull toward the eye (m)"),
                     );
                     ui.add(
+                        egui::Slider::new(&mut m.surface_min_m, 0.0..=5.0)
+                            .text("Ignore surfaces nearer than (m)"),
+                    );
+                    ui.add(
                         egui::Slider::new(&mut m.depth_halflife_s, 0.0..=1.0)
                             .text("Distance smoothing halflife (s)"),
                     );

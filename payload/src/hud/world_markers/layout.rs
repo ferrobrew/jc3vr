@@ -267,6 +267,40 @@ pub(crate) enum Sight {
     Clear,
 }
 
+/// The sight a marker is placed by, filtered against near geometry and with hysteresis. A surface
+/// nearer than `min_surface` metres is ignored: it is the player's own gun, hands, or a leaf
+/// brushing the head, not a wall the marker shows through. A marker not on a surface (`held`
+/// false) moves onto one only when the surface is well in front of its point (nearer than
+/// [`SURFACE_ENGAGE`] of its distance), and a marker on one stays there until the surface is
+/// nearly at its point ([`SURFACE_RELEASE`]), so a surface near the threshold does not make the
+/// marker hop between the two.
+pub(crate) fn surface_sight(
+    sight: Sight,
+    true_distance: f32,
+    min_surface: f32,
+    held: bool,
+) -> Sight {
+    let Sight::Surface(surface) = sight else {
+        return Sight::Clear;
+    };
+    let limit = if held {
+        SURFACE_RELEASE
+    } else {
+        SURFACE_ENGAGE
+    };
+    if surface.is_finite() && surface >= min_surface.max(0.0) && surface < true_distance * limit {
+        sight
+    } else {
+        Sight::Clear
+    }
+}
+
+/// The share of a marker's distance a surface must be nearer than for the marker to move onto it.
+pub(crate) const SURFACE_ENGAGE: f32 = 0.9;
+
+/// The share of a marker's distance a surface must reach for a marker on it to leave it.
+pub(crate) const SURFACE_RELEASE: f32 = 0.97;
+
 /// The distance to draw a marker at: its true distance when the line of sight is clear (or the
 /// surface is not meaningfully nearer), otherwise the surface's distance pulled `pull` toward the
 /// eye, never nearer than `min`.
@@ -303,6 +337,43 @@ mod tests {
     use super::*;
 
     const STAGE: Vec2 = Vec2::new(1920.0, 1080.0);
+
+    #[test]
+    fn near_geometry_is_ignored_and_a_surface_has_hysteresis() {
+        // The player's own gun half a metre away never moves a marker.
+        assert_eq!(
+            surface_sight(Sight::Surface(0.5), 100.0, 1.2, false),
+            Sight::Clear
+        );
+        assert_eq!(
+            surface_sight(Sight::Surface(0.5), 100.0, 1.2, true),
+            Sight::Clear
+        );
+        // A wall well in front of the marker takes it.
+        assert_eq!(
+            surface_sight(Sight::Surface(50.0), 100.0, 1.2, false),
+            Sight::Surface(50.0)
+        );
+        // Between the thresholds, the marker stays where it was.
+        assert_eq!(
+            surface_sight(Sight::Surface(94.0), 100.0, 1.2, false),
+            Sight::Clear
+        );
+        assert_eq!(
+            surface_sight(Sight::Surface(94.0), 100.0, 1.2, true),
+            Sight::Surface(94.0)
+        );
+        // Nearly at its point, it leaves the surface.
+        assert_eq!(
+            surface_sight(Sight::Surface(98.0), 100.0, 1.2, true),
+            Sight::Clear
+        );
+        assert_eq!(surface_sight(Sight::Clear, 100.0, 1.2, true), Sight::Clear);
+        assert_eq!(
+            surface_sight(Sight::Surface(f32::NAN), 100.0, 1.2, false),
+            Sight::Clear
+        );
+    }
 
     fn close(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-3

@@ -7,7 +7,10 @@
 //! placement (and the billboards' world corners) is computed once on eye 0 and shared, like the
 //! panel's. Everything here runs on the render thread with the engine context mutex held.
 
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use glam::{Mat4, Quat, Vec3, Vec4};
 use jc3gi::{
@@ -28,7 +31,7 @@ use crate::{
             depth::{DepthPoint, DepthProbe, RESULT_TTL_S, Timed},
             layout::{
                 Billboard, Crop, Sight, StageFrame, billboard_corners, crop, placement_distance,
-                radians_per_texel, slot_size, smooth_distance,
+                radians_per_texel, slot_size, smooth_distance, surface_sight,
             },
             layout_for, raycast,
         },
@@ -145,6 +148,8 @@ struct Renderer {
     depth_results: HashMap<u32, Timed>,
     /// The smoothed drawn distance per marker, and when it was last updated.
     distances: HashMap<u32, (f32, Instant)>,
+    /// The markers placed on a surface on their last frame, for the placement's hysteresis.
+    on_surface: HashSet<u32>,
     plan: Vec<Planned>,
 }
 
@@ -176,6 +181,7 @@ impl Renderer {
             blank_dirty: false,
             depth_results: HashMap::new(),
             distances: HashMap::new(),
+            on_surface: HashSet::new(),
             plan: Vec::new(),
         })
     }
@@ -266,6 +272,13 @@ impl Renderer {
             if source != DistanceSource::Depth && cfg.surface_placement {
                 ray_requests.push((marker.id, marker.world));
             }
+            let held = self.on_surface.contains(&marker.id);
+            let sight = surface_sight(sight, true_distance, cfg.surface_min_m, held);
+            if matches!(sight, Sight::Surface(_)) {
+                self.on_surface.insert(marker.id);
+            } else {
+                self.on_surface.remove(&marker.id);
+            }
             let target = if cfg.surface_placement {
                 placement_distance(true_distance, sight, cfg.surface_pull_m, MIN_DISTANCE_M)
             } else {
@@ -312,6 +325,8 @@ impl Renderer {
         });
         self.distances
             .retain(|_, (_, at)| now.duration_since(*at).as_secs_f32() < FORGET_S);
+        let distances = &self.distances;
+        self.on_surface.retain(|id| distances.contains_key(id));
         self.depth_results
             .retain(|_, timed| now.duration_since(timed.at).as_secs_f32() < FORGET_S);
 
