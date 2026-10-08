@@ -69,6 +69,15 @@ pub struct ProceduralBodyConfig {
     pub run_duty: f32,
     /// How high a running step lifts the foot, metres.
     pub run_step_height_m: f32,
+    /// Shorten and lower the steps in a crouch by how far the hips have dropped, so a crouched
+    /// walk takes short, quick, low steps instead of the upright walk's strides.
+    pub crouch_gait: bool,
+    /// The stride at the hips' lowest, as a share of the upright walk's.
+    pub crouch_stride_share: f32,
+    /// The lift of a step at the hips' lowest, as a share of the upright walk's.
+    pub crouch_lift_share: f32,
+    /// The least share of a cycle each foot spends on the ground at the hips' lowest.
+    pub crouch_duty: f32,
     /// Find the ground under each foothold with a scene ray, so the feet stand on slopes and
     /// stairs, instead of taking the root's height.
     pub ground_casts: bool,
@@ -164,6 +173,10 @@ impl ProceduralBodyConfig {
             run_stride_m: 2.8,
             run_duty: 0.4,
             run_step_height_m: 0.14,
+            crouch_gait: true,
+            crouch_stride_share: 0.55,
+            crouch_lift_share: 0.6,
+            crouch_duty: 0.7,
             ground_casts: true,
             max_step_up_m: 0.5,
             max_step_down_m: 0.6,
@@ -229,6 +242,9 @@ impl ProceduralBodyConfig {
             ("run_stride_m", self.run_stride_m, 0.1, 3.5),
             ("run_duty", self.run_duty, 0.2, 0.9),
             ("run_step_height_m", self.run_step_height_m, 0.0, 0.5),
+            ("crouch_stride_share", self.crouch_stride_share, 0.1, 1.0),
+            ("crouch_lift_share", self.crouch_lift_share, 0.0, 1.0),
+            ("crouch_duty", self.crouch_duty, 0.2, 0.9),
             ("max_step_up_m", self.max_step_up_m, 0.0, 2.0),
             ("max_step_down_m", self.max_step_down_m, 0.0, 2.0),
             ("ankle_tilt_limit_deg", self.ankle_tilt_limit_deg, 0.0, 60.0),

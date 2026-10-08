@@ -48,12 +48,13 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             },
         ));
         ui.label(format!(
-            "Speed {:.2} m/s · {} · reach drop {:.3} m · stance {}",
+            "Speed {:.2} m/s · {} · crouch {:.2} · reach drop {:.3} m · stance {}",
             status.speed_mps,
             status.gait_phase.map_or_else(
                 || "standing".to_owned(),
                 |p| format!("walking, phase {p:.2}")
             ),
+            status.crouch_depth,
             status.reach_drop_m,
             if status.stance_measured {
                 "measured"

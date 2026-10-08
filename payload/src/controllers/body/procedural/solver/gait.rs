@@ -3,6 +3,10 @@
 //! The stride, the duty factor, and the lift are set at a walking and a running speed and eased
 //! between them, so a faster walk takes longer strides at a quicker cadence and spends less of each
 //! cycle on the ground, until the run has a moment with both feet in the air.
+//!
+//! A crouch shortens the stride and lowers the lift by how far the hips have dropped, and keeps
+//! both feet down for more of the cycle ([`CrouchGait`]): short, quick, low steps. At the same
+//! speed a shorter stride is a quicker cadence, so the feet keep pace without lunging.
 
 use glam::{Quat, Vec3};
 
@@ -12,8 +16,17 @@ use crate::controllers::body::procedural::{
 
 /// The walk's tuning at `speed` metres per second, or `None` below the speed the feet walk at. A
 /// walk under way (`walking`) goes on down to [`STOP_SHARE`] of that speed, so a speed hovering
-/// at the threshold does not switch between walking and standing every few ticks.
-pub fn tuning(speed: f32, walking: bool, config: &ProceduralBodyConfig) -> Option<GaitTuning> {
+/// at the threshold does not switch between walking and standing every few ticks. `crouch` is how
+/// far the hips have dropped toward their lowest, `0..=1` ([`crouch_depth`]), which the crouch
+/// gait scales the walk by.
+///
+/// [`crouch_depth`]: crate::controllers::body::procedural::solver::hips::crouch_depth
+pub fn tuning(
+    speed: f32,
+    walking: bool,
+    crouch: f32,
+    config: &ProceduralBodyConfig,
+) -> Option<GaitTuning> {
     let threshold = if walking {
         config.gait_speed_mps * STOP_SHARE
     } else {
@@ -29,11 +42,67 @@ pub fn tuning(speed: f32, walking: bool, config: &ProceduralBodyConfig) -> Optio
     // Below the walking speed, the stride shortens with the speed, so a slow walk does not drag
     // the cadence down to a crawl.
     let slow = (speed / config.walk_speed_mps.max(1e-3)).clamp(MIN_SLOW_SHARE, 1.0);
-    Some(GaitTuning {
+    let upright = GaitTuning {
         stride_m: lerp(config.walk_stride_m, config.run_stride_m) * slow.sqrt(),
         duty: lerp(config.walk_duty, config.run_duty),
         height_m: lerp(config.walk_step_height_m, config.run_step_height_m),
-    })
+    };
+    Some(CrouchGait::of(config).scale(upright, crouch))
+}
+
+/// How a crouch changes the walk: at the hips' lowest, the stride and the lift are these shares of
+/// the upright walk's, and each foot spends at least `duty` of the cycle on the ground.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct CrouchGait {
+    pub stride_share: f32,
+    pub lift_share: f32,
+    pub duty: f32,
+}
+
+impl CrouchGait {
+    /// The crouch gait the settings ask for: no change with `crouch_gait` off.
+    pub fn of(config: &ProceduralBodyConfig) -> Self {
+        if config.crouch_gait {
+            Self {
+                stride_share: config.crouch_stride_share,
+                lift_share: config.crouch_lift_share,
+                duty: config.crouch_duty,
+            }
+        } else {
+            Self {
+                stride_share: 1.0,
+                lift_share: 1.0,
+                duty: 0.0,
+            }
+        }
+    }
+
+    /// `upright` scaled for a crouch `crouch` of the way to the hips' lowest, eased in so that a
+    /// shallow dip of the head barely changes the walk.
+    pub fn scale(&self, upright: GaitTuning, crouch: f32) -> GaitTuning {
+        let c = if crouch.is_finite() {
+            crouch.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let c = c * c * (3.0 - 2.0 * c);
+        let lerp = |a: f32, b: f32| a + (b - a) * c;
+        GaitTuning {
+            stride_m: upright.stride_m * lerp(1.0, self.stride_share.clamp(0.1, 1.0)),
+            duty: lerp(upright.duty, upright.duty.max(self.duty.clamp(0.0, 0.9))),
+            height_m: upright.height_m * lerp(1.0, self.lift_share.clamp(0.0, 1.0)),
+        }
+    }
+
+    /// The share of a standing step's lift a crouch `crouch` deep leaves.
+    pub fn step_lift(&self, crouch: f32) -> f32 {
+        let unit = GaitTuning {
+            stride_m: 1.0,
+            duty: 0.5,
+            height_m: 1.0,
+        };
+        self.scale(unit, crouch).height_m
+    }
 }
 
 /// A foot's place under the root when standing, model space.
@@ -155,16 +224,16 @@ mod tests {
     #[test]
     fn faster_walks_take_longer_strides_and_less_ground() {
         let config = ProceduralBodyConfig::new();
-        assert!(tuning(config.gait_speed_mps * 0.5, false, &config).is_none());
-        let walk = tuning(config.walk_speed_mps, false, &config).unwrap();
-        let run = tuning(config.run_speed_mps, false, &config).unwrap();
-        let sprint = tuning(config.run_speed_mps * 2.0, false, &config).unwrap();
+        assert!(tuning(config.gait_speed_mps * 0.5, false, 0.0, &config).is_none());
+        let walk = tuning(config.walk_speed_mps, false, 0.0, &config).unwrap();
+        let run = tuning(config.run_speed_mps, false, 0.0, &config).unwrap();
+        let sprint = tuning(config.run_speed_mps * 2.0, false, 0.0, &config).unwrap();
         assert!((walk.stride_m - config.walk_stride_m).abs() < 1e-4);
         assert!(run.stride_m > walk.stride_m);
         assert!(run.duty < 0.5 && walk.duty > 0.5);
         assert_eq!(run, sprint);
         // The cadence rises with the speed.
-        let cadence = |speed: f32| speed / tuning(speed, false, &config).unwrap().stride_m;
+        let cadence = |speed: f32| speed / tuning(speed, false, 0.0, &config).unwrap().stride_m;
         let mut last = 0.0;
         for i in 1..=40 {
             let speed = config.gait_speed_mps + i as f32 * 0.15;
@@ -175,12 +244,43 @@ mod tests {
     }
 
     #[test]
+    fn a_crouch_takes_short_quick_low_steps() {
+        let config = ProceduralBodyConfig::new();
+        let speed = config.walk_speed_mps;
+        let upright = tuning(speed, false, 0.0, &config).unwrap();
+        let half = tuning(speed, false, 0.5, &config).unwrap();
+        let low = tuning(speed, false, 1.0, &config).unwrap();
+        // Standing, the crouch gait changes nothing.
+        assert!((upright.stride_m - config.walk_stride_m).abs() < 1e-4);
+        // At the hips' lowest, the shares of the upright walk.
+        assert!((low.stride_m - upright.stride_m * config.crouch_stride_share).abs() < 1e-4);
+        assert!((low.height_m - upright.height_m * config.crouch_lift_share).abs() < 1e-4);
+        assert!(low.duty >= config.crouch_duty - 1e-4);
+        // Halfway down, between the two.
+        assert!(half.stride_m < upright.stride_m && half.stride_m > low.stride_m);
+        assert!(half.height_m < upright.height_m && half.height_m > low.height_m);
+        // The same speed over a shorter stride is a quicker cadence.
+        assert!(speed / low.stride_m > speed / upright.stride_m * 1.5);
+        // Deeper than the lowest is the lowest, and a depth that is not a number is upright.
+        assert_eq!(tuning(speed, false, 3.0, &config), Some(low));
+        assert_eq!(tuning(speed, false, f32::NAN, &config), Some(upright));
+        // Switched off, a crouch walks as upright.
+        let off = ProceduralBodyConfig {
+            crouch_gait: false,
+            ..config
+        };
+        assert_eq!(tuning(speed, false, 1.0, &off), Some(upright));
+        assert_eq!(CrouchGait::of(&off).step_lift(1.0), 1.0);
+        assert!((CrouchGait::of(&config).step_lift(1.0) - config.crouch_lift_share).abs() < 1e-4);
+    }
+
+    #[test]
     fn a_walk_under_way_goes_on_a_little_below_the_speed_it_starts_at() {
         let config = ProceduralBodyConfig::new();
         let between = config.gait_speed_mps * (1.0 + STOP_SHARE) * 0.5;
-        assert!(tuning(between, false, &config).is_none());
-        assert!(tuning(between, true, &config).is_some());
-        assert!(tuning(config.gait_speed_mps * STOP_SHARE * 0.9, true, &config).is_none());
+        assert!(tuning(between, false, 0.0, &config).is_none());
+        assert!(tuning(between, true, 0.0, &config).is_some());
+        assert!(tuning(config.gait_speed_mps * STOP_SHARE * 0.9, true, 0.0, &config).is_none());
     }
 
     #[test]

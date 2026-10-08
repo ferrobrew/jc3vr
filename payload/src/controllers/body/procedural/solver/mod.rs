@@ -40,7 +40,9 @@ pub mod spine;
 pub mod two_bone;
 
 use glam::{Quat, Vec2, Vec3};
-pub use hips::{DropFollower, HipsFollower, hips_height, hips_horizontal, hips_room, reach_drop};
+pub use hips::{
+    DropFollower, HipsFollower, crouch_depth, hips_height, hips_horizontal, hips_room, reach_drop,
+};
 
 use crate::controllers::body::procedural::{
     config::ProceduralBodyConfig,

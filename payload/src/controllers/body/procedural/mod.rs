@@ -68,6 +68,7 @@ use crate::{
                     air::{AirTuning, air_feet, mix_feet},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
+                    crouch_depth,
                     feet::FootPose,
                     hips_height, hips_horizontal, hips_room, line_yaw,
                     pose::RigPose,
@@ -110,6 +111,9 @@ pub struct ProceduralStatus {
     pub speed_mps: f32,
     /// The walk's phase while walking.
     pub gait_phase: Option<f32>,
+    /// How far the head has taken the hips toward their lowest, `0..=1`: what the crouch gait
+    /// scales the steps by.
+    pub crouch_depth: f32,
     /// Whether the neutral stance the feet stand around has been measured.
     pub stance_measured: bool,
     /// The last gate's ground casts.
@@ -310,6 +314,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let legs_procedural = weights.legs > 0.0 || case.targets(config.air_legs)[0] > 0.0;
             let airborne =
                 config.air_legs && matches!(case, Case::Jump | Case::HandClimb | Case::Flight);
+            let crouch = crouch_depth(rig, head_in_model(&world).y, &config);
+            state.status.crouch_depth = crouch;
             let request = FeetRequest {
                 world: &world,
                 rig,
@@ -317,6 +323,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 still: locomotion.standing_still(),
                 velocity,
                 commanded,
+                crouch,
                 dt,
             };
             let stance = state.stance_feet(&request);
@@ -502,6 +509,7 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     stepping: false,
     speed_mps: 0.0,
     gait_phase: None,
+    crouch_depth: 0.0,
     stance_measured: false,
     ground: GroundTally::new(),
     clavicles: [ClavicleTurn::ZERO; 2],

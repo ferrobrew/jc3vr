@@ -23,7 +23,7 @@ use crate::controllers::{
             arms::Side,
             clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
             feet::{Feet, FeetInput, FootPose, StepTuning},
-            gait::{self, NeutralStance, StanceFoot},
+            gait::{self, CrouchGait, NeutralStance, StanceFoot},
             pose::RigPose,
         },
         state::StateTracker,
@@ -90,6 +90,8 @@ pub(super) struct FeetRequest<'a> {
     pub(super) velocity: Vec3,
     /// The velocity the body is told to move at, world space: where the next footholds lead.
     pub(super) commanded: Vec3,
+    /// How far the head has taken the hips toward their lowest, `0..=1`: the crouch gait's depth.
+    pub(super) crouch: f32,
     pub(super) dt: f32,
 }
 
@@ -155,15 +157,16 @@ impl State {
             threshold_m: config.step_threshold_m,
             threshold_rad: config.step_turn_deg.to_radians(),
             duration_s: config.step_duration_s,
-            height_m: config.step_height_m,
+            height_m: config.step_height_m * CrouchGait::of(config).step_lift(request.crouch),
             tilt_limit_rad: config.ankle_tilt_limit_deg.to_radians(),
         };
+        let walking = self.feet.phase().is_some();
         let input = FeetInput {
             wanted,
             root_height: world.w_axis.y,
             velocity,
             commanded: request.commanded,
-            gait: gait::tuning(velocity.length(), self.feet.phase().is_some(), config),
+            gait: gait::tuning(velocity.length(), walking, request.crouch, config),
             dt,
         };
         // SAFETY: the gate runs with the local character live.
@@ -317,12 +320,15 @@ impl State {
         }
         self.gait_logged_at = Some(now);
         let speed = self.status.speed_mps;
-        let tuning = gait::tuning(speed, true, config);
+        let crouch = self.status.crouch_depth;
+        let tuning = gait::tuning(speed, true, crouch, config);
         tracing::debug!(
             target: "body",
             speed_mps = speed,
+            crouch,
             stride_m = tuning.map_or(0.0, |t| t.stride_m),
             duty = tuning.map_or(0.0, |t| t.duty),
+            lift_m = tuning.map_or(0.0, |t| t.height_m),
             phase,
             reach_drop_m = self.status.reach_drop_m,
             neck_error_m = self.status.neck_error_m,

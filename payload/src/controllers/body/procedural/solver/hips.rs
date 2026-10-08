@@ -157,6 +157,23 @@ pub fn hips_height(rig: &Rig, head_height: f32, config: &ProceduralBodyConfig) -
     (head_height - head_over_hips).clamp(lowest, standing)
 }
 
+/// How far a head at `head_height` has taken the hips toward their lowest, `0..=1`: zero standing,
+/// one at the floor of a squat ([`hips_height`]).
+pub fn crouch_depth(rig: &Rig, head_height: f32, config: &ProceduralBodyConfig) -> f32 {
+    let standing = rig.reference(RigBone::Hips).translation.y;
+    let lowest = standing * config.min_hips_height.clamp(0.1, 1.0);
+    let span = standing - lowest;
+    if span <= 1e-4 {
+        return 0.0;
+    }
+    let depth = (standing - hips_height(rig, head_height, config)) / span;
+    if depth.is_finite() {
+        depth.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 /// The most the hips may drop below where a head at `head_height` puts them: down to their lowest,
 /// counted from where the head has already taken them, so a crouch's drop and a stride's do not
 /// add past the floor of a squat.
@@ -247,6 +264,21 @@ pub(super) fn place_hips(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::body::procedural::rig::tests::skeleton;
+
+    #[test]
+    fn the_crouch_depth_runs_from_standing_to_the_squats_floor() {
+        let rig = Rig::from_skeleton(&skeleton()).unwrap();
+        let config = ProceduralBodyConfig::new();
+        let head = rig.reference(RigBone::Head).translation.y;
+        assert_eq!(crouch_depth(&rig, head, &config), 0.0);
+        assert_eq!(crouch_depth(&rig, head + 0.3, &config), 0.0);
+        // The test hips stand at 1.0 and go no lower than 0.5.
+        assert!((crouch_depth(&rig, head - 0.25, &config) - 0.5).abs() < 1e-4);
+        assert_eq!(crouch_depth(&rig, head - 0.5, &config), 1.0);
+        assert_eq!(crouch_depth(&rig, head - 2.0, &config), 1.0);
+        assert_eq!(crouch_depth(&rig, f32::NAN, &config), 0.0);
+    }
 
     #[test]
     fn the_hips_follower_eases_toward_its_place() {
