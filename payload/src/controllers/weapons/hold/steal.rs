@@ -117,8 +117,9 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
         return;
     };
     let character = inventory.m_Character;
+    // Without the local player's address, any character could be the player.
     let local = ik::local_character();
-    if character.is_null() || character as usize == local {
+    if character.is_null() || local == 0 || character as usize == local {
         return;
     }
     // SAFETY: a live inventory's character is live for its pass.
@@ -207,6 +208,9 @@ pub(crate) unsafe fn take(
     let Some(_alive) = alive else {
         return Err(StealRefusal::Gone);
     };
+    if character == ik::local_character() {
+        return Err(StealRefusal::Gone);
+    }
     // SAFETY: the strong reference keeps the character alive.
     let victim = unsafe { &mut *(character as *mut Character) };
     let Some((weapon, slot)) = (unsafe { wielded(victim) }) else {
