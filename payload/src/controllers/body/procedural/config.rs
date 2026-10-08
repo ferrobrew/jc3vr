@@ -83,6 +83,13 @@ pub struct ProceduralBodyConfig {
     pub kneel: bool,
     /// How long the kneel takes to ease in or out, seconds.
     pub kneel_blend_s: f32,
+    /// Sit on the ground in standing play when the head stays low and still: the hips to the
+    /// ground under the player and the legs out in front. The stick stands the body up.
+    pub sit: bool,
+    /// How long the sit takes to ease in or out, seconds.
+    pub sit_blend_s: f32,
+    /// How long the head stays low and still before the body sits, seconds.
+    pub sit_after_s: f32,
     /// Find the ground under each foothold with a scene ray, so the feet stand on slopes and
     /// stairs, instead of taking the root's height.
     pub ground_casts: bool,
@@ -184,6 +191,9 @@ impl ProceduralBodyConfig {
             crouch_duty: 0.7,
             kneel: true,
             kneel_blend_s: 0.35,
+            sit: true,
+            sit_blend_s: 0.5,
+            sit_after_s: 0.8,
             ground_casts: true,
             max_step_up_m: 0.5,
             max_step_down_m: 0.6,
@@ -253,6 +263,8 @@ impl ProceduralBodyConfig {
             ("crouch_lift_share", self.crouch_lift_share, 0.0, 1.0),
             ("crouch_duty", self.crouch_duty, 0.2, 0.9),
             ("kneel_blend_s", self.kneel_blend_s, 0.0, 3.0),
+            ("sit_blend_s", self.sit_blend_s, 0.0, 3.0),
+            ("sit_after_s", self.sit_after_s, 0.0, 10.0),
             ("max_step_up_m", self.max_step_up_m, 0.0, 2.0),
             ("max_step_down_m", self.max_step_down_m, 0.0, 2.0),
             ("ankle_tilt_limit_deg", self.ankle_tilt_limit_deg, 0.0, 60.0),

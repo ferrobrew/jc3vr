@@ -83,6 +83,7 @@ use crate::{
         locomotion::{
             LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
         },
+        roomscale::{frame_shared, posture::EffectivePosture},
     },
     headpose::{body_relative_rotation, query},
 };
@@ -172,6 +173,15 @@ pub fn published_status() -> ProceduralStatus {
     *PUBLISHED.lock()
 }
 
+/// Whether the body sits on the ground, or is still getting up from it, as of a gate within the
+/// last few ticks: the stick stands it up rather than walking it, so the stick locomotion holds
+/// its velocity at zero. A leaf lock, so any thread may ask; a gate that has stopped running
+/// stops holding the stick.
+pub fn sat_on_ground() -> bool {
+    let status = *PUBLISHED.lock();
+    status.at.is_some_and(|at| at.elapsed() <= SAT_STALE_AFTER) && status.lower.holds_stick()
+}
+
 /// Whether the procedural body poses the torso at all: the wrist targets wait for the gate while
 /// it does, so they are queued on the torso it writes.
 pub fn owns_body() -> bool {
@@ -212,7 +222,16 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     if !wrote {
         publish_torso_weight(0.0);
     }
-    let status = STATE.lock().status;
+    let status = {
+        let mut state = STATE.lock();
+        // A gate that wrote no pose holds no pose of the legs either: a sit must not keep holding
+        // the stick through a pass that never reached the solve.
+        if !wrote {
+            state.lower.reset();
+            state.status.lower = state.lower.status();
+        }
+        state.status
+    };
     *PUBLISHED.lock() = status;
     wrote
 }
@@ -235,6 +254,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         Hand::Right => Side::Right,
     };
     let now = Instant::now();
+    // Read before the gate's own state: the roomscale frame half publishes it from the game thread.
+    let standing_play = frame_shared()
+        .filter(|frame| frame.fresh(now))
+        .is_some_and(|frame| frame.posture != EffectivePosture::Seated);
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
         dt.clamp(0.0, MAX_STEP_S)
@@ -417,6 +440,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 grounded: case == Case::OnFoot && legs_procedural && !airborne,
                 moving: commanded.length() > config.gait_speed_mps * STOP_SHARE
                     || locomotion.stick.length() > MOVING_STICK,
+                stick: locomotion.stick.length() > MOVING_STICK,
+                standing_play,
+                head_world: query().position,
                 off_side,
                 dt,
             };
@@ -479,6 +505,10 @@ const MAX_STEP_S: f32 = 0.1;
 /// How far the move stick must be pushed for the body to count as told to move, whatever the
 /// velocity has reached yet.
 const MOVING_STICK: f32 = 0.3;
+
+/// How long a gate's sit holds the stick after it, at most: past this the gate has stopped
+/// running, and the stick walks again.
+const SAT_STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// How often the pass-through logs its read-back.
 const PASS_THROUGH_LOG_INTERVAL: Duration = Duration::from_secs(5);

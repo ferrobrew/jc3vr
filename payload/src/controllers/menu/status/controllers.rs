@@ -13,7 +13,7 @@ use crate::controllers::{
         ground::GroundTally,
         solver::{
             arms::Side,
-            lower::{LowerPose, LowerStatus},
+            lower::{LowerPose, LowerStatus, SitLegs},
         },
     },
     frame::Hand,
@@ -448,18 +448,36 @@ fn lower_body_line(case: Case, lower: &LowerStatus) -> Line {
             lower.kneel_side.map_or("?", side_letter),
             lower.kneel_weight * 100.0
         )),
+        LowerPose::Sit => Line::ok(format_smolstr!(
+            "SIT {}, {:.0}%",
+            match lower.sit_legs {
+                Some(SitLegs::Crossed) => "CROSSED",
+                Some(SitLegs::KneesUp) => "KNEES UP",
+                None => "?",
+            },
+            lower.sit_weight * 100.0
+        )),
     }
 }
 
 /// What the lower body's pose is picked from: the hips' height the head asks for against the
-/// squat's floor, the crouch's depth, and whether the body is told to move.
+/// squat's floor, the crouch's depth, how long the head has been low and still enough to sit, and
+/// whether the body is told to move, the player plays seated, or the stick stood the body up and a
+/// sit waits for the head to rise.
 fn lower_inputs_line(lower: &LowerStatus, crouch: f32) -> Line {
     let moving = if lower.moving { ", MOVING" } else { "" };
+    let seated = if lower.standing_play { "" } else { ", SEATED" };
+    let disarmed = if lower.sit_armed { "" } else { ", RISE TO SIT" };
     Line::ok(format_smolstr!(
-        "HIPS {:.2} M, FLOOR {:.2} M, CROUCH {:.2}{moving}",
+        "HIPS {:.2} M, FLOOR {:.2} M, CROUCH {:.2}, STILL {:.1} S{moving}{seated}{disarmed}",
         lower.wanted_hips_m,
         lower.floor_m,
-        crouch
+        crouch,
+        lower.still_s
+    ))
+    .with_note(format!(
+        "head speed {:.2} m/s, sit weight {:.2}",
+        lower.head_speed_mps, lower.sit_weight
     ))
 }
 
@@ -620,12 +638,27 @@ mod tests {
             lower_body_line(Case::OnFoot, &lower).text(),
             "OK, KNEEL R, 50%"
         );
+        lower.pose = LowerPose::Sit;
+        lower.sit_legs = Some(SitLegs::Crossed);
+        lower.sit_weight = 1.0;
+        assert_eq!(
+            lower_body_line(Case::OnFoot, &lower).text(),
+            "OK, SIT CROSSED, 100%"
+        );
         lower.wanted_hips_m = 0.42;
         lower.floor_m = 0.5;
+        lower.still_s = 0.4;
         lower.moving = true;
+        lower.standing_play = true;
         assert_eq!(
             lower_inputs_line(&lower, 1.0).text(),
-            "OK, HIPS 0.42 M, FLOOR 0.50 M, CROUCH 1.00, MOVING"
+            "OK, HIPS 0.42 M, FLOOR 0.50 M, CROUCH 1.00, STILL 0.4 S, MOVING"
+        );
+        lower.standing_play = false;
+        lower.sit_armed = false;
+        assert_eq!(
+            lower_inputs_line(&lower, 1.0).text(),
+            "OK, HIPS 0.42 M, FLOOR 0.50 M, CROUCH 1.00, STILL 0.4 S, MOVING, SEATED, RISE TO SIT"
         );
     }
 

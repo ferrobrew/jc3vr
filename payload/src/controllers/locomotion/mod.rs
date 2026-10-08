@@ -38,7 +38,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::procedural::state::animation_moves_body,
+        body::procedural::{sat_on_ground, state::animation_moves_body},
         locomotion::{accel::Rates, speeds::SpeedLog},
     },
     headpose,
@@ -129,7 +129,13 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         _ => unsafe { proxy_velocity(character) }.unwrap_or(task_velocity),
     };
     let forward = unsafe { view_forward(character) };
-    let target = accel::target(stick, forward, game_speed, &config);
+    // Sat on the ground, the stick stands the body up rather than walking it: the velocity stays
+    // at rest until the procedural body is up.
+    let target = if sat_on_ground() {
+        Vec2::ZERO
+    } else {
+        accel::target(stick, forward, game_speed, &config)
+    };
     let velocity = accel::step(start, target, dt, Rates::of(&config));
     let world = Vector3 {
         data: [velocity.x, task_y, velocity.y],

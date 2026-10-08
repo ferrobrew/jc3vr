@@ -25,7 +25,7 @@ use crate::controllers::{
             feet::{Feet, FeetInput, FootPose, StepTuning},
             gait::{self, CrouchGait, NeutralStance, StanceFoot},
             hips_yaw,
-            lower::{LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning},
+            lower::{LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning, SitEnd, SitLegs},
             pose::RigPose,
         },
         state::StateTracker,
@@ -112,6 +112,12 @@ pub(super) struct LowerRequest<'a> {
     pub(super) grounded: bool,
     /// Whether the body is told to move.
     pub(super) moving: bool,
+    /// Whether the move stick is pushed.
+    pub(super) stick: bool,
+    /// Whether the player plays standing.
+    pub(super) standing_play: bool,
+    /// The player's head, world space.
+    pub(super) head_world: Vec3,
     /// The off hand's side.
     pub(super) off_side: Side,
     pub(super) dt: f32,
@@ -131,6 +137,7 @@ impl State {
         let input = LowerInput {
             world: *request.world,
             head: solve.head,
+            head_world: request.head_world,
             crouch: request.crouch,
             hips_xz: solve
                 .hips_xz
@@ -143,6 +150,8 @@ impl State {
             stance: request.stance,
             grounded: request.grounded,
             moving: request.moving,
+            stick: request.stick,
+            standing_play: request.standing_play,
             off_side: request.off_side,
             dt: request.dt,
         };
@@ -157,7 +166,12 @@ impl State {
                 floor_m = status.floor_m,
                 crouch = request.crouch,
                 kneel_side = status.kneel_side.map_or("none", Side::label),
+                sit_legs = status.sit_legs.map_or("none", SitLegs::label),
+                sit_end = change.sit_end.map_or("none", SitEnd::label),
+                head_speed_mps = status.head_speed_mps,
                 moving = status.moving,
+                stick = request.stick,
+                standing_play = request.standing_play,
                 "procedural body: the lower body's pose changes",
             );
         }

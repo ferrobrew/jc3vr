@@ -109,6 +109,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .kneel))
+        .item(config_toggle!("SIT ON THE GROUND", |c| c
+            .controllers
+            .body
+            .procedural
+            .sit))
         .item(config_toggle!("LEGS IN THE AIR", |c| c
             .controllers
             .body

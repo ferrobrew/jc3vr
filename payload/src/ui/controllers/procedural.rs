@@ -75,6 +75,25 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
                 .map_or_else(String::new, |side| format!(" ({} knee)", side.label())),
             if lower.moving { "moving" } else { "still" },
         ));
+        ui.label(format!(
+            "Sit {:.2}{} · head {:.2} m/s · low and still {:.2} s · {} · {}",
+            lower.sit_weight,
+            lower
+                .sit_legs
+                .map_or_else(String::new, |legs| format!(" ({})", legs.label())),
+            lower.head_speed_mps,
+            lower.still_s,
+            if lower.standing_play {
+                "standing play"
+            } else {
+                "seated play"
+            },
+            if lower.sit_armed {
+                "may sit"
+            } else {
+                "waits for the head to rise"
+            },
+        ));
         let ground = &status.ground;
         ui.label(format!(
             "Ground casts this tick {} · hits {} · too steep {} · on objects {} · errors {} · largest offset {:+.3} m",
