@@ -103,7 +103,7 @@ use crate::{
             parachute::{HandleEvent, HandleHold, HandleState},
             physical::{
                 ControlCue, ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement,
-                buttons::{ButtonEvent, ButtonPlacement},
+                buttons::{Button, ButtonEvent, ButtonPlacement, PushPhase},
             },
             wheel::{CockpitTransform, WheelFrame},
             wheel_render::RenderWheel,
@@ -432,6 +432,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let controls_now = state.controls;
     drop(state);
     log_handle_events(&handle_events);
+    // A hand pressing a cockpit button presses it with a flat palm.
+    for hand in Hand::BOTH {
+        let pressing = Button::ALL
+            .into_iter()
+            .any(|b| controls_now.buttons.phase(b, hand) == PushPhase::Pressed);
+        if pressing {
+            grip::declare(hand, Grip::new(GripSource::Surface));
+        }
+    }
 
     let shown = (physical_config.show_wheel && seat.is_some_and(|s| s.driver)).then_some(fit.wheel);
     let wings = (arms_act(mode, &config) && config.vehicles.arm_steering.show_guide)

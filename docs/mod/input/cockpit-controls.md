@@ -47,7 +47,7 @@ A push button is a disc facing the driver: the horn is the hub, `hub_share` (35%
 
 A twist grip burns the nitrous while the hand holding the handlebars' right grip, or the collective, has twisted it `twist_deg` (30°) from the orientation it took the control in, and stops once the twist comes back by 8°. The right grip's twist is about the line across the bars, rolling the grip's top back toward the rider; the collective's is about the fore-aft axis, either way. The handlebars' and the collective's own motion is untouched by it: the bars turn and roll by the grips' positions, and the collective moves along its axis.
 
-A pressed horn holds `SOUND_HORN_SIREN`, and the nitrous holds `USE_VEHICLE_MOD`, which the game reads as the nitrous while it is held and as the turbo jump when it is tapped ([input.md](../../engine/gameplay/input.md#land-vehicle-generic-car-and-motorcycle)), so a short press of the nitrous button is a turbo jump, as a tap of the gamepad's button is. Both need the vehicle's upgrades as the gamepad does. Each press and twist clicks in its hand, and each release ticks.
+A pressed horn holds `SOUND_HORN_SIREN`, and the nitrous holds `USE_VEHICLE_MOD`, which the game reads as the nitrous while it is held and as the turbo jump when it is tapped ([input.md](../../engine/gameplay/input.md#land-vehicle-generic-car-and-motorcycle)), so a short press of the nitrous button is a turbo jump, as a tap of the gamepad's button is. Both need the vehicle's upgrades as the gamepad does. Each press and twist clicks in its hand, and each release ticks. A hand pressing a button takes the flat palm's finger pose ([grip-poses.md](grip-poses.md)); a twisting hand keeps the pose of the control it holds.
 
 ### The landing gear
 
