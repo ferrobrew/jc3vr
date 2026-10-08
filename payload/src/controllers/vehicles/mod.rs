@@ -3,7 +3,7 @@
 //! its decisions on physical controls and arm steering (`docs/mod/input/controllers-and-roomscale.md`).
 //!
 //! - [`config`]: the settings, all under [`ControllersConfig::vehicles`];
-//! - [`physical`]: the opt-in wheel, handlebars, cyclic, collective, flight stick, and throttle of
+//! - [`physical`]: the wheel, handlebars, cyclic, collective, flight stick, and throttle of
 //!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
 //!   hands;
 //! - [`steering`]: how the held wheel turns and maps to the steering;
@@ -137,6 +137,17 @@ pub struct ArmReadout {
     pub stick: Vec2,
     /// The stick vector written to the move half-axes: the stick and the arms together.
     pub written: Vec2,
+}
+
+/// The wrists' mean tilt now, degrees, positive with the leading edges down: what the wingsuit's
+/// wrist-tilt pitch measures, for capturing the player's relaxed tilt as its neutral. `None` unless
+/// both hands are tracked under the controller scheme. Takes the configuration lock and the
+/// controller frame slot, one after the other.
+pub fn wrist_tilt_now_deg() -> Option<f32> {
+    let active = hands::active_hands_raw()?;
+    let [left, right] = active.hands;
+    let tilt = arm::wrists_tilt(left?.wrist.orientation, right?.wrist.orientation).to_degrees();
+    tilt.is_finite().then_some(tilt)
 }
 
 /// The arm steering's readout for the headset panel, while that panel is switched on and the arms

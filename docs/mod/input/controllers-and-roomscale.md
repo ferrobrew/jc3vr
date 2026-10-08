@@ -34,7 +34,7 @@ The following decisions are settled and the rest of the plan assumes them.
 - Driver-seat vehicle weapons aim along the gaze by default, with an option for the right-hand ray. Passenger seats, gunner seats, and mounted guns aim by hand.
 - Recoil is an offset between the controller pose and the rendered weapon, driven by the game's per-weapon recoil state, with a spring return, a stiffer spring under a two-hand grip, and matching haptics.
 - Haptics and the head-through-geometry fade are in scope. Physical melee is not: the game's melee attack takes the body from the player.
-- Vehicles use stick bindings by default. Physical controls (a wheel, handlebars, a helicopter cyclic and collective, a flight stick) are opt-in.
+- Vehicles use stick bindings by default. Physical controls (a wheel, handlebars, a helicopter cyclic and collective, a flight stick and throttle) are on by default alongside them, and the stick still steers any axis no hand holds a control for.
 - The wingsuit and parachute use stick steering by default. Arm-pose steering for the wingsuit and grabbed handles for the parachute add to it.
 - Grenades are thrown physically.
 - Weapons are drawn from body holsters. A radial menu is the seated and accessibility fallback, deferred with the rest of the mod UI.
@@ -126,7 +126,7 @@ The starting assignments are as follows.
 | Driving and flying with physical controls | Anchored: the hands on the wheel, handlebars, or sticks | none needed |
 | Mounted guns and turrets | Anchored: the hands on the handles, which aim the gun | none needed |
 | Parachute | Free, or anchored on a handle a hand has taken | the handles: a hand takes the handle above its shoulder with the grip and pulls it down to steer or brake |
-| Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | opt-in arm steering reads the controllers while the rendered arms stay yielded; anchoring the arms to the wing pose is not built |
+| Wingsuit, stick steering | Yielded: the wing membrane is skinned between the arms and the body, and free arms may deform it | arm steering (on by default) reads the controllers while the rendered arms stay yielded; anchoring the arms to the wing pose is not built |
 | Swimming | Yielded | arm-stroke swimming |
 | Interactions (sabotage, planting, using objects) | Yielded | per interaction |
 | Ragdoll, knockdown, death, and cutscenes | Yielded | none planned |
@@ -216,7 +216,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 
 | Action | VR binding |
 |---|---|
-| Steer | L stick; opt-in wheel or handlebars |
+| Steer | L stick; wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
 | Handbrake | X |
 | Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold Y and tap Y |
@@ -226,14 +226,14 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Horn | L stick click |
 | Look back, vehicle camera, recenter camera | removed; the neck replaces them, and F7 recenters |
 | Motorcycle personal weapon (`MC_FIRE`) | R grip, aimed by the right hand |
-| Motorcycle lean and tilt | L stick; opt-in handlebar lean |
+| Motorcycle lean and tilt | L stick; handlebar lean |
 
 #### Helicopter
 
 | Action | VR binding |
 |---|---|
-| Collective up and down | R trigger and L trigger; opt-in collective lever |
-| Cyclic (forward, back, and roll) | L stick; opt-in cyclic stick |
+| Collective up and down | R trigger and L trigger; collective lever |
+| Cyclic (forward, back, and roll) | L stick; cyclic stick |
 | Yaw | R stick X |
 | Fire primary and secondary | R grip and L grip, aimed by the gaze |
 | Exit, stunt, nitrous | B, A, hold Y |
@@ -242,9 +242,9 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 
 | Action | VR binding |
 |---|---|
-| Pitch and roll | L stick; opt-in flight stick |
+| Pitch and roll | L stick; flight stick |
 | Rudder | R stick X |
-| Thrust up and down | R trigger and L trigger; opt-in throttle |
+| Thrust up and down | R trigger and L trigger; throttle |
 | Fire primary and secondary | R grip and L grip, aimed by the gaze |
 | Exit, stunt | B, A |
 
@@ -252,7 +252,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 
 | Action | VR binding |
 |---|---|
-| Steer | L stick; opt-in wheel or handlebars |
+| Steer | L stick; wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
 | Fire, and the jetski personal weapon | R grip, aimed by the gaze (boat) or the right hand (jetski) |
 | Nitrous and turbo jump | hold Y and tap Y |
@@ -262,7 +262,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 
 | Action | VR binding |
 |---|---|
-| Steer (analog `MOVE_*`) | L stick; opt-in arm-pose steering |
+| Steer (analog `MOVE_*`) | L stick; arm-pose steering |
 | Air brake (`CANCEL` hold, upgrade-gated; `WINGSUIT_AIRBRAKE` when weaponized) | L trigger |
 | Boost and evade (weaponized) | B; A with a stick flick |
 | Fire weapons (weaponized wingsuit or parachute) | R trigger and R grip, aimed by the right hand |
@@ -441,7 +441,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 
 - Per-class vehicle bindings, playtested class by class.
 - Vehicle weapon aiming (the gaze by default, with the hand option), and hand-aimed mounted guns and turrets.
-- The opt-in physical controls: wheel, handlebars, cyclic and collective, flight stick, and throttle.
+- The physical controls: wheel, handlebars, cyclic and collective, flight stick, and throttle.
 - The arm steering for the wingsuit, the handles for the parachute, and the removal of the head look-steer from the wingsuit's steering.
 
 ### 5. Breadth

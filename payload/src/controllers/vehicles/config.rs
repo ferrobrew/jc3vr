@@ -24,7 +24,7 @@ pub struct VehiclesConfig {
     pub driver_weapons_by_hand: bool,
     /// Mounted guns and gunner seats aimed by the hands on the handles.
     pub mounted: MountedConfig,
-    /// The opt-in physical controls of the driver's seat.
+    /// The physical controls of the driver's seat.
     pub physical: PhysicalControlsConfig,
     /// The arm-pose steering of the wingsuit.
     pub arm_steering: ArmSteeringConfig,

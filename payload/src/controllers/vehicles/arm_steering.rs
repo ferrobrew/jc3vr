@@ -100,10 +100,16 @@ pub fn arm_pose(hands: [ArmHand; 2], body: &ArmBody) -> ArmPose {
     ArmPose {
         bank_m: left.position.y - right.position.y,
         height_m: middle.y - shoulder_y,
-        tilt: (wrist_tilt(left.wrist, 1.0) + wrist_tilt(right.wrist, -1.0)) * 0.5,
+        tilt: wrists_tilt(left.wrist, right.wrist),
         sweep_m: (middle - chest).dot(forward),
         spread: Vec2::new(across.x, across.z).length() / body.arm_span.max(0.1),
     }
+}
+
+/// The wrists' mean tilt, radians, positive with the leading edges down, for the `left` and
+/// `right` wrist frames' orientations (-Z toward the fingers, +Y out of the back of the hand).
+pub fn wrists_tilt(left: Quat, right: Quat) -> f32 {
+    (wrist_tilt(left, 1.0) + wrist_tilt(right, -1.0)) * 0.5
 }
 
 /// The pitch input `config`'s measure reads from `pose`.

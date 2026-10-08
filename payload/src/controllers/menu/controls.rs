@@ -7,7 +7,9 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use smol_str::SmolStr;
+#[cfg(not(test))]
+use parking_lot::Mutex;
+use smol_str::{SmolStr, format_smolstr};
 
 use crate::{
     config::Config,
@@ -18,7 +20,10 @@ use crate::{
             comfort, config_choice, config_slider, config_toggle, edit_config, nearest_index,
             read_config, settings_state,
         },
-        vehicles::config::{ArmPitch, WheelTracking},
+        vehicles::{
+            self,
+            config::{ArmPitch, WheelTracking},
+        },
         weapons::{config::PouchSide, reload::config::ReloadButton},
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
@@ -37,7 +42,7 @@ pub(crate) const PAGE: PageDef = PageDef {
     tab: "CONTROLS",
     build,
     on_close: Some(on_close),
-    on_frame: None,
+    on_frame: Some(on_frame),
 };
 
 fn build() -> Page {
@@ -50,6 +55,7 @@ fn build() -> Page {
 /// The page's settings, as it shows them outside the reset confirmation.
 fn settings_page() -> Page {
     let page = Page::new("VR: CONTROLS")
+        .keeping_focus()
         .header("CONTROLLERS")
         .item(config_toggle!("MOTION CONTROLLERS", |c| c
             .controllers
@@ -305,7 +311,8 @@ fn settings_page() -> Page {
             .weapons
             .haptics
             .gamepad_rumble));
-    page.header("VEHICLES")
+    let page = page
+        .header("VEHICLES")
         .item(config_toggle!("VEHICLE WEAPONS BY HAND", |c| c
             .controllers
             .vehicles
@@ -351,18 +358,13 @@ fn settings_page() -> Page {
             &ArmPitch::ALL,
             &ARM_PITCH_LABELS,
             |c| c.controllers.vehicles.arm_steering.pitch_by
-        ))
-        .item(config_slider!(
-            "WINGSUIT FULL TILT",
-            TILT_RANGE,
-            SliderFormat::new(0, " DEG"),
-            |c| c.controllers.vehicles.arm_steering.full_tilt_deg
-        ))
-        .item(config_toggle!("INVERT WINGSUIT PITCH", |c| c
-            .controllers
-            .vehicles
-            .arm_steering
-            .invert_pitch))
+        ));
+    let page = pitch_rows(page);
+    page.item(config_toggle!("INVERT WINGSUIT PITCH", |c| c
+        .controllers
+        .vehicles
+        .arm_steering
+        .invert_pitch))
         .item(config_toggle!("WINGSUIT ARMS READOUT", |c| c
             .controllers
             .vehicles
@@ -489,6 +491,106 @@ fn on_close() {
     CONFIRMING_RESET.store(false, Ordering::Relaxed);
 }
 
+/// Rebuild the page when the wingsuit's pitch measure changed since it was built, so that the
+/// rows for the measure now chosen show.
+fn on_frame() -> ButtonOutcome {
+    let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
+    if built_pitch() == Some(pitch_by) || CONFIRMING_RESET.load(Ordering::Relaxed) {
+        ButtonOutcome::Stay
+    } else {
+        ButtonOutcome::Rebuild
+    }
+}
+
+/// The rows of the wingsuit's pitch measure: the wrists' tilt has its full tilt and a capture of
+/// the relaxed tilt as the neutral; the hands' height and the arms' sweep each their full
+/// distance.
+fn pitch_rows(page: Page) -> Page {
+    let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
+    set_built_pitch(pitch_by);
+    match pitch_by {
+        ArmPitch::WristTilt => page
+            .item(config_slider!(
+                "WINGSUIT FULL TILT",
+                TILT_RANGE,
+                SliderFormat::new(0, " DEG"),
+                |c| c.controllers.vehicles.arm_steering.full_tilt_deg
+            ))
+            .item(Readout {
+                label: "WINGSUIT NEUTRAL TILT".into(),
+                read: neutral_tilt,
+            })
+            .item(Button {
+                label: "CALIBRATE NEUTRAL".into(),
+                caption: "CAPTURE".into(),
+                action: capture_neutral_tilt,
+            }),
+        ArmPitch::Height => page.item(config_slider!(
+            "WINGSUIT FULL HEIGHT",
+            REACH_RANGE,
+            SliderFormat::new(2, " M"),
+            |c| c.controllers.vehicles.arm_steering.full_pitch_m
+        )),
+        ArmPitch::Sweep => page.item(config_slider!(
+            "WINGSUIT FULL SWEEP",
+            REACH_RANGE,
+            SliderFormat::new(2, " M"),
+            |c| c.controllers.vehicles.arm_steering.full_sweep_m
+        )),
+    }
+}
+
+/// The wingsuit's neutral wrist tilt, for a readout.
+fn neutral_tilt() -> SmolStr {
+    let tilt = read_config(|c| c.controllers.vehicles.arm_steering.tilt_neutral_deg);
+    format_smolstr!("{tilt:.0} DEG")
+}
+
+/// Take the wrists' tilt as they are held now as the wingsuit's neutral: the tilt that pitches
+/// nothing.
+fn capture_neutral_tilt() -> ButtonOutcome {
+    if let Some(tilt) = vehicles::wrist_tilt_now_deg() {
+        edit_config(|c| {
+            c.controllers.vehicles.arm_steering.tilt_neutral_deg =
+                tilt.clamp(-NEUTRAL_TILT_LIMIT_DEG, NEUTRAL_TILT_LIMIT_DEG);
+        });
+    }
+    ButtonOutcome::Stay
+}
+
+/// The furthest from flat a captured neutral tilt may be, degrees.
+const NEUTRAL_TILT_LIMIT_DEG: f32 = 45.0;
+
+/// The wingsuit pitch measure the page's rows were last built for.
+#[cfg(not(test))]
+static BUILT_PITCH: Mutex<Option<ArmPitch>> = Mutex::new(None);
+
+#[cfg(not(test))]
+fn built_pitch() -> Option<ArmPitch> {
+    *BUILT_PITCH.lock()
+}
+
+#[cfg(not(test))]
+fn set_built_pitch(pitch_by: ArmPitch) {
+    *BUILT_PITCH.lock() = Some(pitch_by);
+}
+
+// Tests build pages on threads of their own, against configurations of their own.
+#[cfg(test)]
+thread_local! {
+    static BUILT_PITCH: std::cell::Cell<Option<ArmPitch>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn built_pitch() -> Option<ArmPitch> {
+    BUILT_PITCH.get()
+}
+
+#[cfg(test)]
+fn set_built_pitch(pitch_by: ArmPitch) {
+    BUILT_PITCH.set(Some(pitch_by));
+}
+
 /// The button layout the controllers have, for a readout.
 fn button_layout() -> SmolStr {
     let status = vr_input::status();
@@ -580,6 +682,8 @@ const WHEEL_LOCK_RANGE: SliderRange = SliderRange::new(60.0, 180.0, 120);
 const WHEEL_RESPONSE_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 /// The wingsuit's full pitch by wrist tilt, degrees, in degrees.
 const TILT_RANGE: SliderRange = SliderRange::new(10.0, 60.0, 50);
+
+const REACH_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
 /// The hands' strength scale, in twentieths.
 const STRENGTH_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
 
@@ -728,6 +832,37 @@ mod tests {
             ..InputStatus::default()
         };
         assert_eq!(layout_label(&failed, Hand::Left), "RESTART THE GAME");
+    }
+
+    #[test]
+    fn the_wingsuit_rows_follow_the_pitch_measure() {
+        let labels = |pitch_by| {
+            edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = pitch_by);
+            settings_page()
+                .items
+                .iter()
+                .filter_map(value_label)
+                .filter(|label| label.starts_with("WINGSUIT FULL"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(labels(ArmPitch::WristTilt), ["WINGSUIT FULL TILT"]);
+        assert_eq!(labels(ArmPitch::Height), ["WINGSUIT FULL HEIGHT"]);
+        assert_eq!(labels(ArmPitch::Sweep), ["WINGSUIT FULL SWEEP"]);
+        let calibrate = |page: &Page| {
+            page.items
+                .iter()
+                .any(|item| matches!(item, Item::Button(b) if b.label == "CALIBRATE NEUTRAL"))
+        };
+        assert!(!calibrate(&settings_page()));
+        edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = ArmPitch::WristTilt);
+        assert!(calibrate(&settings_page()));
+        // A change of measure since the build asks for a rebuild, and none is asked after it.
+        assert_eq!(on_frame(), ButtonOutcome::Stay);
+        edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = ArmPitch::Height);
+        assert_eq!(on_frame(), ButtonOutcome::Rebuild);
+        settings_page();
+        assert_eq!(on_frame(), ButtonOutcome::Stay);
     }
 
     #[test]

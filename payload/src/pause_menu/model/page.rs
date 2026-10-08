@@ -38,6 +38,9 @@ pub(crate) struct PageDef {
 pub(crate) struct Page {
     pub(crate) title: SmolStr,
     pub(crate) items: Vec<Item>,
+    /// Whether a rebuild keeps the highlight on the row it was on, rather than moving it to the
+    /// first button: for a page whose rows change with a value the player is changing.
+    pub(crate) keep_focus: bool,
 }
 
 impl Page {
@@ -46,7 +49,22 @@ impl Page {
         Self {
             title: title.into(),
             items: Vec::new(),
+            keep_focus: false,
         }
+    }
+
+    /// Keep the highlight where it is when the page is rebuilt ([`Page::keep_focus`]).
+    pub(crate) fn keeping_focus(mut self) -> Self {
+        self.keep_focus = true;
+        self
+    }
+
+    /// The row a rebuild of this page focuses, given the row the highlight was last on: that row
+    /// when the page keeps its focus and the row still holds something to select, otherwise the
+    /// first button.
+    pub(crate) fn rebuild_focus(&self, last: Option<usize>) -> Option<usize> {
+        last.filter(|&row| self.keep_focus && row < self.items.len() && !self.is_header(row))
+            .or_else(|| self.first_button())
     }
 
     /// Append `item`.
@@ -287,6 +305,27 @@ impl From<Button> for Item {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_rebuild_keeps_the_highlight_only_where_the_page_asks() {
+        let page = || {
+            super::Page::new("TEST")
+                .header("SECTION")
+                .text("A LINE")
+                .item(super::Button {
+                    label: "GO".into(),
+                    caption: "GO".into(),
+                    action: || super::ButtonOutcome::Stay,
+                })
+        };
+        assert_eq!(page().rebuild_focus(Some(1)), Some(2));
+        let kept = page().keeping_focus();
+        assert_eq!(kept.rebuild_focus(Some(1)), Some(1));
+        // A header, a row past the end, or no row falls back to the first button.
+        assert_eq!(kept.rebuild_focus(Some(0)), Some(2));
+        assert_eq!(kept.rebuild_focus(Some(9)), Some(2));
+        assert_eq!(kept.rebuild_focus(None), Some(2));
+    }
+
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
     use super::*;

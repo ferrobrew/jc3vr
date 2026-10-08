@@ -778,9 +778,12 @@ fn rebuild(thread: &CaptureThread, screen: &Screen, page_index: usize) {
     let Some(def) = PAGES.get(page_index) else {
         return;
     };
-    let generation = SESSION.lock().generation;
+    let (generation, last) = {
+        let session = SESSION.lock();
+        (session.generation, session.last_selected)
+    };
     let page = (def.build)();
-    let focus = page.first_button();
+    let focus = page.rebuild_focus(last);
     match render::replace_rows(thread, screen, page_index, &page, focus) {
         Ok(()) => {
             if !SESSION.lock().rebuilt(generation, page_index, page) {

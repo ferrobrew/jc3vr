@@ -1,4 +1,4 @@
-//! The opt-in physical controls of the driver's seat: a wheel, handlebars, a helicopter cyclic and
+//! The physical controls of the driver's seat: a wheel, handlebars, a helicopter cyclic and
 //! collective, and a plane's flight stick and throttle. Pure.
 //!
 //! Every control lives in the cockpit frame, placed relative to the seated character's eyes (see
