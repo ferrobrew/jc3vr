@@ -249,6 +249,7 @@ fn the_shipped_templates_read() {
         "hand_bodies.toml",
         "hand_climbing.toml",
         "hand_strike.toml",
+        "hijack.toml",
         "input_basics.toml",
         "parachute_handles.toml",
         "procedural_full_body.toml",

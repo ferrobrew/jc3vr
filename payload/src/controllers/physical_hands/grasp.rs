@@ -13,7 +13,9 @@ use glam::{Quat, Vec3};
 
 use crate::controllers::{
     frame::Pose,
-    physical_hands::{config::PickupConfig, doors::DoorTarget, rigid::BodyPose},
+    physical_hands::{
+        characters::CharacterTarget, config::PickupConfig, doors::DoorTarget, rigid::BodyPose,
+    },
 };
 
 /// What a reachable object is to a hand.
@@ -26,6 +28,8 @@ pub enum TargetKind {
     /// A vehicle's door, hood, trunk, or hatch: an open one held as a loose object on its hinge, a
     /// closed one gripped at its handle area until the latch gives.
     Door(DoorTarget),
+    /// A character, held on to until a yank.
+    Character(CharacterTarget),
 }
 
 /// An object within a hand's reach.

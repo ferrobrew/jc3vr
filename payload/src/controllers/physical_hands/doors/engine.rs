@@ -198,6 +198,24 @@ pub(crate) unsafe fn unlatch(
     Ok(body)
 }
 
+/// The angle the door at part index `part_index` of `vehicle` stands open, radians: its hinge's
+/// angle above the hinge's smallest. Zero for a latched door.
+///
+/// # Safety
+///
+/// `vehicle` must be a live vehicle.
+pub(crate) unsafe fn open_angle(vehicle: NonZeroUsize, part_index: u32) -> f32 {
+    let vehicle = unsafe { &mut *(vehicle.get() as *mut Vehicle) };
+    let Some(pfx) = (unsafe { vehicle.m_PfxVehicle.as_mut() }) else {
+        return 0.0;
+    };
+    let Ok(index) = i32::try_from(part_index) else {
+        return 0.0;
+    };
+    let angle = unsafe { pfx.GetHingeAngleAboveMin(index) };
+    if angle.is_finite() { angle.abs() } else { 0.0 }
+}
+
 /// The most doors a vehicle's door map is walked for, against a corrupt tree.
 const MAX_DOORS: usize = 64;
 

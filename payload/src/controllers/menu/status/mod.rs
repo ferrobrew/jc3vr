@@ -231,7 +231,10 @@ const SECTIONS: &[Section] = &[
     },
     Section {
         title: "HANDS IN THE WORLD",
-        rows: &[row!("VEHICLE DOORS", hands::doors)],
+        rows: &[
+            row!("VEHICLE DOORS", hands::doors),
+            row!("CHARACTERS", hands::characters),
+        ],
     },
     Section {
         title: "GRAPPLE",

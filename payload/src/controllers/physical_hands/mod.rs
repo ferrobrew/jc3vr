@@ -10,7 +10,9 @@
 //! - [`rigid`]: a rigid body's response to impulses;
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
+//! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door;
 //! - [`climb`]: climbing by gripping the static world with a hand its body drives;
+
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
 //! - [`world`]: the Havok world, lent out for one call at a time;
 //! - [`config`]: the settings.
@@ -41,6 +43,7 @@
 //! notes it); otherwise the palms stand down and the readout says why.
 
 mod bodies;
+pub mod characters;
 pub mod climb;
 pub mod config;
 pub mod contact;
@@ -395,6 +398,12 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         }
     };
 
+    let reach_tuning = pickup::ReachTuning {
+        world_scale: active.world_scale,
+        pickup: &config.pickup,
+        doors: &config.doors,
+        characters: &config.characters,
+    };
     let climb_on = climb::enabled(&config);
     let mut climb_palms = [None; 2];
     let mut climb_pressing = [false; 2];
@@ -461,11 +470,9 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 unsafe {
                     pickup::reach(
                         &body_palm,
-                        active.world_scale,
                         None,
                         standing_on,
-                        &config.pickup,
-                        &config.doors,
+                        &reach_tuning,
                         &mut |from, to| cast(from, to, &reach_options),
                     )
                 }
@@ -554,11 +561,9 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             unsafe {
                 pickup::reach(
                     &palm,
-                    active.world_scale,
                     contact.press.map(|(hit, _)| hit),
                     standing_on,
-                    &config.pickup,
-                    &config.doors,
+                    &reach_tuning,
                     &mut |from, to| cast(from, to, &reach_options),
                 )
             }
@@ -598,6 +603,8 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             joints: joint_inputs(&config),
             dt,
             unlatch_pull_m: config.doors.unlatch_pull_m * active.world_scale,
+            world_scale: active.world_scale,
+            characters: config.characters,
         };
         // SAFETY: the simulation phase outside the physics step.
         let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &config.pickup) };
@@ -763,6 +770,8 @@ impl State {
             }
         }
         status.door_grips += outcome.door_grips;
+        status.character_grips += outcome.character_grips;
+        status.hijacks += outcome.hijacks;
         if outcome.door.is_some() {
             status.last_door = outcome.door;
         }
@@ -815,6 +824,8 @@ static STATE: Mutex<State> = Mutex::new(State {
             door_grips: 0,
             unlatches: 0,
             last_door: None,
+            character_grips: 0,
+            hijacks: 0,
             last_error: None,
         },
     },

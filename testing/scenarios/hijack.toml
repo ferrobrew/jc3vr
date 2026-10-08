@@ -1,0 +1,22 @@
+# Template: fill testing/recordings/hijack.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "pull a driver out through the open door"
+description = "Recorded with OPEN DOORS BY HAND and PULL OCCUPANTS OUT BY HAND on, empty-handed, beside the driver's door of a car stopped with a driver (character-grabs.md, checklist items 1 to 4). Open the door by hand, reach in, grip the driver's shoulder, and yank back."
+recording = "../recordings/hijack.jc3trk"
+settle_s = 6.0
+
+[[expect]]
+name = "the door's latch gave"
+signal = "doors.unlatches"
+
+[[expect]]
+name = "the hand took hold of the driver"
+signal = "characters.grips"
+
+[[expect]]
+name = "the yank pulled the driver out"
+signal = "characters.hijacks"
+
+[[expect]]
+name = "the player sits in the vehicle at the end"
+signal = "controllers.in_vehicle"
+check = "at_end"

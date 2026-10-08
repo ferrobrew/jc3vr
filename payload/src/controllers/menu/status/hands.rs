@@ -1,4 +1,5 @@
-//! The status page's rows for what the empty hands do in the world: vehicle doors.
+//! The status page's rows for what the empty hands do in the world: vehicle doors and the
+//! characters they take hold of.
 
 use smol_str::format_smolstr;
 
@@ -18,6 +19,30 @@ pub(super) fn doors() -> Line {
     let status = physical_hands::status();
     let latched = status.hands.map(|h| h.latched);
     doors_line(on, &status.pickup, latched)
+}
+
+pub(super) fn characters() -> Line {
+    let (on, hijack) = read_config(|c| {
+        let p = &c.controllers.physical_hands;
+        (p.enabled && p.pickup.enabled, p.characters.hijack)
+    });
+    characters_line(on && hijack, &physical_hands::status().pickup)
+}
+
+fn characters_line(on: bool, pickup: &PickupStatus) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    let detail = format_smolstr!(
+        "{} GRIPS, {} PULLED OUT",
+        pickup.character_grips,
+        pickup.hijacks
+    );
+    if pickup.character_grips == 0 {
+        Line::new(Health::Waiting, "NO CHARACTER TAKEN YET")
+    } else {
+        Line::ok(detail)
+    }
 }
 
 fn doors_line(on: bool, pickup: &PickupStatus, latched: [bool; 2]) -> Line {
@@ -43,6 +68,19 @@ mod tests {
     use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
+
+    #[test]
+    fn the_characters_row_counts_grips_and_hijacks() {
+        let mut pickup = PickupStatus::default();
+        assert_eq!(characters_line(false, &pickup).health, Health::Off);
+        assert_eq!(characters_line(true, &pickup).health, Health::Waiting);
+        pickup.character_grips = 3;
+        pickup.hijacks = 1;
+        assert_eq!(
+            characters_line(true, &pickup).text(),
+            "OK, 3 GRIPS, 1 PULLED OUT"
+        );
+    }
 
     #[test]
     fn the_doors_row_counts_grips_and_openings() {

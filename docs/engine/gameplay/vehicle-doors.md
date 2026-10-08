@@ -28,6 +28,10 @@ Loosening a merged part ([`PfxBreakable::EnablePart`](https://ferrobrew.github.i
 
 A closed door has no body of its own, so a ray that hits it reports the vehicle. Where a closed door is comes from its part: the model's box in the part's own space, whose origin is the hinge pivot, carried by the part's root-space transform and the vehicle's transform ([vehicle-parts.md](vehicle-parts.md#the-live-parts)).
 
+## Entering through a door
+
+A character in a vehicle seat is attached to the vehicle through the interaction graph ([`Character::IsAttachedToVehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsAttachedToVehicle), [`GetVehiclePtr`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-GetVehiclePtr)); each seat ([`VehicleSeat`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleSeat)) is a node of that graph, and the occupant of a seat is the graph's occupant of its node. The player enters a vehicle with the vehicle-entry action ([`ENTER_VEHICLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action##variant-ENTER_VEHICLE)) on foot; the entry's animation opens and closes the seat's door through the door controller ([opening and closing](#opening-and-closing)). The animation set has hijack acts and states (`ACT_GET_HIJACK`, `ACT_EXIT_VEHICLE_HIJACK`, `S_HIJACK_STRUGGLE_FAIL`), and the interaction graph has conditions on a door's existence and closure and on a vehicle being locked against hijacking. Which entry the action picks, and that it hijacks an occupied seat, is unverified from the code; it is the game's behaviour on the gamepad.
+
 ## Unverified
 
 - That the loosened event sets the door's entry to [`DOOR_OPEN`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::DoorState##variant-DOOR_OPEN) and its door object, as `CVehicleDoorController::SetDoorObject` does; the spawn writes the door object's reference into the entry directly.

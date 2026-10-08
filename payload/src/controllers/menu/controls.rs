@@ -177,6 +177,11 @@ fn settings_page() -> Page {
             .physical_hands
             .doors
             .enabled))
+        .item(config_toggle!("PULL OCCUPANTS OUT BY HAND", |c| c
+            .controllers
+            .physical_hands
+            .characters
+            .hijack))
         .header("GRAPPLE")
         .item(config_toggle!("YANK TO ZIP", |c| c
             .controllers

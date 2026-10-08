@@ -49,7 +49,10 @@ impl std::error::Error for EngineError {}
 /// The hit must come from a cast this tick, so that its object is live.
 pub(super) unsafe fn surface(hit: &RayHit) -> SurfaceHit {
     let surface = match hit.object {
-        Some(object) if unsafe { is_character(object) } => Surface::Character,
+        Some(object) if unsafe { is_character(object) } => Surface::Character {
+            object,
+            body: hit.body,
+        },
         object => Surface::Solid {
             object,
             body: hit.body,

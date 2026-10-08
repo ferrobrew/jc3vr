@@ -44,6 +44,7 @@ use crate::{
         frame::Hand,
         physical_hands::{
             STALE_AFTER, STATE, bodies,
+            characters::{self, CharactersConfig, Seize, SeizeStep},
             config::PickupConfig,
             contact::{Surface, SurfaceHit},
             doors::{self, DoorsConfig, Latch, LatchStep},
@@ -120,6 +121,10 @@ pub struct PickupStatus {
     pub unlatches: u64,
     /// The slot of the last door a hand took.
     pub last_door: Option<DoorSlot>,
+    /// Grips taken on characters.
+    pub character_grips: u64,
+    /// Characters a hand pulled out of a vehicle seat.
+    pub hijacks: u64,
     pub last_error: Option<String>,
 }
 
@@ -150,6 +155,19 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let fresh = state.fresh(Instant::now());
     let mut pulses = Vec::new();
     let mut weapons = Vec::new();
+    // A hand that yanked a seated character out through an open door enters the vehicle the
+    // game's own way, which hijacks the seat.
+    for clicked in std::mem::take(&mut state.pickup.hijack_clicks) {
+        if clicked {
+            desired.push(Desired {
+                target: Target {
+                    map: MapKind::Player,
+                    action: Action::ENTER_VEHICLE,
+                },
+                want: Want::Click,
+            });
+        }
+    }
     for hand in Hand::BOTH {
         let i = hand.index();
         if !inputs.grips[i].held() {
@@ -172,7 +190,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 state.status.pickup.weapons += 1;
                 pulses.push(hand);
             }
-            TargetKind::Prop { .. } | TargetKind::Door(_) => {
+            TargetKind::Prop { .. } | TargetKind::Door(_) | TargetKind::Character(_) => {
                 state.pickup.requests[i] = Some(Request::Grab(reach));
             }
         }
@@ -252,6 +270,10 @@ pub(super) struct PickupState {
     held: [Option<Held>; 2],
     /// Each hand's grip on a latched door, before the latch gives.
     latches: [Option<Latch>; 2],
+    /// Each hand's grip on a character.
+    seizes: [Option<Seize>; 2],
+    /// The hands that yanked a seated character, for the input tick to click the vehicle entry.
+    hijack_clicks: [bool; 2],
     requests: [Option<Request>; 2],
     /// When the input tick last acted on the grips.
     input_at: Option<Instant>,
@@ -262,6 +284,8 @@ impl PickupState {
         Self {
             held: [None; 2],
             latches: [None; 2],
+            seizes: [None; 2],
+            hijack_clicks: [false; 2],
             requests: [None; 2],
             input_at: None,
         }
@@ -290,6 +314,7 @@ impl PickupState {
     pub(super) fn drop_all(&mut self) {
         self.held = [None; 2];
         self.latches = [None; 2];
+        self.seizes = [None; 2];
         self.requests = [None; 2];
     }
 }
@@ -306,13 +331,17 @@ impl PickupState {
 /// Main thread, outside the physics step.
 pub(super) unsafe fn reach(
     palm: &PalmBox,
-    world_scale: f32,
     press: Option<SurfaceHit>,
     standing_on: Option<u32>,
-    config: &PickupConfig,
-    door_config: &DoorsConfig,
+    tuning: &ReachTuning,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) -> Option<Reach> {
+    let ReachTuning {
+        world_scale,
+        pickup: config,
+        doors: door_config,
+        characters: character_config,
+    } = *tuning;
     let origin = palm.point(Vec3::new(0.0, 1.0, 0.0));
     let length = (config.reach_m * world_scale).max(0.0) + 2.0 * palm.half_extents.y;
     let hits = REACH_DIRECTIONS
@@ -324,6 +353,19 @@ pub(super) unsafe fn reach(
         .chain(press);
     let reaches: Vec<Reach> = hits
         .filter_map(|hit| {
+            if let Surface::Character { object, body } = hit.surface {
+                // SAFETY: forwarded from the caller; the hit was found this tick.
+                return unsafe {
+                    characters::reach(
+                        object,
+                        body,
+                        &hit,
+                        palm.centre,
+                        world_scale,
+                        character_config,
+                    )
+                };
+            }
             let Surface::Solid {
                 object: Some(object),
                 body,
@@ -369,6 +411,16 @@ pub(super) unsafe fn reach(
     grasp::nearest(reaches)
 }
 
+/// What a hand's reach takes, and how far it reaches.
+#[derive(Copy, Clone)]
+pub(super) struct ReachTuning<'a> {
+    /// The VR world scale, which scales the reaches.
+    pub world_scale: f32,
+    pub pickup: &'a PickupConfig,
+    pub doors: &'a DoorsConfig,
+    pub characters: &'a CharactersConfig,
+}
+
 /// What a pickup tick works from.
 pub(super) struct TickInputs {
     /// The acting hands' palms; a hand without one lets go.
@@ -379,6 +431,9 @@ pub(super) struct TickInputs {
     pub dt: f32,
     /// How far a hand gripping a latched door pulls it before the latch gives, world metres.
     pub unlatch_pull_m: f32,
+    /// The VR world scale.
+    pub world_scale: f32,
+    pub characters: CharactersConfig,
 }
 
 /// The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
@@ -398,6 +453,8 @@ pub(super) unsafe fn tick(
         joints,
         dt,
         unlatch_pull_m,
+        world_scale,
+        characters: character_config,
     } = inputs;
     let mut outcome = TickOutcome::default();
     for hand in Hand::BOTH {
@@ -424,6 +481,9 @@ pub(super) unsafe fn tick(
         match state.requests[i].take() {
             Some(Request::Release) => {
                 if state.latches[i].take().is_some() {
+                    outcome.released[i] = true;
+                }
+                if state.seizes[i].take().is_some() {
                     outcome.released[i] = true;
                 }
                 if let Some(held) = state.held[i].take() {
@@ -470,6 +530,29 @@ pub(super) unsafe fn tick(
                         break 'grab;
                     }
                 }
+                if let TargetKind::Character(target) = reach.kind {
+                    // SAFETY: forwarded from the caller; the character was reached by this
+                    // tick's casts.
+                    match unsafe { Seize::take(target, reach.point) } {
+                        Some(seize) => {
+                            tracing::info!(
+                                hand = hand.label(),
+                                seated = target.seated.is_some(),
+                                "physical hands: characters: a hand took hold of a character"
+                            );
+                            state.seizes[i] = Some(seize);
+                            outcome.taken[i] = true;
+                            outcome.character_grips += 1;
+                        }
+                        None => {
+                            outcome.error = Some(
+                                "physical hands: characters: the grip could not be placed"
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                    break 'grab;
+                }
                 // SAFETY: forwarded from the caller.
                 match unsafe { bodies::read(reach.body, reach.object) } {
                     Ok(body) => match body.mass_kg.filter(|&m| grasp::can_hold(m, config)) {
@@ -502,6 +585,21 @@ pub(super) unsafe fn tick(
             state.latches[i] = None;
             outcome.lost += 1;
         }
+        if state.seizes[i].is_some() && palms[i].is_none() {
+            state.seizes[i] = None;
+            outcome.lost += 1;
+        }
+        // SAFETY: forwarded from the caller.
+        unsafe {
+            keep_seize(
+                state,
+                hand,
+                palms[i],
+                world_scale,
+                &character_config,
+                &mut outcome,
+            )
+        };
         // SAFETY: forwarded from the caller.
         unsafe { keep_latch(state, hand, palms[i], &joints, unlatch_pull_m, &mut outcome) };
     }
@@ -636,6 +734,10 @@ pub(super) struct TickOutcome {
     pub door_grips: u64,
     /// The slot of a door a hand took this tick.
     pub door: Option<DoorSlot>,
+    /// Grips taken on characters this tick.
+    pub character_grips: u64,
+    /// Seated characters the hands pulled out this tick.
+    pub hijacks: u64,
 }
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
@@ -767,6 +869,66 @@ unsafe fn keep_latch(
             outcome.released[i] = true;
             outcome.lost += 1;
             outcome.error = Some(e.to_string());
+        }
+    }
+}
+
+/// Keep `hand`'s grip on a character: hold the hand at the grab point, and act on a yank. A yank on
+/// a seated character, through a door still open beside the hand, has the input tick click the
+/// vehicle entry, which hijacks the seat; the grip lets go either way.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+unsafe fn keep_seize(
+    state: &mut PickupState,
+    hand: Hand,
+    palm: Option<PalmMotion>,
+    world_scale: f32,
+    config: &CharactersConfig,
+    outcome: &mut TickOutcome,
+) {
+    let i = hand.index();
+    let (Some(seize), Some(palm)) = (state.seizes[i], palm) else {
+        return;
+    };
+    let palm = palm.pose.position;
+    // SAFETY: forwarded from the caller.
+    match unsafe { seize.step(palm, config.yank_m * world_scale) } {
+        SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
+        SeizeStep::Yank { direction, .. } => {
+            state.seizes[i] = None;
+            outcome.released[i] = true;
+            let Some(seated) = seize.target.seated else {
+                return;
+            };
+            // SAFETY: forwarded from the caller; the character, and with it its vehicle, was
+            // checked alive by the step.
+            match unsafe { characters::door_still_open(&seated, palm, world_scale, config) } {
+                Some((door, open_deg)) => {
+                    tracing::info!(
+                        hand = hand.label(),
+                        door = doors::slot_label(door),
+                        open_deg,
+                        ?direction,
+                        "physical hands: hijack: a hand pulled an occupant out through the open door"
+                    );
+                    state.hijack_clicks[i] = true;
+                    outcome.hijacks += 1;
+                }
+                None => {
+                    tracing::info!(
+                        hand = hand.label(),
+                        "physical hands: hijack: the door beside the hand closed before the yank"
+                    );
+                }
+            }
+        }
+        SeizeStep::Lost => {
+            state.seizes[i] = None;
+            outcome.released[i] = true;
+            outcome.lost += 1;
+            outcome.error = Some("physical hands: characters: the character is gone".to_owned());
         }
     }
 }

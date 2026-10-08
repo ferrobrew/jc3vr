@@ -23,8 +23,9 @@ pub enum Surface {
         object: Option<NonZeroUsize>,
         body: u32,
     },
-    /// A character, which the palm passes through.
-    Character,
+    /// A character, which the palm passes through. `object` is the character, and `body` the hit
+    /// Havok body: its proxy's capsule, or one of its ragdoll's bodies.
+    Character { object: NonZeroUsize, body: u32 },
 }
 
 /// A cast's hit.
@@ -76,7 +77,7 @@ impl PointProbe {
             self.last_clear = Some(point);
             return PointContact::Clear;
         };
-        if hit.surface == Surface::Character {
+        if matches!(hit.surface, Surface::Character { .. }) {
             self.last_clear = Some(point);
             return PointContact::Clear;
         }
@@ -175,7 +176,10 @@ mod tests {
             return Some(SurfaceHit {
                 position,
                 normal: Vec3::NEG_X,
-                surface: Surface::Character,
+                surface: Surface::Character {
+                    object: NonZeroUsize::new(64).unwrap(),
+                    body: 9,
+                },
             });
         }
         None

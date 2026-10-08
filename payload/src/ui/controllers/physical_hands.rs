@@ -8,6 +8,7 @@ use crate::{
         frame::Hand,
         physical_hands::{
             PhysicalHandsConfig, PhysicalHandsStatus,
+            characters::CharactersConfig,
             config::{PickupConfig, ShoveConfig},
             doors::{self, DoorsConfig},
             grasp::TargetKind,
@@ -65,6 +66,15 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                         "reaches a {mass_kg:.1} kg object {:.0} mm away",
                         reach.distance * 1000.0
                     ),
+                    TargetKind::Character(target) => format!(
+                        "reaches a {} character {:.0} mm away",
+                        if target.seated.is_some() {
+                            "seated"
+                        } else {
+                            "standing"
+                        },
+                        reach.distance * 1000.0
+                    ),
                     TargetKind::Door(door) => format!(
                         "reaches the {} door ({}) {:.0} mm away",
                         doors::slot_label(door.slot),
@@ -73,6 +83,17 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                     ),
                 },
             });
+            if let Some(Some(target)) = s.reach.map(|r| match r.kind {
+                TargetKind::Character(target) => Some(target),
+                _ => None,
+            }) && let Some(seated) = target.seated
+            {
+                ui.label(format!(
+                    "the character sits behind the {} door, open {:.0}°",
+                    doors::slot_label(seated.door),
+                    seated.open_deg
+                ));
+            }
             if s.latched {
                 ui.label("grips a latched door");
             }
@@ -118,6 +139,10 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
             " · last {}",
             doors::slot_label(slot)
         ))
+    ));
+    ui.label(format!(
+        "Characters: {} grips · {} pulled out of a seat",
+        p.character_grips, p.hijacks
     ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
@@ -172,6 +197,22 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         pickup_settings(ui, &mut p.pickup);
         ui.separator();
         doors_settings(ui, &mut p.doors);
+        ui.separator();
+        characters_settings(ui, &mut p.characters);
+    });
+}
+
+fn characters_settings(ui: &mut Ui, c: &mut CharactersConfig) {
+    ui.checkbox(&mut c.hijack, "Pull occupants out through open doors");
+    ui.add(egui::Slider::new(&mut c.yank_m, 0.02..=0.6).text("Yank past (m)"));
+    ui.add_enabled_ui(c.hijack, |ui| {
+        ui.add(
+            egui::Slider::new(&mut c.hijack_min_open_deg, 0.0..=90.0)
+                .text("Door open at least (°)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut c.hijack_door_reach_m, 0.0..=3.0).text("Open door within (m)"),
+        );
     });
 }
 
