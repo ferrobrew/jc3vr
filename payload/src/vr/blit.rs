@@ -33,6 +33,7 @@ use jc3gi::graphics_engine::device::Device;
 use parking_lot::Mutex;
 use windows::{
     Win32::{
+        Foundation::RECT,
         Graphics::{
             Direct3D::{
                 D3D_PRIMITIVE_TOPOLOGY, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
@@ -48,8 +49,9 @@ use windows::{
                 D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_ARRAY_RTV,
                 D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC,
                 D3D11_USAGE_DEFAULT, D3D11_VIEWPORT, ID3D11Buffer, ID3D11Device,
-                ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11Query,
-                ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
+                ID3D11DeviceContext, ID3D11DomainShader, ID3D11GeometryShader, ID3D11HullShader,
+                ID3D11InputLayout, ID3D11PixelShader, ID3D11Query, ID3D11RasterizerState,
+                ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
                 ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
             },
             Dxgi::Common::{
@@ -252,10 +254,8 @@ pub(crate) unsafe fn blit_direct(
     // releases it, which takes the target out of `DIRECT` first.
     let result = unsafe {
         let targets = capture_state(context);
-        let bindings = ShaderBindings::capture(context);
         blit.set_params(context, target.linearize, brightness);
         let result = blit.draw_eye(device, context, &image, srv);
-        bindings.restore(context);
         restore_state(context, &targets);
         result
     };
@@ -322,13 +322,19 @@ fn give_up(reason: std::fmt::Arguments<'_>) {
 }
 
 /// The shader-stage bindings the blit changes, which [`capture_state`] does not cover: the input
-/// assembler's, the two shaders, and the pixel shader's first sampler, constant buffer, and
-/// resource. Restored after a blit inside the engine's frame, which goes on drawing after it.
+/// assembler's, the vertex and pixel shaders, the geometry, hull, and domain shaders it unbinds,
+/// the scissor rectangles, and the pixel shader's first sampler, constant buffer, and resource.
+/// Every blit restores them: one inside the engine's frame is followed by the engine's own
+/// drawing, and one at the submit by the next frame's.
 struct ShaderBindings {
     input_layout: Option<ID3D11InputLayout>,
     topology: D3D_PRIMITIVE_TOPOLOGY,
     vertex_shader: Option<ID3D11VertexShader>,
     pixel_shader: Option<ID3D11PixelShader>,
+    geometry_shader: Option<ID3D11GeometryShader>,
+    hull_shader: Option<ID3D11HullShader>,
+    domain_shader: Option<ID3D11DomainShader>,
+    scissors: Vec<RECT>,
     ps_samplers: [Option<ID3D11SamplerState>; 1],
     ps_constants: [Option<ID3D11Buffer>; 1],
     ps_resources: [Option<ID3D11ShaderResourceView>; 1],
@@ -343,6 +349,10 @@ impl ShaderBindings {
             topology: D3D_PRIMITIVE_TOPOLOGY::default(),
             vertex_shader: None,
             pixel_shader: None,
+            geometry_shader: None,
+            hull_shader: None,
+            domain_shader: None,
+            scissors: Vec::new(),
             ps_samplers: Default::default(),
             ps_constants: Default::default(),
             ps_resources: Default::default(),
@@ -354,6 +364,16 @@ impl ShaderBindings {
             bindings.topology = context.IAGetPrimitiveTopology();
             context.VSGetShader(&mut bindings.vertex_shader, None, None);
             context.PSGetShader(&mut bindings.pixel_shader, None, None);
+            context.GSGetShader(&mut bindings.geometry_shader, None, None);
+            context.HSGetShader(&mut bindings.hull_shader, None, None);
+            context.DSGetShader(&mut bindings.domain_shader, None, None);
+            let mut count = 0;
+            context.RSGetScissorRects(&mut count, None);
+            bindings.scissors = vec![RECT::default(); count as usize];
+            if count > 0 {
+                context.RSGetScissorRects(&mut count, Some(bindings.scissors.as_mut_ptr()));
+                bindings.scissors.truncate(count as usize);
+            }
             context.PSGetSamplers(0, Some(&mut bindings.ps_samplers));
             context.PSGetConstantBuffers(0, Some(&mut bindings.ps_constants));
             context.PSGetShaderResources(0, Some(&mut bindings.ps_resources));
@@ -371,6 +391,10 @@ impl ShaderBindings {
             context.IASetPrimitiveTopology(self.topology);
             context.VSSetShader(self.vertex_shader.as_ref(), None);
             context.PSSetShader(self.pixel_shader.as_ref(), None);
+            context.GSSetShader(self.geometry_shader.as_ref(), None);
+            context.HSSetShader(self.hull_shader.as_ref(), None);
+            context.DSSetShader(self.domain_shader.as_ref(), None);
+            context.RSSetScissorRects(Some(&self.scissors));
             context.PSSetSamplers(0, Some(&self.ps_samplers));
             context.PSSetConstantBuffers(0, Some(&self.ps_constants));
             context.PSSetShaderResources(0, Some(&self.ps_resources));
@@ -686,6 +710,7 @@ impl VrBlit {
         let rtv = self.rtv_for(device, swapchain_tex, image)?;
 
         unsafe {
+            let bindings = ShaderBindings::capture(context);
             context.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
             context.RSSetViewports(Some(&[D3D11_VIEWPORT {
                 TopLeftX: 0.0,
@@ -700,6 +725,18 @@ impl VrBlit {
             context.IASetInputLayout(None);
             context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context.VSSetShader(&self.vertex_shader, None);
+            // A geometry, hull, or domain shader the engine left bound would sit between the
+            // full-screen triangle and the pixel shader; the scissor is set to the slice in case a
+            // rasterizer state with scissoring is ever bound here.
+            context.GSSetShader(None, None);
+            context.HSSetShader(None, None);
+            context.DSSetShader(None, None);
+            context.RSSetScissorRects(Some(&[RECT {
+                left: 0,
+                top: 0,
+                right: width as i32,
+                bottom: height as i32,
+            }]));
             context.PSSetShader(&self.pixel_shader, None);
             context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
             context.PSSetConstantBuffers(0, Some(&[Some(self.params_cb.clone())]));
@@ -710,6 +747,7 @@ impl VrBlit {
             // Unbind so the engine's next pass does not see our SRV/RTV still bound.
             context.PSSetShaderResources(0, Some(&[None]));
             context.OMSetRenderTargets(Some(&[None]), None);
+            bindings.restore(context);
         }
         Ok(())
     }

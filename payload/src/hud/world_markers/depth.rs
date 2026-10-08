@@ -21,7 +21,8 @@ use windows::Win32::Graphics::{
         D3D11_MAPPED_SUBRESOURCE, D3D11_UAV_DIMENSION_BUFFER, D3D11_UNORDERED_ACCESS_VIEW_DESC,
         D3D11_UNORDERED_ACCESS_VIEW_DESC_0, D3D11_USAGE_DYNAMIC, D3D11_USAGE_STAGING,
         D3D11_VIEWPORT, ID3D11Buffer, ID3D11ComputeShader, ID3D11DepthStencilView,
-        ID3D11DeviceContext, ID3D11RenderTargetView, ID3D11UnorderedAccessView,
+        ID3D11DeviceContext, ID3D11RenderTargetView, ID3D11ShaderResourceView,
+        ID3D11UnorderedAccessView,
     },
     Dxgi::Common::DXGI_FORMAT_R32_FLOAT,
 };
@@ -263,15 +264,30 @@ impl DepthProbe {
             context.OMGetRenderTargets(Some(&mut saved_rtvs), Some(&mut saved_dsv));
             context.OMSetRenderTargets(None, None);
 
+            // The engine may have compute state of its own bound in these slots; put back what
+            // was there rather than leaving them empty.
+            let mut saved_shader: Option<ID3D11ComputeShader> = None;
+            let mut saved_constants: [Option<ID3D11Buffer>; 1] = Default::default();
+            let mut saved_resources: [Option<ID3D11ShaderResourceView>; 1] = Default::default();
+            let mut saved_uavs: [Option<ID3D11UnorderedAccessView>; 1] = Default::default();
+            context.CSGetShader(&mut saved_shader, None, None);
+            context.CSGetConstantBuffers(0, Some(&mut saved_constants));
+            context.CSGetShaderResources(0, Some(&mut saved_resources));
+            context.CSGetUnorderedAccessViews(0, Some(&mut saved_uavs));
+
             context.CSSetShader(&self.shader, None);
             context.CSSetConstantBuffers(0, Some(&[Some(self.params.clone())]));
             context.CSSetShaderResources(0, Some(&[Some(depth.m_SRV.clone())]));
             context.CSSetUnorderedAccessViews(0, 1, Some(&Some(self.result_uav.clone())), None);
             context.Dispatch(1, 1, 1);
+            // The depth SRV is unbound before the output merger gets the depth target back, so
+            // the two never meet; the saved views are then restored in the same order.
             context.CSSetShaderResources(0, Some(&[None]));
-            context.CSSetUnorderedAccessViews(0, 1, Some(&None), None);
-            context.CSSetShader(None, None);
+            context.CSSetUnorderedAccessViews(0, 1, Some(saved_uavs.as_ptr()), None);
+            context.CSSetConstantBuffers(0, Some(&saved_constants));
+            context.CSSetShader(saved_shader.as_ref(), None);
             context.OMSetRenderTargets(Some(&saved_rtvs), saved_dsv.as_ref());
+            context.CSSetShaderResources(0, Some(&saved_resources));
 
             let slot = &mut self.ring[self.frame % RING_DEPTH];
             context.CopyResource(&slot.buffer, &self.result);
