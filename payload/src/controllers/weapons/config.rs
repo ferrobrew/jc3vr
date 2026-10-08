@@ -74,8 +74,8 @@ impl HolstersConfig {
                 radius_m: 0.17,
             },
             chest: VolumeSpec {
-                offset_m: Vec3::new(0.0, -0.14, -0.14),
-                radius_m: 0.10,
+                offset_m: Vec3::new(0.0, -0.16, -0.14),
+                radius_m: 0.09,
             },
             crouch_deadband_m: 0.15,
             show_volumes: false,

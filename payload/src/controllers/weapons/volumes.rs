@@ -23,7 +23,7 @@
 //! - the chest's front on each side, below and inside the shoulder joint, for the grenade and C4
 //!   pouches ([`chest_sides`] says which pouch takes which side);
 //! - the belt's front on the side of the hand without a gun, for the magazine pouch: above the hip
-//!   joints, a hand's width from the midline, and a few centimetres in front of the eyes' vertical
+//!   joints, a few centimetres from the midline, and a few centimetres in front of the eyes' vertical
 //!   line, where the belly is; seated, adjusted like the hips.
 //!
 //! The pouches' sides are laid out around the hand that holds the guns ([`gun_side`]), not the
@@ -275,6 +275,29 @@ pub fn is_pouch(volume: GrabVolume) -> bool {
     )
 }
 
+/// The grab volume `hand` is in among `candidates`, each tested against its own point of the hand,
+/// `point_for`, as [`crate::controllers::bindings::grab::grab_volume_by`] finds it, except that
+/// every other volume wins over a holster that also contains its point. A press meant for a pouch
+/// or a weapon's volume that also lands in a holster's edge must not draw or switch a weapon; a
+/// hand that means the holster is deep in it, clear of the pouches. Among the rest, the hand is in
+/// the one it is deepest in.
+pub fn grab_volume_by(
+    hand: Hand,
+    candidates: &[Candidate],
+    point_for: impl Fn(&Candidate) -> Vec3,
+) -> Option<GrabVolume> {
+    candidates
+        .iter()
+        .filter(|c| c.hand.is_none_or(|h| h == hand))
+        .filter_map(|c| {
+            let holster = matches!(c.volume, GrabVolume::Holster(_));
+            c.depth(point_for(c))
+                .map(|depth| (holster, depth, c.volume))
+        })
+        .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)))
+        .map(|(_, _, volume)| volume)
+}
+
 /// The pouch `hand` reaches for at `point` though the point is outside it: the pouch nearest the
 /// point among those `hand` may grab, when the point is in no volume at all and within `margin` of
 /// that pouch's surface. A grip press there takes from the pouch rather than doing the grip's own
@@ -352,7 +375,7 @@ pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 /// How far up the torso, from the hip joints toward the shoulder joints and as a fraction of that
 /// length, a seated player's hands reach for the hips: the belt line at the side of the waist, above
 /// the seat. A best guess.
-const SEATED_HIP_RISE_FRACTION: f32 = 0.35;
+const SEATED_HIP_RISE_FRACTION: f32 = 0.2;
 
 /// How far forward of the hip joints a seated player's hands reach for the hips, over the thighs,
 /// metres. A best guess.
@@ -367,8 +390,9 @@ const SEATED_SHOULDER_FORWARD_M: f32 = 0.05;
 const BELT_HEIGHT_FRACTION: f32 = 0.58;
 
 /// How far out from the midline the belt's front landmark sits, as a fraction of the shoulder
-/// width: the front of the hip, inside the hip holster on that side.
-const BELT_OUT_FRACTION: f32 = 0.26;
+/// width: toward the middle of the belt, well inside the hip holster on that side, so that a hand
+/// feeling for the pouch does not land in the holster.
+const BELT_OUT_FRACTION: f32 = 0.12;
 
 /// How far in front of the eyes' vertical line the front of the belly is, metres. A generic
 /// figure: standing upright, the belly's front is about under the eyes.
@@ -376,11 +400,11 @@ const BELLY_FRONT_M: f32 = 0.03;
 
 /// How far below the shoulder joints the chest pouches' landmark sits, as a fraction of the
 /// standing height: the upper chest.
-const CHEST_POUCH_DROP_FRACTION: f32 = 0.05;
+const CHEST_POUCH_DROP_FRACTION: f32 = 0.065;
 
 /// How far out from the midline the chest pouches' landmark sits, as a fraction of the shoulder
-/// width: inside the shoulder joint, clear of the chest holster in the middle.
-const CHEST_POUCH_OUT_FRACTION: f32 = 0.48;
+/// width: about under the shoulder joint, clear of the chest holster in the middle.
+const CHEST_POUCH_OUT_FRACTION: f32 = 0.52;
 
 /// How far in front of the eyes' vertical line the front of the chest is, metres. A generic
 /// figure: the chest is a little deeper than the belly.

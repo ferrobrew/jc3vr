@@ -12,6 +12,9 @@
 //!   on when the input is released: it switches weapons when one is wielded, and draws the slot
 //!   when none is (selecting the wielded slot's own holster while it is holstered draws it too).
 //! - A grab at the wielded slot's holster by the hand that does not hold the weapon does nothing.
+//! - A grab by the hand without a gun while the other hand holds one never switches weapons: that
+//!   hand reaches for the pouches beside the holsters, and a press that lands in a holster must not
+//!   take the gun from the other hand. It may still draw its own pistol with independent draws.
 //! - With independent pistol draws ([`crate::controllers::weapons::dual_wield::draw`]), a hip
 //!   grab acts on the grabbing hand's own pistol: a hand without one draws it, and a hand with one
 //!   holsters it, the last pistol through the game's holster. A hip grab while the pistols are not
@@ -39,6 +42,9 @@ pub enum HolsterAction {
     Holster { slot: WeaponSlot },
     /// The slot is already wielded, in the other hand.
     AlreadyDrawn { slot: WeaponSlot },
+    /// A draw of `slot` by the hand without a gun while the other hand holds one, which would
+    /// switch away from that gun.
+    Refused { slot: WeaponSlot },
     /// Draw the grabbing hand's own pistol of the wielded pair.
     DrawPistol { hand: Hand },
     /// Holster the grabbing hand's own pistol, the other hand keeping its own.
@@ -52,6 +58,9 @@ impl HolsterAction {
             HolsterAction::Holster { slot } => format!("holster {}", slot_label(slot)),
             HolsterAction::AlreadyDrawn { slot } => {
                 format!("{} already drawn", slot_label(slot))
+            }
+            HolsterAction::Refused { slot } => {
+                format!("{} not drawn: the other hand holds a gun", slot_label(slot))
             }
             HolsterAction::DrawPistol { hand } => format!("draw {} pistol", hand.label()),
             HolsterAction::HolsterPistol { hand } => format!("holster {} pistol", hand.label()),
@@ -93,6 +102,24 @@ pub fn decide(
 ) -> Option<HolsterAction> {
     let slot = site_slot(site, dominant);
     let per_hand = independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD;
+    // The hand without the gun is the one that reaches for the pouches, and a press of it that
+    // lands in a holster must not switch away from the gun the other hand holds.
+    let other_hand_armed =
+        wielded.is_some_and(|w| !w.hands[hand.index()] && w.hands.contains(&true));
+    let action = decide_for(slot, hand, wielded, per_hand)?;
+    Some(match action {
+        HolsterAction::Draw { slot, .. } if other_hand_armed => HolsterAction::Refused { slot },
+        action => action,
+    })
+}
+
+/// What `hand`'s grab at the holster of `slot` does, before the free hand's refusal.
+fn decide_for(
+    slot: WeaponSlot,
+    hand: Hand,
+    wielded: Option<Wielded>,
+    per_hand: bool,
+) -> Option<HolsterAction> {
     match wielded {
         Some(w) if w.slot == slot && w.hands[hand.index()] => {
             if per_hand && w.hands[hand.other().index()] {
@@ -178,20 +205,41 @@ mod tests {
     }
 
     #[test]
-    fn another_holster_switches_weapons() {
+    fn another_holster_switches_weapons_for_the_gun_hand_only() {
         let rifle = wielded(WeaponSlot::E_SLOT_TWO_HANDED, RIGHT_ONLY);
-        assert!(matches!(
-            decide(
+        for independent in [false, true] {
+            assert!(matches!(
+                decide(
+                    HolsterSite::Hip(Hand::Left),
+                    Hand::Right,
+                    Hand::Right,
+                    rifle,
+                    independent
+                ),
+                Some(HolsterAction::Draw {
+                    action: Action::SELECT_DUEL_WIELD,
+                    ..
+                })
+            ));
+            // The free hand, feeling for a pouch beside a holster, never takes the rifle away.
+            for site in [
                 HolsterSite::Hip(Hand::Left),
-                Hand::Left,
-                Hand::Right,
-                rifle,
-                false
-            ),
-            Some(HolsterAction::Draw {
-                action: Action::SELECT_DUEL_WIELD,
-                ..
-            })
+                HolsterSite::Shoulder(Hand::Left),
+                HolsterSite::Chest,
+            ] {
+                assert!(
+                    matches!(
+                        decide(site, Hand::Left, Hand::Right, rifle, independent),
+                        Some(HolsterAction::Refused { .. })
+                    ),
+                    "{site:?} {independent}"
+                );
+            }
+        }
+        // With nothing wielded, either hand draws.
+        assert!(matches!(
+            decide(HolsterSite::Chest, Hand::Left, Hand::Right, None, false),
+            Some(HolsterAction::Draw { .. })
         ));
     }
 
@@ -245,7 +293,7 @@ mod tests {
         assert!(matches!(
             decide(
                 HolsterSite::Hip(Hand::Left),
-                Hand::Left,
+                Hand::Right,
                 Hand::Right,
                 rifle,
                 true

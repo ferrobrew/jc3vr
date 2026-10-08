@@ -76,12 +76,25 @@ const CHEST: GrabVolume = GrabVolume::Holster(HolsterSite::Chest);
 /// brush the other.
 const MIN_GAP_M: f32 = 0.01;
 
+/// The least gap the defaults leave between a pouch and a holster, metres: a hand feeling for a
+/// pouch lands a little off it more often than not, and a press that lands in a holster instead
+/// draws or switches a weapon.
+const MIN_POUCH_HOLSTER_GAP_M: f32 = 0.04;
+
 fn assert_apart(c: &[Candidate], context: &str) {
     for (i, a) in c.iter().enumerate() {
         for b in &c[i + 1..] {
             let gap = a.centre.distance(b.centre) - a.radius - b.radius;
+            let holster = |c: &Candidate| matches!(c.volume, GrabVolume::Holster(_));
+            let pouch_and_holster =
+                (is_pouch(a.volume) && holster(b)) || (holster(a) && is_pouch(b.volume));
+            let min = if pouch_and_holster {
+                MIN_POUCH_HOLSTER_GAP_M
+            } else {
+                MIN_GAP_M
+            };
             assert!(
-                gap >= MIN_GAP_M,
+                gap >= min,
                 "{:?} and {:?} are {gap} m apart ({context})",
                 a.volume,
                 b.volume
@@ -512,4 +525,38 @@ fn a_near_miss_also_names_a_pouch() {
     let point = pouch.centre + Vec3::new(0.0, 0.0, -(pouch.radius + 0.05));
     let miss = near_miss(point, Hand::Left, &c, 0.3).unwrap();
     assert_eq!(miss.volume, GrabVolume::GrenadePouch);
+}
+
+#[test]
+fn a_pouch_wins_over_a_holster_that_also_holds_the_hand() {
+    let hip = Candidate {
+        volume: RIGHT_HIP,
+        centre: Vec3::ZERO,
+        radius: 0.12,
+        hand: None,
+    };
+    let pouch = Candidate {
+        volume: GrabVolume::MagazinePouch,
+        centre: Vec3::new(0.15, 0.0, 0.0),
+        radius: 0.075,
+        hand: Some(Hand::Left),
+    };
+    let c = [hip, pouch];
+    // Nearer the holster's middle than the pouch's, the hand still takes from the pouch.
+    let point = Vec3::new(0.09, 0.0, 0.0);
+    assert!(hip.depth(point).unwrap() < pouch.depth(point).unwrap());
+    assert_eq!(
+        grab_volume_by(Hand::Left, &c, |_| point),
+        Some(GrabVolume::MagazinePouch)
+    );
+    // The hand the pouch is not for, and a hand in the holster alone, find the holster.
+    assert_eq!(grab_volume_by(Hand::Right, &c, |_| point), Some(RIGHT_HIP));
+    assert_eq!(
+        grab_volume_by(Hand::Left, &c, |_| Vec3::new(-0.05, 0.0, 0.0)),
+        Some(RIGHT_HIP)
+    );
+    assert_eq!(
+        grab_volume_by(Hand::Left, &c, |_| Vec3::new(1.0, 0.0, 0.0)),
+        None
+    );
 }

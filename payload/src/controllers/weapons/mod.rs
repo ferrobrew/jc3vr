@@ -85,7 +85,7 @@ use crate::{
     controllers::{
         bindings::{
             controls::ButtonControl,
-            grab::{self, Candidate, GrabVolume},
+            grab::{Candidate, GrabVolume},
             hold::{Desired, MapKind, Target, Want},
         },
         body::{self, BodyDimensions, alignment},
@@ -327,7 +327,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         }
         let held = active.hands[hand.index()]?.grip.position;
         let body = body_points[hand.index()].unwrap_or(held);
-        grab::grab_volume_by(hand, &candidates, |c| {
+        volumes::grab_volume_by(hand, &candidates, |c| {
             if is_body_volume(c.volume) { body } else { held }
         })
         .or_else(|| volumes::pouch_in_reach(body, hand, &candidates, pouches.reach_margin_m))
@@ -798,7 +798,7 @@ fn act(
         HolsterAction::HolsterPistol { hand } => {
             dual_wield::attach::holster(hand);
         }
-        HolsterAction::AlreadyDrawn { .. } => {}
+        HolsterAction::AlreadyDrawn { .. } | HolsterAction::Refused { .. } => {}
     }
     GrabOutcome::Holster(action)
 }
