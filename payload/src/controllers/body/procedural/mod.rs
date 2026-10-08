@@ -369,10 +369,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 return false;
             };
             input.support = (stance[0].position + stance[1].position) * 0.5;
-            input.planted = if legs_procedural && !airborne {
-                state.feet.planted()
+            (input.planted, input.heel_lifts) = if legs_procedural && !airborne {
+                (state.feet.planted(), state.feet.heel_lifts())
             } else {
-                [true; 2]
+                ([true; 2], [0.0; 2])
             };
             // The torso comes back from the animation with the hips where it left them, and rises
             // from there at the reach drop's pace and moves over the stance at the follower's.
@@ -883,6 +883,7 @@ fn solve_input(
         foot_rotations: feet.map(|f| f.rotation),
         support: (feet[0].position + feet[1].position) * 0.5,
         planted: [true; 2],
+        heel_lifts: [0.0; 2],
         hips_xz: None,
         hips_drop: 0.0,
     })

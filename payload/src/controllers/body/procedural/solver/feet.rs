@@ -8,6 +8,9 @@
 //! stance after it lands, so that it passes under the hip at mid-stance. Changing speed changes the
 //! cadence and the stride, never where the body is.
 //!
+//! Walking, each foot also rolls onto its toes ([`Feet::heel_lifts`]): the heel rises over the last
+//! of its stance as it pushes off, and the foot comes level again over the first half of its swing.
+//!
 //! The ground under a foothold comes from a query the caller supplies (a scene ray in the game, a
 //! function in the tests). Each step asks it for the foothold the step is heading to, every tick
 //! the step is in the air, since the foothold moves on with the body; a planted foot keeps the
@@ -83,6 +86,8 @@ pub struct Feet {
     feet: [Option<Foot>; 2],
     /// The walk's phase, `0..1`, while walking.
     phase: Option<f32>,
+    /// How far each heel is lifted about its toes, radians.
+    lifts: [f32; 2],
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -118,6 +123,7 @@ impl Feet {
         Self {
             feet: [None; 2],
             phase: None,
+            lifts: [0.0; 2],
         }
     }
 
@@ -136,6 +142,12 @@ impl Feet {
     /// The walk's phase, `0..1`, while walking.
     pub fn phase(&self) -> Option<f32> {
         self.phase
+    }
+
+    /// How far each heel is lifted about its toes, radians, left then right: the push-off at the end
+    /// of a walking stance and the toe-off into the swing. Zero standing.
+    pub fn heel_lifts(&self) -> [f32; 2] {
+        self.lifts
     }
 
     /// Which feet are planted on the ground, left then right.
@@ -220,6 +232,11 @@ impl Feet {
         ground: &mut impl FnMut(Vec3) -> Option<Ground>,
     ) {
         self.phase = None;
+        // A stop lets the heels down quickly rather than at once.
+        self.lifts = self.lifts.map(|lift| {
+            let lift = lift * (-dt / HEEL_DOWN_S).exp();
+            if lift < 1e-4 { 0.0 } else { lift }
+        });
         let mut stepping = false;
         for (i, foot) in self.feet.iter_mut().enumerate() {
             if let Some(Foot::Stepping {
@@ -304,6 +321,7 @@ impl Feet {
                 Some(other) => beside(ahead, i, other, &input.wanted),
                 None => ahead,
             };
+
             match &mut self.feet[i] {
                 Some(Foot::Planted { .. }) if lifted => {
                     let step = Lift {
@@ -358,6 +376,19 @@ impl Feet {
                 }
                 _ => {}
             }
+        }
+        // Each foot's roll, from where it is in its cycle after this tick's lifts and landings.
+        for (i, offset) in PHASE_OFFSETS.into_iter().enumerate() {
+            let now = (phase + offset).rem_euclid(1.0);
+            self.lifts[i] = match self.feet[i] {
+                Some(Foot::Planted { .. }) => push_off(now, swing),
+                Some(Foot::Stepping {
+                    t,
+                    kind: StepKind::Walking,
+                    ..
+                }) => toe_off(t),
+                _ => 0.0,
+            };
         }
     }
 
@@ -444,6 +475,34 @@ const LIFT_EPSILON: f32 = 1e-4;
 
 /// The shortest swing a standing step finishing at the walk's pace takes, seconds.
 const MIN_SWING_S: f32 = 0.05;
+
+/// How far a heel lifts at the end of a walking stance, radians: about twenty-five degrees.
+const MAX_HEEL_LIFT: f32 = 0.44;
+
+/// The time constant of the heels coming down when the walk stops, seconds.
+const HEEL_DOWN_S: f32 = 0.06;
+
+/// The share of the stance, from its end, over which the heel lifts.
+const PUSH_OFF_SHARE: f32 = 0.35;
+
+/// The share of the swing, from its start, over which the foot comes level again.
+const TOE_OFF_SHARE: f32 = 0.5;
+
+/// The heel's lift for a planted foot at `now` in its cycle, where the swing is `0..swing` and the
+/// stance the rest.
+fn push_off(now: f32, swing: f32) -> f32 {
+    let stance = (1.0 - swing).max(1e-3);
+    let s = ((now - swing) / stance).clamp(0.0, 1.0);
+    let u = ((s - (1.0 - PUSH_OFF_SHARE)) / PUSH_OFF_SHARE).clamp(0.0, 1.0);
+    MAX_HEEL_LIFT * u * u * (3.0 - 2.0 * u)
+}
+
+/// The heel's lift for a foot `t` of the way through its walking swing: what the push-off left,
+/// easing level.
+fn toe_off(t: f32) -> f32 {
+    let u = (t / TOE_OFF_SHARE).clamp(0.0, 1.0);
+    MAX_HEEL_LIFT * (1.0 - u * u * (3.0 - 2.0 * u))
+}
 
 /// The least sideways gap between the feet a walking step keeps, metres.
 const MIN_GAP_M: f32 = 0.1;
@@ -759,6 +818,36 @@ mod tests {
         let (t1, same) = progress(&feet).expect("the foot landed early");
         assert_eq!(same, duration);
         assert!((t1 - t0 - DT / duration).abs() < 1e-5, "{t0} -> {t1}");
+    }
+
+    #[test]
+    fn a_walking_foot_rolls_onto_its_toes_and_levels_in_the_air() {
+        let mut feet = Feet::new();
+        feet.step(
+            &standing([at(-0.1, 0.0), at(0.1, 0.0)]),
+            &tuning(),
+            &mut flat,
+        );
+        let ticks = walk_for(&mut feet, 1.5, 0.5);
+        assert!(!ticks.is_empty());
+        // The push-off ends where the swing starts, so the lift is continuous across the lift.
+        assert!((push_off(0.999, 0.4) - toe_off(0.0)).abs() < 1e-2);
+        assert_eq!(push_off(0.5, 0.4), 0.0);
+        assert_eq!(toe_off(0.6), 0.0);
+        assert!(
+            feet.heel_lifts()
+                .iter()
+                .all(|l| (0.0..=MAX_HEEL_LIFT).contains(l))
+        );
+        // Standing, the heels come down.
+        for _ in 0..30 {
+            feet.step(
+                &standing([at(-0.1, -0.75), at(0.1, -0.75)]),
+                &tuning(),
+                &mut flat,
+            );
+        }
+        assert_eq!(feet.heel_lifts(), [0.0; 2]);
     }
 
     #[test]

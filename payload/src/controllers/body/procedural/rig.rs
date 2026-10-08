@@ -39,11 +39,13 @@ pub enum RigBone {
     Head,
     LeftShoulder,
     RightShoulder,
+    LeftToeBase,
+    RightToeBase,
 }
 
 impl RigBone {
     /// Every bone, parents before children: the order the pose is written in.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::Hips,
         Self::Pelvis,
         Self::LeftUpLeg,
@@ -60,6 +62,8 @@ impl RigBone {
         Self::Head,
         Self::LeftShoulder,
         Self::RightShoulder,
+        Self::LeftToeBase,
+        Self::RightToeBase,
     ];
 
     pub const COUNT: usize = Self::ALL.len();
@@ -87,6 +91,8 @@ impl RigBone {
             Self::Head => "Head",
             Self::LeftShoulder => "LeftShoulder",
             Self::RightShoulder => "RightShoulder",
+            Self::LeftToeBase => "LeftToeBase",
+            Self::RightToeBase => "RightToeBase",
         }
     }
 
@@ -105,6 +111,8 @@ impl RigBone {
             Self::Sternum => Some(Self::Spine2),
             Self::Neck | Self::LeftShoulder | Self::RightShoulder => Some(Self::Sternum),
             Self::Head => Some(Self::Neck),
+            Self::LeftToeBase => Some(Self::LeftFoot),
+            Self::RightToeBase => Some(Self::RightFoot),
         }
     }
 
@@ -303,6 +311,12 @@ pub(crate) mod tests {
             &mut bones,
         );
         add(
+            "LeftToeBase",
+            Some("LeftFoot"),
+            Vec3::new(-0.1, 0.02, -0.12),
+            &mut bones,
+        );
+        add(
             "RightUpLeg",
             Some("Pelvis"),
             Vec3::new(0.1, 0.92, 0.0),
@@ -318,6 +332,12 @@ pub(crate) mod tests {
             "RightFoot",
             Some("RightLeg"),
             Vec3::new(0.1, 0.08, 0.0),
+            &mut bones,
+        );
+        add(
+            "RightToeBase",
+            Some("RightFoot"),
+            Vec3::new(0.1, 0.02, -0.12),
             &mut bones,
         );
         add("Spine", Some("Hips"), Vec3::new(0.0, 1.1, 0.0), &mut bones);

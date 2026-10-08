@@ -65,6 +65,8 @@ pub struct SolveInput {
     /// Which feet are on the ground, left then right: with one down and one swinging, the hips are
     /// drawn a little toward the one down.
     pub planted: [bool; 2],
+    /// How far each heel is lifted about its toes, radians, left then right.
+    pub heel_lifts: [f32; 2],
     /// Where the hips sit horizontally, model space `(x, z)`, as the caller followed
     /// [`hips_horizontal`] over time; `None` takes it as it is this tick.
     pub hips_xz: Option<Vec2>,
@@ -102,13 +104,18 @@ pub fn solve(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Ri
     .map_or(Vec3::NEG_Z, |yaw| Quat::from_rotation_y(yaw) * Vec3::NEG_Z);
     for (side, (up, leg, foot)) in LEGS.into_iter().enumerate() {
         let pole = knee_pole(rig, foot, input.foot_rotations[side], hips_forward);
-        place_leg(
-            &mut pose,
-            [up, leg, foot],
+        let lift = heel_lift(
+            rig,
+            side,
             input.feet[side],
             input.foot_rotations[side],
-            pole,
+            input.heel_lifts[side],
         );
+        place_leg(&mut pose, [up, leg, foot], lift.ankle, lift.rotation, pole);
+        // The toes stay flat on the ground while the heel rolls up over them.
+        let toe = TOES[side];
+        let pivot = pose.position(toe);
+        pose.rotate_about(toe, lift.turn.inverse(), pivot);
     }
     if pose.is_finite() {
         pose
@@ -470,6 +477,49 @@ fn curl_spine(pose: &mut RigPose, neck_target: Vec3, chest_yaw: f32) -> bool {
     true
 }
 
+/// A foot rolled up onto its toes.
+struct HeelLift {
+    /// Where the ankle goes.
+    ankle: Vec3,
+    /// How the foot is turned.
+    rotation: Quat,
+    /// The roll, model space: the toes take it back.
+    turn: Quat,
+}
+
+/// The foot on `side`, its ankle at `ankle` turned `rotation`, rolled up about its toes by `lift`
+/// radians: the toes stay where they were and the heel rises.
+fn heel_lift(rig: &Rig, side: usize, ankle: Vec3, rotation: Quat, lift: f32) -> HeelLift {
+    let flat = HeelLift {
+        ankle,
+        rotation,
+        turn: Quat::IDENTITY,
+    };
+    if !(lift.is_finite() && lift > 1e-4) {
+        return flat;
+    }
+    let (_, _, foot) = LEGS[side];
+    let reference = rig.reference(foot);
+    let toes = rig.reference(TOES[side]).translation - reference.translation;
+    let carried = rotation * reference.rotation.inverse();
+    let pivot = ankle + carried * toes;
+    let axis = carried * Vec3::X;
+    let turn = Quat::from_axis_angle(axis, -lift);
+    let lifted = HeelLift {
+        ankle: pivot + turn * (ankle - pivot),
+        rotation: (turn * rotation).normalize(),
+        turn,
+    };
+    if lifted.ankle.is_finite() && lifted.rotation.is_finite() {
+        lifted
+    } else {
+        flat
+    }
+}
+
+/// The toes of each leg, left then right.
+const TOES: [RigBone; 2] = [RigBone::LeftToeBase, RigBone::RightToeBase];
+
 /// Where a knee points: the foot's forward, from its orientation against the reference pose's
 /// (which faces -Z), blended evenly with the hips' forward, on the ground plane.
 fn knee_pole(rig: &Rig, foot: RigBone, foot_rotation: Quat, hips_forward: Vec3) -> Vec3 {
@@ -655,6 +705,7 @@ mod tests {
             support: (animated.position(RigBone::LeftFoot) + animated.position(RigBone::RightFoot))
                 * 0.5,
             planted: [true; 2],
+            heel_lifts: [0.0; 2],
             hips_xz: None,
             hips_drop: 0.0,
         };
@@ -863,6 +914,29 @@ mod tests {
         assert!(neck_turn > 0.1, "{neck_turn}");
         // Looking up leaves the chest.
         assert_eq!(chest_pitch(Quat::from_rotation_x(0.6)), 0.0);
+    }
+
+    #[test]
+    fn a_lifted_heel_rolls_the_foot_over_flat_toes() {
+        let (rig, mut input, config) = setup();
+        input.heel_lifts = [0.4, 0.0];
+        // A long stride back, so the leg reaches.
+        input.feet[0].z += 0.2;
+        input.hips_drop = reach_drop(&rig, &input, &config);
+        let flat = {
+            let mut i = input;
+            i.heel_lifts = [0.0; 2];
+            solve(&rig, &i, &config)
+        };
+        let pose = solve(&rig, &input, &config);
+        let toes = |p: &RigPose| p.position(RigBone::LeftToeBase);
+        assert!(toes(&pose).distance(toes(&flat)) < 2e-3, "the toes moved");
+        assert!(pose.position(RigBone::LeftFoot).y > flat.position(RigBone::LeftFoot).y + 0.03);
+        let toe_turn = pose
+            .get(RigBone::LeftToeBase)
+            .rotation
+            .angle_between(flat.get(RigBone::LeftToeBase).rotation);
+        assert!(toe_turn < 1e-3, "the toes did not stay flat: {toe_turn}");
     }
 
     #[test]
