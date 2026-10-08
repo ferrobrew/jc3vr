@@ -204,7 +204,9 @@ fn colour(volume: GrabVolume) -> Rgba {
         | GrabVolume::ParachuteHandle(_)
         | GrabVolume::Pickup
         | GrabVolume::Climb => POUCH,
-        GrabVolume::MagazinePouch | GrabVolume::WeaponAction => MAGAZINE,
+        GrabVolume::MagazinePouch | GrabVolume::WeaponAction | GrabVolume::WorldMagazine => {
+            MAGAZINE
+        }
         GrabVolume::C4Pouch | GrabVolume::GrenadePin | GrabVolume::LiveGrenade => C4,
     }
 }

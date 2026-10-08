@@ -150,8 +150,8 @@ impl std::convert::AsMut<Game> for Game {
 #[repr(C, align(8))]
 /// A game object's `CGameObject` subobject, through which the engine's run-time type tests go. A
 /// [`PhysicsGameObject`](crate::physics::PhysicsGameObject) carries it at
-/// [`GAME_OBJECT_BASE_OFFSET`](crate::physics::PhysicsGameObject::GAME_OBJECT_BASE_OFFSET). Only one
-/// virtual is bound.
+/// [`GAME_OBJECT_BASE_OFFSET`](crate::physics::PhysicsGameObject::GAME_OBJECT_BASE_OFFSET). Only some
+/// virtuals are bound.
 pub struct GameObject {
     vftable: *const crate::game::GameObjectVftable,
 }
@@ -172,6 +172,19 @@ impl GameObject {
         unsafe {
             let f = (&raw const (*self.vftable()).IsType).read();
             f(self as *const Self as _, type_id)
+        }
+    }
+    /// Enables or disables the object. A rigid object's override
+    /// ([`RigidObject`](crate::physics::RigidObject)) records the state and, when it changes, adds its
+    /// body to the physics world on enabling and removes it on disabling. A gun's spare
+    /// magazine prop ([`WeaponData::m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject))
+    /// is disabled from its spawn until
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject)
+    /// enables it.
+    pub unsafe fn Enable(&mut self, enable: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Enable).read();
+            f(self as *mut Self as _, enable)
         }
     }
 }
@@ -280,10 +293,56 @@ pub struct GameObjectVftable {
         this: *const crate::game::GameObject,
         type_id: *const u32,
     ) -> bool,
+    _vfunc_3: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_4: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_5: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_6: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_7: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_8: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_9: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_10: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_11: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_12: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_13: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_14: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_15: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_16: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_17: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_18: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_19: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_20: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_21: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_22: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_23: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_24: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_25: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_26: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_27: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_28: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_29: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_30: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_31: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_32: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_33: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_34: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_35: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_36: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_37: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// Enables or disables the object. A rigid object's override
+    /// ([`RigidObject`](crate::physics::RigidObject)) records the state and, when it changes, adds its
+    /// body to the physics world on enabling and removes it on disabling. A gun's spare
+    /// magazine prop ([`WeaponData::m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject))
+    /// is disabled from its spawn until
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject)
+    /// enables it.
+    pub Enable: unsafe extern "system" fn(
+        this: *mut crate::game::GameObject,
+        enable: bool,
+    ),
 }
 fn _GameObjectVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x18], GameObjectVftable>([0u8; 0x18]);
+        ::std::mem::transmute::<[u8; 0x138], GameObjectVftable>([0u8; 0x138]);
     }
     unreachable!()
 }

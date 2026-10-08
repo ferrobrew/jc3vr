@@ -5,8 +5,24 @@ use smol_str::format_smolstr;
 
 use crate::controllers::{
     menu::{read_config, status::Line},
-    weapons::{c4, grenade},
+    weapons::{c4, grenade, reload::loose},
 };
+
+pub(super) fn magazines() -> Line {
+    if !read_config(|c| {
+        let reload = c.controllers.weapons.reload;
+        reload.enabled && reload.loose.enabled
+    }) {
+        return Line::off("");
+    }
+    let c = loose::counts();
+    Line::ok(format_smolstr!(
+        "{} IN THE WORLD, {} PICKED UP, {} SEATED",
+        c.in_world,
+        c.picked_up,
+        c.seated
+    ))
+}
 
 pub(super) fn c4_by_hand() -> Line {
     if !read_config(|c| c.controllers.weapons.c4_throw) {

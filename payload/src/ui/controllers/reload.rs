@@ -12,7 +12,7 @@ use crate::{
             chamber::{Chamber, WorkStage},
             config::{ActionConfig, BeltConfig, ReloadButton, ReloadConfig, ReloadHaptics},
             insert::InsertStage,
-            wells,
+            loose, wells,
         },
     },
     ui::controllers::{vec3_drag, weapons::pulse_settings},
@@ -31,6 +31,18 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
         c.dry_fires,
         c.empty_pouch,
         c.refused
+    ));
+    let l = loose::counts();
+    ui.label(format!(
+        "  magazines in the world {} · fitting in reach {} · dropped {} · picked up {} · seated \
+         {}{}",
+        l.in_world,
+        l.in_reach,
+        l.dropped,
+        l.picked_up,
+        l.seated,
+        l.last_rounds
+            .map_or(String::new(), |n| format!(" (last held {n})"))
     ));
     let Some(w) = &r.weapon else {
         return;
@@ -165,6 +177,19 @@ fn settings(ui: &mut Ui, r: &mut ReloadConfig) {
     );
     action_settings(ui, &mut r.action);
     ui.checkbox(&mut r.dual_split, "A magazine per dual-wielded pistol");
+    ui.checkbox(&mut r.loose.enabled, "Magazines stay in the world")
+        .on_hover_text(
+            "An ejected magazine keeps its rounds, and a magazine on the ground that fits the gun \
+             can be picked up and seated with them.",
+        );
+    ui.add_enabled_ui(r.loose.enabled, |ui| {
+        let l = &mut r.loose;
+        ui.add(egui::Slider::new(&mut l.radius_m, 0.03..=0.3).text("Grab radius (m)"));
+        ui.add(egui::Slider::new(&mut l.range_m, 0.5..=5.0).text("Reach (m)"));
+        ui.add(egui::Slider::new(&mut l.half_length_m, 0.0..=0.2).text("Half length (m)"));
+        ui.add(egui::Slider::new(&mut l.max_carry_mps, 1.0..=60.0).text("Fastest carry (m/s)"));
+        ui.add(egui::Slider::new(&mut l.keep_s, 10.0..=1200.0).text("Remembered for (s)"));
+    });
     haptics_settings(ui, &mut r.haptics);
 }
 

@@ -57,6 +57,8 @@ pub struct ReloadConfig {
     /// reloaded on its own.
     pub dual_split: bool,
     pub haptics: ReloadHaptics,
+    /// Ejected magazines that stay in the world with their rounds.
+    pub loose: LooseMagazineConfig,
 }
 
 impl ReloadConfig {
@@ -81,6 +83,7 @@ impl ReloadConfig {
             action: ActionConfig::new(),
             dual_split: true,
             haptics: ReloadHaptics::new(),
+            loose: LooseMagazineConfig::new(),
         }
     }
 }
@@ -110,6 +113,46 @@ impl ReloadButton {
             ReloadButton::Eject => "eject the magazine",
             ReloadButton::Native => "the game's reload",
         }
+    }
+}
+
+/// Magazines in the world (see [`crate::controllers::weapons::reload::loose`]). Acts only under the
+/// controller scheme with the reload on, so it defaults on.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LooseMagazineConfig {
+    /// An ejected magazine keeps the rounds it held as an object in the world, and a dropped
+    /// magazine that fits the held gun can be picked up and seated with its rounds.
+    pub enabled: bool,
+    /// The radius of a dropped magazine's grab volume, metres.
+    pub radius_m: f32,
+    /// How far from the player a dropped magazine may be to be picked up, metres.
+    pub range_m: f32,
+    /// How far behind its top a held magazine's centre is, metres: the hand carries the magazine's
+    /// body there.
+    pub half_length_m: f32,
+    /// The fastest a held magazine is moved toward the hand, metres per second.
+    pub max_carry_mps: f32,
+    /// How long a dropped magazine is remembered, seconds.
+    pub keep_s: f32,
+}
+
+impl LooseMagazineConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            radius_m: 0.1,
+            range_m: 2.0,
+            half_length_m: 0.06,
+            max_carry_mps: 20.0,
+            keep_s: 300.0,
+        }
+    }
+}
+
+impl Default for LooseMagazineConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

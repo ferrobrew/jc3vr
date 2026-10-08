@@ -619,7 +619,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             GrabVolume::GrenadePouch => GrabOutcome::Pouch,
             GrabVolume::GrenadePin => GrabOutcome::Pin,
             GrabVolume::LiveGrenade => GrabOutcome::Catch,
-            GrabVolume::MagazinePouch => GrabOutcome::Magazine,
+            GrabVolume::MagazinePouch | GrabVolume::WorldMagazine => GrabOutcome::Magazine,
             GrabVolume::WeaponAction => GrabOutcome::Action,
             GrabVolume::C4Pouch => GrabOutcome::C4,
             GrabVolume::WorldWeapon => {

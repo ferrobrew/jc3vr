@@ -58,6 +58,9 @@ pub enum GrabVolume {
     /// A live grenade in flight or on the ground near a free hand, to catch (see
     /// [`crate::controllers::weapons::grenade::catch`]).
     LiveGrenade,
+    /// A magazine lying in the world that fits the held gun, for the hand without a gun while the
+    /// gun's magazine is out (see [`crate::controllers::weapons::reload::loose`]).
+    WorldMagazine,
 }
 
 impl GrabVolume {
@@ -78,6 +81,7 @@ impl GrabVolume {
             GrabVolume::WorldWeapon => "weapon to take",
             GrabVolume::GrenadePin => "grenade pin",
             GrabVolume::LiveGrenade => "live grenade",
+            GrabVolume::WorldMagazine => "magazine in the world",
         }
     }
 }

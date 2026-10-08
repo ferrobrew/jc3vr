@@ -847,8 +847,7 @@ fn catch_one(hand: Hand, grip: Vec3, seen: &[Sighting], tuning: &GrenadeConfig) 
 unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeConfig) -> Option<(Hand, Fuse)> {
     let caught = catch::caught()?;
     let hand = caught.hand;
-    let Ok((centre, _)) = (unsafe { physical_hands::body_motion(caught.body, caught.owner) })
-    else {
+    let Ok((centre, _)) = (unsafe { physical_hands::body_pose(caught.body, caught.owner) }) else {
         catch::let_go(false);
         tracing::info!(target: "controllers", ?hand, "grenade: the caught grenade is gone from the hand");
         return None;

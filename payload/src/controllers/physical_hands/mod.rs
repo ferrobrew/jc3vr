@@ -242,19 +242,16 @@ pub(crate) unsafe fn set_body_velocities(
     unsafe { bodies::drive(body, owner, rigid::Velocities { linear, angular }) }
 }
 
-/// The dynamic body `body`'s centre of mass and linear velocity, game space, after checking it
-/// still belongs to `owner`: a live grenade near the hands, which a body still owned by it proves
-/// alive.
+/// The dynamic body `body`'s centre of mass and orientation, game space, after checking it still
+/// belongs to `owner`: a live grenade or a dropped magazine near the hands, which a body still
+/// owned by it proves alive.
 ///
 /// # Safety
 ///
 /// The main thread, outside the physics step.
-pub(crate) unsafe fn body_motion(
-    body: u32,
-    owner: NonZeroUsize,
-) -> Result<(Vec3, Vec3), BodyError> {
+pub(crate) unsafe fn body_pose(body: u32, owner: NonZeroUsize) -> Result<(Vec3, Quat), BodyError> {
     let state = unsafe { bodies::read(body, owner) }?;
-    Ok((state.pose.centre, state.velocities.linear))
+    Ok((state.pose.centre, state.pose.orientation))
 }
 
 pub(crate) unsafe fn push_body(character: &mut Character) {

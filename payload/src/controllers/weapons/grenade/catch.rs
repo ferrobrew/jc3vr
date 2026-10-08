@@ -115,7 +115,7 @@ pub(crate) unsafe fn sightings(
     let caught = state.caught.map(|c| c.explosive);
     let mut seen = Vec::new();
     state.tracked.retain(|t| {
-        let Ok((centre, _)) = (unsafe { physical_hands::body_motion(t.body, t.owner) }) else {
+        let Ok((centre, _)) = (unsafe { physical_hands::body_pose(t.body, t.owner) }) else {
             return false;
         };
         let age_s = now.saturating_duration_since(t.launched).as_secs_f32();

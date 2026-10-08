@@ -19,7 +19,7 @@ use crate::{
             physics::{self, BodyPhase},
         },
         scheme,
-        weapons::{self, c4, grenade, grip_watch, hold::second},
+        weapons::{self, c4, grenade, grip_watch, hold::second, reload::loose},
     },
     frame_timing,
     testing::replay,
@@ -137,6 +137,9 @@ signals! {
     GrenadesThrownOn => "grenade.thrown_on", Counter, "Caught grenades thrown on.";
     C4Thrown => "c4.thrown", Counter, "Charges thrown or pressed on from the pouch.";
     C4Stuck => "c4.stuck", Counter, "Charges pressed onto a surface by hand.";
+    MagazinesDropped => "magazines.dropped", Counter, "Magazine props dropped into the world and noted.";
+    MagazinesPickedUp => "magazines.picked_up", Counter, "Magazines picked up from the world.";
+    MagazinesSeated => "magazines.seated", Counter, "Magazines from the world seated in a gun.";
     GripFlips => "grip.flips", Counter, "Snaps of a gun on the wrist.";
     GripPins => "grip.pins", Counter, "Attach bones pinned.";
     StickSpeed => "locomotion.stick_speed_mps", Measure, "The speed the stick drives the body at, metres per second.";
@@ -210,6 +213,9 @@ impl Signal {
             Signal::GrenadesThrownOn => count(grenade::status().catch.thrown),
             Signal::C4Thrown => count(c4::status().thrown),
             Signal::C4Stuck => count(c4::status().stuck),
+            Signal::MagazinesDropped => count(loose::counts().dropped),
+            Signal::MagazinesPickedUp => count(loose::counts().picked_up),
+            Signal::MagazinesSeated => count(loose::counts().seated),
             Signal::GripFlips => count(grip_watch::status().flips.iter().sum()),
             Signal::GripPins => count(grip::status().pins),
             Signal::StickSpeed => locomotion::status()

@@ -8,8 +8,9 @@
 //! - **Eject.** A tap of the reload button ejects the dominant gun's magazine (both pistols' when
 //!   dual-wielded), and a flick of a gun hand ejects that gun's ([`eject`]). The game drops the
 //!   magazine as a prop from the gun, with the gun's velocity, and hides the magazine part. The
-//!   rounds left in it go back to the reserve when the next magazine seats, as the game's own
-//!   reload does.
+//!   magazine keeps the rounds left in it as an object in the world, to be picked up and seated
+//!   again ([`loose`]); with that off, they go back to the reserve when the next magazine seats,
+//!   as the game's own reload does.
 //! - **Load.** The free hand takes a round from the universal pouch on the belt (a magazine, a
 //!   shell, a rocket, or a pod, whatever the gun takes) and pushes it into the gun's well
 //!   ([`insert`]). The well is the gun's own, from the wells table ([`wells`]), carried to the
@@ -38,6 +39,7 @@ pub mod focus;
 pub mod frames;
 pub(super) mod gate;
 pub mod insert;
+pub mod loose;
 pub mod plan;
 mod render;
 mod steps;
@@ -57,6 +59,8 @@ use crate::controllers::{
     frame::{Hand, Pose},
     hands::{ActiveHands, pose::CockpitHand},
     weapons::{
+        body::alignment::measure::Frames,
+        docks,
         engine::HeldWeapon,
         reload::{
             belt::{BeltPush, PushStage},
@@ -76,7 +80,7 @@ use crate::controllers::{
 
 /// The reload's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
-    engine::hook_library()
+    engine::hook_library().with_hook_library(loose::hook_library())
 }
 
 /// The reload's readout.
@@ -202,6 +206,17 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     if let Some(handle) = state.handle_candidate(&tick, free, reload) {
         candidates.push(handle);
     }
+    // SAFETY: as above.
+    let (seen, frames) = unsafe { loose_sightings(&tick, free, active, reload) };
+    state.loose_seen = seen;
+    state.frames = frames;
+    if let Some(hand) = free {
+        candidates.extend(loose::candidates(
+            &state.loose_seen,
+            reload.loose.radius_m,
+            hand,
+        ));
+    }
     state.tick = Some(tick);
     state.pouch = Some((pouch.centre, pouch.radius));
     state.free = free;
@@ -250,6 +265,42 @@ pub(super) fn stand_down() {
     STATE.lock().stand_down();
     gate::publish(None);
     render::clear();
+}
+
+/// The magazines in the world that fit the tick's gun, while its magazine is out and a hand is free
+/// to take one.
+///
+/// # Safety
+///
+/// The main thread, outside the world update, with the tick's weapon read this tick.
+unsafe fn loose_sightings(
+    tick: &Tick,
+    free: Option<Hand>,
+    active: &ActiveHands,
+    reload: &ReloadConfig,
+) -> (Vec<loose::Sighting>, Option<Frames>) {
+    let wants = reload.loose.enabled
+        && free.is_some()
+        && !tick.split
+        && tick.plan.load == plan::LoadKind::Magazine
+        && tick.reading.out;
+    if !wants {
+        return (Vec::new(), None);
+    }
+    let Some(gun) = tick.guns.iter().flatten().next() else {
+        return (Vec::new(), None);
+    };
+    let Some(tag) = (unsafe { engine::magazine_tag(tick.weapon, gun.index) }) else {
+        return (Vec::new(), None);
+    };
+    let Some(player) = (unsafe { engine::local_player_matrix() }) else {
+        return (Vec::new(), None);
+    };
+    let Some(frames) = docks::cockpit_frames(active, player) else {
+        return (Vec::new(), None);
+    };
+    let seen = unsafe { loose::sightings(player.w_axis.truncate(), tag, &frames, &reload.loose) };
+    (seen, Some(frames))
 }
 
 /// The weapon the reload acts on this tick, from the wielded weapon's magazine (`primary`) and the
@@ -381,6 +432,10 @@ struct State {
     tick: Option<Tick>,
     pouch: Option<(Vec3, f32)>,
     free: Option<Hand>,
+    /// The magazines in the world that fit the tick's gun, within reach.
+    loose_seen: Vec<loose::Sighting>,
+    /// The tick's transforms between the cockpit frame and the world, while a magazine is wanted.
+    frames: Option<Frames>,
     /// The remembered weapons, by address, the most recent last.
     records: Vec<(usize, Record)>,
     /// Each gun hand's measured gun relative to its wrist, and the weapon it belongs to.
@@ -421,6 +476,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     tick: None,
     pouch: None,
     free: None,
+    loose_seen: Vec::new(),
+    frames: None,
     records: Vec::new(),
     measured: [None; 2],
     tap: TapDetector::new(),

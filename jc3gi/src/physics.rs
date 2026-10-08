@@ -1144,6 +1144,15 @@ impl PhysicsGameObject {
     pub fn vftable(&self) -> *const crate::physics::PhysicsGameObjectVftable {
         self.vftable as *const crate::physics::PhysicsGameObjectVftable
     }
+    /// The object's engine physics instance, or null. A rigid object
+    /// ([`RigidObject`](crate::physics::RigidObject)) returns its one body's wrapper, a [`PfxRigidBody`](crate::physics::PfxRigidBody), whose
+    /// [`PfxInstance::m_GameObject`](crate::physics::PfxInstance::m_GameObject) is the object.
+    pub unsafe fn GetIPfxInstance(&mut self) -> *mut crate::physics::PfxInstance {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetIPfxInstance).read();
+            f(self as *mut Self as _)
+        }
+    }
     /// Takes the damage in `msg` and returns the damage dealt. Each kind of object overrides
     /// it: a character (`CCharacter::OnDamage`) takes the health, sends the hit effects, and
     /// runs its hit reaction from the message's impulse, position, and direction; a rigid
@@ -1172,7 +1181,12 @@ impl std::convert::AsMut<PhysicsGameObject> for PhysicsGameObject {
 #[repr(C, align(8))]
 pub struct PhysicsGameObjectVftable {
     _vfunc_0: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
-    _vfunc_1: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    /// The object's engine physics instance, or null. A rigid object
+    /// ([`RigidObject`](crate::physics::RigidObject)) returns its one body's wrapper, a [`PfxRigidBody`](crate::physics::PfxRigidBody), whose
+    /// [`PfxInstance::m_GameObject`](crate::physics::PfxInstance::m_GameObject) is the object.
+    pub GetIPfxInstance: unsafe extern "system" fn(
+        this: *mut crate::physics::PhysicsGameObject,
+    ) -> *mut crate::physics::PfxInstance,
     _vfunc_2: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
     _vfunc_3: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
     _vfunc_4: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),

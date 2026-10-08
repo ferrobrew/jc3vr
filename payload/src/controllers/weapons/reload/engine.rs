@@ -36,7 +36,7 @@ use crate::{
         aim::gun,
         frame::{Hand, Pose},
         hands::{ik::TickTarget, late},
-        weapons::reload::{chamber::ActionKind, dual::Transfer, frames, gate},
+        weapons::reload::{chamber::ActionKind, dual::Transfer, frames, gate, loose::EjectRounds},
     },
     hooks::character::acts::resolve_act_id,
 };
@@ -145,23 +145,93 @@ pub unsafe fn measure_gun(
 /// # Safety
 ///
 /// `address` must be the live weapon read this tick; main thread, outside the world update.
-pub unsafe fn drop_magazine(address: usize, index: usize, set_out: bool) {
+pub unsafe fn drop_magazine(address: usize, index: usize, set_out: bool, loose: bool) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
     };
     let character = weapon.m_User[0] as *mut Character;
     let part = unsafe { magazine_part(weapon) }
         .map_or(WeaponData::NO_MAGAZINE_MODEL_NAME_HASH, |p| p.m_NameHash);
+    // A magazine that stays in the world takes the gun's rounds with it; a split pistol's go back
+    // to the reserve through the split, so its magazine drops empty.
+    let rounds = if set_out {
+        weapon.m_MagazineAmmo.max(0)
+    } else {
+        0
+    };
     let Some(gun) = (unsafe { gun_mut(weapon, index) }) else {
         return;
     };
-    let thrown = unsafe { gun.ThrowAwayMagazineObject(character, part) };
+    let mut throw = || unsafe { gun.ThrowAwayMagazineObject(character, part) };
+    let thrown = if loose {
+        EjectRounds::with(rounds, throw)
+    } else {
+        throw()
+    };
     if thrown {
         unsafe { gun.SpawnMagazineObject() };
+    }
+    if loose && set_out && thrown {
+        unsafe { weapon.SetMagazineAmmo(0) };
     }
     if set_out {
         weapon.m_WeaponIsWithoutMagazine = true;
     }
+}
+
+/// Seat a magazine of `rounds` from the world into the weapon at `address`: the rounds still
+/// counted in the weapon go back to the reserve, the magazine holds the seated magazine's rounds
+/// (up to its size), and the magazine part shows again.
+///
+/// # Safety
+///
+/// As [`drop_magazine`].
+pub unsafe fn load_rounds(address: usize, rounds: i32) {
+    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
+        return;
+    };
+    let capacity = unsafe { weapon.GetMagazineSize() };
+    let rounds = if capacity >= 0 {
+        rounds.clamp(0, capacity)
+    } else {
+        rounds.max(0)
+    };
+    let leftover = weapon.m_MagazineAmmo.max(0);
+    let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
+    if leftover > 0
+        && !unlimited
+        && let Some(user) = unsafe { user_mut(weapon) }
+    {
+        let ammo_type = weapon.m_AmmunitionType;
+        let inventory: &mut Inventory = &mut user.m_Inventory;
+        let reserve = unsafe { inventory.GetAmmoCount(ammo_type) };
+        unsafe { inventory.SetAmmoCount(ammo_type, reserve + leftover, true) };
+    }
+    unsafe { weapon.SetMagazineAmmo(rounds) };
+    weapon.m_KeepReloading = false;
+    weapon.m_WeaponIsWithoutMagazine = false;
+    unsafe { show_magazine(weapon) };
+}
+
+/// The magazine spawn tag of gun `index` of the weapon at `address`.
+///
+/// # Safety
+///
+/// As [`drop_magazine`].
+pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
+    let weapon = unsafe { (address as *mut WeaponBase).as_mut() }?;
+    let gun = unsafe { gun_mut(weapon, index) }?;
+    Some(gun.m_MagazineUniqueTag)
+}
+
+/// The local player character's world matrix.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub unsafe fn local_player_matrix() -> Option<Mat4> {
+    let player = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    Some(Mat4::from(player.m_WorldMatrixT1))
 }
 
 /// Load a whole magazine into the weapon at `address` through its own reload, show its magazine

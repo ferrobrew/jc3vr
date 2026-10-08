@@ -136,6 +136,7 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
 | `weapons.second_in_left_hand`, `.second_in_right_hand` | flag | A second weapon is held in that hand. |
 | `weapons.grabs`, `grip.flips`, `grip.pins` | counter | Weapon grabs, guns snapping on the wrist, and attach bones pinned. |
+| `magazines.dropped`, `.picked_up`, `.seated` | counter | Magazine props dropped and noted, magazines picked up from the world, and those seated. |
 | `c4.thrown`, `.stuck` | counter | Charges thrown or pressed on from the pouch, and those pressed onto a surface by hand. |
 | `grenade.pins_pulled`, `.thrown`, `.caught`, `.thrown_on` | counter | Grenade pins pulled, grenades thrown from the pouch, live grenades caught, and caught grenades thrown on. |
 | `locomotion.stick_speed_mps` | measure | The speed the stick drives the body at. |

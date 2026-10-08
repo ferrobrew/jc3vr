@@ -372,6 +372,12 @@ fn settings_page() -> Page {
             .weapons
             .reload
             .flick_eject))
+        .item(config_toggle!("MAGAZINES STAY IN THE WORLD", |c| c
+            .controllers
+            .weapons
+            .reload
+            .loose
+            .enabled))
         .item(config_toggle!("CHAMBER BY HAND", |c| c
             .controllers
             .weapons

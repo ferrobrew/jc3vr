@@ -26,6 +26,7 @@ use crate::controllers::{
             frames::{self, GunFrame},
             gate,
             insert::{self, InsertEvent, InsertInputs, InsertStage, Well},
+            loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
             render, wells,
         },
@@ -320,7 +321,12 @@ impl State {
                 Some(transfer) => {
                     // SAFETY: main thread, outside the world update; the weapon was read this tick.
                     unsafe {
-                        engine::drop_magazine(tick.weapon, gun.index, false);
+                        engine::drop_magazine(
+                            tick.weapon,
+                            gun.index,
+                            false,
+                            config.weapons.reload.loose.enabled,
+                        );
                         engine::transfer(tick.weapon, transfer);
                     }
                     true
@@ -329,7 +335,14 @@ impl State {
             },
             None if !tick.reading.out => {
                 // SAFETY: as above.
-                unsafe { engine::drop_magazine(tick.weapon, gun.index, true) };
+                unsafe {
+                    engine::drop_magazine(
+                        tick.weapon,
+                        gun.index,
+                        true,
+                        config.weapons.reload.loose.enabled,
+                    )
+                };
                 true
             }
             None => false,
@@ -353,8 +366,30 @@ impl State {
         let taker = Hand::BOTH
             .into_iter()
             .find(|h| inputs.grabs[h.index()] == Some(GrabVolume::MagazinePouch));
+        let from_world = Hand::BOTH
+            .into_iter()
+            .find(|h| inputs.grabs[h.index()] == Some(GrabVolume::WorldMagazine))
+            .filter(|_| !self.status.insertion.holding())
+            .and_then(|hand| {
+                let grip = tick.hands[hand.index()]?.grip.position;
+                loose::nearest(&self.loose_seen, grip, reload.loose.radius_m).map(|s| (hand, s))
+            });
         let mut taken = false;
-        if let Some(hand) = taker.filter(|_| !self.status.insertion.holding()) {
+        if let Some((hand, sighting)) = from_world {
+            let gun_hand = if tick.guns[hand.other().index()].is_some() {
+                hand.other()
+            } else {
+                tick.holder
+            };
+            loose::take(hand, sighting);
+            self.status.insert_hands = Some((hand, gun_hand));
+            taken = true;
+            self.event(format!(
+                "{hand:?} took a magazine of {} from the world",
+                sighting.magazine.rounds
+            ));
+            haptics::pulse(hand, reload.haptics.pouch_take, PulseSource::Reload);
+        } else if let Some(hand) = taker.filter(|_| !self.status.insertion.holding()) {
             if has_ammo {
                 let gun_hand = if tick.guns[hand.other().index()].is_some() {
                     hand.other()
@@ -397,9 +432,28 @@ impl State {
         if self.status.insertion.stage == InsertStage::Idle {
             self.status.insert_hands = None;
         }
+        let world_magazine = loose::held().is_some();
+        if world_magazine
+            && let Some((pose, velocity)) = grip
+            && let Some(round) = insert::held_round(
+                pose.position,
+                frames::pointing(pose),
+                reload.held_top_m,
+                velocity,
+            )
+            && let Some(world) = self.frames
+        {
+            let top = world.cockpit_to_world(round.top);
+            let axis = world.view * round.axis;
+            // SAFETY: main thread, outside the world update.
+            if !unsafe { loose::carry(top, axis, inputs.dt, &reload.loose) } {
+                self.event("the magazine from the world is gone".to_owned());
+            }
+        }
         // A magazine part rides the hand while it is held, and hides again when it is dropped
-        // with the gun's magazine still out.
-        if tick.plan.part_top_m.is_some() {
+        // with the gun's magazine still out. A magazine from the world is its own object in the
+        // hand, so the part stays hidden until it seats.
+        if tick.plan.part_top_m.is_some() && !world_magazine {
             match event {
                 // SAFETY (both): main thread, outside the world update; the weapon was read this
                 // tick.
@@ -417,13 +471,28 @@ impl State {
                 pulse_both(reload.haptics.capture);
             }
             Some(InsertEvent::Seated) => {
-                if self.load(tick, gun_hand, config) {
+                // SAFETY (both): main thread, outside the world update; the weapon was read this
+                // tick.
+                let loaded = match unsafe { loose::seat() } {
+                    Some(rounds) => {
+                        unsafe { engine::load_rounds(tick.weapon, rounds) };
+                        if tick.plan.action == ActionKind::None {
+                            self.record(tick).chambers[gun_hand.index()] = Chamber::Chambered;
+                        }
+                        true
+                    }
+                    None => self.load(tick, gun_hand, config),
+                };
+                if loaded {
                     self.status.counts.seats += 1;
                     self.event(format!("{gun_hand:?} seated"));
                     pulse_both(reload.haptics.seat);
                 }
             }
-            Some(InsertEvent::Dropped) => self.event("round dropped".to_owned()),
+            Some(InsertEvent::Dropped) => {
+                loose::let_go();
+                self.event("round dropped".to_owned());
+            }
             _ => {}
         }
     }
@@ -477,7 +546,14 @@ impl State {
                 if let Some(gun) = tick.guns[i].filter(|_| magazine_in) {
                     // SAFETY: main thread, outside the world update; the weapon was read this
                     // tick.
-                    unsafe { engine::drop_magazine(tick.weapon, gun.index, !tick.split) };
+                    unsafe {
+                        engine::drop_magazine(
+                            tick.weapon,
+                            gun.index,
+                            !tick.split,
+                            reload.loose.enabled,
+                        )
+                    };
                 }
             }
             if self.load(tick, hand, config) {
@@ -685,6 +761,7 @@ impl State {
     }
 
     pub(super) fn stand_down(&mut self) {
+        loose::let_go();
         self.clear_tick();
         self.status.active = false;
         self.status.weapon = None;

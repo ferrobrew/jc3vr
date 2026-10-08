@@ -25,7 +25,7 @@ With `button` set to `Native`, a start while the game's reload input is held goe
 
 A tap of the semantic `reload` action (the off-hand's lower face button on foot, in the default layout) ejects the dominant gun's magazine, or both pistols' when they are dual-wielded. The same button held is the game's holster, so only a press released within `tap_s` ejects. With `flick_eject` (off by default, since the button already ejects and a fast turn of the gun hand in play reads as a flick too easily), a gun hand turning faster than `flick_speed_dps` ejects that gun's magazine, at most once per `flick_cooldown_s`; the speed is the change in the hand's orientation between two input ticks (`eject.rs`).
 
-The eject is the game's own magazine drop, run on the input tick: [`WeaponData::ThrowAwayMagazineObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-ThrowAwayMagazineObject) drops the gun's spare magazine prop from the magazine part (hiding the part) or from the gun itself, with the gun's velocity, so a flicked gun throws the magazine; [`WeaponData::SpawnMagazineObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-SpawnMagazineObject) asks for the next spare; and the weapon's magazine-out flag ([`WeaponBase::m_WeaponIsWithoutMagazine`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_WeaponIsWithoutMagazine)) is set, which the game itself reads to refuse fire. A weapon with no magazine prop drops nothing. The rounds left in the ejected magazine stay counted in the weapon until the next magazine seats, when the game's reload returns them to the reserve, as the game's own reload does; nothing is lost and there is no extra round in the chamber.
+The eject is the game's own magazine drop, run on the input tick: [`WeaponData::ThrowAwayMagazineObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-ThrowAwayMagazineObject) drops the gun's spare magazine prop from the magazine part (hiding the part) or from the gun itself, with the gun's velocity, so a flicked gun throws the magazine; [`WeaponData::SpawnMagazineObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-SpawnMagazineObject) asks for the next spare; and the weapon's magazine-out flag ([`WeaponBase::m_WeaponIsWithoutMagazine`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_WeaponIsWithoutMagazine)) is set, which the game itself reads to refuse fire. A weapon with no magazine prop drops nothing. With the magazines in the world off, the rounds left in the ejected magazine stay counted in the weapon until the next magazine seats, when the game's reload returns them to the reserve, as the game's own reload does; nothing is lost and there is no extra round in the chamber. With them on (the default), the rounds leave the gun with the magazine (see "Magazines in the world").
 
 ## Load
 
@@ -40,6 +40,18 @@ While a round is in hand, a ring marks the well's mouth and a dot the hand holdi
 ## Wells
 
 The well's mouth and axis are in the gun's model frame, from the wells table (`tools/sights/wells.json`, derived from the game's models by `tools/sights/extract_wells.py`; see [the tool's README](../../../tools/sights/README.md#magazine-wells)). A weapon with a separate magazine part has its well where the part enters the gun; pistols and SMGs, whose magazine is part of the body mesh, have it at the bottom of the grip. The gun's frame is carried to the hand by measuring the gun's world matrix against the wrist target its placement followed, as the foregrip does (`frames.rs`); the measurement needs the wrist at full weight and is kept until the next one. A weapon the table lacks (or grades as failed) has its well at `well_offset_m` in the holding wrist's frame, its axis toward the wrist.
+
+## Magazines in the world
+
+With `loose.enabled` (on; the pause menu's `MAGAZINES STAY IN THE WORLD`), a dropped magazine is an object that keeps its rounds (`loose.rs`). Every magazine prop the game drops goes through one call ([`WeaponData::ThrowAwayMagazineObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##func-ThrowAwayMagazineObject)), from the eject and from the game's own reload of any character, and a detour on it notes each prop it drops: its body ([`PhysicsGameObject::GetIPfxInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PhysicsGameObject##vfunc-GetIPfxInstance)) and the body's owner, the gun's magazine spawn tag ([`WeaponData::m_MagazineUniqueTag`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_MagazineUniqueTag), which names the magazine model), and the rounds it holds:
+
+- the eject's magazine holds the rounds the gun had: the eject takes them out of the gun (its magazine reads zero, out), so they are in the magazine on the ground and nowhere else. A split pistol's half goes back to the reserve as before, and its magazine drops empty;
+- a magazine the game's own reload drops for the player holds none, since that reload returns the gun's rounds to the reserve;
+- a magazine another character's reload drops holds what that character's magazine held, rounds the game counts nowhere else.
+
+A body still owned by the same prop proves the prop alive. While a gun's magazine is out, each noted magazine of the gun's tag within `loose.range_m` (2 m) is a grab volume for the hand without a gun (`GrabVolume::WorldMagazine`, radius `loose.radius_m`, 0.1 m). A grip press there takes the nearest as the round in hand (`reload: picked a magazine up from the world`, with its rounds), with no pouch needed and whatever the reserve: the magazine prop itself is carried to the hand each tick by its body's velocities, turned so its top points out of the hand, its centre `loose.half_length_m` behind the held top, so the magazine the player sees in the hand is the one from the ground (a gun's magazine part does not show in the hand meanwhile). It is inserted into the well as a pouch magazine is. Seated, it loads its own rounds rather than a reload from the reserve: the rounds still counted in the gun go back to the reserve, the gun's magazine is set to the magazine's rounds (up to its size), the magazine-out flag clears, the part shows, and the prop is disabled ([`GameObject::Enable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameObject##vfunc-Enable)), which takes it out of the world (`reload: seated a magazine from the world`). Let go of before it seats, it falls from the hand with the motion the carry gave it and stays in the world to be picked up again.
+
+The physical hands can also pick a magazine up as any light loose object ([physical-hands.md](physical-hands.md)) when the gun does not want one; the magazine's grab volume wins over the hands' pickup while it does. A noted magazine is forgotten after `loose.keep_s` (300 s), or when its body is gone. `VR: STATUS` shows `MAGAZINES` with the counts, and the scenario signals `magazines.dropped`, `magazines.picked_up`, and `magazines.seated` count them (`testing/scenarios/magazines_in_the_world.toml`).
 
 ## The belt reload
 
@@ -83,9 +95,22 @@ With a second weapon in the other hand ([physical-weapons.md, "A second weapon"]
 
 The Controllers tab's weapon section shows the reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve, each gun hand's chamber, split magazine, belt push, fire hold, and turning speed, the round in hand and its distance from the mouth, the action's work, the recent reload events, and the counters (ejects, seats, belt reloads, actions worked, dry fires, empty pouch grabs, and the game's reload starts refused).
 
+## In the headset: magazines in the world
+
+1. With a rifle drawn and a few rounds fired, tap the reload button: the magazine drops, the HUD reads zero, and `MAGAZINES` counts one in the world. Take a fresh magazine from the pouch, seat it, then fire the rifle dry and eject that one too.
+2. Reach down to the first magazine on the ground with the free hand: `reload: picked a magazine up from the world` with the rounds it held. The magazine rises into the hand, top out, and stays there as the hand moves. Seat it: `reload: seated a magazine from the world`, the magazine on the ground is gone, and the HUD shows the rounds it held. Check the reserve did not change beyond the rounds the gun still held.
+3. Pick the empty one up, seat it: the gun reads zero and the chamber asks for the action.
+4. Pick one up and open the hand away from the gun: it falls and can be picked up again.
+5. Kill a soldier mid-reload or watch one reload, then pick up his dropped magazine with a gun of the same kind: it seats with the rounds his held.
+6. Walk away 300 seconds or more and come back: the old magazines are forgotten, and the counts fall.
+
 ## Unverified
 
 None of this has been run in the headset. In particular:
+
+- that a magazine prop stays in the world after the gun lets go of it, rather than being cleaned up by the spawn system at once, and that a disabled prop is not shown;
+- that the magazine prop's model points its top along its +Y, which the carry turns out of the hand;
+- that a magazine body carried by velocities every tick sits steadily in the hand, and does not knock against the hand bodies (it is in the character's collision group, on another layer);
 
 - that calling the weapon's reload, the magazine drop, and the magazine setter from the input tick, on the main thread outside the world update, is safe: the game calls them from an animation track message inside the character's update, and the drop writes a physics body;
 - that the HUD's ammunition counter follows the reload and the setter from the input tick;
