@@ -101,6 +101,7 @@ use crate::{
             parachute::{HandleEvent, HandleHold, HandleState},
             physical::{
                 ControlCue, ControlEvent, ControlKind, ControlState, Hold, Outputs, Placement,
+                buttons::{ButtonEvent, ButtonPlacement},
             },
             wheel::{CockpitTransform, WheelFrame},
             wheel_render::RenderWheel,
@@ -220,6 +221,8 @@ pub struct VehiclesStatus {
     pub cues: u64,
     /// How many times the throttle went through its afterburner gate.
     pub afterburner_lights: u64,
+    /// How many times a hand pressed a cockpit button or twisted a twist grip.
+    pub button_presses: u64,
 }
 
 pub fn status() -> VehiclesStatus {
@@ -254,6 +257,7 @@ pub struct VehicleSummary {
     pub outputs: Outputs,
     pub cues: u64,
     pub afterburner_lights: u64,
+    pub button_presses: u64,
 }
 
 pub fn summary() -> VehicleSummary {
@@ -267,6 +271,7 @@ pub fn summary() -> VehicleSummary {
         outputs: s.outputs,
         cues: s.cues,
         afterburner_lights: s.afterburner_lights,
+        button_presses: s.button_presses,
     }
 }
 
@@ -422,12 +427,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         state.status.handles = None;
     }
     push_events(&mut state.status, events);
+    let controls_now = state.controls;
     drop(state);
     log_handle_events(&handle_events);
 
     let shown = (physical_config.show_wheel && seat.is_some_and(|s| s.driver)).then_some(fit.wheel);
     let wings = (arms_act(mode, &config) && config.vehicles.arm_steering.show_guide)
         .then_some(arms_engaged);
+    let buttons = ButtonPlacement::for_seat(offered, &physical_config.buttons, &placement.wheel);
+    let button_marks = highlights::button_marks(&buttons, &controls_now.buttons);
     highlights::submit(
         &config,
         &highlights::Highlights {
@@ -436,6 +444,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             wings,
             handles: marks,
             wheel: shown,
+            buttons: &button_marks,
         },
         &xf,
     );
@@ -571,11 +580,27 @@ pub(crate) fn finish_tick(
     state.status.afterburner_lights += u64::from(outputs.afterburner && !afterburner_was);
     state.status.arms = arms;
     state.status.handles = handles;
+    let button_events: Vec<ButtonEvent> = events
+        .iter()
+        .filter_map(|e| match e {
+            ControlEvent::Button(b) => Some(*b),
+            _ => None,
+        })
+        .collect();
+    state.status.button_presses += button_events.iter().filter(|e| e.engages()).count() as u64;
     push_events(&mut state.status, events);
     drop(state);
     *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout);
     log_handle_events(&handle_events);
-    control_haptics::pulse(&outputs, holds_now);
+    control_haptics::pulse(&outputs, holds_now, &button_events);
+    for event in button_events.iter().filter(|e| e.engages()) {
+        tracing::info!(
+            target: "controllers",
+            hand = event.hand().label(),
+            "the hand worked the {}",
+            event.what()
+        );
+    }
     if outputs.afterburner != afterburner_was {
         tracing::info!(
             target: "controllers",
@@ -724,6 +749,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         last_cue: None,
         cues: 0,
         afterburner_lights: 0,
+        button_presses: 0,
     },
     controls: ControlState::new(),
     placement: None,

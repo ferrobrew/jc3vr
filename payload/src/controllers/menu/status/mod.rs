@@ -262,7 +262,10 @@ const SECTIONS: &[Section] = &[
     },
     Section {
         title: "VEHICLES",
-        rows: &[row!("FLIGHT CONTROLS", vehicles::flight_controls)],
+        rows: &[
+            row!("FLIGHT CONTROLS", vehicles::flight_controls),
+            row!("COCKPIT BUTTONS", vehicles::cockpit_buttons),
+        ],
     },
     Section {
         title: "LOCOMOTION",

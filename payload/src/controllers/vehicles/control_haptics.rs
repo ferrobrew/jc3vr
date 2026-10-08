@@ -4,7 +4,7 @@
 use crate::controllers::{
     frame::Hand,
     vehicles::{
-        physical::{ControlCue, ControlKind, Outputs},
+        physical::{ControlCue, ControlKind, Outputs, buttons::ButtonEvent},
         steering::WheelCue,
     },
     weapons::{
@@ -13,9 +13,18 @@ use crate::controllers::{
     },
 };
 
-/// Pulse the hands holding the controls whose cues fired this tick. `holds` is the control each
-/// hand holds, indexed by [`Hand::index`].
-pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2]) {
+/// Pulse the hands holding the controls whose cues fired this tick, and the hands that pressed or
+/// let go of a cockpit button or a twist grip. `holds` is the control each hand holds, indexed by
+/// [`Hand::index`].
+pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2], buttons: &[ButtonEvent]) {
+    for event in buttons {
+        let spec = if event.engages() {
+            PRESS_PULSE
+        } else {
+            CENTRE_PULSE
+        };
+        haptics::pulse(event.hand(), spec, PulseSource::VehicleControl);
+    }
     let holding = |kinds: &[ControlKind]| -> Vec<Hand> {
         Hand::BOTH
             .into_iter()
@@ -55,6 +64,12 @@ pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2]) {
 const STOP_PULSE: PulseSpec = PulseSpec {
     amplitude: 0.5,
     duration_s: 0.03,
+};
+
+/// The click of a cockpit button pressed, or a twist grip twisted far enough to act.
+const PRESS_PULSE: PulseSpec = PulseSpec {
+    amplitude: 0.45,
+    duration_s: 0.025,
 };
 
 /// The light detent the held wheel gives on passing centre.

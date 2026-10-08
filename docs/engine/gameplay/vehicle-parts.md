@@ -40,6 +40,12 @@ The vehicle-common properties include a `SteeringWheel` hinge driven by `steerin
 
 `steering_turn` is the vehicle's [`m_SteeringTurn`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringTurn), the signed steering amount the vehicle's controller last applied. Which sign is right has not been checked.
 
+## Landing gear
+
+A vehicle's landing gear and its hatches move toward [`Vehicle::m_DesiredLandingGearState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_DesiredLandingGearState) in [`Vehicle::UpdateLandingGearVariables`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##func-UpdateLandingGearVariables): the hatches open before the gear comes down and close after it is up, and the gear's attached effects (its sounds) play as they open, close, and lock. Lowered gear is limited by the vehicle's height above the ground, so it does not stand through a runway.
+
+There is no player input for the gear. While the local player drives, the update first chooses the desired state itself, on every call: the gear is wanted down while the vehicle is low over the ground and slower than a deploy speed, unless it is airborne and tilted past the vehicle's landing tilt, and up otherwise while airborne. The deploy speed moves between the vehicle's take-off and landing speeds with the throttle ([`Vehicle::m_SteeringAcceleration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringAcceleration)): braking raises it toward the landing speed at once, and thrust lowers it toward the take-off speed over a smoothing time. Another seat's occupant, or none, leaves the desired state to whatever set it last, such as the AI steering's deploy and retract.
+
 ## The vehicle type hash
 
 [`Vehicle::m_VehicleTypeNameHash`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_VehicleTypeNameHash) keys the vehicle's profile item and its localised name. The entity property file of each vehicle variant carries a `name` (such as `v0405_car_mugello_moderncircuitracer_civilian_01`, or `..._generated` for the debug variants) and its `name_hash`; that the type hash is this `name_hash`, one per variant rather than one per model, is unverified.

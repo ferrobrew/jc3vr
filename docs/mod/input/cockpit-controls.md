@@ -1,6 +1,6 @@
 # Flight controls and cockpit buttons
 
-The physical controls of the driver's seat ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) include the plane's flight stick and throttle and the helicopter's cyclic and collective. This covers how the sticks and levers move and feel. The wheel and the handlebars are in [steering-wheel.md](steering-wheel.md). The code is in `payload/src/controllers/vehicles/physical/`: `sticks.rs` for the sticks, `levers.rs` for the levers, `cues.rs` for their haptic cues, and `control_haptics.rs` one level up for the pulses. The settings are under `controllers.vehicles.physical`, with the plane's own under `physical.flight`.
+The physical controls of the driver's seat ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) include the plane's flight stick and throttle and the helicopter's cyclic and collective, and the cockpit's buttons are worked by hand alongside the controller's. This covers how the sticks and levers move and feel, and the horn, the nitrous, and the landing gear. The wheel and the handlebars are in [steering-wheel.md](steering-wheel.md). The code is in `payload/src/controllers/vehicles/physical/`: `sticks.rs` for the sticks, `levers.rs` for the levers, `cues.rs` for their haptic cues, and `control_haptics.rs` one level up for the pulses. The settings are under `controllers.vehicles.physical`, with the plane's own under `physical.flight`.
 
 ## The sticks
 
@@ -32,13 +32,36 @@ The held sticks and levers give their hand a cue (`PulseSource::VehicleControl`)
 
 One cue fires a tick. A lever that passes neutral on the tick it leaves the gate cues neutral on the next.
 
+## Cockpit buttons
+
+The horn and the nitrous are worked by hand (`physical.buttons`, `buttons.rs`), alongside the controller's buttons, which keep working:
+
+| Seat | Horn | Nitrous |
+| --- | --- | --- |
+| Car and boat, with the wheel | Push a free hand into the wheel's hub | Push a free hand into the button on the dash beside the wheel |
+| Motorcycle, ATV, jetski, and duck, with the handlebars | The button | Twist the right grip back, as a motorcycle's throttle |
+| Helicopter, with the collective | The button | Twist the collective's grip either way |
+| Plane | The button | Push the throttle through its afterburner gate (above) |
+
+A push button is a disc facing the driver: the horn is the hub, `hub_share` (35%) of the wheel's radius across, and the nitrous button sits `nitrous_from_rim_m` (12 cm right and 2 cm up) from the wheel's right edge, `nitrous_radius_m` (4.5 cm) across, facing the driver as the wheel does. Both ride the wheel as it is fitted to the vehicle ([steering-wheel.md](steering-wheel.md)). A hand arms a button by coming to it from the front within its radius, and presses it by pushing on past its face by `press_depth_m` (2 cm); the button stays pressed, giving a centimetre before it lets go, until the hand comes back out or slides off its edge. A hand that reaches it from behind, as one through the dash does, or from the side, as one sweeping across the wheel does, presses nothing, and a hand holding a control presses nothing either, so the hands on the rim cannot sound the horn. The nitrous button is drawn faintly on the dash while the overlay is on, since the vehicle's model has none; both buttons are ringed while a hand is in front of them and lit while pressed.
+
+A twist grip burns the nitrous while the hand holding the handlebars' right grip, or the collective, has twisted it `twist_deg` (30°) from the orientation it took the control in, and stops once the twist comes back by 8°. The right grip's twist is about the line across the bars, rolling the grip's top back toward the rider; the collective's is about the fore-aft axis, either way. The handlebars' and the collective's own motion is untouched by it: the bars turn and roll by the grips' positions, and the collective moves along its axis.
+
+A pressed horn holds `SOUND_HORN_SIREN`, and the nitrous holds `USE_VEHICLE_MOD`, which the game reads as the nitrous while it is held and as the turbo jump when it is tapped ([input.md](../../engine/gameplay/input.md#land-vehicle-generic-car-and-motorcycle)), so a short press of the nitrous button is a turbo jump, as a tap of the gamepad's button is. Both need the vehicle's upgrades as the gamepad does. Each press and twist clicks in its hand, and each release ticks.
+
+### The landing gear
+
+The game has no input for the landing gear. While the local player drives, [`Vehicle::UpdateLandingGearVariables`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##func-UpdateLandingGearVariables) chooses the gear's state itself on every update ([vehicle-parts.md, "Landing gear"](../../engine/gameplay/vehicle-parts.md#landing-gear)), so a gear lever would have nothing to drive. Overriding the choice would mean taking over that update for the player's plane; it is not built.
+
 ## Settings
 
-The pause menu's `VR: CONTROLS` page has `FLIGHT STICK THROW` (the flight stick's full deflection, 5 to 20 cm), `TWIST FLIGHT STICK FOR RUDDER`, and `THROTTLE AFTERBURNER GATE`, under VEHICLES with the other vehicle switches. The debug UI's Controllers tab has every value: per stick the top, the full deflection, the deadzone, and the centring time; per lever its neutral, axis, travel, and detent; and under "Rudder and afterburner (plane)" the twist's deadzone and full twist and where the gate starts.
+The pause menu's `VR: CONTROLS` page has `HORN ON THE WHEEL HUB`, `NITROUS BUTTON BY THE WHEEL`, `TWIST GRIP FOR NITROUS`, `FLIGHT STICK THROW` (the flight stick's full deflection, 5 to 20 cm), `TWIST FLIGHT STICK FOR RUDDER`, and `THROTTLE AFTERBURNER GATE`, under VEHICLES with the other vehicle switches. The debug UI's Controllers tab has every value: per stick the top, the full deflection, the deadzone, and the centring time; per lever its neutral, axis, travel, and detent; under "Rudder and afterburner (plane)" the twist's deadzone and full twist and where the gate starts; and under "Horn and nitrous by hand" the hub's share, the nitrous button's place and size, the press depth, and the twist.
 
 ## What is logged and shown
 
 The input tick logs `the throttle went through its afterburner gate` and `the throttle came back out of its afterburner gate` at info level. The `VR: STATUS` page's VEHICLES section has a FLIGHT CONTROLS row: `WAITING, NOT FLYING A PLANE` outside a plane's driver's seat, and in it whether the stick is held, returning, or free, the rudder, the throttle with `AFTERBURNER` while it is through the gate (or `THROTTLE BY TRIGGER` while the trigger has it), and the counts of cues and burns. The Controllers tab's vehicles section shows the same with the written rudder and the last cue. The recorder's signals are `vehicles.control_cues`, `vehicles.afterburner`, and `vehicles.afterburner_lights`, and `testing/scenarios/flight_controls.toml` is the template.
+
+Each press of a button and each twist that burns the nitrous logs `the hand worked the horn`, `the hand worked the nitrous button`, or `the hand worked the handlebars' twist grip` (or the collective's) at info level, with the hand. The VEHICLES section's COCKPIT BUTTONS row names what the seat has (`HORN, NITROUS BUTTON` with the wheel, `TWIST GRIP` with the handlebars or the collective, `WAITING, NONE IN THIS SEAT` in a plane), whether the horn or the nitrous is on, and the count of presses; out of the driver's seat it reads `WAITING, NOT DRIVING`. The recorder's signals are `vehicles.button_presses`, `vehicles.horn`, and `vehicles.nitrous`, and `testing/scenarios/cockpit_buttons.toml` is the template.
 
 ## Unverified
 
@@ -46,6 +69,9 @@ The input tick logs `the throttle went through its afterburner gate` and `the th
 - That the rudder's sign is right: the top turned right yaws the plane right.
 - The flight stick's throw, the centring time, and the twist's range against the game's own response.
 - Whether the throttle's brake half (pulled back past idle) is the brake the plane wants on the runway.
+- That a hand resting near the hub does not sound the horn while the driving animation sways the fitted wheel, and the hub's share against the drawn hubs.
+- The nitrous button's place beside the wheel, which has no drawn button to match, in cars with the wheel on the right.
+- The twist grips' engaging twist, and that the handlebars' right grip twist does not disturb the bars' roll.
 
 ## Headset checklist
 
@@ -54,3 +80,7 @@ The input tick logs `the throttle went through its afterburner gate` and `the th
 3. Take the stick off-centre and fly: no jump at the grab; a small tremor does not move the plane; full deflection gives a bump. Let go mid-roll: the stick and the plane come back level over a fraction of a second. Take the stick again while it returns: no jump.
 4. Twist the held stick to the right: the plane yaws right, and the VR: STATUS row shows a positive rudder. With `TWIST FLIGHT STICK FOR RUDDER` off, twisting does nothing and the thumbstick's rudder works.
 5. In a helicopter: the cyclic springs back the same way, and the collective clicks at its middle and bumps at its ends.
+6. In a car, hold the wheel with one hand and push the other into the hub: the horn sounds with a click, and stops as the hand comes back out. Rest a hand on the hub without pushing, and sweep a hand across the wheel to take the far rim: no horn. With both hands on the rim, no horn.
+7. With the nitrous upgrade, find the faint button right of the wheel and push it: the nitrous burns while it is held, and a short press is a turbo jump. The VR: STATUS COCKPIT BUTTONS row shows `NITROUS ON` while it is pressed.
+8. On a motorcycle and on a jetski, twist the right grip back while riding: the nitrous burns once the twist passes about 30°, a click marks it, and twisting forward does nothing. In a helicopter, twist the collective's grip either way: the nitrous burns.
+9. In a plane, check that the gear still comes down and goes up by itself.

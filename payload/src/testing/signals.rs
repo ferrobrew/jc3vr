@@ -105,6 +105,9 @@ signals! {
     ControlCues => "vehicles.control_cues", Counter, "Haptic stops, detents, and gates the held sticks and levers gave.";
     Afterburner => "vehicles.afterburner", Flag, "The plane's throttle is through its afterburner gate.";
     AfterburnerLights => "vehicles.afterburner_lights", Counter, "Times the throttle went through its afterburner gate.";
+    ButtonPresses => "vehicles.button_presses", Counter, "Cockpit buttons pressed and twist grips twisted by hand.";
+    HornByHand => "vehicles.horn", Flag, "A hand presses the horn on the wheel's hub.";
+    NitrousByHand => "vehicles.nitrous", Flag, "A hand presses the nitrous button or twists a twist grip.";
     Airborne => "controllers.airborne", Flag, "The mode detector has the player falling, in the wingsuit, or under the parachute.";
     HandBodiesRegistered => "hand_bodies.registered", Flag, "The hand bodies' pre-simulation callback is registered.";
     HandBodiesOnGameThread => "hand_bodies.on_game_thread", Flag, "The callback has fired, on the thread that registered it.";
@@ -196,6 +199,9 @@ impl Signal {
             Signal::ControlCues => count(vehicles::summary().cues),
             Signal::Afterburner => flag(vehicles::summary().outputs.afterburner),
             Signal::AfterburnerLights => count(vehicles::summary().afterburner_lights),
+            Signal::ButtonPresses => count(vehicles::summary().button_presses),
+            Signal::HornByHand => flag(vehicles::summary().outputs.horn),
+            Signal::NitrousByHand => flag(vehicles::summary().outputs.nitrous),
             Signal::Airborne => flag(matches!(mode::current().mode, Mode::Airborne(_))),
             Signal::HandBodiesRegistered => flag(physics::callback_status().registered),
             Signal::HandBodiesOnGameThread => {

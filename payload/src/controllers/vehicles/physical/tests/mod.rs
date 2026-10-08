@@ -1,6 +1,7 @@
 //! Tests for the physical controls: the wheel, the handlebars, and the common grab and release here,
-//! the plane's flight stick and throttle in [`flight`].
+//! the plane's flight stick and throttle in [`flight`], and the cockpit's buttons in [`buttons`].
 
+mod buttons;
 mod flight;
 
 use std::f32::consts::FRAC_PI_2;

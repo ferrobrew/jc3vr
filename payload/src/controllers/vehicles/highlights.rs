@@ -15,6 +15,7 @@ use crate::controllers::{
     },
     vehicles::{
         parachute::{Mark, MarkState},
+        physical::buttons::{Button, ButtonPlacement, ButtonState, PushButton, PushPhase},
         wheel::{CockpitTransform, WheelFrame},
     },
 };
@@ -31,6 +32,35 @@ pub(super) struct Highlights<'a> {
     pub handles: Option<[Mark; 2]>,
     /// The wheel's rim and axes, while they show.
     pub wheel: Option<WheelFrame>,
+    /// The cockpit's push buttons and how near a hand is to pressing each.
+    pub buttons: &'a [ButtonMark],
+}
+
+/// A push button's mark: the button and the nearest any hand is to pressing it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct ButtonMark {
+    pub button: Button,
+    pub at: PushButton,
+    pub phase: PushPhase,
+}
+
+/// The marks of the push buttons `placement` places, by how near each hand is to pressing them.
+pub(super) fn button_marks(placement: &ButtonPlacement, state: &ButtonState) -> Vec<ButtonMark> {
+    Button::ALL
+        .into_iter()
+        .filter_map(|button| {
+            let at = placement.button(button)?;
+            let phases = Hand::BOTH.map(|hand| state.phase(button, hand));
+            let phase = if phases.contains(&PushPhase::Pressed) {
+                PushPhase::Pressed
+            } else if phases.contains(&PushPhase::Armed) {
+                PushPhase::Armed
+            } else {
+                PushPhase::Out
+            };
+            Some(ButtonMark { button, at, phase })
+        })
+        .collect()
 }
 
 /// Submit a highlight on the control each free hand can grab, the parachute handles' marks, the
@@ -43,8 +73,14 @@ pub(super) fn submit(config: &ControllersConfig, highlights: &Highlights, xf: &C
         wings,
         handles,
         wheel,
+        buttons,
     } = *highlights;
     let mut prims = Vec::new();
+    if config.overlay.enabled {
+        for mark in buttons {
+            button_primitives(mark, xf, &mut prims);
+        }
+    }
     if let Some(wheel) = wheel {
         wheel_primitives(&wheel, xf, &mut prims);
     }
@@ -120,6 +156,16 @@ const WING_LINE_M: f32 = 0.006;
 
 const WHEEL: Rgba = [1.0, 0.8, 0.3, 0.8];
 
+/// A push button no hand is at: shown faintly for the nitrous button, which the vehicle's model
+/// does not draw, and not at all for the horn, which is the drawn hub.
+const BUTTON_IDLE: Rgba = [1.0, 0.45, 0.3, 0.35];
+
+/// A push button a hand is in front of: a push from here presses it.
+const BUTTON_ARMED: Rgba = [1.0, 0.6, 0.35, 0.8];
+
+/// A pressed push button.
+const BUTTON_PRESSED: Rgba = [0.35, 1.0, 0.6, 0.9];
+
 const XRAY: DepthMode = DepthMode::XRay {
     occluded_alpha: 0.4,
 };
@@ -181,6 +227,32 @@ fn handle_primitives(mark: &Mark, xf: &CockpitTransform, prims: &mut Vec<Primiti
             depth: XRAY,
         });
     }
+}
+
+/// A push button: a disc on its face, ringed while a hand is in front of it or pressing it.
+fn button_primitives(mark: &ButtonMark, xf: &CockpitTransform, prims: &mut Vec<Primitive>) {
+    let color = match mark.phase {
+        PushPhase::Out if mark.button == Button::Horn => return,
+        PushPhase::Out => BUTTON_IDLE,
+        PushPhase::Armed => BUTTON_ARMED,
+        PushPhase::Pressed => BUTTON_PRESSED,
+    };
+    let at = Anchor::World(xf.point_to_world(mark.at.centre));
+    let normal = xf.direction_to_world(mark.at.normal);
+    let diameter = mark.at.radius * 2.0 * xf.world_scale;
+    let shape = if mark.phase == PushPhase::Out {
+        Shape::Disc
+    } else {
+        Shape::Ring { thickness: 0.15 }
+    };
+    prims.push(Primitive::Sprite {
+        at,
+        size: SpriteSize::World(diameter),
+        facing: Facing::Surface { normal },
+        shape,
+        color,
+        depth: XRAY,
+    });
 }
 
 /// The wheel's rim, its axis from the hub toward the driver, and a spoke to the top of its rim, in

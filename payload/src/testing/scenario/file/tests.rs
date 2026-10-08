@@ -249,6 +249,7 @@ fn the_shipped_templates_read() {
         "articulated.toml",
         "character_grab.toml",
         "climb_moving.toml",
+        "cockpit_buttons.toml",
         "flight_controls.toml",
         "hand_bodies.toml",
         "hand_climbing.toml",

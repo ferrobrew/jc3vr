@@ -583,6 +583,24 @@ fn settings_page() -> Page {
             .physical
             .flight
             .afterburner_gate))
+        .item(config_toggle!("HORN ON THE WHEEL HUB", |c| c
+            .controllers
+            .vehicles
+            .physical
+            .buttons
+            .horn))
+        .item(config_toggle!("NITROUS BUTTON BY THE WHEEL", |c| c
+            .controllers
+            .vehicles
+            .physical
+            .buttons
+            .nitrous_button))
+        .item(config_toggle!("TWIST GRIP FOR NITROUS", |c| c
+            .controllers
+            .vehicles
+            .physical
+            .buttons
+            .twist_nitrous))
         .item(config_toggle!("WINGSUIT ARM STEERING", |c| c
             .controllers
             .vehicles

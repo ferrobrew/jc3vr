@@ -146,6 +146,8 @@ pub struct PhysicalControlsConfig {
     /// What the plane's flight stick and throttle add to a plain stick and lever: the stick's
     /// twist for the rudder and the throttle's afterburner gate.
     pub flight: FlightControlsConfig,
+    /// The horn and the nitrous worked by hand.
+    pub buttons: CockpitButtonsConfig,
     /// How far from a control a hand's grip may be for a grip press to grab it, metres.
     pub grab_radius_m: f32,
     /// How far a holding hand may move from the control before it lets go, metres.
@@ -212,6 +214,7 @@ impl PhysicalControlsConfig {
                 hold_on_release: true,
             },
             flight: FlightControlsConfig::new(),
+            buttons: CockpitButtonsConfig::new(),
             grab_radius_m: 0.09,
             release_distance_m: 0.25,
             from_vehicle: true,
@@ -322,6 +325,59 @@ pub struct StickSpec {
     /// The released stick's centring spring: the time constant it returns to centre with, seconds.
     /// Zero snaps it back.
     pub return_s: f32,
+}
+
+/// The horn and the nitrous worked by hand (see
+/// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
+/// nitrous button on the dash beside the wheel, and the handlebars' right grip or the collective
+/// twisted for the nitrous. The plane's afterburner is its throttle's gate
+/// ([`FlightControlsConfig::afterburner_gate`]). The buttons stay alongside the controller's.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CockpitButtonsConfig {
+    /// Sound the horn by pushing a free hand into the wheel's hub.
+    pub horn: bool,
+    /// The hub's share of the wheel's radius that presses the horn.
+    pub hub_share: f32,
+    /// A nitrous button on the dash beside the wheel, pushed with a free hand.
+    pub nitrous_button: bool,
+    /// The nitrous button from the wheel's rim on its right: along the wheel's right, its up, and
+    /// its axis toward the driver, metres.
+    pub nitrous_from_rim_m: Vec3,
+    pub nitrous_radius_m: f32,
+    /// How far past a button's face a hand pushes to press it, metres.
+    pub press_depth_m: f32,
+    /// Burn the nitrous by twisting the handlebars' right grip back, as a motorcycle's throttle
+    /// is twisted, or the collective's grip either way.
+    pub twist_nitrous: bool,
+    /// How far a twist grip is twisted from where the hand took it to burn the nitrous, degrees.
+    pub twist_deg: f32,
+}
+
+impl CockpitButtonsConfig {
+    pub const fn new() -> Self {
+        Self {
+            horn: true,
+            hub_share: 0.35,
+            nitrous_button: true,
+            nitrous_from_rim_m: Vec3::new(0.12, 0.02, 0.0),
+            nitrous_radius_m: 0.045,
+            press_depth_m: 0.02,
+            twist_nitrous: true,
+            twist_deg: 30.0,
+        }
+    }
+
+    /// Whether any button is switched on.
+    pub const fn any(&self) -> bool {
+        self.horn || self.nitrous_button || self.twist_nitrous
+    }
+}
+
+impl Default for CockpitButtonsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// The plane's flight stick and throttle beyond a plain stick and lever (see

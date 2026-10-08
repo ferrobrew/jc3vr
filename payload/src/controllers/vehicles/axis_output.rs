@@ -35,6 +35,18 @@ pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
     if let Some(throttle) = out.throttle {
         replace_axis(desired, throttle, PLANE_DEC_TRUST, PLANE_INC_TRUST);
     }
+    // The buttons hold their actions alongside the controller's buttons, which merge with them.
+    for (pressed, action) in [(out.horn, SOUND_HORN_SIREN), (out.nitrous, USE_VEHICLE_MOD)] {
+        if pressed {
+            desired.push(Desired {
+                target: Target {
+                    map: MapKind::Player,
+                    action,
+                },
+                want: Want::Hold(1.0),
+            });
+        }
+    }
 }
 
 /// Whether the tables wrote either half of the axis `negative`/`positive` this tick: their stick

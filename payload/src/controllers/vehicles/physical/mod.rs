@@ -23,6 +23,10 @@
 //!   output, with a detent around neutral. The throttle stays where it is let go, and has an
 //!   afterburner gate at the top of its travel.
 //!
+//! The cockpit's buttons ([`buttons`]) are worked by hand too: the horn pressed on the wheel's hub,
+//! a nitrous button on the dash, and the handlebars' right grip or the collective twisted for the
+//! nitrous.
+//!
 //! The sticks and levers give the holding hand a haptic cue at the ends of their travel, the
 //! levers at neutral, and the throttle going into and out of its gate ([`cues`]).
 //!
@@ -33,6 +37,7 @@
 //! The wheel's motion is in [`held_wheel`], the handlebars' in [`handlebars`], the sticks' in
 //! [`sticks`], and the levers' in [`levers`].
 
+pub mod buttons;
 pub mod cues;
 mod handlebars;
 mod held_wheel;
@@ -56,6 +61,7 @@ use crate::controllers::{
     vehicles::{
         config::{LeverSpec, PhysicalControlsConfig, StickSpec},
         physical::{
+            buttons::{ButtonEvent, ButtonInputs, ButtonPlacement, ButtonState, step_buttons},
             cues::TravelCues,
             handlebars::{BarsLatch, bars_now, step_bars},
             held_wheel::step_wheel,
@@ -163,6 +169,8 @@ impl Release {
 pub enum ControlEvent {
     Grabbed(Hand, ControlKind),
     Released(Hand, ControlKind, Release),
+    /// A cockpit button or twist grip pressed or let go.
+    Button(ButtonEvent),
 }
 
 /// The controls' moving parts.
@@ -191,6 +199,8 @@ pub struct ControlState {
     stick_cues: TravelCues,
     /// Which of each lever's cues may fire, indexed as [`levers`](Self::levers).
     lever_cues: [TravelCues; 2],
+    /// The cockpit's buttons and twist grips.
+    pub buttons: ButtonState,
 }
 
 impl ControlState {
@@ -207,6 +217,7 @@ impl ControlState {
             levers: [0.0; 2],
             stick_cues: TravelCues::new(),
             lever_cues: [TravelCues::new(); 2],
+            buttons: ButtonState::new(),
         }
     }
 }
@@ -237,6 +248,10 @@ pub struct Outputs {
     pub stick_cue: Option<ControlCue>,
     /// The cue the held lever gives its hand this tick.
     pub lever_cue: Option<ControlCue>,
+    /// Whether a hand presses the horn on the wheel's hub.
+    pub horn: bool,
+    /// Whether a hand presses the nitrous button or twists a twist grip.
+    pub nitrous: bool,
 }
 
 impl Outputs {
@@ -252,6 +267,8 @@ impl Outputs {
         wheel_cue: None,
         stick_cue: None,
         lever_cue: None,
+        horn: false,
+        nitrous: false,
     };
 }
 
@@ -507,6 +524,26 @@ pub fn step(
             release(state, hand, Release::MovedAway, events);
         }
     }
+
+    let buttons =
+        ButtonPlacement::for_seat(inputs.kinds, &placement.config.buttons, &placement.wheel);
+    let mut button_events = Vec::new();
+    let pressed = step_buttons(
+        &mut state.buttons,
+        &ButtonInputs {
+            placement: &buttons,
+            config: &placement.config.buttons,
+            bars: &placement.bars,
+            grips: inputs.grips,
+            orientations: inputs.orientations,
+            holds: state.holds,
+            bars_angles: state.bars,
+        },
+        &mut button_events,
+    );
+    events.extend(button_events.into_iter().map(ControlEvent::Button));
+    out.horn = pressed.horn;
+    out.nitrous = pressed.nitrous;
     out
 }
 

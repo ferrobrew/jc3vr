@@ -134,7 +134,7 @@ const SETTLED_M: f32 = 0.002;
 
 /// The rotation `delta`'s twist about the unit `axis`, radians, positive anticlockwise looking down
 /// the axis toward its origin.
-fn twist_about(delta: Quat, axis: Vec3) -> f32 {
+pub(super) fn twist_about(delta: Quat, axis: Vec3) -> f32 {
     let delta = if delta.w < 0.0 { -delta } else { delta };
     let along = Vec3::new(delta.x, delta.y, delta.z).dot(axis);
     let twist = 2.0 * along.atan2(delta.w);

@@ -13,9 +13,10 @@ use crate::{
             self, VehiclesStatus,
             arm_steering::PitchInput,
             config::{
-                ArmPitch, ArmSteeringConfig, DrivingViewConfig, FlightControlsConfig,
-                HandlebarsSpec, LeverAxis, LeverSpec, MountedConfig, ParachuteHandlesConfig,
-                PhysicalControlsConfig, StickSpec, VehiclesConfig, WheelSpec, WheelTracking,
+                ArmPitch, ArmSteeringConfig, CockpitButtonsConfig, DrivingViewConfig,
+                FlightControlsConfig, HandlebarsSpec, LeverAxis, LeverSpec, MountedConfig,
+                ParachuteHandlesConfig, PhysicalControlsConfig, StickSpec, VehiclesConfig,
+                WheelSpec, WheelTracking,
             },
             driver_aim,
             driving_view::{self, DrivingViewStatus},
@@ -125,15 +126,28 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         if o.afterburner { " (afterburner)" } else { "" },
     ));
     ui.label(format!(
-        "Stick and lever cues {} (last {}) · afterburner gate passed {}",
+        "Stick and lever cues {} (last {}) · afterburner gate passed {} · horn {} · nitrous {} · buttons worked {}",
         status.cues,
         status.last_cue.map_or("none", |c| c.label()),
         status.afterburner_lights,
+        o.horn,
+        o.nitrous,
+        status.button_presses,
     ));
     wheel_readout(ui, status, readout.wheel_turns);
     driving_view_readout(ui, &readout.driving_view);
     for event in status.events.iter().rev() {
         ui.label(match event {
+            ControlEvent::Button(event) => format!(
+                "{} {} the {}",
+                event.hand().label(),
+                if event.engages() {
+                    "worked"
+                } else {
+                    "let go of"
+                },
+                event.what(),
+            ),
             ControlEvent::Grabbed(hand, kind) => {
                 format!("{} grabbed the {}", hand.label(), kind.label())
             }
@@ -418,6 +432,39 @@ fn physical_settings(ui: &mut Ui, p: &mut PhysicalControlsConfig) {
     egui::CollapsingHeader::new("Throttle (plane)").show(ui, |ui| lever(ui, &mut p.throttle));
     egui::CollapsingHeader::new("Rudder and afterburner (plane)")
         .show(ui, |ui| flight(ui, &mut p.flight));
+    egui::CollapsingHeader::new("Horn and nitrous by hand")
+        .show(ui, |ui| buttons(ui, &mut p.buttons));
+}
+
+fn buttons(ui: &mut Ui, b: &mut CockpitButtonsConfig) {
+    ui.checkbox(&mut b.horn, "Horn on the wheel's hub");
+    ui.add(
+        egui::Slider::new(&mut b.hub_share, 0.1..=0.6)
+            .text("hub's share of the wheel's radius")
+            .fixed_decimals(2),
+    );
+    ui.checkbox(&mut b.nitrous_button, "Nitrous button beside the wheel");
+    vec3_drag(
+        ui,
+        "nitrous button from the rim (right, up, toward the driver; m)",
+        &mut b.nitrous_from_rim_m,
+        0.005,
+    );
+    ui.add(
+        egui::Slider::new(&mut b.nitrous_radius_m, 0.02..=0.1)
+            .text("nitrous button radius (m)")
+            .fixed_decimals(3),
+    );
+    ui.add(
+        egui::Slider::new(&mut b.press_depth_m, 0.005..=0.06)
+            .text("press depth (m)")
+            .fixed_decimals(3),
+    );
+    ui.checkbox(
+        &mut b.twist_nitrous,
+        "Twist the bars' right grip or the collective for nitrous",
+    );
+    ui.add(egui::Slider::new(&mut b.twist_deg, 10.0..=80.0).text("twist to burn (°)"));
 }
 
 fn flight(ui: &mut Ui, f: &mut FlightControlsConfig) {
