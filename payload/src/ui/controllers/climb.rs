@@ -95,6 +95,11 @@ pub(super) fn climb_settings(ui: &mut Ui, c: &mut ClimbConfig) {
         ui.add(
             egui::Slider::new(&mut c.mantle_land_past_m, 0.0..=1.0).text("Land past the edge (m)"),
         );
+        ui.add(egui::Slider::new(&mut c.fling_carry_s, 0.0..=1.0).text("Fling carried for (s)"));
+        ui.add(
+            egui::Slider::new(&mut c.tension_full_speed_mps, 0.1..=10.0)
+                .text("Speed of the strongest tension pulse (m/s)"),
+        );
         ui.add(
             egui::Slider::new(&mut c.min_ledge_normal_y, 0.0..=1.0)
                 .text("Least upward normal of a ledge"),

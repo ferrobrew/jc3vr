@@ -8,7 +8,7 @@ Each tick, the palms' tick casts the pickup's reach rays ([physical-hands.md](ph
 
 A hand with a static surface in reach, or whose body presses into something that holds it back, and no grip reports the climb's grab volume ([`GrabVolume::Climb`](../../../payload/src/controllers/bindings/grab.rs)) to the bindings, after the pickup's, so every placed volume and the pickup volume win over it. As with every grab volume, the grip press is latched at its edge, so it does not fire the grapple: a grip pressed against a wall that no reach ray finds grips nothing, but does not grapple either. The input tick asks the next physics step to grip, and a released grip asks it to let go.
 
-The step takes the grip only for a hand whose body acts, on a body still static. It remembers where the player's body and the palm were and pins the hand's body where it is: from then on the body's goal is that pin, not the controller, so the rendered hand stays on the wall while the controller moves. The hand pulses `climb.grab_pulse`, and `climb.release_pulse` when it lets go.
+The step takes the grip only for a hand whose body acts, on a body still static. It remembers where the player's body and the palm were and pins the hand's body where it is: from then on the body's goal is that pin, not the controller, so the rendered hand stays on the wall while the controller moves. The hand pulses `climb.grab_pulse`, and `climb.release_pulse` when it lets go; a release that flings pulses `climb.fling_pulse` in proportion to the fling's speed against `climb.max_fling_speed_mps`. While the hands move the body, each gripping hand pulses `climb.tension_pulse` every tick in proportion to the climbing speed, full at `climb.tension_full_speed_mps`, so a hard pull is felt in the hands.
 
 ## Climbing
 
@@ -24,7 +24,7 @@ That this keeps the player out of every falling state rests on the readers the d
 
 ## Letting go
 
-The climbing velocity is smoothed over `climb.fling_smoothing_s`. When the last grip lets go with the grip, the proxy keeps `climb.fling_scale` of it, capped at `climb.max_fling_speed_mps` (`climb.fling`), and the game takes the player from there: a fling up a wall rises and falls, and a fling over a ledge lands on it. A grip that ends for any other reason (below) does not fling.
+The climbing velocity is smoothed over `climb.fling_smoothing_s`. When the last grip lets go with the grip, the proxy keeps `climb.fling_scale` of it, capped at `climb.max_fling_speed_mps` (`climb.fling`), and the game takes the player from there: a fling up a wall rises and falls, and a fling over a ledge lands on it. A grip that ends for any other reason (below) does not fling. The game may take the velocity back on the next steps, before its own air handling has the player in the air, so for `climb.fling_carry_s` after the release the step keeps giving the proxy the fling's velocity as a throw under gravity (`pickup.gravity_mps2`), until the proxy finds support or a hand grips again; whether the game keeps the fling without this is unverified.
 
 ## Mantling
 

@@ -834,7 +834,15 @@ fn climb(c: &ClimbConfig) -> Result<(), Invalid> {
         1.0,
     )?;
     pulse("physical_hands.climb.grab_pulse", &c.grab_pulse)?;
-    pulse("physical_hands.climb.release_pulse", &c.release_pulse)
+    pulse("physical_hands.climb.release_pulse", &c.release_pulse)?;
+    nonnegative("physical_hands.climb.fling_carry_s", c.fling_carry_s, 5.0)?;
+    pulse("physical_hands.climb.fling_pulse", &c.fling_pulse)?;
+    pulse("physical_hands.climb.tension_pulse", &c.tension_pulse)?;
+    positive(
+        "physical_hands.climb.tension_full_speed_mps",
+        c.tension_full_speed_mps,
+        50.0,
+    )
 }
 
 fn shove(s: &ShoveConfig) -> Result<(), Invalid> {

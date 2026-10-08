@@ -58,6 +58,16 @@ pub struct ClimbConfig {
     pub grab_pulse: PulseSpec,
     /// The pulse of a hand letting go of the world.
     pub release_pulse: PulseSpec,
+    /// How long a fling keeps carrying the body after the release, seconds, as a throw under
+    /// gravity, until the player stands on something or grips again.
+    pub fling_carry_s: f32,
+    /// The pulse of a fling at its fastest; a slower fling pulses in proportion.
+    pub fling_pulse: PulseSpec,
+    /// The pulse of a gripping hand while the hands move the body, every tick, in proportion to the
+    /// climbing speed.
+    pub tension_pulse: PulseSpec,
+    /// The climbing speed of the strongest tension pulse, metres per second.
+    pub tension_full_speed_mps: f32,
 }
 
 impl ClimbConfig {
@@ -89,6 +99,16 @@ impl ClimbConfig {
                 amplitude: 0.25,
                 duration_s: 0.02,
             },
+            fling_carry_s: 0.2,
+            fling_pulse: PulseSpec {
+                amplitude: 0.9,
+                duration_s: 0.06,
+            },
+            tension_pulse: PulseSpec {
+                amplitude: 0.3,
+                duration_s: 0.03,
+            },
+            tension_full_speed_mps: 3.0,
         }
     }
 }

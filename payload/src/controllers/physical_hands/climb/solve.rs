@@ -90,6 +90,25 @@ pub fn fling(smoothed: Vec3, scale: f32, max_speed: f32) -> Vec3 {
     (smoothed * scale.max(0.0)).clamp_length_max(max_speed.max(0.0))
 }
 
+/// The velocity a fling of `kept` carries `elapsed_s` seconds after the release: thrown, under
+/// `gravity_mps2`, so that the game's own air handling, whenever it takes over, finds the body
+/// moving as a throw would.
+pub fn fling_carry(kept: Vec3, elapsed_s: f32, gravity_mps2: f32) -> Vec3 {
+    if !(kept.is_finite() && elapsed_s.is_finite() && gravity_mps2.is_finite()) {
+        return Vec3::ZERO;
+    }
+    kept - Vec3::Y * gravity_mps2.max(0.0) * elapsed_s.max(0.0)
+}
+
+/// The share of a climb's tension pulse a climb at `speed_mps` pulses with, `0..=1`: full at
+/// `full_mps`.
+pub fn tension(speed_mps: f32, full_mps: f32) -> f32 {
+    if !(speed_mps.is_finite() && full_mps.is_finite() && full_mps > 0.0) {
+        return 0.0;
+    }
+    (speed_mps / full_mps).clamp(0.0, 1.0)
+}
+
 /// How the mantle carries the body over a ledge.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct MantleTuning {
@@ -387,6 +406,18 @@ mod tests {
         // One step of a sudden change moves the smoothed speed only part of the way.
         let once = smooth(Vec3::ZERO, Vec3::Y, STEP, 0.08);
         assert!(once.y > 0.0 && once.y < 1.0);
+    }
+
+    #[test]
+    fn a_fling_is_carried_as_a_throw() {
+        let kept = Vec3::new(1.0, 4.0, 0.0);
+        assert_eq!(fling_carry(kept, 0.0, 9.81), kept);
+        let later = fling_carry(kept, 0.2, 9.81);
+        assert!((later.y - (4.0 - 1.962)).abs() < 1e-4 && later.x == 1.0);
+        assert_eq!(fling_carry(Vec3::NAN, 0.1, 9.81), Vec3::ZERO);
+        assert_eq!(tension(1.5, 3.0), 0.5);
+        assert_eq!(tension(9.0, 3.0), 1.0);
+        assert_eq!(tension(1.0, 0.0), 0.0);
     }
 
     #[test]

@@ -44,7 +44,7 @@ use crate::{
             PhysicalHandsConfig,
             climb::solve::{
                 ClimbTuning, Follow, Mantle, MantleCheck, MantleMotion, MantleTuning, body_target,
-                climb_velocity, fling, is_ledge, mantle_starts, smooth,
+                climb_velocity, fling, fling_carry, is_ledge, mantle_starts, smooth, tension,
             },
             contact::{Surface, SurfaceHit},
             palm::PalmBox,
@@ -260,14 +260,35 @@ pub(super) fn observe(observed: Observed, config: &PhysicalHandsConfig) {
         if !climbing {
             state.warned_mode = false;
         }
-        std::mem::take(&mut state.events)
+        // The gripping hands feel the pull while the hands move the body.
+        let strain = climbing.then(|| {
+            tension(
+                state.status.velocity.length(),
+                config.climb.tension_full_speed_mps,
+            )
+        });
+        let gripping = state.grips.map(|g| g.is_some());
+        (std::mem::take(&mut state.events), strain, gripping)
     };
+    let (events, strain, gripping) = events;
     for (hand, event) in events {
-        let spec = match event {
-            Event::Gripped => config.climb.grab_pulse,
-            Event::Released => config.climb.release_pulse,
+        let (spec, scale) = match event {
+            Event::Gripped => (config.climb.grab_pulse, 1.0),
+            Event::Released => (config.climb.release_pulse, 1.0),
+            Event::Flung(share) => (config.climb.fling_pulse, share),
         };
-        pulse(hand, spec, 1.0, config, PulseSource::Pickup);
+        pulse(hand, spec, scale, config, PulseSource::Pickup);
+    }
+    if let Some(strain) = strain.filter(|&s| s >= MIN_TENSION) {
+        for hand in Hand::BOTH.into_iter().filter(|h| gripping[h.index()]) {
+            pulse(
+                hand,
+                config.climb.tension_pulse,
+                strain,
+                config,
+                PulseSource::Pickup,
+            );
+        }
     }
 }
 
@@ -301,6 +322,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     };
     if let Some(reason) = reason {
         state.requests = [None; 2];
+        state.carry = None;
         state.drop_all(reason);
         state.finish_climb();
         return [None; 2];
@@ -323,7 +345,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         step_s,
     };
     let rig_epoch = state.rig_epoch;
-    let mut released_by_grip = false;
+    let mut released_by_grip = None;
     for hand in Hand::BOTH {
         let i = hand.index();
         match state.requests[i].take() {
@@ -374,7 +396,7 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 }
             }
             Some(Request::Release) if state.grips[i].take().is_some() => {
-                released_by_grip = true;
+                released_by_grip = Some(hand);
                 state.status.releases += 1;
                 state.events.push((hand, Event::Released));
                 tracing::debug!(hand = hand.label(), "hand climbing: a hand let go");
@@ -403,7 +425,11 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     }
 
     if state.grips.iter().all(Option::is_none) {
-        if state.climbing && released_by_grip && state.mantle.is_none() && config.climb.fling {
+        if let Some(hand) = released_by_grip
+            && state.climbing
+            && state.mantle.is_none()
+            && config.climb.fling
+        {
             let kept = fling(
                 state.smoothed,
                 config.climb.fling_scale,
@@ -413,6 +439,14 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             match unsafe { engine::set_velocity(kept) } {
                 Ok(()) => {
                     state.status.last_fling_mps = Some(kept.length());
+                    state.carry = Some(Carry { kept, steps: 0 });
+                    let max = config.climb.max_fling_speed_mps;
+                    let share = if max > 0.0 {
+                        (kept.length() / max).min(1.0)
+                    } else {
+                        0.0
+                    };
+                    state.events.push((hand, Event::Flung(share)));
                     tracing::info!(
                         speed_mps = kept.length(),
                         velocity = ?kept,
@@ -421,10 +455,33 @@ pub(super) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 }
                 Err(e) => state.status.last_error = Some(e.to_string()),
             }
+        } else if let Some(carry) = state.carry {
+            // The game may take a fling's velocity back on the steps after the release, so the
+            // fling keeps carrying the body as a throw for a moment, until it stands somewhere.
+            let elapsed_s = (carry.steps + 1) as f32 * step_s;
+            if support.is_some() || elapsed_s > config.climb.fling_carry_s {
+                state.carry = None;
+            } else {
+                let velocity = fling_carry(carry.kept, elapsed_s, config.pickup.gravity_mps2);
+                // SAFETY: forwarded from the caller.
+                match unsafe { engine::set_velocity(velocity) } {
+                    Ok(()) => {
+                        state.carry = Some(Carry {
+                            steps: carry.steps + 1,
+                            ..carry
+                        })
+                    }
+                    Err(e) => {
+                        state.status.last_error = Some(e.to_string());
+                        state.carry = None;
+                    }
+                }
+            }
         }
         state.finish_climb();
         return [None; 2];
     }
+    state.carry = None;
 
     let place = match place {
         Ok(place) => place,
@@ -600,6 +657,9 @@ const MANTLE_LANDED_BELOW_M: f32 = 0.15;
 /// How many steps a mantle may take before it gives up: three seconds.
 const MAX_MANTLE_STEPS: u32 = 90;
 
+/// The least share of the tension pulse that pulses a gripping hand.
+const MIN_TENSION: f32 = 0.1;
+
 /// How often the climb is written to the debug log.
 const LOG_PERIOD: Duration = Duration::from_secs(1);
 
@@ -613,6 +673,17 @@ enum Request {
 enum Event {
     Gripped,
     Released,
+    /// A release that flung the body, at this share of the fastest fling.
+    Flung(f32),
+}
+
+/// A fling still carrying the body after its release.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Carry {
+    /// The velocity the release kept.
+    kept: Vec3,
+    /// The steps since the release.
+    steps: u32,
 }
 
 /// A hand gripping the world.
@@ -657,6 +728,8 @@ struct State {
     smoothed: Vec3,
     /// The feet's height when the climb started.
     start_feet_y: f32,
+    /// The fling still carrying the body, if one is.
+    carry: Option<Carry>,
     events: Vec<(Hand, Event)>,
     epoch: u64,
     warned_mode: bool,
@@ -740,6 +813,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     mantle_steps: 0,
     smoothed: Vec3::ZERO,
     start_feet_y: 0.0,
+    carry: None,
     events: Vec::new(),
     epoch: 0,
     warned_mode: false,
