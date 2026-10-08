@@ -12,6 +12,7 @@ use crate::{
             config::{PickupConfig, ShoveConfig},
             doors::{self, DoorsConfig},
             grasp::TargetKind,
+            sounds::{self, ImpactSoundsConfig},
             vault::{self, VaultConfig},
         },
     },
@@ -208,6 +209,8 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
             egui::Slider::new(&mut p.object_impulse, 0.0..=4.0).text("Object impulse (× melee)"),
         );
         ui.separator();
+        sounds_settings(ui, &mut p.sounds);
+        ui.separator();
         pickup_settings(ui, &mut p.pickup);
         ui.separator();
         doors_settings(ui, &mut p.doors);
@@ -323,4 +326,29 @@ fn shove_settings(ui: &mut Ui, s: &mut ShoveConfig) {
         ui.add(egui::Slider::new(&mut s.friction, 0.0..=2.0).text("Palm friction"));
         ui.add(egui::Slider::new(&mut s.give_smoothing_s, 0.0..=0.5).text("Give smoothing (s)"));
     });
+}
+
+fn sounds_settings(ui: &mut Ui, s: &mut ImpactSoundsConfig) {
+    let status = sounds::status();
+    ui.checkbox(&mut s.enabled, "Impact sounds")
+        .on_hover_text("The game's melee impact sound where a hand meets something hard enough.");
+    ui.add(
+        egui::Slider::new(&mut s.min_touch_speed_mps, 0.0..=8.0)
+            .text("Slowest sounding touch (m/s)"),
+    );
+    ui.add(egui::Slider::new(&mut s.min_strike_share, 0.0..=1.0).text("Weakest sounding strike"));
+    ui.add(egui::Slider::new(&mut s.hand_cooldown_s, 0.0..=2.0).text("Hand cooldown (s)"));
+    ui.add(egui::Slider::new(&mut s.min_interval_s, 0.0..=1.0).text("Shared interval (s)"));
+    ui.label(format!(
+        "Sounds: {} played · {} held back · {} silent · last {}",
+        status.played,
+        status.limited,
+        status.silent,
+        status
+            .last
+            .map_or("-".to_owned(), |(material, kind)| format!(
+                "{} on material {material}",
+                kind.label()
+            ))
+    ));
 }

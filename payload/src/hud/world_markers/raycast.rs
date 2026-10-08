@@ -43,6 +43,7 @@ pub(crate) unsafe fn resolve_rays(owner: &Character) {
     let options = CastOptions {
         ignore: [owner as *const Character as usize, vehicle],
         see_through: true,
+        material: false,
     };
     let now = Instant::now();
     let mut results = Vec::with_capacity(requests.len().min(MAX_CASTS_PER_TICK));

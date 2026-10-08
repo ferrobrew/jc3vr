@@ -217,6 +217,11 @@ fn settings_page() -> Page {
             .physical_hands
             .characters
             .hijack))
+        .item(config_toggle!("HAND IMPACT SOUNDS", |c| c
+            .controllers
+            .physical_hands
+            .sounds
+            .enabled))
         .header("GRAPPLE")
         .item(config_toggle!("YANK TO ZIP", |c| c
             .controllers

@@ -129,6 +129,7 @@ impl GroundCaster {
         let options = CastOptions {
             ignore: [self.character, 0],
             see_through: false,
+            material: false,
         };
         self.tally.casts += 1;
         let hit = match unsafe { raycast::cast(&ray, length, &options) } {

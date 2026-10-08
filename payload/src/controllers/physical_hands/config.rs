@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::physical_hands::{
     characters::CharactersConfig, climb::ClimbConfig, doors::DoorsConfig,
-    physics::HandBodiesConfig, stunt::StuntConfig, vault::VaultConfig,
+    physics::HandBodiesConfig, sounds::ImpactSoundsConfig, stunt::StuntConfig, vault::VaultConfig,
 };
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
@@ -64,6 +64,8 @@ pub struct PhysicalHandsConfig {
     pub vault: VaultConfig,
     /// Stunt positions on vehicles, entered and let go of with the grip.
     pub stunt: StuntConfig,
+    /// The game's melee impact sound where a hand meets something hard enough.
+    pub sounds: ImpactSoundsConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -91,6 +93,7 @@ impl PhysicalHandsConfig {
             characters: CharactersConfig::new(),
             vault: VaultConfig::new(),
             stunt: StuntConfig::new(),
+            sounds: ImpactSoundsConfig::new(),
         }
     }
 }

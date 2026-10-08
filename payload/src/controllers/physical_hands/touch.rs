@@ -14,6 +14,7 @@ use crate::controllers::{
         contact::{Surface, SurfaceHit},
         engine,
         shove::{self, ShoveTuning},
+        sounds::{self, Impact, ImpactKind},
     },
 };
 
@@ -58,6 +59,26 @@ impl State {
         let impact = impact_speed(velocity, hit.normal);
         let share = (impact / config.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
         haptics::play_scaled(hand, Event::PalmTouch, 0.25 + 0.75 * share);
+        let material = match hit.surface {
+            Surface::Character { .. } => sounds::strike_material(true),
+            Surface::Solid { .. } => hit
+                .material
+                .unwrap_or_else(|| sounds::strike_material(false)),
+        };
+        // SAFETY: forwarded from the caller: the palms' tick on the game thread.
+        unsafe {
+            sounds::play(
+                Impact {
+                    hand,
+                    kind: ImpactKind::Touch,
+                    at: hit.position,
+                    velocity,
+                    material,
+                    strength: impact,
+                },
+                &config.sounds,
+            )
+        };
         let Surface::Solid {
             object: Some(_),
             body,

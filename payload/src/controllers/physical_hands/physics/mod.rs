@@ -1009,6 +1009,7 @@ unsafe fn path_clear(from: Vec3, to: Vec3, held: usize) -> bool {
     let options = CastOptions {
         ignore: [player, held],
         see_through: false,
+        material: false,
     };
     // SAFETY: forwarded from the caller; the ignored objects are the live player and a held
     // object the pickups checked this tick, or zero.

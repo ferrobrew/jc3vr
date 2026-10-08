@@ -30,6 +30,8 @@ pub struct CastOptions {
     /// Pass through the materials bullets and rays pass through (foliage, fences, glass), as the
     /// game's aim ray does.
     pub see_through: bool,
+    /// Read the hit shape's game material ([`RayHit::material`]).
+    pub material: bool,
 }
 
 /// The closest hit of a cast.
@@ -43,6 +45,9 @@ pub struct RayHit {
     pub object: Option<NonZeroUsize>,
     /// The Havok body id of the hit body.
     pub body: u32,
+    /// The hit shape's game material (an `EGameMaterialId`, [`CastRayInfo::GetHitMaterial`]), when
+    /// [`CastOptions::material`] asked for it.
+    pub material: Option<u32>,
 }
 
 /// Why a cast could not run.
@@ -139,6 +144,11 @@ pub unsafe fn cast(
         distance,
         object: NonZeroUsize::new(info.m_GameObject as usize),
         body: info.base.m_BodyId,
+        // SAFETY: a hit of this cast, whose body the query just found.
+        material: options
+            .material
+            .then(|| unsafe { info.GetHitMaterial() })
+            .and_then(|m| u32::try_from(m).ok()),
     }))
 }
 

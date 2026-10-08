@@ -236,6 +236,21 @@ impl std::convert::AsMut<CustomGroupCollisionFilter> for CustomGroupCollisionFil
         self
     }
 }
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A game material (`EGameMaterialId`): the surface kind a physics shape is tagged with, which
+/// picks the impact effects and sounds played against it. Only the values the melee hit's impact
+/// lookup uses are bound.
+pub enum GameMaterialId {
+    EGameMaterialId_Flesh = 25isize as _,
+    EGameMaterialId_Default = 31isize as _,
+}
+fn _GameMaterialId_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], GameMaterialId>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(16))]
 /// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
 pub struct IgnoreMaterialFlagFilter {

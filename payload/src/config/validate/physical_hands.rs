@@ -13,6 +13,28 @@ use crate::{
 
 /// Check the physical hand settings. Paths are relative to `controllers.physical_hands`.
 pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
+    let sounds = &p.sounds;
+    nonnegative(
+        "physical_hands.sounds.min_touch_speed_mps",
+        sounds.min_touch_speed_mps,
+        100.0,
+    )?;
+    range(
+        "physical_hands.sounds.min_strike_share",
+        sounds.min_strike_share,
+        0.0,
+        1.0,
+    )?;
+    nonnegative(
+        "physical_hands.sounds.hand_cooldown_s",
+        sounds.hand_cooldown_s,
+        10.0,
+    )?;
+    nonnegative(
+        "physical_hands.sounds.min_interval_s",
+        sounds.min_interval_s,
+        10.0,
+    )?;
     for (axis, value) in ["x", "y", "z"]
         .into_iter()
         .zip(p.palm_half_extents_m.to_array())

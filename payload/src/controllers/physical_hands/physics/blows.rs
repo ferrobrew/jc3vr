@@ -49,6 +49,7 @@ use crate::controllers::{
                 pulse_share, restrain,
             },
         },
+        sounds::{self, Impact, ImpactKind},
         world::World,
     },
 };
@@ -110,14 +111,28 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         if share >= MIN_PULSE_SHARE {
             haptics::play_scaled(contact.hand, Event::HandStrike, share);
         }
+        // SAFETY: forwarded from the caller.
+        let victim = attacker
+            .as_deref()
+            .and_then(|attacker| unsafe { victim(&contact, attacker) });
+        // SAFETY: forwarded from the caller: the game thread, outside the game's update.
+        unsafe {
+            sounds::play(
+                Impact {
+                    hand: contact.hand,
+                    kind: ImpactKind::Strike,
+                    at: contact.hand_position,
+                    velocity: contact.hand_velocity,
+                    material: sounds::strike_material(victim.is_some()),
+                    strength: share,
+                },
+                &config.sounds,
+            )
+        };
         if !hits.reactions {
             continue;
         }
-        let Some(attacker) = attacker.as_deref() else {
-            continue;
-        };
-        // SAFETY: forwarded from the caller.
-        let Some(victim) = (unsafe { victim(&contact, attacker) }) else {
+        let (Some(attacker), Some(victim)) = (attacker.as_deref(), victim) else {
             continue;
         };
         // SAFETY: a live character, found again above.

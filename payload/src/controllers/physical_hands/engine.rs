@@ -62,6 +62,7 @@ pub(super) unsafe fn surface(hit: &RayHit) -> SurfaceHit {
         position: hit.position,
         normal: hit.normal,
         surface,
+        material: hit.material,
     }
 }
 

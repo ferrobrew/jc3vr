@@ -246,7 +246,10 @@ const SECTIONS: &[Section] = &[
     },
     Section {
         title: "FEEDBACK",
-        rows: &[row!("HAPTIC CUES", feedback::haptic_cues)],
+        rows: &[
+            row!("HAPTIC CUES", feedback::haptic_cues),
+            row!("IMPACT SOUNDS", feedback::impact_sounds),
+        ],
     },
     Section {
         title: "FINGERS",

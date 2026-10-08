@@ -435,6 +435,7 @@ mod tests {
             distance: position.length(),
             object: None,
             body: 0,
+            material: None,
         }
     }
 

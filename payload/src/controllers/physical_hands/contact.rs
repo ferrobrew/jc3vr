@@ -35,6 +35,8 @@ pub struct SurfaceHit {
     /// The surface normal, toward the cast's origin.
     pub normal: Vec3,
     pub surface: Surface,
+    /// The surface's game material, when the cast read it.
+    pub material: Option<u32>,
 }
 
 /// One probe point's contact on a tick.
@@ -168,6 +170,7 @@ mod tests {
                 position,
                 normal: if from.x < 1.0 { Vec3::NEG_X } else { Vec3::X },
                 surface: WALL,
+                material: None,
             });
         }
         if from.x < 5.0
@@ -180,6 +183,7 @@ mod tests {
                     object: NonZeroUsize::new(64).unwrap(),
                     body: 9,
                 },
+                material: None,
             });
         }
         None
@@ -249,6 +253,7 @@ mod tests {
             position: Vec3::new(x, 0.0, 0.0),
             normal: Vec3::NEG_X,
             surface: WALL,
+            material: None,
         };
         let contacts = [
             PointContact::Clear,
@@ -274,6 +279,7 @@ mod tests {
             position: Vec3::X,
             normal: Vec3::NEG_X,
             surface: WALL,
+            material: None,
         };
         assert_eq!(depth_behind(hit, Vec3::new(0.5, 0.0, 0.0)), 0.0);
         assert!((depth_behind(hit, Vec3::new(1.25, 0.0, 0.0)) - 0.25).abs() < 1e-6);

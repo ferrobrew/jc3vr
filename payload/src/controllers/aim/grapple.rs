@@ -216,6 +216,7 @@ unsafe fn visible_from_view(
     let options = CastOptions {
         ignore: [owner as *const _ as usize, vehicle],
         see_through: true,
+        material: false,
     };
     unsafe { raycast::line_of_sight(origin, end, GRAPPLE_OCCLUSION_TOLERANCE_M, &options) }
 }

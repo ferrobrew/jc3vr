@@ -61,6 +61,7 @@ pub mod pickup;
 pub mod push;
 pub mod rigid;
 pub mod shove;
+pub mod sounds;
 pub mod stunt;
 mod touch;
 pub mod vault;
@@ -383,10 +384,13 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             held_objects.into_iter().find(|&o| o != 0).unwrap_or(0),
         ],
         see_through: false,
+        // The impact sounds play against the surface's material.
+        material: config.sounds.enabled,
     };
     let reach_options = CastOptions {
         ignore: [owner as *const Character as usize, 0],
         see_through: false,
+        material: false,
     };
     let mut casts = 0;
     let mut error = None;

@@ -336,6 +336,7 @@ unsafe fn finish(
     let options = CastOptions {
         ignore: [owner as *const Character as usize, vehicle],
         see_through: true,
+        material: false,
     };
     let mut raycast_error = None;
     let hands = Hand::BOTH.map(|hand| {

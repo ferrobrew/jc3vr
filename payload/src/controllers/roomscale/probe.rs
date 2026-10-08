@@ -123,6 +123,7 @@ pub unsafe fn scene_cast(
     let options = CastOptions {
         ignore,
         see_through: false,
+        material: false,
     };
     Ok(unsafe { raycast::cast(&ray, (to - from).length(), &options) }?.map(|hit| hit.position))
 }

@@ -334,7 +334,13 @@ pub struct Character {
     /// [`GetHealth`](crate::character::character::Character::GetHealth). [`HUDUI::InitHealth`](crate::ui::hud_ui::HUDUI::InitHealth) passes
     /// the local player character's to the movie.
     pub m_MaxHealth: i16,
-    _field_1b2: [u8; 682],
+    _field_1b2: [u8; 174],
+    /// The character's attached effects (the `CAttachedEffectContainer` base of its
+    /// `CCombinedAttachedEffectContainer` base): its bone-attached effects and its dynamic usages,
+    /// such as the melee impact
+    /// ([`MELEE_IMPACT_USAGE`](crate::equipment::attached_effects::AttachedEffectContainer::MELEE_IMPACT_USAGE)).
+    pub m_AttachedEffects: crate::equipment::attached_effects::AttachedEffectContainer,
+    _field_2f0: [u8; 364],
     /// The hit reaction's per-type impulse scales: [`HitReaction`](crate::character::character::Character::HitReaction) scales a
     /// hit's impulse by the entry of the lowest [`DamageFlags`](crate::damage::DamageFlags) type bit set
     /// (the first when none is). Per-character tuning read from data, as are the thresholds below.

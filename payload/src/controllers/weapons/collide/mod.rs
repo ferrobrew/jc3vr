@@ -160,6 +160,7 @@ pub(crate) unsafe fn probe(owner: &Character) {
     let options = CastOptions {
         ignore: [owner as *const Character as usize, 0],
         see_through: true,
+        material: false,
     };
     // SAFETY: forwarded from the caller.
     let hit = unsafe { raycast::cast(&ray, probe.length.max(1e-3), &options) };

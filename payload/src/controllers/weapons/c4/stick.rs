@@ -67,6 +67,7 @@ pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
     let options = CastOptions {
         ignore: [owner as *const Character as usize, 0],
         see_through: false,
+        material: false,
     };
     let reach = tuning.stick.contact_m.max(0.0);
     let hits = PROBE_AXES.iter().filter_map(|&axis| {

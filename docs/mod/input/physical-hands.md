@@ -158,6 +158,8 @@ Every hold is checked each tick before it is driven: the body id must still have
 
 ## Haptics
 
+A hand that meets something hard enough also makes the game's melee impact sound for the struck material ([impact-sounds.md](impact-sounds.md)).
+
 The cues are the contact category's ([haptics.md](haptics.md)). A palm meeting a surface plays `Event::PalmTouch` on its hand, weaker for a slower meeting. Taking hold of an object or grabbing a weapon plays `Event::Take`, letting go `Event::LetGo`, and a door's latch giving `Event::Unlatch`. While a hand presses or pulls, it sends a level every tick in proportion to its load: a shoving palm (`Sustain::PalmPressure`) by the share of its push used (or half its resistance, whichever is more), a holding hand (`Sustain::HeldLoad`) by the share of its pull or twist used, and nothing below a tenth.
 
 ## Threading
