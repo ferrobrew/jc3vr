@@ -448,6 +448,7 @@ fn hand_over_line(case: Case) -> Line {
         Case::Dead => "DEAD",
         Case::Ragdoll => "RAGDOLL",
         Case::GettingUp => "GETTING UP",
+        Case::Seated => "SEATED",
         Case::Vehicle => "VEHICLE",
         Case::Traversal => "TRAVERSAL",
         Case::LedgeClimb => "LEDGE CLIMB",

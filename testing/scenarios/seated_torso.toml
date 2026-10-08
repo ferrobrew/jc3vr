@@ -1,0 +1,21 @@
+# Template: fill testing/recordings/seated_torso.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "the torso follows the head in a car seat"
+description = "Recorded standing beside a parked car (procedural-states.md, the seated checklist). Enter the driver's seat, put both hands on the wheel, hold still for two seconds, lean forward, back, and to each side for a second each, look down at the lap, sit back up, and leave the car."
+recording = "../recordings/seated_torso.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the torso is posed on the seat's hips"
+signal = "procedural.seated"
+
+[[expect]]
+log = "procedural body: the torso follows the head on the animation's hips"
+
+[[expect]]
+status = "SEATED TORSO"
+
+[[expect]]
+name = "and handed back after leaving the car"
+signal = "procedural.seated"
+check = "at_end"
+is = false

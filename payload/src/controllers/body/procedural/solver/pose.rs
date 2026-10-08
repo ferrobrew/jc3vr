@@ -116,6 +116,74 @@ impl RigPose {
     }
 }
 
+/// Which of the two solves posed the body: the body built under the player's head, or the torso on
+/// the animation's hips.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SolveKind {
+    UnderHead,
+    OnAnimatedHips,
+}
+
+/// The fade over a switch between the two solves while the body stays procedural (a walk into the
+/// water, a jump into the parachute): the solves place the hips differently, so the written pose
+/// would jump. The last pose written before the switch is held and faded out over the blend time,
+/// in model space, as the region blend fades the animation.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct SolveSwitch {
+    last: Option<(SolveKind, RigPose)>,
+    from: Option<RigPose>,
+    progress: f32,
+}
+
+impl SolveSwitch {
+    pub const fn new() -> Self {
+        Self {
+            last: None,
+            from: None,
+            progress: 0.0,
+        }
+    }
+
+    /// The pose to write for `pose`, solved by `kind`, `dt` seconds after the last: the pose itself,
+    /// or, within `time_s` of a switch of solve, the last pose before it faded into it, eased.
+    pub fn step(&mut self, kind: SolveKind, pose: RigPose, dt: f32, time_s: f32) -> RigPose {
+        if let Some((last_kind, last_pose)) = self.last
+            && last_kind != kind
+        {
+            self.from = Some(last_pose);
+            self.progress = 0.0;
+        }
+        let out = match self.from {
+            Some(from) if time_s > 0.0 => {
+                let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+                self.progress = (self.progress + dt / time_s).min(1.0);
+                let t = self.progress;
+                let eased = t * t * (3.0 - 2.0 * t);
+                if t >= 1.0 {
+                    self.from = None;
+                }
+                from.blend(&pose, eased)
+            }
+            _ => {
+                self.from = None;
+                pose
+            }
+        };
+        self.last = Some((kind, out));
+        out
+    }
+
+    /// Whether a switch is still fading.
+    pub fn fading(&self) -> bool {
+        self.from.is_some()
+    }
+
+    /// Forget the last pose: the body went back to the animation, whose blend covers the return.
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +245,37 @@ mod tests {
                     .abs_diff_eq(animated.position(bone), 1e-5)
             );
         }
+    }
+
+    #[test]
+    fn a_switch_of_solve_fades_from_the_last_pose() {
+        let under = pose();
+        let mut on_hips = pose();
+        on_hips.translate(RigBone::Hips, Vec3::new(0.0, 0.3, 0.0));
+        let mut switch = SolveSwitch::new();
+        assert_eq!(switch.step(SolveKind::UnderHead, under, 0.1, 0.4), under);
+        assert_eq!(switch.step(SolveKind::UnderHead, under, 0.1, 0.4), under);
+        // The first pose after the switch is still mostly the last one, and the fade is monotone.
+        let mut last = under.position(RigBone::Hips).y;
+        let first = switch.step(SolveKind::OnAnimatedHips, on_hips, 0.1, 0.4);
+        assert!(first.position(RigBone::Hips).y < on_hips.position(RigBone::Hips).y);
+        assert!(switch.fading());
+        for _ in 0..5 {
+            let y = switch
+                .step(SolveKind::OnAnimatedHips, on_hips, 0.1, 0.4)
+                .position(RigBone::Hips)
+                .y;
+            assert!(y >= last - 1e-6);
+            last = y;
+        }
+        assert!(!switch.fading());
+        assert_eq!(
+            switch.step(SolveKind::OnAnimatedHips, on_hips, 0.1, 0.4),
+            on_hips
+        );
+        // After a reset (the animation had the body), there is nothing to fade from.
+        switch.reset();
+        assert_eq!(switch.step(SolveKind::UnderHead, under, 0.1, 0.4), under);
     }
 
     #[test]

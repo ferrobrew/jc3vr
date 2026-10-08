@@ -167,6 +167,10 @@ pub struct ProceduralBodyConfig {
     /// Share each limb's twist out over its twist bones after the solve, so a large twist of a
     /// hand or a foot does not wring the skin at one joint.
     pub twist_bones: bool,
+    /// Pose the torso while seated and riding in a vehicle: the spine, the neck, and the shoulders
+    /// follow the player's head and hands over the seat's hips, and the legs keep the seat's
+    /// animation. Off, the seat's animation and the body IK's lean pose the torso.
+    pub seated_torso: bool,
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act, seconds: the game keeps no state for the reaction's length.
     pub hit_reaction_hold_s: f32,
@@ -241,6 +245,7 @@ impl ProceduralBodyConfig {
             landing_dip_min_speed_mps: 1.5,
             landing_dip_s: 0.1,
             twist_bones: true,
+            seated_torso: true,
             hit_reaction_hold_s: 1.2,
         }
     }

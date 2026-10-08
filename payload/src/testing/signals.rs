@@ -137,6 +137,8 @@ signals! {
     PassThroughErrorDeg => "procedural.pass_through_error_deg", Measure, "The pass-through's largest read-back error, degrees.";
     ProceduralOnFoot => "procedural.on_foot", Flag, "The hand-over table's case is on foot.";
     StanceMeasured => "procedural.stance_measured", Flag, "The neutral stance has been measured.";
+    ProceduralSeated => "procedural.seated", Flag, "The torso is posed on the seat's hips in a vehicle.";
+    ProceduralNeckErrorM => "procedural.neck_error_m", Measure, "How far the solved neck is from the point under the player's head, metres, while the procedural body poses the torso.";
     Wielded => "weapons.wielded", Flag, "A weapon is wielded.";
     WeaponInLeftHand => "weapons.in_left_hand", Flag, "The wielded weapon's first gun rides the left hand.";
     WeaponInRightHand => "weapons.in_right_hand", Flag, "The wielded weapon's first gun rides the right hand.";
@@ -226,6 +228,18 @@ impl Signal {
                 .map_or(Value::Missing, |(_, deg)| Value::Number(f64::from(deg))),
             Signal::ProceduralOnFoot => flag(procedural::published_status().case == Case::OnFoot),
             Signal::StanceMeasured => flag(procedural::published_status().stance_measured),
+            Signal::ProceduralSeated => {
+                let status = procedural::published_status();
+                flag(status.case == Case::Seated && status.on_animated_hips && status.weight > 0.0)
+            }
+            Signal::ProceduralNeckErrorM => {
+                let status = procedural::published_status();
+                if status.weight > 0.0 {
+                    Value::Number(f64::from(status.neck_error_m))
+                } else {
+                    Value::Missing
+                }
+            }
             Signal::Wielded => flag(weapons::status().wielded.is_some()),
             Signal::WeaponInLeftHand => flag(wielded_holder() == Some(Hand::Left)),
             Signal::WeaponInRightHand => flag(wielded_holder() == Some(Hand::Right)),

@@ -26,7 +26,7 @@ use crate::controllers::{
             gait::{self, CrouchGait, NeutralStance, StanceFoot},
             hips_yaw,
             lower::{LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning, SitEnd, SitLegs},
-            pose::RigPose,
+            pose::{RigPose, SolveSwitch},
         },
         state::StateTracker,
         targets::TargetFade,
@@ -80,6 +80,11 @@ pub(super) struct State {
     pub(super) dip: LandingDip,
     /// The fade of the owned bones' IK targets.
     pub(super) fade: TargetFade,
+    /// The fade over a switch between the body under the head and the torso on the animation's
+    /// hips.
+    pub(super) switch: SolveSwitch,
+    /// The case the torso on the animation's hips was last logged for, while it lasts.
+    pub(super) on_hips_logged: Option<Case>,
     /// The feet the last gate placed, model space.
     pub(super) last_feet: Option<[FootPose; 2]>,
     /// The feet as they left the ground, model space, while the legs are in the air.
@@ -153,6 +158,21 @@ pub(super) struct LowerRequest<'a> {
 }
 
 impl State {
+    /// Forget what the body under the head keeps between ticks (the feet, the hips' followers, the
+    /// legs in the air, the lower body's pose), so it starts afresh from the animation when it
+    /// comes back.
+    pub(super) fn reset_under_head(&mut self) {
+        self.feet.reset();
+        self.drop.reset();
+        self.hips.reset();
+        self.air.reset();
+        self.dip.reset();
+        self.takeoff_feet = None;
+        self.lower.reset();
+        self.step.reset();
+        self.status.lower = self.lower.status();
+    }
+
     /// Reach the falling feet in the air (`air`, model space) for the ground below them: a ray
     /// straight down under each, as far as the fall covers in twice the reach's time and a little
     /// more, and the feet go down toward what it finds as it nears. The first reach of a fall is
@@ -473,8 +493,8 @@ impl State {
             target: "body",
             from = self.status.case.label(),
             to = case.label(),
-            legs = case.targets(config.air_legs)[0],
-            torso = case.targets(config.air_legs)[1],
+            legs = case.targets(config)[0],
+            torso = case.targets(config)[1],
             legs_now = weights.legs,
             torso_now = weights.torso,
             "procedural body: the hand-over case changes",
@@ -526,6 +546,8 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     air: AirFollower::new(),
     dip: LandingDip::new(),
     fade: TargetFade::new(),
+    switch: SolveSwitch::new(),
+    on_hips_logged: None,
     last_feet: None,
     takeoff_feet: None,
     fall: None,

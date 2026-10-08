@@ -25,7 +25,20 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         if owns_body() { "yes" } else { "no" },
     ));
     if status.mode == ProceduralMode::Full {
-        ui.label(format!("Hand-over case: {}", status.case.label()));
+        ui.label(format!(
+            "Hand-over case: {} · {}{}",
+            status.case.label(),
+            if status.on_animated_hips {
+                "torso on the animation's hips"
+            } else {
+                "body under the head"
+            },
+            if status.switch_fading {
+                " · fading from the other solve"
+            } else {
+                ""
+            },
+        ));
     }
     if let Some(error) = status.rig_error {
         ui.label(format!("Not rigged: {error}"));

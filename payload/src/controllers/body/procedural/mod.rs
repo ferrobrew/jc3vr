@@ -27,6 +27,8 @@
 //! region (the legs, the torso) between it and the animation by the table in [`authority`], and
 //! zeroes the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
 //! pre-solve IK (the body IK's torso, the roomscale crouch, the squared stance) to stand down.
+//! Where the animation keeps the hips (a vehicle seat), the torso is solved on the clip's hips
+//! instead ([`solver::anchored`]); see `docs/mod/body/procedural-states.md`.
 
 pub mod authority;
 pub mod config;
@@ -60,13 +62,14 @@ use crate::{
             alignment::torso_turn,
             procedural::{
                 authority::{Case, Weights, classify},
-                config::ProceduralMode,
-                gate_state::{FeetRequest, Landing, LowerRequest, STATE},
+                config::{ProceduralBodyConfig, ProceduralMode},
+                gate_state::{FeetRequest, Landing, LowerRequest, STATE, State},
                 ground::{GroundCaster, GroundTally},
-                rig::{RigBone, RigError},
+                rig::{Rig, RigBone, RigError},
                 solver::{
                     SolveInput,
                     air::{AirTuning, air_feet, mix_feet},
+                    anchored::{solve_anchored, upright_share},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
                     crouch_depth,
@@ -74,7 +77,7 @@ use crate::{
                     gait::STOP_SHARE,
                     hips_height, hips_horizontal, hips_room, line_yaw,
                     lower::LowerStatus,
-                    pose::RigPose,
+                    pose::{RigPose, SolveKind},
                     reach_drop, solve, step_offset,
                 },
                 targets::{Fade, Slot, TargetFade},
@@ -137,6 +140,11 @@ pub struct ProceduralStatus {
     pub vertical_mps: f32,
     /// The landing dip's drop of the hips, metres.
     pub landing_dip_m: f32,
+    /// Whether the last pose written was the torso on the animation's hips rather than the body
+    /// under the head.
+    pub on_animated_hips: bool,
+    /// Whether a switch between the two solves is still fading.
+    pub switch_fading: bool,
 }
 
 /// What the controllers' arm targets are queued against while the procedural body poses the
@@ -330,6 +338,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let weights = state.blend.step(case, dt, &config);
             state.log_case(case, &weights, &config);
             state.status.case = case;
+            state.status.on_animated_hips = case.anchored() && weights.any();
+            state.status.switch_fading = false;
             state.status.weight = weights.torso;
             state.status.legs_weight = weights.legs;
             let world = Mat4::from(character.m_WorldMatrixT1);
@@ -337,26 +347,38 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let vertical = state.vertical_speed(previous_world.w_axis.y, world.w_axis.y, dt);
             state.track_landing(case, vertical, now, &config);
             if !weights.any() {
-                state.feet.reset();
-                state.drop.reset();
-                state.hips.reset();
+                state.reset_under_head();
                 state.clavicles.reset();
-                state.air.reset();
-                state.dip.reset();
-                state.takeoff_feet = None;
-                state.lower.reset();
-                state.step.reset();
-                state.status.lower = state.lower.status();
+                state.switch.reset();
+                state.on_hips_logged = None;
                 state.status.clavicles = [ClavicleTurn::ZERO; 2];
                 state.fade.forget();
                 return false;
             }
+            if case.anchored() {
+                let gate = AnchoredGate {
+                    character,
+                    animated: &animated,
+                    case,
+                    weights,
+                    dt,
+                };
+                let Some(pose) =
+                    (unsafe { pose_on_animated_hips(&mut state, rig, &gate, &config) })
+                else {
+                    return false;
+                };
+                unsafe { live.write(controller, &pose) };
+                finish_write(&mut state, character, &pose, &weights, &config);
+                return true;
+            }
+            state.on_hips_logged = None;
             let velocity = root_velocity(&previous_world, &world, dt);
             let commanded = commanded_velocity(&locomotion);
             let mut caster = GroundCaster::new(character, world.w_axis.y, &config);
             // The legs come back from the animation with the feet where it left them, and step
             // from there; while the animation has them, the feet are its own.
-            let legs_procedural = weights.legs > 0.0 || case.targets(config.air_legs)[0] > 0.0;
+            let legs_procedural = weights.legs > 0.0 || case.targets(&config)[0] > 0.0;
             let airborne =
                 config.air_legs && matches!(case, Case::Jump | Case::HandClimb | Case::Flight);
             let head = head_in_model(&world);
@@ -498,31 +520,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 clavicles::apply(&mut solved, rig, side, turns[side.index()]);
             }
             let pose = animated.blend_regions(&solved, weights.legs, weights.torso);
+            let pose = state
+                .switch
+                .step(SolveKind::UnderHead, pose, dt, config.blend_s);
             unsafe { live.write(controller, &pose) };
-            publish_torso_weight(weights.torso);
-            state.arms = (weights.torso > 0.0).then(|| ArmContext {
-                keep_out: config.keep_out.then(|| {
-                    TorsoKeepOut::around(
-                        &pose,
-                        config.chest_radius_m,
-                        config.abdomen_radius_m,
-                        config.hand_margin_m,
-                    )
-                }),
-                elbow_reach: config
-                    .elbow_hints
-                    .then_some(config.elbow_hint_reach * weights.torso),
-                chest_yaw: line_yaw(
-                    pose.position(RigBone::LeftShoulder),
-                    pose.position(RigBone::RightShoulder),
-                )
-                .unwrap_or(0.0),
-            });
-            if config.neutralize_targets {
-                neutralize_owned_targets(&mut character.m_HIK, &weights, &mut state.fade);
-            } else {
-                state.fade.forget();
-            }
+            finish_write(&mut state, character, &pose, &weights, &config);
             state.status.hips_drop_m =
                 animated.position(RigBone::Hips).y - pose.position(RigBone::Hips).y;
             let neck_target = input.head
@@ -534,6 +536,112 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         }
     }
 }
+
+/// What the gate poses the torso on the animation's hips from.
+struct AnchoredGate<'a> {
+    character: &'a Character,
+    animated: &'a RigPose,
+    case: Case,
+    weights: Weights,
+    dt: f32,
+}
+
+/// The pose to write where the animation keeps the hips (a vehicle seat): the torso solved on the
+/// clip's hips toward the player's head, the clavicles turned toward the hands, and the legs left
+/// to the animation. `None` when the head is not known.
+///
+/// # Safety
+///
+/// As [`at_solve_gate`].
+unsafe fn pose_on_animated_hips(
+    state: &mut State,
+    rig: &Rig,
+    gate: &AnchoredGate<'_>,
+    config: &ProceduralBodyConfig,
+) -> Option<RigPose> {
+    // The body under the head starts afresh from the animation when it comes back.
+    state.reset_under_head();
+    let input = solve_input(gate.character, gate.animated, animated_feet(gate.animated))?;
+    let mut solved = solve_anchored(&input, config);
+    let turns = unsafe { state.turn_clavicles(gate.character, rig, &solved, gate.dt, config) };
+    for side in Side::BOTH {
+        clavicles::apply(&mut solved, rig, side, turns[side.index()]);
+    }
+    let pose = gate
+        .animated
+        .blend_regions(&solved, gate.weights.legs, gate.weights.torso);
+    let neck_target = input.head
+        + input.head_rotation
+            * (gate.animated.position(RigBone::Neck) - gate.animated.position(RigBone::Head));
+    let neck_error_m = solved.position(RigBone::Neck).distance(neck_target);
+    if state.on_hips_logged != Some(gate.case) {
+        state.on_hips_logged = Some(gate.case);
+        tracing::info!(
+            target: "body",
+            case = gate.case.label(),
+            torso = gate.weights.torso,
+            legs = gate.weights.legs,
+            neck_error_m,
+            "procedural body: the torso follows the head on the animation's hips",
+        );
+    }
+    let pose = state
+        .switch
+        .step(SolveKind::OnAnimatedHips, pose, gate.dt, config.blend_s);
+    state.status.hips_drop_m = 0.0;
+    state.status.reach_drop_m = 0.0;
+    state.status.landing_dip_m = 0.0;
+    state.status.air_weight = 0.0;
+    state.status.landing_reach = 0.0;
+    state.status.stepping = false;
+    state.status.gait_phase = None;
+    state.status.step_offset_m = 0.0;
+    state.status.neck_error_m = neck_error_m;
+    Some(pose)
+}
+
+/// The steps after a procedural pose is written: publish the torso's weight and the arm context
+/// the hand IK queues the wrist targets against, and fade the owned bones' IK targets.
+fn finish_write(
+    state: &mut State,
+    character: &mut Character,
+    pose: &RigPose,
+    weights: &Weights,
+    config: &ProceduralBodyConfig,
+) {
+    publish_torso_weight(weights.torso);
+    state.status.switch_fading = state.switch.fading();
+    // The elbow hints point down and back from the chest, which only holds for a chest near
+    // upright.
+    let upright = (pose.position(RigBone::Neck) - pose.position(RigBone::Spine))
+        .try_normalize()
+        .is_some_and(|axis| upright_share(axis) > ELBOW_HINT_UPRIGHT);
+    state.arms = (weights.torso > 0.0).then(|| ArmContext {
+        keep_out: config.keep_out.then(|| {
+            TorsoKeepOut::around(
+                pose,
+                config.chest_radius_m,
+                config.abdomen_radius_m,
+                config.hand_margin_m,
+            )
+        }),
+        elbow_reach: (config.elbow_hints && upright)
+            .then_some(config.elbow_hint_reach * weights.torso),
+        chest_yaw: line_yaw(
+            pose.position(RigBone::LeftShoulder),
+            pose.position(RigBone::RightShoulder),
+        )
+        .unwrap_or(0.0),
+    });
+    if config.neutralize_targets {
+        neutralize_owned_targets(&mut character.m_HIK, weights, &mut state.fade);
+    } else {
+        state.fade.forget();
+    }
+}
+
+/// How upright the written chest must be for the elbow hints, as [`upright_share`] measures it.
+const ELBOW_HINT_UPRIGHT: f32 = 0.5;
 
 /// The longest step the body takes, seconds: a hitch is not a long blend.
 const MAX_STEP_S: f32 = 0.1;
@@ -623,6 +731,8 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     air_weight: 0.0,
     vertical_mps: 0.0,
     landing_dip_m: 0.0,
+    on_animated_hips: false,
+    switch_fading: false,
 };
 
 /// The largest position (metres) and rotation (degrees) difference between two poses.

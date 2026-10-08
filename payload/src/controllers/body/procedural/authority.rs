@@ -13,7 +13,8 @@
 //! | dead | animation, at once | animation, at once |
 //! | ragdoll | animation, at once | animation, at once |
 //! | getting up from a ragdoll | animation | animation |
-//! | in or on a vehicle (seated, entering, leaving, a stunt position) | animation | animation |
+//! | seated and riding in a vehicle | animation | procedural on the seat's hips (animation with `seated_torso` off) |
+//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a stunt position) | animation | animation |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation | animation |
 //! | the grapple's ledge climb | animation | animation |
 //! | swimming | animation | animation |
@@ -24,6 +25,10 @@
 //! | an authored one-off (a locomotion one-off, a hard landing, a context action, a full-body pickup, cover) | animation | animation |
 //! | on foot without the movement task running | animation | animation |
 //! | on foot on the ground | procedural | procedural |
+//!
+//! Where the torso is procedural over hips the animation keeps ([`Case::anchored`]), the solve
+//! keeps the clip's hips and moves the spine from there (`solver::anchored`) rather than building
+//! the body under the head.
 //!
 //! [`RegionBlend`] eases each region's weight toward its case's with a critically damped spring,
 //! quicker toward the animation than back, and at once where the case says so.
@@ -42,6 +47,8 @@ pub enum Case {
     Dead,
     Ragdoll,
     GettingUp,
+    /// Seated and riding in a vehicle: not entering, leaving, or on a mounted gun.
+    Seated,
     Vehicle,
     Traversal,
     LedgeClimb,
@@ -65,6 +72,7 @@ impl Case {
             Self::Dead => "dead",
             Self::Ragdoll => "ragdoll",
             Self::GettingUp => "getting up",
+            Self::Seated => "seated in a vehicle",
             Self::Vehicle => "vehicle",
             Self::Traversal => "grapple or stunt traversal",
             Self::LedgeClimb => "grapple ledge climb",
@@ -81,14 +89,22 @@ impl Case {
 
     /// The weights the case asks for: the legs', then the torso's. In a jump and a hand climb the
     /// legs are the procedural body's, hanging in the air, when `air_legs`, and the animation's
-    /// otherwise.
-    pub const fn targets(self, air_legs: bool) -> [f32; 2] {
+    /// otherwise. Seated, the torso is the procedural body's when `seated_torso`, and the legs keep
+    /// the seat's animation.
+    pub const fn targets(self, config: &ProceduralBodyConfig) -> [f32; 2] {
         match self {
             Self::OnFoot => [1.0, 1.0],
-            Self::Jump | Self::HandClimb if air_legs => [1.0, 1.0],
+            Self::Jump | Self::HandClimb if config.air_legs => [1.0, 1.0],
             Self::Jump | Self::HandClimb => [0.0, 1.0],
+            Self::Seated if config.seated_torso => [0.0, 1.0],
             _ => [0.0, 0.0],
         }
+    }
+
+    /// Whether the animation keeps the hips while the torso is procedural: the solve moves the
+    /// spine from the clip's hips (`solver::anchored`) instead of building the body under the head.
+    pub const fn anchored(self) -> bool {
+        matches!(self, Self::Seated)
     }
 
     /// Whether the animation takes over at once, with no blend: a ragdoll writes the pose
@@ -109,6 +125,8 @@ pub struct CharacterState {
     pub ragdoll: bool,
     pub getting_up: bool,
     pub vehicle: bool,
+    /// Seated and riding in the vehicle, not in a stunt position: a narrower [`vehicle`](Self::vehicle).
+    pub seated: bool,
     pub traversal: bool,
     /// Climbing over a ledge at the end of a grapple.
     pub ledge_climb: bool,
@@ -141,6 +159,8 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::Ragdoll
     } else if state.getting_up {
         Case::GettingUp
+    } else if state.vehicle && state.seated {
+        Case::Seated
     } else if state.vehicle {
         Case::Vehicle
     } else if state.traversal {
@@ -194,7 +214,7 @@ impl RegionBlend {
 
     /// Ease toward `case`'s weights over `dt` seconds.
     pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> Weights {
-        let targets = case.targets(config.air_legs);
+        let targets = case.targets(config);
         for (spring, target) in self.springs.iter_mut().zip(targets) {
             if case.snaps() {
                 *spring = Spring {
@@ -388,8 +408,54 @@ mod tests {
             }),
             Case::HitReaction
         );
-        assert_eq!(Case::HandClimb.targets(true), [1.0, 1.0]);
-        assert_eq!(Case::HandClimb.targets(false), [0.0, 1.0]);
+        let config = ProceduralBodyConfig::new();
+        let animated_legs = ProceduralBodyConfig {
+            air_legs: false,
+            ..config
+        };
+        assert_eq!(Case::HandClimb.targets(&config), [1.0, 1.0]);
+        assert_eq!(Case::HandClimb.targets(&animated_legs), [0.0, 1.0]);
+    }
+
+    #[test]
+    fn seated_riding_takes_the_torso_and_leaves_the_legs_to_the_seat() {
+        let seated = CharacterState {
+            vehicle: true,
+            seated: true,
+            ..on_foot()
+        };
+        assert_eq!(classify(&seated), Case::Seated);
+        // Entering, leaving, or a stunt position is the vehicle's animation.
+        assert_eq!(
+            classify(&CharacterState {
+                seated: false,
+                ..seated
+            }),
+            Case::Vehicle
+        );
+        // A stale seat outside a vehicle is nothing.
+        assert_eq!(
+            classify(&CharacterState {
+                vehicle: false,
+                ..seated
+            }),
+            Case::OnFoot
+        );
+        assert_eq!(
+            classify(&CharacterState {
+                ragdoll: true,
+                ..seated
+            }),
+            Case::Ragdoll
+        );
+        let config = ProceduralBodyConfig::new();
+        assert_eq!(Case::Seated.targets(&config), [0.0, 1.0]);
+        assert!(Case::Seated.anchored() && !Case::OnFoot.anchored());
+        let off = ProceduralBodyConfig {
+            seated_torso: false,
+            ..config
+        };
+        assert_eq!(Case::Seated.targets(&off), [0.0, 0.0]);
     }
 
     #[test]

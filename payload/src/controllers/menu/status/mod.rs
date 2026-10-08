@@ -8,6 +8,7 @@
 //! modules publish for any thread (see `docs/mod/threading.md`), never the runtime state, and they
 //! take one lock at a time.
 
+mod body;
 mod controllers;
 mod explosives;
 mod fingers;
@@ -279,6 +280,7 @@ const SECTIONS: &[Section] = &[
             row!("LOWER BODY", controllers::lower_body),
             row!("POSE INPUTS", controllers::lower_inputs),
             row!("TWIST BONES", controllers::twist_bones),
+            row!("SEATED TORSO", body::seated_torso),
         ],
     },
 ];

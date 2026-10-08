@@ -40,7 +40,7 @@ pub(super) fn bend_spine(
     }
     let limit = config.lean_limit_deg.max(0.0).to_radians();
     for _ in 0..SWING_ITERATIONS {
-        let Some((axis, angle)) = swing_toward(pose, neck_target, limit) else {
+        let Some((axis, angle)) = swing_toward(pose, neck_target, Vec3::Y, limit) else {
             break;
         };
         for (bone, share) in SPINE.iter().zip(SWING_SHARES) {
@@ -65,7 +65,7 @@ pub(super) fn bend_spine(
         }
     }
     if (curled || chest.pitch > 0.0)
-        && let Some((axis, angle)) = swing_toward(pose, neck_target, limit)
+        && let Some((axis, angle)) = swing_toward(pose, neck_target, Vec3::Y, limit)
     {
         let base = pose.position(RigBone::Spine);
         pose.rotate_about(RigBone::Spine, Quat::from_axis_angle(axis, angle), base);
@@ -73,9 +73,15 @@ pub(super) fn bend_spine(
 }
 
 /// The swing that turns the spine's base-to-neck line toward `neck_target`, or `None` when it is
-/// already there. A lean past `limit` from upright is taken only as far as the limit: the spine
-/// does not fold over.
-fn swing_toward(pose: &RigPose, neck_target: Vec3, limit: f32) -> Option<(Vec3, f32)> {
+/// already there. A lean past `limit` from `upright` (a unit direction: +Y on foot, the clip's own
+/// spine where the animation keeps the hips) is taken only as far as the limit: the spine does not
+/// fold over.
+pub(super) fn swing_toward(
+    pose: &RigPose,
+    neck_target: Vec3,
+    upright: Vec3,
+    limit: f32,
+) -> Option<(Vec3, f32)> {
     let base = pose.position(RigBone::Spine);
     let from = pose.position(RigBone::Neck) - base;
     let to = neck_target - base;
@@ -83,13 +89,13 @@ fn swing_toward(pose: &RigPose, neck_target: Vec3, limit: f32) -> Option<(Vec3, 
         return None;
     }
     let mut direction = to.normalize();
-    if direction.angle_between(Vec3::Y) > limit {
+    if direction.angle_between(upright) > limit {
         // A target straight below the base has no lean direction of its own; the lean is forward.
-        let axis = Vec3::Y
+        let axis = upright
             .cross(direction)
             .try_normalize()
             .unwrap_or(Vec3::NEG_X);
-        direction = Quat::from_axis_angle(axis, limit) * Vec3::Y;
+        direction = Quat::from_axis_angle(axis, limit) * upright;
     }
     let (axis, angle) = Quat::from_rotation_arc(from.normalize(), direction).to_axis_angle();
     (axis.is_finite() && angle.abs() >= 1e-5).then_some((axis, angle))
@@ -162,13 +168,13 @@ const CHEST_PITCH_SHARE: f32 = 0.35;
 const MAX_CHEST_PITCH: f32 = 0.44;
 
 /// Each spine bone's share of the chest's pitch: the upper back takes it.
-const PITCH_SHARES: [f32; 4] = [0.0, 0.2, 0.4, 0.4];
+pub(super) const PITCH_SHARES: [f32; 4] = [0.0, 0.2, 0.4, 0.4];
 
 /// The share of the head's turn against the chest the neck takes.
-const NECK_SHARE: f32 = 0.3;
+pub(super) const NECK_SHARE: f32 = 0.3;
 
 /// The spine bones the bend is shared along, from the base.
-const SPINE: [RigBone; 4] = [
+pub(super) const SPINE: [RigBone; 4] = [
     RigBone::Spine,
     RigBone::Spine1,
     RigBone::Spine2,
@@ -176,13 +182,13 @@ const SPINE: [RigBone; 4] = [
 ];
 
 /// Each spine bone's share of the swing toward the neck target, and of the curl.
-const SWING_SHARES: [f32; 4] = [0.2, 0.25, 0.3, 0.25];
+pub(super) const SWING_SHARES: [f32; 4] = [0.2, 0.25, 0.3, 0.25];
 
 /// Each spine bone's share of the chest's twist, more of it higher up as in a real spine.
-const TWIST_SHARES: [f32; 4] = [0.15, 0.2, 0.3, 0.35];
+pub(super) const TWIST_SHARES: [f32; 4] = [0.15, 0.2, 0.3, 0.35];
 
 /// The swing is applied about the four joints rather than the base, so it is repeated to converge.
-const SWING_ITERATIONS: usize = 3;
+pub(super) const SWING_ITERATIONS: usize = 3;
 
 /// The share of the spine's length below which the head's closeness curls it.
 const CURL_START: f32 = 0.99;

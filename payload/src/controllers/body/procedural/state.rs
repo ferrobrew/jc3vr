@@ -19,6 +19,7 @@ use crate::{
             config::ProceduralBodyConfig,
             signals::{in_hit_reaction, in_ledge_climb},
         },
+        hands::tiers::{self, TierState},
         locomotion::LocomotionStatus,
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
         physical_hands::climb,
@@ -94,6 +95,7 @@ impl StateTracker {
             || falling
             || (off_support && self.in_air_s >= IN_AIR_DEBOUNCE_S);
         let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
+        let stunt_position = unsafe { character.IsInStuntPosition() };
         if movement_task && on_ground && !airborne {
             self.grounded_at = Some(now);
         }
@@ -109,7 +111,11 @@ impl StateTracker {
             getting_up: has(StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL),
             vehicle: matches!(detection.mode, Mode::Vehicle(_))
                 || has(StateBitFlag::SB_INSIDE_VEHICLE)
-                || unsafe { character.IsInStuntPosition() },
+                || stunt_position,
+            // The hand tiers' classification, from the input tick: seated and riding, which an
+            // entry, an exit, a seat switch, and a mounted gun are not. It lags by up to a frame,
+            // as the mode detection does.
+            seated: tiers::status().state == Some(TierState::VehicleSeated) && !stunt_position,
             traversal: detection.traversal.is_some()
                 || unsafe { character.IsStuntTraversing() }
                 || unsafe { character.IsGrappleHanging() }

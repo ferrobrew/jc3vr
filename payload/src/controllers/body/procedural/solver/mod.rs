@@ -30,6 +30,7 @@
 //! rest frame needs to be known.
 
 pub mod air;
+pub mod anchored;
 pub mod arms;
 pub mod clavicles;
 pub mod feet;
@@ -233,7 +234,7 @@ fn knee_pole(rig: &Rig, foot: RigBone, foot_rotation: Quat, hips_forward: Vec3) 
 
 /// Bring a leg's foot to `target`, keeping the foot's model-space orientation `foot_rotation`, the
 /// knee bending toward `pole`.
-fn place_leg(
+pub(super) fn place_leg(
     pose: &mut RigPose,
     [up, leg, foot]: [RigBone; 3],
     target: Vec3,

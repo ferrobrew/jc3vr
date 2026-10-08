@@ -259,6 +259,7 @@ fn the_shipped_templates_read() {
         "procedural_pass_through.toml",
         "push_up.toml",
         "recenter.toml",
+        "seated_torso.toml",
         "second_long_gun.toml",
         "steering_wheel.toml",
         "stick_locomotion.toml",
