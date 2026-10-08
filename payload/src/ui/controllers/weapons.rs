@@ -33,7 +33,7 @@ use crate::{
                 act::{self, DockStatus},
                 dock::SnapKind,
                 holder::Cause,
-                second::{self, SecondStatus},
+                second::{self, SecondStatus, Source},
             },
             holster::slot_label,
             recoil::{self, RecoilStatus},
@@ -323,14 +323,22 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
 
 fn second_readout(ui: &mut Ui, s: &SecondStatus) {
     ui.label(format!(
-        "Second weapon: {} · trigger {} · updates {} · last refusal: {}",
+        "Second weapon: {}{} · trigger {} · updates {} · dropped {} · made wielded {} · last \
+         refusal: {}",
         s.held.map_or("none".to_owned(), |(hand, slot)| format!(
             "{} in the {} hand",
             slot_label(slot),
             hand.label()
         )),
+        match s.source {
+            Some(Source::Carried(socket)) => format!(", carried, from the {}", socket.label()),
+            Some(Source::Slot) => ", from its slot".to_owned(),
+            None => String::new(),
+        },
         if s.trigger { "pulled" } else { "up" },
         s.updates,
+        s.drops,
+        s.promotions,
         s.last_refusal.map_or("none".to_owned(), |r| r.to_string())
     ));
 }

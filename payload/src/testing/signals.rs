@@ -170,6 +170,9 @@ signals! {
     TwoHanded => "weapons.two_handed", Flag, "The wielded weapon is held in both hands' reach.";
     SecondInLeftHand => "weapons.second_in_left_hand", Flag, "A second weapon is held in the left hand.";
     SecondInRightHand => "weapons.second_in_right_hand", Flag, "A second weapon is held in the right hand.";
+    SecondCarried => "weapons.second_carried", Flag, "The second weapon is one the VR inventory carries beyond the slots.";
+    SecondDrops => "weapons.second_drops", Counter, "Second weapons let fall from the hand.";
+    SecondPromotions => "weapons.second_promotions", Counter, "Second weapons that became the wielded weapon.";
     WeaponGrabs => "weapons.grabs", Counter, "Grabs the weapon handling saw.";
     GrenadePins => "grenade.pins_pulled", Counter, "Pins pulled from grenades taken from the pouch.";
     GrenadesThrown => "grenade.thrown", Counter, "Grenades thrown from the pouch.";
@@ -332,6 +335,12 @@ impl Signal {
             ),
             Signal::SecondInLeftHand => flag(second::hand() == Some(Hand::Left)),
             Signal::SecondInRightHand => flag(second::hand() == Some(Hand::Right)),
+            Signal::SecondCarried => flag(matches!(
+                second::status().source,
+                Some(second::Source::Carried(_))
+            )),
+            Signal::SecondDrops => count(second::status().drops),
+            Signal::SecondPromotions => count(second::status().promotions),
             Signal::WeaponGrabs => count(weapons::status().grabs),
             Signal::GrenadePins => count(grenade::status().pins_pulled),
             Signal::GrenadesThrown => count(grenade::status().thrown),

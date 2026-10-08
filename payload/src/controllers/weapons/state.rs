@@ -57,6 +57,7 @@ pub(crate) fn stand_down() {
     wheel::stand_down();
     let mut state = STATE.lock();
     state.weapon = None;
+    state.second = None;
     state.status.active = false;
     state.status.volumes = [None; 2];
     state.status.fire_blocked = false;
@@ -72,6 +73,8 @@ pub(super) struct State {
     pub(super) status: WeaponsStatus,
     /// The tick's wielded weapon and its two-handed geometry.
     pub(super) weapon: Option<(HeldWeapon, Option<GripGeometry>)>,
+    /// The tick's second weapon.
+    pub(super) second: Option<HeldWeapon>,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub(super) gameplay: bool,
     /// The last geometry measured, and the weapon it belongs to: a measurement needs the wrist at
@@ -161,6 +164,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
         docks_followed: 0,
     },
     weapon: None,
+    second: None,
     gameplay: false,
     measured: None,
     placed: Vec::new(),

@@ -7,8 +7,9 @@
 //! - [`pins`]: which weapons lying in the world are kept from the game's despawn;
 //! - [`sockets`]: the places on the body a weapon beyond the slots docks;
 //! - [`carry`]: the weapons carried beyond the slots, their placement and visibility;
-//! - [`actions`]: drawing a carried weapon, putting the held one onto a socket, and carrying the
-//!   weapon a pickup replaces;
+//! - [`actions`]: drawing a carried weapon (into its slot, or as the second weapon beside the
+//!   wielded one), putting a held one onto a socket, and carrying the weapon a pickup replaces;
+//! - [`decide`]: what a grab of a socket and the second weapon's release do;
 //! - [`engine`]: the engine reads behind them;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
@@ -21,6 +22,7 @@
 pub(crate) mod actions;
 pub(crate) mod carry;
 pub mod config;
+pub mod decide;
 pub(crate) mod engine;
 pub mod pins;
 pub mod registry;

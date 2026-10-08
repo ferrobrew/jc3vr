@@ -34,6 +34,18 @@ How weapons come onto a socket and off it:
 
 Taking the slot's weapon out leaves the HUD's weapon list to be rebuilt from the slots ([`HUDUI::InitWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##func-InitWeapons)). Switching `CARRY EXTRA WEAPONS` or `TRACK WEAPONS` off lets every carried weapon fall where it is ([`WeaponBase::OnDrop`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnDrop), `inventory: dropped the carried weapons`). The spawn system's reset releases them.
 
+## A carried weapon in either hand
+
+A carried weapon can be held beside the wielded one, in the other hand, as the second weapon ([physical-weapons.md, "A second weapon"](physical-weapons.md#a-second-weapon)), so two rifles, or two weapons of any one slot, can be held at once, one per hand. With `HOLD WEAPONS IN EITHER HAND` and `SECOND GUN IN THE FREE HAND` on, a grab of a carried weapon's socket by the hand without a gun, while the other hand holds the wielded weapon, takes it as the second weapon (`inventory: drew a carried weapon off the back (first) into the left hand beside the wielded one`). It stays holstered and carried: its guns ride the hand's attach bone, which the carry set's placement puts them on (`inventory::carry`), the rigid grip pins it to the hand as it does a slot's second weapon, and the mod fires it from the hand's trigger, with its own magazine (the pips over the hand) and the player's reserve. Its socket is kept for it.
+
+What the hands do with it (`inventory::decide`, pure):
+
+- with `HOLD GRIP TO HOLD GUNS`, opening its grip at its socket, or at a free socket that fits it (which becomes its socket), docks it there; at any holster puts it back on its socket; anywhere else lets it fall with the hand's motion, out of the carry set, a weapon in the world that the inventory keeps while near;
+- a grip press at a free socket by its hand docks it there too;
+- with `LONE SECOND GUN BECOMES THE MAIN` (on), once nothing else has been wielded for half a second, after the wielded weapon was holstered, put onto a socket, or dropped, it goes into its slot and is equipped in the same hand, the slot's weapon taking its socket, so the HUD, the weapon wheel, and the game's reload take it over.
+
+A slot's second weapon (the shoulder's long gun, the existing case) does the same: put onto a free socket it leaves its slot into the carry set, and let fall it leaves its slot.
+
 ## Settings and readout
 
 The settings are `controllers.weapons.inventory`. The debug UI's Controllers tab has a `VR inventory` section listing every entry (its number, slot, tag hash, place, magazine, and distance) and the counts, and its settings under `VR inventory`. The pause menu's `VR: STATUS` page has an `INVENTORY` section: `TRACKED WEAPONS` (the weapons owned and in the world, and the resets), `CARRIED` (each carried weapon and its socket, and the draws, the weapons put away, and the weapons kept from pickups' drops), and `KEPT IN THE WORLD` (the weapons kept of those in the world, the pins since load, and the weapons left to the game). The debug UI also has the socket counts, the socket radius, and each socket's offset. The scenario signals `inventory.kept`, `inventory.pins`, `inventory.resets`, `inventory.carried`, `inventory.draws`, and `inventory.stows` read them (`testing/scenarios/inventory_keep_dropped.toml` and `inventory_two_rifles.toml`).
@@ -53,8 +65,15 @@ The settings are `controllers.weapons.inventory`. The debug UI's Controllers tab
 11. With three long guns carried and the back full, pick up a fourth: `no socket is free for the weapon the pickup replaces`, and the slot's weapon falls as before.
 12. Enter a car, swim, wingsuit, and parachute: the carried weapons hide and show with the slot's weapons, and stay on the body.
 13. Switch `CARRY EXTRA WEAPONS` off: the carried weapons fall to the ground (`inventory: dropped the carried weapons`) and can be picked up.
+14. Two rifles, one per hand: with a rifle drawn in the right hand and a second rifle carried on the back, reach back with the left hand and grab it: `... into the left hand beside the wielded one`. Each trigger fires its own rifle with its flash and sound, the pips over the left hand count the carried rifle's rounds, and `SECOND WEAPON` shows `TWO-HANDED (CARRIED) IN LEFT`. Fire the left rifle dry: the true reload turns to it. Check that the left rifle's shots alert soldiers and heat it as the wielded one's do.
+15. Open the left grip at the back: the rifle docks on its socket again. Take it again, open the grip away from the body: `hold: dropped the second weapon from the left hand`, it falls with the swing, and `KEPT IN THE WORLD` counts it.
+16. Holding a rifle in each hand (the second a carried one), holster the wielded right rifle at its shoulder. Half a second later: `hold: the second weapon in the left hand is now the wielded weapon`, the HUD shows the left rifle, and the right rifle is on the back. The left rifle does not move in the hand.
+17. Two pistols of different kinds: carry a pistol on the hip, draw the pair's right pistol, and take the carried pistol into the left hand. Each fires its own.
 
 ## Unverified
+
+- Whether a carried weapon fired from a hand, in no slot, plays its effects and sounds, heats, and alerts the AI as the slot's second weapon does.
+- Whether the promotion's equip, which plays no draw act, leaves the upper body in a wielding pose, as the draw without act does.
 
 - Whether the sockets' default offsets put a carried weapon beside the slot's weapon or through the body: the bones' frames are not read, so the offsets are in the character's frame and are a first guess.
 - Whether anything of the game's (the weapon's own updates, its effects, its level of detail) expects a holstered weapon with a holder to be in that holder's inventory.

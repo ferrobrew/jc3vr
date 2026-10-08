@@ -468,14 +468,20 @@ fn held_weapons<'a>(
     inventory: &'a Inventory,
     character: &'a Character,
 ) -> impl Iterator<Item = &'a WeaponBase> + 'a {
-    inventory.m_Weapons.iter().filter_map(move |slot| {
+    let in_slots = inventory.m_Weapons.iter().filter_map(|slot| {
         let weapon = unsafe { slot.px.as_ref() }?;
         let held = matches!(
             weapon.m_State,
             WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
         ) || second::is(weapon as *const WeaponBase as usize);
-        (held && std::ptr::eq(weapon.m_User[0].cast::<Character>(), character)).then_some(weapon)
-    })
+        held.then_some(weapon)
+    });
+    // A second weapon the VR inventory carries is in no slot.
+    // SAFETY: the placement runs inside the world update for the local player's inventory.
+    let carried = unsafe { second::carried_weapon() };
+    in_slots
+        .chain(carried)
+        .filter(move |weapon| std::ptr::eq(weapon.m_User[0].cast::<Character>(), character))
 }
 
 /// How [`pin`] places a gun's attach bone.

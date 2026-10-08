@@ -1,0 +1,24 @@
+# Template: fill testing/recordings/inventory_rifle_each_hand.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a rifle in each hand, one carried"
+description = "Recorded right-handed on foot with an assault rifle in the two-handed slot and a second assault rifle carried on the back (vr-inventory.md, the checklist, items 14 and 16). Draw the slot's rifle with the right hand, take the carried rifle off the back with the left, fire each with its own trigger, then holster the right rifle at its shoulder and keep holding the left one."
+recording = "../recordings/inventory_rifle_each_hand.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the carried rifle is in the left hand as the second weapon"
+signal = "weapons.second_carried"
+
+[[expect]]
+signal = "weapons.second_in_left_hand"
+
+[[expect]]
+name = "it became the wielded weapon once the right rifle was holstered"
+signal = "weapons.second_promotions"
+
+[[expect]]
+name = "and it is the wielded weapon in the left hand at the end"
+signal = "weapons.in_left_hand"
+check = "at_end"
+
+[[expect]]
+status = "SECOND WEAPON"

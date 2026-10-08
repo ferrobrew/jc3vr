@@ -28,12 +28,13 @@ use crate::{
             hold::{
                 self,
                 dock::{self, Release},
-                second,
+                second::{self, Source},
             },
             holster::{self, HolsterAction},
             inventory::{
                 actions::{self, SocketGrab, SocketRefusal},
                 carry,
+                decide::{self, ReleasedAt, SecondRelease},
             },
             reload,
             state::STATE,
@@ -169,7 +170,12 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                     hand,
                     socket,
                     wielded: weapon.map(|(w, _)| (w.address, w.wielded.hands)),
-                    other_holds_second: second::hand() == Some(hand.other()),
+                    second: STATE
+                        .lock()
+                        .second
+                        .and_then(|w| Some((w.address, w.holder?))),
+                    second_allowed: config.weapons.hold.either_hand
+                        && config.weapons.hold.second_weapon,
                     snap_s: config.weapons.hold.snap_s,
                     independent_pistols: config.weapons.dual_wield.split
                         && config.weapons.dual_wield.independent_draw,
@@ -241,6 +247,14 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 &config,
             );
         }
+    }
+
+    let second_released = second::release_tick(grips.map(ButtonControl::held))
+        .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
+    if let Some(hand) = second_released {
+        let volumes = STATE.lock().status.volumes;
+        // SAFETY: the input tick runs on the main thread outside the world update.
+        unsafe { release_second(hand, volumes[hand.index()], &config) };
     }
 
     grenade::input_tick(
@@ -450,7 +464,7 @@ fn act(
         }
         HolsterAction::PutBackSecond { .. } => {
             // SAFETY: the input tick runs on the main thread outside the world update.
-            unsafe { second::put_back() };
+            unsafe { second::put_back(None) };
             return GrabOutcome::Holster(action);
         }
         HolsterAction::DrawPistol { hand } if pistols => {
@@ -579,6 +593,51 @@ fn release(hand: Hand, what: Release, wielded: holster::Wielded, config: &Contro
             }
         }
         Release::Keep => {}
+    }
+}
+
+/// Carry out what opening the second weapon's grip does: at a free socket that fits it (its own
+/// among them), dock it there; at its own holster, or for a carried one at any holster, put it
+/// back; anywhere else, let it fall with the hand's motion.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+unsafe fn release_second(hand: Hand, volume: Option<GrabVolume>, config: &ControllersConfig) {
+    let at = match volume {
+        Some(GrabVolume::Socket(socket)) => ReleasedAt::Socket(socket),
+        Some(GrabVolume::Holster(site))
+            if match second::source() {
+                Some(Source::Carried(_)) => true,
+                Some(Source::Slot) => {
+                    second::slot() == Some(holster::site_slot(site, config.acting_hand()))
+                }
+                None => false,
+            } =>
+        {
+            ReleasedAt::OwnHolster
+        }
+        _ => ReleasedAt::Elsewhere,
+    };
+    let docked = match decide::second_release(at) {
+        SecondRelease::Dock(socket) => unsafe { engine::local_player() }.is_some_and(|owner| {
+            unsafe { actions::stow_second(owner, hand, socket) }
+                .inspect_err(|refusal| {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the second weapon was not docked");
+                })
+                .is_ok()
+        }),
+        SecondRelease::PutBack => {
+            unsafe { second::put_back(None) };
+            true
+        }
+        SecondRelease::Fall => false,
+    };
+    if docked {
+        return;
+    }
+    if let Err(refusal) = unsafe { second::let_fall(config.weapons.hold.max_throw_mps) } {
+        tracing::debug!(target: "controllers", %refusal, "hold: the second weapon was not let go of");
     }
 }
 

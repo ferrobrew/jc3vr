@@ -7,6 +7,7 @@ use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 use crate::{
     config::Config,
     controllers::{
+        aim::gun,
         bindings::grab::{Candidate, GrabVolume, HolsterSite},
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
@@ -61,6 +62,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         engine::local_player().map_or(Ticked::default(), |owner| {
             if holding.either_hand && holding.second_weapon && gameplay {
                 second::validate(owner);
+                if holding.promote_second {
+                    let wielded = gun::held_weapon(owner).map(|w| w as *const WeaponBase as usize);
+                    second::promote_tick(owner, wielded, holding.promote_after_s);
+                }
             } else {
                 second::stand_down();
             }
@@ -90,7 +95,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                     owner,
                     &config.weapons.inventory,
                     config.acting_hand(),
-                    weapon.map(|w| w.address),
+                    held_by_hand(weapon, second),
                 ),
                 character: Some(Mat4::from(owner.m_WorldMatrixT1)),
             }
@@ -201,7 +206,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             &ticked,
             &active,
             free,
-            weapon.and_then(|w| w.holder),
             config.weapons.inventory.socket_radius_m,
         ));
     }
@@ -307,6 +311,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.grab_points = body_points;
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
+    state.second = second_weapon;
     state.gameplay = gameplay;
     let entered = entered_body_volumes(state.last_volumes, volumes);
     state.last_volumes = volumes;
@@ -388,12 +393,11 @@ fn follow_docks(
 }
 
 /// The sockets' grab volumes in the cockpit frame: a carried weapon for each hand without a gun,
-/// and a free socket for the hand holding the wielded weapon.
+/// and a free socket for the hand holding a weapon that fits it.
 fn socket_candidates(
     ticked: &Ticked,
     active: &ActiveHands,
     free: [bool; 2],
-    holder: Option<Hand>,
     radius: f32,
 ) -> Vec<Candidate> {
     let Some(frames) = ticked
@@ -405,10 +409,9 @@ fn socket_candidates(
     let mut out = Vec::new();
     for point in &ticked.sockets {
         let centre = frames.world_to_cockpit(point.point);
-        let hands: Vec<Hand> = if point.occupied {
-            Hand::BOTH.into_iter().filter(|h| free[h.index()]).collect()
-        } else {
-            holder.into_iter().collect()
+        let hands: Vec<Hand> = match point.for_hand {
+            None => Hand::BOTH.into_iter().filter(|h| free[h.index()]).collect(),
+            Some(hand) => vec![hand],
         };
         out.extend(hands.into_iter().map(|hand| Candidate {
             volume: GrabVolume::Socket(point.socket),
@@ -418,6 +421,21 @@ fn socket_candidates(
         }));
     }
     out
+}
+
+/// The weapon in each hand, by [`Hand::index`]: the wielded weapon in its one hand (not the pair
+/// drawn in both), and the second weapon in its.
+fn held_by_hand(weapon: Option<HeldWeapon>, second: Option<HeldWeapon>) -> [Option<usize>; 2] {
+    let mut held = [None; 2];
+    for w in [weapon, second].into_iter().flatten() {
+        if w.wielded.hands == [true; 2] {
+            continue;
+        }
+        if let Some(hand) = w.holder {
+            held[hand.index()] = Some(w.address);
+        }
+    }
+    held
 }
 
 /// Whether the weapon handling acts in `mode`: on the ground and under the parachute or in a fall,

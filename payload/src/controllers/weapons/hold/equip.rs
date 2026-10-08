@@ -265,8 +265,28 @@ pub(crate) unsafe fn drop_held(
             set: false,
         });
     }
+    let thrown = unsafe { throw(weapon, motion, body, address, max_speed_mps) };
+    unsafe { owner.m_Inventory.DropWeapon(slot, false) };
+    Ok(thrown)
+}
+
+/// Let `weapon` fall with the hand's motion: drop it at once ([`WeaponBase::OnDrop`]), then give
+/// its first gun's body `motion` (the gun's measured velocity and angular velocity, read before
+/// the drop), the linear part capped at `max_speed_mps`.
+///
+/// # Safety
+///
+/// `weapon` must be live, `body` its first gun's body as read before the drop, on the main thread
+/// outside the world update.
+unsafe fn throw(
+    weapon: &mut WeaponBase,
+    motion: Option<(Vec3, Vec3)>,
+    body: Option<u32>,
+    address: usize,
+    max_speed_mps: f32,
+) -> Thrown {
     unsafe { weapon.OnDrop() };
-    let thrown = match (motion, body, NonZeroUsize::new(address)) {
+    match (motion, body, NonZeroUsize::new(address)) {
         (Some((linear, angular)), Some(body), Some(owner_object)) => {
             let linear = finite_or_zero(linear).clamp_length_max(max_speed_mps.max(0.0));
             let angular = finite_or_zero(angular);
@@ -289,9 +309,26 @@ pub(crate) unsafe fn drop_held(
             angular: Vec3::ZERO,
             set: false,
         },
-    };
-    unsafe { owner.m_Inventory.DropWeapon(slot, false) };
-    Ok(thrown)
+    }
+}
+
+/// Let a weapon no inventory slot holds fall from the hand, with the hand's motion capped at
+/// `max_speed_mps`: the drop a held weapon gets, without the slot to clear.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the main thread outside the world update.
+pub(crate) unsafe fn drop_loose(weapon: &mut WeaponBase, max_speed_mps: f32) -> Thrown {
+    let first = unsafe { gun::guns(weapon) }.next().flatten();
+    let motion = first.map(|gun| {
+        (
+            Vec3::from_array(gun.m_MeasuredWorldVelocity.data),
+            Vec3::from_array(gun.m_MeasuredAngularVelocity.data),
+        )
+    });
+    let body = first.and_then(|gun| unsafe { body_of(gun) });
+    let address = weapon as *mut WeaponBase as usize;
+    unsafe { throw(weapon, motion, body, address, max_speed_mps) }
 }
 
 /// Drop the weapon in `slot` onto the ground before another weapon replaces it there, so that it

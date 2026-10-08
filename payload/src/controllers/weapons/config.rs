@@ -574,6 +574,11 @@ pub struct HoldConfig {
     /// Slide a gun taken off the ground, out of a character's hands, or off a rack from where it
     /// was into the hand over `snap_s`, rather than have it appear there.
     pub take_slide: bool,
+    /// Make the second weapon the wielded weapon once nothing else has been wielded for
+    /// `promote_after_s`, so the game's HUD and reload take it over.
+    pub promote_second: bool,
+    /// How long the second weapon is held alone before it becomes the wielded weapon, seconds.
+    pub promote_after_s: f32,
 }
 
 impl HoldConfig {
@@ -596,6 +601,8 @@ impl HoldConfig {
             racks: true,
             take_radius_m: 0.1,
             take_slide: true,
+            promote_second: true,
+            promote_after_s: 0.5,
         }
     }
 }

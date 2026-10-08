@@ -36,8 +36,13 @@ pub(super) fn second_weapon() -> Line {
     match second.held {
         None => Line::ok("NONE"),
         Some((hand, slot)) => Line::ok(format_smolstr!(
-            "{} IN {}, {}, RELOAD ON {}",
+            "{}{} IN {}, {}, RELOAD ON {}",
             slot_label(slot).to_uppercase(),
+            if matches!(second.source, Some(second::Source::Carried(_))) {
+                " (CARRIED)"
+            } else {
+                ""
+            },
             hand.label().to_uppercase(),
             second.magazine.map_or(
                 "NO MAGAZINE".into(),

@@ -45,6 +45,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
+    frame::Hand,
     hands::ik,
     weapons::{
         hold::{refs::Strong, steal},
@@ -116,17 +117,50 @@ pub(crate) unsafe fn seen() -> Vec<(Seen, SocketId)> {
         .collect()
 }
 
-/// The sockets taken.
+/// Whether `object` is carried.
+pub(crate) fn contains(object: ObjectKey) -> bool {
+    CARRY.lock().iter().any(|c| c.object == object)
+}
+
+/// The socket `object` docks on, when it is carried.
+pub(crate) fn home(object: ObjectKey) -> Option<SocketId> {
+    CARRY
+        .lock()
+        .iter()
+        .find(|c| c.object == object)
+        .map(|c| c.socket)
+}
+
+/// Mark the carried `object` as driven in `hand`, or back on its socket with `None`; with `socket`,
+/// it docks there from now on. Returns whether it is carried.
+pub(crate) fn set_in_hand(object: ObjectKey, hand: Option<Hand>, socket: Option<SocketId>) -> bool {
+    let mut carry = CARRY.lock();
+    let Some(carried) = carry.iter_mut().find(|c| c.object == object) else {
+        return false;
+    };
+    carried.in_hand = hand;
+    if let Some(socket) = socket {
+        carried.socket = socket;
+    }
+    true
+}
+
+/// Take `object` out of the carry set, handing over its strong reference.
+pub(crate) fn release(object: ObjectKey) -> Option<Strong> {
+    take(object).map(|c| c.strong)
+}
+
+/// The sockets taken, including those kept for a carried weapon in a hand.
 pub(crate) fn taken() -> Vec<SocketId> {
     CARRY.lock().iter().map(|c| c.socket).collect()
 }
 
-/// The carried weapon on `socket`.
+/// The carried weapon on `socket`, not counting one a hand holds.
 pub(crate) fn on_socket(socket: SocketId) -> Option<ObjectKey> {
     CARRY
         .lock()
         .iter()
-        .find(|c| c.socket == socket)
+        .find(|c| c.socket == socket && c.in_hand.is_none())
         .map(|c| c.object)
 }
 
@@ -152,6 +186,7 @@ pub(crate) unsafe fn grips() -> Vec<(SocketId, Vec3)> {
     CARRY
         .lock()
         .iter()
+        .filter(|c| c.in_hand.is_none())
         .filter_map(|c| {
             // SAFETY: the set's strong reference keeps the weapon alive.
             let weapon = unsafe { &*c.weapon() };
@@ -197,6 +232,7 @@ pub(crate) unsafe fn carry_from_slot(
         strong,
         socket,
         offset,
+        in_hand: None,
     });
     unsafe { refresh_hud() };
     tracing::info!(
@@ -326,6 +362,11 @@ pub(crate) unsafe fn place(
         if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             continue;
         }
+        // A weapon in a hand rides the hand's bone, which the second weapon's own writes name.
+        if carried.in_hand.is_some() {
+            unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
+            continue;
+        }
         let bone = carried.socket.bone() as u32;
         for data in unsafe { guns_mut(weapon) } {
             if let Some(entry) = data
@@ -357,9 +398,12 @@ pub(crate) unsafe fn place(
 struct Carried {
     object: ObjectKey,
     strong: Strong,
+    /// The socket it docks on, which is kept for it while a hand holds it.
     socket: SocketId,
     /// Its offset from the socket's bone, in the character's frame.
     offset: Vec3,
+    /// The hand driving it, while it is out of its socket.
+    in_hand: Option<Hand>,
 }
 
 impl Carried {

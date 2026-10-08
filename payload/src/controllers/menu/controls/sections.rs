@@ -347,6 +347,11 @@ pub(super) fn weapons_section(page: Page) -> Page {
             &LEFT_GRIP_LABELS,
             |c| c.controllers.weapons.hold.left_grip
         ))
+        .item(config_toggle!("LONE SECOND GUN BECOMES THE MAIN", |c| c
+            .controllers
+            .weapons
+            .hold
+            .promote_second))
         .item(config_toggle!("SECOND GUN'S AMMO OVER ITS HAND", |c| c
             .controllers
             .weapons
