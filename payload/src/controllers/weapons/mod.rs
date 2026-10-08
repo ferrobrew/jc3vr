@@ -16,6 +16,8 @@
 //!   trigger;
 //! - [`hold`]: which hand holds the wielded weapon (the hand that drew it, took it off the
 //!   ground, or was handed it), the attach bones that put it there, and the direct pickup;
+//! - [`inventory`]: every weapon the player owns, holds, or let go of nearby, and the ones it
+//!   keeps from the game's despawn;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
 //! - [`grenade`]: the physical grenade throw;
 //! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
@@ -73,6 +75,7 @@ pub mod heft;
 mod highlights;
 pub mod hold;
 pub mod holster;
+pub mod inventory;
 pub mod recoil;
 pub mod reload;
 pub mod scope;
@@ -102,6 +105,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(c4::hook_library())
         .with_hook_library(scope::hook_library())
         .with_hook_library(hold::hook_library())
+        .with_hook_library(inventory::hook_library())
         .with_hook_library(empty::hook_library())
         .with_hook_library(heft::hook_library())
         .with_hook_library(reload::hook_library())

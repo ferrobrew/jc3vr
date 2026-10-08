@@ -1,0 +1,39 @@
+# The VR inventory
+
+The game's inventory holds one weapon per slot. The VR inventory treats every weapon as an object that belongs to the world, a hand, or the body, so the player can carry more than the slots hold and pick up again what they put down. The game stays the source of truth for its slots, which the save, the HUD, the weapon wheel, and the missions read; the mod mirrors them and owns everything beyond them. The engine side is in [weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md), and the hands' part (drawing, holstering, picking up, handing over) in [physical-weapons.md](physical-weapons.md). The code is `payload/src/controllers/weapons/inventory/`.
+
+None of this has been run in the headset. It acts while the bindings inject, under the controller scheme with a controller active.
+
+## The registry
+
+With `weapons.inventory.enabled` (on; the pause menu's `TRACK WEAPONS`), the registry (`inventory::registry`) keeps one entry per weapon object the player owns, holds, or has let go of nearby, and where it is: in its slot, in a hand (wielded by the game, or driven by the mod as the second weapon), lying in the world, or held by another character. It covers the pistols, the two-handed weapons, and the special weapons; the heavy weapons, the grenade, the planted explosive, the beacon, and the sun gun stay the game's alone.
+
+Each input tick it reads the slots, the hands, and, for every weapon it knows that is in no slot, what became of it, through a weak reference to the weapon ([`WeaponBase::m_WeakThis`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_WeakThis)) that tells whether it still lives without keeping it alive: a weapon whose holder ([`WeaponBase::m_Holder`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_Holder)) is another character is that character's; any other is lying in the world, with its distance from the player. A weapon is keyed by its object while it lives; one whose object is gone leaves the registry.
+
+Every change is logged at info level: `inventory: tracking a weapon of the two-handed slot, in the left hand`, `inventory: a weapon of the two-handed slot is in the world`, `inventory: no longer tracking a weapon of the two-handed slot: the object is gone`, each with the entry's number and the weapon's spawn tag hash.
+
+## Keeping dropped weapons
+
+The game removes a dropped weapon by its distance from the player and the view, and never one that something else holds a strong reference to. With `weapons.inventory.pin_world` (on; `KEEP DROPPED WEAPONS NEARBY`), a weapon the player let go of is pinned (`inventory::pins`), held by a strong reference, while it is within `pin_radius_m` (8 m), and once pinned until it is past `unpin_radius_m` (12 m), so one at the edge does not flicker. At most `max_pinned` (6) are pinned, the nearest first, since a pinned weapon keeps its resources loaded. An unpinned weapon past `forget_m` (60 m), or beyond the most the registry keeps, is left to the game. Weapons the player never touched are never pinned, so the game's own clean-up of the world goes on as before.
+
+The spawn system's reset (a load) releases its references to every object and replaces the slots' weapons. At its pre-reset event ([`Inventory::m_SpawnSystemPreReset`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_SpawnSystemPreReset), seen through the local player's [`Inventory::HandleEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-HandleEvent)) the inventory releases every reference it holds and forgets every entry (`inventory: the spawn system is resetting`, `inventory: released every weapon`), so no pinned weapon outlives the reset outside the spawn system. Switching the registry off does the same.
+
+## Settings and readout
+
+The settings are `controllers.weapons.inventory`. The debug UI's Controllers tab has a `VR inventory` section listing every entry (its number, slot, tag hash, place, magazine, and distance) and the counts, and its settings under `VR inventory`. The pause menu's `VR: STATUS` page has an `INVENTORY` section: `TRACKED WEAPONS` (the weapons owned and in the world, and the resets) and `KEPT IN THE WORLD` (the weapons kept of those in the world, the pins since load, and the weapons left to the game). The scenario signals `inventory.kept`, `inventory.pins`, and `inventory.resets` read them (`testing/scenarios/inventory_keep_dropped.toml`).
+
+## In the headset
+
+1. Draw a rifle and drop it (with `HOLD GRIP TO HOLD GUNS`, open the grip away from the body): `inventory: a weapon of the two-handed slot is in the world`, then `... is in the world, pinned`. `KEPT IN THE WORLD` shows `1 OF 1 KEPT`.
+2. Walk 15 m away: the pin goes (`... is in the world` again). Walk back: it is pinned again, and the rifle is still there.
+3. Set `Kept within` to 2 m in the debug UI, drop the rifle, walk 30 m away and turn around a few times, and walk back: the game may have removed it (`no longer tracking ...: the object is gone`). With the default 8 m and the pin held, it stays.
+4. Pick the rifle up again: `... is in the left hand` (or right), and the pin's count does not change.
+5. Let a soldier pick up a dropped rifle, if one does: `... is with another character`.
+6. Save and load: `inventory: the spawn system is resetting` and `released every weapon`, then the slots' new weapons are tracked anew. Nothing the inventory kept is left lying around after the load.
+7. Watch that nothing about the game's own weapons changes with the registry on or off.
+
+## Unverified
+
+- Whether every load, death, and fast travel passes through the spawn system's reset, and whether the reset's pre-reset event reaches the local player's inventory in each.
+- Whether a soldier picks up a weapon the player dropped, which the registry would show as held by another character.
+- Whether a weapon the area clean-ups take out of the spawn system while it is pinned lingers in the world until the pin goes.

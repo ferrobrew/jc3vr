@@ -9,6 +9,7 @@ use crate::controllers::weapons::{
         C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig,
         HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
     },
+    inventory::config::InventoryConfig,
     reload::config::ReloadConfig,
     wheel::config::WheelConfig,
 };
@@ -76,6 +77,9 @@ pub struct WeaponsConfig {
     pub ads: AdsConfig,
     /// Held long guns stop at walls: turned aside and pulled back into the hands.
     pub collide: CollideConfig,
+    /// The VR inventory: the weapons the player owns, holds, and lets go of, and the ones kept
+    /// from the game's despawn.
+    pub inventory: InventoryConfig,
 }
 
 impl WeaponsConfig {
@@ -102,6 +106,7 @@ impl WeaponsConfig {
             wheel: WheelConfig::new(),
             ads: AdsConfig::new(),
             collide: CollideConfig::new(),
+            inventory: InventoryConfig::new(),
         }
     }
 }

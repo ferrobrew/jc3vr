@@ -1,0 +1,18 @@
+# Template: fill testing/recordings/inventory_keep_dropped.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a dropped rifle kept while near"
+description = "Recorded right-handed on foot with a rifle in the two-handed slot and HOLD GRIP TO HOLD GUNS on (vr-inventory.md, the checklist, items 1 and 2). Draw the rifle, open the grip away from the body to drop it, walk 15 m away, then walk back and stand over it."
+recording = "../recordings/inventory_keep_dropped.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the dropped rifle was kept"
+signal = "inventory.pins"
+
+[[expect]]
+name = "and is kept again on the way back"
+signal = "inventory.kept"
+check = "at_end"
+at_least = 1
+
+[[expect]]
+status = "KEPT IN THE WORLD"

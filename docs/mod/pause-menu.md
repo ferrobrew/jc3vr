@@ -178,6 +178,8 @@ A grip's position counts whether the runtime measured it or inferred it, because
 | | `LEFT HAND GRIP` | which grip the left hand took for a gun the hold put there (its own, or the right hand's mirrored), and the angle between the two |
 | | `HOLSTERS` | how many holsters were moved onto the guns docked in them on the last tick |
 | | `LAST REFUSAL` | why the last pickup, take, draw, holster, drop, or second weapon was refused |
+| `INVENTORY` | `TRACKED WEAPONS` | how many weapons the VR inventory tracks as the player's and in the world, and the spawn system resets it saw ([input/vr-inventory.md](input/vr-inventory.md)) |
+| | `KEPT IN THE WORLD` | how many of the weapons lying in the world are kept from the game's despawn, the pins since load, and the weapons left to the game |
 | `HAND BODIES` | `CALLBACK` | whether the pre-simulation callback is registered, has fired, and fires on the game thread (else the thread's id) |
 | | `CALLBACK FIRES` | how many times it has fired |
 | | `LEFT BODY`, `RIGHT BODY` | each body's phase (in the world, parked, or none) and its id |

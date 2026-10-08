@@ -357,6 +357,16 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .hold
             .drop_replaced))
+        .item(config_toggle!("TRACK WEAPONS", |c| c
+            .controllers
+            .weapons
+            .inventory
+            .enabled))
+        .item(config_toggle!("KEEP DROPPED WEAPONS NEARBY", |c| c
+            .controllers
+            .weapons
+            .inventory
+            .pin_world))
         .item(config_toggle!("TWO-HANDED FOREGRIP", |c| c
             .controllers
             .weapons

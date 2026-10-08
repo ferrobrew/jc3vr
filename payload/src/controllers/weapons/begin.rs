@@ -22,6 +22,7 @@ use crate::{
             engine::{self, HeldWeapon},
             foregrip, grenade, grip_watch, heft, highlights,
             hold::{self, second},
+            inventory,
             reload::{self, focus::ReloadTarget},
             scope,
             state::STATE,
@@ -66,9 +67,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             second::show_magazine(Some(owner), gameplay && holding.magazine_pips);
             let pair = dual_wield::attach::input_tick(owner, settings);
             let holder = hold::input_tick(owner, hold_settings, pair.is_some());
+            let weapon =
+                engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder));
+            let second = second::held_weapon(owner);
+            inventory::input_tick(
+                owner,
+                &inventory::TickInputs {
+                    settings: config.weapons.inventory,
+                    wielded: weapon.map(|w| (w.address, w.holder)),
+                    driven: second.and_then(|w| Some((w.address, w.holder?))),
+                },
+            );
             Ticked {
-                weapon: engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder)),
-                second: second::held_weapon(owner),
+                weapon,
+                second,
                 docked: if config.weapons.holsters.follow_docks {
                     docks::docked_guns(owner, config.acting_hand())
                 } else {

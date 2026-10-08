@@ -11,8 +11,8 @@ use crate::{
     },
     headpose::config::VrTurnMode,
     ui::controllers::{
-        aim, alignment, climb, fingers, hand_bodies, hands, haptics, overlay, physical_hands,
-        roomscale, scope, stunt, summary, vehicles, weapons,
+        aim, alignment, climb, fingers, hand_bodies, hands, haptics, inventory, overlay,
+        physical_hands, roomscale, scope, stunt, summary, vehicles, weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -287,6 +287,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         let w = &mut c.weapons;
         weapons::weapons_settings(ui, w);
         weapons::breadth_settings(ui, w);
+    });
+
+    egui::CollapsingHeader::new("VR inventory").show(ui, |ui| {
+        inventory::inventory_settings(ui, &mut c.weapons.inventory);
     });
 
     egui::CollapsingHeader::new("Haptics")

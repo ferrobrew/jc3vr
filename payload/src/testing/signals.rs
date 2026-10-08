@@ -21,7 +21,9 @@ use crate::{
             vault,
         },
         scheme, vehicles,
-        weapons::{self, ads, c4, collide, grenade, grip_watch, hold::second, reload::loose},
+        weapons::{
+            self, ads, c4, collide, grenade, grip_watch, hold::second, inventory, reload::loose,
+        },
     },
     frame_timing,
     testing::replay,
@@ -183,6 +185,9 @@ signals! {
     AdsWelded => "ads.welded", Counter, "Times a scope came onto the eye.";
     GunContacts => "collide.contacts", Counter, "Times a held long gun came against a wall.";
     GunTouching => "collide.touching", Flag, "A held long gun is against a wall.";
+    InventoryKept => "inventory.kept", Measure, "Weapons lying in the world the inventory keeps from the game's despawn.";
+    InventoryPins => "inventory.pins", Counter, "Weapons in the world the inventory started keeping.";
+    InventoryResets => "inventory.resets", Counter, "Spawn system resets the inventory saw.";
     GripFlips => "grip.flips", Counter, "Snaps of a gun on the wrist.";
     GripPins => "grip.pins", Counter, "Attach bones pinned.";
     StickSpeed => "locomotion.stick_speed_mps", Measure, "The speed the stick drives the body at, metres per second.";
@@ -338,6 +343,9 @@ impl Signal {
             Signal::AdsShouldered => count(ads::status().shouldered),
             Signal::AdsWelded => count(ads::status().welded),
             Signal::GunContacts => count(collide::status().contacts),
+            Signal::InventoryKept => Value::Number(inventory::status().world().0 as f64),
+            Signal::InventoryPins => count(inventory::status().pins),
+            Signal::InventoryResets => count(inventory::status().resets),
             Signal::GunTouching => flag(collide::status().touching),
             Signal::GripFlips => count(grip_watch::status().flips.iter().sum()),
             Signal::GripPins => count(grip::status().pins),

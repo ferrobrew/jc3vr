@@ -15,6 +15,7 @@ mod feedback;
 mod fingers;
 mod grapple;
 mod hands;
+mod inventory;
 mod system;
 mod vehicles;
 mod weapons;
@@ -202,6 +203,13 @@ const SECTIONS: &[Section] = &[
             row!("LEFT HAND GRIP", weapons::left_grip),
             row!("HOLSTERS", weapons::docks),
             row!("LAST REFUSAL", weapons::last_refusal),
+        ],
+    },
+    Section {
+        title: "INVENTORY",
+        rows: &[
+            row!("TRACKED WEAPONS", inventory::tracked),
+            row!("KEPT IN THE WORLD", inventory::pinned),
         ],
     },
     Section {
