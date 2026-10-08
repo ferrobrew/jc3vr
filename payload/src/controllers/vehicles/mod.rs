@@ -44,13 +44,17 @@
 //! [`ControllersConfig::vehicles`]: crate::controllers::config::ControllersConfig::vehicles
 
 pub mod arm_steering;
+mod arm_tick;
+mod axis_output;
 pub mod config;
 pub mod driver_aim;
 pub mod driving_view;
 pub mod fit;
+mod handle_tick;
 mod highlights;
 pub mod look_steer;
 pub mod mounted;
+mod mounted_tick;
 pub mod parachute;
 pub mod physical;
 pub mod steering;
@@ -63,28 +67,32 @@ use std::{
 };
 
 use glam::{Quat, Vec2, Vec3};
-use jc3gi::{
-    character::character::Character,
-    input::input_action_map::Action::{self, *},
-};
+use jc3gi::input::input_action_map::Action::{TURN_LEFT, TURN_RIGHT};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+pub use self::axis_output::write_outputs;
+use self::{
+    arm_tick::{arm_tick, arms_act},
+    axis_output::axis_wanted,
+    handle_tick::{handles_act, handles_tick},
+    mounted_tick::{mounted_tick, offered},
+};
 use crate::{
     controllers::{
         bindings::{
             controls::Controls,
             grab::{self, GrabVolume},
-            hold::{Desired, MapKind, Target, Want},
+            hold::Desired,
         },
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
         frame::{Hand, Pose},
-        hands::{self, ActiveHands, CockpitHand, tiers},
-        mode::{AirborneVariant, Mode, VehicleSeat},
+        hands::{self, CockpitHand, tiers},
+        mode::{Mode, VehicleSeat},
         overlay::{primitive::Source, store},
         vehicles::{
-            arm_steering::{self as arm, ArmBody, ArmHand, ArmPose, PitchInput},
+            arm_steering::{self as arm, ArmPose, PitchInput},
             config::{ParachuteHandlesConfig, PhysicalControlsConfig},
             fit::{FitInputs, FitReadout, VehicleLatch},
             mounted::{MountedGun, MountedTarget, Reference},
@@ -519,19 +527,6 @@ const CENTRE_PULSE: PulseSpec = PulseSpec {
     duration_s: 0.012,
 };
 
-/// Whether the tables wrote either half of the axis `negative`/`positive` this tick: their stick
-/// is out of its deadzone.
-fn axis_wanted(desired: &[Desired], negative: Action, positive: Action) -> bool {
-    desired.iter().any(|d| {
-        d.target.map == MapKind::Player
-            && (d.target.action == negative || d.target.action == positive)
-            && match d.want {
-                Want::Analog(v) | Want::Hold(v) => v > 0.0,
-                Want::Click => true,
-            }
-    })
-}
-
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
 /// do not inject.
 pub(crate) fn stand_down() {
@@ -689,195 +684,6 @@ static ARM_PANEL: Mutex<Option<ArmReadout>> = Mutex::new(None);
 /// [`is_mounted_weapon`].
 static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
 
-/// The physical controls `seat` offers with their toggles on: only the driver's seat has any. A
-/// vehicle with a steering fork (`fork`) offers handlebars.
-fn offered(
-    seat: Option<VehicleSeat>,
-    config: &ControllersConfig,
-    fork: bool,
-) -> &'static [ControlKind] {
-    let physical = &config.vehicles.physical;
-    let Some(seat) = seat.filter(|s| s.driver && physical.any()) else {
-        return &[];
-    };
-    let kinds = ControlKind::for_seat(seat.class, fork);
-    match kinds {
-        [one] if one.enabled(physical) => kinds,
-        [first, second] => match (first.enabled(physical), second.enabled(physical)) {
-            (true, true) => kinds,
-            (true, false) => &kinds[..1],
-            (false, true) => &kinds[1..],
-            (false, false) => &[],
-        },
-        _ => &[],
-    }
-}
-
-/// What the mounted-gun half of the input tick produced.
-struct MountedTick {
-    readout: Option<MountedReadout>,
-    target: Option<MountedTarget>,
-    handles: Option<[Option<Vec3>; 2]>,
-}
-
-/// Read the mounted gun and derive its aim from the hands.
-fn mounted_tick(active: &ActiveHands) -> MountedTick {
-    let config = &active.config;
-    let none = MountedTick {
-        readout: None,
-        target: None,
-        handles: None,
-    };
-    if !(config.vehicles.mounted.aim_by_hands || config.vehicles.mounted.anchor_hands) {
-        STATE.lock().mounted_reference = None;
-        return none;
-    }
-    // SAFETY: the input tick runs on the main thread outside the world update.
-    let Some(gun) = (unsafe {
-        Character::GetLocalPlayerCharacter()
-            .as_ref()
-            .and_then(|owner| mounted::read(owner))
-    }) else {
-        STATE.lock().mounted_reference = None;
-        return none;
-    };
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let to_cockpit = |world: Vec3| {
-        active.head.position
-            + body.inverse() * (world - head.position) / active.world_scale.max(1e-3)
-    };
-    let handles = gun.handles.map(|h| h.map(to_cockpit));
-    let grips = active.hands.map(|h| h.map(|h| h.grip.position));
-
-    let aim = config.vehicles.mounted.aim_by_hands;
-    let direction = mounted::hands_midpoint(grips)
-        .filter(|_| aim)
-        .and_then(|(mid, tracked)| {
-            let mut state = STATE.lock();
-            let current = state
-                .mounted_reference
-                .filter(|r| r.weapon == gun.address && r.hands == tracked);
-            let reference = current.or_else(|| {
-                let handles_mid = match handles {
-                    [Some(l), Some(r)] => Some((l + r) * 0.5),
-                    [one, other] => one.or(other),
-                };
-                mounted::take_reference(
-                    gun.address,
-                    tracked,
-                    mid,
-                    to_cockpit(gun.pivot),
-                    handles_mid,
-                    body.inverse() * gun.barrel,
-                    config.vehicles.mounted.min_lever_m,
-                )
-            });
-            state.mounted_reference = reference;
-            drop(state);
-            mounted::aim_direction(&reference?, mid).map(|d| body * d)
-        });
-    let target = direction.map(|d| MountedTarget {
-        weapon: gun.address,
-        point: gun.pivot + d * config.aim.max_distance_m.max(1.0),
-        at: Instant::now(),
-    });
-    MountedTick {
-        readout: Some(MountedReadout {
-            gun,
-            direction,
-            target: target.map(|t| t.point),
-        }),
-        target,
-        handles: config.vehicles.mounted.anchor_hands.then_some(handles),
-    }
-}
-
-/// Whether the arm steering acts in `mode`: in the wingsuit, with it switched on.
-fn arms_act(mode: Mode, config: &ControllersConfig) -> bool {
-    config.vehicles.arm_steering.wingsuit && mode == Mode::Airborne(AirborneVariant::Wingsuit)
-}
-
-/// Add the arm pose to the move stick in the wingsuit, when its arm steering is on. `engaged` is
-/// whether the arms steered on the last tick.
-fn arm_tick(
-    mode: Mode,
-    controls: &Controls,
-    active: &ActiveHands,
-    desired: &mut Vec<Desired>,
-    engaged: bool,
-) -> Option<ArmReadout> {
-    let config = &active.config.vehicles.arm_steering;
-    if !arms_act(mode, &active.config) {
-        return None;
-    }
-    let hand = |hand: Hand| {
-        active.hands[hand.index()].map(|h| ArmHand {
-            position: h.grip.position,
-            wrist: h.wrist.orientation,
-        })
-    };
-    let hands = [hand(Hand::Left)?, hand(Hand::Right)?];
-    let dims = body_dimensions(&active.config);
-    let body = ArmBody {
-        head: active.head.position,
-        eyes_above_shoulders: dims.eye_height - dims.shoulder_height,
-        arm_span: dims.arm_span,
-    };
-    let pose = arm::arm_pose(hands, &body);
-    let arms = arm::steer(&pose, config, engaged);
-    let stick = controls.off().stick;
-    let written = arm::combine(stick, arms);
-    write_move(desired, written);
-    Some(ArmReadout {
-        pose,
-        needed_spread: arm::needed_spread(config, engaged),
-        shoulder_y: body.head.y - body.eyes_above_shoulders,
-        pitch: arm::pitch_input(&pose, config),
-        arms,
-        stick,
-        written,
-    })
-}
-
-/// Whether the parachute handles act in `mode`.
-fn handles_act(mode: Mode, config: &ControllersConfig) -> bool {
-    config.vehicles.parachute_handles.enabled && mode == Mode::Airborne(AirborneVariant::Parachute)
-}
-
-/// Steer with the held handles under the parachute: their vector added to the move stick, written
-/// to the move half-axes the parachute task reads, as the stick's. With neither handle held, the
-/// tables' stick writes stand.
-fn handles_tick(
-    state: &HandleState,
-    pulls: [f32; 2],
-    controls: &Controls,
-    desired: &mut Vec<Desired>,
-    config: &ParachuteHandlesConfig,
-) -> HandlesReadout {
-    let held = state.holds.map(|h| h.is_some());
-    let handles = held
-        .contains(&true)
-        .then(|| parachute::steer(pulls, config));
-    let written = handles.map(|h| arm::combine(controls.off().stick, Some(h)));
-    if let Some(written) = written {
-        write_move(desired, written);
-    }
-    HandlesReadout {
-        held,
-        pulls,
-        handles,
-        written,
-    }
-}
-
-/// Write `stick` (+X right, +Y forward) over the tables' move half-axes and their length.
-fn write_move(desired: &mut Vec<Desired>, stick: Vec2) {
-    replace_axis(desired, stick.y, MOVE_BACKWARD, MOVE_FORWARD);
-    replace_axis(desired, stick.x, MOVE_LEFT, MOVE_RIGHT);
-    replace_axis(desired, stick.length().min(1.0), MOVE_ALL, MOVE_ALL);
-}
-
 fn log_handle_events(events: &[HandleEvent]) {
     for event in events {
         tracing::debug!(target: "controllers", ?event, "parachute handle");
@@ -891,52 +697,6 @@ fn body_dimensions(config: &ControllersConfig) -> BodyDimensions {
         BodyDimensions::CHARACTER_ESTIMATE
     } else {
         body::player()
-    }
-}
-
-/// Write the held controls' axes over the tables' writes for the same actions.
-pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
-    if let Some(steer) = out.steer {
-        replace_axis(desired, steer, TURN_LEFT, TURN_RIGHT);
-    }
-    if let Some(lean) = out.lean {
-        replace_axis(desired, lean, BIKE_LEAN_LEFT, BIKE_LEAN_RIGHT);
-    }
-    if let Some(cyclic) = out.cyclic {
-        replace_axis(desired, cyclic.x, HELI_ROLL_LEFT, HELI_ROLL_RIGHT);
-        replace_axis(desired, cyclic.y, HELI_BACKWARD, HELI_FORWARD);
-    }
-    if let Some(collective) = out.collective {
-        replace_axis(desired, collective, HELI_DEC_ALTITUDE, HELI_INC_ALTITUDE);
-    }
-    if let Some(stick) = out.flight_stick {
-        replace_axis(desired, stick.x, PLANE_ROLL_LEFT, PLANE_ROLL_RIGHT);
-        // Pushing the stick forward pitches the nose down.
-        replace_axis(desired, stick.y, PLANE_PITCH_UP, PLANE_PITCH_DOWN);
-    }
-    if let Some(throttle) = out.throttle {
-        replace_axis(desired, throttle, PLANE_DEC_TRUST, PLANE_INC_TRUST);
-    }
-}
-
-/// Replace every player-map want on `negative` and `positive` with the signed `value` split into
-/// the two non-negative half-axes, as the tables write an axis.
-fn replace_axis(desired: &mut Vec<Desired>, value: f32, negative: Action, positive: Action) {
-    desired.retain(|d| {
-        !(d.target.map == MapKind::Player
-            && (d.target.action == negative || d.target.action == positive))
-    });
-    let value = if value.is_finite() { value } else { 0.0 };
-    for (action, half) in [(negative, -value), (positive, value)] {
-        if half > 0.0 {
-            desired.push(Desired {
-                target: Target {
-                    map: MapKind::Player,
-                    action,
-                },
-                want: Want::Analog(half.min(1.0)),
-            });
-        }
     }
 }
 
@@ -988,8 +748,13 @@ fn rendered_angle(
 
 #[cfg(test)]
 mod tests {
+    use jc3gi::input::input_action_map::Action::{self, *};
+
     use super::*;
-    use crate::controllers::mode::VehicleClass;
+    use crate::controllers::{
+        bindings::hold::{MapKind, Target, Want},
+        mode::VehicleClass,
+    };
 
     fn analog(desired: &[Desired], action: Action) -> Option<f32> {
         desired.iter().find_map(|d| match d.want {
