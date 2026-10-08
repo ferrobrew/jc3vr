@@ -76,6 +76,28 @@ pub struct StepInputs {
     pub grabs: [bool; 2],
 }
 
+/// The torso heading the handles hang along this tick, from the fresh torso estimate when there
+/// is one. When the estimate goes stale (the controllers lose tracking a moment, or the estimator
+/// drops out), the last heading eases toward the head's heading `head_yaw` over
+/// [`TORSO_FALLBACK_S`], so the handles neither jump to the cockpit frame's forward nor stay
+/// pinned to a stale heading. With no heading yet, the head's. `dt` is the time since the last
+/// heading, seconds.
+pub fn torso_heading(estimate: Option<Quat>, last: Option<Quat>, head_yaw: Quat, dt: f32) -> Quat {
+    if let Some(estimate) = estimate.filter(|q| q.is_finite()) {
+        return estimate;
+    }
+    match last.filter(|q| q.is_finite()) {
+        Some(last) => {
+            let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+            last.slerp(head_yaw, 1.0 - (-dt / TORSO_FALLBACK_S).exp())
+        }
+        None => head_yaw,
+    }
+}
+
+/// The time constant over which a stale torso heading eases toward the head's, seconds.
+pub const TORSO_FALLBACK_S: f32 = 2.0;
+
 /// Where the handles' volumes are centred for shoulder joints at `shoulders`, indexed by
 /// [`Hand::index`], for a torso turned by `torso` in the cockpit frame: each shoulder's offset
 /// along the torso's axes, mirrored for the left.
@@ -274,6 +296,22 @@ mod tests {
 
     const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
     const SHOULDERS: [Vec3; 2] = [Vec3::new(-0.2, -0.2, 0.1), Vec3::new(0.2, -0.2, 0.1)];
+
+    #[test]
+    fn a_stale_torso_eases_toward_the_head_rather_than_jumping() {
+        let head = Quat::from_rotation_y(0.8);
+        let torso = Quat::from_rotation_y(0.2);
+        let fresh = Quat::from_rotation_y(-0.3);
+        assert_eq!(torso_heading(Some(fresh), Some(torso), head, 0.1), fresh);
+        assert_eq!(torso_heading(None, None, head, 0.1), head);
+        // A tick of staleness barely moves the last heading; a long gap settles on the head.
+        let next = torso_heading(None, Some(torso), head, 1.0 / 30.0);
+        assert!(next.angle_between(torso) < 0.02, "{next}");
+        let settled = torso_heading(None, Some(torso), head, TORSO_FALLBACK_S * 10.0);
+        assert!(settled.angle_between(head) < 1e-3);
+        let nan = torso_heading(None, Some(torso), head, f32::NAN);
+        assert!(nan.angle_between(torso) < 1e-3, "{nan}");
+    }
 
     fn centres() -> [Vec3; 2] {
         handle_centres(&CONFIG, SHOULDERS, Quat::IDENTITY)

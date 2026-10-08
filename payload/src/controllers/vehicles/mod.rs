@@ -279,6 +279,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     }
     if !handles_on {
         parachute::release_all(&mut state.handles, &mut handle_events);
+        state.handles_torso = None;
     }
     let mut candidates = physical::candidates(&placement, &state.controls, offered, grips);
     let mut reach = Vec::new();
@@ -286,8 +287,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     if handles_on {
         let dims = body_dimensions(&config);
         // Along the torso, so that a player turned from the recenter's forward finds the handles
-        // by their own shoulders; without an estimate, along the cockpit frame.
-        let torso = alignment::estimate().map_or(Quat::IDENTITY, |e| e.rotation());
+        // by their own shoulders; while the estimate is stale, the last heading eases toward the
+        // head's.
+        let now = Instant::now();
+        let dt = state
+            .handles_torso
+            .map_or(0.0, |(_, at)| now.duration_since(at).as_secs_f32());
+        let torso = parachute::torso_heading(
+            alignment::estimate().map(|e| e.rotation()),
+            state.handles_torso.map(|(torso, _)| torso),
+            hands::reach::yaw_only(active.head.orientation),
+            dt,
+        );
+        state.handles_torso = Some((torso, now));
         let shoulders = body::shoulder_positions(active.head.position, torso, &dims);
         let centres = parachute::handle_centres(&handles_config, shoulders, torso);
         candidates.extend(parachute::candidates(
@@ -519,6 +531,7 @@ pub(crate) fn stand_down() {
     parachute::release_all(&mut state.handles, &mut handle_events);
     state.controls = ControlState::default();
     state.handles_on = false;
+    state.handles_torso = None;
     state.last_holds = [None; 2];
     state.last_handles = [None; 2];
     state.anchor_weights = [0.0; 2];
@@ -610,6 +623,8 @@ struct State {
     handles_on: bool,
     /// The handles' settings as the last tick read them, kept while a hand blends off its handle.
     handles_config: ParachuteHandlesConfig,
+    /// The torso heading the handles last hung along, and when.
+    handles_torso: Option<(Quat, Instant)>,
     mounted_reference: Option<Reference>,
     mounted_target: Option<MountedTarget>,
     /// The mounted gun's handles in the cockpit frame, kept while the hands blend off them.
@@ -647,6 +662,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     handles: HandleState::new(),
     handles_on: false,
     handles_config: ParachuteHandlesConfig::new(),
+    handles_torso: None,
     mounted_reference: None,
     mounted_target: None,
     mounted_handles: None,
