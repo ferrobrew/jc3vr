@@ -503,6 +503,8 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
         unsafe { apply(weapon, false) };
     }
     unsafe { second::apply_owned(inventory) };
+    // No inventory ends the pass for the carried weapons.
+    unsafe { inventory::carry::end_pass(inventory) };
     // The guns are placed for the pass, so another character's gun is where it is drawn.
     unsafe { steal::observe(inventory) };
 }

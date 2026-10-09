@@ -71,6 +71,7 @@ use crate::{
         aim::targets::weak_target,
         bindings::controls::ButtonControl,
         frame::{Hand, Pose},
+        hands::held::{self, Held, Slot},
         haptics::{self, Event},
         motion::{self, ReleaseEstimate},
         scheme,
@@ -353,11 +354,7 @@ pub(crate) fn hold_offset(hand: Hand, tuning: &C4Config) -> Vec3 {
 
 /// The held charge's world matrix: the grip's world pose moved to the charge's point.
 fn held_matrix(grip: Pose, offset: Vec3) -> Matrix4 {
-    let position = grip.position + grip.orientation * offset;
-    Matrix4::from(Mat4::from_rotation_translation(
-        grip.orientation.normalize(),
-        position,
-    ))
+    Matrix4::from(held::held_matrix(grip, offset))
 }
 
 /// Record a throw step's outcome.
@@ -566,15 +563,28 @@ fn update_attachment_transforms(
         (state.stage, state.grips)
     };
     let Some(hand) = stage.hand().filter(|_| stage.charge_in_hand()) else {
+        held::hold(Slot::Charge, None);
         return;
     };
     let Some(grip) = grips[hand.index()] else {
+        held::hold(Slot::Charge, None);
         return;
     };
     let offset = hold_offset(hand, &Config::lock_query(|c| c.controllers.weapons.c4));
     let matrix = held_matrix(grip, offset);
     // SAFETY: the primed charge is live while the weak reference locks, on this thread.
-    if let Some(charge) = unsafe { primed_charge(&*weapon) } {
+    let charge = unsafe { primed_charge(&*weapon) };
+    // The tick's place moves the charge's transform; its in-hand model is drawn at the hand's
+    // render-time grip.
+    held::hold(
+        Slot::Charge,
+        charge.map(|charge| Held {
+            explosive: charge as usize,
+            hand,
+            offset,
+        }),
+    );
+    if let Some(charge) = charge {
         unsafe { place(charge, &matrix) };
     }
 }
@@ -691,6 +701,8 @@ unsafe fn throw(
     let Some(charge) = (unsafe { primed_charge(weapon) }) else {
         return;
     };
+    // A thrown charge is drawn where it flies from at once, not at the hand.
+    held::hold(Slot::Charge, None);
     // Under the parachute the weapon drops the charge itself, from the right-hand bone.
     let parachute = unsafe { user.IsUsingParachute() };
     let carried = Vec3::from_array(user.m_MeasuredWorldVelocity.data);

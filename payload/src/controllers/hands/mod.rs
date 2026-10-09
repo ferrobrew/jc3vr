@@ -43,6 +43,7 @@ use crate::{
 
 pub mod anchor;
 pub mod grip;
+pub mod held;
 pub mod ik;
 pub mod late;
 pub mod palette;
@@ -59,6 +60,7 @@ pub use pose::CockpitHand;
 pub(crate) fn hook_library() -> HookLibrary {
     late::hook_library()
         .with_hook_library(parts::hook_library())
+        .with_hook_library(held::hook_library())
         .with_hook_library(anchor::hook_library())
 }
 

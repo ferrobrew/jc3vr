@@ -27,6 +27,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
+    hands::held::{self, Slot},
     physical_hands,
     weapons::grenade::config::GrenadeCatchConfig,
 };
@@ -195,6 +196,7 @@ pub(crate) fn caught() -> Option<Caught> {
 
 /// Let go of the caught grenade: `thrown` when the hand threw it, otherwise it was lost.
 pub(crate) fn let_go(thrown: bool) {
+    held::hold(Slot::CaughtGrenade, None);
     let mut state = STATE.lock();
     if state.caught.take().is_some() {
         if thrown {

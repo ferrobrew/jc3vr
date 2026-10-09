@@ -3,8 +3,14 @@
 //! palm gives an object, longer the harder it pushes. With the pickup targets shown, a ring marks
 //! what each hand would take with its grip, a disc the grab point of what it holds, and a line
 //! from the grab point to where the hand would have it, redder the harder the hand pulls.
+//!
+//! The palms and what they hold ride with the player, so they are anchored to the render-time head
+//! at their offset from the tick's head; only the ring on what a hand would take, which lies in the
+//! world, is a world anchor (`docs/mod/rendering/render-time-anchoring.md`).
 
 use std::time::Duration;
+
+use glam::Vec3;
 
 use crate::{
     config::Config,
@@ -19,6 +25,7 @@ use crate::{
             palm::EDGES,
         },
     },
+    headpose,
 };
 
 /// Submit the palms and the pickup targets of the last tick, or clear them when neither is shown.
@@ -29,10 +36,11 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
         clear();
         return;
     }
+    let rides = Rides(headpose::query().position);
     let mut prims = Vec::new();
     if targets {
         for status in hands {
-            pickup_markers(status, config, &mut prims);
+            pickup_markers(status, config, rides, &mut prims);
         }
     }
     if !config.show_boxes {
@@ -51,8 +59,8 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
         let corners = palm.corners();
         for (a, b) in EDGES {
             prims.push(Primitive::Line {
-                from: Anchor::World(corners[a]),
-                to: Anchor::World(corners[b]),
+                from: rides.at(corners[a]),
+                to: rides.at(corners[b]),
                 width: EDGE_WIDTH_M,
                 color,
                 depth: DepthMode::XRay {
@@ -65,8 +73,8 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
         {
             let direction = shove.impulse.normalize_or_zero();
             prims.push(Primitive::Line {
-                from: Anchor::World(shove.at),
-                to: Anchor::World(shove.at + direction * (SHOVE_LINE_M * shove.load.max(0.1))),
+                from: rides.at(shove.at),
+                to: rides.at(shove.at + direction * (SHOVE_LINE_M * shove.load.max(0.1))),
                 width: EDGE_WIDTH_M,
                 color: blend(PRESSED_OBJECT, TOO_HEAVY, shove.resistance),
                 depth: DepthMode::Always,
@@ -74,7 +82,7 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
         }
         if status.press.is_some() {
             prims.push(Primitive::Sprite {
-                at: Anchor::World(palm.centre),
+                at: rides.at(palm.centre),
                 size: SpriteSize::World(palm.half_extents.max_element() * 1.5),
                 facing: Facing::Billboard,
                 shape: Shape::Ring { thickness: 0.2 },
@@ -89,7 +97,12 @@ pub(super) fn submit(hands: &[HandStatus; 2], config: &PhysicalHandsConfig) {
 /// A ring at what the hand would take, coloured by what it is and whether one hand lifts it; a
 /// disc at the grab point of what it holds, coloured by whether the hands holding it lift it; and a
 /// line from the grab point to where the hand would have it, coloured by how hard the hand pulls.
-fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut Vec<Primitive>) {
+fn pickup_markers(
+    status: &HandStatus,
+    config: &PhysicalHandsConfig,
+    rides: Rides,
+    prims: &mut Vec<Primitive>,
+) {
     let size = |status: &HandStatus| {
         status
             .palm
@@ -97,7 +110,7 @@ fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut
     };
     if let Some(held) = status.held {
         prims.push(Primitive::Sprite {
-            at: Anchor::World(held.anchor),
+            at: rides.at(held.anchor),
             size: SpriteSize::World(size(status) * 0.5),
             facing: Facing::Billboard,
             shape: Shape::Disc,
@@ -108,8 +121,8 @@ fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut
         });
         if held.lag_m > MIN_LINE_M {
             prims.push(Primitive::Line {
-                from: Anchor::World(held.anchor),
-                to: Anchor::World(held.target),
+                from: rides.at(held.anchor),
+                to: rides.at(held.target),
                 width: EDGE_WIDTH_M,
                 color: blend(HELD, TOO_HEAVY, held.load),
                 depth: DepthMode::Always,
@@ -132,6 +145,17 @@ fn pickup_markers(status: &HandStatus, config: &PhysicalHandsConfig, prims: &mut
             color,
             depth: DepthMode::Always,
         });
+    }
+}
+
+/// The tick's head position, against which a point that rides with the player is anchored.
+#[derive(Copy, Clone)]
+struct Rides(Vec3);
+
+impl Rides {
+    /// `world`, a point the tick placed, as an offset from the head.
+    fn at(self, world: Vec3) -> Anchor {
+        Anchor::Head(world - self.0)
     }
 }
 

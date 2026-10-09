@@ -1,7 +1,9 @@
 //! The grab-volume highlights: each placed pouch (faint, and brighter while a hand is within
 //! reach), with `holsters.show_volumes` every body volume, the volume each hand is in, the gun's
 //! well while a round is in hand, and a held foregrip, submitted to the overlay's
-//! [`Source::GrabVolumes`] slot at the input tick's rate.
+//! [`Source::GrabVolumes`] slot at the input tick's rate. Every highlight rides with the player, so
+//! each is anchored to the render-time head, or to the render-time hand whose gun it is on, rather
+//! than to the world (`docs/mod/rendering/render-time-anchoring.md`).
 
 use std::time::Duration;
 
@@ -14,7 +16,9 @@ use crate::{
         frame::{Hand, Pose},
         hands::{ActiveHands, CockpitHand, pose as hand_pose},
         overlay::{
-            primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
+            primitive::{
+                Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
+            },
             store,
         },
         weapons::{foregrip, is_body_volume, reload, volumes},
@@ -84,20 +88,11 @@ pub(super) fn submit(config: &ControllersConfig, active: &ActiveHands, reach: &R
         store::clear(Source::GrabVolumes);
         return;
     }
-    let head = headpose::query();
-    let body = headpose::xr::body_rotation();
-    let to_world = |point: Vec3| {
-        hand_pose::compose_world(
-            head.position,
-            body,
-            active.head.position,
-            Pose {
-                position: point,
-                orientation: Quat::IDENTITY,
-            },
-            active.world_scale,
-        )
-        .position
+    let place = Placement {
+        head: headpose::query().position,
+        body: headpose::xr::body_rotation(),
+        cockpit_head: active.head.position,
+        world_scale: active.world_scale,
     };
     let mut prims = Vec::new();
     for c in candidates
@@ -114,7 +109,7 @@ pub(super) fn submit(config: &ControllersConfig, active: &ActiveHands, reach: &R
         };
         let [r, g, b, _] = colour(c.volume);
         prims.push(ring(
-            to_world(reach.drawn_centre(c, None, &active.hands)),
+            place.on_head(reach.drawn_centre(c, None, &active.hands)),
             c.radius * active.world_scale,
             [r, g, b, alpha],
         ));
@@ -133,34 +128,38 @@ pub(super) fn submit(config: &ControllersConfig, active: &ActiveHands, reach: &R
                 c.centre
             };
             prims.push(ring(
-                to_world(centre),
+                place.on_head(centre),
                 c.radius * active.world_scale,
                 colour(volume),
             ));
         }
     }
-    if let Some((centre, radius)) = reload::well_ring(&config.weapons.reload) {
-        prims.push(ring(
-            to_world(centre),
-            radius * active.world_scale,
-            MAGAZINE,
-        ));
+    // The well rides the gun, and the gun its hand.
+    if let Some((gun_hand, mouth, radius)) = reload::well_ring(&config.weapons.reload) {
+        let at = active.hands[gun_hand.index()].map_or(place.on_head(mouth), |held| {
+            place.on_hand(gun_hand, held.grip, mouth)
+        });
+        prims.push(ring(at, radius * active.world_scale, MAGAZINE));
     }
     if let Some(hand) = reload::holding_hand()
-        && let Some(held) = active.hands[hand.index()]
+        && active.hands[hand.index()].is_some()
     {
         prims.push(marker(
-            to_world(held.grip.position),
+            Anchor::hand(hand, HandPose::Grip),
             active.world_scale,
             MAGAZINE,
         ));
     }
+    // The foregrip marker sits on the gun, which rides the holding hand.
     if let Some(hold) = foregrip::status().hold.filter(|h| h.engaged) {
         let mut posed = active.hands;
         foregrip::apply(&mut posed, &config.weapons.foregrip);
-        if let Some(off) = posed[hold.holder.other().index()] {
+        if let (Some(off), Some(holder)) = (
+            posed[hold.holder.other().index()],
+            active.hands[hold.holder.index()],
+        ) {
             prims.push(marker(
-                to_world(off.grip.position),
+                place.on_hand(hold.holder, holder.grip, off.grip.position),
                 active.world_scale,
                 FOREGRIP,
             ));
@@ -169,9 +168,59 @@ pub(super) fn submit(config: &ControllersConfig, active: &ActiveHands, reach: &R
     store::submit(Source::GrabVolumes, &mut prims, HIGHLIGHT_TTL);
 }
 
-fn ring(centre: Vec3, radius: f32, color: Rgba) -> Primitive {
+/// How the tick's cockpit-frame points are placed for the overlay. The tick's points ride with the
+/// player, so they are anchored to the render-time head or a render-time hand rather than to the
+/// world, which a point placed at the tick rate trails while the player moves.
+struct Placement {
+    /// The head's world position at the tick.
+    head: Vec3,
+    body: Quat,
+    cockpit_head: Vec3,
+    world_scale: f32,
+}
+
+impl Placement {
+    fn to_world(&self, pose: Pose) -> Pose {
+        hand_pose::compose_world(
+            self.head,
+            self.body,
+            self.cockpit_head,
+            pose,
+            self.world_scale,
+        )
+    }
+
+    /// `point`, in the cockpit frame, as an offset from the head.
+    fn on_head(&self, point: Vec3) -> Anchor {
+        Anchor::Head(self.to_world(at(point)).position - self.head)
+    }
+
+    /// `point`, in the cockpit frame, in the frame of `hand`'s grip `grip`, so that it moves with
+    /// the hand's render-time grip.
+    fn on_hand(&self, hand: Hand, grip: Pose, point: Vec3) -> Anchor {
+        Anchor::Hand {
+            hand,
+            pose: HandPose::Grip,
+            offset: offset_in(self.to_world(grip), self.to_world(at(point)).position),
+        }
+    }
+}
+
+fn at(position: Vec3) -> Pose {
+    Pose {
+        position,
+        orientation: Quat::IDENTITY,
+    }
+}
+
+/// A world point in the local frame of the world pose `frame`.
+fn offset_in(frame: Pose, world: Vec3) -> Vec3 {
+    frame.orientation.inverse() * (world - frame.position)
+}
+
+fn ring(at: Anchor, radius: f32, color: Rgba) -> Primitive {
     Primitive::Sprite {
-        at: Anchor::World(centre),
+        at,
         size: SpriteSize::World(radius * 2.0),
         facing: Facing::Billboard,
         shape: Shape::Ring { thickness: 0.15 },
@@ -182,9 +231,9 @@ fn ring(centre: Vec3, radius: f32, color: Rgba) -> Primitive {
     }
 }
 
-fn marker(at: Vec3, world_scale: f32, color: Rgba) -> Primitive {
+fn marker(at: Anchor, world_scale: f32, color: Rgba) -> Primitive {
     Primitive::Sprite {
-        at: Anchor::World(at),
+        at,
         size: SpriteSize::World(0.03 * world_scale),
         facing: Facing::Billboard,
         shape: Shape::Disc,
@@ -230,6 +279,46 @@ const HIGHLIGHT_TTL: Duration = Duration::from_millis(150);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::overlay::resolve::{HandPoses, anchor_position};
+
+    #[test]
+    fn the_highlights_ride_the_render_time_head_and_hands() {
+        let place = Placement {
+            head: Vec3::new(100.0, 20.0, -50.0),
+            body: Quat::from_rotation_y(0.7),
+            cockpit_head: Vec3::new(0.0, 1.7, 0.0),
+            world_scale: 1.1,
+        };
+        let point = Vec3::new(0.2, 1.1, -0.3);
+        let world = place.to_world(at(point)).position;
+        // Anchored to the head, the point keeps its offset from the head however far the head
+        // moves between the tick and the frame.
+        let Anchor::Head(offset) = place.on_head(point) else {
+            panic!("not a head anchor");
+        };
+        assert!((place.head + offset).abs_diff_eq(world, 1e-4));
+        // Anchored to a hand, the point resolves onto itself at the tick's grip, and moves with
+        // the grip after it.
+        let grip = Pose {
+            position: Vec3::new(0.25, 1.0, -0.35),
+            orientation: Quat::from_rotation_x(0.4),
+        };
+        let anchor = place.on_hand(Hand::Right, grip, point);
+        let poses = |grip: Pose| HandPoses {
+            wrist: grip,
+            grip,
+            aim: grip,
+        };
+        let tick = place.to_world(grip);
+        let resolved = anchor_position(anchor, &[None, Some(poses(tick))]).unwrap();
+        assert!(resolved.abs_diff_eq(world, 1e-4));
+        let moved = Pose {
+            position: tick.position + Vec3::new(3.0, -1.0, 0.5),
+            ..tick
+        };
+        let resolved = anchor_position(anchor, &[None, Some(poses(moved))]).unwrap();
+        assert!(resolved.abs_diff_eq(world + Vec3::new(3.0, -1.0, 0.5), 1e-4));
+    }
 
     #[test]
     fn a_body_volume_is_drawn_shifted_with_the_remapped_hand_that_reaches_for_it() {

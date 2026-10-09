@@ -13,7 +13,12 @@
 //!   attach-bone entries naming the socket's bone, and then moves the guns by the socket's offset
 //!   in the character's frame ([`place`]);
 //! - it shows or hides the carried weapons whenever the inventory's weapons are
-//!   ([`Inventory::UpdateWeaponVisibility`], detoured).
+//!   ([`Inventory::UpdateWeaponVisibility`], detoured);
+//! - it ends each pose-finalization pass for them as the game ends it for the slots' weapons
+//!   ([`end_pass`], from the hold's detour of [`Inventory::UpdateInventoryPostFinalizePose`]):
+//!   a skip of the render interpolation lasts until then, and no inventory clears it for a carried
+//!   weapon, so without it the weapon would be drawn at its newest placement every frame, a tick
+//!   ahead of the body it rides.
 //!
 //! A weapon comes into the set from a slot by [`Inventory::RemoveWeapon`], which takes it out of
 //! the slot without dropping it ([`carry_from_slot`]), and goes back into a slot by
@@ -36,7 +41,7 @@ use jc3gi::{
         character::Character,
         inventory::{EquipMode, Inventory, WeaponSlot},
     },
-    equipment::weapon::{WeaponBase, WeaponState},
+    equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponState},
     game::GameObject,
     types::math::Matrix4,
     ui::hud_ui::HUDUI,
@@ -486,6 +491,47 @@ pub(crate) unsafe fn place(
             data.m_WorldMatrixT1 = Matrix4::from(translated(current, shift));
             if copied {
                 data.m_WorldMatrixT0 = data.m_WorldMatrixT1;
+            }
+        }
+    }
+}
+
+/// End the pose-finalization pass for the carried weapons of `inventory`, when it is the local
+/// player's: clear each gun's and each model part's skip of the render interpolation, as
+/// [`WeaponBase::UpdatePostFinalizePose`] does for the slots' weapons. A carried weapon came into
+/// the set with its interpolation skipped, so that it does not streak from the slot's bone to the
+/// socket, and the skip holds until cleared.
+///
+/// # Safety
+///
+/// `inventory` must be null or live, on the thread running the character's pass.
+pub(crate) unsafe fn end_pass(inventory: *mut Inventory) {
+    if COUNT.load(Ordering::Relaxed) == 0 {
+        return;
+    }
+    let local = ik::local_character();
+    let ours = unsafe { inventory.as_ref() }
+        .is_some_and(|i| local != 0 && i.m_Character as usize == local);
+    if !ours {
+        return;
+    }
+    let carry = CARRY.lock();
+    for carried in carry.iter() {
+        // SAFETY: the set's strong reference keeps the weapon alive.
+        let weapon = unsafe { &mut *carried.weapon() };
+        for data in unsafe { guns_mut(weapon) } {
+            data.m_SkipRenderInterpolation = false;
+        }
+        for component in unsafe { weapon.m_WeaponComponents.as_slice() } {
+            let Some(component) = (unsafe { component.px.as_mut() }) else {
+                continue;
+            };
+            // SAFETY: the component belongs to the live weapon; the test also takes the barrel
+            // recoil and spin parts, which derive from the model part.
+            if unsafe { component.IsType(ModelAttachementWeaponComponent::TYPE_ID()) } {
+                let part =
+                    unsafe { &mut *(component as *mut _ as *mut ModelAttachementWeaponComponent) };
+                part.m_SkipRenderInterpolation = false;
             }
         }
     }

@@ -81,6 +81,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 ### rendering/
 
 - [fsr.md](mod/rendering/fsr.md) — FSR anti-aliasing and upscaling in the stereo pipeline.
+- [render-time-anchoring.md](mod/rendering/render-time-anchoring.md) — the rule that anything drawn relative to the player is anchored at render time, and where it applies: the overlay's head and hand anchors, the explosives re-pushed at the hand, and the carried weapons' interpolation.
 - [shader-patching.md](mod/rendering/shader-patching.md) — patching the game's shaders in memory at creation: the create hooks, the DXBC checksum refresh, the forced reload through `LoadShaderBundle`, the restore on eject, the sun-shadow PCF hash patch (issue #10), and the LOD dissolve patch.
 - [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md) — Intel XeSS assessed against the shipped FSR2 as anti-aliasing and as a VR upscaler: the Arc-only D3D11 backend, the D3D11on12 route that does work and what it costs, XeSS's sub-rectangle API against the eye seam, and why the recommendation is still to finish FSR2 and validate foveation.
 - [ui-decoupling.md](mod/rendering/ui-decoupling.md) — splitting HUD parts out of the one texture: why the issue #14 attempts failed, the premultiplied-alpha bug in the composite, the techniques, the world markers' crop prototype, and the atlas as built (marker cells, the weapon readout at the gun hand, health and heat on the wrist).

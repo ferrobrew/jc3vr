@@ -69,7 +69,10 @@ use crate::{
         },
         config::ControllersConfig,
         frame::{Hand, Pose},
-        hands::ActiveHands,
+        hands::{
+            ActiveHands,
+            held::{self, Held, Slot},
+        },
         haptics::{self, Event},
         motion::{self, ReleaseEstimate},
         overlay::{
@@ -646,6 +649,8 @@ fn update_from_user(
     }
     if !next.grenade_in_hand() {
         state.pin = None;
+        // A thrown grenade flies from where it is at once, not from the hand.
+        held::hold(Slot::Grenade, None);
     }
     // SAFETY: the grenade was found live just above, on this thread.
     state.status.fuse = primed
@@ -679,14 +684,27 @@ fn update_attachment_transforms(
         (state.stage, state.grips)
     };
     let Some(hand) = stage.hand().filter(|_| stage.grenade_in_hand()) else {
+        held::hold(Slot::Grenade, None);
         return;
     };
     let Some(grip) = grips[hand.index()] else {
+        held::hold(Slot::Grenade, None);
         return;
     };
     let offset = hold_offset(hand, &Config::lock_query(|c| c.controllers.weapons.grenade));
     // SAFETY: the weapon's primed grenade is live while the weak reference locks, on this thread.
-    if let Some(explosive) = unsafe { primed_explosive(w).and_then(|e| e.as_mut()) } {
+    let primed = unsafe { primed_explosive(w).and_then(|e| e.as_mut()) };
+    // The tick's place moves the grenade's physics and its effects; the model is drawn at the
+    // hand's render-time grip.
+    held::hold(
+        Slot::Grenade,
+        primed.as_ref().map(|explosive| Held {
+            explosive: &raw const **explosive as usize,
+            hand,
+            offset,
+        }),
+    );
+    if let Some(explosive) = primed {
         explosive.m_WorldMatrixT1 = held_matrix(grip, offset);
     }
 }
@@ -874,6 +892,16 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeConfig) -> Option<(H
         return None;
     }
     let world_grip = STATE.lock().grips[hand.index()];
+    // The grenade's physics carries it toward the hand by velocity, behind the hand; it is drawn at
+    // the hand's render-time grip.
+    held::hold(
+        Slot::CaughtGrenade,
+        Some(Held {
+            explosive: caught.explosive,
+            hand,
+            offset: hold_offset(hand, tuning),
+        }),
+    );
     if let Some(world_grip) = world_grip {
         let target = world_grip.position + world_grip.orientation * hold_offset(hand, tuning);
         let velocity = catch::carry_velocity(centre, target, inputs.dt, tuning.catch.max_carry_mps);
@@ -895,11 +923,7 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeConfig) -> Option<(H
 
 /// The held grenade's world matrix: the grip's world pose moved to the grenade's point.
 fn held_matrix(grip: Pose, offset: Vec3) -> Matrix4 {
-    let position = grip.position + grip.orientation * offset;
-    Matrix4::from(Mat4::from_rotation_translation(
-        grip.orientation.normalize(),
-        position,
-    ))
+    Matrix4::from(held::held_matrix(grip, offset))
 }
 
 #[cfg(test)]

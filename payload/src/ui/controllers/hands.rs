@@ -8,6 +8,7 @@ use crate::{
         config::{GripOffset, HandsConfig},
         frame::Hand,
         hands::{
+            held,
             ik::HandIkStatus,
             late::{HandLateStatus, LateStatus},
             parts,
@@ -81,9 +82,11 @@ pub(super) fn hands_readout(
         }
     });
     ui.label(format!(
-        "Late-updated gun matrices {} · gun parts {} · palette uploads edited {}",
+        "Late-updated gun matrices {} · gun parts {} · held explosives {} · palette uploads \
+         edited {}",
         late.weapons_updated,
         parts::parts_updated(),
+        held::updated(),
         late.palettes_edited
     ));
 }

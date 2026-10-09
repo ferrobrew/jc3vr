@@ -1,0 +1,32 @@
+# Render-time anchoring
+
+The simulation ticks at 30 Hz and the engine draws each object between its last two ticks' cached matrices, by the frame's interpolation fraction. The headset's view and the hands drawn by the late update (`payload/src/controllers/hands/late.rs`) are placed from the latest tracking at render time instead. Anything the mod places from a tick's data and draws relative to the player therefore has to be anchored to a render-time pose, or it is drawn where the player was up to a tick ago. At walking pace that is a few centimetres; in a car at 114 km/h it is about a metre a tick, and a falling or wingsuiting player outruns it as fast.
+
+## The rule
+
+Anything drawn relative to the player is anchored at render time:
+
+- an overlay primitive placed in the cockpit frame, or from a point that rides with the player, is anchored to the head (`Anchor::Head`, an offset in world axes from the head's render-time position) or to a hand (`Anchor::Hand`, an offset in one of the hand's render-time poses). `Anchor::World` is for points that lie in the world: a grapple target, a gun's hit point, a pickup on the ground;
+- a model the mod holds in a hand is re-pushed at render time from the hand's render-time pose or correction, after the engine's own render update has pushed its interpolated matrix;
+- a model the mod places on the body keeps its interpolation: both of its cached matrices are written on the tick, so the engine draws it between them with the body it rides.
+
+## Where it applies
+
+Overlay highlights:
+
+- The grab volumes, pouches, and body volumes (`weapons/highlights.rs`) are anchored to the head. The reload well's ring and the foregrip's marker sit on the gun, so they are anchored to the holding hand's grip; the marker on a hand holding a round is anchored to that hand.
+- The vehicle controls' rings, the push buttons, and the steering wheel's rim and axes (`vehicles/highlights.rs`) are anchored to the head through the cockpit transform's offset from the head, as the parachute handles' marks already were. The wingsuit guide is anchored to the hands.
+- The physical hands' palm boxes, their press rings and shove lines, and the line from a held object's grab point to where the hand would have it (`physical_hands/draw.rs`) are anchored to the head. The ring on what a hand would take stays a world anchor, since that object lies in the world.
+- The body mirror's figure is anchored to the head. The grenade fuse ring, the wrist detonator, the second weapon's magazine pips, the ghost hands, the gizmos, and the debug panel's pointer are anchored to the hands. The gun's laser starts at the hand and ends at its hit, a world point.
+
+Models in a hand:
+
+- A held gun's model and its separate parts are re-pushed by the late update with the holding hand's correction ([`WeaponBase::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-UpdateRender) and the parts' render update, detoured).
+- The grenade primed from the pouch, a live grenade a hand caught, and the C4 charge primed from the pouch are re-pushed at the hand's render-time grip (`hands/held.rs`), through post-call detours on [`Explosive::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Explosive##func-UpdateRender) (the grenade's model, [`m_ModelInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Explosive##field-m_ModelInstance)) and [`PlantedExplosive::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::PlantedExplosive##func-UpdateRender) (the charge's in-hand model, [`m_InactiveModelInstance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::PlantedExplosive##field-m_InactiveModelInstance)). The throws still place each on the tick, which moves its physics and its effects; each registers what its hand holds every tick, clears the registration when it lets go or throws, and a registration not refreshed lapses after a little more than a tick. The caught grenade is carried to the hand by its physics velocity, which trails the hand further, so drawing it at the hand matters most there.
+
+Models on the body:
+
+- The weapons the VR inventory carries beyond the slots are placed on their sockets on the tick through the weapon's own placement, which writes both cached matrices. A weapon came into the carry set with its render interpolation skipped, so that it does not streak from the slot's bone to its socket, and that skip lasts until [`WeaponBase::UpdatePostFinalizePose`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-UpdatePostFinalizePose) clears it, which only the inventory's slots receive. Left set, the placement copied the new matrix into [`WeaponData::m_WorldMatrixT0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_WorldMatrixT0) every tick, so a carried weapon was drawn un-interpolated, a tick ahead of the body: the rifle popped at speed, and a pistol floated below a falling player. The carry set now ends each pass for its weapons as the game does for the slots' (`inventory::carry::end_pass`, from the hold's detour of [`Inventory::UpdateInventoryPostFinalizePose`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-UpdateInventoryPostFinalizePose)), clearing the guns' [`m_SkipRenderInterpolation`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_SkipRenderInterpolation) and their model parts'.
+- A slot's weapon on the body, the snap between a dock and the hand, and the slides of a draw and a holster are placed by the game's placement or the rigid grip's pin, so they interpolate with the body; the part of a snap in the hand rides the late update's correction.
+
+The headset checklist: drive at speed and fall with a rifle and a pistol carried on the body and watch them stay on their sockets; hold a primed grenade, a caught grenade, and a C4 charge while moving the hand quickly and while driving, and check that each stays in the hand; and drive with the vehicle controls' rings, the reload well, and the pouches showing, and check that they stay on the wheel, the gun, and the body.

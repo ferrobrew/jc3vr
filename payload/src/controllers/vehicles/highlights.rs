@@ -1,5 +1,9 @@
 //! The vehicle handling's overlay: a ring on the control each free hand can grab, the parachute's
 //! handles, the wingsuit's arm-steering guide, and, for tuning, the wheel's rim and axes.
+//!
+//! Every mark is placed in the cockpit frame, which rides with the player, so each is anchored to
+//! the render-time head (or a hand), never to the world: a world point placed at the tick rate
+//! trails a moving vehicle by up to a tick (`docs/mod/rendering/render-time-anchoring.md`).
 
 use std::time::Duration;
 
@@ -108,7 +112,7 @@ pub(super) fn submit(config: &ControllersConfig, highlights: &Highlights, xf: &C
                 continue;
             };
             prims.push(Primitive::Sprite {
-                at: Anchor::World(xf.point_to_world(c.centre)),
+                at: Anchor::Head(xf.point_from_head(c.centre)),
                 size: SpriteSize::World(c.radius * 2.0 * xf.world_scale),
                 facing: Facing::Billboard,
                 shape: Shape::Ring { thickness: 0.15 },
@@ -237,7 +241,7 @@ fn button_primitives(mark: &ButtonMark, xf: &CockpitTransform, prims: &mut Vec<P
         PushPhase::Armed => BUTTON_ARMED,
         PushPhase::Pressed => BUTTON_PRESSED,
     };
-    let at = Anchor::World(xf.point_to_world(mark.at.centre));
+    let at = Anchor::Head(xf.point_from_head(mark.at.centre));
     let normal = xf.direction_to_world(mark.at.normal);
     let diameter = mark.at.radius * 2.0 * xf.world_scale;
     let shape = if mark.phase == PushPhase::Out {
@@ -255,14 +259,14 @@ fn button_primitives(mark: &ButtonMark, xf: &CockpitTransform, prims: &mut Vec<P
     });
 }
 
-/// The wheel's rim, its axis from the hub toward the driver, and a spoke to the top of its rim, in
-/// the world.
+/// The wheel's rim, its axis from the hub toward the driver, and a spoke to the top of its rim,
+/// anchored to the head.
 fn wheel_primitives(wheel: &WheelFrame, xf: &CockpitTransform, prims: &mut Vec<Primitive>) {
-    let hub = xf.point_to_world(wheel.centre);
+    let hub = xf.point_from_head(wheel.centre);
     let normal = xf.direction_to_world(wheel.normal());
     let radius = wheel.radius * xf.world_scale;
     prims.push(Primitive::Sprite {
-        at: Anchor::World(hub),
+        at: Anchor::Head(hub),
         size: SpriteSize::World(radius * 2.0),
         facing: Facing::Surface { normal },
         shape: Shape::Ring { thickness: 0.06 },
@@ -271,11 +275,11 @@ fn wheel_primitives(wheel: &WheelFrame, xf: &CockpitTransform, prims: &mut Vec<P
     });
     for to in [
         hub + normal * radius,
-        xf.point_to_world(wheel.rim_point(0.0)),
+        xf.point_from_head(wheel.rim_point(0.0)),
     ] {
         prims.push(Primitive::Line {
-            from: Anchor::World(hub),
-            to: Anchor::World(to),
+            from: Anchor::Head(hub),
+            to: Anchor::Head(to),
             width: AXIS_WIDTH_M,
             color: WHEEL,
             depth: XRAY,
