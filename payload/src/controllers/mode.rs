@@ -46,6 +46,7 @@ use crate::{
     config::Config,
     controllers::{config::ModeConfig, frame::ActionSetKind},
     hooks::animation::active_state_type_id,
+    sim_rate::scale_ticks,
 };
 
 /// The control mode the bindings act in.
@@ -356,7 +357,9 @@ pub fn traversal(character: &CharacterSnapshot) -> Option<Traversal> {
 /// set, and publish the detection for [`current`]. Called from the input tick while the controllers
 /// are enabled.
 pub(crate) fn tick() -> Detection {
-    let config = Config::lock_query(|c| c.controllers.mode);
+    let mut config = Config::lock_query(|c| c.controllers.mode);
+    // The debounce rides out a flicker of the animation, which lasts a time, not a tick count.
+    config.debounce_ticks = scale_ticks(config.debounce_ticks);
     // SAFETY: called on the main thread from the input tick, outside the world update that writes
     // the state read here.
     let snapshot = unsafe { read_snapshot() };

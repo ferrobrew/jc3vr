@@ -489,10 +489,12 @@ fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> 
     None
 }
 
-/// How many steps a body put somewhere, rather than moved there, ignores its contacts.
+/// How many steps a body put somewhere, rather than moved there, ignores its contacts, at the
+/// game's 30 Hz tick ([`contact::mute_for`] scales it at another sim rate).
 pub(super) const PLACED_MUTE_STEPS: u64 = 3;
 
-/// How many steps a body the rig carried ignores its contacts: a fifth of a second.
+/// How many steps a body the rig carried ignores its contacts: a fifth of a second at the game's
+/// 30 Hz tick ([`contact::mute_for`] scales it at another sim rate).
 const RIG_MUTE_STEPS: u64 = 6;
 
 /// The relative change in a body's size or mass that remakes it.

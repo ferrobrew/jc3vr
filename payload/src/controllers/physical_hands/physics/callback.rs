@@ -106,7 +106,7 @@ unsafe extern "system" fn destructor(_this: *mut PfxPreSimulationCallback, _flag
 unsafe extern "system" fn pre_simulation(
     _this: *mut PfxPreSimulationCallback,
     _world: *mut hknpWorld,
-    _dt: f32,
+    dt: f32,
 ) {
     FIRES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: reads the calling thread's own id.
@@ -133,7 +133,7 @@ unsafe extern "system" fn pre_simulation(
     // joint, or grip as a lost one.
     let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandBodies);
     // SAFETY: the engine calls this before a step, on the thread that steps the world.
-    unsafe { crate::controllers::physical_hands::physics::step() }
+    unsafe { crate::controllers::physical_hands::physics::step(dt) }
 }
 
 /// The hand bodies keep no Havok-space positions: the step converts game space with the world's

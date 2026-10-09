@@ -42,6 +42,7 @@ mod profiler;
 mod recorder;
 mod screenshot;
 mod session;
+mod sim_rate;
 mod stereo;
 mod testing;
 mod thread_role;
@@ -362,6 +363,10 @@ fn update() {
 
         // After the debug UI, whose controls are the most frequent edits, and outside its lock.
         config::tick();
+
+        // After the debug UI too, so a rate chosen there applies to this frame's ticks, and ahead
+        // of the game's update, whose ticks and physics step read the rate it applies.
+        sim_rate::frame_tick();
     });
     if let Err(e) = panic {
         let panic_msg = e

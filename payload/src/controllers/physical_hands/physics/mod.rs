@@ -72,7 +72,7 @@ pub(crate) use self::{
     state::{
         body_pose, drives, enabled, pressing, publish_holds, publish_pins, push, take_joint_losses,
     },
-    step::step,
+    step::{step, step_seconds},
 };
 pub use self::{
     state::{callback_status, status},

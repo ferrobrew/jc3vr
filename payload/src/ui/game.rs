@@ -10,7 +10,7 @@ use jc3gi::{
 };
 
 use crate::{
-    config,
+    config::{self, Config},
     hooks::{
         self,
         input::{
@@ -25,6 +25,7 @@ use crate::{
             },
         },
     },
+    sim_rate::{self, SimRate},
     ui::util::{patch_slider, patchbox},
 };
 
@@ -325,6 +326,7 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
                 }
             }
             patchbox(ui, "Decouple enabled", &mut game.m_DecoupleEnabled);
+            sim_rate_controls(ui);
         });
 
         ui.collapsing("Spawn", |ui| {
@@ -363,3 +365,53 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
 /// How far along the view direction to place a debug-spawned object. Far enough that the object
 /// does not overlap the player, close enough to land in front of them.
 const BARREL_SPAWN_DISTANCE: f32 = 4.0;
+
+/// The sim-rate experiment (`crate::sim_rate`, `docs/mod/performance/sim-rate.md`): the rate, and
+/// what the experiment has applied to the game.
+fn sim_rate_controls(ui: &mut egui::Ui) {
+    ui.separator();
+    let configured = Config::lock_query(|c| c.sim_rate.rate);
+    let mut chosen = configured;
+    egui::ComboBox::from_label("Sim rate (experiment)")
+        .selected_text(format!("{} Hz", chosen.hz()))
+        .show_ui(ui, |ui| {
+            for rate in SimRate::ALL {
+                let label = if rate == SimRate::DEFAULT {
+                    format!("{} Hz (the game's own)", rate.hz())
+                } else {
+                    format!("{} Hz", rate.hz())
+                };
+                ui.selectable_value(&mut chosen, rate, label);
+            }
+        })
+        .response
+        .on_hover_text(
+            "Run the sim tick at another rate, to measure what it costs and what it breaks. Above \
+             30 Hz the game's update frequency is set to the rate, the physics step's pin to \
+             30 Hz is removed so the world steps by the tick, and the interpolation override is \
+             forced to the accumulated method, replacing any override chosen above. Back at \
+             30 Hz all three are restored. The test procedure is in \
+             docs/mod/performance/sim-rate.md.",
+        );
+    if chosen != configured {
+        config::edit().sim_rate.rate = chosen;
+    }
+    let status = sim_rate::status();
+    ui.label(format!(
+        "Applied {} Hz, physics pin {}, game update frequency {}, interpolation override {}, at \
+         most {} ticks a frame when accumulating",
+        status.applied_hz,
+        if status.pin_removed {
+            "removed"
+        } else {
+            "in place"
+        },
+        status
+            .game_hz
+            .map_or_else(|| "?".to_owned(), |hz| format!("{hz} Hz")),
+        status
+            .interpolation_override
+            .map_or_else(|| "?".to_owned(), |o| o.to_string()),
+        status.max_ticks_per_frame,
+    ));
+}

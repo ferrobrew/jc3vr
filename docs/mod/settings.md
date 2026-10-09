@@ -4,7 +4,7 @@ The runtime configuration (`Config` in `payload/src/config/`, behind the `CONFIG
 
 ## Where a setting is exposed
 
-A setting a player would change belongs in the pause menu's VR pages ([pause-menu.md](pause-menu.md)): comfort, controls, handedness, the switch for each gameplay feature, and the tuning of a feature that depends on the player's body or taste, such as a steering lock, a haptic strength, or how far the arms move to steer the wingsuit. The headset is on while the game is played, so a setting that only the debug UI reaches is out of a player's reach. The debug UI holds the internals: offsets, gains, thresholds that need a developer to judge, and diagnostics. A feature lands with its pause menu entries, the same way it lands with its documentation.
+A setting a player would change belongs in the pause menu's VR pages ([pause-menu.md](pause-menu.md)): comfort, controls, handedness, the switch for each gameplay feature, and the tuning of a feature that depends on the player's body or taste, such as a steering lock, a haptic strength, or how far the arms move to steer the wingsuit. The headset is on while the game is played, so a setting that only the debug UI reaches is out of a player's reach. The debug UI holds the internals: offsets, gains, thresholds that need a developer to judge, and diagnostics. A feature lands with its pause menu entries, the same way it lands with its documentation. Experiments are the exception: the sim-rate experiment (`sim_rate.rate`, [performance/sim-rate.md](performance/sim-rate.md)) defaults to the game's own behaviour and only the debug UI reaches it.
 
 ## Where the files live
 

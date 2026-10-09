@@ -1,7 +1,10 @@
 //! The pre-simulation half of the hand bodies' tick: make, add, park, and drive the bodies toward
 //! where their palms will be at the end of the step, then keep the held guns' bodies on them.
 
-use std::time::Instant;
+use std::{
+    sync::atomic::{AtomicU32, Ordering},
+    time::Instant,
+};
 
 use glam::{Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, physics::PhysicsSystem};
@@ -34,16 +37,21 @@ use crate::{
             vault,
         },
     },
-    hooks,
+    hooks, sim_rate,
 };
 
-/// The pre-simulation step: make, add, park, and drive the hand bodies. Called by the callback.
+/// The pre-simulation step: make, add, park, and drive the hand bodies. Called by the callback with
+/// the time the physics update was given, `given_dt`.
 ///
 /// # Safety
 ///
 /// The thread that steps the physics world, outside the step.
-pub(crate) unsafe fn step() {
+pub(crate) unsafe fn step(given_dt: f32) {
     let now = Instant::now();
+    // The step the world is about to take, which the drives, the climb, and the proxy's velocity
+    // read: the engine's 30 Hz constant, or the tick's step under the sim-rate experiment.
+    let step_s = sim_rate::world_step_seconds(Some(given_dt));
+    STEP_S.store(step_s.to_bits(), Ordering::Relaxed);
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     contact::step_tick();
     let mut hands = HANDS.lock();
@@ -128,7 +136,6 @@ pub(crate) unsafe fn step() {
     let age_s = published
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
         .min(MAX_LEAD_S);
-    let step_s = PhysicsSystem::STEP_SECONDS;
     let lead_s = age_s + step_s;
     // SAFETY: forwarded from the caller.
     let group = unsafe { player_system_group() };
@@ -406,6 +413,16 @@ pub(crate) unsafe fn step() {
         status.last_error = Some(error);
     }
 }
+
+/// The step the physics world takes this step, seconds, as [`step`] published it before driving
+/// anything. Read by the code the step calls (the climb and the proxy's velocity), on the thread
+/// that steps the world.
+pub(crate) fn step_seconds() -> f32 {
+    f32::from_bits(STEP_S.load(Ordering::Relaxed))
+}
+
+/// The bits of [`step_seconds`]; the engine's constant until the first step.
+static STEP_S: AtomicU32 = AtomicU32::new(PhysicsSystem::STEP_SECONDS.to_bits());
 
 /// Whether nothing solid lies between `from` and `to`, game space, for the aim's ray filter, which
 /// never hits the player nor the hand bodies; `held` is an object a hand holds, also passed

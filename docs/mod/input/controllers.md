@@ -90,7 +90,7 @@ The detector runs once per engine input tick, from the post-call detour on [`Inp
 
 The mode selects the semantic mode set: `onfoot` and the falling and parachute variants of `airborne` select `on_foot`, the wingsuit `wingsuit`, a vehicle its class's set (`helicopter`, `plane`, or `land_vehicle` for the rest), and `ui` the `menu` set.
 
-A change between gameplay modes must persist for `controllers.mode.debounce_ticks` ticks (two by default) before it takes effect. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The detector selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game sees. The headpose sim keeps its own on-foot test.
+A change between gameplay modes must persist for `controllers.mode.debounce_ticks` ticks (two by default) before it takes effect. The count is at the game's 30 Hz tick; under the sim-rate experiment ([performance/sim-rate.md](../performance/sim-rate.md)) it is scaled to the same duration. Entering and leaving `ui` is immediate, because the UI signals do not flicker and a late switch would send a menu press to the gameplay bindings. The detector selects the OpenXR action set whenever the controllers are enabled, and changes nothing the game sees. The headpose sim keeps its own on-foot test.
 
 ## Bindings and injection
 

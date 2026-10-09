@@ -124,13 +124,15 @@ pub(super) const STALE_AFTER: Duration = Duration::from_millis(200);
 
 /// How many steps in a row may run without a publish, or with a gripping hand's body not acting,
 /// before the grips let go: the aim update runs every simulation tick, and a game pause stops the
-/// steps as well as the publishes.
+/// steps as well as the publishes. Counted at the game's 30 Hz tick, and scaled to the same
+/// duration at another sim rate ([`crate::sim_rate::scale_ticks`]).
 pub(super) const MAX_STALE_STEPS: u32 = 6;
 
 /// How far below the gripped top feet that stand count as on the ledge, metres.
 pub(super) const MANTLE_LANDED_BELOW_M: f32 = 0.15;
 
-/// How many steps a mantle may take before it gives up: three seconds.
+/// How many steps a mantle may take before it gives up: three seconds at the game's 30 Hz tick,
+/// scaled to the same duration at another sim rate ([`crate::sim_rate::scale_ticks`]).
 pub(super) const MAX_MANTLE_STEPS: u32 = 90;
 
 /// The least share of the tension pulse that pulses a gripping hand.

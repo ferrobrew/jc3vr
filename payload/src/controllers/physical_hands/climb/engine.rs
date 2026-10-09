@@ -20,11 +20,14 @@ use glam::{Affine3A, Mat4, Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
     havok::hkSimdFloat32,
-    physics::{PfxCharacterInstance, PhysicsSystem, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
+    physics::{PfxCharacterInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
     types::vector_math::AlignedVector3,
 };
 
-use crate::controllers::physical_hands::{physics::havok_affine, world::World};
+use crate::controllers::physical_hands::{
+    physics::{self, havok_affine},
+    world::World,
+};
 
 /// Why the player could not be climbed with.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -227,7 +230,7 @@ pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
     unsafe { proxy_slot(world.world(), proxy) }?;
     let body = unsafe { proxy.m_CharacterRigidBody.as_mut() }.ok_or(ClimbEngineError::NoPlayer)?;
     let timestep = hkSimdFloat32 {
-        m_real: [PhysicsSystem::STEP_SECONDS; 4],
+        m_real: [physics::step_seconds(); 4],
     };
     unsafe { body.setLinearVelocity(&aligned(velocity), &timestep, false) };
     Ok(())

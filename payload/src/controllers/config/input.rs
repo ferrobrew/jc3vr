@@ -149,6 +149,8 @@ pub enum LocomotionDirection {
 pub struct ModeConfig {
     /// How many consecutive ticks a new gameplay mode must be detected before it takes effect. One
     /// switches at once; the default rides out a one-tick flicker during an animation blend.
+    /// Counted at the game's 30 Hz tick, and scaled to the same duration at another sim rate
+    /// ([`crate::sim_rate::scale_ticks`]).
     pub debounce_ticks: u32,
 }
 

@@ -748,7 +748,8 @@ impl PfxPreSimulationCallback {
         }
     }
     /// Called by [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) before each step, on the thread that runs it, with
-    /// the world and the time the update was given, outside the step: the world may be changed
+    /// the world and the time the update was given (not the step it takes, which is pinned to
+    /// [`PhysicsSystem::STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS) after the callbacks), outside the step: the world may be changed
     /// here, and the step that follows integrates the velocities set here. The callbacks fire
     /// in the order they were added.
     pub unsafe fn preSimulationCallback(
@@ -792,7 +793,8 @@ pub struct PfxPreSimulationCallbackVftable {
         flags: u8,
     ),
     /// Called by [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) before each step, on the thread that runs it, with
-    /// the world and the time the update was given, outside the step: the world may be changed
+    /// the world and the time the update was given (not the step it takes, which is pinned to
+    /// [`PhysicsSystem::STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS) after the callbacks), outside the step: the world may be changed
     /// here, and the step that follows integrates the velocities set here. The callbacks fire
     /// in the order they were added.
     pub preSimulationCallback: unsafe extern "system" fn(
@@ -1281,18 +1283,41 @@ impl PhysicsSystem {
     /// array, and updates the bodies that do not simulate; then, unless one of its two suspend
     /// flags is set (`CGameStateRun::Update` sets one from its update context's pause), and when
     /// the world exists and `dt` is above a small threshold, it fires the pre-simulation callbacks
-    /// ([`AddPreSimulationCallback`](crate::physics::PhysicsSystem::AddPreSimulationCallback)) with the world and `dt`, and
-    /// steps the world once by [`STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS) on the physics thread pool,
-    /// joining the pool before it returns. The game states' updates
-    /// (`CGameStateRun::Update` and the loading and front-end states' updates) call it inline on
-    /// the thread that runs them, through the physics update, which dispatches the queued
-    /// collisions and the damage listeners' events after it.
+    /// ([`FirePreSimulationCallbacks`](crate::physics::PhysicsSystem::FirePreSimulationCallbacks)) with the world and `dt`
+    /// as given, then replaces `dt` with [`STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS) when they differ
+    /// (the pin at [`UPDATE_STEP_PIN_OFFSET`](crate::physics::PhysicsSystem::UPDATE_STEP_PIN_OFFSET)), and steps the world
+    /// once by it on the physics thread pool, joining the pool before it returns. The game states'
+    /// updates (`CGameStateRun::Update` and the loading and front-end states' updates) call it
+    /// inline on the thread that runs them, through the physics update
+    /// ([`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics) in the run state), which
+    /// dispatches the queued collisions and the damage listeners' events after it.
     pub unsafe fn Update(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
                 Self::Update_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const FirePreSimulationCallbacks_ADDRESS: usize = 0x14029C9C0;
+    /// Calls every pre-simulation callback's
+    /// [`preSimulationCallback`](crate::physics::PfxPreSimulationCallback::preSimulationCallback) with `world` and
+    /// `dt`, in the order they were added, compacting away the entries
+    /// [`RemovePreSimulationCallback`](crate::physics::PhysicsSystem::RemovePreSimulationCallback) cleared as it walks.
+    /// [`Update`](crate::physics::PhysicsSystem::Update) calls it before the step with the time it was given, before that
+    /// time is pinned to [`STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS).
+    pub unsafe fn FirePreSimulationCallbacks(
+        &mut self,
+        world: *mut crate::physics::hknpWorld,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world: *mut crate::physics::hknpWorld,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::FirePreSimulationCallbacks_ADDRESS);
+            f(self as *mut Self as _, world, dt)
         }
     }
     pub const AddPreSimulationCallback_ADDRESS: usize = 0x1402BEA00;
@@ -1535,8 +1560,18 @@ impl PhysicsSystem {
     /// player's direct-aim query passes to [`CastRay`](crate::physics::PhysicsSystem::CastRay).
     pub const QUERY_LAYER: i32 = 21;
     /// The simulation step, seconds. [`Update`](crate::physics::PhysicsSystem::Update) steps the world once per call by
-    /// exactly this, whatever time it is given.
+    /// exactly this, whatever time it is given. The value is stored once in the image and shared:
+    /// [`Update`](crate::physics::PhysicsSystem::Update) loads it to pin its step, and the vehicles' parallel post-solve
+    /// update reads it too.
     pub const STEP_SECONDS: f32 = 0.033333335;
+    /// The length in bytes of the `movaps` at [`UPDATE_STEP_PIN_OFFSET`](crate::physics::PhysicsSystem::UPDATE_STEP_PIN_OFFSET).
+    pub const UPDATE_STEP_PIN_LENGTH: u64 = 3;
+    /// The intra-[`Update`](crate::physics::PhysicsSystem::Update) site of the step pin: after comparing the time it was
+    /// given with [`STEP_SECONDS`](crate::physics::PhysicsSystem::STEP_SECONDS) and skipping ahead when they are equal, a
+    /// `movaps` copies the constant over the time, so every step uses the constant. Without the
+    /// copy the world steps by the time it was given, and the step global the pre-collision
+    /// handler reads carries that time too.
+    pub const UPDATE_STEP_PIN_OFFSET: u64 = 195;
 }
 impl std::convert::AsRef<PhysicsSystem> for PhysicsSystem {
     fn as_ref(&self) -> &PhysicsSystem {

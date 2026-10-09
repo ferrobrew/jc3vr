@@ -17,7 +17,6 @@ use std::{fmt, num::NonZeroUsize, ptr};
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
-    physics::PhysicsSystem,
     types::math::Vector3,
     vehicle::{
         stunt_areas::GetNearestStuntArea_World,
@@ -25,9 +24,12 @@ use jc3gi::{
     },
 };
 
-use crate::controllers::physical_hands::{
-    bodies::{is_type, owner_of},
-    stunt::solve::StuntKind,
+use crate::{
+    controllers::physical_hands::{
+        bodies::{is_type, owner_of},
+        stunt::solve::StuntKind,
+    },
+    sim_rate,
 };
 
 /// Why the game did not take the player into a stunt position.
@@ -83,7 +85,8 @@ pub(super) unsafe fn position() -> Option<PositionRead> {
         .map_or(0.0, |vehicle| {
             let from = Mat4::from(vehicle.m_WorldMatrixT0).w_axis.truncate();
             let to = Mat4::from(vehicle.m_WorldMatrixT1).w_axis.truncate();
-            let speed = from.distance(to) / PhysicsSystem::STEP_SECONDS;
+            // The two transforms are a tick apart, over which the world takes one step.
+            let speed = from.distance(to) / sim_rate::world_step_seconds(None);
             if speed.is_finite() { speed } else { 0.0 }
         });
     Some(PositionRead {

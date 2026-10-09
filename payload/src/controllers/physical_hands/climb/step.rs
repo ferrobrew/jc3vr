@@ -23,11 +23,12 @@ use crate::{
                 },
                 types::Landing,
             },
-            physics::drive::Goal,
+            physics::{self, drive::Goal},
             stunt,
         },
         roomscale::teleport,
     },
+    sim_rate::scale_ticks,
 };
 
 /// The climb's part of the hand bodies' pre-simulation step: take and end the grips, and move the
@@ -63,7 +64,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     } else if teleport::epoch() != state.epoch {
         state.epoch = teleport::epoch();
         Some("the player was teleported")
-    } else if state.stale_steps > MAX_STALE_STEPS {
+    } else if state.stale_steps > scale_ticks(MAX_STALE_STEPS) {
         Some("the hands stopped publishing")
     } else {
         None
@@ -81,7 +82,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
     // SAFETY: forwarded from the caller; the proxy's update ran before this callback, and found
     // this support afresh rather than the one the last step wrote.
     let support = unsafe { engine::support() };
-    let step_s = jc3gi::physics::PhysicsSystem::STEP_SECONDS;
+    let step_s = physics::step_seconds();
     let mantle_tuning = MantleTuning {
         start_m: config.climb.mantle_start_m,
         clearance_m: config.climb.mantle_clearance_m,
@@ -161,7 +162,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
             } else {
                 grip.missing_steps.saturating_add(1)
             };
-            if grip.missing_steps > MAX_STALE_STEPS {
+            if grip.missing_steps > scale_ticks(MAX_STALE_STEPS) {
                 state.drop_hand(hand, "the hand's body stopped acting");
             }
         }
@@ -356,7 +357,7 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
                 state.finish_climb();
                 return [None; 2];
             }
-            if state.mantle_steps > MAX_MANTLE_STEPS {
+            if state.mantle_steps > scale_ticks(MAX_MANTLE_STEPS) {
                 state.drop_all("the mantle did not reach the ledge's top");
                 state.finish_climb();
                 return [None; 2];

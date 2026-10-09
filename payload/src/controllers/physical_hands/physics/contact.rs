@@ -41,9 +41,12 @@ use jc3gi::{
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::controllers::{
-    frame::Hand,
-    physical_hands::physics::{callback, hit::contact_impulse},
+use crate::{
+    controllers::{
+        frame::Hand,
+        physical_hands::physics::{callback, hit::contact_impulse},
+    },
+    sim_rate,
 };
 
 /// A body whose contacts are listened for: a hand's own, or the body of the gun a hand holds.
@@ -196,9 +199,12 @@ pub(super) fn step_tick() {
 
 /// Ignore `hand`'s contacts for the next `steps` steps: after its body is put somewhere rather
 /// than moved there (made, added, placed, or carried by the rig), where it may start inside what
-/// it meets and the contact would be a blow it never swung, and while it is held in place.
+/// it meets and the contact would be a blow it never swung, and while it is held in place. `steps`
+/// counts steps at the game's 30 Hz tick, and is scaled to the same duration at another sim rate.
 pub(super) fn mute_for(source: impl Into<Source>, steps: u64) {
-    let until = STEP.load(Ordering::Relaxed).saturating_add(steps);
+    let until = STEP
+        .load(Ordering::Relaxed)
+        .saturating_add(sim_rate::scale_ticks(steps));
     MUTED_UNTIL[source.into().index()].fetch_max(until, Ordering::Relaxed);
 }
 

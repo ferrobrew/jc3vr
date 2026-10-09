@@ -42,7 +42,8 @@
 //! [`RecorderConfig`](crate::recorder::RecorderConfig) in `recorder`,
 //! [`ControllersConfig`](crate::controllers::ControllersConfig) in `controllers::config`,
 //! [`PauseMenuConfig`](crate::pause_menu::PauseMenuConfig) in `pause_menu::config`,
-//! [`TestingConfig`](crate::testing::TestingConfig) in `testing::config`, and
+//! [`TestingConfig`](crate::testing::TestingConfig) in `testing::config`,
+//! [`SimRateConfig`](crate::sim_rate::SimRateConfig) in `sim_rate::config`, and
 //! [`BodyDimensions`](crate::controllers::body::BodyDimensions) in `controllers::body`.
 
 mod automatic;
@@ -74,6 +75,7 @@ use crate::{
     hud::HudConfig,
     pause_menu::PauseMenuConfig,
     recorder::RecorderConfig,
+    sim_rate::SimRateConfig,
     stereo::config::StereoConfig,
     testing::TestingConfig,
     vr::{FoveationConfig, VrConfig},
@@ -163,6 +165,9 @@ pub struct Config {
     pub pause_menu: PauseMenuConfig,
     #[serde(default)]
     pub testing: TestingConfig,
+    /// The sim-rate experiment; see [`crate::sim_rate`].
+    #[serde(default)]
+    pub sim_rate: SimRateConfig,
     /// The player's body dimensions; see [`crate::controllers::body`].
     pub body: BodyDimensions,
 }
@@ -186,6 +191,7 @@ impl Config {
             controllers: ControllersConfig::new(),
             pause_menu: PauseMenuConfig::new(),
             testing: TestingConfig::new(),
+            sim_rate: SimRateConfig::new(),
             body: BodyDimensions::GENERIC_ADULT,
         }
     }
