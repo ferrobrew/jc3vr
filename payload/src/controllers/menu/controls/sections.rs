@@ -709,7 +709,7 @@ pub(super) fn parachute_and_saved_settings_section(page: Page) -> Page {
             .controllers
             .vehicles
             .arm_steering
-            .show_readout))
+            .show_readout_panel))
         .item(config_toggle!("PARACHUTE HANDLES", |c| c
             .controllers
             .vehicles

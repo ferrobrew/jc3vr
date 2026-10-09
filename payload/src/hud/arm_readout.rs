@@ -1,6 +1,6 @@
 //! The wingsuit arm steering's readout: a head-locked panel below the view that shows what the arm
 //! steering reads and writes while it acts, for tuning it in the headset
-//! ([`ArmSteeringConfig::show_readout`](crate::controllers::vehicles::config::ArmSteeringConfig::show_readout)).
+//! ([`ArmSteeringConfig::show_readout_panel`](crate::controllers::vehicles::config::ArmSteeringConfig::show_readout_panel)).
 //! It shows the spread and whether the arms steer, the bank and pitch inputs, the arms' stick
 //! vector, the player's stick, and their sum as written to the game.
 //!

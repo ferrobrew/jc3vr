@@ -517,8 +517,10 @@ pub struct ArmSteeringConfig {
     pub show_guide: bool,
     /// Show a panel below the view in the wingsuit with what the arm steering reads and writes:
     /// the spread, whether the arms steer, the bank and pitch inputs, the arms' stick vector, the
-    /// player's stick, and the sum written. A diagnostic, off by default.
-    pub show_readout: bool,
+    /// player's stick, and the sum written. On by default, as a feature still being tuned in the
+    /// headset. Named apart from the `show_readout` key that saved the earlier default, which was
+    /// off, so that a saved file takes this default once.
+    pub show_readout_panel: bool,
 }
 
 impl ArmSteeringConfig {
@@ -536,7 +538,7 @@ impl ArmSteeringConfig {
             full_sweep_m: 0.35,
             invert_pitch: false,
             show_guide: true,
-            show_readout: false,
+            show_readout_panel: true,
         }
     }
 }

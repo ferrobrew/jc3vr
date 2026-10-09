@@ -624,7 +624,7 @@ fn arm_settings(ui: &mut Ui, a: &mut ArmSteeringConfig) {
         "Ring the hands, lit while the arms steer, with a line between them",
     );
     ui.checkbox(
-        &mut a.show_readout,
+        &mut a.show_readout_panel,
         "Show the arm steering's readout in the headset",
     );
 }

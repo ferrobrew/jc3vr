@@ -92,6 +92,29 @@ fn a_missing_setting_takes_its_default() {
 }
 
 #[test]
+fn a_saved_off_wingsuit_readout_takes_the_new_default() {
+    // A file saved while the readout was off by default holds the earlier key, which no longer
+    // loads, so the panel comes on.
+    let mut table = defaults_table();
+    let arm_steering = ["controllers", "vehicles", "arm_steering"];
+    remove(
+        &mut table,
+        &[&arm_steering[..], &["show_readout_panel"]].concat(),
+    );
+    set(
+        &mut table,
+        &[&arm_steering[..], &["show_readout"]].concat(),
+        false.into(),
+    );
+    let Loaded { config, report } = load(table);
+    assert!(config.controllers.vehicles.arm_steering.show_readout_panel);
+    assert_eq!(
+        report.ignored,
+        ["controllers.vehicles.arm_steering.show_readout"]
+    );
+}
+
+#[test]
 fn an_unknown_setting_is_skipped_and_reported() {
     let mut table = defaults_table();
     set(&mut table, &["stereo", "retired_setting"], 0.5.into());

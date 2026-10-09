@@ -178,7 +178,7 @@ pub(crate) fn finish_tick(
     state.status.button_presses += button_events.iter().filter(|e| e.engages()).count() as u64;
     push_events(&mut state.status, events);
     drop(state);
-    *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout);
+    *ARM_PANEL.lock() = arms.filter(|_| config.vehicles.arm_steering.show_readout_panel);
     log_handle_events(&handle_events);
     control_haptics::pulse(&outputs, holds_now, &button_events);
     for event in button_events.iter().filter(|e| e.engages()) {
