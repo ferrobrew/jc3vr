@@ -149,6 +149,15 @@ pub fn needed_spread(config: &ArmSteeringConfig, engaged: bool) -> f32 {
     }
 }
 
+/// The arms' stick vector this tick: the pose's own (`fresh`), or, while the grapple is aimed
+/// (`aiming`), the vector they steered with when the aim began (`held`). The grapple aims along the
+/// off-hand, and pointing that hand at a target narrows the spread or lowers it against the other
+/// hand, which would stop the steering or bank the suit; holding the last vector keeps the flight
+/// line the player had while they aim.
+pub fn hold_while_aiming(fresh: Option<Vec2>, held: Option<Vec2>, aiming: bool) -> Option<Vec2> {
+    if aiming { held } else { fresh }
+}
+
 /// Combine the stick with the arms: their sum, each axis limited to `-1..=1`.
 pub fn combine(stick: Vec2, arms: Option<Vec2>) -> Vec2 {
     (stick + arms.unwrap_or(Vec2::ZERO)).clamp(Vec2::NEG_ONE, Vec2::ONE)
@@ -321,6 +330,17 @@ mod tests {
         };
         let measured = arm_pose([left, right], &BODY);
         assert!((measured.tilt - tilt).abs() < 1e-3, "{measured:?}");
+    }
+
+    #[test]
+    fn aiming_the_grapple_holds_the_arms_where_they_were() {
+        let fresh = Some(Vec2::new(-0.8, 0.3));
+        let held = Some(Vec2::new(0.2, -0.1));
+        assert_eq!(hold_while_aiming(fresh, held, false), fresh);
+        assert_eq!(hold_while_aiming(fresh, held, true), held);
+        // Arms that were not steering when the aim began do not start while it lasts.
+        assert_eq!(hold_while_aiming(fresh, None, true), None);
+        assert_eq!(hold_while_aiming(None, held, false), None);
     }
 
     #[test]

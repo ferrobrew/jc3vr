@@ -644,6 +644,7 @@ The order puts the parts that everything else depends on first, then the parts w
 33. The wrist summary on mode changes. Jump, drop off a ledge, and grapple-launch on foot: the summary does not pop up. Open the wingsuit or the parachute from a fall, or enter a car: it shows for three seconds, with a `controls summary: the mode changed` line in the log.
 34. Cutscenes. Hold the right B through a skippable cutscene: the game's skip prompt fills and the cutscene skips, right- and left-handed. The `VR: STATUS` page's fingerprint row asks for a restart after this update until the game is restarted.
 35. The wingsuit's buttons. Open the wingsuit with the right B and close it with the right B again; nothing boosts. In the weaponized suit, click the right stick: it boosts. The left A does nothing in the suit.
+36. Aiming the grapple in the wingsuit. With the arms spread and banking slightly, hold the left B and point the left hand at a target: the suit keeps flying the line it had, and lets go of the target to grapple it; once the button is up, the arms steer again. The log has `wingsuit arm steering: the grapple is aimed` and the button-up line.
 
 ## Reverse-engineering work
 

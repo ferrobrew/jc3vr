@@ -67,11 +67,13 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
 }
 
 /// The wanted actions of a vehicle mode in one order: the grapple has its own action there, so
-/// its writes come after the secondary weapon's button rather than among them.
+/// its writes come after the secondary weapon's button rather than among them. The raw tables did
+/// not report the grapple's button as held, so that is left out of the comparison.
 fn in_order(mut step: Step, mode: Mode) -> Step {
     if matches!(mode, Mode::Vehicle(_)) {
         step.desired.sort_by_key(|d| d.target);
     }
+    step.grapple_held = false;
     step
 }
 

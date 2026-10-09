@@ -34,6 +34,7 @@ pub(crate) fn finish_tick(
     controls: &Controls,
     desired: &mut Vec<Desired>,
     dt: f32,
+    grapple_held: bool,
 ) {
     let Some(active) = hands::active_hands_raw() else {
         return;
@@ -147,8 +148,24 @@ pub(crate) fn finish_tick(
             state.last_handles[i] = None;
         }
     }
-    let engaged = state.status.arms.is_some_and(|a| a.arms.is_some());
-    let arms = arm_tick(mode, controls, &active, desired, engaged);
+    let last = state.status.arms.map(|a| a.arms);
+    let engaged = last.flatten().is_some();
+    let was_held = state.status.arms.is_some_and(|a| a.held_for_grapple);
+    let arms = arm_tick(mode, controls, &active, desired, last, grapple_held);
+    let now_held = arms.is_some_and(|a| a.held_for_grapple);
+    if now_held != was_held {
+        tracing::info!(
+            target: "controllers",
+            held = now_held,
+            arms = ?arms.and_then(|a| a.arms),
+            "wingsuit arm steering: {}",
+            if now_held {
+                "the grapple is aimed, so the arms hold the steering they had"
+            } else {
+                "the grapple's button is up, so the arms steer again"
+            }
+        );
+    }
     if arms.is_some_and(|a| a.arms.is_some()) != engaged {
         tracing::debug!(
             target: "controllers",

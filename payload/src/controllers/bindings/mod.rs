@@ -452,6 +452,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             &controls,
             &mut step.desired,
             dt,
+            step.grapple_held,
         );
         physical_hands::pickup::finish_tick(
             &weapons::FinishInputs {

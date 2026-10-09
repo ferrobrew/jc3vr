@@ -103,6 +103,8 @@ pub struct Step {
     /// ([`crate::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
     /// `weapon_wheel` action.
     pub wheel: [WheelPress; 2],
+    /// The grapple's button is held this tick, in a mode with a grapple: the hand is aiming it.
+    pub grapple_held: bool,
 }
 
 /// The tables and their cross-tick state.
@@ -261,11 +263,13 @@ impl Bindings {
         };
         let mut out = EvalSink::new(&intents, latches, controls.move_rotation, map);
         declare(&mut out, mode, &ctx);
+        let mut grapple_held = false;
         if let Some((inputs, actions)) = grapple_press(mode) {
             let button = inputs
                 .iter()
                 .map(|&a| intents.button(a))
                 .fold(ButtonControl::default(), merge_buttons);
+            grapple_held = button.down;
             self.grapple.apply(
                 GrappleTick {
                     button,
@@ -313,6 +317,7 @@ impl Bindings {
             sight_capture: chord.capture,
             recenter: arbitrated.recenter,
             wheel,
+            grapple_held,
         }
     }
 }
