@@ -17,7 +17,7 @@ use crate::controllers::{
         control_haptics,
         handle_tick::handles_tick,
         mounted_grip::{self, MountedGripEvent},
-        mounted_recoil, parachute,
+        mounted_recoil, parachute, parachute_rig,
         physical::{self, ControlEvent, ControlKind, ControlState, buttons::ButtonEvent},
         state::{ARM_PANEL, STATE, log_handle_events, push_events},
         steering, wheel_render, write_outputs,
@@ -116,6 +116,12 @@ pub(crate) fn finish_tick(
             &mut handle_events,
         )
     });
+    // The rig's handles the hands do not hold are drawn on their cords, not in the hands.
+    parachute_rig::publish(
+        state
+            .handles_on
+            .then(|| state.handles.holds.map(|hold| hold.is_some())),
+    );
     let blend = config.hands.anchor.blend_s;
     for hand in Hand::BOTH {
         let i = hand.index();

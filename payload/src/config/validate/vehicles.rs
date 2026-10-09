@@ -153,8 +153,8 @@ pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
         1.0,
     )?;
     positive(
-        "vehicles.parachute_handles.release_distance_m",
-        v.parachute_handles.release_distance_m,
+        "vehicles.parachute_handles.let_go_distance_m",
+        v.parachute_handles.let_go_distance_m,
         10.0,
     )
 }

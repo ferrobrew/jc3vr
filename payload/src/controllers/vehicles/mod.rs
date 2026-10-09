@@ -63,6 +63,7 @@ pub mod mounted_grip;
 pub mod mounted_recoil;
 mod mounted_tick;
 pub mod parachute;
+pub mod parachute_rig;
 pub mod passenger;
 pub mod physical;
 mod state;
@@ -89,6 +90,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(driver_aim::hook_library())
         .with_hook_library(look_steer::hook_library())
         .with_hook_library(wheel_render::hook_library())
+        .with_hook_library(parachute_rig::hook_library())
 }
 
 #[cfg(test)]

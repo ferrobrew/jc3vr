@@ -597,8 +597,12 @@ pub struct ParachuteHandlesConfig {
     /// How far both handles must be pulled, as a share of a full pull, before they brake. Below it,
     /// both pulled together only bank by their difference.
     pub brake_threshold: f32,
-    /// How far a holding hand may move from its handle before it lets go, metres.
-    pub release_distance_m: f32,
+    /// How far a holding hand may move from its handle's pull line (straight below where it took
+    /// the handle, down to a full pull) before it lets go, metres. Generous, since a natural pull
+    /// goes down and back and the grip opening is what lets go; this only catches a hand that has
+    /// clearly left the handle without opening. Named apart from the `release_distance_m` key that
+    /// saved the earlier, tight distance, so that a saved file takes this default once.
+    pub let_go_distance_m: f32,
     /// Mark each handle under the parachute: faint while out of reach, brighter in reach, lit
     /// while held.
     pub show_handles: bool,
@@ -614,7 +618,7 @@ impl ParachuteHandlesConfig {
             full_pull_m: 0.30,
             deadzone_m: 0.03,
             brake_threshold: 0.2,
-            release_distance_m: 0.25,
+            let_go_distance_m: 0.6,
             show_handles: true,
         }
     }

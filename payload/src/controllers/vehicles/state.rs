@@ -309,7 +309,19 @@ pub(super) static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
 
 pub(super) fn log_handle_events(events: &[HandleEvent]) {
     for event in events {
-        tracing::debug!(target: "controllers", ?event, "parachute handle");
+        match *event {
+            HandleEvent::Taken(hand) => {
+                tracing::info!(target: "controllers", hand = hand.label(), "parachute: took a handle");
+            }
+            HandleEvent::Released(hand, why) => {
+                tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    reason = why.label(),
+                    "parachute: let go of a handle"
+                );
+            }
+        }
     }
 }
 

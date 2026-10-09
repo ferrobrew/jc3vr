@@ -21,7 +21,7 @@ use crate::{
             driver_aim,
             driving_view::{self, DrivingViewStatus},
             fit::FitReadout,
-            look_steer,
+            look_steer, parachute_rig,
             physical::{ControlEvent, ControlKind},
             wheel::WheelFrame,
             wheel_render,
@@ -257,6 +257,10 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
                     "({:+.2}, {:+.2})",
                     v.x, v.y
                 )),
+            ));
+            ui.label(format!(
+                "Rig handles put back on their cords: {}",
+                parachute_rig::handles_unplaced()
             ));
         }
         None => {
@@ -660,8 +664,8 @@ fn handle_settings(ui: &mut Ui, h: &mut ParachuteHandlesConfig) {
             .fixed_decimals(2),
     );
     ui.add(
-        egui::Slider::new(&mut h.release_distance_m, 0.1..=0.6)
-            .text("release distance (m)")
+        egui::Slider::new(&mut h.let_go_distance_m, 0.2..=1.5)
+            .text("let-go distance from the pull line (m)")
             .fixed_decimals(2),
     );
 }

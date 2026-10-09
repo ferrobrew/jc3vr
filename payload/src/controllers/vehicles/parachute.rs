@@ -3,9 +3,11 @@
 //! One handle hangs a little above, ahead of, and outside each shoulder, along the torso's heading
 //! ([`handle_centres`]), and only that side's hand takes it. The hands are not on the handles until
 //! the player takes them: like the other grab volumes, a grip press with the hand inside a handle's
-//! volume takes it, and it is held only while the grip is: releasing the grip, or moving further
-//! than the release distance from it, lets go ([`step`]), as a physical vehicle control does
-//! ([`crate::controllers::vehicles::physical`]). A handle's volume wins over the body's volumes it
+//! volume takes it, and it is held only while the grip is: releasing the grip lets go ([`step`]).
+//! A hand that has clearly left its handle without opening (further than the let-go distance from
+//! the handle's pull line, a generous distance) lets go too, but a pull, which goes down and back
+//! rather than straight down, never does: the pull line runs straight below where the handle was
+//! taken, and a tight distance from it let go of a handle mid-pull. A handle's volume wins over the body's volumes it
 //! overlaps. Around it a wider reach ([`reach_candidates`]) takes the handle for a press that no
 //! other volume claims, so that a hand that misses the handle by a little takes it rather than
 //! firing the grapple.
@@ -224,7 +226,7 @@ pub fn step(
             release(state, hand, Release::GripReleased, events);
         }
         if let Some(hold) = state.holds[i]
-            && anchor_point(config, hold, grip).distance(grip) > config.release_distance_m
+            && anchor_point(config, hold, grip).distance(grip) > config.let_go_distance_m
         {
             release(state, hand, Release::MovedAway, events);
         }
@@ -433,9 +435,23 @@ mod tests {
     }
 
     #[test]
+    fn a_natural_pull_down_and_back_keeps_the_handle() {
+        let (mut state, centres) = both_taken();
+        // Down a full pull and back toward the body by a third of a metre, and out a little.
+        let pulled = centres[1] + Vec3::new(0.08, -CONFIG.full_pull_m, 0.3);
+        let (pulls, events) = tick(&mut state, [Some(centres[0]), Some(pulled)], [false; 2]);
+        assert!(events.is_empty(), "{events:?}");
+        assert!((pulls[1] - 1.0).abs() < 1e-5, "{pulls:?}");
+        // Further down than a full pull and further back still.
+        let deep = centres[1] + Vec3::new(0.0, -CONFIG.full_pull_m - 0.2, 0.4);
+        let (_, events) = tick(&mut state, [Some(centres[0]), Some(deep)], [false; 2]);
+        assert!(events.is_empty(), "{events:?}");
+    }
+
+    #[test]
     fn a_hand_that_leaves_its_handle_or_tracking_lets_go() {
         let (mut state, centres) = both_taken();
-        let away = centres[0] + Vec3::new(0.0, 0.0, 0.5);
+        let away = centres[0] + Vec3::new(0.0, 0.0, CONFIG.let_go_distance_m + 0.1);
         let (_, events) = tick(&mut state, [Some(away), None], [false; 2]);
         assert_eq!(
             events,
