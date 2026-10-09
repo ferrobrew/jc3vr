@@ -43,7 +43,11 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::config::Config;
+use crate::{config::Config, headpose::body_yaw_target};
+
+mod telemetry;
+
+pub(crate) use self::telemetry::log_tick;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -67,6 +71,9 @@ pub static SWIM_ROTATE_OVERRIDES: AtomicU64 = AtomicU64::new(0);
 pub static SWIM_TURN_SUPPRESSIONS: AtomicU64 = AtomicU64::new(0);
 /// How often backward input was cleared before the game could see it.
 pub static SWIM_BACKWARD_REFUSALS: AtomicU64 = AtomicU64::new(0);
+/// How often a swim movement core ran for the local player with the override on but no body-yaw
+/// target to give it, so the game's own camera-relative heading turned the body.
+pub static SWIM_UNTARGETED: AtomicU64 = AtomicU64::new(0);
 
 /// Whether the local player is swimming, from the motion state both swim movement cores write every
 /// frame they run. Read by consumers outside this module too (the VR frame loop levels the view
@@ -199,6 +206,8 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         return call.call(from, to, rate, out);
     };
     SWIM_ROTATE_OVERRIDES.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: the core passes a live vector or null.
+    let game_to = unsafe { to.as_ref() }.map(|v| Vec3::from_array(v.data));
     let target = match window.core {
         SwimCore::Surface => {
             *SWIM_PITCH.lock() = 0.0;
@@ -211,10 +220,16 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         .to_radians()
         * window.dt)
         .clamp(f32::EPSILON, DO_ROTATE_EASE_ANGLE);
+    let given = target;
     let target = Vector3 {
         data: target.to_array(),
     };
-    call.call(from, &target, rate, out)
+    call.call(from, &target, rate, out);
+    // SAFETY: the core passes live vectors, and the original has written `out`.
+    let read = |v: *const Vector3| unsafe { v.as_ref() }.map(|v| Vec3::from_array(v.data));
+    if let (Some(from), Some(game_to), Some(out)) = (read(from), game_to, read(out)) {
+        telemetry::record_rotate(window.core, from, game_to, given, out);
+    }
 }
 
 /// The angle below which [`physics::DoRotate`] eases its step out, and the largest step that cannot
@@ -269,15 +284,24 @@ fn engaged_target() -> Option<Vec3> {
     if !(swimming() && Config::lock_query(|c| c.movement.smooth_swim_yaw)) {
         return None;
     }
-    crate::headpose::body_yaw_target()
+    body_yaw_target()
 }
 
 /// Which swim movement core is running: the surface core flattens the heading against the water
 /// plane, the underwater core takes it whole and swims along it, so only the latter needs a pitch.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SwimCore {
     Surface,
     Underwater,
+}
+
+impl SwimCore {
+    const fn label(self) -> &'static str {
+        match self {
+            SwimCore::Surface => "surface",
+            SwimCore::Underwater => "underwater",
+        }
+    }
 }
 
 /// The core running for the local player on this thread and the frame delta it was called with.
@@ -295,6 +319,9 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
         return;
     }
     SWIM_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
+    if Config::lock_query(|c| c.movement.smooth_swim_yaw) && body_yaw_target().is_none() {
+        SWIM_UNTARGETED.fetch_add(1, Ordering::Relaxed);
+    }
     SWIM_WINDOW.with(|w| w.set(Some(SwimWindow { core, dt })));
     call();
     SWIM_WINDOW.with(|w| w.set(None));

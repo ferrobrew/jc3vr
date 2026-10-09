@@ -21,7 +21,7 @@ use crate::{
             parachute::PARACHUTE_LOOK_STEER_SUPPRESSIONS,
             swim::{
                 SWIM_BACKWARD_REFUSALS, SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS,
-                SWIM_ROTATE_OVERRIDES, SWIM_TURN_SUPPRESSIONS,
+                SWIM_ROTATE_OVERRIDES, SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED,
             },
         },
     },
@@ -235,12 +235,13 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
             ));
             ui.label(format!(
                 "Swim: cores {}  dir-overrides {}  rotate-overrides {}  turn-suppressions {}  \
-                 backward-refusals {}",
+                 backward-refusals {}  untargeted {}",
                 SWIM_EVAL_CALLS.load(Ordering::Relaxed),
                 SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
                 SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
                 SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
                 SWIM_BACKWARD_REFUSALS.load(Ordering::Relaxed),
+                SWIM_UNTARGETED.load(Ordering::Relaxed),
             ));
             ui.label(format!(
                 "Parachute: look-steer suppressions {}",

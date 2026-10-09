@@ -26,6 +26,7 @@ use crate::{
     controllers::{self, bindings::hold::DevicePoll},
     frame_timing::{self, Slot},
     headpose,
+    hooks::input::swim::{log_tick, suppress_backward_input},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -90,9 +91,11 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
         clear_effector(map, Action::LOOK_DOWN);
         // Swimming refuses backward input outright; done here so the game's own input never carries
         // it, rather than unpicking its effects downstream.
-        crate::hooks::input::swim::suppress_backward_input(map);
+        suppress_backward_input(map);
 
         headpose::sim::on_input_tick(look_x, look_y, look_x_delta, dt);
+        // The swim heading's telemetry, after the headpose took this tick's turn.
+        log_tick(look_x);
     }
 }
 

@@ -89,8 +89,14 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // The in-water counterpart, from the swim movement cores (the swim family never runs the
     // orientation evaluator). Kept out of `HeadMode` deliberately: swimming only extends the VR
     // body-yaw accumulator below, while the flatscreen latch machinery stays off-foot in water.
+    // The character's motion state counts too: the cores run on the character update's cadence,
+    // which need not give every input tick a run, and a tick read as out of the water clears the
+    // accumulator. Without a target the swim detours stand down for that tick and the core turns
+    // the body toward the camera-relative stick; the view rides the body, so the camera turns with
+    // it, and the next tick re-seeds the accumulator from the turned body, which compounds into a
+    // circle.
     let swim_evals = crate::hooks::input::swim::SWIM_EVAL_CALLS.load(Ordering::Relaxed);
-    let swimming = swim_evals > s.last_swim_evals;
+    let swimming = swim_evals > s.last_swim_evals || crate::hooks::input::swim::swimming();
     s.last_swim_evals = swim_evals;
 
     // Advance the grapple reel-in body-frame filter on this tick, likewise before the VR
