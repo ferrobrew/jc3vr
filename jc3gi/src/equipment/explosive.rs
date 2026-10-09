@@ -4,13 +4,20 @@
 /// physics body, trail effect, detonation timers, and the deferred launch that
 /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) sets up for the physics body to apply later.
 pub struct Explosive {
-    _field_0: [u8; 1208],
+    _field_0: [u8; 1200],
+    /// The explosive's model instance, or null. [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) pushes the
+    /// interpolated world matrix to it.
+    pub m_ModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
     /// The explosive's physics body (the pointer of a shared pointer), or null until the first
     /// `UpdatePostSimFromManager` after the explosive spawns creates it.
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) and [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)
     /// do nothing without it.
     pub m_PfxInstance: *mut crate::physics::PfxRigidBody,
-    _field_4c0: [u8; 128],
+    _field_4c0: [u8; 64],
+    /// The explosive's world matrix as of the previous simulation tick, which
+    /// [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) interpolates from toward
+    /// [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1).
+    pub m_WorldMatrixT0: crate::types::math::Matrix4,
     /// The explosive's world matrix as of the current simulation tick. Its translation row is the
     /// launch start position [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) solves from. The `CGameObject`
     /// transform setter writes it, and the post-simulation update moves a physics body that is not
@@ -140,6 +147,26 @@ impl Explosive {
                 roof_target,
                 exact_target_aiming,
             )
+        }
+    }
+    pub const UpdateRender_ADDRESS: usize = 0x1408C81B0;
+    /// The render-phase `CGameObject::UpdateRender` override: interpolates
+    /// [`m_WorldMatrixT0`](crate::equipment::explosive::Explosive::m_WorldMatrixT0) toward [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1)
+    /// by the render context's interpolation factor (`CTransform::Lerp`) and pushes the result to
+    /// [`m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance) when there is one. `game_object` is the
+    /// explosive's `CGameObject` subobject
+    /// ([`GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the
+    /// explosive. [`PlantedExplosive::UpdateRender`](crate::equipment::explosive::PlantedExplosive::UpdateRender) calls it before drawing its in-hand model.
+    pub unsafe fn UpdateRender(
+        game_object: *mut ::std::ffi::c_void,
+        context: *const crate::game::GameObjectRenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *const crate::game::GameObjectRenderContext,
+            ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
+            f(game_object, context)
         }
     }
     pub const PlayTrailEffect_ADDRESS: usize = 0x1408D6E20;
@@ -295,13 +322,19 @@ impl std::convert::AsMut<Grenade> for Grenade {
 /// world), so a charge that is dropped
 /// ([`DropExplosive`](crate::equipment::explosive::PlantedExplosive::DropExplosive)) sticks where it lands.
 pub struct PlantedExplosive {
-    _field_0: [u8; 1640],
+    _field_0: [u8; 1576],
+    /// The in-hand model's world matrix as of the previous simulation tick, which
+    /// [`UpdateRender`](crate::equipment::explosive::PlantedExplosive::UpdateRender) interpolates from toward
+    /// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1).
+    pub m_InactiveModelWorldMatrixT0: crate::types::math::Matrix4,
     /// The in-hand model's world matrix, written by
     /// [`SetInactiveModelMatrix`](crate::equipment::explosive::PlantedExplosive::SetInactiveModelMatrix). The pre-simulation update copies
     /// it to the previous frame's matrix, and the render update draws the in-hand model between
     /// the two.
     pub m_InactiveModelWorldMatrixT1: crate::types::math::Matrix4,
-    _field_6a8: [u8; 12],
+    /// The in-hand model's instance, or null.
+    pub m_InactiveModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
+    _field_6b0: [u8; 4],
     /// Whether the charge is live, set by [`Activate`](crate::equipment::explosive::PlantedExplosive::Activate).
     pub m_ExplosiveIsPlanted: bool,
     _field_6b5: [u8; 3],
@@ -348,6 +381,27 @@ impl PlantedExplosive {
                 velocity: *const crate::types::math::Vector3,
             ) = ::std::mem::transmute(Self::SetVelocity_ADDRESS);
             f(self as *mut Self as _, velocity)
+        }
+    }
+    pub const UpdateRender_ADDRESS: usize = 0x1408C8920;
+    /// The render-phase `CGameObject::UpdateRender` override: runs [`Explosive::UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender)
+    /// for the live model, then interpolates
+    /// [`m_InactiveModelWorldMatrixT0`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT0) toward
+    /// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1) by the render
+    /// context's interpolation factor and pushes the result to
+    /// [`m_InactiveModelInstance`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelInstance) when there is one.
+    /// `game_object` is the charge's `CGameObject` subobject
+    /// ([`Explosive::GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the charge.
+    pub unsafe fn UpdateRender(
+        game_object: *mut ::std::ffi::c_void,
+        context: *const crate::game::GameObjectRenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *const crate::game::GameObjectRenderContext,
+            ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
+            f(game_object, context)
         }
     }
     pub const SetInactiveModelMatrix_ADDRESS: usize = 0x1408BCC40;
