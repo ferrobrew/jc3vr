@@ -143,6 +143,7 @@ semantic_actions! {
         Boost => ("boost", Bool, "Boost"),
         /// After a stick flick the mod turns the press into an evade.
         OpenParachute => ("open_parachute", Bool, "Open the parachute (after a stick flick: evade)"),
+        /// The button that opened the suit on foot closes it.
         Use => ("use", Bool, "Close the wingsuit"),
         ReleaseTethers => ("release_tethers", Bool, "Release tethers"),
         /// Unbound by default, in favour of [`WingsuitAction::Grapple`].

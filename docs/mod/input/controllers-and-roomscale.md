@@ -267,10 +267,10 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 |---|---|
 | Steer (analog `MOVE_*`) | L stick; arm-pose steering |
 | Air brake (`CANCEL` hold, upgrade-gated; `WINGSUIT_AIRBRAKE` when weaponized) | L trigger |
-| Boost and evade (weaponized) | B; A with a stick flick |
+| Boost and evade (weaponized) | R stick click; A with a stick flick |
 | Fire weapons (weaponized wingsuit or parachute) | R trigger and R grip, aimed by the right hand |
 | Open the parachute | A |
-| Close the wingsuit | X |
+| Close the wingsuit | B, the button that opened it |
 | Release tethers | double tap Y with tethers attached |
 | Grapple (slingshot boost) | Y |
 
@@ -643,6 +643,7 @@ The order puts the parts that everything else depends on first, then the parts w
 32. Stick click latency. In a car, a tap of the left stick click honks at once, with no third-of-a-second delay; on foot it steps the weapon at once. Pressing the right B within a third of a second of the left click still opens the debug panel.
 33. The wrist summary on mode changes. Jump, drop off a ledge, and grapple-launch on foot: the summary does not pop up. Open the wingsuit or the parachute from a fall, or enter a car: it shows for three seconds, with a `controls summary: the mode changed` line in the log.
 34. Cutscenes. Hold the right B through a skippable cutscene: the game's skip prompt fills and the cutscene skips, right- and left-handed. The `VR: STATUS` page's fingerprint row asks for a restart after this update until the game is restarted.
+35. The wingsuit's buttons. Open the wingsuit with the right B and close it with the right B again; nothing boosts. In the weaponized suit, click the right stick: it boosts. The left A does nothing in the suit.
 
 ## Reverse-engineering work
 

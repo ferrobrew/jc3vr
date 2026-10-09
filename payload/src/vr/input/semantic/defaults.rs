@@ -265,9 +265,11 @@ fn wingsuit(action: WingsuitAction) -> Option<DefaultBinding> {
         AirBrake => on(Off, TriggerValue),
         FireGuns => on(Dom, TriggerValue),
         FireSecondary => on(Dom, GripPress),
-        Boost => on(Dom, UpperFace),
+        // The suit closes on the button that opened it (on foot, `use`), and the boost moves to
+        // the dominant stick's click, which the wingsuit leaves free.
+        Boost => on(Dom, ThumbstickClick),
         OpenParachute => on(Dom, LowerFace),
-        Use => on(Off, LowerFace),
+        Use => on(Dom, UpperFace),
         Grapple => on(Off, UpperFace),
         ReleaseTethers | FireGrapple => None,
     }

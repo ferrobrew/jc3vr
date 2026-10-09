@@ -71,6 +71,28 @@ fn the_wingsuit_evades_on_a_flicked_a() {
 }
 
 #[test]
+fn the_wingsuit_closes_on_the_button_that_opened_it_and_boosts_on_the_stick_click() {
+    let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
+    for dominant in Hand::BOTH {
+        let b_press = controls(dominant, |dom, _| dom.b = down());
+        let on_foot = Bindings::default().sim_step(ON_FOOT, &b_press, DT, &CONFIG);
+        assert_eq!(player(&on_foot, OPEN_WINGSUIT), Some(Want::Hold(1.0)));
+        let step = Bindings::default().sim_step(wingsuit, &b_press, DT, &CONFIG);
+        assert_eq!(player(&step, OPEN_WINGSUIT), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, WINGSUIT_BOOST), None);
+
+        let click = controls(dominant, |dom, _| dom.stick_click = down());
+        let step = Bindings::default().sim_step(wingsuit, &click, DT, &CONFIG);
+        assert_eq!(player(&step, WINGSUIT_BOOST), Some(Want::Hold(1.0)));
+
+        // The off-hand A, the reload on foot, does nothing in the suit.
+        let x = controls(dominant, |_, off| off.a = down());
+        let step = Bindings::default().sim_step(wingsuit, &x, DT, &CONFIG);
+        assert!(step.desired.is_empty(), "{:?}", step.desired);
+    }
+}
+
+#[test]
 fn a_stick_held_over_in_the_wingsuit_lets_a_open_the_parachute() {
     let mut b = Bindings::default();
     let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
