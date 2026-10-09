@@ -8,6 +8,12 @@
 //! passes through from then on, as pressed at the window's end. A click released within the window
 //! passes through as a tap.
 //!
+//! A click that joins after the window still makes a chord: the click that was passing through is
+//! withdrawn (the tables see it released) and both are withheld until both are released. The
+//! dominant click's detonation is a hold the game acts on only past its own hold time, so a chord
+//! whose second click is late withdraws it before it detonates; the recenter's own hold is far
+//! longer than any lateness this tolerates.
+//!
 //! The left click's window also covers the debug panel chord's
 //! ([`crate::controllers::bindings::panel_chord`]), which claims the withheld click through
 //! [`StickChord::cancel`].
@@ -54,7 +60,14 @@ impl StickChord {
         let held = clicks.map(ButtonControl::held);
         let mut out = Arbitrated::default();
         self.phase = match self.phase {
-            Phase::Idle | Phase::Pending { .. } if held == [true, true] => {
+            Phase::Idle | Phase::Pending { .. } | Phase::Single if held == [true, true] => {
+                if self.phase == Phase::Single {
+                    tracing::info!(
+                        target: "controllers",
+                        "stick chord: the second click joined late; the first click is withdrawn \
+                         and the two are the recenter chord"
+                    );
+                }
                 out.recenter = hold_s <= 0.0;
                 Phase::Chord {
                     held_s: 0.0,
@@ -103,7 +116,8 @@ enum Phase {
     Idle,
     /// One click is held and withheld, waiting the window for the other.
     Pending { hand: Hand, held_s: f32 },
-    /// A lone click outlasted the window: both clicks pass through until both are released.
+    /// A lone click outlasted the window: it passes through until it is released, or until the
+    /// other click joins and the two become a chord.
     Single,
     /// Both clicks are held and withheld.
     Chord { held_s: f32, fired: bool },
@@ -278,12 +292,33 @@ mod tests {
     }
 
     #[test]
-    fn a_click_after_the_window_is_not_a_chord() {
+    fn a_click_after_the_window_still_makes_a_chord_and_withdraws_the_first() {
         let mut chord = StickChord::new();
-        let mut ticks = vec![[PRESS, UP], [HELD, UP], [HELD, UP], [HELD, PRESS]];
+        // The dominant (right) click first, the left a little after the window.
+        let mut ticks = vec![[UP, PRESS], [UP, HELD], [UP, HELD], [PRESS, HELD]];
         ticks.extend(std::iter::repeat_n([HELD, HELD], 40));
+        ticks.extend([[RELEASE, HELD], [UP, RELEASE], [UP, UP]]);
         let out = run(&mut chord, &ticks);
+        // The right click passed through once the window ran out...
+        assert!(out[2].clicks[1].held());
+        // ...and is withdrawn the tick the left joins, so a hold on it (the detonation) ends there.
+        for o in &out[3..] {
+            assert!(o.clicks.iter().all(|c| !c.held()), "{o:?}");
+        }
+        assert_eq!(out.iter().filter(|o| o.recenter).count(), 1);
+        let fired = out.iter().position(|o| o.recenter).unwrap();
+        assert_eq!(fired, 3 + (HOLD / DT).round() as usize);
+    }
+
+    #[test]
+    fn a_long_single_click_passes_until_released() {
+        let mut chord = StickChord::new();
+        let mut ticks = vec![[PRESS, UP]];
+        ticks.extend(std::iter::repeat_n([HELD, UP], 30));
+        ticks.push([RELEASE, UP]);
+        let out = run(&mut chord, &ticks);
+        assert!(out[29].clicks[0].held());
+        assert!(!out[31].clicks[0].held());
         assert!(out.iter().all(|o| !o.recenter));
-        assert!(out[3].clicks[1].held());
     }
 }
