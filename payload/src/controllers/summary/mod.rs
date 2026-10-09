@@ -10,7 +10,8 @@
 //! - [`content`]: the labelled rows grouped by hand, and their sizes on the panel;
 //! - [`glyphs`]: the embedded button glyphs;
 //! - [`glance`]: the panel's pose on the wrist, the glance that shows it, and its fade;
-//! - [`game_hints`]: hiding the HUD's context button hints.
+//! - [`game_hints`]: hiding the HUD's context button hints;
+//! - [`context`]: those hints relabelled for the controllers, first on the wrist while they show.
 //!
 //! The rows come from the binding tables themselves
 //! ([`crate::controllers::bindings::tables::describe`]), so the summary cannot drift from what the
@@ -25,6 +26,7 @@
 
 pub mod config;
 pub mod content;
+pub mod context;
 pub mod game_hints;
 pub mod glance;
 pub mod glyphs;
@@ -32,6 +34,8 @@ pub mod labels;
 pub mod localise;
 
 use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -53,8 +57,9 @@ use crate::{
         frame::{ControllerFrame, InteractionProfile},
         mode::{AirborneVariant, Mode},
         summary::{
-            content::{Summary, build},
-            labels::Text,
+            content::{Side, Summary, build, with_context},
+            context::ContextHint,
+            labels::{HOLD_KEY, ModText, Text},
         },
     },
     vr::input::sources,
@@ -152,12 +157,25 @@ pub(crate) fn refresh(
             },
         },
     };
+    // The game's context hints are relabelled on the wrist only while the HUD's are hidden.
+    let hints = if config.summary.hide_game_hints {
+        // SAFETY: the input tick runs on the main thread past startup.
+        let read = unsafe { context::read() };
+        let mut state = STATE.lock();
+        if let Some(read) = read {
+            state.hints = read;
+        }
+        state.hints.clone()
+    } else {
+        Vec::new()
+    };
     // SAFETY: the input tick runs on the main thread past startup.
     let locale = unsafe { localise::current_locale() };
     let key = Key {
         ctx,
         locale,
         sources: sources::table_generation(),
+        hints: hints_fingerprint(&hints),
     };
     let previous = STATE.lock().key;
     if previous == Some(key) {
@@ -169,12 +187,29 @@ pub(crate) fn refresh(
     // SAFETY: as above.
     let resolve =
         |text| localise::resolve(text, locale, |key| unsafe { localise::game_string(key) });
-    let summary = build(
-        &describe_bound(&ctx, &table),
+    let rows = describe_bound(&ctx, &table);
+    let summary = build(&rows, mode, controls.dominant, &resolve, &|name| {
+        table.name(name).to_owned()
+    });
+    let renders = locale.is_some_and(localise::renders);
+    // SAFETY: as above.
+    let description = |hash| {
+        renders
+            .then(|| unsafe { localise::game_string_by_hash(hash) })
+            .flatten()
+    };
+    let context_lines = context::lines(
+        &hints,
+        &rows,
         mode,
-        controls.dominant,
+        &resolve(Text::Game(HOLD_KEY)),
+        &description,
         &resolve,
-        &|name| table.name(name).to_owned(),
+    );
+    let summary = with_context(
+        summary,
+        context_lines,
+        resolve(Text::Mod(ModText::OnScreen)),
     );
     // A rebind within a profile raises no event, so read the sources again; the summary rebuilds
     // only if they changed.
@@ -187,7 +222,6 @@ pub(crate) fn refresh(
     let mut state = STATE.lock();
     let first = previous.is_none();
     let (shows, settled) = shows_mode_change(state.settled, mode);
-    let mode_changed = first || shows;
     if shows && !first {
         tracing::info!(
             target: "controllers",
@@ -195,6 +229,23 @@ pub(crate) fn refresh(
             "controls summary: the mode changed, showing the summary"
         );
     }
+    // A hint the game has just raised shows the summary too, with the hint first.
+    let raised = new_hints(&state.seen_hints, &hints);
+    state.seen_hints = hints.iter().map(|h| h.id).collect();
+    let on_screen = summary
+        .groups
+        .first()
+        .filter(|g| g.side == Side::Context)
+        .map_or(0, |g| g.lines.len());
+    if raised && on_screen > 0 {
+        tracing::info!(
+            target: "controllers",
+            hints = hints.len(),
+            relabelled = on_screen,
+            "controls summary: the game raised a context hint, showing it on the wrist"
+        );
+    }
+    let mode_changed = first || shows || (raised && on_screen > 0);
     state.settled = settled;
     state.key = Some(Key {
         sources: generation,
@@ -226,6 +277,20 @@ pub fn shows_mode_change(settled: Option<Text>, mode: Mode) -> (bool, Option<Tex
     (settled != Some(heading), Some(heading))
 }
 
+/// Whether `hints` holds a hint whose id is not in `seen`, the ids of the last read.
+fn new_hints(seen: &[u32], hints: &[ContextHint]) -> bool {
+    hints.iter().any(|h| !seen.contains(&h.id))
+}
+
+/// A fingerprint of `hints`, for the summary's key.
+fn hints_fingerprint(hints: &[ContextHint]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for hint in hints {
+        (hint.id, hint.action as i32, hint.hold, hint.description).hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 /// Whether the mode is one the player passes through rather than settles in.
 const fn transient(mode: Mode) -> bool {
     matches!(mode, Mode::Airborne(AirborneVariant::Falling))
@@ -243,6 +308,8 @@ struct Key {
     locale: Option<Locale>,
     /// The generation of the bound sources ([`sources::table`]).
     sources: u64,
+    /// A fingerprint of the game's context hints the summary relabels.
+    hints: u64,
 }
 
 struct State {
@@ -250,12 +317,18 @@ struct State {
     published: Option<Published>,
     /// The heading of the last mode the player settled in ([`shows_mode_change`]).
     settled: Option<Text>,
+    /// The game's context hints as last read.
+    hints: Vec<ContextHint>,
+    /// The ids of the hints last read, to tell a newly raised one.
+    seen_hints: Vec<u32>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     key: None,
     published: None,
     settled: None,
+    hints: Vec::new(),
+    seen_hints: Vec::new(),
 });
 
 #[cfg(test)]

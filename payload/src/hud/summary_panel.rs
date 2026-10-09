@@ -462,7 +462,18 @@ fn paint_summary(
         let header = match group.side {
             Side::Hand(hand) => vec![Glyph::controller(hand)],
             Side::Either => vec![Glyph::ControllerLeft, Glyph::ControllerRight],
+            Side::Context => Vec::new(),
         };
+        if let Some(title) = &group.title {
+            let galley = painter.layout(
+                title.clone(),
+                FontId::new(m.group_px * 0.6, FontFamily::Name(HEADING_FAMILY.into())),
+                ACCENT,
+                inner_width,
+            );
+            let title_y = y + (m.group_px - galley.size().y) * 0.5;
+            painter.galley(Pos2::new(left, title_y), galley, ACCENT);
+        }
         for (i, &glyph) in header.iter().enumerate() {
             image(
                 glyph,

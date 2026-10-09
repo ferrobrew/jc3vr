@@ -26,12 +26,17 @@ pub enum Side {
     Hand(Hand),
     /// Either hand, or no hand in particular (the system button).
     Either,
+    /// The game's context hints on screen now, relabelled ([`crate::controllers::summary::context`]),
+    /// under a title rather than a controller.
+    Context,
 }
 
 /// The rows of one side.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Group {
     pub side: Side,
+    /// The group's title, for a group headed by text rather than a controller glyph.
+    pub title: Option<String>,
     pub lines: Vec<Line>,
 }
 
@@ -67,6 +72,7 @@ pub fn build(
     .into_iter()
     .map(|side| Group {
         side,
+        title: None,
         lines: Vec::new(),
     })
     .collect();
@@ -102,6 +108,21 @@ pub fn build(
         heading: resolve(heading(mode)),
         groups,
     }
+}
+
+/// Put the game's context hints on screen now, `lines`, first in `summary`, under `title`.
+pub fn with_context(mut summary: Summary, lines: Vec<Line>, title: String) -> Summary {
+    if !lines.is_empty() {
+        summary.groups.insert(
+            0,
+            Group {
+                side: Side::Context,
+                title: Some(title),
+                lines,
+            },
+        );
+    }
+    summary
 }
 
 /// A row's label: its actions' labels in order, each once (ignoring case, since the game spells

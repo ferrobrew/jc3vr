@@ -307,6 +307,7 @@ pub fn mod_action(action: ModAction) -> Text {
 /// a column here.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ModText {
+    OnScreen,
     MapZoom,
     Falling,
     Mech,
@@ -403,6 +404,7 @@ impl ModText {
             ModText::HoldUp => "HOLD UP",
             ModText::WeaponWheel => "Weapon Wheel: Point to Choose, Let Go to Equip",
             ModText::MapZoom => "Map: Zoom In and Out",
+            ModText::OnScreen => "ON SCREEN",
             ModText::ShowSummary => "Show Controls",
             ModText::Recenter => "Recenter View",
             ModText::DebugPanel => "Mod Debug Panel",

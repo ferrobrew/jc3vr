@@ -1,4 +1,79 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// `CHUDUI::SButtonHint`: one queued hint.
+pub struct ButtonHint {
+    pub m_Request: crate::ui::hud_ui::ButtonHintRequest,
+    /// Two input key ids, left as the request's copy leaves them; the hint's glyphs are built from
+    /// the mapping's actions instead.
+    pub m_KeyId1: u32,
+    pub m_KeyId2: u32,
+    /// Seconds left before a timed hint is removed.
+    pub m_TimeLeft: f32,
+    /// The id [`HUDUI::AddButtonHint`](crate::ui::hud_ui::HUDUI::AddButtonHint) returned for it, by which its source removes it.
+    pub m_Id: u32,
+}
+fn _ButtonHint_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x34], ButtonHint>([0u8; 0x34]);
+    }
+    unreachable!()
+}
+impl ButtonHint {}
+impl std::convert::AsRef<ButtonHint> for ButtonHint {
+    fn as_ref(&self) -> &ButtonHint {
+        self
+    }
+}
+impl std::convert::AsMut<ButtonHint> for ButtonHint {
+    fn as_mut(&mut self) -> &mut ButtonHint {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// `CHUDUI::SButtonHintRequest`: what a source asks the HUD to show.
+pub struct ButtonHintRequest {
+    pub m_Type: crate::ui::hud_ui::ButtonHintType,
+    /// The semantic mapping the hint names: its actions, its interaction, and the `buttonhint_*`
+    /// key of its description.
+    pub m_Mapping: crate::input::button_mapping::MappingInfo,
+    /// How long the hint shows, seconds; zero or less shows it until it is removed.
+    pub m_Lifetime: f32,
+}
+fn _ButtonHintRequest_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x24], ButtonHintRequest>([0u8; 0x24]);
+    }
+    unreachable!()
+}
+impl ButtonHintRequest {}
+impl std::convert::AsRef<ButtonHintRequest> for ButtonHintRequest {
+    fn as_ref(&self) -> &ButtonHintRequest {
+        self
+    }
+}
+impl std::convert::AsMut<ButtonHintRequest> for ButtonHintRequest {
+    fn as_mut(&mut self) -> &mut ButtonHintRequest {
+        self
+    }
+}
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The in-game HUD (`CHUDUI`, a `CUIBase` Scaleform movie wrapper). Only the fields and methods
+/// below are mapped.
+/// `CHUDUI::EButtonHintType`: where the HUD shows a button hint.
+pub enum ButtonHintType {
+    BUTTON_HINT_NORMAL = 0isize as _,
+    BUTTON_HINT_Y_USE = 1isize as _,
+    BUTTON_HINT_BIG = 2isize as _,
+}
+fn _ButtonHintType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], ButtonHintType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(u32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// `CHUDUI::EHUDState`: which parts of the HUD are shown. [`HUDUI::Update`](crate::ui::hud_ui::HUDUI::Update) skips most per-frame
@@ -23,8 +98,6 @@ fn _HUDState_size_check() {
     unreachable!()
 }
 #[repr(C, align(8))]
-/// The in-game HUD (`CHUDUI`, a `CUIBase` Scaleform movie wrapper). Only the fields and methods
-/// below are mapped.
 pub struct HUDUI {
     _field_0: [u8; 388],
     /// The current HUD visibility state.
@@ -85,11 +158,22 @@ pub struct HUDUI {
     /// The health last pushed to the movie by [`UpdateHealth`](crate::ui::hud_ui::HUDUI::UpdateHealth);
     /// [`InitHealth`](crate::ui::hud_ui::HUDUI::InitHealth) resets it to -1 so the next update pushes again.
     pub m_LastHealth: i16,
-    _field_484: [u8; 4],
+    _field_484: [u8; 676],
+    /// Whether [`m_ButtonHints`](crate::ui::hud_ui::HUDUI::m_ButtonHints) changed since
+    /// [`UpdateButtonHints`](crate::ui::hud_ui::HUDUI::UpdateButtonHints) last pushed it to the movie.
+    pub m_ButtonHintsNeedsUpdate: bool,
+    _field_729: [u8; 7],
+    /// The queued button hints, in the order they were added.
+    pub m_ButtonHints: crate::types::std_vector::Vector<crate::ui::hud_ui::ButtonHint>,
+    /// The lock guarding [`m_ButtonHints`](crate::ui::hud_ui::HUDUI::m_ButtonHints) and
+    /// [`m_ButtonHintsNeedsUpdate`](crate::ui::hud_ui::HUDUI::m_ButtonHintsNeedsUpdate): hints are added and removed
+    /// from the systems that raise them, and [`UpdateButtonHints`](crate::ui::hud_ui::HUDUI::UpdateButtonHints) holds it
+    /// for its whole walk.
+    pub m_ButtonHintsLock: *mut crate::graphics_engine::device::CRITICAL_SECTION,
 }
 fn _HUDUI_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x488], HUDUI>([0u8; 0x488]);
+        ::std::mem::transmute::<[u8; 0x758], HUDUI>([0u8; 0x758]);
     }
     unreachable!()
 }
@@ -147,6 +231,41 @@ impl HUDUI {
                 Self::Update_ADDRESS,
             );
             f(self as *mut Self as _, dt, dtf)
+        }
+    }
+    pub const AddButtonHint_ADDRESS: usize = 0x140EBA580;
+    /// Queues a button hint under [`m_ButtonHintsLock`](crate::ui::hud_ui::HUDUI::m_ButtonHintsLock): appends it to
+    /// [`m_ButtonHints`](crate::ui::hud_ui::HUDUI::m_ButtonHints) with its lifetime as the time left and the next id of
+    /// a running counter, and sets [`m_ButtonHintsNeedsUpdate`](crate::ui::hud_ui::HUDUI::m_ButtonHintsNeedsUpdate).
+    /// Returns the id.
+    pub unsafe fn AddButtonHint(
+        &mut self,
+        request: *const crate::ui::hud_ui::ButtonHintRequest,
+    ) -> u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                request: *const crate::ui::hud_ui::ButtonHintRequest,
+            ) -> u32 = ::std::mem::transmute(Self::AddButtonHint_ADDRESS);
+            f(self as *mut Self as _, request)
+        }
+    }
+    pub const UpdateButtonHints_ADDRESS: usize = 0x140E8AEA0;
+    /// Ages the queued hints and pushes them to the movie, under
+    /// [`m_ButtonHintsLock`](crate::ui::hud_ui::HUDUI::m_ButtonHintsLock). The first three
+    /// [`BUTTON_HINT_NORMAL`](crate::ui::hud_ui::ButtonHintType::BUTTON_HINT_NORMAL) hints and every other hint
+    /// count down their time left by `dt`, and one that runs out is removed; a big hint, one with
+    /// no time left to begin with, and a normal hint past the third do not age. When the queue
+    /// changed, it builds the movie's three arrays (normal, use, big) of id, two key strings (from
+    /// the mapping's [`m_Action1`](crate::input::button_mapping::MappingInfo::m_Action1) and [`m_Action2`](crate::input::button_mapping::MappingInfo::m_Action2)),
+    /// interaction, and localised description, again counting only the first three normal hints,
+    /// and invokes the movie's `UpdateButtonHints`.
+    pub unsafe fn UpdateButtonHints(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::UpdateButtonHints_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
         }
     }
     pub const UpdatePOIs_ADDRESS: usize = 0x140F03B70;

@@ -48,6 +48,17 @@ pub fn resolve(
 pub unsafe fn game_string(key: &str) -> Option<String> {
     // The store keys strings by the low 32 bits of the key's hash.
     let hash = hashlittle(key.as_bytes()) as u32;
+    // SAFETY: per the contract.
+    unsafe { game_string_by_hash(hash) }
+}
+
+/// The game's string for the key whose hash is `hash`, in its current language, or `None` when it
+/// has none: a key the game hands over already hashed, as a button hint's description.
+///
+/// # Safety
+///
+/// As [`game_string`].
+pub unsafe fn game_string_by_hash(hash: u32) -> Option<String> {
     // SAFETY: per the contract; the returned string is owned by a loaded table and copied out at
     // once.
     unsafe {

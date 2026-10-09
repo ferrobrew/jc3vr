@@ -57,6 +57,7 @@ The egui state lock is the other long one. The game thread holds it across the d
 | `vr::request_recenter` from the pause menu's COMFORT page, the stick-click chord, and the seat transitions | None (atomic request) | UI capture thread, the input tick, and the roomscale update | Rule 3 |
 | `vr::uninstall`, from the lifecycle cleanups in `shutdown_from_game` | Blocking, brief | Game thread under the egui state lock | Rule 6 |
 | The COMFORT and BODY pages' session checks, `hud::egui_panel::is_active`, `hud::mirror_overlay::is_active` | `vr::render_params` | UI capture thread, draw task, frame tail | Rule 2 |
+| The controls summary's read of the HUD's hint queue (`controllers::summary::context::read`) | `TryEnterCriticalSection` on the HUD's own hint lock, released at once | Game thread, input tick | Cannot block; the lock guards only the queue, and nothing is taken under it |
 | `vr::input::restart::current` (the restart notice, the debug UI's banner, the CONTROLS page's button layout readout) and `controllers::summary::note_shown` | None: the input status slot, then the config lock, never nested; a leaf slot | Draw task, game thread in the debug UI, UI capture thread | Rule 2 |
 
 ## The guard
