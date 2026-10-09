@@ -144,6 +144,8 @@ pub enum Gate {
     Gripped,
     /// Only when the press began without its own hand's menu modifier held ([`MenuLatch`]).
     Ungripped,
+    /// Only while the character is a ragdoll.
+    Ragdolling,
 }
 
 /// A digital input, with its gate.
@@ -223,6 +225,8 @@ pub struct Latches {
     pub chord_armed: bool,
     /// The wingsuit's parachute press was latched as an evade flick.
     pub evade: bool,
+    /// The character is a ragdoll.
+    pub ragdolling: bool,
     /// Each hand's menu presses, by [`Hand::index`].
     pub menu: [MenuLatch; 2],
     /// Each hand's pad press, by [`Hand::index`].
@@ -316,6 +320,7 @@ impl<'a> EvalSink<'a> {
             Gate::NoEvadeFlick => !self.latches.evade,
             Gate::Gripped => self.gripped(press.input, hand) == Some(true),
             Gate::Ungripped => self.gripped(press.input, hand) == Some(false),
+            Gate::Ragdolling => self.latches.ragdolling,
         }
     }
 

@@ -256,6 +256,7 @@ impl Bindings {
             chord_grip: chord.dominant_grip,
             chord_armed: chord.armed,
             evade,
+            ragdolling: controls.ragdolling,
             menu: self.menu,
             pads: self.pads,
         };

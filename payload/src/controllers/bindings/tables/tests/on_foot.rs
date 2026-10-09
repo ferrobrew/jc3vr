@@ -326,6 +326,23 @@ fn the_sight_chord_needs_both_grips() {
 }
 
 #[test]
+fn the_use_button_steps_off_ledges_and_keeps_a_ragdoll() {
+    for dominant in Hand::BOTH {
+        let mut c = controls(dominant, |dom, _| dom.b = down());
+        let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+        assert_eq!(player(&step, BYPASS_FALL_PREVENTION), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, ENTER_VEHICLE), Some(Want::Hold(1.0)));
+        // Cancel only while a ragdoll: elsewhere it cancels other things.
+        assert_eq!(player(&step, CANCEL), None);
+        c.ragdolling = true;
+        for mode in [ON_FOOT, Mode::Airborne(AirborneVariant::Falling)] {
+            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            assert_eq!(player(&step, CANCEL), Some(Want::Hold(1.0)), "{mode:?}");
+        }
+    }
+}
+
+#[test]
 fn the_right_b_held_skips_a_cutscene_outside_the_menus() {
     for dominant in Hand::BOTH {
         let c = controls(dominant, |dom, off| match dominant {

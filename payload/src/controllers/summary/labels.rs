@@ -113,6 +113,8 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         },
         ENTER_VEHICLE => ActionLabel::Hidden,
         CANCEL if wingsuit => tap("buttonhint_air_brake"),
+        // On foot and falling the use button carries it only while a ragdoll, to stay one.
+        CANCEL if matches!(mode, Mode::OnFoot(_) | Mode::Airborne(_)) => ActionLabel::Hidden,
         CANCEL => tap("buttonhint_cancel"),
         WINGSUIT_AIRBRAKE => shown_if(wingsuit, "buttonhint_wingsuit_air_brake"),
         THROW_GRENADE => tap("buttonhint_grenade"),

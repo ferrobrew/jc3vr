@@ -103,6 +103,8 @@ pub struct Controls {
     /// Whether the sight tuning capture chord is armed: the tuning tool is on and its marker is
     /// placed.
     pub sight_chord: bool,
+    /// Whether the character is a ragdoll, where the gamepad's held B keeps it one.
+    pub ragdolling: bool,
     /// The hand whose trigger belongs to the native UI pointer.
     pub pointer_hand: Option<Hand>,
     /// Whether a controller has a trackpad, so the menus page with the trackpads rather than the
@@ -155,6 +157,7 @@ impl Controls {
             yank: false,
             grapple: GrappleContext::default(),
             sight_chord: false,
+            ragdolling: false,
             pointer_hand: None,
             masked_hands: [false; 2],
             masked_inputs: [PhysicalSet::EMPTY; 2],

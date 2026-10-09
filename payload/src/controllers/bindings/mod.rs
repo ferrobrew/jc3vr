@@ -42,7 +42,7 @@ pub mod yank;
 
 use std::time::Instant;
 
-use jc3gi::input::input_action_map::Action;
+use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use parking_lot::Mutex;
 
 pub use crate::controllers::bindings::recovery::{Blocker, HandRecovery};
@@ -353,6 +353,9 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // never picks it; its trigger only clicks.
     let reload_held = weapons::reload::fire_held();
     controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
+    controls.ragdolling = mode::last_snapshot()
+        .and_then(|snapshot| snapshot.character)
+        .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
     dual_wield::observe_triggers(start.dual_wield.map(|_| TriggerTick {
         dominant,
         triggers: Hand::BOTH.map(|hand| {

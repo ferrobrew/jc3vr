@@ -198,7 +198,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol; with tethers attached, hold Y with nothing new under the aim, and pull the grapple hand back while holding it to tighten harder |
 | Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | double tap Y with tethers attached |
 | Jump, stunt, open parachute | A |
-| Use item, enter vehicle (hold: gunner seat), open wingsuit | B |
+| Use item, enter vehicle (hold: gunner seat), open wingsuit | B; held, it also steps off a ledge the character would stop at (`BYPASS_FALL_PREVENTION`), and while a ragdoll keeps the character one (`CANCEL` held) |
 | Reload | X ejects the magazine (the game's reload as a setting); the belt pouch loads |
 | Holster | grip press with the weapon hand at the held weapon's holster; a short hold of X also holsters, as on the gamepad |
 | Weapon slot select | draw from a holster; press the L trackpad up, right, left, or down for the pistols, the two-handed, the special, or the explosives slot (Index); the L stick click cycles `NEXT_WEAPON` as a fallback (on by default; not while dual-wielding) |
@@ -667,6 +667,7 @@ The order puts the parts that everything else depends on first, then the parts w
 41. Map zoom. Open the map and push the left stick up and down: it zooms, and the wrist summary lists the zoom on that stick. Rebind `map_zoom` in the runtime's binding interface to another input: the map zooms from that input instead.
 42. Hold to hold across interruptions. Hold a rifle, cover a controller's sensors until the hand is lost, and uncover it with the grip still closed: the rifle stays in the hand; open and close the grip: `hold: the grip closed on the gun in the hand` is logged, and opening it again away from the body drops it. Choose a rifle on the weapon wheel and close the hand on it, then open it in front of the body: it falls. With the pistols drawn in both hands, open one hand anywhere: that pistol goes back to its hip and the other stays drawn. Enter a car holding a rifle: it is not dropped.
 43. Long guns by the dominant hand. With both hands empty, reach the left hand to the left shoulder and squeeze: nothing is drawn and the shoulder's marker does not light for it; reach across with the right hand: the special weapon comes into the right hand. With a pistol in the right hand, the left hand draws the left shoulder's gun as a second weapon.
+44. The gamepad's held B. Walk slowly toward a ledge: the character stops at it; hold the right B and walk on: he steps off. Get knocked into a ragdoll and hold the right B: he stays a ragdoll; let go and he gets up. Pressing the right B to enter a car still enters it.
 
 ## Reverse-engineering work
 

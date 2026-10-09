@@ -67,6 +67,13 @@ pub const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
 pub const PAD_B: &[Action] = &[RELEASE_GRAPPLE, CANCEL, BYPASS_FALL_PREVENTION, BTN_B];
 pub const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
 pub const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
+/// What the gamepad's B does held, beyond the tethers' release, which the grapple button's double
+/// tap took: stepping off a ledge the character would stop at. It rides the use button held, since
+/// using something never walks the character off a ledge.
+pub const BYPASS: &[Action] = &[BYPASS_FALL_PREVENTION];
+/// The gamepad's B held while a ragdoll, which keeps the character one. Only then: `CANCEL` cancels
+/// other things elsewhere, so it is not on the use button otherwise.
+pub const KEEP_RAGDOLLING: &[Action] = &[CANCEL];
 pub const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
 /// The detonation of the placed charges alone, which the game starts once the action has been
 /// held past its hold time. The gamepad's RB also throws a grenade and plants C4; the controllers
@@ -112,6 +119,8 @@ fn on_foot<S: Sink>(s: &mut S, ctx: &TableCtx) {
     s.hold(&[p(F::Jump).gated(Gate::UnlessChordArmed)], PAD_A);
     s.hold(&[p(F::Reload)], PAD_X_ON_FOOT);
     s.hold(&[p(F::Use)], PAD_Y_ON_FOOT);
+    s.hold(&[p(F::Use)], BYPASS);
+    s.hold(&[p(F::Use).gated(Gate::Ragdolling)], KEEP_RAGDOLLING);
     s.hold(&[p(F::ReleaseTethers)], PAD_B);
     s.hold(&[p(F::Detonate)], DETONATE);
     hand_weapon_fallbacks(s);
@@ -330,6 +339,7 @@ fn falling<S: Sink>(s: &mut S, ctx: &TableCtx) {
     s.hold(&[p(F::Jump).gated(Gate::UnlessChordArmed)], PAD_A);
     s.hold(&grapple(), GRAPPLE);
     s.hold(&[p(F::Use)], PAD_Y_ON_FOOT);
+    s.hold(&[p(F::Use).gated(Gate::Ragdolling)], KEEP_RAGDOLLING);
     s.hold(&[p(F::ReleaseTethers)], PAD_B);
     hand_weapon_fallbacks(s);
 }

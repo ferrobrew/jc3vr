@@ -50,10 +50,17 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
                 // In a menu a trigger pulled with its grip held turns the other page, which the
                 // raw tables did not do, so the pages of a gripped sequence are left out.
                 let gripped_menu = mode == Mode::Ui && name.ends_with("grip true");
+                // On foot the use button also steps off ledges, which the raw tables left to the
+                // tethers' release alone, so the bypass is left out there.
+                let on_foot = matches!(mode, Mode::OnFoot(_));
                 let pages = |mut step: Step| {
                     if gripped_menu {
                         step.desired
                             .retain(|d| !matches!(d.target.action, GUI_PAGE_PREV | GUI_PAGE_NEXT));
+                    }
+                    if on_foot {
+                        step.desired
+                            .retain(|d| d.target.action != BYPASS_FALL_PREVENTION);
                     }
                     step
                 };

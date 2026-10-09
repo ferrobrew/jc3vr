@@ -400,7 +400,8 @@ impl DescribeSink<'_> {
             | Gate::UnlessChordArmed
             | Gate::UnlessChordGrip
             | Gate::NoEvadeFlick
-            | Gate::Ungripped => gesture,
+            | Gate::Ungripped
+            | Gate::Ragdolling => gesture,
         };
         let row = |control, gesture| Row {
             control,
