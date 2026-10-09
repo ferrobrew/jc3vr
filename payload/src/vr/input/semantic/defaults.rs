@@ -225,6 +225,9 @@ fn global(action: GlobalAction) -> Option<DefaultBinding> {
         Pause => on(Both, System),
         OpenCommlink | RecenterView | ToggleDebugPanel => None,
         ShowControlsSummary => on(Off, TrackpadTouch),
+        // The game's skip prompt names the gamepad's B: the right controller's upper face button
+        // is B on both the Index and the Touch, whichever hand is dominant.
+        SkipCutscene => on(Right, UpperFace),
     }
 }
 

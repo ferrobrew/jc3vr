@@ -287,6 +287,12 @@ impl Bindings {
             dt,
             config.long_press_s,
         );
+        if mode != Mode::Ui {
+            skip_cutscene(
+                &mut out.desired,
+                intents.button(GlobalAction::SkipCutscene.id()),
+            );
+        }
         let crouch_toggle = matches!(mode, Mode::OnFoot(_))
             && flick_down(
                 &mut self.crouch_flicked,
@@ -571,6 +577,20 @@ impl SystemButton {
         {
             toggle(out, Action::GUI_PAUSE);
         }
+    }
+}
+
+/// The cutscene skip: held while the action is. A cutscene reads its skip from the UI action map
+/// whenever no game screen takes input, so it goes there, from every mode outside the menus.
+fn skip_cutscene(out: &mut Vec<Desired>, button: ButtonControl) {
+    if button.held() {
+        out.push(Desired {
+            target: Target {
+                map: MapKind::Ui,
+                action: Action::SKIP_CUTSCENE,
+            },
+            want: Want::Hold(1.0),
+        });
     }
 }
 

@@ -47,6 +47,7 @@ global.open_commlink: bool
 global.recenter_view: bool
 global.toggle_debug_panel: bool
 global.show_controls_summary: bool
+global.skip_cutscene: bool
 on_foot: set
 on_foot.move: vec2
 on_foot.turn: float
@@ -439,7 +440,11 @@ fn reads(set: SemanticSet, index: usize, hand: Hand, ctx: ReadCtx) -> bool {
             M::MenuTabPad | M::MenuTabPress => ctx.trackpad_paging,
             _ => true,
         },
-        SemanticSet::Global | SemanticSet::Wingsuit => true,
+        // The cutscene skip shares the right B with the mode's own action there on purpose, as
+        // the gamepad's B carries both: the skip acts only in a skippable cutscene, where the
+        // gameplay actions do not, and the B's own action only outside one.
+        SemanticSet::Global => G::ALL[index] != G::SkipCutscene,
+        SemanticSet::Wingsuit => true,
     }
 }
 

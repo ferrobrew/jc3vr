@@ -6,7 +6,7 @@ Under the controller scheme the game's own button hints are wrong: the mod pins 
 
 The HUD's two hint stages, the bottom-right stage of context and systemic hints and the centre stage of the big hint, join the clip groups the capture-seam detour holds invisible (`HINT_CLIPS` in `hud/scaleform.rs`, beside the issue #8 overlays and the reticle groups). They are hidden while `controllers.summary.hide_game_hints` is on and the controller scheme is in effect, with the same intent tracking as the reticles, so the game's own visibility comes back when the scheme ends. Nothing in the hint pipeline is hooked: the game keeps queueing and ageing its hints, so its cooldowns and mission scripts behave as they would.
 
-The use-item and weapon-pickup prompt, the skip-cutscene prompt, HUD notifications, and tutorials still show gamepad glyphs.
+The use-item and weapon-pickup prompt, HUD notifications, and tutorials still show gamepad glyphs. The skip-cutscene prompt shows the gamepad's B, and the skip is bound to the right controller's B (the upper face button, B on both the Index and the Touch) so that the prompt is right as it stands. The summary lists it as a held right B outside the menus.
 
 ## One table, two readers
 
@@ -57,7 +57,7 @@ Japanese and Arabic are not drawn: egui has no CJK font here and does not shape 
 Built and unit-tested (the describer, on the defaults and on the runtime's sources, the source matching, the labels, the layout model, the glance, the fade, and the fallback); not yet tried in the headset. Unknowns to check in game:
 
 1. Whether the two hint-stage paths resolve in the clip registry (the scaleform probe logs it) and stay hidden through cinematics and missions.
-2. Whether the prompts that keep their gamepad glyphs (use-item, skip cutscene, notifications, tutorials) need hiding too.
+2. Whether the prompts that keep their gamepad glyphs (use-item, notifications, tutorials) need hiding too, and whether holding the right B skips a cutscene as its prompt says.
 3. Whether the localisation lookup is sound from the input tick, and whether a language change in the options menu reaches the summary (it should, through the language field).
 4. Whether any game string reads wrong for the controllers in its context (the gunner seat's key reads "Turret Position"; `TOGGLE_MAGNET_1` is labelled in every vehicle, as the game's generic vehicle section has it).
 5. Whether the glance angles and the wrist offset are comfortable on both the Index and Touch controllers, and whether the panel's text is sharp enough at its size and resolution, and whether a long summary's panel is comfortable to read at its height on the wrist.

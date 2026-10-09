@@ -209,6 +209,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
 | Reel-in context: cancel, boost, hang jump, slingshot | double tap Y, hold L trigger (hold L stick click while dual-wielding), A, A |
 | Pause, commlink | System button tap, System button hold (either hand) |
+| Skip a cutscene | hold the right B, as the game's prompt asks (every mode but the menus, either handedness) |
 | Crouch toggle (seated posture) | R stick flicked down |
 
 #### Land vehicles (car; motorcycle in the last rows)
@@ -641,6 +642,7 @@ The order puts the parts that everything else depends on first, then the parts w
 31. The recenter chord. With charges placed, click the right stick a moment before the left (a quarter second apart) and hold both: the view recenters, nothing detonates, and the log has `stick chord: the second click joined late`. Hold the right click alone: the charges detonate.
 32. Stick click latency. In a car, a tap of the left stick click honks at once, with no third-of-a-second delay; on foot it steps the weapon at once. Pressing the right B within a third of a second of the left click still opens the debug panel.
 33. The wrist summary on mode changes. Jump, drop off a ledge, and grapple-launch on foot: the summary does not pop up. Open the wingsuit or the parachute from a fall, or enter a car: it shows for three seconds, with a `controls summary: the mode changed` line in the log.
+34. Cutscenes. Hold the right B through a skippable cutscene: the game's skip prompt fills and the cutscene skips, right- and left-handed. The `VR: STATUS` page's fingerprint row asks for a restart after this update until the game is restarted.
 
 ## Reverse-engineering work
 

@@ -810,6 +810,21 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         Gesture::Press,
         modded(ModAction::DebugPanel),
     );
+    if ctx.mode != Mode::Ui {
+        let mut skip: Vec<Control> = Vec::new();
+        for (control, _) in controls(GlobalAction::SkipCutscene.id()) {
+            if !skip.contains(&control) {
+                skip.push(control);
+            }
+        }
+        for control in skip {
+            add(
+                control,
+                Gesture::Hold,
+                Effect::Actions(vec![Action::SKIP_CUTSCENE]),
+            );
+        }
+    }
     let mut pause: Vec<Control> = Vec::new();
     for (control, _) in controls(GlobalAction::Pause.id()) {
         if !pause.contains(&control) {

@@ -445,7 +445,7 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
             use GlobalAction::*;
             match GlobalAction::ALL[index] {
                 Pause => on(Both, System),
-                OpenCommlink | RecenterView | ToggleDebugPanel => None,
+                OpenCommlink | RecenterView | ToggleDebugPanel | SkipCutscene => None,
                 ShowControlsSummary => on(Off, TrackpadTouch),
             }
         }

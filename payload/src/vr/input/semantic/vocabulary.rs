@@ -84,6 +84,9 @@ semantic_actions! {
         /// The stick-click and B chord is the built-in way; this action is unbound by default.
         ToggleDebugPanel => ("toggle_debug_panel", Bool, "Show or hide the mod's debug panel"),
         ShowControlsSummary => ("show_controls_summary", Bool, "Show the controls summary"),
+        /// Held, skips a skippable cutscene, as the game's own skip prompt asks; read outside the
+        /// menus, where the cutscene's skip listens.
+        SkipCutscene => ("skip_cutscene", Bool, "Skip the cutscene (hold)"),
     }
 }
 

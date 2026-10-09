@@ -18,6 +18,8 @@ The write API is on `LocalPlayerActionMap` (its instance pointer is a global; th
 
 The game's menus read a separate action map, [`ui_action_map`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::ui_action_map), not the player's map.
 
+The cutscene skip reads the UI map too. `CSequenceObject2::UpdateSkip`, and the full-screen video's `CVideoManager::UpdateSkip`, ask the UI steering (`CSteeringUI`, whose action map is `ui_action_map`) whether [`SKIP_CUTSCENE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action##variant-SKIP_CUTSCENE) is held, and only while no game screen takes input. While it is held the skip progress rises with the frame time, and the skip prompt fills; let go, it falls back. The UI map's own bindings (`CSteering::LoadGUIActionMap`) put `SKIP_CUTSCENE` on the gamepad's B, which is the button the skip prompt shows. Neither function is bound in the defs; both were read in the release IDB.
+
 [`InputDeviceManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-Update)`(dt)` is the per-frame device poll. It overwrites the effector values, so a value written before it in the frame does not survive. `Update` runs `UpdateForceClicks` after polling, which is the `m_ForceClick` mechanism: a click latched through `ForceSetClicked` or `ForceClick` sets the effector's [`InputDeviceEffector::m_ForceClick`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputDeviceEffector##field-m_ForceClick) flag, so the press edge survives the poll instead of being cleared by it. `InputDeviceManager::m_Enabled` gates the whole poll, and clearing it freezes device input.
 
 ## Anti-tamper protection
@@ -54,7 +56,7 @@ For ground-truth debugging, the [`MouseState::LastPosition`](https://ferrobrew.g
 
 ## The default gamepad keymap
 
-The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grouped by the game's mapping sections. Buttons use Xbox names. Where one button carries several mappings, the active one depends on the context and the mode partition described in [the semantic button layer](#the-semantic-button-layer). Bindings not listed here (the pause and commlink buttons, the d-pad directions for each weapon slot, and the weaponized wingsuit's buttons) have not been extracted.
+The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grouped by the game's mapping sections. Buttons use Xbox names. Where one button carries several mappings, the active one depends on the context and the mode partition described in [the semantic button layer](#the-semantic-button-layer). The pause and commlink are START and BACK, and the d-pad's directions select the weapon slots (up the dual-wield pistols, right the two-handed weapon, left the special weapon, down the explosives).
 
 ### On foot
 
@@ -130,6 +132,32 @@ The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grou
 | Air brake (`CANCEL`, upgrade-gated) | hold B |
 | Open or close the parachute | A |
 | Grapple (slingshot boost) | LB |
+| Boost (weaponized, `WINGSUIT_BOOST`) | RT |
+| Brake (weaponized, `WINGSUIT_AIRBRAKE`) | LT |
+| Primary and secondary weapon (weaponized) | RB and X |
+| Evade and take off (weaponized, `WINGSUIT_EVADE` with a stick flick, `WINGSUIT_TAKEOFF` held) | Y |
+
+### Mech
+
+| Mapping | Button |
+|---|---|
+| Move | L stick |
+| Punch (`MECH_PUNCH`) | LB |
+| Jump (`MECH_JUMP`) | B |
+| Gravity gun: attract (hold) and throw (release) (`MECH_FIRE_GRAVITY_WEAPON_PRIMARY`) | LT |
+| Gravity gun: drop (`MECH_FIRE_GRAVITY_WEAPON_SECONDARY`) | RB |
+| Right-hand weapon (`MECH_FIRE_RIGHT_HAND_WEAPON`) | RT |
+
+### Everywhere
+
+| Mapping | Button |
+|---|---|
+| Skip a cutscene (`SKIP_CUTSCENE`, read from the UI map) | hold B |
+| Look at the objective (`LOOK_AT`) | hold R3 |
+| Release a tether fired from a vehicle (`VEHICLE_RELEASE_GRAPPLE`) | d-pad down |
+| Pause, commlink | START, BACK |
+
+`MOVE_TO_DRIVERS_SEAT` has no gamepad binding.
 
 ## The mapping → action table
 

@@ -208,6 +208,10 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         GUI_PAGE_PREV => tap("buttonhint_ui_page_prev"),
         GUI_PAGE_NEXT => tap("buttonhint_ui_page_next"),
         GUI_RECENTER => tap("buttonhint_ui_recenter"),
+        SKIP_CUTSCENE => ActionLabel::Shown {
+            tap: None,
+            hold: Some(Text::Game("buttonhint_skip_cutscene")),
+        },
         GUI_PAUSE => tap("buttonhint_pause"),
         GUI_PDA => tap("buttonhint_commlink"),
         _ => return None,

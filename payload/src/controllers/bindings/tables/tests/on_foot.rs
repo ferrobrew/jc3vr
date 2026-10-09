@@ -324,3 +324,36 @@ fn the_sight_chord_needs_both_grips() {
     assert!(!step.sight_capture);
     assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
 }
+
+#[test]
+fn the_right_b_held_skips_a_cutscene_outside_the_menus() {
+    for dominant in Hand::BOTH {
+        let c = controls(dominant, |dom, off| match dominant {
+            Hand::Right => dom.b = down(),
+            Hand::Left => off.b = down(),
+        });
+        for mode in [
+            ON_FOOT,
+            Mode::Airborne(AirborneVariant::Wingsuit),
+            Mode::Vehicle(VehicleSeat {
+                class: VehicleClass::Helicopter,
+                driver: true,
+            }),
+        ] {
+            let mut b = Bindings::default();
+            let step = b.sim_step(mode, &c, DT, &CONFIG);
+            assert_eq!(
+                wants(&step, MapKind::Ui, SKIP_CUTSCENE),
+                Some(Want::Hold(1.0)),
+                "{dominant:?} {mode:?}"
+            );
+        }
+        let mut b = Bindings::default();
+        let step = b.sim_step(Mode::Ui, &c, DT, &CONFIG);
+        assert_eq!(wants(&step, MapKind::Ui, SKIP_CUTSCENE), None);
+    }
+    // The left B is not the skip.
+    let c = controls(Hand::Right, |_, off| off.b = down());
+    let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+    assert_eq!(wants(&step, MapKind::Ui, SKIP_CUTSCENE), None);
+}

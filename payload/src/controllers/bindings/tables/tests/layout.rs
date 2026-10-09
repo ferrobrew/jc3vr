@@ -41,12 +41,14 @@ fn every_action_reachable_before_stays_reachable() {
             added.extend(now.difference(&before).copied());
         }
     }
-    // The new layout adds the weapon slot select on the off-hand trackpad.
+    // The new layout adds the weapon slot select on the off-hand trackpad, and the cutscene skip
+    // on the right B.
     let select = BTreeSet::from([
         SELECT_DUEL_WIELD,
         SELECT_TWO_HANDED,
         SELECT_TWO_HANDED_SPECIAL,
         SELECT_EXPLOSIVES,
+        SKIP_CUTSCENE,
     ]);
     assert_eq!(added, select);
 }
