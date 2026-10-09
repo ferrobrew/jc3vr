@@ -387,14 +387,15 @@ const MASKABLE: [Physical; 8] = [
 /// The grapple's semantic actions in `mode`, and the game actions its gestures drive there.
 pub(crate) const fn grapple_press(mode: Mode) -> Option<(&'static [ActionId], GrappleActions)> {
     // On foot and in the wingsuit the release is the gamepad's B, which the grapple's button
-    // took; in a vehicle it is the release alone.
+    // took. In a vehicle it is the vehicle's own release, which the vehicle reads for a tether
+    // fired from it, with the character's for one fired from a passenger's seat.
     const ON_FOOT: GrappleActions = GrappleActions {
         fire: declare::GRAPPLE,
         release: declare::PAD_B,
     };
     const VEHICLE: GrappleActions = GrappleActions {
         fire: declare::GRAPPLE_VEHICLE,
-        release: &[Action::RELEASE_GRAPPLE],
+        release: &[Action::VEHICLE_RELEASE_GRAPPLE, Action::RELEASE_GRAPPLE],
     };
     match mode {
         Mode::OnFoot(_) | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
@@ -408,6 +409,7 @@ pub(crate) const fn grapple_press(mode: Mode) -> Option<(&'static [ActionId], Gr
                 VehicleClass::Car
                 | VehicleClass::Motorcycle
                 | VehicleClass::Sea
+                | VehicleClass::Mech
                 | VehicleClass::Unknown => &LAND_GRAPPLE,
             },
             VEHICLE,
@@ -459,6 +461,7 @@ pub const fn body_turn_action(mode: Mode) -> Option<ActionId> {
             VehicleClass::Car
             | VehicleClass::Motorcycle
             | VehicleClass::Sea
+            | VehicleClass::Mech
             | VehicleClass::Unknown => Some(LandVehicleAction::Turn.id()),
         },
         Mode::Ui => None,

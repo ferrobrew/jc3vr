@@ -148,6 +148,7 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
         VehicleClass::Car
         | VehicleClass::Motorcycle
         | VehicleClass::Sea
+        | VehicleClass::Mech
         | VehicleClass::Unknown => {
             s.analog(Axis::Trigger(Dom), ACCELERATE);
             s.analog(Axis::Trigger(Off), REVERSE);

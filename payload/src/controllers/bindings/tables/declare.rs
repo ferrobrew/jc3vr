@@ -200,6 +200,7 @@ impl VehicleActions {
             VehicleClass::Car
             | VehicleClass::Motorcycle
             | VehicleClass::Sea
+            | VehicleClass::Mech
             | VehicleClass::Unknown => Self {
                 stunt: L::Stunt.id(),
                 exit: L::ExitVehicle.id(),
@@ -252,6 +253,7 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
             );
             s.hold(&[p(v.fire_primary)], &[FIRE_VEHICLE_WEAPON_PRIMARY, R1]);
         }
+        VehicleClass::Mech => mech(s, seat),
         VehicleClass::Car
         | VehicleClass::Motorcycle
         | VehicleClass::Sea
@@ -290,6 +292,25 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
             presses.push(p(v.fire_off_hand_pistol));
         }
         s.hold(&presses, &[FIRE_RIGHT, R2]);
+    }
+}
+
+/// The mech, on the land vehicle set's actions at the gamepad's places: the stick walks it (the
+/// mech's move reads the plane's pitch and the car's turn), the triggers fire its right-hand weapon
+/// and work its gravity gun (held to attract, let go to throw), the dominant grip drops what the
+/// gravity gun holds, the off-hand grip punches, and the dominant A jumps. The vehicle's shared
+/// actions (the exit, the grapple, the horn, and the grips' vehicle weapons) are declared by the
+/// caller.
+fn mech<S: Sink>(s: &mut S, seat: VehicleSeat) {
+    let steer = L::Steer.id();
+    s.axis(Axis::X(steer), TURN_LEFT, TURN_RIGHT);
+    s.axis(Axis::Y(steer), PLANE_PITCH_UP, PLANE_PITCH_DOWN);
+    if seat.driver {
+        s.hold(&[p(L::Accelerate)], &[MECH_FIRE_RIGHT_HAND_WEAPON]);
+        s.hold(&[p(L::Reverse)], &[MECH_FIRE_GRAVITY_WEAPON_PRIMARY]);
+        s.hold(&[p(L::FirePrimary)], &[MECH_FIRE_GRAVITY_WEAPON_SECONDARY]);
+        s.hold(&[p(L::FireSecondary)], &[MECH_PUNCH]);
+        s.hold(&[p(L::Stunt)], &[MECH_JUMP]);
     }
 }
 

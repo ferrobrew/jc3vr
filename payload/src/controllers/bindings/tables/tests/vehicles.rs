@@ -37,6 +37,82 @@ fn the_car_uses_triggers_as_throttle() {
 }
 
 #[test]
+fn the_mech_punches_jumps_and_fires_at_the_gamepads_places() {
+    let mech = |driver| {
+        Mode::Vehicle(VehicleSeat {
+            class: VehicleClass::Mech,
+            driver,
+        })
+    };
+    let c = controls(Hand::Right, |dom, off| {
+        dom.trigger = 1.0;
+        dom.trigger_press = down();
+        off.trigger = 1.0;
+        off.trigger_press = down();
+        dom.a = down();
+        off.stick = Vec2::new(0.0, 1.0);
+    });
+    let step = Bindings::default().sim_step(mech(true), &c, DT, &CONFIG);
+    for action in [
+        MECH_FIRE_RIGHT_HAND_WEAPON,
+        MECH_FIRE_GRAVITY_WEAPON_PRIMARY,
+        MECH_JUMP,
+    ] {
+        assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
+    }
+    // The stick walks it forward, as the mech's move reads the plane's pitch.
+    assert_eq!(player(&step, PLANE_PITCH_DOWN), Some(Want::Analog(1.0)));
+    for action in [ACCELERATE, REVERSE, HANDBRAKE] {
+        assert_eq!(player(&step, action), None, "{action:?}");
+    }
+    let grips = controls(Hand::Right, |dom, off| {
+        dom.grip = down();
+        off.grip = down();
+    });
+    let step = Bindings::default().sim_step(mech(true), &grips, DT, &CONFIG);
+    assert_eq!(player(&step, MECH_PUNCH), Some(Want::Hold(1.0)));
+    assert_eq!(
+        player(&step, MECH_FIRE_GRAVITY_WEAPON_SECONDARY),
+        Some(Want::Hold(1.0))
+    );
+    // Out of the driver's seat the mech's own actions are not the player's.
+    let step = Bindings::default().sim_step(mech(false), &c, DT, &CONFIG);
+    assert_eq!(player(&step, MECH_FIRE_RIGHT_HAND_WEAPON), None);
+}
+
+#[test]
+fn a_double_tap_in_a_vehicle_releases_the_vehicles_tethers() {
+    let car = Mode::Vehicle(VehicleSeat {
+        class: VehicleClass::Car,
+        driver: true,
+    });
+    let up = ButtonControl {
+        down: false,
+        pressed: false,
+        released: true,
+    };
+    let tick = |b| {
+        let mut c = controls(Hand::Right, |_, off| off.b = b);
+        c.grapple.tethers = true;
+        c
+    };
+    let mut bindings = Bindings::default();
+    let released: Vec<Step> = [down(), up, down(), up]
+        .into_iter()
+        .map(|b| bindings.sim_step(car, &tick(b), DT, &CONFIG))
+        .collect();
+    for action in [VEHICLE_RELEASE_GRAPPLE, RELEASE_GRAPPLE] {
+        assert!(
+            released
+                .iter()
+                .any(|s| player(s, action) == Some(Want::Click)),
+            "{action:?}"
+        );
+    }
+    assert!(released.iter().all(|s| player(s, FIRE_GRAPPLE).is_none()));
+}
+
+#[test]
 fn the_plane_pitches_down_on_stick_forward() {
     let mut b = Bindings::default();
     let plane = Mode::Vehicle(VehicleSeat {

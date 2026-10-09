@@ -108,6 +108,8 @@ impl ControlKind {
             VehicleClass::Motorcycle => &[ControlKind::Handlebars],
             VehicleClass::Helicopter => &[ControlKind::Cyclic, ControlKind::Collective],
             VehicleClass::Plane => &[ControlKind::FlightStick, ControlKind::Throttle],
+            // The mech walks; it has no controls to hold.
+            VehicleClass::Mech => &[],
         }
     }
 

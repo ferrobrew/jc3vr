@@ -221,7 +221,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Handbrake | X |
 | Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold and tap R stick click; the cockpit's nitrous button |
 | Fire vehicle weapons, primary and secondary | R grip and L grip, when the grip takes nothing |
-| Grapple | Y, with its gestures as on foot |
+| Grapple | Y, with its gestures as on foot; its double tap releases a tether fired from the vehicle (`VEHICLE_RELEASE_GRAPPLE`, with `RELEASE_GRAPPLE`) |
 | Enter gunner seat, roof stunt | hold B, A |
 | Exit vehicle | B |
 | Horn | L stick click |
@@ -261,6 +261,20 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Fire, and the jetski personal weapon | R grip, aimed by the gaze (boat) or the right hand (jetski) |
 | Nitrous and turbo jump | hold and tap R stick click |
 | Exit | B |
+
+#### Mech
+
+The mech is its own vehicle class ([`Character::IsAttachedToMech`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsAttachedToMech)), on the land vehicle set's actions at the gamepad's places. It has no physical controls.
+
+| Action | VR binding |
+|---|---|
+| Walk and turn (the plane's pitch and the car's turn) | L stick |
+| Right-hand weapon (`MECH_FIRE_RIGHT_HAND_WEAPON`) | R trigger |
+| Gravity gun: attract while held, throw on release (`MECH_FIRE_GRAVITY_WEAPON_PRIMARY`) | L trigger |
+| Gravity gun: drop (`MECH_FIRE_GRAVITY_WEAPON_SECONDARY`) | R grip, when it takes nothing |
+| Punch (`MECH_PUNCH`) | L grip, when it takes nothing |
+| Jump (`MECH_JUMP`) | A |
+| Exit, grapple | B, Y |
 
 #### Wingsuit and parachute
 
@@ -647,6 +661,8 @@ The order puts the parts that everything else depends on first, then the parts w
 35. The wingsuit's buttons. Open the wingsuit with the right B and close it with the right B again; nothing boosts. In the weaponized suit, click the right stick: it boosts. The left A does nothing in the suit.
 36. Aiming the grapple in the wingsuit. With the arms spread and banking slightly, hold the left B and point the left hand at a target: the suit keeps flying the line it had, and lets go of the target to grapple it; once the button is up, the arms steer again. The log has `wingsuit arm steering: the grapple is aimed` and the button-up line.
 37. The motorcycle's throttle grip. On a motorcycle with the handlebars held, roll the right grip back: the bike accelerates in proportion, with a click as it opens, and no nitrous or turbo jump; the trigger still accelerates. In a helicopter, raise and lower the collective with an ordinary wrist roll: no nitrous; twist it hard either way: nitrous.
+38. The mech. Enter a mech: the summary's heading reads `MECH`, the left stick walks, the right trigger fires the right-hand weapon, the left trigger held attracts with the gravity gun and let go throws, the right grip drops, the left grip punches, and A jumps.
+39. Tethers from a vehicle. Drive a car, tether it to something with the grapple, and double tap the left B: the tether lets go.
 
 ## Reverse-engineering work
 

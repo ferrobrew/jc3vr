@@ -79,6 +79,7 @@ impl Mode {
                 VehicleClass::Motorcycle
                 | VehicleClass::Car
                 | VehicleClass::Sea
+                | VehicleClass::Mech
                 | VehicleClass::Unknown => ActionSetKind::LandVehicle,
             },
             Mode::Ui => ActionSetKind::Ui,
@@ -131,8 +132,10 @@ pub enum VehicleClass {
     Car,
     /// Boats and jetskis, which share one class until the jetski discriminator is pinned.
     Sea,
-    /// The attach state is up but the vehicle is not (yet) resolvable, or is of no class above
-    /// (a mech). Bound like a car.
+    /// The mech: it walks on the car's stick actions and has its own punch, jump, and weapons.
+    Mech,
+    /// The attach state is up but the vehicle is not (yet) resolvable, or is of no class above.
+    /// Bound like a car.
     Unknown,
 }
 
@@ -447,7 +450,9 @@ unsafe fn read_character(character: &Character) -> Option<CharacterSnapshot> {
 /// they run only while the attach state holds, in the resolution order.
 unsafe fn read_vehicle(character: &Character) -> VehicleSeat {
     let class = unsafe {
-        if character.IsAttachedToHelicopter() {
+        if character.IsAttachedToMech() {
+            VehicleClass::Mech
+        } else if character.IsAttachedToHelicopter() {
             VehicleClass::Helicopter
         } else if character.IsAttachedToAirVehicle() {
             VehicleClass::Plane
@@ -713,6 +718,7 @@ mod tests {
                 seat(VehicleClass::Unknown, true),
                 ActionSetKind::LandVehicle,
             ),
+            (seat(VehicleClass::Mech, true), ActionSetKind::LandVehicle),
             (
                 seat(VehicleClass::Helicopter, false),
                 ActionSetKind::Helicopter,

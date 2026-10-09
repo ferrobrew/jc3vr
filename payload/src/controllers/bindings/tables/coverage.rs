@@ -36,6 +36,7 @@ pub fn all_modes() -> Vec<Mode> {
         VehicleClass::Motorcycle,
         VehicleClass::Car,
         VehicleClass::Sea,
+        VehicleClass::Mech,
         VehicleClass::Unknown,
     ] {
         for driver in [true, false] {

@@ -157,7 +157,7 @@ The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grou
 | Release a tether fired from a vehicle (`VEHICLE_RELEASE_GRAPPLE`) | d-pad down |
 | Pause, commlink | START, BACK |
 
-`MOVE_TO_DRIVERS_SEAT` has no gamepad binding.
+`MOVE_TO_DRIVERS_SEAT` has no binding in either the gamepad or the keyboard keymap, and no reader in the gameplay code passes it to a steering as an immediate, so the game does not offer it to the player; a passenger reaches the driver's seat by leaving and entering again.
 
 ## The mapping → action table
 

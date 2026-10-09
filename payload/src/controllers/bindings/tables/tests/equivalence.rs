@@ -41,7 +41,10 @@ use crate::{
 #[test]
 fn the_semantic_tables_want_what_the_raw_tables_wanted() {
     let mut checked = 0usize;
-    for mode in all_modes() {
+    // The raw tables bound a mech like a car; the semantic tables give it its own actions.
+    let mech =
+        |mode: &Mode| matches!(mode, Mode::Vehicle(seat) if seat.class == VehicleClass::Mech);
+    for mode in all_modes().into_iter().filter(|m| !mech(m)) {
         for (dominant, ctx) in all_contexts() {
             for (name, config, ticks) in sequences(mode, dominant, &ctx) {
                 let mut old = legacy::Bindings::new();

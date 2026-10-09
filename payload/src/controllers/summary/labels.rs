@@ -72,7 +72,7 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         FIRE_RIGHT => tap("buttonhint_fire_weapon"),
         RETRACT_GRAPPLE => tap("buttonhint_retract_tethers"),
         FIRE_GRAPPLE => tap("buttonhint_fire_grapple"),
-        RELEASE_GRAPPLE => tap("buttonhint_release_tethers"),
+        RELEASE_GRAPPLE | VEHICLE_RELEASE_GRAPPLE => tap("buttonhint_release_tethers"),
         PUSH_GRAPPLE => tap("buttonhint_hammer"),
         JUMP => shown_if(matches!(mode, Mode::OnFoot(_)), "buttonhint_jump"),
         OPEN_PARACHUTE => shown_if(
@@ -146,6 +146,14 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
             Some(_) => tap("buttonhint_sound_horn_siren_land_vehicle"),
         },
         TOGGLE_MAGNET_1 => tap("buttonhint_toggle_magnet"),
+        MECH_PUNCH => tap("buttonhint_mech_punch"),
+        MECH_JUMP => tap("buttonhint_mech_jump"),
+        MECH_FIRE_GRAVITY_WEAPON_PRIMARY => ActionLabel::Shown {
+            tap: Some(Text::Game("buttonhint_mech_gravity_gun_release")),
+            hold: Some(Text::Game("buttonhint_mech_gravity_gun_attract")),
+        },
+        MECH_FIRE_GRAVITY_WEAPON_SECONDARY => tap("buttonhint_mech_gravity_gun_drop"),
+        MECH_FIRE_RIGHT_HAND_WEAPON => tap("buttonhint_fire_weapon"),
         USE_VEHICLE_MOD if class == Some(VehicleClass::Helicopter) => tap("buttonhint_nitrous"),
         USE_VEHICLE_MOD => ActionLabel::Shown {
             tap: Some(Text::Game("buttonhint_turbo_jump")),
@@ -229,6 +237,7 @@ pub fn heading(mode: Mode) -> Text {
             VehicleClass::Motorcycle => tab("gui_settings_controller_mapping_motorcycle"),
             VehicleClass::Sea => tab("gui_settings_controller_mapping_boat"),
             VehicleClass::Car | VehicleClass::Unknown => tab("gui_settings_controller_mapping_car"),
+            VehicleClass::Mech => Text::Mod(ModText::Mech),
         },
         Mode::Airborne(AirborneVariant::Wingsuit) => {
             tab("gui_settings_controller_mapping_wingsuit")
@@ -296,6 +305,7 @@ pub fn mod_action(action: ModAction) -> Text {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ModText {
     Falling,
+    Mech,
     Parachute,
     AfterFlick,
     Flick,
@@ -347,6 +357,7 @@ impl ModText {
     pub const fn english(self) -> &'static str {
         match self {
             ModText::Falling => "FALLING",
+            ModText::Mech => "MECH",
             ModText::Parachute => "PARACHUTE",
             ModText::AfterFlick => "FLICK, THEN",
             ModText::Flick => "FLICK",
