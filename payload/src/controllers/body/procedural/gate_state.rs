@@ -14,6 +14,7 @@ use crate::controllers::{
         authority::{Case, RegionBlend, WeightFollower, Weights},
         config::ProceduralBodyConfig,
         ground::{GroundCaster, GroundLog},
+        head::{PlayerHead, StandingReference, head_drop},
         joints::{LiveRig, RigCache},
         rig::{Rig, RigBone},
         root_speed,
@@ -58,6 +59,10 @@ pub(super) struct State {
     pub(super) rig: RigCache,
     /// The lower body's pose: standing, crouching, or a held kneel or sit.
     pub(super) lower: LowerBody,
+    /// The height the player is seen to stand at.
+    pub(super) standing: StandingReference,
+    /// The STAGE floor jumps already taken as a prompt to measure the standing height afresh.
+    pub(super) floor_jumps: u32,
     /// The stance's step under the player's head, model space `(x, z)`.
     pub(super) step: HipsFollower,
     /// The regions' weights against the animation.
@@ -171,6 +176,41 @@ pub(super) struct LowerRequest<'a> {
 }
 
 impl State {
+    /// The head's height the hips follow this tick, model space: the reference head's, less how
+    /// far the player's head is below the height they are seen to stand at, past the deadband.
+    /// `standing` is whether the body stands on foot on its own legs, when the head's height is a
+    /// sample of the standing height while the gaze is level. A floor jump across a reference
+    /// space change starts the measure afresh. Without the head anchor, the head's own height.
+    pub(super) fn hips_head(
+        &mut self,
+        rig: &Rig,
+        player: &PlayerHead,
+        standing: bool,
+        dt: f32,
+        config: &ProceduralBodyConfig,
+    ) -> f32 {
+        let jumps = crate::vr::stage::stage().floor_jumps;
+        if jumps != self.floor_jumps {
+            self.floor_jumps = jumps;
+            self.standing.reseed();
+            tracing::info!(
+                target: "body",
+                "procedural body: the floor jumped, so the standing height is measured afresh"
+            );
+        }
+        let Some(height) = player.height else {
+            self.status.head_drop_m = 0.0;
+            return player.head.y;
+        };
+        self.standing.observe(height, standing && player.level, dt);
+        let reference = self.standing.reference();
+        let drop = head_drop(height, reference, config.crouch_deadband_m);
+        self.status.standing_m = reference;
+        self.status.standing_samples = self.standing.samples();
+        self.status.head_drop_m = drop;
+        rig.reference(RigBone::Head).translation.y - drop
+    }
+
     /// Forget what the body under the head keeps between ticks (the feet, the hips' followers, the
     /// legs in the air, the lower body's pose), so it starts afresh from the animation when it
     /// comes back.
@@ -248,6 +288,7 @@ impl State {
         let input = LowerInput {
             world: *request.world,
             head: solve.head,
+            hips_head_y: solve.hips_head(),
             head_world: request.head_world,
             crouch: request.crouch,
             hips_xz: solve
@@ -276,6 +317,8 @@ impl State {
                 wanted_hips_m = status.wanted_hips_m,
                 floor_m = status.floor_m,
                 crouch = request.crouch,
+                standing_m = self.status.standing_m,
+                head_drop_m = self.status.head_drop_m,
                 kneel_side = status.kneel_side.map_or("none", Side::label),
                 sit_legs = status.sit_legs.map_or("none", SitLegs::label),
                 sit_end = change.sit_end.map_or("none", SitEnd::label),
@@ -547,6 +590,8 @@ impl State {
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),
     lower: LowerBody::new(),
+    standing: StandingReference::new(),
+    floor_jumps: 0,
     step: HipsFollower::new(),
     blend: RegionBlend::new(),
     tracker: StateTracker::new(),

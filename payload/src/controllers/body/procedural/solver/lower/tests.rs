@@ -22,6 +22,7 @@ fn setup_with_rig() -> (Rig, LowerRig, LowerInput, LowerTuning) {
     let input = LowerInput {
         world: Mat4::from_translation(Vec3::new(3.0, 1.0, -2.0)),
         head: rig.reference(RigBone::Head).translation,
+        hips_head_y: rig.reference(RigBone::Head).translation.y,
         head_world: Vec3::ZERO,
         crouch: 0.0,
         hips_xz: Vec2::ZERO,
@@ -48,6 +49,7 @@ fn hold(body: &mut LowerBody, rig: &LowerRig, input: &LowerInput, tuning: &Lower
 /// Put the head where it asks for the hips at `hips`, with the crouch's depth that follows.
 fn lower_to(rig: &LowerRig, input: &mut LowerInput, hips: f32) {
     input.head.y = hips + rig.head_over_hips;
+    input.hips_head_y = input.head.y;
     let floored = hips.clamp(rig.lowest_hips, rig.standing_hips);
     input.crouch = (rig.standing_hips - floored) / (rig.standing_hips - rig.lowest_hips);
 }
@@ -73,6 +75,19 @@ fn the_head_picks_standing_and_crouching() {
     assert_eq!(body.status().pose, LowerPose::Crouch);
     lower_to(&rig, &mut input, rig.standing_hips);
     body.update(&rig, &input, &tuning);
+    assert_eq!(body.status().pose, LowerPose::Stand);
+}
+
+#[test]
+fn a_head_bobbing_short_of_the_crouch_stays_standing() {
+    let (rig, mut input, tuning) = setup();
+    let mut body = LowerBody::new();
+    // A standing player's head bobbing a few centimetres, past what the deadband takes, reads as
+    // a shallow crouch depth that stays standing.
+    for hips in [0.07, 0.03, 0.08, 0.02, 0.07] {
+        lower_to(&rig, &mut input, rig.standing_hips - hips);
+        assert_eq!(body.update(&rig, &input, &tuning), None);
+    }
     assert_eq!(body.status().pose, LowerPose::Stand);
 }
 
@@ -227,6 +242,7 @@ fn standing_solve_input(full: &Rig, input: &LowerInput) -> SolveInput {
     SolveInput {
         animated,
         head: input.head,
+        hips_head_y: None,
         head_rotation: Quat::IDENTITY,
         torso_yaw: Some(0.0),
         feet: input.stance.map(|f| f.position),

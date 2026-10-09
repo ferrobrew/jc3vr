@@ -14,6 +14,8 @@
 //!   and writes.
 //! - [`solver`]: the body under the player's head, the feet, the walk, and the clavicles (pure).
 //! - [`gate_state`]: what the gate keeps between ticks, and the steps of the gate that update it.
+//! - [`head`]: the player's head as the body reads it, at the neck pivot, and the height the player
+//!   is seen to stand at.
 //! - [`ground`]: the scene rays that find the ground under the footholds.
 //! - [`state`]: what the character is doing, for the hand-over table, and whether the animation
 //!   moves the body.
@@ -35,6 +37,7 @@ pub mod authority;
 pub mod config;
 mod gate_state;
 pub mod ground;
+pub mod head;
 pub mod joints;
 pub mod rig;
 pub mod signals;
@@ -87,9 +90,7 @@ use crate::{
             },
         },
         frame::Hand,
-        locomotion::{
-            LocomotionStatus, anchor::status as anchor_status, status as locomotion_status,
-        },
+        locomotion::{LocomotionStatus, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
         roomscale::{frame_shared, posture::EffectivePosture},
         vehicles::parachute_brake,
@@ -127,6 +128,12 @@ pub struct ProceduralStatus {
     /// How far the head has taken the hips toward their lowest, `0..=1`: what the crouch gait
     /// scales the steps by.
     pub crouch_depth: f32,
+    /// The height the player is seen to stand at: the neck pivot's over the head anchor, metres.
+    pub standing_m: f32,
+    /// How many samples of it are held.
+    pub standing_samples: usize,
+    /// How far the player's head is below that, past the deadband, metres.
+    pub head_drop_m: f32,
     /// The lower body's pose and what it was picked from.
     pub lower: LowerStatus,
     /// How far the stance has stepped under the player's head, metres.
@@ -276,10 +283,11 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, off_hand) = Config::lock_query(|c| {
+    let (config, off_hand, scale) = Config::lock_query(|c| {
         (
             c.controllers.body.procedural,
             c.controllers.acting_hand().other(),
+            c.vr.world_scale,
         )
     });
     let off_side = match off_hand {
@@ -403,6 +411,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     case,
                     weights,
                     brake,
+                    scale,
                     dt,
                 };
                 let Some(pose) =
@@ -426,8 +435,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     case,
                     Case::Jump | Case::HandClimb | Case::Flight | Case::Wingsuit | Case::Parachute
                 );
-            let head = head_in_model(&world);
-            let crouch = crouch_depth(rig, head.y, &config);
+            let player = head::read(&world, scale);
+            let head = player.head;
+            let standing = case == Case::OnFoot && legs_procedural && !airborne;
+            let hips_head_y = state.hips_head(rig, &player, standing, dt, &config);
+            let crouch = crouch_depth(rig, hips_head_y, &config);
             state.status.crouch_depth = crouch;
             let mut request = FeetRequest {
                 world: &world,
@@ -479,7 +491,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                         fall_speed_mps: config.air_fall_speed_mps,
                         toe_drop: config.air_toe_drop_deg.to_radians(),
                     };
-                    let hips = hips_height(rig, head.y, &config);
+                    let hips = hips_height(rig, hips_head_y, &config);
                     let air = air_feet(rig, stance, hips, vertical, &tuning);
                     let air = if config.landing_reach && airborne && vertical < 0.0 {
                         let landing = Landing {
@@ -512,9 +524,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             state.status.stepping = state.feet.stepping();
             state.status.speed_mps = velocity.length();
             state.status.gait_phase = state.feet.phase();
-            let Some(mut input) = solve_input(character, &animated, feet) else {
+            let Some(mut input) = solve_input(character, &animated, feet, scale) else {
                 return false;
             };
+            input.hips_head_y = Some(hips_head_y);
             input.support = (stance[0].position + stance[1].position) * 0.5
                 + Vec3::new(request.step_offset.x, 0.0, request.step_offset.y);
             (input.planted, input.heel_lifts) = if legs_procedural && !airborne {
@@ -527,11 +540,11 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             if previous.torso <= 0.0 {
                 let hips = animated.position(RigBone::Hips);
                 state.hips.seed(Vec2::new(hips.x, hips.z));
-                let seed =
-                    hips_height(rig, input.head.y, &config) - animated.position(RigBone::Hips).y;
+                let seed = hips_height(rig, input.hips_head(), &config)
+                    - animated.position(RigBone::Hips).y;
                 state
                     .drop
-                    .seed(seed.min(hips_room(rig, input.head.y, &config)));
+                    .seed(seed.min(hips_room(rig, input.hips_head(), &config)));
             }
             let place = hips_horizontal(rig, &input, &config);
             input.hips_xz = Some(state.hips.step(place, dt, config.hips_follow_s));
@@ -558,7 +571,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             state.status.reach_drop_m = reach;
             state.status.landing_dip_m = dip;
             // The dip is the hips' alone: the view is anchored to the root, not to them.
-            input.hips_drop = (reach + dip).min(hips_room(rig, input.head.y, &config));
+            input.hips_drop = (reach + dip).min(hips_room(rig, input.hips_head(), &config));
             let mut solved = solve(rig, &input, &config);
             let turns = unsafe { state.turn_clavicles(character, rig, &solved, dt, &config) };
             for side in Side::BOTH {
@@ -590,6 +603,8 @@ struct AnchoredGate<'a> {
     weights: Weights,
     /// How far the parachute's handles brake, `0..=1`.
     brake: f32,
+    /// The VR world scale.
+    scale: f32,
     dt: f32,
 }
 
@@ -609,7 +624,12 @@ unsafe fn pose_on_animated_hips(
 ) -> Option<RigPose> {
     // The body under the head starts afresh from the animation when it comes back.
     state.reset_under_head();
-    let input = solve_input(gate.character, gate.animated, animated_feet(gate.animated))?;
+    let input = solve_input(
+        gate.character,
+        gate.animated,
+        animated_feet(gate.animated),
+        gate.scale,
+    )?;
     let flare = state.flare.step(
         if gate.case == Case::Parachute {
             gate.brake
@@ -789,6 +809,9 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     speed_mps: 0.0,
     gait_phase: None,
     crouch_depth: 0.0,
+    standing_m: 0.0,
+    standing_samples: 0,
+    head_drop_m: 0.0,
     lower: LowerStatus::new(),
     step_offset_m: 0.0,
     landing_reach: 0.0,
@@ -843,18 +866,21 @@ fn commanded_velocity(locomotion: &LocomotionStatus) -> Vec3 {
     }
 }
 
-/// The solve's inputs from the headpose, the torso estimate, and the feet, in model space.
+/// The solve's inputs from the headpose, the torso estimate, and the feet, in model space, at the
+/// VR world scale `scale`.
 fn solve_input(
     character: &Character,
     animated: &RigPose,
     feet: [FootPose; 2],
+    scale: f32,
 ) -> Option<SolveInput> {
     let world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, _) = world.to_scale_rotation_translation();
-    let head = head_in_model(&world);
+    let head = head::read(&world, scale).head;
     head.is_finite().then(|| SolveInput {
         animated: *animated,
         head,
+        hips_head_y: None,
         head_rotation: body_relative_rotation(),
         torso_yaw: torso_turn(rotation),
         feet: feet.map(|f| f.position),
@@ -866,19 +892,6 @@ fn solve_input(
         hips_drop: 0.0,
         lower: None,
     })
-}
-
-/// The player's head in the model space of the root at `world`. The view hangs from the root at
-/// its smoothed height on the ground ([`AnchorStatus::height_offset`](crate::controllers::locomotion::anchor::AnchorStatus::height_offset)), so on a stair the head
-/// trails the raw root by what the smoothing hides; that is taken back out, so the solve measures
-/// the head against the same root the view does, and a staircase does not read as a crouch.
-fn head_in_model(world: &Mat4) -> Vec3 {
-    let anchor = anchor_status();
-    let hidden = anchor.height_offset * anchor.weight;
-    let hidden = if hidden.is_finite() { hidden } else { 0.0 };
-    world
-        .inverse()
-        .transform_point3(query().position - Vec3::Y * hidden)
 }
 
 /// Fade the game's (and the mod's) IK targets on the bones the procedural body owns, each region

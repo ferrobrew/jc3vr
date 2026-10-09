@@ -173,6 +173,9 @@ pub struct LowerInput {
     pub world: Mat4,
     /// The player's head, model space.
     pub head: Vec3,
+    /// The head's height the hips follow, model space
+    /// ([`SolveInput::hips_head`](crate::controllers::body::procedural::solver::SolveInput::hips_head)).
+    pub hips_head_y: f32,
     /// The player's head, world space: how fast it moves says whether the player is still.
     pub head_world: Vec3,
     /// How far the head has taken the hips toward the squat's floor, `0..=1`
@@ -355,7 +358,7 @@ impl LowerBody {
         } else {
             0.0
         };
-        let wanted = rig.wanted_hips(input.head.y);
+        let wanted = rig.wanted_hips(input.hips_head_y);
         let wanted = if wanted.is_finite() {
             wanted
         } else {
@@ -543,9 +546,9 @@ impl LowerBody {
 }
 
 /// The crouch's depth past which the pose reads as a crouch, and below which it reads as standing
-/// again.
-const CROUCH_ENTER: f32 = 0.15;
-const CROUCH_EXIT: f32 = 0.1;
+/// again: apart, so that a head bobbing about one threshold does not flip the pose.
+const CROUCH_ENTER: f32 = 0.2;
+const CROUCH_EXIT: f32 = 0.08;
 
 /// The time constant of the head's speed, seconds.
 const HEAD_SPEED_S: f32 = 0.2;

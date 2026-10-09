@@ -223,6 +223,7 @@ mod tests {
         let input = SolveInput {
             animated,
             head: animated.position(RigBone::Head),
+            hips_head_y: None,
             head_rotation: Quat::IDENTITY,
             torso_yaw: Some(0.0),
             feet: [

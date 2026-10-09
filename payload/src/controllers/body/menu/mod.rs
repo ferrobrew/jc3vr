@@ -114,6 +114,7 @@ mod tests {
             available: true,
             bounds: Some(Vec2::new(2.0, 2.0)),
             head_height: Some(1.68),
+            ..StageInfo::default()
         };
         assert_eq!(eye_height_from(true, stage), Ok(1.68));
         assert_eq!(eye_height_from(false, stage), Err(Unavailable::NoHeadset));

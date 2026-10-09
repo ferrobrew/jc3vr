@@ -152,6 +152,7 @@ fn full_frame() -> Frame {
             available: true,
             bounds: Some(Vec2::new(3.0, 2.5)),
             head_height: Some(1.62),
+            ..StageInfo::default()
         },
         controllers: Some(ControllerSample {
             focused: true,

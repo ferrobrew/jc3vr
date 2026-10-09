@@ -32,7 +32,7 @@ pub fn hips_horizontal(rig: &Rig, input: &SolveInput, config: &ProceduralBodyCon
         Vec2::new(foot.x - support.x, 0.0) * PLANTED_BIAS
     });
     // A squat sends the hips back over the heels as they go down, as a person's do to balance.
-    let squat = (reference_hips.y - hips_height(rig, input.head.y, config)).max(0.0);
+    let squat = (reference_hips.y - hips_height(rig, input.hips_head(), config)).max(0.0);
     let back = Quat::from_rotation_y(yaw) * Vec3::Z * (squat * SQUAT_BACK);
     let place = support - lean * counterbalance + bias + Vec2::new(back.x, back.z);
     if place.is_finite() { place } else { support }
@@ -125,7 +125,7 @@ pub fn reach_drop(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) 
         };
         need = need.max(below);
     }
-    let room = hips_room(rig, input.head.y, config);
+    let room = hips_room(rig, input.hips_head(), config);
     if need.is_finite() {
         need.clamp(0.0, room)
     } else {
@@ -230,7 +230,8 @@ pub const PLANTED_BIAS: f32 = 0.15;
 
 /// What the hips are placed from.
 pub(super) struct HipsInput {
-    pub(super) head: Vec3,
+    /// The head's height the hips follow ([`SolveInput::hips_head`]).
+    pub(super) head_height: f32,
     pub(super) horizontal: Vec2,
     pub(super) yaw: f32,
     pub(super) drop: f32,
@@ -245,7 +246,7 @@ pub(super) fn hips_input(
     drop: f32,
 ) -> HipsInput {
     HipsInput {
-        head: input.head,
+        head_height: input.hips_head(),
         horizontal: input
             .hips_xz
             .filter(|h| h.is_finite())
@@ -274,13 +275,13 @@ pub(super) fn place_hips(
     config: &ProceduralBodyConfig,
 ) {
     let HipsInput {
-        head,
+        head_height,
         horizontal,
         yaw,
         drop,
         held,
     } = *input;
-    let height = hips_height(rig, head.y, config) - drop;
+    let height = hips_height(rig, head_height, config) - drop;
     let own = Vec3::new(horizontal.x, height, horizontal.y);
     let target = held.map_or(own, |(hips, weight)| own.lerp(hips, weight));
 

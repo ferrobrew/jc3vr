@@ -65,8 +65,13 @@ use crate::controllers::body::procedural::{
 pub struct SolveInput {
     /// The animated pose.
     pub animated: RigPose,
-    /// Where the head bone should be: the player's head.
+    /// Where the head bone should be: the player's head, at the neck pivot.
     pub head: Vec3,
+    /// The head's height the hips follow, model space, when it is not the head's own: the
+    /// reference head's height less how far the player's head has dropped below their standing
+    /// height, past the deadband (`crate::controllers::body::procedural::head`). `None` follows
+    /// the head.
+    pub hips_head_y: Option<f32>,
     /// The player's head rotation relative to the body (identity faces forward).
     pub head_rotation: Quat,
     /// The player's torso heading relative to Rico's facing, radians about +Y, when estimated.
@@ -94,6 +99,13 @@ pub struct SolveInput {
 }
 
 impl SolveInput {
+    /// The head's height the hips follow ([`hips_head_y`](Self::hips_head_y)).
+    pub fn hips_head(&self) -> f32 {
+        self.hips_head_y
+            .filter(|y| y.is_finite())
+            .unwrap_or(self.head.y)
+    }
+
     /// Take the held pose `targets` by its weight: its feet replace the feet by the weight now, and
     /// the solve mixes its hips and knees by the same. A held foot does not roll onto its toes.
     pub fn hold(&mut self, targets: LowerTargets) {
@@ -321,6 +333,7 @@ mod tests {
         let input = SolveInput {
             animated,
             head: animated.position(RigBone::Head),
+            hips_head_y: None,
             head_rotation: Quat::IDENTITY,
             torso_yaw: Some(0.0),
             feet: [

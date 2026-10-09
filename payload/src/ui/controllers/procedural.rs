@@ -76,6 +76,10 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
                 "not measured yet"
             },
         ));
+        ui.label(format!(
+            "Standing height {:+.3} m over the head anchor from {} samples · head {:.3} m below it past the deadband",
+            status.standing_m, status.standing_samples, status.head_drop_m,
+        ));
         let lower = &status.lower;
         ui.label(format!(
             "Lower body: {} · hips wanted at {:.3} m against the floor at {:.3} m · low {:.2} s · kneel {:.2}{} · {}",

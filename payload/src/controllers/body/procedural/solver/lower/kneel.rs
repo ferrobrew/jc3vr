@@ -73,7 +73,7 @@ impl Kneel {
         let right = forward.cross(Vec3::Y);
         let turn = facing(forward);
         let height = rig
-            .wanted_hips(input.head.y)
+            .wanted_hips(input.hips_head_y)
             .clamp(rig.kneel_low(), rig.kneel_high());
         let hips = Vec3::new(ground.x, height, ground.z);
         let down = self.side;

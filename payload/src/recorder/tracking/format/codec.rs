@@ -282,6 +282,7 @@ fn read_stage(input: &mut Decoder) -> Result<StageInfo, DecodeError> {
         available: bit(flags, 0),
         bounds,
         head_height,
+        ..StageInfo::default()
     })
 }
 

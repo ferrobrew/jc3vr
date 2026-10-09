@@ -25,6 +25,9 @@ pub struct ProceduralBodyConfig {
     /// The lowest the hips go before the spine takes the rest of a crouch, as a share of their
     /// standing height.
     pub min_hips_height: f32,
+    /// How far the player's head may drop below the height they are seen to stand at before the
+    /// hips follow it down, metres: a standing player's bobs and the runtime's floor error.
+    pub crouch_deadband_m: f32,
     /// How far the hips turn toward the player's torso, at most, degrees.
     pub pelvis_turn_limit_deg: f32,
     /// How far the chest turns toward the player's torso, at most, degrees.
@@ -204,6 +207,7 @@ impl ProceduralBodyConfig {
             counterbalance: 0.3,
             hips_follow_s: 0.2,
             min_hips_height: 0.5,
+            crouch_deadband_m: 0.04,
             pelvis_turn_limit_deg: 35.0,
             chest_turn_limit_deg: 70.0,
             lean_limit_deg: 60.0,
@@ -283,6 +287,7 @@ impl ProceduralBodyConfig {
             ("counterbalance", self.counterbalance, 0.0, 1.0),
             ("hips_follow_s", self.hips_follow_s, 0.0, 2.0),
             ("min_hips_height", self.min_hips_height, 0.1, 1.0),
+            ("crouch_deadband_m", self.crouch_deadband_m, 0.0, 0.2),
             (
                 "pelvis_turn_limit_deg",
                 self.pelvis_turn_limit_deg,

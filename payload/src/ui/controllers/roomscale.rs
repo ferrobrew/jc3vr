@@ -36,6 +36,12 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
         Some(h) => format!("Head above the floor: {h:.2} m"),
         None => "Head above the floor: unknown".to_owned(),
     });
+    if f.stage.floor_jumps > 0 {
+        ui.label(format!(
+            "Floor jumps taken out: {} · shift {:+.2} m",
+            f.stage.floor_jumps, f.stage.floor_shift_m
+        ));
+    }
     ui.label(match f.head_height {
         Some(h) => format!(
             "Head height remap: eyes {:+.2} m from the character's (from {})",

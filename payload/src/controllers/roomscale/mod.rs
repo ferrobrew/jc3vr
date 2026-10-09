@@ -613,6 +613,8 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
             available: false,
             bounds: None,
             head_height: None,
+            floor_shift_m: 0.0,
+            floor_jumps: 0,
         },
         head_height: None,
         cockpit_y: 0.0,
