@@ -1,4 +1,87 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[derive(Copy, Clone, Default)]
+#[repr(C, align(16))]
+/// An axis-aligned box (`hkAabb`): its least and greatest corners.
+pub struct hkAabb {
+    pub m_min: crate::types::vector_math::AlignedVector3,
+    pub m_max: crate::types::vector_math::AlignedVector3,
+}
+fn _hkAabb_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x20], hkAabb>([0u8; 0x20]);
+    }
+    unreachable!()
+}
+impl hkAabb {}
+impl std::convert::AsRef<hkAabb> for hkAabb {
+    fn as_ref(&self) -> &hkAabb {
+        self
+    }
+}
+impl std::convert::AsMut<hkAabb> for hkAabb {
+    fn as_mut(&mut self) -> &mut hkAabb {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(16))]
+/// A box quantized into a world's integer space (`hkAabb16`): each corner's coordinates as 16-bit
+/// integers, which the world's [`hkIntSpaceUtil`](crate::havok::hkIntSpaceUtil) turns back into Havok-space positions. The two
+/// key halves are not coordinates.
+pub struct hkAabb16 {
+    pub m_min: [u16; 3],
+    pub m_key: u16,
+    pub m_max: [u16; 3],
+    pub m_key1: u16,
+}
+fn _hkAabb16_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], hkAabb16>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl hkAabb16 {}
+impl std::convert::AsRef<hkAabb16> for hkAabb16 {
+    fn as_ref(&self) -> &hkAabb16 {
+        self
+    }
+}
+impl std::convert::AsMut<hkAabb16> for hkAabb16 {
+    fn as_mut(&mut self) -> &mut hkAabb16 {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// The mapping between Havok space and a world's integer space (`hkIntSpaceUtil`), in which the
+/// broad phase keeps every body's box ([`hknpBody::m_aabb`](crate::physics::hknpBody::m_aabb)). A
+/// position is quantized as `(position + offset) * scale`, clamped to the 16-bit range, with
+/// [`m_bitOffsetLow`](crate::havok::hkIntSpaceUtil::m_bitOffsetLow) for a box's least corner and
+/// [`m_bitOffsetHigh`](crate::havok::hkIntSpaceUtil::m_bitOffsetHigh) for its greatest, and restored as
+/// `integer * scale_inv - low_offset` for both corners
+/// ([`hknpWorld::getBodyAabb`](crate::physics::hknpWorld::getBodyAabb)). Only the mapping is bound.
+pub struct hkIntSpaceUtil {
+    pub m_bitOffsetLow: crate::types::vector_math::AlignedVector3,
+    pub m_bitOffsetHigh: crate::types::vector_math::AlignedVector3,
+    pub m_bitScale: crate::types::vector_math::AlignedVector3,
+    pub m_bitScaleInv: crate::types::vector_math::AlignedVector3,
+}
+fn _hkIntSpaceUtil_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x40], hkIntSpaceUtil>([0u8; 0x40]);
+    }
+    unreachable!()
+}
+impl hkIntSpaceUtil {}
+impl std::convert::AsRef<hkIntSpaceUtil> for hkIntSpaceUtil {
+    fn as_ref(&self) -> &hkIntSpaceUtil {
+        self
+    }
+}
+impl std::convert::AsMut<hkIntSpaceUtil> for hkIntSpaceUtil {
+    fn as_mut(&mut self) -> &mut hkIntSpaceUtil {
+        self
+    }
+}
 #[repr(C, align(8))]
 /// A Havok memory allocator (`hkMemoryAllocator`). The engine's Havok heap objects come from a
 /// router's [`m_heap`](crate::havok::hkMemoryRouter::m_heap) through [`blockAlloc`](crate::havok::hkMemoryAllocator::blockAlloc) with the
@@ -188,6 +271,34 @@ impl std::convert::AsMut<hkReferencedObjectVftable> for hkReferencedObjectVftabl
     }
 }
 #[derive(Copy, Clone)]
+#[repr(C, align(2))]
+/// An array stored inside its owner at a relative position (`hkRelArray`): its elements start
+/// [`m_offset`](crate::havok::hkRelArray::m_offset) bytes after the array's own address. The convex shapes keep their
+/// vertices, planes, faces, and indices in such arrays after their fixed members.
+pub struct hkRelArray {
+    /// The number of elements.
+    pub m_size: u16,
+    /// Where the elements start, in bytes from the array's own address.
+    pub m_offset: u16,
+}
+fn _hkRelArray_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], hkRelArray>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+impl hkRelArray {}
+impl std::convert::AsRef<hkRelArray> for hkRelArray {
+    fn as_ref(&self) -> &hkRelArray {
+        self
+    }
+}
+impl std::convert::AsMut<hkRelArray> for hkRelArray {
+    fn as_mut(&mut self) -> &mut hkRelArray {
+        self
+    }
+}
+#[derive(Copy, Clone)]
 #[repr(C, align(16))]
 /// A Havok SIMD scalar (`hkSimdFloat32`): one value held in all four lanes of a vector register.
 pub struct hkSimdFloat32 {
@@ -283,11 +394,28 @@ impl std::convert::AsMut<hknpBodyCinfo> for hknpBodyCinfo {
         self
     }
 }
-#[repr(C, align(8))]
-/// A capsule shape (`hknpCapsuleShape`): the points within a radius of a segment, built as a convex
-/// polytope with that radius as its convex radius.
-pub struct hknpCapsuleShape {}
+#[repr(C, align(16))]
+/// A capsule shape (`hknpCapsuleShape`): the points within a radius of a segment, built as an
+/// [`hknpConvexPolytopeShape`](crate::havok::hknpConvexPolytopeShape): a box of eight vertices along the segment, reaching
+/// [`RADIUS_IN_CORE`](crate::havok::hknpCapsuleShape::RADIUS_IN_CORE) of the radius past it on every side, rounded by the
+/// convex radius ([`hknpShape::m_convexRadius`](crate::havok::hknpShape::m_convexRadius)), the rest of the radius.
+pub struct hknpCapsuleShape {
+    pub base: crate::havok::hknpConvexPolytopeShape,
+    /// The segment's first end, body space.
+    pub m_a: crate::types::vector_math::AlignedVector3,
+    /// The segment's second end, body space.
+    pub m_b: crate::types::vector_math::AlignedVector3,
+}
+fn _hknpCapsuleShape_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x70], hknpCapsuleShape>([0u8; 0x70]);
+    }
+    unreachable!()
+}
 impl hknpCapsuleShape {
+    pub fn vftable(&self) -> *const crate::havok::hknpShapeVftable {
+        self.base.vftable() as *const crate::havok::hknpShapeVftable
+    }
     pub const createCapsuleShape_ADDRESS: usize = 0x141537F70;
     /// Allocates a capsule from the calling thread's Havok heap, with the segment from `a` to `b`
     /// (body space) and `radius`, and returns it with one reference, the caller's. The grappling
@@ -308,6 +436,66 @@ impl hknpCapsuleShape {
             );
             f(a, b, radius)
         }
+    }
+    /// As [`hkReferencedObject::deleteThisReferencedObject`](crate::havok::hkReferencedObject::deleteThisReferencedObject).
+    pub unsafe fn deleteThisReferencedObject(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).deleteThisReferencedObject).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// The shape's kind, an [`hknpShapeType`](crate::havok::hknpShapeType) value; each concrete shape class returns its own
+    /// constant.
+    pub unsafe fn getType(&self) -> u32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getType).read();
+            f(self as *const Self as _)
+        }
+    }
+}
+impl hknpCapsuleShape {
+    /// The share of the capsule's radius its core box reaches past the segment;
+    /// [`hknpShape::m_convexRadius`](crate::havok::hknpShape::m_convexRadius) is the capsule's radius less that share.
+    pub const RADIUS_IN_CORE: f32 = 0.01;
+}
+impl std::convert::AsRef<crate::havok::hknpConvexPolytopeShape> for hknpCapsuleShape {
+    fn as_ref(&self) -> &crate::havok::hknpConvexPolytopeShape {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hknpConvexPolytopeShape> for hknpCapsuleShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hknpConvexPolytopeShape {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<crate::havok::hknpConvexShape> for hknpCapsuleShape {
+    fn as_ref(&self) -> &crate::havok::hknpConvexShape {
+        &self.base.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hknpConvexShape> for hknpCapsuleShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hknpConvexShape {
+        &mut self.base.base
+    }
+}
+impl std::convert::AsRef<crate::havok::hknpShape> for hknpCapsuleShape {
+    fn as_ref(&self) -> &crate::havok::hknpShape {
+        &self.base.base.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hknpShape> for hknpCapsuleShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hknpShape {
+        &mut self.base.base.base
+    }
+}
+impl std::convert::AsRef<crate::havok::hkReferencedObject> for hknpCapsuleShape {
+    fn as_ref(&self) -> &crate::havok::hkReferencedObject {
+        &self.base.base.base.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hkReferencedObject> for hknpCapsuleShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hkReferencedObject {
+        &mut self.base.base.base.base
     }
 }
 impl std::convert::AsRef<hknpCapsuleShape> for hknpCapsuleShape {
@@ -446,6 +634,182 @@ impl std::convert::AsMut<hknpContactJacobianUtil> for hknpContactJacobianUtil {
         self
     }
 }
+#[derive(Copy, Clone)]
+#[repr(C, align(2))]
+/// One face of an [`hknpConvexPolytopeShape`](crate::havok::hknpConvexPolytopeShape) (`hknpConvexPolytopeShape::Face`).
+pub struct hknpConvexPolytopeFace {
+    /// The face's first index in [`hknpConvexPolytopeShape::m_indices`](crate::havok::hknpConvexPolytopeShape::m_indices).
+    pub m_firstIndex: u16,
+    /// How many indices the face has.
+    pub m_numIndices: u8,
+    /// The face's minimum half-angle as the collision detection keeps it, one byte; its encoding
+    /// is not established.
+    pub m_minHalfAngle: u8,
+}
+fn _hknpConvexPolytopeFace_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], hknpConvexPolytopeFace>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+impl hknpConvexPolytopeFace {}
+impl std::convert::AsRef<hknpConvexPolytopeFace> for hknpConvexPolytopeFace {
+    fn as_ref(&self) -> &hknpConvexPolytopeFace {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConvexPolytopeFace> for hknpConvexPolytopeFace {
+    fn as_mut(&mut self) -> &mut hknpConvexPolytopeFace {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// A convex polytope shape (`hknpConvexPolytopeShape`): an [`hknpConvexShape`](crate::havok::hknpConvexShape) with its faces. Each
+/// face ([`hknpConvexPolytopeFace`](crate::havok::hknpConvexPolytopeFace)) names a run of [`m_indices`](crate::havok::hknpConvexPolytopeShape::m_indices), each a vertex
+/// index, which go round the face in order, so consecutive indices and the last and first are the
+/// face's edges. The plane array may hold more planes than there are faces.
+pub struct hknpConvexPolytopeShape {
+    pub base: crate::havok::hknpConvexShape,
+    /// The face planes, as four-lane vectors.
+    pub m_planes: crate::havok::hkRelArray,
+    /// The faces, [`hknpConvexPolytopeFace`](crate::havok::hknpConvexPolytopeFace)s.
+    pub m_faces: crate::havok::hkRelArray,
+    /// The faces' vertex indices, one byte each.
+    pub m_indices: crate::havok::hkRelArray,
+    _field_4c: [u8; 4],
+}
+fn _hknpConvexPolytopeShape_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x50], hknpConvexPolytopeShape>([0u8; 0x50]);
+    }
+    unreachable!()
+}
+impl hknpConvexPolytopeShape {
+    pub fn vftable(&self) -> *const crate::havok::hknpShapeVftable {
+        self.base.vftable() as *const crate::havok::hknpShapeVftable
+    }
+    /// As [`hkReferencedObject::deleteThisReferencedObject`](crate::havok::hkReferencedObject::deleteThisReferencedObject).
+    pub unsafe fn deleteThisReferencedObject(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).deleteThisReferencedObject).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// The shape's kind, an [`hknpShapeType`](crate::havok::hknpShapeType) value; each concrete shape class returns its own
+    /// constant.
+    pub unsafe fn getType(&self) -> u32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getType).read();
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<crate::havok::hknpConvexShape> for hknpConvexPolytopeShape {
+    fn as_ref(&self) -> &crate::havok::hknpConvexShape {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hknpConvexShape> for hknpConvexPolytopeShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hknpConvexShape {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<crate::havok::hknpShape> for hknpConvexPolytopeShape {
+    fn as_ref(&self) -> &crate::havok::hknpShape {
+        &self.base.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hknpShape> for hknpConvexPolytopeShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hknpShape {
+        &mut self.base.base
+    }
+}
+impl std::convert::AsRef<crate::havok::hkReferencedObject> for hknpConvexPolytopeShape {
+    fn as_ref(&self) -> &crate::havok::hkReferencedObject {
+        &self.base.base.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hkReferencedObject> for hknpConvexPolytopeShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hkReferencedObject {
+        &mut self.base.base.base
+    }
+}
+impl std::convert::AsRef<hknpConvexPolytopeShape> for hknpConvexPolytopeShape {
+    fn as_ref(&self) -> &hknpConvexPolytopeShape {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConvexPolytopeShape> for hknpConvexPolytopeShape {
+    fn as_mut(&mut self) -> &mut hknpConvexPolytopeShape {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// A convex shape (`hknpConvexShape`): the hull of its vertices, rounded by its convex radius
+/// ([`hknpShape::m_convexRadius`](crate::havok::hknpShape::m_convexRadius)). Each vertex is a four-lane vector (`hkcdVertex`) whose last
+/// lane holds the vertex's id bits, not a coordinate. Only the vertices are bound.
+pub struct hknpConvexShape {
+    pub base: crate::havok::hknpShape,
+    /// The vertices, body space, as four-lane vectors.
+    pub m_vertices: crate::havok::hkRelArray,
+    _field_34: [u8; 12],
+}
+fn _hknpConvexShape_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x40], hknpConvexShape>([0u8; 0x40]);
+    }
+    unreachable!()
+}
+impl hknpConvexShape {
+    pub fn vftable(&self) -> *const crate::havok::hknpShapeVftable {
+        self.base.vftable() as *const crate::havok::hknpShapeVftable
+    }
+    /// As [`hkReferencedObject::deleteThisReferencedObject`](crate::havok::hkReferencedObject::deleteThisReferencedObject).
+    pub unsafe fn deleteThisReferencedObject(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).deleteThisReferencedObject).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// The shape's kind, an [`hknpShapeType`](crate::havok::hknpShapeType) value; each concrete shape class returns its own
+    /// constant.
+    pub unsafe fn getType(&self) -> u32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getType).read();
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<crate::havok::hknpShape> for hknpConvexShape {
+    fn as_ref(&self) -> &crate::havok::hknpShape {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hknpShape> for hknpConvexShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hknpShape {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<crate::havok::hkReferencedObject> for hknpConvexShape {
+    fn as_ref(&self) -> &crate::havok::hkReferencedObject {
+        &self.base.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hkReferencedObject> for hknpConvexShape {
+    fn as_mut(&mut self) -> &mut crate::havok::hkReferencedObject {
+        &mut self.base.base
+    }
+}
+impl std::convert::AsRef<hknpConvexShape> for hknpConvexShape {
+    fn as_ref(&self) -> &hknpConvexShape {
+        self
+    }
+}
+impl std::convert::AsMut<hknpConvexShape> for hknpConvexShape {
+    fn as_mut(&mut self) -> &mut hknpConvexShape {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// The construction info of a Havok motion (`hknpMotionCinfo`), the mass properties and velocities
 /// of a dynamic body, read by
@@ -510,31 +874,54 @@ impl std::convert::AsMut<hknpMotionCinfo> for hknpMotionCinfo {
         self
     }
 }
-#[repr(C, align(8))]
+#[repr(C, align(16))]
 /// A Havok collision shape (`hknpShape`), a [`hkReferencedObject`](crate::havok::hkReferencedObject) allocated from the Havok heap of
-/// the thread that creates it. A body holds its own reference to its shape. Only the reference
-/// count is bound.
+/// the thread that creates it. A body holds its own reference to its shape. Its kind is what
+/// [`getType`](crate::havok::hknpShape::getType) returns; the convex kinds are [`hknpConvexShape`](crate::havok::hknpConvexShape) and the types
+/// built on it. Only some members are bound.
 pub struct hknpShape {
     pub base: crate::havok::hkReferencedObject,
+    /// The shape's flags (`hknpShape::FlagsEnum`): [`IS_CONVEX_SHAPE`](crate::havok::hknpShape::IS_CONVEX_SHAPE) and
+    /// [`IS_CONVEX_POLYTOPE_SHAPE`](crate::havok::hknpShape::IS_CONVEX_POLYTOPE_SHAPE) mark the convex classes.
+    pub m_flags: u16,
+    _field_12: [u8; 2],
+    /// The radius the shape's core is rounded by: every point within it of the core is inside the
+    /// shape. A sphere is a point with its radius here, and a capsule's core is a box around its
+    /// segment with most of its radius here.
+    pub m_convexRadius: f32,
+    _field_18: [u8; 24],
 }
 fn _hknpShape_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x10], hknpShape>([0u8; 0x10]);
+        ::std::mem::transmute::<[u8; 0x30], hknpShape>([0u8; 0x30]);
     }
     unreachable!()
 }
 impl hknpShape {
-    pub fn vftable(&self) -> *const crate::havok::hkReferencedObjectVftable {
-        self.base.vftable() as *const crate::havok::hkReferencedObjectVftable
+    pub fn vftable(&self) -> *const crate::havok::hknpShapeVftable {
+        self.base.vftable() as *const crate::havok::hknpShapeVftable
     }
-    /// Destroys the object and returns its memory to the Havok heap it came from. The engine
-    /// calls it when a release drops the last reference.
+    /// As [`hkReferencedObject::deleteThisReferencedObject`](crate::havok::hkReferencedObject::deleteThisReferencedObject).
     pub unsafe fn deleteThisReferencedObject(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).deleteThisReferencedObject).read();
             f(self as *mut Self as _)
         }
     }
+    /// The shape's kind, an [`hknpShapeType`](crate::havok::hknpShapeType) value; each concrete shape class returns its own
+    /// constant.
+    pub unsafe fn getType(&self) -> u32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).getType).read();
+            f(self as *const Self as _)
+        }
+    }
+}
+impl hknpShape {
+    /// The [`m_flags`](crate::havok::hknpShape::m_flags) bit of a shape that is an [`hknpConvexPolytopeShape`](crate::havok::hknpConvexPolytopeShape).
+    pub const IS_CONVEX_POLYTOPE_SHAPE: u16 = 2;
+    /// The [`m_flags`](crate::havok::hknpShape::m_flags) bit of a shape that is an [`hknpConvexShape`](crate::havok::hknpConvexShape).
+    pub const IS_CONVEX_SHAPE: u16 = 1;
 }
 impl std::convert::AsRef<crate::havok::hkReferencedObject> for hknpShape {
     fn as_ref(&self) -> &crate::havok::hkReferencedObject {
@@ -553,6 +940,52 @@ impl std::convert::AsRef<hknpShape> for hknpShape {
 }
 impl std::convert::AsMut<hknpShape> for hknpShape {
     fn as_mut(&mut self) -> &mut hknpShape {
+        self
+    }
+}
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// A shape's kind (`hknpShapeType::Enum`), as [`hknpShape::getType`](crate::havok::hknpShape::getType) returns it. Only the convex
+/// kinds are bound; the compound, mesh, and height-field kinds have other values.
+pub enum hknpShapeType {
+    CONVEX = 0isize as _,
+    CONVEX_POLYTOPE = 1isize as _,
+    SPHERE = 2isize as _,
+    CAPSULE = 3isize as _,
+}
+fn _hknpShapeType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], hknpShapeType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(C, align(8))]
+pub struct hknpShapeVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    _vfunc_2: unsafe extern "system" fn(this: *mut crate::havok::hknpShape),
+    /// As [`hkReferencedObject::deleteThisReferencedObject`](crate::havok::hkReferencedObject::deleteThisReferencedObject).
+    pub deleteThisReferencedObject: unsafe extern "system" fn(
+        this: *mut crate::havok::hknpShape,
+    ),
+    /// The shape's kind, an [`hknpShapeType`](crate::havok::hknpShapeType) value; each concrete shape class returns its own
+    /// constant.
+    pub getType: unsafe extern "system" fn(this: *const crate::havok::hknpShape) -> u32,
+}
+fn _hknpShapeVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x28], hknpShapeVftable>([0u8; 0x28]);
+    }
+    unreachable!()
+}
+impl hknpShapeVftable {}
+impl std::convert::AsRef<hknpShapeVftable> for hknpShapeVftable {
+    fn as_ref(&self) -> &hknpShapeVftable {
+        self
+    }
+}
+impl std::convert::AsMut<hknpShapeVftable> for hknpShapeVftable {
+    fn as_mut(&mut self) -> &mut hknpShapeVftable {
         self
     }
 }

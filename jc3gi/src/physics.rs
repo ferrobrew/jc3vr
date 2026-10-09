@@ -1818,10 +1818,18 @@ pub struct hknpBody {
     /// ([`hknpBodyCinfo::m_shape`](crate::havok::hknpBodyCinfo::m_shape)) when the body is created
     /// and released when it is destroyed, so several bodies may share one shape.
     pub m_shape: *mut crate::havok::hknpShape,
-    _field_50: [u8; 24],
+    /// The body's box in the broad phase, quantized into the world's integer space
+    /// ([`hknpWorld::m_intSpaceUtil`](crate::physics::hknpWorld::m_intSpaceUtil)); [`hknpWorld::getBodyAabb`](crate::physics::hknpWorld::getBodyAabb) restores it.
+    pub m_aabb: crate::havok::hkAabb16,
+    _field_60: [u8; 8],
     /// The body's motion in [`hknpWorld::m_motions`](crate::physics::hknpWorld::m_motions); bodies attached to one another share it.
     pub m_motionId: u32,
-    _field_6c: [u8; 36],
+    /// The body's entry in the broad phase, or
+    /// [`INVALID_BROAD_PHASE_ID`](crate::physics::hknpBody::INVALID_BROAD_PHASE_ID) while it is not in the simulation.
+    /// The engine's body wrapper reports a body as added to the world
+    /// ([`PfxRigidBody::IsAddedToWorld`](crate::physics::PfxRigidBody::IsAddedToWorld)) when it has an entry, or an addition pending.
+    pub m_broadPhaseId: u32,
+    _field_70: [u8; 32],
 }
 fn _hknpBody_size_check() {
     unsafe {
@@ -1831,6 +1839,9 @@ fn _hknpBody_size_check() {
 }
 impl hknpBody {}
 impl hknpBody {
+    /// The [`m_broadPhaseId`](crate::physics::hknpBody::m_broadPhaseId) of a body that is not in the broad phase: one
+    /// created but not added to the simulation, or removed from it.
+    pub const INVALID_BROAD_PHASE_ID: u32 = 4294967295;
     /// The [`m_motionId`](crate::physics::hknpBody::m_motionId) of a freed body slot.
     pub const INVALID_MOTION_ID: u32 = 2147483647;
     /// The [`m_flags`](crate::physics::hknpBody::m_flags) bit of a dynamic body, the only kind the velocity and impulse
@@ -2146,7 +2157,7 @@ impl std::convert::AsMut<hknpMotion> for hknpMotion {
         self
     }
 }
-#[repr(C, align(8))]
+#[repr(C, align(16))]
 /// The Havok physics world (`hknpWorld`, Havok Physics 2014.1). Its body manager is embedded at
 /// the start; bodies and motions live in arrays indexed by body id and motion id. Only some members
 /// are bound.
@@ -2169,10 +2180,14 @@ pub struct hknpWorld {
     _field_e8: [u8; 56],
     /// The world's constraints.
     pub m_constraintManager: crate::physics::hknpConstraintManager,
+    _field_150: [u8; 48],
+    /// The mapping between Havok space and the integer space the broad phase keeps the bodies'
+    /// boxes in ([`hknpBody::m_aabb`](crate::physics::hknpBody::m_aabb)).
+    pub m_intSpaceUtil: crate::havok::hkIntSpaceUtil,
 }
 fn _hknpWorld_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x150], hknpWorld>([0u8; 0x150]);
+        ::std::mem::transmute::<[u8; 0x1C0], hknpWorld>([0u8; 0x1C0]);
     }
     unreachable!()
 }
@@ -2375,6 +2390,20 @@ impl hknpWorld {
                 shape: *const ::std::ffi::c_void,
             ) = ::std::mem::transmute(Self::setBodyShape_ADDRESS);
             f(self as *mut Self as _, body_id, shape)
+        }
+    }
+    pub const getBodyAabb_ADDRESS: usize = 0x1414CC220;
+    /// Writes the body `body_id`'s box as the broad phase holds it to `aabb`, Havok space: its
+    /// [`hknpBody::m_aabb`](crate::physics::hknpBody::m_aabb) restored through [`m_intSpaceUtil`](crate::physics::hknpWorld::m_intSpaceUtil), each corner
+    /// as the integer corner times the inverse scale less the low offset.
+    pub unsafe fn getBodyAabb(&self, body_id: u32, aabb: *mut crate::havok::hkAabb) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                body_id: u32,
+                aabb: *mut crate::havok::hkAabb,
+            ) = ::std::mem::transmute(Self::getBodyAabb_ADDRESS);
+            f(self as *const Self as _, body_id, aabb)
         }
     }
 }
