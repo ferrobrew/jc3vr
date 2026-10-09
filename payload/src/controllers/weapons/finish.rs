@@ -770,7 +770,6 @@ fn release(hand: Hand, what: Release, wielded: holster::Wielded, config: &Contro
                 tracing::debug!(target: "controllers", %refusal, "hold: the gun was not let go of");
             }
         }
-        Release::Keep => {}
     }
 }
 

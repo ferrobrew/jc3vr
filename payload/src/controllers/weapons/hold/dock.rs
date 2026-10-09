@@ -119,11 +119,16 @@ const ROUNDING_S: f32 = 1e-5;
 pub struct ReleaseWatch {
     /// The hand whose grip holds the gun.
     armed: Option<Hand>,
+    /// Each hand's grip on the last tick, by [`Hand::index`], for [`Self::latch_press`].
+    before: [bool; 2],
 }
 
 impl ReleaseWatch {
     pub const fn new() -> Self {
-        Self { armed: None }
+        Self {
+            armed: None,
+            before: [false; 2],
+        }
     }
 
     /// `hand` took the gun by a grab: its grip holds it from now on.
@@ -131,9 +136,27 @@ impl ReleaseWatch {
         self.armed = Some(hand);
     }
 
-    /// Stop watching.
+    /// Stop watching. The gun stays in the hand, and is the grip's again once the grip closes on
+    /// it ([`Self::latch_press`]): after a stand-down (a tracking loss, a lost focus, the debug
+    /// panel) a gun held through it is kept rather than dropped by the masked grip.
     pub fn disarm(&mut self) {
         self.armed = None;
+        self.before = [false; 2];
+    }
+
+    /// Fold in one input tick before [`Self::observe`]: a gun in `holder`'s hand that no grab put
+    /// there (a draw the game made, the weapon wheel's, or one kept across a stand-down) becomes the
+    /// grip's on the tick the grip closes on it. Only a press counts, not a grip already held when
+    /// the gun arrived, so a hand that held a vehicle's control while the game drew the gun does
+    /// not drop it on letting go. Returns the hand when it latched.
+    pub fn latch_press(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
+        let before = std::mem::replace(&mut self.before, grips);
+        let hand = holder.filter(|h| self.armed.is_none() && grips[h.index()])?;
+        if before[hand.index()] {
+            return None;
+        }
+        self.armed = Some(hand);
+        Some(hand)
     }
 
     /// Fold in one input tick: `holder` is the hand holding the gun, and `grips` whether each
@@ -160,21 +183,21 @@ impl ReleaseWatch {
 /// What opening the grip on a held gun does.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Release {
-    /// Holster it: the hand is at the weapon's own holster.
+    /// Holster it: the hand is at the weapon's own holster, or the weapon cannot fall.
     Holster,
     /// Let it fall.
     Drop,
-    /// Keep it: the weapon cannot be let go of (the dual-wield pair, whose pistols stay together).
-    Keep,
 }
 
 /// What a release does, with the hand in the weapon's own holster when `at_own_holster`, and a
-/// weapon that can be let fall when `droppable`.
+/// weapon that can be let fall when `droppable`. A weapon that cannot fall (a dual-wield pistol,
+/// which the game keeps in its pair) goes back to its hip wherever the hand opens, as any gun let
+/// go of leaves the hand.
 pub fn on_release(at_own_holster: bool, droppable: bool) -> Release {
-    match (at_own_holster, droppable) {
-        (true, _) => Release::Holster,
-        (false, true) => Release::Drop,
-        (false, false) => Release::Keep,
+    if at_own_holster || !droppable {
+        Release::Holster
+    } else {
+        Release::Drop
     }
 }
 
@@ -242,6 +265,63 @@ mod tests {
     }
 
     #[test]
+    fn a_gun_no_grab_put_in_the_hand_is_the_grips_once_it_closes() {
+        let mut w = ReleaseWatch::new();
+        // The wheel put the gun in the right hand with its grip open.
+        assert_eq!(w.latch_press(Some(Hand::Right), [false; 2]), None);
+        assert_eq!(
+            w.observe(Some(Hand::Right), [false; 2]),
+            None,
+            "not yet held"
+        );
+        // The grip closes on it: from now on it holds the gun.
+        assert_eq!(
+            w.latch_press(Some(Hand::Right), [false, true]),
+            Some(Hand::Right)
+        );
+        assert_eq!(w.observe(Some(Hand::Right), [false, true]), None);
+        assert_eq!(w.latch_press(Some(Hand::Right), [false; 2]), None);
+        assert_eq!(w.observe(Some(Hand::Right), [false; 2]), Some(Hand::Right));
+    }
+
+    #[test]
+    fn a_grip_already_held_when_the_gun_arrived_does_not_latch() {
+        let mut w = ReleaseWatch::new();
+        // The hand held a vehicle's control as the game drew the gun into it.
+        assert_eq!(w.latch_press(None, [true, false]), None);
+        assert_eq!(w.latch_press(Some(Hand::Left), [true, false]), None);
+        assert_eq!(w.observe(Some(Hand::Left), [false; 2]), None, "kept");
+        // A fresh press latches.
+        assert_eq!(w.latch_press(Some(Hand::Left), [false; 2]), None);
+        assert_eq!(
+            w.latch_press(Some(Hand::Left), [true, false]),
+            Some(Hand::Left)
+        );
+    }
+
+    #[test]
+    fn a_stand_down_keeps_the_gun_and_relatches_on_the_next_press() {
+        let mut w = ReleaseWatch::new();
+        w.arm(Hand::Right);
+        w.latch_press(Some(Hand::Right), [false, true]);
+        assert_eq!(w.observe(Some(Hand::Right), [false, true]), None);
+        // Tracking is lost: the watch stands down, and the masked grip reads open.
+        w.disarm();
+        assert_eq!(w.latch_press(Some(Hand::Right), [false; 2]), None);
+        assert_eq!(
+            w.observe(Some(Hand::Right), [false; 2]),
+            None,
+            "not dropped"
+        );
+        // The hand comes back and closes on the gun.
+        assert_eq!(
+            w.latch_press(Some(Hand::Right), [false, true]),
+            Some(Hand::Right)
+        );
+        assert_eq!(w.armed(), Some(Hand::Right));
+    }
+
+    #[test]
     fn a_gun_that_changed_hands_disarms_the_watch() {
         let mut w = ReleaseWatch::new();
         w.arm(Hand::Right);
@@ -257,6 +337,6 @@ mod tests {
         assert_eq!(on_release(true, true), Release::Holster);
         assert_eq!(on_release(true, false), Release::Holster);
         assert_eq!(on_release(false, true), Release::Drop);
-        assert_eq!(on_release(false, false), Release::Keep);
+        assert_eq!(on_release(false, false), Release::Holster);
     }
 }

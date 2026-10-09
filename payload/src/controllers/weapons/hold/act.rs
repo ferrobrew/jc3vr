@@ -264,7 +264,8 @@ pub(crate) fn arm(hand: Hand) {
 }
 
 /// Fold in one input tick of the grips, by [`Hand::index`]: returns the holding hand when its grip
-/// opened on the gun it took by a grab.
+/// opened on the gun it holds: one it took by a grab, or one it closed on after it came into the
+/// hand some other way ([`ReleaseWatch::latch_press`]).
 pub(crate) fn release_tick(holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
     let mut state = STATE.lock();
     if let Some(hand) = state.arm_pending.take()
@@ -272,6 +273,13 @@ pub(crate) fn release_tick(holder: Option<Hand>, grips: [bool; 2]) -> Option<Han
         && grips[hand.index()]
     {
         state.release.arm(hand);
+    }
+    if let Some(hand) = state.release.latch_press(holder, grips) {
+        tracing::info!(
+            target: "controllers",
+            hand = hand.label(),
+            "hold: the grip closed on the gun in the hand, which it holds from now on"
+        );
     }
     state.release.observe(holder, grips)
 }
