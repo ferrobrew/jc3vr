@@ -1,6 +1,6 @@
 # Render-time anchoring
 
-The simulation ticks at 30 Hz and the engine draws each object between its last two ticks' cached matrices, by the frame's interpolation fraction. The headset's view, the hands drawn by the late update (`payload/src/controllers/hands/late.rs`), and the upper body the presentation layer re-poses ([presentation-layer.md](presentation-layer.md)) are placed from the latest tracking at render time instead. Anything the mod places from a tick's data and draws relative to the player therefore has to be anchored to a render-time pose, or it is drawn where the player was up to a tick ago. At walking pace that is a few centimetres; in a car at 114 km/h it is about a metre a tick, and a falling or wingsuiting player outruns it as fast.
+The simulation ticks at 30 Hz and the engine draws each object between its last two ticks' cached matrices, by the frame's interpolation fraction. The headset's view, the hands drawn by the late update (`payload/src/controllers/hands/late/`), and the upper body the presentation layer re-poses ([presentation-layer.md](presentation-layer.md)) are placed from the latest tracking at render time instead. Anything the mod places from a tick's data and draws relative to the player therefore has to be anchored to a render-time pose, or it is drawn where the player was up to a tick ago. At walking pace that is a few centimetres; in a car at 114 km/h it is about a metre a tick, and a falling or wingsuiting player outruns it as fast.
 
 ## The rule
 
