@@ -261,8 +261,8 @@ impl State {
             orientation,
         });
         let dtf = hooks::camera::last_dtf();
-        let hands = late::render_hands();
-        let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip.at(dtf));
+        let hands = late::drawn_hands(dtf);
+        let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 
         // The weapon readout, above the gun hand.
         let holding = aim::status().weapon.map_or([false; 2], |weapon| {
@@ -307,16 +307,14 @@ impl State {
             )
             .map(|corners| corners.map(|c| c.extend(1.0)));
             self.status.ammo_hand = Some(hand);
-            let sighted = hands[hand.index()]
-                .map(|h| h.aim.at(dtf))
-                .is_some_and(|aim| {
-                    sighting(
-                        grip.position,
-                        aim.orientation * Vec3::NEG_Z,
-                        head.position,
-                        head.orientation * Vec3::NEG_Z,
-                    )
-                });
+            let sighted = hands[hand.index()].map(|h| h.aim).is_some_and(|aim| {
+                sighting(
+                    grip.position,
+                    aim.orientation * Vec3::NEG_Z,
+                    head.position,
+                    head.orientation * Vec3::NEG_Z,
+                )
+            });
             self.ammo_alpha = fade(self.ammo_alpha, !sighted, dt, SIGHT_FADE_S);
         } else {
             self.ammo_position = None;
@@ -328,7 +326,7 @@ impl State {
         let off = dominant.other();
         if cfg.tether.enabled
             && let Some(head) = head
-            && let Some(wrist) = hands[off.index()].map(|h| h.wrist.at(dtf))
+            && let Some(wrist) = hands[off.index()].map(|h| h.wrist)
             && let Some(cell) = atlas::part_texture(Part::Tether, |part| part.cell)
         {
             let width = cfg.tether.width_m.max(0.01);

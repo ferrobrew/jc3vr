@@ -90,8 +90,8 @@ impl PosePair {
     }
 }
 
-/// One hand's render-time world poses from the latest controller frame, for the late update and
-/// the overlay layer.
+/// One hand's render-time world poses from the latest controller frame, which the late update
+/// corrects the hand toward.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RenderHand {
     /// The character's wrist frame.
@@ -102,10 +102,32 @@ pub struct RenderHand {
     pub aim: PosePair,
 }
 
-/// The render-time hand poses of the frame in flight, indexed by [`Hand::index`]; `None` for an
-/// inert or untracked hand.
-pub fn render_hands() -> [Option<RenderHand>; 2] {
-    FRAME.lock().map_or([None; 2], |frame| frame.hands)
+/// One hand's world poses as the hand is drawn at a render interpolation fraction.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct DrawnHand {
+    pub wrist: Pose,
+    pub grip: Pose,
+    pub aim: Pose,
+}
+
+/// The hands as they are drawn at the interpolation fraction `dtf`, indexed by [`Hand::index`]:
+/// the solved wrist moved by the hand's correction, which is what the palette edit draws, with the
+/// grip and the aim carried on it as the controller holds them. Anything placed in a hand or
+/// anchored to it at render time takes these rather than the controller's own render-time poses,
+/// so it stays on the hand where the hand falls short of the controller: an arm that cannot reach,
+/// a hand blending to or from the animation. A hand the correction does not apply to is drawn where the tick solved it;
+/// one the IK did not drive this tick takes the controller's render-time pose. `None` for an inert
+/// or untracked hand.
+pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
+    FRAME.lock().map_or([None; 2], |frame| {
+        Hand::BOTH.map(|hand| frame.drawn(hand, dtf))
+    })
+}
+
+/// Count a palette upload edited by a draw outside this module (the presentation layer's), for the
+/// readout's tally.
+pub(crate) fn count_palette_edit() {
+    PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Why a hand was or was not corrected at the sampled render interpolation fraction.
@@ -399,6 +421,30 @@ impl LateFrame {
             correction(now, detached, current.weight)
                 .or_else(|| correction(now, reference, current.weight))
                 .unwrap()
+        })
+    }
+
+    /// `hand`'s poses as drawn at `dtf` (see [`drawn_hands`]).
+    fn drawn(&self, hand: Hand, dtf: f32) -> Option<DrawnHand> {
+        let render = self.hands[hand.index()]?;
+        let (wrist, grip, aim) = (
+            render.wrist.at(dtf),
+            render.grip.at(dtf),
+            render.aim.at(dtf),
+        );
+        let drawn = self.reference(hand, dtf).map_or(wrist, |reference| {
+            let solved = Pose {
+                position: reference.position - self.miss(hand, dtf).unwrap_or(Vec3::ZERO),
+                ..reference
+            };
+            self.hand_delta(hand, dtf)
+                .map_or(solved, |d| hand_pose::mul(d, solved))
+        });
+        let to_drawn = hand_pose::mul(drawn, hand_pose::inverse(wrist));
+        Some(DrawnHand {
+            wrist: drawn,
+            grip: hand_pose::mul(to_drawn, grip),
+            aim: hand_pose::mul(to_drawn, aim),
         })
     }
 
@@ -771,6 +817,43 @@ mod tests {
         let status = f.hand_status(Hand::Right, 0.5);
         assert!((status.solve_miss_m.unwrap() - 0.05).abs() < 1e-5);
         assert!((status.detach_m.unwrap() - 0.04).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_drawn_hand_is_the_controller_s_when_the_arm_reaches_it() {
+        let f = frame(pose(0.5, 0.2), pose(0.3, 0.0), pose(0.4, 0.1), 1.0);
+        let drawn = f.drawn(Hand::Right, 0.5).unwrap();
+        let now = pose(0.5, 0.2);
+        assert!(drawn.wrist.position.abs_diff_eq(now.position, 1e-5));
+        assert!(drawn.wrist.orientation.angle_between(now.orientation) < 1e-4);
+        assert!(drawn.grip.position.abs_diff_eq(now.position, 1e-5));
+        assert!(f.drawn(Hand::Left, 0.5).is_none());
+    }
+
+    #[test]
+    fn the_drawn_hand_falls_short_where_the_arm_does_and_carries_its_grip() {
+        let p = pose(0.3, 0.0);
+        let mut f = with_miss(frame(p, p, p, 1.0), Vec3::new(0.05, 0.0, 0.0));
+        let grip = Pose {
+            position: p.position + Vec3::new(0.0, 0.0, -0.05),
+            ..p
+        };
+        let pair = PosePair {
+            previous: grip,
+            current: grip,
+        };
+        f.hands[Hand::Right.index()].as_mut().unwrap().grip = pair;
+        let drawn = f.drawn(Hand::Right, 0.5).unwrap();
+        // The detach covers all but its threshold of the miss.
+        assert!((drawn.wrist.position.x - 0.29).abs() < 1e-5);
+        assert!(
+            (drawn.grip.position - drawn.wrist.position)
+                .abs_diff_eq(Vec3::new(0.0, 0.0, -0.05), 1e-5)
+        );
+        // Without the late update the hand is drawn where the tick solved it.
+        f.enabled = false;
+        let solved = f.drawn(Hand::Right, 0.5).unwrap();
+        assert!((solved.wrist.position.x - 0.25).abs() < 1e-5);
     }
 
     #[test]

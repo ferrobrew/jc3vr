@@ -21,7 +21,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    controllers::{diagnostics, hands},
+    controllers::{diagnostics, hands, presentation},
     crash::{Phase, mark},
     debug::{
         camera::capture_render_camera,
@@ -198,9 +198,11 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                 &vr_cfg,
             );
         }
-        // Snapshot the render-time hand poses against the head pose pair just published, before
-        // the engine's render update runs the weapons' render updates and the draws follow.
+        // Snapshot the render-time hand poses and the presentation layer's inputs against the head
+        // pose pair just published, before the engine's render update runs the weapons' render
+        // updates and the draws follow.
         hands::late::begin_frame();
+        presentation::begin_frame();
 
         mark(Phase::OriginalUpdateRender);
         #[cfg(feature = "profiler")]

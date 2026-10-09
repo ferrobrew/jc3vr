@@ -164,6 +164,7 @@ const SECTIONS: &[Section] = &[
             row!("DIRECT EYE BLIT", system::direct_blit),
             row!("FRAME TIME", system::frame_time),
             row!("RENDER SIZE", system::render_size),
+            row!("RENDER-RATE BODY", body::render_rate_body),
         ],
     },
     Section {

@@ -20,6 +20,8 @@
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
 //! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
 //!   update;
+//! - [`presentation`]: the render-rate presentation layer: the upper body re-posed every rendered
+//!   frame from the latest tracking, on top of the pose the tick wrote;
 //! - [`haptics`]: the controllers' vibration: one vocabulary of cues for every source, the mixer
 //!   that folds them into what each hand plays, and the game's rumble forwarded;
 //! - [`fingers`]: finger curls on the rendered hands, from hand tracking or estimated from the
@@ -67,6 +69,7 @@ pub mod mode;
 pub mod motion;
 pub mod overlay;
 pub mod physical_hands;
+pub mod presentation;
 pub mod presets;
 pub mod roomscale;
 pub mod scheme;

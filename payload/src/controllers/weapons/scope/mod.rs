@@ -405,7 +405,7 @@ fn plan(enabled: bool, config: &ScopeConfig, anchor: &mut Option<(u64, SightAnch
         sight: weapon.sight.source,
     });
     let dtf = hooks::camera::last_dtf();
-    let Some(wrist) = late::render_hands()[hand.index()].map(|h| h.wrist.at(dtf)) else {
+    let Some(wrist) = late::drawn_hands(dtf)[hand.index()].map(|h| h.wrist) else {
         return Plan {
             scope,
             ..idle(LensIdle::NoSightLine)

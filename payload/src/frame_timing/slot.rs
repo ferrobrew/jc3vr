@@ -34,6 +34,9 @@ pub(crate) enum Slot {
     /// The physical hands' pre-simulation callback, which drives the hand bodies before each physics
     /// step.
     HandBodies,
+    /// The render-rate presentation layer (`controllers::presentation`): the frame's snapshot, and
+    /// the upper body's re-solve for the draws of the player's body.
+    Presentation,
     /// The mod's work in the UI capture thread's hooks: at the main UI movie's capture seam, the HUD
     /// partition, the overlay and reticle hiding, and the atlas's and the world markers' moves into
     /// their cells and back; and the pause menu's VR pages' per-frame update.
@@ -115,6 +118,7 @@ impl Slot {
         Slot::CharacterPose,
         Slot::BodyGate,
         Slot::HandBodies,
+        Slot::Presentation,
         Slot::UiCapture,
         Slot::WorldMarkers,
         Slot::UpdateRenderHook,
@@ -136,7 +140,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 27;
+    pub(crate) const COUNT: usize = 28;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -155,6 +159,7 @@ impl Slot {
             Slot::CharacterPose => "character_pose",
             Slot::BodyGate => "body_gate",
             Slot::HandBodies => "hand_bodies",
+            Slot::Presentation => "presentation",
             Slot::UiCapture => "ui_capture",
             Slot::WorldMarkers => "world_markers",
             Slot::UpdateRenderHook => "update_render_hook",
@@ -187,6 +192,7 @@ impl Slot {
             | Slot::CharacterPose
             | Slot::BodyGate
             | Slot::HandBodies
+            | Slot::Presentation
             | Slot::UiCapture
             | Slot::WorldMarkers
             | Slot::UpdateRenderHook

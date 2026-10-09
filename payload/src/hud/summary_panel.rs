@@ -145,7 +145,7 @@ impl Panel {
             position,
             orientation,
         });
-        let grip = late::render_hands()[off.index()].map(|h| h.grip.at(hooks::camera::last_dtf()));
+        let grip = late::drawn_hands(hooks::camera::last_dtf())[off.index()].map(|h| h.grip);
         let pose = grip.map(|grip| wrist_pose(grip, off, &config.placement));
         let published = summary::published();
 

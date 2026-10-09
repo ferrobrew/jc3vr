@@ -144,6 +144,11 @@ pub(super) fn summary(page: Page) -> Page {
             .body
             .procedural
             .twist_bones))
+        .item(config_toggle!("BODY AT THE FRAME RATE", |c| c
+            .controllers
+            .hands
+            .presentation
+            .enabled))
         .item(config_toggle!("TORSO IN VEHICLES", |c| c
             .controllers
             .body

@@ -16,6 +16,7 @@ use crate::{
             rig,
             tiers::{HandTier, HandTierTable, TierState, TierStatus},
         },
+        presentation,
     },
     ui::controllers::{vec3_drag, yes_no},
 };
@@ -195,6 +196,28 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
         .on_hover_text("Drive the wrists to the controllers with HumanIK.");
     ui.checkbox(&mut h.late_update, "Render-time late update")
         .on_hover_text("Re-pose the hands and the held gun from the latest controller pose.");
+    ui.checkbox(&mut h.presentation.enabled, "Render-rate upper body")
+        .on_hover_text(
+            "Re-pose the spine, the head, and the arms every frame from the latest tracking.",
+        );
+    ui.add_enabled_ui(h.presentation.enabled, |ui| {
+        ui.checkbox(&mut h.presentation.torso, "Bend the torso after the head");
+        ui.checkbox(
+            &mut h.presentation.arms,
+            "Solve the arms again to the hands",
+        );
+    });
+    let p = presentation::status();
+    ui.label(format!(
+        "Render-rate body: {}, {} draws, {:.3} ms a frame (last {:.3}, peak {:.3}), {} ticks{}",
+        p.idle.label(),
+        p.draws,
+        p.mean_cost_us / 1000.0,
+        p.frame_cost_us / 1000.0,
+        p.peak_cost_us / 1000.0,
+        p.ticks,
+        p.rig_error.map_or(String::new(), |e| format!(", {e}")),
+    ));
     ui.checkbox(
         &mut h.suppress_secondary_ik,
         "Switch off the game's secondary hand IK",

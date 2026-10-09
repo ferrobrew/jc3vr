@@ -41,7 +41,7 @@ use crate::{
     config::Config,
     controllers::{
         config::OverlayConfig,
-        frame::{Hand, Pose},
+        frame::Pose,
         hands::late,
         overlay::{
             primitive::{Primitive, Source},
@@ -196,15 +196,14 @@ static STATUS: Mutex<OverlayStatus> = Mutex::new(OverlayStatus {
 /// Whether a draw failure has been logged; later ones are only recorded in the status.
 static DRAW_ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
-/// Each hand's render-time world poses at the camera's interpolation fraction.
+/// Each hand's world poses as it is drawn at the camera's interpolation fraction, so what is
+/// anchored to a hand stays on the hand the late update and the presentation layer draw.
 fn render_poses() -> [Option<HandPoses>; 2] {
-    let dtf = hooks::camera::last_dtf();
-    let hands = late::render_hands();
-    Hand::BOTH.map(|hand| {
-        hands[hand.index()].map(|h| HandPoses {
-            wrist: h.wrist.at(dtf),
-            grip: h.grip.at(dtf),
-            aim: h.aim.at(dtf),
+    late::drawn_hands(hooks::camera::last_dtf()).map(|hand| {
+        hand.map(|h| HandPoses {
+            wrist: h.wrist,
+            grip: h.grip,
+            aim: h.aim,
         })
     })
 }

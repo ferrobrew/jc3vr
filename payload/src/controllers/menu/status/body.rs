@@ -1,7 +1,8 @@
 //! The status page's rows for the procedural body outside standing play: the torso in a vehicle
 //! seat, the wingsuit's arms, the body under the parachute, the torso in the water, the torso on
-//! a vehicle's roof, and the body mirror. Each reads the last gate's published status, which the pause stops
-//! updating, so a row shows what the body did just before the menu opened.
+//! a vehicle's roof, the body mirror, and the render-rate body. Each reads the last published
+//! status, which the pause stops updating, so a row shows what the body did just before the menu
+//! opened.
 
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,7 @@ use crate::controllers::{
         procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
     },
     menu::{read_config, status::Line},
+    presentation::{self, PresentationStatus},
 };
 
 pub(super) fn seated_torso() -> Line {
@@ -185,9 +187,41 @@ fn mirror_line(status: &MirrorStatus, now: Instant) -> Line {
 /// How long after its last pass the mirror reads as drawing.
 const MIRROR_STALE: Duration = Duration::from_secs(30);
 
+pub(super) fn render_rate_body() -> Line {
+    if !read_config(|c| c.controllers.hands.presentation.enabled) {
+        return Line::off("");
+    }
+    presentation_line(&presentation::status())
+}
+
+/// The render-rate body: how many of the player's body draws it re-posed and its smoothed cost
+/// per frame, from the last frame it was active in, which the pause menu's frames leave as they
+/// were.
+fn presentation_line(status: &PresentationStatus) -> Line {
+    if let Some(error) = &status.rig_error {
+        return Line::failed("NO RIG").with_note(error.to_string());
+    }
+    if !status.measured {
+        return Line::waiting(status.idle.label().to_uppercase());
+    }
+    Line::ok(format_smolstr!(
+        "{} DRAWS, {:.3} MS",
+        status.draws,
+        status.mean_cost_us / 1000.0
+    ))
+    .with_note(format!(
+        "now {}, last frame {:.3} ms, peak {:.3} ms, {} ticks",
+        status.idle.label(),
+        status.frame_cost_us / 1000.0,
+        status.peak_cost_us / 1000.0,
+        status.ticks
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::presentation::Idle;
 
     fn status(case: Case, weight: f32) -> ProceduralStatus {
         ProceduralStatus {
@@ -272,6 +306,30 @@ mod tests {
             mirror_line(&MirrorStatus::default(), now).text(),
             "WAITING, NOT DRAWN YET"
         );
+    }
+
+    #[test]
+    fn the_render_rate_body_reads_its_draws_and_cost_or_why_it_waits() {
+        let waiting = PresentationStatus {
+            idle: Idle::NotInHeadset,
+            ..PresentationStatus::default()
+        };
+        assert_eq!(
+            presentation_line(&waiting).text(),
+            "WAITING, NOT IN THE HEADSET"
+        );
+        let active = PresentationStatus {
+            measured: true,
+            draws: 6,
+            mean_cost_us: 21.0,
+            ..PresentationStatus::default()
+        };
+        assert_eq!(presentation_line(&active).text(), "OK, 6 DRAWS, 0.021 MS");
+        let unrigged = PresentationStatus {
+            rig_error: Some("presentation rig: the skeleton has no bone named Neck".into()),
+            ..active
+        };
+        assert_eq!(presentation_line(&unrigged).text(), "FAILED, NO RIG");
     }
 
     #[test]

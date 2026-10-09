@@ -69,6 +69,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.aim_state.without_controllers = false;
     c.hands.ik = hands;
     c.hands.late_update = hands;
+    c.hands.presentation.enabled = hands;
     c.hands.suppress_secondary_ik = hands;
     c.hands.rigid_grip = hands;
     c.aim.gun = hands;

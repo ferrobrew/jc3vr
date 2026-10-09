@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::controllers::{
     aim::sights::config::{SightTable, SightTuningConfig},
     hands::{anchor::AnchorConfig, reach::ReachConfig, tiers::HandTierTable},
+    presentation::PresentationConfig,
 };
 
 /// The aim-state pin and the mental-state cuts (see [`crate::controllers::aim_state`]). Each part
@@ -71,6 +72,9 @@ pub struct HandsConfig {
     /// Re-pose the hand and forearm bones and the held weapon at render time from the latest
     /// controller pose, removing the sim tick's lag behind the controllers.
     pub late_update: bool,
+    /// Re-pose the upper body (the spine, the head, and the arms) at render time from the latest
+    /// tracking, on top of the late update's hands.
+    pub presentation: PresentationConfig,
     /// Switch off the game's secondary hand IK (the weapon's off-hand grip, the grapple fire arm,
     /// and the parachute handles) for every hand the controllers drive.
     pub suppress_secondary_ik: bool,
@@ -106,6 +110,7 @@ impl HandsConfig {
         Self {
             ik: true,
             late_update: true,
+            presentation: PresentationConfig::new(),
             suppress_secondary_ik: true,
             rigid_grip: true,
             reach_t: 1.0,

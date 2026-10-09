@@ -16,10 +16,12 @@
 //! real palette is never touched, so the shadow passes draw a full, headful character that
 //! follows the player-driven head pose.
 //!
-//! The same palette spoof carries the controller hands' render-time late update: while the player's
-//! body draws in any pass, shadows included, the hand and forearm bones' entries are re-posed from
-//! the latest controller pose (see [`crate::controllers::hands::late`]), in the same copy and the
-//! same detected layout as the collapse.
+//! The same palette spoof carries the render-rate presentation of the player's body: while the
+//! player's body draws in any pass, shadows included, the upper body's entries (the spine, the head,
+//! the arms, and the hands) are re-posed from the latest tracking (see
+//! [`crate::controllers::presentation`], which falls back to the hands' and forearms' late update in
+//! [`crate::controllers::hands::late`]), in the same copy and the same detected layout as the
+//! collapse.
 //!
 //! Ownership is settled by pointer identity: every draw receives its owning model instance's
 //! embedded `CRBIInfo` as the `info` argument, and the character hook publishes the player's
@@ -46,9 +48,9 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    controllers::hands::{
-        late::{self, PaletteEdit},
-        palette::PaletteLayout,
+    controllers::{
+        hands::palette::PaletteLayout,
+        presentation::{self, DrawEdit},
     },
     stereo::STEREO_STATE,
 };
@@ -248,10 +250,10 @@ thread_local! {
     static HIDE_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
     /// Set around the original `Draw`/`DrawZ` call for the local player's body in every pass,
-    /// shadows included, while the hands' late update corrects a hand: the palette hooks then
-    /// re-pose the hand and forearm bones (see [`crate::controllers::hands::late`]). Thread-local
-    /// for the same reason as the hide flag.
-    static HAND_EDIT: std::cell::Cell<Option<PaletteEdit>> = const { std::cell::Cell::new(None) };
+    /// shadows included, while the presentation layer or the hands' late update re-poses it: the
+    /// palette hooks then re-pose the bones the edit names (see
+    /// [`crate::controllers::presentation`]). Thread-local for the same reason as the hide flag.
+    static HAND_EDIT: std::cell::Cell<Option<DrawEdit>> = const { std::cell::Cell::new(None) };
 
     /// The scratch palette the spoof writes into, one per draw thread for the same reason.
     static PALETTE_BUF: std::cell::RefCell<[Matrix3x4; PALETTE_BUF_LEN]> =
@@ -278,7 +280,7 @@ static PLAYER_RBI_INFOS: [AtomicUsize; PLAYER_MODEL_SLOTS] =
     [const { AtomicUsize::new(0) }; PLAYER_MODEL_SLOTS];
 
 /// Raise the draw's palette-spoof flags: the head hide for the player's body in non-shadow passes,
-/// and the hands' late update for the player's body in every pass.
+/// and the body's render-time re-pose for the player's body in every pass.
 unsafe fn begin_player_draw(rc: *mut RenderContext, info: *const RBIInfo) {
     let hide = unsafe { should_hide_facial(rc, info) };
     HIDE_ACTIVE.with(|flag| flag.set(hide));
@@ -292,10 +294,10 @@ fn end_player_draw() {
     HAND_EDIT.with(|cell| cell.set(None));
 }
 
-/// The hands' palette edit for this draw, when it belongs to the local player's body model: the
-/// hands' correction brought into the draw's model space through its instance matrix. Every pass
-/// takes it, so the shadow's hands match the rendered ones.
-unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Option<PaletteEdit> {
+/// The body's palette edit for this draw, when it belongs to the local player's body model: the
+/// render-time re-pose brought into the draw's model space through its instance matrix. Every pass
+/// takes it, so the shadow's body matches the rendered one.
+unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Option<DrawEdit> {
     let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
     if body == 0 || info as usize != body {
         return None;
@@ -303,7 +305,7 @@ unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Opt
     let (rc, info) = (unsafe { rc.as_ref() }?, unsafe { info.as_ref() }?);
     let mut instance = Matrix4::default();
     unsafe { info.GetMatrix(&mut instance, rc.m_RenderFrameIndex as i32) };
-    late::palette_edit(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
+    presentation::draw_edit(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
 }
 
 /// Whether this draw belongs to the local player's body model in a non-shadow pass with the hide
@@ -346,7 +348,7 @@ fn ortho_error(x: glam::Vec3, y: glam::Vec3, z: glam::Vec3) -> f32 {
 /// Build a spoofed copy of the bone matrices when this batch references a bone either flag edits:
 /// while the hide flag is up, the collapse bones are replaced by a zero rotation and the published
 /// neck-point translation, so their vertices contract to a point inside the collar; while the hand
-/// edit is up, the hand and forearm bones are re-posed by the hands' late update. Both edits go
+/// edit is up, the bones it names are re-posed at render time. Both edits go
 /// into the one copy. Returns `None` — draw with the real palette — whenever neither applies.
 unsafe fn spoofed_matrices(
     matrices: *const Matrix3x4,
@@ -376,7 +378,7 @@ unsafe fn spoofed_matrices(
 
     // The upload reads `matrices[lookup[i]]` per batch slot, so the copy must span the batch's
     // highest referenced skeleton index; skip the spoof entirely if neither a collapse bone nor a
-    // late-updated hand bone is used.
+    // re-posed bone of the body is used.
     let mut max_index = 0usize;
     let mut bones_counted = 0usize;
     let mut collapse_hits = 0usize;
@@ -415,13 +417,17 @@ unsafe fn spoofed_matrices(
         // The point deliberately does NOT come from the palette: its translation slots depend on
         // the per-block layout below, and sampling them without knowing it parks the collapsed
         // cluster at a phantom point (see [`publish_collapse_target`]).
+        // The presentation layer's neck edit carries it with the neck it re-poses.
         let target = {
             let [x, y, z] = &COLLAPSE_TARGET;
-            [
+            let point = glam::Vec3::new(
                 f32::from_bits(x.load(Ordering::Relaxed)),
                 f32::from_bits(y.load(Ordering::Relaxed)),
                 f32::from_bits(z.load(Ordering::Relaxed)),
-            ]
+            );
+            hands
+                .map_or(point, |edit| edit.neck().transform_point3(point))
+                .to_array()
         };
         // The palette layout differs per block (empirically: the body/facial blocks store four
         // 3-float columns with the translation last, the face-gear and one skin block store

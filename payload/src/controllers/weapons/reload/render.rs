@@ -120,7 +120,7 @@ pub(crate) fn adjust(
     if part.m_NameHash != ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH {
         return None;
     }
-    let grip = late::render_hands()[held.hand.index()]?.grip.at(dtf);
+    let grip = late::drawn_hands(dtf)[held.hand.index()]?.grip;
     Some(held_matrix(grip.position, grip.orientation, held))
 }
 

@@ -7,7 +7,8 @@
 //! ([`crate::controllers::hands::late`]), and a caught grenade, which its physics carries toward
 //! the hand by velocity, further behind still. So each throw registers what its hand holds here
 //! ([`hold`]), and a post-call detour on the explosive's render update re-pushes the model matrix
-//! from the hand's render-time grip ([`late::render_hands`]) at the frame's interpolation fraction:
+//! from the grip of the hand as it is drawn ([`late::drawn_hands`]) at the frame's interpolation
+//! fraction, so it stays in the hand where the hand falls short of the controller:
 //! the grenade's model for [`Explosive::UpdateRender`], and the charge's in-hand model for
 //! [`PlantedExplosive::UpdateRender`].
 //!
@@ -162,7 +163,7 @@ unsafe fn target(
 /// render-time grip.
 fn render_matrix(explosive: usize, slots: [Slot; 2], dtf: f32) -> Option<Mat4> {
     let held = current(explosive, slots, Instant::now())?;
-    let grip = late::render_hands()[held.hand.index()]?.grip.at(dtf);
+    let grip = late::drawn_hands(dtf)[held.hand.index()]?.grip;
     let matrix = held_matrix(grip, held.offset);
     matrix.is_finite().then_some(matrix)
 }
