@@ -20,6 +20,15 @@ pub struct VaultConfig {
     pub min_vertical: f32,
     /// The highest the feet rise above where the push started, metres.
     pub max_rise_m: f32,
+    /// How far above the feet a surface must be for a press on it to lift, metres of the game
+    /// world: the ground the player stands on, and anything barely above it (a kerb, a step, the
+    /// floor where the player's real floor sits a little lower than the game's), is never pushed
+    /// on; a hand reaching down for something on the ground rests on it instead.
+    pub min_height_m: f32,
+    /// How long a press must stay past the deadband before it starts to lift, seconds: a hand
+    /// that brushes a surface on its way past, or lands on it with a moment's overshoot, lifts
+    /// nothing, and a deliberate push lifts.
+    pub hold_s: f32,
     /// The fastest the player may be moving down for the hands to lift them, metres per second:
     /// a player falling faster is never lifted, so that a fall is not stopped. Above zero, so that
     /// a player settling onto the ground or stepping down a slope still pushes up.
@@ -30,11 +39,13 @@ impl VaultConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            deadband_m: 0.04,
+            deadband_m: 0.06,
             stiffness_per_s: 10.0,
             max_lift_mps: 3.0,
             min_vertical: 0.7,
             max_rise_m: 1.4,
+            min_height_m: 0.3,
+            hold_s: 0.15,
             fall_tolerance_mps: 0.5,
         }
     }

@@ -354,6 +354,7 @@ pub(crate) unsafe fn step(given_dt: f32) {
             lags: press_lags,
             supports: climb::static_reaches(),
             scale,
+            dt: step_s,
         };
         // SAFETY: forwarded from the caller; the characters' proxy updates ran before this
         // callback.

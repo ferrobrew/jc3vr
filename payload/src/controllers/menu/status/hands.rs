@@ -100,7 +100,7 @@ fn push_up_line(on: bool, status: VaultStatus) -> Line {
     let rise = status
         .last_rise_m
         .map_or_else(SmolStr::default, |r| format_smolstr!(", LAST {:.2} M", r));
-    match (status.pushes, status.lifting) {
+    let line = match (status.pushes, status.lifting) {
         (_, true) => Line::ok(format_smolstr!(
             "{} PUSHES, LIFTING {:.1} M/S{rise}",
             status.pushes,
@@ -108,7 +108,11 @@ fn push_up_line(on: bool, status: VaultStatus) -> Line {
         )),
         (0, false) => Line::new(Health::Waiting, "NO PUSH YET"),
         (pushes, false) => Line::ok(format_smolstr!("{pushes} PUSHES{rise}")),
-    }
+    };
+    line.with_note(format!(
+        "{} presses at the feet ignored, {} refused off the ground or moving down",
+        status.at_the_feet, status.refusals
+    ))
 }
 
 fn moving_climbs_line(on: bool, grips: u64, on_moving: bool) -> Line {

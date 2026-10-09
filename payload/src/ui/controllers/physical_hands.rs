@@ -164,8 +164,8 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
             .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
     ));
     ui.label(format!(
-        "Push up refused off the ground or moving down: {}",
-        v.refusals
+        "Push up refused off the ground or moving down: {} · at the feet: {}",
+        v.refusals, v.at_the_feet
     ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
@@ -236,6 +236,11 @@ fn vault_settings(ui: &mut Ui, v: &mut VaultConfig) {
         ui.add(egui::Slider::new(&mut v.max_lift_mps, 0.0..=8.0).text("Fastest lift (m/s)"));
         ui.add(egui::Slider::new(&mut v.min_vertical, 0.0..=1.0).text("Least downward press"));
         ui.add(egui::Slider::new(&mut v.max_rise_m, 0.0..=3.0).text("Highest rise (m)"));
+        ui.add(
+            egui::Slider::new(&mut v.min_height_m, 0.0..=1.5)
+                .text("Lowest surface above the feet (m)"),
+        );
+        ui.add(egui::Slider::new(&mut v.hold_s, 0.0..=0.6).text("Press held before lifting (s)"));
         ui.add(
             egui::Slider::new(&mut v.fall_tolerance_mps, 0.0..=3.0)
                 .text("Fastest downward motion that still lifts (m/s)"),

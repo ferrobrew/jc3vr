@@ -17,6 +17,14 @@
 //! It is bounded by [`VaultConfig::max_lift_mps`], and the feet rise at most
 //! [`VaultConfig::max_rise_m`] above where the push started.
 //!
+//! A push is a deliberate act on something above the ground. A surface less than
+//! [`VaultConfig::min_height_m`] above the feet takes no press ([`clear_of_the_feet`]): the ground
+//! the player stands on, a kerb, a step, and the game's floor wherever the player's real floor sits
+//! a little below it, so a hand reaching down for a magazine or a grenade rests on the ground
+//! rather than popping the body up. And a press starts to lift only once it has stayed past the
+//! deadband for [`VaultConfig::hold_s`] ([`PressTimer`]), so a hand that brushes a table or lands
+//! on a car's hood with a moment's overshoot lifts nothing.
+//!
 //! The lift is given in the hand bodies' pre-simulation step, after the characters' proxy updates,
 //! as the climb gives its velocity ([`crate::controllers::physical_hands::climb::engine`]): the
 //! proxy keeps its own horizontal velocity and rises at least at the lift. While a pressing hand
@@ -48,6 +56,8 @@ pub struct VaultStatus {
     /// Presses on a surface under the hand that lifted nothing because the player was off the
     /// ground or moving down, counted once per press.
     pub refusals: u64,
+    /// Presses on a surface too near the feet to push on, counted once per press.
+    pub at_the_feet: u64,
 }
 
 pub fn status() -> VaultStatus {
@@ -86,6 +96,33 @@ pub fn supported_press_lift(lag: Vec3, support: Option<&Hold>, tuning: &LiftTuni
         return 0.0;
     }
     press_lift(lag, tuning)
+}
+
+/// Whether `support` is far enough above the feet, at `feet_y` in game space, to push on: at least
+/// `min_height_m` above them.
+pub fn clear_of_the_feet(support: &Hold, feet_y: f32, min_height_m: f32) -> bool {
+    let height = support.point.y - feet_y;
+    height.is_finite() && height >= min_height_m.max(0.0)
+}
+
+/// How long the current press has stayed past the deadband, before it lifts.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct PressTimer {
+    held_s: f32,
+}
+
+impl PressTimer {
+    /// Advance by `dt` seconds with a press past the deadband (`pressing`) or not, and say whether
+    /// the press has been held for `hold_s`: a deliberate push. A press that lets up starts over.
+    pub fn step(&mut self, pressing: bool, dt: f32, hold_s: f32) -> bool {
+        if !pressing {
+            self.held_s = 0.0;
+            return false;
+        }
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        self.held_s += dt;
+        self.held_s >= hold_s.max(0.0)
+    }
 }
 
 /// Where the player is as the game's character proxy found it on this step.
@@ -143,6 +180,8 @@ pub(crate) struct Press {
     /// player is written as supported on it.
     pub supports: [Option<Hold>; 2],
     pub scale: f32,
+    /// The step's length, seconds.
+    pub dt: f32,
 }
 
 /// The push-up's part of the hand bodies' pre-simulation step: lift the player while the hands
@@ -155,24 +194,15 @@ pub(crate) struct Press {
 pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
     let mut state = STATE.lock();
     let tuning = LiftTuning::of(config, press.scale);
-    // Each hand that presses on a surface under it, with its lift and the surface's body.
+    // Each hand that presses on a surface under it, with its lift and the surface.
     let pressing = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let lift = supported_press_lift(press.lags[i]?, press.supports[i].as_ref(), &tuning);
-        Some((lift, press.supports[i]?.body)).filter(|(lift, _)| *lift > 0.0)
+        let support = press.supports[i]?;
+        let lift = supported_press_lift(press.lags[i]?, Some(&support), &tuning);
+        Some((lift, support)).filter(|(lift, _)| *lift > 0.0)
     });
-    let lift = if config.enabled {
-        pressing
-            .iter()
-            .flatten()
-            .map(|(lift, _)| *lift)
-            .fold(0.0, f32::max)
-    } else {
-        0.0
-    };
-    if lift <= 0.0 {
-        state.refusing = false;
-        state.finish();
+    if !config.enabled || pressing.iter().all(Option::is_none) {
+        state.release();
         return false;
     }
     // SAFETY: forwarded from the caller.
@@ -180,9 +210,30 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
     // SAFETY: forwarded from the caller.
     let current = unsafe { proxy::proxy_velocity() }.ok();
     let (Some(feet), Some(current)) = (feet, current) else {
-        state.finish();
+        state.release();
         return false;
     };
+    let clear =
+        pressing.map(|p| p.filter(|(_, s)| clear_of_the_feet(s, feet, config.min_height_m)));
+    let lift = clear
+        .iter()
+        .flatten()
+        .map(|(lift, _)| *lift)
+        .fold(0.0, f32::max);
+    if lift <= 0.0 {
+        let height_m = pressing
+            .iter()
+            .flatten()
+            .map(|(_, s)| s.point.y - feet)
+            .fold(f32::NEG_INFINITY, f32::max);
+        state.refuse(Refusal::AtTheFeet { height_m });
+        state.timer = PressTimer::default();
+        state.finish();
+        return false;
+    }
+    if !state.lifting && !state.timer.step(true, press.dt, config.hold_s) {
+        return false;
+    }
     let motion = PlayerMotion {
         // SAFETY: forwarded from the caller; the proxy's update ran before this callback, and its
         // support is read before this step writes it.
@@ -191,7 +242,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
     };
     if !may_lift(motion, state.lifting, config.fall_tolerance_mps) {
         if !state.lifting {
-            state.refused(motion);
+            state.refuse(Refusal::Motion(motion));
         }
         state.finish();
         return false;
@@ -215,7 +266,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
         return false;
     }
     let velocity = lifted(current, lift);
-    let support = pressing.into_iter().flatten().map(|(_, body)| body).next();
+    let support = clear.into_iter().flatten().map(|(_, s)| s.body).next();
     // SAFETY: forwarded from the caller; a support is a static body the hand's reach found.
     let result = match support {
         Some(ground) => unsafe { proxy::hold(velocity, ground, Vec3::ZERO) },
@@ -241,25 +292,55 @@ struct State {
     /// The feet's height when the push started.
     start_feet_y: Option<f32>,
     lifting: bool,
+    /// How long the current press has been held before it lifts.
+    timer: PressTimer,
     /// Whether the current press was refused, so that it is counted and logged once.
     refusing: bool,
     status: VaultStatus,
 }
 
+/// Why a press lifted nothing.
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum Refusal {
+    /// The player was off the ground or moving down.
+    Motion(PlayerMotion),
+    /// Every pressed surface was too near the feet, the highest `height_m` above them.
+    AtTheFeet { height_m: f32 },
+}
+
 impl State {
-    /// A press the player's motion refused: count it and log it once.
-    fn refused(&mut self, motion: PlayerMotion) {
+    /// A press refused: count it and log it once.
+    fn refuse(&mut self, refusal: Refusal) {
         if self.refusing {
             return;
         }
         self.refusing = true;
-        self.status.refusals += 1;
-        tracing::info!(
-            grounded = motion.grounded,
-            vertical_mps = motion.vertical_mps,
-            "physical hands: the hands pressed down, but the player is off the ground or moving \
-             down, so nothing lifts"
-        );
+        match refusal {
+            Refusal::Motion(motion) => {
+                self.status.refusals += 1;
+                tracing::info!(
+                    grounded = motion.grounded,
+                    vertical_mps = motion.vertical_mps,
+                    "physical hands: the hands pressed down, but the player is off the ground or \
+                     moving down, so nothing lifts"
+                );
+            }
+            Refusal::AtTheFeet { height_m } => {
+                self.status.at_the_feet += 1;
+                tracing::info!(
+                    height_m,
+                    "physical hands: the hands pressed down on a surface at the feet, which is \
+                     never pushed on"
+                );
+            }
+        }
+    }
+
+    /// No hand presses: the press is over, refused or not.
+    fn release(&mut self) {
+        self.refusing = false;
+        self.timer = PressTimer::default();
+        self.finish();
     }
 
     fn finish(&mut self) {
@@ -278,6 +359,7 @@ impl State {
 static STATE: Mutex<State> = Mutex::new(State {
     start_feet_y: None,
     lifting: false,
+    timer: PressTimer { held_s: 0.0 },
     refusing: false,
     status: VaultStatus {
         lifting: false,
@@ -285,6 +367,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         pushes: 0,
         last_rise_m: None,
         refusals: 0,
+        at_the_feet: 0,
     },
 });
 
@@ -298,7 +381,7 @@ mod tests {
 
     #[test]
     fn a_hand_pressed_down_lifts_the_body() {
-        let lift = press_lift(Vec3::new(0.0, -0.14, 0.0), &tuning());
+        let lift = press_lift(Vec3::new(0.0, -0.16, 0.0), &tuning());
         assert!((lift - 1.0).abs() < 1e-4, "{lift}");
         // Within the deadband, resting on the surface, nothing lifts.
         assert_eq!(press_lift(Vec3::new(0.0, -0.03, 0.0), &tuning()), 0.0);
@@ -333,7 +416,7 @@ mod tests {
 
     #[test]
     fn only_a_surface_under_the_hand_takes_a_press() {
-        let lag = Vec3::new(0.0, -0.14, 0.0);
+        let lag = Vec3::new(0.0, -0.16, 0.0);
         let floor = surface(Vec3::Y);
         let lift = supported_press_lift(lag, Some(&floor), &tuning());
         assert!((lift - 1.0).abs() < 1e-4, "{lift}");
@@ -366,6 +449,46 @@ mod tests {
         assert!(!may_lift(motion(false, 0.5), false, tolerance));
         // A push that started on the ground lifts the player off it.
         assert!(may_lift(motion(false, 1.0), true, tolerance));
+    }
+
+    #[test]
+    fn the_ground_under_the_feet_takes_no_press() {
+        let min = VaultConfig::new().min_height_m;
+        let at = |y| Hold {
+            point: Vec3::new(0.0, y, 0.0),
+            ..surface(Vec3::Y)
+        };
+        // The floor, a kerb, and the game's floor a little above the player's real one.
+        for y in [10.0, 10.05, 10.2] {
+            assert!(!clear_of_the_feet(&at(y), 10.0, min), "{y}");
+        }
+        // A table, a car's hood, a ledge.
+        for y in [10.75, 11.0, 11.6] {
+            assert!(clear_of_the_feet(&at(y), 10.0, min), "{y}");
+        }
+        assert!(!clear_of_the_feet(&at(f32::NAN), 10.0, min));
+        assert!(!clear_of_the_feet(&at(11.0), f32::NAN, min));
+    }
+
+    #[test]
+    fn only_a_held_press_is_deliberate() {
+        let config = VaultConfig::new();
+        let dt = 1.0 / 64.0;
+        let ticks = (config.hold_s / dt).ceil() as usize;
+        let mut timer = PressTimer::default();
+        let pushed: Vec<bool> = (0..ticks + 2)
+            .map(|_| timer.step(true, dt, config.hold_s))
+            .collect();
+        assert!(pushed[..ticks - 1].iter().all(|p| !p), "{pushed:?}");
+        assert!(pushed[ticks..].iter().all(|p| *p), "{pushed:?}");
+        // A brush that lets up starts over.
+        let mut timer = PressTimer::default();
+        for _ in 0..ticks - 2 {
+            assert!(!timer.step(true, dt, config.hold_s));
+        }
+        assert!(!timer.step(false, dt, config.hold_s));
+        assert!(!timer.step(true, dt, config.hold_s));
+        assert!(!timer.step(true, f32::NAN, config.hold_s));
     }
 
     #[test]
