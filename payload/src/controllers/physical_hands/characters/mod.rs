@@ -81,6 +81,7 @@ pub(crate) unsafe fn reach(
         body,
         point: hit.position,
         distance: hit.position.distance(palm),
+        normal: hit.normal,
         kind: TargetKind::Character(CharacterTarget {
             character: object,
             body,
@@ -265,6 +266,7 @@ mod tests {
             body: 9,
             point: Vec3::ZERO,
             distance: 0.05,
+            normal: Vec3::ZERO,
             kind,
         }
     }

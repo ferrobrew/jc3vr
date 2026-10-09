@@ -2,21 +2,21 @@
 //! bindings, and what the debug UI reads back.
 
 use crate::controllers::{
-    bindings::grab::GrabVolume,
     frame::Hand,
+    grab::{GrabVolume, GripTarget},
     weapons::{
         engine::HeldWeapon,
         foregrip::{GripGeometry, Transition},
         holster::HolsterAction,
-        volumes::{NearMiss, Stance},
+        volumes::Stance,
     },
 };
 
 /// What the first half of the weapon handling's input tick hands the bindings.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct TickStart {
-    /// The grab volume each hand is in, indexed by [`Hand::index`].
-    pub volumes: [Option<GrabVolume>; 2],
+    /// The weapon handling's grip targets.
+    pub targets: Vec<GripTarget>,
     /// The hands holding a pistol of the dual-wield slot while the dual-wield split acts (with the
     /// split on, a pistol in at least one hand, in any mode), indexed by [`Hand::index`].
     pub dual_wield: Option<[bool; 2]>,
@@ -109,9 +109,9 @@ pub struct WieldedReadout {
 pub struct WeaponsStatus {
     /// Whether the last input tick ran the weapon handling.
     pub active: bool,
-    /// The grab volume each hand was in, indexed by [`Hand::index`].
+    /// What each hand would take among the weapon handling's targets, indexed by [`Hand::index`].
     pub volumes: [Option<GrabVolume>; 2],
-    /// How many volumes were placed.
+    /// How many targets were placed.
     pub candidates: usize,
     /// The stance the body volumes were placed for.
     pub stance: Option<Stance>,
@@ -121,8 +121,6 @@ pub struct WeaponsStatus {
     /// The most recent grabs, newest last.
     pub events: Vec<GrabEvent>,
     pub grabs: u64,
-    /// The last grip press near but outside a holster.
-    pub last_miss: Option<(Hand, NearMiss)>,
     /// How many holsters were moved onto their docked guns on the last tick.
     pub docks_followed: usize,
 }

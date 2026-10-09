@@ -50,9 +50,9 @@ The log has, at info level, `physical hands: characters: a hand took hold of a c
 
 ## Headset checklist
 
-With `GRAB CHARACTERS`, `PULL OCCUPANTS OUT BY HAND`, and `OPEN DOORS BY HAND` on and `pickup.show_targets` on in the debug UI:
+With `GRAB CHARACTERS`, `PULL OCCUPANTS OUT BY HAND`, `OPEN DOORS BY HAND`, and `GRIP MARKERS` on:
 
-1. Reach toward a standing soldier's collar: a violet ring. Grip: `a hand took hold of a character`, and the rendered hand stays on the soldier as they move.
+1. Reach toward a standing soldier's collar: a violet marker. Grip: `a hand took hold of a character`, and the rendered hand stays on the soldier as they move.
 2. Yank back: `a hand yanked a character` with `hostile=true`, then `a hand threw a character` with a strength above one; the soldier falls toward the player, and `a hand took hold of a fallen character's ragdoll` follows. Drag the body, then let go while swinging: it flies on.
 3. Grip a civilian and yank: they stagger, `hostile=false`, and the hand lets go.
 4. Grip a soldier, push the hand forward fast, and let go: `a hand threw a character` with `yank=false`, and the soldier staggers or falls along the push.

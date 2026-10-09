@@ -64,11 +64,11 @@ use crate::{
         aim::targets::weak_target,
         bindings::{
             controls::ButtonControl,
-            grab::{Candidate, GrabVolume},
             hold::{Desired, MapKind},
         },
         config::ControllersConfig,
         frame::{Hand, Pose},
+        grab::{Candidate, GrabVolume},
         hands::{
             ActiveHands,
             held::{self, Held, Slot},

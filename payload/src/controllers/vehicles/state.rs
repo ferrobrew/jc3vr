@@ -153,7 +153,7 @@ pub(crate) fn stand_down() {
     drop(state);
     *ARM_PANEL.lock() = None;
     log_handle_events(&handle_events);
-    store::clear(Source::VehicleControls);
+    store::clear(Source::WingGuide);
 }
 
 /// Put the hands that hold a physical control, a parachute handle, or a mounted gun's handles on

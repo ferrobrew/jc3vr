@@ -364,6 +364,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
                 stick_raw: Vec2::new(0.5, 0.7),
                 trackpad: Vec2::new(pad, 0.0),
                 grab_volume: None,
+                grab_slow: false,
             };
         }
         let mut pressed = c;

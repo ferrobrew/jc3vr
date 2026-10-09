@@ -9,7 +9,7 @@ The pickup's reach rays ([physical-hands.md](physical-hands.md#picking-things-up
 - A hit on a loosened part's object ([`VehiclePartGameObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::VehiclePartGameObject)) that is one of its vehicle's doors, found through the object's vehicle and the door whose own body that object owns, is an open door, taken where the ray hit it.
 - A hit on the vehicle's own body looks at its doors' boxes in the world ([vehicle-doors.md](../../engine/gameplay/vehicle-doors.md#the-loose-door)), each from the part's model box, its root-space transform, and the vehicle's transform. A palm within `doors.reach_m` of a closed door's box, at a point at least `doors.handle_share` of the way from the hinge to the door's far edge, reaches that door at the box's nearest point. The share is measured from the part's own origin, its hinge pivot, so a grip near the hinge takes nothing. A palm within reach of an open door's box takes that door's own body anywhere, for the case where a ray on an open door reports the vehicle.
 
-A hit on a part object that is not a door, such as a piece broken off, is taken as any loose object. With `pickup.show_targets`, a reached door is marked with a green ring.
+A hit on a part object that is not a door, such as a piece broken off, is taken as any loose object. A reached door is marked green ([grip.md](grip.md#markers)).
 
 ## The latch
 
@@ -46,9 +46,9 @@ The log has, at info level, `physical hands: doors: a hand gripped a latched doo
 
 ## Headset checklist
 
-With `OPEN DOORS BY HAND` on and `pickup.show_targets` on in the debug UI:
+With `OPEN DOORS BY HAND` and `GRIP MARKERS` on:
 
-1. Walk up to a parked, empty car and reach toward the driver's door near its back edge: a green ring at the door. Near the hinge: no ring.
+1. Walk up to a parked, empty car and reach toward the driver's door near its back edge: a green marker at the door. Near the hinge: no ring.
 2. Grip: `a hand gripped a latched door`, a pulse, and the rendered hand stays on the door while the controller moves. The `VEHICLE DOORS` row says `ON A LATCH`.
 3. Pull outward a few centimetres: the latch gives with a strong pulse, `the latch gave, and the hand holds the door`, and the door comes open with the hand.
 4. Swing the door wide and back: it turns about its hinge only. Let go while swinging: it swings on.

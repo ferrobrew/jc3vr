@@ -1,8 +1,8 @@
 //! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads",
 //! "Grenades", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`volumes`]: the body's grab volumes (the holsters, the grenade pouch, the reload pouch, and
-//!   the C4 pouch), placed from the player's body dimensions;
+//! - [`volumes`]: the body's sockets and pouches (the holsters, the grenade pouch, the reload
+//!   pouch, and the C4 pouch), placed from the player's body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`docks`]: the holsters moved onto the guns docked in them;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
@@ -11,7 +11,6 @@
 //!   spread, gone while it is braced on the foregrip;
 //! - [`fire`]: the per-shot seam that kicks the recoil and marks the shot's hand;
 //! - [`grip_watch`]: a diagnostic watch on how each held gun sits in its hand;
-//! - [`highlights`]: the grab-volume highlights on the overlay;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
 //! - [`hold`]: which hand holds the wielded weapon (the hand that drew it, took it off the
@@ -35,28 +34,26 @@
 //! The weapon handling runs on the input tick, in two halves around the bindings' tables
 //! ([`crate::controllers::bindings::input_tick`]):
 //!
-//! 1. [`begin_tick`] reads the wielded weapon, places the grab volumes, and answers which volume
-//!    each hand's grab point (the controller's grip, in the cockpit frame) is in, which the tables
-//!    latch at the grip's press edge. The body's volumes are tested against the player's own grip,
-//!    before the body-scale remap, while they ride the player's body, and the weapon's volumes
-//!    against the grip of the hand on the weapon. A hand just outside a pouch reaches it
-//!    ([`volumes::pouch_in_reach`]), so a press there takes from the pouch rather than firing the
-//!    grapple. A hand holding the foregrip is always in it, so that its next grip press lets go
-//!    rather than firing the grapple.
-//! 2. [`finish_tick`] acts on the grabs the tables report: a holster grab draws or holsters, a
-//!    grab of the held gun's grip by the free hand hands the gun over, a foregrip grab engages or
-//!    releases the two-handed grip, a grenade-pouch grab primes a grenade
-//!    for the throw, a C4-pouch grab primes a charge, and a reload-pouch grab takes a round for the
-//!    reload. It runs the throws, the wrist detonator, and the reload, and
-//!    holds the fire inputs back while a reload, a draw, or a holster plays (the action-runs hand
-//!    tier) and while the reload holds the gun from firing.
+//! 1. [`begin_tick`] reads the wielded weapon and provides the weapon handling's grip targets
+//!    ([`crate::controllers::grab`]): the sockets and pouches on the body, reached by the player's
+//!    own grip before the body-scale remap while they ride the player's body, each pouch with a
+//!    reach margin a hand that misses it by a little still takes it within; the held gun's parts,
+//!    reached by the hand on the gun; the weapons in the world without a body (in characters'
+//!    hands, on racks, in lockers); and the grenade's pin, a live grenade, a magazine in the world,
+//!    and the carried weapons' sockets. A braced foregrip is offered to its hand as held.
+//! 2. [`finish_tick`] acts on the grabs the grip model hands it: a holster grab draws or holsters,
+//!    a grab of the held gun's grip by the free hand hands the gun over, a foregrip grab braces the
+//!    gun, a grenade-pouch grab primes a grenade for the throw, a C4-pouch grab primes a charge,
+//!    and a reload-pouch grab takes a round for the reload. Opening the grip on a gun docks it in
+//!    the nearest socket that fits it under the hand, or lets it fall
+//!    ([`crate::controllers::grab::resolve::dock_target`]). It runs the throws, the wrist
+//!    detonator, and the reload, and holds the fire inputs back while a reload, a draw, or a
+//!    holster plays (the action-runs hand tier) and while the reload holds the gun from firing.
 //!
-//! Guns are sticky: nothing here draws or holsters except a grab. The grab-volume highlights, each
-//! placed pouch (faint, and brighter while a hand is within reach, with `pouches.show`), and, with
-//! slot ([`highlights`]). A grip press that grabs nothing near a holster is logged with its
-//! slot. A grip press that grabs nothing near a holster is logged with its
-//! distance from the nearest one. Everything acts only while the bindings inject, which is only
-//! under the controller scheme with a controller active.
+//! A gun is held while its grip is: nothing here draws or holsters except a grab and its release.
+//! The markers on the targets are the grip model's ([`crate::controllers::grab::markers`]).
+//! Everything acts only while the bindings inject, which is only under the controller scheme with
+//! a controller active.
 
 pub mod ads;
 mod begin;
@@ -74,7 +71,6 @@ pub mod foregrip;
 pub mod grenade;
 pub mod grip_watch;
 pub mod heft;
-mod highlights;
 pub mod hold;
 pub mod holster;
 pub mod inventory;
@@ -89,10 +85,10 @@ pub mod volumes;
 pub mod wheel;
 
 pub(crate) use begin::begin_tick;
-// Re-exported so the weapon-handling submodules that need them (the near-miss highlights, the
-// weapon wheel, the reload) can reach them at the weapon handling's own path, as they did before
-// the input tick's two halves moved out of this file.
-use begin::{gameplay, is_body_volume, weighted_hands};
+// Re-exported so the weapon-handling submodules that need them (the weapon wheel, the reload) can
+// reach them at the weapon handling's own path, as they did before the input tick's two halves
+// moved out of this file.
+use begin::{gameplay, weighted_hands};
 pub(crate) use finish::{FinishInputs, finish_tick};
 use re_utilities::hook_library::HookLibrary;
 pub(crate) use state::stand_down;
@@ -122,11 +118,11 @@ mod tests {
     use crate::controllers::{
         bindings::{
             controls::ButtonControl,
-            grab::{GrabVolume, HolsterSite},
             hold::{Desired, MapKind, Target, Want},
         },
         config::ControllersConfig,
         frame::Hand,
+        grab::{GrabVolume, HolsterSite},
         mode::{AirborneVariant, Mode, OnFootVariant},
         weapons::{
             begin::{entered_body_volumes, gameplay},

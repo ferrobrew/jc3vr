@@ -203,8 +203,6 @@ pub struct PickupConfig {
     pub articulated: bool,
     /// The heaviest articulated object a hand takes hold of, kilograms.
     pub max_articulated_mass_kg: f32,
-    /// Mark the object each hand would take, and the held ones, in the world-space overlay.
-    pub show_targets: bool,
 }
 
 impl PickupConfig {
@@ -229,7 +227,6 @@ impl PickupConfig {
             max_throw_speed_mps: 25.0,
             articulated: true,
             max_articulated_mass_kg: 20_000.0,
-            show_targets: false,
         }
     }
 }

@@ -22,17 +22,16 @@
 //! This module runs on the input tick in two halves around them, like the weapon handling:
 //!
 //! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
-//!    places the physical controls' and the parachute handles' grab volumes, and returns the volume
-//!    each hand is in, with the parachute handle each free hand is within reach of. A hand holding
-//!    a control or a handle is always in it, so that a press made while it still holds (a release
-//!    and a press between two ticks) takes the control again rather than firing a weapon or the
-//!    grapple.
-//!
-//! A control or a handle is held only while its hand's grip is: releasing the grip lets go.
+//!    provides the vehicle handling's grip targets ([`crate::controllers::grab`]): the driver's
+//!    controls, the cockpit's buttons, the parachute's handles with a reach margin around each,
+//!    and the mounted gun's handles. What a hand holds is offered to it as held, so that a press
+//!    made while it still holds (a release and a press between two ticks) takes it again.
 //! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, replaces the tables'
 //!    analog writes for each axis a control drives, and publishes the wheel angle for the rendered
 //!    wheel; in the wingsuit it adds the arm pose to the move stick, and under the parachute the
 //!    held handles.
+//!
+//! A control or a handle is held only while its hand's grip is: releasing the grip lets go.
 //!
 //! The hands take the anchored poses in [`apply`], which every hand subsystem's hands pass through
 //! ([`crate::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
@@ -56,7 +55,7 @@ pub mod driving_view;
 mod finish;
 pub mod fit;
 mod handle_tick;
-mod highlights;
+
 pub mod look_steer;
 pub mod mounted;
 pub mod mounted_grip;
@@ -71,6 +70,7 @@ pub mod steering;
 mod types;
 pub mod wheel;
 pub mod wheel_render;
+mod wing_guide;
 
 use re_utilities::hook_library::HookLibrary;
 

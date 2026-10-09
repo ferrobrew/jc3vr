@@ -202,7 +202,7 @@ mod tests {
         let mut store = Store::new();
         let now = Instant::now();
         let mut many = vec![line(1.0); MAX_PRIMITIVES - 1];
-        store.submit(Source::GrabVolumes, &mut many, TTL, now);
+        store.submit(Source::GrabMarkers, &mut many, TTL, now);
         store.submit(Source::GhostHands, &mut vec![line(2.0); 5], TTL, now);
         let mut out = Vec::new();
         let (counts, truncated) = store.collect(now, &mut out);

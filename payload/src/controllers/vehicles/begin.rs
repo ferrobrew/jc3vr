@@ -1,5 +1,7 @@
 //! The first half of the vehicle handling's input tick: read the mounted gun, fit the wheel and
-//! the handlebars, and place the physical controls' and the parachute handles' grab volumes.
+//! the handlebars, and provide the vehicle handling's grip targets ([`crate::controllers::grab`]):
+//! the driver's controls, the cockpit's buttons, the parachute's handles, and the mounted gun's
+//! handles.
 
 use std::{sync::atomic::Ordering, time::Instant};
 
@@ -7,11 +9,11 @@ use glam::Vec3;
 
 use crate::{
     controllers::{
-        bindings::grab::{self, GrabVolume},
         body::{self, BodyDimensions, alignment},
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::Hand,
+        grab::{self, GrabVolume, GripTarget, HandPoint, Mark, MarkAt, MarkStyle, Shown, Tier},
         hands::{self, tiers},
         mode::Mode,
         vehicles::{
@@ -19,7 +21,7 @@ use crate::{
             driving_view, fit,
             fit::FitInputs,
             handle_tick::handles_act,
-            highlights, mounted_grip,
+            mounted_grip,
             mounted_tick::{mounted_tick, offered},
             parachute,
             physical::{
@@ -29,14 +31,15 @@ use crate::{
             state::{MOUNTED_WEAPON, STATE, log_handle_events, push_events},
             types::TickVolumes,
             wheel::CockpitTransform,
+            wing_guide,
         },
     },
     headpose,
 };
 
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
-/// controls, and return the control each hand is in. Called while the bindings inject, before the
-/// tables.
+/// controls, and return the vehicle handling's grip targets. Called while the bindings inject,
+/// before the tables.
 pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::vehicles::stand_down();
@@ -93,13 +96,103 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         parachute::release_all(&mut state.handles, &mut handle_events);
         state.handles_torso = None;
     }
-    let mut candidates = physical::candidates(&placement, &state.controls, offered, grips);
-    candidates.extend(mounted_grip::candidates(
-        &mounted_config,
-        mounted.handle_points,
-    ));
-    let mut reach = Vec::new();
-    let mut marks = None;
+    // What a hand holds goes first, so that it keeps it over anything as near.
+    let mut targets = Vec::new();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let Some(point) = grips[i] else {
+            continue;
+        };
+        if let Some(hold) = state.controls.holds[i] {
+            grip::declare(hand, Grip::new(GripSource::of_control(hold.kind)));
+            targets.push(
+                control_target(
+                    GrabVolume::VehicleControl(hold.kind),
+                    point,
+                    physical_config.grab_radius_m,
+                    hand,
+                )
+                .held(hand),
+            );
+        }
+        if state.mounted_grip.holds[i] {
+            targets.push(
+                handle_target(
+                    GrabVolume::MountedHandle(hand),
+                    mounted.handle_points[i].unwrap_or(point),
+                    mounted_config.grab_radius_m,
+                    hand,
+                )
+                .held(hand),
+            );
+        }
+    }
+    let holding = Hand::BOTH.map(|hand| {
+        state.controls.holds[hand.index()].is_some() || state.mounted_grip.holds[hand.index()]
+    });
+    let controls = physical::candidates(&placement, &state.controls, offered, grips);
+    targets.extend(
+        controls
+            .iter()
+            .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
+            .map(|c| {
+                c.target(
+                    HandPoint::Drawn,
+                    Mark::ring(
+                        MarkAt::Cockpit {
+                            point: c.centre,
+                            on_body: false,
+                        },
+                        CONTROL_MARK_M,
+                    )
+                    .showing(Shown::Always),
+                )
+            }),
+    );
+    targets.extend(
+        mounted_grip::candidates(&mounted_config, mounted.handle_points)
+            .iter()
+            .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
+            .map(|c| handle_target(c.volume, c.centre, c.radius, c.hand.unwrap_or(Hand::Right))),
+    );
+    let buttons = ButtonPlacement::for_seat(offered, &physical_config.buttons, &placement.wheel);
+    for button in Button::ALL {
+        let Some(at) = buttons.button(button) else {
+            continue;
+        };
+        let pressed_by = Hand::BOTH
+            .into_iter()
+            .find(|&h| state.controls.buttons.phase(button, h) == PushPhase::Pressed);
+        // The horn is the wheel's drawn hub, so it is marked only once a hand is at it.
+        let shown = match button {
+            Button::Horn => Shown::InReach,
+            Button::Nitrous => Shown::Always,
+        };
+        let target = GripTarget::sphere(
+            GrabVolume::CockpitButton(button),
+            None,
+            at.centre,
+            at.radius,
+            HandPoint::Drawn,
+            Mark::ring(
+                MarkAt::Cockpit {
+                    point: at.centre,
+                    on_body: false,
+                },
+                at.radius * 2.0,
+            )
+            .on_surface(at.normal)
+            .styled(MarkStyle::Button)
+            .showing(shown),
+        );
+        targets.push(match pressed_by {
+            Some(hand) => GripTarget {
+                held_by: Some(hand),
+                ..target
+            },
+            None => target,
+        });
+    }
     if handles_on {
         let dims = body_dimensions(&config);
         // Along the torso, so that a player turned from the recenter's forward finds the handles
@@ -118,40 +211,41 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         state.handles_torso = Some((torso, now));
         let shoulders = body::shoulder_positions(active.head.position, torso, &dims);
         let centres = parachute::handle_centres(&handles_config, shoulders, torso);
-        candidates.extend(parachute::candidates(
-            &handles_config,
-            &state.handles,
-            centres,
-            grips,
-        ));
-        reach.extend(parachute::reach_candidates(
-            &handles_config,
-            &state.handles,
-            centres,
-        ));
-        marks = handles_config
-            .show_handles
-            .then(|| parachute::marks(&handles_config, &state.handles, centres, grips));
+        let placed = parachute::candidates(&handles_config, &state.handles, centres, grips);
+        for (hand, c) in Hand::BOTH.into_iter().zip(placed) {
+            let target = handle_target(c.volume, c.centre, c.radius, hand);
+            let target = GripTarget {
+                mark: target.mark.showing(Shown::Always),
+                ..target
+            };
+            if state.handles.holds[hand.index()].is_some() {
+                grip::declare(hand, Grip::new(GripSource::ParachuteHandle));
+                targets.insert(0, target.held(hand));
+            } else {
+                targets.push(target);
+            }
+        }
+        // A hand that misses a free handle by a little still takes it when nothing else is in
+        // reach.
+        targets.extend(
+            parachute::reach_candidates(&handles_config, &state.handles, centres).map(|c| {
+                c.target(
+                    HandPoint::Drawn,
+                    Mark::ring(
+                        MarkAt::Cockpit {
+                            point: c.centre,
+                            on_body: false,
+                        },
+                        c.radius,
+                    )
+                    .showing(Shown::Never),
+                )
+                .ranked(Tier::Fallback)
+            }),
+        );
     }
-    let volumes = Hand::BOTH.map(|hand| {
-        let i = hand.index();
-        if let Some(hold) = state.controls.holds[i] {
-            grip::declare(hand, Grip::new(GripSource::of_control(hold.kind)));
-            return Some(GrabVolume::VehicleControl(hold.kind));
-        }
-        if state.handles.holds[i].is_some() {
-            grip::declare(hand, Grip::new(GripSource::ParachuteHandle));
-            return Some(GrabVolume::ParachuteHandle(hand));
-        }
-        if state.mounted_grip.holds[i] {
-            return Some(GrabVolume::MountedHandle(hand));
-        }
-        grab::grab_volume(grips[i]?, hand, &candidates)
-    });
-    let reach = Hand::BOTH.map(|hand| {
-        let i = hand.index();
-        grab::grab_volume(grips[i]?, hand, &reach).filter(|_| volumes[i].is_none())
-    });
+    let points = grab::tick::hand_points(&active);
+    let volumes = grab::resolve::resolve(&targets, points).map(|r| r.chosen.map(|c| c.volume));
     state.handles_on = handles_on;
     state.handles_config = handles_config;
     state.placement = Some(placement);
@@ -189,26 +283,54 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             grip::declare(hand, Grip::new(GripSource::Surface));
         }
     }
-
-    let shown = (physical_config.show_wheel && seat.is_some_and(|s| s.driver)).then_some(fit.wheel);
-    let wings = (arms_act(mode, &config) && config.vehicles.arm_steering.show_guide)
-        .then_some(arms_engaged);
-    let buttons = ButtonPlacement::for_seat(offered, &physical_config.buttons, &placement.wheel);
-    let button_marks = highlights::button_marks(&buttons, &controls_now.buttons);
-    highlights::submit(
-        &config,
-        &highlights::Highlights {
-            candidates: &candidates,
-            volumes,
-            wings,
-            handles: marks,
-            wheel: shown,
-            buttons: &button_marks,
-        },
-        &xf,
+    wing_guide::submit(
+        config.overlay.enabled
+            && arms_act(mode, &config)
+            && config.vehicles.arm_steering.show_guide,
+        arms_engaged,
     );
-    TickVolumes { volumes, reach }
+    TickVolumes { targets }
 }
+
+/// A vehicle control's grab point for `hand`, at `point` in the cockpit frame.
+fn control_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> GripTarget {
+    GripTarget::sphere(
+        volume,
+        Some(hand),
+        point,
+        radius,
+        HandPoint::Drawn,
+        Mark::ring(
+            MarkAt::Cockpit {
+                point,
+                on_body: false,
+            },
+            CONTROL_MARK_M,
+        ),
+    )
+}
+
+/// A handle to reach for: a dot, ringed once a hand is within reach.
+fn handle_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> GripTarget {
+    GripTarget::sphere(
+        volume,
+        Some(hand),
+        point,
+        radius,
+        HandPoint::Drawn,
+        Mark::ring(
+            MarkAt::Cockpit {
+                point,
+                on_body: false,
+            },
+            radius * 2.0,
+        )
+        .styled(MarkStyle::Handle),
+    )
+}
+
+/// The marker on a vehicle control's grab point, metres.
+const CONTROL_MARK_M: f32 = 0.05;
 
 /// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share
 /// times the hand's hold on its handle, `shares`.

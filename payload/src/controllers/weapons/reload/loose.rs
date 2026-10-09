@@ -43,9 +43,9 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        bindings::grab::{Candidate, GrabVolume},
         body::alignment::measure::Frames,
         frame::Hand,
+        grab::{Candidate, GrabVolume},
         physical_hands,
         weapons::reload::config::LooseMagazineConfig,
     },

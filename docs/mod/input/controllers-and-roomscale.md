@@ -25,8 +25,8 @@ The following decisions are settled and the rest of the plan assumes them.
 - Handedness is configurable. A `dominant_hand` setting mirrors the gun and grapple hands, the bindings, and the weapon attach bones. The grapple gauntlet stays on Rico's left arm model in the mirrored layout, so the grapple fires from the gauntlet on the non-dominant arm cosmetically.
 - The aim state is pinned clear for the local player (see "The aim-state pin").
 - The combat mental state keeps running for the AI, and its effects on the player's body are removed: no automatic draw and no automatic holster.
-- Guns are sticky. A drawn gun stays in the hand until the player holsters it. Grip inputs differ between controllers (an analog grip on Touch, a force-sensing grip on Index, a binary grip button on older wands), and holding a grip for minutes is tiring on all of them, so the grip is used only as an edge: press to grab, press to grapple. The foregrip is the one exception, held while the grip is held as a real foregrip is (a setting restores the edge).
-- The left grip fires the grapple, except inside a grab volume (a foregrip, a holster, a wheel), where it grabs. The grapple keeps the game's native tap and hold semantics, and a yank gesture on the left hand is an alternate zip trigger.
+- Hold to hold. A gun, a prop, a grenade, or a control stays in the hand while the grip is held, and letting go drops or docks it ([grip.md](grip.md)).
+- The left grip fires the grapple, except where it takes something within reach. The grapple keeps the game's native tap and hold semantics, and a yank gesture on the left hand is an alternate zip trigger.
 - Two-handed weapons are held by the dominant hand alone. The off-hand can grab the foregrip, and the line between the two hands then sets the weapon's direction.
 - Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its own hand.
 - Guns show no reticle by default. A dot at the hit point and a laser line are options. The grapple shows a hook-point highlight and a gauntlet beam, each configurable.
@@ -180,9 +180,7 @@ A switch between gameplay modes is debounced by a configurable number of ticks (
 
 ### Grip semantics
 
-Guns are sticky, so the grip is an edge, never a hold. A grab volume is a region where a grip press grabs instead of performing its default action. The grab volumes are the holsters on the body, a two-handed weapon's foregrip, the grenade and C4 pouches on the chest, the reload pouch on the belt and a gun's action under the true reload, and, under the opt-in physical controls, the wheel, the handlebars, the flight sticks, and the turret handles. An empty hand near a loose object or a weapon lying in the world is in the physical hands' pickup volume, which every other volume wins over ([physical-hands.md](physical-hands.md#the-grip)). With `overlay.grab_volumes` (off by default), the world-space overlay highlights the volume the hand is in, and draws each pouch faintly at all times, so that the player learns where they are. The holster volumes are small and close to the body, so that a grapple fired in a hurry near the hip does not draw a weapon instead.
-
-Holding a grenade is the exception to sticky grips: the grenade is held while the grip is held, and thrown when the grip is released. The physical vehicle controls and the parachute handles are held the same way, only while the grip is, so that a hand on the wheel lets go as a hand on a real one does.
+The grip holds what it takes for as long as it is held, everywhere: a gun, a prop, a grenade, a vehicle control, a handle. Letting go drops it with the hand's velocity, or docks it in the socket that fits it under the hand. Of everything a hand is within reach of, the target whose grab point is nearest the hand wins, whatever placed it, and the hand keeps looking while the grip is held, so a hand closed in the air takes what it is then laid on. An empty grip in the air is a fist; a grip on a surface climbs it. Every target is marked in its kind's colour, the one a squeeze would take highlighted. The model and its parts are in [grip.md](grip.md).
 
 ### Per-mode bindings
 
@@ -352,7 +350,7 @@ Precision aim adds a camera-tree FOV hint, shows a 2D sniper overlay, and hides 
 
 ## The world-space overlay layer
 
-A world-space overlay layer draws sprites and lines into the scene with depth, per eye. It carries the grapple highlight and beam, the optional gun dot and laser, the grab-volume highlights, the ghost hands of the yielded tier, and debug controller gizmos. The floating HUD panel cannot do this, because it draws a 2D texture on one plane, and the per-hand readouts need their own depths. The layer draws after post-processing and before the HUD, and tests against the scene depth in its pixel shader ([controllers.md, "The world-space overlay"](controllers.md#the-world-space-overlay)).
+A world-space overlay layer draws sprites and lines into the scene with depth, per eye. It carries the grapple highlight and beam, the optional gun dot and laser, the grip targets' markers, the ghost hands of the yielded tier, and debug controller gizmos. The floating HUD panel cannot do this, because it draws a 2D texture on one plane, and the per-hand readouts need their own depths. The layer draws after post-processing and before the HUD, and tests against the scene depth in its pixel shader ([controllers.md, "The world-space overlay"](controllers.md#the-world-space-overlay)).
 
 ## Roomscale design
 
@@ -431,7 +429,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 
 ### 3. Holding
 
-- Holsters and grab volumes, with the overlay highlights.
+- Holsters and pouches, with the grip targets' markers.
 - The two-handed foregrip.
 - Recoil and haptics.
 - The dual-wield split.
@@ -474,7 +472,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Hands | `hands.ik`, `hands.late_update`, `hands.suppress_secondary_ik`, `hands.reach_t`, `hands.reach_r`, `hands.pull`, `hands.resist`, `hands.grip`, `hands.yield_blend_s`, `hands.return_blend_s`, `hands.tiers` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches and the wrist detonator are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
 | Gun aiming | `aim.gun`, `aim.max_distance_m`, `aim.min_target_distance_m`, `aim.sights` | Built. The sight line starts from the fire point, corrected by the config entry or the embedded table (milestone 5). |
 | Grapple aiming | `aim.grapple`, `aim.grapple_origin_m` | Built. |
-| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.ghost_hands`, `overlay.grab_volumes`, `overlay.debug_gizmos`, and `overlay.body_mirror` with `overlay.body_mirror_distance_m` (the last four debugging aids, off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
+| World-space overlay | `overlay.enabled`, `overlay.gun_readout` (`None` by default, `Dot`, or `Laser`), `overlay.grapple_highlight`, `overlay.grapple_beam`, `overlay.hide_game_reticle`, `overlay.markers` (on), `overlay.ghost_hands`, `overlay.debug_gizmos`, and `overlay.body_mirror` with `overlay.body_mirror_distance_m` (the last three debugging aids, off), `overlay.depth_tolerance_m`, `overlay.depth_tolerance_rel`, `overlay.min_line_px`, `overlay.xray_alpha` | Built. |
 
 ### Milestone 2: posture and roomscale
 
@@ -492,11 +490,11 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 
 ### Milestone 3: holding
 
-The settings are under `weapons` unless named otherwise. The description is in [controllers.md, "Holsters, grab volumes, the foregrip, and the action-runs tier"](controllers.md#holsters-grab-volumes-the-foregrip-and-the-action-runs-tier), with recoil, haptics, dual-wield, the anchored tier, and the yank in ["Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand).
+The settings are under `weapons` unless named otherwise. The description is in [controllers.md, "Holsters, pouches, the foregrip, and the action-runs tier"](controllers.md#holsters-pouches-the-foregrip-and-the-action-runs-tier), with recoil, haptics, dual-wield, the anchored tier, and the yank in ["Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand).
 
 | Part | Settings | State |
 |---|---|---|
-| Holsters and grab volumes | `holsters.enabled`, `holsters.hip` (radius 0.12 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.09 m), `holsters.stick_click_cycles` (on), `holsters.show_volumes` (off), `overlay.grab_volumes`; the pouches under `pouches`: `grenade` and `c4` (0.075 m, on either side of the chest, for either hand with no gun drawn and the free hand otherwise; `grenade_side` picks the grenades' side by the gun hand), `magazine` (0.075 m, at the front of the free hand's hip, for the free hand), `reach_margin_m` (0.05 m), and `show` (on) | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
+| Holsters and pouches | `holsters.enabled`, `holsters.hip` (radius 0.12 m), `holsters.shoulder` (0.17 m), `holsters.chest` (0.09 m), `holsters.stick_click_cycles` (on); the pouches under `pouches`: `grenade` and `c4` (0.075 m, on either side of the chest, for either hand with no gun drawn and the free hand otherwise; `grenade_side` picks the grenades' side by the gun hand), `magazine` (0.075 m, at the front of the free hand's hip, for the free hand), and `reach_margin_m` (0.05 m) | Built, with a seated placement keyed on the roomscale posture (`roomscale.posture`). The volume offsets and radii are untuned. |
 | The two-handed foregrip | `foregrip.enabled`, `foregrip.hold`, `foregrip.radius_m`, `foregrip.release_distance_m`, `foregrip.blend_s`, `foregrip.fallback_distance_m`, `foregrip.min_span_m` | Built. |
 | The action-runs tier | `block_fire_during_actions` | Built for reloads, draws, and holsters. |
 | Recoil | `recoil.enabled`, `recoil.suppress_camera_kick`, and the kick and spring tuning under `recoil` | Built. |

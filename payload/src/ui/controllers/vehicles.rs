@@ -453,7 +453,6 @@ fn physical_settings(ui: &mut Ui, p: &mut PhysicalControlsConfig) {
         &mut p.animate_wheel,
         "Turn the vehicle's wheel with the steering",
     );
-    ui.checkbox(&mut p.show_wheel, "Draw the wheel's rim and axis");
     egui::CollapsingHeader::new("Wheel (car, boat)").show(ui, |ui| wheel(ui, &mut p.wheel));
     egui::CollapsingHeader::new("Handlebars (motorcycle, ATV, jetski)")
         .show(ui, |ui| handlebars(ui, &mut p.handlebars));
@@ -647,7 +646,6 @@ fn handle_settings(ui: &mut Ui, h: &mut ParachuteHandlesConfig) {
             .text("reach instead of the grapple (m)")
             .fixed_decimals(2),
     );
-    ui.checkbox(&mut h.show_handles, "Mark the handles");
     ui.add(
         egui::Slider::new(&mut h.full_pull_m, 0.1..=0.6)
             .text("full pull (m)")

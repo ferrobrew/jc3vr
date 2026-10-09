@@ -17,7 +17,8 @@
 //!    publishes each driven hand's palm in the rig, the static surface in its reach, and where the
 //!    player's body is, and pulses the hands for the grips the last step took or ended.
 //! 2. The input tick ([`finish_tick`]) asks for a grip where a hand's grip press found the climb's
-//!    grab volume ([`volume`]), and for a release where the grip lets go.
+//!    surface ([`reach_hold`], offered to the grip as a fallback target), and for a release where
+//!    the grip lets go.
 //! 3. The hand bodies' pre-simulation step ([`step::step`]) takes and ends the grips, pins each
 //!    gripping hand's body where it took hold, and moves the player: the velocity that carries the
 //!    body to where the gripping hands would have it, and a support on the gripped surface, so
@@ -39,7 +40,7 @@ pub use config::ClimbConfig;
 
 pub(crate) use self::{
     observe::{observe, reach},
-    state::{enabled, finish_tick, gripped, stand_down, static_reaches, take_landing, volume},
+    state::{enabled, finish_tick, gripped, reach_hold, stand_down, static_reaches, take_landing},
     step::step,
     types::Observed,
 };

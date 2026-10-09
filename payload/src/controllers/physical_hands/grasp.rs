@@ -46,6 +46,8 @@ pub struct Reach {
     pub point: Vec3,
     /// How far the point is from the palm, metres.
     pub distance: f32,
+    /// The surface's normal at the point, toward the palm; zero where none is known.
+    pub normal: Vec3,
     pub kind: TargetKind,
 }
 
@@ -288,6 +290,7 @@ mod tests {
             body: 1,
             point: Vec3::ZERO,
             distance,
+            normal: Vec3::ZERO,
             kind,
         }
     }

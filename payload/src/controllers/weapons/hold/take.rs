@@ -13,8 +13,8 @@ use glam::{Mat4, Vec3};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::grab::Candidate,
     frame::Hand,
+    grab::Candidate,
     hands::ActiveHands,
     weapons::{
         config::HoldConfig,
@@ -111,7 +111,7 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
 }
 
 /// Take the weapon `hand`'s grab of a
-/// [`GrabVolume::WorldWeapon`](crate::controllers::bindings::grab::GrabVolume::WorldWeapon) closed
+/// [`GrabVolume::WorldWeapon`](crate::controllers::grab::GrabVolume::WorldWeapon) closed
 /// on. Returns whether a
 /// weapon went into the hand.
 ///

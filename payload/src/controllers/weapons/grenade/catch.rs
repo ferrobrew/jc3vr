@@ -15,7 +15,7 @@
 //! release velocity, estimated as a throw from the pouch is, plus the character's own velocity.
 //!
 //! [`Grenade::PropelToward`]: jc3gi::equipment::explosive::Grenade::PropelToward
-//! [`GrabVolume::LiveGrenade`]: crate::controllers::bindings::grab::GrabVolume::LiveGrenade
+//! [`GrabVolume::LiveGrenade`]: crate::controllers::grab::GrabVolume::LiveGrenade
 //! [`GrenadeCatchConfig::range_m`]: crate::controllers::weapons::grenade::config::GrenadeCatchConfig::range_m
 
 use std::{num::NonZeroUsize, time::Instant};
@@ -25,8 +25,8 @@ use jc3gi::{equipment::explosive::Explosive, physics::PfxInstance};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
+    grab::{Candidate, GrabVolume},
     hands::held::{self, Slot},
     physical_hands,
     weapons::grenade::config::GrenadeCatchConfig,

@@ -281,7 +281,6 @@ fn pickup_settings(ui: &mut Ui, p: &mut PickupConfig) {
     ui.checkbox(&mut p.enabled, "Pick up objects with the grip");
     ui.add_enabled_ui(p.enabled, |ui| {
         ui.checkbox(&mut p.weapons, "Grab weapons to pick them up");
-        ui.checkbox(&mut p.show_targets, "Mark what each hand reaches");
         ui.add(egui::Slider::new(&mut p.reach_m, 0.0..=0.4).text("Reach (m)"));
         ui.add(egui::Slider::new(&mut p.max_mass_kg, 0.0..=5000.0).text("Heaviest held (kg)"));
         ui.checkbox(

@@ -14,6 +14,7 @@ mod explosives;
 mod feedback;
 mod fingers;
 mod grapple;
+mod grip;
 mod hands;
 mod inventory;
 mod system;
@@ -250,6 +251,14 @@ const SECTIONS: &[Section] = &[
             row!("COLLIDER VIEW", controllers::collider_view),
             row!("LEFT GUN BODY", controllers::left_gun_body),
             row!("RIGHT GUN BODY", controllers::right_gun_body),
+        ],
+    },
+    Section {
+        title: "GRIP",
+        rows: &[
+            row!("LEFT GRIP", grip::left_grip),
+            row!("RIGHT GRIP", grip::right_grip),
+            row!("GRIP MARKERS", grip::markers),
         ],
     },
     Section {

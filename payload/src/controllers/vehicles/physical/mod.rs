@@ -55,8 +55,8 @@ pub use crate::controllers::vehicles::physical::{
     sticks::stick_deflection,
 };
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
+    grab::{Candidate, GrabVolume},
     mode::VehicleClass,
     vehicles::{
         config::{LeverSpec, PhysicalControlsConfig, StickSpec},

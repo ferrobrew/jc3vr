@@ -10,7 +10,8 @@
 //! render-time hand poses and submit every frame, as does the sight tuning marker, which stays
 //! where it was placed.
 //!
-//! The grab-volume highlights are the holsters' to produce, into [`Source::GrabVolumes`].
+//! The grip targets' markers are the grip model's to produce, into [`Source::GrabMarkers`]
+//! ([`crate::controllers::grab::markers`]).
 
 use std::{
     sync::atomic::{AtomicU64, Ordering},

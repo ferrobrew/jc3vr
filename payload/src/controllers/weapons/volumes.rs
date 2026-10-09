@@ -58,9 +58,9 @@
 use glam::{Mat3, Quat, Vec3};
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume, HolsterSite},
     body::{self, BodyDimensions, alignment::measure::SkeletonLandmarks},
     frame::Hand,
+    grab::{Candidate, GrabVolume, HolsterSite},
     weapons::config::{HolstersConfig, PouchSide, PouchesConfig, VolumeSpec},
 };
 
@@ -335,106 +335,6 @@ pub fn magazine_pouch(
         side,
         grabber,
     )
-}
-
-/// Whether `volume` is one of the pouches.
-pub fn is_pouch(volume: GrabVolume) -> bool {
-    matches!(
-        volume,
-        GrabVolume::GrenadePouch | GrabVolume::MagazinePouch | GrabVolume::C4Pouch
-    )
-}
-
-/// The grab volume `hand` is in among `candidates`, each tested against its own point of the hand,
-/// `point_for`, as [`crate::controllers::bindings::grab::grab_volume_by`] finds it, except that
-/// every other volume wins over a holster that also contains its point. A press meant for a pouch
-/// or a weapon's volume that also lands in a holster's edge must not draw or switch a weapon; a
-/// hand that means the holster is deep in it, clear of the pouches. Among the rest, the hand is in
-/// the one it is deepest in.
-pub fn grab_volume_by(
-    hand: Hand,
-    candidates: &[Candidate],
-    point_for: impl Fn(&Candidate) -> Vec3,
-) -> Option<GrabVolume> {
-    candidates
-        .iter()
-        .filter(|c| c.hand.is_none_or(|h| h == hand))
-        .filter_map(|c| {
-            let holster = matches!(c.volume, GrabVolume::Holster(_));
-            c.depth(point_for(c))
-                .map(|depth| (holster, depth, c.volume))
-        })
-        .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)))
-        .map(|(_, _, volume)| volume)
-}
-
-/// The pouch `hand` reaches for at `point` though the point is outside it: the pouch nearest the
-/// point among those `hand` may grab, when the point is in no volume at all and within `margin` of
-/// that pouch's surface. A grip press there takes from the pouch rather than doing the grip's own
-/// action (the off-hand's grapple), because a hand feeling for a pouch on the body lands a little
-/// off it more often than not.
-pub fn pouch_in_reach(
-    point: Vec3,
-    hand: Hand,
-    candidates: &[Candidate],
-    margin: f32,
-) -> Option<GrabVolume> {
-    if !point.is_finite() || !margin.is_finite() || margin <= 0.0 {
-        return None;
-    }
-    let grabbable =
-        |c: &&Candidate| c.hand.is_none_or(|h| h == hand) && c.radius.is_finite() && c.radius > 0.0;
-    if candidates
-        .iter()
-        .filter(grabbable)
-        .any(|c| c.depth(point).is_some())
-    {
-        return None;
-    }
-    candidates
-        .iter()
-        .filter(grabbable)
-        .filter(|c| is_pouch(c.volume))
-        .map(|c| (c.volume, point.distance(c.centre) - c.radius))
-        .filter(|(_, outside)| *outside <= margin)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(volume, _)| volume)
-}
-
-/// A grab point outside every holster that `hand` may grab: the nearest holster, how far the point
-/// is outside its surface, and the point's offset from its centre.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct NearMiss {
-    pub volume: GrabVolume,
-    pub outside_m: f32,
-    pub offset: Vec3,
-}
-
-/// The holster or pouch nearest `point` among `candidates` that `hand` may grab, when `point` is
-/// outside every one of them and within `margin` of that one's surface.
-pub fn near_miss(
-    point: Vec3,
-    hand: Hand,
-    candidates: &[Candidate],
-    margin: f32,
-) -> Option<NearMiss> {
-    if !point.is_finite() {
-        return None;
-    }
-    let holsters = candidates.iter().filter(|c| {
-        (matches!(c.volume, GrabVolume::Holster(_)) || is_pouch(c.volume))
-            && c.hand.is_none_or(|h| h == hand)
-            && c.radius.is_finite()
-            && c.radius > 0.0
-    });
-    let (nearest, outside) = holsters
-        .map(|c| (c, point.distance(c.centre) - c.radius))
-        .min_by(|a, b| a.1.total_cmp(&b.1))?;
-    (outside > 0.0 && outside <= margin).then(|| NearMiss {
-        volume: nearest.volume,
-        outside_m: outside,
-        offset: point - nearest.centre,
-    })
 }
 
 /// The standing height of the hip joints as a fraction of the standing height: a generic

@@ -12,6 +12,7 @@ use std::{fmt, num::NonZeroUsize, ptr};
 
 use glam::{Quat, Vec3};
 use jc3gi::{
+    character::character::Character,
     equipment::weapon::{WeaponBase, WeaponState},
     game::GameObject,
     physics::{
@@ -19,6 +20,7 @@ use jc3gi::{
         hknpWorld,
     },
     types::vector_math::AlignedVector3,
+    vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
 
 use crate::controllers::physical_hands::{
@@ -80,26 +82,81 @@ impl BodyState {
 }
 
 /// What the object at `object`, reached on its body `body`, is to a hand: a weapon lying in the
-/// world, a loose rigid object, or nothing a hand takes.
+/// world, or a loose object (a rigid object, or any other object whose reached body is dynamic and
+/// has a mass, such as a barrel), or why it is neither.
 ///
 /// # Safety
 ///
 /// Main thread, outside the physics step; `object` and `body` must come from a cast this tick.
-pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Option<TargetKind> {
+pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetKind, Unclassified> {
     let game_object =
         (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
     if unsafe { (*game_object).IsType(WeaponBase::TYPE_ID()) } {
         let weapon = object.get() as *const WeaponBase;
-        return (unsafe { (*weapon).m_State } == WeaponState::E_WS_DROPPED)
-            .then_some(TargetKind::Weapon);
+        // Read as the raw value, so that a state the enum does not name is still reported.
+        let state = unsafe { (&raw const (*weapon).m_State).cast::<i32>().read() };
+        return if state == WeaponState::E_WS_DROPPED as i32 {
+            Ok(TargetKind::Weapon)
+        } else {
+            Err(Unclassified::WeaponNotDropped(state))
+        };
     }
-    if !unsafe { (*game_object).IsType(RigidObject::TYPE_ID()) } {
-        return None;
+    let state = unsafe { read(body, object) }.map_err(Unclassified::Body)?;
+    state
+        .mass_kg
+        .map(|mass_kg| TargetKind::Prop { mass_kg })
+        .ok_or(Unclassified::NoMass)
+}
+
+/// Why a reached object is no loose object for a hand.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum Unclassified {
+    /// A weapon in this state (raw), not lying dropped in the world.
+    WeaponNotDropped(i32),
+    /// The reached body cannot be read as a loose one: static, keyframed, or gone.
+    Body(BodyError),
+    /// The body's mass is infinite.
+    NoMass,
+}
+
+impl fmt::Display for Unclassified {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Unclassified::WeaponNotDropped(state) => {
+                write!(f, "a weapon that is not lying dropped (state {state})")
+            }
+            Unclassified::Body(e) => write!(f, "{e}"),
+            Unclassified::NoMass => write!(f, "its body's mass is infinite"),
+        }
     }
-    let state = unsafe { read(body, object) }.ok()?;
-    Some(TargetKind::Prop {
-        mass_kg: state.mass_kg?,
-    })
+}
+
+/// What kind of object `object` is, for the reach's log: the classes a hand tells apart, and the
+/// address of its `CGameObject` subobject's virtual table, which names any other class in the
+/// disassembly.
+///
+/// # Safety
+///
+/// `object` must be a live physics game object.
+pub(super) unsafe fn describe(object: NonZeroUsize) -> String {
+    let game_object =
+        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    let is = |type_id: *const u32| unsafe { (*game_object).IsType(type_id) };
+    let kind = if is(unsafe { WeaponBase::TYPE_ID() }) {
+        "weapon"
+    } else if is(unsafe { Vehicle::TYPE_ID() }) {
+        "vehicle"
+    } else if is(unsafe { VehiclePartGameObject::TYPE_ID() }) {
+        "vehicle part"
+    } else if is(unsafe { Character::TYPE_ID() }) {
+        "character"
+    } else if is(unsafe { RigidObject::TYPE_ID() }) {
+        "rigid object"
+    } else {
+        "other object"
+    };
+    let vftable = unsafe { (*game_object).vftable() } as usize;
+    format!("{kind} (vftable {vftable:#x})")
 }
 
 /// The state of the body `body`, checked to still belong to `owner`.

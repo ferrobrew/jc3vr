@@ -131,6 +131,10 @@ pub(super) fn hands_and_aim_section(page: Page) -> Page {
             .controllers
             .overlay
             .hide_game_reticle))
+        .item(config_toggle!("GRIP MARKERS", |c| c
+            .controllers
+            .overlay
+            .markers))
         .item(config_toggle!("FINGERS", |c| c.controllers.fingers.enabled))
         .item(config_toggle!("FINGERS WRAP WHAT THE HAND HOLDS", |c| c
             .controllers
@@ -496,11 +500,6 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .reload
             .action
             .physical))
-        .item(config_toggle!("SHOW POUCHES", |c| c
-            .controllers
-            .weapons
-            .pouches
-            .show))
         .item(config_toggle!("THROWN GRENADES", |c| c
             .controllers
             .weapons
@@ -715,11 +714,6 @@ pub(super) fn parachute_and_saved_settings_section(page: Page) -> Page {
             .vehicles
             .parachute_handles
             .enabled))
-        .item(config_toggle!("MARK PARACHUTE HANDLES", |c| c
-            .controllers
-            .vehicles
-            .parachute_handles
-            .show_handles))
         .item(config_slider!(
             "HANDLE HEIGHT ABOVE SHOULDER",
             HANDLE_HEIGHT_RANGE,

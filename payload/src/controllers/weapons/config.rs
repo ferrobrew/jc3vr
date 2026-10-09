@@ -34,9 +34,6 @@ pub struct HolstersConfig {
     /// Looking down at a holster lowers the head a little without the body crouching, so a small
     /// drop leaves the volumes where they are; a crouch carries them down.
     pub crouch_deadband_m: f32,
-    /// Draw every body volume, the holsters as well as the pouches, through the world-space overlay
-    /// at all times, so that their placement can be seen and tuned. Needs the overlay on.
-    pub show_volumes: bool,
     /// Which body the holsters and pouches ride.
     pub anchor: HolsterAnchor,
     /// Move a holster with a gun docked in it to where the gun is on the character's body, so a
@@ -86,7 +83,6 @@ impl HolstersConfig {
                 radius_m: 0.09,
             },
             crouch_deadband_m: 0.15,
-            show_volumes: false,
             anchor: HolsterAnchor::Body,
             follow_docks: true,
         }
@@ -107,10 +103,6 @@ impl Default for HolstersConfig {
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PouchesConfig {
-    /// Draw each placed pouch faintly through the world-space overlay at all times, and brighter
-    /// while a hand is within reach of it, so that their places can be learned. Needs the overlay
-    /// on.
-    pub show: bool,
     /// Which side of the chest the grenade pouch sits on. The C4 pouch takes the other side.
     pub grenade_side: PouchSide,
     /// The grenade pouch, offset from the chest's front on its side.
@@ -158,7 +150,6 @@ impl PouchesConfig {
             radius_m: 0.075,
         };
         Self {
-            show: true,
             grenade_side: PouchSide::Dominant,
             grenade: pouch,
             c4: pouch,

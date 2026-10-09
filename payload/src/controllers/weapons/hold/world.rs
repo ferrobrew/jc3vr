@@ -12,8 +12,8 @@ use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     frame::{Hand, Pose},
+    grab::{Candidate, GrabVolume},
 };
 
 /// Where a target weapon is.

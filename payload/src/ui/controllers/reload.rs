@@ -187,7 +187,6 @@ fn settings(ui: &mut Ui, r: &mut ReloadConfig) {
     ui.add(egui::Slider::new(&mut r.capture_angle_deg, 5.0..=90.0).text("Capture angle (°)"));
     ui.add(egui::Slider::new(&mut r.seat_depth_m, 0.005..=0.1).text("Seat depth (m)"));
     ui.add(egui::Slider::new(&mut r.timeout_s, 1.0..=30.0).text("Round timeout (s)"));
-    ui.checkbox(&mut r.show_well, "Ring the well while holding a round");
     belt_settings(ui, &mut r.belt);
     ui.checkbox(&mut r.chamber, "Work the action after running dry");
     ui.checkbox(

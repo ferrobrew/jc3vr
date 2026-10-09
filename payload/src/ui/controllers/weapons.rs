@@ -121,15 +121,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
             None => "nothing",
         }
     ));
-    if let Some((hand, miss)) = status.last_miss {
-        ui.label(format!(
-            "Last near miss: {} hand {:.2} m outside the {} (offset from its centre {})",
-            hand.label(),
-            miss.outside_m,
-            miss.volume.label(),
-            vec3(miss.offset)
-        ));
-    }
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
             let ui = &mut columns[hand.index()];
@@ -821,10 +812,6 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
          player's body in vehicles, ragdolls, and skydives. The player's body turns with the \
          estimated torso.",
     );
-    ui.checkbox(&mut h.show_volumes, "Show every holster volume")
-        .on_hover_text(
-            "Draw all the body volumes through the overlay, the one a hand is in highlighted.",
-        );
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
         .on_hover_text("The fallback for drawing without reaching a holster.");
     ui.add(egui::Slider::new(&mut h.crouch_deadband_m, 0.0..=0.5).text("Crouch deadband (m)"));
@@ -841,8 +828,6 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
 }
 
 fn pouch_settings(ui: &mut Ui, p: &mut PouchesConfig) {
-    ui.checkbox(&mut p.show, "Show the pouches")
-        .on_hover_text("Draw each pouch faintly, brighter while a hand is within reach of it.");
     ui.horizontal(|ui| {
         ui.label("Grenade pouch on the");
         for side in PouchSide::ALL {
@@ -858,7 +843,6 @@ fn pouch_settings(ui: &mut Ui, p: &mut PouchesConfig) {
     volume_settings(ui, "Magazine pouch", &mut p.magazine);
     if ui.button("Reset pouches").clicked() {
         *p = PouchesConfig {
-            show: p.show,
             grenade_side: p.grenade_side,
             ..PouchesConfig::new()
         };

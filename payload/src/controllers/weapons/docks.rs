@@ -23,9 +23,9 @@ use jc3gi::{
 use crate::{
     controllers::{
         aim::gun,
-        bindings::grab::{Candidate, GrabVolume, HolsterSite},
         body::alignment::measure::Frames,
         frame::Hand,
+        grab::{Candidate, GrabVolume, HolsterSite},
         hands::ActiveHands,
         weapons::{
             hold::{layout, second},

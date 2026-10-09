@@ -36,8 +36,8 @@
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
+    grab::{Candidate, GrabVolume},
     vehicles::{config::ParachuteHandlesConfig, physical::Release},
 };
 
@@ -152,55 +152,6 @@ pub fn reach_candidates(
         })
 }
 
-/// How a handle is marked.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum MarkState {
-    /// Free, its hand out of reach or untracked.
-    Idle,
-    /// Free, its hand in reach: a grip press takes it.
-    InReach,
-    /// Held.
-    Held,
-}
-
-/// A handle's mark: where it is and how it is shown.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Mark {
-    pub hand: Hand,
-    pub centre: Vec3,
-    pub radius: f32,
-    pub state: MarkState,
-}
-
-/// The handles' marks, indexed by [`Hand::index`], for hands with grips at `grips`: a held handle
-/// where its hand holds it, a free one at its place, in reach when its hand is within the reach.
-pub fn marks(
-    config: &ParachuteHandlesConfig,
-    state: &HandleState,
-    centres: [Vec3; 2],
-    grips: [Option<Vec3>; 2],
-) -> [Mark; 2] {
-    let placed = candidates(config, state, centres, grips);
-    let reach = config.reach_m.max(config.radius_m);
-    Hand::BOTH.map(|hand| {
-        let i = hand.index();
-        let centre = placed[i].centre;
-        let state = if state.holds[i].is_some() {
-            MarkState::Held
-        } else if grips[i].is_some_and(|g| g.distance(centre) <= reach) {
-            MarkState::InReach
-        } else {
-            MarkState::Idle
-        };
-        Mark {
-            hand,
-            centre,
-            radius: config.radius_m,
-            state,
-        }
-    })
-}
-
 /// Advance the handles by one input tick: act on the grabs, and let go of the handles whose hands
 /// were lost or moved away. Returns each hand's pull, `0..=1`.
 pub fn step(
@@ -294,7 +245,7 @@ fn release(state: &mut HandleState, hand: Hand, why: Release, events: &mut Vec<H
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::{bindings::grab::grab_volume, vehicles::arm_steering::combine};
+    use crate::controllers::{grab::grab_volume, vehicles::arm_steering::combine};
 
     const CONFIG: ParachuteHandlesConfig = ParachuteHandlesConfig::new();
     const SHOULDERS: [Vec3; 2] = [Vec3::new(-0.2, -0.2, 0.1), Vec3::new(0.2, -0.2, 0.1)];
@@ -389,25 +340,6 @@ mod tests {
         // A held handle has no reach of its own: its hand is in its volume already.
         let (state, _) = both_taken();
         assert_eq!(reach_candidates(&CONFIG, &state, centres).count(), 0);
-    }
-
-    #[test]
-    fn the_marks_show_reach_and_hold() {
-        let centres = centres();
-        let mut state = HandleState::new();
-        let near = centres[1] + Vec3::Y * CONFIG.reach_m * 0.9;
-        let marks = marks(&CONFIG, &state, centres, [None, Some(near)]);
-        assert_eq!(marks[0].state, MarkState::Idle);
-        assert_eq!(marks[1].state, MarkState::InReach);
-        assert_eq!(marks[1].centre, centres[1]);
-        tick(&mut state, [None, Some(centres[1])], [false, true]);
-        let low = centres[1] - Vec3::Y * 0.1;
-        let held = super::marks(&CONFIG, &state, centres, [None, Some(low)]);
-        assert_eq!(held[1].state, MarkState::Held);
-        assert!(
-            (held[1].centre - low).length() < 1e-5,
-            "drawn where the hand holds it"
-        );
     }
 
     #[test]

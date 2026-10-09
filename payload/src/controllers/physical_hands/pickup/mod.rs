@@ -39,12 +39,10 @@ use jc3gi::{
 use crate::{
     config::Config,
     controllers::{
-        bindings::{
-            grab::GrabVolume,
-            hold::{Desired, MapKind, Target, Want},
-        },
+        bindings::hold::{Desired, MapKind, Target, Want},
         fingers::grip::GripSource,
         frame::Hand,
+        grab::{GrabVolume, PickupKind},
         hands::ik,
         haptics::{self, Event},
         physical_hands::{
@@ -139,23 +137,6 @@ pub struct PickupStatus {
     pub last_error: Option<String>,
 }
 
-/// The pickup volume `hand` is in: [`GrabVolume::Pickup`] when the hand has a target and holds
-/// nothing. Called from the input tick.
-pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
-    if !(config.enabled && config.pickup.enabled) {
-        return None;
-    }
-    let state = STATE.lock();
-    let i = hand.index();
-    let available = state.fresh(Instant::now())
-        && state.pickup.held[i].is_none()
-        && state.status.hands[i]
-            .reach
-            .is_some_and(|r| config.pickup.weapons || r.kind != TargetKind::Weapon);
-    available.then_some(GrabVolume::Pickup)
-}
-
 /// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
 /// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
 /// of it, and a released grip asks it to let go. Called from the input tick after the tables.
@@ -188,7 +169,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
             continue;
         }
-        if inputs.grabs[i] != Some(GrabVolume::Pickup) {
+        if !matches!(inputs.grabs[i], Some(GrabVolume::Pickup(_))) {
             continue;
         }
         let Some(reach) = state.status.hands[i].reach.filter(|_| fresh) else {
@@ -320,6 +301,16 @@ impl PickupState {
         self.held[hand.index()].is_some()
     }
 
+    /// What kind of target the object `hand` holds is, when it holds one.
+    pub(super) fn held_kind(&self, hand: Hand) -> Option<PickupKind> {
+        self.held[hand.index()].map(|held| match held.kind {
+            HeldKind::Prop => PickupKind::Prop,
+            HeldKind::Articulated => PickupKind::Hinged,
+            HeldKind::Door => PickupKind::Door,
+            HeldKind::Ragdoll => PickupKind::Character,
+        })
+    }
+
     /// Whether `hand` grips a latched door.
     pub(super) fn latched(&self, hand: Hand) -> bool {
         self.latches[hand.index()].is_some()
@@ -364,7 +355,8 @@ impl PickupState {
 /// `world_scale`), or the object the palm presses into, or a vehicle's door ([`doors::reach`]). An
 /// object heavier than [`PickupConfig::max_mass_kg`] is not one, nor the body `standing_on` the
 /// player stands on, which a hand would lift from under the player. `cast` returns the first hit
-/// between two points.
+/// between two points. What each hit was, and why it was not taken, goes into `notes` for the grip
+/// press's log.
 ///
 /// # Safety
 ///
@@ -375,6 +367,7 @@ pub(super) unsafe fn reach(
     standing_on: Option<u32>,
     tuning: &ReachTuning,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+    notes: &mut Vec<String>,
 ) -> Option<Reach> {
     let ReachTuning {
         world_scale,
@@ -392,75 +385,120 @@ pub(super) unsafe fn reach(
             cast(origin, origin + direction * length)
         })
         .chain(press);
-    let reaches: Vec<Reach> = hits
-        .filter_map(|hit| {
-            if let Surface::Character { object, body } = hit.surface {
-                // SAFETY: forwarded from the caller; the hit was found this tick.
-                return unsafe {
-                    characters::reach(
-                        object,
-                        body,
-                        &hit,
-                        palm.centre,
-                        world_scale,
-                        character_config,
-                    )
-                };
+    let mut seen: Vec<(Option<NonZeroUsize>, u32)> = Vec::new();
+    let mut reaches = Vec::new();
+    for hit in hits {
+        let (object, body) = match hit.surface {
+            Surface::Character { object, body } => (Some(object), body),
+            Surface::Solid { object, body } => (object, body),
+        };
+        // The rays fan out from one palm, so most hit the same body; it is noted once.
+        let first = !seen.contains(&(object, body));
+        if first {
+            seen.push((object, body));
+        }
+        let mut note = |why: String| {
+            if first && notes.len() < MAX_REACH_NOTES {
+                notes.push(why);
             }
-            let Surface::Solid {
-                object: Some(object),
-                body,
-            } = hit.surface
-            else {
-                return None;
-            };
-            // A vehicle's door, open or at a closed door's handle area, before anything else: the
-            // player may stand on the vehicle whose door they open.
+        };
+        let distance = hit.position.distance(palm.centre);
+        let at = format!(
+            "body {body} at {:.0} mm",
+            distance / world_scale.max(1e-3) * 1000.0
+        );
+        if let Surface::Character { object, body } = hit.surface {
             // SAFETY: forwarded from the caller; the hit was found this tick.
-            if let Some(door) = unsafe {
-                doors::reach(
+            match unsafe {
+                characters::reach(
                     object,
                     body,
                     &hit,
                     palm.centre,
-                    door_config.reach_m * world_scale,
-                    door_config,
+                    world_scale,
+                    character_config,
                 )
             } {
-                return Some(door);
+                Some(reach) => {
+                    note(format!("a character, {at}: in reach"));
+                    reaches.push(reach);
+                }
+                None => note(format!("a character, {at}: not one a hand takes here")),
             }
-            if standing_on == Some(body) {
-                return None;
-            }
-
-            // SAFETY: forwarded from the caller; the hit was found this tick.
-            let classified = unsafe { bodies::classify(object, body) };
-            // A body joined to the world or another body is taken whatever its weight, since its
-            // constraint carries it.
-            let kind = match classified {
-                Some(TargetKind::Weapon) => TargetKind::Weapon,
-                // SAFETY: forwarded from the caller.
-                other => match unsafe { articulated_kind(object, body, tuning) } {
-                    Some(articulated) => articulated,
-                    None => other?,
-                },
-            };
-            if let TargetKind::Prop { mass_kg } = kind
-                && !grasp::can_hold(mass_kg, config)
-            {
-                return None;
-            }
-            Some(Reach {
+            continue;
+        }
+        let Surface::Solid {
+            object: Some(object),
+            body,
+        } = hit.surface
+        else {
+            note(format!("the static world, {at}: climbed, not taken"));
+            continue;
+        };
+        // SAFETY: forwarded from the caller; the hit was found this tick.
+        let what = unsafe { bodies::describe(object) };
+        // A vehicle's door, open or at a closed door's handle area, before anything else: the
+        // player may stand on the vehicle whose door they open.
+        // SAFETY: forwarded from the caller; the hit was found this tick.
+        if let Some(door) = unsafe {
+            doors::reach(
                 object,
                 body,
-                point: hit.position,
-                distance: hit.position.distance(palm.centre),
-                kind,
-            })
-        })
-        .collect();
+                &hit,
+                palm.centre,
+                door_config.reach_m * world_scale,
+                door_config,
+            )
+        } {
+            note(format!("{what}, {at}: a door in reach"));
+            reaches.push(door);
+            continue;
+        }
+        if standing_on == Some(body) {
+            note(format!("{what}, {at}: the player stands on it"));
+            continue;
+        }
+        // SAFETY: forwarded from the caller; the hit was found this tick.
+        let classified = unsafe { bodies::classify(object, body) };
+        // A body joined to the world or another body is taken whatever its weight, since its
+        // constraint carries it.
+        // SAFETY: forwarded from the caller.
+        let articulated = match classified {
+            Ok(TargetKind::Weapon) => None,
+            _ => unsafe { articulated_kind(object, body, tuning) },
+        };
+        let kind = match (articulated, classified) {
+            (Some(articulated), _) => articulated,
+            (None, Ok(kind)) => kind,
+            (None, Err(why)) => {
+                note(format!("{what}, {at}: not taken, {why}"));
+                continue;
+            }
+        };
+        if let TargetKind::Prop { mass_kg } = kind
+            && !grasp::can_hold(mass_kg, config)
+        {
+            note(format!(
+                "{what}, {at}: not taken, {mass_kg:.0} kg is over the {:.0} kg a hand takes",
+                config.max_mass_kg
+            ));
+            continue;
+        }
+        note(format!("{what}, {at}: in reach"));
+        reaches.push(Reach {
+            object,
+            body,
+            point: hit.position,
+            distance,
+            normal: hit.normal,
+            kind,
+        });
+    }
     grasp::nearest(reaches)
 }
+
+/// The most notes one hand's reach keeps per tick.
+const MAX_REACH_NOTES: usize = 8;
 
 /// What the object at `object`, reached on its dynamic body `body`, is when the body is joined to
 /// the world or another body by an enabled constraint: an articulated object, light enough for

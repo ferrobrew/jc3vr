@@ -113,6 +113,7 @@ pub fn injected_with(
                 stick_raw: stick,
                 trackpad: pad,
                 grab_volume: None,
+                grab_slow: false,
             };
         }
         c

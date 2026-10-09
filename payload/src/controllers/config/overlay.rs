@@ -23,8 +23,10 @@ pub struct OverlayConfig {
     pub hide_game_reticle: bool,
     /// Draw a translucent ghost at the controller of a hand the animation owns.
     pub ghost_hands: bool,
-    /// Highlight the grab volume each hand is in (a holster, the foregrip, the grenade pouch).
-    pub grab_volumes: bool,
+    /// Mark every grip target (the sockets and pouches on the body, the weapons, the vehicle
+    /// controls, the objects and surfaces in reach), coloured by kind, the one each hand's squeeze
+    /// would take highlighted ([`crate::controllers::grab::markers`]).
+    pub markers: bool,
     /// Draw axes at the controllers' grip and aim poses, for debugging.
     pub debug_gizmos: bool,
     /// Draw Rico's solved skeleton reflected in a mirror ahead of him, with the targets it was
@@ -54,7 +56,7 @@ impl OverlayConfig {
             grapple_beam: true,
             hide_game_reticle: true,
             ghost_hands: false,
-            grab_volumes: false,
+            markers: true,
             debug_gizmos: false,
             body_mirror: false,
             body_mirror_distance_m: 1.2,

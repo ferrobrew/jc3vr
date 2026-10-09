@@ -12,8 +12,8 @@
 use glam::Vec3;
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
+    grab::{Candidate, GrabVolume},
     hands::tiers,
     vehicles::config::MountedConfig,
 };

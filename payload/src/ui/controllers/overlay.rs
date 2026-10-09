@@ -47,8 +47,10 @@ pub(super) fn overlay_settings(ui: &mut Ui, o: &mut OverlayConfig) {
         ui.checkbox(&mut o.grapple_beam, "Grapple beam");
         ui.checkbox(&mut o.ghost_hands, "Ghost hands")
             .on_hover_text("Show the controller's hand while the animation owns it.");
-        ui.checkbox(&mut o.grab_volumes, "Grab-volume highlights")
-            .on_hover_text("Ring the holster, foregrip, or pouch each hand is in.");
+        ui.checkbox(&mut o.markers, "Grip markers").on_hover_text(
+            "Mark everything the hands can take, coloured by kind, with what each squeeze would \
+             take highlighted.",
+        );
         ui.checkbox(&mut o.debug_gizmos, "Controller gizmos");
         ui.checkbox(&mut o.body_mirror, "Body mirror").on_hover_text(
             "Draw Rico's skeleton reflected in a mirror ahead of him, with rings at the head and \

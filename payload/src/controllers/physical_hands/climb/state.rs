@@ -7,21 +7,18 @@ use std::time::{Duration, Instant};
 use glam::{Affine3A, Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::{
-    config::Config,
-    controllers::{
-        bindings::grab::GrabVolume,
-        fingers::grip::{self, Grip as FingerGrip, GripSource},
-        frame::Hand,
-        physical_hands::{
-            PhysicalHandsConfig,
-            climb::{
-                engine,
-                solve::{Mantle, carried, carried_turn},
-                types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
-            },
-            physics::{self, drive::Goal},
+use crate::controllers::{
+    fingers::grip::{self, Grip as FingerGrip, GripSource},
+    frame::Hand,
+    grab::GrabVolume,
+    physical_hands::{
+        PhysicalHandsConfig,
+        climb::{
+            engine,
+            solve::{Mantle, carried, carried_turn},
+            types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
         },
+        physics::{self, drive::Goal},
     },
 };
 
@@ -72,21 +69,16 @@ pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.climb.enabled && physics::enabled(config)
 }
 
-/// The climb's grab volume for `hand`: [`GrabVolume::Climb`] when the hand grips nothing and its
-/// body reaches a static surface, or presses into something that holds it back, so that a grip
-/// pressed against a wall is latched to the climb rather than firing the grapple even when no
-/// reach ray finds the surface. Called from the input tick.
-pub(crate) fn volume(hand: Hand) -> Option<GrabVolume> {
-    let config = Config::lock_query(|c| c.controllers.physical_hands);
-    if !enabled(&config) {
-        return None;
-    }
+/// The surface `hand` could climb: the one its reach found, while the hand grips nothing. A hand
+/// that only presses into something its reach did not find offers nothing, since a grip there would
+/// have nothing to hold. Called from the input tick.
+pub(crate) fn reach_hold(hand: Hand) -> Option<Hold> {
     let state = STATE.lock();
     let i = hand.index();
-    (state.fresh(Instant::now())
-        && state.grips[i].is_none()
-        && (state.status.hands[i].reach.is_some() || state.pressing[i]))
-        .then_some(GrabVolume::Climb)
+    if !state.fresh(Instant::now()) || state.grips[i].is_some() {
+        return None;
+    }
+    state.status.hands[i].reach
 }
 
 /// Act on the input tick's grips: a grip pressed on the climb's grab volume asks the next step to

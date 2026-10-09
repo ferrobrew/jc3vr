@@ -185,8 +185,6 @@ pub struct PhysicalControlsConfig {
     /// Turn the vehicle's rendered steering wheel with the steering: by the held wheel's angle, or
     /// otherwise by the vehicle's own steering, so the stick turns it too.
     pub animate_wheel: bool,
-    /// Draw the wheel's rim and axis, for tuning.
-    pub show_wheel: bool,
 }
 
 impl PhysicalControlsConfig {
@@ -246,7 +244,6 @@ impl PhysicalControlsConfig {
             release_distance_m: 0.25,
             from_vehicle: true,
             animate_wheel: true,
-            show_wheel: false,
         }
     }
 
@@ -605,9 +602,6 @@ pub struct ParachuteHandlesConfig {
     /// clearly left the handle without opening. Named apart from the `release_distance_m` key that
     /// saved the earlier, tight distance, so that a saved file takes this default once.
     pub let_go_distance_m: f32,
-    /// Mark each handle under the parachute: faint while out of reach, brighter in reach, lit
-    /// while held.
-    pub show_handles: bool,
 }
 
 impl ParachuteHandlesConfig {
@@ -621,7 +615,6 @@ impl ParachuteHandlesConfig {
             deadzone_m: 0.03,
             brake_threshold: 0.2,
             let_go_distance_m: 0.6,
-            show_handles: true,
         }
     }
 }

@@ -10,8 +10,8 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::gun,
-    bindings::grab::HolsterSite,
     frame::{Hand, Pose},
+    grab::HolsterSite,
     weapons::{
         engine::slot_from_raw,
         hold::{pickup::gun_pose, second},

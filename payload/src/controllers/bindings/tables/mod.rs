@@ -1,6 +1,7 @@
 //! The per-mode binding tables: from the tick's semantic actions to the game actions wanted this
 //! tick. Pure, with the little state the tables need across ticks (the pause button's long press,
-//! what each grip press was latched to, the wingsuit's evade press, and the menu and pad latches).
+//! what each grip press is doing ([`GripLatch`]), the wingsuit's evade press, and the menu and pad
+//! latches).
 //!
 //! Each mode reads the semantic actions of its action set ([`crate::vr::input::semantic`]), which
 //! the player can rebind in the runtime; [`crate::vr::input::semantic::defaults`] suggests the
@@ -51,7 +52,10 @@ use crate::{
     controllers::{
         bindings::{
             controls::{ButtonControl, Controls},
-            grab::GrabVolume,
+            grab::{
+                GrabVolume,
+                latch::{GripLatch, LatchTick},
+            },
             hold::{Desired, MapKind, Target, Want},
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
             tables::{
@@ -85,9 +89,9 @@ pub struct Step {
     pub body_turn: f32,
     /// The seated crouch toggle was flicked this tick.
     pub crouch_toggle: bool,
-    /// The grab each hand's grip press started this tick, indexed by [`Hand::index`]: the volume the
-    /// hand was in at the press edge. The grabbing subsystems act on it; the tables inject nothing
-    /// for it.
+    /// The grab each hand's grip started this tick, indexed by [`Hand::index`]: what the hand was in
+    /// reach of at the press, or what a fist came to while the grip was held ([`GripLatch`]). The
+    /// grabbing subsystems act on it; the tables inject nothing for it.
     pub grabs: [Option<GrabVolume>; 2],
     /// The sight tuning capture chord was pressed this tick.
     pub sight_capture: bool,
@@ -105,8 +109,8 @@ pub struct Step {
 #[derive(Debug, Clone, Default)]
 pub struct Bindings {
     system: SystemButton,
-    /// What each hand's current grip press was latched to at its press edge, by [`Hand::index`].
-    grips: [Option<GripUse>; 2],
+    /// What each hand's grip press is doing, by [`Hand::index`].
+    grips: [GripLatch; 2],
     /// Whether the current wingsuit parachute press was latched as an evade.
     evade_press: Option<bool>,
     /// How long the move stick has been pushed out of its rest, seconds, or `None` while it rests.
@@ -124,7 +128,7 @@ impl Bindings {
     pub const fn new() -> Self {
         Self {
             system: SystemButton { held: None },
-            grips: [None; 2],
+            grips: [GripLatch::Open; 2],
             evade_press: None,
             move_pushed_s: None,
             crouch_flicked: false,
@@ -136,6 +140,11 @@ impl Bindings {
             pads: [PadLatch { press: None }; 2],
             stick_chord: StickChord::new(),
         }
+    }
+
+    /// What each hand's grip press is doing, by [`Hand::index`].
+    pub fn grip_latches(&self) -> [GripLatch; 2] {
+        self.grips
     }
 
     /// Forget the stick clicks' current presses, withholding both until both are released: the
@@ -172,18 +181,20 @@ impl Bindings {
             let volume = volume.filter(|v| {
                 !(chord.dominant_grip && hand == off_hand && *v == GrabVolume::Foregrip)
             });
-            latch_grip(
-                &mut self.grips[hand.index()],
-                controls.hand(hand).grip,
-                volume,
-            )
+            self.grips[hand.index()].step(LatchTick {
+                grip: controls.hand(hand).grip,
+                target: volume,
+                bound: grip_bound(input, hand),
+                slow: controls.hand(hand).grab_slow,
+                dt,
+            })
         });
         let ctx = TableCtx::of(controls);
         let mut masks = context_masks(mode, &ctx, controls.dominant);
         for hand in Hand::BOTH {
             let i = hand.index();
             // A grip press latched to a grab belongs to the grab for the whole press.
-            if matches!(self.grips[i], Some(GripUse::Grab(_))) {
+            if self.grips[i].grabbing() {
                 masks.push(Mask {
                     hand,
                     scope: MaskScope::Input(Physical::Grip),
@@ -374,36 +385,13 @@ pub const fn body_turn_action(mode: Mode) -> Option<ActionId> {
     }
 }
 
-/// What a grip press does, decided at its press edge and kept for the whole press, so that a hand
-/// leaving a volume mid-press does not turn a grab into a grapple.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum GripUse {
-    /// The grip's default action (the off-hand's grapple, a vehicle weapon).
-    Default,
-    /// A grab of the volume the hand was in, reported once in [`Step::grabs`]; the tables inject
-    /// nothing for it.
-    Grab(GrabVolume),
-}
-
-/// Latch a grip press at its press edge. Returns the volume a press latched as a grab this tick.
-fn latch_grip(
-    latch: &mut Option<GripUse>,
-    grip: ButtonControl,
-    volume: Option<GrabVolume>,
-) -> Option<GrabVolume> {
-    if !grip.held() {
-        *latch = None;
-        return None;
-    }
-    if latch.is_some() && !(grip.pressed && grip.released && !grip.down) {
-        return None;
-    }
-    let latched = volume.map_or(GripUse::Default, GripUse::Grab);
-    *latch = Some(latched);
-    match latched {
-        GripUse::Grab(volume) => Some(volume),
-        GripUse::Default => None,
-    }
+/// Whether a game action of the tick's sets reads `hand`'s grip: a press there with nothing in
+/// reach drives that action rather than closing the hand into a fist.
+fn grip_bound(input: &SemanticInput, hand: Hand) -> bool {
+    [&input.global, &input.mode]
+        .into_iter()
+        .flat_map(|set| &set.actions)
+        .any(|action| action.bound[hand.index()].contains(Physical::Grip))
 }
 
 /// A downward flick of a stick axis `y` (+Y forward) past `threshold`: fires once, then re-arms

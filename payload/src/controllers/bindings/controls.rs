@@ -1,14 +1,14 @@
 //! The controller frame and its edges, reduced to the logical controls the binding tables read:
-//! per-hand buttons with their edges, deadzoned sticks and triggers, and the grab volume each hand
-//! is in. Pure.
+//! per-hand buttons with their edges, deadzoned sticks and triggers, and what each hand's grip would
+//! take. Pure.
 
 use glam::{Quat, Vec2, Vec3};
 
 use crate::{
     controllers::{
-        bindings::grab::GrabVolume,
         config::BindingsConfig,
         frame::{Button, ControllerFrame, Edges, Hand, HandFrame},
+        grab::GrabVolume,
     },
     vr::input::{
         layout::{Input, Vec2Input, provides},
@@ -69,8 +69,11 @@ pub struct HandControls {
     pub stick_raw: Vec2,
     /// The thumb's position on the trackpad, each axis `-1..=1`, zero on a controller without one.
     pub trackpad: Vec2,
-    /// The grab volume the hand is in.
+    /// What the hand would take with its grip ([`crate::controllers::bindings::grab`]).
     pub grab_volume: Option<GrabVolume>,
+    /// Whether the hand moves slowly enough for a closed fist to take what it comes to
+    /// ([`crate::controllers::grab::latch`]).
+    pub grab_slow: bool,
 }
 
 /// Both controllers' logical controls, and the layout's handedness.
@@ -110,8 +113,8 @@ pub struct Controls {
 }
 
 impl Controls {
-    /// Derive the controls from a published frame, the edges since the last tick, and the grab
-    /// volume of each hand.
+    /// Derive the controls from a published frame, the edges since the last tick, and what each
+    /// hand's grip would take.
     pub fn from_frame(
         frame: &ControllerFrame,
         edges: &Edges,
@@ -137,6 +140,7 @@ impl Controls {
                 stick_raw: hand.inputs.thumbstick,
                 trackpad: hand.inputs.trackpad,
                 grab_volume: grab_volumes[which.index()],
+                grab_slow: false,
             }
         });
         Self {

@@ -12,8 +12,8 @@
 use glam::Vec3;
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     frame::Hand,
+    grab::{Candidate, GrabVolume},
 };
 
 /// The action's grab volume for `hand`: a sphere of `radius` at the action's handle `handle`, in

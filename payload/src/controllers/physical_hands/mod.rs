@@ -64,6 +64,7 @@ pub mod rigid;
 pub mod shove;
 pub mod sounds;
 pub mod stunt;
+mod targets;
 mod touch;
 pub mod vault;
 mod world;
@@ -79,6 +80,7 @@ pub use config::PhysicalHandsConfig;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
 use parking_lot::Mutex;
+pub(crate) use targets::targets;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
@@ -435,6 +437,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     let mut climb_pressing = [false; 2];
     let mut climb_reaches = [None; 2];
     let mut touches = Vec::new();
+    let mut reach_notes = [Vec::new(), Vec::new()];
     let mut hand_status = [HandStatus::default(); 2];
     let mut clamp = [Vec3::ZERO; 2];
     let mut palms = [None; 2];
@@ -502,6 +505,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                         standing_on,
                         &reach_tuning,
                         &mut |from, to| cast(from, to, &reach_options),
+                        &mut reach_notes[i],
                     )
                 }
             } else {
@@ -594,6 +598,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                     standing_on,
                     &reach_tuning,
                     &mut |from, to| cast(from, to, &reach_options),
+                    &mut reach_notes[i],
                 )
             }
         } else {
@@ -685,6 +690,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     state.status.hands = hand_status;
     state.status.push = push;
     state.status.casts = casts;
+    state.reach_notes = reach_notes;
     state.clamp = clamp;
     state.at = Some(now);
     physics::publish_holds(joined);
@@ -794,6 +800,8 @@ struct State {
     at: Option<Instant>,
     epoch: u64,
     pickup: PickupState,
+    /// What each hand's reach found on the last tick, for the grip press's log.
+    reach_notes: [Vec<String>; 2],
 }
 
 impl State {
@@ -907,6 +915,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     at: None,
     epoch: 0,
     pickup: PickupState::new(),
+    reach_notes: [Vec::new(), Vec::new()],
 });
 
 /// Stop: forget the probes and the push, and say why.

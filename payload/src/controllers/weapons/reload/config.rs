@@ -38,8 +38,6 @@ pub struct ReloadConfig {
     pub seat_depth_m: f32,
     /// How long a magazine taken from the pouch stays in the hand before it is dropped, seconds.
     pub timeout_s: f32,
-    /// Draw a ring at the well's mouth while a magazine is in the hand.
-    pub show_well: bool,
     /// The one-handed belt reload: push the gun's well down onto the pouch.
     pub belt: BeltConfig,
     /// Require the action to be worked by hand after the gun runs dry: the slide, the charging
@@ -73,7 +71,6 @@ impl ReloadConfig {
             capture_angle_deg: 50.0,
             seat_depth_m: 0.025,
             timeout_s: 8.0,
-            show_well: false,
             belt: BeltConfig::new(),
             chamber: true,
             manual_action: true,

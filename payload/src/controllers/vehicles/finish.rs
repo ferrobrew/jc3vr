@@ -5,8 +5,9 @@
 use jc3gi::input::input_action_map::Action::{TURN_LEFT, TURN_RIGHT};
 
 use crate::controllers::{
-    bindings::{controls::Controls, grab::GrabVolume, hold::Desired},
+    bindings::{controls::Controls, hold::Desired},
     frame::Hand,
+    grab::GrabVolume,
     hands::{self, tiers},
     haptics::{self, Event},
     mode::Mode,

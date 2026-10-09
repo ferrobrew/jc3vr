@@ -6,9 +6,9 @@
 use glam::Vec3;
 
 use crate::controllers::{
-    bindings::grab::GrabVolume,
     config::ControllersConfig,
     frame::Hand,
+    grab::GrabVolume,
     haptics::{self, Event},
     weapons::{
         foregrip::{self, set_pump_slide},

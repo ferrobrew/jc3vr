@@ -27,7 +27,7 @@
 
 use jc3gi::{character::inventory::WeaponSlot, input::input_action_map::Action};
 
-use crate::controllers::{bindings::grab::HolsterSite, frame::Hand};
+use crate::controllers::{frame::Hand, grab::HolsterSite};
 
 /// The weapon in the hands, as the holsters see it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

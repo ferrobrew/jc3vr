@@ -35,10 +35,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        bindings::{
-            grab::GrabVolume,
-            hold::{Desired, MapKind, Target, Want},
-        },
+        bindings::hold::{Desired, MapKind, Target, Want},
         fingers::grip::{self, Grip, GripSource, catalogue::GripPose},
         frame::Hand,
         haptics::{self, Event, Sustain},
@@ -92,16 +89,14 @@ pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
     config.stunt.enabled && climb::enabled(config)
 }
 
-/// The stunt hold's grab volume for `hand`: [`GrabVolume::StuntHold`] while the player hangs from
-/// a helicopter, so that a grip there holds on rather than firing the grapple. Called from the
+/// Whether the player hangs from a helicopter, so that either hand's grip holds on. Called from the
 /// input tick.
-pub(crate) fn volume(_hand: Hand) -> Option<GrabVolume> {
+pub(crate) fn hanging() -> bool {
     let state = STATE.lock();
-    (state.status.position == Some(StuntKind::Hanging)
+    state.status.position == Some(StuntKind::Hanging)
         && state
             .ticked
-            .is_some_and(|at| Instant::now().saturating_duration_since(at) <= STALE_AFTER))
-    .then_some(GrabVolume::StuntHold)
+            .is_some_and(|at| Instant::now().saturating_duration_since(at) <= STALE_AFTER)
 }
 
 /// Read the stunt position, enter one where the grips or a mantle offer it, and let go of a hang

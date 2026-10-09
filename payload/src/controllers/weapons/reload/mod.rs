@@ -56,13 +56,11 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    bindings::{
-        controls::ButtonControl,
-        grab::{Candidate, GrabVolume},
-    },
+    bindings::controls::ButtonControl,
     body::alignment::measure::Frames,
     config::ControllersConfig,
     frame::{Hand, Pose},
+    grab::{Candidate, GrabVolume},
     hands::{ActiveHands, pose::CockpitHand},
     weapons::{
         docks,
@@ -350,15 +348,14 @@ pub(super) unsafe fn fill_of(address: usize) -> Option<Fill> {
     })
 }
 
-/// The hand holding the gun, and the well's mouth and radius to ring while a round is in hand.
-pub(super) fn well_ring(config: &ReloadConfig) -> Option<(Hand, Vec3, f32)> {
+/// The hand holding the gun, and the well's mouth and capture radius, while the other hand holds a
+/// round for it.
+pub(super) fn well(config: &ReloadConfig) -> Option<(Hand, Vec3, f32)> {
     let state = STATE.lock();
     let (_, gun_hand) = state.status.insert_hands?;
     let tick = state.tick.as_ref()?;
     let well = tick.guns[gun_hand.index()].as_ref()?.well?;
-    config
-        .show_well
-        .then_some((gun_hand, well.mouth, config.capture_radius_m))
+    Some((gun_hand, well.mouth, config.capture_radius_m))
 }
 
 /// The hand holding a round, for the overlay's marker.

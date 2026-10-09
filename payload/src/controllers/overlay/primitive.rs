@@ -19,14 +19,14 @@ pub enum Source {
     GrappleBeam,
     /// The guns' dot or laser.
     GunReadout,
-    /// The highlight of the grab volume a hand is in.
-    GrabVolumes,
+    /// The grip targets' markers ([`crate::controllers::grab::markers`]).
+    GrabMarkers,
     /// The ghosts of yielded hands at their controllers.
     GhostHands,
     /// Axes at the controllers' grip and aim poses.
     DebugGizmos,
-    /// The highlights of the physical vehicle control a hand can grab.
-    VehicleControls,
+    /// The wingsuit's arm-steering guide.
+    WingGuide,
     /// The ring at a hand holding a primed grenade, warning of its fuse.
     GrenadeWarning,
     /// The sight tuning tool's line-up marker.
@@ -54,10 +54,10 @@ impl Source {
         Source::GrappleHighlight,
         Source::GrappleBeam,
         Source::GunReadout,
-        Source::GrabVolumes,
+        Source::GrabMarkers,
         Source::GhostHands,
         Source::DebugGizmos,
-        Source::VehicleControls,
+        Source::WingGuide,
         Source::GrenadeWarning,
         Source::SightTuning,
         Source::PanelPointer,
@@ -73,10 +73,10 @@ impl Source {
             Source::GrappleHighlight => 0,
             Source::GrappleBeam => 1,
             Source::GunReadout => 2,
-            Source::GrabVolumes => 3,
+            Source::GrabMarkers => 3,
             Source::GhostHands => 4,
             Source::DebugGizmos => 5,
-            Source::VehicleControls => 6,
+            Source::WingGuide => 6,
             Source::GrenadeWarning => 7,
             Source::SightTuning => 8,
             Source::PanelPointer => 9,
@@ -93,10 +93,10 @@ impl Source {
             Source::GrappleHighlight => "grapple highlight",
             Source::GrappleBeam => "grapple beam",
             Source::GunReadout => "gun readout",
-            Source::GrabVolumes => "grab volumes",
+            Source::GrabMarkers => "grab markers",
             Source::GhostHands => "ghost hands",
             Source::DebugGizmos => "controller gizmos",
-            Source::VehicleControls => "vehicle controls",
+            Source::WingGuide => "wingsuit guide",
             Source::GrenadeWarning => "grenade fuse warning",
             Source::SightTuning => "sight tuning marker",
             Source::PanelPointer => "debug panel pointer",

@@ -4,7 +4,7 @@
 use glam::{Vec2, Vec3};
 
 use crate::controllers::{
-    bindings::grab::GrabVolume,
+    grab::{GrabVolume, GripTarget},
     mode::VehicleSeat,
     vehicles::{
         arm_steering::{ArmPose, PitchInput},
@@ -44,13 +44,10 @@ pub struct ArmReadout {
     pub written: Vec2,
 }
 
-/// The grab volumes [`begin_tick`] found.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
+/// The grip targets [`begin_tick`] provides.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct TickVolumes {
-    /// The volume each hand is in, indexed by [`Hand::index`].
-    pub volumes: [Option<GrabVolume>; 2],
-    /// The parachute handle each free hand is within reach of, for a press no other volume claims.
-    pub reach: [Option<GrabVolume>; 2],
+    pub targets: Vec<GripTarget>,
 }
 
 /// The parachute handles as the last input tick saw them.

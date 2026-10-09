@@ -13,6 +13,8 @@
 //! - [`mode`]: the per-tick mode detector, which selects the OpenXR action set;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
+//! - [`grab`]: the grip model: what each hand's grip would take among the targets every subsystem
+//!   provides, when it takes it, and the markers that show it;
 //! - [`body`]: the player's body dimensions, their calibration in the headset, and the remap onto
 //!   the character's proportions;
 //! - [`gamepad_setting`]: the game's active-input-device setting held at the gamepad under the
@@ -60,6 +62,7 @@ pub mod diagnostics;
 pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
+pub mod grab;
 pub mod hands;
 pub mod haptics;
 pub mod locomotion;

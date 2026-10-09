@@ -5,9 +5,9 @@ use glam::Vec3;
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume},
     config::ControllersConfig,
     frame::{Hand, Pose},
+    grab::{Candidate, GrabVolume},
     hands::{ActiveHands, ik},
     haptics::{self, Event},
     weapons::{

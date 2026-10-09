@@ -1,5 +1,5 @@
 use super::*;
-use crate::controllers::bindings::grab::grab_volume;
+use crate::controllers::grab::grab_volume;
 
 const DIMS: BodyDimensions = BodyDimensions::GENERIC_ADULT;
 /// A taller player's own body, as a calibration would save it.
@@ -98,8 +98,13 @@ fn assert_apart(c: &[Candidate], context: &str) {
         for b in &c[i + 1..] {
             let gap = a.centre.distance(b.centre) - a.radius - b.radius;
             let holster = |c: &Candidate| matches!(c.volume, GrabVolume::Holster(_));
-            let pouch_and_holster =
-                (is_pouch(a.volume) && holster(b)) || (holster(a) && is_pouch(b.volume));
+            let pouch = |c: &Candidate| {
+                matches!(
+                    c.volume,
+                    GrabVolume::GrenadePouch | GrabVolume::MagazinePouch | GrabVolume::C4Pouch
+                )
+            };
+            let pouch_and_holster = (pouch(a) && holster(b)) || (holster(a) && pouch(b));
             let min = if pouch_and_holster {
                 MIN_POUCH_HOLSTER_GAP_M
             } else {
@@ -321,42 +326,11 @@ fn a_hand_at_a_volume_grabs_it_and_a_hand_in_front_grabs_nothing() {
         // A hand held out in front at chest height, as when firing the grapple.
         let out_front = Vec3::new(0.0, -0.3, -0.45);
         assert_eq!(grab_volume(out_front, Hand::Left, &c), None);
-        assert_eq!(pouch_in_reach(out_front, Hand::Left, &c, 0.05), None);
     }
     // A hand hanging relaxed at the side, a little forward of the holster, still reaches it.
     let c = holsters(&STANDING, &DIMS);
     let hip = centre(&c, RIGHT_HIP);
     assert!(grab_volume(hip + Vec3::new(0.0, 0.0, -0.08), Hand::Right, &c).is_some());
-}
-
-#[test]
-fn a_hand_just_outside_a_pouch_reaches_it() {
-    let c = every_volume(&STANDING, &DIMS);
-    let grenade = find(&c, GrabVolume::GrenadePouch);
-    let margin = POUCHES.reach_margin_m;
-    // Just in front of the pouch, outside it.
-    let near = grenade.centre + Vec3::new(0.0, 0.0, -(grenade.radius + margin * 0.5));
-    assert_eq!(grab_volume(near, Hand::Left, &c), None);
-    assert_eq!(
-        pouch_in_reach(near, Hand::Left, &c, margin),
-        Some(GrabVolume::GrenadePouch)
-    );
-    // Past the margin it is the grip's own press again.
-    let far = grenade.centre + Vec3::new(0.0, 0.0, -(grenade.radius + margin * 1.5));
-    assert_eq!(pouch_in_reach(far, Hand::Left, &c, margin), None);
-    // The hand with the gun does not reach for the magazines.
-    let magazine = find(&c, GrabVolume::MagazinePouch);
-    let near = magazine.centre + Vec3::new(0.0, 0.0, -(magazine.radius + margin * 0.5));
-    assert_eq!(
-        pouch_in_reach(near, Hand::Left, &c, margin),
-        Some(GrabVolume::MagazinePouch)
-    );
-    assert_eq!(pouch_in_reach(near, Hand::Right, &c, margin), None);
-    // Inside a volume, the volume is the grab, not a pouch in reach.
-    let chest = centre(&c, CHEST);
-    assert_eq!(pouch_in_reach(chest, Hand::Left, &c, margin), None);
-    assert_eq!(pouch_in_reach(Vec3::NAN, Hand::Left, &c, margin), None);
-    assert_eq!(pouch_in_reach(near, Hand::Left, &c, 0.0), None);
 }
 
 /// A head at `position` looking level, with no previous tick.
@@ -553,67 +527,6 @@ fn a_degenerate_girdle_keeps_the_cockpit_axes() {
     assert_eq!(girdle_basis([Vec3::ZERO, Vec3::Y]), Quat::IDENTITY);
     let basis = girdle_basis([Vec3::new(-0.2, 0.0, 0.0), Vec3::new(0.2, 0.1, 0.0)]);
     assert!((basis * Vec3::NEG_Z).distance(Vec3::NEG_Z) < 1e-5);
-}
-
-#[test]
-fn a_near_miss_names_the_nearest_holster_and_its_distance() {
-    let c = holsters(&STANDING, &DIMS);
-    let hip = find(&c, RIGHT_HIP);
-    let point = hip.centre + Vec3::new(0.0, hip.radius + 0.05, 0.0);
-    let miss = near_miss(point, Hand::Right, &c, 0.3).unwrap();
-    assert_eq!(miss.volume, RIGHT_HIP);
-    assert!((miss.outside_m - 0.05).abs() < 1e-5);
-    assert!((miss.offset.y - (hip.radius + 0.05)).abs() < 1e-5);
-    // Inside a holster, or far from all of them, is not a near miss.
-    assert_eq!(near_miss(hip.centre, Hand::Right, &c, 0.3), None);
-    assert_eq!(
-        near_miss(Vec3::new(0.0, 0.5, -1.0), Hand::Right, &c, 0.3),
-        None
-    );
-    assert_eq!(near_miss(Vec3::NAN, Hand::Right, &c, 0.3), None);
-}
-
-#[test]
-fn a_near_miss_also_names_a_pouch() {
-    let c = every_volume(&STANDING, &DIMS);
-    let pouch = find(&c, GrabVolume::GrenadePouch);
-    let point = pouch.centre + Vec3::new(0.0, 0.0, -(pouch.radius + 0.05));
-    let miss = near_miss(point, Hand::Left, &c, 0.3).unwrap();
-    assert_eq!(miss.volume, GrabVolume::GrenadePouch);
-}
-
-#[test]
-fn a_pouch_wins_over_a_holster_that_also_holds_the_hand() {
-    let hip = Candidate {
-        volume: RIGHT_HIP,
-        centre: Vec3::ZERO,
-        radius: 0.12,
-        hand: None,
-    };
-    let pouch = Candidate {
-        volume: GrabVolume::MagazinePouch,
-        centre: Vec3::new(0.15, 0.0, 0.0),
-        radius: 0.075,
-        hand: Some(Hand::Left),
-    };
-    let c = [hip, pouch];
-    // Nearer the holster's middle than the pouch's, the hand still takes from the pouch.
-    let point = Vec3::new(0.09, 0.0, 0.0);
-    assert!(hip.depth(point).unwrap() < pouch.depth(point).unwrap());
-    assert_eq!(
-        grab_volume_by(Hand::Left, &c, |_| point),
-        Some(GrabVolume::MagazinePouch)
-    );
-    // The hand the pouch is not for, and a hand in the holster alone, find the holster.
-    assert_eq!(grab_volume_by(Hand::Right, &c, |_| point), Some(RIGHT_HIP));
-    assert_eq!(
-        grab_volume_by(Hand::Left, &c, |_| Vec3::new(-0.05, 0.0, 0.0)),
-        Some(RIGHT_HIP)
-    );
-    assert_eq!(
-        grab_volume_by(Hand::Left, &c, |_| Vec3::new(1.0, 0.0, 0.0)),
-        None
-    );
 }
 
 #[test]

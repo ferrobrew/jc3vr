@@ -81,6 +81,7 @@ pub(crate) unsafe fn reach(
             body: door_body,
             point: hit.position,
             distance: hit.position.distance(palm),
+            normal: hit.normal,
             kind: TargetKind::Door(DoorTarget {
                 vehicle,
                 vehicle_body: None,
@@ -118,6 +119,7 @@ pub(crate) unsafe fn reach(
                 body,
                 point: r.point,
                 distance: r.distance,
+                normal: target.outward,
                 kind: TargetKind::Door(target),
             })
         })

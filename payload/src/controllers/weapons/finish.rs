@@ -10,12 +10,12 @@ use crate::{
     controllers::{
         bindings::{
             controls::ButtonControl,
-            grab::GrabVolume,
             hold::{Desired, MapKind, Target, Want},
         },
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::Hand,
+        grab::{GrabVolume, resolve::dock_target},
         hands::{
             self, ActiveHands, pose as hand_pose,
             tiers::{self, HandTier, TierState},
@@ -40,7 +40,6 @@ use crate::{
             reload,
             state::STATE,
             types::{GrabEvent, GrabOutcome},
-            volumes::{self, Stance},
             weighted_hands,
         },
     },
@@ -268,10 +267,13 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                     }
                 }
             }
-            GrabVolume::VehicleControl(_)
+            // The other subsystems' grabs: the bindings hand the weapon handling only its own.
+            GrabVolume::MagazineWell
+            | GrabVolume::VehicleControl(_)
+            | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
             | GrabVolume::MountedHandle(_)
-            | GrabVolume::Pickup
+            | GrabVolume::Pickup(_)
             | GrabVolume::Climb
             | GrabVolume::StuntHold => {
                 continue;
@@ -287,17 +289,19 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             outcome,
         });
     }
-    if gameplay {
-        log_near_misses(&grabs, &grips);
-    }
     let holder = weapon.and_then(|(w, _)| w.holder);
     let released = hold::act::release_tick(holder, grips.map(ButtonControl::held))
         .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
     if let (Some(hand), Some((w, _))) = (released, weapon) {
-        let volumes = STATE.lock().status.volumes;
-        // A free socket the hand opens at takes the gun, before the holster or the drop.
-        let stowed = match volumes[hand.index()] {
-            Some(GrabVolume::Socket(socket)) if carry::on_socket(socket).is_none() => {
+        let at_own = |site| holster::site_slot(site, config.acting_hand()) == w.wielded.slot;
+        // A free socket that fits takes the gun, or its own holster does, whichever is nearer.
+        let dock = docked_at(hand, |v| match v {
+            GrabVolume::Socket(socket) => carry::on_socket(socket).is_none(),
+            GrabVolume::Holster(site) => at_own(site),
+            _ => false,
+        });
+        let stowed = match dock {
+            Some(GrabVolume::Socket(socket)) => {
                 // SAFETY: the input tick runs on the main thread outside the world update.
                 unsafe { engine::local_player() }.is_some_and(|owner| {
                     unsafe { actions::stow(owner, hand, socket, w.wielded.hands == [true; 2]) }
@@ -309,11 +313,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
             _ => false,
         };
-        let at_own_holster = matches!(
-            volumes[hand.index()],
-            Some(GrabVolume::Holster(site))
-                if holster::site_slot(site, config.acting_hand()) == w.wielded.slot
-        );
+        let at_own_holster = matches!(dock, Some(GrabVolume::Holster(_)));
         let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD;
         // A gun the other hand braces stays in that hand, carried where it holds it.
         let left_in_brace = !stowed
@@ -335,9 +335,17 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let second_released = second::release_tick(grips.map(ButtonControl::held))
         .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
     if let Some(hand) = second_released {
-        let volumes = STATE.lock().status.volumes;
+        let carried_second = matches!(second::source(), Some(Source::Carried(_)));
+        let own_slot = second::slot();
+        let dock = docked_at(hand, |v| match v {
+            GrabVolume::Socket(_) => true,
+            GrabVolume::Holster(site) => {
+                carried_second || own_slot == Some(holster::site_slot(site, config.acting_hand()))
+            }
+            _ => false,
+        });
         // SAFETY: the input tick runs on the main thread outside the world update.
-        unsafe { release_second(hand, volumes[hand.index()], &config) };
+        unsafe { release_second(hand, dock) };
     }
 
     grenade::input_tick(
@@ -426,14 +434,15 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     state.status.events.drain(..excess);
 }
 
+/// The target of the weapon handling's last tick that `fits` and that `hand` is nearest among those
+/// it is within reach of, to dock what it lets go in.
+fn docked_at(hand: Hand, fits: impl Fn(GrabVolume) -> bool) -> Option<GrabVolume> {
+    let state = STATE.lock();
+    dock_target(hand, &state.placed, state.points[hand.index()], fits)
+}
+
 /// The fire inputs a weapon action holds back.
 const FIRE_ACTIONS: [Action; 2] = [Action::FIRE_RIGHT, Action::R2];
-
-/// How far outside a holster's surface a grip press counts as a near miss, metres.
-const NEAR_MISS_MARGIN_M: f32 = 0.3;
-
-/// The shortest time between two near-miss log lines.
-const NEAR_MISS_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How many grabs the readout keeps.
 const MAX_EVENTS: usize = 6;
@@ -537,43 +546,6 @@ fn record_hands(
         .filter(|h| h.engaged && weapon.is_some_and(|w| w.address == h.weapon))
         .map(|h| (h.holder.other(), h.region));
     regions::record(regions::hands_on_gun(holder, brace));
-}
-
-/// Record, and log at most once per [`NEAR_MISS_LOG_INTERVAL`], a grip press this tick that grabbed
-/// nothing within [`NEAR_MISS_MARGIN_M`] of a holster, so that a reach that falls short in the
-/// headset can be read from the log.
-fn log_near_misses(grabs: &[Option<GrabVolume>; 2], grips: &[ButtonControl; 2]) {
-    let mut state = STATE.lock();
-    for hand in Hand::BOTH {
-        let i = hand.index();
-        if !grips[i].pressed || grabs[i].is_some() {
-            continue;
-        }
-        let Some(point) = state.grab_points[i] else {
-            continue;
-        };
-        let Some(miss) = volumes::near_miss(point, hand, &state.placed, NEAR_MISS_MARGIN_M) else {
-            continue;
-        };
-        state.status.last_miss = Some((hand, miss));
-        let now = Instant::now();
-        if state
-            .last_miss_log
-            .is_some_and(|t| now.saturating_duration_since(t) < NEAR_MISS_LOG_INTERVAL)
-        {
-            continue;
-        }
-        state.last_miss_log = Some(now);
-        tracing::debug!(
-            target: "controllers",
-            ?hand,
-            nearest = miss.volume.label(),
-            outside_m = miss.outside_m,
-            offset_from_centre = ?miss.offset,
-            stance = state.status.stance.map_or("none", Stance::label),
-            "holsters: grip press outside the nearest holster"
-        );
-    }
 }
 
 /// Whether the fire input is held back because no hand holding the wielded weapon pulls its
@@ -760,27 +732,18 @@ fn release(hand: Hand, what: Release, wielded: holster::Wielded, config: &Contro
     }
 }
 
-/// Carry out what opening the second weapon's grip does: at a free socket that fits it (its own
-/// among them), dock it there; at its own holster, or for a carried one at any holster, put it
-/// back; anywhere else, let it fall with the hand's motion.
+/// Carry out what opening the second weapon's grip does with the hand over `dock`, the nearest
+/// target that takes it back: at a socket, dock it there; at its own holster (any holster for a
+/// carried one), put it back; anywhere else, let it fall with the hand's motion.
 ///
 /// # Safety
 ///
 /// The main thread, outside the world update.
-unsafe fn release_second(hand: Hand, volume: Option<GrabVolume>, config: &ControllersConfig) {
-    let at = match volume {
+unsafe fn release_second(hand: Hand, dock: Option<GrabVolume>) {
+    let config = Config::lock_query(|c| c.controllers);
+    let at = match dock {
         Some(GrabVolume::Socket(socket)) => ReleasedAt::Socket(socket),
-        Some(GrabVolume::Holster(site))
-            if match second::source() {
-                Some(Source::Carried(_)) => true,
-                Some(Source::Slot) => {
-                    second::slot() == Some(holster::site_slot(site, config.acting_hand()))
-                }
-                None => false,
-            } =>
-        {
-            ReleasedAt::OwnHolster
-        }
+        Some(GrabVolume::Holster(_)) => ReleasedAt::OwnHolster,
         _ => ReleasedAt::Elsewhere,
     };
     let docked = match decide::second_release(at) {

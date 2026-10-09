@@ -1,6 +1,6 @@
 //! The weapon handling's tick-to-tick state: the readout the debug UI reads
 //! ([`WeaponsStatus`](crate::controllers::weapons::WeaponsStatus)), the wielded weapon and its
-//! measured geometry, and the bookkeeping the two tick halves and the near-miss log share.
+//! measured geometry, and the bookkeeping the two tick halves share.
 
 use std::time::Instant;
 
@@ -8,11 +8,10 @@ use glam::Vec3;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::grab::{Candidate, GrabVolume, HolsterSite},
     config::ControllersConfig,
     frame::Hand,
+    grab::{GrabVolume, GripTarget, HandPoints, HolsterSite},
     hands::ik,
-    overlay::{primitive::Source, store},
     physical_hands::physics::guns,
     roomscale::{self, posture::EffectivePosture},
     weapons::{
@@ -68,14 +67,13 @@ pub(crate) fn stand_down() {
     state.status.fire_blocked = false;
     state.status.stance = None;
     state.placed.clear();
-    state.grab_points = [None; 2];
+    state.points = [None; 2];
     state.body_y = None;
     state.last_volumes = [None; 2];
     state.touch = None;
     state.slide = None;
     state.promote = None;
     state.docked_touch = [None; 2];
-    store::clear(Source::GrabVolumes);
 }
 
 pub(super) struct State {
@@ -89,11 +87,9 @@ pub(super) struct State {
     /// The last geometry measured, and the weapon and holding hand it belongs to: a measurement
     /// needs the wrist at full weight, so a tick without one keeps the last.
     measured: Option<(usize, Hand, GripGeometry)>,
-    /// The tick's placed volumes and each hand's grab point for the body's volumes, for the
-    /// near-miss log.
-    pub(super) placed: Vec<Candidate>,
-    pub(super) grab_points: [Option<Vec3>; 2],
-    pub(super) last_miss_log: Option<Instant>,
+    /// The tick's grip targets and each hand's points, for the docking of what a hand lets go.
+    pub(super) placed: Vec<GripTarget>,
+    pub(super) points: [Option<HandPoints>; 2],
     /// The hand that last held a gun, kept while none is drawn.
     pub(super) last_holder: Option<Hand>,
     /// The body frame's height on the last tick ([`crate::controllers::weapons::volumes::body_frame`]).
@@ -193,7 +189,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
         fire_blocked: false,
         events: Vec::new(),
         grabs: 0,
-        last_miss: None,
         stance: None,
         docks_followed: 0,
     },
@@ -202,8 +197,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     gameplay: false,
     measured: None,
     placed: Vec::new(),
-    grab_points: [None; 2],
-    last_miss_log: None,
+    points: [None; 2],
     last_holder: None,
     body_y: None,
     last_volumes: [None; 2],
