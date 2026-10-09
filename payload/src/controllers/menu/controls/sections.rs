@@ -278,6 +278,11 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .holsters
             .follow_docks))
+        .item(config_toggle!("LONG GUNS DRAW TO THE DOMINANT HAND", |c| c
+            .controllers
+            .weapons
+            .holsters
+            .long_guns_dominant))
         .item(config_toggle!("STICK CLICK CYCLES WEAPONS", |c| c
             .controllers
             .weapons

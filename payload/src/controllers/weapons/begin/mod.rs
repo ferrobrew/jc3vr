@@ -242,12 +242,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     {
         targets.push(target);
     }
+    let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
+    let empty_handed = config.weapons.holsters.long_guns_dominant
+        && gun_hands == [false; 2]
+        && second_hand.is_none();
     if gameplay {
         if config.weapons.holsters.enabled {
             let mut holsters =
                 volumes::holster_candidates(&body_frame, &dims, &config.weapons.holsters);
             state.status.docks_followed =
                 follow_docks(&mut holsters, &ticked, &body_frame, &config, &active);
+            volumes::reserve_long_guns(&mut holsters, config.acting_hand(), empty_handed);
             targets.extend(holsters.iter().map(|c| place.body(c)));
         }
         let grabbers = ChestGrabbers::for_guns(weapon.map_or([false; 2], |w| w.wielded.hands));
@@ -267,11 +272,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         }
     }
     let body_points = body_points(&active, &body_frame.anchor);
-    let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
     let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
     state.docked_touch = [None; 2];
     if gameplay {
-        let docked = docked_candidates(
+        let mut docked = docked_candidates(
             &mut state,
             &ticked,
             &active,
@@ -279,6 +283,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             free,
             &regions_config,
         );
+        volumes::reserve_long_guns(&mut docked, config.acting_hand(), empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
         let sockets = socket_candidates(
             &ticked,

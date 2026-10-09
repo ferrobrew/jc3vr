@@ -16,6 +16,8 @@ With `weapons.hold.either_hand` (on; the pause menu's `HOLD WEAPONS IN EITHER HA
 
 The log line `hold: the weapon is in the left hand` (or right) names the hand each time a weapon comes into the hands, with the cause (`draw`, `pickup`, or `the game's draw`).
 
+With `weapons.holsters.long_guns_dominant` (on; `LONG GUNS DRAW TO THE DOMINANT HAND`), a long gun is drawn off a shoulder only by the dominant hand while neither hand holds a weapon (`volumes::reserve_long_guns`): the shoulder holsters and the long guns docked on them are offered to that hand alone, and marked for it alone. The layout follows the gun hand (the trigger that fires, the tethers' retract, the pouches, and the wrist detonator), so a rifle drawn by reaching to the near shoulder with the off-hand used to swap it. A right-handed player reaches across to the left shoulder for the special weapon. With a weapon already in a hand, either hand takes a long gun, as the second weapon or to holster the one it holds.
+
 The dual-wield pair is not moved this way: it keeps its own layout, one pistol per hand ([controllers.md, "Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand)). A pair taken off the ground with independent pistol draws on brings out only the grabbing hand's pistol, as a hip grab's draw does.
 
 ## The owned attach bones

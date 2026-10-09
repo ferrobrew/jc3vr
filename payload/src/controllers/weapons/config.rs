@@ -39,6 +39,11 @@ pub struct HolstersConfig {
     /// Move a holster with a gun docked in it to where the gun is on the character's body, so a
     /// hand reaches where the gun is seen (see [`crate::controllers::weapons::docks`]).
     pub follow_docks: bool,
+    /// With no weapon in either hand, only the dominant hand draws a long gun off a shoulder, so
+    /// the trigger that fires it, the tethers' retract, the pouches, and the wrist detonator stay
+    /// where they were. The off-hand still draws one as a second weapon while the other hand holds
+    /// a gun.
+    pub long_guns_dominant: bool,
 }
 
 /// Which body the holsters and pouches ride (see [`crate::controllers::weapons::volumes`]).
@@ -85,6 +90,7 @@ impl HolstersConfig {
             crouch_deadband_m: 0.15,
             anchor: HolsterAnchor::Body,
             follow_docks: true,
+            long_guns_dominant: true,
         }
     }
 }

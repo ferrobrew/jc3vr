@@ -234,6 +234,28 @@ pub fn holster_candidates(
     out
 }
 
+/// Keep the long guns' draws for the dominant hand while neither hand holds a weapon (`empty`):
+/// the shoulder holsters and the long guns docked on them are offered to the dominant hand alone,
+/// so a long gun drawn by reaching with the off-hand does not move the layout that follows the gun
+/// hand. With a weapon in a hand, either hand may take one, as a second weapon or to holster it.
+pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty: bool) {
+    if !empty {
+        return;
+    }
+    candidates.retain_mut(|c| {
+        if !matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))) {
+            return true;
+        }
+        match c.hand {
+            None => {
+                c.hand = Some(dominant);
+                true
+            }
+            Some(hand) => hand == dominant,
+        }
+    });
+}
+
 /// The sides of the chest the two chest pouches take, by the body's own sides.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ChestSides {

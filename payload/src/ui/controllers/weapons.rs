@@ -812,6 +812,10 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
          player's body in vehicles, ragdolls, and skydives. The player's body turns with the \
          estimated torso.",
     );
+    ui.checkbox(
+        &mut h.long_guns_dominant,
+        "Only the dominant hand draws a long gun with both hands empty",
+    );
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
         .on_hover_text("The fallback for drawing without reaching a holster.");
     ui.add(egui::Slider::new(&mut h.crouch_deadband_m, 0.0..=0.5).text("Crouch deadband (m)"));

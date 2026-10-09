@@ -666,6 +666,7 @@ The order puts the parts that everything else depends on first, then the parts w
 40. Menu pages with the pointer. In the map or a menu with the native pointer showing, aim just off the panel's edge and pull the right trigger: nothing pages. Pull the left trigger: the page goes back; hold the left grip and pull it: the page goes forward.
 41. Map zoom. Open the map and push the left stick up and down: it zooms, and the wrist summary lists the zoom on that stick. Rebind `map_zoom` in the runtime's binding interface to another input: the map zooms from that input instead.
 42. Hold to hold across interruptions. Hold a rifle, cover a controller's sensors until the hand is lost, and uncover it with the grip still closed: the rifle stays in the hand; open and close the grip: `hold: the grip closed on the gun in the hand` is logged, and opening it again away from the body drops it. Choose a rifle on the weapon wheel and close the hand on it, then open it in front of the body: it falls. With the pistols drawn in both hands, open one hand anywhere: that pistol goes back to its hip and the other stays drawn. Enter a car holding a rifle: it is not dropped.
+43. Long guns by the dominant hand. With both hands empty, reach the left hand to the left shoulder and squeeze: nothing is drawn and the shoulder's marker does not light for it; reach across with the right hand: the special weapon comes into the right hand. With a pistol in the right hand, the left hand draws the left shoulder's gun as a second weapon.
 
 ## Reverse-engineering work
 

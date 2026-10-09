@@ -644,3 +644,44 @@ fn the_waist_stays_over_the_feet_through_a_lean() {
     assert!((hip(&leaning) - hip(&upright)).length() < 1e-5);
     assert!((shoulder(&leaning) - shoulder(&upright) - Vec3::new(0.0, 0.0, -0.3)).length() < 1e-5);
 }
+
+#[test]
+fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
+    let shoulders = |c: &[Candidate]| -> Vec<Option<Hand>> {
+        c.iter()
+            .filter(|c| matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))))
+            .map(|c| c.hand)
+            .collect()
+    };
+    for dominant in Hand::BOTH {
+        let mut empty = holster_candidates(&STANDING, &DIMS, &HolstersConfig::new());
+        let count = empty.len();
+        reserve_long_guns(&mut empty, dominant, true);
+        assert_eq!(
+            empty.len(),
+            count,
+            "the volumes stay, for the dominant hand"
+        );
+        assert_eq!(shoulders(&empty), vec![Some(dominant); 2]);
+        // The hips and the chest are either hand's still.
+        assert!(
+            empty
+                .iter()
+                .filter(|c| !matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))))
+                .all(|c| c.hand.is_none())
+        );
+        // A long gun docked under the off-hand's touch is not offered to it.
+        let mut touched = vec![Candidate {
+            volume: GrabVolume::Holster(HolsterSite::Shoulder(Hand::Left)),
+            centre: Vec3::ZERO,
+            radius: 0.1,
+            hand: Some(dominant.other()),
+        }];
+        reserve_long_guns(&mut touched, dominant, true);
+        assert!(touched.is_empty());
+        // With a gun in a hand, either hand takes one, as a second weapon.
+        let mut armed = holster_candidates(&STANDING, &DIMS, &HolstersConfig::new());
+        reserve_long_guns(&mut armed, dominant, false);
+        assert_eq!(shoulders(&armed), vec![None; 2]);
+    }
+}
