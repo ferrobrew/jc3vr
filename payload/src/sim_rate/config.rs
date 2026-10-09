@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct SimRateConfig {
     /// The tick rate the game runs at. The default, 30 Hz, is the game's own and leaves it
-    /// untouched; the others are the experiment.
+    /// untouched; the others are the experiment. Not saved, so every session starts at the game's
+    /// own rate.
+    #[serde(skip)]
     pub rate: SimRate,
 }
 

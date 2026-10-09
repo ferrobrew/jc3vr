@@ -6,7 +6,7 @@ The frame breakdown's tick split and phase timing ([frame-timing.md](frame-timin
 
 ## Running it
 
-The switch is "Sim rate (experiment)" in the debug UI's Game tab, under "Game". It is the setting `sim_rate.rate` in the settings file, saved like any other, with the values `"30"`, `"45"`, `"60"`, `"75"`, and `"90"`. It defaults to 30, the game's own rate, at which the experiment changes nothing. Unlike a gameplay feature, which ships switched on with its entries in the pause menu ([settings.md](../settings.md)), it defaults to the game's own rate and stays out of the pause menu: it is a test instrument, and a player who switched it on by accident would get a different game. Because it is saved, a session started after a test opens at the rate the test left, and the log says so (below).
+The switch is "Sim rate (experiment)" in the debug UI's Game tab, under "Game". It is the setting `sim_rate.rate`, with the rates 30, 45, 60, 75, and 90, and it is not saved to the settings file. It defaults to 30, the game's own rate, at which the experiment changes nothing. Unlike a gameplay feature, which ships switched on with its entries in the pause menu ([settings.md](../settings.md)), it defaults to the game's own rate and stays out of the pause menu: it is a test instrument, and a player who switched it on by accident would get a different game. Because it is not saved, every session starts at the game's own rate, and a test sets the rate again each time.
 
 The rate applies at the top of the next frame, ahead of that frame's ticks, and the readout under the switch shows what is applied: the rate, whether the physics pin is removed, the game's own update frequency field, the interpolation override, and the most ticks one frame may run.
 

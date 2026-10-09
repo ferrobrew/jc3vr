@@ -49,7 +49,7 @@ The pause menu's `VR: CONTROLS` page shows the file's state (`UP TO DATE`, `SAVI
 
 ## What is not saved
 
-Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and cinematic mode; the HUD split's discovered clip-path prefix (`hud.split_path_prefix`); the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
+Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and cinematic mode; the HUD split's discovered clip-path prefix (`hud.split_path_prefix`); the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; the sim-rate experiment's tick rate (`sim_rate.rate`), so a session never starts at an experimental rate; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
 
 ## TOML and the configuration types
 
