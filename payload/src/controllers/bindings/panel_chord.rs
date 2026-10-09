@@ -6,15 +6,19 @@
 //! every input tick, before the bindings decide whether to inject, and writes no game action: the
 //! panel can be closed the way it was opened.
 //!
-//! The chord's presses belong to it alone. A lone left stick click is withheld from the tables for
+//! The chord's B belongs to it alone; its stick click is shared. A lone left stick click waits only
+//! the recenter chord's window ([`BindingsConfig::stick_click_windows`](crate::controllers::config::BindingsConfig::stick_click_windows))
+//! before it reaches the tables, so the horn, the weapon step, and the dual-wield retract are not
+//! held back for this developer chord; a B pressed within
 //! [`BindingsConfig::panel_chord_window_s`](crate::controllers::config::BindingsConfig::panel_chord_window_s)
-//! ([`BindingsConfig::stick_click_windows`](crate::controllers::config::BindingsConfig::stick_click_windows)),
-//! and the chord counts only a B pressed within that window, so the stick click never reaches the
-//! game before the chord claims it. Once the chord fires, the left stick click and the right B are
-//! masked from the bindings (the raw frame, and the semantic actions bound to them), the native UI pointer, and the debug panel's own pointer until each is
-//! released, so neither acts in the game nor right-clicks on the panel. The caller also tells the
-//! tables to forget the withheld stick click ([`crate::controllers::bindings::tables::Bindings::cancel_stick_clicks`]),
-//! which would otherwise pass through as a tap when the mask hides it.
+//! of the click still toggles the panel. A B that comes after the click has passed through finds
+//! the click's own binding already acted on its press. Once the chord fires, the left stick click
+//! and the right B are masked from the bindings (the raw frame, and the semantic actions bound to
+//! them), the native UI pointer, and the debug panel's own pointer until each is released, so
+//! neither acts in the game nor right-clicks on the panel. The caller also tells the tables to
+//! forget the stick click ([`crate::controllers::bindings::tables::Bindings::cancel_stick_clicks`]),
+//! which withdraws a click that was passing through and keeps a withheld one from passing through
+//! as a tap when the mask hides it.
 //!
 //! The chord stands aside for the recenter chord: once the right stick click is held too, the left
 //! stick click belongs to the recenter chord until it is released. A B pressed after the window is

@@ -298,7 +298,28 @@ fn a_lone_left_stick_click_still_acts_after_the_window() {
                 .any(|d| d.target.action == Action::NEXT_WEAPON)
         })
         .expect("the weapon steps");
-    assert!(stepped as f32 * DT >= BindingsConfig::new().panel_chord_window_s - DT);
+    // The click waits only the recenter chord's window, not the panel chord's.
+    let config = BindingsConfig::new();
+    assert!(stepped as f32 * DT >= config.stick_chord_window_s - DT);
+    assert!((stepped as f32) * DT < config.panel_chord_window_s);
+}
+
+#[test]
+fn a_b_after_the_click_passed_still_toggles_and_withholds_the_rest_of_the_click() {
+    // The click passes after the recenter window; the B comes within the panel's.
+    let mut ticks = vec![(true, false, false); 4];
+    ticks.extend([
+        (true, false, true),
+        (true, false, false),
+        (true, false, false),
+    ]);
+    ticks.push((false, false, false));
+    let steps = run(Mode::OnFoot(OnFootVariant::Ground), Hand::Right, &ticks);
+    assert_eq!(steps.iter().filter(|(_, toggled)| *toggled).count(), 1);
+    let toggled = steps.iter().position(|(_, toggled)| *toggled).unwrap();
+    for (step, _) in &steps[toggled..] {
+        assert!(step.desired.is_empty(), "{:?}", step.desired);
+    }
 }
 
 #[test]

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        bindings::{panel_chord, yank::YankConfig},
+        bindings::yank::YankConfig,
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig},
     },
@@ -199,8 +199,8 @@ pub struct BindingsConfig {
     /// How long both stick clicks must be held together to recenter the VR view, seconds.
     pub recenter_hold_s: f32,
     /// How soon after the left stick click the right B must be pressed to show or hide the debug
-    /// panel, seconds ([`crate::controllers::bindings::panel_chord`]). A lone left stick click
-    /// waits this long, or the stick click chord window if that is longer, before it acts.
+    /// panel, seconds ([`crate::controllers::bindings::panel_chord`]). The click is not withheld
+    /// for it: a lone stick click waits only the stick click chord window.
     pub panel_chord_window_s: f32,
     /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
     /// line.
@@ -226,15 +226,11 @@ impl BindingsConfig {
     }
 
     /// How long a lone stick click waits before it acts, seconds, by [`Hand::index`]: the stick
-    /// click chord window, and on the left also the debug panel chord's window.
+    /// click chord window on both hands. The debug panel chord does not lengthen the left click's
+    /// wait, so that the horn, the weapon step, and the dual-wield retract act as soon as the
+    /// recenter chord allows.
     pub fn stick_click_windows(&self) -> [f32; 2] {
-        Hand::BOTH.map(|hand| {
-            if hand == panel_chord::CLICK_HAND {
-                self.stick_chord_window_s.max(self.panel_chord_window_s)
-            } else {
-                self.stick_chord_window_s
-            }
-        })
+        [self.stick_chord_window_s; 2]
     }
 }
 

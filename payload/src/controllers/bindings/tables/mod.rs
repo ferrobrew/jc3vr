@@ -24,8 +24,7 @@
 //!
 //! Holding both stick clicks together recenters the VR view, in every mode ([`stick_chord`]). A lone
 //! stick click waits a short window for the other before it reaches the actions bound to it, so
-//! that the chord never also fires either click's own binding. The left click waits longer, for
-//! the debug panel chord too ([`crate::controllers::bindings::panel_chord`]).
+//! that the chord never also fires either click's own binding.
 //!
 //! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
 //! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the

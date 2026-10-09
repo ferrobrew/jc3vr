@@ -136,7 +136,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         )
         .on_hover_text(
             "How soon after the left stick click the right B must be pressed to show or hide the \
-             debug panel. A lone left stick click waits this long before it acts.",
+             debug panel. The click is not held back for it.",
         );
         let y = &mut b.yank;
         ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(

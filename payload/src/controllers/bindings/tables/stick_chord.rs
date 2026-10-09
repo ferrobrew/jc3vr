@@ -14,9 +14,8 @@
 //! whose second click is late withdraws it before it detonates; the recenter's own hold is far
 //! longer than any lateness this tolerates.
 //!
-//! The left click's window also covers the debug panel chord's
-//! ([`crate::controllers::bindings::panel_chord`]), which claims the withheld click through
-//! [`StickChord::cancel`].
+//! The debug panel chord ([`crate::controllers::bindings::panel_chord`]) claims the left click
+//! through [`StickChord::cancel`], withheld or passing through.
 
 use crate::controllers::{bindings::controls::ButtonControl, frame::Hand};
 
