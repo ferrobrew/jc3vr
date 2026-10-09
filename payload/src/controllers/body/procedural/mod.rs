@@ -436,7 +436,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     Case::Jump | Case::HandClimb | Case::Flight | Case::Wingsuit | Case::Parachute
                 );
             let player = head::read(&world, scale);
-            let head = player.head;
             let standing = case == Case::OnFoot && legs_procedural && !airborne;
             let hips_head_y = state.hips_head(rig, &player, standing, dt, &config);
             let crouch = crouch_depth(rig, hips_head_y, &config);
@@ -454,13 +453,15 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             };
             let stance = state.stance_feet(&request);
             // The stance steps under a head that has gone further than a lean, so the feet follow
-            // a player walking about the room instead of the body stretching after the head.
+            // a player walking about the room instead of the body stretching after the head. The
+            // head is taken upright over the player's feet: a lean or a reach over a table moves
+            // the head and not the feet, so it steps nothing.
             let wanted_step = if config.step_under_head {
                 let (_, rotation, _) = world.to_scale_rotation_translation();
                 let limit = config.pelvis_turn_limit_deg.max(0.0).to_radians();
                 let yaw = torso_turn(rotation).map_or(0.0, |y| y.clamp(-limit, limit));
                 let middle = (stance[0].position + stance[1].position) * 0.5;
-                step_offset(rig, head, middle, yaw, config.lean_allowance_m)
+                step_offset(rig, player.upright, middle, yaw, config.lean_allowance_m)
             } else {
                 Vec2::ZERO
             };

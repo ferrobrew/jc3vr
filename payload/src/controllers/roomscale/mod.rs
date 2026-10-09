@@ -56,7 +56,7 @@ pub use seat::SeatPhase;
 use crate::{
     config::Config,
     controllers::{
-        body::{self, BodyDimensions},
+        body::{self, BodyDimensions, alignment::estimate as alignment_estimate},
         config::{Posture, RoomscaleConfig},
         roomscale::{
             crouch::CrouchTracker,
@@ -117,6 +117,11 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let player = body::player();
     let now = Instant::now();
     let in_gameplay = hooks::in_gameplay();
+    // The chase follows the player's feet, not the head: a lean or a reach moves the head out over
+    // feet that stayed put ([`crate::controllers::body::stance`]). Without the torso estimate, the
+    // head stands for the feet.
+    let lean = alignment_estimate().map_or(Vec2::ZERO, |e| e.stance.lean);
+    let lean = if lean.is_finite() { lean } else { Vec2::ZERO };
 
     let mut frame = FRAME.lock();
     let dt = frame
@@ -240,7 +245,8 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let crouched = frame
         .crouch
         .update(eye_drop_m, crouch.enter_drop_m, crouch.exit_drop_m);
-    let offset = inputs.body * (Vec3::new(cur.x, 0.0, cur.z) * inputs.world_scale);
+    let offset =
+        inputs.body * (Vec3::new(cur.x - lean.x, 0.0, cur.z - lean.y) * inputs.world_scale);
     let chase_offset = if offset.is_finite() {
         Vec2::new(offset.x, offset.z)
     } else {
@@ -318,6 +324,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         world_scale: inputs.world_scale,
         eye_drop_m,
         chase_offset,
+        lean,
         cockpit_shift: frame.shift.current(),
         teleport_rebases: frame.teleport_rebases,
         crouched,
@@ -522,6 +529,9 @@ pub struct FrameStatus {
     pub world_scale: f32,
     pub eye_drop_m: f32,
     pub chase_offset: Vec2,
+    /// How far the head leans out over the player's feet, cockpit `(x, z)`: what the chase leaves
+    /// alone.
+    pub lean: Vec2,
     /// The cockpit shift, cockpit frame, metres.
     pub cockpit_shift: Vec3,
     /// Teleports that re-based the horizontal offset.
@@ -621,6 +631,7 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
         world_scale: 1.0,
         eye_drop_m: 0.0,
         chase_offset: Vec2::ZERO,
+        lean: Vec2::ZERO,
         cockpit_shift: Vec3::ZERO,
         teleport_rebases: 0,
         crouched: false,

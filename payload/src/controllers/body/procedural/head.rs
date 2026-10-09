@@ -18,8 +18,14 @@
 use glam::{Mat4, Quat, Vec3};
 
 use crate::{
-    controllers::{body::torso::EYES_TO_NECK_PIVOT, locomotion::anchor::status as anchor_status},
-    headpose::{anchor as headpose_anchor, body_relative_rotation, query},
+    controllers::{
+        body::{alignment::estimate as alignment_estimate, torso::EYES_TO_NECK_PIVOT},
+        locomotion::anchor::status as anchor_status,
+    },
+    headpose::{
+        anchor as headpose_anchor, body_relative_rotation, query,
+        xr::body_rotation as view_rotation,
+    },
 };
 
 /// The player's head as the body reads it, in the model space of the root at `world`, at the VR
@@ -41,8 +47,22 @@ pub(super) fn read(world: &Mat4, scale: f32) -> PlayerHead {
     let height = headpose_anchor()
         .map(|anchor| head.y - to_model.transform_point3(anchor - hidden).y)
         .filter(|h| h.is_finite());
+    // The lean over the feet, from the cockpit frame into the model space: what the head moved
+    // without the feet.
+    let lean = alignment_estimate()
+        .map(|e| e.stance.lean)
+        .filter(|l| l.is_finite())
+        .map_or(Vec3::ZERO, |l| {
+            to_model.transform_vector3(view_rotation() * Vec3::new(l.x, 0.0, l.y) * scale)
+        });
+    let lean = if lean.is_finite() {
+        Vec3::new(lean.x, 0.0, lean.z)
+    } else {
+        Vec3::ZERO
+    };
     PlayerHead {
         head,
+        upright: head - lean,
         height,
         level: looks_level(rotation),
     }
@@ -52,6 +72,10 @@ pub(super) fn read(world: &Mat4, scale: f32) -> PlayerHead {
 pub(super) struct PlayerHead {
     /// The neck pivot, model space.
     pub(super) head: Vec3,
+    /// Where the neck pivot would be upright over the player's feet, model space: the head less
+    /// the lean the torso estimate reads over the feet
+    /// ([`crate::controllers::body::stance`]). What the feet step under.
+    pub(super) upright: Vec3,
     /// The neck pivot's height over the head anchor, metres, when the anchor is known.
     pub(super) height: Option<f32>,
     /// Whether the gaze is about level.
@@ -99,7 +123,7 @@ pub fn head_drop(height: f32, reference: f32, deadband_m: f32) -> f32 {
 /// The height the player is seen to stand at: the neck pivot's height over the head anchor that
 /// [`STANDING_PERCENTILE`] of the recent standing samples lie below, metres. Until it has
 /// [`MIN_SAMPLES`] of them, the calibration's: zero, the pivot at the anchor.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct StandingReference {
     samples: [f32; WINDOW],
     len: usize,

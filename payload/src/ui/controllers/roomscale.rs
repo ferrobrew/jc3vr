@@ -76,6 +76,10 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
         status.sim.task_velocity.y,
         status.sim.stick,
     ));
+    ui.label(format!(
+        "Lean over the feet, left to the head: ({:+.2}, {:+.2}) m",
+        f.lean.x, f.lean.y
+    ));
     ui.label(format!("Cockpit shift: {}", vec3(f.cockpit_shift)));
     ui.label(format!(
         "Teleports: {} ({} by distance) · re-based {}",
