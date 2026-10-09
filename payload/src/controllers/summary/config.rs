@@ -18,7 +18,9 @@ pub struct SummaryConfig {
     pub show_on_glance: bool,
     /// The glance's geometry and timing.
     pub glance: GlanceConfig,
-    /// Show the panel for this long after the mode changes, seconds; zero never does.
+    /// Show the panel for this long after the mode changes to one the player settles in, seconds;
+    /// zero never does. Falling does not count
+    /// ([`shows_mode_change`](crate::controllers::summary::shows_mode_change)).
     pub show_on_mode_change_s: f32,
     /// Show the panel while the off-hand's trackpad is touched (Index controllers only).
     pub show_on_trackpad_touch: bool,

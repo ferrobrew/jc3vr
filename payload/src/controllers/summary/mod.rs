@@ -51,8 +51,11 @@ use crate::{
         },
         config::ControllersConfig,
         frame::{ControllerFrame, InteractionProfile},
-        mode::Mode,
-        summary::content::{Summary, build},
+        mode::{AirborneVariant, Mode},
+        summary::{
+            content::{Summary, build},
+            labels::Text,
+        },
     },
     vr::input::sources,
 };
@@ -63,7 +66,8 @@ pub struct Published {
     pub summary: Arc<Summary>,
     /// Bumped on every rebuild, so that the panel can tell a new summary from the one it drew.
     pub revision: u64,
-    /// When the mode last changed to one with another heading.
+    /// When the mode last changed to one the player settles in with another heading than the last
+    /// such mode's ([`shows_mode_change`]).
     pub mode_changed_at: Instant,
 }
 
@@ -180,11 +184,18 @@ pub(crate) fn refresh(
         heading = %summary.heading,
         "controls summary rebuilt"
     );
-    // A change between modes that share a heading (walking and swimming, a seat and another in the
-    // same class) is not shown as a mode change.
-    let mode_changed =
-        previous.is_none_or(|k| labels::heading(k.ctx.mode) != labels::heading(mode));
     let mut state = STATE.lock();
+    let first = previous.is_none();
+    let (shows, settled) = shows_mode_change(state.settled, mode);
+    let mode_changed = first || shows;
+    if shows && !first {
+        tracing::info!(
+            target: "controllers",
+            heading = %summary.heading,
+            "controls summary: the mode changed, showing the summary"
+        );
+    }
+    state.settled = settled;
     state.key = Some(Key {
         sources: generation,
         ..key
@@ -199,6 +210,25 @@ pub(crate) fn refresh(
         revision,
         mode_changed_at,
     });
+}
+
+/// Whether a change to `mode` shows the summary, given the heading of the last mode the player
+/// settled in, and that heading after the change. Falling is passed through on the way from one mode
+/// to another (every jump, every drop off a ledge, every grapple launch), so it neither shows the
+/// summary nor counts as the mode the player left: a jump that lands shows nothing, and a fall that
+/// opens the parachute or the wingsuit shows that mode's. A change between modes that share a
+/// heading (walking and swimming, a seat and another in the same class) shows nothing either.
+pub fn shows_mode_change(settled: Option<Text>, mode: Mode) -> (bool, Option<Text>) {
+    if transient(mode) {
+        return (false, settled);
+    }
+    let heading = labels::heading(mode);
+    (settled != Some(heading), Some(heading))
+}
+
+/// Whether the mode is one the player passes through rather than settles in.
+const fn transient(mode: Mode) -> bool {
+    matches!(mode, Mode::Airborne(AirborneVariant::Falling))
 }
 
 /// Whether the mode changed within `window` of `now`.
@@ -218,9 +248,69 @@ struct Key {
 struct State {
     key: Option<Key>,
     published: Option<Published>,
+    /// The heading of the last mode the player settled in ([`shows_mode_change`]).
+    settled: Option<Text>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     key: None,
     published: None,
+    settled: None,
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controllers::mode::{OnFootVariant, VehicleClass, VehicleSeat};
+
+    const GROUND: Mode = Mode::OnFoot(OnFootVariant::Ground);
+    const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);
+
+    /// Run `modes` from nothing settled, and say which changes showed the summary.
+    fn shown(modes: &[Mode]) -> Vec<bool> {
+        let mut settled = None;
+        modes
+            .iter()
+            .map(|&mode| {
+                let (shows, next) = shows_mode_change(settled, mode);
+                settled = next;
+                shows
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_jump_that_lands_shows_nothing() {
+        assert_eq!(
+            shown(&[GROUND, FALLING, GROUND, FALLING, GROUND]),
+            [true, false, false, false, false]
+        );
+    }
+
+    #[test]
+    fn a_fall_into_the_wingsuit_or_the_parachute_shows_it() {
+        let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
+        let parachute = Mode::Airborne(AirborneVariant::Parachute);
+        assert_eq!(
+            shown(&[
+                GROUND, FALLING, wingsuit, FALLING, parachute, FALLING, GROUND
+            ]),
+            [true, false, true, false, true, false, true]
+        );
+    }
+
+    #[test]
+    fn modes_that_share_a_heading_show_nothing() {
+        let car = |driver| {
+            Mode::Vehicle(VehicleSeat {
+                class: VehicleClass::Car,
+                driver,
+            })
+        };
+        let swimming = Mode::OnFoot(OnFootVariant::Swimming);
+        assert_eq!(
+            shown(&[GROUND, swimming, car(true), car(false), GROUND]),
+            [true, false, true, false, true]
+        );
+    }
+}
