@@ -14,6 +14,7 @@ pub mod graphics_engine;
 pub mod input;
 #[cfg(feature = "profiler")]
 pub mod profiler;
+pub mod sim;
 pub mod ui;
 pub mod wndproc;
 
@@ -39,6 +40,7 @@ pub(super) fn install() {
     let hook_library = ThreadSuspender::for_block(|| {
         let library = HookLibrary::new()
             .with_hook_library(game::hook_library())
+            .with_hook_library(sim::hook_library())
             .with_hook_library(clock::hook_library())
             .with_hook_library(graphics_engine::hook_library())
             .with_hook_library(draw_count::hook_library())

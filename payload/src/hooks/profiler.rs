@@ -3,11 +3,11 @@
 //! These hooks exist purely to instrument the game; they add no behaviour of their own beyond
 //! opening puffin CPU scopes and GPU timestamp brackets. The frame phases and render seams that
 //! the mod *already* hooks for other reasons are instrumented inline in those hooks (also under
-//! the feature); this module covers the seams that are otherwise untouched:
+//! the feature), as are the sim tick and its phases (`crate::hooks::sim`, which the frame breakdown
+//! times in every build); this module covers the seams that are otherwise untouched:
 //!
 //! - `RenderEngine::DrawGBuffer` and `RenderEngine::Draw` — the two scene seams between `PreDraw`
 //!   and `DrawPosteffects`, bracketed on the GPU timeline and timed on the CPU.
-//! - `CGame::UpdateGame` — one sim tick (the render phases are covered by `game_update_render`).
 //! - `CRenderPass::ChangeRenderBlockType` — counts the outgoing type run's blocks (always), and,
 //!   when the per-draw scopes are enabled, opens a per-render-block-type CPU scope named by the
 //!   type, closed by the next switch or by the pass draw's tail (see `render_pass::do_draw`).
@@ -19,13 +19,10 @@
 //! `ChangeRenderBlockType` above instead.
 
 use detours_macro::detour;
-use jc3gi::{
-    game::{Game, UpdateContexts},
-    graphics_engine::{
-        graphics_engine::{HContext_t, HTexture_t, RenderContext},
-        render_engine::{RenderBlockTypeBase, RenderEngine},
-        render_pass::RenderPass,
-    },
+use jc3gi::graphics_engine::{
+    graphics_engine::{HContext_t, HTexture_t, RenderContext},
+    render_engine::{RenderBlockTypeBase, RenderEngine},
+    render_pass::RenderPass,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -39,7 +36,6 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&DRAW_GBUFFER_BINDER)
         .with_static_binder(&RENDER_ENGINE_DRAW_BINDER)
-        .with_static_binder(&UPDATE_GAME_BINDER)
         .with_static_binder(&CHANGE_RENDER_BLOCK_TYPE_BINDER)
 }
 
@@ -61,15 +57,6 @@ fn render_engine_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     // SAFETY: `ctx` is the live immediate context for this dispatch.
     let _gpu = unsafe { gpu::seam(ctx, GpuSeam::Scene) };
     RENDER_ENGINE_DRAW.get().unwrap().call(this, ctx)
-}
-
-// CGame::UpdateGame -- one sim tick (clock, FPS, active game-state update). Called zero or more
-// times per real frame per the frame-pacing mode, so the flame graph shows how many sim ticks a
-// frame ran and where their time went.
-#[detour(address = jc3gi::game::Game::UpdateGame_ADDRESS)]
-fn update_game(this: *mut Game, update_contexts: *mut UpdateContexts) {
-    puffin::profile_scope!("CGame::UpdateGame");
-    UPDATE_GAME.get().unwrap().call(this, update_contexts);
 }
 
 // CRenderPass::ChangeRenderBlockType -- switches the active render-block type between type runs in

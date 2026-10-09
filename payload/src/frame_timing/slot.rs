@@ -6,9 +6,30 @@
 pub(crate) enum Slot {
     /// `crate::update`: the directing tools, the eye-capture upkeep, and the egui debug UI pass.
     DebugUi,
-    /// The engine's `Game::Update`, excluding the mod scopes nested in it: the sim tick and the
-    /// parts of the frame the mod does not hook.
+    /// The engine's `Game::Update`, excluding the mod scopes nested in it and the sim ticks: the
+    /// tick scheduler, the update contexts, and the parts of the frame the mod does not hook.
     EngineUpdate,
+    /// One sim tick (`Game::UpdateGame`), excluding the scopes nested in it: the run state's
+    /// managers, its waits on the AI and light fragments, and everything in the tick this
+    /// breakdown does not time on its own.
+    SimTick,
+    /// The game world's pre-simulation queue (`GameWorld::UpdatePreSim`): the registered objects'
+    /// pre-simulation updates, the characters' state-machine and pre-physics passes among them.
+    SimWorldPreSim,
+    /// The run state's physics phase (`GameState::UpdatePhysics`): the physics step and the
+    /// collision, damage, and shape-sensor dispatch after it, excluding the hand bodies' callback.
+    SimPhysics,
+    /// The game world's post-simulation queue (`GameWorld::UpdatePostSim`): the objects'
+    /// post-simulation updates, the teleport, and the removal queue.
+    SimWorldPostSim,
+    /// The tick's time-budgeted streaming block: the resource streamer, the location system, and
+    /// the deletion of queued objects.
+    SimStreaming,
+    /// The first AI thread's body (`RunAIThread1_Proxy`), on the fragment worker that runs it.
+    AiThread1,
+    /// The second AI thread's body (`RunAIThread2_Proxy`), on the fragment worker that runs it. It
+    /// is kicked at the end of a tick and runs alongside the render update.
+    AiThread2,
     /// The mod's work after the engine's input-device poll, excluding the bindings and the
     /// physical hands: the gamepad-setting hold and the headpose look handling.
     InputTick,
@@ -111,6 +132,13 @@ impl Slot {
     pub(crate) const ALL: [Slot; Self::COUNT] = [
         Slot::DebugUi,
         Slot::EngineUpdate,
+        Slot::SimTick,
+        Slot::SimWorldPreSim,
+        Slot::SimPhysics,
+        Slot::SimWorldPostSim,
+        Slot::SimStreaming,
+        Slot::AiThread1,
+        Slot::AiThread2,
         Slot::InputTick,
         Slot::Bindings,
         Slot::PhysicalHands,
@@ -140,7 +168,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 28;
+    pub(crate) const COUNT: usize = 35;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -152,6 +180,13 @@ impl Slot {
         match self {
             Slot::DebugUi => "debug_ui",
             Slot::EngineUpdate => "engine_update",
+            Slot::SimTick => "sim_tick",
+            Slot::SimWorldPreSim => "sim_world_pre",
+            Slot::SimPhysics => "sim_physics",
+            Slot::SimWorldPostSim => "sim_world_post",
+            Slot::SimStreaming => "sim_streaming",
+            Slot::AiThread1 => "ai_thread_1",
+            Slot::AiThread2 => "ai_thread_2",
             Slot::InputTick => "input_tick",
             Slot::Bindings => "bindings",
             Slot::PhysicalHands => "physical_hands",
@@ -202,7 +237,16 @@ impl Slot {
             | Slot::Tail
             | Slot::PostDraw => Kind::Mod,
             Slot::VrBeginFrame | Slot::VrInput | Slot::VrEndFrame => Kind::Runtime,
-            Slot::EngineUpdate | Slot::EngineUpdateRender | Slot::Dispatch => Kind::Engine,
+            Slot::EngineUpdate
+            | Slot::SimTick
+            | Slot::SimWorldPreSim
+            | Slot::SimPhysics
+            | Slot::SimWorldPostSim
+            | Slot::SimStreaming
+            | Slot::AiThread1
+            | Slot::AiThread2
+            | Slot::EngineUpdateRender
+            | Slot::Dispatch => Kind::Engine,
             Slot::VrLock
             | Slot::VrWaitFrame
             | Slot::VrSwapchainWait

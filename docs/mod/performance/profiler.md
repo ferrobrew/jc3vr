@@ -41,9 +41,8 @@ Take the capture alongside the always-on breakdown in the same log ([frame-timin
 
 ## What is instrumented
 
-CPU scopes, main thread: `CGame::Update` (the frame), `UpdateGame` (each sim tick),
-`UpdateRender`, the per-eye dispatch loop (one `Dispatch` scope per `CGame::Draw`, tagged with the
-eye and ordinal), and the post-Draw drain (`WaitForCPUDraw + drain`).
+CPU scopes, main thread: `CGame::Update` (the frame), `CGame::UpdateGame` (each sim tick) and, inside it, the game world's two update queues, the physics phase, and the streaming block's three calls, `UpdateRender`, the per-eye dispatch loop (one `Dispatch` scope per `CGame::Draw`, tagged with the
+eye and ordinal), and the post-Draw drain (`WaitForCPUDraw + drain`). The two AI threads' bodies get a scope each on the fragment worker that runs them.
 
 CPU scopes, draw thread: `RenderEngine::PreDraw` / `DrawGBuffer` / `Draw (scene)` /
 `DrawPosteffects` / `PostDraw`, `DrawRenderPassRange` (with the pass range as data), and
@@ -118,8 +117,9 @@ the frame bars.
 - `payload/src/profiler/chrome_trace.rs` — puffin frames → Chrome trace-event JSON.
 - `payload/src/profiler/ui.rs` — the Performance-tab collapsible.
 - `payload/src/hooks/profiler.rs` — the profiler-only detours (`DrawGBuffer`,
-  `RenderEngine::Draw`, `CGame::UpdateGame`, `ChangeRenderBlockType`); seams the mod already hooks
-  for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`.
+  `RenderEngine::Draw`, `ChangeRenderBlockType`); seams the mod already hooks
+  for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`,
+  among them the sim tick and its phases in `payload/src/hooks/sim.rs`, which the frame breakdown times in every build.
 
 ## Deliberate omissions
 

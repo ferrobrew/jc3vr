@@ -32,8 +32,92 @@ impl SlotTotals {
     }
 }
 
+/// How many sim ticks a game frame ran, for the split of the frame intervals: whether a slow
+/// frame is a frame that carried a tick.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum TickLoad {
+    /// The frame ran no sim tick: it interpolated between the last two.
+    None,
+    /// The frame ran one sim tick.
+    One,
+    /// The frame ran two or more, catching up.
+    Several,
+}
+
+impl TickLoad {
+    /// Every load, in index order.
+    pub(crate) const ALL: [TickLoad; Self::COUNT] =
+        [TickLoad::None, TickLoad::One, TickLoad::Several];
+
+    /// The number of loads.
+    pub(crate) const COUNT: usize = 3;
+
+    /// The load of a frame that ran `ticks` sim ticks.
+    pub(crate) const fn of(ticks: u32) -> Self {
+        match ticks {
+            0 => TickLoad::None,
+            1 => TickLoad::One,
+            _ => TickLoad::Several,
+        }
+    }
+
+    /// The load's position in [`Self::ALL`] and in [`Totals::by_tick_load`].
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The load's name in the log line and the debug UI.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            TickLoad::None => "0",
+            TickLoad::One => "1",
+            TickLoad::Several => "2+",
+        }
+    }
+}
+
+/// The frame intervals of one group of frames over a window.
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FrameGroup {
+    /// How many frames the group holds.
+    pub(crate) frames: u64,
+    /// The sum of their intervals.
+    pub(crate) frame_ns: u64,
+    /// The longest of their intervals.
+    pub(crate) frame_max_ns: u64,
+}
+
+impl FrameGroup {
+    /// No frames.
+    pub(crate) const ZERO: FrameGroup = FrameGroup {
+        frames: 0,
+        frame_ns: 0,
+        frame_max_ns: 0,
+    };
+
+    /// The mean interval in milliseconds, or zero without frames.
+    pub(crate) fn mean_ms(&self) -> f64 {
+        if self.frames == 0 {
+            return 0.0;
+        }
+        self.frame_ns as f64 / self.frames as f64 / 1e6
+    }
+
+    fn add(&mut self, interval_ns: u64) {
+        self.frames += 1;
+        self.frame_ns = self.frame_ns.saturating_add(interval_ns);
+        self.frame_max_ns = self.frame_max_ns.max(interval_ns);
+    }
+
+    fn absorb(&mut self, other: &FrameGroup) {
+        self.frames = self.frames.saturating_add(other.frames);
+        self.frame_ns = self.frame_ns.saturating_add(other.frame_ns);
+        self.frame_max_ns = self.frame_max_ns.max(other.frame_max_ns);
+    }
+}
+
 /// Everything the counters accumulated over a window.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Totals {
     /// Game frames that ended in the window, as counted by the interval between successive
     /// `Game::Update` entries.
@@ -42,11 +126,21 @@ pub(crate) struct Totals {
     pub(crate) frame_ns: u64,
     /// The longest of those frame intervals.
     pub(crate) frame_max_ns: u64,
+    /// The sim ticks the window's frames ran.
+    pub(crate) sim_ticks: u64,
+    /// The window's frames split by how many sim ticks each ran, indexed by [`TickLoad::index`].
+    pub(crate) by_tick_load: [FrameGroup; TickLoad::COUNT],
     /// Per-slot totals, indexed by [`Slot::index`].
     pub(crate) slots: [SlotTotals; Slot::COUNT],
     /// Self time by the thread it ran on and its kind, indexed by [`ThreadClass::index`] then
     /// [`Kind::index`].
     pub(crate) buckets: [[u64; Kind::COUNT]; ThreadClass::COUNT],
+}
+
+impl Default for Totals {
+    fn default() -> Self {
+        Self::EMPTY
+    }
 }
 
 impl Totals {
@@ -55,6 +149,8 @@ impl Totals {
         frames: 0,
         frame_ns: 0,
         frame_max_ns: 0,
+        sim_ticks: 0,
+        by_tick_load: [FrameGroup::ZERO; TickLoad::COUNT],
         slots: [SlotTotals::ZERO; Slot::COUNT],
         buckets: [[0; Kind::COUNT]; ThreadClass::COUNT],
     };
@@ -64,6 +160,10 @@ impl Totals {
         self.frames = self.frames.saturating_add(other.frames);
         self.frame_ns = self.frame_ns.saturating_add(other.frame_ns);
         self.frame_max_ns = self.frame_max_ns.max(other.frame_max_ns);
+        self.sim_ticks = self.sim_ticks.saturating_add(other.sim_ticks);
+        for (mine, theirs) in self.by_tick_load.iter_mut().zip(&other.by_tick_load) {
+            mine.absorb(theirs);
+        }
         for (mine, theirs) in self.slots.iter_mut().zip(&other.slots) {
             mine.absorb(theirs);
         }
@@ -72,6 +172,20 @@ impl Totals {
                 *mine = mine.saturating_add(*theirs);
             }
         }
+    }
+
+    /// Record one frame of `interval_ns` that ran `ticks` sim ticks.
+    pub(crate) fn add_frame(&mut self, interval_ns: u64, ticks: u32) {
+        self.frames += 1;
+        self.frame_ns = self.frame_ns.saturating_add(interval_ns);
+        self.frame_max_ns = self.frame_max_ns.max(interval_ns);
+        self.sim_ticks = self.sim_ticks.saturating_add(u64::from(ticks));
+        self.by_tick_load[TickLoad::of(ticks).index()].add(interval_ns);
+    }
+
+    /// The frames that ran `load` sim ticks.
+    pub(crate) fn tick_load(&self, load: TickLoad) -> &FrameGroup {
+        &self.by_tick_load[load.index()]
     }
 
     /// A slot's totals.
@@ -117,9 +231,10 @@ pub(crate) struct Report {
 }
 
 impl fmt::Display for Report {
-    /// The one-line breakdown: the frame interval, then per thread the time per frame by kind,
-    /// then every slot that ran as `name=<self ms per frame>/<max ms per call>`. All times are
-    /// milliseconds.
+    /// The one-line breakdown: the frame interval, the sim ticks and the frame intervals split by
+    /// how many ticks each frame ran (`<ticks>=<frames>/<mean ms>/<max ms>`, for the loads that
+    /// occurred), then per thread the time per frame by kind, then every slot that ran as
+    /// `name=<self ms per frame>/<max ms per call>`. All times are milliseconds.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let t = &self.totals;
         write!(
@@ -130,6 +245,21 @@ impl fmt::Display for Report {
             t.mean_frame_ms(),
             ns_to_ms(t.frame_max_ns),
         )?;
+        write!(f, " | sim: ticks={}", t.sim_ticks)?;
+        for load in TickLoad::ALL {
+            let g = t.tick_load(load);
+            if g.frames == 0 {
+                continue;
+            }
+            write!(
+                f,
+                " {}={}/{:.2}/{:.2}",
+                load.name(),
+                g.frames,
+                g.mean_ms(),
+                ns_to_ms(g.frame_max_ns),
+            )?;
+        }
         for class in ThreadClass::ALL {
             let total: u64 = Kind::ALL.iter().map(|kind| t.bucket(class, *kind)).sum();
             if total == 0 && class != ThreadClass::Game {
@@ -274,9 +404,61 @@ mod tests {
         assert_eq!(
             report.to_string(),
             "frame breakdown window_s=10.0 frames=4 frame_ms=14.00 frame_max_ms=14.00 \
-             | game: mod=1.00 openxr=0.00 engine=0.00 wait=5.00 untracked=8.00 \
+             | sim: ticks=0 | game: mod=1.00 openxr=0.00 engine=0.00 wait=5.00 untracked=8.00 \
              | slots: debug_ui=1.00/1.50 vr_wait_frame=5.00/6.00"
         );
+    }
+
+    #[test]
+    fn frames_split_by_their_tick_load() {
+        let mut t = Totals::default();
+        t.add_frame(12 * MS, 0);
+        t.add_frame(10 * MS, 0);
+        t.add_frame(16 * MS, 1);
+        t.add_frame(30 * MS, 3);
+        assert_eq!(t.frames, 4);
+        assert_eq!(t.frame_ns, 68 * MS);
+        assert_eq!(t.frame_max_ns, 30 * MS);
+        assert_eq!(t.sim_ticks, 4);
+        let none = t.tick_load(TickLoad::None);
+        assert_eq!((none.frames, none.frame_max_ns), (2, 12 * MS));
+        assert!((none.mean_ms() - 11.0).abs() < 1e-9);
+        assert_eq!(t.tick_load(TickLoad::One).frames, 1);
+        assert_eq!(t.tick_load(TickLoad::Several).frame_ns, 30 * MS);
+    }
+
+    #[test]
+    fn the_tick_split_absorbs_and_shows_the_loads_that_occurred() {
+        let mut a = Totals::default();
+        a.add_frame(10 * MS, 0);
+        let mut b = Totals::default();
+        b.add_frame(20 * MS, 1);
+        b.add_frame(14 * MS, 1);
+        a.absorb(&b);
+        assert_eq!(a.sim_ticks, 2);
+        assert_eq!(a.tick_load(TickLoad::One).frames, 2);
+        assert_eq!(a.tick_load(TickLoad::One).frame_max_ns, 20 * MS);
+        let line = Report {
+            window_s: 1.0,
+            totals: a,
+        }
+        .to_string();
+        assert!(
+            line.contains(" | sim: ticks=2 0=1/10.00/10.00 1=2/17.00/20.00 | game:"),
+            "{line}"
+        );
+        assert!(!line.contains(" 2+="), "{line}");
+    }
+
+    #[test]
+    fn tick_loads_are_in_index_order() {
+        for (i, load) in TickLoad::ALL.iter().enumerate() {
+            assert_eq!(load.index(), i);
+        }
+        assert_eq!(TickLoad::of(0), TickLoad::None);
+        assert_eq!(TickLoad::of(1), TickLoad::One);
+        assert_eq!(TickLoad::of(2), TickLoad::Several);
+        assert_eq!(TickLoad::of(u32::MAX), TickLoad::Several);
     }
 
     #[test]

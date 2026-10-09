@@ -94,6 +94,38 @@ impl GameWorld {
             f(self as *mut Self as _, world, state, flags)
         }
     }
+    pub const UpdatePreSimImpl_ADDRESS: usize = 0x1409C9FD0;
+    /// `CGameWorld::UpdatePreSim`, the implementation behind the
+    /// [`UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim) virtual. It takes the interface subobject (the
+    /// singleton) as `self`.
+    pub unsafe fn UpdatePreSimImpl(
+        &mut self,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePreSimImpl_ADDRESS);
+            f(self as *mut Self as _, context)
+        }
+    }
+    pub const UpdatePostSimImpl_ADDRESS: usize = 0x140A14B40;
+    /// `CGameWorld::UpdatePostSim`, the implementation behind the
+    /// [`UpdatePostSim`](crate::game_world::GameWorld::UpdatePostSim) virtual. It takes the interface subobject (the
+    /// singleton) as `self`.
+    pub unsafe fn UpdatePostSimImpl(
+        &mut self,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePostSimImpl_ADDRESS);
+            f(self as *mut Self as _, context)
+        }
+    }
     pub const IsTeleportingImpl_ADDRESS: usize = 0x1409AF810;
     /// `CGameWorld::IsTeleporting`, the implementation behind the
     /// [`IsTeleporting`](crate::game_world::GameWorld::IsTeleporting) virtual: whether the teleport state
@@ -104,6 +136,35 @@ impl GameWorld {
                 Self::IsTeleportingImpl_ADDRESS,
             );
             f(self as *const Self as _)
+        }
+    }
+    /// Runs the pre-simulation half of the world's update queue (the priorities below 1024)
+    /// with `context`, unless the context is paused. The registered objects' pre-simulation
+    /// updates run here, the characters' state-machine and pre-physics passes among them.
+    /// The run state's update calls it once per tick, before
+    /// [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics).
+    pub unsafe fn UpdatePreSim(
+        &mut self,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).UpdatePreSim).read();
+            f(self as *mut Self as _, context)
+        }
+    }
+    /// Advances the deferred teleport ([`UpdateTeleport`](crate::game_world::UpdateTeleport)), runs the post-simulation half of
+    /// the world's update queue (the priorities from 1024 to 2047) with `context` unless the
+    /// context is paused, services the object removal queue, and, when the world's water
+    /// extensions are enabled, updates their splashes, wind, and collisions. The run state's
+    /// update calls it once per tick, after
+    /// [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics).
+    pub unsafe fn UpdatePostSim(
+        &mut self,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).UpdatePostSim).read();
+            f(self as *mut Self as _, context)
         }
     }
     /// Queues a deferred player teleport that `CGameWorld::UpdateTeleport` services over the
@@ -212,8 +273,25 @@ pub struct GameWorldVftable {
     _vfunc_10: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
     _vfunc_11: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
     _vfunc_12: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
-    _vfunc_13: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
-    _vfunc_14: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
+    /// Runs the pre-simulation half of the world's update queue (the priorities below 1024)
+    /// with `context`, unless the context is paused. The registered objects' pre-simulation
+    /// updates run here, the characters' state-machine and pre-physics passes among them.
+    /// The run state's update calls it once per tick, before
+    /// [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics).
+    pub UpdatePreSim: unsafe extern "system" fn(
+        this: *mut crate::game_world::GameWorld,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ),
+    /// Advances the deferred teleport ([`UpdateTeleport`](crate::game_world::UpdateTeleport)), runs the post-simulation half of
+    /// the world's update queue (the priorities from 1024 to 2047) with `context` unless the
+    /// context is paused, services the object removal queue, and, when the world's water
+    /// extensions are enabled, updates their splashes, wind, and collisions. The run state's
+    /// update calls it once per tick, after
+    /// [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics).
+    pub UpdatePostSim: unsafe extern "system" fn(
+        this: *mut crate::game_world::GameWorld,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ),
     _vfunc_15: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
     _vfunc_16: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),
     _vfunc_17: unsafe extern "system" fn(this: *mut crate::game_world::GameWorld),

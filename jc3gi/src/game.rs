@@ -3,7 +3,15 @@
 pub struct Game {
     _field_0: [u8; 16],
     pub m_CountAccumulator: u64,
+    /// The sim tick rate, ticks per second. The constructor writes 30 here and into
+    /// [`m_DefaultUpdateFrequency`](crate::game::Game::m_DefaultUpdateFrequency). [`Update`](crate::game::Game::Update)
+    /// reads it every frame (raising it to 1 when it is not positive): the step it derives,
+    /// one over this rate, is each tick's `m_Dt` and `m_OriginalDt` in the update context, and the
+    /// rate the clock is forced to for the duration of the sim. Writing it changes the tick from
+    /// the next frame on. [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) does not
+    /// follow it: it steps the world by its own fixed step.
     pub m_UpdateFrequency: u32,
+    /// The tick rate the constructor sets, kept beside [`m_UpdateFrequency`](crate::game::Game::m_UpdateFrequency).
     pub m_DefaultUpdateFrequency: u32,
     _field_20: [u8; 20],
     pub m_Exit: u8,
@@ -68,6 +76,18 @@ impl Game {
     }
     pub const Update_ADDRESS: usize = 0x1409604E0;
     /// The top-level per-frame update: advances the sim and drives rendering. Returns false on exit.
+    ///
+    /// Each frame it derives the sim step as one over [`m_UpdateFrequency`](crate::game::Game::m_UpdateFrequency),
+    /// builds the update contexts with that step as their `m_Dt`, and, while
+    /// [`E_GUF_UPDATE`](crate::game::GameUpdateFlags::E_GUF_UPDATE) is set, forces the clock to that rate
+    /// (`CClock::EnableForceToFPS`), so that [`Clock::GetSPF`](crate::clock::Clock::GetSPF) returns the
+    /// step during the sim; it undoes the forcing before [`UpdateRender`](crate::game::Game::UpdateRender).
+    /// The frame's seconds per frame, capped at half a second, are converted into ticks by
+    /// the chosen [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod), each tick one
+    /// [`UpdateGame`](crate::game::Game::UpdateGame) call, and the fraction left over is the render context's
+    /// `m_Dtf`. While the clock is paused, or [`m_DecoupleEnabled`](crate::game::Game::m_DecoupleEnabled) is
+    /// clear, it instead runs one [`UpdateGame`](crate::game::Game::UpdateGame) with the frame's time as the
+    /// step.
     pub unsafe fn Update(&mut self) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
@@ -110,7 +130,10 @@ impl Game {
 impl Game {
     /// The [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod) chosen while a cutscene plays:
     /// the same accumulator, but [`UpdateGame`](crate::game::Game::UpdateGame) runs once per whole step
-    /// accumulated (capped), subtracting one per update.
+    /// accumulated, subtracting one per update, up to [`Game_MaxGameUpdatesPerRender`](get_Game_MaxGameUpdatesPerRender) a frame;
+    /// the frame's contribution to the accumulator is capped at the same count, so a frame that
+    /// would need more ticks loses the time. A filtered-timer guard drops the frame to one tick
+    /// when the recent ticks took longer than a step.
     pub const INTERPOLATION_METHOD_ACCUMULATED: u32 = 2;
     /// The [`m_PrevInterpolationMethod`](crate::game::Game::m_PrevInterpolationMethod) value written when the
     /// frame takes the paused path; it matches no method, so the next unpaused frame resets the
@@ -404,6 +427,36 @@ impl GameState {
             f(update_contexts)
         }
     }
+    pub const UpdatePhysics_ADDRESS: usize = 0x1409AC2A0;
+    /// `CGameState::UpdatePhysics`: the run state's physics phase, between the game world's
+    /// pre-simulation and post-simulation queues ([`GameWorld::UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim)
+    /// and [`GameWorld::UpdatePostSim`](crate::game_world::GameWorld::UpdatePostSim)). Unless the clock's
+    /// update speed is below a tenth (deep slow motion, which skips the step), it calls
+    /// [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) with `dt`, the update context's
+    /// `m_Dt`. It then dispatches the queued collisions, clears the collision array, runs the
+    /// vehicles' post-collision update, processes the damage listeners' events, and updates the
+    /// shape sensors.
+    pub unsafe fn UpdatePhysics(dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+                Self::UpdatePhysics_ADDRESS,
+            );
+            f(dt)
+        }
+    }
+    pub const UpdateDeletionOfObjects_ADDRESS: usize = 0x1409BA410;
+    /// `CGameState::UpdateDeletionOfObjects`: deletes the queued background objects and the
+    /// locator's queued resources within `budget_us` microseconds. The run state's update calls
+    /// it once per tick, after [`StreamerUpdate`](crate::game::StreamerUpdate) and [`GameLocationSystemUpdate`](crate::game::GameLocationSystemUpdate), with what is
+    /// left of the tick's streaming budget.
+    pub unsafe fn UpdateDeletionOfObjects(budget_us: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(budget_us: u32) = ::std::mem::transmute(
+                Self::UpdateDeletionOfObjects_ADDRESS,
+            );
+            f(budget_us)
+        }
+    }
 }
 #[repr(C, align(8))]
 /// `CGameStateRun`: the in-game state's static update functions.
@@ -444,6 +497,13 @@ fn _GameUpdateFlags_size_check() {
         ::std::mem::transmute::<[u8; 0x4], GameUpdateFlags>([0u8; 0x4]);
     }
     unreachable!()
+}
+/// `g_MaxGameUpdatesPerRender`: the most [`Game::UpdateGame`](crate::game::Game::UpdateGame) calls one [`Game::Update`](crate::game::Game::Update) makes
+/// under [`INTERPOLATION_METHOD_ACCUMULATED`](crate::game::Game::INTERPOLATION_METHOD_ACCUMULATED) and
+/// [`INTERPOLATION_METHOD_TIME_BASED`](crate::game::Game::INTERPOLATION_METHOD_TIME_BASED). The image
+/// initializes it to 2.
+pub unsafe fn get_Game_MaxGameUpdatesPerRender() -> &'static mut u32 {
+    unsafe { &mut *(0x142D6EA50 as *mut u32) }
 }
 #[repr(C, align(8))]
 pub struct ProjectContext {}
@@ -493,5 +553,94 @@ impl std::convert::AsRef<UpdateContexts> for UpdateContexts {
 impl std::convert::AsMut<UpdateContexts> for UpdateContexts {
     fn as_mut(&mut self) -> &mut UpdateContexts {
         self
+    }
+}
+pub const StreamerUpdate_ADDRESS: usize = 0x14118A180;
+/// The resource streamer's update: polls the file system and the decompressors, creates the
+/// loaded resources, and starts the pending requests, within `budget_us` microseconds. The run
+/// state's update calls it once per tick after the physics phase, with a budget of at least
+/// a fixed minimum taken from a reservoir it refills every tick, so the streaming time per second
+/// grows with the tick rate when there is work. Returns the streamer's result code.
+pub unsafe fn StreamerUpdate(budget_us: u32) -> u32 {
+    unsafe {
+        let f: unsafe extern "system" fn(budget_us: u32) -> u32 = ::std::mem::transmute(
+            StreamerUpdate_ADDRESS,
+        );
+        f(budget_us)
+    }
+}
+pub const GameLocationSystemUpdate_ADDRESS: usize = 0x1404BC110;
+/// The game location system's update: checks which locations to load and advances their loading
+/// and the landmarks' visibility, within `budget_us` microseconds. The run state's update calls it
+/// once per tick, after [`StreamerUpdate`](crate::game::StreamerUpdate).
+pub unsafe fn GameLocationSystemUpdate(budget_us: u32) {
+    unsafe {
+        let f: unsafe extern "system" fn(budget_us: u32) = ::std::mem::transmute(
+            GameLocationSystemUpdate_ADDRESS,
+        );
+        f(budget_us)
+    }
+}
+pub const RunLightThread_ADDRESS: usize = 0x1409AE070;
+/// `RunLightThread`: queues the light manager's update on a CPU fragment, with `dt` the tick's
+/// step, and clears the signal the run state's update later waits on. The run state's update calls
+/// it once per tick after the effects' post-simulation update.
+pub unsafe fn RunLightThread(dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+            RunLightThread_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread1_ADDRESS: usize = 0x1409F0D40;
+/// `RunAIThread1`: queues [`RunAIThread1_Proxy`](crate::game::RunAIThread1_Proxy) on a CPU fragment with `dt` the tick's step, and
+/// clears its completion signal. The run state's update calls it once per tick after the awareness
+/// events' dispatch, and waits for the signal near the end of the same tick.
+pub unsafe fn RunAIThread1(dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+            RunAIThread1_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread1_Proxy_ADDRESS: usize = 0x1409F0B30;
+/// The first AI thread's body, run on a CPU fragment worker (or by a thread that runs queued
+/// fragments while it waits): the per-character AI update, the road graph, traffic, and action
+/// token managers, and the pathfinder's instant-rotation switch. `dt` points at the tick's step.
+/// Returns 1.
+pub unsafe fn RunAIThread1_Proxy(dt: *mut f32) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: *mut f32) -> i32 = ::std::mem::transmute(
+            RunAIThread1_Proxy_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread2_ADDRESS: usize = 0x1409F0DE0;
+/// `RunAIThread2`: caches the game camera's position for the AI pathfinder, then queues
+/// [`RunAIThread2_Proxy`](crate::game::RunAIThread2_Proxy) on a CPU fragment with `dt` the tick's step, and clears its completion
+/// signal. The run state's update calls it last in the tick, so the thread runs alongside the rest
+/// of the frame: the run state's render update waits for the signal before its raycast threads,
+/// and the next tick's update waits for it before its input.
+pub unsafe fn RunAIThread2(dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+            RunAIThread2_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread2_Proxy_ADDRESS: usize = 0x1409F0BC0;
+/// The second AI thread's body, run on a CPU fragment worker: the pathfinders' work, the navmesh
+/// pathfinder, the behavior trees, the AI system's update, and the terrain pathfinder; it queues a
+/// further fragment of its own. `dt` points at the tick's step. Returns 1.
+pub unsafe fn RunAIThread2_Proxy(dt: *mut f32) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: *mut f32) -> i32 = ::std::mem::transmute(
+            RunAIThread2_Proxy_ADDRESS,
+        );
+        f(dt)
     }
 }

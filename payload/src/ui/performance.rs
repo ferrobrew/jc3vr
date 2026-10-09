@@ -6,7 +6,7 @@ use std::{collections::VecDeque, time::Instant};
 use parking_lot::Mutex;
 
 use crate::{
-    frame_timing::{self, Kind, ThreadClass, ns_to_ms},
+    frame_timing::{self, Kind, ThreadClass, TickLoad, ns_to_ms},
     ui::util::patchbox,
 };
 
@@ -65,6 +65,21 @@ fn frame_breakdown(ui: &mut egui::Ui) {
                 t.mean_frame_ms(),
                 ns_to_ms(t.frame_max_ns),
             ));
+            // Whether the slow frames are the ones that carried a sim tick.
+            let mut ticks = format!("{} sim ticks;", t.sim_ticks);
+            for load in TickLoad::ALL {
+                let g = t.tick_load(load);
+                if g.frames > 0 {
+                    ticks.push_str(&format!(
+                        " {} ticks: {} frames, {:.2} ms, worst {:.2} ms;",
+                        load.name(),
+                        g.frames,
+                        g.mean_ms(),
+                        ns_to_ms(g.frame_max_ns),
+                    ));
+                }
+            }
+            ui.label(ticks.trim_end_matches(';'));
             for class in ThreadClass::ALL {
                 let mut line = format!("{}:", class.name());
                 for kind in Kind::ALL {

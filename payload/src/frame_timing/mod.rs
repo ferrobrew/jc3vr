@@ -34,7 +34,7 @@ use std::{
     marker::PhantomData,
     sync::{
         OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -43,7 +43,7 @@ use parking_lot::Mutex;
 
 pub(crate) use crate::frame_timing::{
     recent::FramePercentiles,
-    report::{Report, Totals, ns_to_ms},
+    report::{Report, TickLoad, Totals, ns_to_ms},
     slot::{Kind, Slot, ThreadClass},
 };
 use crate::{
@@ -94,6 +94,12 @@ impl Drop for Scope {
     }
 }
 
+/// Count a sim tick against the current game frame, so the breakdown can split the frames by how
+/// many ticks they ran. Call at the start of each `Game::UpdateGame`, on the game thread.
+pub(crate) fn note_sim_tick() {
+    TICKS_THIS_FRAME.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Mark the start of a game frame: records the interval since the previous call, and closes the
 /// reporting windows that have run their length, publishing the debug UI's breakdown and logging
 /// the long one. Call once per frame from the game thread, at the top of `Game::Update`.
@@ -112,7 +118,9 @@ pub(crate) fn frame_tick() {
             "perf: a game frame stalled",
         );
     }
-    let (ui, log) = WINDOWS.with_borrow_mut(|windows| windows.tick(now, drain));
+    // The ticks counted since the last call belong to the frame that ends here.
+    let ticks = TICKS_THIS_FRAME.swap(0, Ordering::Relaxed);
+    let (ui, log) = WINDOWS.with_borrow_mut(|windows| windows.tick(now, ticks, drain));
     let percentiles = RECENT.with_borrow_mut(|recent| {
         if let Some(interval) = interval {
             recent.push(interval);
@@ -162,6 +170,10 @@ static SLOTS: [SlotCounters; Slot::COUNT] = [const { SlotCounters::new() }; Slot
 
 static BUCKETS: [[AtomicU64; Kind::COUNT]; ThreadClass::COUNT] =
     [const { [const { AtomicU64::new(0) }; Kind::COUNT] }; ThreadClass::COUNT];
+
+/// The sim ticks the current game frame has run, counted by [`note_sim_tick`] and taken by
+/// [`frame_tick`].
+static TICKS_THIS_FRAME: AtomicU32 = AtomicU32::new(0);
 
 /// The frame interval past which [`frame_tick`] logs the frame on its own.
 const STALL_LOG_NS: u64 = 1_000_000_000;
@@ -244,18 +256,17 @@ impl Windows {
         }
     }
 
-    /// Record a frame starting at `now`, and return the UI window's report and the log window's
-    /// report for any window that closed. `drain` takes the scope totals since the last drain.
+    /// Record a frame starting at `now`, the frame before it having run `ticks` sim ticks, and
+    /// return the UI window's report and the log window's report for any window that closed.
+    /// `drain` takes the scope totals since the last drain.
     fn tick(
         &mut self,
         now: u64,
+        ticks: u32,
         drain: impl FnOnce() -> Totals,
     ) -> (Option<Report>, Option<Report>) {
         if let Some(last) = self.last_frame_ns.replace(now) {
-            let interval = now.saturating_sub(last);
-            self.pending.frames += 1;
-            self.pending.frame_ns = self.pending.frame_ns.saturating_add(interval);
-            self.pending.frame_max_ns = self.pending.frame_max_ns.max(interval);
+            self.pending.add_frame(now.saturating_sub(last), ticks);
         }
         let ui_start = *self.ui_start_ns.get_or_insert(now);
         let log_start = *self.log_start_ns.get_or_insert(now);
@@ -303,11 +314,17 @@ mod tests {
     #[test]
     fn the_first_frame_has_no_interval() {
         let mut w = Windows::new();
-        assert_eq!(w.tick(5 * MS, || panic!("not drained yet")), (None, None));
+        assert_eq!(
+            w.tick(5 * MS, 0, || panic!("not drained yet")),
+            (None, None)
+        );
         assert_eq!(w.pending.frames, 0);
-        w.tick(19 * MS, || panic!("not drained yet"));
+        w.tick(19 * MS, 1, || panic!("not drained yet"));
         assert_eq!(w.pending.frames, 1);
         assert_eq!(w.pending.frame_ns, 14 * MS);
+        // The ticks the first frame ran belong to the interval that ends with the second.
+        assert_eq!(w.pending.sim_ticks, 1);
+        assert_eq!(w.pending.tick_load(TickLoad::One).frames, 1);
     }
 
     #[test]
@@ -317,7 +334,7 @@ mod tests {
         let mut ui_reports = Vec::new();
         // 14 ms frames for a little over two seconds.
         while now <= 2_100 * MS {
-            let (ui, log) = w.tick(now, || drained_with(Slot::DebugUi, MS));
+            let (ui, log) = w.tick(now, 0, || drained_with(Slot::DebugUi, MS));
             assert!(log.is_none());
             ui_reports.extend(ui);
             now += 14 * MS;
@@ -337,7 +354,7 @@ mod tests {
         let mut ui_frames = 0;
         let mut drains = 0;
         let log = loop {
-            let (ui, log) = w.tick(now, || {
+            let (ui, log) = w.tick(now, 1, || {
                 drains += 1;
                 drained_with(Slot::VrWaitFrame, 2 * MS)
             });
@@ -348,6 +365,8 @@ mod tests {
             now += 10 * MS;
         };
         assert_eq!(log.totals.frames, ui_frames);
+        assert_eq!(log.totals.sim_ticks, ui_frames);
+        assert_eq!(log.totals.tick_load(TickLoad::One).frames, ui_frames);
         assert_eq!(log.totals.frame_ns, 1000 * 10 * MS);
         assert_eq!(log.totals.slot(Slot::VrWaitFrame).self_ns, drains * 2 * MS);
         assert_eq!(log.totals.slot(Slot::VrWaitFrame).calls, drains);
