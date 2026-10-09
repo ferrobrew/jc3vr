@@ -667,29 +667,39 @@ pub unsafe fn NAirMovement_UpdateStdLookSteering(
 }
 pub const NParachuteObjectControl_SyncBones_ADDRESS: usize = 0x140CD74F0;
 /// `NParachuteObjectControl::SyncBones`: moves the parachute object's own rig to track the pose of
-/// `owner`, the character it is attached to, and — for the player — poses the character's hand
-/// bones directly onto the rig's handle-link bones. `am` is the parachute's animated model (its
-/// `CAnimationControl` and skeleton); `props` is the parachute object's loaded properties.
+/// `owner`, the character it is attached to, and, for the player, places the rig's handles in the
+/// character's hands. `am` is the parachute's animated model, whose
+/// [`m_AnimationController`](crate::character::character::AnimatedModel::m_AnimationController) holds the
+/// rig's skeleton and joints; `props` is the parachute object's loaded properties.
 ///
-/// Besides the rig-tracking pose (syncing the back-attach bone to the character and blending the
-/// rest of the rig's bones toward their bind pose over a settling segment), the player's hand
-/// placement onto the handle-link bones is conditional per hand: wielding a weapon, grapple-firing,
-/// or the segment carrying a per-hand "no handle placement" tag suppresses that hand's placement,
-/// while a segment carrying a "force handle placement override" tag places both hands regardless
-/// of those conditions. Placed hands follow the handle-link bone with a small trailing offset
-/// driven by its own motion. This runs independently of the `SECONDARY` HumanIK pass that
-/// [`NParachuteHandleIKTask`](crate::input::parachute::NParachuteHandleIKTask) drives through the blackboard; the two placement paths pose the same
-/// bones by different means.
+/// Besides the rig-tracking pose (syncing the rig's `Base` bone toward the character's `BackAttach`
+/// bone over a settling segment, re-deriving each rig joint from the rig's model-space pose, and
+/// blending the joints toward their bind pose over another), it places each handle for the player.
+/// Each side has three rig bones: the handle (`RightHandle`, `LeftHandle`), its rotation bone
+/// (`RightHandleRotate`, `LeftHandleRotate`), and the link the handle's cord hangs from
+/// (`RightLink`, `LeftLink`). A placed handle takes the world position of the character's second
+/// hand-attach bone (`RightHandAttach2`, `LeftHandAttach2`) carried into the rig's model space as
+/// its joint translation, the rotation bone takes that bone's rotation, and the link is drawn a
+/// little toward the handle while the handle is further from it than in the bind pose. A handle not
+/// placed sits on its link: its joint translation is the link's.
+///
+/// The right handle is not placed while the character wields a weapon or is within a
+/// `SEG_NO_RIGHT_HANDLE_PLACEMENT` segment; the left one while the character fires the grapple,
+/// has a grapple hook out, or is within a `SEG_NO_LEFT_HANDLE_PLACEMENT` segment. A non-zero first
+/// word of `props` suspends both unless a `SEG_FORCE_HANDLE_PLACEMENT_OVERRIDE` segment is active.
+/// So the handles are drawn in the character's hands wherever its hands are, independently of the
+/// `SECONDARY` HumanIK pass that [`NParachuteHandleIKTask`](crate::input::parachute::NParachuteHandleIKTask) drives toward the links through the
+/// blackboard.
 pub unsafe fn NParachuteObjectControl_SyncBones(
     parachute: *mut ::std::ffi::c_void,
-    am: *mut ::std::ffi::c_void,
+    am: *mut crate::character::character::AnimatedModel,
     owner: *mut crate::character::character::Character,
     props: *mut ::std::ffi::c_void,
 ) {
     unsafe {
         let f: unsafe extern "system" fn(
             parachute: *mut ::std::ffi::c_void,
-            am: *mut ::std::ffi::c_void,
+            am: *mut crate::character::character::AnimatedModel,
             owner: *mut crate::character::character::Character,
             props: *mut ::std::ffi::c_void,
         ) = ::std::mem::transmute(NParachuteObjectControl_SyncBones_ADDRESS);
