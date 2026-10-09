@@ -20,6 +20,10 @@ pub struct VaultConfig {
     pub min_vertical: f32,
     /// The highest the feet rise above where the push started, metres.
     pub max_rise_m: f32,
+    /// The fastest the player may be moving down for the hands to lift them, metres per second:
+    /// a player falling faster is never lifted, so that a fall is not stopped. Above zero, so that
+    /// a player settling onto the ground or stepping down a slope still pushes up.
+    pub fall_tolerance_mps: f32,
 }
 
 impl VaultConfig {
@@ -31,6 +35,7 @@ impl VaultConfig {
             max_lift_mps: 3.0,
             min_vertical: 0.7,
             max_rise_m: 1.4,
+            fall_tolerance_mps: 0.5,
         }
     }
 }

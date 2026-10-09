@@ -55,15 +55,16 @@ pub(crate) fn take_landing() -> Option<Landing> {
     (Instant::now().saturating_duration_since(at) <= STALE_AFTER).then_some(landing)
 }
 
-/// The static body each hand reaches, as the palms' tick last found it: a surface the hands push
-/// the body up from may be written as its support ([`crate::controllers::physical_hands::vault`]).
-pub(crate) fn static_reaches() -> [Option<u32>; 2] {
+/// The static surface each hand reaches, as the palms' tick last found it: the hands push the body
+/// up only from a surface under them, which may be written as the player's support
+/// ([`crate::controllers::physical_hands::vault`]).
+pub(crate) fn static_reaches() -> [Option<Hold>; 2] {
     let state = STATE.lock();
     let fresh = state.fresh(Instant::now());
     state
         .status
         .hands
-        .map(|h| h.reach.filter(|r| fresh && !r.moving).map(|r| r.body))
+        .map(|h| h.reach.filter(|r| fresh && !r.moving))
 }
 
 /// Whether the climbing is on: its switch, under the hand bodies, which it needs.
