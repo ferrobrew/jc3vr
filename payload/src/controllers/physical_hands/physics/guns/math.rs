@@ -1,5 +1,6 @@
 //! The held guns' pure math: the gun body's mass, its place on the holding hand and how far it
-//! strays from it, the gun's barrel and up axes in its own frame, and a shot's impulse.
+//! strays from it, the motion that keeps it on the hand, the gun's barrel and up axes in its own
+//! frame, and a shot's impulse.
 
 use glam::{Mat4, Quat, Vec3};
 
@@ -40,11 +41,18 @@ impl MassSource {
 
 /// The mass a gun body is made with, kilograms, from the inverse mass of the gun's own body
 /// (`inverse_mass`, zero for an infinite one), or the class's fallback when that gives no finite,
-/// positive mass; either is held within the configured bounds.
-pub fn gun_mass(inverse_mass: f32, class: HeftClass, config: &HeldGunsConfig) -> (f32, MassSource) {
+/// positive mass. A weapon of `guns` guns (the dual-wield pair) shares its own body's mass among
+/// them. Either is held between the lightest and the class's heaviest.
+pub fn gun_mass(
+    inverse_mass: f32,
+    class: HeftClass,
+    guns: usize,
+    config: &HeldGunsConfig,
+) -> (f32, MassSource) {
     let lightest = config.min_mass_kg.max(0.01);
-    let heaviest = config.max_mass_kg.max(lightest);
-    let from_body = (inverse_mass.is_finite() && inverse_mass > 0.0).then(|| 1.0 / inverse_mass);
+    let heaviest = class_value(&config.max_mass_by_class_kg, class).max(lightest);
+    let from_body = (inverse_mass.is_finite() && inverse_mass > 0.0)
+        .then(|| 1.0 / inverse_mass / guns.max(1) as f32);
     let (mass, source) = match from_body.filter(|m| m.is_finite()) {
         Some(mass) => (mass, MassSource::Body),
         None => (
@@ -74,18 +82,69 @@ pub fn deviation(hand: Pose, seat: Pose, gun: Pose) -> Pose {
     hand_pose::mul(hand_pose::inverse(seated(hand, seat)), gun)
 }
 
-/// Whether a deviation is past what a held gun may stray before it is put back on its seat:
-/// `break_distance_m` of shift, or a turn of [`MAX_TURN_RAD`].
-pub fn strayed(deviation: Pose, break_distance_m: f32) -> bool {
+/// Whether a deviation is past what a held gun may stray before it is put back on its seat: a
+/// shift past `max_shift_m`, or a turn past `max_turn_rad`.
+pub fn strayed(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> bool {
     let finite = deviation.position.is_finite() && deviation.orientation.is_finite();
     !finite
-        || deviation.position.length() > break_distance_m.max(0.0)
-        || turn_rad(deviation.orientation) > MAX_TURN_RAD
+        || deviation.position.length() > max_shift_m.max(0.0)
+        || turn_rad(deviation.orientation) > max_turn_rad.max(0.0)
 }
 
-/// The largest turn a gun body may stray from its seat, radians.
-pub const MAX_TURN_RAD: f32 = 0.8;
+/// `deviation` held to a shift of `max_shift_m` and a turn of `max_turn_rad`, about the same axis:
+/// how far the drawn gun is carried off the hand's grip by its body's stray. A non-finite
+/// deviation is none.
+pub fn limit(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> Pose {
+    if !(deviation.position.is_finite() && deviation.orientation.is_finite()) {
+        return Pose::IDENTITY;
+    }
+    let q = deviation.orientation.normalize();
+    let q = if q.w < 0.0 { -q } else { q };
+    let (axis, angle) = q.to_axis_angle();
+    let max_turn = max_turn_rad.max(0.0);
+    let orientation = if angle > max_turn && axis.is_finite() {
+        Quat::from_axis_angle(axis, max_turn)
+    } else {
+        q
+    };
+    Pose {
+        position: deviation.position.clamp_length_max(max_shift_m.max(0.0)),
+        orientation,
+    }
+}
 
+/// The gun's seat on the holding hand, from where the hand is meant to be: the gun's pose `gun`,
+/// as its placement on the tick put it in the hand, in the frame of the controller's palm `palm`,
+/// which the hand's body is driven to. The hand's body may lag its palm while it carries the gun
+/// in, so the seat taken from where the body is would hold the gun as far off the hand as the
+/// body lagged, for as long as it is held.
+pub fn intended_seat(palm: Pose, gun: Pose) -> Pose {
+    seat(palm, gun)
+}
+
+/// Whether a hand body at `body` is close enough to its palm `palm` for a gun to be seated on it:
+/// within [`SETTLED_SHIFT_M`] and [`SETTLED_TURN_RAD`].
+pub fn settled(body: Pose, palm: Pose) -> bool {
+    let shift = body.position.distance(palm.position);
+    let turn = turn_rad(body.orientation.inverse() * palm.orientation);
+    shift.is_finite() && shift <= SETTLED_SHIFT_M && turn <= SETTLED_TURN_RAD
+}
+
+/// How far a hand body may be off its palm for a gun to be seated on it, metres.
+pub const SETTLED_SHIFT_M: f32 = 0.05;
+
+/// How far a hand body may be turned off its palm for a gun to be seated on it, radians.
+pub const SETTLED_TURN_RAD: f32 = 0.2;
+
+/// The furthest a gun held by its grip sits from the palm, metres: a seat further out is a gun
+/// still on its way into the hand, or one the hand's pose put somewhere else.
+pub const MAX_GRIP_SEAT_M: f32 = 0.15;
+
+/// The velocity of a point at `point` on a body at `origin` moving at `linear` and turning at
+/// `angular`: the gun body seated on the hand moves with the hand's body, as one rigid body.
+pub fn carried_velocity(origin: Vec3, linear: Vec3, angular: Vec3, point: Vec3) -> Vec3 {
+    linear + angular.cross(point - origin)
+}
 /// The angle of a rotation, radians.
 pub fn turn_rad(q: Quat) -> f32 {
     let q = q.normalize();
@@ -154,34 +213,52 @@ mod tests {
     fn a_gun_takes_its_own_bodys_mass_within_bounds() {
         let config = HeldGunsConfig::new();
         assert_eq!(
-            gun_mass(0.25, HeftClass::Rifle, &config),
-            (4.0, MassSource::Body)
+            gun_mass(0.4, HeftClass::Rifle, 1, &config),
+            (2.5, MassSource::Body)
         );
         // An infinite mass, or a broken one, takes the class's.
         assert_eq!(
-            gun_mass(0.0, HeftClass::Heavy, &config),
+            gun_mass(0.0, HeftClass::Heavy, 1, &config),
             (config.fallback_mass_kg.heavy, MassSource::Class)
         );
         assert_eq!(
-            gun_mass(f32::NAN, HeftClass::Sidearm, &config).1,
+            gun_mass(f32::NAN, HeftClass::Sidearm, 1, &config).1,
             MassSource::Class
         );
-        // Held within the bounds.
+        // Held within the bounds: a rifle's pickup mass of ten kilograms is held to the rifle's.
         assert_eq!(
-            gun_mass(1000.0, HeftClass::Rifle, &config).0,
+            gun_mass(1000.0, HeftClass::Rifle, 1, &config).0,
             config.min_mass_kg
         );
         assert_eq!(
-            gun_mass(0.001, HeftClass::Rifle, &config).0,
-            config.max_mass_kg
+            gun_mass(0.1, HeftClass::Rifle, 1, &config).0,
+            config.max_mass_by_class_kg.rifle
         );
+        assert!(gun_mass(0.1, HeftClass::Rifle, 1, &config).0 <= 4.0);
         // Crossed bounds hold the lighter.
         let crossed = HeldGunsConfig {
             min_mass_kg: 5.0,
-            max_mass_kg: 2.0,
+            max_mass_by_class_kg: GunClassValues::new(2.0, 2.0, 2.0, 2.0),
             ..config
         };
-        assert_eq!(gun_mass(0.25, HeftClass::Rifle, &crossed).0, 5.0);
+        assert_eq!(gun_mass(0.25, HeftClass::Rifle, 1, &crossed).0, 5.0);
+    }
+
+    #[test]
+    fn a_dual_pair_shares_its_mass_and_each_pistol_is_held_to_a_sidearms() {
+        let config = HeldGunsConfig {
+            max_mass_by_class_kg: GunClassValues::new(10.0, 10.0, 10.0, 10.0),
+            ..HeldGunsConfig::new()
+        };
+        assert_eq!(gun_mass(0.2, HeftClass::Sidearm, 2, &config).0, 2.5);
+        let config = HeldGunsConfig::new();
+        let (each, _) = gun_mass(0.2, HeftClass::Sidearm, 2, &config);
+        assert!((0.9..=1.1).contains(&each), "{each}");
+        // No guns counts as one.
+        assert_eq!(
+            gun_mass(0.4, HeftClass::Smg, 0, &config),
+            gun_mass(0.4, HeftClass::Smg, 1, &config)
+        );
     }
 
     #[test]
@@ -200,7 +277,57 @@ mod tests {
         let carried = seated(moved, seat);
         let d = deviation(moved, seat, carried);
         assert!(d.position.length() < 1e-5);
-        assert!(!strayed(d, 0.4));
+        assert!(!strayed(d, 0.05, 0.14));
+    }
+
+    #[test]
+    fn the_seat_is_taken_from_the_palm_not_from_a_lagging_hand_body() {
+        let palm = pose(Vec3::new(0.3, 1.2, -0.4), Quat::from_rotation_y(0.3));
+        // The gun sits four centimetres into the palm, as its grip puts it.
+        let gun = seated(palm, pose(Vec3::new(0.0, -0.04, 0.0), Quat::IDENTITY));
+        let intended = intended_seat(palm, gun);
+        assert!((intended.position.length() - 0.04).abs() < 1e-5);
+        // A body twenty centimetres behind its palm would have seated the gun that far off.
+        let lagging = pose(palm.position + Vec3::new(0.0, 0.0, 0.2), palm.orientation);
+        assert!(seat(lagging, gun).position.length() > 0.19);
+        assert!(!settled(lagging, palm));
+        assert!(settled(palm, palm));
+        let turned = pose(palm.position, palm.orientation * Quat::from_rotation_x(0.5));
+        assert!(!settled(turned, palm));
+    }
+
+    #[test]
+    fn the_drawn_deviation_is_held_to_a_couple_of_degrees() {
+        let max_turn = 2.0_f32.to_radians();
+        let d = pose(Vec3::new(0.1, 0.0, 0.0), Quat::from_rotation_x(0.3));
+        let held = limit(d, 0.015, max_turn);
+        assert!((held.position.length() - 0.015).abs() < 1e-6);
+        assert!((turn_rad(held.orientation) - max_turn).abs() < 1e-4);
+        // The turn keeps its axis.
+        let (axis, _) = held.orientation.to_axis_angle();
+        assert!(axis.abs_diff_eq(Vec3::X, 1e-4));
+        // A small deviation is kept as it is.
+        let small = pose(Vec3::new(0.005, 0.0, 0.0), Quat::from_rotation_z(0.01));
+        assert_eq!(limit(small, 0.015, max_turn).position, small.position);
+        assert!(
+            limit(small, 0.015, max_turn)
+                .orientation
+                .abs_diff_eq(small.orientation, 1e-6)
+        );
+        assert_eq!(
+            limit(pose(Vec3::NAN, Quat::IDENTITY), 0.015, max_turn),
+            Pose::IDENTITY
+        );
+    }
+
+    #[test]
+    fn a_seated_gun_moves_with_its_hand_as_one_body() {
+        let origin = Vec3::new(1.0, 1.0, 1.0);
+        let gun = origin + Vec3::new(0.0, 0.0, -0.3);
+        let v = carried_velocity(origin, Vec3::X, Vec3::new(0.0, 2.0, 0.0), gun);
+        // Turning about +Y at two radians a second, a point thirty centimetres ahead (-Z) moves
+        // toward -X at 0.6 m/s, on top of the hand's own +X.
+        assert!(v.abs_diff_eq(Vec3::new(0.4, 0.0, 0.0), 1e-5));
     }
 
     #[test]
@@ -218,9 +345,22 @@ mod tests {
         // Composing the seated pose with the deviation is the gun body.
         let back = hand_pose::mul(seated(hand, seat), d);
         assert!(back.position.abs_diff_eq(gun.position, 1e-5));
-        assert!(strayed(pose(Vec3::new(0.5, 0.0, 0.0), Quat::IDENTITY), 0.4));
-        assert!(strayed(pose(Vec3::ZERO, Quat::from_rotation_x(1.0)), 0.4));
-        assert!(strayed(pose(Vec3::NAN, Quat::IDENTITY), 0.4));
+        assert!(strayed(
+            pose(Vec3::new(0.06, 0.0, 0.0), Quat::IDENTITY),
+            0.05,
+            0.14
+        ));
+        assert!(strayed(
+            pose(Vec3::ZERO, Quat::from_rotation_x(0.2)),
+            0.05,
+            0.14
+        ));
+        assert!(!strayed(
+            pose(Vec3::new(0.03, 0.0, 0.0), Quat::from_rotation_x(0.1)),
+            0.05,
+            0.14
+        ));
+        assert!(strayed(pose(Vec3::NAN, Quat::IDENTITY), 0.05, 0.14));
     }
 
     #[test]

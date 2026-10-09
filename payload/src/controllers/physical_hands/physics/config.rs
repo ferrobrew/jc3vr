@@ -74,7 +74,9 @@ pub struct HandBodiesConfig {
 /// Held guns as physics bodies (see [`crate::controllers::physical_hands::physics::guns`]): a gun
 /// in a hand whose body acts is a body of the gun's own shape and mass, joined to the holding
 /// hand's body (and to the bracing hand's on its foregrip), so its weight drags the hands, it
-/// collides along its whole length, and it strikes what it is swung into.
+/// collides along its whole length, and it strikes what it is swung into. The gun is near-rigid in
+/// the hand: its body moves with the hand's on every step, its mass is held to its class's, and
+/// the drawn gun keeps within a couple of degrees of the hand's grip.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HeldGunsConfig {
@@ -83,8 +85,10 @@ pub struct HeldGunsConfig {
     pub enabled: bool,
     /// The lightest a gun body is made, kilograms.
     pub min_mass_kg: f32,
-    /// The heaviest a gun body is made, kilograms.
-    pub max_mass_kg: f32,
+    /// The heaviest a gun body of each weight class is made, kilograms. A gun's own body carries
+    /// its pickup's mass, which is far heavier than the gun (a rifle's ten kilograms), and a gun
+    /// that outweighs the hand holding it swings the hand rather than the other way round.
+    pub max_mass_by_class_kg: GunClassValues,
     /// The mass of a gun whose own body gives none, by weight class, kilograms.
     pub fallback_mass_kg: GunClassValues,
     /// The impulse a shot gives the gun body back along its barrel, by weight class, newton
@@ -94,7 +98,17 @@ pub struct HeldGunsConfig {
     pub muzzle_rise: f32,
     /// How far a gun body may stray from its place in the holding hand before it is put back
     /// there, metres.
-    pub break_distance_m: f32,
+    pub stray_distance_m: f32,
+    /// How far a gun body may turn from its place in the holding hand before it is put back there,
+    /// degrees.
+    pub stray_turn_deg: f32,
+    /// The furthest the drawn gun is carried off the hand's grip by its body's stray, metres.
+    pub drawn_max_shift_m: f32,
+    /// The furthest the drawn gun is turned off the hand's grip by its body's stray, degrees.
+    pub drawn_max_turn_deg: f32,
+    /// The least time between two pulses of a gun body's contacts in one hand, seconds: a gun
+    /// rubbing along a wall touches it on every step.
+    pub contact_pulse_interval_s: f32,
 }
 
 /// One value per gun weight class.
@@ -129,11 +143,15 @@ impl HeldGunsConfig {
         Self {
             enabled: true,
             min_mass_kg: 0.5,
-            max_mass_kg: 25.0,
-            fallback_mass_kg: GunClassValues::new(1.0, 2.5, 4.0, 9.0),
+            max_mass_by_class_kg: GunClassValues::new(1.0, 2.5, 4.0, 6.0),
+            fallback_mass_kg: GunClassValues::new(1.0, 2.5, 4.0, 6.0),
             recoil_impulse_ns: GunClassValues::new(1.5, 1.5, 3.0, 6.0),
             muzzle_rise: 0.4,
-            break_distance_m: 0.4,
+            stray_distance_m: 0.05,
+            stray_turn_deg: 8.0,
+            drawn_max_shift_m: 0.015,
+            drawn_max_turn_deg: 2.0,
+            contact_pulse_interval_s: 0.2,
         }
     }
 }

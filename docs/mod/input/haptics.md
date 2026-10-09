@@ -57,7 +57,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | Source | Raised when | Primitive | Strength | Category | Raised by |
 | --- | --- | --- | --- | --- | --- |
 | `Event::PalmTouch` | a palm meets a surface, scaled by how fast (a quarter at a touch) | bump | 0.4 | contact | `physical_hands::touch` |
-| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum | bump | 0.4 | contact | `physical_hands::physics::blows` |
+| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every `physical_hands.bodies.guns.contact_pulse_interval_s` per hand | bump | 0.4 | contact | `physical_hands::physics::blows` |
 | `Event::Take` | a hand takes hold of an object, a character, a door, or a weapon off the ground | bump | 0.6 | contact | `physical_hands`, `physical_hands::pickup` |
 | `Event::LetGo` | a hand lets go of what it held | click | 0.25 | contact | `physical_hands` |
 | `Event::Unlatch` | a door's latch gives under the hand | bump | 0.9 | contact | `physical_hands` |

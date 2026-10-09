@@ -333,6 +333,24 @@ impl HandBody {
         })
     }
 
+    /// The body's centre of mass, Havok space: the game-space position less the physics system's
+    /// accumulated shift, so only a difference of two bodies' centres is a game-space offset.
+    ///
+    /// # Safety
+    ///
+    /// As [`HandBody::create`].
+    pub unsafe fn centre_of_mass(&self) -> Result<Vec3, BodyError> {
+        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let world = world.world();
+        let slot = unsafe { self.slot(world) }?;
+        let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
+        let centre = Vec3::from_array(motion.m_centerOfMass.data);
+        centre
+            .is_finite()
+            .then_some(centre)
+            .ok_or(BodyError::BadMotion)
+    }
+
     /// Give the body the velocities `linear` and `angular`, world space.
     ///
     /// # Safety
@@ -455,6 +473,27 @@ pub unsafe fn player_system_group() -> Option<u32> {
     let slot = unsafe { &*world.m_bodies.add(body as usize) };
     let group = slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT;
     (group != 0).then_some(group)
+}
+
+/// Whether the body `body` is in the local player's collision system group: the player's own body,
+/// a hand's, or a held gun's, none of which a hand or a gun strikes.
+///
+/// # Safety
+///
+/// As [`HandBody::create`].
+pub unsafe fn in_player_group(body: u32) -> bool {
+    let Some(group) = (unsafe { player_system_group() }) else {
+        return false;
+    };
+    let Some(world) = (unsafe { World::get() }) else {
+        return false;
+    };
+    let world = world.world();
+    if body > world.m_peakBodyIndex || world.m_bodies.is_null() {
+        return false;
+    }
+    let slot = unsafe { &*world.m_bodies.add(body as usize) };
+    slot.m_collisionFilterInfo >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT == group
 }
 
 /// The engine instance of the body `body`, as an address.

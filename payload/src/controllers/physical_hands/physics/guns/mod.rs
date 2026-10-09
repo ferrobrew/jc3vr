@@ -23,11 +23,20 @@
 //!    rigid grip pins it to the hand and no slide is moving it between the hand and the body.
 //! 2. The hands those guns are in act ([`acting_hands`]), so their bodies are driven, with a
 //!    holding hand's strength.
-//! 3. The pre-simulation step makes each gun's body where the gun was last placed, joins it to the
-//!    holding hand's body in the pose the two are in (its seat), and joins the bracing hand's body
-//!    where that hand holds it. It measures how far the gun body strays from its seat
-//!    ([`deviation`]), which the rigid grip's pin carries the drawn gun by, and gives the gun
-//!    body each shot's kick ([`queue_shot`]).
+//! 3. The pre-simulation step makes each gun's body on its seat on the holding hand's body: the
+//!    gun's last placement in the frame of the controller's palm the hand is driven to, so a hand
+//!    body that lags its palm does not seat the gun off the hand. It waits for the hand body to
+//!    settle on its palm, joins the gun body to it, and joins the bracing hand's body where that
+//!    hand holds it. Each step it moves the gun body with the hand's as one rigid body, puts it
+//!    back on its seat past a few centimetres or degrees of stray, measures the stray
+//!    ([`deviation`]), which the rigid grip's pin carries the drawn gun by within a couple of
+//!    degrees, and gives the gun body each shot's kick ([`queue_shot`]).
+//!
+//! The gun body's mass is its own body's (the weapon's pickup mass, shared between a dual-wield
+//! pair's two guns) held to its weight class's, so that a rifle does not outweigh the hand that
+//! swings it, and the hand holding it is driven with its full strength against the hand's and the
+//! gun's mass together: near-rigid in the hand, with the gun's mass felt as a slight lag in a fast
+//! swing.
 //!
 //! [`WeaponData::m_PfxInstance`]: jc3gi::equipment::weapon::WeaponData::m_PfxInstance
 
@@ -63,6 +72,8 @@ pub struct HeldGun {
     /// The gun's own body's id.
     pub body: u32,
     pub class: HeftClass,
+    /// How many guns the weapon has: the dual-wield pair's two share its own body's mass.
+    pub guns: usize,
     /// The carry the hand holds the gun by, when it holds it by a part other than its grip
     /// ([`crate::controllers::weapons::regions::carry_mark`]): the seat is the carry's.
     pub carry: Option<u32>,
@@ -181,8 +192,9 @@ pub fn physical_hands() -> [bool; 2] {
 }
 
 /// How far the gun body of `weapon` in `hand` strays from its seat on the hand's body, in the
-/// gun's own frame: the rigid grip's pin carries the drawn gun by it, so the gun is drawn where its
-/// body is. `None` without a joined gun body for that weapon in that hand.
+/// gun's own frame, held to the drawn gun's limits: the rigid grip's pin carries the drawn gun by
+/// it, so the gun is drawn where its body is, within a couple of degrees of the hand's grip.
+/// `None` without a joined gun body for that weapon in that hand.
 pub(crate) fn deviation(hand: Hand, weapon: usize) -> Option<Pose> {
     let shared = SHARED.lock();
     if !shared.stepped_lately(Instant::now()) {
@@ -209,7 +221,8 @@ pub(super) fn count_contact(hand: Hand) {
     SHARED.lock().status.contacts[hand.index()] += 1;
 }
 
-/// The mass of `hand`'s gun body, for a blow it strikes.
+/// The mass of `hand`'s gun body on the last step, for a blow it strikes and for the drive of the
+/// hand that holds it.
 pub(super) fn mass(hand: Hand) -> Option<f32> {
     SHARED.lock().status.hands[hand.index()].map(|g| g.mass_kg)
 }
@@ -275,6 +288,7 @@ mod tests {
             wrapper: NonZeroUsize::new(at + 16).unwrap(),
             body: 7,
             class: HeftClass::Rifle,
+            guns: 1,
             carry: None,
         }
     }

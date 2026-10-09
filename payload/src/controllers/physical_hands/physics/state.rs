@@ -348,6 +348,19 @@ pub(super) fn holding_tuning(
     }
 }
 
+/// The drive of a hand on a gun: the hand's full strength, unlike a hand lifting a loose object,
+/// against the hand's and the gun's mass together (`gun_kg`, the gun body's mass when the hand
+/// holds one). The gun body moves with the hand's body as one rigid body, so the gun stays where
+/// the hand holds it, and its mass shows only where the strength runs out: a slight lag in a fast
+/// swing.
+pub(super) fn gun_tuning(tuning: &DriveTuning, gun_kg: Option<f32>) -> DriveTuning {
+    let gun_kg = gun_kg.filter(|m| m.is_finite() && *m > 0.0).unwrap_or(0.0);
+    DriveTuning {
+        mass_kg: tuning.mass_kg.max(0.0) + gun_kg,
+        ..*tuning
+    }
+}
+
 /// How hard a hand presses into what holds it back, `0..=1`: its lag past the push deadband, as a
 /// share of the lag that presses fully.
 pub(super) fn press_load(lag: Vec3, config: &HandBodiesConfig, scale: f32) -> f32 {
@@ -356,4 +369,28 @@ pub(super) fn press_load(lag: Vec3, config: &HandBodiesConfig, scale: f32) -> f3
         return 0.0;
     }
     ((lag.length() - config.push_deadband_m * scale) / full).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_hand_on_a_gun_drives_the_hand_and_the_gun_with_its_full_strength() {
+        let tuning = DriveTuning {
+            mass_kg: 3.0,
+            max_force_n: 5000.0,
+            max_torque_nm: 400.0,
+            linear_gain: 1.0,
+            angular_gain: 0.8,
+            max_speed_mps: 20.0,
+            max_angular_speed_rps: 30.0,
+        };
+        let on_gun = gun_tuning(&tuning, Some(4.0));
+        assert_eq!(on_gun.mass_kg, 7.0);
+        assert_eq!(on_gun.max_force_n, tuning.max_force_n);
+        assert_eq!(on_gun.max_torque_nm, tuning.max_torque_nm);
+        assert_eq!(gun_tuning(&tuning, None), tuning);
+        assert_eq!(gun_tuning(&tuning, Some(f32::NAN)), tuning);
+    }
 }

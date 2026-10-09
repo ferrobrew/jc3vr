@@ -172,7 +172,12 @@ fn guns_settings(ui: &mut Ui, g: &mut HeldGunsConfig) {
     ui.checkbox(&mut g.enabled, "Held guns are bodies joined to the hands");
     ui.add_enabled_ui(g.enabled, |ui| {
         ui.add(egui::Slider::new(&mut g.min_mass_kg, 0.1..=10.0).text("Lightest gun (kg)"));
-        ui.add(egui::Slider::new(&mut g.max_mass_kg, 1.0..=60.0).text("Heaviest gun (kg)"));
+        class_sliders(
+            ui,
+            "Heaviest gun (kg)",
+            &mut g.max_mass_by_class_kg,
+            0.1..=30.0,
+        );
         class_sliders(
             ui,
             "Mass without its own (kg)",
@@ -187,8 +192,24 @@ fn guns_settings(ui: &mut Ui, g: &mut HeldGunsConfig) {
         );
         ui.add(egui::Slider::new(&mut g.muzzle_rise, 0.0..=1.0).text("Muzzle rise (share)"));
         ui.add(
-            egui::Slider::new(&mut g.break_distance_m, 0.05..=1.0)
+            egui::Slider::new(&mut g.stray_distance_m, 0.01..=0.5)
                 .text("Stray before it is put back (m)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut g.stray_turn_deg, 1.0..=45.0)
+                .text("Turn before it is put back (°)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut g.drawn_max_shift_m, 0.0..=0.1)
+                .text("Drawn gun's furthest shift off the grip (m)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut g.drawn_max_turn_deg, 0.0..=15.0)
+                .text("Drawn gun's furthest turn off the grip (°)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut g.contact_pulse_interval_s, 0.0..=1.0)
+                .text("Least time between contact pulses (s)"),
         );
     });
 }

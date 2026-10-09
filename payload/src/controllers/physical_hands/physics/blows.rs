@@ -105,17 +105,39 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         .get_or_insert_with(Instant::now)
         .elapsed()
         .as_secs_f64();
+    let pulse_interval_s = f64::from(config.bodies.guns.contact_pulse_interval_s.max(0.0));
     for contact in contacts {
+        // The player's own body, the hands, and the other gun are in the player's group, which
+        // the gun body never collides with; a contact with one is none.
+        // SAFETY: forwarded from the caller.
+        if contact.gun && unsafe { body::in_player_group(contact.other_body) } {
+            continue;
+        }
         // A held gun strikes with its mass on the arm's.
         let gun_mass = contact.gun.then(|| guns::mass(contact.hand)).flatten();
         if contact.gun {
             guns::count_contact(contact.hand);
         }
         let hits = &striking_with(own_hits, gun_mass);
-        // Harder the faster the hand met it: a punch, not a shove.
-        let met = hits.blow_mass_kg.max(0.0) * contact.hand_velocity.length();
+        // Harder the faster the hand met it: a punch, not a shove. A gun's pulse is the arm's
+        // alone, and a gun rubbing along what it touches pulses at most once an interval, so a
+        // held gun does not buzz the hand.
+        let pulse_mass = if contact.gun {
+            own_hits.blow_mass_kg
+        } else {
+            hits.blow_mass_kg
+        };
+        let met = pulse_mass.max(0.0) * contact.hand_velocity.length();
         let share = pulse_share(met, hits.full_pulse_impulse_ns);
-        if share >= MIN_PULSE_SHARE {
+        let pulse = share >= MIN_PULSE_SHARE
+            && (!contact.gun
+                || gun_pulse_due(
+                    &mut GUN_PULSES.lock(),
+                    contact.hand,
+                    now_s,
+                    pulse_interval_s,
+                ));
+        if pulse {
             haptics::play_scaled(contact.hand, Event::HandStrike, share);
         }
         // SAFETY: forwarded from the caller.
@@ -238,11 +260,25 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
     delivered
 }
 
+/// Whether a gun contact in `hand` at `now_s` may pulse: none has pulsed in that hand for
+/// `interval_s`. Records the pulse when it may.
+fn gun_pulse_due(last: &mut [Option<f64>; 2], hand: Hand, now_s: f64, interval_s: f64) -> bool {
+    let due = last[hand.index()].is_none_or(|at| now_s - at >= interval_s || now_s < at);
+    if due {
+        last[hand.index()] = Some(now_s);
+    }
+    due
+}
+
+/// When each hand's gun last pulsed, seconds on the blows' clock.
+static GUN_PULSES: Mutex<[Option<f64>; 2]> = Mutex::new([None; 2]);
+
 /// Forget the contacts recorded since the last frame tick, the characters struck lately, and the
 /// shoves queued.
 pub(super) fn discard() {
     let _ = contact::take();
     GATE.lock().0.clear();
+    *GUN_PULSES.lock() = [None; 2];
     SHOVES.lock().clear();
 }
 
@@ -491,6 +527,18 @@ fn vector(v: Vec3) -> Vector3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_guns_contacts_pulse_at_most_once_an_interval_per_hand() {
+        let mut last = [None; 2];
+        assert!(gun_pulse_due(&mut last, Hand::Right, 10.0, 0.2));
+        assert!(!gun_pulse_due(&mut last, Hand::Right, 10.1, 0.2));
+        // The other hand keeps its own interval.
+        assert!(gun_pulse_due(&mut last, Hand::Left, 10.1, 0.2));
+        assert!(gun_pulse_due(&mut last, Hand::Right, 10.25, 0.2));
+        // A clock that went back starts again.
+        assert!(gun_pulse_due(&mut last, Hand::Right, 1.0, 0.2));
+    }
 
     #[test]
     fn a_blow_travels_with_the_hand() {

@@ -29,7 +29,7 @@ use std::{
     ptr::NonNull,
     sync::{
         OnceLock,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     },
 };
 
@@ -149,6 +149,9 @@ pub(super) unsafe fn listen(
         HookedTable { type_info, table }
     });
     WRAPPERS[source.index()].store(wrapper.as_ptr() as usize, Ordering::Release);
+    // SAFETY: the wrapper is live, as the caller guarantees.
+    let body = unsafe { (*wrapper.as_ptr()).m_BodyId };
+    BODY_IDS[source.index()].store(body, Ordering::Release);
     unsafe {
         slot.write(&table.table);
         (*wrapper.as_ptr()).SetContactImpulseEventActive(true);
@@ -159,6 +162,7 @@ pub(super) unsafe fn listen(
 /// Stop attributing contacts to `source`'s body: before its wrapper is destroyed.
 pub(super) fn forget(source: Source) {
     WRAPPERS[source.index()].store(0, Ordering::Release);
+    BODY_IDS[source.index()].store(NO_BODY, Ordering::Release);
     MOTION.lock()[source.index()] = None;
 }
 
@@ -226,6 +230,19 @@ const SOURCES: usize = 4;
 
 /// Each source's wrapper, as an address; zero for none.
 static WRAPPERS: [AtomicUsize; SOURCES] = [const { AtomicUsize::new(0) }; SOURCES];
+
+/// Each listening source's body id; [`NO_BODY`] for none.
+static BODY_IDS: [AtomicU32; SOURCES] = [const { AtomicU32::new(NO_BODY) }; SOURCES];
+
+/// No body.
+const NO_BODY: u32 = u32::MAX;
+
+/// Whether `body` is one of the mod's own listening bodies: a hand's or a held gun's. A gun meets
+/// its own hands through the joints, not as a contact, and a hand touching the gun it holds is
+/// not a strike.
+fn is_own_body(body: u32) -> bool {
+    body != NO_BODY && BODY_IDS.iter().any(|id| id.load(Ordering::Acquire) == body)
+}
 
 /// Each source body's position and velocity for the coming step.
 static MOTION: Mutex<[Option<(Vec3, Vec3)>; SOURCES]> = Mutex::new([None; SOURCES]);
@@ -312,6 +329,9 @@ unsafe fn record(
         }
     }
     let other_body = event.m_bodyIds[usize::from(is_body_a)];
+    if is_own_body(other_body) {
+        return;
+    }
     let (other_instance, other_object) = match unsafe { other.as_ref() } {
         Some(instance) => (other as usize, instance.m_GameObject as usize),
         None => (0, 0),

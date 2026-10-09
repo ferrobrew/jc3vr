@@ -13,7 +13,7 @@ use crate::{
             ray::Ray,
             raycast::{self, CastOptions},
         },
-        frame::Hand,
+        frame::{Hand, Pose},
         physical_hands::{
             climb,
             physics::{
@@ -26,8 +26,8 @@ use crate::{
                 render::RenderOffset,
                 state::{
                     MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD,
-                    RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, enabled, holding_tuning,
-                    press_load,
+                    RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, enabled, gun_tuning,
+                    holding_tuning, press_load,
                 },
                 types::{BodyPhase, HandBodyStatus},
             },
@@ -114,7 +114,6 @@ pub(crate) unsafe fn step() {
         guns::GunHolds::default()
     };
     let on_gun = gun_holds.hands();
-    let both_on_gun = on_gun.iter().all(|&h| h);
     let mut joint_lost = [false; 2];
     let holds = if !fresh {
         [None; 2]
@@ -249,7 +248,7 @@ pub(crate) unsafe fn step() {
                     linear_gain *= b.hits.follow_through_gain.clamp(0.0, 1.0);
                 }
                 let held_tuning = if on_gun[i] {
-                    holding_tuning(&tuning, &config, both_on_gun)
+                    gun_tuning(&tuning, guns::mass(hand))
                 } else {
                     holding.map_or(tuning, |h| holding_tuning(&tuning, &config, h.shared))
                 };
@@ -332,6 +331,12 @@ pub(crate) unsafe fn step() {
                 config: &b.guns,
                 contact_events: b.hits.enabled,
                 group,
+                palms: targets.map(|target| {
+                    target.filter(|_| fresh).map(|t| Pose {
+                        position: t.position,
+                        orientation: t.orientation,
+                    })
+                }),
             },
         )
     };

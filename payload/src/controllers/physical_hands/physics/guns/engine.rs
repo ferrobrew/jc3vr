@@ -94,6 +94,12 @@ pub enum GunError {
     BadPose,
     /// The gun is too far from the hand that holds it: it is not in the hand yet.
     NotInHand,
+    /// The holding hand's body is not on its palm yet, so a gun seated on it would sit off the
+    /// hand.
+    HandUnsettled,
+    /// The gun body is not in the player's collision group, so it would collide with the player
+    /// and the hands.
+    NotInPlayerGroup,
     /// The gun's own body is in the simulation: the weapon was dropped or mounted.
     OwnBodyInWorld,
     /// The gun body could not be made, or joined.
@@ -108,6 +114,8 @@ impl fmt::Display for GunError {
             GunError::NoShape => "the gun's own body has no shape",
             GunError::BadPose => "the gun's placement is not finite",
             GunError::NotInHand => "the gun is too far from the hand that holds it",
+            GunError::HandUnsettled => "the holding hand's body is not on its palm yet",
+            GunError::NotInPlayerGroup => "the gun body is not in the player's collision group",
             GunError::OwnBodyInWorld => "the gun's own body is in the world",
             GunError::Body(what) => what,
         };
@@ -197,6 +205,7 @@ const PINNED_LATELY: Duration = Duration::from_millis(250);
 /// As [`read_holds`].
 unsafe fn held_gun(weapon: usize, index: usize, class: HeftClass) -> Option<HeldGun> {
     let base = unsafe { (weapon as *const WeaponBase).as_ref() }?;
+    let guns = unsafe { gun::guns(base) }.count();
     let data = unsafe { gun::guns(base) }.nth(index).flatten()?;
     let wrapper = unsafe { data.m_PfxInstance.as_ref() }?;
     Some(HeldGun {
@@ -205,6 +214,7 @@ unsafe fn held_gun(weapon: usize, index: usize, class: HeftClass) -> Option<Held
         wrapper: NonZeroUsize::new(data.m_PfxInstance as usize)?,
         body: wrapper.m_BodyId,
         class,
+        guns,
         carry: None,
     })
 }
