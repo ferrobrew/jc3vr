@@ -68,7 +68,7 @@ pub use config::{HandBodiesConfig, HandHitsConfig};
 pub(crate) use joint::affine as havok_affine;
 
 pub(crate) use self::{
-    observe::{apply, frame_tick, observe},
+    observe::{apply, apply_at_render, frame_tick, observe},
     state::{
         body_pose, drives, enabled, pressing, publish_holds, publish_pins, push, take_joint_losses,
     },

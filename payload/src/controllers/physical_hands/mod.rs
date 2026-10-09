@@ -204,14 +204,28 @@ pub(crate) fn input_tick() {
     MAIN_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
 }
 
-/// Hold each pressed hand at the surface it presses into, in the cockpit frame. Called by
-/// [`crate::controllers::hands::active_hands`].
-pub fn apply(cockpit: &mut [Option<CockpitHand>; 2]) {
+/// When the hands are composed for: the simulation tick, or a frame rendered between ticks.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DrawTime {
+    /// The simulation tick: the hand bodies' offsets as the last step left them.
+    Tick,
+    /// A rendered frame: the hand bodies' offsets blended between the last two steps, so the
+    /// drawn hand does not step at the physics rate.
+    Render,
+}
+
+/// Hold each pressed hand at the surface it presses into, in the cockpit frame, and draw each hand
+/// body's hand at its body, for `at`. Called by [`crate::controllers::hands::active_hands`] and
+/// [`crate::controllers::hands::render_active_hands`].
+pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
     let (enabled, palm_offset) = Config::lock_query(|c| {
         let p = &c.controllers.physical_hands;
         (p.enabled && p.clamp_hand, p.palm_offset_m)
     });
-    physics::apply(cockpit, palm_offset);
+    match at {
+        DrawTime::Tick => physics::apply(cockpit, palm_offset),
+        DrawTime::Render => physics::apply_at_render(cockpit, palm_offset),
+    }
     if !enabled {
         return;
     }

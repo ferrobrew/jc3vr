@@ -204,7 +204,7 @@ pub fn status() -> LateStatus {
 /// Snapshot the frame's late-update inputs. Called once per rendered frame from `Game::UpdateRender`
 /// after the VR head pose pair is published and before the engine's render update.
 pub(crate) fn begin_frame() {
-    let Some(active) = hands::active_hands() else {
+    let Some(active) = hands::render_active_hands() else {
         *FRAME.lock() = None;
         return;
     };

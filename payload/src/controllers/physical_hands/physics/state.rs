@@ -26,7 +26,7 @@ use crate::{
                 contact,
                 drive::{DriveTuning, Goal},
                 guns,
-                render::RenderOffset,
+                render::{OffsetTimeline, RenderOffset},
                 types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
             },
         },
@@ -185,6 +185,11 @@ pub(super) struct Shared {
     pub(super) world_offsets: [RenderOffset; 2],
     /// The same in the cockpit frame, for drawing the hands.
     pub(super) cockpit_offsets: [RenderOffset; 2],
+    /// The last two steps' world offsets and when they landed, for drawing the offset at render
+    /// time between the steps.
+    pub(super) offset_timeline: OffsetTimeline,
+    /// Which hands are drawn at their bodies, as the last post-simulation update decided.
+    pub(super) shown: [bool; 2],
     /// The share of each hand's strength the last step used.
     pub(super) loads: [f32; 2],
     /// Each acting body's pose before the last step, game space.
@@ -227,6 +232,8 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
     rig_moves: [None; 2],
     world_offsets: [RenderOffset::NONE; 2],
     cockpit_offsets: [RenderOffset::NONE; 2],
+    offset_timeline: OffsetTimeline::EMPTY,
+    shown: [false; 2],
     loads: [0.0; 2],
     body_poses: [None; 2],
     push: Vec2::ZERO,

@@ -151,7 +151,8 @@ pub(crate) fn observe(dt: f32) {
         let offsets = shared.world_offsets;
         for hand in Hand::BOTH {
             let i = hand.index();
-            shared.cockpit_offsets[i] = if show && targets[i].is_some() {
+            shared.shown[i] = show && targets[i].is_some();
+            shared.cockpit_offsets[i] = if shared.shown[i] {
                 offsets[i].to_cockpit(body_rotation, scale)
             } else {
                 RenderOffset::NONE
@@ -185,6 +186,36 @@ pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
             && !offset.is_none()
         {
             offset.apply(hand, palm_offset);
+        }
+    }
+}
+
+/// Draw each driven hand where its body is, as [`apply`] does, for a frame rendered now: the
+/// offset is the last two steps' blended by the time since the latest (`OffsetTimeline::at`), not
+/// the latest step's alone, so a hand held back by a wall is drawn without stepping between
+/// the physics steps while the controller moves on. Called by
+/// [`crate::controllers::physical_hands::apply_at_render`] for the late update's render-time hands.
+pub(crate) fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+    let now = Instant::now();
+    let (offsets, shown, scale) = {
+        let shared = SHARED.lock();
+        if !shared.fresh(now) {
+            return;
+        }
+        let Some(offsets) = shared.offset_timeline.at(now) else {
+            return;
+        };
+        (offsets, shared.shown, shared.world_scale.max(1e-3))
+    };
+    let body_rotation = headpose::xr::body_rotation();
+    for ((hand, offset), shown) in cockpit.iter_mut().zip(offsets).zip(shown) {
+        if let Some(hand) = hand.as_mut()
+            && shown
+        {
+            let offset = offset.to_cockpit(body_rotation, scale);
+            if !offset.is_none() {
+                offset.apply(hand, palm_offset);
+            }
         }
     }
 }

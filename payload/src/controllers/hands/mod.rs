@@ -34,7 +34,7 @@ use crate::{
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
-        physical_hands::{self, physics::guns},
+        physical_hands::{self, DrawTime, physics::guns},
         scheme, vehicles,
         weapons::{ads, collide, foregrip, heft, recoil},
     },
@@ -93,6 +93,17 @@ pub struct ActiveHands {
 /// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
 /// mounted gun's handle holds it ([`vehicles::apply`]).
 pub fn active_hands() -> Option<ActiveHands> {
+    compose_active_hands(DrawTime::Tick)
+}
+
+/// The active hands as [`active_hands`] composes them, for a frame rendered now rather than for
+/// the simulation tick: a hand body's hand is drawn at its body blended between the physics steps
+/// ([`DrawTime::Render`]). The late update's render-time hands are composed from these.
+pub fn render_active_hands() -> Option<ActiveHands> {
+    compose_active_hands(DrawTime::Render)
+}
+
+fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
     let mut active = active_hands_raw()?;
     vehicles::apply(&mut active.hands);
     let physical = guns::physical_hands();
@@ -122,7 +133,7 @@ pub fn active_hands() -> Option<ActiveHands> {
         &active.config.weapons.collide,
     );
     keep_physical(&mut active.hands, &sighted, physical);
-    physical_hands::apply(&mut active.hands);
+    physical_hands::apply(&mut active.hands, at);
     anchor::apply(&mut active.hands, active.head, active.world_scale);
     Some(active)
 }

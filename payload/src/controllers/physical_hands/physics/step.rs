@@ -71,6 +71,7 @@ pub(crate) unsafe fn step() {
         shared.status.push = Vec2::ZERO;
         shared.push = Vec2::ZERO;
         shared.world_offsets = [RenderOffset::NONE; 2];
+        shared.offset_timeline.reset();
         shared.loads = [0.0; 2];
         shared.body_poses = [None; 2];
         return;
@@ -389,6 +390,7 @@ pub(crate) unsafe fn step() {
         *lost |= now_lost;
     }
     shared.world_offsets = offsets;
+    shared.offset_timeline.push(offsets, Instant::now());
     shared.loads = loads;
     shared.body_poses = poses;
     shared.push = push;
