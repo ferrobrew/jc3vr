@@ -26,7 +26,7 @@ The following decisions are settled and the rest of the plan assumes them.
 - The aim state is pinned clear for the local player (see "The aim-state pin").
 - The combat mental state keeps running for the AI, and its effects on the player's body are removed: no automatic draw and no automatic holster.
 - Hold to hold. A gun, a prop, a grenade, or a control stays in the hand while the grip is held, and letting go drops or docks it ([grip.md](grip.md)).
-- The left grip fires the grapple, except where it takes something within reach. The grapple keeps the game's native tap and hold semantics, and a yank gesture on the left hand is an alternate zip trigger.
+- The grapple is the off-hand's upper face button (Y): a tap fires, a hold on a target tethers, and with tethers attached a hold with nothing new under the aim tightens them and a double tap releases them. A sharp pull of the left hand while the button is held zips along an attached line. The grips grapple nothing ([grip.md](grip.md)): they take what is within reach.
 - Two-handed weapons are held by the dominant hand alone. The off-hand can grab the foregrip, and the line between the two hands then sets the weapon's direction.
 - Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its own hand.
 - Guns show no reticle by default. A dot at the hit point and a laser line are options. The grapple shows a hook-point highlight and a gauntlet beam, each configurable.
@@ -194,9 +194,9 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Body turn | R stick, smooth by default, snap as an option |
 | Fire the dominant-hand weapon (`FIRE_RIGHT`) | R trigger |
 | Fire the left pistol while dual-wielding | L trigger (see "Dual-wield") |
-| Fire grapple (`FIRE_GRAPPLE`: fire; tap while attached to zip; hold to tether) | L grip outside grab volumes; the yank gesture also zips |
-| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol; with tethers attached, pulling the grapple hand back (a gesture) |
-| Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | Y |
+| Fire grapple (`FIRE_GRAPPLE`: fire; tap while attached to zip; hold to tether) | Y; with a line attached, a sharp pull of the left hand while Y is held also zips |
+| Retract tethers (`RETRACT_GRAPPLE`) | L trigger; L stick click while dual-wielding, where the L trigger fires the left pistol; with tethers attached, hold Y with nothing new under the aim, and pull the grapple hand back while holding it to tighten harder |
+| Release tethers and cancel (`RELEASE_GRAPPLE`, `CANCEL`) | double tap Y with tethers attached |
 | Jump, stunt, open parachute | A |
 | Use item, enter vehicle (hold: gunner seat), open wingsuit | B |
 | Reload | X ejects the magazine (the game's reload as a setting); the belt pouch loads |
@@ -207,7 +207,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Detonate C4 | touch the button on the inside of the left wrist with the right index fingertip; or hold the R stick click (`DETONATE_EXPLOSIVE` alone) |
 | Melee (`PUSH_GRAPPLE` under the hammer ability) | none |
 | Precision aim and sniper zoom | removed; scopes magnify optically (see "Scopes") |
-| Reel-in context: cancel, boost, hang jump, slingshot | Y, hold L trigger (hold L stick click while dual-wielding), A, A |
+| Reel-in context: cancel, boost, hang jump, slingshot | double tap Y, hold L trigger (hold L stick click while dual-wielding), A, A |
 | Pause, commlink | System button tap, System button hold (either hand) |
 | Crouch toggle (seated posture) | R stick flicked down |
 
@@ -218,8 +218,9 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Steer | L stick; wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
 | Handbrake | X |
-| Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold Y and tap Y |
-| Fire vehicle weapons, primary and secondary | R grip and L grip |
+| Nitrous and turbo jump (`USE_VEHICLE_MOD`, upgrade-gated) | hold and tap R stick click; the cockpit's nitrous button |
+| Fire vehicle weapons, primary and secondary | R grip and L grip, when the grip takes nothing |
+| Grapple | Y, with its gestures as on foot |
 | Enter gunner seat, roof stunt | hold B, A |
 | Exit vehicle | B |
 | Horn | L stick click |
@@ -234,8 +235,9 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Collective up and down | R trigger and L trigger; collective lever |
 | Cyclic (forward, back, and roll) | L stick; cyclic stick |
 | Yaw | R stick X |
-| Fire primary and secondary | R grip and L grip, aimed by the gaze |
-| Exit, stunt, nitrous | B, A, hold Y |
+| Fire primary and secondary | R grip and L grip, aimed by the gaze, when the grip takes nothing |
+| Grapple | Y |
+| Exit, stunt, nitrous | B, A, hold R stick click |
 
 #### Plane
 
@@ -244,7 +246,8 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Pitch and roll | L stick; flight stick |
 | Rudder | R stick X |
 | Thrust up and down | R trigger and L trigger; throttle |
-| Fire primary and secondary | R grip and L grip, aimed by the gaze |
+| Fire primary and secondary | R grip and L grip, aimed by the gaze, when the grip takes nothing |
+| Grapple | Y |
 | Exit, stunt | B, A |
 
 #### Boats and jetskis
@@ -254,7 +257,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Steer | L stick; wheel or handlebars |
 | Accelerate and reverse | R trigger and L trigger |
 | Fire, and the jetski personal weapon | R grip, aimed by the gaze (boat) or the right hand (jetski) |
-| Nitrous and turbo jump | hold Y and tap Y |
+| Nitrous and turbo jump | hold and tap R stick click |
 | Exit | B |
 
 #### Wingsuit and parachute
@@ -267,8 +270,8 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Fire weapons (weaponized wingsuit or parachute) | R trigger and R grip, aimed by the right hand |
 | Open the parachute | A |
 | Close the wingsuit | X |
-| Release tethers | Y |
-| Grapple (slingshot boost) | L grip |
+| Release tethers | double tap Y with tethers attached |
+| Grapple (slingshot boost) | Y |
 
 #### UI
 
@@ -290,7 +293,7 @@ The grapple slot, index [`TargetType::TARGET_GRAPPLE`](https://ferrobrew.github.
 
 The game's grapple reticle pins to the centre of the screen when the aim uses a direct position, so it cannot show a hand ray, and it is hidden while the grapple aims by hand. The grapple readout is drawn by the world-space overlay layer instead: a highlight on the surface or object the grapple would attach to, shown only when the target is valid and in range, with a distinct style for targets that support tethering, and a gauntlet beam from the wrist to the target point. Each is configurable.
 
-The yank gesture is a sharp pull of the left hand back toward the body while a line is attached. It issues the same `FIRE_GRAPPLE` tap that zips. The physical grapple builds on the pull: it speeds the reel, boosts it on a yank during the reel, tightens attached tethers, and pumps the hang swing ([physical-grapple.md](physical-grapple.md)).
+The yank gesture is a sharp pull of the left hand back toward the body while a line is attached and the grapple button is held. It issues the same `FIRE_GRAPPLE` tap that zips; a pull with the button up does nothing, so a hand moved back in the course of play never zips. The physical grapple builds on the pull: it speeds the reel, boosts it on a yank during the reel, tightens attached tethers, and pumps the hang swing ([physical-grapple.md](physical-grapple.md)).
 
 ### Dual-wield
 

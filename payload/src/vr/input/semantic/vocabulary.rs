@@ -101,10 +101,13 @@ semantic_actions! {
         RetractTethers => ("retract_tethers", Float, "Retract tethers"),
         /// Read only while dual-wielding, when the off-hand trigger fires its pistol.
         RetractTethersAlt => ("retract_tethers_alt", Bool, "Retract tethers (while dual-wielding)"),
-        FireGrapple => ("fire_grapple", Float, "Fire the grapple (hold: tether)"),
+        /// The grapple on an analog input, for a player who binds it to one; unbound by default, in
+        /// favour of [`OnFootAction::Grapple`].
+        FireGrapple => ("fire_grapple", Float, "Grapple, on an analog input (hold: tether)"),
         Jump => ("jump", Bool, "Jump (in the air: open the parachute)"),
         Use => ("use", Bool, "Use or enter a vehicle (hold: gunner seat)"),
         Reload => ("reload", Bool, "Reload (hold: holster)"),
+        /// Unbound by default: a double tap of the grapple releases the tethers.
         ReleaseTethers => ("release_tethers", Bool, "Release tethers"),
         /// Detonates the placed charges once held past the game's hold time; the charges come
         /// from their pouch.
@@ -120,6 +123,9 @@ semantic_actions! {
         /// By default the dominant stick pushed up, the half of its vertical axis that
         /// `crouch_flick` leaves unread.
         WeaponWheel => ("weapon_wheel", Float, "Weapon wheel (hold, point to choose)"),
+        /// With tethers attached, a double tap releases them and a hold with nothing new under the
+        /// aim tightens them; the mod reads the gestures.
+        Grapple => ("grapple", Bool, "Grapple (hold: tether or tighten; double tap: release tethers)"),
     }
 }
 
@@ -136,7 +142,9 @@ semantic_actions! {
         OpenParachute => ("open_parachute", Bool, "Open the parachute (after a stick flick: evade)"),
         Use => ("use", Bool, "Close the wingsuit"),
         ReleaseTethers => ("release_tethers", Bool, "Release tethers"),
-        FireGrapple => ("fire_grapple", Float, "Fire the grapple (hold: tether)"),
+        /// Unbound by default, in favour of [`WingsuitAction::Grapple`].
+        FireGrapple => ("fire_grapple", Float, "Grapple, on an analog input (hold: tether)"),
+        Grapple => ("grapple", Bool, "Grapple (hold: tether or tighten; double tap: release tethers)"),
     }
 }
 
@@ -150,7 +158,7 @@ semantic_actions! {
         /// Read in the driver's seat.
         Reverse => ("reverse", Float, "Brake and reverse"),
         FirePrimary => ("fire_primary", Float, "Fire the vehicle weapon"),
-        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon or the grapple"),
+        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon"),
         Stunt => ("stunt", Bool, "Stunt position"),
         ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold: gunner seat)"),
         VehicleMod => ("vehicle_mod", Bool, "Nitrous (tap: turbo jump)"),
@@ -160,6 +168,7 @@ semantic_actions! {
         Fire => ("fire", Float, "Fire (passenger)"),
         /// Read out of the driver's seat while dual-wielding.
         FireOffHandPistol => ("fire_off_hand_pistol", Float, "Fire the off-hand pistol (passenger)"),
+        Grapple => ("grapple", Bool, "Grapple (hold: tether or tighten; double tap: release tethers)"),
     }
 }
 
@@ -173,7 +182,7 @@ semantic_actions! {
         /// Read in the driver's seat.
         CollectiveDown => ("collective_down", Float, "Descend"),
         FirePrimary => ("fire_primary", Float, "Fire the vehicle weapon"),
-        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon or the grapple"),
+        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon"),
         Stunt => ("stunt", Bool, "Stunt position"),
         ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold: gunner seat)"),
         VehicleMod => ("vehicle_mod", Bool, "Vehicle mod"),
@@ -182,6 +191,7 @@ semantic_actions! {
         Fire => ("fire", Float, "Fire (passenger)"),
         /// Read out of the driver's seat while dual-wielding.
         FireOffHandPistol => ("fire_off_hand_pistol", Float, "Fire the off-hand pistol (passenger)"),
+        Grapple => ("grapple", Bool, "Grapple (hold: tether or tighten; double tap: release tethers)"),
     }
 }
 
@@ -196,7 +206,7 @@ semantic_actions! {
         /// Read in the driver's seat.
         ThrustDown => ("thrust_down", Float, "Less thrust"),
         FirePrimary => ("fire_primary", Float, "Fire the vehicle weapon"),
-        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon or the grapple"),
+        FireSecondary => ("fire_secondary", Float, "Fire the secondary weapon"),
         Stunt => ("stunt", Bool, "Stunt position"),
         ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold: gunner seat)"),
         Horn => ("horn", Bool, "Horn or magnet"),
@@ -204,6 +214,7 @@ semantic_actions! {
         Fire => ("fire", Float, "Fire (passenger)"),
         /// Read out of the driver's seat while dual-wielding.
         FireOffHandPistol => ("fire_off_hand_pistol", Float, "Fire the off-hand pistol (passenger)"),
+        Grapple => ("grapple", Bool, "Grapple (hold: tether or tighten; double tap: release tethers)"),
     }
 }
 

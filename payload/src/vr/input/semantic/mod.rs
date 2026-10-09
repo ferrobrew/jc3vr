@@ -45,7 +45,7 @@ use crate::{
 /// OpenXR application version, so a runtime that keys saved bindings on it can tell the schemas
 /// apart. A change to the schema bumps it and adds an entry to the changelog in
 /// `docs/mod/input/controllers.md` ("Action schema").
-pub(crate) const SCHEMA_VERSION: u32 = 2;
+pub(crate) const SCHEMA_VERSION: u32 = 3;
 
 /// An action's OpenXR type.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

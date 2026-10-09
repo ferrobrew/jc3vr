@@ -72,7 +72,13 @@ pub const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
 /// held past its hold time. The gamepad's RB also throws a grenade and plants C4; the controllers
 /// take a grenade from its pouch and a charge from its own pouch instead, so neither rides along.
 pub const DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
-pub const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, FIRE_GRAPPLE, MC_RELOAD, L1];
+/// The gamepad's LB in a vehicle, without the grapple it also fires there: the grapple has a button
+/// of its own ([`GRAPPLE_VEHICLE`]).
+pub const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, MC_RELOAD, L1];
+/// The grapple in a vehicle.
+pub const GRAPPLE_VEHICLE: &[Action] = &[FIRE_GRAPPLE];
+/// The grapple on foot, falling, and in the wingsuit: the gamepad's LB.
+pub const GRAPPLE: &[Action] = &[FIRE_GRAPPLE, L1];
 pub const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 /// The weapon slots on the gamepad's d-pad, by direction: the selection cross the game shows
 /// while one is held lays them out the same way, and the release commits.
@@ -102,7 +108,7 @@ fn on_foot<S: Sink>(s: &mut S, ctx: &TableCtx) {
 
     s.hold(&fire(ctx), &[FIRE_RIGHT, R2]);
     s.hold(&[retract(ctx)], &[RETRACT_GRAPPLE, L2]);
-    s.hold(&[grapple()], &[FIRE_GRAPPLE, L1]);
+    s.hold(&grapple(), GRAPPLE);
     s.hold(&[p(F::Jump).gated(Gate::UnlessChordArmed)], PAD_A);
     s.hold(&[p(F::Reload)], PAD_X_ON_FOOT);
     s.hold(&[p(F::Use)], PAD_Y_ON_FOOT);
@@ -116,10 +122,14 @@ fn on_foot<S: Sink>(s: &mut S, ctx: &TableCtx) {
     }
 }
 
-/// The grapple, unless the sight chord's dominant grip withholds it. The yank gesture presses the
-/// action too ([`crate::controllers::bindings::intents::Gestures`]).
-fn grapple() -> Press {
-    p(F::FireGrapple).gated(Gate::UnlessChordGrip)
+/// The grapple, on its button or an analog input a player binds it to, unless the sight chord's
+/// dominant grip withholds it. The yank gesture presses the analog action too
+/// ([`crate::controllers::bindings::intents::Gestures`]).
+fn grapple() -> [Press; 2] {
+    [
+        p(F::Grapple).gated(Gate::UnlessChordGrip),
+        p(F::FireGrapple).gated(Gate::UnlessChordGrip),
+    ]
 }
 
 /// The hand-weapon fire actions: the dominant trigger's, and with a pistol in the off-hand its
@@ -161,6 +171,7 @@ struct VehicleActions {
     horn: ActionId,
     fire: ActionId,
     fire_off_hand_pistol: ActionId,
+    grapple: ActionId,
 }
 
 impl VehicleActions {
@@ -174,6 +185,7 @@ impl VehicleActions {
                 horn: H::Horn.id(),
                 fire: H::Fire.id(),
                 fire_off_hand_pistol: H::FireOffHandPistol.id(),
+                grapple: H::Grapple.id(),
             },
             VehicleClass::Plane => Self {
                 stunt: P::Stunt.id(),
@@ -183,6 +195,7 @@ impl VehicleActions {
                 horn: P::Horn.id(),
                 fire: P::Fire.id(),
                 fire_off_hand_pistol: P::FireOffHandPistol.id(),
+                grapple: P::Grapple.id(),
             },
             VehicleClass::Car
             | VehicleClass::Motorcycle
@@ -195,6 +208,7 @@ impl VehicleActions {
                 horn: L::Horn.id(),
                 fire: L::Fire.id(),
                 fire_off_hand_pistol: L::FireOffHandPistol.id(),
+                grapple: L::Grapple.id(),
             },
         }
     }
@@ -207,6 +221,7 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
     s.hold(&[p(v.stunt)], PAD_A);
     s.hold(&[p(v.exit)], PAD_Y_VEHICLE);
     s.hold(&[p(v.fire_secondary)], PAD_LB_VEHICLE);
+    s.hold(&[p(v.grapple)], GRAPPLE_VEHICLE);
     s.hold(&[p(v.horn)], PAD_L3_VEHICLE);
     match seat.class {
         VehicleClass::Helicopter => {
@@ -292,7 +307,7 @@ fn falling<S: Sink>(s: &mut S, ctx: &TableCtx) {
     s.hold(&[p(F::Reload)], PAD_X_ON_FOOT);
     s.hold(&[p(F::Detonate)], DETONATE);
     s.hold(&[p(F::Jump).gated(Gate::UnlessChordArmed)], PAD_A);
-    s.hold(&[grapple()], &[FIRE_GRAPPLE, L1]);
+    s.hold(&grapple(), GRAPPLE);
     s.hold(&[p(F::Use)], PAD_Y_ON_FOOT);
     s.hold(&[p(F::ReleaseTethers)], PAD_B);
     hand_weapon_fallbacks(s);
@@ -316,7 +331,7 @@ fn wingsuit<S: Sink>(s: &mut S) {
         &[WINGSUIT_EVADE],
     );
     s.hold(&[p(W::OpenParachute).gated(Gate::NoEvadeFlick)], PAD_A);
-    s.hold(&[p(W::FireGrapple)], &[FIRE_GRAPPLE, L1]);
+    s.hold(&[p(W::Grapple), p(W::FireGrapple)], GRAPPLE);
     s.hold(&[p(W::Use)], PAD_Y_ON_FOOT);
     s.hold(&[p(W::ReleaseTethers)], PAD_B);
 }

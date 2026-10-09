@@ -11,6 +11,7 @@ fn the_car_uses_triggers_as_throttle() {
     });
     let c = controls(Hand::Right, |dom, off| {
         dom.trigger = 0.6;
+        dom.stick_click = down();
         off.stick = Vec2::new(-0.4, 0.0);
         off.a = down();
         off.b = down();
@@ -20,8 +21,19 @@ fn the_car_uses_triggers_as_throttle() {
     assert_eq!(player(&step, TURN_LEFT), Some(Want::Analog(0.4)));
     assert_eq!(player(&step, TURN_RIGHT), None);
     assert_eq!(player(&step, HANDBRAKE), Some(Want::Hold(1.0)));
+    // Nitrous moved to the dominant stick click; the off-hand's upper face is the grapple.
     assert_eq!(player(&step, USE_VEHICLE_MOD), Some(Want::Hold(1.0)));
+    assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
     assert_eq!(player(&step, SUBMERSIBLE_DIVE), None);
+    // The off-hand's grip fires the secondary weapon alone, not the grapple.
+    let mut b = Bindings::default();
+    let grip = controls(Hand::Right, |_, off| off.grip = down());
+    let step = b.sim_step(car, &grip, DT, &CONFIG);
+    assert_eq!(
+        player(&step, FIRE_VEHICLE_WEAPON_SECONDARY),
+        Some(Want::Hold(1.0))
+    );
+    assert_eq!(player(&step, FIRE_GRAPPLE), None);
 }
 
 #[test]

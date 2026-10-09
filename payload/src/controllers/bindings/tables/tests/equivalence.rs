@@ -7,11 +7,13 @@
 //! sequences. That separates the port of the tables from the change of the default layout: the
 //! shipped defaults are free to move, and this still checks that each meaning is read as before.
 //!
-//! The semantic tables differ from the raw-input ones on purpose in two places, which the
+//! The semantic tables differ from the raw-input ones on purpose in three places, which the
 //! comparison accounts for:
 //!
 //! - Out of the driver's seat, the throttle actions are not read; the raw-input tables injected
 //!   the throttle from the triggers there too, where it drives nothing ([`normalise`]).
+//! - In a vehicle the grapple has its own action, which the raw layout put on the secondary
+//!   weapon's button, so its writes follow that button's rather than sit among them ([`in_order`]).
 //! - The yank is a source of the grapple action, so the sight tuning chord's grip withholds a
 //!   yank as it withholds the grip's grapple; no sequence yanks during the chord.
 
@@ -47,8 +49,11 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
                 for (i, (controls, dt)) in ticks.iter().enumerate() {
                     let input =
                         simulate(controls, SemanticSet::of(mode.action_set()), legacy_layout);
-                    let want = normalise(old.step(mode, controls, *dt, &config), mode);
-                    let got = new.step(mode, controls, &input, *dt, &config);
+                    let want = in_order(
+                        normalise(old.step(mode, controls, *dt, &config), mode),
+                        mode,
+                    );
+                    let got = in_order(new.step(mode, controls, &input, *dt, &config), mode);
                     assert_eq!(
                         got, want,
                         "{mode:?}, {dominant:?}-handed, {ctx:?}: {name}, tick {i}"
@@ -59,6 +64,15 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
         }
     }
     assert!(checked > 100_000, "{checked} ticks compared");
+}
+
+/// The wanted actions of a vehicle mode in one order: the grapple has its own action there, so
+/// its writes come after the secondary weapon's button rather than among them.
+fn in_order(mut step: Step, mode: Mode) -> Step {
+    if matches!(mode, Mode::Vehicle(_)) {
+        step.desired.sort_by_key(|d| d.target);
+    }
+    step
 }
 
 /// The throttle actions out of the driver's seat, which the semantic tables do not read.
@@ -450,7 +464,7 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
                 Reload => on(Dom, UpperFace),
                 ReleaseTethers => on(Off, UpperFace),
                 Detonate => on(Dom, ThumbstickClick),
-                ThrowGrenade | WeaponSelectPad | WeaponSelectPress | WeaponWheel => None,
+                ThrowGrenade | WeaponSelectPad | WeaponSelectPress | WeaponWheel | Grapple => None,
             }
         }
         SemanticSet::Wingsuit => {
@@ -466,6 +480,7 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
                 Use => on(Off, LowerFace),
                 ReleaseTethers => on(Off, UpperFace),
                 FireGrapple => on(Off, GripPress),
+                Grapple => None,
             }
         }
         SemanticSet::LandVehicle => {
@@ -476,7 +491,8 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
                 Accelerate | Fire => on(Dom, TriggerValue),
                 Reverse | FireOffHandPistol => on(Off, TriggerValue),
                 FirePrimary => on(Dom, GripPress),
-                FireSecondary => on(Off, GripPress),
+                // The grapple shared the secondary weapon's button.
+                FireSecondary | Grapple => on(Off, GripPress),
                 Stunt => on(Dom, LowerFace),
                 ExitVehicle => on(Off, LowerFace),
                 VehicleMod => on(Dom, UpperFace),
@@ -492,7 +508,7 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
                 CollectiveUp | Fire => on(Dom, TriggerValue),
                 CollectiveDown | FireOffHandPistol => on(Off, TriggerValue),
                 FirePrimary => on(Dom, GripPress),
-                FireSecondary => on(Off, GripPress),
+                FireSecondary | Grapple => on(Off, GripPress),
                 Stunt => on(Dom, LowerFace),
                 ExitVehicle => on(Off, LowerFace),
                 VehicleMod => on(Dom, UpperFace),
@@ -507,7 +523,7 @@ pub(crate) fn legacy_layout(set: SemanticSet, index: usize) -> Option<DefaultBin
                 ThrustUp | Fire => on(Dom, TriggerValue),
                 ThrustDown | FireOffHandPistol => on(Off, TriggerValue),
                 FirePrimary => on(Dom, GripPress),
-                FireSecondary => on(Off, GripPress),
+                FireSecondary | Grapple => on(Off, GripPress),
                 Stunt => on(Dom, LowerFace),
                 ExitVehicle => on(Off, LowerFace),
                 Horn => on(Off, ThumbstickClick),

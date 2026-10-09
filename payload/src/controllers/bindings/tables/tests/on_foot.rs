@@ -19,11 +19,13 @@ fn on_foot_face_buttons_follow_the_plan() {
         off.b = down();
     });
     let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
-    for action in [JUMP, OPEN_PARACHUTE, STUNT_JUMP, RELEASE_GRAPPLE, CANCEL] {
+    for action in [JUMP, OPEN_PARACHUTE, STUNT_JUMP, FIRE_GRAPPLE, L1] {
         assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
     }
-    assert_eq!(player(&step, PUSH_GRAPPLE), None);
-    assert_eq!(player(&step, RELOAD), None);
+    // The off-hand's upper face is the grapple; the tethers' release is its double tap.
+    for action in [RELEASE_GRAPPLE, CANCEL, PUSH_GRAPPLE, RELOAD] {
+        assert_eq!(player(&step, action), None, "{action:?}");
+    }
 }
 
 #[test]
@@ -55,11 +57,11 @@ fn the_dominant_hand_mirrors_the_layout() {
     let mut b = Bindings::default();
     let right_handed = controls(Hand::Right, |dom, off| {
         dom.trigger_press = down();
-        off.grip = down();
+        off.b = down();
     });
     let left_handed = controls(Hand::Left, |dom, off| {
         dom.trigger_press = down();
-        off.grip = down();
+        off.b = down();
     });
     // The same logical presses land on opposite physical hands, and fire the same actions.
     assert!(right_handed.hands[1].trigger_press.down);
@@ -111,33 +113,58 @@ fn the_right_stick_turns_the_body_on_foot_but_yaws_a_helicopter() {
 }
 
 #[test]
-fn a_grip_press_in_a_grab_volume_does_not_grapple() {
+fn a_grip_press_in_reach_grabs_once_and_holds_through_the_press() {
     let mut b = Bindings::default();
     let grab = controls(Hand::Right, |_, off| {
         off.grip = down();
         off.grab_volume = Some(GrabVolume::Holster(HolsterSite::Chest));
     });
     let step = b.sim_step(ON_FOOT, &grab, DT, &CONFIG);
-    assert_eq!(player(&step, FIRE_GRAPPLE), None);
+    assert!(step.desired.is_empty(), "{:?}", step.desired);
     assert_eq!(
         step.grabs[Hand::Left.index()],
         Some(GrabVolume::Holster(HolsterSite::Chest))
     );
-    // Leaving the volume mid-press keeps the press a grab.
-    let left_volume = controls(Hand::Right, |_, off| {
+    // Leaving the target mid-press keeps the press a grab, reported once.
+    let held = |c: &mut HandControls| {
+        c.grip = ButtonControl {
+            down: true,
+            ..Default::default()
+        };
+        c.grab_slow = true;
+    };
+    let left_volume = controls(Hand::Right, |_, off| held(off));
+    let step = b.sim_step(ON_FOOT, &left_volume, DT, &CONFIG);
+    assert!(step.desired.is_empty());
+    assert_eq!(step.grabs, [None; 2]);
+}
+
+#[test]
+fn an_empty_grip_on_foot_is_a_fist_that_takes_what_it_comes_to() {
+    let mut b = Bindings::default();
+    let fist = controls(Hand::Right, |_, off| off.grip = down());
+    let step = b.sim_step(ON_FOOT, &fist, DT, &CONFIG);
+    assert!(
+        step.desired.is_empty(),
+        "a fist fires nothing: {:?}",
+        step.desired
+    );
+    assert_eq!(step.grabs, [None; 2]);
+    // Still closed, laid on the grenade pouch: it takes it.
+    let on_pouch = controls(Hand::Right, |_, off| {
         off.grip = ButtonControl {
             down: true,
             ..Default::default()
         };
+        off.grab_volume = Some(GrabVolume::GrenadePouch);
+        off.grab_slow = true;
     });
-    let step = b.sim_step(ON_FOOT, &left_volume, DT, &CONFIG);
-    assert_eq!(player(&step, FIRE_GRAPPLE), None);
-    // The grab is reported once, at its press edge.
-    assert_eq!(step.grabs, [None; 2]);
-    // A fresh press outside the volume grapples.
-    b.sim_step(ON_FOOT, &Controls::default(), DT, &CONFIG);
-    let step = b.sim_step(ON_FOOT, &left_volume, DT, &CONFIG);
-    assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
+    let step = b.sim_step(ON_FOOT, &on_pouch, DT, &CONFIG);
+    assert_eq!(
+        step.grabs[Hand::Left.index()],
+        Some(GrabVolume::GrenadePouch)
+    );
+    assert!(step.desired.is_empty());
 }
 
 #[test]
@@ -257,7 +284,8 @@ fn a_disarmed_sight_chord_leaves_the_bindings_alone() {
     let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
     assert!(!step.sight_capture);
     assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
-    assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
+    // The grips are fists, which fire nothing.
+    assert_eq!(player(&step, FIRE_GRAPPLE), None);
 }
 
 #[test]
@@ -295,5 +323,4 @@ fn the_sight_chord_needs_both_grips() {
     let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
     assert!(!step.sight_capture);
     assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
-    assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
 }

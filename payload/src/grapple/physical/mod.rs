@@ -64,6 +64,8 @@ pub(crate) struct TickInput<'a> {
     /// The grapple hand's distance from the body point a yank pulls toward, metres, or `None`
     /// while the hand is untracked.
     pub distance: Option<f32>,
+    /// Whether the grapple button is held: the pull retracts the tethers only while it is.
+    pub button_held: bool,
     pub detection: &'a Detection,
     pub config: &'a ControllersConfig,
 }
@@ -73,6 +75,8 @@ pub(crate) struct TickInput<'a> {
 pub(crate) struct TickOutput {
     /// The retract input's value the pull asks for, `0..=1`, while it retracts the tethers.
     pub retract: Option<f32>,
+    /// The dual tethers the hook holds.
+    pub tethers: u32,
 }
 
 /// Where the grapple is, as the readout names it.
@@ -236,14 +240,15 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
 
     // The tether retract: the pull's depth, while tethers are attached and free.
     let tethers = hook.map_or(0, |h| h.tethers);
-    let armed = tether::armed(
-        &TetherTick {
-            tethers,
-            active_wire: hook.is_some_and(|h| h.active_wire),
-            detection: *input.detection,
-        },
-        &config.tether,
-    );
+    let armed = input.button_held
+        && tether::armed(
+            &TetherTick {
+                tethers,
+                active_wire: hook.is_some_and(|h| h.active_wire),
+                detection: *input.detection,
+            },
+            &config.tether,
+        );
     // A retract that arms with the hand already back starts from that hand, not from a pull.
     let arming = armed && !state.tether_armed;
     if arming {
@@ -347,7 +352,7 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     }
     haptics::sustain(hand, Sustain::GrappleTension, line[0]);
     haptics::sustain(hand, Sustain::GrappleReel, line[1]);
-    TickOutput { retract }
+    TickOutput { retract, tethers }
 }
 
 /// Forget the pull and stop driving the reel: the bindings stand down.

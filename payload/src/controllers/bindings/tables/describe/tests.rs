@@ -67,9 +67,12 @@ fn the_dominant_hand_mirrors_the_description() {
         let rows = describe(&ctx(ON_FOOT, dominant, TableCtx::default()));
         let fire = actions_of(&rows, Control::Trigger(dominant), Gesture::Press);
         assert!(fire.contains(&FIRE_RIGHT), "{dominant:?}");
-        let grapple = actions_of(&rows, Control::Grip(dominant.other()), Gesture::Press);
+        let grapple = actions_of(&rows, Control::B(dominant.other()), Gesture::Press);
         assert!(grapple.contains(&FIRE_GRAPPLE), "{dominant:?}");
-        assert!(actions_of(&rows, Control::Grip(dominant), Gesture::Press).is_empty());
+        // Both grips are free on foot: an empty grip is a fist.
+        for hand in Hand::BOTH {
+            assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
+        }
     }
 }
 
@@ -461,7 +464,20 @@ fn actions_bound_to_nothing_share_one_unbound_row() {
     // On the defaults, the actions that ship unbound are listed as such too.
     let defaults = describe(&ctx(ON_FOOT, Hand::Right, TableCtx::default()));
     let unbound = actions_of(&defaults, Control::Unbound, Gesture::Press);
-    assert_eq!(unbound, vec![THROW_GRENADE]);
+    // The grapple's analog action ships unbound beside its button, and the tethers' release is
+    // the grapple's double tap, so its own action ships unbound too.
+    assert_eq!(
+        unbound,
+        vec![
+            FIRE_GRAPPLE,
+            L1,
+            RELEASE_GRAPPLE,
+            CANCEL,
+            BYPASS_FALL_PREVENTION,
+            BTN_B,
+            THROW_GRENADE
+        ]
+    );
 }
 
 #[test]

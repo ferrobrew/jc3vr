@@ -11,8 +11,17 @@ use crate::controllers::bindings::tables::{
 
 /// The game actions the new layout leaves without a button: grenades come from their pouch and
 /// C4 from its chest pouch, and the grenade throw stays as an unbound action for a player who
-/// binds it.
-const DROPPED: [Action; 2] = [THROW_GRENADE, PLANT_EXPLOSIVE];
+/// binds it. The gamepad's B (releasing the tethers, cancelling, and stepping off a ledge) is the
+/// grapple button's double tap ([`crate::controllers::bindings::grapple_button`]), a gesture the
+/// tables do not declare.
+const DROPPED: [Action; 6] = [
+    THROW_GRENADE,
+    PLANT_EXPLOSIVE,
+    RELEASE_GRAPPLE,
+    CANCEL,
+    BYPASS_FALL_PREVENTION,
+    BTN_B,
+];
 
 #[test]
 fn every_action_reachable_before_stays_reachable() {

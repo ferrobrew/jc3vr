@@ -74,10 +74,13 @@ pub(super) fn layout_fingerprint() -> Line {
 
 pub(super) fn self_check() -> Line {
     let status = self_check::status();
-    match (status.report.is_some(), status.findings.len()) {
+    match (status.report.is_some(), status.problems) {
         (false, _) => Line::waiting("NOT RUN"),
-        (true, 0) => Line::ok("PASSED"),
-        (true, findings) => Line::failed(format_smolstr!("{findings} FINDINGS")),
+        (true, 0) => Line::ok(format_smolstr!("PASSED, {} CHECKED", status.findings.len())),
+        (true, problems) => Line::failed(format_smolstr!(
+            "{problems} OF {} ONE-SIDED",
+            status.findings.len()
+        )),
     }
 }
 

@@ -239,13 +239,13 @@ fn on_foot(action: OnFootAction) -> Option<DefaultBinding> {
         Fire => on(Dom, TriggerValue),
         FireOffHandPistol | RetractTethers => on(Off, TriggerValue),
         RetractTethersAlt | NextWeapon => on(Off, ThumbstickClick),
-        FireGrapple => on(Off, GripPress),
+        Grapple => on(Off, UpperFace),
         Jump => on(Dom, LowerFace),
         Use => on(Dom, UpperFace),
         Reload => on(Off, LowerFace),
-        ReleaseTethers => on(Off, UpperFace),
         Detonate => on(Dom, ThumbstickClick),
-        ThrowGrenade => None,
+        // A double tap of the grapple releases the tethers, and the grapple is on a button.
+        ReleaseTethers | ThrowGrenade | FireGrapple => None,
         WeaponSelectPad => on(Off, Trackpad),
         WeaponSelectPress => on(Off, TrackpadForce),
         WeaponWheel => on(Dom, ThumbstickY),
@@ -265,8 +265,8 @@ fn wingsuit(action: WingsuitAction) -> Option<DefaultBinding> {
         Boost => on(Dom, UpperFace),
         OpenParachute => on(Dom, LowerFace),
         Use => on(Off, LowerFace),
-        ReleaseTethers => on(Off, UpperFace),
-        FireGrapple => on(Off, GripPress),
+        Grapple => on(Off, UpperFace),
+        ReleaseTethers | FireGrapple => None,
     }
 }
 
@@ -283,7 +283,9 @@ fn land_vehicle(action: LandVehicleAction) -> Option<DefaultBinding> {
         FireSecondary => on(Off, GripPress),
         Stunt => on(Dom, LowerFace),
         ExitVehicle => on(Dom, UpperFace),
-        VehicleMod => on(Off, UpperFace),
+        Grapple => on(Off, UpperFace),
+        // The grapple took the off-hand's upper face; nitrous is also on the cockpit's button.
+        VehicleMod => on(Dom, ThumbstickClick),
         Handbrake => on(Off, LowerFace),
         Horn => on(Off, ThumbstickClick),
     }
@@ -302,7 +304,8 @@ fn helicopter(action: HelicopterAction) -> Option<DefaultBinding> {
         FireSecondary => on(Off, GripPress),
         Stunt => on(Dom, LowerFace),
         ExitVehicle => on(Dom, UpperFace),
-        VehicleMod => on(Off, UpperFace),
+        Grapple => on(Off, UpperFace),
+        VehicleMod => on(Dom, ThumbstickClick),
         Horn => on(Off, ThumbstickClick),
     }
 }
@@ -320,6 +323,7 @@ fn plane(action: PlaneAction) -> Option<DefaultBinding> {
         FireSecondary => on(Off, GripPress),
         Stunt => on(Dom, LowerFace),
         ExitVehicle => on(Dom, UpperFace),
+        Grapple => on(Off, UpperFace),
         Horn => on(Off, ThumbstickClick),
     }
 }

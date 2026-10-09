@@ -66,6 +66,7 @@ on_foot.throw_grenade: bool
 on_foot.weapon_select_pad: vec2
 on_foot.weapon_select_press: float
 on_foot.weapon_wheel: float
+on_foot.grapple: bool
 wingsuit: set
 wingsuit.steer: vec2
 wingsuit.turn: float
@@ -77,6 +78,7 @@ wingsuit.open_parachute: bool
 wingsuit.use: bool
 wingsuit.release_tethers: bool
 wingsuit.fire_grapple: float
+wingsuit.grapple: bool
 land_vehicle: set
 land_vehicle.steer: vec2
 land_vehicle.turn: float
@@ -91,6 +93,7 @@ land_vehicle.handbrake: bool
 land_vehicle.horn: bool
 land_vehicle.fire: float
 land_vehicle.fire_off_hand_pistol: float
+land_vehicle.grapple: bool
 helicopter: set
 helicopter.cyclic: vec2
 helicopter.yaw: float
@@ -104,6 +107,7 @@ helicopter.vehicle_mod: bool
 helicopter.horn: bool
 helicopter.fire: float
 helicopter.fire_off_hand_pistol: float
+helicopter.grapple: bool
 plane: set
 plane.pitch_roll: vec2
 plane.rudder: float
@@ -116,6 +120,7 @@ plane.exit_vehicle: bool
 plane.horn: bool
 plane.fire: float
 plane.fire_off_hand_pistol: float
+plane.grapple: bool
 menu: set
 menu.menu_confirm: bool
 menu.menu_back: bool
@@ -521,7 +526,16 @@ fn the_defaults_mirror_the_gamepad_by_side() {
         land(L::ExitVehicle, Hand::Right),
         on_foot(F::Use, Hand::Right)
     );
-    assert_eq!(land(L::VehicleMod, Hand::Left), Some("input/b/click"));
+    // The grapple takes the off-hand's upper face in every mode, and nitrous the dominant stick's
+    // click.
+    assert_eq!(land(L::Grapple, Hand::Left), Some("input/b/click"));
+    assert_eq!(
+        land(L::VehicleMod, Hand::Right),
+        Some("input/thumbstick/click")
+    );
+    assert_eq!(on_foot(F::Grapple, Hand::Left), Some("input/b/click"));
+    assert_eq!(on_foot(F::FireGrapple, Hand::Left), None);
+    assert_eq!(on_foot(F::ReleaseTethers, Hand::Left), None);
     assert_eq!(land(L::Handbrake, Hand::Left), Some("input/a/click"));
     for (set, exit) in [
         (SemanticSet::Helicopter, H::ExitVehicle as usize),
@@ -560,26 +574,29 @@ fn the_defaults_mirror_the_gamepad_by_side() {
         None
     );
     assert_eq!(
-        on_foot(F::ReleaseTethers, Hand::Left),
-        Some("input/b/click")
-    );
-    assert_eq!(
         on_foot(F::Detonate, Hand::Right),
         Some("input/thumbstick/click")
     );
-    assert_eq!(
-        on_foot(F::FireGrapple, Hand::Left),
-        Some("input/squeeze/force")
-    );
+    // The grips are free on foot: nothing ships on them.
+    for action in F::ALL {
+        for hand in Hand::BOTH {
+            assert_ne!(
+                on_foot(*action, hand),
+                Some("input/squeeze/force"),
+                "{action:?}"
+            );
+        }
+    }
+    // On the left Touch controller the grapple is Y.
     assert_eq!(
         default_path(
             SemanticSet::OnFoot,
-            F::FireGrapple as usize,
+            F::Grapple as usize,
             Profile::OculusTouch,
             Hand::Left,
             Hand::Right
         ),
-        Some("input/squeeze/value")
+        Some("input/y/click")
     );
     assert_eq!(
         default_binding(SemanticSet::OnFoot, F::ThrowGrenade as usize),

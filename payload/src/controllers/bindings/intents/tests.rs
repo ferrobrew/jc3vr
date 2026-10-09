@@ -40,21 +40,21 @@ fn build(input: &SemanticInput, masks: &[Mask], clicks: [ButtonControl; 2]) -> I
 #[test]
 fn an_input_mask_rests_only_the_actions_bound_to_it_on_its_hand() {
     let input = everything_held();
-    let grip = |hand| Mask {
+    let upper = |hand| Mask {
         hand,
-        scope: MaskScope::Input(Physical::Grip),
+        scope: MaskScope::Input(Physical::UpperFace),
         exempt: None,
     };
-    let fire_grapple = OnFootAction::FireGrapple.id();
+    let grapple = OnFootAction::Grapple.id();
     let open = build(&input, &[], [DOWN; 2]);
-    assert!(open.button(fire_grapple).held());
-    // The grapple is on the left grip: a mask on the right grip leaves it alone.
-    let right = build(&input, &[grip(Hand::Right)], [DOWN; 2]);
-    assert!(right.button(fire_grapple).held());
-    let left = build(&input, &[grip(Hand::Left)], [DOWN; 2]);
-    assert!(!left.button(fire_grapple).held());
+    assert!(open.button(grapple).held());
+    // The grapple is on the left upper face button: a mask on the right one leaves it alone.
+    let right = build(&input, &[upper(Hand::Right)], [DOWN; 2]);
+    assert!(right.button(grapple).held());
+    let left = build(&input, &[upper(Hand::Left)], [DOWN; 2]);
+    assert!(!left.button(grapple).held());
     // The left hand's other actions are untouched.
-    assert!(left.button(OnFootAction::ReleaseTethers.id()).held());
+    assert!(left.button(OnFootAction::Reload.id()).held());
 }
 
 #[test]

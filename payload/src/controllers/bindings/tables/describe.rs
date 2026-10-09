@@ -22,6 +22,7 @@ use crate::{
             tables::{
                 body_turn_action, context_masks,
                 declare::{TableCtx, declare},
+                grapple_press,
                 sink::{Axis, Direction, Gate, Input, PadLayout, PadZone, Press, Sink, pad_of},
             },
         },
@@ -164,6 +165,8 @@ pub enum Gesture {
     PressRight,
     /// A sharp pull of the hand back toward the body.
     Yank,
+    /// Pressed twice in quick succession.
+    DoubleTap,
     /// Pressed while both grips are held.
     WithBothGrips,
     /// Pressed while the same hand's grip is held.
@@ -181,6 +184,10 @@ pub enum ModAction {
     SightCapture,
     /// Draw or holster a weapon at a body holster.
     Holster,
+    /// Release every tether: the grapple's double tap.
+    ReleaseTethers,
+    /// Tighten the tethers: the grapple held with nothing new under the aim.
+    TightenTethers,
     /// Steady a two-handed weapon by its foregrip.
     Foregrip,
     /// Take a round from the belt pouch and push it into the gun's well.
@@ -635,6 +642,22 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
     if let Some(turn) = body_turn_action(ctx.mode) {
         for (control, _) in controls(turn) {
             add(control, Gesture::Press, modded(ModAction::Turn));
+        }
+    }
+    // The grapple button's gestures (`crate::controllers::bindings::grapple_button`).
+    if let Some((grapple, _)) = grapple_press(ctx.mode) {
+        for &action in grapple {
+            for (control, _) in controls(action)
+                .into_iter()
+                .filter(|(c, _)| *c != Control::Unbound)
+            {
+                add(
+                    control,
+                    Gesture::DoubleTap,
+                    modded(ModAction::ReleaseTethers),
+                );
+                add(control, Gesture::Hold, modded(ModAction::TightenTethers));
+            }
         }
     }
     let on_foot = matches!(ctx.mode, Mode::OnFoot(_));

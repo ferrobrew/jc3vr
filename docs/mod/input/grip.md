@@ -7,7 +7,7 @@ The grip takes things: a gun from a holster or a rack, a grenade from its pouch,
 - Hold to hold, everywhere. A gun, a prop, a grenade, a control, or anything else stays in the hand only while the grip is held. Letting go drops it with the hand's velocity, or docks it in the socket that fits it when the hand is over one (a rifle on the back, a pistol on the hip).
 - One targeting rule. Of everything a hand is within reach of, the target whose grab point is nearest the hand wins, whatever subsystem placed it: the sockets and pouches on the body, objects in the world, weapons (in the world, on racks and in lockers, in characters' hands, docked on the body), vehicle controls, doors, characters, and surfaces to climb.
 - Targeting runs continuously while the grip is held. A hand closed in the air and then laid on a handle takes the handle.
-- An empty grip in the air is a fist and fires no game action. A grip on a surface the hand touches climbs it.
+- An empty grip in the air is a fist and fires no game action. A grip on a surface the hand touches climbs it. The grapple is on the off-hand's upper face button, not the grip ([controllers-and-roomscale.md, "On foot"](controllers-and-roomscale.md#on-foot)).
 - One exception, for now: in a vehicle and in the wingsuit the grips fire the vehicle's and the suit's weapons, which have no other input yet. A grip there fires its weapon only when the press takes nothing, so a hand on the wheel or a handle never fires, and nothing becomes unreachable. Where those weapons go is to be decided.
 - Every target has a marker in its kind's colour, and the one a squeeze would take is highlighted before the squeeze. The markers are anchored at render time.
 

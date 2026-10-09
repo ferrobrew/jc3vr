@@ -20,7 +20,9 @@
 //! After the block it watches the paired inputs and the grip, and logs one `input: self-check
 //! finding` line per pair the first time the player presses and releases it: how many frames the
 //! raw and the semantic action each read engaged, and for the grip, the force at which the
-//! runtime's boolean pressed and released beside the mod's own thresholds.
+//! runtime's boolean pressed and released beside the mod's own thresholds. A pair that both report
+//! has passed, and the grip's finding is a measurement; only a pair one side of which read nothing
+//! is a problem ([`SelfCheckStatus::problems`]).
 //!
 //! `controllers.input.self_check` turns it off; [`request_rerun`] runs it again (the debug UI's
 //! button), for example after switching to a set that was inactive the first time.
@@ -53,6 +55,8 @@ pub(crate) struct SelfCheckStatus {
     pub(crate) report: Option<String>,
     /// The findings logged since.
     pub(crate) findings: Vec<String>,
+    /// How many of the findings are problems: a pair the runtime gave to one set only.
+    pub(crate) problems: usize,
 }
 
 /// A snapshot of the self-check's results.
@@ -134,8 +138,8 @@ impl SelfCheck {
                 .value
                 .engaged();
             let raw = watch.pair.raw.engaged(&frame.hands[hand.index()].inputs);
-            if let Some(finding) = watch.observe(semantic, raw) {
-                note_finding(finding);
+            if let Some((finding, verdict)) = watch.observe(semantic, raw) {
+                note_finding(finding, verdict == Verdict::OneSided);
             }
         }
     }
@@ -166,10 +170,13 @@ impl SelfCheck {
                         format!("value, press {:.2} release {:.2}", t.press, t.release)
                     }
                 };
-                note_finding(format!(
-                    "grip on the {} hand: the runtime's boolean {finding}; the mod reads the {rule}",
-                    hand.label()
-                ));
+                note_finding(
+                    format!(
+                        "grip on the {} hand: the runtime's boolean {finding}; the mod reads the {rule}",
+                        hand.label()
+                    ),
+                    false,
+                );
             }
         }
     }
@@ -324,8 +331,8 @@ impl OverlapWatch {
         }
     }
 
-    /// Count one frame; at the end of the first engagement, the finding.
-    fn observe(&mut self, semantic: bool, raw: bool) -> Option<String> {
+    /// Count one frame; at the end of the first engagement, the finding and its verdict.
+    fn observe(&mut self, semantic: bool, raw: bool) -> Option<(String, Verdict)> {
         if semantic || raw {
             self.raw_frames += u32::from(raw);
             self.semantic_frames += u32::from(semantic);
@@ -336,13 +343,13 @@ impl OverlapWatch {
             return None;
         }
         self.done = true;
-        let verdict = match (self.raw_frames > 0, self.semantic_frames > 0) {
-            (true, true) => "both report",
-            (true, false) => "only the raw action reports",
-            _ => "only the semantic action reports",
+        let (verdict, kind) = match (self.raw_frames > 0, self.semantic_frames > 0) {
+            (true, true) => ("both report", Verdict::Both),
+            (true, false) => ("only the raw action reports", Verdict::OneSided),
+            _ => ("only the semantic action reports", Verdict::OneSided),
         };
         let p = &self.pair;
-        Some(format!(
+        let text = format!(
             "{}.{} and hands.{} on the {} hand ({}): {verdict} (raw {} frames, semantic {}, both {})",
             p.set.name(),
             p.set.actions()[p.index].name,
@@ -352,8 +359,18 @@ impl OverlapWatch {
             self.raw_frames,
             self.semantic_frames,
             self.both_frames
-        ))
+        );
+        Some((text, kind))
     }
+}
+
+/// What a pair's press found.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Verdict {
+    /// Both actions read the input: the pair passes.
+    Both,
+    /// Only one did: the runtime gave the input to one set.
+    OneSided,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -398,7 +415,7 @@ const SOURCE_SAMPLE: &[(SetId, &str)] = &[
     (SetId::Hands, "squeeze_click"),
     (SetId::Semantic(SemanticSet::Global), "pause"),
     (SetId::Semantic(SemanticSet::OnFoot), "jump"),
-    (SetId::Semantic(SemanticSet::OnFoot), "fire_grapple"),
+    (SetId::Semantic(SemanticSet::OnFoot), "grapple"),
     (SetId::Semantic(SemanticSet::OnFoot), "turn"),
     (SetId::Semantic(SemanticSet::Wingsuit), "boost"),
     (SetId::Semantic(SemanticSet::LandVehicle), "accelerate"),
@@ -550,14 +567,21 @@ fn active_label(active: Result<bool, String>) -> String {
     }
 }
 
-fn note_finding(finding: String) {
-    tracing::info!(target: "vr", "input: self-check finding: {finding}");
-    STATUS.lock().findings.push(finding);
+fn note_finding(finding: String, problem: bool) {
+    if problem {
+        tracing::warn!(target: "vr", "input: self-check finding: {finding}");
+    } else {
+        tracing::info!(target: "vr", "input: self-check finding: {finding}");
+    }
+    let mut status = STATUS.lock();
+    status.findings.push(finding);
+    status.problems += usize::from(problem);
 }
 
 static STATUS: Mutex<SelfCheckStatus> = Mutex::new(SelfCheckStatus {
     report: None,
     findings: Vec::new(),
+    problems: 0,
 });
 
 static RERUN: AtomicBool = AtomicBool::new(false);
@@ -603,11 +627,11 @@ mod tests {
             find(
                 &pairs,
                 SemanticSet::OnFoot,
-                OnFootAction::FireGrapple as usize,
+                OnFootAction::Grapple as usize,
                 Hand::Left
             ),
             Some(RawProbe {
-                input: Input::Float(FloatInput::SqueezeForce),
+                input: Input::Bool(BoolInput::BClick),
                 axis: None
             })
         );
@@ -647,15 +671,21 @@ mod tests {
         assert_eq!(watch.observe(false, false), None);
         assert_eq!(watch.observe(true, true), None);
         assert_eq!(watch.observe(false, true), None);
-        let finding = watch
+        let (finding, verdict) = watch
             .observe(false, false)
             .expect("a finding at the release");
+        assert_eq!(verdict, Verdict::Both);
         assert!(finding.contains("both report"), "{finding}");
         assert!(
             finding.contains("raw 2 frames, semantic 1, both 1"),
             "{finding}"
         );
         assert!(watch.done);
+        // A pair only the raw action reads is a problem.
+        let mut watch = OverlapWatch::new(pair);
+        watch.observe(false, true);
+        let (_, verdict) = watch.observe(false, false).expect("a finding");
+        assert_eq!(verdict, Verdict::OneSided);
     }
 
     #[test]

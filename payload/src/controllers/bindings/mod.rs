@@ -9,8 +9,11 @@
 //! - the grip model ([`crate::controllers::grab`]) gathers the targets the weapon handling, the
 //!   vehicle handling, and the physical hands provide, resolves each hand among them, and hands
 //!   each grab to the subsystem that owns its target;
-//! - [`yank`] detects the yank gesture on the grapple hand, which the tables turn into a grapple
-//!   tap;
+//! - [`grapple_button`] reads the grapple button's gestures while tethers or a line are attached:
+//!   a tap, a double tap that releases the tethers, a hold that tethers or tightens, and a sharp
+//!   pull that zips;
+//! - [`yank`] detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
+//!   held;
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
@@ -28,6 +31,7 @@
 //! and an effector left clicked there reads as a fresh click on every frame.
 
 pub mod controls;
+pub mod grapple_button;
 pub mod hold;
 pub mod inject;
 pub mod intents;
@@ -45,9 +49,10 @@ pub use crate::controllers::bindings::recovery::{Blocker, HandRecovery};
 use crate::{
     config::Config,
     controllers::{
-        aim::sights,
+        aim::{self, sights},
         bindings::{
             controls::{ButtonControl, Controls, yaw_of},
+            grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Phase, Target, Want},
             inject::{Landing, Outcome},
             intents::SemanticInput,
@@ -361,10 +366,13 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     }));
     let grapple_hand = dominant.other();
     let grapple_distance = grapple_hand_distance(grapple_hand, &config.bindings.yank);
+    // The hand's pulls act only while the grapple button is held.
+    let grapple_held = grapple_button_held(&semantic_input, detection.mode);
+    let line = line_attached();
     let yank = state.yank.step(
         dt,
         grapple_distance,
-        yank_armed(&detection),
+        yank_armed_in(line, &detection) && grapple_held,
         &config.bindings.yank,
     );
     if let Some(yank) = yank {
@@ -377,9 +385,15 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         grapple::physical::input_tick(&grapple::physical::TickInput {
             dt,
             distance: grapple_distance,
+            button_held: grapple_held,
             detection: &detection,
             config: &config,
         })
+    };
+    controls.grapple = GrappleContext {
+        tethers: physical_grapple.tethers > 0,
+        line: yank_armed_in(line, &detection),
+        aim_target: aim::status().grapple.is_some_and(|g| g.valid),
     };
     let mut step = state.bindings.step(
         detection.mode,
@@ -698,17 +712,27 @@ fn grapple_hand_distance(hand: Hand, config: &YankConfig) -> Option<f32> {
     Some(grip.distance(yank::body_point(active.head.position, config)))
 }
 
-/// Whether a yank may fire: a grapple line is live, the character is on foot or airborne, and the
-/// line is not already carrying the character. During a reel-in or a hang the grapple hand holds the
-/// line and drives the hang swing, and a pull on the line there is a swing, not a yank.
-fn yank_armed(detection: &Detection) -> bool {
-    let wire = mode::last_snapshot()
+/// Whether the grapple has a line of its own attached, as the mode detector's snapshot reads it.
+fn line_attached() -> bool {
+    mode::last_snapshot()
         .and_then(|s| s.character)
-        .is_some_and(|c| c.grapple_wire);
-    yank_armed_in(wire, detection)
+        .is_some_and(|c| c.grapple_wire)
 }
 
-/// [`yank_armed`] over its inputs.
+/// Whether the grapple button is held on either hand in `mode`.
+fn grapple_button_held(semantic: &SemanticInput, mode: Mode) -> bool {
+    tables::grapple_press(mode).is_some_and(|(actions, _)| {
+        actions
+            .iter()
+            .filter_map(|&action| semantic.get(action))
+            .any(|input| input.hands.iter().any(|h| h.button.held()))
+    })
+}
+
+/// Whether a yank may fire, with `wire` whether a grapple line is live: the character is on foot or
+/// airborne, and the line is not already carrying the character. During a reel-in or a hang the
+/// grapple hand holds the line and drives the hang swing, and a pull on the line there is a swing,
+/// not a yank. The caller also needs the grapple button held.
 fn yank_armed_in(wire: bool, detection: &Detection) -> bool {
     wire && detection.traversal.is_none()
         && matches!(detection.mode, Mode::OnFoot(_) | Mode::Airborne(_))

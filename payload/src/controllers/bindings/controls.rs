@@ -6,6 +6,7 @@ use glam::{Quat, Vec2, Vec3};
 
 use crate::{
     controllers::{
+        bindings::grapple_button::GrappleContext,
         config::BindingsConfig,
         frame::{Button, ControllerFrame, Edges, Hand, HandFrame},
         grab::GrabVolume,
@@ -95,8 +96,10 @@ pub struct Controls {
     /// trigger fires it, and where it would retract the tethers the off-hand's stick click does
     /// instead.
     pub dual_wield: bool,
-    /// Whether the yank gesture fired this tick: a grapple tap.
+    /// Whether the yank gesture fired this tick: a sharp pull of the grapple hand.
     pub yank: bool,
+    /// What the grapple button's gestures need to know of the game.
+    pub grapple: GrappleContext,
     /// Whether the sight tuning capture chord is armed: the tuning tool is on and its marker is
     /// placed.
     pub sight_chord: bool,
@@ -150,6 +153,7 @@ impl Controls {
             weapon_cycle: false,
             dual_wield: false,
             yank: false,
+            grapple: GrappleContext::default(),
             sight_chord: false,
             pointer_hand: None,
             masked_hands: [false; 2],

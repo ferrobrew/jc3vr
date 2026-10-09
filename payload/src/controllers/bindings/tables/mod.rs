@@ -52,10 +52,7 @@ use crate::{
     controllers::{
         bindings::{
             controls::{ButtonControl, Controls},
-            grab::{
-                GrabVolume,
-                latch::{GripLatch, LatchTick},
-            },
+            grapple_button::{GrappleActions, GrappleButton, GrappleTick},
             hold::{Desired, MapKind, Target, Want},
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
             tables::{
@@ -66,6 +63,10 @@ use crate::{
         },
         config::BindingsConfig,
         frame::Hand,
+        grab::{
+            GrabVolume,
+            latch::{GripLatch, LatchTick},
+        },
         mode::{AirborneVariant, Mode, VehicleClass},
         weapons::wheel::select::WheelPress,
     },
@@ -122,6 +123,8 @@ pub struct Bindings {
     /// Each hand's pad press latch, by [`Hand::index`].
     pads: [PadLatch; 2],
     stick_chord: StickChord,
+    /// The grapple button's gestures.
+    grapple: GrappleButton,
 }
 
 impl Bindings {
@@ -139,6 +142,7 @@ impl Bindings {
             }; 2],
             pads: [PadLatch { press: None }; 2],
             stick_chord: StickChord::new(),
+            grapple: GrappleButton::new(),
         }
     }
 
@@ -258,6 +262,22 @@ impl Bindings {
         };
         let mut out = EvalSink::new(&intents, latches, controls.move_rotation, map);
         declare(&mut out, mode, &ctx);
+        if let Some((inputs, actions)) = grapple_press(mode) {
+            let button = inputs
+                .iter()
+                .map(|&a| intents.button(a))
+                .fold(ButtonControl::default(), merge_buttons);
+            self.grapple.apply(
+                GrappleTick {
+                    button,
+                    context: controls.grapple,
+                    yank: controls.yank,
+                    dt,
+                },
+                actions,
+                &mut out.desired,
+            );
+        }
         let body_turn = body_turn_action(mode).map_or(0.0, |a| intents.raw(a));
         if !matches!(mode, Mode::Airborne(AirborneVariant::Wingsuit)) {
             self.evade_press = None;
@@ -353,6 +373,56 @@ const MASKABLE: [Physical; 8] = [
     Physical::UpperFace,
     Physical::System,
 ];
+
+/// The grapple's semantic actions in `mode`, and the game actions its gestures drive there.
+pub(crate) const fn grapple_press(mode: Mode) -> Option<(&'static [ActionId], GrappleActions)> {
+    // On foot and in the wingsuit the release is the gamepad's B, which the grapple's button
+    // took; in a vehicle it is the release alone.
+    const ON_FOOT: GrappleActions = GrappleActions {
+        fire: declare::GRAPPLE,
+        release: declare::PAD_B,
+    };
+    const VEHICLE: GrappleActions = GrappleActions {
+        fire: declare::GRAPPLE_VEHICLE,
+        release: &[Action::RELEASE_GRAPPLE],
+    };
+    match mode {
+        Mode::OnFoot(_) | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
+            Some((&ON_FOOT_GRAPPLE, ON_FOOT))
+        }
+        Mode::Airborne(AirborneVariant::Wingsuit) => Some((&WINGSUIT_GRAPPLE, ON_FOOT)),
+        Mode::Vehicle(seat) => Some((
+            match seat.class {
+                VehicleClass::Helicopter => &HELICOPTER_GRAPPLE,
+                VehicleClass::Plane => &PLANE_GRAPPLE,
+                VehicleClass::Car
+                | VehicleClass::Motorcycle
+                | VehicleClass::Sea
+                | VehicleClass::Unknown => &LAND_GRAPPLE,
+            },
+            VEHICLE,
+        )),
+        Mode::Ui => None,
+    }
+}
+
+const ON_FOOT_GRAPPLE: [ActionId; 2] = [OnFootAction::Grapple.id(), OnFootAction::FireGrapple.id()];
+const WINGSUIT_GRAPPLE: [ActionId; 2] = [
+    WingsuitAction::Grapple.id(),
+    WingsuitAction::FireGrapple.id(),
+];
+const LAND_GRAPPLE: [ActionId; 1] = [LandVehicleAction::Grapple.id()];
+const HELICOPTER_GRAPPLE: [ActionId; 1] = [HelicopterAction::Grapple.id()];
+const PLANE_GRAPPLE: [ActionId; 1] = [PlaneAction::Grapple.id()];
+
+/// Two presses of one gesture as one: held while either is, with either's edges.
+pub(crate) fn merge_buttons(a: ButtonControl, b: ButtonControl) -> ButtonControl {
+    ButtonControl {
+        down: a.down || b.down,
+        pressed: a.pressed || b.pressed,
+        released: a.released || b.released,
+    }
+}
 
 /// The vector action of `set` that moves or steers, whose flick the wingsuit's evade reads.
 const fn move_action(set: SemanticSet) -> Option<ActionId> {
