@@ -1,0 +1,19 @@
+# Template: fill testing/recordings/door_by_handle.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a car door taken by its handle"
+description = "Recorded with OPEN DOORS BY HAND and GRIP MARKERS on, empty-handed, beside a parked, empty car (vehicle-doors.md, grip.md). Bring the left hand to the driver's door's handle without touching the door, squeeze, pull it open, let go."
+recording = "../recordings/door_by_handle.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "the grip press near the car notes its doors"
+log = "door (shut): handle"
+
+[[expect]]
+name = "the hand took the latched door"
+signal = "doors.grips"
+at_least = 1
+
+[[expect]]
+name = "the latch gave to the pull"
+signal = "doors.unlatches"
+at_least = 1

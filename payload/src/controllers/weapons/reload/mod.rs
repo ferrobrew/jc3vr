@@ -210,7 +210,9 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         !gun_hands[h.index()] && !occupied[h.index()] && active.hands[h.index()].is_some()
     });
     let pouch = volumes::magazine_pouch(body_frame, dims, &config.weapons.pouches, gun_side, free);
-    if free.is_some() {
+    // A pouch with nothing to give is not offered: no round comes out of it.
+    let stocked = tick.reserve > 0 || tick.reading.unlimited;
+    if free.is_some() && stocked {
         candidates.push(pouch);
     }
     if let Some(handle) = state.handle_candidate(&tick, free, reload) {

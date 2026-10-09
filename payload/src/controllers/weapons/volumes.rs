@@ -1,12 +1,15 @@
 //! Placing the body's grab volumes: the holsters, the grenade pouch, the magazine pouch, and the C4
 //! pouch. Pure.
 //!
-//! The volumes are placed in the cockpit frame relative to the body frame. The cockpit frame
-//! composes onto the character's world transform with the character's animated head at its origin
-//! (see `headpose::xr`), so in the cockpit frame the body faces the frame's own axes (+X right, +Y
-//! up, -Z forward) with the eyes at the origin. The volumes therefore stay on the body when the
-//! player turns or leans their head to look at them, and move with the body when a stick turn or the
-//! roomscale chase moves it.
+//! The volumes are placed in the cockpit frame relative to the body frame: the player's body as the
+//! headset sees it, not the character's animated head that the cockpit frame's origin follows (see
+//! `headpose::xr`), which sits ahead of the player whenever the animation leans or the roomscale
+//! chase trails. The upper body hangs from the neck pivot, which the head's pose places below and
+//! behind the eyes ([`crate::controllers::body::torso`]), facing the estimated torso; the waist
+//! hangs over the feet ([`crate::controllers::body::stance`]), which stay put through a lean or a
+//! reach, so the hip holsters and the belt's pouch do not swing out with a lean. The volumes
+//! therefore stay on the body when the player turns or leans their head to look at them, and move
+//! with the body when the player walks, turns, or a stick turn moves it.
 //!
 //! Vertically, the body frame follows the head down once the head drops further than a deadband
 //! below its upright height, so a crouch carries the holsters down while glancing at one does not,
@@ -55,7 +58,7 @@
 //! seated, and the standing and roomscale postures are standing. That mapping is the caller's job
 //! ([`crate::controllers::weapons`]), so that this module stays pure.
 
-use glam::{Mat3, Quat, Vec3};
+use glam::{Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::{
     body::{self, BodyDimensions, alignment::measure::SkeletonLandmarks},
@@ -89,8 +92,9 @@ impl Stance {
 /// which body the volumes ride.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BodyFrame {
-    /// The body frame's origin in the cockpit frame: the eyes at their upright height, dropped with
-    /// a head that has dropped further than the deadband below it.
+    /// The body frame's origin in the cockpit frame: the eyes as they would be on the player's
+    /// upright neck, at their upright height, dropped with a head that has dropped further than the
+    /// deadband below it.
     pub origin: Vec3,
     pub seated: bool,
     /// The body the volumes ride.
@@ -100,9 +104,10 @@ pub struct BodyFrame {
 /// The body the volumes ride, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Anchor {
-    /// The player's body, estimated from the dimensions, facing this heading (radians about +Y,
-    /// positive turning -Z toward -X).
-    Body { yaw: f32 },
+    /// The player's body, estimated from the dimensions, facing `yaw` (radians about +Y, positive
+    /// turning -Z toward -X), with its hip joints' middle over `pelvis` (`(x, z)`, the feet's
+    /// estimate), or with `None`, under the shoulders.
+    Body { yaw: f32, pelvis: Option<Vec2> },
     /// The character's skeleton.
     Skeleton(SkeletonLandmarks),
 }
@@ -121,14 +126,17 @@ impl Anchor {
 pub struct HeadDrop {
     /// The head's cockpit position.
     pub position: Vec3,
+    /// Where the eyes would be on the player's upright neck, `(x, z)` in the cockpit frame: the
+    /// neck pivot's place carried forward to the eyes along the torso's heading.
+    pub upright: Vec2,
     /// How far the head is pitched down from level, radians (negative looking up).
     pub pitch_down: f32,
     /// The body frame's height on the last tick, when there was one.
     pub previous_y: Option<f32>,
 }
 
-/// The body frame for the head `head` in `stance`, riding `anchor`: the eyes at the cockpit
-/// frame's origin, until the head drops more than `crouch_deadband` below it.
+/// The body frame for the head `head` in `stance`, riding `anchor`: the eyes over the upright neck
+/// at the cockpit frame's origin height, until the head drops more than `crouch_deadband` below it.
 ///
 /// A head that drops while it looks well down is bending over to look at the body, not crouching,
 /// and the pouches must stay where the hand is reaching for them: from [`LOOK_DOWN_START`] to
@@ -162,11 +170,19 @@ pub fn body_frame(
         _ => target,
     };
     let anchor = match anchor {
-        Anchor::Body { yaw } if !yaw.is_finite() => Anchor::Body { yaw: 0.0 },
+        Anchor::Body { yaw, pelvis } => Anchor::Body {
+            yaw: if yaw.is_finite() { yaw } else { 0.0 },
+            pelvis: pelvis.filter(|p| p.is_finite()),
+        },
         anchor => anchor,
     };
+    let upright = if head.upright.is_finite() {
+        head.upright
+    } else {
+        Vec2::ZERO
+    };
     BodyFrame {
-        origin: Vec3::new(0.0, y, 0.0),
+        origin: Vec3::new(upright.x, y, upright.y),
         seated: stance == Stance::Seated,
         anchor,
     }
@@ -407,15 +423,16 @@ fn belt(frame: &BodyFrame, dims: &BodyDimensions, side: Hand) -> Vec3 {
 /// where a standing body's hip joints are.
 fn waist(frame: &BodyFrame, dims: &BodyDimensions, offset: Vec3) -> Vec3 {
     let pelvis = pelvis_girdle(frame);
+    let hip_drop = dims.height * HIP_HEIGHT_FRACTION - dims.eye_height;
     let (hips, shoulders_up) = match &frame.anchor {
-        Anchor::Body { .. } => (
-            frame.origin
-                + pelvis
-                    * Vec3::new(
-                        0.0,
-                        dims.height * HIP_HEIGHT_FRACTION - dims.eye_height,
-                        body::EYES_FORWARD_OF_SHOULDERS,
-                    ),
+        Anchor::Body {
+            pelvis: Some(over), ..
+        } => (
+            Vec3::new(over.x, frame.origin.y + hip_drop, over.y),
+            dims.shoulder_height - dims.height * HIP_HEIGHT_FRACTION,
+        ),
+        Anchor::Body { pelvis: None, .. } => (
+            frame.origin + pelvis * Vec3::new(0.0, hip_drop, body::EYES_FORWARD_OF_SHOULDERS),
             dims.shoulder_height - dims.height * HIP_HEIGHT_FRACTION,
         ),
         Anchor::Skeleton(skeleton) => {
@@ -463,7 +480,7 @@ fn shoulder_width(frame: &BodyFrame, dims: &BodyDimensions) -> f32 {
 /// The pelvis's orientation: the body's heading, or the line through the skeleton's hip joints.
 fn pelvis_girdle(frame: &BodyFrame) -> Quat {
     match &frame.anchor {
-        Anchor::Body { yaw } => Quat::from_rotation_y(*yaw),
+        Anchor::Body { yaw, .. } => Quat::from_rotation_y(*yaw),
         Anchor::Skeleton(skeleton) => girdle_basis(skeleton.hips),
     }
 }
@@ -484,7 +501,7 @@ impl Chest {
 /// the body's heading, or the skeleton's, oriented by the line through them.
 fn chest_girdle(frame: &BodyFrame, dims: &BodyDimensions) -> Chest {
     match &frame.anchor {
-        Anchor::Body { yaw } => {
+        Anchor::Body { yaw, .. } => {
             let basis = Quat::from_rotation_y(*yaw);
             Chest {
                 shoulders: body::shoulder_positions(frame.origin, basis, dims),

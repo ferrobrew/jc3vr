@@ -10,6 +10,7 @@ use crate::{
     controllers::{
         body::procedural::{self, authority::Case},
         frame::{self as controller_frame, Hand},
+        grab::{latch::GripLatch, tick as grab_tick},
         hands::grip,
         locomotion,
         menu::status::{self as status_page, Health},
@@ -154,6 +155,11 @@ signals! {
     PushUps => "push_up.pushes", Counter, "Pushes up with the hands pressed down.";
     PushingUp => "push_up.lifting", Flag, "The hands lift the body.";
     ArticulatedGrips => "articulated.grips", Counter, "Articulated objects a hand took hold of.";
+    GripGrabs => "grab.taken", Counter, "Targets the grips took.";
+    GripLeftHolds => "grab.left_holds", Flag, "The left grip holds what it took.";
+    GripRightHolds => "grab.right_holds", Flag, "The right grip holds what it took.";
+    GripLeftFist => "grab.left_fist", Flag, "The left grip is closed on nothing.";
+    GripRightFist => "grab.right_fist", Flag, "The right grip is closed on nothing.";
     DoorGrips => "doors.grips", Counter, "Grips taken on a latched vehicle door.";
     DoorUnlatches => "doors.unlatches", Counter, "Vehicle door latches a hand undid.";
     DoorOnLatch => "doors.on_latch", Flag, "A hand grips a latched vehicle door.";
@@ -304,6 +310,13 @@ impl Signal {
             Signal::PushUps => count(vault::status().pushes),
             Signal::PushingUp => flag(vault::status().lifting),
             Signal::ArticulatedGrips => count(physical_hands::status().pickup.articulated_grips),
+            Signal::GripGrabs => count(grab_tick::status().grabs),
+            Signal::GripLeftHolds => grip_latch(Hand::Left, GripLatch::grabbing),
+            Signal::GripRightHolds => grip_latch(Hand::Right, GripLatch::grabbing),
+            Signal::GripLeftFist => grip_latch(Hand::Left, |l| matches!(l, GripLatch::Fist { .. })),
+            Signal::GripRightFist => {
+                grip_latch(Hand::Right, |l| matches!(l, GripLatch::Fist { .. }))
+            }
             Signal::DoorGrips => count(physical_hands::status().pickup.door_grips),
             Signal::DoorUnlatches => count(physical_hands::status().pickup.unlatches),
             Signal::DoorOnLatch => flag(physical_hands::status().hands.iter().any(|h| h.latched)),
@@ -465,6 +478,16 @@ pub(crate) fn parse_health(word: &str) -> Option<Health> {
 /// The hand the wielded weapon's first gun rides.
 fn wielded_holder() -> Option<Hand> {
     weapons::status().wielded.and_then(|w| w.weapon.holder)
+}
+
+/// Whether `hand`'s grip passes `test`, while the grip model resolves the hands.
+fn grip_latch(hand: Hand, test: impl Fn(GripLatch) -> bool) -> Value {
+    let status = grab_tick::status();
+    if status.live {
+        Value::Bool(test(status.hands[hand.index()].latch))
+    } else {
+        Value::Missing
+    }
 }
 
 #[cfg(test)]

@@ -432,6 +432,18 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         characters: &config.characters,
         hand_bodies: physics::status().hands.map(|h| h.body_id),
     };
+    // The vehicles whose doors the free palms might reach, offered by their handles.
+    let door_vehicles = if pickup_on && config.doors.enabled {
+        let near: Vec<Vec3> = Hand::BOTH
+            .into_iter()
+            .filter(|h| free[h.index()])
+            .filter_map(|h| active.hands[h.index()].map(|c| compose(c.wrist).position))
+            .collect();
+        // SAFETY: the simulation phase outside the physics step, on the aim update's thread.
+        unsafe { doors::scan::near(&near, active.world_scale) }
+    } else {
+        Vec::new()
+    };
     let climb_on = climb::enabled(&config);
     let mut climb_palms = [None; 2];
     let mut climb_pressing = [false; 2];
@@ -511,6 +523,18 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
             } else {
                 None
             };
+            // SAFETY: the simulation phase outside the physics step; the vehicles are this tick's.
+            let door = unsafe {
+                doors::scan::handle_reach(
+                    body_palm.centre,
+                    &door_vehicles,
+                    active.world_scale,
+                    &config.doors,
+                    &mut |from, to| cast(from, to, &reach_options),
+                    &mut reach_notes[i],
+                )
+            };
+            let reach = grasp::nearest(reach.into_iter().chain(door));
             if climb_on {
                 // The palm in the rig: its tracking-space place turned and scaled as the world
                 // palm is, but not carried by the head's world position, which the climb moves.
@@ -604,6 +628,18 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         } else {
             None
         };
+        // SAFETY: the simulation phase outside the physics step; the vehicles are this tick's.
+        let door = unsafe {
+            doors::scan::handle_reach(
+                palm.centre,
+                &door_vehicles,
+                active.world_scale,
+                &config.doors,
+                &mut |from, to| cast(from, to, &reach_options),
+                &mut reach_notes[i],
+            )
+        };
+        let reach = grasp::nearest(reach.into_iter().chain(door));
         hand_status[i] = HandStatus {
             acting: true,
             palm: Some(palm),

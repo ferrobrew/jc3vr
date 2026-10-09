@@ -1,5 +1,6 @@
-//! Taking a weapon off a rack. The design is in `docs/mod/input/physical-weapons.md`, the engine
-//! side in `docs/engine/gameplay/weapon-equip-and-drop.md`.
+//! Taking a weapon off a rack, or out of a locker. The design is in
+//! `docs/mod/input/physical-weapons.md`, the engine side in
+//! `docs/engine/gameplay/weapon-equip-and-drop.md`.
 //!
 //! A rack's weapon is placed by its weapon placement rule in the rack state, which keeps no body in
 //! the physics world, so the hands' reach cannot find it. The game offers it to the player through
@@ -7,8 +8,10 @@
 //! ([`InteractionUserProxy::m_ValidEntries`]), either the weapon's own pickup interaction (a rack
 //! that uses the ordinary pickup), or a node standing for the rack's placement rule
 //! ([`WeaponPlacementRule`]), whose spawned weapon it is. [`targets`] walks those entries as a
-//! swimming character's pickup does, and the weapon handling places grab volumes along each rack
-//! weapon for a free hand ([`crate::controllers::weapons::hold::world`]).
+//! swimming character's pickup does, and the weapon handling offers each weapon to a free hand
+//! ([`crate::controllers::weapons::hold::world`]). Any weapon an entry offers is taken, whatever
+//! its state, except one a character holds or one already being picked up: a locker's weapon,
+//! which the game offers the same way, is not in the rack state.
 //!
 //! A grab of one takes it ([`take`]), found again among the entries so that it is known alive:
 //!
@@ -143,10 +146,12 @@ pub(crate) unsafe fn take(
     };
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *(target.weapon as *mut WeaponBase) };
-    if weapon.m_State != WeaponState::E_WS_WEAPON_RACK {
+    if !offered_state(weapon) {
         return Err(RackRefusal::Gone);
     }
-    if !weapon.m_InfinitePickup {
+    // A copy is asked of a rack with unlimited stock; anything else hands its own weapon over.
+    let restocks = weapon.m_InfinitePickup && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
+    if !restocks {
         let slot = unsafe { pickup::take(hand, weapon, options) }.map_err(RackRefusal::Pickup)?;
         RACK_TAKES.lock().takes += 1;
         tracing::info!(
@@ -321,7 +326,7 @@ unsafe fn walk(owner: &Character, mut visit: impl FnMut(&WeaponBase, Strong) -> 
             continue;
         };
         let weapon = unsafe { weapon_of(strong.object()) };
-        if let Some(weapon) = weapon.filter(|w| w.m_State == WeaponState::E_WS_WEAPON_RACK)
+        if let Some(weapon) = weapon.filter(|w| offered_state(w))
             && visit(weapon, strong)
         {
             return;
@@ -331,6 +336,23 @@ unsafe fn walk(owner: &Character, mut visit: impl FnMut(&WeaponBase, Strong) -> 
 
 /// The most entries a walk visits, a bound against a corrupt array.
 const MAX_ENTRIES: usize = 256;
+
+/// Whether an offered weapon in `weapon`'s state may be taken: any but one a character holds,
+/// wields, or carries, and one already being picked up.
+fn offered_state(weapon: &WeaponBase) -> bool {
+    // Read as the raw value, so that a state the enum does not name is not misread.
+    let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
+    ![
+        WeaponState::E_WS_WIELDING,
+        WeaponState::E_WS_DUAL_WIELDING,
+        WeaponState::E_WS_HOLSTERED,
+        WeaponState::E_WS_HOLSTERED_INVISIBLE,
+        WeaponState::E_WS_PICKING_UP,
+        WeaponState::E_WS_WINGSUIT_WEAPON,
+    ]
+    .into_iter()
+    .any(|s| s as i32 == state)
+}
 
 /// The weapon `entry` offers, held alive: its context's own weapon, or the weapon its entry node's
 /// placement rule spawned.

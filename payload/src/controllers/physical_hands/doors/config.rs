@@ -11,6 +11,9 @@ pub struct DoorsConfig {
     pub enabled: bool,
     /// How far outside a door's box a palm still reaches it, metres of the player's hand.
     pub reach_m: f32,
+    /// How far from a door's handle a palm takes the door, whatever the reach's rays hit, metres of
+    /// the player's hand.
+    pub handle_reach_m: f32,
     /// Where on a closed door its handle area starts, as a share of the way from the door's hinge
     /// to its far edge, `0..=1`: a grip nearer the hinge than this takes nothing. Zero takes a
     /// closed door anywhere.
@@ -25,6 +28,7 @@ impl DoorsConfig {
         Self {
             enabled: true,
             reach_m: 0.06,
+            handle_reach_m: 0.15,
             handle_share: 0.4,
             unlatch_pull_m: 0.05,
         }

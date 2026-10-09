@@ -24,13 +24,15 @@ Everything a hand can take is one `GripTarget` (`grab/target.rs`):
 
 A hand has two points. The sockets and pouches on the player's own body are reached by the player's own grip, before the body-scale remap, so a hand on the player's own belt finds the pouch on it whatever the character's proportions. Everything else (a held gun's parts, what lies on the character, the world, the cockpit) is reached by the hand as it is drawn.
 
+The player's body is where the headset puts it, not where the character's animated head is: the cockpit frame's origin follows that head, which sits ahead of the player whenever the animation leans or the roomscale chase trails. The shoulders, the chest, and their sockets and pouches hang from the neck pivot (from the torso estimate, or below and behind the eyes by the head's own pose without one), facing the estimated torso; the hips and the belt's pouch hang over the feet's estimate, which stays put through a lean or a reach, so they do not swing out with a lean ([controllers.md](controllers.md#holsters-pouches-the-foregrip-and-the-action-runs-tier), [alignment.md](../body/alignment.md)).
+
 The providers place their targets on every input tick:
 
 | Provider | Targets | Consumer |
 | --- | --- | --- |
-| The weapon handling (`weapons/begin.rs`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip (to take it over), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands and on racks, the held grenade's pin, a live grenade, and a magazine in the world | `weapons::finish_tick` |
+| The weapon handling (`weapons/begin.rs`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin, and only while it has something to give: a grenade, room for another charge, or a round in reserve), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip (to take it over), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands, on racks, and in lockers (each at the point of the gun nearest the hand), the held grenade's pin, a live grenade, and a magazine in the world | `weapons::finish_tick` |
 | The vehicle handling (`vehicles/begin.rs`) | The driver's controls (one grab point per hand on each), the cockpit's buttons, the parachute's handles (each with a reach margin), and the mounted gun's handles, with what a hand holds as held | `vehicles::finish_tick` |
-| The physical hands (`physical_hands/targets.rs`) | What each empty hand's reach found (an object, a hinged object, a weapon, a door, a character), what a hand holds, a surface to climb, and the helicopter the player hangs from | `pickup::finish_tick`, `climb::finish_tick`, `stunt::finish_tick` |
+| The physical hands (`physical_hands/targets.rs`) | What each empty hand's reach found (an object, a hinged object, a weapon, a door, a character), every door near the hand by its handle, what a hand holds, a surface to climb, and the helicopter the player hangs from | `pickup::finish_tick`, `climb::finish_tick`, `stunt::finish_tick` |
 
 Each subsystem only provides and consumes. The input tick (`bindings::input_tick`) gathers the targets, resolves the hands among them, steps the grips, and hands each grab to the subsystem its target names.
 
@@ -105,5 +107,7 @@ Nothing else draws a marker, logs a press, or decides between two subsystems' ta
 3. Hold a hand over a pouch and the hip holster at once: the nearer marker is the brightest, and a squeeze takes that one.
 4. Draw a rifle from the back and let go over the back: it docks. Let go in front of the body: it falls.
 5. Reach for a crate on the ground with the palm on the ground beside it: the crate's white marker is highlighted, not the ground's orange one. Lay the palm on a bare wall: the wall's orange marker is highlighted, and a squeeze climbs.
-6. Sit in a car: green markers sit on the wheel's rim near each hand and on the nitrous button. Grip the rim: the marker goes solid.
+6. Sit in a car: green markers sit on the wheel's rim near each hand and on the nitrous button. Grip the rim: the marker goes solid. Stand beside a parked car: a green marker sits on each door's handle once a hand comes within 15 cm of it, and a squeeze takes the door.
 7. Press a grip near a barrel and read the log's `grip: pressed` line: its notes say what the reach hit and why it did or did not take it.
+8. Lean over a table without stepping: the hip holsters and the belt's pouch stay at the hips, and the chest's pouches lean with the shoulders. Stand half a metre behind where Rico's head is drawn (the chase trailing): the markers sit on the player's own body.
+9. Throw every grenade: the grenade pouch's marker goes, and comes back with a grenade picked up. Take a gun from a soldier's hands, and one from a locker: the gold marker sits on the gun where the hand would close.

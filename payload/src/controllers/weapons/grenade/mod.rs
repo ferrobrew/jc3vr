@@ -129,6 +129,9 @@ pub struct GrenadeStatus {
     pub last_release: Option<Vec3>,
     /// Whether the grenade weapon's update ran for the local player since the payload loaded.
     pub weapon_seen: bool,
+    /// Whether the player has a grenade to take from the pouch, as the weapon's last update read
+    /// it, or `None` before one ran.
+    pub in_stock: Option<bool>,
     pub primed: u64,
     pub thrown: u64,
     /// Grenades gone from the hand before their throw (almost always their fuse).
@@ -143,6 +146,12 @@ pub struct GrenadeStatus {
     pub catch: CatchCounts,
     /// The most recent steps, newest last.
     pub events: Vec<GrenadeEvent>,
+}
+
+/// Whether the grenade pouch has a grenade to give: the player has one, or the grenade weapon has
+/// not been read yet. A pouch with nothing to give is not offered.
+pub(crate) fn in_stock() -> bool {
+    STATE.lock().status.in_stock != Some(false)
 }
 
 pub fn status() -> GrenadeStatus {
@@ -403,6 +412,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         fuse: None,
         last_release: None,
         weapon_seen: false,
+        in_stock: None,
         primed: 0,
         thrown: 0,
         gone: 0,
@@ -586,6 +596,8 @@ fn update_from_user(
     }
     // SAFETY: as above, on the thread that updates the weapon.
     let view = unsafe { weapon_view(w) };
+    // SAFETY: as above.
+    state.status.in_stock = Some(unsafe { has_grenades(w) });
     let hand = state.stage.hand();
     let (next, action, outcome) = stage::before_update(state.stage, view);
     state.stage = next;
@@ -765,6 +777,16 @@ unsafe fn local_weapon<'a>(
         return None;
     }
     unsafe { weapon.as_mut() }
+}
+
+/// Whether the player has a grenade for the weapon to prime.
+///
+/// # Safety
+///
+/// `weapon` must be the local player's live thrown grenade weapon, on the thread that updates it.
+unsafe fn has_grenades(weapon: &ThrownGrenadeWeapon) -> bool {
+    let base = unsafe { &*(weapon as *const ThrownGrenadeWeapon).cast::<WeaponBase>() };
+    (unsafe { base.GetTotalAmmo() }) > 0
 }
 
 /// The weapon's state as its update begins.

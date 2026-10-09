@@ -162,6 +162,16 @@ pub fn status() -> C4Status {
     STATE.lock().status.clone()
 }
 
+/// Whether the C4 pouch has a charge to give: fewer charges are placed than may be, as the weapon's
+/// last update read it, or it has not been read yet. A pouch with nothing to give is not offered.
+pub(crate) fn in_stock() -> bool {
+    STATE
+        .lock()
+        .status
+        .charges
+        .is_none_or(|(live, max)| live < max)
+}
+
 /// The placed charges at the weapon's last update, or `None` before it ran.
 pub fn charges() -> Option<i32> {
     STATE.lock().status.charges.map(|(live, _)| live)

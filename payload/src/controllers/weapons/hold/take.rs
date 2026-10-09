@@ -107,7 +107,12 @@ pub(crate) unsafe fn begin_tick(inputs: &TakeInputs) -> Vec<Candidate> {
     }
     state.status.held_targets = held;
     state.status.rack_targets = state.targets.len() - held;
-    world::candidates(&state.targets, settings.take_radius_m, inputs.free)
+    world::candidates(
+        &state.targets,
+        settings.take_radius_m,
+        inputs.free,
+        inputs.active.hands.map(|h| h.map(|h| h.grip.position)),
+    )
 }
 
 /// Take the weapon `hand`'s grab of a

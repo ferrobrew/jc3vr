@@ -22,12 +22,18 @@ const BODIES: [BodyDimensions; 3] = [
 const STANDING: BodyFrame = BodyFrame {
     origin: Vec3::ZERO,
     seated: false,
-    anchor: Anchor::Body { yaw: 0.0 },
+    anchor: Anchor::Body {
+        yaw: 0.0,
+        pelvis: None,
+    },
 };
 const SEATED: BodyFrame = BodyFrame {
     origin: Vec3::ZERO,
     seated: true,
-    anchor: Anchor::Body { yaw: 0.0 },
+    anchor: Anchor::Body {
+        yaw: 0.0,
+        pelvis: None,
+    },
 };
 const POUCHES: PouchesConfig = PouchesConfig::new();
 
@@ -337,6 +343,7 @@ fn a_hand_at_a_volume_grabs_it_and_a_hand_in_front_grabs_nothing() {
 fn level(position: Vec3) -> HeadDrop {
     HeadDrop {
         position,
+        upright: Vec2::ZERO,
         pitch_down: 0.0,
         previous_y: None,
     }
@@ -344,11 +351,15 @@ fn level(position: Vec3) -> HeadDrop {
 
 #[test]
 fn bending_over_to_look_at_the_belt_does_not_move_the_pouches() {
-    let upright = Anchor::Body { yaw: 0.0 };
+    let upright = Anchor::Body {
+        yaw: 0.0,
+        pelvis: None,
+    };
     let y = |position: Vec3, pitch_deg: f32, previous_y| {
         body_frame(
             HeadDrop {
                 position,
+                upright: Vec2::ZERO,
                 pitch_down: pitch_deg.to_radians(),
                 previous_y,
             },
@@ -378,7 +389,10 @@ fn bending_over_to_look_at_the_belt_does_not_move_the_pouches() {
 
 #[test]
 fn the_body_drops_only_past_the_deadband() {
-    let upright = Anchor::Body { yaw: 0.0 };
+    let upright = Anchor::Body {
+        yaw: 0.0,
+        pelvis: None,
+    };
     let origin = |head, stance| body_frame(level(head), stance, 0.15, upright).origin;
     for stance in [Stance::Standing, Stance::Seated] {
         assert_eq!(origin(Vec3::new(0.3, -0.1, 0.2), stance), Vec3::ZERO);
@@ -394,7 +408,10 @@ fn the_body_drops_only_past_the_deadband() {
             level(Vec3::ZERO),
             Stance::Standing,
             0.15,
-            Anchor::Body { yaw: f32::NAN }
+            Anchor::Body {
+                yaw: f32::NAN,
+                pelvis: Some(Vec2::NAN),
+            }
         )
         .anchor,
         upright
@@ -454,7 +471,7 @@ fn the_volumes_turn_with_the_torso_about_the_eyes() {
         let ahead = every_volume(&BodyFrame { seated, ..STANDING }, &DIMS);
         let turned_body = BodyFrame {
             seated,
-            anchor: Anchor::Body { yaw },
+            anchor: Anchor::Body { yaw, pelvis: None },
             ..STANDING
         };
         let turned_rico = BodyFrame {
@@ -574,4 +591,56 @@ fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn the_body_hangs_from_the_players_neck_not_the_cockpit_origin() {
+    // The player stands half a metre behind the cockpit frame's origin, where the character's
+    // animated head leans on ahead of them.
+    let behind = Vec2::new(0.0, 0.5);
+    let frame = body_frame(
+        HeadDrop {
+            upright: behind,
+            ..level(Vec3::new(0.0, 0.0, 0.5))
+        },
+        Stance::Standing,
+        0.15,
+        Anchor::Body {
+            yaw: 0.0,
+            pelvis: None,
+        },
+    );
+    assert_eq!(frame.origin, Vec3::new(0.0, 0.0, 0.5));
+    let at_origin = holsters(&STANDING, &DIMS);
+    let at_player = holsters(&frame, &DIMS);
+    for (a, b) in at_origin.iter().zip(&at_player) {
+        assert!(
+            (b.centre - a.centre - Vec3::new(0.0, 0.0, 0.5)).length() < 1e-5,
+            "{:?} moves with the player",
+            a.volume
+        );
+    }
+}
+
+#[test]
+fn the_waist_stays_over_the_feet_through_a_lean() {
+    // Upright, the feet are under the shoulders, and the hips sit where they always did.
+    let under = Vec2::new(0.0, body::EYES_FORWARD_OF_SHOULDERS);
+    let upright = BodyFrame {
+        anchor: Anchor::Body {
+            yaw: 0.0,
+            pelvis: Some(under),
+        },
+        ..STANDING
+    };
+    let hip = |frame: &BodyFrame| centre(&holsters(frame, &DIMS), RIGHT_HIP);
+    let shoulder = |frame: &BodyFrame| centre(&holsters(frame, &DIMS), RIGHT_SHOULDER);
+    assert!((hip(&upright) - hip(&STANDING)).length() < 1e-5);
+    // Leaning forward 0.3 m over the feet: the shoulders go with the head, the hips stay.
+    let leaning = BodyFrame {
+        origin: Vec3::new(0.0, 0.0, -0.3),
+        ..upright
+    };
+    assert!((hip(&leaning) - hip(&upright)).length() < 1e-5);
+    assert!((shoulder(&leaning) - shoulder(&upright) - Vec3::new(0.0, 0.0, -0.3)).length() < 1e-5);
 }

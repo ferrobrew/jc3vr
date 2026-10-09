@@ -7,7 +7,8 @@
 //!
 //! - [`config`]: the settings;
 //! - [`geometry`]: a door's box, its handle area, and the pull on its latch, pure;
-//! - [`engine`]: a vehicle's doors as its door controller keeps them, and the latch.
+//! - [`engine`]: a vehicle's doors as its door controller keeps them, and the latch;
+//! - [`scan`]: the doors near the hands, offered by their handles whatever the reach's rays hit.
 //!
 //! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks [`reach`] about
 //! every ray hit on a vehicle or a loosened vehicle part. A hit on an open door's own body takes the
@@ -20,6 +21,7 @@
 pub mod config;
 pub mod engine;
 pub mod geometry;
+pub(crate) mod scan;
 
 use std::num::NonZeroUsize;
 

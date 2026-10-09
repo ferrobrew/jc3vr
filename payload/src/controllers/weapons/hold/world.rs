@@ -1,12 +1,12 @@
 //! Weapons in the world that the hands' reach cannot find, because they have no body in the
-//! physics world: a gun in a living character's hands, and a weapon on a rack. Pure: the grab
-//! volumes placed on them and which one a grab took.
+//! physics world: a gun in a living character's hands, and a weapon on a rack or in a locker.
+//! Pure: the grip targets placed on them and which one a grab took.
 //!
 //! Each target is a short segment along the gun, from the grip of the hand that holds it to the
-//! grip of the other hand (or the gun's origin without one), in the cockpit frame. Its volumes are
-//! spheres along the segment, so that a hand closing anywhere on the gun takes it, placed only for
-//! a hand without a gun of its own. A grab of one ([`GrabVolume::WorldWeapon`]) takes the target
-//! whose segment is nearest the grabbing hand.
+//! grip of the other hand (or the gun's origin without one), in the cockpit frame. Each hand
+//! without a gun of its own is offered the point of the segment nearest it, so that a hand closing
+//! anywhere on the gun takes it, and the marker shows where. A grab of one
+//! ([`GrabVolume::WorldWeapon`]) takes the target whose segment is nearest the grabbing hand.
 
 use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
@@ -37,21 +37,28 @@ pub struct WorldTarget {
     pub gun: Pose,
 }
 
-/// The grab volumes on `targets`, of `radius`, for each hand in `free` (by [`Hand::index`]).
-pub fn candidates(targets: &[WorldTarget], radius: f32, free: [bool; 2]) -> Vec<Candidate> {
+/// The grip targets on `targets`, of `radius`, for each hand in `free` with its drawn point in
+/// `points` (by [`Hand::index`]): each at the point of the gun's segment nearest the hand.
+pub fn candidates(
+    targets: &[WorldTarget],
+    radius: f32,
+    free: [bool; 2],
+    points: [Option<Vec3>; 2],
+) -> Vec<Candidate> {
     let radius = radius.max(0.0);
     let mut out = Vec::new();
     for target in targets {
         let [a, b] = target.points;
-        for centre in [a, (a + b) * 0.5, b] {
-            for hand in Hand::BOTH.into_iter().filter(|h| free[h.index()]) {
-                out.push(Candidate {
-                    volume: GrabVolume::WorldWeapon,
-                    centre,
-                    radius,
-                    hand: Some(hand),
-                });
-            }
+        for hand in Hand::BOTH.into_iter().filter(|h| free[h.index()]) {
+            let Some(point) = points[hand.index()] else {
+                continue;
+            };
+            out.push(Candidate {
+                volume: GrabVolume::WorldWeapon,
+                centre: nearest_on_segment(point, a, b),
+                radius,
+                hand: Some(hand),
+            });
         }
     }
     out
@@ -70,6 +77,11 @@ pub fn chosen(targets: &[WorldTarget], point: Vec3, reach: f32) -> Option<WorldT
 
 /// The distance from `point` to the segment from `a` to `b`.
 pub fn segment_distance(point: Vec3, a: Vec3, b: Vec3) -> f32 {
+    point.distance(nearest_on_segment(point, a, b))
+}
+
+/// The point of the segment from `a` to `b` nearest `point`.
+pub fn nearest_on_segment(point: Vec3, a: Vec3, b: Vec3) -> Vec3 {
     let along = b - a;
     let length_sq = along.length_squared();
     let t = if length_sq > f32::EPSILON {
@@ -77,7 +89,7 @@ pub fn segment_distance(point: Vec3, a: Vec3, b: Vec3) -> f32 {
     } else {
         0.0
     };
-    point.distance(a + along * t)
+    a + along * t
 }
 
 /// The impulse that staggers a character without knocking it down, from its hit-reaction tuning:
@@ -155,21 +167,28 @@ mod tests {
     }
 
     #[test]
-    fn the_volumes_line_the_gun_for_the_free_hands_only() {
+    fn each_free_hand_is_offered_the_point_of_the_gun_nearest_it() {
         let rifle = target(
             TargetKind::Rack { weapon: 3 },
             Vec3::ZERO,
             Vec3::new(0.0, 0.0, -0.6),
         );
-        let both = candidates(&[rifle], 0.1, [true; 2]);
-        assert_eq!(both.len(), 6);
+        let points = [
+            Some(Vec3::new(0.1, 0.0, -0.4)),
+            Some(Vec3::new(-0.05, 0.0, 0.3)),
+        ];
+        let both = candidates(&[rifle], 0.1, [true; 2], points);
+        assert_eq!(both.len(), 2);
         assert!(both.iter().all(|c| c.volume == GrabVolume::WorldWeapon));
-        let left = candidates(&[rifle], 0.1, [true, false]);
-        assert_eq!(left.len(), 3);
-        assert!(left.iter().all(|c| c.hand == Some(Hand::Left)));
-        assert!(candidates(&[rifle], 0.1, [false; 2]).is_empty());
-        let middle = left[1].centre;
-        assert!(middle.distance(Vec3::new(0.0, 0.0, -0.3)) < 1e-6);
+        // The left hand beside the barrel is offered the barrel beside it, the right hand behind the
+        // stock the stock's end.
+        assert!(both[0].centre.distance(Vec3::new(0.0, 0.0, -0.4)) < 1e-6);
+        assert_eq!(both[0].hand, Some(Hand::Left));
+        assert!(both[1].centre.distance(Vec3::ZERO) < 1e-6);
+        let left = candidates(&[rifle], 0.1, [true, false], points);
+        assert_eq!(left.len(), 1);
+        assert!(candidates(&[rifle], 0.1, [false; 2], points).is_empty());
+        assert!(candidates(&[rifle], 0.1, [true; 2], [None; 2]).is_empty());
     }
 
     #[test]

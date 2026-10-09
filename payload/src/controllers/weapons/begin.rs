@@ -5,14 +5,17 @@
 
 use std::time::{Duration, Instant};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 
 use crate::{
     config::Config,
     controllers::{
         aim::gun,
-        body::{self, BodyDimensions, alignment},
+        body::{
+            self, BodyDimensions, alignment,
+            torso::{self, EYES_TO_NECK_PIVOT},
+        },
         config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{
@@ -214,15 +217,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
 
     let stance = state.step_stance();
     let looking = active.head.orientation * Vec3::NEG_Z;
+    let player = PlayerBody::of(&active);
     let body_frame = volumes::body_frame(
         HeadDrop {
             position: active.head.position,
+            upright: player.upright,
             pitch_down: (-looking.y).clamp(-1.0, 1.0).asin(),
             previous_y: state.body_y,
         },
         stance,
         config.weapons.holsters.crouch_deadband_m,
-        volume_anchor(&config, &active),
+        volume_anchor(&config, &active, &player),
     );
     state.body_y = Some(body_frame.origin.y);
     let dims = body_dimensions(&config, &body_frame.anchor);
@@ -245,13 +250,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             targets.extend(holsters.iter().map(|c| place.body(c)));
         }
         let grabbers = ChestGrabbers::for_guns(weapon.map_or([false; 2], |w| w.wielded.hands));
+        // A pouch with nothing to give is neither offered nor drawn.
         if config.weapons.grenade_throw
+            && grenade::in_stock()
             && let Some(pouch) =
                 volumes::grenade_pouch(&body_frame, &dims, pouches, gun_side, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
         if config.weapons.c4_throw
+            && c4::in_stock()
             && let Some(pouch) = volumes::c4_pouch(&body_frame, &dims, pouches, gun_side, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
@@ -924,17 +932,50 @@ pub(super) fn gameplay(mode: Mode) -> bool {
     )
 }
 
+/// The player's body as the headset puts it, for the body's sockets and pouches: where the eyes
+/// would be on the upright neck, which way the torso faces, and where the feet are.
+struct PlayerBody {
+    /// The eyes over the neck pivot, `(x, z)` in the cockpit frame.
+    upright: Vec2,
+    yaw: f32,
+    /// The middle of the feet, `(x, z)`, while the torso estimate is fresh.
+    feet: Option<Vec2>,
+}
+
+impl PlayerBody {
+    /// The body from the torso estimate ([`alignment::estimate`]) while it is fresh, or from the
+    /// head's pose alone: the neck pivot below and behind the eyes, facing where the head does.
+    fn of(active: &ActiveHands) -> Self {
+        let head = active.head;
+        let estimate = alignment::estimate();
+        let yaw = estimate
+            .map(|e| e.yaw)
+            .or_else(|| torso::head_heading(head.orientation))
+            .unwrap_or(0.0);
+        let neck = estimate.map_or(head.position + head.orientation * EYES_TO_NECK_PIVOT, |e| {
+            e.neck
+        });
+        let eyes = neck - Quat::from_rotation_y(yaw) * EYES_TO_NECK_PIVOT;
+        Self {
+            upright: Vec2::new(eyes.x, eyes.z),
+            yaw,
+            feet: estimate.map(|e| e.stance.stance),
+        }
+    }
+}
+
 /// The body the volumes ride: the character's skeleton when the setting asks for it and the
-/// skeleton is fresh and upright, and the player's body turned to the estimated torso otherwise
-/// (facing the cockpit frame's forward without an estimate).
-fn volume_anchor(config: &ControllersConfig, active: &ActiveHands) -> Anchor {
+/// skeleton is fresh and upright, and otherwise the player's body as the headset puts it
+/// (`player`), turned to the estimated torso with its waist over the feet.
+fn volume_anchor(config: &ControllersConfig, active: &ActiveHands, player: &PlayerBody) -> Anchor {
     let skeleton = (config.weapons.holsters.anchor == HolsterAnchor::Rico)
         .then(|| alignment::skeleton_in_cockpit(active.head.position, active.world_scale))
         .flatten();
     let anchor = match skeleton {
         Some(skeleton) => Anchor::Skeleton(skeleton),
         None => Anchor::Body {
-            yaw: alignment::estimate().map_or(0.0, |e| e.yaw),
+            yaw: player.yaw,
+            pelvis: player.feet,
         },
     };
     alignment::record_volume_anchor(anchor.label());
