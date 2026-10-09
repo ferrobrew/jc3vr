@@ -4,8 +4,9 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::physical_hands::{
-    characters::CharactersConfig, climb::ClimbConfig, doors::DoorsConfig,
-    physics::HandBodiesConfig, sounds::ImpactSoundsConfig, stunt::StuntConfig, vault::VaultConfig,
+    characters::CharactersConfig, climb::ClimbConfig, collider_view::ColliderViewConfig,
+    doors::DoorsConfig, physics::HandBodiesConfig, sounds::ImpactSoundsConfig, stunt::StuntConfig,
+    vault::VaultConfig,
 };
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
@@ -66,6 +67,9 @@ pub struct PhysicalHandsConfig {
     pub stunt: StuntConfig,
     /// The game's melee impact sound where a hand meets something hard enough.
     pub sounds: ImpactSoundsConfig,
+    /// The collider view: the physics world's bodies near the player drawn in the overlay, a
+    /// diagnostic.
+    pub collider_view: ColliderViewConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -94,6 +98,7 @@ impl PhysicalHandsConfig {
             vault: VaultConfig::new(),
             stunt: StuntConfig::new(),
             sounds: ImpactSoundsConfig::new(),
+            collider_view: ColliderViewConfig::new(),
         }
     }
 }

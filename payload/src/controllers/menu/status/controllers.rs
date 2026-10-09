@@ -28,9 +28,12 @@ use crate::controllers::{
         read_config,
         status::{Health, Line},
     },
-    physical_hands::physics::{
-        self, BodyPhase, CallbackStatus, HandBodyStatus,
-        guns::{self, GunBodyStatus},
+    physical_hands::{
+        collider_view::{self, ColliderViewStatus},
+        physics::{
+            self, BodyPhase, CallbackStatus, HandBodyStatus,
+            guns::{self, GunBodyStatus},
+        },
     },
     weapons::{grip_watch, heft::HeftClass},
 };
@@ -120,6 +123,10 @@ pub(super) fn contact_events() -> Line {
     } else {
         Line::waiting(detail)
     }
+}
+
+pub(super) fn collider_view() -> Line {
+    collider_view_line(&collider_view::status())
 }
 
 pub(super) fn blows() -> Line {
@@ -603,6 +610,36 @@ fn hand_letter(hand: Hand) -> &'static str {
     }
 }
 
+/// The collider view's row: off with the key that shows it, waiting for the step counter or a
+/// read, or the bodies drawn and those the budget left out.
+fn collider_view_line(status: &ColliderViewStatus) -> Line {
+    if !status.enabled {
+        return Line::off("CTRL+NUMPAD 0 SHOWS IT");
+    }
+    if let Some(error) = &status.last_error
+        && status.reads == 0
+    {
+        return Line::failed("SEE LOG").with_note(error.clone());
+    }
+    if !status.registered || status.reads == 0 {
+        return Line::waiting("NO PHYSICS STEP YET");
+    }
+    let detail = format_smolstr!(
+        "{} OF {} BODIES, {} PRIMITIVES",
+        status.drawn.bodies,
+        status.in_range,
+        status.primitives
+    );
+    if status.drawn.dropped > 0 {
+        Line::ok(format_smolstr!(
+            "{detail}, {} OVER BUDGET",
+            status.drawn.dropped
+        ))
+    } else {
+        Line::ok(detail)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -610,7 +647,41 @@ mod tests {
     use glam::Vec3;
 
     use super::*;
-    use crate::controllers::locomotion::view::Neutral;
+    use crate::controllers::{
+        locomotion::view::Neutral, physical_hands::collider_view::draw::Drawn,
+    };
+
+    #[test]
+    fn the_collider_view_row_says_how_to_show_it_and_what_it_draws() {
+        let off = ColliderViewStatus::default();
+        assert_eq!(
+            collider_view_line(&off).text(),
+            "OFF, CTRL+NUMPAD 0 SHOWS IT"
+        );
+        let waiting = ColliderViewStatus {
+            enabled: true,
+            registered: true,
+            ..ColliderViewStatus::default()
+        };
+        assert_eq!(collider_view_line(&waiting).health, Health::Waiting);
+        let drawing = ColliderViewStatus {
+            enabled: true,
+            registered: true,
+            reads: 3,
+            in_range: 40,
+            primitives: 1200,
+            drawn: Drawn {
+                bodies: 30,
+                dropped: 10,
+                ..Drawn::default()
+            },
+            ..ColliderViewStatus::default()
+        };
+        assert_eq!(
+            collider_view_line(&drawing).text(),
+            "OK, 30 OF 40 BODIES, 1200 PRIMITIVES, 10 OVER BUDGET"
+        );
+    }
 
     #[test]
     fn a_gun_body_shows_its_mass_joints_and_hits() {

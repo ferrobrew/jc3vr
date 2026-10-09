@@ -48,6 +48,7 @@ pub mod articulated;
 mod bodies;
 pub mod characters;
 pub mod climb;
+pub mod collider_view;
 pub mod config;
 pub mod contact;
 pub mod doors;

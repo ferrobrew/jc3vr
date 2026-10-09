@@ -49,6 +49,7 @@ pub enum Action {
     ToggleTrackingRecording,
     ToggleReplay,
     ToggleScenario,
+    ToggleColliderView,
 }
 impl Action {
     /// A short label for the debug tab.
@@ -72,6 +73,7 @@ impl Action {
             Action::ToggleTrackingRecording => "Start or stop a tracking recording",
             Action::ToggleReplay => "Replay the last tracking recording, or stop the replay",
             Action::ToggleScenario => "Run the last scenario again, or stop it",
+            Action::ToggleColliderView => "Show or hide the physics colliders",
         }
     }
 }
@@ -231,11 +233,12 @@ pub fn run(action: Action) {
         Action::ToggleTrackingRecording => crate::recorder::tracking::toggle(),
         Action::ToggleReplay => crate::testing::toggle_replay(),
         Action::ToggleScenario => crate::testing::toggle_scenario(),
+        Action::ToggleColliderView => crate::controllers::physical_hands::collider_view::toggle(),
     }
 }
 
 /// The stock layout [`Keymap::new`] borrows.
-const DEFAULT_BINDINGS: [Binding; 18] = [
+const DEFAULT_BINDINGS: [Binding; 19] = [
     Binding {
         action: Action::ToggleCinematic,
         chord: Chord::plain(VK_NUMPAD0.0),
@@ -307,6 +310,10 @@ const DEFAULT_BINDINGS: [Binding; 18] = [
     Binding {
         action: Action::ToggleScenario,
         chord: Chord::ctrl(VK_SUBTRACT.0),
+    },
+    Binding {
+        action: Action::ToggleColliderView,
+        chord: Chord::ctrl(VK_NUMPAD0.0),
     },
 ];
 

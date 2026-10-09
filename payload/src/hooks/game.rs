@@ -122,6 +122,12 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // state, so it is polled here and read by the render side.
         crate::hud::depth::poll_vehicle_state();
 
+        // The collider view reads the physics world the game's update just stepped, and places its
+        // primitives at this frame's interpolation fraction.
+        crate::controllers::physical_hands::collider_view::render_tick(
+            (*update_contexts).m_RenderContext.m_Dtf,
+        );
+
         // Pump the OpenXR runtime once per frame and, if a session is running, begin the XR frame
         // before the eye Draws: `xrWaitFrame` inside `frame_begin` paces the app against the
         // compositor, replacing vsync (which stays suppressed via BLOCK_FLIP). Set the headpose

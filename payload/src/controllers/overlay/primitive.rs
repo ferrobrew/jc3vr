@@ -41,10 +41,13 @@ pub enum Source {
     MagazinePips,
     /// The body mirror's reflection of Rico's skeleton.
     BodyMirror,
+    /// The collider view's bodies, joints, and contacts. Last, so that it gives way first to the
+    /// overlay's cap.
+    ColliderView,
 }
 
 impl Source {
-    pub const COUNT: usize = 14;
+    pub const COUNT: usize = 15;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -62,6 +65,7 @@ impl Source {
         Source::PhysicalHands,
         Source::MagazinePips,
         Source::BodyMirror,
+        Source::ColliderView,
     ];
 
     pub const fn index(self) -> usize {
@@ -80,6 +84,7 @@ impl Source {
             Source::PhysicalHands => 11,
             Source::MagazinePips => 12,
             Source::BodyMirror => 13,
+            Source::ColliderView => 14,
         }
     }
 
@@ -99,6 +104,7 @@ impl Source {
             Source::PhysicalHands => "physical hands",
             Source::MagazinePips => "second weapon's magazine",
             Source::BodyMirror => "body mirror",
+            Source::ColliderView => "collider view",
         }
     }
 }

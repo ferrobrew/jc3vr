@@ -40,7 +40,7 @@ use crate::controllers::{
     physical_hands::{
         PhysicalHandsConfig,
         bodies::owner_of,
-        engine,
+        collider_view, engine,
         physics::{
             HandHitsConfig, body,
             contact::{self, Contact},
@@ -113,6 +113,11 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         if contact.gun && unsafe { body::in_player_group(contact.other_body) } {
             continue;
         }
+        collider_view::note_contact(
+            contact.hand_position,
+            contact.other_body,
+            contact.impulse_ns,
+        );
         // A held gun strikes with its mass on the arm's.
         let gun_mass = contact.gun.then(|| guns::mass(contact.hand)).flatten();
         if contact.gun {

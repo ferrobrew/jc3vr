@@ -9,6 +9,7 @@ mod aim_state;
 mod alignment;
 mod body;
 mod climb;
+mod collider_view;
 mod diagnostics;
 mod explosives;
 mod fingers;
@@ -81,6 +82,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let fingers_status = controller_fingers::status();
     let physical_hands_status = controller_physical_hands::status();
     let hand_bodies_status = controller_physical_hands::physics::status();
+    let collider_view_status = controller_physical_hands::collider_view::status();
     let climb_status = controller_physical_hands::climb::status();
     let stunt_status = controller_physical_hands::stunt::status();
     let overlay_status = controller_overlay::status();
@@ -178,6 +180,12 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .default_open(true)
             .show(ui, |ui| {
                 hand_bodies::hand_bodies_readout(ui, &hand_bodies_status)
+            });
+
+        egui::CollapsingHeader::new("Collider view")
+            .default_open(true)
+            .show(ui, |ui| {
+                collider_view::collider_view_readout(ui, &collider_view_status)
             });
 
         egui::CollapsingHeader::new("Hand climbing")

@@ -247,6 +247,7 @@ const SECTIONS: &[Section] = &[
             row!("CONTACT EVENTS", controllers::contact_events),
             row!("BLOWS DEALT", controllers::blows),
             row!("GRAB JOINTS", controllers::joints),
+            row!("COLLIDER VIEW", controllers::collider_view),
             row!("LEFT GUN BODY", controllers::left_gun_body),
             row!("RIGHT GUN BODY", controllers::right_gun_body),
         ],
