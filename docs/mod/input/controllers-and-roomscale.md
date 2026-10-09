@@ -228,6 +228,7 @@ The tables are the default bindings of the semantic actions, laid out for the Va
 | Look back, vehicle camera, recenter camera | removed; the neck replaces them, and F7 recenters |
 | Motorcycle personal weapon (`MC_FIRE`) | R grip, aimed by the right hand |
 | Motorcycle lean and tilt | L stick; handlebar lean |
+| Motorcycle throttle | R trigger; twisting the handlebars' right grip back |
 
 #### Helicopter
 
@@ -645,6 +646,7 @@ The order puts the parts that everything else depends on first, then the parts w
 34. Cutscenes. Hold the right B through a skippable cutscene: the game's skip prompt fills and the cutscene skips, right- and left-handed. The `VR: STATUS` page's fingerprint row asks for a restart after this update until the game is restarted.
 35. The wingsuit's buttons. Open the wingsuit with the right B and close it with the right B again; nothing boosts. In the weaponized suit, click the right stick: it boosts. The left A does nothing in the suit.
 36. Aiming the grapple in the wingsuit. With the arms spread and banking slightly, hold the left B and point the left hand at a target: the suit keeps flying the line it had, and lets go of the target to grapple it; once the button is up, the arms steer again. The log has `wingsuit arm steering: the grapple is aimed` and the button-up line.
+37. The motorcycle's throttle grip. On a motorcycle with the handlebars held, roll the right grip back: the bike accelerates in proportion, with a click as it opens, and no nitrous or turbo jump; the trigger still accelerates. In a helicopter, raise and lower the collective with an ordinary wrist roll: no nitrous; twist it hard either way: nitrous.
 
 ## Reverse-engineering work
 

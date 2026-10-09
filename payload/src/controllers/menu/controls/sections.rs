@@ -676,7 +676,13 @@ pub(super) fn vehicles_section(page: Page) -> Page {
             .physical
             .buttons
             .nitrous_button))
-        .item(config_toggle!("TWIST GRIP FOR NITROUS", |c| c
+        .item(config_toggle!("TWIST BIKE GRIP FOR THROTTLE", |c| c
+            .controllers
+            .vehicles
+            .physical
+            .buttons
+            .twist_throttle))
+        .item(config_toggle!("TWIST COLLECTIVE FOR NITROUS", |c| c
             .controllers
             .vehicles
             .physical

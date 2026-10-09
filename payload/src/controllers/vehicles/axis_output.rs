@@ -35,6 +35,10 @@ pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
     if let Some(throttle) = out.throttle {
         replace_axis(desired, throttle, PLANE_DEC_TRUST, PLANE_INC_TRUST);
     }
+    // The bars' throttle grip opens the throttle alongside the trigger: the larger wins.
+    if let Some(throttle) = out.bike_throttle.filter(|t| *t > 0.0) {
+        raise_analog(desired, throttle, ACCELERATE);
+    }
     // The buttons hold their actions alongside the controller's buttons, which merge with them.
     for (pressed, action) in [(out.horn, SOUND_HORN_SIREN), (out.nitrous, USE_VEHICLE_MOD)] {
         if pressed {
@@ -47,6 +51,33 @@ pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {
             });
         }
     }
+}
+
+/// Raise the player-map want on `action` to at least `value`, `0..=1`, keeping a larger one the
+/// tables wrote.
+fn raise_analog(desired: &mut Vec<Desired>, value: f32, action: Action) {
+    let value = if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let target = Target {
+        map: MapKind::Player,
+        action,
+    };
+    let existing = desired
+        .iter()
+        .filter(|d| d.target == target)
+        .map(|d| match d.want {
+            Want::Analog(v) | Want::Hold(v) => v,
+            Want::Click => 0.0,
+        })
+        .fold(0.0, f32::max);
+    desired.retain(|d| d.target != target);
+    desired.push(Desired {
+        target,
+        want: Want::Analog(value.max(existing)),
+    });
 }
 
 /// Whether the tables wrote either half of the axis `negative`/`positive` this tick: their stick

@@ -125,16 +125,16 @@ pub fn push_step(phase: PushPhase, button: &PushButton, point: Option<Vec3>) -> 
 /// The twist grips' place: the handlebars' right grip and the collective.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TwistGrip {
-    /// The handlebars' right grip, twisted back as a motorcycle's throttle is.
+    /// The handlebars' right grip, the throttle, twisted back as a motorcycle's throttle is.
     Bars,
-    /// The collective's grip, twisted either way.
+    /// The collective's grip, twisted either way for the nitrous.
     Collective,
 }
 
 impl TwistGrip {
     pub const fn label(self) -> &'static str {
         match self {
-            TwistGrip::Bars => "handlebars' twist grip",
+            TwistGrip::Bars => "handlebars' throttle grip",
             TwistGrip::Collective => "collective's twist grip",
         }
     }
@@ -152,6 +152,21 @@ pub fn grip_twist(grip: TwistGrip, grab: Quat, now: Quat, across: Vec3) -> f32 {
     }
 }
 
+/// The throttle a handlebars' right grip twisted back by `twist` radians opens, `0..=1`: nothing
+/// within [`THROTTLE_DEADZONE_DEG`], so a hand that settles on the grip does not creep, and full at
+/// [`CockpitButtonsConfig::throttle_twist_deg`]. A grip rolled forward is closed.
+pub fn twist_throttle(twist: f32, config: &CockpitButtonsConfig) -> f32 {
+    let deadzone = THROTTLE_DEADZONE_DEG.to_radians();
+    let full = config
+        .throttle_twist_deg
+        .max(THROTTLE_DEADZONE_DEG + 1.0)
+        .to_radians();
+    if !twist.is_finite() || twist <= deadzone {
+        return 0.0;
+    }
+    ((twist - deadzone) / (full - deadzone)).min(1.0)
+}
+
 /// Whether a twist grip at `twist` radians burns the nitrous, given whether it did on the last
 /// tick: past the twist to engage, and until it comes back by a margin.
 pub fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsConfig) -> bool {
@@ -166,13 +181,14 @@ pub fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsConfig) -> bo
     }
 }
 
-/// The buttons' state: each hand's phase with each push button, and whether each hand's twist grip
-/// burns the nitrous.
+/// The buttons' state: each hand's phase with each push button, and the twist grip each hand works:
+/// the collective's burning the nitrous, or the bars' throttle open.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ButtonState {
     /// Indexed by [`Button`], then by [`Hand::index`].
     pub phases: [[PushPhase; 2]; 2],
-    /// The twist grip each hand burns the nitrous with.
+    /// The twist grip each hand works: the collective's past its nitrous twist, or the bars'
+    /// throttle open.
     pub twists: [Option<TwistGrip>; 2],
 }
 
@@ -231,13 +247,13 @@ impl ButtonEvent {
 pub struct ButtonPlacement {
     pub horn: Option<PushButton>,
     pub nitrous: Option<PushButton>,
-    pub bars_twist: bool,
+    pub bars_throttle: bool,
     pub collective_twist: bool,
 }
 
 impl ButtonPlacement {
     /// The buttons a seat offering `kinds` has with `config`: the horn and the nitrous button with
-    /// the wheel, the bars' twist with the handlebars, and the collective's twist with the
+    /// the wheel, the bars' throttle with the handlebars, and the collective's twist with the
     /// collective.
     pub fn for_seat(
         kinds: &[ControlKind],
@@ -249,7 +265,7 @@ impl ButtonPlacement {
             horn: (wheel_seat && config.horn).then(|| PushButton::horn(wheel, config)),
             nitrous: (wheel_seat && config.nitrous_button)
                 .then(|| PushButton::nitrous(wheel, config)),
-            bars_twist: config.twist_nitrous && kinds.contains(&ControlKind::Handlebars),
+            bars_throttle: config.twist_throttle && kinds.contains(&ControlKind::Handlebars),
             collective_twist: config.twist_nitrous && kinds.contains(&ControlKind::Collective),
         }
     }
@@ -263,10 +279,12 @@ impl ButtonPlacement {
 }
 
 /// What the buttons ask of the vehicle this tick.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ButtonOutputs {
     pub horn: bool,
     pub nitrous: bool,
+    /// The throttle the bars' right grip opens, `0..=1`, while the right hand holds it.
+    pub throttle: Option<f32>,
 }
 
 /// One tick's inputs for the buttons.
@@ -284,8 +302,9 @@ pub struct ButtonInputs<'a> {
     pub bars_angles: Vec2,
 }
 
-/// Advance the buttons by one tick: the free hands press the push buttons, and the hands holding
-/// the bars' right grip or the collective twist them.
+/// Advance the buttons by one tick: the free hands press the push buttons, the hand holding the
+/// bars' right grip twists the throttle, and a hand holding the collective twists for the
+/// nitrous.
 pub fn step_buttons(
     state: &mut ButtonState,
     inputs: &ButtonInputs,
@@ -311,10 +330,11 @@ pub fn step_buttons(
     }
     let [left, right] = bar_ends(inputs.bars.centre, 1.0, inputs.bars_angles);
     let across = right - left;
+    let mut throttle = None;
     for hand in Hand::BOTH {
         let i = hand.index();
         let grip = inputs.holds[i].and_then(|hold| match hold.kind {
-            ControlKind::Handlebars if inputs.placement.bars_twist && hand == Hand::Right => {
+            ControlKind::Handlebars if inputs.placement.bars_throttle && hand == Hand::Right => {
                 Some((TwistGrip::Bars, hold))
             }
             ControlKind::Collective if inputs.placement.collective_twist => {
@@ -325,7 +345,16 @@ pub fn step_buttons(
         let was = state.twists[i];
         let now = grip.and_then(|(grip, hold)| {
             let twist = grip_twist(grip, hold.orientation?, inputs.orientations[i]?, across);
-            twist_engaged(twist, was == Some(grip), inputs.config).then_some(grip)
+            match grip {
+                TwistGrip::Bars => {
+                    let open = twist_throttle(twist, inputs.config);
+                    throttle = Some(open);
+                    (open > 0.0).then_some(grip)
+                }
+                TwistGrip::Collective => {
+                    twist_engaged(twist, was == Some(grip), inputs.config).then_some(grip)
+                }
+            }
         });
         state.twists[i] = now;
         if was != now {
@@ -339,7 +368,9 @@ pub fn step_buttons(
     }
     ButtonOutputs {
         horn: state.pressed(Button::Horn),
-        nitrous: state.pressed(Button::Nitrous) || state.twists.iter().any(Option::is_some),
+        nitrous: state.pressed(Button::Nitrous)
+            || state.twists.contains(&Some(TwistGrip::Collective)),
+        throttle,
     }
 }
 
@@ -349,6 +380,9 @@ const ARM_REACH_M: f32 = 0.12;
 /// How far past a push button's face a hand may be and still press it, metres: further is a hand
 /// through the dash.
 const MAX_PUSH_M: f32 = 0.12;
+
+/// The twist of the handlebars' right grip that opens no throttle, degrees.
+pub const THROTTLE_DEADZONE_DEG: f32 = 4.0;
 
 /// How far a twist grip comes back from its engaging twist before it lets go, degrees.
 const TWIST_HYSTERESIS_DEG: f32 = 8.0;

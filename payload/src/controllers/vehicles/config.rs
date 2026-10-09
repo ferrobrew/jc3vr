@@ -371,11 +371,16 @@ pub struct CockpitButtonsConfig {
     pub nitrous_radius_m: f32,
     /// How far past a button's face a hand pushes to press it, metres.
     pub press_depth_m: f32,
-    /// Burn the nitrous by twisting the handlebars' right grip back, as a motorcycle's throttle
-    /// is twisted, or the collective's grip either way.
+    /// Burn the nitrous by twisting the collective's grip either way.
     pub twist_nitrous: bool,
-    /// How far a twist grip is twisted from where the hand took it to burn the nitrous, degrees.
+    /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
+    /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
     pub twist_deg: f32,
+    /// Open the throttle by twisting the handlebars' right grip back, as a motorcycle's throttle
+    /// is twisted. The trigger still accelerates; the larger of the two wins.
+    pub twist_throttle: bool,
+    /// How far the handlebars' right grip is twisted back for full throttle, degrees.
+    pub throttle_twist_deg: f32,
 }
 
 impl CockpitButtonsConfig {
@@ -388,13 +393,15 @@ impl CockpitButtonsConfig {
             nitrous_radius_m: 0.045,
             press_depth_m: 0.02,
             twist_nitrous: true,
-            twist_deg: 30.0,
+            twist_deg: 40.0,
+            twist_throttle: true,
+            throttle_twist_deg: 30.0,
         }
     }
 
     /// Whether any button is switched on.
     pub const fn any(&self) -> bool {
-        self.horn || self.nitrous_button || self.twist_nitrous
+        self.horn || self.nitrous_button || self.twist_nitrous || self.twist_throttle
     }
 }
 

@@ -492,11 +492,16 @@ fn buttons(ui: &mut Ui, b: &mut CockpitButtonsConfig) {
             .text("press depth (m)")
             .fixed_decimals(3),
     );
-    ui.checkbox(
-        &mut b.twist_nitrous,
-        "Twist the bars' right grip or the collective for nitrous",
-    );
+    ui.checkbox(&mut b.twist_nitrous, "Twist the collective for nitrous");
     ui.add(egui::Slider::new(&mut b.twist_deg, 10.0..=80.0).text("twist to burn (°)"));
+    ui.checkbox(
+        &mut b.twist_throttle,
+        "Twist the bars' right grip back for the throttle",
+    );
+    ui.add(
+        egui::Slider::new(&mut b.throttle_twist_deg, 10.0..=80.0)
+            .text("twist for full throttle (°)"),
+    );
 }
 
 fn flight(ui: &mut Ui, f: &mut FlightControlsConfig) {

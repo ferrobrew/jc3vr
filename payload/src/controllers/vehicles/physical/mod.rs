@@ -24,8 +24,8 @@
 //!   afterburner gate at the top of its travel.
 //!
 //! The cockpit's buttons ([`buttons`]) are worked by hand too: the horn pressed on the wheel's hub,
-//! a nitrous button on the dash, and the handlebars' right grip or the collective twisted for the
-//! nitrous.
+//! a nitrous button on the dash, the handlebars' right grip twisted back for the throttle, and the
+//! collective twisted for the nitrous.
 //!
 //! The sticks and levers give the holding hand a haptic cue at the ends of their travel, the
 //! levers at neutral, and the throttle going into and out of its gate ([`cues`]).
@@ -250,8 +250,10 @@ pub struct Outputs {
     pub lever_cue: Option<ControlCue>,
     /// Whether a hand presses the horn on the wheel's hub.
     pub horn: bool,
-    /// Whether a hand presses the nitrous button or twists a twist grip.
+    /// Whether a hand presses the nitrous button or twists the collective's grip.
     pub nitrous: bool,
+    /// The throttle the handlebars' right grip opens, `0..=1`, while the right hand holds it.
+    pub bike_throttle: Option<f32>,
 }
 
 impl Outputs {
@@ -269,6 +271,7 @@ impl Outputs {
         lever_cue: None,
         horn: false,
         nitrous: false,
+        bike_throttle: None,
     };
 }
 
@@ -544,6 +547,7 @@ pub fn step(
     events.extend(button_events.into_iter().map(ControlEvent::Button));
     out.horn = pressed.horn;
     out.nitrous = pressed.nitrous;
+    out.bike_throttle = pressed.throttle;
     out
 }
 

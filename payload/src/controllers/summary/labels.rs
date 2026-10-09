@@ -374,7 +374,7 @@ impl ModText {
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
             ModText::ArmSteering => "Spread Arms: Lower One to Bank, Both to Dive, Raise to Climb",
             ModText::Wheel => "Hold at the Wheel: Steer",
-            ModText::Handlebars => "Hold at the Handlebars: Steer",
+            ModText::Handlebars => "Hold at the Handlebars: Steer; Twist the Right Grip: Throttle",
             ModText::HelicopterControls => "Hold at the Cyclic or Collective: Fly",
             ModText::PlaneControls => "Hold at the Stick or Throttle: Fly",
             ModText::SelectDualWield => "Select Pistols",

@@ -128,6 +128,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.physical.buttons.horn = vehicles;
     c.vehicles.physical.buttons.nitrous_button = vehicles;
     c.vehicles.physical.buttons.twist_nitrous = vehicles;
+    c.vehicles.physical.buttons.twist_throttle = vehicles;
     c.vehicles.arm_steering.wingsuit = vehicles;
     c.vehicles.driving_view.enabled = vehicles;
     c.vehicles.parachute_handles.enabled = vehicles;
