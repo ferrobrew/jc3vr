@@ -294,6 +294,7 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::HelicopterControls => ModText::HelicopterControls,
         ModAction::PlaneControls => ModText::PlaneControls,
         ModAction::WeaponWheel => ModText::WeaponWheel,
+        ModAction::MapZoom => ModText::MapZoom,
         ModAction::ShowSummary => ModText::ShowSummary,
         ModAction::Recenter => ModText::Recenter,
         ModAction::DebugPanel => ModText::DebugPanel,
@@ -304,6 +305,7 @@ pub fn mod_action(action: ModAction) -> Text {
 /// a column here.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ModText {
+    MapZoom,
     Falling,
     Mech,
     Parachute,
@@ -398,6 +400,7 @@ impl ModText {
             ModText::PressRight => "PRESS RIGHT",
             ModText::HoldUp => "HOLD UP",
             ModText::WeaponWheel => "Weapon Wheel: Point to Choose, Let Go to Equip",
+            ModText::MapZoom => "Map: Zoom In and Out",
             ModText::ShowSummary => "Show Controls",
             ModText::Recenter => "Recenter View",
             ModText::DebugPanel => "Mod Debug Panel",

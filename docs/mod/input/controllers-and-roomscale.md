@@ -664,6 +664,7 @@ The order puts the parts that everything else depends on first, then the parts w
 38. The mech. Enter a mech: the summary's heading reads `MECH`, the left stick walks, the right trigger fires the right-hand weapon, the left trigger held attracts with the gravity gun and let go throws, the right grip drops, the left grip punches, and A jumps.
 39. Tethers from a vehicle. Drive a car, tether it to something with the grapple, and double tap the left B: the tether lets go.
 40. Menu pages with the pointer. In the map or a menu with the native pointer showing, aim just off the panel's edge and pull the right trigger: nothing pages. Pull the left trigger: the page goes back; hold the left grip and pull it: the page goes forward.
+41. Map zoom. Open the map and push the left stick up and down: it zooms, and the wrist summary lists the zoom on that stick. Rebind `map_zoom` in the runtime's binding interface to another input: the map zooms from that input instead.
 
 ## Reverse-engineering work
 

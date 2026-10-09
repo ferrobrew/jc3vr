@@ -224,6 +224,8 @@ pub enum ModAction {
     Recenter,
     /// Show or hide the mod's debug panel.
     DebugPanel,
+    /// Zoom the native map.
+    MapZoom,
 }
 
 /// What a row does.
@@ -757,6 +759,12 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                 _ => Gesture::Hold,
             };
             add(control, gesture, modded(ModAction::WeaponWheel));
+        }
+    }
+    // The map reads its zoom itself (`crate::controllers::map`), in the menu set.
+    if ctx.mode == Mode::Ui {
+        for (control, _) in controls(MenuAction::MapZoom.id()) {
+            add(control, Gesture::Press, modded(ModAction::MapZoom));
         }
     }
     if features.wrist_detonator && ctx.mode != Mode::Ui {

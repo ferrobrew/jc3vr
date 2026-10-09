@@ -51,6 +51,11 @@ use crate::{
         },
     },
     hud::pointer::{ControllerPointer, RoutedPointer},
+    vr::input::semantic::{
+        self, SemanticSet,
+        frame::{ActionValue, SemanticFrame},
+        vocabulary::MenuAction,
+    },
 };
 
 /// The map hooks: the map's input handler and per-frame update, and the action lookup the shim
@@ -137,14 +142,11 @@ static MAP_STATE: Mutex<MapState> = Mutex::new(MapState {
 static CONTROLLER_DRIVEN: AtomicBool = AtomicBool::new(false);
 
 fn controller_sample(pointer: ControllerPointer) -> ControllerSample {
-    let zoom_axis = frame::with_latest(|frame| {
-        if frame.focused && frame.age() <= MAX_FRAME_AGE {
-            frame.hand(pointer.hand.other()).inputs.thumbstick.y
-        } else {
-            0.0
-        }
-    })
-    .unwrap_or(0.0);
+    let focused =
+        frame::with_latest(|frame| frame.focused && frame.age() <= MAX_FRAME_AGE).unwrap_or(false);
+    let zoom_axis = semantic::frame::latest()
+        .filter(|_| focused)
+        .map_or(0.0, |frame| zoom_axis(&frame));
     ControllerSample {
         hand: pointer.hand,
         uv: Vec2::new(pointer.uv.0, pointer.uv.1),
@@ -152,6 +154,23 @@ fn controller_sample(pointer: ControllerPointer) -> ControllerSample {
         secondary: pointer.buttons & 2 != 0,
         zoom_axis,
     }
+}
+
+/// The map's zoom: the menu set's `map_zoom` action, on whichever hand the player bound it to (the
+/// off-hand's stick by default), the hand pushed further winning; zero while the menu set is not
+/// active.
+fn zoom_axis(frame: &SemanticFrame) -> f32 {
+    let Some(menu) = frame.set(SemanticSet::Menu) else {
+        return 0.0;
+    };
+    menu.actions[MenuAction::MapZoom.id().index()]
+        .iter()
+        .map(|state| match state.value {
+            ActionValue::Float(value) if value.is_finite() => value.clamp(-1.0, 1.0),
+            ActionValue::Vec2(value) if value.y.is_finite() => value.y.clamp(-1.0, 1.0),
+            _ => 0.0,
+        })
+        .fold(0.0, |a: f32, b: f32| if b.abs() > a.abs() { b } else { a })
 }
 
 /// Commit this frame's prepared map state and return it.
@@ -312,6 +331,44 @@ impl ModeDepth {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::frame::{ActionSetKind, Hand};
+
+    fn set(set: SemanticSet) -> semantic::frame::SetState {
+        semantic::frame::SetState {
+            set,
+            actions: set
+                .actions()
+                .iter()
+                .map(|def| [semantic::frame::ActionState::rest(def.kind); 2])
+                .collect(),
+        }
+    }
+
+    fn menu_frame(zoom: [f32; 2]) -> SemanticFrame {
+        let mut menu = set(SemanticSet::Menu);
+        for hand in Hand::BOTH {
+            menu.actions[MenuAction::MapZoom.id().index()][hand.index()].value =
+                ActionValue::Float(zoom[hand.index()]);
+        }
+        SemanticFrame {
+            published_at: Instant::now(),
+            action_set: ActionSetKind::Ui,
+            global: set(SemanticSet::Global),
+            mode: menu,
+        }
+    }
+
+    #[test]
+    fn the_zoom_reads_the_map_zoom_action_on_either_hand() {
+        assert_eq!(zoom_axis(&menu_frame([0.0, 0.0])), 0.0);
+        assert_eq!(zoom_axis(&menu_frame([0.8, 0.0])), 0.8);
+        assert_eq!(zoom_axis(&menu_frame([0.2, -0.6])), -0.6);
+        assert_eq!(zoom_axis(&menu_frame([f32::NAN, 0.3])), 0.3);
+        // Outside the menus the action is not read.
+        let mut on_foot = menu_frame([0.9, 0.9]);
+        on_foot.mode = set(SemanticSet::OnFoot);
+        assert_eq!(zoom_axis(&on_foot), 0.0);
+    }
 
     #[test]
     fn gamepad_mode_is_restored_once_after_nested_scopes() {

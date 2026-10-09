@@ -265,8 +265,16 @@ fn the_menu_folds_both_hands_and_lists_the_grip_modifier() {
         for hand in Hand::BOTH {
             assert!(actions_of(&rows, Control::Grip(hand), Gesture::Press).is_empty());
             assert!(rows.iter().all(|r| r.control.hand() != Some(hand)
-                || matches!(r.control, Control::Trigger(_) | Control::StickClick(_))));
+                || matches!(r.control, Control::Trigger(_) | Control::StickClick(_))
+                || r.effect == Effect::Mod(ModAction::MapZoom)));
         }
+        // The map's zoom is the off-hand stick's vertical axis.
+        let zoom: Vec<_> = rows
+            .iter()
+            .filter(|r| r.effect == Effect::Mod(ModAction::MapZoom))
+            .map(|r| r.control.hand())
+            .collect();
+        assert_eq!(zoom, vec![Some(dominant.other())]);
         assert!(rows.iter().all(|r| r.control != Control::EitherTrackpad));
 
         let table = TableCtx {
