@@ -180,6 +180,8 @@ The log has the lifecycle at info level: `hand bodies: registered the pre-simula
 
 The palms' settings are `physical_hands` in the controller settings, under "Physical hands" in the debug UI's Controllers tab, with the readout (each palm's press, push, and speed, its shove's impulse, load, and resistance, what it reaches or holds with the mass, the lag, and the pull and twist used, and the counters) beside the other subsystems. The shove settings are `physical_hands.shove` and the pickup settings `physical_hands.pickup`. `show_boxes` draws the palm boxes in the world-space overlay, coloured by whether they press into the world or an object, with a line along each shove, longer for a harder push and redder for a body that resists. With `pickup.show_targets`, a disc marks each hand's grab point and a line joins it to where the hand would have it, redder the harder the hand pulls.
 
+The collider view ([collider-view.md](collider-view.md), `physical_hands.collider_view`, Ctrl+Numpad0) draws the hand bodies with every other body near the player: their boxes and capsules, their joints, and the contacts they start.
+
 ## Unverified in the headset
 
 - That the callback fires once per simulation tick, on the game thread, and that the bodies are created with the weapons layer in the player's system group (the readout's filter word against the player's group).
