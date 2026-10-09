@@ -10,9 +10,12 @@
 //! with the hand body's own mass and with how fast the character moves into the hand. The character
 //! reacts through its own hit reaction, which scales the impulse it is given by the blow type's
 //! factor and compares the result against the character's stagger and knockdown thresholds. The
-//! blow is calibrated against the character's own knockdown threshold: a blow of
-//! [`HandHitsConfig::knockdown_impulse_ns`] reaches it, and a weaker blow the same share of it, so
-//! the character's own tuning decides where between a flinch and a stagger a weaker blow lands.
+//! blow is calibrated against the character's own thresholds ([`blow`]): a blow of
+//! [`HandHitsConfig::stagger_impulse_ns`] (a solid punch) reaches its stagger threshold, a harder
+//! one rises toward its knockdown threshold, and a blow of
+//! [`HandHitsConfig::knockdown_impulse_ns`] (a hard swing) reaches the knockdown and ragdolls it;
+//! a weaker blow than a solid punch flinches it in proportion. Every character is struck alike,
+//! whatever its faction: the game's own reactions to being hit (alarm, heat) follow.
 
 use glam::Vec3;
 
@@ -63,28 +66,13 @@ pub fn striking_with(config: &HandHitsConfig, gun_mass_kg: Option<f32>) -> HandH
     }
 }
 
-/// `plan` restrained to at most `max_strength` of a knockdown, and to no damage: the blow a
-/// character the player is not hostile to takes, so that a swing at an ally, an escort, or a
-/// bystander staggers at most and never hurts.
-pub fn restrain(plan: BlowPlan, max_strength: f32) -> BlowPlan {
-    let max_strength = max_strength.max(0.0);
-    let scale = if plan.strength > max_strength && plan.strength > 0.0 {
-        max_strength / plan.strength
-    } else {
-        1.0
-    };
-    BlowPlan {
-        strength: plan.strength * scale,
-        reaction_impulse: plan.reaction_impulse * scale,
-        damage: None,
-    }
-}
-
 /// A struck character's own hit-reaction tuning.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct VictimTuning {
     /// The factor the character's hit reaction scales a blow of this type by.
     pub type_scale: f32,
+    /// The scaled impulse at or above which the character staggers.
+    pub stagger_threshold: f32,
     /// The scaled impulse at or above which the character is knocked down.
     pub knockdown_threshold: f32,
 }
@@ -135,7 +123,7 @@ pub fn blow(
         return Blow::Uncalibrated;
     }
     let strength = impulse_ns / knockdown;
-    let reaction_impulse = strength * victim.knockdown_threshold / victim.type_scale;
+    let reaction_impulse = scaled_reaction(impulse_ns, victim, config) / victim.type_scale;
     let damage = (config.damage && impulse_ns >= config.damage_impulse_ns).then(|| {
         let damage = melee_damage.max(0) as f32 * config.damage_scale.max(0.0) * strength;
         if damage.is_finite() {
@@ -154,6 +142,42 @@ pub fn blow(
         damage,
     })
 }
+
+/// The impulse the character's hit reaction compares against its thresholds, after its type
+/// factor, for a blow of `impulse_ns`: a solid punch (the stagger impulse) just past the stagger
+/// threshold, rising to just short of the knockdown threshold toward the knockdown impulse, and the
+/// knockdown threshold and past it from there; below the stagger impulse, the same share of the
+/// stagger threshold, a flinch. A character whose stagger threshold is not below its knockdown
+/// threshold, or a stagger impulse not below the knockdown impulse, takes the knockdown's share
+/// alone.
+fn scaled_reaction(impulse_ns: f32, victim: VictimTuning, config: &HandHitsConfig) -> f32 {
+    let knockdown = config.knockdown_impulse_ns;
+    let stagger = config.stagger_impulse_ns;
+    let linear = impulse_ns / knockdown * victim.knockdown_threshold;
+    let calibrated = victim.stagger_threshold.is_finite()
+        && victim.stagger_threshold > 0.0
+        && victim.stagger_threshold < victim.knockdown_threshold
+        && stagger.is_finite()
+        && stagger > 0.0
+        && stagger < knockdown;
+    if !calibrated || impulse_ns >= knockdown {
+        return linear;
+    }
+    if impulse_ns < stagger {
+        return impulse_ns / stagger * victim.stagger_threshold * UNDER_STAGGER;
+    }
+    let t = (impulse_ns - stagger) / (knockdown - stagger);
+    let from = victim.stagger_threshold * OVER_STAGGER;
+    let to = victim.knockdown_threshold * UNDER_KNOCKDOWN;
+    from + (to - from.min(to)) * t
+}
+
+/// How far past the stagger threshold a solid punch lands, as a factor of it.
+const OVER_STAGGER: f32 = 1.1;
+/// How far short of the stagger threshold a blow just under a solid punch stays, as a factor.
+const UNDER_STAGGER: f32 = 0.9;
+/// How far short of the knockdown threshold a blow just under a hard swing stays, as a factor.
+const UNDER_KNOCKDOWN: f32 = 0.95;
 
 /// The share of the strongest hit pulse a contact of `impulse_ns` pulses its hand with, `0..=1`.
 pub fn pulse_share(impulse_ns: f32, full_impulse_ns: f32) -> f32 {
@@ -224,6 +248,7 @@ mod tests {
     const CONFIG: HandHitsConfig = HandHitsConfig::new();
     const VICTIM: VictimTuning = VictimTuning {
         type_scale: 2.0,
+        stagger_threshold: 40.0,
         knockdown_threshold: 100.0,
     };
 
@@ -351,14 +376,49 @@ mod tests {
     }
 
     #[test]
-    fn a_blow_to_a_character_not_hostile_staggers_at_most() {
-        let hard = plan(CONFIG.knockdown_impulse_ns * 2.0);
-        let restrained = restrain(hard, 0.9);
-        assert!((restrained.strength - 0.9).abs() < 1e-5);
-        assert!((restrained.reaction_impulse / hard.reaction_impulse - 0.45).abs() < 1e-5);
-        assert_eq!(restrained.damage, None);
-        let light = plan(CONFIG.min_impulse_ns + 1.0);
-        assert_eq!(restrain(light, 0.9).strength, light.strength);
+    fn a_solid_punch_staggers_and_a_hard_swing_knocks_down() {
+        let reacts = |impulse: f32| plan(impulse).reaction_impulse * VICTIM.type_scale;
+        // A solid punch, about three metres a second: past the stagger, short of a knockdown.
+        let punch = reacts(CONFIG.stagger_impulse_ns);
+        assert!(punch > VICTIM.stagger_threshold, "{punch}");
+        assert!(punch < VICTIM.knockdown_threshold, "{punch}");
+        // A blow a little short of it flinches.
+        assert!(reacts(CONFIG.stagger_impulse_ns * 0.8) < VICTIM.stagger_threshold);
+        // A hard swing knocks down, and harder still more.
+        assert!(reacts(CONFIG.knockdown_impulse_ns) >= VICTIM.knockdown_threshold - 1e-3);
+        assert!(reacts(CONFIG.knockdown_impulse_ns * 1.5) > VICTIM.knockdown_threshold);
+        // Between the two the reaction rises, and never reaches the knockdown early.
+        let mut last = punch;
+        let steps = 10;
+        for k in 1..steps {
+            let impulse = CONFIG.stagger_impulse_ns
+                + (CONFIG.knockdown_impulse_ns - CONFIG.stagger_impulse_ns) * k as f32
+                    / steps as f32;
+            let r = reacts(impulse);
+            assert!(
+                r >= last && r < VICTIM.knockdown_threshold,
+                "{impulse}: {r}"
+            );
+            last = r;
+        }
+        // Damage scales with the blow.
+        let damage = |impulse: f32| plan(impulse).damage.unwrap_or(0);
+        assert!(damage(CONFIG.knockdown_impulse_ns * 1.5) > damage(CONFIG.stagger_impulse_ns));
+    }
+
+    #[test]
+    fn a_character_with_tuning_out_of_order_takes_the_knockdowns_share() {
+        let odd = VictimTuning {
+            stagger_threshold: 150.0,
+            ..VICTIM
+        };
+        let Blow::Strikes(p) = blow(CONFIG.stagger_impulse_ns, odd, 100, &CONFIG) else {
+            panic!("a blow");
+        };
+        let share = CONFIG.stagger_impulse_ns / CONFIG.knockdown_impulse_ns;
+        assert!(
+            (p.reaction_impulse * odd.type_scale - share * odd.knockdown_threshold).abs() < 1e-3
+        );
     }
 
     #[test]

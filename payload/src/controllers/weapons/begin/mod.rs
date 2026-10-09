@@ -5,31 +5,30 @@
 
 use std::time::{Duration, Instant};
 
-use glam::{Mat4, Quat, Vec2, Vec3};
+use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 
 use crate::{
     config::Config,
     controllers::{
         aim::gun,
-        body::{
-            self, BodyDimensions, alignment,
-            torso::{self, EYES_TO_NECK_PIVOT},
-        },
+        body::alignment,
         config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{
             self, Candidate, GrabVolume, GripTarget, HandPoint, HolsterSite, Mark, MarkAt, Shown,
-            Tier,
         },
         hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
         haptics::{self, Event},
         mode::{AirborneVariant, Mode, OnFootVariant},
         physical_hands::physics::guns,
-        vehicles::wheel::CockpitTransform,
         weapons::{
-            ads, c4, collide,
-            config::HolsterAnchor,
+            ads,
+            begin::{
+                place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
+                player_body::{PlayerBody, body_dimensions, body_points, volume_anchor},
+            },
+            c4, collide,
             docks::{self, DockedGun},
             dual_wield,
             engine::{self, HeldWeapon},
@@ -48,8 +47,10 @@ use crate::{
             volumes::{self, Anchor, BodyFrame, ChestGrabbers, HeadDrop},
         },
     },
-    headpose,
 };
+
+mod place;
+mod player_body;
 
 /// The first half of the weapon handling's input tick: read the weapon, place the pistols, and
 /// return the weapon handling's grip targets and whether the dual-wield split acts. Called while
@@ -366,6 +367,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             .showing(Shown::Always),
         ));
     }
+    if let Some((hand, contact)) = c4::preview() {
+        targets.push(GripTarget::measured(
+            GrabVolume::ChargeSurface,
+            hand,
+            contact.distance,
+            Mark::ring(MarkAt::World(contact.point), CHARGE_MARK_M)
+                .on_surface(contact.normal)
+                .showing(Shown::Always),
+        ));
+    }
     // A hand holding the second weapon braces nothing and takes nothing from the other hand.
     let foregrip_hand = weapon
         .and_then(|w| w.holder)
@@ -505,157 +516,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         held,
     }
 }
-
-/// How the weapon handling's candidates become grip targets: which point of the hand reaches the
-/// body's sockets and pouches, and where the markers go.
-struct Place {
-    /// The hand's point for the body's sockets and pouches: the player's own grip on the player's
-    /// body, the drawn one on the character's skeleton.
-    by: HandPoint,
-    xf: CockpitTransform,
-}
-
-impl Place {
-    fn new(active: &ActiveHands, anchor: &Anchor) -> Self {
-        Self {
-            by: match anchor {
-                Anchor::Body { .. } => HandPoint::Player,
-                Anchor::Skeleton(_) => HandPoint::Drawn,
-            },
-            xf: CockpitTransform {
-                head_world: headpose::query().position,
-                head_cockpit: active.head.position,
-                body: headpose::xr::body_rotation(),
-                world_scale: active.world_scale,
-            },
-        }
-    }
-
-    /// A socket or a pouch on the body, always marked.
-    fn body(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            self.by,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: c.centre,
-                    on_body: self.by == HandPoint::Player,
-                },
-                mark_size(c.radius),
-            )
-            .showing(Shown::Always),
-        )
-    }
-
-    /// A pouch, and its reach margin: a hand that misses it by a little still takes from it when
-    /// nothing else is in reach, because a hand feeling for a pouch on the body lands a little off
-    /// it more often than not.
-    fn pouch(&self, c: &Candidate, margin: f32) -> [GripTarget; 2] {
-        let pouch = self.body(c);
-        let around = Candidate {
-            radius: c.radius + margin.max(0.0),
-            ..*c
-        }
-        .target(self.by, pouch.mark.showing(Shown::Never))
-        .ranked(Tier::Fallback);
-        [pouch, around]
-    }
-
-    /// Where a hand touched a gun docked on the body.
-    fn touch(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            self.by,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: c.centre,
-                    on_body: self.by == HandPoint::Player,
-                },
-                mark_size(c.radius),
-            ),
-        )
-    }
-
-    /// A socket on the character's skeleton for a carried weapon, always marked.
-    fn socket(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: c.centre,
-                    on_body: false,
-                },
-                mark_size(c.radius),
-            )
-            .showing(Shown::Always),
-        )
-    }
-
-    /// A part of the gun in `holder`'s hand.
-    fn on_hand(&self, c: &Candidate, holder: Hand) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::OnHand {
-                    hand: holder,
-                    point: c.centre,
-                },
-                mark_size(c.radius),
-            ),
-        )
-    }
-
-    /// Something lying in the world.
-    fn world(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::World(self.xf.point_to_world(c.centre)),
-                WORLD_MARK_M,
-            ),
-        )
-    }
-}
-
-/// The braced foregrip, held by the bracing hand, marked where it holds the gun.
-fn held_foregrip(
-    hold: &foregrip::Hold,
-    active: &ActiveHands,
-    config: &ControllersConfig,
-) -> Option<GripTarget> {
-    let mut posed = active.hands;
-    foregrip::apply(&mut posed, &config.weapons.foregrip);
-    let brace = hold.holder.other();
-    let point = posed[brace.index()]?.grip.position;
-    let target = Candidate {
-        volume: GrabVolume::Foregrip,
-        centre: point,
-        radius: config.weapons.foregrip.radius_m,
-        hand: Some(brace),
-    }
-    .target(
-        HandPoint::Drawn,
-        Mark::ring(
-            MarkAt::OnHand {
-                hand: hold.holder,
-                point,
-            },
-            FOREGRIP_MARK_M,
-        ),
-    );
-    Some(target.held(brace))
-}
-
-/// A marker's size for a target reached within `radius`: the reach's diameter, kept within a size
-/// that marks the spot without covering what is around it.
-fn mark_size(radius: f32) -> f32 {
-    (radius * 2.0).clamp(MIN_MARK_M, MAX_MARK_M)
-}
-
-const MIN_MARK_M: f32 = 0.03;
-const MAX_MARK_M: f32 = 0.12;
-/// The marker on something lying in the world, metres.
-const WORLD_MARK_M: f32 = 0.06;
-/// The marker on a braced foregrip, metres.
-const FOREGRIP_MARK_M: f32 = 0.03;
 
 /// What the weapon handling read of the local player on the input tick.
 #[derive(Default)]
@@ -930,76 +790,6 @@ pub(super) fn gameplay(mode: Mode) -> bool {
         Mode::OnFoot(OnFootVariant::Ground)
             | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute)
     )
-}
-
-/// The player's body as the headset puts it, for the body's sockets and pouches: where the eyes
-/// would be on the upright neck, which way the torso faces, and where the feet are.
-struct PlayerBody {
-    /// The eyes over the neck pivot, `(x, z)` in the cockpit frame.
-    upright: Vec2,
-    yaw: f32,
-    /// The middle of the feet, `(x, z)`, while the torso estimate is fresh.
-    feet: Option<Vec2>,
-}
-
-impl PlayerBody {
-    /// The body from the torso estimate ([`alignment::estimate`]) while it is fresh, or from the
-    /// head's pose alone: the neck pivot below and behind the eyes, facing where the head does.
-    fn of(active: &ActiveHands) -> Self {
-        let head = active.head;
-        let estimate = alignment::estimate();
-        let yaw = estimate
-            .map(|e| e.yaw)
-            .or_else(|| torso::head_heading(head.orientation))
-            .unwrap_or(0.0);
-        let neck = estimate.map_or(head.position + head.orientation * EYES_TO_NECK_PIVOT, |e| {
-            e.neck
-        });
-        let eyes = neck - Quat::from_rotation_y(yaw) * EYES_TO_NECK_PIVOT;
-        Self {
-            upright: Vec2::new(eyes.x, eyes.z),
-            yaw,
-            feet: estimate.map(|e| e.stance.stance),
-        }
-    }
-}
-
-/// The body the volumes ride: the character's skeleton when the setting asks for it and the
-/// skeleton is fresh and upright, and otherwise the player's body as the headset puts it
-/// (`player`), turned to the estimated torso with its waist over the feet.
-fn volume_anchor(config: &ControllersConfig, active: &ActiveHands, player: &PlayerBody) -> Anchor {
-    let skeleton = (config.weapons.holsters.anchor == HolsterAnchor::Rico)
-        .then(|| alignment::skeleton_in_cockpit(active.head.position, active.world_scale))
-        .flatten();
-    let anchor = match skeleton {
-        Some(skeleton) => Anchor::Skeleton(skeleton),
-        None => Anchor::Body {
-            yaw: player.yaw,
-            pelvis: player.feet,
-        },
-    };
-    alignment::record_volume_anchor(anchor.label());
-    anchor
-}
-
-/// The dimensions the volumes are placed with: the player's on the player's body; on the
-/// character's skeleton, the character's while the hands are remapped onto them, and the player's
-/// otherwise.
-fn body_dimensions(config: &ControllersConfig, anchor: &Anchor) -> BodyDimensions {
-    match anchor {
-        Anchor::Skeleton(_) if config.body.remap_hands => BodyDimensions::CHARACTER_ESTIMATE,
-        _ => body::player(),
-    }
-}
-
-/// Each hand's point for the body's volumes: the player's own grip, before the body-scale remap,
-/// on the player's body, so that a hand on the player's own belt finds the pouch there; the grip
-/// of the hand the player sees on the character's skeleton, whose landmarks are the character's.
-fn body_points(active: &ActiveHands, anchor: &Anchor) -> [Option<Vec3>; 2] {
-    match anchor {
-        Anchor::Body { .. } => active.player_grips,
-        Anchor::Skeleton(_) => active.hands.map(|h| h.map(|h| h.grip.position)),
-    }
 }
 
 /// The hands as the gun is shown on them before its recoil: the two-handed pose of a held

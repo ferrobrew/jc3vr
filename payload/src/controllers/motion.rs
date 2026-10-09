@@ -193,6 +193,7 @@ fn velocities(samples: &[MotionSample], offset: Vec3) -> impl Iterator<Item = (f
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::config::GrenadeConfig;
 
     const DT: f64 = 1.0 / 90.0;
 
@@ -213,6 +214,38 @@ mod tests {
 
     fn close(a: Vec3, b: Vec3) -> bool {
         a.distance(b) < 1e-3
+    }
+
+    #[test]
+    fn the_throws_window_reaches_a_peak_before_the_fingers_open() {
+        // A throw peaks at 8 m/s, then slows over a fifth of a second before the fingers open: a
+        // relaxed squeeze lags the throw. The grenade's window still finds the peak; a window of a
+        // tenth of a second only finds the slowed hand.
+        let peak = Vec3::new(0.0, 2.0, -8.0);
+        let samples = (0..60)
+            .map(|i| {
+                let t = i as f64 * DT;
+                let release_s = 59.0 * DT;
+                let since_peak = (t - (release_s - 0.2)).max(0.0) as f32;
+                let velocity = peak * (1.0 - since_peak * 4.0).max(0.1);
+                sample(i, Vec3::ZERO, Some(velocity))
+            })
+            .collect::<Vec<_>>();
+        let release_s = 59.0 * DT;
+        let tuning = GrenadeConfig::new();
+        let wide = release_velocity(
+            &samples,
+            release_s,
+            Vec3::ZERO,
+            ReleaseEstimate {
+                window_s: tuning.release_window_s,
+                peak_span_s: tuning.release_peak_span_s,
+            },
+        )
+        .unwrap();
+        let narrow = release_velocity(&samples, release_s, Vec3::ZERO, ESTIMATE).unwrap();
+        assert!(wide.length() > 7.0, "{wide:?}");
+        assert!(narrow.length() < wide.length() * 0.8, "{narrow:?}");
     }
 
     #[test]

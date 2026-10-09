@@ -14,7 +14,7 @@ use crate::{
         },
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
-        frame::Hand,
+        frame::{self, Hand},
         grab::{GrabVolume, resolve::dock_target},
         hands::{
             self, ActiveHands, pose as hand_pose,
@@ -73,6 +73,15 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let config = Config::lock_query(|c| c.controllers);
     let active = hands::active_hands_raw();
     let now = Instant::now();
+    // The fingers opening lets a grenade or a charge go, not the grip's press relaxing.
+    let values = frame::with_latest(|f| {
+        Hand::BOTH.map(|h| {
+            let hand = f.hand(h);
+            (f.focused && hand.active).then_some(hand.inputs.squeeze)
+        })
+    })
+    .unwrap_or([None; 2]);
+    let opened = STATE.lock().opening.step(values, grips);
     let (weapon, gameplay, gun_side, touch, slide, promote, docked_touch) = {
         let state = STATE.lock();
         (
@@ -269,6 +278,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
             // The other subsystems' grabs: the bindings hand the weapon handling only its own.
             GrabVolume::MagazineWell
+            | GrabVolume::ChargeSurface
             | GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
@@ -365,20 +375,37 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 .map_or([None; 2], |a| a.hands.map(|h| h.map(|h| h.grip.position))),
             triggers,
             dominant: config.acting_hand(),
-            grips,
+            opened,
             world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
             dt,
         },
         &config,
         desired,
     );
+    // A hand holds nothing when it holds no gun (the C4 the game's planting mode wields is not one),
+    // no second weapon, grenade, or round.
+    let gun_hands = weapon.map_or([false; 2], |(w, _)| {
+        if w.wielded.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
+            [false; 2]
+        } else {
+            w.wielded.hands
+        }
+    });
+    let free = Hand::BOTH.map(|h| {
+        !gun_hands[h.index()]
+            && second::hand() != Some(h)
+            && grenade::throwing_hand() != Some(h)
+            && reload::holding_hand() != Some(h)
+    });
     c4::input_tick(
         &c4::TickInputs {
             acting: config.weapons.c4_throw && gameplay && active.is_some(),
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
-            grips,
+            opened,
+            free,
+            dominant: config.acting_hand(),
             world_scale: active.as_ref().map_or(1.0, |a| a.world_scale),
         },
         &config.weapons.c4,
@@ -403,7 +430,6 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     );
     // A gun the reload holds cannot fire. The dual-wield split keeps a held pistol's trigger from
     // the game itself, so the fire input is held back only when no drawn gun may fire.
-    let gun_hands = weapon.map_or([false; 2], |(w, _)| w.wielded.hands);
     let reload_blocks = gun_hands.contains(&true)
         && Hand::BOTH
             .iter()
@@ -414,7 +440,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     );
     // Only a hand on the grip fires the gun.
     let carried = weapon.and_then(|(w, _)| regions::carrying(w.address));
+    let explosive = grenade::throwing_hand().or_else(c4::throwing_hand);
     let fire_blocked = reload_blocks
+        || explosive_holds_fire(explosive, gun_hands, second::hand())
         || carried.is_some()
         || hold::act::holstering()
         || primary_trigger_idle(weapon.map(|(w, _)| w), &triggers)
@@ -439,6 +467,20 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 fn docked_at(hand: Hand, fits: impl Fn(GrabVolume) -> bool) -> Option<GrabVolume> {
     let state = STATE.lock();
     dock_target(hand, &state.placed, state.points[hand.index()], fits)
+}
+
+/// Whether the fire input is held back for a grenade or a charge in the hand `explosive`: with no
+/// gun in the other hand (`gun_hands`, or the second weapon's `second`), the fire input would draw
+/// a gun into the hand that holds it.
+fn explosive_holds_fire(
+    explosive: Option<Hand>,
+    gun_hands: [bool; 2],
+    second: Option<Hand>,
+) -> bool {
+    explosive.is_some_and(|hand| {
+        let other = hand.other();
+        !gun_hands[other.index()] && second != Some(other)
+    })
 }
 
 /// The fire inputs a weapon action holds back.
@@ -800,4 +842,23 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
             | GrabOutcome::Take { taken: true }
             | GrabOutcome::Socket { done: true }
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_grenade_in_the_hand_holds_fire_back_unless_the_other_hand_has_a_gun() {
+        assert!(!explosive_holds_fire(None, [false; 2], None));
+        assert!(explosive_holds_fire(Some(Hand::Left), [false; 2], None));
+        // The gun in the hand that now holds the grenade does not count.
+        assert!(explosive_holds_fire(Some(Hand::Left), [true, false], None));
+        assert!(!explosive_holds_fire(Some(Hand::Left), [false, true], None));
+        assert!(!explosive_holds_fire(
+            Some(Hand::Left),
+            [false; 2],
+            Some(Hand::Right)
+        ));
+    }
 }

@@ -10,7 +10,7 @@ The pickup's reach rays find characters as well as objects: a hit on a character
 - A hit on any other body of the character is a body of its ragdoll: it is taken as a loose object, by the object that owns the body, when it is dynamic and light enough ([physical-hands.md](physical-hands.md#holding)), so a fallen character is dragged by the limb the hand took, through a joint with the hand bodies' joint grabs, and thrown by letting go while swinging.
 - A character attached to a vehicle ([`Character::IsAttachedToVehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsAttachedToVehicle)) is a target only when one of that vehicle's doors stands open at least `characters.hijack_min_open_deg` ([`PfxBreakable::GetHingeAngleAboveMin`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::parts::PfxBreakable##func-GetHingeAngleAboveMin)) with its box's centre within `characters.hijack_door_reach_m` of the palm: the hand reaches in through the door, not through the glass.
 
-Whether the player's faction is hostile to the character ([`GetRelation`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/faction##func-GetRelation)) is judged at the reach, as the blows judge it ([physical-hands.md](physical-hands.md#hits)).
+Whether the player's faction is hostile to the character ([`GetRelation`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/faction##func-GetRelation)) is judged at the reach. The yank is the one place it decides anything; the blows and the shove below strike every character alike ([physical-hands.md](physical-hands.md#hits)).
 
 ## Holding on and yanking
 

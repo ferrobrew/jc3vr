@@ -30,7 +30,7 @@ The providers place their targets on every input tick:
 
 | Provider | Targets | Consumer |
 | --- | --- | --- |
-| The weapon handling (`weapons/begin.rs`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin, and only while it has something to give: a grenade, room for another charge, or a round in reserve), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip (to take it over), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands, on racks, and in lockers (each at the point of the gun nearest the hand), the held grenade's pin, a live grenade, and a magazine in the world | `weapons::finish_tick` |
+| The weapon handling (`weapons/begin/`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin, and only while it has something to give: a grenade, room for another charge, or a round in reserve), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip (to take it over), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands, on racks, and in lockers (each at the point of the gun nearest the hand), the held grenade's pin, a live grenade, the surface a held charge would stick to, and a magazine in the world | `weapons::finish_tick` |
 | The vehicle handling (`vehicles/begin.rs`) | The driver's controls (one grab point per hand on each), the cockpit's buttons, the parachute's handles (each with a reach margin), and the mounted gun's handles, with what a hand holds as held | `vehicles::finish_tick` |
 | The physical hands (`physical_hands/targets.rs`) | What each empty hand's reach found (an object, a hinged object, a weapon, a door, a character), every door near the hand by its handle, what a hand holds, a surface to climb, and the helicopter the player hangs from | `pickup::finish_tick`, `climb::finish_tick`, `stunt::finish_tick` |
 
@@ -61,6 +61,10 @@ A press and release between two ticks is a fresh press even while the last one i
 
 What letting go does is the holder's, with one shared rule for docking (`grab::resolve::dock_target`): of the targets the opening hand is within reach of, the nearest that fits what it holds takes it. A gun goes onto a free socket that fits it or its own holster, whichever is nearer under the hand; the second weapon goes onto any socket or back to its own holster; anything else falls with the hand's velocity. A hand over both a pouch and the gun's own holster puts the gun in the holster, because a pouch does not fit a gun.
 
+A grenade or a charge is let go when the fingers open, not when the press ends (`weapons/opening.rs`): a throwing hand relaxes its squeeze before the fingers leave the handle, so a release read from the press drops the grenade mid-throw. The fingers are read from the grip's value, the Index controller's capacitive sense or the Touch controller's pull, closed above 0.6 and open below 0.35, and a controller without a value falls back to the press. The throw's velocity comes from the fastest moment of the last quarter second before the fingers opened ([controllers.md, "Grenades, aim assist, and reloads"](controllers.md#grenades-aim-assist-and-reloads)), and the release is logged at info level with its speed. While a hand holds a grenade or a charge, the fire input is held back unless the other hand holds a gun, since with nothing wielded it would draw one into the hand with the explosive.
+
+A charge is the same whether it came from the chest pouch or the weapon wheel: choosing the explosives on the wheel puts the game in its planting mode, which the mod leaves at once for a charge in a free hand. Held near a surface, a red ring marks where it would stick; pressed onto the surface it sticks there, and let go in the air it is thrown ([physical-weapons.md, "C4 pressed onto a surface"](physical-weapons.md#c4-pressed-onto-a-surface)).
+
 ## Markers
 
 One renderer draws every target (`grab/markers.rs`), submitted to the overlay at the input tick's rate:
@@ -73,7 +77,7 @@ One renderer draws every target (`grab/markers.rs`), submitted to the overlay at
 | Vehicle | green | the driver's controls, the cockpit's buttons, the doors, the parachute's and the mounted gun's handles, and the helicopter to hang from |
 | Climb | orange | a surface to climb |
 | Character | violet | a character |
-| Explosive | red | a live grenade, the held grenade's pin |
+| Explosive | red | a live grenade, the held grenade's pin, the surface a held charge would stick to |
 
 A marker shows as its target says: always, faintly while no hand is within reach (the sockets and pouches on the body, the vehicle's controls and buttons, the parachute's handles); only while a hand is within reach (everything in the world and on a gun); or never (a reach margin, which its pouch or handle already marks). It is brighter while a hand is within reach of it, brightest and a little larger on the target a squeeze would take, and solid while a hand holds it. Its styles are a ring around the grab point, a handle (a dot, ringed once a hand is near), and a button (a disc on its face, ringed while a hand is in front of it). A marker on something in the world lies on its surface where the reach knows the surface's normal, and one on a weapon in the world sits where the hand would take it.
 
@@ -111,3 +115,5 @@ Nothing else draws a marker, logs a press, or decides between two subsystems' ta
 7. Press a grip near a barrel and read the log's `grip: pressed` line: its notes say what the reach hit and why it did or did not take it.
 8. Lean over a table without stepping: the hip holsters and the belt's pouch stay at the hips, and the chest's pouches lean with the shoulders. Stand half a metre behind where Rico's head is drawn (the chase trailing): the markers sit on the player's own body.
 9. Throw every grenade: the grenade pouch's marker goes, and comes back with a grenade picked up. Take a gun from a soldier's hands, and one from a locker: the gold marker sits on the gun where the hand would close.
+10. Take a grenade and throw it overhand, relaxing the squeeze through the swing: it leaves the hand only as the fingers open, and the log's `grenade: the fingers opened` line shows a `speed_mps` near the hand's peak. Pull the trigger of the hand holding it with no gun drawn: no pistol comes out.
+11. Choose C4 on the weapon wheel with a hand empty: the planting mode ends and a charge is in the dominant hand. Bring it near a wall: a red ring lies on the wall where it would stick; press it on: it sticks. Punch a civilian solidly: they stagger; swing hard: they fall.

@@ -177,8 +177,11 @@ pub struct HandHitsConfig {
     pub damage: bool,
     /// The weakest contact impulse a character reacts to, newton seconds.
     pub min_impulse_ns: f32,
-    /// The contact impulse that knocks a character down, newton seconds: a blow of this impulse
-    /// reaches the character's own knockdown threshold, and a weaker one the same share of it.
+    /// The contact impulse that staggers a character, newton seconds: a solid punch, which lands
+    /// just past the character's own stagger threshold.
+    pub stagger_impulse_ns: f32,
+    /// The contact impulse that knocks a character down, newton seconds: a hard swing, which
+    /// reaches the character's own knockdown threshold and ragdolls it.
     pub knockdown_impulse_ns: f32,
     /// The weakest contact impulse that deals damage, newton seconds.
     pub damage_impulse_ns: f32,
@@ -213,8 +216,10 @@ impl HandHitsConfig {
             reactions: true,
             damage: true,
             min_impulse_ns: 8.0,
-            knockdown_impulse_ns: 70.0,
-            damage_impulse_ns: 35.0,
+            // An arm of 10 kg: a solid punch at 3 m/s staggers, a hard swing at 5.5 m/s ragdolls.
+            stagger_impulse_ns: 30.0,
+            knockdown_impulse_ns: 55.0,
+            damage_impulse_ns: 25.0,
             damage_scale: 1.0,
             cooldown_s: 0.5,
             damage_cooldown_s: 1.0,

@@ -68,6 +68,9 @@ pub enum GrabVolume {
     MagazineWell,
     /// The C4 pouch on the chest, while the C4 throw is on.
     C4Pouch,
+    /// The surface a held charge is coming to, where it sticks when pressed on: marked, never taken
+    /// by a squeeze (see [`crate::controllers::weapons::c4::stick`]).
+    ChargeSurface,
     /// A physical vehicle control of the driver's seat (see
     /// [`crate::controllers::vehicles::physical`]).
     VehicleControl(ControlKind),
@@ -117,6 +120,7 @@ impl GrabVolume {
             GrabVolume::WeaponAction => "weapon action",
             GrabVolume::MagazineWell => "magazine well",
             GrabVolume::C4Pouch => "C4 pouch",
+            GrabVolume::ChargeSurface => "surface for the charge",
             GrabVolume::VehicleControl(kind) => kind.label(),
             GrabVolume::CockpitButton(button) => button.label(),
             GrabVolume::ParachuteHandle(Hand::Left) => "left parachute handle",
@@ -155,7 +159,9 @@ impl GrabVolume {
             | GrabVolume::StuntHold
             | GrabVolume::Pickup(PickupKind::Door) => Category::Vehicle,
             GrabVolume::Pickup(PickupKind::Character) => Category::Character,
-            GrabVolume::GrenadePin | GrabVolume::LiveGrenade => Category::Explosive,
+            GrabVolume::GrenadePin | GrabVolume::LiveGrenade | GrabVolume::ChargeSurface => {
+                Category::Explosive
+            }
             GrabVolume::Climb => Category::Climb,
             GrabVolume::Pickup(PickupKind::Prop | PickupKind::Hinged)
             | GrabVolume::WorldMagazine => Category::Prop,
@@ -173,6 +179,7 @@ impl GrabVolume {
             | GrabVolume::WeaponAction
             | GrabVolume::MagazineWell
             | GrabVolume::C4Pouch
+            | GrabVolume::ChargeSurface
             | GrabVolume::WorldWeapon
             | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade

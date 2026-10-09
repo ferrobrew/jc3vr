@@ -1,8 +1,9 @@
 //! C4 by hand: the charge thrown from the chest pouch, and the detonation from the wrist button,
 //! with the engine side on [`PlantedExplosiveWeapon`] and [`PlantedExplosive`].
 //!
-//! A grip press at the C4 pouch primes a charge in whichever hand grabbed it, and opening the grip
-//! throws it with that hand's velocity; it sticks where it lands. The game's own C4 weapon does the
+//! A grip press at the C4 pouch primes a charge in whichever hand grabbed it, and opening the
+//! fingers ([`crate::controllers::weapons::opening`]) throws it with that hand's velocity; it
+//! sticks where it lands. The game's own C4 weapon does the
 //! work, driven directly rather than through its planting mode (which equips the weapon, aims a
 //! placement ghost with the camera, and places the charge at the aimed surface with an animation):
 //!
@@ -36,18 +37,27 @@
 //!
 //! A held charge pressed onto a surface sticks there instead of being thrown ([`stick`]): it is
 //! made live the same way, and placed just off the surface and pushed onto it, so that its own
-//! collision sticks it.
+//! collision sticks it. The surface the charge is coming to is marked where it would stick
+//! ([`preview`]).
+//!
+//! The weapon wheel's explosives put the game in its planting mode, whose plant input the
+//! controller layout leaves unbound. A free hand takes the charge instead ([`wheel`]): the
+//! planting mode is left with the game's own holster ([`Character::HolsterWeapon`]), and once it
+//! has ended the charge comes into that hand as one from the pouch does. A charge from the wheel
+//! and one from the pouch are then the same charge.
 //!
 //! Every step is felt: a primed charge pulses its hand, a thrown one pulses the hand it leaves, a
 //! grab the game refuses buzzes the grabbing hand (and is logged at info level), and a detonation
 //! the weapon starts, from either source, pulses both hands and flashes the wrist button.
 //!
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
+//! [`Character::HolsterWeapon`]: jc3gi::character::character::Character::HolsterWeapon
 
 pub mod config;
 pub mod press;
 pub mod stage;
 pub mod stick;
+pub mod wheel;
 pub mod wrist;
 
 use std::time::Instant;
@@ -69,7 +79,6 @@ use crate::{
     config::Config,
     controllers::{
         aim::targets::weak_target,
-        bindings::controls::ButtonControl,
         frame::{Hand, Pose},
         hands::held::{self, Held, Slot},
         haptics::{self, Event},
@@ -79,8 +88,10 @@ use crate::{
             c4::{
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
                 stick::{self as stick_by_hand, StickAt},
+                wheel::{WheelHands, WheelStep},
             },
             config::C4Config,
+            engine,
             grenade::stage::Release,
         },
     },
@@ -195,6 +206,17 @@ pub(crate) fn stick_candidate(tuning: &C4Config) -> Option<(Hand, Pose)> {
         .flatten()
 }
 
+/// The surface the held charge is coming to, where it would stick if pressed on: the hand and the
+/// contact, from the last aim update.
+pub(crate) fn preview() -> Option<(Hand, stick_by_hand::Contact)> {
+    STATE.lock().preview
+}
+
+/// Note the surface the held charge is coming to.
+pub(crate) fn publish_preview(preview: Option<(Hand, stick_by_hand::Contact)>) {
+    STATE.lock().preview = preview;
+}
+
 /// Press the charge `hand` holds onto a surface: the next weapon update places it at `at` and
 /// pushes it on, as a release that throws it would. Nothing happens if the hand no longer holds a
 /// charge it has not let go of.
@@ -233,8 +255,12 @@ pub(super) struct TickInputs {
     pub acting: bool,
     /// The hand that grabbed the C4 pouch this tick.
     pub pouch_grab: Option<Hand>,
-    /// Each hand's grip over the tick, indexed by [`Hand::index`].
-    pub grips: [ButtonControl; 2],
+    /// The hands whose fingers opened this tick, indexed by [`Hand::index`].
+    pub opened: [bool; 2],
+    /// The hands holding nothing, by [`Hand::index`], for a charge from the weapon wheel.
+    pub free: [bool; 2],
+    /// The dominant hand, which takes a charge from the weapon wheel when it is free.
+    pub dominant: Hand,
     /// The VR world scale the hands compose with.
     pub world_scale: f32,
 }
@@ -249,8 +275,45 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
     if let Some(hand) = inputs.pouch_grab {
         state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
     }
+    let planting = state.status.planting_mode;
+    let pending = state
+        .wheel
+        .map(|(hand, since)| (hand, since.elapsed().as_secs_f32()));
+    let hands = WheelHands {
+        free: inputs.free,
+        dominant: inputs.dominant,
+    };
+    match wheel::step(planting, state.stage, pending, hands) {
+        WheelStep::Leave(hand) => {
+            state.wheel = Some((hand, Instant::now()));
+            drop(state);
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            if let Some(owner) = unsafe { engine::local_player() } {
+                unsafe { engine::holster(owner) };
+            }
+            tracing::info!(
+                target: "controllers",
+                hand = hand.label(),
+                "c4: the weapon wheel's explosives leave the planting mode for a charge in the hand"
+            );
+            state = STATE.lock();
+        }
+        WheelStep::Take(hand) => {
+            state.wheel = None;
+            state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
+        }
+        WheelStep::Wait => {}
+        WheelStep::Drop => {
+            state.wheel = None;
+            tracing::info!(
+                target: "controllers",
+                planting,
+                "c4: the weapon wheel's charge is not taken: no hand is free, or the planting mode did not end"
+            );
+        }
+    }
     if let Some(hand) = state.stage.hand()
-        && inputs.grips[hand.index()].released
+        && inputs.opened[hand.index()]
     {
         // Without a tracked sample of the throw, the charge is dropped where it is rather than kept
         // in a hand that has opened.
@@ -259,7 +322,12 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Config) {
         });
         state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
         state.status.last_release = Some(release.velocity);
-        tracing::debug!(target: "controllers", ?hand, velocity = ?release.velocity, "c4 release");
+        tracing::info!(
+            target: "controllers",
+            hand = hand.label(),
+            speed_mps = release.velocity.length(),
+            "c4: the fingers opened, and the charge leaves the hand"
+        );
     }
     state.status.stage = state.stage;
 }
@@ -270,12 +338,19 @@ pub(super) fn stand_down() {
     let mut state = STATE.lock();
     state.stage = stage::on_input(state.stage, InputEvent::StandDown);
     state.status.stage = state.stage;
+    state.wheel = None;
+    state.preview = None;
 }
 
 /// Note the controllers' grips in the world for the weapon's updates: where a held charge sits and
 /// where a throw leaves from. `None` for a hand the aim update did not compose.
 pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
-    STATE.lock().grips = grips;
+    let mut state = STATE.lock();
+    state.grips = grips;
+    // Without the hands, no surface is probed.
+    if grips == [None; 2] {
+        state.preview = None;
+    }
 }
 
 /// How long a detonation request waits for the weapon to start the detonation, seconds: long
@@ -304,6 +379,10 @@ struct State {
     held_since: Option<Instant>,
     /// Where a charge pressed onto a surface leaves from, until it is placed.
     stick: Option<StickAt>,
+    /// The surface the held charge is coming to, with its hand.
+    preview: Option<(Hand, stick_by_hand::Contact)>,
+    /// The hand a charge from the weapon wheel is for, and when the planting mode was left for it.
+    wheel: Option<(Hand, Instant)>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -330,6 +409,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     was_detonating: false,
     held_since: None,
     stick: None,
+    preview: None,
+    wheel: None,
 });
 
 /// The release of a throw by `hand`: the velocity of the held charge's point over the samples just
@@ -817,6 +898,8 @@ mod tests {
             was_detonating: false,
             held_since: None,
             stick: None,
+            preview: None,
+            wheel: None,
         }
     }
 

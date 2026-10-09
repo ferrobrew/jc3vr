@@ -21,6 +21,7 @@
 //!   keeps from the game's despawn;
 //! - [`camera_kick`]: the game's camera recoil, suppressed while the guns aim by hand;
 //! - [`grenade`]: the physical grenade throw;
+//! - [`opening`]: when a hand holding a grenade or a charge lets it go: when its fingers open;
 //! - [`c4`]: the C4 throw from the chest pouch and the wrist detonator;
 //! - [`reload`]: the true reload: eject, load from the belt pouch, and chamber by hand;
 //! - [`empty`]: the game's automatic switch away from an empty weapon suppressed, and the dry fire
@@ -74,6 +75,7 @@ pub mod heft;
 pub mod hold;
 pub mod holster;
 pub mod inventory;
+pub mod opening;
 pub mod recoil;
 pub mod regions;
 pub mod reload;

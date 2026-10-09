@@ -237,8 +237,9 @@ pub(super) struct TickInputs {
     pub triggers: [ButtonControl; 2],
     /// The dominant hand, whose trigger fires; the other's retracts the tethers.
     pub dominant: Hand,
-    /// Each hand's grip over the tick, indexed by [`Hand::index`].
-    pub grips: [ButtonControl; 2],
+    /// The hands whose fingers opened this tick, indexed by [`Hand::index`]
+    /// ([`crate::controllers::weapons::opening`]).
+    pub opened: [bool; 2],
     /// The VR world scale the hands compose with.
     pub world_scale: f32,
     pub dt: f32,
@@ -309,7 +310,7 @@ pub(super) fn input_tick(
         catch_one(hand, grip, &state.sightings, tuning);
     }
     if let Some(hand) = state.stage.hand()
-        && inputs.grips[hand.index()].released
+        && inputs.opened[hand.index()]
     {
         // Without a tracked sample of the throw (the controller was occluded), the grenade is let
         // go where it is rather than kept in a hand that has opened.
@@ -318,7 +319,13 @@ pub(super) fn input_tick(
         });
         state.stage = stage::on_input(state.stage, InputEvent::Release(hand, release));
         state.status.last_release = Some(release.velocity);
-        tracing::debug!(target: "controllers", ?hand, velocity = ?release.velocity, "grenade release");
+        tracing::info!(
+            target: "controllers",
+            hand = hand.label(),
+            speed_mps = release.velocity.length(),
+            velocity = ?release.velocity,
+            "grenade: the fingers opened, and the grenade leaves the hand"
+        );
     }
     state.status.stage = state.stage;
     if state.stage != Stage::Idle {
@@ -892,8 +899,7 @@ unsafe fn carry_caught(inputs: &TickInputs, tuning: &GrenadeConfig) -> Option<(H
         tracing::info!(target: "controllers", ?hand, "grenade: the caught grenade is gone from the hand");
         return None;
     };
-    let grip = inputs.grips[hand.index()];
-    if grip.released || !grip.held() {
+    if inputs.opened[hand.index()] {
         let relative = release(hand, inputs.world_scale, tuning).map_or(Vec3::ZERO, |r| r.velocity);
         let carried = unsafe { engine::local_player() }
             .map(|p| Vec3::from_array(p.m_MeasuredWorldVelocity.data))

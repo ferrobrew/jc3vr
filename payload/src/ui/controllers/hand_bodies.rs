@@ -241,6 +241,9 @@ fn hits_settings(ui: &mut Ui, h: &mut HandHitsConfig) {
         ui.checkbox(&mut h.reactions, "Characters react to blows");
         ui.add(egui::Slider::new(&mut h.min_impulse_ns, 0.0..=50.0).text("Weakest blow (N·s)"));
         ui.add(
+            egui::Slider::new(&mut h.stagger_impulse_ns, 1.0..=300.0).text("Stagger blow (N·s)"),
+        );
+        ui.add(
             egui::Slider::new(&mut h.knockdown_impulse_ns, 1.0..=300.0)
                 .text("Knockdown blow (N·s)"),
         );

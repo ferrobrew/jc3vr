@@ -20,6 +20,7 @@ use crate::controllers::{
         foregrip::{self, GripGeometry},
         grenade, grip_watch, heft,
         hold::{self, second},
+        opening::OpenWatch,
         recoil,
         regions::{self, Carry, GunRegion, RegionHit},
         reload,
@@ -107,6 +108,8 @@ pub(super) struct State {
     pub(super) promote: Option<Hand>,
     /// Where each hand touches a long gun docked on a shoulder, by [`Hand::index`].
     pub(super) docked_touch: [Option<DockTouch>; 2],
+    /// Each hand's fingers, for the release of a grenade or a charge.
+    pub(super) opening: OpenWatch,
 }
 
 /// Where the hand without the wielded long gun touches it.
@@ -206,4 +209,5 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     slide: None,
     promote: None,
     docked_touch: [None; 2],
+    opening: OpenWatch::new(),
 });

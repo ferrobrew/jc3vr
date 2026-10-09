@@ -673,8 +673,8 @@ impl GrenadeConfig {
     pub const fn new() -> Self {
         Self {
             hold_offset_m: Vec3::ZERO,
-            release_window_s: 0.1,
-            release_peak_span_s: 0.015,
+            release_window_s: 0.25,
+            release_peak_span_s: 0.03,
             velocity_scale: 1.0,
             max_speed_mps: 30.0,
             hand_aimed_fallback: true,
@@ -721,8 +721,8 @@ impl C4Config {
     pub const fn new() -> Self {
         Self {
             hold_offset_m: Vec3::ZERO,
-            release_window_s: 0.1,
-            release_peak_span_s: 0.015,
+            release_window_s: 0.25,
+            release_peak_span_s: 0.03,
             velocity_scale: 1.0,
             max_speed_mps: 25.0,
             detonator: WristDetonatorConfig::new(),

@@ -9,9 +9,9 @@
 //! thresholds and carries the blow's momentum into the ragdoll it falls as. A blow hard enough to
 //! deal damage is a melee damage message ([`DamageMsg`]) to the character's damage virtual
 //! ([`PhysicsGameObject::OnDamage`]) instead, which takes the health and runs the same hit reaction
-//! from the message's impulse. Only a character the player's faction is hostile to
-//! ([`GetRelation`]) takes damage or a knockdown: an ally, an escort, or a bystander is staggered
-//! at most, so that a careless swing cannot kill a mission's own characters.
+//! from the message's impulse. Every character is struck alike, whatever its relation to the
+//! player's faction ([`GetRelation`], read for the log): a civilian, a guard, and an ally take the
+//! same blow, and the game's own reactions to it (the alarm, the heat) follow.
 //!
 //! The character is found again from the contact's body when the blow is dealt: the body's engine
 //! instance must still be the one the event named, and its owner the same object, so a character
@@ -47,7 +47,7 @@ use crate::controllers::{
             guns,
             hit::{
                 ANY_HAND, Blow, BlowPlan, HitGate, VictimTuning, approach, blow, blow_impulse,
-                pulse_share, restrain, striking_with,
+                pulse_share, striking_with,
             },
         },
         sounds::{self, Impact, ImpactKind},
@@ -191,14 +191,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         ) {
             continue;
         }
-        let tuning = VictimTuning {
-            type_scale: victim
-                .m_HitReaction_DamageImpulseScale
-                .get(melee_type_index())
-                .copied()
-                .unwrap_or(0.0),
-            knockdown_threshold: victim.m_HitReaction_ImpulseRagdollThreshold,
-        };
+        let tuning = victim_tuning(victim);
         let melee_damage = unsafe { engine::melee_damage(attacker) }.unwrap_or(0);
         let mut plan = match blow(impulse_ns, tuning, melee_damage, hits) {
             Blow::Strikes(plan) => plan,
@@ -215,9 +208,6 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         // SAFETY: both characters are live.
         let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
         let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
-        if !hostile {
-            plan = restrain(plan, NOT_HOSTILE_MAX_STRENGTH);
-        }
         // One damaging blow per character a while, from either hand.
         if plan.damage.is_some()
             && !gate.0.admit(
@@ -339,7 +329,7 @@ pub(crate) fn queue_shove(shove: Shove) {
 }
 
 /// Deal the shoves queued since the last frame tick through each character's own hit reaction, as
-/// a blow without damage. A character the player is not hostile to is staggered at most.
+/// a blow without damage, every character alike.
 ///
 /// # Safety
 ///
@@ -368,23 +358,13 @@ pub(super) unsafe fn deliver_shoves(config: &PhysicalHandsConfig) -> ShovesDeliv
             ShoveForce::Yank { strength } => strength.max(0.0) * hits.knockdown_impulse_ns,
             ShoveForce::Push { speed_mps } => hits.blow_mass_kg.max(0.0) * speed_mps.max(0.0),
         };
-        let tuning = VictimTuning {
-            type_scale: victim
-                .m_HitReaction_DamageImpulseScale
-                .get(melee_type_index())
-                .copied()
-                .unwrap_or(0.0),
-            knockdown_threshold: victim.m_HitReaction_ImpulseRagdollThreshold,
-        };
+        let tuning = victim_tuning(victim);
         let Blow::Strikes(mut plan) = blow(impulse_ns, tuning, 0, &hits) else {
             continue;
         };
         // SAFETY: both characters are live.
         let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
         let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
-        if !hostile {
-            plan = restrain(plan, NOT_HOSTILE_MAX_STRENGTH);
-        }
         plan.damage = None;
         let yank = matches!(shove.force, ShoveForce::Yank { .. });
         // SAFETY: forwarded from the caller; both characters are live.
@@ -418,8 +398,18 @@ static SHOVES: Mutex<Vec<Shove>> = Mutex::new(Vec::new());
 /// How far above a character's root its chest is, metres: where a blow aims.
 const CHEST_HEIGHT_M: f32 = 1.2;
 
-/// The strongest blow a character the player is not hostile to takes, as a share of a knockdown.
-const NOT_HOSTILE_MAX_STRENGTH: f32 = 0.9;
+/// A struck character's own hit-reaction tuning, for a blow of the melee type.
+fn victim_tuning(victim: &Character) -> VictimTuning {
+    VictimTuning {
+        type_scale: victim
+            .m_HitReaction_DamageImpulseScale
+            .get(melee_type_index())
+            .copied()
+            .unwrap_or(0.0),
+        stagger_threshold: victim.m_HitReaction_ImpulseStumbleThreshold,
+        knockdown_threshold: victim.m_HitReaction_ImpulseRagdollThreshold,
+    }
+}
 
 /// The share of a knockdown from which a blow follows through.
 const FOLLOW_THROUGH_STRENGTH: f32 = 0.5;

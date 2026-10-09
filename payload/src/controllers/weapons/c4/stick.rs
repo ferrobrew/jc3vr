@@ -10,6 +10,9 @@
 //! touches, oriented by the surface and attached to the object it touched, as a thrown charge
 //! sticks where it lands. The player's own character is never a surface.
 //!
+//! The same probes, reaching [`C4StickConfig::preview_m`], find the surface the charge is coming
+//! to, which is marked where the charge would stick ([`c4::preview`]).
+//!
 //! [`C4StickConfig::contact_m`]: crate::controllers::weapons::c4::config::C4StickConfig::contact_m
 //! [`C4StickConfig::standoff_m`]: crate::controllers::weapons::c4::config::C4StickConfig::standoff_m
 //! [`C4StickConfig::push_mps`]: crate::controllers::weapons::c4::config::C4StickConfig::push_mps
@@ -58,9 +61,11 @@ pub struct StickAt {
 pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
     let tuning = &config.weapons.c4;
     if !(config.weapons.c4_throw && tuning.stick.enabled) {
+        c4::publish_preview(None);
         return;
     }
     let Some((hand, grip)) = c4::stick_candidate(tuning) else {
+        c4::publish_preview(None);
         return;
     };
     let centre = probe_origin(grip, c4::hold_offset(hand, tuning));
@@ -70,18 +75,24 @@ pub(crate) unsafe fn probe(owner: &Character, config: &ControllersConfig) {
         material: false,
     };
     let reach = tuning.stick.contact_m.max(0.0);
-    let hits = PROBE_AXES.iter().filter_map(|&axis| {
-        let ray = Ray::new(centre, grip.orientation * axis)?;
-        // SAFETY: forwarded from the caller; the owner is live.
-        let hit = unsafe { raycast::cast(&ray, reach, &options) }.ok()??;
-        Some((
-            hit.position,
-            hit.normal,
-            ray.direction,
-            hit.object.is_some(),
-        ))
-    });
-    let Some(contact) = nearest_contact(centre, hits, reach) else {
+    let preview = tuning.stick.preview_m.max(reach);
+    let hits: Vec<_> = PROBE_AXES
+        .iter()
+        .filter_map(|&axis| {
+            let ray = Ray::new(centre, grip.orientation * axis)?;
+            // SAFETY: forwarded from the caller; the owner is live.
+            let hit = unsafe { raycast::cast(&ray, preview, &options) }.ok()??;
+            Some((
+                hit.position,
+                hit.normal,
+                ray.direction,
+                hit.object.is_some(),
+            ))
+        })
+        .collect();
+    let near = nearest_contact(centre, hits.iter().copied(), preview);
+    c4::publish_preview(near.map(|contact| (hand, contact)));
+    let Some(contact) = near.filter(|c| c.distance <= reach) else {
         return;
     };
     c4::press(hand, placement(contact, &tuning.stick));

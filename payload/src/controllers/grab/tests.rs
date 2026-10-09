@@ -225,6 +225,7 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::WeaponAction,
         GrabVolume::MagazineWell,
         GrabVolume::C4Pouch,
+        GrabVolume::ChargeSurface,
         GrabVolume::VehicleControl(ControlKind::Wheel),
         GrabVolume::CockpitButton(Button::Horn),
         GrabVolume::ParachuteHandle(Hand::Left),
@@ -258,6 +259,7 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::WeaponAction
             | GrabVolume::MagazineWell
             | GrabVolume::C4Pouch
+            | GrabVolume::ChargeSurface
             | GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
