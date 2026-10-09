@@ -663,6 +663,7 @@ The order puts the parts that everything else depends on first, then the parts w
 37. The motorcycle's throttle grip. On a motorcycle with the handlebars held, roll the right grip back: the bike accelerates in proportion, with a click as it opens, and no nitrous or turbo jump; the trigger still accelerates. In a helicopter, raise and lower the collective with an ordinary wrist roll: no nitrous; twist it hard either way: nitrous.
 38. The mech. Enter a mech: the summary's heading reads `MECH`, the left stick walks, the right trigger fires the right-hand weapon, the left trigger held attracts with the gravity gun and let go throws, the right grip drops, the left grip punches, and A jumps.
 39. Tethers from a vehicle. Drive a car, tether it to something with the grapple, and double tap the left B: the tether lets go.
+40. Menu pages with the pointer. In the map or a menu with the native pointer showing, aim just off the panel's edge and pull the right trigger: nothing pages. Pull the left trigger: the page goes back; hold the left grip and pull it: the page goes forward.
 
 ## Reverse-engineering work
 

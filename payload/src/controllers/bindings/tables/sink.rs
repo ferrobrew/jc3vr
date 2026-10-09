@@ -240,6 +240,10 @@ pub struct MenuLatch {
     pub back: Option<bool>,
     /// The direction the stick push latched to, and whether it began with the modifier held.
     pub stick: Option<(Direction, bool)>,
+    /// Whether the previous page press began with the modifier held, while it is held.
+    pub page_prev: Option<bool>,
+    /// Whether the next page press began with the modifier held, while it is held.
+    pub page_next: Option<bool>,
 }
 
 /// One hand's pad press: the press action and the zone it latched to at its press edge, held
@@ -265,8 +269,9 @@ pub struct EvalSink<'a> {
     intents: &'a Intents,
     latches: Latches,
     move_rotation: f32,
-    /// The menu actions whose presses latch the modifier, as `(confirm, back)`.
-    menu_presses: (ActionId, ActionId),
+    /// The menu actions whose presses latch the modifier: confirm, back, and the previous and next
+    /// page.
+    menu_presses: [ActionId; 4],
     pub map: MapKind,
     pub desired: Vec<Desired>,
 }
@@ -277,7 +282,12 @@ impl<'a> EvalSink<'a> {
             intents,
             latches,
             move_rotation,
-            menu_presses: (MenuAction::MenuConfirm.id(), MenuAction::MenuBack.id()),
+            menu_presses: [
+                MenuAction::MenuConfirm.id(),
+                MenuAction::MenuBack.id(),
+                MenuAction::MenuPagePrev.id(),
+                MenuAction::MenuPageNext.id(),
+            ],
             map,
             desired: Vec::with_capacity(32),
         }
@@ -288,8 +298,10 @@ impl<'a> EvalSink<'a> {
     fn gripped(&self, input: Input, hand: Hand) -> Option<bool> {
         let latch = &self.latches.menu[hand.index()];
         match input {
-            Input::Action(a) if a == self.menu_presses.0 => latch.confirm,
-            Input::Action(a) if a == self.menu_presses.1 => latch.back,
+            Input::Action(a) if a == self.menu_presses[0] => latch.confirm,
+            Input::Action(a) if a == self.menu_presses[1] => latch.back,
+            Input::Action(a) if a == self.menu_presses[2] => latch.page_prev,
+            Input::Action(a) if a == self.menu_presses[3] => latch.page_next,
             Input::MenuStick(_) => latch.stick.map(|(_, gripped)| gripped),
             _ => None,
         }

@@ -140,6 +140,8 @@ impl Bindings {
                 confirm: None,
                 back: None,
                 stick: None,
+                page_prev: None,
+                page_next: None,
             }; 2],
             pads: [PadLatch { press: None }; 2],
             stick_chord: StickChord::new(),

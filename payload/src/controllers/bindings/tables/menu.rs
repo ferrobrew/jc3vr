@@ -1,4 +1,4 @@
-//! The menu presses' latches ([`MenuLatch`]): each confirm, back, and stick press of a hand
+//! The menu presses' latches ([`MenuLatch`]): each confirm, back, page, and stick press of a hand
 //! remembers whether that hand's menu modifier was held when it began, and the stick reads as one
 //! latched direction at a time; and the pad presses' latches ([`PadLatch`]), which keep the zone a
 //! press began on. Pure.
@@ -30,6 +30,16 @@ pub fn step(latch: &mut MenuLatch, intents: &Intents, hand: Hand, push: f32) {
     let gripped = read(MenuAction::MenuModifier).button.held();
     latch.confirm = latch_button(latch.confirm, read(MenuAction::MenuConfirm).button, gripped);
     latch.back = latch_button(latch.back, read(MenuAction::MenuBack).button, gripped);
+    latch.page_prev = latch_button(
+        latch.page_prev,
+        read(MenuAction::MenuPagePrev).button,
+        gripped,
+    );
+    latch.page_next = latch_button(
+        latch.page_next,
+        read(MenuAction::MenuPageNext).button,
+        gripped,
+    );
     latch.stick = latch_stick(
         latch.stick,
         read(MenuAction::MenuNavigate).vector_raw,

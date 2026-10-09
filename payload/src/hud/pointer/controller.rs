@@ -99,12 +99,14 @@ pub fn clear_controller() {
 }
 
 /// The hand whose menu trigger belongs to the pointer. The UI binding table uses that trigger for
-/// page navigation; the pointer claims it for a whole press when the press began with the ray on
-/// the panel, so a press that starts on the panel never turns a page and a page press that starts
-/// off it is held until its physical release.
+/// page navigation; the pointer owns it whenever it shows, and for the rest of a press that began
+/// on the panel. So a press aimed at a button just off the panel's edge clicks nothing rather than
+/// turning a page, and the pages stay on the other trigger and on the grip-held trigger.
 pub fn owns_menu_trigger() -> Option<Hand> {
     let state = CONTROLLER_STATE.lock();
-    state.trigger_claimed.then_some(state.hand).flatten()
+    (state.showing || state.trigger_claimed)
+        .then_some(state.hand)
+        .flatten()
 }
 
 /// The trigger as one input tick sees it: the level, and the edges latched since the last tick.
@@ -143,6 +145,8 @@ pub(super) struct ControllerState {
     trigger_down: bool,
     /// Whether the current trigger press began with the ray on the panel.
     trigger_claimed: bool,
+    /// Whether the pointer is usable this tick: a game menu is up and the native pointer is on.
+    showing: bool,
     hand: Option<Hand>,
 }
 
@@ -157,6 +161,7 @@ impl ControllerState {
             updated: None,
             trigger_down: false,
             trigger_claimed: false,
+            showing: false,
             hand: None,
         }
     }
@@ -179,6 +184,7 @@ impl ControllerState {
         self.captured = false;
         self.output = None;
         self.trigger_claimed = false;
+        self.showing = false;
         self.updated = Some(now);
     }
 
@@ -198,6 +204,7 @@ impl ControllerState {
             self.captured = false;
             self.output = None;
             self.trigger_claimed = false;
+            self.showing = false;
             self.updated = None;
         }
     }
@@ -264,6 +271,7 @@ impl ControllerState {
             self.trigger_claimed = false;
         }
         self.trigger_down = trigger_down;
+        self.showing = true;
         self.hand = Some(hand);
         self.output = output;
         self.updated = Some(now);
@@ -439,5 +447,24 @@ mod tests {
         assert!(claimed(&state), "a panel press stays claimed off the panel");
         state.step(None, false, Hand::Right, now);
         assert!(!claimed(&state));
+    }
+
+    #[test]
+    fn the_pointer_owns_its_trigger_whenever_it_shows() {
+        let now = Instant::now();
+        let owner = |state: &ControllerState| {
+            (state.showing || state.trigger_claimed)
+                .then_some(state.hand)
+                .flatten()
+        };
+        let mut state = ControllerState::new();
+        assert_eq!(owner(&state), None);
+        // A press just off the panel's edge is the pointer's, not a page.
+        state.step(OUTSIDE, false, Hand::Right, now);
+        state.step(OUTSIDE, true, Hand::Right, now);
+        assert_eq!(owner(&state), Some(Hand::Right));
+        // With the menu gone, the trigger is the table's again.
+        state.disarm(now);
+        assert_eq!(owner(&state), None);
     }
 }

@@ -23,6 +23,28 @@ fn pointer_suppresses_only_its_hand_in_either_layout() {
 }
 
 #[test]
+fn the_other_trigger_with_its_grip_turns_the_pointers_page() {
+    for dominant in Hand::BOTH {
+        let mut c = controls(dominant, |_, off| {
+            off.grip = down();
+            off.trigger_press = down();
+            off.trigger = 1.0;
+        });
+        c.pointer_hand = Some(dominant);
+        let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let (pointers_page, own_page) = match dominant {
+            Hand::Left => (GUI_PAGE_PREV, GUI_PAGE_NEXT),
+            Hand::Right => (GUI_PAGE_NEXT, GUI_PAGE_PREV),
+        };
+        assert_eq!(
+            wants(&step, MapKind::Ui, pointers_page),
+            Some(Want::Hold(1.0))
+        );
+        assert_eq!(wants(&step, MapKind::Ui, own_page), None);
+    }
+}
+
+#[test]
 fn either_hand_confirms_and_goes_back_in_either_layout() {
     for dominant in Hand::BOTH {
         for hand in Hand::BOTH {

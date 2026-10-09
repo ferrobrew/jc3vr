@@ -359,9 +359,10 @@ fn wingsuit<S: Sink>(s: &mut S) {
 
 /// A game menu. Each hand's confirm, back, and stick act alike, whichever is dominant. A hand's
 /// menu modifier (its grip), latched at each press, turns its confirm and back into the gamepad's
-/// X and Y, and its stick's left and right into the tab steps. The game repeats a held step itself,
-/// so the stick is read as one latched direction at a time ([`Input::MenuStick`]). The native UI
-/// pointer's trigger is masked from the page actions on its hand.
+/// X and Y, its stick's left and right into the tab steps, and its trigger's page step into the
+/// other page. The game repeats a held step itself, so the stick is read as one latched direction
+/// at a time ([`Input::MenuStick`]). The native UI pointer's trigger is masked from the page
+/// actions on its hand while the pointer shows.
 fn ui<S: Sink>(s: &mut S, ctx: &TableCtx) {
     let confirm = M::MenuConfirm.id();
     let back = M::MenuBack.id();
@@ -398,8 +399,22 @@ fn ui<S: Sink>(s: &mut S, ctx: &TableCtx) {
         s.hold(&[zone(M::MenuTabPress, PadZone::Left)], &[GUI_TAB_PREV]);
         s.hold(&[zone(M::MenuTabPress, PadZone::Right)], &[GUI_TAB_NEXT]);
     }
-    s.hold(&[p(M::MenuPagePrev)], &[GUI_PAGE_PREV]);
-    s.hold(&[p(M::MenuPageNext)], &[GUI_PAGE_NEXT]);
+    // Each trigger pages its own way, and with its grip held the other way, so both pages stay in
+    // reach while the native UI pointer owns one hand's trigger.
+    s.hold(
+        &[
+            p(M::MenuPagePrev).gated(Gate::Ungripped),
+            p(M::MenuPageNext).gated(Gate::Gripped),
+        ],
+        &[GUI_PAGE_PREV],
+    );
+    s.hold(
+        &[
+            p(M::MenuPageNext).gated(Gate::Ungripped),
+            p(M::MenuPagePrev).gated(Gate::Gripped),
+        ],
+        &[GUI_PAGE_NEXT],
+    );
     s.hold(&[p(M::MenuFocus)], &[GUI_FOCUS]);
     s.hold(&[p(M::MenuRecenter)], &[GUI_RECENTER]);
 }

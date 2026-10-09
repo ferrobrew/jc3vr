@@ -47,16 +47,29 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
     for mode in all_modes().into_iter().filter(|m| !mech(m)) {
         for (dominant, ctx) in all_contexts() {
             for (name, config, ticks) in sequences(mode, dominant, &ctx) {
+                // In a menu a trigger pulled with its grip held turns the other page, which the
+                // raw tables did not do, so the pages of a gripped sequence are left out.
+                let gripped_menu = mode == Mode::Ui && name.ends_with("grip true");
+                let pages = |mut step: Step| {
+                    if gripped_menu {
+                        step.desired
+                            .retain(|d| !matches!(d.target.action, GUI_PAGE_PREV | GUI_PAGE_NEXT));
+                    }
+                    step
+                };
                 let mut old = legacy::Bindings::new();
                 let mut new = Bindings::new();
                 for (i, (controls, dt)) in ticks.iter().enumerate() {
                     let input =
                         simulate(controls, SemanticSet::of(mode.action_set()), legacy_layout);
-                    let want = in_order(
+                    let want = pages(in_order(
                         normalise(old.step(mode, controls, *dt, &config), mode),
                         mode,
-                    );
-                    let got = in_order(new.step(mode, controls, &input, *dt, &config), mode);
+                    ));
+                    let got = pages(in_order(
+                        new.step(mode, controls, &input, *dt, &config),
+                        mode,
+                    ));
                     assert_eq!(
                         got, want,
                         "{mode:?}, {dominant:?}-handed, {ctx:?}: {name}, tick {i}"
