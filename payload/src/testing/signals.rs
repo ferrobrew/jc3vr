@@ -4,11 +4,14 @@
 //! Every read takes the publishing module's leaf slot or atomics only, as the status page's rows
 //! do, so the runner may read them from the game thread at the top of the frame.
 
-use std::fmt;
+use std::{fmt, time::Instant};
 
 use crate::{
     controllers::{
-        body::procedural::{self, authority::Case},
+        body::{
+            procedural::{self, authority::Case},
+            rig::root as rig_root,
+        },
         frame::{self as controller_frame, Hand},
         grab::{latch::GripLatch, tick as grab_tick},
         hands::grip,
@@ -226,6 +229,9 @@ signals! {
     GripFlips => "grip.flips", Counter, "Snaps of a gun on the wrist.";
     GripPins => "grip.pins", Counter, "Attach bones pinned.";
     StickSpeed => "locomotion.stick_speed_mps", Measure, "The speed the stick drives the body at, metres per second.";
+    RigGapM => "rig.gap_m", Measure, "How far the ground point under the player's upright eyes is from the root, metres, while a VR frame renders.";
+    RigResidualM => "rig.residual_m", Measure, "How far that point is outside the lean the chase leaves alone, metres: what the chase still has to close.";
+    RigLedgerProjected => "rig.ledger_projected", Counter, "Completed steps whose chase was credited by projection, because something stopped or deflected the root.";
 }
 
 impl Signal {
@@ -454,7 +460,20 @@ impl Signal {
             Signal::StickSpeed => locomotion::status()
                 .velocity
                 .map_or(Value::Missing, |v| Value::Number(f64::from(v.length()))),
+            Signal::RigGapM => rig_measure(|f| f.gap_m()),
+            Signal::RigResidualM => rig_measure(|f| f.residual_m()),
+            Signal::RigLedgerProjected => count(rig_root::status().sim.ledger.projected),
         }
+    }
+}
+
+/// A measure of the rig's latest frame, missing while no VR frame renders.
+fn rig_measure(read: impl Fn(&rig_root::FrameReadout) -> f32) -> Value {
+    let frame = rig_root::status().frame;
+    if frame.fresh(Instant::now()) {
+        Value::Number(f64::from(read(&frame)))
+    } else {
+        Value::Missing
     }
 }
 

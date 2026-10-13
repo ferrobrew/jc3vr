@@ -1,6 +1,6 @@
 //! The Controllers tab: the scheme, the OpenXR input status, live readouts of the published
 //! controller frame and of each controller subsystem (the native map, finger curls, the physical
-//! hands, weapon handling, scopes, vehicles and flight, the controls summary, posture, roomscale, and the semantic
+//! hands, weapon handling, scopes, vehicles and flight, the controls summary, posture, roomscale, the body rig, and the semantic
 //! actions with the input self-check included),
 //! the player's body dimensions, and every controller setting. Each subsystem's section is in its own file.
 
@@ -27,6 +27,7 @@ mod physical_hands;
 mod presets;
 mod procedural;
 mod reload;
+mod rig;
 mod roomscale;
 mod scope;
 mod semantic;
@@ -237,6 +238,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
         egui::CollapsingHeader::new("Posture and roomscale")
             .default_open(true)
             .show(ui, |ui| roomscale::roomscale_readout(ui, &roomscale_status));
+
+        egui::CollapsingHeader::new("Body rig")
+            .default_open(true)
+            .show(ui, |ui| rig::rig_readout(ui, &roomscale_status.root));
 
         egui::CollapsingHeader::new("Stick locomotion and view anchor")
             .default_open(true)

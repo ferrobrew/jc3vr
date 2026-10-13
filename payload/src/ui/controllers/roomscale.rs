@@ -1,5 +1,6 @@
-//! Posture and roomscale: the posture in effect, the play area, the head height, the chase, the
-//! teleport re-bases, the comfort fade, the crouch, and the seat phase, and their settings.
+//! Posture and roomscale: the posture in effect, the play area, the head height, the teleports, the
+//! comfort fade, the crouch, and the seat phase, and their settings. The chase and the lean are the
+//! rig's ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
 
@@ -11,7 +12,7 @@ use crate::{
         },
     },
     hooks::camera::height,
-    ui::controllers::{stance, vec3, yes_no},
+    ui::controllers::{stance, yes_no},
 };
 
 pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
@@ -56,34 +57,17 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
         yes_no(f.crouched),
         yes_no(f.seated_crouch),
         yes_no(status.visual_crouch),
-        yes_no(status.sim.capsule_owned),
-        if status.sim.capsule_blocked {
+        yes_no(status.root.sim.capsule_owned),
+        if status.root.sim.capsule_blocked {
             " (no headroom)"
         } else {
             ""
         },
     ));
 
-    ui.separator();
     ui.label(format!(
-        "Chase: offset ({:+.2}, {:+.2}) m · engaged {} · velocity ({:+.2}, {:+.2}) m/s · task ({:+.2}, {:+.2}) m/s · stick {:.2}",
-        f.chase_offset.x,
-        f.chase_offset.y,
-        yes_no(status.sim.chase_engaged),
-        status.sim.chase_velocity.x,
-        status.sim.chase_velocity.y,
-        status.sim.task_velocity.x,
-        status.sim.task_velocity.y,
-        status.sim.stick,
-    ));
-    ui.label(format!(
-        "Lean over the feet, left to the head: ({:+.2}, {:+.2}) m",
-        f.lean.x, f.lean.y
-    ));
-    ui.label(format!("Cockpit shift: {}", vec3(f.cockpit_shift)));
-    ui.label(format!(
-        "Teleports: {} ({} by distance) · re-based {}",
-        status.teleports, status.warps, f.teleport_rebases
+        "Teleports: {} ({} by distance)",
+        status.teleports, status.warps
     ));
 
     ui.separator();
@@ -146,18 +130,10 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
     ui.horizontal(|ui| {
         ui.label("Posture");
         ui.selectable_value(&mut r.posture, Posture::Auto, "Auto")
-            .on_hover_text(
-                "Seated or standing by the head's height above the floor; standing becomes \
-             roomscale with a large enough play area.",
-            );
+            .on_hover_text("Seated or standing by the head's height above the floor.");
         ui.selectable_value(&mut r.posture, Posture::Seated, "Seated");
         ui.selectable_value(&mut r.posture, Posture::Standing, "Standing");
-        ui.selectable_value(&mut r.posture, Posture::Roomscale, "Roomscale");
     });
-    ui.add(
-        egui::Slider::new(&mut r.roomscale_min_extent_m, 0.5..=3.0)
-            .text("Auto roomscale play area (m)"),
-    );
     ui.add(
         egui::Slider::new(&mut r.auto_posture.stand_after_s, 0.0..=5.0)
             .text("Auto: standing after (s)"),
@@ -182,25 +158,6 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
             ui.add(egui::Slider::new(&mut s.window_s, 10.0..=600.0).text("Window (s)"));
             ui.add(egui::Slider::new(&mut s.rate_mps, 0.001..=0.05).text("Rate (m/s)"));
             ui.add(egui::Slider::new(&mut s.deadband_m, 0.0..=0.1).text("Deadband (m)"));
-        });
-    });
-
-    ui.checkbox(&mut r.chase.enabled, "Roomscale chase")
-        .on_hover_text("In the roomscale posture, walk the body toward the physical head.");
-    ui.add_enabled_ui(r.chase.enabled, |ui| {
-        ui.indent("chase", |ui| {
-            ui.add(egui::Slider::new(&mut r.chase.deadzone_m, 0.0..=0.5).text("Deadzone (m)"));
-            ui.add(
-                egui::Slider::new(&mut r.chase.max_speed_mps, 0.5..=8.0).text("Max speed (m/s)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut r.chase.time_constant_s, 0.03..=1.0)
-                    .text("Time constant (s)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut r.chase.warp_min_m, 1.0..=50.0)
-                    .text("Unannounced teleport distance (m)"),
-            );
         });
     });
 
@@ -284,8 +241,8 @@ fn camera_height_readout(ui: &mut Ui) {
         yes_no(frame.crouched),
         yes_no(frame.seated_crouch),
         yes_no(r.roomscale.visual_crouch),
-        yes_no(r.roomscale.sim.capsule_owned),
-        if r.roomscale.sim.capsule_blocked {
+        yes_no(r.roomscale.root.sim.capsule_owned),
+        if r.roomscale.root.sim.capsule_blocked {
             " (no headroom)"
         } else {
             ""

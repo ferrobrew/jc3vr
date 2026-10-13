@@ -12,7 +12,8 @@ use crate::{
     headpose::config::VrTurnMode,
     ui::controllers::{
         aim, alignment, climb, collider_view, fingers, grab_view, hand_bodies, hands, haptics,
-        inventory, overlay, physical_hands, roomscale, scope, stunt, summary, vehicles, weapons,
+        inventory, overlay, physical_hands, rig, roomscale, scope, stunt, summary, vehicles,
+        weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -309,6 +310,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {
         roomscale::roomscale_settings(ui, &mut c.roomscale);
+    });
+
+    egui::CollapsingHeader::new("Body rig").show(ui, |ui| {
+        rig::rig_settings(ui, &mut c.body.rig);
     });
 
     egui::CollapsingHeader::new("Vehicles and flight")

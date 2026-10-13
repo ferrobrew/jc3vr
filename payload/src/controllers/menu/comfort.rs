@@ -1,5 +1,6 @@
 //! The `VR: COMFORT` page: recentering the view and steadying it on foot, the stick movement, the
-//! view on the grapple, the posture and the roomscale chase, crouching, the comfort fades, and the
+//! view on the grapple, the posture, the body following the head and the lean it leaves alone,
+//! crouching, the comfort fades, and the
 //! view in vehicles: getting in, and the driver's view at the wheel. The recenter is an action, not
 //! a setting.
 
@@ -82,17 +83,18 @@ fn build() -> Page {
             .controllers
             .roomscale
             .posture))
-        .item(config_toggle!("WALK IN THE ROOM", |c| c
+        .item(config_toggle!("BODY FOLLOWS YOU", |c| c
             .controllers
-            .roomscale
+            .body
+            .rig
             .chase
             .enabled))
-        .item(config_slider!(
-            "ROOM WALK DEADZONE",
-            CHASE_DEADZONE_RANGE,
-            SliderFormat::new(2, " M"),
-            |c| c.controllers.roomscale.chase.deadzone_m
-        ))
+        .item(config_toggle!("LEAN WITHOUT STEPPING", |c| c
+            .controllers
+            .body
+            .rig
+            .lean
+            .enabled))
         .header("CROUCHING")
         .item(config_toggle!("CROUCH WITH YOUR HEAD", |c| c
             .controllers
@@ -220,13 +222,8 @@ fn recenter_status(
     "LOOK AHEAD, THEN PRESS"
 }
 
-const POSTURES: [Posture; 4] = [
-    Posture::Auto,
-    Posture::Seated,
-    Posture::Standing,
-    Posture::Roomscale,
-];
-const POSTURE_LABELS: [&str; 4] = ["AUTOMATIC", "SEATED", "STANDING", "ROOMSCALE"];
+const POSTURES: [Posture; 3] = [Posture::Auto, Posture::Seated, Posture::Standing];
+const POSTURE_LABELS: [&str; 3] = ["AUTO", "SEATED", "STANDING"];
 
 const SEAT_TRANSITIONS: [SeatTransition; 3] = [
     SeatTransition::Ride,
@@ -248,8 +245,6 @@ const GRAPPLE_MODE_LABELS: [&str; 3] = ["HOLD STILL", "KEEP LEVEL", "SWING WITH 
 /// The stick locomotion's rates, metres per second squared: from a slow, drifting start to all
 /// but instant.
 const ACCELERATION_RANGE: SliderRange = SliderRange::new(2.0, 42.0, 80);
-/// How far the head may lead the body before the room walk follows, in centimetres.
-const CHASE_DEADZONE_RANGE: SliderRange = SliderRange::new(0.0, 0.5, 50);
 /// How far the seated crouch lowers the eyes, in centimetres.
 const SEATED_DROP_RANGE: SliderRange = SliderRange::new(0.2, 1.2, 100);
 /// A fade's duration, in hundredths of a second.
