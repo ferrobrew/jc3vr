@@ -199,6 +199,21 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
                      so turning the head past the deadzone turns the chute with no stick input. \
                      Stick steering and velocity banking stay.",
                 );
+                ui.checkbox(
+                    &mut cfg.movement.suppress_wingsuit_stall_flip,
+                    "Suppress the wingsuit's stall flip (the body must not loop on its own)",
+                )
+                .on_hover_text(
+                    "Stop the wingsuit's blend state from stalling while the head pose comes \
+                     from the headset, so it never plays the stall clip or the loop that \
+                     recovers from it over a physics body that never loops. Pitching up and \
+                     slowing loses lift and drops instead.",
+                );
+                ui.label(if crate::hooks::input::wingsuit::suppressed() {
+                    "Stall flip: removed"
+                } else {
+                    "Stall flip: the game's"
+                });
             }
             // The game's own relaxed (no-aim) strafe support, left in the game from the dev menu:
             // while enabled, `QueueMoveActions` queues `ACT_MOVE_NO_AIM_STRAFE` -- a neutral-stance

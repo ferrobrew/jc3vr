@@ -103,6 +103,13 @@ pub struct MovementConfig {
     /// head is decoupled, keeping the stick input and the velocity alignment intact. Inert without
     /// a headpose (flatscreen without the latch). See `crate::hooks::input::parachute`.
     pub suppress_parachute_look_steer: bool,
+    /// Remove the wingsuit's stall flip while the head pose comes from the headset. Slowing with
+    /// the nose raised makes the wingsuit's blend state play a stall clip, and a full loop that
+    /// recovers from it, over a physics body that never loops, so the body turns a circle the
+    /// player never gestured. This patches the blend state's one write of its stalling flag so it
+    /// never stalls; the player who pitches up loses lift and drops. See
+    /// `crate::hooks::input::wingsuit`.
+    pub suppress_wingsuit_stall_flip: bool,
     /// Suppress Rico's periodic idle fidget for the local player -- the weight-shifts and
     /// look-arounds the game plays while standing still. The idle input task
     /// (`NStateTask_InputLocoIdleTask`) queues `ACT_TO_IDLE_ONE_OFF` on an idle timer to drive the
@@ -145,6 +152,7 @@ impl MovementConfig {
             suppress_reverse_look: true,
             suppress_air_aim_facing: true,
             suppress_parachute_look_steer: true,
+            suppress_wingsuit_stall_flip: true,
             suppress_idle_fidget: true,
             suppress_idle_breathing: false,
         }

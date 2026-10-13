@@ -9,6 +9,7 @@ pub mod locomotion;
 pub mod look;
 pub mod parachute;
 pub mod swim;
+pub mod wingsuit;
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()

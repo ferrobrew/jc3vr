@@ -35,6 +35,7 @@ use crate::{
             graphics_engine::{BLOCK_FLIP, log_hook_thread},
             ssao,
         },
+        input,
     },
     stereo::STEREO_STATE,
     thread_role::{self, ThreadRole},
@@ -209,6 +210,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // updates and the draws follow.
         hands::late::begin_frame();
         presentation::begin_frame();
+        input::wingsuit::sync();
 
         mark(Phase::OriginalUpdateRender);
         #[cfg(feature = "profiler")]

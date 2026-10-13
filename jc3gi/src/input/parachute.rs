@@ -467,6 +467,73 @@ impl std::convert::AsMut<ParachuteHandleIKProperties> for ParachuteHandleIKPrope
         self
     }
 }
+#[repr(C, align(8))]
+/// The wingsuit's animation-graph blend state (`CWingsuitBlendState`). Besides blending the
+/// flight samplers, it decides each frame whether the character stalls, and while it does, plays
+/// one of two dedicated clips in place of the flight blend: a plain stall, or a full loop that
+/// recovers from it (the flip). Neither the stall nor the flip moves the physics body: the air
+/// physics clamps the body's pitch and orients it from the steering, so the loop is the clip's own
+/// rotation of the pose. Its layout is unmapped.
+pub struct WingsuitBlendState {}
+impl WingsuitBlendState {
+    pub const UpdateSamplers_ADDRESS: usize = 0x1408735E0;
+    /// Weights the state's samplers for the character owning `instance` over `dt`. The character
+    /// enters the stall when its forward airspeed (its velocity against its forward axis) falls
+    /// below [`WingsuitBlendState_ToStallSpeed`](get_WingsuitBlendState_ToStallSpeed) with its nose raised past
+    /// [`WingsuitBlendState_StallNoseUp`](get_WingsuitBlendState_StallNoseUp), and leaves it when the airspeed recovers past a higher
+    /// threshold; while a stall clip has weight the nose test is skipped. Stalling sets a local
+    /// flag through the instruction whose immediate is [`WingsuitBlendState_StallFlagSet`](get_WingsuitBlendState_StallFlagSet), the
+    /// only place the flag is set. While stalling, inside the clip's stall-selection segment, it
+    /// ramps up the flip clip when the nose is raised further, setting the character's
+    /// in-flip flag, and the plain stall clip otherwise, and scales every other sampler down by the
+    /// stall's weight. The stall's progression through its turn segment gates the air brake, the
+    /// wingsuit's close act, and part of the air physics' steering while it runs.
+    pub unsafe fn UpdateSamplers(
+        &mut self,
+        instance: *mut ::std::ffi::c_void,
+        dt: f32,
+        samplers: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                instance: *mut ::std::ffi::c_void,
+                dt: f32,
+                samplers: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::UpdateSamplers_ADDRESS);
+            f(self as *mut Self as _, instance, dt, samplers)
+        }
+    }
+}
+impl std::convert::AsRef<WingsuitBlendState> for WingsuitBlendState {
+    fn as_ref(&self) -> &WingsuitBlendState {
+        self
+    }
+}
+impl std::convert::AsMut<WingsuitBlendState> for WingsuitBlendState {
+    fn as_mut(&mut self) -> &mut WingsuitBlendState {
+        self
+    }
+}
+/// The immediate operand of the instruction in [`WingsuitBlendState::UpdateSamplers`](crate::input::parachute::WingsuitBlendState::UpdateSamplers) that sets
+/// its stalling flag (a byte register move of one). It is the only write of a true value to the
+/// flag, which is cleared on every path that does not stall; with the immediate zero, the blend
+/// state never stalls, its stall clips stay at no weight, the stall progression stays at its
+/// not-stalling value, and the flip never plays.
+pub unsafe fn get_WingsuitBlendState_StallFlagSet() -> &'static mut u8 {
+    unsafe { &mut *(0x140873DC7 as *mut u8) }
+}
+/// The component of the character's forward axis along the world's up axis that
+/// [`WingsuitBlendState::UpdateSamplers`](crate::input::parachute::WingsuitBlendState::UpdateSamplers) requires the nose to be raised past to enter the stall;
+/// the character's forward axis is its negative Z, so a raised nose reads below this.
+pub unsafe fn get_WingsuitBlendState_StallNoseUp() -> &'static mut f32 {
+    unsafe { &mut *(0x1423DB9D8 as *mut f32) }
+}
+/// The forward airspeed below which [`WingsuitBlendState::UpdateSamplers`](crate::input::parachute::WingsuitBlendState::UpdateSamplers) enters the stall, metres
+/// per second.
+pub unsafe fn get_WingsuitBlendState_ToStallSpeed() -> &'static mut f32 {
+    unsafe { &mut *(0x1423DB9DC as *mut f32) }
+}
 pub const UpdateParachutePhysics_ADDRESS: usize = 0x1407E6DF0;
 /// The parachute flight/steering core, called per frame by
 /// [`NStateTask_MovementParachuteTask::Update`](crate::input::parachute::NStateTask_MovementParachuteTask::Update). Computes the parachute steering values, the
