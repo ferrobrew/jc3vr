@@ -1,16 +1,15 @@
-//! The character hooks: the pose-finalization pass (the weapon-agnostic body's decision, headset-driven
-//! body IK, the controller hands' wrist targets, the roomscale crouch's hips and feet, and the
-//! squared standing stance before the HumanIK solve, the secondary hand targets switched off before
-//! the `SECONDARY` pass, the head override, the hands' post-solve publish, the finger curls, and the
-//! body alignment's skeleton read after it), the act filter, the animation modifiers, and the
-//! animation-layer mask.
+//! The character hooks: the pose-finalization pass (the weapon-agnostic body's decision, the rig's
+//! completion of the step's root movement, headset-driven body IK, and the controller hands' wrist
+//! targets before the HumanIK solve, the secondary hand targets switched off before the `SECONDARY`
+//! pass, and the head override, the hands' post-solve publish, the finger curls, and the rig's
+//! skeleton read after it), the act filter, the animation modifiers, and the animation-layer mask.
 //!
 //! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
 //! - [`head`]: the post-solve head override and the render-block head-hide inputs;
 //! - [`acts`]: the local player's act filter;
 //! - [`gate`]: the HumanIK solve gate, where the procedural body writes the pose;
-//! - [`modifiers`]: the weapon-agnostic body and the standing stance's relaxed idle, which keep the
-//!   weapon's animation modifiers off the body's rule systems;
+//! - [`modifiers`]: the weapon-agnostic body, which keeps the weapon's animation modifiers off the
+//!   body's rule systems;
 //! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose;
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, for the procedural body's
 //!   hand-over table;

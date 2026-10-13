@@ -2,7 +2,7 @@
 //! was last in the open, and how deep.
 //!
 //! Each tick a cast runs from the last position the point held in the open to where it is now, as
-//! the head probe does ([`crate::controllers::roomscale::probe`]): a hit means the point crossed a
+//! the head probe does ([`crate::controllers::body::rig::collision::probe`]): a hit means the point crossed a
 //! surface. Against a solid surface (world geometry or an object), the point is pressed in by its
 //! depth behind the surface, and its last open position stays where it was until the hand comes
 //! back out. A second cast from an anchor the body keeps in the open (the shoulder) forgives a stale

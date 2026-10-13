@@ -17,7 +17,7 @@ use crate::{
 /// its position and yaw only (the cockpit model). The frame loop consumes the baseline when
 /// mapping per-eye poses (see [`crate::vr::frame`]). No-op until a frame has located a head pose.
 ///
-/// While the roomscale chase keeps the body on the physical head, only the yaw and the height are
+/// While the rig's chase keeps the body on the physical head, only the yaw and the height are
 /// re-based ([`crate::controllers::roomscale::manual_recenter_kind`]): the chase already keeps the
 /// position converged, and a position re-base could put the body through a wall the chase could
 /// not cross. The seat transitions ask for their own re-base through [`request_seat_recenter`].

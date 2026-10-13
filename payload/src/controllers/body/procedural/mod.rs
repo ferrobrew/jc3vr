@@ -29,7 +29,7 @@
 //! how it reads back, the proof that the write path is sound; `Full` builds the body, handing each
 //! region (the legs, the torso) between it and the animation by the table in [`authority`], and
 //! zeroes the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the
-//! pre-solve IK (the body IK's torso, the roomscale crouch, the squared stance) to stand down.
+//! pre-solve IK (the body IK's torso) to stand down.
 //! Where the animation keeps the hips (a vehicle seat), the torso is solved on the clip's hips
 //! instead ([`solver::anchored`]); see `docs/mod/body/procedural-states.md`.
 
@@ -223,8 +223,7 @@ pub fn owns_body() -> bool {
 }
 
 /// The torso's weight of the procedural pose at the last gate, `0..=1`. The pre-solve IK that
-/// would pose the same bones (the body IK's torso, the roomscale crouch, the squared stance) is
-/// queued while it is below one, and the gate fades the reach and pull of those targets by what is
+/// would pose the same bones (the body IK's torso) is queued while it is below one, and the gate fades the reach and pull of those targets by what is
 /// left of it ([`neutralize_owned_targets`]), so the hand-over is as gradual as the blend.
 pub fn torso_weight() -> f32 {
     f32::from_bits(TORSO_WEIGHT.load(Ordering::Relaxed))
@@ -844,7 +843,7 @@ fn round_trip_error(written: &RigPose, read: &RigPose) -> (f32, f32) {
 }
 
 /// The root's horizontal velocity over the pass, world space, from the previous tick's root to
-/// this one's: whatever moved it (the stick, the roomscale chase, a push, a wall that stopped it).
+/// this one's: whatever moved it (the stick, the rig's chase, a push, a wall that stopped it).
 /// A teleport reads as standing still.
 fn root_velocity(previous: &Mat4, current: &Mat4, dt: f32) -> Vec3 {
     let moved = current.w_axis - previous.w_axis;

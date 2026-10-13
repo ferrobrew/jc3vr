@@ -161,7 +161,7 @@ pub struct WeaponDiagnostic {
     pub sight_angles_deg: [f32; 2],
 }
 
-/// Roomscale posture, stage, chase, seat, fade state, and sampled simulation velocities.
+/// The posture, the stage, the rig's root and chase, the seat, the fade, and the requested velocities.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RoomscaleDiagnostic {
     pub active: bool,

@@ -6,7 +6,7 @@
 //! rates, measured across a millisecond each side of the frame. The semantic actions are `global`
 //! and `on_foot`, every action at rest but the two a stick drives with the default bindings of a
 //! right-handed player: `move` from the left stick and `turn` from the right stick's horizontal
-//! axis. The first frame carries a full recenter, so a replay starts the posture, the roomscale
+//! axis. The first frame carries a full recenter, so a replay starts the posture, the rig's
 //! chase, and the torso estimate afresh from the scripted head.
 
 use std::{
@@ -190,7 +190,7 @@ impl From<SchemaError> for SynthError {
 const MIN_RATE_HZ: f32 = 10.0;
 const MAX_RATE_HZ: f32 = 1000.0;
 
-/// The play area reported, large enough for the room-scale scripts.
+/// The play area reported: a room-scale setup's, larger than any script walks.
 const PLAY_AREA_M: Vec2 = Vec2::new(4.0, 4.0);
 
 /// The fields of view of an Index's eyes, `left, right, up, down` in radians, wider outward.

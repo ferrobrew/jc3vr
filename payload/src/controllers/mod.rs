@@ -39,7 +39,7 @@
 //! - [`vehicles`]: vehicles, mounted guns, the wingsuit, and the parachute: the opt-in physical
 //!   controls, hand-aimed mounted guns and driver weapons, arm steering, and the wingsuit's head
 //!   look-steer removed;
-//! - [`roomscale`]: posture, the head-height remap, the roomscale chase loop, crouching, the
+//! - [`roomscale`]: posture, the head-height remap, the cockpit composition, the crouch capsule, the
 //!   head-through-geometry fade, and seat transitions. These need the headset rather than the
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme;
 //! - [`summary`]: the controls summary on the off-hand wrist, and hiding the game's own button

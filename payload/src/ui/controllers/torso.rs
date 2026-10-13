@@ -24,13 +24,13 @@ pub(super) fn torso_readout(ui: &mut Ui, status: &TorsoStatus, skeleton: &Skelet
     if ui
         .checkbox(&mut verbose, "Log the divergence to the session log (1 Hz)")
         .on_hover_text(
-            "Turns this subsystem up to DEBUG. Equivalent to a body_alignment=debug directive in \
+            "Turns this subsystem up to DEBUG. Equivalent to a body_divergence=debug directive in \
              the Diagnostics tab's filter box.",
         )
         .changed()
         && let Err(error) = logging::set_target_debug(SKELETON_TARGET, verbose)
     {
-        tracing::warn!(%error, "could not change the body-alignment log level");
+        tracing::warn!(%error, "could not change the body-divergence log level");
     }
 
     let deg = |r: f32| format!("{:+.1}°", r.to_degrees());

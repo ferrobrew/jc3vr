@@ -72,8 +72,8 @@ pub(super) struct PlayerHead {
     /// The neck pivot, model space.
     pub(super) head: Vec3,
     /// Where the neck pivot would be upright over the player's feet, model space: the head less
-    /// the lean the chase leaves alone ([`crate::controllers::body::rig::lean`]). What the feet
-    /// step under.
+    /// the lean the chase leaves alone ([`crate::controllers::body::rig::lean`]). The pelvis hinges
+    /// back by a share of the difference.
     pub(super) upright: Vec3,
     /// The neck pivot's height over the head anchor, metres, when the anchor is known.
     pub(super) height: Option<f32>,

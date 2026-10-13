@@ -1,7 +1,7 @@
 //! The STAGE reference space: the runtime's floor-level play area, located alongside the LOCAL space
-//! the rest of the runtime works in. It supplies the two things the posture needs and LOCAL cannot
-//! give: the head's true height above the floor, and the play area's bounds, which separate a
-//! room-scale setup from a standing-only one.
+//! the rest of the runtime works in. It supplies what the posture needs and LOCAL cannot give: the
+//! head's true height above the floor. The play area's bounds are read alongside it for the
+//! readouts and the recordings.
 //!
 //! The eye views, the controllers, and the compositor layer all stay in LOCAL. The STAGE space is
 //! only located against it once per frame (see [`locate_head`]), so a runtime without a STAGE space

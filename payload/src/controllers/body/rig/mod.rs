@@ -1,6 +1,6 @@
 //! The body rig: who moves the character's root, the chase that keeps it under the player's head,
-//! the lean the chase leaves alone, the push-back at walls, the player's torso, and the pelvis
-//! (`docs/mod/body/rig.md`).
+//! the lean the chase leaves alone, the push-back at walls, the player's torso, the pelvis, and the
+//! legs (`docs/mod/body/rig.md`).
 //!
 //! - [`root`]: the root's owner per simulation tick, the chase, its ledger, the cockpit shift, and
 //!   the push-back;
@@ -8,6 +8,7 @@
 //! - [`collision`]: the head-through-geometry probe;
 //! - [`torso`]: the torso's heading and joints from the head and the hands;
 //! - [`pelvis`]: the pelvis's place, its hip hinge, and its lean into the body's motion;
+//! - [`legs`]: where the feet stand and step, from the root's measured motion;
 //! - [`frames`] and [`skeleton`]: relating the cockpit to the character's model space, and the
 //!   character's skeleton after the solves;
 //! - [`config`]: the settings, under `controllers.body.rig`.

@@ -63,8 +63,7 @@ pub enum Posture {
     /// height, the body does not follow the head about the room, and a button toggles crouching.
     Seated,
     /// STAGE space: the true floor height, physical crouching, and the body following the head
-    /// about the room. Earlier builds called this with the chase on `Roomscale`, which still loads
-    /// as it.
+    /// about the room. A saved `Roomscale` loads as this.
     #[serde(alias = "Roomscale")]
     Standing,
 }

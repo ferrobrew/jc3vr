@@ -3,8 +3,8 @@
 //!
 //! The volumes are placed in the cockpit frame relative to the body frame: the player's body as the
 //! headset sees it, not the character's animated head that the cockpit frame's origin follows (see
-//! `headpose::xr`), which sits ahead of the player whenever the animation leans or the roomscale
-//! chase trails. The upper body hangs from the neck pivot, which the head's pose places below and
+//! `headpose::xr`), which sits ahead of the player whenever the animation leans or the rig's chase
+//! trails. The upper body hangs from the neck pivot, which the head's pose places below and
 //! behind the eyes ([`crate::controllers::body::rig::torso`]), facing the estimated torso; the waist
 //! hangs over the feet ([`crate::controllers::body::rig::feet`]), which stay put through a lean or a
 //! reach, so the hip holsters and the belt's pouch do not swing out with a lean. The volumes
@@ -52,10 +52,10 @@
 //!   coincide. Where the skeleton is unavailable or not upright (a vehicle, a ragdoll, a skydive)
 //!   the caller falls back to the player's body.
 //!
-//! The stance ([`Stance`]) comes from the roomscale posture
+//! The stance ([`Stance`]) comes from the posture
 //! (`crate::controllers::roomscale::posture::EffectivePosture`), the single source of truth for
 //! seated versus standing that the head height and the chase also key off: the seated posture is
-//! seated, and the standing and roomscale postures are standing. That mapping is the caller's job
+//! seated, and the standing posture is standing. That mapping is the caller's job
 //! ([`crate::controllers::weapons`]), so that this module stays pure.
 
 use glam::{Mat3, Quat, Vec2, Vec3};

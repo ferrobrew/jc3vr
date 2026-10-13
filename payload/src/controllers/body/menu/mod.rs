@@ -1,5 +1,5 @@
 //! The `VR: BODY` page: the saved body dimensions, the body-scaling switches, the procedural body,
-//! the body's alignment with the player's torso, and the guided calibration that measures the
+//! the body turning to face the player's torso, and the guided calibration that measures the
 //! player in the headset ([`Calibration`](crate::controllers::body::calibration::Calibration))
 //! and saves the result with the rest of the settings.
 //!

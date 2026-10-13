@@ -11,8 +11,7 @@
 //!   head about the room ([`crate::controllers::body::rig::root`]).
 //!
 //! OpenXR has no signal for a seated user, so the automatic posture tells seated from standing by
-//! the head's height above the floor ([`PostureClassifier`]). The play area's size decides nothing:
-//! a player standing still produces sub-centimetre root motion that the cockpit shift absorbs.
+//! the head's height above the floor ([`PostureClassifier`]).
 
 use glam::Vec3;
 

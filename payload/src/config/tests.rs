@@ -168,13 +168,26 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
         &["controllers", "roomscale", "crouch", "visual"],
         true.into(),
     );
+    set(
+        &mut table,
+        &["controllers", "body", "procedural", "hips_follow_s"],
+        0.2.into(),
+    );
+    set(
+        &mut table,
+        &["controllers", "body", "procedural", "gait"],
+        false.into(),
+    );
     let Loaded { config, report } = load(table);
     assert_eq!(config.controllers.roomscale.posture, Posture::Standing);
     assert!(config.controllers.body.rig.chase.enabled);
+    assert!(config.controllers.body.rig.legs.gait);
     assert_eq!(
         report.ignored,
         [
             "controllers.body.alignment",
+            "controllers.body.procedural.gait",
+            "controllers.body.procedural.hips_follow_s",
             "controllers.body.procedural.step_under_head",
             "controllers.roomscale.chase",
             "controllers.roomscale.crouch.visual",

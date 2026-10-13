@@ -26,7 +26,7 @@ use crate::{
 
 /// The tracing target for the divergence's once-a-second log. Public so that the debug UI can turn
 /// it up to `DEBUG`.
-pub const SKELETON_TARGET: &str = "body_alignment";
+pub const SKELETON_TARGET: &str = "body_divergence";
 
 /// The character's skeleton in the cockpit frame, when it is fresh and upright: what the holsters
 /// ride under [`HolsterAnchor::Rico`](crate::controllers::weapons::config::HolsterAnchor::Rico).
@@ -205,14 +205,14 @@ fn log(measured: Option<Divergence>) {
             shoulder_offsets_flat_m = ?[flat(d.shoulders[0]), flat(d.shoulders[1])],
             hip_offsets_flat_m = ?[flat(d.hips[0]), flat(d.hips[1])],
             volume_anchor = anchor.unwrap_or("none"),
-            "body alignment"
+            "body divergence"
         ),
         (estimate, _) => {
             if !NOTHING_LOGGED.swap(true, Ordering::Relaxed) {
                 tracing::debug!(
                     target: SKELETON_TARGET,
                     estimate = estimate.is_some(),
-                    "body alignment: nothing to measure (no estimate or no skeleton)"
+                    "body divergence: nothing to measure (no estimate or no skeleton)"
                 );
             }
             return;

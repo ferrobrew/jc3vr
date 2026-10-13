@@ -197,7 +197,7 @@ pub struct LowerInput {
     pub moving: bool,
     /// Whether the move stick is pushed: it stands a sitting body up.
     pub stick: bool,
-    /// Whether the player plays standing (the standing or the roomscale posture): only a standing
+    /// Whether the player plays standing (the standing posture): only a standing
     /// player's head goes to the floor by sitting on it.
     pub standing_play: bool,
     /// The off hand's side: the knee that goes down when neither foot trails.
