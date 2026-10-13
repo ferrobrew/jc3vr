@@ -2777,7 +2777,9 @@ impl WeaponBase {
     /// [`m_MeasuredWorldVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredWorldVelocity) and
     /// [`m_MeasuredAngularVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredAngularVelocity). A non-player
     /// holder's weapon first gets stored ammunition from the holder's dropped-magazine range.
-    /// It clears the holder and enables the weapon's pickup interaction.
+    /// It clears the holder, enables the weapon's pickup interaction, and hides the models of
+    /// every gun past the first, so a dropped weapon of several guns, such as a dual-wield
+    /// weapon, shows its first gun alone, as it is one body ([`AddToWorld`](crate::equipment::weapon::WeaponBase::AddToWorld)).
     pub unsafe fn OnDrop(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).OnDrop).read();
@@ -3202,7 +3204,9 @@ pub struct WeaponBaseVftable {
     /// [`m_MeasuredWorldVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredWorldVelocity) and
     /// [`m_MeasuredAngularVelocity`](crate::equipment::weapon::WeaponData::m_MeasuredAngularVelocity). A non-player
     /// holder's weapon first gets stored ammunition from the holder's dropped-magazine range.
-    /// It clears the holder and enables the weapon's pickup interaction.
+    /// It clears the holder, enables the weapon's pickup interaction, and hides the models of
+    /// every gun past the first, so a dropped weapon of several guns, such as a dual-wield
+    /// weapon, shows its first gun alone, as it is one body ([`AddToWorld`](crate::equipment::weapon::WeaponBase::AddToWorld)).
     pub OnDrop: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
