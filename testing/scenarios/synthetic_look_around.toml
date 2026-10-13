@@ -1,0 +1,39 @@
+# Synthetic: the recording is written by `cargo run -p tracking-synth` to
+# testing/recordings/synthetic/look_around.jc3trk. See docs/mod/testing/recorder.md.
+name = "synthetic: looking around"
+description = "Turn the head 70 degrees left and right, then look down at the floor, the torso still."
+recording = "../recordings/synthetic/look_around.jc3trk"
+start = "in_place"
+pacing = "real_time"
+
+[[expect]]
+signal = "replay.driving"
+
+[[expect]]
+name = "the recorded recenter, and only it, is applied"
+signal = "vr.recenters"
+equals = 1
+
+[[expect]]
+signal = "controllers.frame_fresh"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "always"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"
+
+[[expect]]
+name = "the stick drives nothing"
+signal = "locomotion.stick_speed_mps"
+check = "always"
+below = 0.05
+
+# TODO(body rig): expectations for the signals the new body rig will add:
+# - the torso's heading moves by no more than the head's turn past the neck limit.
+# - looking down keeps a heading rather than spinning the torso.
+# - the feet stay put.

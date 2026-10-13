@@ -26,6 +26,7 @@ glam = { workspace = true }
 jc3gi = { path = "../jc3gi" }
 fsr-sys = { path = "../fsr-sys" }
 dxbc-stereo = { path = "../dxbc-stereo" }
+tracking-format = { path = "../tracking-format" }
 # Runtime-loaded (`loaded` default feature): the OpenXR loader is opened at runtime via
 # `xr::Entry::load_from`, not linked, so an `openxr_loader.dll` must sit beside the payload DLL (see
 # the `vr` module docs). The `static` feature would build the loader in and drop that DLL, but it does
@@ -68,3 +69,5 @@ jiff = "0.2.29"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+# The synthetic recordings are held to this build's decoder and semantic schema.
+tracking-synth = { path = "../tools/tracking-synth" }

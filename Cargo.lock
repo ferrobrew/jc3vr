@@ -1024,6 +1024,8 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "tracking-format",
+ "tracking-synth",
  "windows 0.62.2",
 ]
 
@@ -2347,6 +2349,25 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tracking-format"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "openxr-sys",
+]
+
+[[package]]
+name = "tracking-synth"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "pretty_assertions",
+ "tracing",
+ "tracing-subscriber",
+ "tracking-format",
 ]
 
 [[package]]

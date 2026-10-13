@@ -1,0 +1,42 @@
+# Synthetic: the recording is written by `cargo run -p tracking-synth` to
+# testing/recordings/synthetic/stand_still.jc3trk. See docs/mod/testing/recorder.md.
+name = "synthetic: standing still"
+description = "Stand still for twelve seconds with a relaxed stance's sway, the hands hanging at the sides."
+recording = "../recordings/synthetic/stand_still.jc3trk"
+start = "in_place"
+pacing = "real_time"
+
+[[expect]]
+signal = "replay.driving"
+
+[[expect]]
+name = "the recorded recenter, and only it, is applied"
+signal = "vr.recenters"
+equals = 1
+
+[[expect]]
+signal = "controllers.frame_fresh"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "always"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"
+
+[[expect]]
+name = "the neutral stance is measured while standing"
+signal = "procedural.stance_measured"
+
+[[expect]]
+name = "the stick drives nothing"
+signal = "locomotion.stick_speed_mps"
+check = "always"
+below = 0.05
+
+# TODO(body rig): expectations for the signals the new body rig will add:
+# - the feet stay under the head within the upright slack while the head sways.
+# - the torso's heading holds inside its deadzone.

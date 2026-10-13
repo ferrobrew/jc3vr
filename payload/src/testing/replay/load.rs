@@ -132,6 +132,7 @@ fn matches_schema(sample: &SemanticSample) -> bool {
 mod tests {
     use glam::Vec2;
     use pretty_assertions::assert_eq;
+    use tracking_synth::{scripts, synth::Options};
 
     use super::*;
     use crate::{
@@ -139,8 +140,9 @@ mod tests {
         recorder::tracking::format::{Frame, Header, SessionSample, StartMarker},
         vr::{
             input::semantic::{
-                SemanticSet,
+                SCHEMA_VERSION, SemanticSet,
                 frame::{ActionState, ActionValue, SetState},
+                vocabulary::OnFootAction,
             },
             stage::StageInfo,
         },
@@ -244,5 +246,47 @@ mod tests {
         );
         assert!(semantic);
         assert_eq!(warnings.len(), 4);
+    }
+
+    #[test]
+    fn the_synthetic_recordings_replay_their_semantic_actions() {
+        let expected = Expected {
+            action_schema: SCHEMA_VERSION,
+            ..EXPECTED
+        };
+        for script in scripts::all() {
+            let bytes = tracking_synth::generate(&script, Options::default())
+                .expect("the script generates");
+            let recording = format::decode(&bytes).expect("the recording decodes");
+            assert_eq!(
+                check(&recording, expected),
+                (true, Vec::new()),
+                "{}",
+                script.name
+            );
+        }
+    }
+
+    #[test]
+    fn the_synthetic_left_stick_drives_this_build_s_move_action() {
+        let script = scripts::named("stick_walk").expect("a built-in script");
+        let bytes =
+            tracking_synth::generate(&script, Options::default()).expect("the script generates");
+        let recording = format::decode(&bytes).expect("the recording decodes");
+        // Three seconds in, the left stick is pushed fully forward.
+        let semantic = recording.frames[270]
+            .semantic
+            .as_ref()
+            .expect("the semantic actions are recorded");
+        assert_eq!(semantic.mode.set, SemanticSet::OnFoot);
+        let movement = semantic.mode.actions[OnFootAction::Move.id().index()];
+        assert_eq!(
+            movement[Hand::Left.index()].value,
+            ActionValue::Vec2(Vec2::Y)
+        );
+        assert_eq!(
+            semantic.mode.actions[OnFootAction::Turn.id().index()][Hand::Right.index()].value,
+            ActionValue::Float(0.0)
+        );
     }
 }

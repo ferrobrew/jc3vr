@@ -2,7 +2,7 @@
 
 The test tools make the mod testable without anyone in the headset. The tracking recorder writes what the OpenXR runtime gives the mod each frame to a file; a replay plays that file back into the game in place of the runtime, with or without a headset; and a scenario names a recording and what must happen while it replays, and reports PASS or FAIL for each expectation. A headset session records a feature being used once, and the scenario checks it on every build afterwards.
 
-The code is `payload/src/recorder/tracking/` (the recorder and the file format), `payload/src/testing/` (the replay, the scenario runner, the signals, the log tap, and the request file), the seams in `payload/src/vr/replay.rs`, `payload/src/vr/input/replay.rs`, and the frame loop, and the Testing tab in `payload/src/ui/testing.rs`. The scenario templates are in `testing/scenarios/` at the repository root.
+The code is `payload/src/recorder/tracking/` (the recorder, and the conversion between the payload's types and the file's), `tracking-format/` (the file format's data model and codec, a crate of its own so that host tools build it on Linux and Windows), `tools/tracking-synth/` (the synthetic recordings), `payload/src/testing/` (the replay, the scenario runner, the signals, the log tap, and the request file), the seams in `payload/src/vr/replay.rs`, `payload/src/vr/input/replay.rs`, and the frame loop, and the Testing tab in `payload/src/ui/testing.rs`. The scenario templates are in `testing/scenarios/` at the repository root.
 
 ## Starting and stopping
 
@@ -37,7 +37,7 @@ The file goes to `sessions/<stamp>/tracking/<stamp>.jc3trk` beside the payload D
 
 ### File format
 
-The format is a real wire format with a version, and its decoder is covered by round-trip tests. All numbers are little-endian. A file is the magic `JC3VRTRK`, a `u16` format version (1), a `u32` header length and the header, and then records until the end of the file, each a tag byte, a `u32` length, and the payload. The one record is a frame. A reader skips a record whose tag it does not know, so a later version can add records an older build passes over, and a file whose last record was cut short (the game stopped mid-write) reads as the records before it. Any other malformed field is an error that names the field and its byte offset. The per-field layout is in `payload/src/recorder/tracking/format/codec.rs`.
+The format is a real wire format with a version, and its decoder is covered by round-trip tests. All numbers are little-endian. A file is the magic `JC3VRTRK`, a `u16` format version (1), a `u32` header length and the header, and then records until the end of the file, each a tag byte, a `u32` length, and the payload. The one record is a frame. A reader skips a record whose tag it does not know, so a later version can add records an older build passes over, and a file whose last record was cut short (the game stopped mid-write) reads as the records before it. Any other malformed field is an error that names the field and its byte offset. The per-field layout is in `tracking-format/src/codec.rs`. The payload records and replays in its own types and converts them to the crate's field by field, so a field added to a recorded type does not build until the format accounts for it.
 
 ## Replay
 
@@ -181,6 +181,41 @@ A signal is added in `payload/src/testing/signals.rs`, reading a published snaps
 
 `testing/scenarios/` holds a starter set covering the headset checklists in [physical-hands.md](../input/physical-hands.md), [hand-climbing.md](../input/hand-climbing.md), [controllers-and-roomscale.md](../input/controllers-and-roomscale.md), [steering-wheel.md](../input/steering-wheel.md), and the procedural body ([procedural-body.md](../body/procedural-body.md)). Each names a recording in `testing/recordings/` that does not exist yet, and says in its description what to do while recording it. To fill one: stand where the scenario should start (save a director bookmark there to have the marker name it), start a tracking recording, do what the description says, stop, copy the file from the session's `tracking` folder to the name the scenario expects, and run the scenario once to see that it passes against the build it was recorded on.
 
+The `synthetic_*.toml` scenarios are the exception: their recordings are generated rather than recorded (below).
+
+## Synthetic recordings
+
+A synthetic recording is written from a script instead of recorded in a headset, so the body rig can be tested by a replay without anyone wearing one. `tools/tracking-synth` writes them:
+
+```sh
+cargo run -p tracking-synth --target x86_64-unknown-linux-gnu   # on Linux
+cargo run -p tracking-synth                                     # on Windows
+```
+
+The `--target` is needed on Linux because the workspace builds for Windows by default. With no script named, the tool writes every built-in script to `testing/recordings/synthetic/<script>.jc3trk` in the repository it was built from. Naming scripts writes only those, `--out <dir>` writes elsewhere, `--rate <hz>` samples at another frame rate than 90 Hz, and `--list` prints the scripts with a line on each. The folder is git-ignored and the files are regenerated rather than committed: each runs to between 400 KB and a megabyte. Regenerate them after a change to the tool, the file format, or the semantic action schema.
+
+Each built-in script is the recording of the scenario `testing/scenarios/synthetic_<script>.toml`, which names it as `../recordings/synthetic/<script>.jc3trk` and replays it with `start = "in_place"`. The scenarios check what the existing signals can tell (the replay plays, the recorded recenter is the only one, the controllers are fresh, the player stays on foot, the skeleton rigs, and the stick drives the body or nothing), and list as TODOs the expectations that wait for the new body rig's signals: where the feet are, where the torso faces, and what the roomscale chase does. The scripts are:
+
+- `stand_still`: standing for twelve seconds with a relaxed stance's sway.
+- `walk_room_forward`: walking 1.5 m forward, pausing, and stepping back to the start.
+- `walk_room_square`: walking a 1.5 m square clockwise, turning the body right at each corner.
+- `lean_forward`: leaning from the hips over a table, the head 35 cm forward and 20 cm down, and back.
+- `crouch`: squatting 45 cm at the hips and standing up.
+- `turn_in_place`: turning the whole body 90° left on the spot, the head leading, and back.
+- `stick_walk`: standing still with the left stick pushed forward for 3 s at full, 3 s at half, then released.
+- `stick_strafe_and_turn`: strafing right and left with the left stick, flicking the right stick right twice, and holding it left.
+- `look_around`: turning the head 70° left and right and looking down at the floor, the torso still.
+
+A script (`tools/tracking-synth/src/scripts.rs`) describes the player as a body rather than as three tracked devices. Its tracks are keyed over time and eased between keys with the quintic smootherstep, so every key is a moment of rest, as a body's moves start and stop. The body's tracks are where it stands on the floor, its heading, how far the hips drop, how far the torso leans forward about the hips, the head's yaw and pitch on the neck, and the amount of standing sway; each hand's tracks are an offset of the grip from where the arm hangs, the thumbstick, the trigger, the squeeze value and force, and the buttons held.
+
+The rig (`tools/tracking-synth/src/rig.rs`) poses a 1.8 m player of standard proportions from the tracks and reads the devices off the skeleton: eyes at 1.68 m, 12 cm above and 9 cm ahead of the neck pivot and 63 mm apart, hip joints at 0.93 m, shoulder joints at 1.48 m and 0.40 m apart, and 0.69 m from a shoulder to the palm's centre. The arms hang from the shoulders under gravity, swing with the gait, and come forward in a squat, so the hands follow the body. A walk bobs the head and shifts the hips by the body's speed across the floor, and a standing body sways and its hands tremor by a few millimetres. The poses are in the cockpit frame with the standing head at the start as the origin, as after a recenter. The aim pose is the grip's moved 6 cm along the handle and pitched 40° down, an approximation of the Index's rather than a measured offset. Replay the scenarios with the body dimensions of a 1.8 m player, so the body rig's measurements match the recording's.
+
+Every frame is a focused session that asked for the frame to be rendered, with the head located and both controllers active on the Index profile, tracked, with velocities, in the on-foot mode set. The derived presses use the payload's default thresholds, the grip's read from the squeeze force, and a hand round the handle reads a squeeze of 0.9 and no force. The semantic actions are `global` and `on_foot` at rest, but for `move` from the left stick and `turn` from the right stick's horizontal axis, as a right-handed player's default bindings read them. The tool indexes them by the payload's snapshot of the action schema, `payload/src/vr/input/semantic/schema.golden`, which the payload's tests hold to the actions it creates. The STAGE space reports a 4 m by 4 m play area and the eyes' height above the floor. There are no hand joints. The first frame carries a full manual recenter that turns nothing, so the replay starts the posture, the roomscale chase, and the torso estimate afresh from the scripted head.
+
+The header names the build as `tracking-synth` and its version, the stamp as `synthetic <script>`, the schema version from the snapshot, the right hand dominant, and a world scale and time scale of one. The start marker is the identity at the world's origin with no bookmark, because a synthetic recording was made nowhere in the world: replayed from the marker, it would teleport the player to the origin.
+
+The tool's tests check that every script's recording reads back as written and that the poses and inputs are the ones the scripts describe, and unit-test the tracks' easing, the rig, and the inputs. The payload's tests generate every script, decode it with the payload's decoder, check that the replay would publish its semantic actions, and check that the left stick drives this build's `move` action.
+
 ## Limits
 
 The game is not deterministic, so a replay reproduces the player's input, not the game's response to it. Physics, animation timing, AI, traffic, weather, time of day, and streaming differ between runs, and the game's frame rate decides when the sim ticks fall against the recorded frames. A scenario should check what the input makes happen (a grip took, a weapon is in a hand, a mantle completed, no warning fired) rather than exact positions, and a recording should start somewhere quiet. Other limits:
@@ -192,3 +227,4 @@ The game is not deterministic, so a replay reproduces the player's input, not th
 - The per-eye render parameters, and what reads them (the world-space overlay, the scope lens, the HUD panel), are absent without a session.
 - The game's own clock and pause are not part of the replay: a pause menu or a time scale during a replay desynchronises it from the game.
 - A replay holds live recenters off, F7 included.
+- A synthetic recording is clean: it has no tracking loss, jitter, or dropped frames, and its body moves as the rig models it rather than as a person does.

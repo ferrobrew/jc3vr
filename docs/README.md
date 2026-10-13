@@ -135,7 +135,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ### testing/
 
-- [recorder.md](mod/testing/recorder.md) — testing without the headset: the tracking recorder and its file format, the replay at the head, controller, and STAGE seams with or without a session, the scenario file and its signals, status rows, and log probes, the PASS and FAIL results, the ways to start the tools, the templates, and the limits of a replay.
+- [recorder.md](mod/testing/recorder.md) — testing without the headset: the tracking recorder and its file format, the replay at the head, controller, and STAGE seams with or without a session, the scenario file and its signals, status rows, and log probes, the PASS and FAIL results, the ways to start the tools, the templates, the synthetic recordings written by `tracking-synth` from scripted head and controller paths, and the limits of a replay.
 
 ## issues/
 

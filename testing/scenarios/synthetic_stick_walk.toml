@@ -1,0 +1,42 @@
+# Synthetic: the recording is written by `cargo run -p tracking-synth` to
+# testing/recordings/synthetic/stick_walk.jc3trk. See docs/mod/testing/recorder.md.
+name = "synthetic: walking with the stick"
+description = "Stand still and push the left stick forward: 3 s at full, 3 s at half, then release."
+recording = "../recordings/synthetic/stick_walk.jc3trk"
+start = "in_place"
+pacing = "real_time"
+
+[[expect]]
+signal = "replay.driving"
+
+[[expect]]
+name = "the recorded recenter, and only it, is applied"
+signal = "vr.recenters"
+equals = 1
+
+[[expect]]
+signal = "controllers.frame_fresh"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "always"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"
+
+[[expect]]
+name = "the stick drives the body"
+signal = "locomotion.stick_speed_mps"
+check = "eventually"
+above = 1.0
+
+[[expect]]
+status = "STICK VELOCITY"
+
+# TODO(body rig): expectations for the signals the new body rig will add:
+# - the stick speed at half the push is about half the full push's.
+# - the body stops when the stick is released.
+# - the head stays on the body while the stick moves it.

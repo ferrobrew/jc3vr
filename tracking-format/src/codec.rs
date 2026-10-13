@@ -1,28 +1,17 @@
 //! The encoding of each of the tracking file's types, in both directions.
 
-use openxr as xr;
-
 use crate::{
-    controllers::frame::{
-        ActionSetKind, Button, ButtonSet, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint,
-        InteractionProfile, TrackedPose,
+    ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
+    SessionSample, SessionState, StartMarker,
+    model::{
+        ActionSetKind, ActionState, ActionValue, Button, ButtonSet, HAND_JOINT_COUNT, Hand,
+        HandFrame, HandInputs, HandJoint, InteractionProfile, RecenterCause, RecenterKind,
+        SemanticSet, SetState, Stage, TrackedPose,
     },
-    recorder::tracking::format::{
-        ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
-        SessionSample, StartMarker,
-        wire::{DecodeError, DecodeErrorKind, Decoder, Encoder},
-    },
-    vr::{
-        RecenterCause, RecenterKind,
-        input::semantic::{
-            SemanticSet,
-            frame::{ActionState, ActionValue, SetState},
-        },
-        stage::StageInfo,
-    },
+    wire::{DecodeError, DecodeErrorKind, Decoder, Encoder},
 };
 
-pub(super) fn header(out: &mut Encoder, header: &Header) {
+pub(crate) fn header(out: &mut Encoder, header: &Header) {
     out.str(&header.build);
     out.str(&header.recorded_at);
     out.u32(header.action_schema);
@@ -41,7 +30,7 @@ pub(super) fn header(out: &mut Encoder, header: &Header) {
     out.f32(header.time_scale);
 }
 
-pub(super) fn read_header(input: &mut Decoder) -> Result<Header, DecodeError> {
+pub(crate) fn read_header(input: &mut Decoder) -> Result<Header, DecodeError> {
     let build = input.str("the build stamp")?;
     let recorded_at = input.str("the recording stamp")?;
     let action_schema = input.u32()?;
@@ -71,7 +60,7 @@ pub(super) fn read_header(input: &mut Decoder) -> Result<Header, DecodeError> {
     })
 }
 
-pub(super) fn frame(out: &mut Encoder, frame: &Frame) {
+pub(crate) fn frame(out: &mut Encoder, frame: &Frame) {
     out.u64(frame.time_ns);
     out.i64(frame.display_time_ns);
     let mut flags = 0;
@@ -124,12 +113,12 @@ pub(super) fn frame(out: &mut Encoder, frame: &Frame) {
     }
 }
 
-pub(super) fn read_frame(input: &mut Decoder) -> Result<Frame, DecodeError> {
+pub(crate) fn read_frame(input: &mut Decoder) -> Result<Frame, DecodeError> {
     let time_ns = input.u64()?;
     let display_time_ns = input.i64()?;
     let flags = input.u8()?;
     let state = if bit(flags, FRAME_SESSION_STATE) {
-        Some(xr::SessionState::from_raw(input.i32()?))
+        Some(SessionState::from_raw(input.i32()?))
     } else {
         None
     };
@@ -260,7 +249,7 @@ fn read_action_set(input: &mut Decoder) -> Result<ActionSetKind, DecodeError> {
         .ok_or_else(|| invalid(offset, "the action set", index.into()))
 }
 
-fn stage(out: &mut Encoder, stage: &StageInfo) {
+fn stage(out: &mut Encoder, stage: &Stage) {
     let mut flags = 0u8;
     set_bit(&mut flags, 0, stage.available);
     set_bit(&mut flags, 1, stage.bounds.is_some());
@@ -274,15 +263,14 @@ fn stage(out: &mut Encoder, stage: &StageInfo) {
     }
 }
 
-fn read_stage(input: &mut Decoder) -> Result<StageInfo, DecodeError> {
+fn read_stage(input: &mut Decoder) -> Result<Stage, DecodeError> {
     let flags = input.u8()?;
     let bounds = bit(flags, 1).then(|| input.vec2()).transpose()?;
     let head_height = bit(flags, 2).then(|| input.f32()).transpose()?;
-    Ok(StageInfo {
+    Ok(Stage {
         available: bit(flags, 0),
         bounds,
         head_height,
-        ..StageInfo::default()
     })
 }
 

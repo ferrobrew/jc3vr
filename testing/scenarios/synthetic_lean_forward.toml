@@ -1,0 +1,49 @@
+# Synthetic: the recording is written by `cargo run -p tracking-synth` to
+# testing/recordings/synthetic/lean_forward.jc3trk. See docs/mod/testing/recorder.md.
+name = "synthetic: leaning over a table"
+description = "Replayed with BODY FROM YOUR HEAD on FULL. Lean from the hips over a table, the head 35 cm forward and 20 cm down, hold, and return."
+recording = "../recordings/synthetic/lean_forward.jc3trk"
+start = "in_place"
+pacing = "real_time"
+
+[[expect]]
+signal = "replay.driving"
+
+[[expect]]
+name = "the recorded recenter, and only it, is applied"
+signal = "vr.recenters"
+equals = 1
+
+[[expect]]
+signal = "controllers.frame_fresh"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "always"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"
+
+[[expect]]
+signal = "procedural.on_foot"
+
+# A loose bound until a baseline run against the body rig sets a tighter one.
+[[expect]]
+name = "the solved neck stays under the head"
+signal = "procedural.neck_error_m"
+check = "always"
+below = 0.10
+
+[[expect]]
+name = "the stick drives nothing"
+signal = "locomotion.stick_speed_mps"
+check = "always"
+below = 0.05
+
+# TODO(body rig): expectations for the signals the new body rig will add:
+# - the feet stay put while the head leans out within the lean reach.
+# - the roomscale chase leaves the lean to the head rather than walking the body forward.
+# - the spine bends at the hips rather than the body crouching.

@@ -5,19 +5,19 @@ use std::fmt;
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::frame::Pose;
+use crate::model::Pose;
 
 /// Why a tracking file could not be read.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DecodeError {
+pub struct DecodeError {
     /// The byte offset in the file at which the read failed.
-    pub(crate) offset: usize,
-    pub(crate) kind: DecodeErrorKind,
+    pub offset: usize,
+    pub kind: DecodeErrorKind,
 }
 
 /// What was wrong at a [`DecodeError`]'s offset.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DecodeErrorKind {
+pub enum DecodeErrorKind {
     /// The file does not start with the tracking file's magic.
     BadMagic,
     /// The file is of a format version this build cannot read.
@@ -45,7 +45,7 @@ impl fmt::Display for DecodeErrorKind {
             DecodeErrorKind::UnsupportedVersion(version) => write!(
                 f,
                 "format version {version} is not supported by this build, which reads version {}",
-                crate::recorder::tracking::format::VERSION
+                crate::VERSION
             ),
             DecodeErrorKind::Truncated { needed, available } => write!(
                 f,

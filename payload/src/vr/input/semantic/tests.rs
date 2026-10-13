@@ -17,125 +17,11 @@ use crate::{
     },
 };
 
-/// Every set, action, and type of the schema, in stash order. Changing it changes the players'
-/// saved bindings: bump [`SCHEMA_VERSION`] and add a changelog entry (see its documentation).
-const GOLDEN: &str = "\
-hands: set
-hands.grip_pose: pose
-hands.aim_pose: pose
-hands.haptic: haptic
-hands.trigger_click: bool
-hands.trigger_touch: bool
-hands.thumbstick_click: bool
-hands.thumbstick_touch: bool
-hands.trackpad_touch: bool
-hands.a_click: bool
-hands.a_touch: bool
-hands.b_click: bool
-hands.b_touch: bool
-hands.system_click: bool
-hands.squeeze_click: bool
-hands.trigger_value: float
-hands.squeeze_value: float
-hands.squeeze_force: float
-hands.trackpad_force: float
-hands.thumbstick: vec2
-hands.trackpad: vec2
-global: set
-global.pause: bool
-global.open_commlink: bool
-global.recenter_view: bool
-global.toggle_debug_panel: bool
-global.show_controls_summary: bool
-global.skip_cutscene: bool
-on_foot: set
-on_foot.move: vec2
-on_foot.turn: float
-on_foot.crouch_flick: float
-on_foot.fire: float
-on_foot.fire_off_hand_pistol: float
-on_foot.retract_tethers: float
-on_foot.retract_tethers_alt: bool
-on_foot.fire_grapple: float
-on_foot.jump: bool
-on_foot.use: bool
-on_foot.reload: bool
-on_foot.release_tethers: bool
-on_foot.detonate: bool
-on_foot.next_weapon: bool
-on_foot.throw_grenade: bool
-on_foot.weapon_select_pad: vec2
-on_foot.weapon_select_press: float
-on_foot.weapon_wheel: float
-on_foot.grapple: bool
-wingsuit: set
-wingsuit.steer: vec2
-wingsuit.turn: float
-wingsuit.air_brake: float
-wingsuit.fire_guns: float
-wingsuit.fire_secondary: float
-wingsuit.boost: bool
-wingsuit.open_parachute: bool
-wingsuit.use: bool
-wingsuit.release_tethers: bool
-wingsuit.fire_grapple: float
-wingsuit.grapple: bool
-land_vehicle: set
-land_vehicle.steer: vec2
-land_vehicle.turn: float
-land_vehicle.accelerate: float
-land_vehicle.reverse: float
-land_vehicle.fire_primary: float
-land_vehicle.fire_secondary: float
-land_vehicle.stunt: bool
-land_vehicle.exit_vehicle: bool
-land_vehicle.vehicle_mod: bool
-land_vehicle.handbrake: bool
-land_vehicle.horn: bool
-land_vehicle.fire: float
-land_vehicle.fire_off_hand_pistol: float
-land_vehicle.grapple: bool
-helicopter: set
-helicopter.cyclic: vec2
-helicopter.yaw: float
-helicopter.collective_up: float
-helicopter.collective_down: float
-helicopter.fire_primary: float
-helicopter.fire_secondary: float
-helicopter.stunt: bool
-helicopter.exit_vehicle: bool
-helicopter.vehicle_mod: bool
-helicopter.horn: bool
-helicopter.fire: float
-helicopter.fire_off_hand_pistol: float
-helicopter.grapple: bool
-plane: set
-plane.pitch_roll: vec2
-plane.rudder: float
-plane.thrust_up: float
-plane.thrust_down: float
-plane.fire_primary: float
-plane.fire_secondary: float
-plane.stunt: bool
-plane.exit_vehicle: bool
-plane.horn: bool
-plane.fire: float
-plane.fire_off_hand_pistol: float
-plane.grapple: bool
-menu: set
-menu.menu_confirm: bool
-menu.menu_back: bool
-menu.menu_modifier: float
-menu.menu_navigate: vec2
-menu.menu_tab_pad: vec2
-menu.menu_tab_press: float
-menu.menu_page_prev: float
-menu.menu_page_next: float
-menu.pointer_select: float
-menu.menu_focus: bool
-menu.menu_recenter: bool
-menu.map_zoom: float
-";
+/// The schema's version, then every set, action, and type of the schema, in stash order. Changing
+/// it changes the players' saved bindings: bump [`SCHEMA_VERSION`] and add a changelog entry (see
+/// its documentation). It is a file of its own because `tools/tracking-synth` reads it to index the
+/// semantic actions of the recordings it writes.
+const GOLDEN: &str = include_str!("schema.golden");
 
 #[test]
 fn the_schema_matches_the_golden_snapshot() {
@@ -149,7 +35,11 @@ fn the_schema_matches_the_golden_snapshot() {
             lines.push_str(&format!("{set}.{name}: {tag}\n"));
         }
     }
-    assert_eq!(lines, GOLDEN);
+    let (version, golden) = GOLDEN
+        .split_once('\n')
+        .expect("the snapshot starts with its version line");
+    assert_eq!(version, format!("version: {SCHEMA_VERSION}"));
+    assert_eq!(lines, golden);
 }
 
 #[test]

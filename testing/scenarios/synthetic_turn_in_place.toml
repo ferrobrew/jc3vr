@@ -1,0 +1,39 @@
+# Synthetic: the recording is written by `cargo run -p tracking-synth` to
+# testing/recordings/synthetic/turn_in_place.jc3trk. See docs/mod/testing/recorder.md.
+name = "synthetic: turning on the spot"
+description = "Turn the whole body 90 degrees left on the spot, the head leading, hold, and turn back."
+recording = "../recordings/synthetic/turn_in_place.jc3trk"
+start = "in_place"
+pacing = "real_time"
+
+[[expect]]
+signal = "replay.driving"
+
+[[expect]]
+name = "the recorded recenter, and only it, is applied"
+signal = "vr.recenters"
+equals = 1
+
+[[expect]]
+signal = "controllers.frame_fresh"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "always"
+
+[[expect]]
+name = "the skeleton rigs"
+signal = "procedural.rig_error"
+check = "never"
+
+[[expect]]
+name = "the stick drives nothing"
+signal = "locomotion.stick_speed_mps"
+check = "always"
+below = 0.05
+
+# TODO(body rig): expectations for the signals the new body rig will add:
+# - the torso's heading follows the turn past the deadzone and returns.
+# - the body turns under the view without moving the view's heading.
+# - the feet turn on the spot rather than stepping away.

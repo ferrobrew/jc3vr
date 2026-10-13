@@ -1,0 +1,15 @@
+[package]
+name = "tracking-format"
+version = "0.1.0"
+edition = "2024"
+description = "The jc3vr tracking recording (.jc3trk): its data model and codec, cross-platform so that host tools can read and write recordings."
+publish = false
+
+# Pure and portable, unlike its main consumer (the payload, a Windows cdylib), so that host tools
+# such as `tools/tracking-synth` can read and write recordings on Linux and Windows alike.
+
+[dependencies]
+glam = { workspace = true }
+# The session state's type only: the payload's `openxr` re-exports the same type from this crate,
+# so a recorded state needs no conversion.
+openxr-sys = "0.13"
