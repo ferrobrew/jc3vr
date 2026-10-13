@@ -37,6 +37,39 @@ signal = "locomotion.stick_speed_mps"
 check = "always"
 below = 0.05
 
-# TODO(body rig): expectations for the signals the new body rig will add:
-# - the feet stay under the head within the upright slack while the head sways.
-# - the torso's heading holds inside its deadzone.
+# The body rig (docs/mod/body/rig.md). The thresholds follow the rig's unit tests and are
+# provisional until a replay against this build confirms them. Replay on open, level ground: a wall
+# or a slope nearby obstructs the chase and fails the open-floor checks.
+
+[[expect]]
+name = "the chase keeps up with the head"
+signal = "rig.residual_m"
+check = "always"
+below = 0.05
+
+[[expect]]
+name = "the root stays under the head"
+signal = "rig.gap_m"
+check = "always"
+below = 0.05
+
+[[expect]]
+name = "the legs stand"
+signal = "legs.moving"
+check = "never"
+
+[[expect]]
+name = "nothing obstructs the chase"
+signal = "rig.obstructed"
+check = "never"
+
+[[expect]]
+name = "nothing is pushed back"
+signal = "rig.pushbacks"
+at_most = 0
+
+# A guess: a character context that filters the wanted velocity sends steps to the projection.
+[[expect]]
+name = "every step's chase is credited exactly"
+signal = "rig.ledger_projected"
+at_most = 0

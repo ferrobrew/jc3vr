@@ -36,7 +36,55 @@ above = 1.0
 [[expect]]
 status = "STICK VELOCITY"
 
-# TODO(body rig): expectations for the signals the new body rig will add:
-# - each flick snap turns the view once under the snap scheme.
-# - the held push turns the view smoothly under the smooth scheme.
-# - the strafe moves the body sideways without turning it.
+# The body rig (docs/mod/body/rig.md). The thresholds follow the rig's unit tests and are
+# provisional until a replay against this build confirms them. Replay on open, level ground: a wall
+# or a slope nearby obstructs the chase and fails the open-floor checks.
+
+[[expect]]
+name = "the chase keeps up with the head"
+signal = "rig.residual_m"
+check = "always"
+below = 0.05
+
+[[expect]]
+name = "the root stays under the head"
+signal = "rig.gap_m"
+check = "always"
+below = 0.05
+
+[[expect]]
+name = "the legs walk"
+signal = "legs.moving"
+
+[[expect]]
+name = "the legs stand again at the end"
+signal = "legs.moving"
+check = "at_end"
+is = false
+
+# The unit tests bound the lead by 0.42 of a leg's length, about 0.38 m for a 1.8 m player.
+[[expect]]
+name = "every walking foot lands under the body"
+signal = "legs.touchdown_lead_m"
+check = "always"
+below = 0.45
+
+[[expect]]
+name = "nothing obstructs the chase"
+signal = "rig.obstructed"
+check = "never"
+
+[[expect]]
+name = "nothing is pushed back"
+signal = "rig.pushbacks"
+at_most = 0
+
+# A guess: a character context that filters the wanted velocity sends steps to the projection.
+[[expect]]
+name = "every step's chase is credited exactly"
+signal = "rig.ledger_projected"
+at_most = 0
+
+# Not checked, for want of a signal: the flicks snap the view once each under the snap
+# scheme, the held push turns it smoothly under the smooth scheme, and the strafe does not turn
+# the body.
