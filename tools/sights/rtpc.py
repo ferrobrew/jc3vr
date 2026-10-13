@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from archives import hashlittle
 
 # The variant types this reader decodes. Other types read as ``None``.
-INTEGER, FLOAT, STRING, VEC2, VEC3, VEC4, MAT4 = 1, 2, 3, 4, 5, 6, 8
-INTEGERS, FLOATS = 9, 10
+INTEGER, FLOAT, STRING, VEC2, VEC3, VEC4, MAT3, MAT4 = 1, 2, 3, 4, 5, 6, 7, 8
+INTEGERS, FLOATS, BYTES, OBJECT_ID, EVENTS = 9, 10, 11, 13, 14
 
 
 @dataclass
@@ -54,10 +54,20 @@ def _value(data: bytes, raw: bytes, kind: int):
     (offset,) = struct.unpack("<I", raw)
     if kind == STRING:
         return data[offset : data.index(b"\0", offset)].decode("ascii")
-    if kind in (VEC2, VEC3, VEC4, MAT4):
-        count = {VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16}[kind]
+    if kind in (VEC2, VEC3, VEC4, MAT3, MAT4):
+        count = {VEC2: 2, VEC3: 3, VEC4: 4, MAT3: 9, MAT4: 16}[kind]
         return struct.unpack_from(f"<{count}f", data, offset)
     if kind in (INTEGERS, FLOATS):
         (count,) = struct.unpack_from("<I", data, offset)
         return struct.unpack_from(f"<{count}{'i' if kind == INTEGERS else 'f'}", data, offset + 4)
+    if kind == BYTES:
+        (count,) = struct.unpack_from("<I", data, offset)
+        return data[offset + 4 : offset + 4 + count]
+    if kind == OBJECT_ID:
+        # A ``u64`` object id; zero is no object.
+        return struct.unpack_from("<Q", data, offset)[0]
+    if kind == EVENTS:
+        # A ``u32`` count of event ids, each a pair of ``u32``.
+        (count,) = struct.unpack_from("<I", data, offset)
+        return tuple(struct.unpack_from("<II", data, offset + 4 + 8 * i) for i in range(count))
     return None
