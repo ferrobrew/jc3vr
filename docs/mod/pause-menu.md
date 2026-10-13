@@ -109,7 +109,7 @@ A step-by-step page (the body calibration) keeps its step in a static beside its
 
 ## Pages
 
-Five pages are registered, in this order, as the tabs `BODY` (`controllers/body/menu.rs`, titled `VR: BODY`), `CONTROLS` (`controllers/menu/controls/`, `VR: CONTROLS`), `COMFORT` (`controllers/menu/comfort.rs`, `VR: COMFORT`), `DISPLAY` (`controllers/menu/display.rs`, `VR: DISPLAY`), and `STATUS` (`controllers/menu/status/`, `VR: STATUS`). Labels are written in upper case in the source because that is how the movie shows them: it upper-cases row labels and key text, and shows option labels as given. A registry test checks it.
+Five pages are registered, in this order, as the tabs `BODY` (`controllers/body/menu/`, titled `VR: BODY`), `CONTROLS` (`controllers/menu/controls/`, `VR: CONTROLS`), `COMFORT` (`controllers/menu/comfort.rs`, `VR: COMFORT`), `DISPLAY` (`controllers/menu/display.rs`, `VR: DISPLAY`), and `STATUS` (`controllers/menu/status/`, `VR: STATUS`). Labels are written in upper case in the source because that is how the movie shows them: it upper-cases row labels and key text, and shows option labels as given. A registry test checks it.
 
 ### Settings pages
 

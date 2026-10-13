@@ -93,7 +93,7 @@ The pin also needs:
 
 ### Locomotion and facing
 
-Locomotion is aim-relative strafing in all on-foot cases, through the FPS-movement shim. The stick direction is relative to the head by default, with an option for the off-hand controller's pointing direction. The body's yaw is the existing scheme: stick turning (smooth or snap), plus the torso following the head through a deadzone. The torso-follow drives the visible body and the movement frame only; it never rotates the view. Physical turning is always honoured.
+Locomotion is aim-relative strafing in all on-foot cases, through the FPS-movement shim. The stick direction is relative to the head by default, with an option for the off-hand controller's pointing direction. The body's yaw is stick turning (smooth or snap), plus the body turning under the view to face the player's torso, estimated from the head and the hands ([rig.md, "The body turning under the view"](../body/rig.md#the-body-turning-under-the-view)). The body's turn toward the torso never rotates the view, and the movement frame is the view's. Physical turning is always honoured.
 
 ### Hands
 
@@ -145,7 +145,7 @@ Two postures are supported.
 - Seated: the seated eye reference, the head height the player actually sits at, maps to Rico's standing eye height, the body does not follow the head about the room, and a downward flick of the dominant stick toggles between standing and crouched eye height.
 - Standing: STAGE space for the true floor height, physical crouching, and the body following the head about the room ([rig.md](../body/rig.md)).
 
-OpenXR has no signal for whether the user is seated, and SteamVR's OpenXR runtime exposes only a standing basis. The head height above the STAGE floor, compared with the calibrated standing and seated eye heights, indicates a seated player. The posture setting is `auto | seated | standing`. In `auto`, the head height selects seated or standing, seated until the head is located. The play area's size decides nothing ([rig.md, "Posture"](../body/rig.md#posture)). The detection is described in [controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale).
+OpenXR has no signal for whether the user is seated, and SteamVR's OpenXR runtime exposes only a standing basis. The head height above the STAGE floor, compared with the calibrated standing and seated eye heights, indicates a seated player. The posture setting is `auto | seated | standing`. In `auto`, the head height selects seated or standing, seated until the head is located ([rig.md, "Posture"](../body/rig.md#posture)). The detection is described in [controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale).
 
 ## Input
 
@@ -164,7 +164,7 @@ The mode detector replaces the headpose sim's binary on-foot test (the `Evaluate
 The first matching rule selects the mode, and with it the action set. The order follows the engine's state overlaps ([§5.6](../../engine/character/hands-locomotion-and-state.md#56-state-overlap-and-precedence)).
 
 1. A menu is up: `ui`. The signals are the game clock's stop flag ([`Clock::m_Stop`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/clock::Clock##field-m_Stop)), which covers the pause menu, the commlink, and the other pause reasons; the UI blocker bit ([`InputSystemBlocker::Ui`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputSystemBlocker##variant-Ui)) of the player action map, which covers game screens such as the map that do not pause; and the mod's own panel.
-2. A deferred teleport is in flight ([`GameWorld::IsTeleporting`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-IsTeleporting)), or the character is not readable: hold the current set. The rig re-base on a teleport belongs to the chase loop (see "The chase loop").
+2. A deferred teleport is in flight ([`GameWorld::IsTeleporting`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-IsTeleporting)), or the character is not readable: hold the current set. The re-base on a teleport is the rig's ([rig.md, "Teleports and seat exits"](../body/rig.md#teleports-and-seat-exits)).
 3. Seated in a vehicle (`IsInVehicleAttachState`, which spans the entry and exit animations): `vehicle`, with the class resolved in the order helicopter, plane, motorcycle, car, sea, and the driver seat selecting the driver bindings.
 4. Grapple traversal (reeling in, pre-reel, hanging, or reeled in): the gameplay mode stays (`onfoot` or `airborne`), and the reel or hang sub-state is flagged for the hand tiers.
 5. Wingsuit: `airborne`, wingsuit variant.
@@ -426,7 +426,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 
 ### 2. Posture and roomscale
 
-- The posture setting and STAGE-space support, the stage-bounds check, and the seated crouch toggle.
+- The posture setting and STAGE-space support, and the seated crouch toggle.
 - The Bonelab-style remap, still driven by config dimensions.
 - The body following the head ([rig.md](../body/rig.md)), the teleport re-base, and the head-through-geometry fade.
 - The crouching body, then the capsule swap.
@@ -488,7 +488,7 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 | Posture and STAGE space | `posture` (`Auto`, `Seated`, or `Standing`) | Built. `Auto` detects seated from the head height (`auto_posture`). |
 | Head height remap | `body.remap_head` (on) | Built. |
 | Seated crouch toggle | `bindings.crouch_flick`, `crouch.seated_drop_m` | Built. It works with or without the head remap. |
-| The body following the head and the teleport re-base | `body.rig.chase` (on), `body.rig.lean` (on) | Built ([rig.md](../body/rig.md)). |
+| The body following the head and the teleport re-base | `body.rig.chase` (on), `body.rig.lean` (on), `body.rig.pushback` (on) | Built ([rig.md](../body/rig.md)). |
 | The head-through-geometry fade | `head_fade.enabled` (on), `head_fade.start_depth_m`, `head_fade.full_depth_m`, `fade.out_s`, `fade.in_s` | Built. The fade darkens the image in the VR blit. |
 | The crouch capsule | `crouch.capsule` (on), `crouch.enter_drop_m`, `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
 | Seat transitions | `seat_transition` (`Ride` by default, `Instant`, or `Fade`), `seat_fade_hold_s` | Built. Ceremony is deferred with the mod UI. |
@@ -629,7 +629,7 @@ The order puts the parts that everything else depends on first, then the parts w
 17. The grapple hand. While reeling and hanging, the grapple hand holds the line; while hanging, moving that hand pushes the body. A sharp pull on a live line zips.
 18. The body following the head (`body.rig.chase.enabled`, in the standing posture). Walking physically moves the body with the head and the view never runs ahead; walking while pushing the stick moves at the sum of the two; leaning over a table moves nothing; a wall stops the body while the view stays with the head. A fast travel, a respawn, a load, and a vehicle teleport re-base without a chase spike. F7 re-bases yaw and height only.
 19. The head fade (`roomscale.head_fade.enabled`). Putting the head into a wall darkens the view with depth and clears on the way out, and moving the head down past the torso does not trigger it.
-20. Crouch (`roomscale.crouch.visual`, then `roomscale.crouch.capsule`). A physical crouch folds the legs with the feet planted; with the capsule, Rico fits under low cover, cannot stand up into a ceiling, and swimming, vehicles, the parachute, and ragdoll keep their own capsules. Check whether enemies react to a lowered head.
+20. Crouch (`roomscale.crouch.capsule`). A physical crouch folds the legs with the feet planted; with the capsule, Rico fits under low cover, cannot stand up into a ceiling, and swimming, vehicles, the parachute, and ragdoll keep their own capsules. Check whether enemies react to a lowered head.
 21. Seat transitions (`roomscale.seat_transition`). With `Instant` and `Fade`, enter, shuffle seats, and exit each vehicle class; the fades cover the animations and the seated view is re-based. Note any seat state logged as unmatched.
 22. Mounted guns. A mounted gun and a gunner seat anchor the hands to the handles, and moving the hands swings the muzzle about the pivot without runaway turning.
 23. Vehicle weapons (`vehicles.driver_weapons_by_hand`). The driver's weapons follow the dominant hand, turrets trail it, and the motorcycle and jetski personal weapon aims with the hand.

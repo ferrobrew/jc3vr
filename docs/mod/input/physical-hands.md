@@ -88,7 +88,7 @@ The hit object's kind comes from the engine's run-time type test ([`GameObject::
 
 A palm pressed past a small deadband (`push_deadband_m`) into a surface whose normal is mostly horizontal (`min_push_horizontal`) asks for a push along the normal, at `push_stiffness_per_s` per metre of press, up to `max_push_speed_mps` for both hands together. Pressing down on a table or the floor does not push. As the body moves away the press shallows, so the push settles with the palm resting on the surface.
 
-The push is added to the on-foot locomotion task's wanted velocity from the roomscale simulation half, before the chase reads the task's velocity, so it counts as the task's own movement: the view moves with the body as it does for the stick, and the cockpit shift does not take it back out. Only the on-foot task's ticks carry it, so a palm in a vehicle, a swim, or a fall never pushes.
+The push is added to the on-foot locomotion task's wanted velocity in the rig's root hook, beside the stick's ([rig.md, "Who moves the root"](../body/rig.md#who-moves-the-root)), so the ledger counts it as the task's movement: the view moves with the body as it does for the stick, and the cockpit shift does not take it back out. Only the on-foot task's ticks carry it, so a palm in a vehicle, a swim, or a fall never pushes.
 
 With `clamp_hand`, the hand's cockpit poses are moved out of the surface by the deepest press, which the IK targets and the rendered hand follow. The probes use the unclamped hands, so the press, and with it the push, still measures where the real hand is.
 
