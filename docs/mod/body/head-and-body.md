@@ -25,7 +25,7 @@ JC3 is a fast open-world action game — shoot, melee, drive, fly, wingsuit, gra
 
 ## Body-from-head heuristic
 
-JC3 has a real rig, so there's a known body bone — but you still decide how its yaw relates to the HMD. The layered estimate: body yaw is a damped follow of head yaw with a deadzone (~10° free, catch-up over ~30° / 0.2–0.5 s — the Cyberpunk third-person-mod free-range/catch-up pattern, mechanically VRIK's `MaxRootAngle`); a small hand-midpoint correction weighted low, since hands move wildly; and the locomotion-forward frame decoupled from both gaze and torso. Drive the existing body bone via scheme B rather than building a physics body. The estimate as built, and the body turning under the view to follow it, are in [alignment.md](alignment.md).
+JC3 has a real rig, so there's a known body bone — but you still decide how its yaw relates to the HMD. The layered estimate: body yaw is a damped follow of head yaw with a deadzone (~10° free, catch-up over ~30° / 0.2–0.5 s — the Cyberpunk third-person-mod free-range/catch-up pattern, mechanically VRIK's `MaxRootAngle`); a small hand-midpoint correction weighted low, since hands move wildly; and the locomotion-forward frame decoupled from both gaze and torso. Drive the existing body bone via scheme B rather than building a physics body. The estimate as built, and the body turning under the view to follow it, are in [rig.md](rig.md#the-torso).
 
 ## HMD pose to camera
 

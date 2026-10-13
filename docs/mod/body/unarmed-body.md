@@ -2,11 +2,11 @@
 
 On foot under the controllers, Rico's body plays what it plays unarmed, whatever he holds. The controllers alone place the arms and the guns. The game's weapon body animation broke the match between the player's body and Rico's in the headset: dual SMGs put him in a foot-forward stance, so his legs and shoulders were not where the player's were and the arms ended in different places, and a two-handed gun kept his left hand on the weapon, away from the tracked hand. Rather than tuning each weapon's animation, every weapon's body animation is left out by default, to be layered back as it is tested.
 
-The engine side is in [animation-layers.md](../../engine/character/animation-layers.md) and [idle-stance.md](../../engine/character/idle-stance.md). The code is `controllers::roomscale::stance::unarmed`, with the detours in `hooks::character::modifiers`, `hooks::character::layers`, and the `SECONDARY` pass seam in `hooks::character` and `controllers::hands::ik`.
+The engine side is in [animation-layers.md](../../engine/character/animation-layers.md) and [idle-stance.md](../../engine/character/idle-stance.md). The code is `controllers::body::unarmed`, with the detours in `hooks::character::modifiers`, `hooks::character::layers`, and the `SECONDARY` pass seam in `hooks::character` and `controllers::hands::ik`.
 
 ## When it applies
 
-The settings are `controllers.roomscale.stance.unarmed`. With `weapon_animations` set to `Unarmed` (the default; `Native` restores the game's), the unarmed body applies under the controller scheme, with the headset driving the view, in gameplay, while the hand tiers classify the character as on foot or in a reload, draw, or holster. Vehicles, the parachute, the wingsuit, swimming, the grapple hang and reel, cutscenes, and ragdoll keep the game's animation.
+The settings are `controllers.body.unarmed`. With `weapon_animations` set to `Unarmed` (the default; `Native` restores the game's), the unarmed body applies under the controller scheme, with the headset driving the view, in gameplay, while the hand tiers classify the character as on foot or in a reload, draw, or holster. Vehicles, the parachute, the wingsuit, swimming, the grapple hang and reel, cutscenes, and ragdoll keep the game's animation.
 
 The decision is made once per tick at the entry of the local player's pose-finalization pass. The next tick's modifier pass and pose job use it, so it takes effect one tick late, and a decision older than a quarter of a second counts as not applying.
 
@@ -22,13 +22,9 @@ The off-hand fix also needed a timing fix that applies with or without the unarm
 
 The aim families are already held off by the aim-state pin, and the aim and arm IK tasks by its IK skips ([controllers-and-roomscale.md, "The aim-state pin"](../input/controllers-and-roomscale.md#the-aim-state-pin)).
 
-## The standing stance's toggles
-
-The relaxed idle (`stance.relaxed_idle`) kept the weapon's modifiers off the base layer while standing still. The unarmed body does that on every on-foot tick and more, so the relaxed idle only matters with `weapon_animations` set to `Native`, and the settings grey it out otherwise. The squared stance (`stance.square`) stays independent: it squares whatever idle plays with HumanIK, which should have little left to do on the unarmed idle.
-
 ## Debug UI
 
-The Controllers tab's "Standing stance" section starts with the unarmed body: whether it applies or why not, whether the weapon's modifiers were kept off the body on the last modifier pass, how many layers the character has, each maskable layer's state with a running count of skipped blends, and whether the game's weapon grip was switched off for each hand on the last `SECONDARY` pass. The settings are at the top of the stance settings, at the end of the "Posture and roomscale" settings.
+The Controllers tab's "Weapon-agnostic body" section shows whether it applies or why not, whether the weapon's modifiers were kept off the body on the last modifier pass, how many layers the character has, each maskable layer's state with a running count of skipped blends, and whether the game's weapon grip was switched off for each hand on the last `SECONDARY` pass. The settings are under "Weapon-agnostic body" in the tab's settings.
 
 ## Unverified
 

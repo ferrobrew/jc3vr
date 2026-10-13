@@ -380,11 +380,11 @@ Who moves the root on each simulation tick, the chase after the ground point und
 
 ### Crouch, in stages
 
-1. Visual crouch, first and behind config: a positional target on the hips, lowered by a share of the head's drop, and the ankles pinned where the animation put them fold the body through the same HumanIK pass the head target already uses, solved at the full-body step. The feet stay planted and the hips drop.
-2. Capsule height: the engine swaps the proxy capsule per state itself (`SetProxyState`, which calls `hknpWorld::setBodyShape`), and every character has a crouching proxy state with a shortened capsule ([hands-locomotion-and-state.md §4.6a](../../engine/character/hands-locomotion-and-state.md#46a-capsule-dimensions-and-runtime-resize)). The mod requests that state through the character's pending proxy state ([`Character::m_PendingProxyState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_PendingProxyState)), which the engine applies on the sim thread. The request is made only while the pending state is the default or already the crouch, so the engine's own proxy states for swimming, the parachute, vehicles, and ragdoll win, and it is released only when a ray up from the feet finds the headroom to stand. This stage requires the visual crouch.
+1. The body: the procedural body's hips follow the head down and the legs fold under them ([procedural-body.md](../body/procedural-body.md#crouching-and-seated-players)).
+2. Capsule height: the engine swaps the proxy capsule per state itself (`SetProxyState`, which calls `hknpWorld::setBodyShape`), and every character has a crouching proxy state with a shortened capsule ([hands-locomotion-and-state.md §4.6a](../../engine/character/hands-locomotion-and-state.md#46a-capsule-dimensions-and-runtime-resize)). The mod requests that state through the character's pending proxy state ([`Character::m_PendingProxyState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##field-m_PendingProxyState)), which the engine applies on the sim thread. The request is made only while the pending state is the default or already the crouch, so the engine's own proxy states for swimming, the parachute, vehicles, and ragdoll win, and it is released only when a ray up from the feet finds the headroom to stand.
 3. AI response: whether enemy perception responds to a lowered head is measured in the headset.
 
-In the seated posture, the crouch toggle moves the eye height between the standing and crouched presets, and drives the same visual crouch.
+In the seated posture, the crouch toggle moves the eye height between the standing and crouched presets, and the body folds under it the same way.
 
 ### Seat transitions
 
@@ -429,7 +429,7 @@ Author the pyxis definitions for the seams milestone 1 uses, and verify each off
 - The posture setting and STAGE-space support, the stage-bounds check, and the seated crouch toggle.
 - The Bonelab-style remap, still driven by config dimensions.
 - The body following the head ([rig.md](../body/rig.md)), the teleport re-base, and the head-through-geometry fade.
-- The visual crouch, then the capsule swap.
+- The crouching body, then the capsule swap.
 - The Instant, Fade, and Ride seat-transition modes.
 
 ### 3. Holding
@@ -490,7 +490,7 @@ The settings are under `roomscale`, except the seated crouch flick (`bindings.cr
 | Seated crouch toggle | `bindings.crouch_flick`, `crouch.seated_drop_m` | Built. It works with or without the head remap. |
 | The body following the head and the teleport re-base | `body.rig.chase` (on), `body.rig.lean` (on) | Built ([rig.md](../body/rig.md)). |
 | The head-through-geometry fade | `head_fade.enabled` (on), `head_fade.start_depth_m`, `head_fade.full_depth_m`, `fade.out_s`, `fade.in_s` | Built. The fade darkens the image in the VR blit. |
-| The visual crouch and the capsule | `crouch.visual` (on), `crouch.capsule` (on; requires the visual crouch), `crouch.hips_share`, `crouch.enter_drop_m`, `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
+| The crouch capsule | `crouch.capsule` (on), `crouch.enter_drop_m`, `crouch.exit_drop_m` | Built. The AI response to a lowered head is not measured. |
 | Seat transitions | `seat_transition` (`Ride` by default, `Instant`, or `Fade`), `seat_fade_hold_s` | Built. Ceremony is deferred with the mod UI. |
 
 ### Milestone 3: holding
