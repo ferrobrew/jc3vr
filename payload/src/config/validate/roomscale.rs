@@ -34,7 +34,6 @@ pub(super) fn roomscale(r: &RoomscaleConfig) -> Result<(), Invalid> {
         r.seated_reference.deadband_m,
         1.0,
     )?;
-    range("roomscale.crouch.hips_share", r.crouch.hips_share, 0.0, 1.0)?;
     nonnegative("roomscale.crouch.enter_drop_m", r.crouch.enter_drop_m, 10.0)?;
     nonnegative("roomscale.crouch.exit_drop_m", r.crouch.exit_drop_m, 10.0)?;
     nonnegative(

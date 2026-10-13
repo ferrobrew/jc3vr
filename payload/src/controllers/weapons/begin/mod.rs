@@ -12,7 +12,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
-        body::alignment,
+        body::rig::skeleton,
         config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{
@@ -718,7 +718,7 @@ fn follow_docks(
     else {
         return 0;
     };
-    let Some(skeleton) = alignment::skeleton_in_cockpit(active.head.position, active.world_scale)
+    let Some(skeleton) = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
     else {
         return 0;
     };

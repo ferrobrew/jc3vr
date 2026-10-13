@@ -1,19 +1,14 @@
 //! The animation-modifier detours behind the weapon-agnostic body
-//! ([`crate::controllers::roomscale::stance::unarmed`]) and the standing stance's relaxed idle
-//! ([`crate::controllers::roomscale::stance`]).
+//! ([`crate::controllers::body::unarmed`]).
 //!
 //! [`Character::SetCharacterModifiers`] sets the wielded weapon's held or aimed modifier, and its
 //! equipped modifier, through [`Character::SetModifier`], which forwards to every rule system of
 //! the animated model. For the local player those are the only `SetModifier` calls it makes, so the
 //! calls made inside it can be filtered by rule system ([`keeps_weapon_modifier`]):
 //!
-//! - while the unarmed body applies, only the upper-body action layer takes them, so every other
-//!   layer plays its unarmed clips and the actions keep the weapon's clip lengths;
-//! - otherwise, while the relaxed idle applies, the body's rule system (the first) goes without and
-//!   the others keep the weapon's arm and grip poses.
-//!
-//! The detour on `SetCharacterModifiers` also records which idle variant the modifiers select, for
-//! the readout.
+//! while the unarmed body applies, only the upper-body action layer takes them, so every other
+//! layer plays its unarmed clips and the actions keep the weapon's clip lengths. The detour on
+//! `SetCharacterModifiers` records whether it kept a weapon's modifiers off, for the readout.
 
 use std::{cell::Cell, ptr};
 
@@ -21,11 +16,7 @@ use detours_macro::detour;
 use jc3gi::{animation::rule_system::AnimationModifierType, character::character::Character};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::roomscale::stance::{
-    self,
-    logic::idle_variant,
-    unarmed::{self, ModifierSuppression, keeps_weapon_modifier},
-};
+use crate::controllers::body::unarmed::{self, ModifierSuppression, keeps_weapon_modifier};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -35,7 +26,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::character::character::Character::SetCharacterModifiers_ADDRESS)]
 fn character_set_character_modifiers(character: *mut Character) {
-    let Some(local) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
+    if !(unsafe { character.as_ref() }).is_some_and(|c| c.m_IsLocalCharacter) {
         CHARACTER_SET_CHARACTER_MODIFIERS
             .get()
             .unwrap()
@@ -44,14 +35,9 @@ fn character_set_character_modifiers(character: *mut Character) {
     };
     let suppression = if unarmed::applies() {
         ModifierSuppression::AllButActions
-    } else if stance::relaxed_idle_applies() {
-        ModifierSuppression::BaseLayer
     } else {
         ModifierSuppression::None
     };
-    // The same queries the engine makes inside the call, made just before it, for the readout.
-    let trying_to_aim = unsafe { local.IsTryingToAim() };
-    let tether = unsafe { stance::tether(local) };
     SCOPE.set(Some(Scope {
         character,
         suppression,
@@ -62,12 +48,7 @@ fn character_set_character_modifiers(character: *mut Character) {
         .unwrap()
         .call(character);
     let weapon = SCOPE.take().is_some_and(|scope| scope.weapon_calls > 0);
-    let body_suppressed = suppression != ModifierSuppression::None;
-    stance::record_modifiers(
-        weapon && suppression == ModifierSuppression::BaseLayer,
-        weapon && suppression == ModifierSuppression::AllButActions,
-        idle_variant(weapon, trying_to_aim, tether, body_suppressed),
-    );
+    unarmed::record_modifiers(weapon && suppression == ModifierSuppression::AllButActions);
 }
 
 #[detour(address = jc3gi::character::character::Character::SetModifier_ADDRESS)]

@@ -30,7 +30,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        body::{self, BodyDimensions, alignment},
+        body::{self, BodyDimensions, rig::shoulder_heading},
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::ArmRemap,
@@ -115,7 +115,7 @@ fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
         &active.config.weapons.heft,
     );
     keep_physical(&mut active.hands, &unweighted, physical);
-    let torso = reach::torso_heading(active.head, alignment::shoulder_heading());
+    let torso = reach::torso_heading(active.head, shoulder_heading());
     let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
     ads::apply(
         &mut active.hands,
@@ -238,7 +238,7 @@ fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Opti
         return [None; 2];
     }
     let player = body::player();
-    let torso = reach::torso_heading(head, alignment::shoulder_heading());
+    let torso = reach::torso_heading(head, shoulder_heading());
     Hand::BOTH.map(|hand| {
         measured[hand.index()]
             .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))

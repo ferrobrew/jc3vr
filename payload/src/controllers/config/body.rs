@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{
-    alignment::AlignmentConfig, procedural::config::ProceduralBodyConfig, rig::RigConfig,
+    procedural::config::ProceduralBodyConfig, rig::RigConfig, unarmed::UnarmedBodyConfig,
 };
 
 /// Body scale remapping between the player's body and the character's (see
@@ -18,13 +18,13 @@ pub struct BodyRemapConfig {
     /// Scale the hands' offsets from the shoulders by the ratio of the arm spans. Acts only under
     /// the controller scheme.
     pub remap_hands: bool,
-    /// Keeping the character's body aligned with the player's: the torso estimate, the body
-    /// turning under the view, and the chest turn.
-    pub alignment: AlignmentConfig,
     /// The procedural body: Rico's pose built from the player's head and body.
     pub procedural: ProceduralBodyConfig,
-    /// The body rig: who moves the root, the chase after the player's head, and the lean.
+    /// The body rig: who moves the root, the chase after the player's head, the lean, the
+    /// push-back, and the torso.
     pub rig: RigConfig,
+    /// The weapon-agnostic body: which of the game's weapon animations reach the body on foot.
+    pub unarmed: UnarmedBodyConfig,
 }
 
 impl BodyRemapConfig {
@@ -32,9 +32,9 @@ impl BodyRemapConfig {
         Self {
             remap_head: true,
             remap_hands: true,
-            alignment: AlignmentConfig::new(),
             procedural: ProceduralBodyConfig::new(),
             rig: RigConfig::new(),
+            unarmed: UnarmedBodyConfig::new(),
         }
     }
 }

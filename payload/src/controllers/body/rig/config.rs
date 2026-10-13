@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::config::validate::Invalid;
 
 /// The body rig: who moves the root, the chase that keeps it under the physical head, the lean the
-/// chase leaves alone, and the push-back at walls (`docs/mod/body/rig.md`). All default on.
+/// chase leaves alone, the push-back at walls, the torso, and the pelvis (`docs/mod/body/rig.md`).
+/// All default on.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RigConfig {
@@ -15,6 +16,10 @@ pub struct RigConfig {
     pub lean: LeanConfig,
     /// Holding the view at a wall the body cannot pass.
     pub pushback: PushbackConfig,
+    /// The player's torso, and the character turning to face it.
+    pub torso: TorsoConfig,
+    /// The pelvis leaning into the body's motion.
+    pub pelvis: PelvisConfig,
 }
 
 impl RigConfig {
@@ -23,6 +28,8 @@ impl RigConfig {
             chase: ChaseConfig::new(),
             lean: LeanConfig::new(),
             pushback: PushbackConfig::new(),
+            torso: TorsoConfig::new(),
+            pelvis: PelvisConfig::new(),
         }
     }
 
@@ -51,6 +58,49 @@ impl RigConfig {
             ("pushback.debt_cap_m", self.pushback.debt_cap_m, 0.0, 2.0),
             ("pushback.fade_span_m", self.pushback.fade_span_m, 0.01, 1.0),
             ("pushback.reset_s", self.pushback.reset_s, 0.0, 10.0),
+            (
+                "torso.follow_deadband_deg",
+                self.torso.follow_deadband_deg,
+                0.0,
+                90.0,
+            ),
+            (
+                "torso.chest_limit_deg",
+                self.torso.chest_limit_deg,
+                0.0,
+                180.0,
+            ),
+            ("torso.head_weight", self.torso.head_weight, 0.0, 5.0),
+            (
+                "torso.neck_limit_deg",
+                self.torso.neck_limit_deg,
+                0.0,
+                180.0,
+            ),
+            ("torso.follow_s", self.torso.follow_s, 0.0, 2.0),
+            ("pelvis.follow_s", self.pelvis.follow_s, 0.0, 1.0),
+            ("pelvis.hinge_share", self.pelvis.hinge_share, 0.0, 1.0),
+            ("pelvis.speed_lean", self.pelvis.speed_lean, 0.0, 1.0),
+            (
+                "pelvis.max_speed_lean",
+                self.pelvis.max_speed_lean,
+                0.0,
+                1.0,
+            ),
+            ("pelvis.accel_lean", self.pelvis.accel_lean, 0.0, 1.0),
+            (
+                "pelvis.max_accel_lean",
+                self.pelvis.max_accel_lean,
+                0.0,
+                1.0,
+            ),
+            ("pelvis.max_roll", self.pelvis.max_roll, 0.0, 1.0),
+            (
+                "pelvis.motion_smoothing_s",
+                self.pelvis.motion_smoothing_s,
+                0.0,
+                2.0,
+            ),
         ];
         for (name, value, min, max) in checks {
             if !value.is_finite() || !(min..=max).contains(&value) {
@@ -185,6 +235,91 @@ impl PushbackConfig {
 }
 
 impl Default for PushbackConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The player's torso: its heading from the head and the hands, the character turning under the
+/// view to face it, and the chest turning toward it.
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TorsoConfig {
+    /// On foot, turn the character to face the player's torso under the view, which keeps its
+    /// heading: only the turn input turns the view.
+    pub follow: bool,
+    /// How far the torso may turn from the character's facing before the character turns, degrees.
+    /// The chest turn covers what is left.
+    pub follow_deadband_deg: f32,
+    /// The furthest the chest is turned from the character's facing, degrees.
+    pub chest_limit_deg: f32,
+    /// How much the head's heading counts against the hands', which count up to one each.
+    pub head_weight: f32,
+    /// The furthest the head may be turned from the torso, degrees.
+    pub neck_limit_deg: f32,
+    /// How quickly the heading follows, seconds (the time constant of a critically damped filter).
+    pub follow_s: f32,
+}
+
+impl TorsoConfig {
+    pub const fn new() -> Self {
+        Self {
+            follow: true,
+            follow_deadband_deg: 10.0,
+            chest_limit_deg: 45.0,
+            head_weight: 0.3,
+            neck_limit_deg: 65.0,
+            follow_s: 0.08,
+        }
+    }
+}
+
+impl Default for TorsoConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The pelvis: held under the neck pivot by a stiff spring, hinged back by a share of the lean, and
+/// leaning into the body's motion.
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PelvisConfig {
+    /// How quickly the pelvis follows its target, seconds (the time constant of a critically damped
+    /// spring): short, so a quick lean bends the spine first and the pelvis is otherwise held.
+    pub follow_s: f32,
+    /// How far back the pelvis goes per metre of lean, as a share: the hip hinge.
+    pub hinge_share: f32,
+    /// The forward lean per metre per second of speed, radians.
+    pub speed_lean: f32,
+    /// The most the speed leans the body, radians.
+    pub max_speed_lean: f32,
+    /// The forward lean per metre per second squared of acceleration, radians.
+    pub accel_lean: f32,
+    /// The most the acceleration leans the body either way, radians.
+    pub max_accel_lean: f32,
+    /// The most a sideways acceleration rolls the body, radians.
+    pub max_roll: f32,
+    /// How much the measured velocity and acceleration are smoothed, seconds.
+    pub motion_smoothing_s: f32,
+}
+
+impl PelvisConfig {
+    pub const fn new() -> Self {
+        Self {
+            follow_s: 0.06,
+            hinge_share: 0.3,
+            speed_lean: 0.035,
+            max_speed_lean: 0.14,
+            accel_lean: 0.02,
+            max_accel_lean: 0.1,
+            max_roll: 0.08,
+            motion_smoothing_s: 0.1,
+        }
+    }
+}
+
+impl Default for PelvisConfig {
     fn default() -> Self {
         Self::new()
     }

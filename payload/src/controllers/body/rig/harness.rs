@@ -28,8 +28,8 @@ use crate::controllers::body::{
             pushback::{Pushback, PushbackInput, PushbackOutcome},
             shift::{CockpitBasis, CockpitShift},
         },
+        torso::head_heading,
     },
-    torso::head_heading,
 };
 
 /// The simulation rate, ticks per second.

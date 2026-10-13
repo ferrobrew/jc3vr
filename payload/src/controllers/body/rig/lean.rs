@@ -20,8 +20,10 @@ use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::body::{
     procedural::head::{StandingReference, head_drop},
-    rig::config::LeanConfig,
-    torso::{EYES_TO_NECK_PIVOT, yaw_forward},
+    rig::{
+        config::LeanConfig,
+        torso::{EYES_TO_NECK_PIVOT, yaw_forward},
+    },
 };
 
 /// One frame's lean.

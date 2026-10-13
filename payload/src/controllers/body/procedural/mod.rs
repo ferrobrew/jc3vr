@@ -64,7 +64,6 @@ use crate::{
     config::Config,
     controllers::{
         body::{
-            alignment::torso_turn,
             procedural::{
                 authority::{Case, WeightFollower, Weights, classify},
                 config::{ProceduralBodyConfig, ProceduralMode},
@@ -80,7 +79,7 @@ use crate::{
                     crouch_depth,
                     feet::FootPose,
                     gait::STOP_SHARE,
-                    hips_height, hips_horizontal, hips_room, line_yaw,
+                    hips_height, hips_room, line_yaw,
                     lower::LowerStatus,
                     pose::{RigPose, SolveKind},
                     reach_drop, solve, step_offset,
@@ -88,6 +87,7 @@ use crate::{
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
+            rig::{pelvis, torso_turn},
         },
         frame::Hand,
         locomotion::{LocomotionStatus, status as locomotion_status},
@@ -138,6 +138,8 @@ pub struct ProceduralStatus {
     pub lower: LowerStatus,
     /// How far the stance has stepped under the player's head, metres.
     pub step_offset_m: f32,
+    /// How far the body leans into its motion, degrees.
+    pub motion_lean_deg: f32,
     /// How far the falling legs have reached for the ground below, `0..=1`.
     pub landing_reach: f32,
     /// Whether the neutral stance the feet stand around has been measured.
@@ -283,9 +285,10 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, off_hand, scale) = Config::lock_query(|c| {
+    let (config, pelvis_config, off_hand, scale) = Config::lock_query(|c| {
         (
             c.controllers.body.procedural,
+            c.controllers.body.rig.pelvis,
             c.controllers.acting_hand().other(),
             c.vr.world_scale,
         )
@@ -547,8 +550,22 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     .drop
                     .seed(seed.min(hips_room(rig, input.hips_head(), &config)));
             }
-            let place = hips_horizontal(rig, &input, &config);
-            input.hips_xz = Some(state.hips.step(place, dt, config.hips_follow_s));
+            // The pelvis: over the stance, hinged back by a share of the lean the chase leaves
+            // alone, and leaning into the root's measured motion.
+            let flat = |v: Vec3| Vec2::new(v.x, v.z);
+            let lean = flat(player.head - player.upright);
+            let moving = flat(world.inverse().transform_vector3(velocity));
+            let motion = state
+                .motion
+                .step(moving, dt, pelvis::spine_length(rig), &pelvis_config);
+            state.status.motion_lean_deg = motion.pitch.to_degrees();
+            let place = pelvis::target(
+                pelvis::rest(rig, &input, &config),
+                lean,
+                motion.offset,
+                &pelvis_config,
+            );
+            input.hips_xz = Some(state.hips.step(place, dt, pelvis_config.follow_s));
             let lower = LowerRequest {
                 world: &world,
                 rig,
@@ -815,6 +832,7 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     head_drop_m: 0.0,
     lower: LowerStatus::new(),
     step_offset_m: 0.0,
+    motion_lean_deg: 0.0,
     landing_reach: 0.0,
     stance_measured: false,
     ground: GroundTally::new(),

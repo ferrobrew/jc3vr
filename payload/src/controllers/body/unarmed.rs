@@ -16,7 +16,7 @@
 //!
 //! The decision is made once per tick at the entry of the local player's pose-finalization pass
 //! ([`tick`]), which also publishes the masked layers' blenders for the pose job. The modifier pass
-//! and the pose job of the next tick read it.
+//! and the pose job of the next tick read it. The settings are `controllers.body.unarmed`.
 
 use std::{
     sync::LazyLock,
@@ -25,16 +25,79 @@ use std::{
 
 use jc3gi::character::character::{AnimationLayer, Character};
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     config::Config,
     controllers::{
         hands::tiers::{self, TierState},
-        roomscale::stance::config::{UnarmedBodyConfig, WeaponAnimations},
         scheme,
     },
     headpose, hooks,
 };
+
+/// Which of the game's weapon animations reach the character's body on foot.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum WeaponAnimations {
+    /// The game's own: the weapon's stances, the upper-body actions, and the additive layers.
+    Native,
+    /// The body plays what it plays unarmed, whatever is held: the weapon's animation modifiers stay
+    /// off every layer but the upper-body actions, and the layers set in [`UnarmedBodyConfig`] are
+    /// left out of the pose while still running, so reloads, draws, and holsters keep their timing
+    /// and their animation events.
+    #[default]
+    Unarmed,
+}
+
+impl WeaponAnimations {
+    pub const ALL: [WeaponAnimations; 2] = [WeaponAnimations::Native, WeaponAnimations::Unarmed];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            WeaponAnimations::Native => "native",
+            WeaponAnimations::Unarmed => "unarmed",
+        }
+    }
+}
+
+/// The weapon-agnostic body. Acts only under the controller scheme with the headset driving the
+/// view, in gameplay, while the hand tiers classify the character as on foot (including a reload,
+/// draw, or holster), so it defaults on.
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UnarmedBodyConfig {
+    pub weapon_animations: WeaponAnimations,
+    /// Leave the upper-body action layer (draw, holster, switch, reload, pump, bolt, pickup, and
+    /// throws) out of the pose.
+    pub mask_actions: bool,
+    /// Leave the synchronised upper-body layer (the turns toward the aim target, and the locomotion
+    /// partials) out of the pose.
+    pub mask_synced_partial: bool,
+    /// Leave the synchronised additive layer (leans, landings, and the grapple, grenade, and launcher
+    /// fire additives) out of the pose.
+    pub mask_additive: bool,
+    /// Switch the game's off-hand weapon grip off for both hands, driven or not, so that only the
+    /// foregrip grab puts a hand on a two-handed weapon.
+    pub release_weapon_grip: bool,
+}
+
+impl UnarmedBodyConfig {
+    pub const fn new() -> Self {
+        Self {
+            weapon_animations: WeaponAnimations::Unarmed,
+            mask_actions: true,
+            mask_synced_partial: true,
+            mask_additive: true,
+            release_weapon_grip: true,
+        }
+    }
+}
+
+impl Default for UnarmedBodyConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Whether the unarmed body applies, and why not when it does not.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -137,9 +200,6 @@ pub const fn layer_label(layer: AnimationLayer) -> &'static str {
 pub enum ModifierSuppression {
     /// Every rule system takes them: the game's own behaviour.
     None,
-    /// The base layer goes without, so its idle plays the relaxed clip (the standing stance's
-    /// relaxed idle).
-    BaseLayer,
     /// Only the upper-body action layer takes them (the unarmed body).
     AllButActions,
 }
@@ -148,7 +208,6 @@ pub enum ModifierSuppression {
 pub fn keeps_weapon_modifier(suppression: ModifierSuppression, layer: usize) -> bool {
     match suppression {
         ModifierSuppression::None => true,
-        ModifierSuppression::BaseLayer => layer != AnimationLayer::MAINBODY as usize,
         ModifierSuppression::AllButActions => layer == AnimationLayer::GLOBAL_PARTIAL as usize,
     }
 }
@@ -164,6 +223,8 @@ pub struct UnarmedStatus {
     pub layers: usize,
     /// How many times the pose job left each of [`MASKABLE_LAYERS`] out, since injection.
     pub skipped: [u64; MASKABLE_LAYERS.len()],
+    /// Whether the latest modifier pass kept the weapon's modifiers off the body.
+    pub weapon_suppressed: bool,
 }
 
 /// The latest status.
@@ -183,7 +244,7 @@ pub unsafe fn tick(character: *mut Character) {
     let Some(character) = (unsafe { character.as_ref() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let config = Config::lock_query(|c| c.controllers.roomscale.stance.unarmed);
+    let config = Config::lock_query(|c| c.controllers.body.unarmed);
     let inputs = GateInputs {
         controllers: scheme::is_controllers(),
         vr: headpose::source() == headpose::Source::Vr,
@@ -204,13 +265,21 @@ pub unsafe fn tick(character: *mut Character) {
         }
     });
     hooks::character::layers::publish(published);
-    *STATE.lock() = UnarmedStatus {
+    let mut state = STATE.lock();
+    *state = UnarmedStatus {
         at: Some(Instant::now()),
         verdict,
         masked: published.map(|b| b != 0),
         layers: blenders.len(),
         skipped: [0; MASKABLE_LAYERS.len()],
+        weapon_suppressed: state.weapon_suppressed,
     };
+}
+
+/// Record whether the modifier pass kept the wielded weapon's modifiers off the body, for the
+/// readout.
+pub fn record_modifiers(weapon_suppressed: bool) {
+    STATE.lock().weapon_suppressed = weapon_suppressed;
 }
 
 /// Whether the unarmed body applied on the local player's latest pose finalization, recently enough
@@ -222,7 +291,7 @@ pub fn applies() -> bool {
 
 /// Whether the game's off-hand weapon grip is switched off for both hands this tick.
 pub fn release_grip() -> bool {
-    Config::lock_query(|c| c.controllers.roomscale.stance.unarmed.release_weapon_grip) && applies()
+    Config::lock_query(|c| c.controllers.body.unarmed.release_weapon_grip) && applies()
 }
 
 /// How long a decision holds for the modifier pass, which runs earlier in the next tick.
@@ -383,10 +452,6 @@ mod tests {
         for layer in layers {
             let index = layer as usize;
             assert!(keeps_weapon_modifier(ModifierSuppression::None, index));
-            assert_eq!(
-                keeps_weapon_modifier(ModifierSuppression::BaseLayer, index),
-                layer != AnimationLayer::MAINBODY,
-            );
             assert_eq!(
                 keeps_weapon_modifier(ModifierSuppression::AllButActions, index),
                 layer == AnimationLayer::GLOBAL_PARTIAL,

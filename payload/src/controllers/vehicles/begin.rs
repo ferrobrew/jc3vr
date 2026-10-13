@@ -9,7 +9,7 @@ use glam::Vec3;
 
 use crate::{
     controllers::{
-        body::{self, BodyDimensions, alignment},
+        body::{self, BodyDimensions, rig},
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::Hand,
@@ -203,7 +203,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             .handles_torso
             .map_or(0.0, |(_, at)| now.duration_since(at).as_secs_f32());
         let torso = parachute::torso_heading(
-            alignment::estimate().map(|e| e.rotation()),
+            rig::estimate().map(|e| e.rotation()),
             state.handles_torso.map(|(torso, _)| torso),
             hands::reach::yaw_only(active.head.orientation),
             dt,

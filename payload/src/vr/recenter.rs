@@ -125,7 +125,7 @@ fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
     // The head's forward becomes the body's: any turn of the body under the view is spent, and
     // the torso estimate turns with the frame.
     crate::headpose::xr::on_recenter();
-    crate::controllers::body::alignment::on_recenter(turn);
+    crate::controllers::body::rig::on_recenter(turn);
     RECENTERS.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -190,7 +190,7 @@ fn service_follow_bank() {
         RecenterCause::SeatTransition,
     );
     crate::headpose::xr::bank(yaw);
-    crate::controllers::body::alignment::on_recenter(turn);
+    crate::controllers::body::rig::on_recenter(turn);
     tracing::debug!(
         target: "vr",
         yaw_deg = yaw.to_degrees(),

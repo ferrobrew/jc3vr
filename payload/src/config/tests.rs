@@ -131,7 +131,7 @@ fn an_unknown_setting_is_skipped_and_reported() {
 }
 
 #[test]
-fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_chase() {
+fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings() {
     let mut table = defaults_table();
     set(
         &mut table,
@@ -150,8 +150,18 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_chase() {
     );
     set(
         &mut table,
-        &["controllers", "body", "alignment", "torso", "lean_reach_m"],
-        0.7.into(),
+        &["controllers", "body", "alignment", "root_follow"],
+        true.into(),
+    );
+    set(
+        &mut table,
+        &["controllers", "roomscale", "stance", "square"],
+        true.into(),
+    );
+    set(
+        &mut table,
+        &["controllers", "roomscale", "crouch", "visual"],
+        true.into(),
     );
     let Loaded { config, report } = load(table);
     assert_eq!(config.controllers.roomscale.posture, Posture::Standing);
@@ -159,9 +169,11 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_chase() {
     assert_eq!(
         report.ignored,
         [
-            "controllers.body.alignment.torso.lean_reach_m",
+            "controllers.body.alignment",
             "controllers.roomscale.chase",
+            "controllers.roomscale.crouch.visual",
             "controllers.roomscale.roomscale_min_extent_m",
+            "controllers.roomscale.stance",
         ]
     );
     assert!(report.reset.is_empty());

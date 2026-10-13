@@ -57,7 +57,7 @@ use crate::{
                 self,
                 skeleton::{self, SkeletonKey},
             },
-            torso::EYES_TO_NECK_PIVOT,
+            rig::torso::EYES_TO_NECK_PIVOT,
         },
         frame::{Hand, Pose},
         hands::{late, pose as hand_pose},

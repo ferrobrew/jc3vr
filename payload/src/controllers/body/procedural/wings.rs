@@ -15,7 +15,6 @@ use crate::{
     controllers::{
         body::{
             self,
-            alignment::shoulder_heading,
             procedural::{
                 authority::Case,
                 config::ProceduralBodyConfig,
@@ -28,6 +27,7 @@ use crate::{
                     wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
                 },
             },
+            rig::shoulder_heading,
         },
         frame::{self, Hand, Pose},
         hands::{
@@ -57,7 +57,7 @@ pub fn wing_arms() -> [bool; 2] {
 
 /// The player's arms for the wingsuit, when the controller scheme drives the hands in the headset
 /// and the mode detection has the player in the wingsuit. Takes the configuration lock, the
-/// controller frame slot, and the alignment's estimate, one after the other, so the gate reads it
+/// controller frame slot, and the rig's torso estimate, one after the other, so the gate reads it
 /// before it takes its own state.
 pub(super) fn read_player_arms() -> Option<PlayerArms> {
     let config = Config::lock_query(|c| c.controllers);

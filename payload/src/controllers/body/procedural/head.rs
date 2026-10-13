@@ -19,7 +19,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::{
     controllers::{
-        body::{rig::lean_allowance, torso::EYES_TO_NECK_PIVOT},
+        body::rig::{lean_allowance, torso::EYES_TO_NECK_PIVOT},
         locomotion::anchor::status as anchor_status,
     },
     headpose::{

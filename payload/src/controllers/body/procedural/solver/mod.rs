@@ -8,10 +8,9 @@
 //!    give way to the reference pose's, so the body's shape is the player's rather than the
 //!    clip's. The walk's sway comes from the hips' draw toward the planted foot instead.
 //! 1. The hips ([`hips`]): their height follows the head down (the legs take a drop first,
-//!    to a deep squat), and they sit over the stance the root carries ([`hips_horizontal`]), not
-//!    over the feet, which leave it with every step, pulled back as the head leans forward so a
-//!    lean becomes a hip hinge, and drawn a little toward the one foot on the ground while the
-//!    other swings. The caller follows that place over time. They turn to the player's torso,
+//!    to a deep squat), and they sit where the rig's pelvis puts them
+//!    ([`crate::controllers::body::rig::pelvis`]): over the stance the root carries, hinged back by
+//!    a share of the lean, and leaning into the body's motion. They turn to the player's torso,
 //!    within a limit. They drop further when a foot is out of the legs' reach ([`reach_drop`]): a
 //!    stride, a slope, a stair.
 //! 2. The spine ([`spine`]): the chest twists to the torso and pitches forward by a share of
@@ -45,8 +44,8 @@ pub mod wings;
 
 use glam::{Quat, Vec2, Vec3};
 pub use hips::{
-    DropFollower, HipsFollower, crouch_depth, hips_height, hips_horizontal, hips_room, hips_yaw,
-    reach_drop, step_offset,
+    DropFollower, HipsFollower, crouch_depth, hips_height, hips_room, hips_yaw, reach_drop,
+    step_offset,
 };
 
 use crate::controllers::body::procedural::{
@@ -88,7 +87,7 @@ pub struct SolveInput {
     /// How far each heel is lifted about its toes, radians, left then right.
     pub heel_lifts: [f32; 2],
     /// Where the hips sit horizontally, model space `(x, z)`, as the caller followed
-    /// [`hips_horizontal`] over time; `None` takes it as it is this tick.
+    /// the rig's pelvis over time; `None` takes its rest place this tick.
     pub hips_xz: Option<Vec2>,
     /// How far the hips drop below where the head puts them so the legs reach the feet, metres:
     /// [`reach_drop`], followed over time by [`DropFollower`].
@@ -320,9 +319,9 @@ fn wrap(angle: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::body::procedural::{
-        rig::tests::skeleton,
-        solver::hips::{MAX_LEAN_M, SQUAT_BACK},
+    use crate::controllers::body::{
+        procedural::rig::tests::skeleton,
+        rig::pelvis::{SQUAT_BACK, rest},
     };
 
     fn setup() -> (Rig, SolveInput, ProceduralBodyConfig) {
@@ -478,28 +477,17 @@ mod tests {
     #[test]
     fn a_step_does_not_move_the_hips() {
         let (rig, mut input, config) = setup();
-        let before = hips_horizontal(&rig, &input, &config);
+        let before = rest(&rig, &input, &config);
         // One foot lifts and swings ahead: the stance the root carries has not moved.
         input.feet[0].z -= 0.4;
         input.feet[0].y += 0.1;
-        let during = hips_horizontal(&rig, &input, &config);
+        let during = rest(&rig, &input, &config);
         assert!(during.abs_diff_eq(before, 1e-6), "{before} -> {during}");
         // With the other foot down alone, the hips lean over it, and only a little.
         input.planted = [false, true];
-        let swaying = hips_horizontal(&rig, &input, &config);
+        let swaying = rest(&rig, &input, &config);
         assert!(swaying.x > before.x && swaying.x - before.x < 0.03);
         assert!((swaying.y - before.y).abs() < 1e-6);
-    }
-
-    #[test]
-    fn a_far_reach_counts_only_as_a_capped_lean() {
-        let (rig, mut input, config) = setup();
-        input.head.z -= 3.0;
-        let place = hips_horizontal(&rig, &input, &config);
-        assert!(
-            (place.y - MAX_LEAN_M * config.counterbalance).abs() < 1e-4,
-            "{place}"
-        );
     }
 
     #[test]
@@ -576,9 +564,9 @@ mod tests {
     #[test]
     fn a_squat_sends_the_hips_back() {
         let (rig, mut input, config) = setup();
-        let standing = hips_horizontal(&rig, &input, &config);
+        let standing = rest(&rig, &input, &config);
         input.head.y -= 0.4;
-        let squatting = hips_horizontal(&rig, &input, &config);
+        let squatting = rest(&rig, &input, &config);
         assert!(
             (squatting.y - standing.y - 0.4 * SQUAT_BACK).abs() < 1e-4,
             "{squatting}"

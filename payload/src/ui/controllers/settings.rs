@@ -11,8 +11,8 @@ use crate::{
     },
     headpose::config::VrTurnMode,
     ui::controllers::{
-        aim, alignment, climb, collider_view, fingers, grab_view, hand_bodies, hands, haptics,
-        inventory, overlay, physical_hands, rig, roomscale, scope, stunt, summary, vehicles,
+        aim, climb, collider_view, fingers, grab_view, hand_bodies, hands, haptics, inventory,
+        overlay, physical_hands, rig, roomscale, scope, stunt, summary, torso, unarmed, vehicles,
         weapons,
     },
     vr::input::{self as vr_input, restart},
@@ -247,9 +247,13 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
     });
 
-    egui::CollapsingHeader::new("Body alignment").show(ui, |ui| {
-        alignment::alignment_settings(ui, &mut c.body.alignment)
+    egui::CollapsingHeader::new("Torso and pelvis").show(ui, |ui| {
+        let rig = &mut c.body.rig;
+        torso::torso_settings(ui, &mut rig.torso, &mut rig.pelvis)
     });
+
+    egui::CollapsingHeader::new("Weapon-agnostic body")
+        .show(ui, |ui| unarmed::unarmed_settings(ui, &mut c.body.unarmed));
 
     egui::CollapsingHeader::new("Aiming").show(ui, |ui| aim::aim_settings(ui, c));
 

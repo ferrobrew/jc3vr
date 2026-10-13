@@ -7,11 +7,9 @@ mod walls;
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::body::{
-    rig::{
-        harness::{FRAME_HZ, Head, TICK_HZ, World},
-        root::owner::RootOwner,
-    },
+use crate::controllers::body::rig::{
+    harness::{FRAME_HZ, Head, TICK_HZ, World},
+    root::owner::RootOwner,
     torso::EYES_TO_NECK_PIVOT,
 };
 

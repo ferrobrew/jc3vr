@@ -5,7 +5,7 @@
 //! headset sees it, not the character's animated head that the cockpit frame's origin follows (see
 //! `headpose::xr`), which sits ahead of the player whenever the animation leans or the roomscale
 //! chase trails. The upper body hangs from the neck pivot, which the head's pose places below and
-//! behind the eyes ([`crate::controllers::body::torso`]), facing the estimated torso; the waist
+//! behind the eyes ([`crate::controllers::body::rig::torso`]), facing the estimated torso; the waist
 //! hangs over the feet ([`crate::controllers::body::rig::feet`]), which stay put through a lean or a
 //! reach, so the hip holsters and the belt's pouch do not swing out with a lean. The volumes
 //! therefore stay on the body when the player turns or leans their head to look at them, and move
@@ -40,7 +40,7 @@
 //! The body the volumes ride is one of two ([`BodyFrame`]):
 //!
 //! - The player's body, estimated from the player's own dimensions, turned to the player's
-//!   estimated torso heading ([`crate::controllers::body::torso`]) so that the volumes stay at the
+//!   estimated torso heading ([`crate::controllers::body::rig::torso`]) so that the volumes stay at the
 //!   player's hips, belt, chest, and shoulders when the player turns in the room. The caller tests
 //!   these volumes against the player's own hands, before the body-scale remap, so a hand put on
 //!   the player's own belt finds the pouch there whatever the character's proportions.
@@ -61,7 +61,7 @@
 use glam::{Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::{
-    body::{self, BodyDimensions, alignment::measure::SkeletonLandmarks},
+    body::{self, BodyDimensions, rig::frames::SkeletonLandmarks},
     frame::Hand,
     grab::{Candidate, GrabVolume, HolsterSite},
     weapons::config::{HolstersConfig, PouchSide, PouchesConfig, VolumeSpec},

@@ -1,5 +1,5 @@
 //! The animation-layer mask behind the weapon-agnostic body
-//! ([`crate::controllers::roomscale::stance::unarmed`]): the pose job leaves the local player's
+//! ([`crate::controllers::body::unarmed`]): the pose job leaves the local player's
 //! masked layers out of the pose while they keep running.
 //!
 //! The pose job blends each layer's blender over the previous layer's output
@@ -25,7 +25,7 @@ use detours_macro::detour;
 use jc3gi::animation::pose_producer::{Blender, QsTransform};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::roomscale::stance::unarmed::MASKABLE_LAYERS;
+use crate::controllers::body::unarmed::MASKABLE_LAYERS;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&BLENDER_UPDATE_POSE_BINDER)

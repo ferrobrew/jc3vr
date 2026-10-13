@@ -11,7 +11,7 @@ use crate::{
         roomscale::{self, FrameStatus, RoomscaleStatus, posture::EffectivePosture},
     },
     hooks::camera::height,
-    ui::controllers::{stance, yes_no},
+    ui::controllers::yes_no,
 };
 
 pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
@@ -51,11 +51,10 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
         None => "Head height remap: off".to_owned(),
     });
     ui.label(format!(
-        "Eye drop {:.2} m · crouched {} · seated crouch {} · visual crouch {} · capsule {}{}",
+        "Eye drop {:.2} m · crouched {} · seated crouch {} · capsule {}{}",
         f.eye_drop_m,
         yes_no(f.crouched),
         yes_no(f.seated_crouch),
-        yes_no(status.visual_crouch),
         yes_no(status.root.sim.capsule_owned),
         if status.root.sim.capsule_blocked {
             " (no headroom)"
@@ -161,17 +160,10 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
     });
 
     let c = &mut r.crouch;
-    ui.checkbox(&mut c.visual, "Visual crouch")
-        .on_hover_text("Drop the hips and plant the feet when the head drops.");
-    ui.add_enabled_ui(c.visual, |ui| {
-        ui.indent("crouch", |ui| {
-            ui.checkbox(&mut c.capsule, "Crouch capsule")
-                .on_hover_text("Shorten the collision capsule while crouched.");
-            ui.add(egui::Slider::new(&mut c.hips_share, 0.0..=1.0).text("Hips share of the drop"));
-            ui.add(egui::Slider::new(&mut c.enter_drop_m, 0.1..=1.2).text("Crouched below (m)"));
-            ui.add(egui::Slider::new(&mut c.exit_drop_m, 0.05..=1.2).text("Standing above (m)"));
-        });
-    });
+    ui.checkbox(&mut c.capsule, "Crouch capsule")
+        .on_hover_text("Shorten the collision capsule while crouched.");
+    ui.add(egui::Slider::new(&mut c.enter_drop_m, 0.1..=1.2).text("Crouched below (m)"));
+    ui.add(egui::Slider::new(&mut c.exit_drop_m, 0.05..=1.2).text("Standing above (m)"));
     ui.add(egui::Slider::new(&mut c.seated_drop_m, 0.1..=1.0).text("Seated crouch drop (m)"));
 
     let h = &mut r.head_fade;
@@ -198,9 +190,6 @@ pub(super) fn roomscale_settings(ui: &mut Ui, r: &mut RoomscaleConfig) {
         r.seat_transition == SeatTransition::Fade,
         egui::Slider::new(&mut r.seat_fade_hold_s, 0.0..=2.0).text("Seat fade hold (s)"),
     );
-
-    ui.separator();
-    stance::stance_settings(ui, &mut r.stance);
 }
 
 /// The camera's height against Rico's animated eyes, both above his root, and what sets the
@@ -234,12 +223,11 @@ fn camera_height_readout(ui: &mut Ui) {
         ));
     }
     ui.label(format!(
-        "{} · {} · crouched {} · seated crouch {} · visual crouch {} · capsule {}{}",
+        "{} · {} · crouched {} · seated crouch {} · capsule {}{}",
         r.place(),
         frame.posture.label(),
         yes_no(frame.crouched),
         yes_no(frame.seated_crouch),
-        yes_no(r.roomscale.visual_crouch),
         yes_no(r.roomscale.root.sim.capsule_owned),
         if r.roomscale.root.sim.capsule_blocked {
             " (no headroom)"

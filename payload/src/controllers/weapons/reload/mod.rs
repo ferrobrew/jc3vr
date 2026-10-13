@@ -57,7 +57,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     bindings::controls::ButtonControl,
-    body::alignment::measure::Frames,
+    body::rig::frames::Frames,
     config::ControllersConfig,
     frame::{Hand, Pose},
     grab::{Candidate, GrabVolume},

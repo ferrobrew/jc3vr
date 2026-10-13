@@ -214,7 +214,7 @@ fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &V
     // transition without pinning the camera to the body (issue #27).
     headpose::xr::set_cockpit_pose(center_position, center_orientation);
     // The player's torso, estimated from this cockpit pose and the controllers sampled with it.
-    crate::controllers::body::alignment::frame_tick(crate::controllers::frame::Pose {
+    crate::controllers::body::rig::frame_tick(crate::controllers::frame::Pose {
         position: center_position,
         orientation: center_orientation,
     });

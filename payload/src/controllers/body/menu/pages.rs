@@ -179,15 +179,10 @@ pub(super) fn summary(page: Page) -> Page {
         .item(config_toggle!("BODY FACES YOUR TORSO", |c| c
             .controllers
             .body
-            .alignment
-            .root_follow))
+            .rig
+            .torso
+            .follow))
         .text("ONLY THE TURN INPUT TURNS THE VIEW.")
-        .item(config_toggle!("CHEST FACES YOUR TORSO", |c| c
-            .controllers
-            .body
-            .alignment
-            .drive_chest))
-        .text("BODY FROM YOUR HEAD TURNS IT IN FULL.")
 }
 
 pub(super) fn stand(page: Page) -> Page {

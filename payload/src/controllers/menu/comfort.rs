@@ -102,11 +102,6 @@ fn build() -> Page {
             .pushback
             .enabled))
         .header("CROUCHING")
-        .item(config_toggle!("CROUCH WITH YOUR HEAD", |c| c
-            .controllers
-            .roomscale
-            .crouch
-            .visual))
         .item(config_toggle!("CROUCH COLLISION", |c| c
             .controllers
             .roomscale

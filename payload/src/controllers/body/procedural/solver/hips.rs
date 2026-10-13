@@ -1,42 +1,17 @@
-//! The hips: where they sit over the stance, how high the head puts them, and how far they drop
-//! for the legs to reach the feet. Pure, in Rico's model space.
+//! The hips: how high the head puts them, how far they drop for the legs to reach the feet, and
+//! where the stance steps under the head. Where they sit horizontally is the rig's pelvis
+//! ([`crate::controllers::body::rig::pelvis`]). Pure, in Rico's model space.
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::body::procedural::{
-    config::ProceduralBodyConfig,
-    rig::{Rig, RigBone},
-    solver::{LEGS, SolveInput, line_yaw, pose::RigPose, wrap},
+use crate::controllers::body::{
+    procedural::{
+        config::ProceduralBodyConfig,
+        rig::{Rig, RigBone},
+        solver::{LEGS, SolveInput, line_yaw, pose::RigPose, wrap},
+    },
+    rig::pelvis,
 };
-
-/// Where the hips want to sit horizontally, model space `(x, z)`: over the middle of the stance the
-/// root carries, moved back by `counterbalance` of the head's lean ahead of where a neutral head
-/// would be over it, the lean measured against the root and taken at most [`MAX_LEAN_M`], and
-/// drawn [`PLANTED_BIAS`] of the way toward the one foot on the ground while the other swings.
-pub fn hips_horizontal(rig: &Rig, input: &SolveInput, config: &ProceduralBodyConfig) -> Vec2 {
-    let reference_hips = rig.reference(RigBone::Hips).translation;
-    let head_over_hips = rig.reference(RigBone::Head).translation - reference_hips;
-    let support = Vec2::new(input.support.x, input.support.z);
-    let yaw = hips_yaw(input, config);
-    let neutral = Quat::from_rotation_y(yaw) * Vec3::new(head_over_hips.x, 0.0, head_over_hips.z);
-    let lean = Vec2::new(input.head.x, input.head.z) - support - Vec2::new(neutral.x, neutral.z);
-    let lean = lean.clamp_length_max(MAX_LEAN_M);
-    let counterbalance = config.counterbalance.clamp(0.0, 1.0);
-    let bias = match input.planted {
-        [true, false] => Some(0),
-        [false, true] => Some(1),
-        _ => None,
-    }
-    .map_or(Vec2::ZERO, |i| {
-        let foot = input.feet[i];
-        Vec2::new(foot.x - support.x, 0.0) * PLANTED_BIAS
-    });
-    // A squat sends the hips back over the heels as they go down, as a person's do to balance.
-    let squat = (reference_hips.y - hips_height(rig, input.hips_head(), config)).max(0.0);
-    let back = Quat::from_rotation_y(yaw) * Vec3::Z * (squat * SQUAT_BACK);
-    let place = support - lean * counterbalance + bias + Vec2::new(back.x, back.z);
-    if place.is_finite() { place } else { support }
-}
 
 /// How far the stance moves to step under the player's head, model space `(x, z)`, as an offset
 /// from the stance the root carries (`support`, its middle): the head's lean past `allowance`
@@ -65,8 +40,7 @@ pub fn step_offset(rig: &Rig, head: Vec3, support: Vec3, yaw: f32, allowance: f3
     lean * (1.0 - allowance / length)
 }
 
-/// Follows the hips' horizontal place with a time constant, so a quick lean bends the spine before
-/// the hips go with it. It follows the stance's step under the head the same way.
+/// Follows the stance's step under the head with a time constant.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HipsFollower {
     current: Option<Vec2>,
@@ -79,11 +53,6 @@ impl HipsFollower {
 
     pub fn reset(&mut self) {
         self.current = None;
-    }
-
-    /// Start from `place`: the hips start where something else left them.
-    pub fn seed(&mut self, place: Vec2) {
-        self.current = place.is_finite().then_some(place);
     }
 
     /// Move toward `wanted` over `dt` seconds with the time constant `time_s`, and return the
@@ -216,18 +185,6 @@ const LEG_REACH: f32 = 0.97;
 /// How much slower the hips rise back than they drop.
 const RISE_SLOWDOWN: f32 = 3.0;
 
-/// The most the head's lean counts for the hips, metres: a head further out is a reach, not a lean
-/// the hips should hinge back from.
-pub const MAX_LEAN_M: f32 = 0.5;
-
-/// How far back the hips go per metre they drop below standing.
-pub const SQUAT_BACK: f32 = 0.3;
-
-/// How far toward the one foot on the ground the hips are drawn while the other swings, as a share
-/// of that foot's sideways offset from the stance's middle: a walk's small sway over the stance
-/// foot.
-pub const PLANTED_BIAS: f32 = 0.15;
-
 /// What the hips are placed from.
 pub(super) struct HipsInput {
     /// The head's height the hips follow ([`SolveInput::hips_head`]).
@@ -250,7 +207,7 @@ pub(super) fn hips_input(
         horizontal: input
             .hips_xz
             .filter(|h| h.is_finite())
-            .unwrap_or_else(|| hips_horizontal(rig, input, config)),
+            .unwrap_or_else(|| pelvis::rest(rig, input, config)),
         yaw: hips_yaw(input, config),
         drop: if drop.is_finite() { drop.max(0.0) } else { 0.0 },
         held: input

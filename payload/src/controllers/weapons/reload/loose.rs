@@ -43,7 +43,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        body::alignment::measure::Frames,
+        body::rig::frames::Frames,
         frame::Hand,
         grab::{Candidate, GrabVolume},
         physical_hands,

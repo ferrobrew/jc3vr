@@ -60,9 +60,12 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        body::procedural::{
-            ArmContext, arm_context, owns_body,
-            solver::arms::{Side, elbow_hint},
+        body::{
+            procedural::{
+                ArmContext, arm_context, owns_body,
+                solver::arms::{Side, elbow_hint},
+            },
+            unarmed,
         },
         frame::{Hand, Pose},
         hands::{
@@ -71,7 +74,6 @@ use crate::{
             secondary::{self, SecondaryParts, Switched},
             tiers,
         },
-        roomscale::stance::unarmed,
     },
     headpose,
     hooks::{self, character::body_ik},

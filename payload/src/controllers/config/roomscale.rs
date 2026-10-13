@@ -4,8 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::roomscale::stance::StanceConfig;
-
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
 /// headset alone, controllers or not, and default on as part of the full gameplay preset. The head
 /// height itself is remapped only under [`BodyRemapConfig::remap_head`].
@@ -31,8 +29,6 @@ pub struct RoomscaleConfig {
     /// Under [`SeatTransition::Fade`], how long the view stays dark after the seat locks, so that
     /// the re-based view settles before it clears, seconds.
     pub seat_fade_hold_s: f32,
-    /// Keeping the standing stance square with the player's.
-    pub stance: StanceConfig,
 }
 
 impl RoomscaleConfig {
@@ -46,7 +42,6 @@ impl RoomscaleConfig {
             fade: FadeConfig::new(),
             seat_transition: SeatTransition::Ride,
             seat_fade_hold_s: 0.3,
-            stance: StanceConfig::new(),
         }
     }
 }
@@ -153,17 +148,10 @@ impl Default for SeatedReferenceConfig {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CrouchConfig {
-    /// Fold the body with the lowered head through the body IK: the feet stay planted and the hips
-    /// drop. On by default, as part of the full gameplay preset: it changes the body for every
-    /// player who ducks.
-    pub visual: bool,
     /// Shorten the character's collision capsule while crouched, with the game's own crouching
-    /// proxy state. Requires [`visual`](Self::visual). The game hands the proxy state to its own
-    /// states (swimming, vehicles, the parachute, ragdoll) whenever they want it.
+    /// proxy state. The game hands the proxy state to its own states (swimming, vehicles, the
+    /// parachute, ragdoll) whenever they want it.
     pub capsule: bool,
-    /// How much of the head's drop the hips take, `0..=1`. A squat lowers the hips nearly as far as
-    /// the head; the spine takes the rest.
-    pub hips_share: f32,
     /// How far (metres, at the character's scale) the head must drop below the standing eye height
     /// before the character counts as crouched, for the capsule and the readouts.
     pub enter_drop_m: f32,
@@ -178,9 +166,7 @@ pub struct CrouchConfig {
 impl CrouchConfig {
     pub const fn new() -> Self {
         Self {
-            visual: true,
             capsule: true,
-            hips_share: 0.8,
             enter_drop_m: 0.45,
             exit_drop_m: 0.30,
             seated_drop_m: 0.6,

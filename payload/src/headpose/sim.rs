@@ -67,7 +67,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         return;
     }
     // Read before the SIM lock: it takes the config lock and the torso estimate's slot.
-    let follow = crate::controllers::body::alignment::follow_settings();
+    let follow = crate::controllers::body::rig::follow_settings();
 
     let mut s = SIM.lock();
 

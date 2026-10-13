@@ -9,10 +9,7 @@
 
 use glam::{Mat4, Quat, Vec3};
 
-use crate::controllers::{
-    body::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of},
-    roomscale::stance::logic::lateral_twist,
-};
+use crate::controllers::body::rig::torso::{TorsoEstimate, wrap, yaw_forward, yaw_of};
 
 /// The character's skeleton landmarks in its model space, from the bones HumanIK drives.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -181,6 +178,26 @@ pub fn upright(landmarks: &SkeletonLandmarks) -> bool {
         && flat(landmarks.head - chest).length() <= UPRIGHT_HEAD_REACH_M
 }
 
+/// The turn of the line from `left` to `right` away from the model's lateral axis, radians, in
+/// `-π/2..=π/2`; `None` when the points coincide horizontally. Wrapping to a half turn makes the
+/// measure independent of which side of the model the rig puts its left.
+pub fn lateral_twist(left: Vec3, right: Vec3) -> Option<f32> {
+    let v = right - left;
+    let (x, y) = (v.x, -v.z);
+    if x.hypot(y) < 1.0e-5 || !x.is_finite() || !y.is_finite() {
+        return None;
+    }
+    let angle = y.atan2(x);
+    let half = std::f32::consts::FRAC_PI_2;
+    Some(if angle > half {
+        angle - std::f32::consts::PI
+    } else if angle <= -half {
+        angle + std::f32::consts::PI
+    } else {
+        angle
+    })
+}
+
 /// The range of the head's height above the middle of the shoulder joints for an upright body,
 /// metres: from a hunch to a stretch.
 const UPRIGHT_HEAD_TO_CHEST_M: (f32, f32) = (0.05, 0.45);
@@ -203,7 +220,10 @@ mod tests {
     use super::*;
     use crate::controllers::body::{
         BodyDimensions,
-        torso::{TorsoConfig, TorsoEstimator, TorsoInputs},
+        rig::{
+            config::TorsoConfig,
+            torso::{TorsoEstimator, TorsoInputs},
+        },
     };
 
     fn deg(d: f32) -> f32 {

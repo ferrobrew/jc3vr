@@ -197,7 +197,6 @@ fn log(r: &HeightReadout) {
         seated_samples = frame.seated_reference.samples,
         crouched = frame.crouched,
         seated_crouch = frame.seated_crouch,
-        visual_crouch = r.roomscale.visual_crouch,
         capsule = r.roomscale.root.sim.capsule_owned,
         no_headroom = r.roomscale.root.sim.capsule_blocked,
         "camera height above Rico's root"

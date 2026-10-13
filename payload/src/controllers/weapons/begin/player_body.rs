@@ -5,8 +5,11 @@ use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
     body::{
-        self, BodyDimensions, alignment, rig,
-        torso::{self, EYES_TO_NECK_PIVOT},
+        self, BodyDimensions,
+        rig::{
+            self, skeleton,
+            torso::{self, EYES_TO_NECK_PIVOT},
+        },
     },
     config::ControllersConfig,
     hands::ActiveHands,
@@ -24,11 +27,11 @@ pub(super) struct PlayerBody {
 }
 
 impl PlayerBody {
-    /// The body from the torso estimate ([`alignment::estimate`]) while it is fresh, or from the
+    /// The body from the torso estimate ([`rig::estimate`]) while it is fresh, or from the
     /// head's pose alone: the neck pivot below and behind the eyes, facing where the head does.
     pub(super) fn of(active: &ActiveHands) -> Self {
         let head = active.head;
-        let estimate = alignment::estimate();
+        let estimate = rig::estimate();
         let yaw = estimate
             .map(|e| e.yaw)
             .or_else(|| torso::head_heading(head.orientation))
@@ -54,7 +57,7 @@ pub(super) fn volume_anchor(
     player: &PlayerBody,
 ) -> Anchor {
     let skeleton = (config.weapons.holsters.anchor == HolsterAnchor::Rico)
-        .then(|| alignment::skeleton_in_cockpit(active.head.position, active.world_scale))
+        .then(|| skeleton::skeleton_in_cockpit(active.head.position, active.world_scale))
         .flatten();
     let anchor = match skeleton {
         Some(skeleton) => Anchor::Skeleton(skeleton),
@@ -63,7 +66,7 @@ pub(super) fn volume_anchor(
             pelvis: player.feet,
         },
     };
-    alignment::record_volume_anchor(anchor.label());
+    skeleton::record_volume_anchor(anchor.label());
     anchor
 }
 

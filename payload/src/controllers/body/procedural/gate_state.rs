@@ -9,30 +9,35 @@ use jc3gi::character::character::{AnimationController, Character};
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::procedural::{
-        ArmContext, INITIAL_STATUS, MAX_VERTICAL_MPS, ProceduralStatus, animated_feet,
-        authority::{Case, RegionBlend, WeightFollower, Weights},
-        config::ProceduralBodyConfig,
-        ground::{GroundCaster, GroundLog},
-        head::{PlayerHead, StandingReference, head_drop},
-        joints::{LiveRig, RigCache},
-        rig::{Rig, RigBone},
-        root_speed,
-        solver::{
-            DropFollower, HipsFollower, SolveInput,
-            air::{AirFollower, DipTuning, LandingDip, ReachTuning, reach_for_landing},
-            arms::Side,
-            clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
-            feet::{Feet, FeetInput, FootPose, StepTuning},
-            gait::{self, CrouchGait, NeutralStance, StanceFoot},
-            hips_yaw,
-            lower::{LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning, SitEnd, SitLegs},
-            pose::{RigPose, SolveSwitch},
-            wings::WingTarget,
+    body::{
+        procedural::{
+            ArmContext, INITIAL_STATUS, MAX_VERTICAL_MPS, ProceduralStatus, animated_feet,
+            authority::{Case, RegionBlend, WeightFollower, Weights},
+            config::ProceduralBodyConfig,
+            ground::{GroundCaster, GroundLog},
+            head::{PlayerHead, StandingReference, head_drop},
+            joints::{LiveRig, RigCache},
+            rig::{Rig, RigBone},
+            root_speed,
+            solver::{
+                DropFollower, HipsFollower, SolveInput,
+                air::{AirFollower, DipTuning, LandingDip, ReachTuning, reach_for_landing},
+                arms::Side,
+                clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
+                feet::{Feet, FeetInput, FootPose, StepTuning},
+                gait::{self, CrouchGait, NeutralStance, StanceFoot},
+                hips_yaw,
+                lower::{
+                    LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning, SitEnd, SitLegs,
+                },
+                pose::{RigPose, SolveSwitch},
+                wings::WingTarget,
+            },
+            state::StateTracker,
+            targets::TargetFade,
+            wings::WingQueue,
         },
-        state::StateTracker,
-        targets::TargetFade,
-        wings::WingQueue,
+        rig::pelvis::{MotionLean, PelvisSpring},
     },
     hands::ik::deferred_wrist_targets,
 };
@@ -77,8 +82,10 @@ pub(super) struct State {
     pub(super) stance: NeutralStance,
     /// The hips' drop for the legs' reach.
     pub(super) drop: DropFollower,
-    /// The hips' place over the stance.
-    pub(super) hips: HipsFollower,
+    /// The pelvis's place over the stance.
+    pub(super) hips: PelvisSpring,
+    /// The body's lean into its motion.
+    pub(super) motion: MotionLean,
     /// The clavicles' turns toward the hands.
     pub(super) clavicles: ClavicleFollower,
     /// The legs' mix of the air's feet against the ground's.
@@ -218,6 +225,7 @@ impl State {
         self.feet.reset();
         self.drop.reset();
         self.hips.reset();
+        self.motion.reset();
         self.air.reset();
         self.dip.reset();
         self.takeoff_feet = None;
@@ -599,7 +607,8 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     feet: Feet::new(),
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
-    hips: HipsFollower::new(),
+    hips: PelvisSpring::new(),
+    motion: MotionLean::new(),
     clavicles: ClavicleFollower::new(),
     air: AirFollower::new(),
     dip: LandingDip::new(),

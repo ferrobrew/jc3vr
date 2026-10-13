@@ -108,7 +108,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.roomscale.posture = if room { Posture::Auto } else { Posture::Seated };
     c.body.rig.chase.enabled = room;
     c.body.rig.lean.enabled = room;
-    c.roomscale.crouch.visual = room;
     c.roomscale.crouch.capsule = room;
     c.roomscale.head_fade.enabled = room;
     c.roomscale.seat_transition = SeatTransition::Ride;
@@ -205,7 +204,6 @@ mod tests {
         assert_eq!(c.scheme, SchemeSetting::Gamepad);
         assert!(!c.body.rig.chase.enabled);
         assert!(!c.body.rig.lean.enabled);
-        assert!(!c.roomscale.crouch.visual);
         assert!(!c.roomscale.crouch.capsule);
         assert!(!c.roomscale.head_fade.enabled);
         assert!(!c.body.remap_head);

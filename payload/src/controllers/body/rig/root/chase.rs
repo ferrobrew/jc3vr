@@ -20,12 +20,10 @@
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::body::{
-    rig::{
-        config::{ChaseConfig, LeanConfig},
-        lean::{Lean, lean},
-        root::ledger::CompletedMovement,
-    },
+use crate::controllers::body::rig::{
+    config::{ChaseConfig, LeanConfig},
+    lean::{Lean, lean},
+    root::ledger::CompletedMovement,
     torso::EYES_TO_NECK_PIVOT,
 };
 

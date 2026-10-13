@@ -6,7 +6,6 @@
 
 mod aim;
 mod aim_state;
-mod alignment;
 mod body;
 mod climb;
 mod collider_view;
@@ -33,9 +32,10 @@ mod scope;
 mod semantic;
 mod settings;
 mod sights;
-mod stance;
 mod stunt;
 mod summary;
+mod torso;
+mod unarmed;
 mod vehicles;
 mod weapons;
 
@@ -46,7 +46,7 @@ use crate::{
     config,
     controllers::{
         aim as controller_aim, aim_state as controller_aim_state, bindings,
-        body::{self as controller_body, alignment as controller_alignment},
+        body::{self as controller_body, rig as controller_rig, unarmed as controller_unarmed},
         fingers as controller_fingers,
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
@@ -90,9 +90,11 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let stunt_status = controller_physical_hands::stunt::status();
     let overlay_status = controller_overlay::status();
     let roomscale_status = controller_roomscale::status();
-    let stance_status = controller_roomscale::stance::status();
-    let unarmed_status = controller_roomscale::stance::unarmed::status();
-    let alignment_status = controller_alignment::status();
+    let unarmed_status = controller_unarmed::status();
+    let torso_status = (
+        controller_rig::torso_status(),
+        controller_rig::skeleton::status(),
+    );
     let procedural_status = controller_body::procedural::status();
     let locomotion_status = (
         controller_locomotion::status(),
@@ -256,15 +258,18 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
                 procedural::procedural_readout(ui, &procedural_status)
             });
 
-        egui::CollapsingHeader::new("Standing stance")
+        egui::CollapsingHeader::new("Weapon-agnostic body")
             .default_open(true)
             .show(ui, |ui| {
-                stance::stance_readout(ui, &stance_status, &unarmed_status, &hand_ik)
+                unarmed::unarmed_readout(ui, &unarmed_status, &hand_ik)
             });
 
-        egui::CollapsingHeader::new("Body alignment")
+        egui::CollapsingHeader::new("Torso")
             .default_open(true)
-            .show(ui, |ui| alignment::alignment_readout(ui, &alignment_status));
+            .show(ui, |ui| {
+                let (torso, skeleton) = &torso_status;
+                torso::torso_readout(ui, torso, skeleton)
+            });
 
         egui::CollapsingHeader::new("Semantic actions").show(ui, semantic::semantic_readout);
 

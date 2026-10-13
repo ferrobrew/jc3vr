@@ -74,8 +74,8 @@ use crate::{
                     pushback::{Pushback, PushbackInput, PushbackOutcome},
                     shift::{CockpitBasis, CockpitShift},
                 },
+                torso::head_heading,
             },
-            torso::head_heading,
         },
         config::RoomscaleConfig,
         locomotion::after_task,
@@ -386,7 +386,7 @@ pub(crate) unsafe fn release_capsule() {
 
 /// Whether the crouch capsule follows the head.
 pub(crate) fn capsule_enabled(config: &RoomscaleConfig) -> bool {
-    config.crouch.capsule && config.crouch.visual
+    config.crouch.capsule
 }
 
 /// A gap between rendered frames longer than this means the headset stopped rendering, and the

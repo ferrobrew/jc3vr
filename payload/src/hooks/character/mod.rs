@@ -27,10 +27,9 @@ use crate::{
     controllers::{
         self,
         body::procedural::{
-            gate_skipped, signals::set_local_character, skeleton, torso_weight, wings::wing_arms,
+            gate_skipped, signals::set_local_character, skeleton, wings::wing_arms,
         },
         hands::{self, ik::HandPlan},
-        roomscale::stance,
     },
     frame_timing::{self, Slot},
 };
@@ -81,9 +80,6 @@ fn character_update_pass_finalize_pose_parallel(
     // wrists the controllers drive, and queued after it because the hand targets compose through
     // the head anchors the body IK publishes.
     //
-    // The stance is planned before the body IK, which takes its chest turn into the torso
-    // rotation, and queued after the crouch, so that its squared ankles replace the crouch's pins.
-    //
     // The weapon-agnostic body's decision only publishes, for the next tick's modifier pass and
     // pose job, so its place here is free.
     let timing = frame_timing::scope(Slot::CharacterPose);
@@ -96,8 +92,7 @@ fn character_update_pass_finalize_pose_parallel(
         set_local_character(character, Instant::now());
         gate::begin_pass(dt);
     }
-    unsafe { stance::unarmed::tick(character) };
-    let stance_plan = unsafe { stance::plan(character, dt) };
+    unsafe { controllers::body::unarmed::tick(character) };
     unsafe {
         controllers::body::rig::root::complete_movement(character);
         // The wingsuit's arms queue their own wrist targets at the solve gate, so the body IK does
@@ -107,21 +102,12 @@ fn character_update_pass_finalize_pose_parallel(
         body_ik::capture_anchors_and_queue_body_ik(
             character,
             [driven[0] || wings[0], driven[1] || wings[1]],
-            stance_plan.as_ref().map_or(0.0, |p| p.chest_yaw),
             dt,
         );
         // While the procedural body poses the torso, the wrist targets wait for the solve gate,
         // where the torso they are solved on exists.
         if let Some(plan) = plan {
             hands::ik::queue_or_defer(character, plan);
-        }
-        // The procedural body poses the hips and legs itself at the solve gate. Below its full
-        // weight these are queued as before, and the gate fades them by what is left of it.
-        if torso_weight() < 1.0 {
-            controllers::roomscale::queue_crouch_ik(character);
-            if let Some(stance_plan) = stance_plan.as_ref() {
-                stance::queue(character, stance_plan);
-            }
         }
     }
     drop(timing);
@@ -172,7 +158,7 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         head::override_head(character);
         hands::ik::after_solve(character);
         controllers::fingers::after_solve(character);
-        controllers::body::alignment::after_solve(character);
+        controllers::body::rig::skeleton::after_solve(character);
         controllers::body::procedural::twist::after_solve(character);
         controllers::body::mirror::after_solve(character);
         controllers::presentation::after_solve(character);

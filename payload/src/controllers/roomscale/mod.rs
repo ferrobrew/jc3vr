@@ -8,9 +8,8 @@
 //! - [`seated`]: the seated eye reference, which follows how the player actually sits;
 //! - [`teleport`]: the teleport epoch, from the game's camera reset;
 //! - [`fade`]: the comfort fade the VR blit applies;
-//! - [`crouch`]: the visual crouch's IK targets and the capsule's proxy-state rules;
-//! - [`seat`]: the seat-transition phases and modes;
-//! - [`stance`]: the standing stance: the relaxed idle and the squared stance.
+//! - [`crouch`]: whether the character counts as crouched, and the capsule's proxy-state rules;
+//! - [`seat`]: the seat-transition phases and modes.
 //!
 //! The frame half runs once per rendered VR frame from the pose composition
 //! ([`compose_cockpit`], called by [`crate::vr::begin_render_frame`] on the game thread, after the
@@ -30,7 +29,6 @@ pub mod fade;
 pub mod posture;
 pub mod seat;
 pub mod seated;
-pub mod stance;
 pub mod teleport;
 
 use std::{
@@ -49,8 +47,8 @@ use crate::{
     controllers::{
         body::{
             self, BodyDimensions,
-            alignment::estimate as alignment_estimate,
             rig::{
+                self,
                 collision::probe::{self, ProbeResult},
                 root::{self as rig_root, RootStatus, capsule_enabled},
             },
@@ -114,7 +112,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let player = body::player();
     let now = Instant::now();
     let in_gameplay = hooks::in_gameplay();
-    let torso_yaw = alignment_estimate().map(|e| e.yaw);
+    let torso_yaw = rig::estimate().map(|e| e.yaw);
     let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
 
     let mut frame = FRAME.lock();
@@ -388,43 +386,6 @@ pub fn toggle_seated_crouch() {
     }
 }
 
-/// Queue the visual crouch's IK targets for the local player at the entry of its pose-finalization
-/// pass, when the head has dropped. Called by the character hook after the body IK and the hands.
-///
-/// # Safety
-///
-/// `character` must be null or a live character, at the entry of its pose-finalization pass.
-pub(crate) unsafe fn queue_crouch_ik(character: *mut Character) {
-    let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
-    if !local {
-        return;
-    }
-    let config = Config::lock_query(|c| c.controllers.roomscale.crouch);
-    let now = Instant::now();
-    let frame = frame_shared().filter(|f| f.fresh(now) && f.seat == SeatPhase::Out);
-    let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
-    let queued = match frame {
-        Some(frame)
-            if config.visual
-                && on_foot
-                && headpose::source() == headpose::Source::Vr
-                && hooks::in_gameplay() =>
-        {
-            let drop = crouch::hips_drop(frame.eye_drop_m, config.hips_share);
-            // SAFETY: forwarded from the caller.
-            drop >= MIN_HIPS_DROP_M && unsafe { crouch::queue_ik(character, drop) }
-        }
-        _ => false,
-    };
-    FRAME.lock().visual_crouch = queued;
-}
-
-/// Whether the visual crouch queued its targets on the latest pose finalization; read after
-/// [`queue_crouch_ik`] in the same pass, this tick's.
-pub(crate) fn visual_crouch_queued() -> bool {
-    FRAME.lock().visual_crouch
-}
-
 /// What the frame half publishes for the simulation half.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct FrameShared {
@@ -461,8 +422,6 @@ pub struct RoomscaleStatus {
     /// Teleports seen, and how many came from the distance test.
     pub teleports: u64,
     pub warps: u64,
-    /// Whether the visual crouch queued its targets on the last pose finalization.
-    pub visual_crouch: bool,
 }
 
 /// The frame half's readout.
@@ -495,10 +454,10 @@ pub struct FrameStatus {
 }
 
 pub fn status() -> RoomscaleStatus {
-    let (frame, active, visual_crouch) = {
+    let (frame, active) = {
         let f = FRAME.lock();
         let active = f.shared.is_some_and(|s| s.fresh(Instant::now()));
-        (f.status, active, f.visual_crouch)
+        (f.status, active)
     };
     RoomscaleStatus {
         active,
@@ -507,16 +466,12 @@ pub fn status() -> RoomscaleStatus {
         fade: fade::status(),
         teleports: teleport::epoch(),
         warps: teleport::warps(),
-        visual_crouch,
     }
 }
 
 /// A gap between rendered frames longer than this means the headset stopped rendering: the fade
 /// resets, and the frame half's values stop holding for the simulation half.
 const FRAME_GAP: Duration = Duration::from_millis(500);
-
-/// The smallest hips drop worth queueing a crouch for, metres; below it the standing pose stands.
-const MIN_HIPS_DROP_M: f32 = 0.02;
 
 /// How many unknown vehicle states are logged, so that a long session cannot fill the log.
 const UNKNOWN_STATE_LOG_LIMIT: usize = 32;
@@ -535,7 +490,6 @@ struct FrameState {
     seat_fade_release: Option<(f32, Instant)>,
     /// Vehicle states seen in none of the seat tables, already logged.
     unknown_states: Option<HashSet<u32>>,
-    visual_crouch: bool,
     shared: Option<FrameShared>,
     status: FrameStatus,
 }
@@ -551,7 +505,6 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     last_seat_event: None,
     seat_fade_release: None,
     unknown_states: None,
-    visual_crouch: false,
     shared: None,
     status: FrameStatus {
         setting: Posture::Auto,

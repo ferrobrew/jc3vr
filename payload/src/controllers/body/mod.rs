@@ -45,13 +45,12 @@
 //! the headset and derives the other dimensions from them ([`calibration`]) before saving them
 //! with [`save`].
 
-pub mod alignment;
 pub mod calibration;
 pub(crate) mod menu;
 pub mod mirror;
 pub mod procedural;
 pub mod rig;
-pub mod torso;
+pub mod unarmed;
 
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};

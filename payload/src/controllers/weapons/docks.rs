@@ -23,7 +23,7 @@ use jc3gi::{
 use crate::{
     controllers::{
         aim::gun,
-        body::alignment::measure::Frames,
+        body::rig::frames::Frames,
         frame::Hand,
         grab::{Candidate, GrabVolume, HolsterSite},
         hands::ActiveHands,
