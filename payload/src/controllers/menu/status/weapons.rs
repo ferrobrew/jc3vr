@@ -174,12 +174,9 @@ pub(super) fn docks() -> Line {
     ))
 }
 
-pub(super) fn left_grip() -> Line {
-    if !read_config(|c| c.controllers.weapons.hold.either_hand) {
-        return Line::off("");
-    }
-    match grip::left_grip_read() {
-        None => Line::waiting("NO GUN IN THE LEFT HAND YET"),
+pub(super) fn right_grip() -> Line {
+    match grip::right_grip_read() {
+        None => Line::waiting("NO GUN IN THE RIGHT HAND YET"),
         Some(read) => Line::ok(format_smolstr!(
             "{}, OWN {:.0} DEG FROM MIRRORED",
             if read.mirrored { "MIRRORED" } else { "OWN" },

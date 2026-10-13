@@ -19,12 +19,14 @@
 //! proxy, the shot origin, and the render-time late update all derive from, is rigid in the hand.
 //!
 //! The canonical grip is the same for both of a hand's attach bones, so a state task moving the gun
-//! between them does not turn it either. A gun the hold puts in the left hand (any weapon but the
-//! dual-wield pair under its own layout) can take the right hand's grip mirrored across the body
-//! instead ([`LeftGrip`]): the left attach bone's bind pose is the one the game's left-hand pistol
-//! uses, and a long gun on it may sit turned. The automatic choice keeps the left hand's own grip
-//! unless it is turned far from the mirrored one, and the readout reports the angle between the two
-//! ([`left_grip_read`]). A gun whose body the hand bodies hold
+//! between them does not turn it either. The skeleton relates its left and right bones with every
+//! local axis flipped rather than as mirror images, so one gun model hung off both attach bones
+//! sits on one side turned half round from the other side's mirror. The left attach bone's bind
+//! pose holds the gun the way the game's own animation holds it in the left hand; the right one's
+//! does not, so a gun in the right hand can take the left hand's grip mirrored across the body
+//! instead ([`RightGrip`]). The automatic choice keeps the right hand's own grip unless it is turned
+//! far from the mirrored one, and the readout reports the angle between the two
+//! ([`right_grip_read`]). A gun whose body the hand bodies hold
 //! ([`crate::controllers::physical_hands::physics::guns`]) is pinned where that body is: the
 //! canonical grip carried by how far the gun body strays from its seat on the holding hand's body
 //! ([`seat_on_body`]), so the drawn gun, and everything that derives from its placement, follows the
@@ -59,9 +61,8 @@ use crate::{
         hands::{ik, pose as hand_pose, tiers},
         physical_hands::physics::guns,
         weapons::{
-            config::LeftGrip,
+            config::RightGrip,
             hold::{
-                self,
                 act::{self, SnapStart, SnapView},
                 second,
             },
@@ -116,20 +117,20 @@ pub fn status() -> GripStatus {
     }
 }
 
-/// How the left hand's grip for a gun the hold put there was chosen, from its last placement.
+/// How the right hand's grip was chosen, from its last placement of a gun.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct LeftGripRead {
-    /// The angle between the left hand's own bind-pose grip and the right hand's grip mirrored onto
-    /// the left wrist, degrees.
+pub struct RightGripRead {
+    /// The angle between the right hand's own bind-pose grip and the left hand's grip mirrored onto
+    /// the right wrist, degrees.
     pub angle_deg: f32,
     /// Whether the mirrored grip is the one used.
     pub mirrored: bool,
 }
 
-/// The left hand's grip read at its last placement of a gun the hold put there. A leaf lock, so any
-/// thread may read it.
-pub fn left_grip_read() -> Option<LeftGripRead> {
-    *LEFT_GRIP.lock()
+/// The right hand's grip read at its last placement of a gun. A leaf lock, so any thread may read
+/// it.
+pub fn right_grip_read() -> Option<RightGripRead> {
+    *RIGHT_GRIP.lock()
 }
 
 /// The model-space axis across the body: the one the two wrists' bind positions differ most
@@ -162,24 +163,24 @@ pub fn mirror_pose(pose: Pose, axis: usize) -> Pose {
     }
 }
 
-/// The right hand's grip mirrored onto the left wrist: the right attach bone's bind pose
-/// `right_attach` mirrored across `axis`, relative to the left wrist's bind pose `left_wrist`.
-pub fn mirrored_grip(left_wrist: Mat4, right_attach: Mat4, axis: usize) -> Option<Pose> {
-    let attach = relative_pose(Mat4::IDENTITY, right_attach)?;
+/// The left hand's grip mirrored onto the right wrist: the left attach bone's bind pose
+/// `left_attach` mirrored across `axis`, relative to the right wrist's bind pose `right_wrist`.
+pub fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Option<Pose> {
+    let attach = relative_pose(Mat4::IDENTITY, left_attach)?;
     let mirrored = mirror_pose(attach, axis);
     relative_pose(
-        left_wrist,
+        right_wrist,
         Mat4::from_rotation_translation(mirrored.orientation, mirrored.position),
     )
 }
 
-/// The grip the left hand takes for `choice`, from its own bind-pose grip `own` and the right's
+/// The grip the right hand takes for `choice`, from its own bind-pose grip `own` and the left's
 /// mirrored, and whether it is the mirrored one.
-pub fn pick_left_grip(choice: LeftGrip, own: Pose, mirrored: Pose) -> (Pose, bool) {
+pub fn pick_right_grip(choice: RightGrip, own: Pose, mirrored: Pose) -> (Pose, bool) {
     let use_mirrored = match choice {
-        LeftGrip::BindPose => false,
-        LeftGrip::MirroredRight => true,
-        LeftGrip::Auto => angle_deg(own.orientation, mirrored.orientation) > AUTO_TURN_DEG,
+        RightGrip::BindPose => false,
+        RightGrip::MirroredLeft => true,
+        RightGrip::Auto => angle_deg(own.orientation, mirrored.orientation) > AUTO_TURN_DEG,
     };
     if use_mirrored {
         (mirrored, true)
@@ -188,7 +189,7 @@ pub fn pick_left_grip(choice: LeftGrip, own: Pose, mirrored: Pose) -> (Pose, boo
     }
 }
 
-/// How far the left hand's own grip may turn from the mirrored one before the automatic choice
+/// How far the right hand's own grip may turn from the mirrored one before the automatic choice
 /// takes the mirrored one, degrees.
 pub const AUTO_TURN_DEG: f32 = 45.0;
 
@@ -239,10 +240,10 @@ pub(crate) unsafe fn before_placement(
         return None;
     }
     let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() }?;
-    let (enabled, left_grip) = Config::lock_query(|c| {
+    let (enabled, right_grip) = Config::lock_query(|c| {
         (
             c.controllers.hands.rigid_grip,
-            c.controllers.weapons.hold.left_grip,
+            c.controllers.weapons.hold.right_grip,
         )
     });
     let targets = ik::tick_records().current;
@@ -272,17 +273,13 @@ pub(crate) unsafe fn before_placement(
             let weight = if enabled { weights[hand.index()] } else { 0.0 };
             let address = weapon as *const WeaponBase as usize;
             let snap = act::snap_view(address, hand);
-            // The hold's weapons in the left hand may take the mirrored grip; the dual-wield pair
-            // under its own layout keeps the left hand's own, which suits its pistols.
-            let held_by_hold =
-                hold::owned_holder(address) == Some(Hand::Left) || second::is(address);
             // A sliding gun is not in the hand yet, so it has no body to follow.
             let deviation = snap
                 .is_none()
                 .then(|| guns::deviation(hand, address))
                 .flatten();
             let grip = PinGrip {
-                left: (hand == Hand::Left && held_by_hold).then_some(left_grip),
+                right: right_grip,
                 weight,
                 snap,
                 deviation,
@@ -509,8 +506,10 @@ fn held_weapons<'a>(
 /// How [`pin`] places a gun's attach bone.
 #[derive(Debug, Copy, Clone)]
 struct PinGrip {
-    /// The left hand's grip choice, for a gun the hold put in the left hand.
-    left: Option<LeftGrip>,
+    /// The right hand's grip choice, for any gun in the right hand: the game's own animation
+    /// turns the right attach bone away from its bind pose for every gun, the dual-wield pair's
+    /// right pistol included.
+    right: RightGrip,
     /// The hand's controller weight.
     weight: f32,
     /// A snap moving the gun between where it was and the hand.
@@ -523,7 +522,7 @@ struct PinGrip {
 }
 
 /// Read `hand`'s wrist and the gun's attach bone `attach`, and with a weight above zero, write the
-/// attach bone onto the wrist at the hand's canonical grip (or the left hand's chosen grip),
+/// attach bone onto the wrist at the hand's canonical grip (or the right hand's chosen grip),
 /// blended from the animated pose by the weight ([`blend_pin`]). While a snap moves the gun, the
 /// grip is first carried from where the gun was toward the hand by the snap's progress. `None`
 /// when a bone does not resolve or the skeleton gives no canonical grip.
@@ -535,7 +534,7 @@ unsafe fn pin(
     grip: PinGrip,
 ) -> Option<PinRead> {
     let PinGrip {
-        left,
+        right,
         weight,
         snap,
         deviation,
@@ -557,11 +556,11 @@ unsafe fn pin(
         record_read(hand, GripRead::DegenerateBindPose);
         return None;
     };
-    let offset = match left {
-        Some(choice) if hand == Hand::Left => {
-            unsafe { left_grip(character, controller, wrist_index, own, choice) }.unwrap_or(own)
+    let offset = match hand {
+        Hand::Right => {
+            unsafe { right_grip(character, controller, wrist_index, own, right) }.unwrap_or(own)
         }
-        _ => own,
+        Hand::Left => own,
     };
     record_read(hand, GripRead::Read);
     let mut wrist_joint = Joint::default();
@@ -617,28 +616,28 @@ unsafe fn snap_start(character: &Character, start: SnapStart) -> Option<Pose> {
     }
 }
 
-/// The left hand's grip for `choice`, from its own canonical grip `own` and the right hand's
-/// mirrored onto the left wrist, which is cached per animation controller. Records the choice for
-/// the readout. `None` when the right hand's bones do not resolve.
-unsafe fn left_grip(
+/// The right hand's grip for `choice`, from its own canonical grip `own` and the left hand's
+/// mirrored onto the right wrist, which is cached per animation controller. Records the choice for
+/// the readout. `None` when the left hand's bones do not resolve.
+unsafe fn right_grip(
     character: &Character,
     controller: &AnimationController,
-    left_wrist: u32,
+    right_wrist: u32,
     own: Pose,
-    choice: LeftGrip,
+    choice: RightGrip,
 ) -> Option<Pose> {
     let key = GripKey {
         controller: controller as *const AnimationController as usize,
-        wrist_index: left_wrist,
+        wrist_index: right_wrist,
         primary_index: 0,
     };
     let cached = MIRRORED.lock().filter(|(k, _)| *k == key).map(|(_, m)| m);
     let mirrored = match cached {
         Some(mirrored) => mirrored,
         None => {
-            let right_wrist = unsafe { character.GetSafeIndex(SafeBoneIndex::RIGHT_HAND) };
-            let right_attach = unsafe { character.GetSafeIndex(SafeBoneIndex::ATTACH_HAND_RIGHT) };
-            if right_wrist == 0 || right_attach == 0 {
+            let left_wrist = unsafe { character.GetSafeIndex(SafeBoneIndex::LEFT_HAND) };
+            let left_attach = unsafe { character.GetSafeIndex(SafeBoneIndex::ATTACH_HAND_LEFT) };
+            if left_wrist == 0 || left_attach == 0 {
                 return None;
             }
             let bind = |index| {
@@ -646,23 +645,23 @@ unsafe fn left_grip(
                 unsafe { controller.GetBindPoseBoneMatrix(index, &mut matrix) };
                 Mat4::from(matrix)
             };
-            let left = bind(left_wrist);
-            let axis = lateral_axis(left.w_axis.truncate(), bind(right_wrist).w_axis.truncate());
-            let mirrored = mirrored_grip(left, bind(right_attach), axis)?;
+            let right = bind(right_wrist);
+            let axis = lateral_axis(bind(left_wrist).w_axis.truncate(), right.w_axis.truncate());
+            let mirrored = mirrored_grip(right, bind(left_attach), axis)?;
             tracing::info!(
                 target: "controllers",
                 axis,
                 offset_m = ?mirrored.position,
                 own_offset_m = ?own.position,
                 turn_from_own_deg = angle_deg(own.orientation, mirrored.orientation),
-                "rigid grip: the right hand's grip mirrored onto the left wrist"
+                "rigid grip: the left hand's grip mirrored onto the right wrist"
             );
             *MIRRORED.lock() = Some((key, mirrored));
             mirrored
         }
     };
-    let (grip, used) = pick_left_grip(choice, own, mirrored);
-    *LEFT_GRIP.lock() = Some(LeftGripRead {
+    let (grip, used) = pick_right_grip(choice, own, mirrored);
+    *RIGHT_GRIP.lock() = Some(RightGripRead {
         angle_deg: angle_deg(own.orientation, mirrored.orientation),
         mirrored: used,
     });
@@ -730,9 +729,9 @@ struct GripKey {
 }
 
 static GRIPS: Mutex<[Option<(GripKey, Pose)>; 2]> = Mutex::new([None; 2]);
-/// The right hand's grip mirrored onto the left wrist, and the controller it was read for.
+/// The left hand's grip mirrored onto the right wrist, and the controller it was read for.
 static MIRRORED: Mutex<Option<(GripKey, Pose)>> = Mutex::new(None);
-static LEFT_GRIP: Mutex<Option<LeftGripRead>> = Mutex::new(None);
+static RIGHT_GRIP: Mutex<Option<RightGripRead>> = Mutex::new(None);
 static LAST: Mutex<[Option<HandGrip>; 2]> = Mutex::new([None; 2]);
 static PINS: AtomicU64 = AtomicU64::new(0);
 /// Each hand's last [`GripRead`] as its discriminant, `0` before the hand placed a gun.
@@ -860,37 +859,112 @@ mod tests {
         );
     }
 
-    /// A rig symmetric across X: the right side's pose and the left's, its mirror.
-    fn symmetric(right: Pose) -> (Mat4, Mat4) {
-        let left = mirror_pose(right, 0);
-        (
-            Mat4::from_rotation_translation(right.orientation, right.position),
-            Mat4::from_rotation_translation(left.orientation, left.position),
-        )
+    fn matrix(p: Pose) -> Mat4 {
+        Mat4::from_rotation_translation(p.orientation, p.position)
+    }
+
+    /// A rig symmetric across X: the left side's pose and the right's, its mirror.
+    fn symmetric(left: Pose) -> (Mat4, Mat4) {
+        (matrix(left), matrix(mirror_pose(left, 0)))
     }
 
     #[test]
-    fn a_symmetric_rig_mirrors_onto_its_own_left_grip() {
-        let (right_wrist, left_wrist) = symmetric(pose(
-            Vec3::new(0.35, 1.2, 0.1),
+    fn a_symmetric_rig_mirrors_onto_its_own_right_grip() {
+        let (left_wrist, right_wrist) = symmetric(pose(
+            Vec3::new(-0.35, 1.2, 0.1),
             Quat::from_euler(glam::EulerRot::XYZ, 0.3, -0.7, 0.2),
         ));
         let offset = pose(Vec3::new(0.08, -0.02, 0.03), Quat::from_rotation_z(0.4));
-        let right_attach =
-            right_wrist * Mat4::from_rotation_translation(offset.orientation, offset.position);
-        let left_attach = {
-            let a = relative_pose(Mat4::IDENTITY, right_attach).unwrap();
-            let m = mirror_pose(a, 0);
-            Mat4::from_rotation_translation(m.orientation, m.position)
-        };
-        let own = relative_pose(left_wrist, left_attach).unwrap();
+        let left_attach = left_wrist * matrix(offset);
+        let right_attach = matrix(mirror_pose(
+            relative_pose(Mat4::IDENTITY, left_attach).unwrap(),
+            0,
+        ));
+        let own = relative_pose(right_wrist, right_attach).unwrap();
         let axis = lateral_axis(left_wrist.w_axis.truncate(), right_wrist.w_axis.truncate());
         assert_eq!(axis, 0);
-        let mirrored = mirrored_grip(left_wrist, right_attach, axis).unwrap();
+        let mirrored = mirrored_grip(right_wrist, left_attach, axis).unwrap();
         assert!(mirrored.position.distance(own.position) < 1e-4);
         assert!(angle_deg(mirrored.orientation, own.orientation) < 0.05);
-        // The automatic choice keeps the left hand's own grip when the two agree.
-        assert_eq!(pick_left_grip(LeftGrip::Auto, own, mirrored), (own, false));
+        // The automatic choice keeps the right hand's own grip when the two agree.
+        assert_eq!(
+            pick_right_grip(RightGrip::Auto, own, mirrored),
+            (own, false)
+        );
+    }
+
+    /// A rig whose right side is the left side mirrored across X with every local axis flipped:
+    /// the mirror image turned half round about its own lateral axis. Each side's pose is
+    /// `(wrist, attach)`, model space.
+    fn flipped_axes(left_wrist: Pose, left_attach: Pose) -> [(Mat4, Mat4); 2] {
+        let flip = |p: Pose| {
+            let m = mirror_pose(p, 0);
+            pose(
+                m.position,
+                (m.orientation * Quat::from_rotation_x(std::f32::consts::PI)).normalize(),
+            )
+        };
+        [
+            (matrix(left_wrist), matrix(left_attach)),
+            (matrix(flip(left_wrist)), matrix(flip(left_attach))),
+        ]
+    }
+
+    /// A flipped-axes rig with a grip of the size and turn the session log showed.
+    fn logged_rig() -> [(Mat4, Mat4); 2] {
+        let left_wrist = pose(
+            Vec3::new(-0.4, 1.3, 0.05),
+            Quat::from_euler(glam::EulerRot::YXZ, 0.9, -0.3, 1.4),
+        );
+        let grip = pose(
+            Vec3::new(0.0628, -0.0340, 0.0037),
+            Quat::from_axis_angle(Vec3::new(1.0, 1.0, 1.0).normalize(), 120f32.to_radians()),
+        );
+        flipped_axes(left_wrist, hand_pose::mul(left_wrist, grip))
+    }
+
+    #[test]
+    fn a_flipped_axes_rig_relates_its_grips_as_the_log_shows() {
+        let [(lw, la), (rw, ra)] = logged_rig();
+        let left = relative_pose(lw, la).unwrap();
+        let right = relative_pose(rw, ra).unwrap();
+        // The right grip's offset is the left's negated, and its rotation the same.
+        assert!(right.position.distance(-left.position) < 1e-4);
+        assert!(angle_deg(right.orientation, left.orientation) < 0.05);
+    }
+
+    #[test]
+    fn the_right_hand_on_a_flipped_axes_rig_takes_the_true_mirror_of_the_left() {
+        let [(lw, la), (rw, ra)] = logged_rig();
+        let own = relative_pose(rw, ra).unwrap();
+        let axis = lateral_axis(lw.w_axis.truncate(), rw.w_axis.truncate());
+        assert_eq!(axis, 0);
+        let mirrored = mirrored_grip(rw, la, axis).unwrap();
+        // The right hand's own grip is turned half round from the mirror, so the automatic choice
+        // takes the mirror.
+        assert!(angle_deg(own.orientation, mirrored.orientation) > 179.0);
+        assert_eq!(
+            pick_right_grip(RightGrip::Auto, own, mirrored),
+            (mirrored, true)
+        );
+        // On the right wrist's bind pose, the mirrored grip holds the gun as the left hand's
+        // reflected across the body: its forward and up axes, which lie in its symmetry plane, are
+        // the left gun's reflected, and its attach point the left one's.
+        let reflect = |v: Vec3| Vec3::new(-v.x, v.y, v.z);
+        let (_, left_gun, left_at) = la.to_scale_rotation_translation();
+        let right_gun = pinned_attach(
+            relative_pose(Mat4::IDENTITY, rw).unwrap(),
+            Vec3::ONE,
+            mirrored,
+        );
+        for axis in [Vec3::NEG_Z, Vec3::Y, Vec3::new(0.0, 0.6, -0.8)] {
+            let want = reflect(left_gun * axis);
+            assert!(
+                (right_gun.orientation * axis).distance(want) < 1e-4,
+                "{axis}"
+            );
+        }
+        assert!(right_gun.position.distance(reflect(left_at)) < 1e-4);
     }
 
     #[test]
@@ -907,21 +981,21 @@ mod tests {
     }
 
     #[test]
-    fn the_automatic_grip_turns_to_the_mirror_only_for_a_turned_left_grip() {
+    fn the_automatic_grip_turns_to_the_mirror_only_for_a_turned_right_grip() {
         let own = pose(Vec3::ZERO, Quat::IDENTITY);
         let near = pose(Vec3::X * 0.01, Quat::from_rotation_y(0.2));
         let flipped = pose(Vec3::ZERO, Quat::from_rotation_x(std::f32::consts::PI));
-        assert_eq!(pick_left_grip(LeftGrip::Auto, own, near), (own, false));
+        assert_eq!(pick_right_grip(RightGrip::Auto, own, near), (own, false));
         assert_eq!(
-            pick_left_grip(LeftGrip::Auto, own, flipped),
+            pick_right_grip(RightGrip::Auto, own, flipped),
             (flipped, true)
         );
         assert_eq!(
-            pick_left_grip(LeftGrip::BindPose, own, flipped),
+            pick_right_grip(RightGrip::BindPose, own, flipped),
             (own, false)
         );
         assert_eq!(
-            pick_left_grip(LeftGrip::MirroredRight, own, near),
+            pick_right_grip(RightGrip::MirroredLeft, own, near),
             (near, true)
         );
     }

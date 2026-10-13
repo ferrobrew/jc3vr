@@ -556,8 +556,8 @@ pub struct HoldConfig {
     /// own trigger: a second weapon, which the game keeps
     /// holstered while the mod drives it. Needs `either_hand`.
     pub second_weapon: bool,
-    /// Which grip a gun held in the left hand takes on the wrist.
-    pub left_grip: LeftGrip,
+    /// Which grip a gun held in the right hand takes on the wrist.
+    pub right_grip: RightGrip,
     /// Show the second weapon's magazine as pips over its hand, since the game's HUD shows only the
     /// wielded weapon's.
     pub magazine_pips: bool,
@@ -594,7 +594,7 @@ impl HoldConfig {
             max_throw_mps: 15.0,
             drop_replaced: true,
             second_weapon: true,
-            left_grip: LeftGrip::Auto,
+            right_grip: RightGrip::Auto,
             magazine_pips: true,
             steal: true,
             racks: true,
@@ -606,28 +606,32 @@ impl HoldConfig {
     }
 }
 
-/// Which grip a gun the hold puts in the left hand takes on the wrist (see
-/// [`crate::controllers::hands::grip`]). The dual-wield pistols keep the left hand's own grip.
+/// Which grip a gun in the right hand takes on the wrist (see
+/// [`crate::controllers::hands::grip`]). The left hand always takes its own grip.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum LeftGrip {
-    /// The left hand's own grip, unless it is turned far from the right hand's grip mirrored, which
+pub enum RightGrip {
+    /// The right hand's own grip, unless it is turned far from the left hand's grip mirrored, which
     /// is then taken instead.
     #[default]
     Auto,
-    /// The left hand's own grip: its attach bone's pose on its wrist in the bind pose.
+    /// The right hand's own grip: its attach bone's pose on its wrist in the bind pose.
     BindPose,
-    /// The right hand's grip mirrored across the body onto the left wrist.
-    MirroredRight,
+    /// The left hand's grip mirrored across the body onto the right wrist.
+    MirroredLeft,
 }
 
-impl LeftGrip {
-    pub const ALL: [LeftGrip; 3] = [LeftGrip::Auto, LeftGrip::BindPose, LeftGrip::MirroredRight];
+impl RightGrip {
+    pub const ALL: [RightGrip; 3] = [
+        RightGrip::Auto,
+        RightGrip::BindPose,
+        RightGrip::MirroredLeft,
+    ];
 
     pub const fn label(self) -> &'static str {
         match self {
-            LeftGrip::Auto => "automatic",
-            LeftGrip::BindPose => "the left hand's own",
-            LeftGrip::MirroredRight => "the right hand's mirrored",
+            RightGrip::Auto => "automatic",
+            RightGrip::BindPose => "the right hand's own",
+            RightGrip::MirroredLeft => "the left hand's mirrored",
         }
     }
 }

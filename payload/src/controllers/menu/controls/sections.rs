@@ -17,7 +17,7 @@ use crate::{
         vehicles::config::{ArmPitch, WheelTracking},
         weapons::{
             ads::config::AimingEye,
-            config::{LeftGrip, PouchSide},
+            config::{PouchSide, RightGrip},
             reload::config::ReloadButton,
         },
     },
@@ -362,10 +362,10 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .hold
             .take_slide))
         .item(config_choice!(
-            "LEFT HAND GUN GRIP",
-            &LeftGrip::ALL,
-            &LEFT_GRIP_LABELS,
-            |c| c.controllers.weapons.hold.left_grip
+            "RIGHT HAND GUN GRIP",
+            &RightGrip::ALL,
+            &RIGHT_GRIP_LABELS,
+            |c| c.controllers.weapons.hold.right_grip
         ))
         .item(config_toggle!("LONE SECOND GUN BECOMES THE MAIN", |c| c
             .controllers
@@ -799,8 +799,9 @@ pub(super) const RELOAD_BUTTON_LABELS: [&str; 2] = ["EJECT", "GAME RELOAD"];
 /// By [`AimingEye::ALL`].
 pub(super) const AIMING_EYE_LABELS: [&str; 3] = ["GUN HAND'S SIDE", "LEFT", "RIGHT"];
 pub(super) const POUCH_SIDE_LABELS: [&str; 2] = ["GUN HAND SIDE", "FREE HAND SIDE"];
-pub(super) const LEFT_GRIP_LABELS: [&str; 3] =
-    ["AUTOMATIC", "LEFT HAND'S OWN", "RIGHT HAND'S MIRRORED"];
+/// By [`RightGrip::ALL`].
+pub(super) const RIGHT_GRIP_LABELS: [&str; 3] =
+    ["AUTOMATIC", "RIGHT HAND'S OWN", "LEFT HAND'S MIRRORED"];
 pub(super) const HAND_LABELS: [&str; 2] = ["LEFT", "RIGHT"];
 
 pub(super) const DIRECTIONS: [LocomotionDirection; 2] =
