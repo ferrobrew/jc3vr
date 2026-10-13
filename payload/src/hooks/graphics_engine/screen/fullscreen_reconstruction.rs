@@ -175,8 +175,8 @@ fn subsurface_draw(
 /// downscaled colour is derived from the wrong world ray over most of the frame.
 ///
 /// The prepass's five compute dispatches -- the near-field circle-of-confusion extract plus four
-/// separable blur passes ping-ponging two quarter-resolution textures -- were the reason this was
-/// previously reported as unsplittable, and they are still unmaskable. But they do not need a mask:
+/// separable blur passes ping-ponging two quarter-resolution textures -- are unmaskable, which
+/// makes the pass look unsplittable. But they do not need a mask:
 /// none of them reads a view or projection matrix (the extract takes the depth texture and the focal
 /// tuning; the blur takes a step direction and its source texture), so their whole-target result is
 /// already right for both eyes. [`reconstruction::DispatchPhase::FirstRun`] therefore issues them on

@@ -237,8 +237,8 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
                     let eye1 = crate::stereo::draw_index() == 1;
                     let half_ipd = ipd * 0.5;
                     // Eye 0 is the LEFT eye (shift -right), eye 1 the RIGHT (shift +right), so view 0
-                    // == left (OpenXR convention). Previously reversed, which made the debug pair
-                    // fuse cross-eyed when the "parallel" toggle was off.
+                    // == left (OpenXR convention). The reverse assignment fuses the debug pair
+                    // cross-eyed when the "parallel" toggle is off.
                     let offset = if eye1 { half_ipd } else { -half_ipd };
                     let mut transform = glam::Mat4::from(camera.m_TransformF);
                     let delta = offset * transform.x_axis.truncate();

@@ -91,8 +91,9 @@ pub fn should_reproject(name: Option<&str>) -> bool {
 /// a rigid half-IPD offset from everything around it. That is visible in a single eye, not only in
 /// stereo.
 ///
-/// Reprojection is the fix and is already built; it was simply unreachable, because the remap claimed
-/// the shader before [`should_reproject`] was ever consulted. Routing it there costs nothing extra --
+/// Reprojection fixes it, and this check routes such a shader to it even though the remap's
+/// candidacy test claims it, which would otherwise keep [`should_reproject`] from being consulted.
+/// Routing it there costs nothing extra --
 /// the shader still resolves its eye from `SV_InstanceID & 1` and the draw is still the one
 /// instance-doubled submission.
 ///

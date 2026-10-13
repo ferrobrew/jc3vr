@@ -81,7 +81,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             bone(b"fRightEar"),
         ]);
 
-        // HEAD: optionally the legacy scale-hide, plus the full headpose pose, in a single
+        // HEAD: optionally the scale head-hide, plus the full headpose pose, in a single
         // SetJoint. The head/neck/eye anchors are captured PRE-IK in
         // `character_update_pass_finalize_pose_parallel`: this hook runs last, after the HumanIK
         // solve *and* after CalculateModelSpacePose, so a capture here would read the IK-solved head
@@ -135,12 +135,12 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         let in_gameplay = hooks::in_gameplay();
 
         // Only override the pose once a valid anchor exists; until then (loading screens, garbage
-        // bone data) the bone keeps its animated pose and only the legacy scale-hide applies.
+        // bone data) the bone keeps its animated pose and only the scale head-hide applies.
         if in_gameplay && headpose::is_active() && headpose::anchor().is_some() {
             // Compose the player's body-relative offset onto the *animated* model-space
-            // orientation, exactly like the neck twist below. The previous absolute write assumed
-            // the bone's rest frame matched the model axes, which it does not — observed in the
-            // (now headful) shadow as the head collapsing into the shoulders. Model space is the
+            // orientation, exactly like the neck twist below. An absolute write is not used because
+            // the bone's rest frame does not match the model axes: it collapses the head into the
+            // shoulders, which shows in the shadow. Model space is the
             // body frame, so the sim's body-relative angles apply directly, and the animated
             // translation is kept (plus the roomscale offset brought into the body frame), so the
             // head stays anatomically placed while turning where the player looks.
@@ -207,7 +207,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             }
         }
 
-        // Facial bones: scale only (the legacy head-hide behaviour).
+        // Facial bones: scale only (the scale head-hide).
         if !hide_scale {
             return;
         }

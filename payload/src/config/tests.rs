@@ -93,8 +93,8 @@ fn a_missing_setting_takes_its_default() {
 
 #[test]
 fn a_saved_off_wingsuit_readout_takes_the_new_default() {
-    // A file saved while the readout was off by default holds the earlier key, which no longer
-    // loads, so the panel comes on.
+    // A file saved by a build with the readout off by default holds a key that does not load, so
+    // the panel comes on.
     let mut table = defaults_table();
     let arm_steering = ["controllers", "vehicles", "arm_steering"];
     remove(

@@ -445,8 +445,8 @@ pub fn begin_frame() {
 /// This is the only place the range flag may be forced down from outside its guard. The flag is
 /// written and read exclusively on the draw thread, and the dispatch prologue is the one point in
 /// that thread's sequence where no range can be live -- so a clear here cannot interleave with a range
-/// in progress, as the former frame-start clear on the game thread could once the frame tail was
-/// deferred.
+/// in progress, as a frame-start clear on the game thread could while a deferred frame tail is still
+/// drawing.
 ///
 /// The config flags are pinned here for the same reason and at the same point. They gate state this
 /// thread arms and restores in pairs -- the eye-half viewport, the armed constant reprojection, the

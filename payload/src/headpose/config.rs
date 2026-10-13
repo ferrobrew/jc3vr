@@ -66,8 +66,8 @@ pub struct HeadPoseConfig {
     /// A head-local offset (metres) applied to the *whole* published headpose position — the head
     /// bone override, the camera, and the aim transform all shift together, simulating the player
     /// physically translating their head (leaning, roomscale movement). Distinct from the camera
-    /// config's `head_offset`, which only moves the camera relative to the head. Stands in for the
-    /// HMD's positional tracking until issue #12.
+    /// config's `head_offset`, which only moves the camera relative to the head. Simulates the HMD's
+    /// positional tracking, for testing without a headset.
     pub position_offset: Vec3,
     /// VR on-foot body-yaw (turning) settings. In VR the HMD owns the head, so the look input
     /// (mouse and right stick) is free to turn the body instead (see [`VrTurnConfig`]).
@@ -116,7 +116,7 @@ pub enum VrTurnMode {
 
 /// VR on-foot body-yaw (turning) settings.
 ///
-/// The head is HMD-driven, so the look effectors (mouse and right stick) no longer steer the head
+/// The head is HMD-driven, so the look effectors (mouse and right stick) do not steer the head
 /// and are repurposed to turn the body. The turned heading is fed to the locomotion hook as the
 /// body's face-dir target, so the character's whole frame — body and, composed onto it, the head —
 /// rotates with the input.

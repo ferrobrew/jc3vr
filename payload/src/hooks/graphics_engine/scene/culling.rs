@@ -306,8 +306,8 @@ fn patch_spawn_budgets(spawn_system: *mut SpawnSystem, scale: f32) {
 
 /// Drop the main view's software-occlusion frustums: set `m_FrustumCount` (the occluder
 /// count + 1 field, at [`BFBCFrustumCullParameters::m_FrustumCount`]) to 1, leaving only the
-/// widened camera frustum at index 0, so software occlusion no longer
-/// culls edge geometry that the centre viewpoint hides but an offset eye can see. The occluder data
+/// widened camera frustum at index 0, so software occlusion does not
+/// cull edge geometry that the centre viewpoint hides but an offset eye can see. The occluder data
 /// stays in place, just un-iterated; view-frustum culling (index 0) is unchanged.
 ///
 /// # Safety

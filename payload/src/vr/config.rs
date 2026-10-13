@@ -56,11 +56,11 @@ pub enum ProjectionConvention {
     /// `SetupRenderCamera` (so the engine does not re-reverse it), then rebuild the view-projections
     /// manually. TAA jitter is not applied on this path.
     ///
-    /// The consume-vs-rebuild question this guarded against is now settled against the engine
+    /// The consume-vs-rebuild question this guards against is settled against the engine
     /// (`docs/engine/rendering/rendering.md` §2.9): `Camera::SetupRenderCamera` *consumes* whatever is in
     /// `m_Projection`, applying `z' = w - z` to it in place — it never rebuilds from FOV/near/far —
     /// so the pre-call [`EnginePreReverseZ`](Self::EnginePreReverseZ) write flows through correctly
-    /// and is the verified-correct default. This variant is retained only as a runtime escape hatch
+    /// and is the verified-correct default. This variant exists only as a runtime escape hatch
     /// for a headset playtest, in case the depth still reads wrong for a reason not visible from the
     /// desktop.
     ManualReverseZ,

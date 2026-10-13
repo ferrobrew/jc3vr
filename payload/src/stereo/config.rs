@@ -208,7 +208,7 @@ pub struct SinglePassConfig {
     /// from a baked model-view-projection in its own constant buffer rather than from the render
     /// context, so the collapse's per-eye machinery never reaches it and both eyes see the collapsed
     /// centre view. Flat water at the wrong depth reads as correct in a screenshot and wrong in a
-    /// headset, which is why it survived this long. On by default -- the flag stays so a suspected regression can be
+    /// headset, which makes the defect easy to miss. On by default -- the flag stays so a suspected regression can be
     /// isolated without rebuilding.
     pub nvwater_per_eye: bool,
     /// Reproject the screen-space decal *box geometry* per eye, on top of
@@ -391,10 +391,10 @@ pub struct StereoConfig {
     /// fragment to run the render passes asynchronously, and the engine only waits on it at the *next*
     /// `Draw`'s entry -- so without this, eye 0's fragment is still in flight when the between-eye
     /// snapshot/restore mutates the shared render-frame state, and the fragment reads a torn per-camera
-    /// context (wild `this`) and faults. The fix for the intermittent open-world crash, IDB-verified
+    /// context (wild `this`) and faults. Without it the open world crashes intermittently. IDB-verified
     /// (the barrier address is disassembled from the engine's own entry wait). Default on: a wrong
     /// barrier fails on frame 1, which is the wanted behaviour during development -- crash fast and
-    /// deterministically rather than mask a latent fault. Toggle off to reproduce the original crash for
+    /// deterministically rather than mask a latent fault. Toggle off to reproduce the crash for
     /// an A/B.
     pub drain_draw_fragment: bool,
     /// Defer the frame tail -- the final dispatch's draw-thread drain, the VR eye blit and submit,

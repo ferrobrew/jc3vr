@@ -461,10 +461,10 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // near->NDC z 1, far->0), matching the reverse-Z depth buffer the game renders. So invert the
     // reverse-Z off-axis projection, not the standard-depth one: `inverse(projection_reverse_z)`
     // reproduces the engine's inverse exactly for a symmetric frustum and adds the off-center shear the
-    // symmetric rebuild omits. Inverting `projection_standard` (the earlier code) matched the x/y and
-    // shear -- so specular/SSR looked fixed -- but sign-flipped and mis-scaled the depth basis, so the
-    // sun shadow sampled over the reconstructed positions swam with the off-axis shear as the camera
-    // rotated (issue #31).
+    // symmetric rebuild omits. Inverting `projection_standard` instead matches the x/y and shear -- so
+    // specular/SSR look fixed -- but sign-flips and mis-scales the depth basis, so the sun shadow
+    // sampled over the reconstructed positions swims with the off-axis shear as the camera rotates
+    // (issue #31).
     // A per-eye half run masks the pass to this eye's half of the double-wide target and folds the
     // full-target-NDC -> eye-NDC remap into the inverse, so the half reconstructs exactly. If the mask
     // cannot be applied (the bound target is not the collapse's double-wide scene target), the run is

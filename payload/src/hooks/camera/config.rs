@@ -16,16 +16,16 @@ pub struct CameraConfig {
     /// and any gear weighted to facial bones — contracts to a point inside the collar, while the
     /// shadow passes see the real palette, so the shadow keeps its head.
     pub hide_head_draws: bool,
-    /// The legacy head-hide: scale the HEAD bone and a facial-bone list to 0.001. Kept as a
-    /// fallback; superseded by `hide_head_draws` (the scale approach also removed the head from
-    /// the shadow, and its unscaled child bones leaked the eyes into view).
+    /// The scale head-hide: scale the HEAD bone and a facial-bone list to 0.001. A fallback for
+    /// `hide_head_draws`, which is preferred because the scale approach also removes the head from
+    /// the shadow, and its unscaled child bones leak the eyes into view.
     pub hide_head_scale: bool,
 }
 impl CameraConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            // Both offsets default to zero now that the head is properly hidden: with
+            // Both offsets default to zero because the head is hidden: with
             // use_eye_matrices on (the default), the camera arm is the measured neck-to-eye arm
             // from the animated eye bones and head_offset is a correction on top of it; with it
             // off, head_offset is the whole arm from the neck pivot.

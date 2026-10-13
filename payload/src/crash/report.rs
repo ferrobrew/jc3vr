@@ -26,7 +26,7 @@ pub(super) unsafe fn record_exception(info: *mut EXCEPTION_POINTERS) {
         // unmapped by the time the handler reads them: a re-read of the code mid-logging returned
         // float bit patterns, and a late dereference faulted inside the handler itself -- an AV in
         // a vectored handler escalates otherwise-handled exception traffic into process death. The
-        // probe-then-read window is still racy in principle, but a single read can no longer
+        // probe-then-read window is still racy in principle, but a single read cannot
         // disagree with itself, and nothing dereferences the record after this block.
         //
         // The reads are volatile because a plain copy is not actually a single read: the record

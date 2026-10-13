@@ -249,8 +249,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // is dirty (CBlender::UpdateTime), and the animation graph finalized this frame's local pose
         // earlier in SIM, so this read reflects this frame's animation. At worst it is the previous
         // frame's model-space pose (one frame of latency) — still IK-free, and it can never contain
-        // this frame's solve, so no tight feedback loop can form. The counterpart capture in
-        // UpdatePropEffects is removed; that hook now only consumes the published anchors.
+        // this frame's solve, so no tight feedback loop can form. UpdatePropEffects does not
+        // capture; it only consumes the published anchors.
         let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
         let joint_translation = |joint: &Joint| {

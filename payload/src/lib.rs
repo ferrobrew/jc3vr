@@ -73,8 +73,8 @@ fn initialize_startup() {
 
     std::panic::set_hook(Box::new(|info| {
         // Log the location before touching the payload: for formatted panics, `payload()` runs the
-        // format arguments' Display impls, and one reading dead game memory faults — which
-        // previously killed the process before anything was logged. The location is plain static
+        // format arguments' Display impls, and one reading dead game memory faults, which
+        // kills the process before anything is logged. The location is plain static
         // data and always safe.
         let location = info.location().map(|l| l.to_string());
         tracing::error!(

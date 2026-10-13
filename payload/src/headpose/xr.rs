@@ -30,11 +30,11 @@
 //! Aim is unchanged from flatscreen: the camera follows the head, and the head *is* the aim (gaze
 //! aim is the interim model).
 //!
-//! Body yaw: the HMD owns the head, so the look effectors (mouse and right stick) no longer steer
+//! Body yaw: the HMD owns the head, so the look effectors (mouse and right stick) do not steer
 //! it and are repurposed to turn the body ([`advance_body_yaw`]). The turned heading is handed to
 //! the locomotion hook as the body's face-dir target ([`body_yaw_target`]), so the character's whole
 //! frame — body and, composed onto it, the head — rotates with the input, and the native
-//! turn-toward-movement never fights it (backpedaling no longer tank-turns the body).
+//! turn-toward-movement never fights it (backpedaling does not tank-turn the body).
 //!
 //! On foot the body may also turn under the view toward the player's torso
 //! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
@@ -130,8 +130,8 @@ pub fn cockpit_pose() -> Option<CockpitPose> {
 /// `swimming` is passed separately from `on_foot` only to keep the accumulator alive: the swim
 /// family never runs the on-foot orientation evaluator, so without it the accumulator would clear
 /// the moment the player entered water and the right stick would stop steering the body. The lead
-/// clamp below applies identically in both, since in water the body now turns because of the target
-/// too (see [`crate::hooks::input::swim`]).
+/// clamp below applies identically in both, since in water the body also turns because of the
+/// target (see [`crate::hooks::input::swim`]).
 ///
 /// `follow` lets the body turn under the view toward the player's torso ([`BodyFollow`]); its
 /// offset also seeds the accumulator, so that the view does not jump when the body was turned

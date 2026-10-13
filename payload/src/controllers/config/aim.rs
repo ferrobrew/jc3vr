@@ -18,7 +18,7 @@ pub struct AimStateConfig {
     /// family while firing still works.
     pub pin: bool,
     /// Also pin the grapple aim clear, which the weapon pin does not reach. It changes how the
-    /// body behaves on a held tether: the body no longer turns to face the hook.
+    /// body behaves on a held tether: the body does not turn to face the hook.
     pub pin_grapple: bool,
     /// Skip the local player's arm and upper-body aim IK tasks, because the controllers own the
     /// arms.

@@ -45,7 +45,7 @@ fn smoothed_exposure_update(this: *mut c_void, exposure: f32) {
 }
 
 // CalculateMidAndBrightPointForHistogram -- the per-frame histogram percentile computation; Update
-// calls it once per histogram. The exposure readback now happens in the Update detour (which holds
+// calls it once per histogram. The exposure readback happens in the Update detour (which holds
 // the ToneMappingEffect directly and can read both histograms), so this only keeps the (inert) gate.
 #[detour(address = jc3gi::graphics_engine::tone_mapping::CalculateMidAndBrightPointForHistogram_ADDRESS)]
 fn calc_histogram_mid_bright(
@@ -185,9 +185,9 @@ fn tonemapping_apply(
 
 // ToneMappingEffect::GenerateHistogramForFinalScene -- meters the non-exposure-weighted final-scene
 // histogram (m_Histogram2): the raw scene brightness that Update divides the auto-exposure target
-// by. It runs once per dispatch, but only the exposure-weighted meter was gated at first -- so in
-// stereo m_Histogram2 was metered on both eyes, its occlusion-query ring inflated and corrupted,
-// and the exposure divided by a too-large brightness => the frame went dark. Gate it to eye 0
+// by. It runs once per dispatch, so ungated in stereo m_Histogram2 is metered on both eyes, its
+// occlusion-query ring inflates and corrupts, and the exposure divides by a too-large brightness,
+// which darkens the frame. Gating only the exposure-weighted meter is not enough. Gate it to eye 0
 // (under exposure.gate), symmetric with tonemapping_apply, so it meters once per real frame.
 #[detour(
     address = jc3gi::graphics_engine::tone_mapping::ToneMappingEffect::GenerateHistogramForFinalScene_ADDRESS

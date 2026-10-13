@@ -42,14 +42,13 @@ pub(super) fn hook_library() -> HookLibrary {
 /// `crate::hooks::game::game_update_render` (which calls this too, `pub(crate)` for exactly that),
 /// whose thread identity settles two questions static reasoning could not.
 ///
-/// The first was a lock-order inversion against `crate::update`, which takes the `EguiState` lock and
-/// then `crate::ui::render::EGUI_DEBUG_RENDER_STATE` inside it: `render_engine_post_draw` used to hold
+/// The first is whether `render_engine_post_draw` runs apart from `crate::update`, which is what this
+/// hook's shared state has to assume. `crate::update` takes the `EguiState` lock and then
+/// `crate::ui::render::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
 /// `EGUI_DEBUG_RENDER_STATE` across `hud::egui_panel::draw_quad` and `hud::mirror_overlay::render`,
-/// both of which take the `EguiState` lock. Two blocking mutexes in opposite orders deadlock if and
-/// only if the two sides run on different threads. The nesting is gone (the captures are now cloned
-/// under a brief lock, as everywhere else), so the answer no longer decides whether that pair was a
-/// bug -- but it still says whether the two do run apart, which is what the rest of this hook's
-/// shared state has to assume.
+/// both of which take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
+/// else. Two blocking mutexes in opposite orders deadlock if and only if the two sides run on
+/// different threads.
 ///
 /// The second is whether [`crate::vr::back_buffer`]'s safety argument holds: it is built on
 /// `CreateRenderSetups` running on the render thread under the drained idle context while the

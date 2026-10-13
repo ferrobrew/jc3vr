@@ -323,8 +323,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             }
             // Snapshot the add/draw list parity so each later dispatch's CKeep1000Frames toggles
             // it to the same value as the first, making SaveRenderFrameData set the same list
-            // pointers. This replaces the former RotateRenderFrameData eye-1 gate -- the function
-            // now runs on every dispatch, so the overflow list is processed and the external
+            // pointers. With the parity matched, RotateRenderFrameData runs on every dispatch rather
+            // than being skipped on eye 1, so the overflow list is processed and the external
             // render camera is updated on all of them too.
             let saved_add_buffer = *get_current_add_buffer();
             #[cfg(feature = "profiler")]
@@ -474,7 +474,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
             // The draw thread reads the per-dispatch stereo state (draw_index, far_phase) for the
             // final dispatch asynchronously. Resetting it here would race that read when the tail
-            // is deferred (the main thread no longer drained the last dispatch), so eye 1 would
+            // is deferred (the main thread has not drained the last dispatch), so eye 1 would
             // render as eye 0 -- wrong camera, and its capture copies into eye 0's texture, leaving
             // the right eye frozen. When deferring, the tail resets it after draining instead.
             if !defer_tail {

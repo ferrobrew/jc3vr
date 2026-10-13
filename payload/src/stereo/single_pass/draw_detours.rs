@@ -131,8 +131,8 @@ pub(super) unsafe extern "system" fn draw_detour(
 /// (`CRenderEngine::CreateRenderPass`, whose pass id is a literal at every call), which name the
 /// owning system for each id, plus that system's enqueue site.
 ///
-/// The two groups below are the result. Every fullscreen slot-13 block turned out to sit on a pass of
-/// its own that no geometry block is enqueued onto -- including three that fall *inside* the GBuffer
+/// The two groups below are the result. Every fullscreen slot-13 block sits on a pass of its own
+/// that no geometry block is enqueued onto -- including three that fall *inside* the GBuffer
 /// index range and so are live under the collapse ([`RenderPassId::RP_DOWNSAMPLE_DEPTH`],
 /// [`RenderPassId::RP_UNDERWATER_FOG_GRADIENT`], and the fog-volume trio) -- so no pass carries both
 /// kinds and the pass id is a sound discriminator. It stays an allowlist, not a heuristic: the cost of

@@ -169,7 +169,7 @@ fn render_block_foliage_draw(
 /// [`render_block_foliage_draw`], so it takes the same reprojection.
 ///
 /// It has to: the depth prepass and the colour pass must agree on where a blade of grass is, and the
-/// colour pass is now per-eye. A prepass left at the centre view primes depth for geometry neither eye
+/// colour pass is per-eye. A prepass left at the centre view primes depth for geometry neither eye
 /// draws there, and the colour fragments that follow are rejected against it.
 ///
 /// The velocity permutation additionally stages the previous frame's offset view-projection at

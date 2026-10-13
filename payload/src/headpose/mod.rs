@@ -19,8 +19,8 @@
 //!   as it smooths its own camera.
 //!
 //! Recentering is a source concern: the sim's pose is body-relative, so it recenters by zeroing
-//! its accumulated angles ([`recenter`] delegates to [`sim::reset`]). The VR source will own its
-//! own re-basing against the HMD's absolute pose when it lands (issue #12).
+//! its accumulated angles ([`recenter`] delegates to [`sim::reset`]). The VR source re-bases
+//! against the HMD's absolute pose instead ([`crate::vr::recenter`]).
 
 use std::sync::{
     OnceLock,

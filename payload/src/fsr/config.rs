@@ -10,9 +10,9 @@ pub struct FsrConfig {
     pub enabled: bool,
     /// Apply the temporal sub-pixel jitter (camera projection + dispatch). FSR needs it to
     /// reconstruct sub-pixel detail, but it also excites a blob-scale shadow-term flicker whose
-    /// mechanism resisted a long bisection (issue #10) -- every identified jitter coupling was
-    /// fixed or ruled out (motion vectors, the post-chain double-run, the LOD dissolve, the shadow
-    /// fit) and the flicker still tracked the jitter, so it ships off: stability over sharpness.
+    /// mechanism is not identified (issue #10): every identified jitter coupling is fixed or ruled
+    /// out (motion vectors, the post-chain double-run, the LOD dissolve, the shadow fit) and the
+    /// flicker still tracks the jitter, so it is off by default: stability over sharpness.
     /// Enable to trade back.
     pub jitter: bool,
     /// The sign convention of the *camera-side* jitter (the clip-space translation on the
@@ -35,7 +35,7 @@ pub struct FsrConfig {
     /// Feed motion vectors to FSR. Off makes FSR reproject with zero motion (ghosts moving objects) --
     /// a debug A/B to confirm the decode is helping.
     pub motion_vectors: bool,
-    /// The sign/axis convention applied to the decoded UV motion before FSR. The decode math is now
+    /// The sign/axis convention applied to the decoded UV motion before FSR. The decode math is
     /// RE-exact (see `docs/mod/rendering/fsr.md`); only FSR's expected sign/Y direction is empirical -- a wrong sign
     /// is visually obvious (trails point backwards). Defaults to `(1, -1)` (UV is Y-down; FSR's
     /// convention TBD against on-screen motion).

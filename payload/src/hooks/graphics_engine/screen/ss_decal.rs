@@ -149,7 +149,7 @@ fn ss_decal_draw(this: *const RenderBlockSSDecal, rc: *mut RenderContext, info: 
 /// shared with every other block type in the frame, so with nothing staging it they read whatever the
 /// last block happened to leave there -- an arbitrary offset, out of the texture as often as not, and
 /// changing from draw to draw. Writing zero turns that into one definite, bounded outcome: the fetch
-/// addresses the left half, which is what the pass did before this module existed. It cannot be made
+/// addresses the left half, which is what the unpatched pass does. It cannot be made
 /// *correct* here -- the spliced `· 0.5` has no neutral value -- so the shader reload the debug UI
 /// requests on the toggle is still what retracts the rewrite; this only keeps the meantime stable.
 ///
