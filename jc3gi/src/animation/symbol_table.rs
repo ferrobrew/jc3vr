@@ -239,6 +239,12 @@ impl EventIdSymbolTable {
     pub const ACT_STUNT_TURN_120L: &::std::ffi::CStr = c"ACT_STUNT_TURN_120L";
     /// The stunt turn a third to the right; see [`ACT_STUNT_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STUNT_TURN_0).
     pub const ACT_STUNT_TURN_120R: &::std::ffi::CStr = c"ACT_STUNT_TURN_120R";
+    /// The return to the idle. The locomotion helpers queue it where no turn is needed:
+    /// [`QueueStuntTurns`](crate::input::locomotion::NStateTask_LocoUtil::QueueStuntTurns) when the move
+    /// direction is close to the body's forward, and
+    /// [`QueueAimRelativeOnSpotActions`](crate::input::locomotion::NStateTask_LocoUtil::QueueAimRelativeOnSpotActions)
+    /// when the aim is. The starts, move, and path-follow input tasks also queue it.
+    pub const ACT_TO_IDLE: &::std::ffi::CStr = c"ACT_TO_IDLE";
     /// The one-off idle-variation act: transitions the on-foot idle from `S_IDLE` to
     /// `S_IDLE_ONE_OFF` in `rico_base.afsmb`, playing a single idle-break animation (a weight shift,
     /// a look-around, a fidget) before returning to `S_IDLE`. `NStateTask_InputLocoIdleTask::Update`

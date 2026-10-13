@@ -13,14 +13,18 @@
 //!   pre-flight (`AnimatedModel::TryAct`) first, and the original act is queued when the state
 //!   machine would not take the straight one.
 //! - The stunt turns, which turn the body toward the stick while it stands on a vehicle's roof,
-//!   are dropped. The game queues them only on its input tasks' stunt branch, while the character
+//!   are replaced by the return to the idle (`ACT_TO_IDLE`), which is what the game queues in their
+//!   place when the stick points nearly straight ahead, and dropped when the state machine would
+//!   not take it. The game queues them only on its input tasks' stunt branch, while the character
 //!   is attached to a vehicle, where the mode detection may read a vehicle rather than on foot, so
 //!   they have their own scope ([`ActScope::StuntArea`]): it needs neither the on-foot mode nor
 //!   the stick locomotion, which does not run there. The stunt area's view rides the body, so a
 //!   stunt turn would turn the view.
 //!
 //! A filter that removes acts can leave the animation state machine waiting for one it never
-//! receives. The [`Watchdog`] watches for that: the filter normally acts in short bursts (a start,
+//! receives. The [`Watchdog`] watches for that on foot (the stunt area's acts are queued every tick
+//! the stick is held toward a side with no stunt area, and their replacement is the act the game
+//! itself queues at the same point when no turn is needed, so the watchdog never releases them): the filter normally acts in short bursts (a start,
 //! a stop), so when it has acted without a break for [`ActFilterConfig::watchdog_s`] the watchdog
 //! lets every act through for [`ActFilterConfig::release_s`] and logs a warning.
 
@@ -52,6 +56,28 @@ pub enum ActScope {
     StuntArea,
 }
 
+impl ActScope {
+    /// Whether the [`Watchdog`] times this scope's acts. The stunt area's replacement is the act
+    /// the game itself queues when no turn is needed, so it never leaves the state machine waiting,
+    /// and a stick held toward a side with no stunt area must never let a stunt turn through.
+    pub const fn watched(self) -> bool {
+        match self {
+            ActScope::OnFoot => true,
+            ActScope::StuntArea => false,
+        }
+    }
+
+    /// What a replacement the state machine refused becomes. On foot the original act is queued,
+    /// so the state machine still moves on; a stunt turn is dropped, which leaves the state as the
+    /// game would have left it with no turn to make.
+    pub const fn on_refusal(self) -> ActDecision {
+        match self {
+            ActScope::OnFoot => ActDecision::Pass,
+            ActScope::StuntArea => ActDecision::Drop,
+        }
+    }
+}
+
 /// What the filter does with an act.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ActDecision {
@@ -68,7 +94,8 @@ pub enum ActDecision {
 pub struct ActFilterStatus {
     pub dropped: u64,
     pub replaced: u64,
-    /// Replacements the state machine refused, which queued the original act.
+    /// Replacements the state machine refused: on foot the original act was queued, and in the
+    /// stunt area the act was dropped ([`ActScope::on_refusal`]).
     pub refused: u64,
     /// How often the watchdog released the filter.
     pub releases: u64,
@@ -112,23 +139,25 @@ pub(crate) unsafe fn filter(
     if !applies {
         return ActDecision::Pass;
     }
-    let now = Instant::now();
     let mut state = STATE.lock();
-    if !state.watchdog.admit(now) {
-        state.status.released = true;
-        return ActDecision::Pass;
-    }
-    state.status.released = false;
-    if let Some(release) = state.watchdog.record(now, config) {
-        state.status.releases += 1;
-        state.status.released = true;
-        tracing::warn!(
-            target: "controllers",
-            acted_for_s = release.acted_for.as_secs_f32(),
-            release_s = config.release_s,
-            "locomotion: the act filter acted without a break; letting every act through",
-        );
-        return ActDecision::Pass;
+    if scope.watched() {
+        let now = Instant::now();
+        if !state.watchdog.admit(now) {
+            state.status.released = true;
+            return ActDecision::Pass;
+        }
+        state.status.released = false;
+        if let Some(release) = state.watchdog.record(now, config) {
+            state.status.releases += 1;
+            state.status.released = true;
+            tracing::warn!(
+                target: "controllers",
+                acted_for_s = release.acted_for.as_secs_f32(),
+                release_s = config.release_s,
+                "locomotion: the act filter acted without a break; letting every act through",
+            );
+            return ActDecision::Pass;
+        }
     }
     match wanted {
         ActDecision::Replace(replacement) => {
@@ -140,7 +169,7 @@ pub(crate) unsafe fn filter(
                 wanted
             } else {
                 state.status.refused += 1;
-                ActDecision::Pass
+                scope.on_refusal()
             }
         }
         ActDecision::Drop => {
@@ -221,7 +250,7 @@ impl Watchdog {
 pub struct ActTable {
     drop: Vec<i32>,
     replace: Vec<(i32, i32)>,
-    stunt_drop: Vec<i32>,
+    stunt_replace: Vec<(i32, i32)>,
 }
 
 impl ActTable {
@@ -235,14 +264,15 @@ impl ActTable {
             .iter()
             .map(|(from, to)| Some((resolve(from)?, resolve(to)?)))
             .collect::<Option<Vec<_>>>()?;
-        let stunt_drop = STUNT_DROPPED
+        let idle = resolve(EventIdSymbolTable::ACT_TO_IDLE)?;
+        let stunt_replace = STUNT_TURNS
             .iter()
-            .map(|name| resolve(name))
+            .map(|name| Some((resolve(name)?, idle)))
             .collect::<Option<Vec<_>>>()?;
         Some(Self {
             drop,
             replace,
-            stunt_drop,
+            stunt_replace,
         })
     }
 
@@ -252,8 +282,8 @@ impl ActTable {
         if self.drop.contains(&id) {
             return Some((ActDecision::Drop, ActScope::OnFoot));
         }
-        if self.stunt_drop.contains(&id) {
-            return Some((ActDecision::Drop, ActScope::StuntArea));
+        if let Some(&(_, to)) = self.stunt_replace.iter().find(|(from, _)| *from == id) {
+            return Some((ActDecision::Replace(to), ActScope::StuntArea));
         }
         self.replace
             .iter()
@@ -396,9 +426,9 @@ const REPLACED: [(&CStr, &CStr); 27] = [
     ),
 ];
 
-/// The stunt turns. The straight one turns the body too, by up to a sixth of a turn through its
-/// angle correction, and the stunt idle needs none of them to move on, so all three are dropped.
-const STUNT_DROPPED: [&CStr; 3] = [
+/// The stunt turns, each replaced by `ACT_TO_IDLE`. The straight one turns the body too, by up to
+/// a sixth of a turn through its angle correction, so all three are replaced.
+const STUNT_TURNS: [&CStr; 3] = [
     EventIdSymbolTable::ACT_STUNT_TURN_0,
     EventIdSymbolTable::ACT_STUNT_TURN_120R,
     EventIdSymbolTable::ACT_STUNT_TURN_120L,
@@ -520,7 +550,8 @@ mod tests {
             .iter()
             .copied()
             .chain(REPLACED.iter().flat_map(|(a, b)| [*a, *b]))
-            .chain(STUNT_DROPPED.iter().copied())
+            .chain(STUNT_TURNS.iter().copied())
+            .chain([EventIdSymbolTable::ACT_TO_IDLE])
             .collect();
         let id_of = move |name: &CStr| {
             names
@@ -586,15 +617,29 @@ mod tests {
     }
 
     #[test]
-    fn every_stunt_turn_is_dropped_in_the_stunt_area() {
+    fn every_stunt_turn_returns_to_the_idle_in_the_stunt_area() {
         let (table, id) = test_table();
-        for name in STUNT_DROPPED {
+        let idle = id(EventIdSymbolTable::ACT_TO_IDLE);
+        for name in STUNT_TURNS {
             assert_eq!(
                 table.decide(id(name)),
-                Some((ActDecision::Drop, ActScope::StuntArea)),
+                Some((ActDecision::Replace(idle), ActScope::StuntArea)),
                 "{name:?}"
             );
         }
+        assert_eq!(table.decide(idle), None);
+    }
+
+    #[test]
+    fn a_refused_stunt_turn_is_dropped_and_a_refused_start_passes() {
+        assert_eq!(ActScope::StuntArea.on_refusal(), ActDecision::Drop);
+        assert_eq!(ActScope::OnFoot.on_refusal(), ActDecision::Pass);
+    }
+
+    #[test]
+    fn only_the_on_foot_scope_is_watched() {
+        assert!(ActScope::OnFoot.watched());
+        assert!(!ActScope::StuntArea.watched());
     }
 
     #[test]
@@ -603,7 +648,7 @@ mod tests {
         for name in DROPPED
             .iter()
             .chain(REPLACED.iter().map(|(from, _)| from))
-            .chain(STUNT_DROPPED.iter())
+            .chain(STUNT_TURNS.iter())
         {
             assert!(seen.insert(*name), "{name:?} is filtered twice");
         }
