@@ -15,14 +15,22 @@ use crate::{
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::{self, Hand},
-        grab::{GrabVolume, resolve::dock_target},
+        grab::{GrabVolume, HolsterSite, resolve::dock_target},
         hands::{
             self, ActiveHands, pose as hand_pose,
             tiers::{self, HandTier, TierState},
         },
         haptics::{self, Event},
         weapons::{
-            c4, dual_wield, engine,
+            c4,
+            dual_wield::{
+                self,
+                single::{
+                    self,
+                    hips::{HipGrab, HipView},
+                },
+            },
+            engine,
             foregrip::{self, GripGeometry, Inputs, Transition, TwoHandedWeapon},
             grenade,
             hold::{
@@ -35,6 +43,7 @@ use crate::{
                 actions::{self, SocketGrab, SocketRefusal},
                 carry,
                 decide::{self, ReleasedAt, SecondRelease},
+                sockets::SocketId,
             },
             regions::{self, Carry, CarryCause, GunRegion},
             reload,
@@ -193,22 +202,55 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                     None => regions::cancel_draw(hand),
                 }
                 let wielded = weapon.map(|(w, _)| w.wielded);
-                let independent =
-                    config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
-                let second_weapon = holster::Second {
-                    enabled: config.weapons.hold.either_hand && config.weapons.hold.second_weapon,
-                    held: second::hand().zip(second::slot()),
+                // A hip with single pistols is the hip of the pistol that sits there.
+                let hip = match site {
+                    HolsterSite::Hip(side) if single::hips_single() => {
+                        Some(single_hip_grab(side, hand, weapon.map(|(w, _)| w), &config))
+                    }
+                    _ => None,
                 };
-                match holster::decide(
-                    site,
-                    hand,
-                    config.acting_hand(),
-                    wielded,
-                    independent,
-                    second_weapon,
-                ) {
-                    Some(action) => act(action, hand, &config, desired),
-                    None => continue,
+                match hip {
+                    Some(HipGrab::Socket(socket)) => {
+                        match grab_socket(hand, socket, weapon.map(|(w, _)| w), &config) {
+                            Some(outcome) => outcome,
+                            None => continue,
+                        }
+                    }
+                    Some(HipGrab::Nothing) => continue,
+                    Some(HipGrab::Rehome) => {
+                        let (Some(w), HolsterSite::Hip(side)) = (weapon.map(|(w, _)| w), site)
+                        else {
+                            continue;
+                        };
+                        // SAFETY: the wielded weapon was read this tick, on the main thread outside
+                        // the world update.
+                        unsafe { single::rehome(w.address, side) };
+                        let holster = HolsterAction::Holster {
+                            slot: WeaponSlot::E_SLOT_DUAL_WIELD,
+                        };
+                        act(holster, hand, &config, desired)
+                    }
+                    Some(HipGrab::Slot) | None => {
+                        let independent = hip.is_none()
+                            && config.weapons.dual_wield.split
+                            && config.weapons.dual_wield.independent_draw;
+                        let second_weapon = holster::Second {
+                            enabled: config.weapons.hold.either_hand
+                                && config.weapons.hold.second_weapon,
+                            held: second::hand().zip(second::slot()),
+                        };
+                        match holster::decide(
+                            site,
+                            hand,
+                            config.acting_hand(),
+                            wielded,
+                            independent,
+                            second_weapon,
+                        ) {
+                            Some(action) => act(action, hand, &config, desired),
+                            None => continue,
+                        }
+                    }
                 }
             }
             GrabVolume::Handle => {
@@ -250,30 +292,9 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 GrabOutcome::Take { taken }
             }
             GrabVolume::Socket(socket) => {
-                let grab = SocketGrab {
-                    hand,
-                    socket,
-                    wielded: weapon.map(|(w, _)| (w.address, w.wielded.hands)),
-                    second: STATE
-                        .lock()
-                        .second
-                        .and_then(|w| Some((w.address, w.holder?))),
-                    second_allowed: config.weapons.hold.either_hand
-                        && config.weapons.hold.second_weapon,
-                    snap_s: config.weapons.hold.snap_s,
-                    independent_pistols: config.weapons.dual_wield.split
-                        && config.weapons.dual_wield.independent_draw,
-                };
-                // SAFETY: the input tick runs on the main thread outside the world update.
-                match unsafe { actions::grab(&grab) } {
-                    Ok(_) => GrabOutcome::Socket { done: true },
-                    // A grip press at a free socket with nothing to put there does nothing.
-                    Err(SocketRefusal::Empty) => continue,
-                    Err(refusal) => {
-                        tracing::debug!(target: "controllers", %refusal, "inventory: the socket grab did nothing");
-                        hold::refused(refusal);
-                        GrabOutcome::Socket { done: false }
-                    }
+                match grab_socket(hand, socket, weapon.map(|(w, _)| w), &config) {
+                    Some(outcome) => outcome,
+                    None => continue,
                 }
             }
             // The other subsystems' grabs: the bindings hand the weapon handling only its own.
@@ -303,7 +324,15 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let released = hold::act::release_tick(holder, grips.map(ButtonControl::held))
         .filter(|_| config.weapons.hold.grip_to_hold && gameplay);
     if let (Some(hand), Some((w, _))) = (released, weapon) {
-        let at_own = |site| holster::site_slot(site, config.acting_hand()) == w.wielded.slot;
+        let single_pistol = single::is(w.address);
+        let at_own = |site| match site {
+            // A single pistol goes back to its own hip, or to a free one, which becomes its own.
+            HolsterSite::Hip(side) if single_pistol => {
+                single::slot_home() == Some(side)
+                    || !carry::taken().contains(&single::hips::hip_socket(side))
+            }
+            _ => holster::site_slot(site, config.acting_hand()) == w.wielded.slot,
+        };
         // A free socket that fits takes the gun, or its own holster does, whichever is nearer.
         let dock = docked_at(hand, |v| match v {
             GrabVolume::Socket(socket) => carry::on_socket(socket).is_none(),
@@ -324,7 +353,16 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             _ => false,
         };
         let at_own_holster = matches!(dock, Some(GrabVolume::Holster(_)));
-        let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD;
+        if let Some(GrabVolume::Holster(HolsterSite::Hip(side))) = dock
+            && single_pistol
+            && single::slot_home() != Some(side)
+        {
+            // SAFETY: the wielded weapon was read this tick, on the main thread outside the world
+            // update.
+            unsafe { single::rehome(w.address, side) };
+        }
+        // The game's pair cannot fall, since it is one weapon; a single pistol is a weapon alone.
+        let droppable = w.wielded.slot != WeaponSlot::E_SLOT_DUAL_WIELD || single_pistol;
         // A gun the other hand braces stays in that hand, carried where it holds it.
         let left_in_brace = !stowed
             && !at_own_holster
@@ -622,8 +660,9 @@ fn act(
     let independent = config.weapons.dual_wield.split && config.weapons.dual_wield.independent_draw;
     let settings = &config.weapons.hold;
     let pistols = docks_pistols(config);
+    let single_pistol = single::slot_single();
     match action {
-        HolsterAction::Draw { slot, .. } if docks_without_act(config, slot) => {
+        HolsterAction::Draw { slot, .. } if docks_without_act(config, slot, single_pistol) => {
             // SAFETY: the input tick runs on the main thread outside the world update.
             match unsafe { hold::act::draw(hand, slot, settings.snap_s) } {
                 Ok(()) => return GrabOutcome::Holster(action),
@@ -663,7 +702,7 @@ fn act(
                 }
             }
         }
-        HolsterAction::Holster { slot } if docks_without_act(config, slot) => {
+        HolsterAction::Holster { slot } if docks_without_act(config, slot, single_pistol) => {
             // SAFETY: the input tick runs on the main thread outside the world update.
             match unsafe { hold::act::holster(hand, settings.snap_s) } {
                 Ok(()) => return GrabOutcome::Holster(action),
@@ -674,7 +713,7 @@ fn act(
         }
         _ => {}
     }
-    act_with_game(action, hand, independent, desired)
+    act_with_game(action, hand, independent && !single_pistol, desired)
 }
 
 /// Whether the pistols are drawn and holstered without the game's acts, each sliding between its hip
@@ -686,11 +725,20 @@ pub(super) fn docks_pistols(config: &ControllersConfig) -> bool {
 }
 
 /// Whether `slot` is drawn and holstered without the game's act: the long guns with
-/// `hold.instant_dock`, and the pistols as [`docks_pistols`] says.
-pub(super) fn docks_without_act(config: &ControllersConfig, slot: WeaponSlot) -> bool {
+/// `hold.instant_dock`, the game's pair as [`docks_pistols`] says, and a single pistol
+/// (`single_pistol`, for the pistol slot) with `hold.pistol_dock`, as a weapon of one gun.
+pub(super) fn docks_without_act(
+    config: &ControllersConfig,
+    slot: WeaponSlot,
+    single_pistol: bool,
+) -> bool {
     let hold = config.weapons.hold;
     let long_guns = hold.either_hand && hold.instant_dock && hold::equip::handles(slot);
-    long_guns || (slot == WeaponSlot::E_SLOT_DUAL_WIELD && docks_pistols(config))
+    let pistols = match single_pistol {
+        true => hold.either_hand && hold.pistol_dock,
+        false => docks_pistols(config),
+    };
+    long_guns || (slot == WeaponSlot::E_SLOT_DUAL_WIELD && pistols)
 }
 
 /// Carry out `hand`'s holster decision through the game's own draw and holster.
@@ -758,7 +806,7 @@ fn release(hand: Hand, what: Release, wielded: holster::Wielded, config: &Contro
         }
         Release::Holster => {
             // SAFETY: the input tick runs on the main thread outside the world update.
-            let instant = docks_without_act(config, wielded.slot)
+            let instant = docks_without_act(config, wielded.slot, single::slot_single())
                 && unsafe { hold::act::holster(hand, settings.snap_s) }.is_ok();
             if !instant && let Some(owner) = unsafe { engine::local_player() } {
                 unsafe { engine::holster(owner) };
@@ -821,6 +869,62 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
     let status = tiers::status();
     status.state == Some(TierState::WeaponAction)
         && status.effective[gun_hand.index()] == HandTier::ActionRuns
+}
+
+/// What `hand`'s grab at the hip on `side` does while the pistols are single, with `weapon` in the
+/// hands.
+fn single_hip_grab(
+    side: Hand,
+    hand: Hand,
+    weapon: Option<engine::HeldWeapon>,
+    config: &ControllersConfig,
+) -> HipGrab {
+    let socket = single::hips::hip_socket(side);
+    let inventory = &config.weapons.inventory;
+    single::hips::hip_grab(HipView {
+        side,
+        slot_home: single::slot_home(),
+        socket: inventory.carry && inventory.layout(config.acting_hand()).has(socket),
+        socket_taken: carry::taken().contains(&socket),
+        holds_slot: weapon.is_some_and(|w| {
+            single::is(w.address)
+                && w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
+                && w.wielded.hands[hand.index()]
+        }),
+    })
+}
+
+/// Carry out `hand`'s grab of `socket`, with `weapon` in the hands. `None` for a grab that did
+/// nothing worth reporting: a free socket with nothing to put there.
+fn grab_socket(
+    hand: Hand,
+    socket: SocketId,
+    weapon: Option<engine::HeldWeapon>,
+    config: &ControllersConfig,
+) -> Option<GrabOutcome> {
+    let grab = SocketGrab {
+        hand,
+        socket,
+        wielded: weapon.map(|w| (w.address, w.wielded.hands)),
+        second: STATE
+            .lock()
+            .second
+            .and_then(|w| Some((w.address, w.holder?))),
+        second_allowed: config.weapons.hold.either_hand && config.weapons.hold.second_weapon,
+        snap_s: config.weapons.hold.snap_s,
+        independent_pistols: config.weapons.dual_wield.split
+            && config.weapons.dual_wield.independent_draw,
+    };
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    match unsafe { actions::grab(&grab) } {
+        Ok(_) => Some(GrabOutcome::Socket { done: true }),
+        Err(SocketRefusal::Empty) => None,
+        Err(refusal) => {
+            tracing::debug!(target: "controllers", %refusal, "inventory: the socket grab did nothing");
+            hold::refused(refusal);
+            Some(GrabOutcome::Socket { done: false })
+        }
+    }
 }
 
 /// Whether a grab's outcome is one the grab cue pulses: a draw, a holster, or a foregrip grab.

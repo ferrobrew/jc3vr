@@ -9,17 +9,25 @@
 //! tracked slot holds a weapon again, which is when the mission gives the slots back, or any
 //! weapon the player picks up in the meantime.
 //!
-//! The detour runs on whatever thread runs the graph script, so it only sets a flag.
+//! The pistol slot's weapon goes the same way: what it was (one pistol or the game's pair) is noted
+//! as the cache takes it, so the give-back restores it as it was
+//! ([`crate::controllers::weapons::dual_wield::single`]).
+//!
+//! The detour runs on whatever thread runs the graph script, so it only sets flags.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use detours_macro::detour;
-use jc3gi::{character::inventory::Inventory, graph_script::NodeWeaponCache};
+use jc3gi::{
+    character::inventory::{Inventory, WeaponSlot},
+    graph_script::NodeWeaponCache,
+};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     hands::ik,
     weapons::{
+        dual_wield::single,
         hold::second::{self, Source},
         inventory::carry,
     },
@@ -36,6 +44,11 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// The main thread, outside the world update.
 pub(super) unsafe fn input_tick(slots_filled: bool) {
+    match TOOK_PISTOL.swap(TOOK_NOTHING, Ordering::Relaxed) {
+        TOOK_PAIR => single::cover_mission(false),
+        TOOK_SINGLE => single::cover_mission(true),
+        _ => {}
+    }
     if STASH_ASKED.swap(false, Ordering::Relaxed) {
         if matches!(second::source(), Some(Source::Carried(_))) {
             unsafe { second::put_back(None) };
@@ -70,19 +83,39 @@ pub(super) unsafe fn input_tick(slots_filled: bool) {
 
 /// Set by the detour for the next input tick.
 static STASH_ASKED: AtomicBool = AtomicBool::new(false);
+/// What the pistol slot held when a mission took the slots' weapons, set by the detour for the
+/// next input tick: nothing, the game's pair, or a single pistol, which its give-back restores.
+static TOOK_PISTOL: AtomicU8 = AtomicU8::new(TOOK_NOTHING);
+const TOOK_NOTHING: u8 = 0;
+const TOOK_PAIR: u8 = 1;
+const TOOK_SINGLE: u8 = 2;
 /// Whether the slots have been seen empty since the carried weapons were stashed.
 static EMPTIED: AtomicBool = AtomicBool::new(false);
 
 #[detour(address = jc3gi::graph_script::NodeWeaponCache::CacheAllWeaponSlots_ADDRESS)]
 fn cache_all_weapon_slots(cache: *mut NodeWeaponCache, inventory: *mut Inventory, remove: bool) {
-    CACHE_ALL_WEAPON_SLOTS
-        .get()
-        .unwrap()
-        .call(cache, inventory, remove);
     let local = ik::local_character();
     // SAFETY: the cache is given a live inventory.
     let ours = unsafe { inventory.as_ref() }
         .is_some_and(|i| local != 0 && i.m_Character as usize == local);
+    // The pistol slot is read before the cache forces it out.
+    let pistol = unsafe { inventory.as_ref() }
+        .filter(|_| ours && remove)
+        .and_then(|i| i.m_Weapons.get(WeaponSlot::E_SLOT_DUAL_WIELD as usize))
+        .map(|slot| slot.px as usize)
+        .filter(|&object| object != 0);
+    CACHE_ALL_WEAPON_SLOTS
+        .get()
+        .unwrap()
+        .call(cache, inventory, remove);
+    if let Some(object) = pistol {
+        let took = if single::is(object) {
+            TOOK_SINGLE
+        } else {
+            TOOK_PAIR
+        };
+        TOOK_PISTOL.store(took, Ordering::Relaxed);
+    }
     if remove && ours && carry::count() > 0 {
         STASH_ASKED.store(true, Ordering::Relaxed);
     }

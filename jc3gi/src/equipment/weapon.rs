@@ -570,11 +570,15 @@ impl ModelAttachementWeaponComponent {
             f(self as *mut Self as _, enable)
         }
     }
-    /// Shows or hides the part's model.
-    pub unsafe fn SetVisible(&mut self, visible: bool, p2: bool) {
+    /// Shows or hides the part's model: hidden while the part is disabled
+    /// ([`m_Enabled`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Enabled)) or while the model of the part's gun
+    /// ([`m_WeaponDataIndex`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WeaponDataIndex)) is hidden, whatever `visible` asks.
+    /// It writes the part's model flags only when they differ. The barrel recoil and barrel
+    /// spin parts share it.
+    pub unsafe fn SetVisible(&mut self, visible: bool, fade: bool) {
         unsafe {
             let f = (&raw const (*self.vftable()).SetVisible).read();
-            f(self as *mut Self as _, visible, p2)
+            f(self as *mut Self as _, visible, fade)
         }
     }
 }
@@ -791,11 +795,15 @@ pub struct ModelAttachementWeaponComponentVftable {
     _vfunc_54: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
     ),
-    /// Shows or hides the part's model.
+    /// Shows or hides the part's model: hidden while the part is disabled
+    /// ([`m_Enabled`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_Enabled)) or while the model of the part's gun
+    /// ([`m_WeaponDataIndex`](crate::equipment::weapon::ModelAttachementWeaponComponent::m_WeaponDataIndex)) is hidden, whatever `visible` asks.
+    /// It writes the part's model flags only when they differ. The barrel recoil and barrel
+    /// spin parts share it.
     pub SetVisible: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::ModelAttachementWeaponComponent,
         visible: bool,
-        p2: bool,
+        fade: bool,
     ),
 }
 fn _ModelAttachementWeaponComponentVftable_size_check() {
@@ -1726,7 +1734,12 @@ pub struct WeaponBase {
     /// The index into [`m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData) of the gun that fires next, which
     /// [`GetFireFromPositionBase`](crate::equipment::weapon::WeaponBase::GetFireFromPositionBase) reads to pick the muzzle. The
     /// tail of [`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase) (`MarkNextWeaponComponentForFire`,
-    /// inlined in this build) advances it modulo the gun count after each shot.
+    /// inlined in this build) advances it modulo the gun count after each shot, except that a
+    /// weapon of the [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) slot in the
+    /// [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING) state is kept on the first gun, so a
+    /// dual-wield weapon wielded rather than dual-wielded fires its first gun alone. The
+    /// disassembler's `CWeaponBase::MarkNextWeaponComponentForFire` is another function, called
+    /// on a vehicle.
     pub m_NextWeaponToFire: u8,
     /// The index of the gun that fired last, recorded before
     /// [`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire) advances.
@@ -1987,6 +2000,100 @@ impl WeaponBase {
             f(self as *const Self as _)
         }
     }
+    pub const SetState_ADDRESS: usize = 0x1409818C0;
+    /// Sets the weapon's state ([`m_State`](crate::equipment::weapon::WeaponBase::m_State)) and moves its bodies into or out of
+    /// the physics world for it (`CWeaponBase::SetState`). It does nothing when the state is
+    /// unchanged. The bodies stay in the world ([`AddToWorld`](crate::equipment::weapon::WeaponBase::AddToWorld), waking them for
+    /// [`E_WS_DROPPED`](crate::equipment::weapon::WeaponState::E_WS_DROPPED)) for the dropped, mounted, and turret states,
+    /// unless `keep_out_of_world` is set or a turret becomes dropped; every other state takes
+    /// them out ([`RemoveFromWorld`](crate::equipment::weapon::WeaponBase::RemoveFromWorld)). Entering
+    /// [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) hides the weapon and
+    /// leaving it shows the weapon again ([`SetVisible`](crate::equipment::weapon::WeaponBase::SetVisible)); a weapon of a
+    /// non-player character with
+    /// [`DUAL_WIELDER_BLACKBOARD_VALUE`](crate::equipment::weapon::WeaponBase::DUAL_WIELDER_BLACKBOARD_VALUE) is also shown again
+    /// on entering the wielding, dual-wielding, holstered, vehicle, picking-up, or wingsuit state
+    /// from any state but dropped. Entering the rack state reads the
+    /// player's maximum stock of the weapon's ammunition into its stored ammunition. A
+    /// dual-wield-slot weapon entering [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING) has its next
+    /// gun reset to the first ([`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire)). The equip
+    /// ([`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip)), the pickup ([`OnPickup`](crate::equipment::weapon::WeaponBase::OnPickup)), the placement
+    /// rules, and the animation's weapon-state and predefined-bone state tasks call it; the
+    /// weapon-state task sets a state from its data on entry and restores the old one on exit.
+    pub unsafe fn SetState(
+        &mut self,
+        state: crate::equipment::weapon::WeaponState,
+        keep_out_of_world: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                state: crate::equipment::weapon::WeaponState,
+                keep_out_of_world: bool,
+            ) = ::std::mem::transmute(Self::SetState_ADDRESS);
+            f(self as *mut Self as _, state, keep_out_of_world)
+        }
+    }
+    pub const AddToWorld_ADDRESS: usize = 0x14095F960;
+    /// Puts the weapon's bodies into the physics world (`CWeaponBase::AddToWorld`, which the
+    /// disassembler names `CWeaponBase::RemoveFromWorld`): each gun's body through
+    /// [`WeaponData::AddToWorld`](crate::equipment::weapon::WeaponData::AddToWorld), except that a weapon of the
+    /// [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) slot puts only its first gun's body in
+    /// and takes the others' out, so a dual-wield weapon in the world is one body.
+    /// [`SetState`](crate::equipment::weapon::WeaponBase::SetState) and the drop virtual ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) call it.
+    pub unsafe fn AddToWorld(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::AddToWorld_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const RemoveFromWorld_ADDRESS: usize = 0x14095FA20;
+    /// Takes every gun's body out of the physics world
+    /// ([`PfxRigidBody::RemoveFromWorld`](crate::physics::PfxRigidBody::RemoveFromWorld)) without
+    /// destroying it (`CWeaponBase::RemoveFromWorld`, which the disassembler names
+    /// `CWeaponBase::AddToWorld`). [`SetState`](crate::equipment::weapon::WeaponBase::SetState), the pickup
+    /// ([`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart), [`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem), and
+    /// [`OnPickup`](crate::equipment::weapon::WeaponBase::OnPickup)), the unequip, the drop, and the despawn call it.
+    pub unsafe fn RemoveFromWorld(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RemoveFromWorld_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetVisibleBase_ADDRESS: usize = 0x140985140;
+    /// The base implementation of the [`SetVisible`](crate::equipment::weapon::WeaponBase::SetVisible) virtual. It shows or hides
+    /// each gun's model ([`WeaponData::m_BaseModelInstance`](crate::equipment::weapon::WeaponData::m_BaseModelInstance), through its
+    /// [`m_Flags`](crate::graphics_engine::model_instance::ModelInstance::m_Flags)), writing only a gun
+    /// whose visibility differs, and then calls every component's
+    /// [`SetVisible`](crate::equipment::weapon::WeaponComponentBase::SetVisible) with the weapon-wide value; a model part
+    /// follows its own gun's model, so the parts of a hidden gun stay hidden. Guns past the first
+    /// are hidden even when showing:
+    ///
+    /// - for a dual-wield-slot weapon in [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING);
+    /// - for a dual-wield-slot weapon of a non-player character without
+    ///   [`DUAL_WIELDER_BLACKBOARD_VALUE`](crate::equipment::weapon::WeaponBase::DUAL_WIELDER_BLACKBOARD_VALUE);
+    /// - for any weapon of a non-player character with that value while it is
+    ///   [`E_WS_HOLSTERED`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED).
+    ///
+    /// A player's dual-wield weapon holstered or dual-wielded therefore shows both guns. A weapon
+    /// in [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) is shown only with
+    /// `force`. Showing with `fade` restarts each shown gun's fade from transparent; showing
+    /// without it makes the gun opaque at once. Nothing re-applies the rule between calls, so a
+    /// weapon whose state changes keeps the guns' visibility from its last call.
+    pub unsafe fn SetVisibleBase(&mut self, visible: bool, fade: bool, force: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                visible: bool,
+                fade: bool,
+                force: bool,
+            ) = ::std::mem::transmute(Self::SetVisibleBase_ADDRESS);
+            f(self as *mut Self as _, visible, fade, force)
+        }
+    }
     pub const SetMagazineAmmoBase_ADDRESS: usize = 0x14096E520;
     /// The base implementation of the [`SetMagazineAmmo`](crate::equipment::weapon::WeaponBase::SetMagazineAmmo) virtual.
     pub unsafe fn SetMagazineAmmoBase(&mut self, ammo: i32) {
@@ -2179,7 +2286,8 @@ impl WeaponBase {
     /// ammunition, resets the fire timers, applies recoil, scatter, and heat, plays the fire effect
     /// on `weapon_data`, decrements the forced-fire and projectile-offset counts, and then advances
     /// the fire-point cursor of the gun at [`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire) and the
-    /// gun index itself.
+    /// gun index itself (held on the first gun for a dual-wield-slot weapon in the wielding
+    /// state).
     pub unsafe fn Fire_ProjectileBase(
         &mut self,
         weapon_data: *mut crate::equipment::weapon::WeaponData,
@@ -2632,7 +2740,10 @@ impl WeaponBase {
     /// equip, selects its slot, starts using it (the user becomes `character`), puts the
     /// locally controlled character's avatar into
     /// [`E_COMBAT`](crate::character::avatar::MentalState::E_COMBAT) and shows the weapon on the HUD, and
-    /// sets the wielding state, or dual-wielding for the dual-wield slot of a player. It plays
+    /// sets the wielding state ([`SetState`](crate::equipment::weapon::WeaponBase::SetState)), or dual-wielding for the
+    /// dual-wield slot of a player or of a character whose blackboard holds
+    /// [`DUAL_WIELDER_BLACKBOARD_VALUE`](crate::equipment::weapon::WeaponBase::DUAL_WIELDER_BLACKBOARD_VALUE). Any other
+    /// character wields the dual-wield slot, firing and showing its first gun alone. It plays
     /// no act: the draw animation comes from the character's draw, not from here. It does
     /// nothing for a dead character. The inventory's add calls it with the equipping mode.
     pub unsafe fn OnEquip(
@@ -2875,7 +2986,9 @@ impl WeaponBase {
     /// guns' models in. A weapon in the
     /// [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) state is shown only
     /// with `force`. Hiding takes effect at once. A hand grenade picked up hides itself this
-    /// way before it despawns, and a placement rule hides a weapon it places invisible.
+    /// way before it despawns, and a placement rule hides a weapon it places invisible. The
+    /// base implementation is [`SetVisibleBase`](crate::equipment::weapon::WeaponBase::SetVisibleBase), which every weapon
+    /// class keeps.
     pub unsafe fn SetVisible(&mut self, visible: bool, fade: bool, force: bool) {
         unsafe {
             let f = (&raw const (*self.vftable()).SetVisible).read();
@@ -2903,6 +3016,11 @@ impl WeaponBase {
     }
 }
 impl WeaponBase {
+    /// The character blackboard value whose presence lets a non-player character dual-wield the
+    /// [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) slot: [`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip)
+    /// then sets the dual-wielding state, and [`SetVisibleBase`](crate::equipment::weapon::WeaponBase::SetVisibleBase) and
+    /// [`SetState`](crate::equipment::weapon::WeaponBase::SetState) treat the character's weapons as a dual-wielder's.
+    pub const DUAL_WIELDER_BLACKBOARD_VALUE: u32 = 604052363;
     /// The offset of the embedded `CGameObject` subobject, which the `CGameObject` overrides
     /// ([`GetTransform`](crate::equipment::weapon::WeaponBase::GetTransform), [`UpdateRender`](crate::equipment::weapon::WeaponBase::UpdateRender)) receive as
     /// their `game_object` in place of the weapon.
@@ -3055,7 +3173,10 @@ pub struct WeaponBaseVftable {
     /// equip, selects its slot, starts using it (the user becomes `character`), puts the
     /// locally controlled character's avatar into
     /// [`E_COMBAT`](crate::character::avatar::MentalState::E_COMBAT) and shows the weapon on the HUD, and
-    /// sets the wielding state, or dual-wielding for the dual-wield slot of a player. It plays
+    /// sets the wielding state ([`SetState`](crate::equipment::weapon::WeaponBase::SetState)), or dual-wielding for the
+    /// dual-wield slot of a player or of a character whose blackboard holds
+    /// [`DUAL_WIELDER_BLACKBOARD_VALUE`](crate::equipment::weapon::WeaponBase::DUAL_WIELDER_BLACKBOARD_VALUE). Any other
+    /// character wields the dual-wield slot, firing and showing its first gun alone. It plays
     /// no act: the draw animation comes from the character's draw, not from here. It does
     /// nothing for a dead character. The inventory's add calls it with the equipping mode.
     pub OnEquip: unsafe extern "system" fn(
@@ -3261,7 +3382,9 @@ pub struct WeaponBaseVftable {
     /// guns' models in. A weapon in the
     /// [`E_WS_HOLSTERED_INVISIBLE`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED_INVISIBLE) state is shown only
     /// with `force`. Hiding takes effect at once. A hand grenade picked up hides itself this
-    /// way before it despawns, and a placement rule hides a weapon it places invisible.
+    /// way before it despawns, and a placement rule hides a weapon it places invisible. The
+    /// base implementation is [`SetVisibleBase`](crate::equipment::weapon::WeaponBase::SetVisibleBase), which every weapon
+    /// class keeps.
     pub SetVisible: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
         visible: bool,
@@ -3380,11 +3503,15 @@ impl WeaponComponentBase {
             f(self as *mut Self as _, enable)
         }
     }
-    /// Shows or hides the component's models.
-    pub unsafe fn SetVisible(&mut self, visible: bool, p2: bool) {
+    /// Shows or hides the component's models. The model part's override
+    /// ([`ModelAttachementWeaponComponent::SetVisible`](crate::equipment::weapon::ModelAttachementWeaponComponent::SetVisible)) shows its part only while the part is
+    /// enabled and its own gun's model ([`WeaponData::m_BaseModelInstance`](crate::equipment::weapon::WeaponData::m_BaseModelInstance)) is shown, so a
+    /// part hidden this way stays hidden until the next call after its gun is shown again.
+    /// `fade` fades a shown part in, as for the weapon's guns.
+    pub unsafe fn SetVisible(&mut self, visible: bool, fade: bool) {
         unsafe {
             let f = (&raw const (*self.vftable()).SetVisible).read();
-            f(self as *mut Self as _, visible, p2)
+            f(self as *mut Self as _, visible, fade)
         }
     }
 }
@@ -3575,11 +3702,15 @@ pub struct WeaponComponentBaseVftable {
     _vfunc_54: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponComponentBase,
     ),
-    /// Shows or hides the component's models.
+    /// Shows or hides the component's models. The model part's override
+    /// ([`ModelAttachementWeaponComponent::SetVisible`](crate::equipment::weapon::ModelAttachementWeaponComponent::SetVisible)) shows its part only while the part is
+    /// enabled and its own gun's model ([`WeaponData::m_BaseModelInstance`](crate::equipment::weapon::WeaponData::m_BaseModelInstance)) is shown, so a
+    /// part hidden this way stays hidden until the next call after its gun is shown again.
+    /// `fade` fades a shown part in, as for the weapon's guns.
     pub SetVisible: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponComponentBase,
         visible: bool,
-        p2: bool,
+        fade: bool,
     ),
 }
 fn _WeaponComponentBaseVftable_size_check() {
@@ -3739,9 +3870,8 @@ impl WeaponData {
     /// sets its collision layer for the owning weapon's state, makes it dynamic, and places it at
     /// the gun's world matrix ([`m_WorldMatrixT1`](crate::equipment::weapon::WeaponData::m_WorldMatrixT1)), so the body's frame is
     /// the gun's model frame and its shape is in that frame. The weapon's own world addition
-    /// calls it for each gun but a dual-wielded weapon's second (`CWeaponBase::AddToWorld`, which
-    /// the disassembler names `CWeaponBase::RemoveFromWorld`; the disassembler's
-    /// `CWeaponBase::AddToWorld` is the removal).
+    /// ([`WeaponBase::AddToWorld`](crate::equipment::weapon::WeaponBase::AddToWorld)) calls it for each gun but the second and later guns of a
+    /// dual-wield-slot weapon.
     pub unsafe fn AddToWorld(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(

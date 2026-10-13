@@ -37,6 +37,12 @@ pub struct WeaponsConfig {
     /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
     /// own hand.
     pub dual_wield: DualWieldConfig,
+    /// Make the two pistols two weapons: the pair the game hands over becomes the slot's pistol
+    /// and a second one carried on the other hip, each picked up, held, dropped, reloaded, and
+    /// fired on its own, and a pistol taken from the world is one pistol. Needs the VR inventory
+    /// and its carrying; without them, or while the second pistol has not come, the pistols stay
+    /// the game's pair.
+    pub separate_pistols: bool,
     /// Which hand holds the weapon: the hand that drew it, picked it up, or was handed it.
     pub hold: HoldConfig,
     /// A long gun grabbed anywhere along it: held where the hand closed on it, braced there by a
@@ -96,6 +102,7 @@ impl WeaponsConfig {
             recoil: RecoilConfig::new(),
             heft: HeftConfig::new(),
             dual_wield: DualWieldConfig::new(),
+            separate_pistols: true,
             hold: HoldConfig::new(),
             regions: RegionsConfig::new(),
             reload: ReloadConfig::new(),

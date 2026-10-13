@@ -22,7 +22,19 @@
 //! tag_hash = 5678
 //! magazine = 12
 //! socket = "back_first"
+//!
+//! [[carried]]
+//! tag_hash = 9012
+//! magazine = 7
+//! socket = "hip_left"
+//! single = true
 //! ```
+//!
+//! With the pistols made separate, `slot_pistol_single = true` says the pistol slot's weapon is one
+//! pistol rather than the game's pair, so that a load brings it back as one pistol instead of
+//! splitting it again, and `single = true` says the same of a carried pistol. A file without them
+//! (written before the pistols were separate) leaves the slot's pistol to be split as a pair the
+//! game handed over, and its carried pistols pairs.
 
 use std::fmt;
 
@@ -113,12 +125,15 @@ impl Fingerprint {
     }
 }
 
-/// One carried weapon: its type, its magazine, and its socket.
+/// One carried weapon: its type, its magazine, its socket, and whether it is a single pistol.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Record {
     pub tag_hash: u32,
     pub magazine: i32,
     pub socket: SocketId,
+    /// Whether the weapon is one pistol of the pistol slot rather than the game's pair
+    /// ([`crate::controllers::weapons::dual_wield::single`]).
+    pub single: bool,
 }
 
 /// A sidecar.
@@ -126,6 +141,8 @@ pub struct Record {
 pub struct Sidecar {
     pub fingerprint: Fingerprint,
     pub carried: Vec<Record>,
+    /// Whether the pistol slot's weapon is one pistol, when the file says.
+    pub slot_pistol_single: Option<bool>,
 }
 
 /// Why a sidecar could not be read.
@@ -172,8 +189,10 @@ impl Sidecar {
                     tag_hash: r.tag_hash,
                     magazine: r.magazine,
                     socket: r.socket.key().to_owned(),
+                    single: r.single,
                 })
                 .collect(),
+            slot_pistol_single: self.slot_pistol_single,
         };
         // The file's types are all plain numbers, strings, arrays, and tables, which serialize.
         toml::to_string(&file).unwrap_or_default()
@@ -197,6 +216,7 @@ impl Sidecar {
                         tag_hash: r.tag_hash,
                         magazine: r.magazine,
                         socket,
+                        single: r.single,
                     })
                     .ok_or(SidecarError::UnknownSocket(r.socket))
             })
@@ -217,6 +237,7 @@ impl Sidecar {
         Ok(Sidecar {
             fingerprint: Fingerprint { slots, reserves },
             carried,
+            slot_pistol_single: file.slot_pistol_single,
         })
     }
 
@@ -241,6 +262,8 @@ struct File {
     fingerprint: FileFingerprint,
     #[serde(default)]
     carried: Vec<FileRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    slot_pistol_single: Option<bool>,
 }
 
 /// The fingerprint as the file has it, its lengths checked on reading.
@@ -255,6 +278,14 @@ struct FileRecord {
     tag_hash: u32,
     magazine: i32,
     socket: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    single: bool,
+}
+
+/// Whether `value` is false, so a record of a weapon that is not a single pistol leaves the key
+/// out.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[cfg(test)]
@@ -279,13 +310,16 @@ mod tests {
                     tag_hash: 0x5555_6666,
                     magazine: 12,
                     socket: SocketId::BackFirst,
+                    single: false,
                 },
                 Record {
                     tag_hash: 0xFFFF_FFFF,
                     magazine: -1,
                     socket: SocketId::HipLeft,
+                    single: true,
                 },
             ],
+            slot_pistol_single: Some(true),
         }
     }
 
@@ -298,8 +332,17 @@ mod tests {
         let empty = Sidecar {
             fingerprint: fingerprint(),
             carried: Vec::new(),
+            slot_pistol_single: None,
         };
         assert_eq!(Sidecar::decode(&empty.encode()), Ok(empty));
+    }
+
+    #[test]
+    fn a_file_from_before_separate_pistols_says_nothing_of_the_slot_s_pistol() {
+        let text = sidecar().encode();
+        assert!(text.contains("slot_pistol_single = true"));
+        let older = text.replace("slot_pistol_single = true\n", "");
+        assert_eq!(Sidecar::decode(&older).unwrap().slot_pistol_single, None);
     }
 
     #[test]

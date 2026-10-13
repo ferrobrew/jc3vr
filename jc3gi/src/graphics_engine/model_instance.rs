@@ -65,8 +65,33 @@ impl std::convert::AsMut<ModelCollection> for ModelCollection {
 }
 #[repr(C, align(8))]
 /// A placed model instance (`NModelSystem::CModelInstance`): a shared model plus its render-block
-/// instance info and world transform. Opaque.
-pub struct ModelInstance {}
+/// instance info and world transform. Only some members are mapped.
+pub struct ModelInstance {
+    _field_0: [u8; 12],
+    /// The instance's status bits (`m_Flags`). The weapon's visibility virtual
+    /// ([`WeaponBase::SetVisible`](crate::equipment::weapon::WeaponBase::SetVisible)) and the model
+    /// parts' ([`WeaponComponentBase::SetVisible`](crate::equipment::weapon::WeaponComponentBase::SetVisible))
+    /// show an instance by setting [`VISIBLE`](crate::graphics_engine::model_instance::ModelInstanceFlags::VISIBLE) and
+    /// [`FLAG_ENABLED`](crate::graphics_engine::model_instance::ModelInstanceFlags::FLAG_ENABLED) and hide it by clearing both, writing
+    /// only when [`VISIBLE`](crate::graphics_engine::model_instance::ModelInstanceFlags::VISIBLE) differs from the wanted state. Adding the
+    /// instance to the world sets both, and removing it clears both.
+    pub m_Flags: crate::graphics_engine::model_instance::ModelInstanceFlags,
+    _field_10: [u8; 96],
+    /// A dirty bit for the instance's render info, set (atomically) whenever
+    /// [`m_FadeAlpha`](crate::graphics_engine::model_instance::ModelInstance::m_FadeAlpha) is written.
+    pub m_RenderInfoDirty: u32,
+    _field_74: [u8; 11],
+    /// The instance's fade alpha, 255 for fully shown. Showing without a fade sets it to 255 at
+    /// once; showing with a fade sets it to zero and starts the model instance manager's fade.
+    /// Hiding leaves it as it was.
+    pub m_FadeAlpha: u8,
+}
+fn _ModelInstance_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x80], ModelInstance>([0u8; 0x80]);
+    }
+    unreachable!()
+}
 impl ModelInstance {
     pub const AddToRender_ADDRESS: usize = 0x140319BD0;
     /// Builds the per-pass draw lists for this instance's render blocks. It fills an
@@ -244,6 +269,20 @@ impl std::convert::AsMut<ModelInstance> for ModelInstance {
     fn as_mut(&mut self) -> &mut ModelInstance {
         self
     }
+}
+crate::__bitflags! {
+    #[doc =
+    " A model instance's status bits (`NModelSystem::CModelInstance::EModelInstanceStatus`), stored"]
+    #[doc =
+    " in [`ModelInstance::m_Flags`](crate::graphics_engine::model_instance::ModelInstance::m_Flags). Only the bits the engine's show and hide touch are listed."]
+    pub struct ModelInstanceFlags : u32 { const FLAG_ENABLED = 1usize as _; const VISIBLE
+    = 16usize as _; }
+}
+fn _ModelInstanceFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], ModelInstanceFlags>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// The model instance manager (`CModelInstanceManager`). Opaque.

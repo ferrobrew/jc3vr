@@ -3,6 +3,7 @@
 use egui::Ui;
 
 use crate::controllers::weapons::{
+    dual_wield::single,
     holster::slot_label,
     inventory::{
         InventoryStatus, config::InventoryConfig, restore::RestoreStatus, sockets::SocketId,
@@ -56,14 +57,36 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         s.carried_replaced,
         s.with_others()
     ));
+    let p = single::status();
+    ui.label(format!(
+        "Single pistols: {} · active {} · slot's single {} (hip {}) · second pistol {:?} · split \
+         {} · arrived as one {} · taken as one {} · pairs kept {}",
+        p.singles,
+        super::yes_no(p.active),
+        super::yes_no(p.slot_single),
+        p.slot_home.map_or("none", |h| h.label()),
+        p.twin,
+        p.splits,
+        p.ones,
+        p.picked,
+        p.pairs
+    ));
+    if let Some(last) = &p.last {
+        ui.label(format!("Last: {last}"));
+    }
     for entry in &s.entries {
         ui.label(format!(
-            "#{} {} ({:#010x}) · {} · magazine {}{}",
+            "#{} {} ({:#010x}) · {} · magazine {}{}{}",
             entry.id.0,
             slot_label(entry.kind.slot),
             entry.kind.tag_hash,
             entry.location.label(),
             entry.magazine,
+            if single::is(entry.object) {
+                " · single pistol"
+            } else {
+                ""
+            },
             entry
                 .distance_m
                 .map_or(String::new(), |d| format!(" · {d:.1} m away"))

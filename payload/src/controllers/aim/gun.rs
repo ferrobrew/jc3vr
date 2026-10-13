@@ -45,7 +45,10 @@ use crate::{
         frame::Hand,
         hands::late,
         vehicles,
-        weapons::{dual_wield, hold},
+        weapons::{
+            dual_wield::{self, single},
+            hold,
+        },
     },
 };
 
@@ -195,6 +198,8 @@ fn update_from_user_post_sim(
     let Some(w) = (unsafe { weapon.as_mut() }) else {
         return original(aim_position, input);
     };
+    // A single pistol fires the gun it shows, whoever uses it.
+    single::pin(w);
     // Every character's weapons pass through here on the worker threads, so anything that is
     // neither the local player's nor the mounted gun the hands aim is ruled out before any lock.
     if !(w.m_IsUserLocalPlayer || vehicles::is_mounted_weapon(weapon as usize)) {
@@ -264,13 +269,19 @@ static SNAPSHOT: Mutex<Option<Snapshot>> = Mutex::new(None);
 static AIMED: AtomicU64 = AtomicU64::new(0);
 static KEPT: AtomicU64 = AtomicU64::new(0);
 
-/// The weapon's guns, in order.
+/// The weapon's guns, in order. A single pistol has one: its first, the only one it shows and
+/// fires ([`single`]).
 pub(crate) unsafe fn guns(weapon: &WeaponBase) -> impl Iterator<Item = Option<&WeaponData>> {
     let list = &weapon.m_lWeaponData;
     let count = if list.m_Begin.is_null() || list.m_End < list.m_Begin {
         0
     } else {
         unsafe { list.m_End.offset_from(list.m_Begin) as usize }
+    };
+    let count = if single::is(weapon as *const WeaponBase as usize) {
+        count.min(1)
+    } else {
+        count
     };
     (0..count).map(move |i| unsafe { (*list.m_Begin.add(i)).as_ref() })
 }

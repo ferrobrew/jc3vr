@@ -306,6 +306,10 @@ pub(super) fn weapons_section(page: Page) -> Page {
             .weapons
             .dual_wield
             .split))
+        .item(config_toggle!("SEPARATE PISTOLS", |c| c
+            .controllers
+            .weapons
+            .separate_pistols))
         .item(config_toggle!("HOLD WEAPONS IN EITHER HAND", |c| c
             .controllers
             .weapons

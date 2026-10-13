@@ -180,7 +180,11 @@ pub(crate) unsafe fn take(
         tracing::info!(target: "controllers", slot = slot_label(slot), "hold: carried the weapon the rack's copy replaces");
     }
     hold::begin(hand, Cause::Rack, None);
-    if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+    // A copy of a pistol is one pistol while pistols are single, and has no pair to draw from.
+    if options.independent_pistols
+        && slot == WeaponSlot::E_SLOT_DUAL_WIELD
+        && !dual_wield::single::active()
+    {
         dual_wield::attach::begin_draw(hand);
     }
     unsafe { weapon.PickupStart(pickup::activator(owner)) };
@@ -206,7 +210,8 @@ pub(crate) unsafe fn take(
 }
 
 /// A weapon the game wielded came into `hand` on a rack's grab: when a copy was asked for that
-/// hand, slide it in from where the rack's weapon was.
+/// hand, slide it in from where the rack's weapon was. A copy of a pistol is one pistol while
+/// pistols are single.
 pub(crate) fn arrived(weapon: usize, hand: Hand) {
     let mut copy = COPY.lock();
     let Some(pending) = copy
@@ -216,6 +221,10 @@ pub(crate) fn arrived(weapon: usize, hand: Hand) {
         return;
     };
     pending.arrived_at = Some(Instant::now());
+    // SAFETY: the weapon the game wields this input tick is live.
+    if let Some(copy) = unsafe { (weapon as *mut WeaponBase).as_mut() } {
+        unsafe { dual_wield::single::rack_copy_arrived(copy) };
+    }
     if let Some(from) = pending.from {
         act::slide_in(weapon, hand, from, pending.slide_s);
     }

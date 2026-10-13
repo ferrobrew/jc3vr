@@ -18,6 +18,11 @@
 //! A weapon on a rack is taken the same way, after the call that starts the game's own pickup of
 //! it ([`WeaponBase::PickupStart`]), which takes it out of the rack's state and tells the rack it
 //! was picked up; the pickup animation that would complete it is never queued.
+//!
+//! While pistols are single ([`crate::controllers::weapons::dual_wield::single`]), a pistol taken
+//! from the world is one pistol. With the slot's pistol already there and the other hand holding
+//! the wielded weapon, it is held beside it as the second weapon, carried on a free hip socket,
+//! rather than taking the slot.
 
 use std::fmt;
 
@@ -28,16 +33,19 @@ use jc3gi::{
     game::GameObject,
 };
 
-use crate::controllers::{
-    aim::gun,
-    frame::{Hand, Pose},
-    weapons::{
-        dual_wield,
-        engine::{self, slot_from_raw},
-        hold::{self, act, equip, holder::Cause},
-        holster::slot_label,
-        inventory,
-        regions::{self, CarryCause, WorldTouch},
+use crate::{
+    config::Config,
+    controllers::{
+        aim::gun,
+        frame::{Hand, Pose},
+        weapons::{
+            dual_wield::{self, single},
+            engine::{self, slot_from_raw},
+            hold::{self, act, equip, holder::Cause, second},
+            holster::slot_label,
+            inventory::{self, carry, engine as inventory_engine, sockets::Fit},
+            regions::{self, CarryCause, WorldTouch},
+        },
     },
 };
 
@@ -139,6 +147,17 @@ pub(crate) unsafe fn take(
     let slot = unsafe { takeable(owner, weapon) }?;
     let address = weapon as *mut WeaponBase as usize;
     let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
+    // While pistols are single, a pistol from the world is one pistol, and the slot's pistol
+    // stays where it is when this one can be held beside the wielded weapon.
+    let single = slot == WeaponSlot::E_SLOT_DUAL_WIELD && single::active();
+    if single && occupant != 0 && occupant != address && !from_rack {
+        match unsafe { take_beside(owner, hand, weapon) } {
+            Ok(()) => return Ok(slot),
+            Err(why) => {
+                tracing::debug!(target: "controllers", why, "hold: the pistol takes the slot instead");
+            }
+        }
+    }
     // The weapon the pickup replaces goes onto a free socket when there is one.
     let carried = occupant != 0
         && occupant != address
@@ -163,7 +182,8 @@ pub(crate) unsafe fn take(
             regions::engine::world_carry(weapon, hand, gun, &touch)
         });
     hold::begin(hand, options.cause, Some(address));
-    if options.independent_pistols && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+    let pair = slot == WeaponSlot::E_SLOT_DUAL_WIELD && !single;
+    if options.independent_pistols && pair {
         dual_wield::attach::begin_draw(hand);
     }
     let activator = activator(owner);
@@ -176,7 +196,7 @@ pub(crate) unsafe fn take(
     if !wielded {
         return Err(Refusal::NotWielded);
     }
-    if slot != WeaponSlot::E_SLOT_DUAL_WIELD {
+    if !pair {
         hold::adopt(address, hand);
     }
     if let Some(carry) = carry {
@@ -194,6 +214,58 @@ pub(crate) unsafe fn take(
         hand.label()
     );
     Ok(slot)
+}
+
+/// Take the single pistol `weapon`, lying in the world, into `hand` as the second weapon beside
+/// the weapon the other hand wields: it is carried on a free hip socket and drawn off it into the
+/// hand at once. Refused, touching nothing, when second weapons are off, the other hand does not
+/// hold the wielded weapon, a second weapon is already held, or no hip socket is free.
+///
+/// # Safety
+///
+/// As [`take`], with `weapon` lying in the world.
+unsafe fn take_beside(
+    owner: &mut Character,
+    hand: Hand,
+    weapon: &mut WeaponBase,
+) -> Result<(), &'static str> {
+    let (hold, inventory, dominant) = Config::lock_query(|c| {
+        (
+            c.controllers.weapons.hold,
+            c.controllers.weapons.inventory,
+            c.controllers.acting_hand(),
+        )
+    });
+    if !(hold.either_hand && hold.second_weapon) {
+        return Err("second weapons are off");
+    }
+    if second::hand().is_some() {
+        return Err("a second weapon is already held");
+    }
+    let other_wields = unsafe { engine::held_weapon(owner) }
+        .is_some_and(|w| w.wielded.hands[hand.other().index()] && !w.wielded.hands[hand.index()]);
+    if !other_wields {
+        return Err("the other hand does not hold the wielded weapon");
+    }
+    let socket = inventory
+        .layout(dominant)
+        .choose(Fit::Pistol, &carry::taken())
+        .ok_or("no hip socket is free")?;
+    let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or("the pistol is gone")?;
+    unsafe { single::designate(weapon, "a pistol taken from the world") };
+    let object = unsafe { carry::carry_loose(owner, strong, socket, inventory.offsets.of(socket)) }
+        .map_err(|_| "the pistol was not carried")?;
+    if let Err(refusal) = unsafe { second::take_carried(hand, object) } {
+        tracing::info!(target: "controllers", %refusal, "hold: the pistol stays on the hip");
+        return Ok(());
+    }
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        "hold: picked the pistol up into the {} hand beside the wielded weapon",
+        hand.label()
+    );
+    Ok(())
 }
 
 /// Whether `owner` can take `weapon` into a hand by a direct pickup, whatever its state: its slot

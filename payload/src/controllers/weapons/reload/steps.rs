@@ -12,6 +12,7 @@ use crate::controllers::{
     haptics::{self, Event},
     weapons::{
         self,
+        dual_wield::single,
         engine::HeldWeapon,
         foregrip::set_pump_slide,
         regions::{action_back, action_volume},
@@ -65,6 +66,7 @@ impl State {
         )?;
         let reserve = unsafe { engine::reserve(base) };
         let split = weapon.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
+            && !single::is(weapon.address)
             && reload.dual_split
             && config.weapons.dual_wield.split;
         // The gun as it is shown: turned onto the line between the hands by the two-handed pose

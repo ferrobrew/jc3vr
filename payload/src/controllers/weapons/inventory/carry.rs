@@ -54,6 +54,7 @@ use crate::controllers::{
     frame::Hand,
     hands::ik,
     weapons::{
+        dual_wield::single,
         hold::{refs::Strong, steal},
         holster::slot_label,
         inventory::{
@@ -340,6 +341,7 @@ pub(crate) fn records() -> Vec<Record> {
                 tag_hash: kind.tag_hash,
                 magazine: weapon.m_MagazineAmmo,
                 socket: c.socket,
+                single: single::is(c.object),
             })
         })
         .collect()
@@ -360,6 +362,38 @@ pub(crate) unsafe fn promote(
     if !unsafe { owner.m_Inventory.GetAnimationAllowsDrawing() } {
         return Err(CarryRefusal::AnimationForbids);
     }
+    unsafe { into_slot(owner, object, EquipMode::E_EQUIP) }
+}
+
+/// Move the carried weapon `object` into its empty slot without equipping it: it stays holstered
+/// on the body, and the HUD and the weapon wheel list it. Refused when the slot holds a weapon.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn promote_unequipped(
+    owner: &mut Character,
+    object: ObjectKey,
+) -> Result<(), CarryRefusal> {
+    // SAFETY: a carried weapon is kept alive by the set; one that is not is refused below.
+    let slot = contains(object)
+        .then(|| unsafe { inventory_engine::slot_of(&*(object as *const WeaponBase)) })
+        .flatten()
+        .ok_or(CarryRefusal::NotCarried)?;
+    if !owner.m_Inventory.m_Weapons[slot as usize].px.is_null() {
+        return Err(CarryRefusal::NotDone);
+    }
+    unsafe { into_slot(owner, object, EquipMode::E_DONT_EQUIP) }.map(|_| ())
+}
+
+/// Move the carried weapon `object` into its slot with `mode`, the slot's occupant coming into
+/// the set first: on the socket the weapon leaves, or, when both are single pistols, on the
+/// occupant's own hip ([`single::promote_socket`]).
+unsafe fn into_slot(
+    owner: &mut Character,
+    object: ObjectKey,
+    mode: EquipMode,
+) -> Result<Option<ObjectKey>, CarryRefusal> {
     let carried = take(object).ok_or(CarryRefusal::NotCarried)?;
     // SAFETY: the set's strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *carried.weapon() };
@@ -367,10 +401,22 @@ pub(crate) unsafe fn promote(
         push(carried);
         return Err(CarryRefusal::Unsupported);
     };
-    let occupant = if owner.m_Inventory.m_Weapons[slot as usize].px.is_null() {
+    let occupant_object = owner.m_Inventory.m_Weapons[slot as usize].px as ObjectKey;
+    let occupant = if occupant_object == 0 {
+        single::entered_slot(object, carried.socket);
         None
     } else {
-        match unsafe { carry_from_slot(owner, slot, carried.socket, carried.offset) } {
+        let taken = taken();
+        let socket = single::promote_socket(object, carried.socket, occupant_object, |s| {
+            !taken.contains(&s)
+        })
+        .unwrap_or(carried.socket);
+        let offset = if socket == carried.socket {
+            carried.offset
+        } else {
+            Vec3::ZERO
+        };
+        match unsafe { carry_from_slot(owner, slot, socket, offset) } {
             Ok(occupant) => Some(occupant),
             Err(refusal) => {
                 push(carried);
@@ -379,7 +425,7 @@ pub(crate) unsafe fn promote(
         }
     };
     let view = shared_view(&carried.strong);
-    unsafe { owner.m_Inventory.AddWeapon(&view, EquipMode::E_EQUIP) };
+    unsafe { owner.m_Inventory.AddWeapon(&view, mode) };
     let in_slot = owner.m_Inventory.m_Weapons[slot as usize].px as ObjectKey == object;
     if !in_slot {
         push(carried);

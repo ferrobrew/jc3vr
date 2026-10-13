@@ -314,7 +314,14 @@ pub(crate) unsafe fn carry_replaced(owner: &mut Character, slot: WeaponSlot) -> 
     let Some(fit) = (unsafe { fit_of_weapon(occupant) }) else {
         return false;
     };
-    let Some(socket) = settings.layout(dominant).choose(fit, &carry::taken()) else {
+    let layout = settings.layout(dominant);
+    let taken = carry::taken();
+    // The slot's single pistol stays on its own hip.
+    let home = dual_wield::single::slot_home()
+        .filter(|_| dual_wield::single::is(occupant as *const WeaponBase as usize))
+        .map(dual_wield::single::hips::hip_socket)
+        .filter(|&socket| layout.accepts(socket, fit) && !taken.contains(&socket));
+    let Some(socket) = home.or_else(|| layout.choose(fit, &taken)) else {
         tracing::info!(
             target: "controllers",
             slot = slot_label(slot),
@@ -365,7 +372,8 @@ unsafe fn draw(
     let from = unsafe { pickup::gun_pose(weapon) };
     let slot = unsafe { inventory_engine::slot_of(weapon) };
     hold::begin(hand, Cause::Draw, Some(object));
-    let pistols = slot == Some(WeaponSlot::E_SLOT_DUAL_WIELD);
+    // The game's pair has a pistol per hand; a single pistol is a weapon of one gun.
+    let pistols = slot == Some(WeaponSlot::E_SLOT_DUAL_WIELD) && !dual_wield::single::is(object);
     if pistols && grab.independent_pistols {
         dual_wield::attach::begin_draw(hand);
     }

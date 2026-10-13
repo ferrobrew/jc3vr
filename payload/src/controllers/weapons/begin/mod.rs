@@ -110,6 +110,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                     dominant: config.acting_hand(),
                     wielded: weapon.map(|w| (w.address, w.holder)),
                     driven: second.and_then(|w| Some((w.address, w.holder?))),
+                    separate_pistols: config.weapons.separate_pistols,
                 },
             );
             Ticked {
@@ -156,6 +157,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let dual_wield = weapon
         .filter(|w| {
             dual.split
+                && !dual_wield::single::is(w.address)
                 && w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
                 && w.wielded.hands.contains(&true)
         })

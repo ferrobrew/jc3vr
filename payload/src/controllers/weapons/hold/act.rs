@@ -24,7 +24,8 @@ use parking_lot::Mutex;
 use crate::controllers::{
     frame::{Hand, Pose},
     weapons::{
-        dual_wield, engine,
+        dual_wield::{self, single},
+        engine,
         hold::{
             self,
             dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
@@ -85,7 +86,8 @@ pub fn status() -> DockStatus {
 pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(), DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
     hold::begin(hand, Cause::Draw, None);
-    let pistols = slot == WeaponSlot::E_SLOT_DUAL_WIELD;
+    // The game's pair has a pistol per hand; a single pistol is a weapon of one gun.
+    let pistols = slot == WeaponSlot::E_SLOT_DUAL_WIELD && !single::slot_single();
     let gun = if pistols {
         // Only this hand's pistol comes out; the layout shows the other on its hip.
         dual_wield::attach::begin_draw(hand);
@@ -189,7 +191,11 @@ pub(crate) unsafe fn holster_pistol(hand: Hand, snap_s: f32) -> Result<(), DockR
 /// The main thread, outside the world update.
 pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
-    let gun = dual_wield::attach::gun_of(hand).unwrap_or(0);
+    let gun = if single::slot_single() {
+        0
+    } else {
+        dual_wield::attach::gun_of(hand).unwrap_or(0)
+    };
     let target = match unsafe { equip::holster_target(owner, gun) } {
         Ok(target) => target,
         Err(refusal) => {

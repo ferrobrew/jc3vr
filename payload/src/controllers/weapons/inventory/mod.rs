@@ -44,6 +44,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     frame::Hand,
     weapons::{
+        dual_wield::single,
         hold::{
             refs::{Strong, Weak},
             second,
@@ -133,6 +134,8 @@ pub(crate) struct TickInputs {
     pub wielded: Option<(ObjectKey, Option<Hand>)>,
     /// The weapon the mod drives in a hand, and that hand.
     pub driven: Option<(ObjectKey, Hand)>,
+    /// Whether the pistols are made separate ([`single`]).
+    pub separate_pistols: bool,
 }
 
 /// Fold one input tick into the registry and act on the pins.
@@ -152,6 +155,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             second::carry_released();
             unsafe { carry::drop_all() };
             restore::clear();
+            single::clear();
         }
         return;
     }
@@ -175,7 +179,16 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
     }
     let seen: Vec<_> = slots.into_iter().map(|(seen, _)| seen).collect();
     let offsets = inputs.settings.offsets;
-    carry::set_offsets(|socket| offsets.of(socket));
+    // A carried pistol sits in a hip holster the slot's pistol does not take.
+    let pistol = seen
+        .iter()
+        .find(|s| s.kind.slot == WeaponSlot::E_SLOT_DUAL_WIELD)
+        .map(|s| s.object);
+    let pair = pistol.is_some_and(|object| !single::is(object));
+    let home = single::slot_home().filter(|_| pistol.is_some_and(single::is));
+    carry::set_offsets(|socket| {
+        single::hips::hip_offset(socket, home, pair || !single::active(), offsets.of(socket))
+    });
     let carried = unsafe { carry::seen() };
     for (seen, _) in &carried {
         if !state.handles.iter().any(|h| h.object == seen.object) {
@@ -219,12 +232,45 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
     state.prune();
     state.status.entries = state.registry.entries().to_vec();
     state.status.stashed = carry::stashed();
+    let tracked: Vec<ObjectKey> = state.registry.entries().iter().map(|e| e.object).collect();
+    // The single pistols lying in the world are kept to their first gun too.
+    let world_singles: Vec<Strong> = state
+        .handles
+        .iter()
+        .filter(|h| single::is(h.object))
+        .filter(|h| {
+            state
+                .registry
+                .find(h.object)
+                .is_some_and(|e| matches!(e.location, Location::World { .. }))
+        })
+        .filter_map(|h| h.weak.lock())
+        .collect();
+    drop(state);
+    for strong in &world_singles {
+        // SAFETY: the strong reference keeps the weapon alive while it is written.
+        unsafe { single::hide_extra(&mut *engine::weapon_of(strong)) };
+    }
+    drop(world_singles);
+    unsafe {
+        single::input_tick(
+            owner,
+            &single::Tick {
+                separate: inputs.separate_pistols,
+                settings: &inputs.settings,
+                dominant: inputs.dominant,
+                tracked: &tracked,
+            },
+        )
+    };
 }
 
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
 /// since the reset removes the weapons in the world and replaces the slots' weapons.
 fn on_reset() {
-    restore::on_pre_reset(carry::records());
+    let slot_single = single::slot_single();
+    restore::on_pre_reset(carry::records(), slot_single);
+    single::on_reset(Some(slot_single));
     let mut state = STATE.lock();
     state.status.resets += 1;
     state.release_all("the spawn system reset");

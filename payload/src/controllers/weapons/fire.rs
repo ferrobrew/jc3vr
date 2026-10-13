@@ -95,7 +95,12 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
         return;
     }
     let Some(w) = unsafe { weapon.as_ref() }.filter(|w| acting && w.m_IsUserLocalPlayer) else {
-        return original();
+        original();
+        // The shot advanced the next gun; a single pistol's stays its first.
+        if let Some(w) = unsafe { weapon.as_mut() } {
+            dual_wield::single::pin(w);
+        }
+        return;
     };
     let shot = Shot {
         weapon: weapon as usize,
@@ -107,6 +112,9 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     let outer = SHOT.replace(Some(shot));
     original();
     let shot = SHOT.replace(outer).unwrap_or(shot);
+    if let Some(w) = unsafe { weapon.as_mut() } {
+        dual_wield::single::pin(w);
+    }
 
     let (Some(hand), Some(w)) = (shot.hand, unsafe { weapon.as_ref() }) else {
         return;

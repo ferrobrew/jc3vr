@@ -6,6 +6,7 @@ use smol_str::format_smolstr;
 use crate::controllers::{
     menu::{read_config, status::Line},
     weapons::{
+        dual_wield::single::{self, grant::TwinState},
         holster::slot_label,
         inventory::{
             self,
@@ -29,6 +30,42 @@ pub(super) fn tracked() -> Line {
         s.with_others(),
         s.resets
     ))
+}
+
+/// Whether the pistols are two weapons: the slot's pistol, the second pistol of the last pair, and
+/// the counts.
+pub(super) fn separate_pistols() -> Line {
+    if !read_config(|c| c.controllers.weapons.separate_pistols) {
+        return Line::off("");
+    }
+    let s = single::status();
+    if !s.active {
+        return Line::waiting("NEEDS TRACK WEAPONS AND CARRY EXTRA WEAPONS");
+    }
+    let counts = format_smolstr!(
+        "{} SINGLE, {} PAIRS SPLIT, {} TAKEN AS ONE",
+        s.singles,
+        s.splits,
+        s.picked + s.ones
+    );
+    let line = match (s.slot_single, s.twin) {
+        (true, _) => Line::ok(format_smolstr!(
+            "SLOT'S ON THE {} HIP, {counts}",
+            s.slot_home.map_or("right", |h| h.label()).to_uppercase()
+        )),
+        (false, TwinState::Pending { .. }) => {
+            Line::waiting(format_smolstr!("SECOND PISTOL COMING, {counts}"))
+        }
+        (false, TwinState::Pair { why, .. }) => Line::failed(format_smolstr!(
+            "PAIR KEPT: {}, {counts}",
+            why.label().to_uppercase()
+        )),
+        (false, _) => Line::ok(format_smolstr!("NO PISTOL IN THE SLOT, {counts}")),
+    };
+    match s.last {
+        Some(last) => line.with_note(last),
+        None => line,
+    }
 }
 
 pub(super) fn pinned() -> Line {

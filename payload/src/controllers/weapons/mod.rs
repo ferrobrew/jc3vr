@@ -106,6 +106,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(c4::hook_library())
         .with_hook_library(scope::hook_library())
         .with_hook_library(hold::hook_library())
+        .with_hook_library(dual_wield::single::hook_library())
         .with_hook_library(inventory::hook_library())
         .with_hook_library(empty::hook_library())
         .with_hook_library(heft::hook_library())
@@ -227,22 +228,27 @@ mod tests {
         let mut config = ControllersConfig::new();
         let pistols = WeaponSlot::E_SLOT_DUAL_WIELD;
         let rifle = WeaponSlot::E_SLOT_TWO_HANDED;
-        assert!(docks_without_act(&config, pistols));
-        assert!(docks_without_act(&config, rifle));
+        assert!(docks_without_act(&config, pistols, false));
+        assert!(docks_without_act(&config, rifle, false));
         config.weapons.dual_wield.independent_draw = false;
-        assert!(!docks_without_act(&config, pistols));
-        assert!(docks_without_act(&config, rifle));
+        assert!(!docks_without_act(&config, pistols, false));
+        assert!(docks_without_act(&config, rifle, false));
         config.weapons.dual_wield.independent_draw = true;
         config.weapons.hold.pistol_dock = false;
-        assert!(!docks_without_act(&config, pistols));
+        assert!(!docks_without_act(&config, pistols, false));
         config.weapons.hold.pistol_dock = true;
         config.weapons.hold.instant_dock = false;
         assert!(
-            docks_without_act(&config, pistols),
+            docks_without_act(&config, pistols, false),
             "the switches are separate"
         );
-        assert!(!docks_without_act(&config, rifle));
-        assert!(!docks_without_act(&config, WeaponSlot::E_SLOT_HEAVY));
+        assert!(!docks_without_act(&config, rifle, false));
+        assert!(!docks_without_act(&config, WeaponSlot::E_SLOT_HEAVY, false));
+        // A single pistol docks as a weapon of one gun, whatever the pair's own switches.
+        config.weapons.dual_wield.independent_draw = false;
+        assert!(docks_without_act(&config, pistols, true));
+        config.weapons.hold.pistol_dock = false;
+        assert!(!docks_without_act(&config, pistols, true));
     }
 
     #[test]

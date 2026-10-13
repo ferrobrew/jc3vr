@@ -59,6 +59,7 @@ use crate::controllers::{
     frame::Hand,
     hands::ik,
     weapons::{
+        dual_wield::single,
         engine::{self, HeldWeapon, slot_from_raw},
         heft::HeftClass,
         hold::{
@@ -423,7 +424,7 @@ pub(crate) unsafe fn show_magazine(owner: Option<&Character>, shown: bool) {
     let readout = owner.and_then(|owner| {
         let hand = hand()?;
         let weapon = unsafe { self::weapon(owner) }?;
-        let capacity = unsafe { weapon.GetMagazineSize() };
+        let capacity = unsafe { single::magazine_size(weapon) };
         Some((
             hand,
             weapon.m_MagazineAmmo,

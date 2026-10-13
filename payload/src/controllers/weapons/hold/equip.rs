@@ -32,7 +32,11 @@ use crate::controllers::{
     frame::{Hand, Pose},
     hands::{grip, pose as hand_pose},
     physical_hands,
-    weapons::{dual_wield, engine::slot_from_raw, hold::layout},
+    weapons::{
+        dual_wield::{self, single},
+        engine::slot_from_raw,
+        hold::layout,
+    },
 };
 
 /// Why a dock or a drop was not done.
@@ -244,7 +248,9 @@ pub(crate) unsafe fn drop_held(
     // The wielded weapon is live in the inventory until the slot is cleared below.
     let weapon = unsafe { wielded_mut(owner) }.ok_or(DockRefusal::NothingHeld)?;
     let slot = unsafe { slot_of(weapon) }.ok_or(DockRefusal::Unsupported)?;
-    if slot == WeaponSlot::E_SLOT_DUAL_WIELD {
+    // The game's pair is one weapon and cannot fall; a single pistol is a weapon alone.
+    let pair = !single::is(weapon as *mut WeaponBase as usize);
+    if slot == WeaponSlot::E_SLOT_DUAL_WIELD && pair {
         return Err(DockRefusal::Unsupported);
     }
     let first = unsafe { gun::guns(weapon) }.next().flatten();

@@ -36,7 +36,10 @@ use crate::{
         aim::gun,
         frame::{Hand, Pose},
         hands::{ik::TickTarget, late},
-        weapons::reload::{chamber::ActionKind, dual::Transfer, frames, gate, loose::EjectRounds},
+        weapons::{
+            dual_wield::single,
+            reload::{chamber::ActionKind, dual::Transfer, frames, gate, loose::EjectRounds},
+        },
     },
     hooks::character::acts::resolve_act_id,
 };
@@ -75,7 +78,7 @@ pub unsafe fn read(weapon: &WeaponBase) -> Reading {
     let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
     let reload_type = unsafe { (&raw const weapon.m_ReloadType).cast::<i32>().read() };
     let ammo_type = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
-    let capacity = unsafe { weapon.GetMagazineSize() };
+    let capacity = unsafe { single::magazine_size(weapon) };
     Reading {
         class,
         name_hash: weapon.m_WeaponNameHash,
@@ -190,7 +193,7 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
     };
-    let capacity = unsafe { weapon.GetMagazineSize() };
+    let capacity = unsafe { single::magazine_size(weapon) };
     let rounds = if capacity >= 0 {
         rounds.clamp(0, capacity)
     } else {
@@ -245,6 +248,10 @@ pub unsafe fn load_full(address: usize) -> bool {
         return false;
     };
     let loaded = unsafe { weapon.Reload() };
+    // The game's reload fills a single pistol to the pair's size; it holds half.
+    if let Some(user) = unsafe { user_mut(weapon) } {
+        unsafe { single::clamp_magazine(user, weapon) };
+    }
     weapon.m_KeepReloading = false;
     weapon.m_WeaponIsWithoutMagazine = false;
     unsafe { show_magazine(weapon) };
@@ -261,7 +268,7 @@ pub unsafe fn load_one(address: usize) -> bool {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return false;
     };
-    let capacity = unsafe { weapon.GetMagazineSize() };
+    let capacity = unsafe { single::magazine_size(weapon) };
     if weapon.m_MagazineAmmo >= capacity {
         return false;
     }

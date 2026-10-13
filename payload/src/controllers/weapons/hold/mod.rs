@@ -479,6 +479,7 @@ fn update_attachment_transforms(
         unsafe { apply(weapon, true) };
     }
     unsafe { second::apply_owned(inventory) };
+    unsafe { dual_wield::single::apply_home(inventory) };
     // The rigid grip pins the attach bones after the layouts above have chosen them.
     let placement = unsafe { grip::before_placement(inventory, character) };
     UPDATE_ATTACHMENT_TRANSFORMS
@@ -503,6 +504,7 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
         unsafe { apply(weapon, false) };
     }
     unsafe { second::apply_owned(inventory) };
+    unsafe { dual_wield::single::apply_home(inventory) };
     // No inventory ends the pass for the carried weapons.
     unsafe { inventory::carry::end_pass(inventory) };
     // The guns are placed for the pass, so another character's gun is where it is drawn.

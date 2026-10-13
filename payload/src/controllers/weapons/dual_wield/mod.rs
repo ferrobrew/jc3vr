@@ -50,6 +50,7 @@
 
 pub mod attach;
 pub mod draw;
+pub mod single;
 
 use std::time::{Duration, Instant};
 
@@ -349,6 +350,7 @@ pub(crate) unsafe fn before_update(
     input: &WeaponInputs,
 ) -> Option<WeaponInputs> {
     if !(weapon.m_IsUserLocalPlayer
+        && !single::is(weapon as *const WeaponBase as usize)
         && weapon.m_EquipSlot == WeaponSlot::E_SLOT_DUAL_WIELD
         && matches!(
             weapon.m_State,

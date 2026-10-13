@@ -216,6 +216,7 @@ const SECTIONS: &[Section] = &[
         rows: &[
             row!("TRACKED WEAPONS", inventory::tracked),
             row!("CARRIED", inventory::carried),
+            row!("SEPARATE PISTOLS", inventory::separate_pistols),
             row!("SAVE SIDECAR", inventory::sidecar),
             row!("LAST LOAD", inventory::last_load),
             row!("KEPT IN THE WORLD", inventory::pinned),
