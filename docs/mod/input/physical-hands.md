@@ -201,7 +201,7 @@ The collider view ([collider-view.md](collider-view.md), `physical_hands.collide
 
 - That the aim update runs on the input tick's thread. The readout's off-thread count says.
 - Whether holding the hand at the surface reads well with the render-time late update.
-- How the push feels against the roomscale chase when the player leans into a wall.
+- How the push feels against the chase ([rig.md](../body/rig.md)) when the player leans into a wall.
 - How the push up feels: whether the lift settles without bouncing at the default stiffness, whether the game keeps the player on foot while the pressing hand finds no static world under it, and whether a vault over a low wall carries on smoothly with the stick.
 - That the aim's ray filter hits loose props and dropped weapons at all, and their bodies' masses and inertias: the strength defaults are guesses.
 - That the simulation's gravity is the default `pickup.gravity_mps2`; a mismatch shows as a held object that sags or rises at rest.

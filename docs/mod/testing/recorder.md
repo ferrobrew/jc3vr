@@ -174,6 +174,9 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `c4.thrown`, `.stuck` | counter | Charges thrown or pressed on from the pouch, and those pressed onto a surface by hand. |
 | `grenade.pins_pulled`, `.thrown`, `.caught`, `.thrown_on` | counter | Grenade pins pulled, grenades thrown from the pouch, live grenades caught, and caught grenades thrown on. |
 | `locomotion.stick_speed_mps` | measure | The speed the stick drives the body at. |
+| `rig.gap_m` | measure | How far the ground point under the player's upright eyes is from the root, while a VR frame renders ([rig.md](../body/rig.md#readouts-and-signals)). |
+| `rig.residual_m` | measure | How far that point is outside the lean the chase leaves alone: what the chase still has to close. |
+| `rig.ledger_projected` | counter | Completed steps whose chase was credited by projection, because something stopped or deflected the root. |
 
 A signal is added in `payload/src/testing/signals.rs`, reading a published snapshot only, as the status page's rows do.
 
@@ -220,7 +223,7 @@ The tool's tests check that every script's recording reads back as written and t
 
 The game is not deterministic, so a replay reproduces the player's input, not the game's response to it. Physics, animation timing, AI, traffic, weather, time of day, and streaming differ between runs, and the game's frame rate decides when the sim ticks fall against the recorded frames. A scenario should check what the input makes happen (a grip took, a weapon is in a hand, a mantle completed, no warning fired) rather than exact positions, and a recording should start somewhere quiet. Other limits:
 
-- The state the mod keeps across frames is live, not recorded: the posture and its seated reference, the roomscale chase, the torso estimate, the body calibration, and the settings. A replay starts from whatever they are, so start it from the same posture and settings the recording was made with; the replay warns about the dominant hand and the world scale.
+- The state the mod keeps across frames is live, not recorded: the posture and its seated reference, the chase, the torso estimate, the body calibration, and the settings. A replay starts from whatever they are, so start it from the same posture and settings the recording was made with; the replay warns about the dominant hand and the world scale.
 - The semantic actions are the ones the bindings saw while recording. If the game takes the replay into another mode than the recording was in, the recorded mode set's actions are published, and the bindings of the mode the game is in see none.
 - The head is held at the last recorded located views between them, and is not interpolated, so a desktop rendering faster than the recording steps.
 - With a session running, the compositor shows the replayed view at the live head pose, so wearing the headset during a replay is uncomfortable.
