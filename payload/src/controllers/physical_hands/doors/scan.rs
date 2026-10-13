@@ -1,5 +1,6 @@
 //! The doors near the hands, offered by their handles whatever the reach's rays hit: every door of
-//! every vehicle near the player is a target at its handle ([`DoorBox::handle`]) for a palm within
+//! every vehicle near the player is a target at its handle ([`door_handle`]: the embedded table's,
+//! or the box guess for a door the table lacks) for a palm within
 //! [`DoorsConfig::handle_reach_m`] of it. A latched door is merged into its vehicle's body, so the
 //! grip that takes it needs that body, which proves the vehicle alive while the hand holds the
 //! latch: a short cast from the palm to the handle finds it. What each door near a palm was, and
@@ -16,6 +17,7 @@ use jc3gi::{
     physics::PhysicsGameObject,
     vehicle::vehicle::{DoorSlot, Vehicle},
 };
+use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::targets::{self, TargetSet},
@@ -25,8 +27,8 @@ use crate::controllers::{
         doors::{
             DoorTarget, DoorsConfig,
             engine::{self, DoorRead},
-            geometry::DoorKind,
-            slot_label,
+            geometry::{DoorKind, door_handle},
+            slot_label, table,
         },
         grab_view::model::{HandleOutcome, HandleSeen},
         grasp::{Reach, TargetKind},
@@ -102,7 +104,9 @@ pub(crate) unsafe fn handle_reach(
     let mut best: Option<Reach> = None;
     for &vehicle in vehicles {
         let origin = unsafe { engine::vehicle_frame(vehicle) }.w_axis.truncate();
-        for door in unsafe { engine::doors(vehicle) } {
+        let doors = unsafe { engine::doors(vehicle) };
+        unsafe { log_sources(vehicle, &doors) };
+        for door in doors {
             let what = format!(
                 "vehicle {:#x} {} door{}",
                 vehicle.get(),
@@ -113,7 +117,8 @@ pub(crate) unsafe fn handle_reach(
                 note(notes, format!("{what}: no model box to find its handle on"));
                 continue;
             };
-            let Some(handle) = door_box.handle(kind_of(door.slot)) else {
+            let entry = door.part_hash.and_then(table::lookup);
+            let Some(handle) = door_handle(&door_box, kind_of(door.slot), entry) else {
                 note(
                     notes,
                     format!("{what}: its box has no faces to find its handle on"),
@@ -153,13 +158,9 @@ pub(crate) unsafe fn handle_reach(
             note(
                 notes,
                 format!(
-                    "{what}: handle {:.0} mm away, in reach (hinge {})",
+                    "{what}: handle {:.0} mm away, in reach (handle from {})",
                     mm(distance),
-                    if handle.hinge_from_pivot {
-                        "from the pivot"
-                    } else {
-                        "from the door's kind"
-                    }
+                    handle.source.label()
                 ),
             );
             let reach = Reach {
@@ -205,6 +206,54 @@ fn note(notes: &mut Vec<String>, note: String) {
     if notes.len() < MAX_NOTES {
         notes.push(note);
     }
+}
+
+/// Log, once per vehicle model, where each of `vehicle`'s doors takes its handle from: the
+/// embedded table or the door's box. A model is known by the smallest of its door parts' name
+/// hashes, which every vehicle of the model shares.
+///
+/// # Safety
+///
+/// `vehicle` must be a live vehicle.
+unsafe fn log_sources(vehicle: NonZeroUsize, doors: &[DoorRead]) {
+    static LOGGED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+    let Some(key) = doors.iter().filter_map(|d| d.part_hash).min() else {
+        return;
+    };
+    {
+        let mut logged = LOGGED.lock();
+        if logged.contains(&key) {
+            return;
+        }
+        logged.push(key);
+    }
+    let mut model = None;
+    let sources: Vec<String> = doors
+        .iter()
+        .map(|door| {
+            let entry = door.part_hash.and_then(table::lookup);
+            let name = entry
+                .map(|e| e.part.clone())
+                .or_else(|| unsafe { engine::part_name(vehicle, door.part_index) })
+                .unwrap_or_else(|| format!("the {} door", slot_label(door.slot)));
+            if model.is_none() {
+                model = entry
+                    .map(|e| e.vehicle.clone())
+                    .or_else(|| name.split('_').next().map(str::to_owned));
+            }
+            let source = door
+                .door_box
+                .and_then(|b| door_handle(&b, kind_of(door.slot), entry))
+                .map_or("nowhere (no model box)", |h| h.source.label());
+            format!("{name} from {source}")
+        })
+        .collect();
+    tracing::info!(
+        target: "controllers",
+        model = model.as_deref().unwrap_or("unknown"),
+        "physical hands: doors: door handles: {}",
+        sources.join(", ")
+    );
 }
 
 /// How a door in `slot` opens, for finding its hinge.

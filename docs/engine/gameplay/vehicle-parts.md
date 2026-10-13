@@ -8,7 +8,9 @@ Each vehicle entity embeds a `<model>_vehicle_parts.vmodc`, an ADF `VehicleParts
 
 Part names follow `<model>_<piece>`. A part's damage type is chosen for the damage it takes, not for what it is, so it does not identify a part: some steering wheels use `Land_Generic` or `Boat_Body`, and the mirrors of the modern mini and the old moped use `Land_Steering_Wheel`. The name does.
 
-A part's mesh is authored in the part's own space, whose origin is the pivot the parent space offset places. Most parts have an identity offset under the body, so their meshes are authored in the vehicle's space (+X right, +Y up, -Z forward, the driver on -X in a car). A hinged part's offset is its hinge pivot.
+A part's mesh is authored in the part's own space, whose origin is the pivot the parent space offset places. Most parts have an identity offset under the body, so their meshes are authored in the vehicle's space (+X right, +Y up, -Z forward, the driver on -X in a car). A hinged part that the engine turns, such as a handlebar, has its hinge pivot as its offset. The doors, hoods, and trunks do not: their offsets are the identity too, and the hinge they hang from once loose is their constraint from the physics prototype, whose point is also among the vehicle's deform points.
+
+Each vehicle entity also embeds a `<model>_vehicle_deform.vmodc`, an ADF `DeformPoints` resource of named transforms in the vehicle's space, each with the part it comes from and the part it is skinned to, and a type. Among them are the seats the interaction graph's nodes name ([vehicle-doors.md](vehicle-doors.md#the-interaction-graph-in-the-entity)), each loose part's constraint (type `Constraint`, named after the part's `..._CON` node), lights, and stunt-area corners. The vehicle moves them with its deformation. The parts resource's `door_parts` lists the door parts, and each door part's behaviour (`FrontLeftDoor`, `Hood`, `Trunk`, and so on) matches the name of a door slot; that the door controller fills its slots by behaviour is unverified.
 
 ## The live parts
 

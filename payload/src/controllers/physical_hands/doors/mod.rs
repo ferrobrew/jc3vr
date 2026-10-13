@@ -6,7 +6,8 @@
 //! `docs/mod/input/vehicle-doors.md`, the engine side in `docs/engine/gameplay/vehicle-doors.md`.
 //!
 //! - [`config`]: the settings;
-//! - [`geometry`]: a door's box, its handle area, and the pull on its latch, pure;
+//! - [`geometry`]: a door's box, its handle area, its handle, and the pull on its latch, pure;
+//! - [`table`]: the door handle table derived offline from the game's files;
 //! - [`engine`]: a vehicle's doors as its door controller keeps them, and the latch;
 //! - [`scan`]: the doors near the hands, offered by their handles whatever the reach's rays hit.
 //!
@@ -22,6 +23,7 @@ pub mod config;
 pub mod engine;
 pub mod geometry;
 pub(crate) mod scan;
+pub mod table;
 
 use std::num::NonZeroUsize;
 

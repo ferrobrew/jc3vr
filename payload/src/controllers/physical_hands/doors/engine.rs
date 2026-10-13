@@ -14,7 +14,7 @@
 //!
 //! Every function here runs on the game thread outside the physics step.
 
-use std::{fmt, num::NonZeroUsize, ptr};
+use std::{ffi::CStr, fmt, num::NonZeroUsize, ptr};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -68,6 +68,9 @@ pub struct DoorRead {
     pub door_box: Option<DoorBox>,
     /// The door's own body and its owner, while it hangs on its hinge.
     pub body: Option<(NonZeroUsize, u32)>,
+    /// The door part's name hash, from its entry in the vehicle's parts resource; `None` for a
+    /// part without one.
+    pub part_hash: Option<u32>,
 }
 
 /// The vehicle a ray hit on `object` belongs to: the vehicle itself, or the vehicle a loosened
@@ -122,6 +125,7 @@ pub(crate) unsafe fn doors(vehicle: NonZeroUsize) -> Vec<DoorRead> {
                 latched: !part.IsConstraintActive(),
                 door_box: door_box(world, part),
                 body: loose_body(part),
+                part_hash: part.m_PartProperties.as_ref().map(|p| p.m_name.m_hash),
             });
         })
     };
@@ -214,6 +218,29 @@ pub(crate) unsafe fn open_angle(vehicle: NonZeroUsize, part_index: u32) -> f32 {
     };
     let angle = unsafe { pfx.GetHingeAngleAboveMin(index) };
     if angle.is_finite() { angle.abs() } else { 0.0 }
+}
+
+/// The name of the door part at part index `part_index` of `vehicle`, from the vehicle's parts
+/// resource; `None` for a part without one.
+///
+/// # Safety
+///
+/// `vehicle` must be a live vehicle.
+pub(crate) unsafe fn part_name(vehicle: NonZeroUsize, part_index: u32) -> Option<String> {
+    let vehicle = unsafe { &mut *(vehicle.get() as *mut Vehicle) };
+    let pfx = unsafe { vehicle.m_PfxVehicle.as_mut() }?;
+    let part = unsafe { pfx.GetPartByIndex(part_index).as_ref() }?;
+    let properties = unsafe { part.m_PartProperties.as_ref() }?;
+    let name = properties.m_name.m_string;
+    if name.is_null() {
+        return None;
+    }
+    // SAFETY: the resource's NUL-terminated name, resolved when the resource was loaded.
+    Some(
+        unsafe { CStr::from_ptr(name.cast()) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// The most doors a vehicle's door map is walked for, against a corrupt tree.

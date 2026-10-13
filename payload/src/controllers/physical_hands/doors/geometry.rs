@@ -1,21 +1,23 @@
 //! A vehicle door's shape, pure: where its box is, whether a palm reaches it and its handle area,
 //! where its handle is, which way is out, and how far a gripping hand has pulled it out.
 //!
-//! A door is a part of the vehicle whose mesh is authored in its own space, whose origin is taken
-//! to be its hinge pivot (`docs/engine/gameplay/vehicle-parts.md`). Its box is the model's box in
-//! that space, carried into the world by the part's root-space transform and the vehicle's world
-//! transform. The handle area is the part of the box away from the hinge: a point's distance from
-//! the pivot, as a share of the way from the box's nearest point to the pivot to its farthest
-//! corner.
+//! A door is a part of the vehicle whose mesh is authored in its own space
+//! (`docs/engine/gameplay/vehicle-parts.md`). Its box is the model's box in that space, carried into
+//! the world by the part's root-space transform and the vehicle's world transform. The handle area
+//! is the part of the box away from the part's origin: a point's distance from the origin, as a
+//! share of the way from the box's nearest point to the origin to its farthest corner.
 //!
-//! The handle itself ([`DoorBox::handle`]) is found from the box alone, so that it does not rest on
-//! the pivot being the part's origin: the hinge runs along one edge of the box, and the handle is
-//! on the outer face at the opposite edge, halfway along it (at mid-height for a side door). Which
-//! edge is the hinge's is read from the pivot when the pivot lies near one, and otherwise from the
-//! kind of door: a side door hinges at its front, a hood at its back, and a trunk or a rear door at
-//! its top.
+//! The handle itself ([`door_handle`]) comes from the embedded table when the door part is in it
+//! ([`crate::controllers::physical_hands::doors::table`]), placed offline from the game's entry
+//! clips and door meshes, and otherwise from the box alone ([`DoorBox::handle`]): the hinge runs
+//! along one edge of the box, and the handle is on the outer face at the opposite edge, halfway
+//! along it (at mid-height for a side door). Which edge is the hinge's is read from the part's
+//! origin when it lies near one, and otherwise from the kind of door: a side door hinges at its
+//! front, a hood at its back, and a trunk or a rear door at its top.
 
 use glam::{Mat4, Vec3};
+
+use crate::controllers::physical_hands::doors::table::{HandleGrade, TableEntry};
 
 /// A door's box in the world.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -135,7 +137,22 @@ impl DoorBox {
         (point.is_finite() && normal != Vec3::ZERO).then_some(Handle {
             point,
             normal,
-            hinge_from_pivot: pivot <= PIVOT_NEAR_END || pivot >= 1.0 - PIVOT_NEAR_END,
+            source: HandleSource::Box {
+                hinge_from_pivot: pivot <= PIVOT_NEAR_END || pivot >= 1.0 - PIVOT_NEAR_END,
+            },
+        })
+    }
+
+    /// The handle a table entry places at `local` with the outer face's normal `normal`, both in
+    /// the door's own space, carried into the world. `None` for a point or normal that does not
+    /// carry.
+    pub fn handle_at(&self, local: Vec3, normal: Vec3, grade: HandleGrade) -> Option<Handle> {
+        let point = self.to_world.transform_point3(local);
+        let normal = self.to_world.transform_vector3(normal).normalize_or_zero();
+        (point.is_finite() && normal != Vec3::ZERO).then_some(Handle {
+            point,
+            normal,
+            source: HandleSource::Table(grade),
         })
     }
 
@@ -202,6 +219,18 @@ pub enum DoorKind {
     Rear,
 }
 
+/// A door's handle: the table's entry for the door when there is one, and the box guess for the
+/// door of `kind` otherwise.
+pub fn door_handle(
+    door_box: &DoorBox,
+    kind: DoorKind,
+    entry: Option<&TableEntry>,
+) -> Option<Handle> {
+    entry
+        .and_then(|e| door_box.handle_at(e.handle_m, e.normal, e.grade))
+        .or_else(|| door_box.handle(kind))
+}
+
 /// A door's handle.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Handle {
@@ -209,8 +238,35 @@ pub struct Handle {
     pub point: Vec3,
     /// The outer face's normal, world space.
     pub normal: Vec3,
-    /// Whether the hinge's edge was read from the part's pivot, rather than from the door's kind.
-    pub hinge_from_pivot: bool,
+    /// Where the handle came from.
+    pub source: HandleSource,
+}
+
+/// Where a door's handle came from.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum HandleSource {
+    /// The embedded table, with the tool's grade for the entry.
+    Table(HandleGrade),
+    /// The door's box ([`DoorBox::handle`]); `hinge_from_pivot` is whether the hinge's edge was
+    /// read from the part's origin, rather than from the door's kind.
+    Box { hinge_from_pivot: bool },
+}
+
+impl HandleSource {
+    /// The source as the log and the grip notes say it.
+    pub fn label(self) -> &'static str {
+        match self {
+            HandleSource::Table(HandleGrade::Clip) => "the table (clip)",
+            HandleSource::Table(HandleGrade::ClipDoubtful) => "the table (doubtful clip)",
+            HandleSource::Table(HandleGrade::Hinge) => "the table (box and constraint)",
+            HandleSource::Box {
+                hinge_from_pivot: true,
+            } => "its box (hinge from the pivot)",
+            HandleSource::Box {
+                hinge_from_pivot: false,
+            } => "its box (hinge from the door's kind)",
+        }
+    }
 }
 
 /// The share of the door's run within which the pivot counts as at one end, where the hinge is.
@@ -311,7 +367,12 @@ mod tests {
     fn a_side_doors_handle_is_on_its_outer_face_across_from_the_hinge_at_mid_height() {
         // The left door above: hinged at its front (its own origin, the pivot), running back.
         let handle = left_door().handle(DoorKind::Side).unwrap();
-        assert!(handle.hinge_from_pivot);
+        assert_eq!(
+            handle.source,
+            HandleSource::Box {
+                hinge_from_pivot: true
+            }
+        );
         assert!(
             handle.point.abs_diff_eq(Vec3::new(-0.95, 1.0, 0.1), 1e-5),
             "{handle:?}"
@@ -332,7 +393,12 @@ mod tests {
         )
         .unwrap();
         let handle = door.handle(DoorKind::Side).unwrap();
-        assert!(!handle.hinge_from_pivot);
+        assert_eq!(
+            handle.source,
+            HandleSource::Box {
+                hinge_from_pivot: false
+            }
+        );
         assert!(
             handle.point.abs_diff_eq(Vec3::new(-0.95, 1.0, 0.1), 1e-5),
             "{handle:?}"
@@ -379,6 +445,56 @@ mod tests {
             handle.normal.z > 0.9,
             "its outer face looks back: {handle:?}"
         );
+    }
+
+    fn table_entry(handle_m: Vec3, normal: Vec3) -> TableEntry {
+        TableEntry {
+            vehicle: "testcar".into(),
+            part: "testcar_door_f_l".into(),
+            part_hash: 1,
+            handle_m,
+            normal,
+            grade: HandleGrade::Clip,
+        }
+    }
+
+    #[test]
+    fn a_door_in_the_table_takes_its_entrys_handle_carried_by_the_vehicle() {
+        let vehicle = Mat4::from_rotation_translation(
+            Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            Vec3::new(10.0, 0.0, 5.0),
+        );
+        // A door part with an identity root-space transform, its mesh in the vehicle's space.
+        let door = DoorBox::new(
+            vehicle,
+            Mat4::IDENTITY,
+            Vec3::new(-1.0, 0.3, -0.9),
+            Vec3::new(-0.7, 1.5, 0.5),
+        )
+        .unwrap();
+        let entry = table_entry(Vec3::new(-0.93, 0.99, 0.37), Vec3::NEG_X);
+        let handle = door_handle(&door, DoorKind::Side, Some(&entry)).unwrap();
+        assert_eq!(handle.source, HandleSource::Table(HandleGrade::Clip));
+        assert!(
+            handle
+                .point
+                .abs_diff_eq(vehicle.transform_point3(entry.handle_m), 1e-5),
+            "{handle:?}"
+        );
+        // The vehicle's left faces +Z once it has turned a quarter about +Y.
+        assert!(handle.normal.abs_diff_eq(Vec3::Z, 1e-5), "{handle:?}");
+    }
+
+    #[test]
+    fn a_door_missing_from_the_table_falls_back_to_its_box() {
+        let door = left_door();
+        let fallback = door_handle(&door, DoorKind::Side, None).unwrap();
+        assert_eq!(Some(fallback), door.handle(DoorKind::Side));
+        assert!(matches!(fallback.source, HandleSource::Box { .. }));
+        // An entry that does not carry into the world falls back too.
+        let broken = table_entry(Vec3::NAN, Vec3::NEG_X);
+        let handle = door_handle(&door, DoorKind::Side, Some(&broken)).unwrap();
+        assert!(matches!(handle.source, HandleSource::Box { .. }));
     }
 
     #[test]
