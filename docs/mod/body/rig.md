@@ -1,6 +1,6 @@
 # The body rig
 
-The rig decides who moves Rico's root on each simulation tick, walks the root after the player's head in the standing posture, and leaves a lean over the feet alone. The camera stays on the player's real head throughout: the root follows the head, never the other way round. The code is in `payload/src/controllers/body/rig/`, and the settings are `controllers.body.rig`. The torso's heading still comes from the torso estimate ([alignment.md](alignment.md)), and the legs from the procedural body ([procedural-body.md](procedural-body.md)).
+The rig decides who moves Rico's root on each simulation tick, walks the root after the player's head in the standing posture, leaves a lean over the feet alone, and holds the view at a wall the root cannot pass. The camera stays on the player's real head throughout: the root follows the head, never the other way round. The code is in `payload/src/controllers/body/rig/`, and the settings are `controllers.body.rig`. The torso's heading still comes from the torso estimate ([alignment.md](alignment.md)), and the legs from the procedural body ([procedural-body.md](procedural-body.md)).
 
 ## Who moves the root
 
@@ -16,7 +16,7 @@ Several systems want the root: the game's own states, the hand climbing, the ani
 
 On every tick the task wrote the velocity, the hook first replaces the clip's velocity with the stick's ([locomotion.md](locomotion.md)) and adds the palms' push off what they press into; together these are the task's movement. While the player owns the root, the chase velocity is added to it through the character's world-space accessors ([`Character::GetWantedWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-GetWantedWorldVelocity) and [`Character::SetWantedWorldVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-SetWantedWorldVelocity)), because the proxy's own wanted velocity is character-local. Nothing scales or caps the sum but a sanity bound of 12 m/s, applied to both parts alike. The stick and the chase are independent: the stick moves the root and the camera together, so it never changes how far the root is from the head, and the chase does not yield to it. A player walking in the room while pushing the stick moves at the sum of the two.
 
-The same hook steps the head-through-geometry probe and requests or releases the crouch capsule ([controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)).
+The same hook steps the head-through-geometry probe (below) and requests or releases the crouch capsule ([controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)).
 
 ## The chase
 
@@ -60,6 +60,26 @@ The ledger (`rig::root::ledger`) keeps the split. Each tick the player owns the 
 
 Attribution errors cannot separate the body from the head. An under-credit leaves the camera moved by the uncredited part, and an over-credit leaves it behind by the excess; either way the next tick measures the gap from the head as it now is, so the root still converges on it. An error is a small mismatch between the camera and the real head, never a body left behind. A tick some other owner moved the root on records nothing, so a climb's motion is never credited as chase.
 
+## Walls
+
+The view stays with the real head, so a player who walks or leans into a wall would see through it while the root stands at the wall. Two things answer it: the push-back holds the view at the wall, and the fades darken a view that goes past it.
+
+The push-back (`rig::root::pushback`) runs in the frame half after the gap is measured. The ledger keeps the requested and credited chase distances of its last two steps; when less than half of what they asked for was credited, and the gap outside the lean is over `pushback.min_gap_m` (5 cm), the player's chase is obstructed. A wall the root slides along at a shallow angle leaves most of the chase credited, so it is no obstruction. The view may then go only a threshold past the root:
+
+| Owner | Threshold |
+| --- | --- |
+| Player, obstructed | `pushback.obstructed_m`, 0.10 m |
+| Player, unobstructed | none: the chase owns the gap |
+| Authored | `pushback.authored_m`, 0.30 m, which only catches a runaway gap while the chase is suspended |
+| Climb and Seated | `pushback.reach_m`, 0.45 m, about an arm's-length lean |
+| Game | none |
+
+The part of the gap beyond the threshold is taken out of the cockpit by sliding the cockpit shift back along the gap, on both sides of the pose pair so the view does not interpolate across it, and the view holds rigidly at the obstruction. It is a translation of the room against the world, never a rotation. The slide is capped per episode at `pushback.debt_cap_m` (0.30 m). With the cap spent, the push-back fade rises over `pushback.fade_span_m` past the threshold, black 0.15 m past it. The episode ends once the gap has stayed under half the threshold for `pushback.reset_s` (0.2 s), measured against the tight threshold while none is in force, so a slide that flickers in and out of obstruction does not start a fresh episode each time. The slide an episode applied stays: the room has slid against the world, and the camera stays that far from the real head until a recenter. A teleport or a recenter ends the episode. With `pushback.enabled` off, nothing slides and the fade answers the gap past the threshold at once.
+
+The obstruction needs two steps of the ledger to show, so a head walking into a wall at a metre a second goes up to about seven centimetres past the threshold before the view is pulled back to it in one frame.
+
+The head-through-geometry probe (`rig::collision::probe`) catches what the push-back cannot: a head pushed into geometry the root is nowhere near, such as a low beam or a wall the player leans into from a stand. On each tick the player's on-foot task runs, it casts from the last position the head held in the open to where it is now, and from the animated head, which the capsule keeps in the open, so a head the body has carried round the obstruction counts as clear again. A single ray through the eye centre lets the side of the head through a corner or a door frame, so the pair is cast three times, through the eye centre and 8 cm to either side across the view, and the deepest hit counts. The fan stands in for a swept sphere until the game's sphere cast is reverse-engineered. Its depth drives the head fade ([controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)).
+
 ## Teleports and seat exits
 
 A teleport (a camera reset, or a single-tick jump of the root further than the body's speed explains, `chase.warp_min_m` at rest; [controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)) clears the ledger and restarts the head's velocity, and in the standing posture re-bases the shift so the head sits over the root, with no interpolation from the previous shift.
@@ -71,23 +91,23 @@ On the first frame out of a vehicle seat after an exit, a head within a metre of
 The posture is `Auto`, `Seated`, or `Standing` (`controllers.roomscale.posture`). `Auto` is seated or standing by the head's height above the floor ([controllers.md, "Posture and roomscale"](../input/controllers.md#posture-and-roomscale)). The play area's size decides nothing: with no deadzone and the feed-forward, a player standing still produces sub-centimetre root motion, which the shift absorbs. A settings file from an earlier build that saved `Roomscale` loads as `Standing`.
 
 - `Standing`: the true floor height, physical crouching, the crouch capsule, and the player owning the root.
-- `Seated`: the seated eye reference and the crouch toggle ([controllers.md](../input/controllers.md#posture-and-roomscale)); the root moves only by the stick, and the lean still places the feet.
+- `Seated`: the seated eye reference and the crouch toggle ([controllers.md](../input/controllers.md#posture-and-roomscale)); the root moves only by the stick, the lean still places the feet, and the push-back holds a lean at an arm's length.
 
 ## Recentering
 
-On foot in the standing posture with the chase on, the manual recenters (F7, the debug UI's and the pause menu's buttons, the stick click chord, and the recenter on resuming gameplay) re-base the yaw and the height only: the chase keeps the position, so a position re-base is never needed, and one could put the body through a wall the chase could not cross. The yaw re-base turns the shift with the cockpit frame, so the root stays where it is in the room. Seated, in a seat, with the chase off (nothing else brings the body back under the head), or without a recent frame, they re-base fully, which makes the head the cockpit origin and clears the shift. Any recenter clears the ledger and restarts the head's velocity.
+On foot in the standing posture with the chase on, the manual recenters (F7, the debug UI's and the pause menu's buttons, the stick click chord, and the recenter on resuming gameplay) re-base the yaw and the height only: the chase keeps the position, so a position re-base is never needed, and one could put the body through a wall the chase could not cross. The yaw re-base turns the shift with the cockpit frame, so the root stays where it is in the room. Seated, in a seat, with the chase off (nothing else brings the body back under the head), or without a recent frame, they re-base fully, which makes the head the cockpit origin and clears the shift. Any recenter clears the ledger, restarts the head's velocity, and ends a push-back episode.
 
 ## Settings
 
-The pause menu's `VR: COMFORT` page has `POSTURE` (`AUTO`, `SEATED`, or `STANDING`), `BODY FOLLOWS YOU` (`chase.enabled`, on), and `LEAN WITHOUT STEPPING` (`lean.enabled`, on). The debug UI's settings have the rest under "Body rig": the chase's gain, feed-forward, speed limit, and warp distance, and the lean's gain, deadband, cap, and shares.
+The pause menu's `VR: COMFORT` page has `POSTURE` (`AUTO`, `SEATED`, or `STANDING`), `BODY FOLLOWS YOU` (`chase.enabled`, on), `LEAN WITHOUT STEPPING` (`lean.enabled`, on), and `STOP AT WALLS` (`pushback.enabled`, on; off leaves only the fade). The debug UI's settings have the rest under "Body rig": the chase's gain, feed-forward, speed limit, and warp distance, the lean's gain, deadband, cap, and shares, and the push-back's thresholds, cap, fade span, and calm time.
 
 ## Readouts and signals
 
-The Controllers tab's "Body rig" section shows the root's owner and whether the on-foot tick runs; the gap to the target, the part outside the lean, and the target in the cockpit frame; the effective gap, the chase, the task, and the head's velocities; the lean, its allowance, the pivot's drop and the standing height, and the torso heading; the feet and the cockpit shift; and the ledger's exact and projected counts, with the re-bases at teleports and seat exits.
+The Controllers tab's "Body rig" section shows the root's owner and whether the on-foot tick runs; the gap to the target, the part outside the lean, and the target in the cockpit frame; the effective gap, the chase, the task, and the head's velocities; the lean, its allowance, the pivot's drop and the standing height, and the torso heading; the feet and the cockpit shift; the push-back's threshold, whether the chase is obstructed, the frame's push, the episode's slide, the episode count, and the fade; and the ledger's exact and projected counts, with the re-bases at teleports and seat exits.
 
-The scenario signals ([recorder.md](../testing/recorder.md)) are `rig.gap_m` (the gap before the lean), `rig.residual_m` (the part outside it), and `rig.ledger_projected` (steps credited by projection). On a flat floor, a replayed walk should keep `rig.residual_m` below 5 cm and `rig.ledger_projected` flat.
+The scenario signals ([recorder.md](../testing/recorder.md)) are `rig.gap_m` (the gap before the lean), `rig.residual_m` (the part outside it), `rig.ledger_projected` (steps credited by projection), `rig.pushback_m` (the episode's slide), `rig.obstructed`, and `rig.pushbacks` (episodes). On a flat floor, a replayed walk should keep `rig.residual_m` below 5 cm and `rig.ledger_projected` flat; a walk into a wall should count at least one push-back.
 
-The pure parts run in a kinematic world in the unit tests (`rig::harness`): a root stepped at 30 Hz that integrates the composed velocity, optional wall planes, a frame half at 90 Hz, and the pose pair interpolated by the time since the last tick. They hold that a minimum-jerk walk of a metre peaking at 1.4 m/s keeps the gap under 3 cm and settles under 5 mm 0.3 s after stopping; that a hundred metres of random walking keeps the camera within a millimetre of the real head with nothing credited by projection; that the stick and the room add; that two or three ticks to a frame never overshoot; that a 0.3 m lean with a 0.12 m pivot drop, drop first, moves the root under 2 cm and standing up closes the gap; and that a climb clears the ledger.
+The pure parts run in a kinematic world in the unit tests (`rig::harness`): a root stepped at 30 Hz that integrates the composed velocity, optional wall planes, a frame half at 90 Hz, and the pose pair interpolated by the time since the last tick. They hold that a minimum-jerk walk of a metre peaking at 1.4 m/s keeps the gap under 3 cm and settles under 5 mm 0.3 s after stopping; that a hundred metres of random walking keeps the camera within a millimetre of the real head with nothing credited by projection; that the stick and the room add; that two or three ticks to a frame never overshoot; that a 0.3 m lean with a 0.12 m pivot drop, drop first, moves the root under 2 cm and standing up closes the gap; that a climb clears the ledger; that walking into a wall holds the view at the threshold until the cap is spent and fades only past it; that backing away clears the fade, ends the episode, and keeps the slide; and that sliding along a wall pushes nothing more.
 
 ## Unverified
 
@@ -99,4 +119,6 @@ None of this has been run in the headset.
 - Root motion of millimetres at rest may wake the animation graph's idle and move selection or the AI's perception.
 - The root turns through the orientation executor while the chase moves it; the procedural body's planted feet have to absorb both.
 - A gap of more than a metre at a seat exit under the `Ride` transition jumps the view with no fade.
+- Stairs, door frames, slopes, and small props may read as obstructed and push the view back. The obstruction's half-credited rule and the 10 cm threshold need tuning on stairs.
+- After many push-back episodes the room may have slid far from where the player stands; whether a recenter should be suggested is open.
 - The gap measure assumes the steady view: with `STEADY VIEW ON FOOT` off, the anchor is the animated head, which sits a little off the root, and the chase holds the root that far from under the eyes.

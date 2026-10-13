@@ -177,6 +177,9 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `rig.gap_m` | measure | How far the ground point under the player's upright eyes is from the root, while a VR frame renders ([rig.md](../body/rig.md#readouts-and-signals)). |
 | `rig.residual_m` | measure | How far that point is outside the lean the chase leaves alone: what the chase still has to close. |
 | `rig.ledger_projected` | counter | Completed steps whose chase was credited by projection, because something stopped or deflected the root. |
+| `rig.pushback_m` | measure | How far the push-back has slid the view back in its current episode ([rig.md](../body/rig.md#walls)). |
+| `rig.obstructed` | flag | The ledger finds the player's chase obstructed: something stops the body. |
+| `rig.pushbacks` | counter | Push-back episodes: times the view started being held at a wall. |
 
 A signal is added in `payload/src/testing/signals.rs`, reading a published snapshot only, as the status page's rows do.
 
