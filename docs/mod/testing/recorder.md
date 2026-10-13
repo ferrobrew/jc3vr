@@ -180,6 +180,8 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `rig.pushback_m` | measure | How far the push-back has slid the view back in its current episode ([rig.md](../body/rig.md#walls)). |
 | `rig.obstructed` | flag | The ledger finds the player's chase obstructed: something stops the body. |
 | `rig.pushbacks` | counter | Push-back episodes: times the view started being held at a wall. |
+| `legs.moving` | flag | The procedural body's feet walk rather than step standing ([rig.md](../body/rig.md#the-legs)). |
+| `legs.touchdown_lead_m` | measure | How far ahead of its hip the last walking foot landed, while the procedural body poses the legs. |
 
 A signal is added in `payload/src/testing/signals.rs`, reading a published snapshot only, as the status page's rows do.
 
