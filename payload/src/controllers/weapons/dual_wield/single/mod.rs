@@ -73,7 +73,7 @@ use crate::{
                 engine as inventory_engine,
                 registry::ObjectKey,
                 restore,
-                sockets::{Fit, Layout, SocketId},
+                sockets::{Fit, Layout, SocketId, fit_of},
             },
         },
     },
@@ -136,15 +136,18 @@ pub(crate) fn active() -> bool {
 }
 
 /// Make `weapon` a single pistol: its guns past the first hidden from now on. Returns whether it
-/// became one; a weapon outside the dual-wield slot, one already single, or one the table has no
-/// room for does not.
+/// became one; a weapon outside the dual-wield slot, one of a single gun, one already single, or
+/// one the table has no room for does not.
 ///
 /// # Safety
 ///
 /// `weapon` must be live, on the main thread outside the world update or on a thread updating
 /// its holder.
 pub(crate) unsafe fn designate(weapon: &mut WeaponBase, why: &str) -> bool {
-    if unsafe { slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD) {
+    // A weapon of one gun is one weapon already.
+    if unsafe { slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD)
+        || unsafe { gun_count(weapon) } < 2
+    {
         return false;
     }
     let object = weapon as *mut WeaponBase as usize;
@@ -422,7 +425,9 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
         STATE.lock().grants.cover_rack_copy();
     }
     let layout = tick.settings.layout(tick.dominant);
-    let twin_socket = twin_socket(&layout);
+    let fit = slot.as_ref().and_then(|w| unsafe { fit_of_weapon(w) });
+    let guns = slot.as_ref().is_some_and(|w| unsafe { gun_count(w) } >= 2);
+    let twin_socket = fit.and_then(|fit| twin_socket(&layout, fit));
     let (grant, dt) = {
         let mut state = STATE.lock();
         let now = Instant::now();
@@ -436,6 +441,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
             enabled,
             slot: slot_object,
             single: slot_is_single,
+            guns,
             stashed: carry::stashed(),
             socket_free: twin_socket.is_some(),
             dt,
@@ -650,16 +656,24 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
     }
 }
 
-/// The free hip socket a twin goes onto: the hip the slot's pistol does not take, when it is free,
-/// or any free hip socket.
-fn twin_socket(layout: &Layout) -> Option<SocketId> {
+/// The free socket a twin of `fit` goes onto: the hip the slot's pistol does not take, when it is
+/// free, or the first free socket that fits it.
+fn twin_socket(layout: &Layout, fit: Fit) -> Option<SocketId> {
     let taken = carry::taken();
     let home = slot_home().unwrap_or(Hand::Right);
     let other = hip_socket(home.other());
-    if layout.accepts(other, Fit::Pistol) && !taken.contains(&other) {
+    if layout.accepts(other, fit) && !taken.contains(&other) {
         return Some(other);
     }
-    layout.choose(Fit::Pistol, &taken)
+    layout.choose(fit, &taken)
+}
+
+/// What fits `weapon` on the body, read as raw values: an unset slot or class is out of its enum's
+/// range.
+unsafe fn fit_of_weapon(weapon: &WeaponBase) -> Option<Fit> {
+    let slot = unsafe { slot_of(weapon) }?;
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    fit_of(slot, class)
 }
 
 /// A twin came: carry it on the hip the slot's pistol does not take, and deal the pair's magazine
@@ -680,7 +694,8 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
     let slot_pistol = unsafe { &mut *(pair as *mut WeaponBase) };
     let carried = Hand::BOTH.map(|side| carry::on_socket(hip_socket(side)).is_some());
     set_home(pair, home_for(carried));
-    let Some(socket) = twin_socket(&layout) else {
+    let socket = unsafe { fit_of_weapon(slot_pistol) }.and_then(|fit| twin_socket(&layout, fit));
+    let Some(socket) = socket else {
         STATE.lock().grants.refused(pair);
         clear_home();
         note(

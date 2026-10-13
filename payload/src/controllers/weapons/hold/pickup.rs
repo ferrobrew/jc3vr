@@ -43,7 +43,7 @@ use crate::{
             engine::{self, slot_from_raw},
             hold::{self, act, equip, holder::Cause, second},
             holster::slot_label,
-            inventory::{self, carry, engine as inventory_engine, sockets::Fit},
+            inventory::{self, carry, engine as inventory_engine, sockets::fit_of},
             regions::{self, CarryCause, WorldTouch},
         },
     },
@@ -247,10 +247,13 @@ unsafe fn take_beside(
     if !other_wields {
         return Err("the other hand does not hold the wielded weapon");
     }
+    // Read as the raw value: an unset or unknown class is out of the enum's range.
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    let fit = fit_of(WeaponSlot::E_SLOT_DUAL_WIELD, class).ok_or("the pistol fits no socket")?;
     let socket = inventory
         .layout(dominant)
-        .choose(Fit::Pistol, &carry::taken())
-        .ok_or("no hip socket is free")?;
+        .choose(fit, &carry::taken())
+        .ok_or("no socket is free for the pistol")?;
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or("the pistol is gone")?;
     unsafe { single::designate(weapon, "a pistol taken from the world") };
     let object = unsafe { carry::carry_loose(owner, strong, socket, inventory.offsets.of(socket)) }

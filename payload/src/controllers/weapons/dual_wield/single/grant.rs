@@ -31,6 +31,9 @@ pub struct GrantTick {
     pub slot: Option<usize>,
     /// Whether the slot's weapon is a single pistol already.
     pub single: bool,
+    /// Whether the slot's weapon has more than one gun; a weapon of one gun is one weapon
+    /// already.
+    pub guns: bool,
     /// Whether the carried weapons are stashed for a mission.
     pub stashed: bool,
     /// Whether a hip socket is free for a twin.
@@ -250,7 +253,7 @@ impl Grants {
 
     /// What a weapon that just arrived in the slot is.
     fn arrive(&mut self, object: usize, tick: GrantTick) -> Grant {
-        if tick.single {
+        if tick.single || !tick.guns {
             self.state = TwinState::Done { object };
             return Grant::Nothing;
         }
@@ -315,6 +318,7 @@ mod tests {
             enabled: true,
             slot,
             single: false,
+            guns: true,
             stashed: false,
             socket_free: true,
             dt: TICK,
@@ -347,6 +351,18 @@ mod tests {
         assert_eq!(g.observe(single), Grant::Nothing);
         assert_eq!(g.state(), TwinState::Done { object: PAIR });
         assert_eq!(g.arrived(Some(PAIR), true), None);
+    }
+
+    #[test]
+    fn a_weapon_of_one_gun_is_never_split() {
+        let mut g = Grants::new();
+        g.cover_mission(false);
+        let one_gun = GrantTick {
+            guns: false,
+            ..tick(Some(PAIR))
+        };
+        assert_eq!(g.observe(one_gun), Grant::Nothing);
+        assert_eq!(g.state(), TwinState::Done { object: PAIR });
     }
 
     #[test]
