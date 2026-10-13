@@ -19,7 +19,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::{
     controllers::{
-        body::{alignment::estimate as alignment_estimate, torso::EYES_TO_NECK_PIVOT},
+        body::{rig::lean_allowance, torso::EYES_TO_NECK_PIVOT},
         locomotion::anchor::status as anchor_status,
     },
     headpose::{
@@ -47,10 +47,9 @@ pub(super) fn read(world: &Mat4, scale: f32) -> PlayerHead {
     let height = headpose_anchor()
         .map(|anchor| head.y - to_model.transform_point3(anchor - hidden).y)
         .filter(|h| h.is_finite());
-    // The lean over the feet, from the cockpit frame into the model space: what the head moved
-    // without the feet.
-    let lean = alignment_estimate()
-        .map(|e| e.stance.lean)
+    // The lean the chase leaves alone, from the cockpit frame into the model space: what the head
+    // moved without the feet.
+    let lean = lean_allowance()
         .filter(|l| l.is_finite())
         .map_or(Vec3::ZERO, |l| {
             to_model.transform_vector3(view_rotation() * Vec3::new(l.x, 0.0, l.y) * scale)
@@ -73,8 +72,8 @@ pub(super) struct PlayerHead {
     /// The neck pivot, model space.
     pub(super) head: Vec3,
     /// Where the neck pivot would be upright over the player's feet, model space: the head less
-    /// the lean the torso estimate reads over the feet
-    /// ([`crate::controllers::body::stance`]). What the feet step under.
+    /// the lean the chase leaves alone ([`crate::controllers::body::rig::lean`]). What the feet
+    /// step under.
     pub(super) upright: Vec3,
     /// The neck pivot's height over the head anchor, metres, when the anchor is known.
     pub(super) height: Option<f32>,

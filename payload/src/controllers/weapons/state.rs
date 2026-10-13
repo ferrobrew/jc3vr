@@ -133,9 +133,9 @@ pub(super) struct DockTouch {
 
 impl State {
     /// The stance for this tick, from the roomscale posture (the single source of truth for
-    /// seated versus standing): seated for the seated posture, standing for the standing and
-    /// roomscale postures, and standing without a recent roomscale frame (the roomscale
-    /// subsystems off, or not yet run). Logs a change of stance.
+    /// seated versus standing): seated for the seated posture, standing for the standing posture,
+    /// and standing without a recent roomscale frame (the roomscale subsystems off, or not yet
+    /// run). Logs a change of stance.
     pub(super) fn step_stance(&mut self) -> Stance {
         let now = Instant::now();
         let posture = roomscale::frame_shared()

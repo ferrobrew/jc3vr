@@ -6,7 +6,7 @@
 //! `headpose::xr`), which sits ahead of the player whenever the animation leans or the roomscale
 //! chase trails. The upper body hangs from the neck pivot, which the head's pose places below and
 //! behind the eyes ([`crate::controllers::body::torso`]), facing the estimated torso; the waist
-//! hangs over the feet ([`crate::controllers::body::stance`]), which stay put through a lean or a
+//! hangs over the feet ([`crate::controllers::body::rig::feet`]), which stay put through a lean or a
 //! reach, so the hip holsters and the belt's pouch do not swing out with a lean. The volumes
 //! therefore stay on the body when the player turns or leans their head to look at them, and move
 //! with the body when the player walks, turns, or a stick turn moves it.

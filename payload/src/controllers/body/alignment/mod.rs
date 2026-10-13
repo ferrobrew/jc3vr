@@ -112,9 +112,6 @@ pub fn follow_settings() -> FollowSettings {
 pub fn on_recenter(turn: Quat) {
     let mut state = STATE.lock();
     state.estimator.rotate(turn);
-    // A recentre may move the cockpit's origin to the head and its height with it; the feet start
-    // again under the head.
-    state.estimator.reset_stance();
     state.estimate = None;
 }
 

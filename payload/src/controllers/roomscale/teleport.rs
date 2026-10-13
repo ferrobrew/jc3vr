@@ -6,7 +6,7 @@
 //! position, and a playlist commit. A post-call detour on it counts a teleport epoch that the
 //! roomscale consumers compare against the epoch they last saw. Writers that bypass the game world
 //! (a vehicle teleport carrying its seated driver, scripted warps) are caught by the chase loop's
-//! per-tick distance test instead ([`crate::controllers::roomscale::chase::is_warp`]), which counts
+//! per-tick distance test instead ([`crate::controllers::body::rig::root::chase::is_warp`]), which counts
 //! into the same epoch.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,7 +30,7 @@ pub fn warps() -> u64 {
 }
 
 /// Count a teleport the distance test found.
-pub(super) fn record_warp() {
+pub(crate) fn record_warp() {
     WARPS.fetch_add(1, Ordering::Relaxed);
     EPOCH.fetch_add(1, Ordering::Relaxed);
     tracing::debug!(target: "controllers", "roomscale: the body warped without a camera reset");

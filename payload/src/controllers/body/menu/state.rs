@@ -37,7 +37,7 @@ pub(super) fn posture_stance() -> Stance {
         .filter(|f| f.fresh(Instant::now()))
         .map(|f| match f.posture {
             EffectivePosture::Seated => DetectedPosture::Seated,
-            EffectivePosture::Standing | EffectivePosture::Roomscale => DetectedPosture::Standing,
+            EffectivePosture::Standing => DetectedPosture::Standing,
         });
     Stance::for_posture(read_config(|c| c.controllers.roomscale.posture), detected)
 }

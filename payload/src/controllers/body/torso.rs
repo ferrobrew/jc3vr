@@ -19,9 +19,8 @@
 //! eyes in the head's frame, so nodding moves the eyes and not the shoulders; the shoulders sit
 //! below the pivot along the torso's heading; and the pelvis sits below the shoulders along the
 //! spine, which leans when the shoulders move away from a pelvis that follows them slowly, as when
-//! the player leans over without stepping. The feet are estimated apart
-//! ([`crate::controllers::body::stance`]): they stay put through a lean or a reach and follow the
-//! pivot only once it has stepped.
+//! the player leans over without stepping. Where the feet are is the rig's
+//! ([`crate::controllers::body::rig::feet`]).
 //!
 //! All positions and headings are in the cockpit frame: +X right, +Y up, -Z forward, metres. A
 //! heading is a yaw about +Y, positive turning -Z toward -X, the convention of
@@ -31,10 +30,7 @@ use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
-    body::{
-        self, BodyDimensions,
-        stance::{StanceEstimate, StanceTracker},
-    },
+    body::{self, BodyDimensions},
     weapons::volumes::HIP_HEIGHT_FRACTION,
 };
 
@@ -64,12 +60,6 @@ pub struct TorsoConfig {
     pub pelvis_follow_s: f32,
     /// The furthest the spine may lean from upright, degrees.
     pub max_lean_deg: f32,
-    /// The furthest the neck pivot may be out from over the feet before they step after it,
-    /// metres: about an arm's length, so that leaning over a table and reaching across it move
-    /// nothing below the hips.
-    pub lean_reach_m: f32,
-    /// How far an upright neck pivot may sway from over the feet before they step, metres.
-    pub upright_slack_m: f32,
 }
 
 impl TorsoConfig {
@@ -84,8 +74,6 @@ impl TorsoConfig {
             walk_speed_mps: 0.45,
             pelvis_follow_s: 0.8,
             max_lean_deg: 50.0,
-            lean_reach_m: 0.7,
-            upright_slack_m: 0.12,
         }
     }
 }
@@ -133,8 +121,6 @@ pub struct TorsoEstimate {
     pub hips: [Vec3; 2],
     /// The spine's direction from the pelvis to the chest, a unit vector.
     pub spine: Vec3,
-    /// Where the feet are, and how far the neck pivot leans out over them.
-    pub stance: StanceEstimate,
 }
 
 impl TorsoEstimate {
@@ -148,7 +134,6 @@ impl TorsoEstimate {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct TorsoEstimator {
     state: Option<State>,
-    stance: StanceTracker,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -163,28 +148,17 @@ struct State {
 
 impl TorsoEstimator {
     pub const fn new() -> Self {
-        Self {
-            state: None,
-            stance: StanceTracker::new(),
-        }
+        Self { state: None }
     }
 
-    /// Forget the held heading and the feet, so the next update starts from the head.
+    /// Forget the held heading, so the next update starts from the head.
     pub fn reset(&mut self) {
         self.state = None;
-        self.stance.reset();
-    }
-
-    /// Forget the feet, so the next update puts them under the head: a recentre that moved the
-    /// cockpit's origin to the head.
-    pub fn reset_stance(&mut self) {
-        self.stance.reset();
     }
 
     /// Turn the held state by `turn` about +Y, for a cockpit frame that turned by it (new frame
     /// from old), so that the torso stays where it is in the room.
     pub fn rotate(&mut self, turn: Quat) {
-        self.stance.rotate(turn);
         if let Some(state) = self.state.as_mut() {
             let yaw = yaw_of(turn * yaw_forward(state.yaw));
             state.yaw = yaw.unwrap_or(state.yaw);
@@ -217,7 +191,6 @@ impl TorsoEstimator {
             0.0
         };
         let neck = head + orientation * EYES_TO_NECK_PIVOT;
-        let stance = self.stance.update(neck, orientation, dt, dims, config)?;
 
         let state = self.state.get_or_insert(State {
             yaw: head_yaw,
@@ -308,7 +281,6 @@ impl TorsoEstimator {
             pelvis,
             hips,
             spine,
-            stance,
         })
     }
 }

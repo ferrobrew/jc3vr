@@ -69,12 +69,12 @@ impl Stance {
     pub const ALL: [Stance; 2] = [Stance::Standing, Stance::Seated];
 
     /// The stance a calibration defaults to under the posture setting: seated in the seated
-    /// posture, standing in the standing and roomscale postures, and in the automatic posture
+    /// posture, standing in the standing posture, and in the automatic posture
     /// whatever it currently `detected` (standing when it has not run).
     pub fn for_posture(posture: Posture, detected: Option<DetectedPosture>) -> Stance {
         match (posture, detected) {
             (Posture::Seated, _) | (Posture::Auto, Some(DetectedPosture::Seated)) => Stance::Seated,
-            (Posture::Auto, _) | (Posture::Standing | Posture::Roomscale, _) => Stance::Standing,
+            (Posture::Auto, _) | (Posture::Standing, _) => Stance::Standing,
         }
     }
 }
@@ -691,7 +691,7 @@ mod tests {
                 Stance::for_posture(Posture::Seated, detected),
                 Stance::Seated
             );
-            for posture in [Posture::Auto, Posture::Standing, Posture::Roomscale] {
+            for posture in [Posture::Auto, Posture::Standing] {
                 assert_eq!(Stance::for_posture(posture, detected), Stance::Standing);
             }
         }

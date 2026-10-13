@@ -5,7 +5,7 @@ use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::{
     body::{
-        self, BodyDimensions, alignment,
+        self, BodyDimensions, alignment, rig,
         torso::{self, EYES_TO_NECK_PIVOT},
     },
     config::ControllersConfig,
@@ -19,7 +19,7 @@ pub(super) struct PlayerBody {
     /// The eyes over the neck pivot, `(x, z)` in the cockpit frame.
     pub(super) upright: Vec2,
     pub(super) yaw: f32,
-    /// The middle of the feet, `(x, z)`, while the torso estimate is fresh.
+    /// The middle of the feet, `(x, z)`, while the rig's frame half runs.
     pub(super) feet: Option<Vec2>,
 }
 
@@ -40,7 +40,7 @@ impl PlayerBody {
         Self {
             upright: Vec2::new(eyes.x, eyes.z),
             yaw,
-            feet: estimate.map(|e| e.stance.stance),
+            feet: rig::feet(),
         }
     }
 }

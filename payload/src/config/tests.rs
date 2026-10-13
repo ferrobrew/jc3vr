@@ -10,7 +10,7 @@ use super::*;
 use crate::{
     config::load::{LoadReport, Loaded, parse},
     controllers::{
-        config::{SchemeSetting, SightOverride},
+        config::{Posture, SchemeSetting, SightOverride},
         frame::Hand,
     },
     director::keymap::{Action, Binding, Chord},
@@ -128,6 +128,43 @@ fn an_unknown_setting_is_skipped_and_reported() {
         ["director.paused", "obsolete", "stereo.retired_setting"]
     );
     assert!(report.defaulted.is_empty() && report.reset.is_empty());
+}
+
+#[test]
+fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_chase() {
+    let mut table = defaults_table();
+    set(
+        &mut table,
+        &["controllers", "roomscale", "posture"],
+        "Roomscale".into(),
+    );
+    set(
+        &mut table,
+        &["controllers", "roomscale", "roomscale_min_extent_m"],
+        1.0.into(),
+    );
+    set(
+        &mut table,
+        &["controllers", "roomscale", "chase", "deadzone_m"],
+        0.1.into(),
+    );
+    set(
+        &mut table,
+        &["controllers", "body", "alignment", "torso", "lean_reach_m"],
+        0.7.into(),
+    );
+    let Loaded { config, report } = load(table);
+    assert_eq!(config.controllers.roomscale.posture, Posture::Standing);
+    assert!(config.controllers.body.rig.chase.enabled);
+    assert_eq!(
+        report.ignored,
+        [
+            "controllers.body.alignment.torso.lean_reach_m",
+            "controllers.roomscale.chase",
+            "controllers.roomscale.roomscale_min_extent_m",
+        ]
+    );
+    assert!(report.reset.is_empty());
 }
 
 #[test]

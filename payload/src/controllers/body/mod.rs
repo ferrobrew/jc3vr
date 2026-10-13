@@ -50,7 +50,7 @@ pub mod calibration;
 pub(crate) mod menu;
 pub mod mirror;
 pub mod procedural;
-pub mod stance;
+pub mod rig;
 pub mod torso;
 
 use glam::{Quat, Vec3};

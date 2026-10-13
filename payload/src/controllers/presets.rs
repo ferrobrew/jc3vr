@@ -106,7 +106,8 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.body.remap_head = room;
     c.body.remap_hands = hands;
     c.roomscale.posture = if room { Posture::Auto } else { Posture::Seated };
-    c.roomscale.chase.enabled = room;
+    c.body.rig.chase.enabled = room;
+    c.body.rig.lean.enabled = room;
     c.roomscale.crouch.visual = room;
     c.roomscale.crouch.capsule = room;
     c.roomscale.head_fade.enabled = room;
@@ -202,7 +203,8 @@ mod tests {
         apply_preset(&mut c, Preset::GamepadBaseline);
         assert!(!c.enabled);
         assert_eq!(c.scheme, SchemeSetting::Gamepad);
-        assert!(!c.roomscale.chase.enabled);
+        assert!(!c.body.rig.chase.enabled);
+        assert!(!c.body.rig.lean.enabled);
         assert!(!c.roomscale.crouch.visual);
         assert!(!c.roomscale.crouch.capsule);
         assert!(!c.roomscale.head_fade.enabled);

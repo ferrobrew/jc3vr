@@ -7,14 +7,14 @@
 //!   crouch toggle lowers the eyes by a preset. The reference is measured against the STAGE floor
 //!   when the runtime has one, and is the eye height at the last recenter otherwise;
 //! - standing: the head's true height above the STAGE floor is remapped onto the character
-//!   ([`remap_head_height`]), so that ducking and crouching are physical;
-//! - roomscale: standing, with the chase loop on.
+//!   ([`remap_head_height`]), so that ducking and crouching are physical, and the body follows the
+//!   head about the room ([`crate::controllers::body::rig::root`]).
 //!
 //! OpenXR has no signal for a seated user, so the automatic posture tells seated from standing by
-//! the head's height above the floor ([`PostureClassifier`]), and standing from roomscale by the
-//! play area.
+//! the head's height above the floor ([`PostureClassifier`]). The play area's size decides nothing:
+//! a player standing still produces sub-centimetre root motion that the cockpit shift absorbs.
 
-use glam::{Vec2, Vec3};
+use glam::Vec3;
 
 use crate::controllers::{
     body::{BodyDimensions, remap_head_height, remap_head_translation},
@@ -27,7 +27,6 @@ use crate::controllers::{
 pub enum EffectivePosture {
     Seated,
     Standing,
-    Roomscale,
 }
 
 impl EffectivePosture {
@@ -35,30 +34,18 @@ impl EffectivePosture {
         match self {
             EffectivePosture::Seated => "seated",
             EffectivePosture::Standing => "standing",
-            EffectivePosture::Roomscale => "roomscale",
         }
     }
 }
 
-/// Resolve the posture setting. The automatic setting takes the classifier's `detected` posture,
-/// and a standing one becomes roomscale when both sides of the play area's `bounds` (width and
-/// depth, metres; `None` when the runtime reports none) reach `min_extent_m`.
-pub fn resolve(
-    setting: Posture,
-    detected: DetectedPosture,
-    bounds: Option<Vec2>,
-    min_extent_m: f32,
-) -> EffectivePosture {
+/// Resolve the posture setting. The automatic setting takes the classifier's `detected` posture.
+pub fn resolve(setting: Posture, detected: DetectedPosture) -> EffectivePosture {
     match setting {
         Posture::Seated => EffectivePosture::Seated,
         Posture::Standing => EffectivePosture::Standing,
-        Posture::Roomscale => EffectivePosture::Roomscale,
-        Posture::Auto => match (detected, bounds) {
-            (DetectedPosture::Seated, _) => EffectivePosture::Seated,
-            (DetectedPosture::Standing, Some(extent)) if extent.min_element() >= min_extent_m => {
-                EffectivePosture::Roomscale
-            }
-            (DetectedPosture::Standing, _) => EffectivePosture::Standing,
+        Posture::Auto => match detected {
+            DetectedPosture::Seated => EffectivePosture::Seated,
+            DetectedPosture::Standing => EffectivePosture::Standing,
         },
     }
 }
@@ -428,7 +415,7 @@ pub fn head_height(
     character: &BodyDimensions,
 ) -> HeadHeight {
     match (input.posture, input.stage_height, input.seated_reference) {
-        (EffectivePosture::Standing | EffectivePosture::Roomscale, Some(height), _) => HeadHeight {
+        (EffectivePosture::Standing, Some(height), _) => HeadHeight {
             cockpit_y: remap_head_height(height, player, character) - character.eye_height,
             source: HeadHeightSource::Floor,
         },
@@ -527,39 +514,26 @@ mod tests {
     }
 
     #[test]
-    fn auto_takes_roomscale_only_standing_with_a_large_enough_play_area() {
-        let resolve_auto = |detected, bounds| resolve(Posture::Auto, detected, bounds, 1.0);
-        let standing = DetectedPosture::Standing;
-        assert_eq!(resolve_auto(standing, None), EffectivePosture::Standing);
+    fn auto_takes_the_detection() {
         assert_eq!(
-            resolve_auto(standing, Some(Vec2::new(0.5, 3.0))),
+            resolve(Posture::Auto, DetectedPosture::Standing),
             EffectivePosture::Standing
         );
         assert_eq!(
-            resolve_auto(standing, Some(Vec2::new(2.0, 1.5))),
-            EffectivePosture::Roomscale
-        );
-        assert_eq!(
-            resolve_auto(DetectedPosture::Seated, Some(Vec2::splat(4.0))),
+            resolve(Posture::Auto, DetectedPosture::Seated),
             EffectivePosture::Seated
         );
     }
 
     #[test]
-    fn an_explicit_posture_ignores_the_detection_and_the_play_area() {
-        let big = Some(Vec2::splat(4.0));
-        let seated = DetectedPosture::Seated;
+    fn an_explicit_posture_ignores_the_detection() {
         assert_eq!(
-            resolve(Posture::Seated, DetectedPosture::Standing, big, 1.0),
+            resolve(Posture::Seated, DetectedPosture::Standing),
             EffectivePosture::Seated
         );
         assert_eq!(
-            resolve(Posture::Standing, seated, big, 1.0),
+            resolve(Posture::Standing, DetectedPosture::Seated),
             EffectivePosture::Standing
-        );
-        assert_eq!(
-            resolve(Posture::Roomscale, seated, None, 1.0),
-            EffectivePosture::Roomscale
         );
     }
 
@@ -749,7 +723,7 @@ mod tests {
         let h = head_height(
             &HeadHeightInput {
                 stage_height: Some(PLAYER.eye_height - 0.4),
-                ..input(EffectivePosture::Roomscale)
+                ..input(EffectivePosture::Standing)
             },
             &PLAYER,
             &CHARACTER,

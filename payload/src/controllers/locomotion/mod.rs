@@ -8,7 +8,7 @@
 //!
 //! - [`after_task`] replaces the horizontal velocity the movement task wrote with the stick's,
 //!   reached at a fixed acceleration ([`accel`]). It runs from the post-call detour on the on-foot
-//!   locomotion task (`controllers::roomscale::sim`), before the palms' push and the roomscale
+//!   locomotion task ([`crate::controllers::body::rig::root`]), before the palms' push and the
 //!   chase add their own.
 //! - [`acts`] keeps the turn-in-place and turning start and stop acts off the body.
 //! - [`anchor`] anchors the on-foot view to Rico's root and a neutral standing head instead of his

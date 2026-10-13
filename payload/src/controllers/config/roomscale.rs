@@ -1,5 +1,6 @@
-//! Posture and roomscale locomotion: the player's posture, the automatic posture's detection, the
-//! seated eye reference, the roomscale chase loop, crouching, and the comfort fades.
+//! Posture and roomscale: the player's posture, the automatic posture's detection, the seated eye
+//! reference, crouching, the comfort fades, and the seat transitions. The chase that walks the body
+//! after the head is the rig's ([`crate::controllers::body::rig::config::ChaseConfig`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -13,18 +14,12 @@ use crate::controllers::roomscale::stance::StanceConfig;
 pub struct RoomscaleConfig {
     /// The player's posture.
     pub posture: Posture,
-    /// In the automatic posture, the smallest play area (both sides, metres) that counts as a
-    /// room-scale setup. A runtime reports a standing-only setup as no bounds or a very small
-    /// rectangle.
-    pub roomscale_min_extent_m: f32,
     /// In the automatic posture, how the head's height above the floor tells a seated player from
     /// a standing one.
     pub auto_posture: AutoPostureConfig,
     /// In the seated posture, how the head height that maps to the character's eyes follows the
     /// player.
     pub seated_reference: SeatedReferenceConfig,
-    /// The body chasing the physical head in the roomscale posture.
-    pub chase: ChaseConfig,
     /// Crouching.
     pub crouch: CrouchConfig,
     /// Fading the view when the head goes deep into geometry the body cannot follow it through.
@@ -44,10 +39,8 @@ impl RoomscaleConfig {
     pub const fn new() -> Self {
         Self {
             posture: Posture::Auto,
-            roomscale_min_extent_m: 1.0,
             auto_posture: AutoPostureConfig::new(),
             seated_reference: SeatedReferenceConfig::new(),
-            chase: ChaseConfig::new(),
             crouch: CrouchConfig::new(),
             head_fade: HeadFadeConfig::new(),
             fade: FadeConfig::new(),
@@ -68,17 +61,17 @@ impl Default for RoomscaleConfig {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Posture {
     /// Seated or standing by the head's height above the floor ([`AutoPostureConfig`]), seated
-    /// until the head has been located; standing becomes roomscale when the runtime reports a
-    /// room-scale boundary.
+    /// until the head has been located.
     #[default]
     Auto,
     /// The seated eye reference ([`SeatedReferenceConfig`]) maps to the character's standing eye
-    /// height, roomscale translation is off, and a button toggles crouching.
+    /// height, the body does not follow the head about the room, and a button toggles crouching.
     Seated,
-    /// STAGE space: the true floor height, roomscale translation off, physical crouching.
+    /// STAGE space: the true floor height, physical crouching, and the body following the head
+    /// about the room. Earlier builds called this with the chase on `Roomscale`, which still loads
+    /// as it.
+    #[serde(alias = "Roomscale")]
     Standing,
-    /// STAGE space with the roomscale chase loop on.
-    Roomscale,
 }
 
 /// The automatic posture's seated and standing detection
@@ -151,45 +144,6 @@ impl SeatedReferenceConfig {
 }
 
 impl Default for SeatedReferenceConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The roomscale chase loop: in the roomscale posture, the body walks toward the physical head.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ChaseConfig {
-    /// On by default, as part of the full gameplay preset: it moves the character from head
-    /// motion, which the headset alone produces.
-    pub enabled: bool,
-    /// Horizontal head offsets from the body below this many metres are left alone. A chase that
-    /// has started runs until the offset is below half of it.
-    pub deadzone_m: f32,
-    /// The fastest the chase moves the body, metres per second.
-    pub max_speed_mps: f32,
-    /// How quickly the chase closes the offset: the chase speed is the offset divided by this,
-    /// seconds, before the speed limit. A few simulation ticks, so that the body does not overshoot
-    /// the head.
-    pub time_constant_s: f32,
-    /// The shortest single-tick jump of the body, metres, that counts as a teleport the game made
-    /// without announcing it. The threshold also grows with the body's speed.
-    pub warp_min_m: f32,
-}
-
-impl ChaseConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            deadzone_m: 0.10,
-            max_speed_mps: 3.0,
-            time_constant_s: 0.15,
-            warp_min_m: 8.0,
-        }
-    }
-}
-
-impl Default for ChaseConfig {
     fn default() -> Self {
         Self::new()
     }

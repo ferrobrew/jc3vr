@@ -224,6 +224,7 @@ fn render_frame(views: [EyeView; 2], display_time: Option<openxr::Time>, cfg: &V
     let cockpit = crate::controllers::roomscale::compose_cockpit(
         &crate::controllers::roomscale::FrameInputs {
             cockpit: center_position,
+            orientation: center_orientation,
             body: body_rotation,
             world_scale: cfg.world_scale,
         },

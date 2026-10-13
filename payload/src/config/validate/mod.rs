@@ -49,6 +49,7 @@ impl std::error::Error for Invalid {}
 pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     locomotion(&c.locomotion.stick, &c.locomotion.acts, &c.locomotion.view)?;
     c.body.procedural.validate()?;
+    c.body.rig.validate()?;
     input::input(&c.input)?;
     input::bindings(&c.bindings)?;
     input::mode(&c.mode)?;

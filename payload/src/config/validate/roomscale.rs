@@ -1,5 +1,5 @@
-//! Checks for posture and roomscale locomotion: the auto-posture timers, the seated reference, the
-//! chase, the crouch, and the head fade.
+//! Checks for posture and roomscale: the auto-posture timers, the seated reference, the crouch, and
+//! the head fade.
 
 use crate::{
     config::validate::{Invalid, nonnegative, positive, range},
@@ -8,11 +8,6 @@ use crate::{
 
 /// Check the roomscale settings. Paths are relative to `controllers.roomscale`.
 pub(super) fn roomscale(r: &RoomscaleConfig) -> Result<(), Invalid> {
-    positive(
-        "roomscale.roomscale_min_extent_m",
-        r.roomscale_min_extent_m,
-        100.0,
-    )?;
     nonnegative(
         "roomscale.auto_posture.stand_after_s",
         r.auto_posture.stand_after_s,
@@ -39,18 +34,6 @@ pub(super) fn roomscale(r: &RoomscaleConfig) -> Result<(), Invalid> {
         r.seated_reference.deadband_m,
         1.0,
     )?;
-    nonnegative("roomscale.chase.deadzone_m", r.chase.deadzone_m, 100.0)?;
-    nonnegative(
-        "roomscale.chase.max_speed_mps",
-        r.chase.max_speed_mps,
-        1_000.0,
-    )?;
-    positive(
-        "roomscale.chase.time_constant_s",
-        r.chase.time_constant_s,
-        60.0,
-    )?;
-    nonnegative("roomscale.chase.warp_min_m", r.chase.warp_min_m, 1_000.0)?;
     range("roomscale.crouch.hips_share", r.crouch.hips_share, 0.0, 1.0)?;
     nonnegative("roomscale.crouch.enter_drop_m", r.crouch.enter_drop_m, 10.0)?;
     nonnegative("roomscale.crouch.exit_drop_m", r.crouch.exit_drop_m, 10.0)?;

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{
-    alignment::AlignmentConfig, procedural::config::ProceduralBodyConfig,
+    alignment::AlignmentConfig, procedural::config::ProceduralBodyConfig, rig::RigConfig,
 };
 
 /// Body scale remapping between the player's body and the character's (see
@@ -23,6 +23,8 @@ pub struct BodyRemapConfig {
     pub alignment: AlignmentConfig,
     /// The procedural body: Rico's pose built from the player's head and body.
     pub procedural: ProceduralBodyConfig,
+    /// The body rig: who moves the root, the chase after the player's head, and the lean.
+    pub rig: RigConfig,
 }
 
 impl BodyRemapConfig {
@@ -32,6 +34,7 @@ impl BodyRemapConfig {
             remap_hands: true,
             alignment: AlignmentConfig::new(),
             procedural: ProceduralBodyConfig::new(),
+            rig: RigConfig::new(),
         }
     }
 }

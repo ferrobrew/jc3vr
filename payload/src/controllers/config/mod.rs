@@ -32,8 +32,8 @@ pub use self::{
     input::{BindingsConfig, InputConfig, LocomotionConfig, LocomotionDirection, ModeConfig},
     overlay::{GunReadout, OverlayConfig},
     roomscale::{
-        AutoPostureConfig, ChaseConfig, FadeConfig, HeadFadeConfig, Posture, RoomscaleConfig,
-        SeatTransition, SeatedReferenceConfig,
+        AutoPostureConfig, FadeConfig, HeadFadeConfig, Posture, RoomscaleConfig, SeatTransition,
+        SeatedReferenceConfig,
     },
     weapons::WeaponsConfig,
 };

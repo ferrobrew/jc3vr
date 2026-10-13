@@ -56,6 +56,7 @@ impl HeightReadout {
     /// Whether Rico was on foot at the sample: the on-foot locomotion tick ran recently.
     pub fn on_foot(&self) -> bool {
         self.roomscale
+            .root
             .sim
             .at
             .is_some_and(|at| self.at.saturating_duration_since(at) < probe::STALE_AFTER)
@@ -197,8 +198,8 @@ fn log(r: &HeightReadout) {
         crouched = frame.crouched,
         seated_crouch = frame.seated_crouch,
         visual_crouch = r.roomscale.visual_crouch,
-        capsule = r.roomscale.sim.capsule_owned,
-        no_headroom = r.roomscale.sim.capsule_blocked,
+        capsule = r.roomscale.root.sim.capsule_owned,
+        no_headroom = r.roomscale.root.sim.capsule_blocked,
         "camera height above Rico's root"
     );
 }
