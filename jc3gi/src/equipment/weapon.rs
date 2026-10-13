@@ -1738,8 +1738,8 @@ pub struct WeaponBase {
     /// weapon of the [`E_SLOT_DUAL_WIELD`](crate::character::inventory::WeaponSlot::E_SLOT_DUAL_WIELD) slot in the
     /// [`E_WS_WIELDING`](crate::equipment::weapon::WeaponState::E_WS_WIELDING) state is kept on the first gun, so a
     /// dual-wield weapon wielded rather than dual-wielded fires its first gun alone. The
-    /// disassembler's `CWeaponBase::MarkNextWeaponComponentForFire` is another function, called
-    /// on a vehicle.
+    /// disassembler's `CWeaponBase::MarkNextWeaponComponentForFire` is
+    /// [`Vehicle::IsRocketBoat`](crate::vehicle::vehicle::Vehicle::IsRocketBoat).
     pub m_NextWeaponToFire: u8,
     /// The index of the gun that fired last, recorded before
     /// [`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire) advances.
