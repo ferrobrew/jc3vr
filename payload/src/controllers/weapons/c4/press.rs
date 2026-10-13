@@ -19,8 +19,10 @@
 //! - once pressed, the button presses again only after the fingertip has moved away past
 //!   `release_radius_m`, which is more than `touch_radius_m`, so a fingertip resting on the button
 //!   does not chatter;
-//! - a fingertip first seen touching (tracking just found it there) waits to move away, so that
-//!   regaining tracking never presses.
+//! - a fingertip first seen touching (tracking just found it there), or one that reached the
+//!   button from behind the wrist, is blocked until it leaves the touch sphere, so that regaining
+//!   tracking never presses, while a finger that slipped past the wrist's side can come straight
+//!   back in.
 //!
 //! A hand that loses tracking resets the detector without a press.
 
@@ -117,7 +119,7 @@ pub enum PressPhase {
     /// The button pressed; it waits for the fingertip to move away.
     Pressed,
     /// The fingertip was first seen touching, or came from behind the wrist; it waits for the
-    /// fingertip to move away.
+    /// fingertip to leave the touch sphere.
     Blocked,
 }
 
@@ -129,7 +131,7 @@ impl PressPhase {
             PressPhase::Touching { fast: true, .. } => "touching",
             PressPhase::Touching { fast: false, .. } => "touching slowly (dwell)",
             PressPhase::Pressed => "pressed, waiting for the finger to move away",
-            PressPhase::Blocked => "blocked, waiting for the finger to move away",
+            PressPhase::Blocked => "blocked, waiting for the finger to leave the button",
         }
     }
 
@@ -229,9 +231,8 @@ impl PressDetector {
                     PressPhase::Armed { approach_mps: 0.0 }
                 }
             }
-            PressPhase::Pressed | PressPhase::Blocked if away => {
-                PressPhase::Armed { approach_mps: 0.0 }
-            }
+            PressPhase::Pressed if away => PressPhase::Armed { approach_mps: 0.0 },
+            PressPhase::Blocked if !within => PressPhase::Armed { approach_mps: 0.0 },
             phase @ (PressPhase::Pressed | PressPhase::Blocked) => phase,
         };
         PressReading {
@@ -411,6 +412,24 @@ mod tests {
         // Away, and a poke from in front presses.
         assert_eq!(run(&mut d, moving(below, Vec3::X * 0.1, 0.5)), 0);
         assert_eq!(run(&mut d, moving(Vec3::X * 0.1, Vec3::ZERO, 0.5)), 1);
+    }
+
+    #[test]
+    fn a_blocked_fingertip_is_free_once_it_leaves_the_button() {
+        let t = tuning();
+        let mut d = PressDetector::new();
+        let below = Vec3::new(-(t.max_behind_m + 0.005), 0.0, 0.0);
+        assert_eq!(
+            run(&mut d, moving(Vec3::new(-0.1, 0.0, 0.0), below, 0.5)),
+            0
+        );
+        assert_eq!(d.phase, PressPhase::Blocked);
+        // Just outside the touch sphere, well inside the release radius, frees it.
+        let outside = Vec3::Y * (t.touch_radius_m + 0.002);
+        assert!(outside.length() < t.release_radius_m);
+        assert_eq!(run(&mut d, moving(below, outside, 0.5)), 0);
+        assert!(matches!(d.phase, PressPhase::Armed { .. }));
+        assert_eq!(run(&mut d, moving(outside, Vec3::X * 0.005, 0.5)), 1);
     }
 
     #[test]

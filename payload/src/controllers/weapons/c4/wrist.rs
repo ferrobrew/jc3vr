@@ -4,20 +4,29 @@
 //! button is on the other: a gun can ride the hand that is not the player's dominant one, and the
 //! button belongs on the hand that the pouches leave free.
 //!
-//! On each input tick the button is placed on its hand where the hand is drawn (its grip in
-//! [`hands::active_hands`], the poses the rendered hands follow), and the pressing fingertip is
-//! read from the controller frame (its tracked skeleton, or an estimate from its controller) and
-//! carried with its hand to where that hand is drawn ([`press::carry`]). The press
+//! On each input tick the press is tested in the off hand's grip frame as that hand is drawn
+//! ([`late::drawn_hands`], the hands the palette edit renders, which fall short of the controllers
+//! where an arm cannot reach or a hand blends with the animation). The button sits at a fixed place
+//! in that frame, as the overlay draws it, and the pressing fingertip is read from the controller
+//! frame (its tracked skeleton, or an estimate from its controller), carried with its hand to
+//! where that hand is drawn ([`press::carry`]), and brought into the off hand's frame. The press
 //! detector ([`press`]) and the drawn button therefore share one frame: the finger the player sees
-//! touching the button is the one that presses it, whatever the body-scale remap or the two-handed
-//! pose does to the hands.
+//! touching the button is the one that presses it, whatever the body-scale remap, the two-handed
+//! pose, or an arm's reach does to the hands, and the approach speed is the finger's against the
+//! wrist. Before the render frame has drawn both hands, the hands' tick targets
+//! ([`hands::active_hands`]) stand in for them.
 //!
 //! A press with charges placed asks the C4 weapon to detonate them ([`request_detonation`]) and
 //! clicks both hands; a press with none buzzes the pressing hand and flashes the button grey. The
 //! button is drawn on the wrist through the world-space overlay, lying on the wrist facing out of
 //! it: dim with no charges placed, lit with a pip beside it for each placed charge, filling as a
-//! slow touch dwells, and flashing on a press. A detonation the game starts, from the button or the
-//! stick click, flashes it bright ([`note_detonation`]).
+//! slow touch dwells, and flashing on a press. A ring around it marks the touch sphere. While the
+//! fingertip is within the approach radius, a dot marks the point that is tested and a second ring
+//! closes from the approach radius onto the touch sphere as it nears, and the pressing hand ticks
+//! once on the way in; a blocked touch (the finger came from behind the wrist, or was first seen on
+//! the button) turns the rims and the dot red until the finger leaves the touch sphere. A
+//! detonation the game starts, from the button or the stick click, flashes it bright
+//! ([`note_detonation`]).
 
 use std::time::{Duration, Instant};
 
@@ -27,8 +36,8 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         config::ControllersConfig,
-        frame::{self, Hand},
-        hands,
+        frame::{self, Hand, Pose},
+        hands::{self, late},
         haptics::{self, Event},
         overlay::{
             primitive::{
@@ -44,7 +53,7 @@ use crate::{
             config::WristDetonatorConfig,
         },
     },
-    headpose,
+    headpose, hooks,
 };
 
 /// Where the fingertip was read from.
@@ -108,11 +117,20 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
     let tuning = &config.weapons.c4.detonator;
     let presser = inputs.presser;
     let off = presser.other();
-    let drawn = active.hands;
-    let face = drawn[off.index()].and_then(|hand| press::button_face(off, hand.grip, tuning));
+    // Both hands as they are drawn, or both as the tick targets them: never one of each, which
+    // are in different frames.
+    let drawn = late::drawn_hands(hooks::camera::last_dtf());
+    let grips = if drawn[presser.index()].is_some() && drawn[off.index()].is_some() {
+        drawn.map(|hand| hand.map(|h| h.grip))
+    } else {
+        active.hands.map(|hand| hand.map(|h| h.grip))
+    };
+    let off_grip = grips[off.index()];
+    let face = off_grip.and_then(|_| press::button_face(off, Pose::IDENTITY, tuning));
     let tip = frame::with_latest(|frame| {
         let dom = frame.hand(presser);
-        let drawn = drawn[presser.index()]?;
+        let presser_grip = grips[presser.index()]?;
+        let off_grip = off_grip?;
         if !(dom.active && dom.aim.is_valid() && dom.grip.is_valid()) {
             return None;
         }
@@ -127,7 +145,8 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             _ => FingertipSourceKind::Estimate,
         };
         let tip = press::fingertip(presser, source, tuning);
-        Some((press::carry(tip, dom.grip.pose, drawn.grip), kind))
+        let on_drawn_hand = press::carry(tip, dom.grip.pose, presser_grip);
+        Some((press::carry(on_drawn_hand, off_grip, Pose::IDENTITY), kind))
     })
     .flatten();
     let charges = c4::charges().unwrap_or(0).max(0);
@@ -158,7 +177,15 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
     }
     state.flash = state.flash.filter(|f| now < f.until);
     let flash = state.flash.map(|f| f.kind);
+    let near = reading
+        .distance_m
+        .is_some_and(|d| d <= tuning.approach_radius_m.max(tuning.touch_radius_m));
+    let came_near = near && !state.near && matches!(reading.phase, PressPhase::Armed { .. });
+    state.near = near;
     drop(state);
+    if came_near {
+        haptics::play(presser, Event::DetonatorNear);
+    }
 
     if reading.pressed {
         if lit {
@@ -177,12 +204,22 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         return;
     };
     let body = headpose::xr::body_rotation();
+    let world_grip = match drawn[off.index()] {
+        Some(hand) => hand.grip.orientation,
+        None => active.hands[off.index()].map_or(body, |h| body * h.grip.orientation),
+    };
     let look = Look {
         off,
-        normal: (body * face.normal).normalize_or(Vec3::Y),
+        normal: (world_grip * face.normal).normalize_or(Vec3::Y),
         charges,
         progress: reading.phase.dwell_progress(tuning),
         flash,
+        closeness: reading
+            .distance_m
+            .filter(|_| near)
+            .map(|d| closeness(d, tuning)),
+        blocked: reading.phase == PressPhase::Blocked,
+        tip: tip.map(|(t, _)| t).filter(|_| near),
     };
     let mut prims = button(&look, tuning);
     store::submit(Source::WristDetonator, &mut prims, TTL);
@@ -204,6 +241,7 @@ pub(crate) fn stand_down() {
     state.status.acting = false;
     state.status.reading = PressReading::default();
     state.flash = None;
+    state.near = false;
     drop(state);
     store::clear(Source::WristDetonator);
 }
@@ -227,6 +265,12 @@ const PRESSED: Rgba = [1.0, 0.95, 0.8, 1.0];
 const EMPTY: Rgba = [0.5, 0.6, 0.8, 0.9];
 const DETONATED: Rgba = [1.0, 0.6, 0.1, 1.0];
 const PIP: Rgba = [1.0, 0.35, 0.15, 0.95];
+const WELL: Rgba = [0.85, 0.9, 1.0, 1.0];
+const BLOCKED: Rgba = [1.0, 0.1, 0.1, 0.95];
+const TIP: Rgba = [1.0, 1.0, 1.0, 0.95];
+
+/// The tested fingertip's dot's diameter, metres.
+const TIP_SIZE_M: f32 = 0.008;
 
 /// A flash of the button after an event.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -258,6 +302,8 @@ struct State {
     detector: PressDetector,
     status: WristStatus,
     flash: Option<Flash>,
+    /// Whether the fingertip was within the approach radius on the last tick.
+    near: bool,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -276,6 +322,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         idle_presses: 0,
     },
     flash: None,
+    near: false,
 });
 
 /// What the button looks like on a tick.
@@ -287,6 +334,24 @@ struct Look {
     /// How far a slow touch is through its dwell, `0..=1`.
     progress: f32,
     flash: Option<FlashKind>,
+    /// How far the fingertip has come from the approach radius to the touch sphere, `0..=1`, while
+    /// it is within the approach radius.
+    closeness: Option<f32>,
+    /// Whether the touch is blocked.
+    blocked: bool,
+    /// The tested fingertip in the off hand's grip frame, while it is within the approach radius.
+    tip: Option<Vec3>,
+}
+
+/// How far a fingertip `distance_m` from the button's centre has come from the approach radius to
+/// the touch sphere, `0..=1`.
+fn closeness(distance_m: f32, tuning: &WristDetonatorConfig) -> f32 {
+    let touch = tuning.touch_radius_m.max(0.0);
+    let span = tuning.approach_radius_m - touch;
+    if span <= 0.0 {
+        return if distance_m <= touch { 1.0 } else { 0.0 };
+    }
+    (1.0 - (distance_m - touch) / span).clamp(0.0, 1.0)
 }
 
 /// The button's sprites on the off-hand's wrist, lying on the wrist facing out of it: a disc and
@@ -299,9 +364,11 @@ fn button(look: &Look, tuning: &WristDetonatorConfig) -> Vec<Primitive> {
         Some(FlashKind::Detonated) => (DETONATED, DETONATED, 1.8),
         Some(FlashKind::Pressed) => (PRESSED, PRESSED, 1.2),
         Some(FlashKind::Empty) => (EMPTY, EMPTY, 1.0),
+        None if look.blocked => (if lit { LIT } else { DIM }, BLOCKED, 1.0),
         None if lit => (mix(LIT, DWELL, look.progress), LIT_RIM, 1.0),
         None => (mix(DIM, DWELL, look.progress), DIM_RIM, 1.0),
     };
+    let closeness = look.closeness.unwrap_or(0.0);
     let sprite = |offset: Vec3, size: f32, shape: Shape, color: Rgba| Primitive::Sprite {
         at: Anchor::Hand {
             hand: look.off,
@@ -319,10 +386,42 @@ fn button(look: &Look, tuning: &WristDetonatorConfig) -> Vec<Primitive> {
         },
     };
     let diameter = radius * 2.0 * scale;
+    let well = tuning.touch_radius_m.max(radius) * 2.0;
+    let well_colour = if look.blocked {
+        BLOCKED
+    } else {
+        fade(WELL, 0.35 + 0.65 * closeness)
+    };
     let mut prims = vec![
         sprite(centre, diameter, Shape::Disc, fill),
         sprite(centre, diameter, Shape::Ring { thickness: 0.25 }, rim),
+        sprite(centre, well, Shape::Ring { thickness: 0.08 }, well_colour),
     ];
+    if let Some(closeness) = look.closeness.filter(|_| !look.blocked) {
+        let approach = tuning.approach_radius_m.max(tuning.touch_radius_m) * 2.0;
+        prims.push(sprite(
+            centre,
+            approach + (well - approach) * closeness,
+            Shape::Ring { thickness: 0.06 },
+            fade(WELL, closeness),
+        ));
+    }
+    if let Some(tip) = look.tip {
+        prims.push(Primitive::Sprite {
+            at: Anchor::Hand {
+                hand: look.off,
+                pose: HandPose::Grip,
+                offset: tip,
+            },
+            size: SpriteSize::World(TIP_SIZE_M),
+            facing: Facing::Billboard,
+            shape: Shape::Disc,
+            color: if look.blocked { BLOCKED } else { TIP },
+            depth: DepthMode::XRay {
+                occluded_alpha: 0.5,
+            },
+        });
+    }
     // +Z of the grip frame runs back from the fist toward the elbow.
     for i in 0..look.charges.min(MAX_PIPS) {
         let along = radius + PIP_SPACING_M * (i as f32 + 1.0);
@@ -344,6 +443,12 @@ fn mirrored(hand: Hand, v: Vec3) -> Vec3 {
     }
 }
 
+/// `colour` with its alpha scaled by `alpha`.
+fn fade(colour: Rgba, alpha: f32) -> Rgba {
+    let [r, g, b, a] = colour;
+    [r, g, b, a * alpha.clamp(0.0, 1.0)]
+}
+
 fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
     let t = t.clamp(0.0, 1.0);
     std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
@@ -360,6 +465,9 @@ mod tests {
             charges,
             progress: 0.0,
             flash,
+            closeness: None,
+            blocked: false,
+            tip: None,
         }
     }
 
@@ -373,10 +481,11 @@ mod tests {
     #[test]
     fn a_pip_shows_each_placed_charge() {
         let t = WristDetonatorConfig::new();
-        // The disc and its rim, then one pip per charge, up to the most drawn.
-        assert_eq!(button(&look(0, None), &t).len(), 2);
-        assert_eq!(button(&look(3, None), &t).len(), 5);
-        assert_eq!(button(&look(40, None), &t).len(), 2 + MAX_PIPS as usize);
+        // The disc, its rim, and the touch sphere's ring, then one pip per charge, up to the most
+        // drawn.
+        assert_eq!(button(&look(0, None), &t).len(), 3);
+        assert_eq!(button(&look(3, None), &t).len(), 6);
+        assert_eq!(button(&look(40, None), &t).len(), 3 + MAX_PIPS as usize);
     }
 
     #[test]
@@ -392,6 +501,50 @@ mod tests {
             colour(&button(&look(2, Some(FlashKind::Detonated)), &t)[0]),
             DETONATED
         );
+    }
+
+    #[test]
+    fn an_approaching_fingertip_shows_its_dot_and_a_closing_ring() {
+        let t = WristDetonatorConfig::new();
+        let near = Look {
+            closeness: Some(closeness(t.approach_radius_m * 0.5, &t)),
+            tip: Some(Vec3::X * 0.05),
+            ..look(0, None)
+        };
+        let prims = button(&near, &t);
+        // The base three, the closing ring, and the fingertip's dot.
+        assert_eq!(prims.len(), 5);
+        let Primitive::Sprite { size, .. } = prims[3] else {
+            panic!("{:?}", prims[3]);
+        };
+        let SpriteSize::World(size) = size else {
+            panic!("{size:?}");
+        };
+        assert!(size > t.touch_radius_m * 2.0 && size < t.approach_radius_m * 2.0);
+    }
+
+    #[test]
+    fn closeness_runs_from_the_approach_radius_to_the_touch_sphere() {
+        let t = WristDetonatorConfig::new();
+        assert_eq!(closeness(t.approach_radius_m, &t), 0.0);
+        assert_eq!(closeness(t.touch_radius_m, &t), 1.0);
+        assert_eq!(closeness(0.0, &t), 1.0);
+        let mid = closeness((t.approach_radius_m + t.touch_radius_m) * 0.5, &t);
+        assert!((mid - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_blocked_touch_turns_the_rims_and_the_dot_red() {
+        let t = WristDetonatorConfig::new();
+        let blocked = Look {
+            blocked: true,
+            tip: Some(Vec3::ZERO),
+            ..look(0, None)
+        };
+        let prims = button(&blocked, &t);
+        assert_eq!(colour(&prims[1]), BLOCKED);
+        assert_eq!(colour(&prims[2]), BLOCKED);
+        assert_eq!(colour(prims.last().unwrap()), BLOCKED);
     }
 
     #[test]

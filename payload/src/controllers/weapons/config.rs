@@ -761,7 +761,7 @@ pub struct WristDetonatorConfig {
     /// The direction out of the button's face, which the button is drawn facing. Normalised on
     /// use.
     pub normal: Vec3,
-    /// The drawn button's radius, metres.
+    /// The drawn button's radius, metres. The touch sphere is drawn around it as a ring.
     pub radius_m: f32,
     /// How close to the button's centre the fingertip must come to touch it, metres.
     pub touch_radius_m: f32,
@@ -769,6 +769,10 @@ pub struct WristDetonatorConfig {
     /// again, metres. More than `touch_radius_m`, so that a fingertip resting on the button does
     /// not press it twice.
     pub release_radius_m: f32,
+    /// How close to the button's centre the fingertip comes before the button shows it
+    /// approaching, metres: the fingertip's dot appears, a ring closes in on the button as the
+    /// fingertip nears, and the pressing hand ticks once on the way in.
+    pub approach_radius_m: f32,
     /// How far behind the face's plane a fingertip may be and still touch, metres: further behind,
     /// it has come through the wrist, which a real finger cannot.
     pub max_behind_m: f32,
@@ -797,6 +801,7 @@ impl WristDetonatorConfig {
             radius_m: 0.02,
             touch_radius_m: 0.03,
             release_radius_m: 0.05,
+            approach_radius_m: 0.1,
             max_behind_m: 0.015,
             min_entry_speed_mps: 0.25,
             dwell_s: 0.15,

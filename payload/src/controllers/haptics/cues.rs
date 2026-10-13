@@ -162,6 +162,8 @@ pub enum Event {
     DetonatorPress,
     /// The wrist detonator pressed with nothing placed.
     DetonatorEmpty,
+    /// The pressing fingertip coming within reach of the wrist detonator.
+    DetonatorNear,
     /// The weapon wheel opening or its choice changing.
     WheelTick,
     /// The weapon wheel's release committing a weapon.
@@ -210,7 +212,7 @@ pub enum Event {
 }
 
 impl Event {
-    pub const ALL: [Event; 50] = [
+    pub const ALL: [Event; 51] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -241,6 +243,7 @@ impl Event {
         Event::C4Detonate,
         Event::DetonatorPress,
         Event::DetonatorEmpty,
+        Event::DetonatorNear,
         Event::WheelTick,
         Event::WheelCommit,
         Event::SteeringStop,
@@ -296,6 +299,7 @@ impl Event {
             Event::C4Detonate => Cue::new(Primitive::Thud, 1.0, Category::Weapons).long(),
             Event::DetonatorPress => Cue::new(Primitive::Click, 1.0, Category::Weapons),
             Event::DetonatorEmpty => Cue::new(Primitive::Buzz, 0.1, Category::Weapons),
+            Event::DetonatorNear => Cue::new(Primitive::Tick, 0.4, Category::Weapons),
             Event::WheelTick => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
             Event::WheelCommit => Cue::new(Primitive::Click, 0.75, Category::Weapons),
             Event::SteeringStop | Event::ControlStop => {
@@ -353,6 +357,7 @@ impl Event {
             Event::C4Detonate => "C4 detonate",
             Event::DetonatorPress => "detonator press",
             Event::DetonatorEmpty => "detonator empty",
+            Event::DetonatorNear => "detonator near",
             Event::WheelTick => "weapon wheel tick",
             Event::WheelCommit => "weapon wheel commit",
             Event::SteeringStop => "steering stop",

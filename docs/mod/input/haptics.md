@@ -86,6 +86,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::C4Detonate` | the placed charges detonate, on both hands | thud, long | 1.0 | weapons | `weapons::c4` |
 | `Event::DetonatorPress` | the wrist detonator is pressed with charges placed, on both hands | click | 1.0 | weapons | `weapons::c4::wrist` |
 | `Event::DetonatorEmpty` | the wrist detonator is pressed with nothing placed | buzz | 0.1 | weapons | `weapons::c4::wrist` |
+| `Event::DetonatorNear` | the pressing fingertip comes within the wrist detonator's approach radius, on the pressing hand | tick | 0.4 | weapons | `weapons::c4::wrist` |
 | `Event::WheelTick` | the weapon wheel opens or its choice changes | tick | 0.75 | weapons | `weapons::wheel` |
 | `Event::WheelCommit` | the weapon wheel's release commits a weapon | click | 0.75 | weapons | `weapons::wheel` |
 | `Event::SteeringStop` | the held wheel reaches its lock | bump | 0.6 | vehicles | `vehicles::control_haptics` |
