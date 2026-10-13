@@ -85,9 +85,8 @@ not parse.
 
 Treat it as a last resort. On `Shaders_F` it names **1330 of 1551**: it leaves 221 blank and reports a
 stray printable byte as the name for 4 more (`lightglow` comes out as `B`, `nvwaterhighend` as `2`).
-Its gaps are not random — whole runs of hull and domain shaders fall in them — and that is exactly how
-an earlier investigation concluded that the WaveWorks hull and domain shaders were "unnamed". They are
-named; the scan simply could not see it. If a shader looks nameless, check the name table before
+Its gaps are not random — whole runs of hull and domain shaders fall in them — so read from the scan, the
+WaveWorks hull and domain shaders look "unnamed". They are named; the scan simply cannot see it. If a shader looks nameless, check the name table before
 believing it.
 
 ## Disassembling a blob

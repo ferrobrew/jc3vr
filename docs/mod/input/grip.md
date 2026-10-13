@@ -83,7 +83,7 @@ A marker shows as its target says: always, faintly while no hand is within reach
 
 The markers are anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)): a marker in the cockpit frame (the body's sockets, the vehicle's controls) to the render-time head, one on a held gun to its hand's render-time grip, and only what lies in the world to the world. A socket on the player's own body is drawn shifted by the remap of the hand that reaches for it, so the drawn hand meets the drawn marker where the grab happens.
 
-`overlay.markers` (on; the pause menu's `GRIP MARKERS`) is the one switch for every marker. It replaces the separate highlight switches the weapon, vehicle, and pickup handling had.
+`overlay.markers` (on; the pause menu's `GRIP MARKERS`) is the one switch for every marker; the weapon, vehicle, and pickup handling have no highlight switches of their own.
 
 ## Readouts and logs
 

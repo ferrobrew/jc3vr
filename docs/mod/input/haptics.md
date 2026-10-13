@@ -28,7 +28,7 @@ OpenXR plays one vibration per controller at a time, and a new one replaces what
 
 - Sustained sources sum. The sum passes a soft limiter: unchanged up to `mix.sustain_knee` (0.45), then bent smoothly toward `mix.sustain_ceiling` (0.7). However many sustained sources stack (a held load, the game's rumble, the grapple's tension), the hand never reaches full strength from them, and a one-off cue stands out above them. With no cue playing, the hand plays the limited sum for `mix.refresh_s` (100 ms), refreshed at every flush. A source that sends a level of zero ends at once; one that stops sending ends when its hold runs out.
 - One-off cues play at the next flush. The cue of the highest priority (then the strongest) among the frame's arrivals leads and sets the length and the frequency. Each other arrival, and a cue still playing, adds `mix.stack_share` (0.35) of its amplitude, and the mod's sustained level adds `mix.duck_share` (0.5) of itself beneath the lead. The total passes the soft limiter at full strength with its knee at `mix.knee` (0.85), so a single cue below the knee plays exactly as shaped and a pile of them never clips. The cue plays for the longer of its own length and what remained of the one it cut into.
-- The game's rumble is left out of a one-off cue's onset entirely (it ducks under the mod's cues), and every sustained source is held off a hand while a one-off cue plays there, resuming at the first flush after it ends. This replaces the hold the shot used to keep against the game's continuous rumble, and covers every cue rather than the shot alone.
+- The game's rumble is left out of a one-off cue's onset entirely (it ducks under the mod's cues), and every sustained source is held off a hand while a one-off cue plays there, resuming at the first flush after it ends.
 - An arrival weaker than the cue playing and of a lower priority is masked: dropped rather than cutting a heavier cue short (a holster tick during a long burst of fire).
 
 The global strength (`intensity`) scales the mixer's output as it is sent, so it scales every cue the same way, and it never changes the mix.
@@ -117,7 +117,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Sustain::GrappleReel` | the grapple hand while the reel carries the character, by its speed | hum | 0.35 | traversal | `grapple::physical` |
 | `Sustain::GameRumble` | the game's per-frame motor strength: the low motor on the left hand, the high one on the right | hum | 1.0 | game | `haptics::rumble` |
 
-The defaults were picked to land each source close to the amplitude and length it had before the vocabulary, rounded onto the primitive it belongs to; the clearest changes are the pressure and tension sources, which were short pulses resent every tick and are now sustained levels that sum, and the kick and the palm contact, whose softest end is now the bump's soft amplitude.
+Each default is rounded onto the primitive its source belongs to. The pressure and tension sources are sustained levels that sum, not short pulses resent every tick, and the softest end of the kick and the palm contact is the bump's soft amplitude.
 
 ## The game's rumble
 
@@ -149,4 +149,4 @@ The pause menu's `VR: STATUS` page has `HAPTIC CUES` under FEEDBACK: the cues se
 ## Open questions
 
 - Whether the runtimes in use (SteamVR's Index driver through Monado, and WiVRn) honour the frequency hint, and whether the low hint of the thud and the hum feels weaker than the runtime's default on the Index's actuators.
-- Whether the sustained ceiling leaves the game's strongest rumbles (a landing from height, an explosion close by) strong enough, now that they sum under it.
+- Whether the sustained ceiling leaves the game's strongest rumbles (a landing from height, an explosion close by) strong enough, since they sum under it.

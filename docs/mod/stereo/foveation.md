@@ -63,17 +63,16 @@ The design above is implemented, on by default, across:
   foveal_first_pass, foveal_last_pass}` (`config.rs`), surfaced in the "Foveation" debug section.
   `enabled` defaults **true**.
 
-## Hardware findings
+## The fill-in draw's pipeline state
 
-The first in-headset validation caught a raw-state hazard the design missed: the fill-in draw runs on
-the immediate context with the pipeline state it binds itself, and it originally bound everything
-*except* a blend state — so it inherited whatever blend the engine's last scene block left on the
-context. An inherited additive/alpha state made the fill add its neighbour-averaged reconstruction
-over the entire already-shaded frame (~2x global brightness), latched for as long as the scene kept
-producing the same leftover state and flipping with head pose. `bind_fullscreen` now binds an
-explicit opaque blend (the state backup already restored the engine's blend afterwards). The lesson
-generalizes: a raw pass on the engine's context must bind *every* state stage it depends on, not
-just the ones it obviously uses.
+The fill-in draw runs on the immediate context with the pipeline state it binds itself, so
+`bind_fullscreen` binds every stage it depends on, an explicit opaque blend included (the state
+backup restores the engine's blend afterwards). A stage it left unbound would inherit whatever the
+engine's last scene block left on the context: an inherited additive or alpha blend makes the fill
+add its neighbour-averaged reconstruction over the entire already-shaded frame (about twice the
+global brightness), latched for as long as the scene keeps producing the same leftover state and
+flipping with head pose. The rule generalizes: a raw pass on the engine's context must bind *every*
+state stage it depends on, not just the ones it obviously uses.
 
 ## Open items (needs in-headset validation)
 

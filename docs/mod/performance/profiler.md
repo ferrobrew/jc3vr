@@ -81,7 +81,7 @@ under DXVK's monotonic timestamp clock; implausible gaps are discarded.
 A dispatch's outer scope, and each seam inside it, is a *span*: the GPU's whole execution window
 for that stretch, idle included. If the draw thread cannot record commands as fast as the GPU
 retires them, the GPU drains **inside** the span and the scope still reads its full width — which
-is how an earlier capture produced "the GPU is the ceiling at 13 ms" for a frame that was actually
+is how a capture can read "the GPU is the ceiling at 13 ms" for a frame that is actually
 waiting on submission.
 
 So each render pass is bracketed with its own timestamp pair inside its seam (from the

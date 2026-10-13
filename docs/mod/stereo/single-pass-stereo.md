@@ -62,10 +62,10 @@ The flag is raised, read, and lowered entirely on the draw thread, inside one
 must run there too — it does, in the `PreDraw` prologue (`single_pass::begin_dispatch`), the one point
 in that thread's sequence where no range can be live.
 
-It used to run on the game thread at the top of [`Game::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateRender), which is safe only while every
+It cannot run on the game thread at the top of [`Game::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateRender), which is safe only while every
 dispatch is drained before `UpdateRender` returns. With `stereo.defer_frame_tail` on (the default) the
 last dispatch is *not* drained: the draw thread keeps walking the previous frame's ~20k draws while
-the game thread runs the next frame's sim and re-enters `UpdateRender`. The clear then lands in the
+the game thread runs the next frame's sim and re-enters `UpdateRender`. A clear there lands in the
 middle of a live range, and every draw after it is treated as out of range — no eye split, `cb13`
 mirrored instead of per-eye, the per-eye reprojection matrices dropped. How far the draw thread got by
 then varies frame to frame, so whole geometry families (instanced buildings, bark, foliage) blink in
@@ -376,9 +376,9 @@ A fullscreen pass is one draw with one constant buffer, so a pass that rebuilds 
 depth gets one basis while its quad spans both halves: the left half gets eye 0's frustum compressed
 2x horizontally and the right half a basis unrelated to it. The error is a function of the view
 matrix, so it turns with the camera — and the two passes that sample the sun cascade over the
-reconstructed positions are what made the shadows slide.
+reconstructed positions are what make the shadows slide.
 
-The consumer set is closed at seven (engine `rendering.md` §4.1), and each is now its own flag:
+The consumer set is closed at seven (engine `rendering.md` §4.1), and each has its own flag:
 `single_pass.reconstruct_per_eye` and `single_pass.atmospheric_per_eye` (both **on** — splitting only
 the deferred resolve leaves atmospheric scattering painting the mistake back over it),
 `single_pass.ssao_per_eye`, `single_pass.ssr_per_eye`, `single_pass.subsurface_per_eye`, and
@@ -427,15 +427,15 @@ has to describe where that geometry actually landed. On by default, but the hard
 A/B: the affected family may not be on screen at all at the water-quality setting in use, which makes a
 headset comparison the only way to tell the fix from a no-op.
 
-> **A correction worth keeping.** This mechanism was first attributed to `NvWaterHighEnd`, and the fix
-> was first designed as a DXBC rewrite of nine water pixel shaders with eye parity plumbed into a
-> pixel shader. Both were wrong. `NvWater*` builds its UV from `SV_Position × cb0[8].zw`, which is
+> **Not `NvWaterHighEnd`, and not a shader rewrite.** This mechanism is not `NvWaterHighEnd`'s, and its
+> fix is not a DXBC rewrite of nine water pixel shaders with eye parity plumbed into a pixel shader.
+> `NvWater*` builds its UV from `SV_Position × cb0[8].zw`, which is
 > already consistent under double-wide; the projective-UV family is the legacy non-NV one. And the
 > defect lives entirely in a CPU-staged matrix, so no bytecode rewrite and no pixel-shader eye parity
 > is needed. `NvWater*` has a different defect — its vertex shader writes clip from a baked
 > model-view-projection in its own constant buffer, so both eyes see the collapsed centre view. Flat
 > water at the wrong depth is invisible in a screenshot and wrong only in a headset, which is why it
-> survived so long; `single_pass.nvwater_per_eye` (**on**) addresses it, and
+> is easy to miss; `single_pass.nvwater_per_eye` (**on**) addresses it, and
 > `single_pass.ssdecal_geometry_per_eye` (**on**) is the same shape for the decal box.
 
 #### The water box surface, and what the legacy family's clip path actually is
@@ -713,7 +713,7 @@ Cost is one extra submission per such draw: measured at a mean of ~131 draws per
 total, dominated by `generalmkiiihwinstanced` (the buildings), then the `vegetationfoliage*hwinstanced`
 and `vegetationbark*hwinstanced` families.
 
-The counters that measured the case still run, now splitting it into **handled** (re-issued per eye)
+The counters that measure the case split it into **handled** (re-issued per eye)
 and **exposed** (the flag off, or the re-issue declined for want of a recorded full viewport, a live
 context, or `cb13` contents). Exposed draws are further split by instance count — one instance means
 the geometry is simply missing from the right eye, more than one means the batch is halved. Each draw

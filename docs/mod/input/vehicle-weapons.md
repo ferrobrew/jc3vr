@@ -28,7 +28,7 @@ The pause menu's `VR: CONTROLS` page has `PASSENGER BODY AIMS BY HAND`, `GRIP MO
 
 - That the vehicle aim blend turns the seated body toward the hand's point without a fight with the passenger's lean-out animation, and how far round it turns before the game's blend runs out of samplers.
 - Whether a stunt position runs the same blend; on it the gun aims by the hand either way.
-- Whether the game refuses a passenger's shot that points into the vehicle; if it does, the hand's point now decides that, rather than the gaze.
+- Whether the game refuses a passenger's shot that points into the vehicle; if it does, the hand's point decides that, rather than the gaze.
 - That the per-shot seam sees every mounted gun's shot, the turrets' included, and the kick's size and the spring's feel against the guns' rates of fire.
 - That the grip press on a mounted gun is free for the handle grab in every gunner seat.
 

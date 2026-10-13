@@ -49,7 +49,7 @@ The anchor hands over between the two over `view.blend_s` seconds, eased, so lea
 
 While the proxy stands on the ground that tick (not [`Character::IsInAir`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInAir)), the root's height is smoothed by a critically damped follower (`view.height_smoothing_s`), so the steps of a staircase, which the proxy climbs in small pops, read as a ramp. Leaving the ground winds whatever the smoothing still hides down to nothing over a tenth of a second, so a jump's rise reaches the view at once and without a jump of its own. The smoothed height trails by at most `view.max_height_lag_m`, and a change beyond `view.height_snap_m` (a drop, a teleport) passes at once. The readout shows the current offset.
 
-Because the camera's anchor no longer contains the animation, everything that composes onto it does too: the roomscale cockpit, the head-height remap, and the body IK's head target all measure the player's head against the root-fixed head.
+Because the camera's anchor does not contain the animation, everything that composes onto it does too: the roomscale cockpit, the head-height remap, and the body IK's head target all measure the player's head against the root-fixed head.
 
 ## What needs confirming in the headset
 

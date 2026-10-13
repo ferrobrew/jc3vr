@@ -43,7 +43,7 @@ The pose values are judged by eye, not measured, and are the first thing to tune
 
 The hand's shape is its measured curls blended toward the pose by the pose's share (`blend.rs`). The share follows its target with `blend_s`, so taking hold closes the fingers onto the pose and letting go opens them back to the measured curls; the shape is then smoothed with the curls' own `smoothing_s` and bent as the curls are, by the hand's tier weight.
 
-With the grip poses off (`grip.enabled`), the earlier behaviour holds: a held hold closes the hand into a fist, and every other hold keeps the measured curls. With `grip.weapons` off, a gun or the foregrip keeps the game's grip animation, and only the trigger finger is driven (every finger with `drive_all_when_holding`), because the game's grip clips per weapon already wrap the fingers round the gun.
+With the grip poses off (`grip.enabled`), the plain behaviour holds: a held hold closes the hand into a fist, and every other hold keeps the measured curls. With `grip.weapons` off, a gun or the foregrip keeps the game's grip animation, and only the trigger finger is driven (every finger with `drive_all_when_holding`), because the game's grip clips per weapon already wrap the fingers round the gun.
 
 ## Contact fit
 

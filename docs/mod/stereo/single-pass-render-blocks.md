@@ -112,9 +112,8 @@ id still indexes the original instance.
 
 ### Black-in-VR: the clustered grid is *not* the cause
 
-The earlier version of this section claimed the black grass was the clustered froxel grid and that
-`single_pass.clustered_per_eye` had fixed it. Both halves of that are wrong, and the shader bundle
-says so directly.
+The black grass is not the clustered froxel grid, and `single_pass.clustered_per_eye` does not fix
+it. The shader bundle says so directly.
 
 **The visible grass is deferred, not forward-lit.** The block's colour permutations split cleanly:
 
@@ -153,7 +152,7 @@ multiple of 128 …; the clustered light assignment ran whole-grid
 That is why toggling `single_pass.clustered_per_eye` changed nothing. Making the split usable means
 rounding the per-eye render width up to a multiple of `LIGHT_GRID_TILE_SIZE` in `vr::engine_render_resolution`, so that the double-wide width is a multiple of twice the tile size. The change is worth making for the local-lighting correctness it provides, but it does not affect the black grass.
 
-**Corrected resource map.** The old text's slot attributions were wrong. The map below comes from [`RenderBlockTypeBase::SetupForwardLightingResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupForwardLightingResources), [`RenderBlockTypeBase::SetupLightingTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupLightingTextures), and the shader bundle's own binding tables:
+**Resource map.** The map below comes from [`RenderBlockTypeBase::SetupForwardLightingResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupForwardLightingResources), [`RenderBlockTypeBase::SetupLightingTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupLightingTextures), and the shader bundle's own binding tables:
 
 | Slot | What it actually is | Source |
 |---|---|---|
@@ -182,10 +181,10 @@ log shows actually running). So "dark and speckled together" is the signature of
 and after that of the G-buffer *normal* (`o1`), which would leave the deferred resolve computing
 `N·L ≈ 0` on foliage while the terrain beside it lights correctly.
 
-The one-toggle experiment that separates them is `single_pass.foliage`, and it used to be unable to
-engage at all — see the next section, which is now fixed.
+The one-toggle experiment that separates them is `single_pass.foliage`, which can engage only
+because of the decline the next section describes.
 
-## The vegetation `cb0[4]` misclassification (fixed)
+## The vegetation `cb0[4]` misclassification
 
 The rewriter's per-eye set is `cb0[{4, 29..32}]`, and it patches any vertex shader that references one
 of them. But those five rows are not one thing. `cb0[29..32]` is `m_OffsetViewProjection` — it can only
@@ -200,18 +199,18 @@ rows. Their roles:
 | `vegetationfoliage*` | `add r0.w, r1.y, cb0[4].y` — turns the camera-relative position back into a world one for the wind-noise texture lookup | `cb2[4..7]`, the baked `OffsetVP` |
 | `vegetationbark*instanced` | `add r1.xyz, r0.xyzx, -cb0[4].xyzx` — makes the per-instance world position camera-relative | `cb1[0..3]`, the baked `OffsetVP` |
 
-Neither takes its clip position from `cb0`, so the remap bought them nothing: instance-doubling and
-`SV_ViewportArrayIndex` routing put them in both eye halves, but both halves were drawn from the
-collapsed **centre** camera. It also *locked out the fix*: `baked_cb_intercept_ready` declines whenever
-`BOUND_VS_PATCHED` is set, so `single_pass.foliage` and `single_pass.bark` could never run.
+Neither takes its clip position from `cb0`, so the remap buys them nothing when it claims them:
+instance-doubling and `SV_ViewportArrayIndex` routing put them in both eye halves, but both halves are
+drawn from the collapsed **centre** camera. A claim also *locks out the fix*: `baked_cb_intercept_ready`
+declines whenever `BOUND_VS_PATCHED` is set, so `single_pass.foliage` and `single_pass.bark` cannot run
+on a claimed shader.
 
 ### What that looks like, and why it is a *mono* defect
 
-The symptom was first reported as vegetation that is roughly in the right place but does not stay put
-as the camera moves, and it was first explained here as zero disparity between the eyes. **That
-explanation was wrong**, and the correction matters because it changes which mechanism to chase: it was
-observed in the **left-eye desktop mirror, with the headset not being worn**. A single view cannot show
-a stereo-depth defect at all.
+The symptom is vegetation that is roughly in the right place but does not stay put as the camera
+moves. It is **not** zero disparity between the eyes, and the distinction changes which mechanism to
+chase: it shows in the **left-eye desktop mirror, with the headset not being worn**. A single view
+cannot show a stereo-depth defect at all.
 
 Under the collapse the render camera stays centred and each patched shader gets its eye's view from
 `cb13`; so in the left half of the double-wide target, terrain, props and characters are drawn from the
@@ -235,10 +234,10 @@ at the viewpoint:
 | Foliage's remapped `cb0[4]` in the wind-noise UV | no | bounded by the *vertical* component of a 32 mm offset, against a world-scaled noise lookup |
 
 So of the two `cb0[4]` mis-substitutions, bark's actually *supplied* the correct eye viewpoint (it
-rebases by `cb0[4]`, which the remap made per-eye) and left only the fixed projection difference, while
+rebases by `cb0[4]`, which the remap makes per-eye) and leaves only the fixed projection difference, while
 foliage's is confined to a wind-noise coordinate and is negligible. The distance-dependent term belongs
-entirely to foliage, whose clip path never touches `cb0` and was therefore wholly centre-viewed. The
-`cb0[4]` misclassification is what *prevented the repair*, not what caused the displacement.
+entirely to foliage, whose clip path never touches `cb0` and is therefore wholly centre-viewed. The
+`cb0[4]` misclassification is what *prevents the repair*, not what caused the displacement.
 
 What the arithmetic predicts precisely is a rigid ~32 mm lateral displacement that swings around with
 the camera heading and grows angularly as you close on it. Whether "recedes as I approach" is the right
@@ -247,8 +246,8 @@ which has not been taken. The mechanism is pinned by the distance dependence reg
 adjective.
 
 The stereo consequence — both eyes seeing the identical centre image, so the vegetation also fuses at
-infinite depth in a headset — is real, and the same fix addresses it. It is simply not what was seen
-here.
+infinite depth in a headset — is real, and the same fix addresses it. It is simply not what the mirror
+shows.
 
 **The fix, in `stereo::single_pass::baked_cb_block_owns_vs`.** While a family's intercept flag is on,
 its vertex shaders are declined by the `cb0` remap at creation, so the block intercept owns them end to
@@ -272,7 +271,7 @@ and that is true whether or not the remap claims the shader. Un-patching without
 transform makes things worse, not better — an unpatched instanced draw is forwarded once at whatever
 viewport is bound.
 
-All fifty were then read out of the disassembly one at a time, and the classification is pinned by
+Each of the fifty is classified from its disassembly, and the classification is pinned by
 `corpus_camera_only_population_is_the_triaged_fifty`. The axis that matters is where each takes its
 clip from:
 
@@ -281,7 +280,7 @@ clip from:
   (`sh_0086`), and `layeredblend` (`sh_0087`) are one shared body — `clip = cb1[0..3] · objectPosition`,
   `cb0[4]` differenced into a `dp3` for a LOD fade (`mad_sat o3.w, r0.x, l(-0.0001), l(1.0)`), and a
   post-projection depth bias `mad o0.z, cb2[0].x, r0.w, r0.z`. None of them is an NDC writer: each
-  multiplies an object-space position by a 4×4 matrix. All four are now on `REPROJECT_NAME_PREFIXES`
+  multiplies an object-space position by a 4×4 matrix. All four are on `REPROJECT_NAME_PREFIXES`
   and take `single_pass.reproject_camera_only` (on by default, requires `single_pass.reproject`), at no
   extra draw cost. The vegetation families and `terrainshadowsimple` are also in this group but are
   owned elsewhere — the block intercepts and the shadow atlas respectively.
@@ -289,7 +288,7 @@ clip from:
   (translation-bearing, mapping *absolute* world to clip), staged into `m_VPGlobalConstData[0..3]` by
   `SetGlobalShaderProgramCameraConstants` — verified in the IDB, not just read off the def. It is
   per-view data, but it is **not** one of the five rows the remap makes per-eye, so these shaders are
-  centre-viewed for a reason the remap could never have fixed. The legacy water surfaces (`waterbelow`,
+  centre-viewed for a reason the remap cannot fix. The legacy water surfaces (`waterbelow`,
   `waterbox`, `waterboxbelow`, `waterboxsurface`, `waterhighend`, `watershader_lod0/1`), the clouds
   (`cirrusclouds`, `cloudflythrough`, `clouds`, `cloudsshadow`), and `weather` are all here. They are
   structurally reprojectable — the reprojection post-multiplies whatever clip the shader computed, so
@@ -336,7 +335,7 @@ is on. It is not done here because it needs a `BlockIntercept` variant for the W
 `draw_per_eye_half_ignoring_bound_vs` re-issue compose — the two must land together, since declining
 without the intercept forwards the draw once at whatever viewport is bound.
 
-**The bound-shader gate also had to change.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
+**The bound-shader gate.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
 reads the shader bound by the *previous* draw, because these blocks bind their own inside the `Draw`
 being wrapped. Bark is drawn interleaved with patched model geometry, so the check would stand its
 intercept down on a neighbour's shader. `BoundVsGate::Owned` skips it for the two families whose

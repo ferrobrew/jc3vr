@@ -33,7 +33,7 @@ in `crate::stereo`, and the capture/composite pipeline in `far_field::share`.
 ### Frame structure: three dispatches
 
 Reuse the stereo machinery (the double-`Draw` loop and its between-eye state save/restore — the
-restores now run between every consecutive dispatch pair) with a third, far-only dispatch:
+restores run between every consecutive dispatch pair) with a third, far-only dispatch:
 
 1. **Far dispatch** (eye-0 pose): far model runs + gated far types only (near windows empty), plus
    sky. Post-effects and screen-space passes gated off. Capture the shared far product at the end
@@ -109,7 +109,7 @@ reuses that machinery, at a modest pixel-density cost.
 - **Variant A** (share the lit far colour+depth, lighting paid once) needs the lighting-resolve
   masking dig.
 - **Transparent far content stays per-eye**: Share-gated types render only in the far dispatch's
-  G-buffer range, so transparent types cannot be gated (`Window` — car/building glass — vanished
-  entirely and was dropped from the default gate list). The future option is a per-entry split on
+  G-buffer range, so transparent types cannot be gated (`Window` — car/building glass — vanishes
+  entirely when gated, so it is not on the default gate list). The future option is a per-entry split on
   the back-to-front transparency passes, whose sort keys are raw distances.
 - **Water tiles** (non-ocean) and remaining bleed from increment 1.
