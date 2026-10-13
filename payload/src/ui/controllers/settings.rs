@@ -11,8 +11,8 @@ use crate::{
     },
     headpose::config::VrTurnMode,
     ui::controllers::{
-        aim, alignment, climb, collider_view, fingers, hand_bodies, hands, haptics, inventory,
-        overlay, physical_hands, roomscale, scope, stunt, summary, vehicles, weapons,
+        aim, alignment, climb, collider_view, fingers, grab_view, hand_bodies, hands, haptics,
+        inventory, overlay, physical_hands, roomscale, scope, stunt, summary, vehicles, weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -267,6 +267,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
 
     egui::CollapsingHeader::new("Hand bodies").show(ui, |ui| {
         hand_bodies::hand_bodies_settings(ui, &mut c.physical_hands.bodies)
+    });
+
+    egui::CollapsingHeader::new("Grab view").show(ui, |ui| {
+        grab_view::grab_view_settings(ui, &mut c.physical_hands.grab_view)
     });
 
     egui::CollapsingHeader::new("Collider view").show(ui, |ui| {

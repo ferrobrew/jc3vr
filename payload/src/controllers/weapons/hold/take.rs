@@ -16,6 +16,7 @@ use crate::controllers::{
     frame::Hand,
     grab::Candidate,
     hands::ActiveHands,
+    physical_hands::grab_view,
     weapons::{
         config::HoldConfig,
         docks, engine,
@@ -162,6 +163,7 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
         Err(refusal) => {
             tracing::info!(target: "controllers", hand = hand.label(), %refusal, "hold: no weapon taken");
             STATE.lock().status.last_refusal = Some(refusal.to_string());
+            grab_view::refused(hand, None, &refusal.to_string());
             hold::refused(refusal);
             false
         }

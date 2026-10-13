@@ -14,6 +14,7 @@ mod diagnostics;
 mod explosives;
 mod fingers;
 mod frame;
+mod grab_view;
 mod hand_bodies;
 mod hands;
 mod haptics;
@@ -83,6 +84,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let physical_hands_status = controller_physical_hands::status();
     let hand_bodies_status = controller_physical_hands::physics::status();
     let collider_view_status = controller_physical_hands::collider_view::status();
+    let grab_view_status = controller_physical_hands::grab_view::status();
     let climb_status = controller_physical_hands::climb::status();
     let stunt_status = controller_physical_hands::stunt::status();
     let overlay_status = controller_overlay::status();
@@ -181,6 +183,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 hand_bodies::hand_bodies_readout(ui, &hand_bodies_status)
             });
+
+        egui::CollapsingHeader::new("Grab view")
+            .default_open(true)
+            .show(ui, |ui| grab_view::grab_view_readout(ui, &grab_view_status));
 
         egui::CollapsingHeader::new("Collider view")
             .default_open(true)

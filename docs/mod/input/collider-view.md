@@ -1,6 +1,6 @@
 # The collider view
 
-The collider view draws the physics world's bodies near the player in the world-space overlay: each body's box and, where it is cheap to read, its shape, coloured by what the body is, with the mod's joints, the contacts the hand bodies and held guns start, and the player's ground. It is a diagnostic for seeing what the hand bodies ([physical-hands.md](physical-hands.md)), the held guns' bodies ([physical-guns.md](physical-guns.md)), and the player's capsule meet. It is off by default. The code is `payload/src/controllers/physical_hands/collider_view/`; the engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md).
+The collider view draws the physics world's bodies near the player in the world-space overlay: each body's box and, where it is cheap to read, its shape, coloured by what the body is, with the mod's joints, the contacts the hand bodies and held guns start, and the player's ground. It is a diagnostic for seeing what the hand bodies ([physical-hands.md](physical-hands.md)), the held guns' bodies ([physical-guns.md](physical-guns.md)), and the player's capsule meet. It is off by default. For why a hand does or does not take something, the grab view ([grab-view.md](grab-view.md)) draws the reach's rays, the grip targets, and the candidates around the hands, and borrows this view's read of the world for its candidates. The code is `payload/src/controllers/physical_hands/collider_view/`; the engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md).
 
 ## Using it
 

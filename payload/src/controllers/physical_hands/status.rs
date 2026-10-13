@@ -101,37 +101,82 @@ pub fn status() -> PhysicalHandsStatus {
     STATE.lock().status.clone()
 }
 
+/// What the palms' last tick did for one hand: the inputs of the grip press log's summary
+/// ([`press_summary`]) and of the grab view's palm marker.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PalmReadout {
+    /// Why the palms stood down, if they did.
+    pub idle: Option<Idle>,
+    /// How long ago the palms last ticked, or `None` before the first tick.
+    pub age_ms: Option<u128>,
+    /// Whether the hand holds nothing else: no gun, not the foregrip, no grenade or charge, and the
+    /// controller drives it.
+    pub free: bool,
+    /// Whether the hand's body drives it.
+    pub driven: bool,
+    /// Whether the hand's body has a fresh pose.
+    pub body_pose: bool,
+    /// Whether the palm was placed on the last tick.
+    pub palm: bool,
+    /// Whether the reach found something the grip would take.
+    pub reach: bool,
+    /// Whether the hand holds what its grip took from the world.
+    pub holding: bool,
+    /// The casts the last tick made.
+    pub casts: u32,
+    pub last_error: Option<String>,
+}
+
+/// What the palms' last tick did for `hand`.
+pub(crate) fn palm_readout(hand: Hand) -> PalmReadout {
+    let (idle, age_ms, hand_status, casts, last_error) = {
+        let state = STATE.lock();
+        let age_ms = state
+            .at
+            .map(|at| Instant::now().saturating_duration_since(at).as_millis());
+        let status = &state.status;
+        (
+            status.idle,
+            age_ms,
+            status.hands[hand.index()],
+            status.casts,
+            status.last_error.clone(),
+        )
+    };
+    PalmReadout {
+        idle,
+        age_ms,
+        free: free_hands()[hand.index()],
+        driven: physics::drives(hand),
+        body_pose: physics::body_pose(hand).is_some(),
+        palm: hand_status.palm.is_some(),
+        reach: hand_status.reach.is_some(),
+        holding: hand_status.held.is_some(),
+        casts,
+        last_error,
+    }
+}
+
 /// What the palms' last tick did for `hand`, for the grip's press log: why the palms stood down,
 /// or whether the hand was free, driven by its body (and whether that body's pose was fresh), had
 /// a palm, and reached anything, with the tick's age, casts, and last failure. A grab the reach
 /// should have offered and did not is explained by these.
 pub(crate) fn press_summary(hand: Hand) -> String {
-    let state = STATE.lock();
-    let age_ms = state
-        .at
-        .map(|at| Instant::now().saturating_duration_since(at).as_millis());
-    let status = &state.status;
-    let summary = match (status.idle, age_ms) {
+    let r = palm_readout(hand);
+    let summary = match (r.idle, r.age_ms) {
         (Some(idle), _) => format!("idle: {}", idle.label()),
         (None, None) => "never ticked".to_owned(),
-        (None, Some(age_ms)) => {
-            let hand_status = &status.hands[hand.index()];
-            format!(
-                "ticked {age_ms} ms ago, free={}, driven={}, body pose={}, palm={}, reach={}, casts={}",
-                free_hands()[hand.index()],
-                physics::drives(hand),
-                if physics::body_pose(hand).is_some() {
-                    "fresh"
-                } else {
-                    "none"
-                },
-                hand_status.palm.is_some(),
-                hand_status.reach.is_some(),
-                status.casts,
-            )
-        }
+        (None, Some(age_ms)) => format!(
+            "ticked {age_ms} ms ago, free={}, driven={}, body pose={}, palm={}, reach={}, casts={}",
+            r.free,
+            r.driven,
+            if r.body_pose { "fresh" } else { "none" },
+            r.palm,
+            r.reach,
+            r.casts,
+        ),
     };
-    match &status.last_error {
+    match &r.last_error {
         Some(error) => format!("{summary}, last error: {error}"),
         None => summary,
     }

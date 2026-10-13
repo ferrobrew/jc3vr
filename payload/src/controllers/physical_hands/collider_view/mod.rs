@@ -30,7 +30,7 @@ use std::{
 use glam::Vec3;
 use parking_lot::Mutex;
 
-pub use self::config::ColliderViewConfig;
+pub use self::{config::ColliderViewConfig, scan::ScanError};
 use self::{
     draw::{DrawInputs, Drawn, FLASH_S, Flash},
     model::{BodyKind, JointKind, MotionKind, Snapshot, gazed},
@@ -234,6 +234,29 @@ pub(crate) unsafe fn render_tick(dtf: f32) {
     if error.is_some() {
         status.last_error = error;
     }
+}
+
+/// Read the moving bodies whose boxes come within `radius_m` of `centre` (game space), the
+/// nearest `max_bodies` of them, whether or not the view is on: the grab view's candidates
+/// ([`crate::controllers::physical_hands::grab_view`]). Static bodies are left out, but for the
+/// player's ground.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub(crate) unsafe fn scan_moving(
+    centre: Vec3,
+    radius_m: f32,
+    max_bodies: u32,
+) -> Result<Snapshot, ScanError> {
+    let config = ColliderViewConfig {
+        radius_m,
+        max_bodies,
+        static_bodies: false,
+        ..ColliderViewConfig::new()
+    };
+    // SAFETY: forwarded from the caller.
+    unsafe { scan::scan(centre, &config, &mod_ids()) }
 }
 
 /// Flash a contact a hand body or a held gun's body started: where the body was before the step

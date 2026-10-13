@@ -28,6 +28,7 @@ use crate::controllers::{
             geometry::DoorKind,
             slot_label,
         },
+        grab_view::model::{HandleOutcome, HandleSeen},
         grasp::{Reach, TargetKind},
     },
 };
@@ -67,7 +68,8 @@ pub(crate) unsafe fn near(palms: &[Vec3], world_scale: f32) -> Vec<NonZeroUsize>
 
 /// The nearest door handle of `vehicles` a palm at `palm` is within the handle reach of, at the VR
 /// world scale `world_scale`, with `cast` returning the first hit between two points. What each
-/// door near the palm was goes into `notes`.
+/// door near the palm was goes into `notes`, and each handle near it, with how it stood to the
+/// palm, into `handles` when given, for the grab view.
 ///
 /// # Safety
 ///
@@ -80,7 +82,18 @@ pub(crate) unsafe fn handle_reach(
     config: &DoorsConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
     notes: &mut Vec<String>,
+    mut handles: Option<&mut Vec<HandleSeen>>,
 ) -> Option<Reach> {
+    if let Some(handles) = handles.as_deref_mut() {
+        handles.clear();
+    }
+    let mut seen = |at: Vec3, outcome: HandleOutcome| {
+        if let Some(handles) = handles.as_deref_mut()
+            && handles.len() < MAX_HANDLES_SEEN
+        {
+            handles.push(HandleSeen { at, outcome });
+        }
+    };
     if !config.enabled {
         return None;
     }
@@ -111,6 +124,7 @@ pub(crate) unsafe fn handle_reach(
             let mm = |d: f32| d / scale * 1000.0;
             if distance > reach_m {
                 if distance <= NOTED_M * scale {
+                    seen(handle.point, HandleOutcome::OutOfReach);
                     note(
                         notes,
                         format!(
@@ -125,6 +139,7 @@ pub(crate) unsafe fn handle_reach(
             let Some((object, body, vehicle_body)) =
                 (unsafe { holdable(vehicle, &door, handle.point, handle.normal, palm, cast) })
             else {
+                seen(handle.point, HandleOutcome::NoBody);
                 note(
                     notes,
                     format!(
@@ -134,6 +149,7 @@ pub(crate) unsafe fn handle_reach(
                 );
                 continue;
             };
+            seen(handle.point, HandleOutcome::InReach);
             note(
                 notes,
                 format!(
@@ -178,6 +194,9 @@ const MAX_VEHICLES: usize = 8;
 
 /// How far from a palm a door out of reach is still noted, metres at the player's scale.
 const NOTED_M: f32 = 1.0;
+
+/// The most door handles a hand records for the grab view per tick.
+const MAX_HANDLES_SEEN: usize = 8;
 
 /// The most door notes a hand keeps per tick.
 const MAX_NOTES: usize = 12;

@@ -178,7 +178,11 @@ fn alpha(shown: Shown, state: MarkState) -> Option<f32> {
 
 /// Where `target`'s marker is drawn: a socket on the player's own body shifted with the remapped
 /// hand that reaches for it (`reacher`, or the nearest hand that may take it).
-fn anchor(target: &GripTarget, reacher: Option<Hand>, frame: &MarkerFrame) -> Option<Anchor> {
+pub(crate) fn anchor(
+    target: &GripTarget,
+    reacher: Option<Hand>,
+    frame: &MarkerFrame,
+) -> Option<Anchor> {
     match target.mark.at {
         MarkAt::World(point) => point.is_finite().then_some(Anchor::World(point)),
         MarkAt::Cockpit { point, on_body } => {
@@ -240,7 +244,7 @@ fn body_shift(
 
 /// A frame with no turn, for the tests.
 #[cfg(test)]
-pub(super) fn test_frame() -> MarkerFrame {
+pub(crate) fn test_frame() -> MarkerFrame {
     use glam::Quat;
 
     MarkerFrame {

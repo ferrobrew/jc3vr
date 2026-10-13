@@ -56,7 +56,7 @@ use crate::{
         hands::ik,
         haptics::{self, Event},
         physical_hands::{
-            STATE, bodies,
+            STATE, bodies, grab_view,
             grasp::{Reach, TargetKind},
         },
         weapons::{
@@ -213,6 +213,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             weapons::hold::record_pickup(refusal.map(|r| r.to_string()));
             if let Some(refusal) = refusal {
                 tracing::debug!(target: "controllers", ?hand, %refusal, "physical hands: direct weapon pickup refused");
+                grab_view::refused(hand, Some(reach.point), &refusal.to_string());
             }
             refusal
         } else {

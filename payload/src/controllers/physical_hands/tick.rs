@@ -26,7 +26,7 @@ use crate::{
         physical_hands::{
             PhysicalHandsConfig, climb,
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
-            doors, draw, engine, grasp,
+            doors, draw, engine, grab_view, grasp,
             grasp::PalmMotion,
             hold::{self, BodySpace, PlayerKeepOut},
             palm::{PROBE_POINTS, PalmBox},
@@ -181,6 +181,15 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
     let mut climb_reaches = [None; 2];
     let mut touches = Vec::new();
     let mut reach_notes = [Vec::new(), Vec::new()];
+    // The grab view's record of the reach, only while it is on.
+    let viewing = grab_view::recording(&config);
+    let mut rays = [Vec::new(), Vec::new()];
+    let mut handles = [Vec::new(), Vec::new()];
+    let near_hands = Hand::BOTH.map(|hand| {
+        active.hands[hand.index()]
+            .filter(|_| viewing)
+            .map(|c| compose(c.wrist).position)
+    });
     let mut hand_status = [HandStatus::default(); 2];
     let mut clamp = [Vec3::ZERO; 2];
     let mut palms = [None; 2];
@@ -249,6 +258,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                         &reach_tuning,
                         &mut |from, to| cast(from, to, &reach_options),
                         &mut reach_notes[i],
+                        viewing.then(|| &mut rays[i]),
                     )
                 }
             } else {
@@ -263,6 +273,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                     &config.doors,
                     &mut |from, to| cast(from, to, &reach_options),
                     &mut reach_notes[i],
+                    viewing.then(|| &mut handles[i]),
                 )
             };
             let reach = grasp::nearest(reach.into_iter().chain(door));
@@ -354,6 +365,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                     &reach_tuning,
                     &mut |from, to| cast(from, to, &reach_options),
                     &mut reach_notes[i],
+                    viewing.then(|| &mut rays[i]),
                 )
             }
         } else {
@@ -368,6 +380,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
                 &config.doors,
                 &mut |from, to| cast(from, to, &reach_options),
                 &mut reach_notes[i],
+                viewing.then(|| &mut handles[i]),
             )
         };
         let reach = grasp::nearest(reach.into_iter().chain(door));
@@ -397,6 +410,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
 
     let mut joined = [None; 2];
     let mut pins = [None; 2];
+    let mut refused = [None, None];
     if pickup_on {
         let inputs = pickup::TickInputs {
             palms,
@@ -412,6 +426,7 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &config.pickup) };
         joined = outcome.joints;
         pins = outcome.pins;
+        refused.clone_from(&outcome.refused);
         state.record_pickup(outcome, &mut hand_status);
         for hand in Hand::BOTH {
             let i = hand.index();
@@ -474,6 +489,21 @@ pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
         &config,
     );
     draw::submit(&snapshot, &config);
+    for hand in Hand::BOTH {
+        if let Some((at, why)) = &refused[hand.index()] {
+            grab_view::refused(hand, Some(*at), why);
+        }
+    }
+    if viewing {
+        grab_view::record(grab_view::Recorded {
+            head: head.position,
+            rays,
+            handles,
+        });
+        // SAFETY: forwarded from the caller: the simulation phase outside the physics step, on the
+        // main thread.
+        unsafe { grab_view::scan_candidates(near_hands, standing_on, &config) };
+    }
 }
 
 /// Declare what each hand holds, for its finger pose, with the contact fit's curls for a held body

@@ -41,13 +41,17 @@ pub enum Source {
     MagazinePips,
     /// The body mirror's reflection of Rico's skeleton.
     BodyMirror,
+    /// The grab view: the reach rays, the lines to the grip targets, the palms' state, the refused
+    /// grabs, and the candidates near the hands
+    /// ([`crate::controllers::physical_hands::grab_view`]).
+    GrabView,
     /// The collider view's bodies, joints, and contacts. Last, so that it gives way first to the
     /// overlay's cap.
     ColliderView,
 }
 
 impl Source {
-    pub const COUNT: usize = 15;
+    pub const COUNT: usize = 16;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -65,6 +69,7 @@ impl Source {
         Source::PhysicalHands,
         Source::MagazinePips,
         Source::BodyMirror,
+        Source::GrabView,
         Source::ColliderView,
     ];
 
@@ -84,7 +89,8 @@ impl Source {
             Source::PhysicalHands => 11,
             Source::MagazinePips => 12,
             Source::BodyMirror => 13,
-            Source::ColliderView => 14,
+            Source::GrabView => 14,
+            Source::ColliderView => 15,
         }
     }
 
@@ -104,6 +110,7 @@ impl Source {
             Source::PhysicalHands => "physical hands",
             Source::MagazinePips => "second weapon's magazine",
             Source::BodyMirror => "body mirror",
+            Source::GrabView => "grab view",
             Source::ColliderView => "collider view",
         }
     }

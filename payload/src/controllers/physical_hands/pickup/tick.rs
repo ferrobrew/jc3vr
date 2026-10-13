@@ -69,6 +69,8 @@ pub(crate) struct TickOutcome {
     /// Holds lost this tick.
     pub lost: u64,
     pub error: Option<String>,
+    /// Each hand's grab that was refused this tick: where it reached (world space), and why.
+    pub refused: [Option<(Vec3, String)>; 2],
     /// What each hand holds through a joint, for the hand bodies to join.
     pub joints: [Option<HoldTarget>; 2],
     /// Where each hand gripping a latched door is held, world space.
@@ -89,6 +91,14 @@ pub(crate) struct TickOutcome {
     pub yanks: u64,
     /// Fallen characters' ragdolls the hands took hold of this tick.
     pub regrips: u64,
+}
+
+impl TickOutcome {
+    /// Note that `hand`'s grab of what it reached at `at` (world space) was refused, `why`.
+    fn refuse(&mut self, hand: Hand, at: Vec3, why: String) {
+        self.refused[hand.index()] = Some((at, why.clone()));
+        self.error = Some(why);
+    }
 }
 
 /// The pickups' simulation tick: take hold and let go as the input tick asked, keep the grips on
@@ -183,7 +193,9 @@ pub(crate) unsafe fn tick(
                                 outcome.door_grips += 1;
                             }
                             None => {
-                                outcome.error = Some(
+                                outcome.refuse(
+                                    hand,
+                                    reach.point,
                                     "physical hands: doors: the door's grip could not be placed"
                                         .to_owned(),
                                 );
@@ -209,7 +221,9 @@ pub(crate) unsafe fn tick(
                             outcome.character_grips += 1;
                         }
                         None => {
-                            outcome.error = Some(
+                            outcome.refuse(
+                                hand,
+                                reach.point,
                                 "physical hands: characters: the grip could not be placed"
                                     .to_owned(),
                             );
@@ -245,12 +259,14 @@ pub(crate) unsafe fn tick(
                             }
                         }
                         None => {
-                            outcome.error = Some(
+                            outcome.refuse(
+                                hand,
+                                reach.point,
                                 "physical hands: pickup: the body is fixed or too heavy".to_owned(),
                             );
                         }
                     },
-                    Err(e) => outcome.error = Some(e.to_string()),
+                    Err(e) => outcome.refuse(hand, reach.point, e.to_string()),
                 }
             }
             None => {}

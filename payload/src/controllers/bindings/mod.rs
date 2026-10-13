@@ -416,6 +416,11 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .filter(|_| config.overlay.enabled && config.overlay.markers && !in_menu)
             .map(marker_frame),
     });
+    let view_frame = active
+        .as_ref()
+        .filter(|_| config.overlay.enabled && !in_menu)
+        .map(marker_frame);
+    physical_hands::grab_view::submit(&targets, view_frame.as_ref());
     if step.crouch_toggle {
         crate::controllers::roomscale::toggle_seated_crouch();
     }

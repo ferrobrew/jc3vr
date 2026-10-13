@@ -7,6 +7,7 @@ use crate::{
         PhysicalHandsConfig,
         climb::ClimbConfig,
         config::{PickupConfig, ShoveConfig},
+        grab_view::GrabViewConfig,
         physics::{HandBodiesConfig, HandHitsConfig},
     },
 };
@@ -77,6 +78,7 @@ pub(super) fn physical_hands(p: &PhysicalHandsConfig) -> Result<(), Invalid> {
     shove(&p.shove)?;
     pickup(&p.pickup)?;
     hand_bodies(&p.bodies)?;
+    grab_view(&p.grab_view)?;
     climb(&p.climb)
 }
 
@@ -361,3 +363,22 @@ fn hand_hits(h: &HandHitsConfig) -> Result<(), Invalid> {
         10_000.0,
     )
 }
+
+fn grab_view(v: &GrabViewConfig) -> Result<(), Invalid> {
+    positive("physical_hands.grab_view.radius_m", v.radius_m, 20.0)?;
+    positive(
+        "physical_hands.grab_view.candidate_radius_m",
+        v.candidate_radius_m,
+        20.0,
+    )?;
+    if v.max_candidates > MAX_GRAB_VIEW_CANDIDATES {
+        return Err(Invalid(format!(
+            "physical_hands.grab_view.max_candidates must be at most {MAX_GRAB_VIEW_CANDIDATES}, got {}",
+            v.max_candidates
+        )));
+    }
+    Ok(())
+}
+
+/// The most candidates the grab view may draw: each is thirteen primitives.
+const MAX_GRAB_VIEW_CANDIDATES: u32 = 64;

@@ -15,6 +15,7 @@ Anything drawn relative to the player is anchored at render time:
 Overlay markers and readouts:
 
 - The grip targets' markers (`grab/markers.rs`, [grip.md](../input/grip.md#markers)): a marker in the cockpit frame (the body's sockets and pouches, the vehicle's controls and buttons, the parachute's handles) is anchored to the head; a marker on a held gun (its grip, foregrip, action, and well) to the holding hand's grip; and only a marker on what lies in the world (an object, a weapon, a door, a character, a surface to climb) is a world anchor.
+- The grab view (`physical_hands/grab_view/`, [grab-view.md](../input/grab-view.md#anchoring)): its palm markers and the hands' ends of its lines are anchored to the hands, a target's end where the target's grip marker is, its reach rays to the head, and its door handles, candidates, and the physical hands' refusals to the world.
 - The wingsuit guide is anchored to the hands.
 - The physical hands' palm boxes, their press rings and shove lines, and the line from a held object's grab point to where the hand would have it (`physical_hands/draw.rs`) are anchored to the head.
 - The body mirror's figure is anchored to the head. The grenade fuse ring, the wrist detonator, the second weapon's magazine pips, the ghost hands, the gizmos, and the debug panel's pointer are anchored to the hands. The gun's laser starts at the hand and ends at its hit, a world point.

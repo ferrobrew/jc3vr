@@ -16,6 +16,7 @@
 //! - [`vault`]: pushing the body up with the hands pressed down on a surface;
 //! - [`stunt`]: stunt positions on vehicles, entered and let go of with the grip;
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
+//! - [`grab_view`]: the grab view, a diagnostic of what the grip and the reach saw;
 //! - [`world`]: the Havok world, lent out for one call at a time;
 //! - [`config`]: the settings.
 //!
@@ -57,6 +58,7 @@ pub mod contact;
 pub mod doors;
 mod draw;
 mod engine;
+pub mod grab_view;
 pub mod grasp;
 pub mod hold;
 pub mod palm;
@@ -84,8 +86,8 @@ use glam::{Quat, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
 pub(crate) use state::input_tick;
 use state::{STALE_AFTER, State};
-pub(crate) use status::press_summary;
 pub use status::{HandStatus, PhysicalHandsStatus, ShoveReport, status};
+pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 pub(crate) use targets::targets;
 use tick::free_hands;
 pub(crate) use tick::{after_aim, mode_acts};

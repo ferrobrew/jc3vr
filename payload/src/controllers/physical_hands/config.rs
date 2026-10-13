@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::controllers::physical_hands::{
     characters::CharactersConfig, climb::ClimbConfig, collider_view::ColliderViewConfig,
-    doors::DoorsConfig, physics::HandBodiesConfig, sounds::ImpactSoundsConfig, stunt::StuntConfig,
-    vault::VaultConfig,
+    doors::DoorsConfig, grab_view::GrabViewConfig, physics::HandBodiesConfig,
+    sounds::ImpactSoundsConfig, stunt::StuntConfig, vault::VaultConfig,
 };
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
@@ -70,6 +70,9 @@ pub struct PhysicalHandsConfig {
     /// The collider view: the physics world's bodies near the player drawn in the overlay, a
     /// diagnostic.
     pub collider_view: ColliderViewConfig,
+    /// The grab view: what the grip and the reach saw drawn in the overlay around the hands, a
+    /// diagnostic.
+    pub grab_view: GrabViewConfig,
 }
 
 impl PhysicalHandsConfig {
@@ -99,6 +102,7 @@ impl PhysicalHandsConfig {
             stunt: StuntConfig::new(),
             sounds: ImpactSoundsConfig::new(),
             collider_view: ColliderViewConfig::new(),
+            grab_view: GrabViewConfig::new(),
         }
     }
 }
