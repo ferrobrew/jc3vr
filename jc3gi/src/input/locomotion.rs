@@ -661,6 +661,82 @@ impl NStateTask_LocoUtil {
             f(character)
         }
     }
+    pub const QueueFlickStick_ADDRESS: usize = 0x14081C340;
+    /// Queues the flick, a turn toward a new move direction while a start plays: measures the XZ
+    /// angle from the body forward to the blackboard move direction, and within a sixth of a turn
+    /// to either side queues [`ACT_FLICK_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0),
+    /// past it the third-turn flick to that side, writing the residual angle correction as
+    /// [`QueueStarts`](crate::input::locomotion::NStateTask_LocoUtil::QueueStarts) does. Returns false, queuing nothing, without a move
+    /// direction on the blackboard. Called from the starts task in place of
+    /// [`QueueStops`](crate::input::locomotion::NStateTask_LocoUtil::QueueStops) while the start clip is inside its
+    /// `FLICK_STICK_TURN_VALID_SEG` segment.
+    pub unsafe fn QueueFlickStick(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::QueueFlickStick_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueAimFlickStick_ADDRESS: usize = 0x14081C430;
+    /// The aiming flicks, called from the aim flick-stick task: measures the XZ angle from the body
+    /// forward to the blackboard move direction and queues
+    /// [`ACT_FLICK_0_AIM`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0_AIM) within an
+    /// eighth of a turn, the quarter-turn flick to that side within three eighths, and the half
+    /// turn past that. It writes no angle correction. Returns false, queuing nothing, without a
+    /// move direction on the blackboard.
+    pub unsafe fn QueueAimFlickStick(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::QueueAimFlickStick_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueStuntTurns_ADDRESS: usize = 0x14081C210;
+    /// The stunt turns, for a character standing in a vehicle's stunt area: measures the XZ angle
+    /// from the body forward to the blackboard move direction and queues `ACT_TO_IDLE` when it is
+    /// small, otherwise
+    /// [`ACT_STUNT_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STUNT_TURN_0) up to a
+    /// sixth of a turn and the third-turn stunt turn to that side beyond, writing the residual
+    /// angle correction. The idle, stops, flick-stick, and rotate-on-spot input tasks call it on
+    /// their stunt branch when the state machine would not take `ACT_STUNT_TRANSITION` (a step to
+    /// the next stunt area) or the move is not a start, and only while
+    /// [`Character::ShouldApplyStuntModification`](crate::character::character::Character::ShouldApplyStuntModification)
+    /// holds. Returns false, queuing nothing, without a move direction on the blackboard.
+    pub unsafe fn QueueStuntTurns(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::QueueStuntTurns_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueAimRelativeOnSpotActions_ADDRESS: usize = 0x140831B00;
+    /// The on-spot acts of a player wielding a heavy weapon, called from the idle and move input
+    /// tasks: with the aim (from [`GetAimMoveAngle`](crate::input::locomotion::NStateTask_LocoUtil::GetAimMoveAngle)) within a sixth of a
+    /// turn of the body's forward it queues `ACT_TO_IDLE`, and past it
+    /// [`ACT_AIM_FOCUS_ROTATE_90L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90L)
+    /// or its right-hand counterpart. It writes no angle correction. Returns false for a character
+    /// that is not the player or wields no heavy weapon.
+    pub unsafe fn QueueAimRelativeOnSpotActions(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(
+                Self::QueueAimRelativeOnSpotActions_ADDRESS,
+            );
+            f(character)
+        }
+    }
     pub const GetAimMoveAngle_ADDRESS: usize = 0x140831880;
     /// The XZ angle (degrees) from `move_dir` to the aim reference direction: the vector from the
     /// character to the player's aim-target position (or the camera forward while planting an

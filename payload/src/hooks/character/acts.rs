@@ -28,8 +28,9 @@ pub(super) fn hook_library() -> HookLibrary {
 ///   matching return transitions on its own (they only fire from the reverse states).
 /// - Drop the automatic holsters under the controller scheme's mental-state cuts (see
 ///   [`aim_state::swallow_local_act`]).
-/// - Drop the turn-in-place acts and straighten the turning starts and stops while the stick
-///   drives the body on foot ([`act_filter`]).
+/// - Drop the turn-in-place acts and straighten the turning starts, stops, and flicks while the
+///   stick drives the body on foot, and drop the stunt turns in a vehicle's stunt area
+///   ([`act_filter`]).
 #[detour(address = jc3gi::character::character::Character::QueueAct_ADDRESS)]
 fn character_queue_act(character: *mut Character, act: *const u32) {
     if let Some(local) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter)

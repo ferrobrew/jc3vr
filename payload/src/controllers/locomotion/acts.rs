@@ -1,15 +1,23 @@
 //! The act filter: keeps the turning animations off the local player while the stick drives the
-//! body on foot. Called from the `Character::QueueAct` detour (`hooks::character::acts`).
+//! body on foot, and while the player stands in a vehicle's stunt area. Called from the
+//! `Character::QueueAct` detour (`hooks::character::acts`).
 //!
 //! - The turn-in-place acts (the rotate-on-spot acts, their warp flavors, the continuous rotation
-//!   starts, and the quarter and half turns) are dropped. The body still turns: the orientation
-//!   executor yaws it toward the torso's heading, which is a rotation of the root and not an
-//!   animation that steps the feet around.
-//! - The turning run and walk starts are replaced by the straight start, and the turning stops by
-//!   the straight stop, so the state machine still passes through its start and stop states (it
-//!   needs to know Rico is moving) without the clip swinging the body. The replacement goes through
-//!   the game's own pre-flight (`AnimatedModel::TryAct`) first, and the original act is queued when
-//!   the state machine would not take the straight one.
+//!   starts, the quarter and half turns, and the heavy weapon's aim-focus rotations) are dropped.
+//!   The body still turns: the orientation executor yaws it toward the torso's heading, which is a
+//!   rotation of the root and not an animation that steps the feet around.
+//! - The turning run and walk starts are replaced by the straight start, the turning stops by the
+//!   straight stop, and the turning flicks (running and aiming) by the straight flick, so the
+//!   state machine still passes through its start, stop, and flick states (it needs to know Rico
+//!   is moving) without the clip swinging the body. The replacement goes through the game's own
+//!   pre-flight (`AnimatedModel::TryAct`) first, and the original act is queued when the state
+//!   machine would not take the straight one.
+//! - The stunt turns, which turn the body toward the stick while it stands on a vehicle's roof,
+//!   are dropped. The game queues them only on its input tasks' stunt branch, while the character
+//!   is attached to a vehicle, where the mode detection may read a vehicle rather than on foot, so
+//!   they have their own scope ([`ActScope::StuntArea`]): it needs neither the on-foot mode nor
+//!   the stick locomotion, which does not run there. The stunt area's view rides the body, so a
+//!   stunt turn would turn the view.
 //!
 //! A filter that removes acts can leave the animation state machine waiting for one it never
 //! receives. The [`Watchdog`] watches for that: the filter normally acts in short bursts (a start,
@@ -34,6 +42,15 @@ use crate::{
     headpose::{Source, source},
     hooks::{character::resolve_act_id, in_gameplay},
 };
+
+/// Where an act the filter knows is filtered.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ActScope {
+    /// On foot on the ground, while the stick drives the body.
+    OnFoot,
+    /// Standing in a vehicle's stunt area.
+    StuntArea,
+}
 
 /// What the filter does with an act.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -78,14 +95,21 @@ pub(crate) unsafe fn filter(
     controllers_enabled: bool,
 ) -> ActDecision {
     let config = &locomotion.acts;
-    if !config.enabled || !locomotion.stick.enabled || !applies(controllers_enabled) {
+    if !config.enabled {
         return ActDecision::Pass;
     }
     let Some(table) = table() else {
         return ActDecision::Pass;
     };
-    let wanted = table.decide(id);
-    if wanted == ActDecision::Pass {
+    let Some((wanted, scope)) = table.decide(id) else {
+        return ActDecision::Pass;
+    };
+    let applies = match scope {
+        ActScope::OnFoot => locomotion.stick.enabled && applies_on_foot(controllers_enabled),
+        // SAFETY: the caller's contract: the local character, on the thread queuing its act.
+        ActScope::StuntArea => unsafe { applies_in_stunt_area(character, controllers_enabled) },
+    };
+    if !applies {
         return ActDecision::Pass;
     }
     let now = Instant::now();
@@ -197,6 +221,7 @@ impl Watchdog {
 pub struct ActTable {
     drop: Vec<i32>,
     replace: Vec<(i32, i32)>,
+    stunt_drop: Vec<i32>,
 }
 
 impl ActTable {
@@ -210,23 +235,35 @@ impl ActTable {
             .iter()
             .map(|(from, to)| Some((resolve(from)?, resolve(to)?)))
             .collect::<Option<Vec<_>>>()?;
-        Some(Self { drop, replace })
+        let stunt_drop = STUNT_DROPPED
+            .iter()
+            .map(|name| resolve(name))
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            drop,
+            replace,
+            stunt_drop,
+        })
     }
 
-    /// What the filter would do with `id`, before the watchdog and the pre-flight.
-    pub fn decide(&self, id: i32) -> ActDecision {
+    /// What the filter would do with `id`, and where, before the watchdog and the pre-flight, or
+    /// `None` for an act it lets through everywhere.
+    pub fn decide(&self, id: i32) -> Option<(ActDecision, ActScope)> {
         if self.drop.contains(&id) {
-            return ActDecision::Drop;
+            return Some((ActDecision::Drop, ActScope::OnFoot));
+        }
+        if self.stunt_drop.contains(&id) {
+            return Some((ActDecision::Drop, ActScope::StuntArea));
         }
         self.replace
             .iter()
             .find(|(from, _)| *from == id)
-            .map_or(ActDecision::Pass, |&(_, to)| ActDecision::Replace(to))
+            .map(|&(_, to)| (ActDecision::Replace(to), ActScope::OnFoot))
     }
 }
 
 /// The turn-in-place acts.
-const DROPPED: [&CStr; 16] = [
+const DROPPED: [&CStr; 18] = [
     EventIdSymbolTable::ACT_ROTATE_45L,
     EventIdSymbolTable::ACT_ROTATE_45R,
     EventIdSymbolTable::ACT_ROTATE_90L,
@@ -243,10 +280,12 @@ const DROPPED: [&CStr; 16] = [
     EventIdSymbolTable::ACT_TURN_90R,
     EventIdSymbolTable::ACT_TURN_180L,
     EventIdSymbolTable::ACT_TURN_180R,
+    EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90L,
+    EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90R,
 ];
 
-/// The turning starts and stops, each with its straight variant.
-const REPLACED: [(&CStr, &CStr); 22] = [
+/// The turning starts, stops, and flicks, each with its straight variant.
+const REPLACED: [(&CStr, &CStr); 27] = [
     (
         EventIdSymbolTable::ACT_IDLE_TO_START_90R,
         EventIdSymbolTable::ACT_IDLE_TO_START_0,
@@ -335,20 +374,65 @@ const REPLACED: [(&CStr, &CStr); 22] = [
         EventIdSymbolTable::ACT_STOP_TURN_180L_WARP,
         EventIdSymbolTable::ACT_STOP_TURN_0_WARP,
     ),
+    (
+        EventIdSymbolTable::ACT_FLICK_120R,
+        EventIdSymbolTable::ACT_FLICK_0,
+    ),
+    (
+        EventIdSymbolTable::ACT_FLICK_120L,
+        EventIdSymbolTable::ACT_FLICK_0,
+    ),
+    (
+        EventIdSymbolTable::ACT_FLICK_90R_AIM,
+        EventIdSymbolTable::ACT_FLICK_0_AIM,
+    ),
+    (
+        EventIdSymbolTable::ACT_FLICK_90L_AIM,
+        EventIdSymbolTable::ACT_FLICK_0_AIM,
+    ),
+    (
+        EventIdSymbolTable::ACT_FLICK_180_AIM,
+        EventIdSymbolTable::ACT_FLICK_0_AIM,
+    ),
+];
+
+/// The stunt turns. The straight one turns the body too, by up to a sixth of a turn through its
+/// angle correction, and the stunt idle needs none of them to move on, so all three are dropped.
+const STUNT_DROPPED: [&CStr; 3] = [
+    EventIdSymbolTable::ACT_STUNT_TURN_0,
+    EventIdSymbolTable::ACT_STUNT_TURN_120R,
+    EventIdSymbolTable::ACT_STUNT_TURN_120L,
 ];
 
 /// Acts closer together than this belong to one burst.
 const BURST_GAP: Duration = Duration::from_millis(400);
 
-/// Whether the filter applies: the headset drives the view, gameplay owns the character, and the
-/// player is on foot on the ground.
-fn applies(controllers_enabled: bool) -> bool {
+/// Whether the on-foot scope applies: the headset drives the view, gameplay owns the character,
+/// and the player is on foot on the ground.
+fn applies_on_foot(controllers_enabled: bool) -> bool {
     let detection = current_mode();
     source() == Source::Vr
         && in_gameplay()
         && controllers_enabled
         && detection.mode == Mode::OnFoot(OnFootVariant::Ground)
         && detection.traversal.is_none()
+}
+
+/// Whether the stunt area's scope applies: the headset drives the view, gameplay owns the
+/// character, and the game applies its stunt modification to it
+/// ([`Character::ShouldApplyStuntModification`]), as its input tasks test just before they queue a
+/// stunt turn.
+///
+/// # Safety
+///
+/// `character` must be the live local character, on the thread queuing its act.
+unsafe fn applies_in_stunt_area(character: &Character, controllers_enabled: bool) -> bool {
+    source() == Source::Vr
+        && in_gameplay()
+        && controllers_enabled
+        // SAFETY: the caller's contract; the game's own input task calls it on this thread for this
+        // character just before it queues the act.
+        && unsafe { character.ShouldApplyStuntModification() }
 }
 
 /// The resolved table, once every name in it resolves. The names are the `NCharacter` act ids the
@@ -381,6 +465,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     fn config() -> ActFilterConfig {
@@ -428,27 +514,105 @@ mod tests {
         assert_eq!(dog.record(after, &config), None);
     }
 
-    #[test]
-    fn the_table_maps_turns_and_straightens_starts() {
+    /// Every name in the tables, resolved to a distinct id.
+    fn test_table() -> (ActTable, impl Fn(&CStr) -> i32) {
         let names: Vec<&CStr> = DROPPED
             .iter()
             .copied()
             .chain(REPLACED.iter().flat_map(|(a, b)| [*a, *b]))
+            .chain(STUNT_DROPPED.iter().copied())
             .collect();
-        let id_of = |name: &CStr| {
+        let id_of = move |name: &CStr| {
             names
                 .iter()
                 .position(|n| *n == name)
                 .map(|i| i as i32 + 100)
         };
-        let table = ActTable::resolve(id_of).unwrap();
-        let rotate = id_of(EventIdSymbolTable::ACT_ROTATE_90L).unwrap();
-        assert_eq!(table.decide(rotate), ActDecision::Drop);
-        let start = id_of(EventIdSymbolTable::ACT_IDLE_TO_START_180L).unwrap();
-        let straight = id_of(EventIdSymbolTable::ACT_IDLE_TO_START_0).unwrap();
-        assert_eq!(table.decide(start), ActDecision::Replace(straight));
-        assert_eq!(table.decide(straight), ActDecision::Pass);
-        assert_eq!(table.decide(-1), ActDecision::Pass);
+        let table = ActTable::resolve(&id_of).unwrap();
+        (table, move |name| id_of(name).unwrap())
+    }
+
+    #[test]
+    fn the_table_maps_turns_and_straightens_starts() {
+        let (table, id) = test_table();
+        assert_eq!(
+            table.decide(id(EventIdSymbolTable::ACT_ROTATE_90L)),
+            Some((ActDecision::Drop, ActScope::OnFoot))
+        );
+        let straight = id(EventIdSymbolTable::ACT_IDLE_TO_START_0);
+        assert_eq!(
+            table.decide(id(EventIdSymbolTable::ACT_IDLE_TO_START_180L)),
+            Some((ActDecision::Replace(straight), ActScope::OnFoot))
+        );
+        assert_eq!(table.decide(straight), None);
+        assert_eq!(table.decide(-1), None);
+    }
+
+    #[test]
+    fn the_aim_focus_rotations_are_dropped_on_foot() {
+        let (table, id) = test_table();
+        for name in [
+            EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90L,
+            EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90R,
+        ] {
+            assert_eq!(
+                table.decide(id(name)),
+                Some((ActDecision::Drop, ActScope::OnFoot)),
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_turning_flicks_straighten_and_the_straight_ones_pass() {
+        let (table, id) = test_table();
+        let running = id(EventIdSymbolTable::ACT_FLICK_0);
+        let aiming = id(EventIdSymbolTable::ACT_FLICK_0_AIM);
+        for (name, straight) in [
+            (EventIdSymbolTable::ACT_FLICK_120R, running),
+            (EventIdSymbolTable::ACT_FLICK_120L, running),
+            (EventIdSymbolTable::ACT_FLICK_90R_AIM, aiming),
+            (EventIdSymbolTable::ACT_FLICK_90L_AIM, aiming),
+            (EventIdSymbolTable::ACT_FLICK_180_AIM, aiming),
+        ] {
+            assert_eq!(
+                table.decide(id(name)),
+                Some((ActDecision::Replace(straight), ActScope::OnFoot)),
+                "{name:?}"
+            );
+        }
+        assert_eq!(table.decide(running), None);
+        assert_eq!(table.decide(aiming), None);
+    }
+
+    #[test]
+    fn every_stunt_turn_is_dropped_in_the_stunt_area() {
+        let (table, id) = test_table();
+        for name in STUNT_DROPPED {
+            assert_eq!(
+                table.decide(id(name)),
+                Some((ActDecision::Drop, ActScope::StuntArea)),
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_act_is_in_two_tables() {
+        let mut seen = BTreeSet::new();
+        for name in DROPPED
+            .iter()
+            .chain(REPLACED.iter().map(|(from, _)| from))
+            .chain(STUNT_DROPPED.iter())
+        {
+            assert!(seen.insert(*name), "{name:?} is filtered twice");
+        }
+        for (_, to) in REPLACED {
+            assert!(
+                !seen.contains(to),
+                "{to:?} is both a replacement and filtered"
+            );
+        }
     }
 
     #[test]

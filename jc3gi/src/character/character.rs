@@ -1251,6 +1251,18 @@ impl Character {
             f(self as *const Self as _)
         }
     }
+    pub const ShouldApplyStuntModification_ADDRESS: usize = 0x1407F1A00;
+    /// Whether the on-foot input tasks apply their stunt modification, the stunt turns
+    /// ([`QueueStuntTurns`](crate::input::locomotion::NStateTask_LocoUtil::QueueStuntTurns)): the
+    /// character is attached to a vehicle, or a global override flag is set.
+    pub unsafe fn ShouldApplyStuntModification(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::ShouldApplyStuntModification_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const IsStuntHanging_ADDRESS: usize = 0x1407F12D0;
     /// Whether the character hangs from a helicopter in its stunt position: the vehicle it is
     /// attached to ([`GetVehicle`](crate::character::character::Character::GetVehicle)) is a

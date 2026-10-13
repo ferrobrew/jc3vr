@@ -28,6 +28,14 @@ impl EventIdSymbolTable {
     }
 }
 impl EventIdSymbolTable {
+    /// The heavy weapon's standing turn a quarter to the left: one of the on-spot acts
+    /// [`QueueAimRelativeOnSpotActions`](crate::input::locomotion::NStateTask_LocoUtil::QueueAimRelativeOnSpotActions)
+    /// queues for a player wielding a heavy weapon when the aim is more than a sixth of a turn from
+    /// the body's forward.
+    pub const ACT_AIM_FOCUS_ROTATE_90L: &::std::ffi::CStr = c"ACT_AIM_FOCUS_ROTATE_90L";
+    /// The heavy weapon's standing turn a quarter to the right; see
+    /// [`ACT_AIM_FOCUS_ROTATE_90L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90L).
+    pub const ACT_AIM_FOCUS_ROTATE_90R: &::std::ffi::CStr = c"ACT_AIM_FOCUS_ROTATE_90R";
     /// The wingsuit's evade, a barrel roll. The air physics
     /// ([`NAirMovement_UpdateAirPhysics`](crate::input::parachute::NAirMovement_UpdateAirPhysics)) queues
     /// it straight on the character's [`AnimatedModel`](crate::character::character::AnimatedModel), not
@@ -37,6 +45,32 @@ impl EventIdSymbolTable {
     /// and `_DOWN` variants) and its recovery are segments of the clip it plays, not acts of their
     /// own.
     pub const ACT_BOOST_WINGSUIT_BARREL_ROLL: &::std::ffi::CStr = c"ACT_BOOST_WINGSUIT_BARREL_ROLL";
+    /// The forward flick: one of the flick acts that
+    /// [`QueueFlickStick`](crate::input::locomotion::NStateTask_LocoUtil::QueueFlickStick) chooses by the
+    /// angle from the body's forward to the move direction, for a move direction within a sixth of
+    /// a turn of the body's forward. The starts task queues the flicks in place of the stops when a
+    /// stop is called for inside the start clip's `FLICK_STICK_TURN_VALID_SEG` segment. Like the
+    /// starts, the flick writes the residual angle correction that turns the root toward the move
+    /// direction.
+    pub const ACT_FLICK_0: &::std::ffi::CStr = c"ACT_FLICK_0";
+    /// The forward aiming flick: one of the flick acts that
+    /// [`QueueAimFlickStick`](crate::input::locomotion::NStateTask_LocoUtil::QueueAimFlickStick) chooses
+    /// by the angle from the body's forward to the move direction, for a move direction within an
+    /// eighth of a turn of the body's forward. Unlike the running flicks, the aiming flicks write
+    /// no angle correction.
+    pub const ACT_FLICK_0_AIM: &::std::ffi::CStr = c"ACT_FLICK_0_AIM";
+    /// The flick that turns a third to the left; see [`ACT_FLICK_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0).
+    pub const ACT_FLICK_120L: &::std::ffi::CStr = c"ACT_FLICK_120L";
+    /// The flick that turns a third to the right; see [`ACT_FLICK_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0).
+    pub const ACT_FLICK_120R: &::std::ffi::CStr = c"ACT_FLICK_120R";
+    /// The aiming flick that turns around; see [`ACT_FLICK_0_AIM`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0_AIM).
+    pub const ACT_FLICK_180_AIM: &::std::ffi::CStr = c"ACT_FLICK_180_AIM";
+    /// The aiming flick that turns a quarter to the left; see
+    /// [`ACT_FLICK_0_AIM`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0_AIM).
+    pub const ACT_FLICK_90L_AIM: &::std::ffi::CStr = c"ACT_FLICK_90L_AIM";
+    /// The aiming flick that turns a quarter to the right; see
+    /// [`ACT_FLICK_0_AIM`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0_AIM).
+    pub const ACT_FLICK_90R_AIM: &::std::ffi::CStr = c"ACT_FLICK_90R_AIM";
     /// The knock-back a player takes from an explosion's impulse:
     /// [`Character::HitReaction`](crate::character::character::Character::HitReaction) queues it when
     /// the state machine accepts it, and the full ragdoll otherwise. In `rico_base.afsmb` it leads
@@ -196,6 +230,15 @@ impl EventIdSymbolTable {
     pub const ACT_STOP_TURN_90R: &::std::ffi::CStr = c"ACT_STOP_TURN_90R";
     /// See [`ACT_STOP_TURN_0_WARP`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STOP_TURN_0_WARP).
     pub const ACT_STOP_TURN_90R_WARP: &::std::ffi::CStr = c"ACT_STOP_TURN_90R_WARP";
+    /// The stunt turn toward a move direction a little off the body's forward: one of the stunt
+    /// turns that [`QueueStuntTurns`](crate::input::locomotion::NStateTask_LocoUtil::QueueStuntTurns)
+    /// chooses by the angle from the body's forward to the move direction, for a character standing
+    /// in a vehicle's stunt area. Each writes the residual angle correction that turns the root.
+    pub const ACT_STUNT_TURN_0: &::std::ffi::CStr = c"ACT_STUNT_TURN_0";
+    /// The stunt turn a third to the left; see [`ACT_STUNT_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STUNT_TURN_0).
+    pub const ACT_STUNT_TURN_120L: &::std::ffi::CStr = c"ACT_STUNT_TURN_120L";
+    /// The stunt turn a third to the right; see [`ACT_STUNT_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STUNT_TURN_0).
+    pub const ACT_STUNT_TURN_120R: &::std::ffi::CStr = c"ACT_STUNT_TURN_120R";
     /// The one-off idle-variation act: transitions the on-foot idle from `S_IDLE` to
     /// `S_IDLE_ONE_OFF` in `rico_base.afsmb`, playing a single idle-break animation (a weight shift,
     /// a look-around, a fidget) before returning to `S_IDLE`. `NStateTask_InputLocoIdleTask::Update`
