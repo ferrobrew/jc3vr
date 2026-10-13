@@ -9,9 +9,10 @@
 //! that uses the ordinary pickup), or a node standing for the rack's placement rule
 //! ([`WeaponPlacementRule`]), whose spawned weapon it is. [`targets`] walks those entries as a
 //! swimming character's pickup does, and the weapon handling offers each weapon to a free hand
-//! ([`crate::controllers::weapons::hold::world`]). Any weapon an entry offers is taken, whatever
-//! its state, except one a character holds or one already being picked up: a locker's weapon,
-//! which the game offers the same way, is not in the rack state.
+//! ([`crate::controllers::weapons::hold::world`]). A weapon an entry offers is taken in the rack
+//! state or lying in the world (a locker's weapon is offered the same way out of the rack state,
+//! presumably set down at a spot by its placement rule); one a character holds, one already being
+//! picked up, and a mounted gun, which a placement rule also spawns, are left out.
 //!
 //! A grab of one takes it ([`take`]), found again among the entries so that it is known alive:
 //!
@@ -349,6 +350,9 @@ fn offered_state(weapon: &WeaponBase) -> bool {
         WeaponState::E_WS_HOLSTERED_INVISIBLE,
         WeaponState::E_WS_PICKING_UP,
         WeaponState::E_WS_WINGSUIT_WEAPON,
+        WeaponState::E_WS_MOUNTED,
+        WeaponState::E_WS_TURRET,
+        WeaponState::E_WS_VEHICLE,
     ]
     .into_iter()
     .any(|s| s as i32 == state)

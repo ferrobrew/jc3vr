@@ -48,8 +48,8 @@ pub enum Refusal {
     NoCharacter,
     /// The weapon is no longer lying in the world.
     NotDropped,
-    /// The weapon is no longer on its rack.
-    NotOnRack,
+    /// The weapon an interaction offers is neither on its rack nor lying in the world: its raw state.
+    NotOffered { state: i32 },
     /// The weapon's slot is out of range.
     UnknownSlot,
     /// A hand grenade: the game collects it by proximity.
@@ -75,7 +75,12 @@ impl fmt::Display for Refusal {
         let why = match self {
             Refusal::NoCharacter => "there is no local player",
             Refusal::NotDropped => "the weapon is not lying in the world",
-            Refusal::NotOnRack => "the weapon is not on its rack",
+            Refusal::NotOffered { state } => {
+                return write!(
+                    f,
+                    "weapon pickup: the offered weapon is neither on its rack nor lying in the world (state {state})"
+                );
+            }
             Refusal::UnknownSlot => "the weapon's slot is out of range",
             Refusal::Grenade => "a hand grenade is collected by the game",
             Refusal::InfinitePickup => "the weapon gives a copy when picked up",
@@ -118,11 +123,18 @@ pub(crate) unsafe fn take(
     options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
     let owner = unsafe { engine::local_player() }.ok_or(Refusal::NoCharacter)?;
-    let from_rack = options.cause == Cause::Rack;
-    match (from_rack, weapon.m_State) {
-        (false, WeaponState::E_WS_DROPPED) | (true, WeaponState::E_WS_WEAPON_RACK) => {}
+    // An interaction offers a rack's weapon in the rack state, and a weapon its placement rule
+    // set down at a spot (a locker's) lying in the world; only the rack state needs the game's own
+    // pickup started first.
+    let offered = options.cause == Cause::Rack;
+    let from_rack = offered && weapon.m_State == WeaponState::E_WS_WEAPON_RACK;
+    match (offered, weapon.m_State) {
+        (_, WeaponState::E_WS_DROPPED) | (true, WeaponState::E_WS_WEAPON_RACK) => {}
         (false, _) => return Err(Refusal::NotDropped),
-        (true, _) => return Err(Refusal::NotOnRack),
+        (true, _) => {
+            let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
+            return Err(Refusal::NotOffered { state });
+        }
     }
     let slot = unsafe { takeable(owner, weapon) }?;
     let address = weapon as *mut WeaponBase as usize;
