@@ -1,15 +1,14 @@
 //! The cockpit shift: how far the view's cockpit origin has been moved to keep the camera on the
 //! physical head while the body catches up with it. Pure.
 //!
-//! The camera is `anchor + body × (cockpit × scale)`, and the anchor is the animated head bone. When
-//! the chase walks the body toward the head, the anchor moves with the body while the cockpit
-//! offset stays, so without a correction the camera runs ahead by the distance the body covered and
-//! the measured offset never shrinks: the body would chase the head forever. The shift takes the
-//! chase's part of the body's displacement back out of the cockpit, so the camera stays with the
-//! real head and the offset closes.
+//! The camera is `anchor + body × (cockpit × scale)`, and the anchor rides the root. When the chase
+//! walks the root toward the head, the anchor moves with the root while the cockpit offset stays,
+//! so without a correction the camera runs ahead by the distance the root covered and the gap never
+//! shrinks: the root would chase the head forever. The shift takes the chase's part of the root's
+//! displacement back out of the cockpit, so the camera stays with the real head and the gap closes.
 //!
-//! The simulation half ([`crate::controllers::roomscale::sim`]) attributes each completed step's
-//! displacement to the chase and publishes the running total at the last two completed steps
+//! The ledger ([`crate::controllers::body::rig::root::ledger`]) attributes each completed step's
+//! displacement to the chase and keeps the running total at the last two completed steps
 //! ([`CompletedMovement`]). The shift folds in everything completed since it last looked, so
 //! several steps between rendered frames all count, and rendering never consumes a request.
 //! Animated head motion is not attributed to locomotion.
@@ -21,7 +20,7 @@
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::roomscale::sim::CompletedMovement;
+use crate::controllers::body::rig::root::ledger::CompletedMovement;
 
 /// The shift pair, and the cumulative completed movement it has folded in.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -52,6 +51,11 @@ impl CockpitShift {
     /// The shift for the current step's side of the pose pair, cockpit frame.
     pub fn current(&self) -> Vec3 {
         self.cur
+    }
+
+    /// The cumulative completed chase movement the shift has folded in, world `(x, z)`.
+    pub fn observed(&self) -> Vec2 {
+        self.observed
     }
 
     /// The raw cockpit position with the shift taken out, for the previous and current sides of the
