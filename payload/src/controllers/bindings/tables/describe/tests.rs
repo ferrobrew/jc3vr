@@ -92,16 +92,16 @@ fn dual_wielding_moves_the_retract_to_the_stick_click_and_fires_from_both_trigge
 }
 
 #[test]
-fn the_wingsuit_lists_the_evade_after_a_flick() {
+fn the_wingsuit_lists_no_evade() {
     let rows = describe(&ctx(
         Mode::Airborne(AirborneVariant::Wingsuit),
         Hand::Right,
         TableCtx::default(),
     ));
-    assert_eq!(
-        actions_of(&rows, Control::A(Hand::Right), Gesture::AfterFlick),
-        vec![WINGSUIT_EVADE]
-    );
+    assert!(rows.iter().all(|row| !matches!(
+        &row.effect,
+        Effect::Actions(actions) if actions.contains(&WINGSUIT_EVADE)
+    )));
     assert!(actions_of(&rows, Control::A(Hand::Right), Gesture::Press).contains(&OPEN_PARACHUTE));
 }
 

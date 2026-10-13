@@ -145,8 +145,6 @@ pub enum Gesture {
     Hold,
     /// Pushed up and held.
     HoldUp,
-    /// Pressed right after a flick of the move stick.
-    AfterFlick,
     /// Flicked and let go.
     Flick,
     /// Touched.
@@ -394,12 +392,10 @@ impl DescribeSink<'_> {
 
     fn press_rows(&self, press: Press, actions: &[Action]) -> Vec<Row> {
         let gate = |gesture| match press.gate {
-            Gate::EvadeFlick => Gesture::AfterFlick,
             Gate::Gripped => Gesture::WithGrip,
             Gate::Always
             | Gate::UnlessChordArmed
             | Gate::UnlessChordGrip
-            | Gate::NoEvadeFlick
             | Gate::Ungripped
             | Gate::Ragdolling => gesture,
         };

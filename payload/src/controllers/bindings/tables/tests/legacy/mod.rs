@@ -105,17 +105,13 @@ impl Bindings {
         self.move_pushed_s = step_pushed(
             self.move_pushed_s,
             controls.off().stick.length(),
-            config.evade_flick,
+            EVADE_FLICK,
             dt,
         );
         let evade = match mode {
-            Mode::Airborne(variant) => latch_evade(
-                &mut self.evade_press,
-                variant,
-                controls,
-                self.move_pushed_s,
-                config,
-            ),
+            Mode::Airborne(variant) => {
+                latch_evade(&mut self.evade_press, variant, controls, self.move_pushed_s)
+            }
             _ => false,
         };
         let latches = Latches {
@@ -257,6 +253,13 @@ impl SightChord {
     }
 }
 
+/// How far the move stick had to be pushed when the wingsuit's A was pressed for the press to
+/// evade, `0..1`. The stick rested below half of it.
+const EVADE_FLICK: f32 = 0.8;
+
+/// How recently the move stick had to have left its rest for the wingsuit's A to evade, seconds.
+const EVADE_WINDOW_S: f32 = 0.25;
+
 /// Advance how long the move stick has been out of its rest: it rests below half the evade flick,
 /// and the time counts from when it last left the rest.
 fn step_pushed(pushed_s: Option<f32>, magnitude: f32, evade_flick: f32, dt: f32) -> Option<f32> {
@@ -275,7 +278,6 @@ fn latch_evade(
     variant: AirborneVariant,
     controls: &Controls,
     move_pushed_s: Option<f32>,
-    config: &BindingsConfig,
 ) -> bool {
     let a = controls.dom().a;
     if variant != AirborneVariant::Wingsuit || !a.held() {
@@ -283,8 +285,8 @@ fn latch_evade(
         return false;
     }
     *latch.get_or_insert_with(|| {
-        controls.off().stick.length() >= config.evade_flick
-            && move_pushed_s.is_some_and(|s| s <= config.evade_window_s)
+        controls.off().stick.length() >= EVADE_FLICK
+            && move_pushed_s.is_some_and(|s| s <= EVADE_WINDOW_S)
     })
 }
 

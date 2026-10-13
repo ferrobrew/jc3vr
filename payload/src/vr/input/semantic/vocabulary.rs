@@ -141,8 +141,7 @@ semantic_actions! {
         FireGuns => ("fire_guns", Float, "Fire the wingsuit guns"),
         FireSecondary => ("fire_secondary", Float, "Fire the wingsuit's secondary weapon"),
         Boost => ("boost", Bool, "Boost"),
-        /// After a stick flick the mod turns the press into an evade.
-        OpenParachute => ("open_parachute", Bool, "Open the parachute (after a stick flick: evade)"),
+        OpenParachute => ("open_parachute", Bool, "Open the parachute"),
         /// The button that opened the suit on foot closes it.
         Use => ("use", Bool, "Close the wingsuit"),
         ReleaseTethers => ("release_tethers", Bool, "Release tethers"),

@@ -74,8 +74,8 @@ pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
 /// Every action the tables inject in `mode` under `ctx` with the shipped default bindings, over a
 /// set of ticks that between them press every input with the grips held and without, push every
 /// stick each way, press each trackpad quadrant, hold each stick click alone past the chord
-/// window, flick into the wingsuit's evade and not, and press the system button both briefly and
-/// long.
+/// window, flick the move stick before a press and not, and press the system button both briefly
+/// and long.
 pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
     injected_with(mode, dominant, ctx, default_binding)
 }

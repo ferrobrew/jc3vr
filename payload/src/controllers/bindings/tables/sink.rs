@@ -136,10 +136,6 @@ pub enum Gate {
     UnlessChordArmed,
     /// Not while the dominant grip is held with the sight tuning chord armed.
     UnlessChordGrip,
-    /// Only when the wingsuit's parachute press was latched as an evade flick.
-    EvadeFlick,
-    /// Only when the wingsuit's parachute press was not latched as an evade flick.
-    NoEvadeFlick,
     /// Only when the press began with its own hand's menu modifier held ([`MenuLatch`]).
     Gripped,
     /// Only when the press began without its own hand's menu modifier held ([`MenuLatch`]).
@@ -223,8 +219,6 @@ pub struct Latches {
     pub chord_grip: bool,
     /// Both of the sight tuning chord's grips are held.
     pub chord_armed: bool,
-    /// The wingsuit's parachute press was latched as an evade flick.
-    pub evade: bool,
     /// The character is a ragdoll.
     pub ragdolling: bool,
     /// Each hand's menu presses, by [`Hand::index`].
@@ -316,8 +310,6 @@ impl<'a> EvalSink<'a> {
             Gate::Always => true,
             Gate::UnlessChordArmed => !self.latches.chord_armed,
             Gate::UnlessChordGrip => !self.latches.chord_grip,
-            Gate::EvadeFlick => self.latches.evade,
-            Gate::NoEvadeFlick => !self.latches.evade,
             Gate::Gripped => self.gripped(press.input, hand) == Some(true),
             Gate::Ungripped => self.gripped(press.input, hand) == Some(false),
             Gate::Ragdolling => self.latches.ragdolling,

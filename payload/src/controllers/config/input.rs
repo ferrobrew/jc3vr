@@ -181,12 +181,6 @@ pub struct BindingsConfig {
     pub trigger_deadzone: f32,
     /// How long the system button must be held to open the commlink rather than pause, seconds.
     pub long_press_s: f32,
-    /// How far the move stick must be pushed when the wingsuit's A is pressed for the press to
-    /// evade rather than open the parachute, `0..1`. The stick rests below half of it.
-    pub evade_flick: f32,
-    /// How recently the move stick must have left its rest for the wingsuit's A to evade, seconds:
-    /// a flick, not a stick held over to steer.
-    pub evade_window_s: f32,
     /// How far down the dominant stick must be flicked on foot to toggle the seated crouch, `0..1`.
     /// The stick must come back above half of it before the next flick counts.
     pub crouch_flick: f32,
@@ -214,8 +208,6 @@ impl BindingsConfig {
             move_deadzone: 0.15,
             trigger_deadzone: 0.05,
             long_press_s: 0.5,
-            evade_flick: 0.8,
-            evade_window_s: 0.25,
             crouch_flick: 0.8,
             menu_stick_push: 0.5,
             stick_chord_window_s: 0.1,

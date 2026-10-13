@@ -113,10 +113,6 @@ pub struct Bindings {
     system: SystemButton,
     /// What each hand's grip press is doing, by [`Hand::index`].
     grips: [GripLatch; 2],
-    /// Whether the current wingsuit parachute press was latched as an evade.
-    evade_press: Option<bool>,
-    /// How long the move stick has been pushed out of its rest, seconds, or `None` while it rests.
-    move_pushed_s: Option<f32>,
     /// Whether the crouch flick has fired and waits for the stick to come back.
     crouch_flicked: bool,
     /// Each hand's menu press latches, by [`Hand::index`].
@@ -133,8 +129,6 @@ impl Bindings {
         Self {
             system: SystemButton { held: None },
             grips: [GripLatch::Open; 2],
-            evade_press: None,
-            move_pushed_s: None,
             crouch_flicked: false,
             menu: [MenuLatch {
                 confirm: None,
@@ -239,23 +233,9 @@ impl Bindings {
             menu::step(&mut self.menu[i], &intents, hand, config.menu_stick_push);
             menu::step_pad(&mut self.pads[i], &intents, hand);
         }
-        let move_stick =
-            move_action(intents.mode_set()).map_or(0.0, |a| intents.vector(a).length());
-        self.move_pushed_s = step_pushed(self.move_pushed_s, move_stick, config.evade_flick, dt);
-        let evade = match mode {
-            Mode::Airborne(variant) => latch_evade(
-                &mut self.evade_press,
-                variant,
-                &intents,
-                self.move_pushed_s,
-                config,
-            ),
-            _ => false,
-        };
         let latches = Latches {
             chord_grip: chord.dominant_grip,
             chord_armed: chord.armed,
-            evade,
             ragdolling: controls.ragdolling,
             menu: self.menu,
             pads: self.pads,
@@ -285,9 +265,6 @@ impl Bindings {
             );
         }
         let body_turn = body_turn_action(mode).map_or(0.0, |a| intents.raw(a));
-        if !matches!(mode, Mode::Airborne(AirborneVariant::Wingsuit)) {
-            self.evade_press = None;
-        }
         self.system.step(
             &mut out.desired,
             intents.button(GlobalAction::Pause.id()),
@@ -439,18 +416,6 @@ pub(crate) fn merge_buttons(a: ButtonControl, b: ButtonControl) -> ButtonControl
     }
 }
 
-/// The vector action of `set` that moves or steers, whose flick the wingsuit's evade reads.
-const fn move_action(set: SemanticSet) -> Option<ActionId> {
-    match set {
-        SemanticSet::OnFoot => Some(OnFootAction::Move.id()),
-        SemanticSet::Wingsuit => Some(WingsuitAction::Steer.id()),
-        SemanticSet::LandVehicle => Some(LandVehicleAction::Steer.id()),
-        SemanticSet::Helicopter => Some(HelicopterAction::Cyclic.id()),
-        SemanticSet::Plane => Some(PlaneAction::PitchRoll.id()),
-        SemanticSet::Global | SemanticSet::Menu => None,
-    }
-}
-
 /// The action whose value turns the body in `mode`, or `None` in the modes whose tables use the
 /// turn input themselves.
 pub const fn body_turn_action(mode: Mode) -> Option<ActionId> {
@@ -526,38 +491,6 @@ impl SightChord {
             capture: armed && dom.a.pressed,
         }
     }
-}
-
-/// Advance how long the move stick has been out of its rest: it rests below half the evade flick,
-/// and the time counts from when it last left the rest.
-fn step_pushed(pushed_s: Option<f32>, magnitude: f32, evade_flick: f32, dt: f32) -> Option<f32> {
-    let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-    if !magnitude.is_finite() || magnitude < evade_flick * 0.5 {
-        return None;
-    }
-    Some(pushed_s.map_or(0.0, |s| s + dt))
-}
-
-/// Decide at the wingsuit parachute press's edge whether the press evades or acts as the virtual A.
-/// It evades only on a flick: the steer stick is past the evade flick and left its rest within the
-/// evade window. A stick held over to steer or dive is not a flick, so the press still opens the
-/// parachute.
-fn latch_evade(
-    latch: &mut Option<bool>,
-    variant: AirborneVariant,
-    intents: &Intents,
-    move_pushed_s: Option<f32>,
-    config: &BindingsConfig,
-) -> bool {
-    let press = intents.button(WingsuitAction::OpenParachute.id());
-    if variant != AirborneVariant::Wingsuit || !press.held() {
-        *latch = None;
-        return false;
-    }
-    *latch.get_or_insert_with(|| {
-        intents.vector(WingsuitAction::Steer.id()).length() >= config.evade_flick
-            && move_pushed_s.is_some_and(|s| s <= config.evade_window_s)
-    })
 }
 
 /// The pause action: a press shorter than the long-press time clicks pause on release; holding it

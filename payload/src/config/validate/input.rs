@@ -20,8 +20,6 @@ pub(super) fn bindings(c: &BindingsConfig) -> Result<(), Invalid> {
     range("bindings.move_deadzone", c.move_deadzone, 0.0, 1.0)?;
     range("bindings.trigger_deadzone", c.trigger_deadzone, 0.0, 1.0)?;
     positive("bindings.long_press_s", c.long_press_s, 60.0)?;
-    range("bindings.evade_flick", c.evade_flick, 0.0, 1.0)?;
-    positive("bindings.evade_window_s", c.evade_window_s, 60.0)?;
     range("bindings.crouch_flick", c.crouch_flick, 0.0, 1.0)?;
     range("bindings.menu_stick_push", c.menu_stick_push, 0.0, 1.0)?;
     nonnegative("bindings.stick_chord_window_s", c.stick_chord_window_s, 1.0)?;

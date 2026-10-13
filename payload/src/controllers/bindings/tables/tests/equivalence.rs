@@ -7,7 +7,7 @@
 //! sequences. That separates the port of the tables from the change of the default layout: the
 //! shipped defaults are free to move, and this still checks that each meaning is read as before.
 //!
-//! The semantic tables differ from the raw-input ones on purpose in three places, which the
+//! The semantic tables differ from the raw-input ones on purpose in four places, which the
 //! comparison accounts for:
 //!
 //! - Out of the driver's seat, the throttle actions are not read; the raw-input tables injected
@@ -16,6 +16,8 @@
 //!   weapon's button, so its writes follow that button's rather than sit among them ([`in_order`]).
 //! - The yank is a source of the grapple action, so the sight tuning chord's grip withholds a
 //!   yank as it withholds the grip's grapple; no sequence yanks during the chord.
+//! - The wingsuit's evade is unbound, so a press after a flick of the stick opens the parachute
+//!   where the raw-input tables evaded ([`normalise`]).
 
 use glam::Vec2;
 
@@ -100,8 +102,28 @@ fn in_order(mut step: Step, mode: Mode) -> Step {
     step
 }
 
-/// The throttle actions out of the driver's seat, which the semantic tables do not read.
+/// The throttle actions out of the driver's seat, which the semantic tables do not read, and the
+/// wingsuit's evade, which they read as the parachute's press.
 fn normalise(mut step: Step, mode: Mode) -> Step {
+    if mode == Mode::Airborne(AirborneVariant::Wingsuit) {
+        step.desired = step
+            .desired
+            .into_iter()
+            .flat_map(|d| {
+                if d.target.action == WINGSUIT_EVADE {
+                    legacy::declare::PAD_A
+                        .iter()
+                        .map(|&action| Desired {
+                            target: Target { action, ..d.target },
+                            want: d.want,
+                        })
+                        .collect()
+                } else {
+                    vec![d]
+                }
+            })
+            .collect();
+    }
     if let Mode::Vehicle(seat) = mode
         && !seat.driver
     {

@@ -126,24 +126,17 @@ fn the_plane_pitches_down_on_stick_forward() {
 }
 
 #[test]
-fn the_wingsuit_evades_on_a_flicked_a() {
+fn a_flicked_a_in_the_wingsuit_opens_the_parachute_and_never_evades() {
     let mut b = Bindings::default();
     let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
+    b.sim_step(wingsuit, &Controls::default(), DT, &CONFIG);
     let flick = controls(Hand::Right, |dom, off| {
         dom.a = down();
         off.stick = Vec2::new(0.9, 0.0);
     });
     let step = b.sim_step(wingsuit, &flick, DT, &CONFIG);
-    assert_eq!(player(&step, WINGSUIT_EVADE), Some(Want::Hold(1.0)));
-    assert_eq!(player(&step, OPEN_PARACHUTE), None);
-    // The latch holds for the press even once the stick recentres.
-    let held = controls(Hand::Right, |dom, _| dom.a = down());
-    let step = b.sim_step(wingsuit, &held, DT, &CONFIG);
-    assert_eq!(player(&step, WINGSUIT_EVADE), Some(Want::Hold(1.0)));
-    // A fresh press without the flick opens the parachute.
-    b.sim_step(wingsuit, &Controls::default(), DT, &CONFIG);
-    let step = b.sim_step(wingsuit, &held, DT, &CONFIG);
     assert_eq!(player(&step, OPEN_PARACHUTE), Some(Want::Hold(1.0)));
+    assert_eq!(player(&step, WINGSUIT_EVADE), None);
 }
 
 #[test]
@@ -166,35 +159,6 @@ fn the_wingsuit_closes_on_the_button_that_opened_it_and_boosts_on_the_stick_clic
         let step = Bindings::default().sim_step(wingsuit, &x, DT, &CONFIG);
         assert!(step.desired.is_empty(), "{:?}", step.desired);
     }
-}
-
-#[test]
-fn a_stick_held_over_in_the_wingsuit_lets_a_open_the_parachute() {
-    let mut b = Bindings::default();
-    let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
-    let banked = controls(Hand::Right, |_, off| off.stick = Vec2::new(0.9, 0.0));
-    let ticks = (CONFIG.evade_window_s / DT).ceil() as usize + 2;
-    for _ in 0..ticks {
-        b.sim_step(wingsuit, &banked, DT, &CONFIG);
-    }
-    let mut press = banked;
-    press.hands[Hand::Right.index()].a = down();
-    let step = b.sim_step(wingsuit, &press, DT, &CONFIG);
-    assert_eq!(player(&step, OPEN_PARACHUTE), Some(Want::Hold(1.0)));
-    assert_eq!(player(&step, WINGSUIT_EVADE), None);
-}
-
-#[test]
-fn a_flick_out_of_rest_evades_within_the_window() {
-    let mut b = Bindings::default();
-    let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
-    b.sim_step(wingsuit, &Controls::default(), DT, &CONFIG);
-    let pushed = controls(Hand::Right, |_, off| off.stick = Vec2::new(0.0, -0.9));
-    b.sim_step(wingsuit, &pushed, DT, &CONFIG);
-    let mut press = pushed;
-    press.hands[Hand::Right.index()].a = down();
-    let step = b.sim_step(wingsuit, &press, DT, &CONFIG);
-    assert_eq!(player(&step, WINGSUIT_EVADE), Some(Want::Hold(1.0)));
 }
 
 #[test]

@@ -357,11 +357,9 @@ fn wingsuit<S: Sink>(s: &mut S) {
     s.hold(&[p(W::Boost)], &[WINGSUIT_BOOST]);
     s.hold(&[p(W::FireGuns)], &[FIRE_WINGSUIT_WEAPON_MAIN, R2]);
     s.hold(&[p(W::FireSecondary)], &[FIRE_WINGSUIT_WEAPON_SECONDARY]);
-    s.hold(
-        &[p(W::OpenParachute).gated(Gate::EvadeFlick)],
-        &[WINGSUIT_EVADE],
-    );
-    s.hold(&[p(W::OpenParachute).gated(Gate::NoEvadeFlick)], PAD_A);
+    // The evade is left unbound: its barrel roll is a roll the player's body never makes
+    // (`hooks::input::wingsuit`), so a flick before the press opens the parachute as any press.
+    s.hold(&[p(W::OpenParachute)], PAD_A);
     s.hold(&[p(W::Grapple), p(W::FireGrapple)], GRAPPLE);
     s.hold(&[p(W::Use)], PAD_Y_ON_FOOT);
     s.hold(&[p(W::ReleaseTethers)], PAD_B);
