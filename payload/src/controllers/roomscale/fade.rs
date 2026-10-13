@@ -1,5 +1,5 @@
 //! The comfort fade: a full-screen darkening of the headset's view, shared by the head-through-
-//! geometry probe and the seat transitions. Each source sets a target level; the fade eases toward
+//! geometry probe, the push-back at walls, and the seat transitions. Each source sets a target level; the fade eases toward
 //! the darkest target at the configured rates, and the VR blit ([`crate::vr`]) scales the image by
 //! `1 - level` as it copies each eye into the swapchain.
 //!
@@ -21,15 +21,19 @@ pub enum FadeSource {
     HeadInGeometry,
     /// A seat transition is hiding an entry or exit animation.
     Seat,
+    /// The head has gone past a wall further than the push-back slides the view
+    /// ([`crate::controllers::body::rig::root::pushback`]).
+    PushBack,
 }
 
 impl FadeSource {
-    const COUNT: usize = 2;
+    const COUNT: usize = 3;
 
     const fn index(self) -> usize {
         match self {
             FadeSource::HeadInGeometry => 0,
             FadeSource::Seat => 1,
+            FadeSource::PushBack => 2,
         }
     }
 }
@@ -46,6 +50,7 @@ pub struct FadeStatus {
     /// Each source's target, by [`FadeSource`].
     pub head: f32,
     pub seat: f32,
+    pub pushback: f32,
 }
 
 pub fn status() -> FadeStatus {
@@ -54,6 +59,7 @@ pub fn status() -> FadeStatus {
         level: level(),
         head: targets[FadeSource::HeadInGeometry.index()],
         seat: targets[FadeSource::Seat.index()],
+        pushback: targets[FadeSource::PushBack.index()],
     }
 }
 

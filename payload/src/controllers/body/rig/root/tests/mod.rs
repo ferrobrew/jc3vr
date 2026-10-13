@@ -1,6 +1,9 @@
 //! The root's behaviour in the kinematic world ([`crate::controllers::body::rig::harness`]): the
 //! chase following a walk in the room, the shift keeping the camera on the real head, the stick and
 //! the room adding, several ticks to a frame, the lean, and the owners that stand the chase down.
+//! The walls are in [`walls`].
+
+mod walls;
 
 use glam::{Quat, Vec2, Vec3};
 
@@ -14,13 +17,13 @@ use crate::controllers::body::{
 
 /// The share of a minimum-jerk reach completed at `u` (`0..=1`), the usual model of a person
 /// moving from one place to another.
-fn min_jerk(u: f32) -> f32 {
+pub(super) fn min_jerk(u: f32) -> f32 {
     let u = u.clamp(0.0, 1.0);
     u * u * u * (10.0 - 15.0 * u + 6.0 * u * u)
 }
 
 /// How long a minimum-jerk reach of `distance` takes to peak at `speed`.
-fn min_jerk_duration(distance: f32, speed: f32) -> f32 {
+pub(super) fn min_jerk_duration(distance: f32, speed: f32) -> f32 {
     1.875 * distance / speed
 }
 

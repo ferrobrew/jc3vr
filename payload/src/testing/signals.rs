@@ -232,6 +232,9 @@ signals! {
     RigGapM => "rig.gap_m", Measure, "How far the ground point under the player's upright eyes is from the root, metres, while a VR frame renders.";
     RigResidualM => "rig.residual_m", Measure, "How far that point is outside the lean the chase leaves alone, metres: what the chase still has to close.";
     RigLedgerProjected => "rig.ledger_projected", Counter, "Completed steps whose chase was credited by projection, because something stopped or deflected the root.";
+    RigPushbackM => "rig.pushback_m", Measure, "How far the push-back has slid the view back in its current episode, metres, while a VR frame renders.";
+    RigObstructed => "rig.obstructed", Flag, "The ledger finds the player's chase obstructed: something stops the body.";
+    RigPushbacks => "rig.pushbacks", Counter, "Push-back episodes: times the view started being held at a wall.";
 }
 
 impl Signal {
@@ -463,6 +466,12 @@ impl Signal {
             Signal::RigGapM => rig_measure(|f| f.gap_m()),
             Signal::RigResidualM => rig_measure(|f| f.residual_m()),
             Signal::RigLedgerProjected => count(rig_root::status().sim.ledger.projected),
+            Signal::RigPushbackM => rig_measure(|f| f.debt_m),
+            Signal::RigObstructed => {
+                let frame = rig_root::status().frame;
+                flag(frame.fresh(Instant::now()) && frame.pushback.obstructed)
+            }
+            Signal::RigPushbacks => count(rig_root::status().frame.pushbacks),
         }
     }
 }

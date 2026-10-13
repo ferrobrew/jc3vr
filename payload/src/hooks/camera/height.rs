@@ -18,8 +18,8 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        body::{self, BodyDimensions},
-        roomscale::{self, RoomscaleStatus, SeatPhase, posture::HeadHeight, probe},
+        body::{self, BodyDimensions, rig::collision::probe},
+        roomscale::{self, RoomscaleStatus, SeatPhase, posture::HeadHeight},
         vehicles::driving_view,
     },
     headpose::{anchor, eye_arm, neck_delta},

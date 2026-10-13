@@ -109,6 +109,9 @@ pub struct Requests {
     pending: Option<Movement>,
     completed: CompletedMovement,
     counts: LedgerCounts,
+    /// The requested and the credited chase distances of the last two completed steps, newest
+    /// last.
+    recent: [(f32, f32); 2],
 }
 
 impl Requests {
@@ -123,7 +126,17 @@ impl Requests {
                 exact: 0,
                 projected: 0,
             },
+            recent: [(0.0, 0.0); 2],
         }
+    }
+
+    /// Whether something stopped the chase: over the last two completed steps, less than half of
+    /// the chase they asked for was credited. A wall the root slides along at a shallow angle
+    /// leaves most of the chase credited, so it is no obstruction.
+    pub fn obstructed(&self) -> bool {
+        let requested: f32 = self.recent.iter().map(|(r, _)| r).sum();
+        let credited: f32 = self.recent.iter().map(|(_, c)| c).sum();
+        requested > MIN_OBSTRUCTED_REQUEST_M && credited < requested * OBSTRUCTED_SHARE
     }
 
     /// The running total at the last two completed steps.
@@ -149,6 +162,7 @@ impl Requests {
     /// Complete a step that moved the root from `previous` to `current`, world positions.
     pub fn complete(&mut self, previous: Vec3, current: Vec3) {
         self.completed.previous = self.completed.current;
+        let mut step = (0.0, 0.0);
         if let Some(request) = self.pending.take() {
             let delta = current - previous;
             let position_scale = previous.abs().max(current.abs()).max_element();
@@ -159,13 +173,16 @@ impl Requests {
                 Attribution::Exact => self.counts.exact += 1,
                 Attribution::Projected => self.counts.projected += 1,
             }
+            step = (request.chase.length(), credited.length());
         }
+        self.recent = [self.recent[1], step];
     }
 
     /// Drop the pending request and settle the pair, so nothing is credited until the player owns
     /// the root again.
     pub fn clear(&mut self) {
         self.pending = None;
+        self.recent = [(0.0, 0.0); 2];
         self.completed.previous = self.completed.current;
     }
 }
@@ -173,6 +190,13 @@ impl Requests {
 /// The fastest the stick, the hands, and the chase together may move the root, metres per second:
 /// a sanity bound, well above anything a player asks for.
 pub const MAX_COMBINED_SPEED_MPS: f32 = 12.0;
+
+/// The least chase two steps must ask for, metres, before their shortfall counts as an
+/// obstruction.
+const MIN_OBSTRUCTED_REQUEST_M: f32 = 1e-3;
+
+/// The share of the requested chase below which the credited chase means an obstruction.
+const OBSTRUCTED_SHARE: f32 = 0.5;
 
 /// The absolute part of the exact-match tolerance, metres.
 const EXACT_ABSOLUTE_M: f32 = 1e-4;
@@ -342,6 +366,33 @@ mod tests {
         requests.complete(Vec3::ZERO, Vec3::Z);
         assert_eq!(requests.completed().current, Vec2::X);
         assert_eq!(requests.completed().previous, Vec2::X);
+    }
+
+    #[test]
+    fn a_wall_obstructs_and_a_shallow_slide_does_not() {
+        let mut requests = Requests::new();
+        for _ in 0..2 {
+            requests.submit(Movement::new(Vec2::ZERO, Vec2::X * 0.1, 1.0));
+            requests.complete(Vec3::ZERO, Vec3::ZERO);
+        }
+        assert!(requests.obstructed());
+        // Along a wall at thirty degrees: most of the chase still goes through.
+        let along = Vec2::new(30f32.to_radians().cos(), 30f32.to_radians().sin()) * 0.1;
+        for _ in 0..2 {
+            requests.submit(Movement::new(Vec2::ZERO, along, 1.0));
+            requests.complete(
+                Vec3::ZERO,
+                Vec3::new(0.1 * 30f32.to_radians().cos(), 0.0, 0.0),
+            );
+        }
+        assert!(!requests.obstructed());
+        requests.submit(Movement::new(Vec2::ZERO, Vec2::X, 1.0));
+        requests.complete(Vec3::ZERO, Vec3::ZERO);
+        requests.clear();
+        assert!(!requests.obstructed());
+        // A chase that asks for nothing is never obstructed.
+        requests.complete(Vec3::ZERO, Vec3::ZERO);
+        assert!(!requests.obstructed());
     }
 
     #[test]

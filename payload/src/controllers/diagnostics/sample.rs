@@ -6,10 +6,11 @@ use serde::Serialize;
 use crate::{
     controllers::{
         aim::{self, AimIdle, HandSource, raycast::RaycastError, sights::SightSource},
+        body::rig::collision::probe::ProbeResult,
         frame::{self, ActionSetKind, Hand},
         hands::{ik, late, tiers},
         mode::{self, AirborneVariant, HoldReason, Mode, OnFootVariant, Traversal},
-        roomscale::{self, probe::ProbeResult},
+        roomscale,
         scheme::{self, Scheme},
     },
     vr::input as vr_input,
@@ -175,6 +176,8 @@ pub struct RoomscaleDiagnostic {
     /// the lean, world metres.
     pub gap_m: f32,
     pub residual_m: f32,
+    /// How far the push-back has slid the view in its current episode, metres.
+    pub pushback_m: f32,
     pub cockpit_shift_m: [f32; 3],
     pub requested_chase_velocity_mps: [f32; 2],
     pub requested_task_velocity_mps: [f32; 2],
@@ -366,6 +369,7 @@ fn roomscale_diagnostic(status: roomscale::RoomscaleStatus) -> RoomscaleDiagnost
         root_owner: status.root.sim.owner.map(|o| o.label()),
         gap_m: status.root.frame.gap_m(),
         residual_m: status.root.frame.residual_m(),
+        pushback_m: status.root.frame.debt_m,
         cockpit_shift_m: status.root.frame.shift.to_array(),
         requested_chase_velocity_mps: status.root.sim.chase_velocity.to_array(),
         requested_task_velocity_mps: status.root.sim.task_velocity.to_array(),

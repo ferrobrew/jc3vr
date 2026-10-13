@@ -6,10 +6,9 @@ use egui::Ui;
 
 use crate::{
     controllers::{
+        body::rig::collision::probe::ProbeResult,
         config::{Posture, RoomscaleConfig, SeatTransition},
-        roomscale::{
-            self, FrameStatus, RoomscaleStatus, posture::EffectivePosture, probe::ProbeResult,
-        },
+        roomscale::{self, FrameStatus, RoomscaleStatus, posture::EffectivePosture},
     },
     hooks::camera::height,
     ui::controllers::{stance, yes_no},
@@ -79,8 +78,8 @@ pub(super) fn roomscale_readout(ui: &mut Ui, status: &RoomscaleStatus) {
         }
     });
     ui.label(format!(
-        "Fade: level {:.2} · head {:.2} · seat {:.2}",
-        status.fade.level, status.fade.head, status.fade.seat
+        "Fade: level {:.2} · head {:.2} · seat {:.2} · push-back {:.2}",
+        status.fade.level, status.fade.head, status.fade.seat, status.fade.pushback
     ));
     ui.label(format!(
         "Seat: {}{}",

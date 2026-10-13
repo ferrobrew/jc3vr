@@ -1,6 +1,6 @@
 //! A kinematic world for testing the rig without the game: a root stepped at the simulation rate
 //! that integrates the composed velocity, optional wall planes that stop it, a frame half at the
-//! headset's rate, and the pose pair the engine interpolates the camera across.
+//! headset's rate with the push-back, and the pose pair the engine interpolates the camera across.
 //!
 //! The rig's own pure parts run unchanged: the ledger, the cockpit shift, the chase's measurement
 //! and velocity, and the lean. The world stands in for the engine: the proxy's solve is a straight
@@ -19,9 +19,13 @@ use crate::controllers::body::{
         config::RigConfig,
         lean::pivot_height,
         root::{
-            chase::{self, ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure, to_world},
+            chase::{
+                self, ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure, to_cockpit,
+                to_world,
+            },
             ledger::{Movement, Requests},
             owner::RootOwner,
+            pushback::{Pushback, PushbackInput, PushbackOutcome},
             shift::{CockpitBasis, CockpitShift},
         },
     },
@@ -70,6 +74,9 @@ pub(crate) struct Sample {
     pub(crate) camera_error_m: f32,
     pub(crate) root: Vec2,
     pub(crate) measurement: Measurement,
+    pub(crate) pushback: PushbackOutcome,
+    /// The push-back's slide in its current episode, metres.
+    pub(crate) debt_m: f32,
 }
 
 /// The kinematic world.
@@ -92,6 +99,7 @@ pub(crate) struct World {
     shift: CockpitShift,
     head_velocity: HeadVelocity,
     published: Option<ChaseFrame>,
+    pushback: Pushback,
     ticks: u64,
 }
 
@@ -115,6 +123,7 @@ impl World {
             shift: CockpitShift::new(),
             head_velocity: HeadVelocity::new(),
             published: None,
+            pushback: Pushback::new(),
             ticks: 0,
         }
     }
@@ -156,6 +165,21 @@ impl World {
 
     pub(crate) fn ledger(&self) -> &Requests {
         &self.ledger
+    }
+
+    pub(crate) fn pushback(&self) -> &Pushback {
+        &self.pushback
+    }
+
+    /// The real head's world `(x, z)` for its cockpit position `eyes`, now.
+    pub(crate) fn real_head(&self, eyes: Vec3) -> Vec2 {
+        self.room + to_world(Vec2::new(eyes.x, eyes.z), self.view, self.world_scale)
+    }
+
+    /// The camera's world `(x, z)` for the cockpit position `eyes` on the current side of the pair.
+    pub(crate) fn camera(&self, eyes: Vec3) -> Vec2 {
+        let (_, cur) = self.shift.apply(eyes);
+        self.root + to_world(Vec2::new(cur.x, cur.z), self.view, self.world_scale)
     }
 
     /// Run for `seconds`, with the head in the room at `head(t)` for the world time `t`, calling
@@ -221,21 +245,34 @@ impl World {
         self.shift.observe(&basis, self.ledger.completed());
         let torso_yaw = head_heading(head.orientation).unwrap_or(0.0);
         let drop_m = head_drop(pivot_height(head.eyes, head.orientation), 0.0, 0.0);
-        let measurement = measure(
-            &MeasureInput {
-                raw: head.eyes,
-                shift: self.shift.current(),
-                observed: self.shift.observed(),
-                head: head.orientation,
-                torso_yaw,
-                view: self.view,
-                world_scale: self.world_scale,
-                drop_m,
+        let mut input = MeasureInput {
+            raw: head.eyes,
+            shift: self.shift.current(),
+            observed: self.shift.observed(),
+            head: head.orientation,
+            torso_yaw,
+            view: self.view,
+            world_scale: self.world_scale,
+            drop_m,
+            dt,
+        };
+        let mut measurement = measure(&input, &mut self.head_velocity, &self.config.lean);
+        let pushback = self.pushback.step(
+            &PushbackInput {
+                gap: measurement.frame.gap,
+                owner: Some(self.owner),
+                stopped: self.ledger.obstructed(),
                 dt,
             },
-            &mut self.head_velocity,
-            &self.config.lean,
+            &self.config.pushback,
         );
+        if pushback.push != Vec2::ZERO {
+            self.shift
+                .slide_view(to_cockpit(pushback.push, self.view, self.world_scale));
+            input.shift = self.shift.current();
+            input.dt = 0.0;
+            measurement = measure(&input, &mut self.head_velocity, &self.config.lean);
+        }
         self.published = Some(measurement.frame);
 
         let (prev, cur) = self.shift.apply(head.eyes);
@@ -250,6 +287,8 @@ impl World {
             camera_error_m: camera.distance(real),
             root: self.root,
             measurement,
+            pushback,
+            debt_m: self.pushback.debt(),
         }
     }
 }

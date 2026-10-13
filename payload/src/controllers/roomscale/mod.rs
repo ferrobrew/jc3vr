@@ -7,7 +7,6 @@
 //!   implies (the body remap onto the character's eye height);
 //! - [`seated`]: the seated eye reference, which follows how the player actually sits;
 //! - [`teleport`]: the teleport epoch, from the game's camera reset;
-//! - [`probe`]: the head-through-geometry probe;
 //! - [`fade`]: the comfort fade the VR blit applies;
 //! - [`crouch`]: the visual crouch's IK targets and the capsule's proxy-state rules;
 //! - [`seat`]: the seat-transition phases and modes;
@@ -29,7 +28,6 @@
 pub mod crouch;
 pub mod fade;
 pub mod posture;
-pub mod probe;
 pub mod seat;
 pub mod seated;
 pub mod stance;
@@ -52,7 +50,10 @@ use crate::{
         body::{
             self, BodyDimensions,
             alignment::estimate as alignment_estimate,
-            rig::root::{self as rig_root, RootStatus, capsule_enabled},
+            rig::{
+                collision::probe::{self, ProbeResult},
+                root::{self as rig_root, RootStatus, capsule_enabled},
+            },
         },
         config::{Posture, RoomscaleConfig},
         roomscale::{
@@ -62,7 +63,6 @@ use crate::{
                 ClassifierInput, ClassifierStatus, DetectedPosture, EffectivePosture, HeadHeight,
                 HeadHeightInput, PostureClassifier,
             },
-            probe::ProbeResult,
             seat::{SeatEvent, SeatTracker},
             seated::{SeatedReference, SeatedReferenceStatus},
         },

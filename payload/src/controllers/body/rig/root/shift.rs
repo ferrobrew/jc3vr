@@ -100,6 +100,15 @@ impl CockpitShift {
         self.settle();
     }
 
+    /// Move the view by `offset`, cockpit frame, on both sides of the pair alike, so the view does
+    /// not interpolate across it: the push-back holding the view at a wall.
+    pub fn slide_view(&mut self, offset: Vec3) {
+        if offset.is_finite() {
+            self.prev -= offset;
+            self.cur -= offset;
+        }
+    }
+
     /// Clear the shift, when a recenter re-bases the baseline's position.
     pub fn clear(&mut self) {
         self.cur = Vec3::ZERO;
@@ -180,6 +189,23 @@ mod tests {
             },
         );
         assert_eq!(shift.apply(Vec3::ZERO), (-Vec3::X, -Vec3::X));
+    }
+
+    #[test]
+    fn a_slide_moves_both_sides_of_the_pair() {
+        let mut shift = CockpitShift::new();
+        shift.observe(
+            &frame(),
+            CompletedMovement {
+                previous: Vec2::ZERO,
+                current: Vec2::X * 0.1,
+            },
+        );
+        shift.slide_view(Vec3::Z * 0.2);
+        assert_eq!(
+            shift.apply(Vec3::ZERO),
+            (Vec3::Z * 0.2, Vec3::X * -0.1 + Vec3::Z * 0.2)
+        );
     }
 
     #[test]

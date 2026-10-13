@@ -5,7 +5,8 @@
 //! - [`owner`]: the one owner of the root per tick;
 //! - [`chase`]: the gap to the ground point under the upright eyes and the velocity that closes it;
 //! - [`ledger`]: what each step asked for and how much of the completed movement was the chase's;
-//! - [`shift`]: the cockpit shift that takes the credited chase back out of the view.
+//! - [`shift`]: the cockpit shift that takes the credited chase back out of the view;
+//! - [`pushback`]: holding the view at a wall the chase cannot pass.
 //!
 //! The simulation half runs from a post-call detour on the on-foot locomotion task
 //! (`NStateTask_MovementLocomotionTask::Update`), which writes the character proxy's wanted velocity
@@ -28,12 +29,13 @@
 //!
 //! The pose-finalization entry completes the tick's request against the root's displacement
 //! ([`complete_movement`]). The frame half ([`frame`]), called once per rendered frame by the pose
-//! composition, folds the credited chase into the cockpit shift, measures the gap and the lean, and
-//! publishes them for the next ticks.
+//! composition, folds the credited chase into the cockpit shift, measures the gap and the lean,
+//! slides the view back at an obstruction, and publishes the gap for the next ticks.
 
 pub mod chase;
 pub mod ledger;
 pub mod owner;
+pub mod pushback;
 pub mod shift;
 
 #[cfg(test)]
@@ -60,12 +62,16 @@ use crate::{
             BodyDimensions,
             procedural::{head::looks_level, state::animation_moves_body},
             rig::{
+                collision::probe::{self, HeadProbe, TimedProbe},
                 config::RigConfig,
                 lean::{Lean, StandingHeight, pivot_height},
                 root::{
-                    chase::{ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure},
+                    chase::{
+                        ChaseFrame, HeadVelocity, MeasureInput, Measurement, measure, to_cockpit,
+                    },
                     ledger::{CompletedMovement, LedgerCounts, Movement, Requests},
                     owner::{OwnerInput, RootOwner},
+                    pushback::{Pushback, PushbackInput, PushbackOutcome},
                     shift::{CockpitBasis, CockpitShift},
                 },
             },
@@ -77,8 +83,8 @@ use crate::{
         roomscale::{
             self, SeatPhase,
             crouch::capsule_step,
+            fade::{self, FadeSource},
             posture::EffectivePosture,
-            probe::{self, HeadProbe, TimedProbe},
             teleport,
         },
     },
@@ -143,6 +149,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         let completed = clear_movement();
         frame.shift.synchronize(completed);
         frame.head_velocity.reset();
+        frame.pushback.end_episode();
         if inputs.posture == EffectivePosture::Standing {
             frame.shift.rebase_horizontal(inputs.raw);
             frame.status.teleport_rebases += 1;
@@ -188,6 +195,27 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         measurement = measure(&input, &mut state.head_velocity, &config.lean);
     }
 
+    // Where the chase cannot follow, the view is held at the obstruction.
+    let (owner, stopped) = owner_and_obstruction(now);
+    let pushback = state.pushback.step(
+        &PushbackInput {
+            gap: measurement.frame.gap,
+            owner,
+            stopped,
+            dt: inputs.dt,
+        },
+        &config.pushback,
+    );
+    if pushback.push != Vec2::ZERO {
+        state
+            .shift
+            .slide_view(to_cockpit(pushback.push, inputs.view, inputs.world_scale));
+        input.shift = state.shift.current();
+        input.dt = 0.0;
+        measurement = measure(&input, &mut state.head_velocity, &config.lean);
+    }
+    fade::set_target(FadeSource::PushBack, pushback.fade);
+
     state.published = Some((measurement.frame, now));
     state.status = FrameReadout {
         at: Some(now),
@@ -196,6 +224,9 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         standing_m: state.standing.reference(),
         world_scale: inputs.world_scale,
         shift: state.shift.current(),
+        pushback,
+        debt_m: state.pushback.debt(),
+        pushbacks: state.pushback.episodes(),
         ..state.status
     };
     let (prev, cur) = state.shift.apply(inputs.raw);
@@ -210,6 +241,7 @@ pub fn on_recenter(kind: RecenterKind, turn: Quat) {
     let completed = clear_movement();
     frame.shift.synchronize(completed);
     frame.head_velocity.reset();
+    frame.pushback.end_episode();
     match kind {
         RecenterKind::Full => frame.shift.clear(),
         RecenterKind::YawAndHeight => frame.shift.rotate(turn),
@@ -276,6 +308,12 @@ pub struct FrameReadout {
     pub teleport_rebases: u64,
     /// Seat exits that re-based a head too far from the body.
     pub exit_rebases: u64,
+    /// What the push-back did on the frame.
+    pub pushback: PushbackOutcome,
+    /// How far the push-back has slid the view in its current episode, metres.
+    pub debt_m: f32,
+    /// Push-back episodes since the payload loaded.
+    pub pushbacks: u64,
 }
 
 impl FrameReadout {
@@ -365,6 +403,7 @@ struct FrameState {
     head_velocity: HeadVelocity,
     standing: StandingHeight,
     last_seat: SeatPhase,
+    pushback: Pushback,
     /// The latest measurement for the simulation half, and when it was taken.
     published: Option<(ChaseFrame, Instant)>,
     status: FrameReadout,
@@ -376,6 +415,7 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     head_velocity: HeadVelocity::new(),
     standing: StandingHeight::new(),
     last_seat: SeatPhase::Out,
+    pushback: Pushback::new(),
     published: None,
     status: FrameReadout {
         at: None,
@@ -399,12 +439,35 @@ static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
         shift: Vec3::ZERO,
         teleport_rebases: 0,
         exit_rebases: 0,
+        pushback: PushbackOutcome {
+            push: Vec2::ZERO,
+            threshold: None,
+            obstructed: false,
+            fade: 0.0,
+        },
+        debt_m: 0.0,
+        pushbacks: 0,
     },
 });
 
 fn fresh_readout() -> Option<FrameReadout> {
     let readout = FRAME.lock().status;
     readout.fresh(Instant::now()).then_some(readout)
+}
+
+/// Who owned the root on the latest on-foot tick, while the simulation half runs, and whether the
+/// ledger finds the chase obstructed.
+fn owner_and_obstruction(now: Instant) -> (Option<RootOwner>, bool) {
+    let sim = SIM.lock();
+    let fresh = sim
+        .status
+        .at
+        .is_some_and(|at| now.saturating_duration_since(at) <= probe::STALE_AFTER);
+    if fresh {
+        (sim.status.owner, sim.movement.obstructed())
+    } else {
+        (None, false)
+    }
 }
 
 /// The latest frame's measurement for the simulation half, while it is fresh.
@@ -579,9 +642,12 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
 
     sim.status.probe = if config.head_fade.enabled {
         let ignore = [character as *const Character as usize, 0];
-        let head = headpose::query().position;
+        let pose = headpose::query();
+        let head = pose.position;
         let anchor = headpose::anchor().unwrap_or(head);
-        let result = sim.probe.step(head, anchor, |from, to| {
+        let right = pose.orientation * Vec3::X;
+        let right = Vec3::new(right.x, 0.0, right.z).normalize_or_zero();
+        let result = sim.probe.step(head, anchor, right, |from, to| {
             // SAFETY: the simulation phase, and the ignored object is the live local character.
             unsafe { probe::scene_cast(from, to, ignore) }.unwrap_or_else(|error| {
                 tracing::debug!(target: "controllers", "rig: head probe: {error}");

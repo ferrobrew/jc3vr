@@ -1,6 +1,6 @@
 //! The `VR: COMFORT` page: recentering the view and steadying it on foot, the stick movement, the
-//! view on the grapple, the posture, the body following the head and the lean it leaves alone,
-//! crouching, the comfort fades, and the
+//! view on the grapple, the posture, the body following the head, the lean it leaves alone, and
+//! the stop at walls, crouching, the comfort fades, and the
 //! view in vehicles: getting in, and the driver's view at the wheel. The recenter is an action, not
 //! a setting.
 
@@ -94,6 +94,12 @@ fn build() -> Page {
             .body
             .rig
             .lean
+            .enabled))
+        .item(config_toggle!("STOP AT WALLS", |c| c
+            .controllers
+            .body
+            .rig
+            .pushback
             .enabled))
         .header("CROUCHING")
         .item(config_toggle!("CROUCH WITH YOUR HEAD", |c| c

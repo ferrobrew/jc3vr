@@ -167,6 +167,13 @@ pub fn to_world(v: Vec2, view: Quat, world_scale: f32) -> Vec2 {
     if flat.is_finite() { flat } else { Vec2::ZERO }
 }
 
+/// A world `(x, z)` vector carried into the cockpit frame by the inverse of [`to_world`].
+pub fn to_cockpit(v: Vec2, view: Quat, world_scale: f32) -> Vec3 {
+    let cockpit = view.normalize().inverse() * Vec3::new(v.x, 0.0, v.y) / world_scale;
+    let flat = Vec3::new(cockpit.x, 0.0, cockpit.z);
+    if flat.is_finite() { flat } else { Vec3::ZERO }
+}
+
 /// The head's horizontal velocity in the cockpit frame, smoothed over [`HEAD_VELOCITY_S`], with
 /// tracking noise below [`HEAD_VELOCITY_FLOOR_MPS`] taken out.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

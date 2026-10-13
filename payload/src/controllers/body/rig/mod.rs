@@ -5,6 +5,7 @@
 //! - [`lean`]: how far the neck pivot may be out over the feet without a step;
 //! - [`config`]: the settings, under `controllers.body.rig`.
 
+pub mod collision;
 pub mod config;
 pub mod lean;
 pub mod root;

@@ -513,6 +513,7 @@ mod tests {
                 root_owner: None,
                 gap_m: 0.0,
                 residual_m: 0.0,
+                pushback_m: 0.0,
                 cockpit_shift_m: [0.0; 3],
                 requested_chase_velocity_mps: [0.0; 2],
                 requested_task_velocity_mps: [0.0; 2],

@@ -8,6 +8,10 @@
 //! that a head the body has carried around the obstruction counts as clear again. The depth past the
 //! hit drives the comfort fade.
 //!
+//! A single ray through the eye centre lets the head's sides through a corner or a door frame, so
+//! the pair is cast three times, through the eye centre and [`FAN_HALF_WIDTH_M`] to either side of
+//! it across the view, and the deepest hit counts. The fan stands in for a swept sphere.
+//!
 //! The casts use the player aim's filter ([`crate::controllers::aim::raycast`]): the plain
 //! simple-ray query can hit the player's own ragdoll and hit-proxy bodies, which a head moving down
 //! or forward past the torso crosses. The casts run in the simulation phase, where the engine casts
@@ -61,24 +65,34 @@ impl HeadProbe {
     }
 
     /// Probe the `head` position against the geometry. `anchor` is the animated head, which the
-    /// body keeps in the open. `cast` returns the first hit between two points, or `None`.
+    /// body keeps in the open, and `right` the view's horizontal right, a unit vector, which the fan
+    /// spreads along. `cast` returns the first hit between two points, or `None`.
     pub fn step(
         &mut self,
         head: Vec3,
         anchor: Vec3,
+        right: Vec3,
         mut cast: impl FnMut(Vec3, Vec3) -> Option<Vec3>,
     ) -> ProbeResult {
-        let from = self.last_clear.unwrap_or(anchor);
-        let hit = segment(from, head, &mut cast)
-            .filter(|_| from == anchor || segment(anchor, head, &mut cast).is_some());
-        match hit {
+        let right = if right.is_finite() { right } else { Vec3::ZERO };
+        let start = self.last_clear.unwrap_or(anchor);
+        let mut deepest: Option<f32> = None;
+        for side in [0.0, 1.0, -1.0] {
+            let offset = right * (side * FAN_HALF_WIDTH_M);
+            let (from, to, anchor) = (start + offset, head + offset, anchor + offset);
+            let hit = segment(from, to, &mut cast)
+                .filter(|_| from == anchor || segment(anchor, to, &mut cast).is_some());
+            if let Some(point) = hit {
+                let depth = (to - point).length();
+                deepest = Some(deepest.map_or(depth, |d| d.max(depth)));
+            }
+        }
+        match deepest {
             None => {
                 self.last_clear = Some(head);
                 ProbeResult::Clear
             }
-            Some(point) => ProbeResult::Obstructed {
-                depth: (head - point).length(),
-            },
+            Some(depth) => ProbeResult::Obstructed { depth },
         }
     }
 }
@@ -128,6 +142,10 @@ pub unsafe fn scene_cast(
     Ok(unsafe { raycast::cast(&ray, (to - from).length(), &options) }?.map(|hit| hit.position))
 }
 
+/// How far to either side of the eye centre the outer rays of the fan run, metres: about the
+/// head's half-width.
+pub const FAN_HALF_WIDTH_M: f32 = 0.08;
+
 /// The shortest segment worth casting, metres.
 const MIN_SEGMENT_M: f32 = 1e-3;
 
@@ -160,7 +178,12 @@ mod tests {
     #[test]
     fn a_head_in_the_open_is_clear() {
         let mut probe = HeadProbe::default();
-        let r = probe.step(Vec3::new(0.5, 1.7, 0.0), Vec3::new(0.0, 1.7, 0.0), wall);
+        let r = probe.step(
+            Vec3::new(0.5, 1.7, 0.0),
+            Vec3::new(0.0, 1.7, 0.0),
+            Vec3::Z,
+            wall,
+        );
         assert_eq!(r, ProbeResult::Clear);
     }
 
@@ -168,8 +191,8 @@ mod tests {
     fn a_head_through_the_wall_is_obstructed_by_its_depth() {
         let mut probe = HeadProbe::default();
         let anchor = Vec3::new(0.0, 1.7, 0.0);
-        probe.step(Vec3::new(0.9, 1.7, 0.0), anchor, wall);
-        let r = probe.step(Vec3::new(1.2, 1.7, 0.0), anchor, wall);
+        probe.step(Vec3::new(0.9, 1.7, 0.0), anchor, Vec3::Z, wall);
+        let r = probe.step(Vec3::new(1.2, 1.7, 0.0), anchor, Vec3::Z, wall);
         match r {
             ProbeResult::Obstructed { depth } => assert!((depth - 0.2).abs() < 1e-5),
             other => panic!("expected an obstruction, got {other:?}"),
@@ -179,10 +202,41 @@ mod tests {
     #[test]
     fn a_body_carried_around_the_wall_clears_a_stale_position() {
         let mut probe = HeadProbe::default();
-        probe.step(Vec3::new(0.9, 1.7, 0.0), Vec3::new(0.0, 1.7, 0.0), wall);
+        probe.step(
+            Vec3::new(0.9, 1.7, 0.0),
+            Vec3::new(0.0, 1.7, 0.0),
+            Vec3::Z,
+            wall,
+        );
         // The body has walked through a doorway: the head and its anchor are both past the wall.
-        let r = probe.step(Vec3::new(1.5, 1.7, 0.0), Vec3::new(1.4, 1.7, 0.0), wall);
+        let r = probe.step(
+            Vec3::new(1.5, 1.7, 0.0),
+            Vec3::new(1.4, 1.7, 0.0),
+            Vec3::Z,
+            wall,
+        );
         assert_eq!(r, ProbeResult::Clear);
+    }
+
+    /// A door frame's post: a wall at `x = 1` only for `z > 0.05`.
+    fn post(from: Vec3, to: Vec3) -> Option<Vec3> {
+        wall(from, to).filter(|hit| hit.z > 0.05)
+    }
+
+    #[test]
+    fn the_fan_catches_a_post_beside_the_eye_centre() {
+        let mut probe = HeadProbe::default();
+        let anchor = Vec3::new(0.0, 1.7, 0.0);
+        probe.step(Vec3::new(0.9, 1.7, 0.0), anchor, Vec3::Z, post);
+        // The eye centre passes beside the post; the side of the head does not.
+        let r = probe.step(Vec3::new(1.1, 1.7, 0.0), anchor, Vec3::Z, post);
+        assert!(matches!(r, ProbeResult::Obstructed { .. }), "{r:?}");
+        let mut single = HeadProbe::default();
+        single.step(Vec3::new(0.9, 1.7, 0.0), anchor, Vec3::ZERO, post);
+        assert_eq!(
+            single.step(Vec3::new(1.1, 1.7, 0.0), anchor, Vec3::ZERO, post),
+            ProbeResult::Clear
+        );
     }
 
     #[test]
