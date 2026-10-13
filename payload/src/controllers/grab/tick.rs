@@ -24,6 +24,7 @@ use crate::controllers::{
         target::HandPoints,
     },
     hands::ActiveHands,
+    physical_hands,
 };
 
 /// One input tick's targets and how each hand stands among them.
@@ -223,6 +224,7 @@ fn log_press(hand: Hand, tick: &Tick, latch: GripLatch, acquired: bool) {
         others = if considered.is_empty() { "none" } else { considered.as_str() },
         nearest_miss = missed.as_deref().unwrap_or("none"),
         notes = if notes.is_empty() { "none" } else { notes.as_str() },
+        palms = physical_hands::press_summary(hand),
         slow = tick.slow[hand.index()],
         targets = tick.targets.len(),
         "{}",

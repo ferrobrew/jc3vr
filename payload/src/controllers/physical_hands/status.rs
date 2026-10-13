@@ -1,13 +1,20 @@
 //! The physical hands' readout: why the palms did nothing on the last tick, and what each one did
 //! when they acted.
 
+use std::time::Instant;
+
 use glam::{Vec2, Vec3};
 
-use crate::controllers::physical_hands::{
-    grasp::Reach,
-    palm::PalmBox,
-    pickup::{HeldReport, PickupStatus},
-    state::STATE,
+use crate::controllers::{
+    frame::Hand,
+    physical_hands::{
+        free_hands,
+        grasp::Reach,
+        palm::PalmBox,
+        physics,
+        pickup::{HeldReport, PickupStatus},
+        state::STATE,
+    },
 };
 
 /// Why the palms did nothing on the last aim update.
@@ -92,4 +99,40 @@ pub struct PhysicalHandsStatus {
 
 pub fn status() -> PhysicalHandsStatus {
     STATE.lock().status.clone()
+}
+
+/// What the palms' last tick did for `hand`, for the grip's press log: why the palms stood down,
+/// or whether the hand was free, driven by its body (and whether that body's pose was fresh), had
+/// a palm, and reached anything, with the tick's age, casts, and last failure. A grab the reach
+/// should have offered and did not is explained by these.
+pub(crate) fn press_summary(hand: Hand) -> String {
+    let state = STATE.lock();
+    let age_ms = state
+        .at
+        .map(|at| Instant::now().saturating_duration_since(at).as_millis());
+    let status = &state.status;
+    let summary = match (status.idle, age_ms) {
+        (Some(idle), _) => format!("idle: {}", idle.label()),
+        (None, None) => "never ticked".to_owned(),
+        (None, Some(age_ms)) => {
+            let hand_status = &status.hands[hand.index()];
+            format!(
+                "ticked {age_ms} ms ago, free={}, driven={}, body pose={}, palm={}, reach={}, casts={}",
+                free_hands()[hand.index()],
+                physics::drives(hand),
+                if physics::body_pose(hand).is_some() {
+                    "fresh"
+                } else {
+                    "none"
+                },
+                hand_status.palm.is_some(),
+                hand_status.reach.is_some(),
+                status.casts,
+            )
+        }
+    };
+    match &status.last_error {
+        Some(error) => format!("{summary}, last error: {error}"),
+        None => summary,
+    }
 }
