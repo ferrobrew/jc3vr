@@ -5,10 +5,12 @@
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::body::procedural::solver::{
-    arms::Side,
-    feet::FootPose,
-    lower::{LowerInput, LowerRig, LowerTargets, facing, flat},
+use crate::controllers::body::{
+    procedural::solver::{
+        arms::Side,
+        lower::{LowerInput, LowerRig, LowerTargets, facing, flat},
+    },
+    rig::legs::swing::FootPose,
 };
 
 /// How far below the squat's floor the head must ask the hips to go before the body kneels,

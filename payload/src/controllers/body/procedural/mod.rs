@@ -76,18 +76,15 @@ use crate::{
                     anchored::{HangTuning, hang_feet, solve_anchored, upright_share},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
-                    crouch_depth,
-                    feet::FootPose,
-                    gait::STOP_SHARE,
-                    hips_height, hips_room, line_yaw,
+                    crouch_depth, hips_height, hips_room, line_yaw,
                     lower::LowerStatus,
                     pose::{RigPose, SolveKind},
-                    reach_drop, solve, step_offset,
+                    reach_drop, solve,
                 },
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
-            rig::{pelvis, torso_turn},
+            rig::{legs::swing::FootPose, pelvis, torso_turn},
         },
         frame::Hand,
         locomotion::{LocomotionStatus, status as locomotion_status},
@@ -136,8 +133,10 @@ pub struct ProceduralStatus {
     pub head_drop_m: f32,
     /// The lower body's pose and what it was picked from.
     pub lower: LowerStatus,
-    /// How far the stance has stepped under the player's head, metres.
-    pub step_offset_m: f32,
+    /// Whether the feet walk rather than step standing.
+    pub legs_moving: bool,
+    /// How far ahead of its hip the last walking foot landed, metres.
+    pub touchdown_lead_m: Option<f32>,
     /// How far the body leans into its motion, degrees.
     pub motion_lean_deg: f32,
     /// How far the falling legs have reached for the ground below, `0..=1`.
@@ -285,10 +284,11 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, pelvis_config, off_hand, scale) = Config::lock_query(|c| {
+    let (config, pelvis_config, legs_config, off_hand, scale) = Config::lock_query(|c| {
         (
             c.controllers.body.procedural,
             c.controllers.body.rig.pelvis,
+            c.controllers.body.rig.legs,
             c.controllers.acting_hand().other(),
             c.vr.world_scale,
         )
@@ -443,33 +443,16 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             let hips_head_y = state.hips_head(rig, &player, standing, dt, &config);
             let crouch = crouch_depth(rig, hips_head_y, &config);
             state.status.crouch_depth = crouch;
-            let mut request = FeetRequest {
+            let request = FeetRequest {
                 world: &world,
                 rig,
                 animated: &animated,
                 still: locomotion.standing_still(),
                 velocity,
-                commanded,
                 crouch,
-                step_offset: Vec2::ZERO,
                 dt,
             };
             let stance = state.stance_feet(&request);
-            // The stance steps under a head that has gone further than a lean, so the feet follow
-            // a player walking about the room instead of the body stretching after the head. The
-            // head is taken upright over the player's feet: a lean or a reach over a table moves
-            // the head and not the feet, so it steps nothing.
-            let wanted_step = if config.step_under_head {
-                let (_, rotation, _) = world.to_scale_rotation_translation();
-                let limit = config.pelvis_turn_limit_deg.max(0.0).to_radians();
-                let yaw = torso_turn(rotation).map_or(0.0, |y| y.clamp(-limit, limit));
-                let middle = (stance[0].position + stance[1].position) * 0.5;
-                step_offset(rig, player.upright, middle, yaw, config.lean_allowance_m)
-            } else {
-                Vec2::ZERO
-            };
-            request.step_offset = state.step.step(wanted_step, dt, STEP_UNDER_S);
-            state.status.step_offset_m = request.step_offset.length();
             let feet = if legs_procedural {
                 let ground_feet = if airborne {
                     // The feet leave the ground with the body; the landing plants them afresh
@@ -484,7 +467,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                             .feet
                             .plant(animated_feet(&animated).map(|f| to_world(&world, &f)));
                     }
-                    state.place_feet(&request, &config, &mut caster)
+                    state.place_feet(&request, &config, &legs_config, &mut caster)
                 };
                 let air_weight = state.air.step(airborne, dt);
                 state.status.air_weight = air_weight;
@@ -528,12 +511,13 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             state.status.stepping = state.feet.stepping();
             state.status.speed_mps = velocity.length();
             state.status.gait_phase = state.feet.phase();
+            state.status.legs_moving = state.feet.moving();
+            state.status.touchdown_lead_m = state.feet.touchdown().map(|(_, lead)| lead);
             let Some(mut input) = solve_input(character, &animated, feet, scale) else {
                 return false;
             };
             input.hips_head_y = Some(hips_head_y);
-            input.support = (stance[0].position + stance[1].position) * 0.5
-                + Vec3::new(request.step_offset.x, 0.0, request.step_offset.y);
+            input.support = (stance[0].position + stance[1].position) * 0.5;
             (input.planted, input.heel_lifts) = if legs_procedural && !airborne {
                 (state.feet.planted(), state.feet.heel_lifts())
             } else {
@@ -572,7 +556,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                 stance,
                 crouch,
                 grounded: case == Case::OnFoot && legs_procedural && !airborne,
-                moving: commanded.length() > config.gait_speed_mps * STOP_SHARE
+                moving: commanded.length() > legs_config.standing_mps
                     || locomotion.stick.length() > MOVING_STICK,
                 stick: locomotion.stick.length() > MOVING_STICK,
                 standing_play,
@@ -700,7 +684,7 @@ unsafe fn pose_on_animated_hips(
     state.status.landing_reach = 0.0;
     state.status.stepping = false;
     state.status.gait_phase = None;
-    state.status.step_offset_m = 0.0;
+    state.status.legs_moving = false;
     state.status.neck_error_m = neck_error_m;
     Some(pose)
 }
@@ -754,10 +738,6 @@ const MAX_STEP_S: f32 = 0.1;
 /// How far the move stick must be pushed for the body to count as told to move, whatever the
 /// velocity has reached yet.
 const MOVING_STICK: f32 = 0.3;
-
-/// How quickly the stance follows its step under the head, seconds: the time constant of its
-/// follower, so a head that crosses the allowance for a moment does not jerk the feet's places.
-const STEP_UNDER_S: f32 = 0.15;
 
 /// How long a gate's sit holds the stick after it, at most: past this the gate has stopped
 /// running, and the stick walks again.
@@ -831,7 +811,8 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     standing_samples: 0,
     head_drop_m: 0.0,
     lower: LowerStatus::new(),
-    step_offset_m: 0.0,
+    legs_moving: false,
+    touchdown_lead_m: None,
     motion_lean_deg: 0.0,
     landing_reach: 0.0,
     stance_measured: false,

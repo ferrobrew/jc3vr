@@ -235,6 +235,8 @@ signals! {
     RigPushbackM => "rig.pushback_m", Measure, "How far the push-back has slid the view back in its current episode, metres, while a VR frame renders.";
     RigObstructed => "rig.obstructed", Flag, "The ledger finds the player's chase obstructed: something stops the body.";
     RigPushbacks => "rig.pushbacks", Counter, "Push-back episodes: times the view started being held at a wall.";
+    LegsMoving => "legs.moving", Flag, "The procedural body's feet walk rather than step standing.";
+    LegsTouchdownLeadM => "legs.touchdown_lead_m", Measure, "How far ahead of its hip the last walking foot landed, metres, while the procedural body poses the legs.";
 }
 
 impl Signal {
@@ -472,6 +474,14 @@ impl Signal {
                 flag(frame.fresh(Instant::now()) && frame.pushback.obstructed)
             }
             Signal::RigPushbacks => count(rig_root::status().frame.pushbacks),
+            Signal::LegsMoving => flag(procedural::published_status().legs_moving),
+            Signal::LegsTouchdownLeadM => {
+                let status = procedural::published_status();
+                match status.touchdown_lead_m {
+                    Some(lead) if status.legs_weight > 0.0 => Value::Number(f64::from(lead)),
+                    _ => Value::Missing,
+                }
+            }
         }
     }
 }

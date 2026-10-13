@@ -8,9 +8,9 @@
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::body::procedural::{
-    rig::{Rig, RigBone},
-    solver::feet::FootPose,
+use crate::controllers::body::{
+    procedural::rig::{Rig, RigBone},
+    rig::legs::swing::FootPose,
 };
 
 /// How the legs hang in the air.

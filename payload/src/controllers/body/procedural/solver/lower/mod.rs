@@ -20,14 +20,16 @@ mod sit;
 
 use glam::{Mat4, Quat, Vec2, Vec3};
 
-use crate::controllers::body::procedural::{
-    config::ProceduralBodyConfig,
-    rig::{Rig, RigBone},
-    solver::{
-        arms::Side,
-        feet::FootPose,
-        lower::{kneel::Kneel, sit::Sit},
+use crate::controllers::body::{
+    procedural::{
+        config::ProceduralBodyConfig,
+        rig::{Rig, RigBone},
+        solver::{
+            arms::Side,
+            lower::{kneel::Kneel, sit::Sit},
+        },
     },
+    rig::legs::swing::FootPose,
 };
 
 /// The lower body's pose.

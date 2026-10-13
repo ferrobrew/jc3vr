@@ -21,6 +21,7 @@ pub mod collision;
 pub mod config;
 pub mod frames;
 pub mod lean;
+pub mod legs;
 pub mod pelvis;
 pub mod root;
 pub mod skeleton;

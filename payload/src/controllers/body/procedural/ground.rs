@@ -26,7 +26,7 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions},
     },
-    body::procedural::{config::ProceduralBodyConfig, solver::feet::Ground},
+    body::{procedural::config::ProceduralBodyConfig, rig::legs::swing::Ground},
 };
 
 /// The casts of one gate, and the running tally the log reports.

@@ -285,7 +285,7 @@ mod tests {
             config.headpose.grapple.mode = GrappleComfortMode::Off;
             // Not on either page: the debug UI's tuning, the body page, and the display.
             config.controllers.hands.reach.pull_max = 0.5;
-            config.controllers.body.procedural.gait = false;
+            config.controllers.body.rig.legs.gait = false;
             config.headpose.mouse_sensitivity = 3.0;
             config.hud.distance = 2.0;
         });
@@ -306,7 +306,7 @@ mod tests {
             assert_eq!(config.controllers.dominant_hand, Hand::Left);
             assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
             assert_eq!(config.controllers.hands.reach.pull_max, 0.5);
-            assert!(!config.controllers.body.procedural.gait);
+            assert!(!config.controllers.body.rig.legs.gait);
             assert_eq!(config.headpose.mouse_sensitivity, 3.0);
             assert_eq!(config.hud.distance, 2.0);
         });

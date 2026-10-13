@@ -20,12 +20,10 @@ use crate::controllers::{
             rig::{Rig, RigBone},
             root_speed,
             solver::{
-                DropFollower, HipsFollower, SolveInput,
+                DropFollower, SolveInput,
                 air::{AirFollower, DipTuning, LandingDip, ReachTuning, reach_for_landing},
                 arms::Side,
                 clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
-                feet::{Feet, FeetInput, FootPose, StepTuning},
-                gait::{self, CrouchGait, NeutralStance, StanceFoot},
                 hips_yaw,
                 lower::{
                     LowerBody, LowerInput, LowerRig, LowerTargets, LowerTuning, SitEnd, SitLegs,
@@ -37,7 +35,16 @@ use crate::controllers::{
             targets::TargetFade,
             wings::WingQueue,
         },
-        rig::pelvis::{MotionLean, PelvisSpring},
+        rig::{
+            config::LegsConfig,
+            legs::{
+                Legs, LegsInput, LegsTuning,
+                gait::{self, CrouchGait},
+                stance::{NeutralStance, StanceFoot},
+                swing::FootPose,
+            },
+            pelvis::{MotionLean, PelvisSpring},
+        },
     },
     hands::ik::deferred_wrist_targets,
 };
@@ -68,8 +75,6 @@ pub(super) struct State {
     pub(super) standing: StandingReference,
     /// The STAGE floor jumps already taken as a prompt to measure the standing height afresh.
     pub(super) floor_jumps: u32,
-    /// The stance's step under the player's head, model space `(x, z)`.
-    pub(super) step: HipsFollower,
     /// The regions' weights against the animation.
     pub(super) blend: RegionBlend,
     /// What the hand-over table reads from the character, with the history it keeps.
@@ -77,7 +82,7 @@ pub(super) struct State {
     /// Whether the hand-over case has been logged once.
     pub(super) case_logged: bool,
     /// The planted feet, world space.
-    pub(super) feet: Feet,
+    pub(super) feet: Legs,
     /// The neutral stance the feet stand and walk around, for the rigged skeleton.
     pub(super) stance: NeutralStance,
     /// The hips' drop for the legs' reach.
@@ -133,15 +138,11 @@ pub(super) struct FeetRequest<'a> {
     pub(super) animated: &'a RigPose,
     /// Whether Rico stands still: the animated feet stand for the stance until it is measured.
     pub(super) still: bool,
-    /// The root's horizontal velocity over the pass, world space: what the walk keeps pace with.
+    /// The root's measured horizontal velocity over the pass, world space: what the walk keeps
+    /// pace with and where the feet land.
     pub(super) velocity: Vec3,
-    /// The velocity the body is told to move at, world space: where the next footholds lead.
-    pub(super) commanded: Vec3,
     /// How far the head has taken the hips toward their lowest, `0..=1`: the crouch gait's depth.
     pub(super) crouch: f32,
-    /// How far the stance steps under the player's head, model space `(x, z)`: the feet are
-    /// wanted this far from the stance the root carries.
-    pub(super) step_offset: Vec2,
     pub(super) dt: f32,
 }
 
@@ -230,7 +231,6 @@ impl State {
         self.dip.reset();
         self.takeoff_feet = None;
         self.lower.reset();
-        self.step.reset();
         self.status.lower = self.lower.status();
     }
 
@@ -387,6 +387,7 @@ impl State {
         &mut self,
         request: &FeetRequest<'_>,
         config: &ProceduralBodyConfig,
+        legs: &LegsConfig,
         caster: &mut GroundCaster,
     ) -> [FootPose; 2] {
         let FeetRequest {
@@ -400,31 +401,32 @@ impl State {
             self.feet.reset();
             return animated_feet(animated);
         }
-        let shift = Vec3::new(request.step_offset.x, 0.0, request.step_offset.y);
-        let model = self.stance_feet(request).map(|f| FootPose {
-            position: f.position + shift,
-            rotation: f.rotation,
-        });
+        let model = self.stance_feet(request);
         let (_, rotation, _) = world.to_scale_rotation_translation();
         let inverse = world.inverse();
-        let wanted = model.map(|f| FootPose {
+        let rest = model.map(|f| FootPose {
             position: world.transform_point3(f.position),
             rotation: rotation * f.rotation,
         });
-        let tuning = StepTuning {
-            threshold_m: config.step_threshold_m,
-            threshold_rad: config.step_turn_deg.to_radians(),
-            duration_s: config.step_duration_s,
-            height_m: config.step_height_m * CrouchGait::of(config).step_lift(request.crouch),
-            tilt_limit_rad: config.ankle_tilt_limit_deg.to_radians(),
-        };
-        let walking = self.feet.phase().is_some();
-        let input = FeetInput {
-            wanted,
+        let tuning = LegsTuning::of(
+            legs,
+            CrouchGait::of(config),
+            config.ankle_tilt_limit_deg.to_radians(),
+        );
+        let rig = request.rig;
+        let leg_length_m = (rig.reference(RigBone::LeftLeg).translation
+            - rig.reference(RigBone::LeftUpLeg).translation)
+            .length()
+            + (rig.reference(RigBone::LeftFoot).translation
+                - rig.reference(RigBone::LeftLeg).translation)
+                .length();
+        let input = LegsInput {
+            rest,
             root_height: world.w_axis.y,
             velocity,
-            commanded: request.commanded,
-            gait: gait::tuning(velocity.length(), walking, request.crouch, config),
+            crouch: request.crouch,
+            hip_height_m: rig.reference(RigBone::Hips).translation.y,
+            leg_length_m,
             dt,
         };
         // SAFETY: the gate runs with the local character live.
@@ -579,14 +581,15 @@ impl State {
         self.gait_logged_at = Some(now);
         let speed = self.status.speed_mps;
         let crouch = self.status.crouch_depth;
-        let tuning = gait::tuning(speed, true, crouch, config);
+        let tuning = gait::tuning(speed, crouch, &CrouchGait::of(config));
         tracing::debug!(
             target: "body",
             speed_mps = speed,
             crouch,
-            stride_m = tuning.map_or(0.0, |t| t.stride_m),
-            duty = tuning.map_or(0.0, |t| t.duty),
-            lift_m = tuning.map_or(0.0, |t| t.height_m),
+            stride_m = tuning.stride_m,
+            duty = tuning.duty,
+            lift_m = tuning.height_m,
+            touchdown_lead_m = ?self.status.touchdown_lead_m,
             phase,
             reach_drop_m = self.status.reach_drop_m,
             neck_error_m = self.status.neck_error_m,
@@ -600,11 +603,10 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     lower: LowerBody::new(),
     standing: StandingReference::new(),
     floor_jumps: 0,
-    step: HipsFollower::new(),
     blend: RegionBlend::new(),
     tracker: StateTracker::new(),
     case_logged: false,
-    feet: Feet::new(),
+    feet: Legs::new(),
     stance: NeutralStance::new(),
     drop: DropFollower::new(),
     hips: PelvisSpring::new(),

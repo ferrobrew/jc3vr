@@ -160,6 +160,11 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
     );
     set(
         &mut table,
+        &["controllers", "body", "procedural", "step_under_head"],
+        true.into(),
+    );
+    set(
+        &mut table,
         &["controllers", "roomscale", "crouch", "visual"],
         true.into(),
     );
@@ -170,6 +175,7 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
         report.ignored,
         [
             "controllers.body.alignment",
+            "controllers.body.procedural.step_under_head",
             "controllers.roomscale.chase",
             "controllers.roomscale.crouch.visual",
             "controllers.roomscale.roomscale_min_extent_m",

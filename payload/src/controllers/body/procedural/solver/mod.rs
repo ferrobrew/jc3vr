@@ -32,8 +32,6 @@ pub mod air;
 pub mod anchored;
 pub mod arms;
 pub mod clavicles;
-pub mod feet;
-pub mod gait;
 pub mod hips;
 pub mod lower;
 pub mod pose;
@@ -43,10 +41,7 @@ pub mod two_bone;
 pub mod wings;
 
 use glam::{Quat, Vec2, Vec3};
-pub use hips::{
-    DropFollower, HipsFollower, crouch_depth, hips_height, hips_room, hips_yaw, reach_drop,
-    step_offset,
-};
+pub use hips::{DropFollower, crouch_depth, hips_height, hips_room, hips_yaw, reach_drop};
 
 use crate::controllers::body::procedural::{
     config::ProceduralBodyConfig,

@@ -24,19 +24,20 @@
 
 use glam::{Quat, Vec3};
 
-use crate::controllers::body::procedural::{
-    config::ProceduralBodyConfig,
-    rig::{Rig, RigBone},
-    solver::{
-        LEGS, SolveInput,
-        feet::FootPose,
-        place_leg,
-        pose::RigPose,
-        spine::{
-            NECK_SHARE, PITCH_SHARES, SPINE, SWING_ITERATIONS, SWING_SHARES, TWIST_SHARES,
-            chest_pitch, swing_toward,
+use crate::controllers::body::{
+    procedural::{
+        config::ProceduralBodyConfig,
+        rig::{Rig, RigBone},
+        solver::{
+            LEGS, SolveInput, place_leg,
+            pose::RigPose,
+            spine::{
+                NECK_SHARE, PITCH_SHARES, SPINE, SWING_ITERATIONS, SWING_SHARES, TWIST_SHARES,
+                chest_pitch, swing_toward,
+            },
         },
     },
+    rig::legs::swing::FootPose,
 };
 
 /// Solve the torso on the animated hips of `input.animated`, toward `input.head`, and with `legs`,

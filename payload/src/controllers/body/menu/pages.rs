@@ -97,13 +97,9 @@ pub(super) fn summary(page: Page) -> Page {
         .item(config_toggle!("WALKING LEGS", |c| c
             .controllers
             .body
-            .procedural
+            .rig
+            .legs
             .gait))
-        .item(config_toggle!("STEP UNDER YOUR HEAD", |c| c
-            .controllers
-            .body
-            .procedural
-            .step_under_head))
         .item(config_toggle!("SHORT STEPS IN A CROUCH", |c| c
             .controllers
             .body

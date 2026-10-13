@@ -61,14 +61,16 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             },
         ));
         ui.label(format!(
-            "Speed {:.2} m/s · {} · crouch {:.2} · stepped under the head {:.3} m · reach drop {:.3} m · stance {}",
+            "Speed {:.2} m/s · {} · crouch {:.2} · last touchdown {} ahead of the hip · reach drop {:.3} m · stance {}",
             status.speed_mps,
-            status.gait_phase.map_or_else(
-                || "standing".to_owned(),
-                |p| format!("walking, phase {p:.2}")
-            ),
+            match (status.legs_moving, status.gait_phase) {
+                (true, Some(p)) => format!("walking, phase {p:.2}"),
+                _ => "standing".to_owned(),
+            },
             status.crouch_depth,
-            status.step_offset_m,
+            status
+                .touchdown_lead_m
+                .map_or_else(|| "none".to_owned(), |m| format!("{m:.2} m")),
             status.reach_drop_m,
             if status.stance_measured {
                 "measured"

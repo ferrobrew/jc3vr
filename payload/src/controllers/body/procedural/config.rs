@@ -35,43 +35,6 @@ pub struct ProceduralBodyConfig {
     /// Hold the feet in the world, stepping when the body moves or turns away from them, instead
     /// of leaving them where the animation puts them.
     pub plant_feet: bool,
-    /// How far a planted foot may be from where the animation would put it before it steps,
-    /// metres.
-    pub step_threshold_m: f32,
-    /// How far a planted foot may be turned from the animation's before it steps, degrees.
-    pub step_turn_deg: f32,
-    /// How long a step takes, seconds.
-    pub step_duration_s: f32,
-    /// How high a step lifts the foot, metres.
-    pub step_height_m: f32,
-    /// Step the feet under the player's head when it has gone further from the stance than a lean
-    /// (`lean_allowance_m`): a player who walks about the room, or leans far over one foot, has the
-    /// feet step under them rather than the body stretching after the head.
-    pub step_under_head: bool,
-    /// How far the head may lean from over the stance before the feet step under it, metres.
-    pub lean_allowance_m: f32,
-    /// Walk the feet while the body moves (phase-driven steps matched to the body's velocity),
-    /// instead of leaving the moving body to the animation.
-    pub gait: bool,
-    /// The speed the feet start walking at, metres per second; below it they step as standing.
-    pub gait_speed_mps: f32,
-    /// The walking speed, metres per second, at which the walk's tuning is the `walk_*` values.
-    pub walk_speed_mps: f32,
-    /// The distance travelled in one walking cycle (a step of each foot), metres.
-    pub walk_stride_m: f32,
-    /// The share of a walking cycle each foot spends on the ground.
-    pub walk_duty: f32,
-    /// How high a walking step lifts the foot, metres.
-    pub walk_step_height_m: f32,
-    /// The running speed, metres per second, at which the walk's tuning is the `run_*` values.
-    pub run_speed_mps: f32,
-    /// The distance travelled in one running cycle, metres.
-    pub run_stride_m: f32,
-    /// The share of a running cycle each foot spends on the ground; below a half, both feet leave
-    /// it for a moment.
-    pub run_duty: f32,
-    /// How high a running step lifts the foot, metres.
-    pub run_step_height_m: f32,
     /// Shorten and lower the steps in a crouch by how far the hips have dropped, so a crouched
     /// walk takes short, quick, low steps instead of the upright walk's strides.
     pub crouch_gait: bool,
@@ -205,22 +168,6 @@ impl ProceduralBodyConfig {
             lean_limit_deg: 60.0,
             neutralize_targets: true,
             plant_feet: true,
-            step_threshold_m: 0.15,
-            step_turn_deg: 35.0,
-            step_duration_s: 0.3,
-            step_height_m: 0.06,
-            step_under_head: true,
-            lean_allowance_m: 0.2,
-            gait: true,
-            gait_speed_mps: 0.3,
-            walk_speed_mps: 1.5,
-            walk_stride_m: 1.4,
-            walk_duty: 0.62,
-            walk_step_height_m: 0.08,
-            run_speed_mps: 5.0,
-            run_stride_m: 2.8,
-            run_duty: 0.4,
-            run_step_height_m: 0.14,
             crouch_gait: true,
             crouch_stride_share: 0.55,
             crouch_lift_share: 0.6,
@@ -291,20 +238,6 @@ impl ProceduralBodyConfig {
                 180.0,
             ),
             ("lean_limit_deg", self.lean_limit_deg, 0.0, 90.0),
-            ("step_threshold_m", self.step_threshold_m, 0.01, 1.0),
-            ("step_turn_deg", self.step_turn_deg, 1.0, 180.0),
-            ("step_duration_s", self.step_duration_s, 0.05, 2.0),
-            ("step_height_m", self.step_height_m, 0.0, 0.5),
-            ("lean_allowance_m", self.lean_allowance_m, 0.0, 1.0),
-            ("gait_speed_mps", self.gait_speed_mps, 0.05, 5.0),
-            ("walk_speed_mps", self.walk_speed_mps, 0.1, 20.0),
-            ("walk_stride_m", self.walk_stride_m, 0.1, 3.0),
-            ("walk_duty", self.walk_duty, 0.2, 0.9),
-            ("walk_step_height_m", self.walk_step_height_m, 0.0, 0.5),
-            ("run_speed_mps", self.run_speed_mps, 0.1, 20.0),
-            ("run_stride_m", self.run_stride_m, 0.1, 3.5),
-            ("run_duty", self.run_duty, 0.2, 0.9),
-            ("run_step_height_m", self.run_step_height_m, 0.0, 0.5),
             ("crouch_stride_share", self.crouch_stride_share, 0.1, 1.0),
             ("crouch_lift_share", self.crouch_lift_share, 0.0, 1.0),
             ("crouch_duty", self.crouch_duty, 0.2, 0.9),
@@ -363,12 +296,6 @@ impl ProceduralBodyConfig {
                     "body.procedural.{name} is {value}, outside [{min}, {max}]"
                 )));
             }
-        }
-        if self.run_speed_mps <= self.walk_speed_mps {
-            return Err(Invalid(format!(
-                "body.procedural.run_speed_mps ({}) is not above walk_speed_mps ({})",
-                self.run_speed_mps, self.walk_speed_mps
-            )));
         }
         Ok(())
     }

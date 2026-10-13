@@ -8,10 +8,12 @@
 
 use glam::{Quat, Vec2, Vec3};
 
-use crate::controllers::body::procedural::solver::{
-    arms::Side,
-    feet::FootPose,
-    lower::{LowerInput, LowerRig, LowerTargets, SitLegs, facing, flat},
+use crate::controllers::body::{
+    procedural::solver::{
+        arms::Side,
+        lower::{LowerInput, LowerRig, LowerTargets, SitLegs, facing, flat},
+    },
+    rig::legs::swing::FootPose,
 };
 
 /// How high the hip joints sit above the ground while sitting, metres.
