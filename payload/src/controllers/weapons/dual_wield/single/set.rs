@@ -1,8 +1,10 @@
 //! The weapon objects that are single pistols, readable from any thread without a lock.
 //!
 //! The set is a fixed table of addresses. The input tick adds and removes entries on the main
-//! thread outside the world update, the pickup's detour adds one on the game's update thread, and
-//! the detours and the per-gun reads on the simulation's threads only test membership. An entry
+//! thread outside the world update, and the pickup's detour adds one inside the world update, from
+//! the pickup's track message or a swimming character's pickup; the two never run at once, so
+//! there is one writer at a time. The detours and the per-gun reads on the simulation's threads
+//! only test membership. An entry
 //! is claimed with a compare-and-swap, so two writers never take the same place; a reader that
 //! races a removal sees the pistol as single for at most that read, which shows or fires its first
 //! gun alone once more.

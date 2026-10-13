@@ -20,7 +20,7 @@ pub const TWIN_WAIT_S: f32 = 10.0;
 /// seconds.
 pub const RACK_COPY_COVER_S: f32 = 5.0;
 /// How long a respawn's cover waits for the slot's pistol to come back after a reset, seconds.
-pub const RESPAWN_COVER_S: f32 = 60.0;
+pub const RESPAWN_COVER_S: f32 = 20.0;
 
 /// One input tick's view of the dual-wield slot.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -253,15 +253,19 @@ impl Grants {
 
     /// What a weapon that just arrived in the slot is.
     fn arrive(&mut self, object: usize, tick: GrantTick) -> Grant {
+        // Every cover is for the next weapon to arrive, whatever it turns out to be.
+        let rack_copy = self.rack_copy.take().is_some();
+        let respawn = self.respawn.take().map(|(single, _)| single);
+        let mission = self.mission.take();
         if tick.single || !tick.guns {
             self.state = TwinState::Done { object };
             return Grant::Nothing;
         }
-        let one = if self.rack_copy.take().is_some() {
+        let one = if rack_copy {
             Some(OneWhy::RackCopy)
-        } else if let Some((single, _)) = self.respawn.take() {
+        } else if let Some(single) = respawn {
             single.then_some(OneWhy::Respawn)
-        } else if let Some(single) = self.mission.take() {
+        } else if let Some(single) = mission {
             single.then_some(OneWhy::MissionReturn)
         } else {
             None
@@ -477,6 +481,22 @@ mod tests {
         let mut g = Grants::new();
         g.cover_mission(false);
         assert_eq!(g.observe(tick(Some(PAIR))), Grant::Request { object: PAIR });
+    }
+
+    #[test]
+    fn a_cover_is_used_up_by_a_pistol_that_arrives_single() {
+        let mut g = Grants::new();
+        g.cover_mission(true);
+        let single = GrantTick {
+            single: true,
+            ..tick(Some(PAIR))
+        };
+        assert_eq!(g.observe(single), Grant::Nothing);
+        assert_eq!(
+            g.observe(tick(Some(OTHER))),
+            Grant::Request { object: OTHER },
+            "a later pair the game hands over is split, not taken for the give-back"
+        );
     }
 
     #[test]

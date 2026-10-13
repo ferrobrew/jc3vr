@@ -256,6 +256,7 @@ unsafe fn take_beside(
         .ok_or("no socket is free for the pistol")?;
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or("the pistol is gone")?;
     unsafe { single::designate(weapon, "a pistol taken from the world") };
+    unsafe { single::taken_from_world(owner, weapon) };
     let object = unsafe { carry::carry_loose(owner, strong, socket, inventory.offsets.of(socket)) }
         .map_err(|_| "the pistol was not carried")?;
     if let Err(refusal) = unsafe { second::take_carried(hand, object) } {
