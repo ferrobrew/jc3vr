@@ -11,7 +11,8 @@
 //!   [`note_act`] stamps the local player's from that queue. The character keeps no state for the
 //!   reaction's length, so it counts for `hit_reaction_hold_s` after its act, renewed by the next.
 //!
-//! Both are logged at info level when they start.
+//! Both are logged at info level when they start. The published local model also answers
+//! [`is_local_model`] for the other act-queue filters.
 
 use std::{
     ffi::CStr,
@@ -59,8 +60,7 @@ pub(crate) fn note_ledge_climb(now: Instant) {
 /// Called from the act queue, for every model's every act, so anything that is not the local
 /// player's model is turned away with one atomic load before the clock or a lock is touched.
 pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
-    let local = LOCAL_MODEL.load(Ordering::Relaxed);
-    if local == 0 || model as usize != local {
+    if !matches_local_address(model) {
         return;
     }
     let Some(ids) = hit_reaction_ids() else {
@@ -71,10 +71,7 @@ pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
     };
     let now = Instant::now();
     let mut state = STATE.lock();
-    if state
-        .local_at
-        .is_none_or(|at| now.saturating_duration_since(at) > LOCAL_FRESH)
-    {
+    if !fresh(&state, now) {
         return;
     }
     state.hit_reaction_at = Some(now);
@@ -84,6 +81,13 @@ pub(crate) fn note_act(model: *const AnimatedModel, act: i32) {
         act = %name.to_string_lossy(),
         "procedural body: a hit reaction starts",
     );
+}
+
+/// Whether `model` is the local player's animated model, as published by
+/// [`set_local_character`] within [`LOCAL_FRESH`]. Anything else is turned away with one atomic
+/// load before the clock or a lock is touched, so the act queue may ask for every model's act.
+pub(crate) fn is_local_model(model: *const AnimatedModel) -> bool {
+    matches_local_address(model) && fresh(&STATE.lock(), Instant::now())
 }
 
 /// Whether the grapple's ledge climb ran within the last tick or two.
@@ -133,6 +137,19 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 static LOCAL_MODEL: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether `model` is at the published local model's address, however old the publish.
+fn matches_local_address(model: *const AnimatedModel) -> bool {
+    let local = LOCAL_MODEL.load(Ordering::Relaxed);
+    local != 0 && model as usize == local
+}
+
+/// Whether the local model was published recently enough to still be the player's.
+fn fresh(state: &State, now: Instant) -> bool {
+    state
+        .local_at
+        .is_some_and(|at| now.saturating_duration_since(at) <= LOCAL_FRESH)
+}
 
 /// The runtime ids of [`HIT_REACTION_ACTS`] with their names, resolved once the act table is live.
 fn hit_reaction_ids() -> Option<&'static [(i32, &'static CStr); 4]> {

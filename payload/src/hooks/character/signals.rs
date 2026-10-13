@@ -1,6 +1,8 @@
 //! The state signals the procedural body's hand-over table needs that the character does not keep
 //! (`controllers::body::procedural::signals`): a post-call on the grapple's ledge climb task, and a
-//! pre-call on the animated model's act queue, which the hit reactions queue on directly.
+//! pre-call on the animated model's act queue, which the hit reactions queue on directly. The same
+//! pre-call drops the wingsuit's barrel roll, which the air physics also queues there directly
+//! (`hooks::input::wingsuit`).
 
 use std::{ffi::c_void, time::Instant};
 
@@ -10,7 +12,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::body::procedural::signals::{note_act, note_ledge_climb},
-    hooks::input::locomotion::character_from_context,
+    hooks::input::{locomotion::character_from_context, wingsuit},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -34,6 +36,9 @@ fn ledge_climb_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) 
 fn animated_model_queue_act(model: *mut AnimatedModel, act: *const u32) {
     // SAFETY: the act is the caller's live `idstring`.
     if let Some(&id) = unsafe { act.as_ref() } {
+        if wingsuit::drops_act(model, id as i32) {
+            return;
+        }
         note_act(model, id as i32);
     }
     ANIMATED_MODEL_QUEUE_ACT.get().unwrap().call(model, act);

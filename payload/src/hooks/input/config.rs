@@ -110,6 +110,12 @@ pub struct MovementConfig {
     /// never stalls; the player who pitches up loses lift and drops. See
     /// `crate::hooks::input::wingsuit`.
     pub suppress_wingsuit_stall_flip: bool,
+    /// Remove the wingsuit's barrel roll (its evade) for the local player while the head pose
+    /// comes from the headset. The roll's clip turns the body a full circle and carries it
+    /// sideways, which the player's own body never does. The air physics queues the act straight
+    /// on the animated model, so it is dropped at `AnimatedModel::QueueAct` for the local player's
+    /// model. See `crate::hooks::input::wingsuit`.
+    pub suppress_wingsuit_barrel_roll: bool,
     /// Suppress Rico's periodic idle fidget for the local player -- the weight-shifts and
     /// look-arounds the game plays while standing still. The idle input task
     /// (`NStateTask_InputLocoIdleTask`) queues `ACT_TO_IDLE_ONE_OFF` on an idle timer to drive the
@@ -153,6 +159,7 @@ impl MovementConfig {
             suppress_air_aim_facing: true,
             suppress_parachute_look_steer: true,
             suppress_wingsuit_stall_flip: true,
+            suppress_wingsuit_barrel_roll: true,
             suppress_idle_fidget: true,
             suppress_idle_breathing: false,
         }

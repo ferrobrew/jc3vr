@@ -23,6 +23,7 @@ use crate::{
                 SWIM_BACKWARD_REFUSALS, SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS,
                 SWIM_ROTATE_OVERRIDES, SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED,
             },
+            wingsuit::{barrel_rolls_dropped, suppressed as stall_flip_suppressed},
         },
     },
     sim_rate::{self, SimRate},
@@ -209,11 +210,24 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
                      recovers from it over a physics body that never loops. Pitching up and \
                      slowing loses lift and drops instead.",
                 );
-                ui.label(if crate::hooks::input::wingsuit::suppressed() {
+                ui.label(if stall_flip_suppressed() {
                     "Stall flip: removed"
                 } else {
                     "Stall flip: the game's"
                 });
+                ui.checkbox(
+                    &mut cfg.movement.suppress_wingsuit_barrel_roll,
+                    "Suppress the wingsuit's barrel roll (the body must not roll on its own)",
+                )
+                .on_hover_text(
+                    "Drop the wingsuit's evade, a barrel roll, for the local player while the head \
+                     pose comes from the headset. Its clip rolls the body a full turn and carries \
+                     it sideways, which the player's own body never does.",
+                );
+                ui.label(format!(
+                    "Barrel rolls dropped: {}",
+                    barrel_rolls_dropped()
+                ));
             }
             // The game's own relaxed (no-aim) strafe support, left in the game from the dev menu:
             // while enabled, `QueueMoveActions` queues `ACT_MOVE_NO_AIM_STRAFE` -- a neutral-stance

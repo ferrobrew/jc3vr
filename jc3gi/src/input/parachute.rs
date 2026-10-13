@@ -689,6 +689,18 @@ pub const NAirMovement_UpdateAirPhysics_ADDRESS: usize = 0x1407E1680;
 /// `m_XInputYawPitchRollAmount` and `m_YInputYawPitchRollAmount` into a yaw, pitch, and roll
 /// steering vector and, for the local player outside an alignment segment, adds the camera
 /// look-steer from [`NAirMovement_UpdateStdLookSteering`](crate::input::parachute::NAirMovement_UpdateStdLookSteering) to it.
+///
+/// It also starts the wingsuit's evade. When the `WINGSUIT_EVADE` action fires, it tests a
+/// character value against a threshold, believed to be the boost's charge (unverified): short of
+/// it, the function reports a failed boost to the HUD (unless an enemy missile is locked on) and
+/// does nothing more; otherwise, with the move stick out of its rest, it queues
+/// [`ACT_BOOST_WINGSUIT_BARREL_ROLL`](crate::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL)
+/// directly on the character's [`AnimatedModel`](crate::character::character::AnimatedModel)
+/// ([`AnimatedModel::QueueAct`](crate::character::character::AnimatedModel::QueueAct)). While the roll's
+/// clip is inside its evade-movement segment (`SEG_IN_BARREL_ROLL_EVADE_MOVEMENT`), the function
+/// builds an orientation from a matrix the character holds and the velocity's heading; that this
+/// matrix is the animated reference bone, so that the clip carries the body sideways through the
+/// roll, is unverified.
 pub unsafe fn NAirMovement_UpdateAirPhysics(
     character: *mut crate::character::character::Character,
     dt: f32,

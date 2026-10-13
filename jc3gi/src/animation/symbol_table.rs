@@ -28,6 +28,15 @@ impl EventIdSymbolTable {
     }
 }
 impl EventIdSymbolTable {
+    /// The wingsuit's evade, a barrel roll. The air physics
+    /// ([`NAirMovement_UpdateAirPhysics`](crate::input::parachute::NAirMovement_UpdateAirPhysics)) queues
+    /// it straight on the character's [`AnimatedModel`](crate::character::character::AnimatedModel), not
+    /// through [`Character::QueueAct`](crate::character::character::Character::QueueAct), when the
+    /// `WINGSUIT_EVADE` action fires with the move stick out of its rest. It is the only evade act:
+    /// the roll's directions (`SEG_IN_BARREL_ROLL_EVADE_MOVEMENT` and its `_LEFT`, `_RIGHT`, `_UP`,
+    /// and `_DOWN` variants) and its recovery are segments of the clip it plays, not acts of their
+    /// own.
+    pub const ACT_BOOST_WINGSUIT_BARREL_ROLL: &::std::ffi::CStr = c"ACT_BOOST_WINGSUIT_BARREL_ROLL";
     /// The knock-back a player takes from an explosion's impulse:
     /// [`Character::HitReaction`](crate::character::character::Character::HitReaction) queues it when
     /// the state machine accepts it, and the full ragdoll otherwise. In `rico_base.afsmb` it leads
