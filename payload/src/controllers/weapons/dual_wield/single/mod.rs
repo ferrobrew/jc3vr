@@ -457,13 +457,37 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     }
 }
 
-/// Forget every single pistol and the slot's history: the inventory is off, or gameplay ended.
+/// Forget every single pistol and the slot's history: the inventory is off.
 pub(crate) fn clear() {
+    ACTIVE.store(false, Ordering::Relaxed);
     for object in set::all() {
         set::remove(object);
     }
     clear_home();
     STATE.lock().grants.clear();
+}
+
+/// Stop making pistols single while the weapon handling stands down, and keep only the single
+/// pistols something keeps alive for the inventory's return: the slot's and the carried ones. A
+/// pistol lying in the world may be destroyed meanwhile, and its address taken by another object,
+/// which must not be mistaken for a single pistol.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn stand_down() {
+    ACTIVE.store(false, Ordering::Relaxed);
+    if set::len() == 0 {
+        return;
+    }
+    let slot = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+        .and_then(|owner| unsafe { slot_weapon(owner) })
+        .map(|w| w as *mut WeaponBase as usize);
+    for object in set::all() {
+        if Some(object) != slot && !carry::contains(object) {
+            set::remove(object);
+        }
+    }
 }
 
 /// Hide `weapon`'s guns past the first and their model parts, when they are shown.

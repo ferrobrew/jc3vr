@@ -348,9 +348,9 @@ pub(crate) fn records() -> Vec<Record> {
 }
 
 /// Move the carried weapon `object` into its slot and equip it: the slot's occupant comes into the
-/// carry set on the socket the weapon leaves, so nothing is dropped, and the inventory's add puts
-/// the weapon in and equips it ([`EquipMode::E_EQUIP`]). Returns the occupant that took the
-/// socket, if any.
+/// carry set first, on the socket the weapon leaves (or its own hip, for two single pistols), so
+/// nothing is dropped, and the inventory's add puts the weapon in and equips it
+/// ([`EquipMode::E_EQUIP`]). Returns the occupant that took a socket, if any.
 ///
 /// # Safety
 ///
