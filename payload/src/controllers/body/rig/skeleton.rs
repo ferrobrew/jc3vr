@@ -18,7 +18,7 @@ use crate::{
     config::Config,
     controllers::body::rig::{
         self,
-        frames::{Divergence, Frames, SkeletonLandmarks, divergence, upright},
+        frames::{Divergence, Frames, SkeletonLandmarks, divergence, plausible},
     },
     headpose, hooks,
     hooks::character::body_ik::bone_for_effector,
@@ -28,8 +28,8 @@ use crate::{
 /// it up to `DEBUG`.
 pub const SKELETON_TARGET: &str = "body_divergence";
 
-/// The character's skeleton in the cockpit frame, when it is fresh and upright: what the holsters
-/// ride under [`HolsterAnchor::Rico`](crate::controllers::weapons::config::HolsterAnchor::Rico).
+/// The character's skeleton in the cockpit frame, when it is fresh and plausible: what the body's
+/// grab volumes ride ([`crate::controllers::weapons::volumes`]).
 /// `head_cockpit` is the head's cockpit position and `world_scale` the VR world scale the cockpit
 /// composes with.
 pub fn skeleton_in_cockpit(head_cockpit: Vec3, world_scale: f32) -> Option<SkeletonLandmarks> {
@@ -49,7 +49,7 @@ pub fn skeleton_in_cockpit(head_cockpit: Vec3, world_scale: f32) -> Option<Skele
         return None;
     }
     let landmarks = skeleton.map(|p| frames.model_to_cockpit(p));
-    upright(&landmarks).then_some(landmarks)
+    plausible(&landmarks).then_some(landmarks)
 }
 
 /// Record which body the holsters rode on the latest input tick, for the readout.

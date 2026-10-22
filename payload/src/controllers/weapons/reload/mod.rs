@@ -167,12 +167,10 @@ pub(super) struct BeginInputs<'a> {
     pub occupied: [bool; 2],
     pub active: &'a ActiveHands,
     pub config: &'a ControllersConfig,
-    pub body_frame: &'a BodyFrame,
-    pub dims: &'a crate::controllers::body::BodyDimensions,
+    /// The character's body the pouch rides, when its skeleton could be read.
+    pub body: Option<&'a BodyFrame>,
     /// The hand the pouches are laid out around ([`volumes::gun_side`]).
     pub gun_side: Hand,
-    /// Each hand's point for the body's volumes, by [`Hand::index`].
-    pub body_points: [Option<Vec3>; 2],
     /// Whether the tick's mode is one the weapon handling acts in.
     pub gameplay: bool,
 }
@@ -185,10 +183,8 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         occupied,
         active,
         config,
-        body_frame,
-        dims,
+        body,
         gun_side,
-        body_points,
         gameplay,
     } = *inputs;
     let reload = &config.weapons.reload;
@@ -200,7 +196,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     };
     // SAFETY: the input tick runs on the main thread outside the world update, and the weapon was
     // read this tick.
-    let Some(tick) = (unsafe { state.read_tick(weapon, active, config, body_points) }) else {
+    let Some(tick) = (unsafe { state.read_tick(weapon, active, config) }) else {
         state.clear_tick();
         return Vec::new();
     };
@@ -209,10 +205,13 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let free = Hand::BOTH.into_iter().find(|h| {
         !gun_hands[h.index()] && !occupied[h.index()] && active.hands[h.index()].is_some()
     });
-    let pouch = volumes::magazine_pouch(body_frame, dims, &config.weapons.pouches, gun_side, free);
+    let pouch = body.map(|b| volumes::magazine_pouch(b, &config.weapons.pouches, gun_side, free));
     // A pouch with nothing to give is not offered: no round comes out of it.
     let stocked = tick.reserve > 0 || tick.reading.unlimited;
-    if free.is_some() && stocked {
+    if let Some(pouch) = pouch
+        && free.is_some()
+        && stocked
+    {
         candidates.push(pouch);
     }
     if let Some(handle) = state.handle_candidate(&tick, free, reload) {
@@ -230,7 +229,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         ));
     }
     state.tick = Some(tick);
-    state.pouch = Some((pouch.centre, pouch.radius));
+    state.pouch = pouch.map(|p| (p.centre, p.radius));
     state.free = free;
     candidates
 }
@@ -423,10 +422,6 @@ struct GunTick {
     well: Option<Well>,
     /// The action's handle and the gun's rearward axis.
     handle: Option<(Vec3, Vec3)>,
-    /// The gun hand's grip as drawn, and where the same hand reaches the body's pouches
-    /// ([`belt::into_body_frame`]).
-    drawn_grip: Vec3,
-    body_grip: Option<Vec3>,
 }
 
 /// What the reload remembers about a weapon.

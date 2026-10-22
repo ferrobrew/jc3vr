@@ -12,6 +12,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
+        body::rig::skeleton,
         frame::{Hand, Pose},
         grab::{
             self, Candidate, GrabVolume, GripTarget, HandPoint, HolsterSite, Mark, MarkAt, Shown,
@@ -22,10 +23,7 @@ use crate::{
         physical_hands::physics::guns,
         weapons::{
             ads,
-            begin::{
-                place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
-                player_body::{PlayerBody, body_dimensions, body_points, volume_anchor},
-            },
+            begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
             c4, collide,
             docks::{self, HolsterGun},
             dual_wield,
@@ -42,13 +40,12 @@ use crate::{
             scope,
             state::{DockTouch, OffTouch, STATE, State},
             types::{TickStart, WieldedReadout},
-            volumes::{self, ChestGrabbers, HeadDrop},
+            volumes::{self, BodyFrame, ChestGrabbers},
         },
     },
 };
 
 mod place;
-mod player_body;
 
 /// The first half of the weapon handling's input tick: read the weapon, place the pistols, and
 /// return the weapon handling's grip targets and whether the dual-wield split acts. Called while
@@ -216,24 +213,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
     }));
 
-    let stance = state.step_stance();
-    let looking = active.head.orientation * Vec3::NEG_Z;
-    let player = PlayerBody::of(&active);
-    let body_frame = volumes::body_frame(
-        HeadDrop {
-            position: active.head.position,
-            upright: player.upright,
-            pitch_down: (-looking.y).clamp(-1.0, 1.0).asin(),
-            previous_y: state.body_y,
-        },
-        stance,
-        config.weapons.holsters.crouch_deadband_m,
-        volume_anchor(&config, &active, &player),
-    );
-    state.body_y = Some(body_frame.origin.y);
-    let dims = body_dimensions(&config, &body_frame.anchor);
+    let body = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
+        .and_then(BodyFrame::on);
+    skeleton::record_volume_anchor(if body.is_some() {
+        "the character's skeleton"
+    } else {
+        "nothing: no skeleton"
+    });
     let pouches = &config.weapons.pouches;
-    let place = Place::new(&active, &body_frame.anchor);
+    let place = Place::new(&active);
     // A held foregrip goes first, so that the bracing hand keeps it over anything as near.
     let mut targets = Vec::new();
     let hold = foregrip::status().hold.filter(|h| h.engaged);
@@ -246,10 +234,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let empty_handed = config.weapons.holsters.long_guns_dominant
         && gun_hands == [false; 2]
         && second_hand.is_none();
-    if gameplay {
+    if gameplay && let Some(body) = &body {
         if config.weapons.holsters.enabled {
-            let mut holsters =
-                volumes::holster_candidates(&body_frame, &dims, &config.weapons.holsters);
+            let mut holsters = volumes::holster_candidates(body, &config.weapons.holsters);
             let mut seated = seat_on_guns(&mut holsters, &ticked, &active);
             state.status.docks_followed = seated.len();
             volumes::reserve_long_guns(&mut holsters, config.acting_hand(), empty_handed);
@@ -261,19 +248,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         // A pouch with nothing to give is neither offered nor drawn.
         if config.weapons.grenade_throw
             && grenade::in_stock()
-            && let Some(pouch) =
-                volumes::grenade_pouch(&body_frame, &dims, pouches, gun_side, grabbers)
+            && let Some(pouch) = volumes::grenade_pouch(body, pouches, gun_side, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
         if config.weapons.c4_throw
             && c4::in_stock()
-            && let Some(pouch) = volumes::c4_pouch(&body_frame, &dims, pouches, gun_side, grabbers)
+            && let Some(pouch) = volumes::c4_pouch(body, pouches, gun_side, grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
     }
-    let body_points = body_points(&active, &body_frame.anchor);
     let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
     state.docked_touch = [None; 2];
     if gameplay {
@@ -334,10 +319,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         occupied: free.map(|f| !f),
         active: &active,
         config: &config,
-        body_frame: &body_frame,
-        dims: &dims,
+        body: body.as_ref(),
         gun_side,
-        body_points,
         gameplay,
     });
     for c in &reload_candidates {
@@ -496,7 +479,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.status.active = true;
     state.status.volumes = volumes;
     state.status.candidates = targets.len();
-    state.status.stance = Some(stance);
     state.placed.clone_from(&targets);
     state.points = points;
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });

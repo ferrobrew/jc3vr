@@ -22,11 +22,6 @@ pub(super) fn weapons(w: &WeaponsConfig) -> Result<(), Invalid> {
         w.pouches.reach_margin_m,
         1.0,
     )?;
-    nonnegative(
-        "weapons.holsters.crouch_deadband_m",
-        w.holsters.crouch_deadband_m,
-        10.0,
-    )?;
     positive("weapons.foregrip.radius_m", w.foregrip.radius_m, 10.0)?;
     positive(
         "weapons.foregrip.release_distance_m",

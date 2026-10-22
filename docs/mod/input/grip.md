@@ -22,9 +22,9 @@ Everything a hand can take is one `GripTarget` (`grab/target.rs`):
 - the hand that holds it now, if one does;
 - its marker: where it is drawn, the surface it lies on, its size, its style, and when it shows.
 
-A hand has two points. The sockets and pouches on the player's own body are reached by the player's own grip, before the body-scale remap, so a hand on the player's own belt finds the pouch on it whatever the character's proportions. Everything else (a held gun's parts, what lies on the character, the world, the cockpit) is reached by the hand as it is drawn.
+A hand reaches every target as it is drawn: the holsters and pouches on Rico's body, a held gun's parts, what lies on the character, the world, and the cockpit.
 
-The player's body is where the headset puts it, not where the character's animated head is: the cockpit frame's origin follows that head, which sits ahead of the player whenever the animation leans or the chase trails. The shoulders, the chest, and their sockets and pouches hang from the neck pivot (from the torso estimate, or below and behind the eyes by the head's own pose without one), facing the estimated torso; the hips and the belt's pouch hang over the feet's estimate, which stays put through a lean or a reach, so they do not swing out with a lean ([controllers.md](controllers.md#holsters-pouches-the-foregrip-and-the-action-runs-tier), [rig.md](../body/rig.md#the-torso)).
+The holsters and pouches ride Rico's skeleton, the body the player sees, through a crouch, a lean, a fall, or the parachute, so what the player sees on the body is where they reach ([controllers.md](controllers.md#holsters-pouches-the-foregrip-and-the-action-runs-tier), [rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)). Where Rico's body and the player's disagree, the rig closes the gap, rather than the volumes following the player's body.
 
 The providers place their targets on every input tick:
 
@@ -81,7 +81,7 @@ One renderer draws every target (`grab/markers.rs`), submitted to the overlay at
 
 A marker shows as its target says: always, faintly while no hand is within reach (the sockets and pouches on the body, the vehicle's controls and buttons, the parachute's handles); only while a hand is within reach (everything in the world and on a gun); or never (a reach margin, which its pouch or handle already marks). It is brighter while a hand is within reach of it, brightest and a little larger on the target a squeeze would take, and solid while a hand holds it. Its styles are a ring around the grab point, a handle (a dot, ringed once a hand is near), and a button (a disc on its face, ringed while a hand is in front of it). A marker on something in the world lies on its surface where the reach knows the surface's normal, and one on a weapon in the world sits where the hand would take it.
 
-The markers are anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)): a marker in the cockpit frame (the body's sockets, the vehicle's controls) to the render-time head, one on a held gun to its hand's render-time grip, and only what lies in the world to the world. A socket on the player's own body is drawn shifted by the remap of the hand that reaches for it, so the drawn hand meets the drawn marker where the grab happens.
+The markers are anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)): a marker in the cockpit frame (the body's sockets, the vehicle's controls) to the render-time head, one on a held gun to its hand's render-time grip, and only what lies in the world to the world.
 
 `overlay.markers` (on; the pause menu's `GRIP MARKERS`) is the one switch for every marker; the weapon, vehicle, and pickup handling have no highlight switches of their own.
 
@@ -113,7 +113,7 @@ Nothing else draws a marker, logs a press, or decides between two subsystems' ta
 5. Reach for a crate on the ground with the palm on the ground beside it: the crate's white marker is highlighted, not the ground's orange one. Lay the palm on a bare wall: the wall's orange marker is highlighted, and a squeeze climbs.
 6. Sit in a car: green markers sit on the wheel's rim near each hand and on the nitrous button. Grip the rim: the marker goes solid. Stand beside a parked car: a green marker sits on each door's handle once a hand comes within 15 cm of it, and a squeeze takes the door.
 7. Press a grip near a barrel and read the log's `grip: pressed` line: its notes say what the reach hit and why it did or did not take it.
-8. Lean over a table without stepping: the hip holsters and the belt's pouch stay at the hips, and the chest's pouches lean with the shoulders. Stand half a metre behind where Rico's head is drawn (the chase trailing): the pouches' markers sit on the player's own body, and the holsters' markers stay on Rico's guns.
+8. Lean over a table without stepping: the markers stay on Rico's hips, belt, and chest as his body leans. Open the parachute and look down: the markers ride his body there too. Stand half a metre behind where Rico's head is drawn (the chase trailing): the markers stay on Rico, and the drawn hand reaches them there.
 9. Throw every grenade: the grenade pouch's marker goes, and comes back with a grenade picked up. Take a gun from a soldier's hands, and one from a locker: the gold marker sits on the gun where the hand would close.
 10. Take a grenade and throw it overhand, relaxing the squeeze through the swing: it leaves the hand only as the fingers open, and the log's `grenade: the fingers opened` line shows a `speed_mps` near the hand's peak. Pull the trigger of the hand holding it with no gun drawn: no pistol comes out.
 11. Choose C4 on the weapon wheel with a hand empty: the planting mode ends and a charge is in the dominant hand. Bring it near a wall: a red ring lies on the wall where it would stick; press it on: it sticks. Punch a civilian solidly: they stagger; swing hard: they fall.

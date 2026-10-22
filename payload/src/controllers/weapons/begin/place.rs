@@ -7,27 +7,19 @@ use crate::{
         grab::{Candidate, GrabVolume, GripTarget, HandPoint, Mark, MarkAt, Shown, Tier},
         hands::ActiveHands,
         vehicles::wheel::CockpitTransform,
-        weapons::{foregrip, volumes::Anchor},
+        weapons::foregrip,
     },
     headpose,
 };
 
-/// How the weapon handling's candidates become grip targets: which point of the hand reaches the
-/// body's sockets and pouches, and where the markers go.
+/// How the weapon handling's candidates become grip targets, and where the markers go.
 pub(super) struct Place {
-    /// The hand's point for the body's sockets and pouches: the player's own grip on the player's
-    /// body, the drawn one on the character's skeleton.
-    pub(super) by: HandPoint,
     pub(super) xf: CockpitTransform,
 }
 
 impl Place {
-    pub(super) fn new(active: &ActiveHands, anchor: &Anchor) -> Self {
+    pub(super) fn new(active: &ActiveHands) -> Self {
         Self {
-            by: match anchor {
-                Anchor::Body { .. } => HandPoint::Player,
-                Anchor::Skeleton(_) => HandPoint::Drawn,
-            },
             xf: CockpitTransform {
                 head_world: headpose::query().position,
                 head_cockpit: active.head.position,
@@ -37,14 +29,15 @@ impl Place {
         }
     }
 
-    /// A socket or a pouch on the body, always marked.
+    /// A holster or a pouch on the character's body, reached by the hand as it is drawn, always
+    /// marked.
     pub(super) fn body(&self, c: &Candidate) -> GripTarget {
         c.target(
-            self.by,
+            HandPoint::Drawn,
             Mark::ring(
                 MarkAt::Cockpit {
                     point: c.centre,
-                    on_body: self.by == HandPoint::Player,
+                    on_body: false,
                 },
                 mark_size(c.radius),
             )
@@ -61,7 +54,7 @@ impl Place {
             radius: c.radius + margin.max(0.0),
             ..*c
         }
-        .target(self.by, pouch.mark.showing(Shown::Never))
+        .target(HandPoint::Drawn, pouch.mark.showing(Shown::Never))
         .ranked(Tier::Fallback);
         [pouch, around]
     }

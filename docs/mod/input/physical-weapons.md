@@ -97,14 +97,14 @@ The rigid grip shows the slide only while the hand's controller weight is above 
 
 ## Holsters on the docked guns
 
-With `weapons.holsters.follow_docks` (on; `HOLSTERS FOLLOW THE GUNS`), each hip and shoulder holster sits on its gun, where the player sees it on the character's body, and is reached by the hand as it is drawn rather than by the player's own hand (`weapons::docks`), so what the player sees is what they grab, wherever the animation, the procedural body, or the chase puts the gun. A holster's gun is the shoulder's long gun or the hip's pistol of the pistol slot (by the hip holster bone the pistol rides when holstered):
+With `weapons.holsters.follow_docks` (on; `HOLSTERS FOLLOW THE GUNS`), each hip and shoulder holster sits on its gun, where the player sees it on the character's body, and is reached by the hand as it is drawn (`weapons::docks`), so what the player sees is what they grab, wherever the animation, the procedural body, or the chase puts the gun. A holster's gun is the shoulder's long gun or the hip's pistol of the pistol slot (by the hip holster bone the pistol rides when holstered):
 
 - docked (in the holstered state on its dock bone, not the second weapon; a pistol waiting on its hip while the other is drawn), the volume is on the gun's grip ([`WeaponBase::GetGripPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-GetGripPosition), or the gun's origin without one, and a pistol's origin);
 - in a hand, the volume is where the gun docks again: its dock bone, carried out by where the gun's grip sat on that bone when it was last seen docked, or at the bone for a gun not yet seen docked;
 - with no weapon in the slot, there is nothing on the body there, and the holster is not offered;
-- where the gun's dock bone or the frames cannot be read, the holster stays on the landmarks, reached by the player's own hand.
+- where the gun's dock bone or the frames cannot be read, the holster stays on the skeleton's landmarks.
 
-The chest holster carries the planted explosive, which shows nothing on the body, and stays on the landmarks with the pouches. The volumes on the parts of a long gun docked on a shoulder ([physical-guns.md](physical-guns.md)) are reached by the drawn hand too. The grip's offset on its bone is taken from the gun's last placement and the bone's pose now, so a gun noted while the body moves fast sits slightly off; an offset longer than 0.6 m is taken for a bad read and not noted. `VR: STATUS` shows how many holsters sit on their guns (`HOLSTERS`).
+The chest holster carries the planted explosive, which shows nothing on the body, and stays on the skeleton's landmarks with the pouches. The volumes on the parts of a long gun docked on a shoulder ([physical-guns.md](physical-guns.md)) are reached by the drawn hand too. The grip's offset on its bone is taken from the gun's last placement and the bone's pose now, so a gun noted while the body moves fast sits slightly off; an offset longer than 0.6 m is taken for a bad read and not noted. `VR: STATUS` shows how many holsters sit on their guns (`HOLSTERS`).
 
 ## Letting go
 
@@ -322,7 +322,7 @@ With `SEPARATE PISTOLS`, `TRACK WEAPONS`, `CARRY EXTRA WEAPONS`, `SECOND GUN IN 
 - How a character's animation and AI take losing the gun they hold outside an animation state's own drop: whether a soldier mid-fire or mid-reload settles into an unarmed or a newly drawn state, and whether the behaviour trees send it after a weapon on the ground.
 - Whether every rack's weapon is among the player's valid interaction entries while the hand can reach it (the entries depend on the interaction's own range and conditions), and whether a rack weapon's world matrix is current while it sits on the rack.
 - Whether the second weapon's magazine handled by the true reload (the game's reload call on a weapon in the holstered state, and its magazine-out flag) behaves as the wielded weapon's does, and whether the pips sit above the fist in every controller's grip frame.
-- Whether a docked gun's grip from its last placement lies where the gun is drawn on the body at the input tick, and whether the character-skeleton placement the holsters are measured against matches the one the skeleton anchor uses.
+- Whether a docked gun's grip from its last placement lies where the gun is drawn on the body at the input tick.
 - Whether a rack's copy reliably arrives as the next weapon wielded, within the pending hand's three seconds, and whether hiding and showing the rack's weapon interferes with the resupply point's own events.
 - Whether the end-of-pass detour's grip positions match the gun's drawn pose for other characters (their pass places their guns before the detour notes them).
 - Whether the measured sight line in the wrist's frame is right for every long gun (one without a trusted sight correction lines up its bore rather than its sights), whether the butt behind the grip and the pocket's offset put the stock on the shoulder the player feels, and whether turning the gun onto the eye ever fights the two-handed pose or the recoil.

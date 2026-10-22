@@ -1,8 +1,8 @@
 use super::*;
-use crate::controllers::grab::grab_volume;
+use crate::controllers::{body::BodyDimensions, grab::grab_volume};
 
-const DIMS: BodyDimensions = BodyDimensions::GENERIC_ADULT;
-/// A taller player's own body, as a calibration would save it.
+const DIMS: BodyDimensions = BodyDimensions::CHARACTER_ESTIMATE;
+/// A body a little shorter than the character's.
 const TALL: BodyDimensions = BodyDimensions {
     height: 1.80,
     eye_height: 1.68,
@@ -14,58 +14,52 @@ const TALL: BodyDimensions = BodyDimensions {
     hand: 0.19,
     seated_eye_height: None,
 };
-const BODIES: [BodyDimensions; 3] = [
-    BodyDimensions::GENERIC_ADULT,
-    BodyDimensions::CHARACTER_ESTIMATE,
-    TALL,
-];
-const STANDING: BodyFrame = BodyFrame {
-    origin: Vec3::ZERO,
-    seated: false,
-    anchor: Anchor::Body {
-        yaw: 0.0,
-        pelvis: None,
-    },
-};
-const SEATED: BodyFrame = BodyFrame {
-    origin: Vec3::ZERO,
-    seated: true,
-    anchor: Anchor::Body {
-        yaw: 0.0,
-        pelvis: None,
-    },
-};
+const BODIES: [BodyDimensions; 3] = [DIMS, BodyDimensions::GENERIC_ADULT, TALL];
 const POUCHES: PouchesConfig = PouchesConfig::new();
 
-fn holsters(frame: &BodyFrame, dims: &BodyDimensions) -> Vec<Candidate> {
-    holster_candidates(frame, dims, &HolstersConfig::new())
+/// A skeleton built to the dimensions, with its eyes at the origin, turned by `yaw`.
+fn ideal_skeleton(dims: &BodyDimensions, yaw: f32) -> SkeletonLandmarks {
+    let turn = Quat::from_rotation_y(yaw);
+    let shoulders = body::shoulder_positions(Vec3::ZERO, turn, dims);
+    let pelvis = turn
+        * Vec3::new(
+            0.0,
+            dims.height * HIP_HEIGHT_FRACTION - dims.eye_height,
+            body::EYES_FORWARD_OF_SHOULDERS,
+        );
+    let half = turn * Vec3::new(dims.shoulder_width * 0.22, 0.0, 0.0);
+    SkeletonLandmarks {
+        head: Vec3::ZERO,
+        pelvis,
+        hips: [pelvis - half, pelvis + half],
+        shoulders,
+    }
+}
+
+fn frame_of(skeleton: SkeletonLandmarks) -> BodyFrame {
+    BodyFrame::on(skeleton).expect("a body to place the volumes on")
+}
+
+fn standing(dims: &BodyDimensions) -> BodyFrame {
+    frame_of(ideal_skeleton(dims, 0.0))
+}
+
+fn holsters(frame: &BodyFrame) -> Vec<Candidate> {
+    holster_candidates(frame, &HolstersConfig::new())
 }
 
 /// Every volume, holsters and pouches, for a player whose dominant hand is `dominant`.
-fn every_volume_for(
-    frame: &BodyFrame,
-    dims: &BodyDimensions,
-    pouches: &PouchesConfig,
-    dominant: Hand,
-) -> Vec<Candidate> {
-    let mut c = holsters(frame, dims);
+fn every_volume_for(frame: &BodyFrame, pouches: &PouchesConfig, dominant: Hand) -> Vec<Candidate> {
+    let mut c = holsters(frame);
     c.extend(grenade_pouch(
         frame,
-        dims,
         pouches,
         dominant,
         ChestGrabbers::Either,
     ));
-    c.extend(c4_pouch(
-        frame,
-        dims,
-        pouches,
-        dominant,
-        ChestGrabbers::Either,
-    ));
+    c.extend(c4_pouch(frame, pouches, dominant, ChestGrabbers::Either));
     c.push(magazine_pouch(
         frame,
-        dims,
         pouches,
         dominant,
         Some(dominant.other()),
@@ -73,8 +67,8 @@ fn every_volume_for(
     c
 }
 
-fn every_volume(frame: &BodyFrame, dims: &BodyDimensions) -> Vec<Candidate> {
-    every_volume_for(frame, dims, &POUCHES, Hand::Right)
+fn every_volume(frame: &BodyFrame) -> Vec<Candidate> {
+    every_volume_for(frame, &POUCHES, Hand::Right)
 }
 
 fn find(c: &[Candidate], volume: GrabVolume) -> Candidate {
@@ -128,7 +122,7 @@ fn assert_apart(c: &[Candidate], context: &str) {
 
 #[test]
 fn the_holsters_sit_where_the_body_has_them() {
-    let c = holsters(&STANDING, &DIMS);
+    let c = holsters(&standing(&DIMS));
     let right_hip = centre(&c, RIGHT_HIP);
     let left_hip = centre(&c, LEFT_HIP);
     let right_shoulder = centre(&c, RIGHT_SHOULDER);
@@ -142,29 +136,7 @@ fn the_holsters_sit_where_the_body_has_them() {
     // Over the shoulder is behind it; the chest is in front.
     assert!(right_shoulder.z > body::EYES_FORWARD_OF_SHOULDERS);
     assert!(chest.z < 0.0);
-    assert_eq!(chest.x, 0.0);
-}
-
-#[test]
-fn seated_hips_are_higher_and_forward_and_the_rest_follow_the_torso() {
-    for dims in BODIES {
-        let standing = holsters(&STANDING, &dims);
-        let seated = holsters(&SEATED, &dims);
-        let (up, sh) = (centre(&standing, RIGHT_HIP), centre(&seated, RIGHT_HIP));
-        // At the belt line beside the waist: about half a metre below the eyes, close to the
-        // body, and in front of the eyes over the thighs.
-        assert!(sh.y > up.y + 0.1, "{sh} vs {up}");
-        assert!(sh.y < -0.4 && sh.y > -0.65, "{sh}");
-        assert!(sh.z < 0.0 && sh.z > -0.15, "{sh}");
-        assert_eq!(sh.x, up.x);
-        // The shoulders come forward a little, clear of a backrest; the chest stays.
-        let (us, ss) = (
-            centre(&standing, RIGHT_SHOULDER),
-            centre(&seated, RIGHT_SHOULDER),
-        );
-        assert!(ss.z < us.z && ss.z > 0.0 && ss.y == us.y);
-        assert_eq!(centre(&standing, CHEST), centre(&seated, CHEST));
-    }
+    assert!(chest.x.abs() < 1e-6);
 }
 
 #[test]
@@ -173,17 +145,15 @@ fn the_default_volumes_keep_apart() {
         grenade_side: PouchSide::OffHand,
         ..POUCHES
     };
-    for frame in [STANDING, SEATED] {
-        for dims in BODIES {
+    for dims in BODIES {
+        for yaw in [0.0, -0.6] {
+            let frame = frame_of(ideal_skeleton(&dims, yaw));
             for dominant in Hand::BOTH {
                 for pouches in [POUCHES, swapped] {
-                    let c = every_volume_for(&frame, &dims, &pouches, dominant);
+                    let c = every_volume_for(&frame, &pouches, dominant);
                     assert_apart(
                         &c,
-                        &format!(
-                            "seated {}, height {}, dominant {dominant:?}",
-                            frame.seated, dims.height
-                        ),
+                        &format!("height {}, yaw {yaw}, dominant {dominant:?}", dims.height),
                     );
                 }
             }
@@ -192,21 +162,9 @@ fn the_default_volumes_keep_apart() {
 }
 
 #[test]
-fn a_seated_hand_at_the_waist_grabs_the_hip_holster() {
-    let dims = BodyDimensions::CHARACTER_ESTIMATE;
-    // A hand resting at the side of the waist, over the front of the seat: half a metre below
-    // the eyes, a hand's width out from the body, a little in front of the eyes.
-    let hand = Vec3::new(0.22, -0.5, -0.08);
-    let seated = holsters(&SEATED, &dims);
-    assert_eq!(grab_volume(hand, Hand::Right, &seated), Some(RIGHT_HIP));
-    let standing = holsters(&STANDING, &dims);
-    assert_eq!(grab_volume(hand, Hand::Right, &standing), None);
-}
-
-#[test]
 fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
     for dims in BODIES {
-        let c = every_volume(&STANDING, &dims);
+        let c = every_volume(&standing(&dims));
         let grenade = centre(&c, GrabVolume::GrenadePouch);
         let c4 = centre(&c, GrabVolume::C4Pouch);
         let magazine = centre(&c, GrabVolume::MagazinePouch);
@@ -215,7 +173,7 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
         // A right-handed player: the grenades on the dominant side of the chest, the C4 on the
         // other, and the magazines at the front of the off-hand's hip.
         assert!(grenade.x > 0.0 && c4.x < 0.0 && magazine.x < 0.0);
-        assert!((grenade.x + c4.x).abs() < 1e-5 && grenade.y == c4.y);
+        assert!((grenade.x + c4.x).abs() < 1e-5 && (grenade.y - c4.y).abs() < 1e-5);
         // The chest pouches on the upper chest, below the shoulders and above the belt; the
         // magazine pouch at the waist, above the hip holster.
         assert!(grenade.y < shoulders.y - 0.1 && grenade.y > magazine.y + 0.2);
@@ -232,39 +190,39 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
 
 #[test]
 fn a_left_handed_layout_mirrors_a_right_handed_one() {
-    for frame in [STANDING, SEATED] {
-        let right = every_volume_for(&frame, &DIMS, &POUCHES, Hand::Right);
-        let left = every_volume_for(&frame, &DIMS, &POUCHES, Hand::Left);
-        for volume in [
-            GrabVolume::GrenadePouch,
-            GrabVolume::C4Pouch,
-            GrabVolume::MagazinePouch,
-        ] {
-            let (r, l) = (centre(&right, volume), centre(&left, volume));
-            assert!(
-                (r.x + l.x).abs() < 1e-5 && r.y == l.y && r.z == l.z,
-                "{volume:?}"
-            );
-        }
+    let frame = standing(&DIMS);
+    let right = every_volume_for(&frame, &POUCHES, Hand::Right);
+    let left = every_volume_for(&frame, &POUCHES, Hand::Left);
+    for volume in [
+        GrabVolume::GrenadePouch,
+        GrabVolume::C4Pouch,
+        GrabVolume::MagazinePouch,
+    ] {
+        let (r, l) = (centre(&right, volume), centre(&left, volume));
+        assert!(
+            (r.x + l.x).abs() < 1e-5 && (r.y - l.y).abs() < 1e-5 && (r.z - l.z).abs() < 1e-5,
+            "{volume:?}"
+        );
     }
 }
 
 #[test]
 fn the_pouches_are_laid_out_around_the_gun_hand_not_the_dominant_hand() {
+    let frame = standing(&DIMS);
     // A left-handed player whose gun rides the right hand: the free hand is the left.
     let side = gun_side(Some(Hand::Right), None, Hand::Left);
     assert_eq!(side, Hand::Right);
-    let magazine = magazine_pouch(&STANDING, &DIMS, &POUCHES, side, Some(Hand::Left));
+    let magazine = magazine_pouch(&frame, &POUCHES, side, Some(Hand::Left));
     assert!(magazine.centre.x < 0.0, "{}", magazine.centre);
     assert_eq!(magazine.hand, Some(Hand::Left));
     // The free hand decides the side even against the gun side, and with no hand free the pouch
     // is on the side away from the guns.
-    let free_right = magazine_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, Some(Hand::Right));
+    let free_right = magazine_pouch(&frame, &POUCHES, Hand::Right, Some(Hand::Right));
     assert!(free_right.centre.x > 0.0);
-    let both_held = magazine_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, None);
+    let both_held = magazine_pouch(&frame, &POUCHES, Hand::Right, None);
     assert!(both_held.centre.x < 0.0);
     // The grenades go on the gun hand's side by default.
-    let grenade = grenade_pouch(&STANDING, &DIMS, &POUCHES, side, ChestGrabbers::Either).unwrap();
+    let grenade = grenade_pouch(&frame, &POUCHES, side, ChestGrabbers::Either).unwrap();
     assert!(grenade.centre.x > 0.0);
     // Holstered, the layout stays where the last gun had it, and falls back on the dominant hand
     // before any gun is drawn.
@@ -287,7 +245,7 @@ fn the_grenade_side_can_be_overridden_and_the_c4_takes_the_other() {
         };
         let sides = chest_sides(&swapped, dominant);
         assert_eq!((sides.grenade, sides.c4), (dominant.other(), dominant));
-        let c = every_volume_for(&STANDING, &DIMS, &swapped, dominant);
+        let c = every_volume_for(&standing(&DIMS), &swapped, dominant);
         let grenade = centre(&c, GrabVolume::GrenadePouch);
         assert_eq!(grenade.x > 0.0, dominant == Hand::Left);
     }
@@ -295,199 +253,67 @@ fn the_grenade_side_can_be_overridden_and_the_c4_takes_the_other() {
 
 #[test]
 fn either_hand_takes_from_the_chest_pouches_and_only_the_free_hand_from_the_magazines() {
-    for frame in [STANDING, SEATED] {
-        let c = every_volume(&frame, &DIMS);
-        for volume in [GrabVolume::GrenadePouch, GrabVolume::C4Pouch] {
-            let pouch = find(&c, volume);
-            assert_eq!(pouch.hand, None);
-            for hand in Hand::BOTH {
-                assert_eq!(grab_volume(pouch.centre, hand, &c), Some(volume));
-            }
+    let c = every_volume(&standing(&DIMS));
+    for volume in [GrabVolume::GrenadePouch, GrabVolume::C4Pouch] {
+        let pouch = find(&c, volume);
+        assert_eq!(pouch.hand, None);
+        for hand in Hand::BOTH {
+            assert_eq!(grab_volume(pouch.centre, hand, &c), Some(volume));
         }
-        let magazine = find(&c, GrabVolume::MagazinePouch);
-        assert_eq!(magazine.hand, Some(Hand::Left));
-        assert_eq!(
-            grab_volume(magazine.centre, Hand::Left, &c),
-            Some(GrabVolume::MagazinePouch)
-        );
-        assert_ne!(
-            grab_volume(magazine.centre, Hand::Right, &c),
-            Some(GrabVolume::MagazinePouch)
-        );
     }
+    let magazine = find(&c, GrabVolume::MagazinePouch);
+    assert_eq!(magazine.hand, Some(Hand::Left));
+    assert_eq!(
+        grab_volume(magazine.centre, Hand::Left, &c),
+        Some(GrabVolume::MagazinePouch)
+    );
+    assert_ne!(
+        grab_volume(magazine.centre, Hand::Right, &c),
+        Some(GrabVolume::MagazinePouch)
+    );
 }
 
 #[test]
 fn a_hand_at_a_volume_grabs_it_and_a_hand_in_front_grabs_nothing() {
-    for frame in [STANDING, SEATED] {
-        let c = every_volume(&frame, &DIMS);
-        for candidate in &c {
-            assert_eq!(
-                grab_volume(candidate.centre, Hand::Left, &c),
-                Some(candidate.volume),
-                "{:?}",
-                candidate.volume
-            );
-        }
-        // A hand held out in front at chest height, as when firing the grapple.
-        let out_front = Vec3::new(0.0, -0.3, -0.45);
-        assert_eq!(grab_volume(out_front, Hand::Left, &c), None);
+    let frame = standing(&DIMS);
+    let c = every_volume(&frame);
+    for candidate in &c {
+        assert_eq!(
+            grab_volume(candidate.centre, Hand::Left, &c),
+            Some(candidate.volume),
+            "{:?}",
+            candidate.volume
+        );
     }
+    // A hand held out in front at chest height, as when firing the grapple.
+    let out_front = Vec3::new(0.0, -0.3, -0.45);
+    assert_eq!(grab_volume(out_front, Hand::Left, &c), None);
     // A hand hanging relaxed at the side, a little forward of the holster, still reaches it.
-    let c = holsters(&STANDING, &DIMS);
+    let c = holsters(&frame);
     let hip = centre(&c, RIGHT_HIP);
     assert!(grab_volume(hip + Vec3::new(0.0, 0.0, -0.08), Hand::Right, &c).is_some());
 }
 
-/// A head at `position` looking level, with no previous tick.
-fn level(position: Vec3) -> HeadDrop {
-    HeadDrop {
-        position,
-        upright: Vec2::ZERO,
-        pitch_down: 0.0,
-        previous_y: None,
-    }
-}
-
 #[test]
-fn bending_over_to_look_at_the_belt_does_not_move_the_pouches() {
-    let upright = Anchor::Body {
-        yaw: 0.0,
-        pelvis: None,
-    };
-    let y = |position: Vec3, pitch_deg: f32, previous_y| {
-        body_frame(
-            HeadDrop {
-                position,
-                upright: Vec2::ZERO,
-                pitch_down: pitch_deg.to_radians(),
-                previous_y,
-            },
-            Stance::Standing,
-            0.15,
-            upright,
-        )
-        .origin
-        .y
-    };
-    let bent = Vec3::new(0.0, -0.4, -0.15);
-    // Looking well down at the belt, the head drops past the deadband but the frame holds.
-    assert_eq!(y(bent, 55.0, Some(0.0)), 0.0);
-    // Looking level, the same drop is a crouch.
-    assert!((y(bent, 0.0, Some(0.0)) + 0.25).abs() < 1e-6);
-    // In between, it follows part of the way.
-    let part = y(bent, 30.0, Some(0.0));
-    assert!(part < 0.0 && part > -0.25, "{part}");
-    // Crouched, then looking down at the belt: the frame stays at the crouch.
-    assert!((y(Vec3::new(0.0, -0.6, 0.0), 60.0, Some(-0.45)) + 0.45).abs() < 1e-6);
-    // Standing up while still looking down: the frame rises with the head at once.
-    assert_eq!(y(Vec3::new(0.0, -0.05, 0.0), 60.0, Some(-0.45)), 0.0);
-    // The first tick, and a non-finite pitch, follow the head.
-    assert!((y(bent, 55.0, None) + 0.25).abs() < 1e-6);
-    assert!((y(bent, f32::NAN, Some(0.0)) + 0.25).abs() < 1e-6);
-}
-
-#[test]
-fn the_body_drops_only_past_the_deadband() {
-    let upright = Anchor::Body {
-        yaw: 0.0,
-        pelvis: None,
-    };
-    let origin = |head, stance| body_frame(level(head), stance, 0.15, upright).origin;
-    for stance in [Stance::Standing, Stance::Seated] {
-        assert_eq!(origin(Vec3::new(0.3, -0.1, 0.2), stance), Vec3::ZERO);
-        assert_eq!(origin(Vec3::new(0.0, 0.2, 0.0), stance), Vec3::ZERO);
-        let crouched = origin(Vec3::new(0.0, -0.5, 0.0), stance);
-        assert!((crouched.y + 0.35).abs() < 1e-6);
-        assert_eq!(origin(Vec3::NAN, stance), Vec3::ZERO);
-    }
-    assert!(body_frame(level(Vec3::ZERO), Stance::Seated, 0.15, upright).seated);
-    assert!(!body_frame(level(Vec3::ZERO), Stance::Standing, 0.15, upright).seated);
-    assert_eq!(
-        body_frame(
-            level(Vec3::ZERO),
-            Stance::Standing,
-            0.15,
-            Anchor::Body {
-                yaw: f32::NAN,
-                pelvis: Some(Vec2::NAN),
-            }
-        )
-        .anchor,
-        upright
-    );
-}
-
-/// A skeleton built to the dimensions, with its eyes at the origin, turned by `yaw`.
-fn ideal_skeleton(dims: &BodyDimensions, yaw: f32) -> SkeletonLandmarks {
-    let turn = Quat::from_rotation_y(yaw);
-    let shoulders = body::shoulder_positions(Vec3::ZERO, turn, dims);
-    let pelvis = turn
-        * Vec3::new(
-            0.0,
-            dims.height * HIP_HEIGHT_FRACTION - dims.eye_height,
-            body::EYES_FORWARD_OF_SHOULDERS,
-        );
-    let half = turn * Vec3::new(dims.shoulder_width * 0.22, 0.0, 0.0);
-    SkeletonLandmarks {
-        head: Vec3::ZERO,
-        pelvis,
-        hips: [pelvis - half, pelvis + half],
-        shoulders,
-    }
-}
-
-#[test]
-fn a_skeleton_built_to_the_dimensions_places_the_volumes_as_the_body_does() {
-    for dims in BODIES {
-        for seated in [false, true] {
-            let body = BodyFrame { seated, ..STANDING };
-            let rico = BodyFrame {
-                anchor: Anchor::Skeleton(ideal_skeleton(&dims, 0.0)),
-                ..body
-            };
-            for (a, b) in every_volume(&body, &dims)
-                .iter()
-                .zip(every_volume(&rico, &dims))
-            {
-                assert_eq!(a.volume, b.volume);
-                assert!(
-                    a.centre.distance(b.centre) < 1e-4,
-                    "{:?}: {} vs {} (seated {seated})",
-                    a.volume,
-                    a.centre,
-                    b.centre
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn the_volumes_turn_with_the_torso_about_the_eyes() {
-    let yaw = 1.2;
-    let turn = Quat::from_rotation_y(yaw);
-    for seated in [false, true] {
-        let ahead = every_volume(&BodyFrame { seated, ..STANDING }, &DIMS);
-        let turned_body = BodyFrame {
-            seated,
-            anchor: Anchor::Body { yaw, pelvis: None },
-            ..STANDING
-        };
-        let turned_rico = BodyFrame {
-            seated,
-            anchor: Anchor::Skeleton(ideal_skeleton(&DIMS, yaw)),
-            ..STANDING
-        };
-        for frame in [turned_body, turned_rico] {
-            for (a, b) in ahead.iter().zip(every_volume(&frame, &DIMS)) {
-                assert!(
-                    (turn * a.centre).distance(b.centre) < 1e-4,
-                    "{:?} under {}",
-                    a.volume,
-                    frame.anchor.label()
-                );
-            }
+fn the_volumes_ride_the_body_in_any_orientation() {
+    let upright = every_volume(&standing(&DIMS));
+    // Turned in the room, pitched face down as in a skydive, rolled onto a side, and moved.
+    let turns = [
+        Quat::from_rotation_y(1.2),
+        Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+        Quat::from_rotation_z(0.9) * Quat::from_rotation_y(-0.4),
+    ];
+    let shift = Vec3::new(0.3, -0.2, 0.5);
+    for turn in turns {
+        let skeleton = ideal_skeleton(&DIMS, 0.0).map(|p| turn * p + shift);
+        let moved = every_volume(&frame_of(skeleton));
+        for (a, b) in upright.iter().zip(&moved) {
+            assert_eq!(a.volume, b.volume);
+            assert!(
+                (turn * a.centre + shift).distance(b.centre) < 1e-4,
+                "{:?} under {turn}",
+                a.volume
+            );
         }
     }
 }
@@ -495,24 +321,12 @@ fn the_volumes_turn_with_the_torso_about_the_eyes() {
 #[test]
 fn the_hip_volumes_ride_the_pelvis_and_the_shoulder_volumes_ride_the_chest() {
     let mut skeleton = ideal_skeleton(&DIMS, 0.0);
-    let before = every_volume(
-        &BodyFrame {
-            anchor: Anchor::Skeleton(skeleton),
-            ..STANDING
-        },
-        &DIMS,
-    );
+    let before = every_volume(&frame_of(skeleton));
     // The chest turns 30 degrees over a still pelvis.
     let chest = skeleton.chest();
     let twist = Quat::from_rotation_y(0.5);
     skeleton.shoulders = skeleton.shoulders.map(|s| chest + twist * (s - chest));
-    let after = every_volume(
-        &BodyFrame {
-            anchor: Anchor::Skeleton(skeleton),
-            ..STANDING
-        },
-        &DIMS,
-    );
+    let after = every_volume(&frame_of(skeleton));
     for (a, b) in before.iter().zip(&after) {
         let moved = a.centre.distance(b.centre) > 1e-3;
         let on_chest = matches!(
@@ -526,28 +340,48 @@ fn the_hip_volumes_ride_the_pelvis_and_the_shoulder_volumes_ride_the_chest() {
 }
 
 #[test]
-fn the_volumes_on_the_skeleton_keep_apart() {
-    for dims in BODIES {
-        for seated in [false, true] {
-            let frame = BodyFrame {
-                seated,
-                anchor: Anchor::Skeleton(ideal_skeleton(&dims, -0.6)),
-                ..STANDING
-            };
-            assert_apart(&every_volume(&frame, &dims), &format!("seated {seated}"));
-        }
-    }
+fn a_bent_spine_tilts_the_girdles_with_it() {
+    // Bending forward at the hips: the shoulders come forward and down over a still pelvis, and
+    // the chest's pouches stay on the front of the chest rather than hanging below it.
+    let mut skeleton = ideal_skeleton(&DIMS, 0.0);
+    let hips = skeleton.hip_centre();
+    let bend = Quat::from_rotation_x(-0.6);
+    skeleton.shoulders = skeleton.shoulders.map(|s| hips + bend * (s - hips));
+    let frame = frame_of(skeleton);
+    let spine = (skeleton.chest() - hips).normalize();
+    assert!((frame.chest * Vec3::Y).distance(spine) < 1e-5);
+    let grenade = centre(&every_volume(&frame), GrabVolume::GrenadePouch);
+    let ahead = (grenade - skeleton.chest()).dot(frame.chest * Vec3::NEG_Z);
+    assert!(ahead > 0.0, "{grenade}");
 }
 
 #[test]
-fn a_degenerate_girdle_keeps_the_cockpit_axes() {
-    assert_eq!(girdle_basis([Vec3::ZERO, Vec3::Y]), Quat::IDENTITY);
-    let basis = girdle_basis([Vec3::new(-0.2, 0.0, 0.0), Vec3::new(0.2, 0.1, 0.0)]);
-    assert!((basis * Vec3::NEG_Z).distance(Vec3::NEG_Z) < 1e-5);
+fn a_degenerate_skeleton_places_nothing() {
+    let skeleton = ideal_skeleton(&DIMS, 0.0);
+    // The shoulders on one point.
+    let pinched = SkeletonLandmarks {
+        shoulders: [skeleton.chest(); 2],
+        ..skeleton
+    };
+    assert_eq!(BodyFrame::on(pinched), None);
+    // The spine along the line through the hips.
+    let along = SkeletonLandmarks {
+        shoulders: skeleton
+            .hips
+            .map(|h| h + (skeleton.hips[1] - skeleton.hips[0])),
+        ..skeleton
+    };
+    assert_eq!(BodyFrame::on(along), None);
+    let broken = SkeletonLandmarks {
+        pelvis: Vec3::NAN,
+        ..skeleton
+    };
+    assert_eq!(BodyFrame::on(broken), None);
 }
 
 #[test]
 fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
+    let frame = standing(&DIMS);
     assert_eq!(ChestGrabbers::for_guns([false; 2]), ChestGrabbers::Either);
     assert_eq!(
         ChestGrabbers::for_guns([false, true]),
@@ -560,8 +394,8 @@ fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
     assert_eq!(ChestGrabbers::for_guns([true; 2]), ChestGrabbers::Neither);
     let only_left = ChestGrabbers::Only(Hand::Left);
     for pouch in [
-        grenade_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, only_left).unwrap(),
-        c4_pouch(&STANDING, &DIMS, &POUCHES, Hand::Right, only_left).unwrap(),
+        grenade_pouch(&frame, &POUCHES, Hand::Right, only_left).unwrap(),
+        c4_pouch(&frame, &POUCHES, Hand::Right, only_left).unwrap(),
     ] {
         assert_eq!(pouch.hand, Some(Hand::Left));
         let c = [pouch];
@@ -571,82 +405,13 @@ fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
             Some(pouch.volume)
         );
     }
-    assert!(
-        grenade_pouch(
-            &STANDING,
-            &DIMS,
-            &POUCHES,
-            Hand::Right,
-            ChestGrabbers::Neither
-        )
-        .is_none()
-    );
-    assert!(
-        c4_pouch(
-            &STANDING,
-            &DIMS,
-            &POUCHES,
-            Hand::Right,
-            ChestGrabbers::Neither
-        )
-        .is_none()
-    );
-}
-
-#[test]
-fn the_body_hangs_from_the_players_neck_not_the_cockpit_origin() {
-    // The player stands half a metre behind the cockpit frame's origin, where the character's
-    // animated head leans on ahead of them.
-    let behind = Vec2::new(0.0, 0.5);
-    let frame = body_frame(
-        HeadDrop {
-            upright: behind,
-            ..level(Vec3::new(0.0, 0.0, 0.5))
-        },
-        Stance::Standing,
-        0.15,
-        Anchor::Body {
-            yaw: 0.0,
-            pelvis: None,
-        },
-    );
-    assert_eq!(frame.origin, Vec3::new(0.0, 0.0, 0.5));
-    let at_origin = holsters(&STANDING, &DIMS);
-    let at_player = holsters(&frame, &DIMS);
-    for (a, b) in at_origin.iter().zip(&at_player) {
-        assert!(
-            (b.centre - a.centre - Vec3::new(0.0, 0.0, 0.5)).length() < 1e-5,
-            "{:?} moves with the player",
-            a.volume
-        );
-    }
-}
-
-#[test]
-fn the_waist_stays_over_the_feet_through_a_lean() {
-    // Upright, the feet are under the shoulders, and the hips sit where they always did.
-    let under = Vec2::new(0.0, body::EYES_FORWARD_OF_SHOULDERS);
-    let upright = BodyFrame {
-        anchor: Anchor::Body {
-            yaw: 0.0,
-            pelvis: Some(under),
-        },
-        ..STANDING
-    };
-    let hip = |frame: &BodyFrame| centre(&holsters(frame, &DIMS), RIGHT_HIP);
-    let shoulder = |frame: &BodyFrame| centre(&holsters(frame, &DIMS), RIGHT_SHOULDER);
-    assert!((hip(&upright) - hip(&STANDING)).length() < 1e-5);
-    // Leaning forward 0.3 m over the feet: the shoulders go with the head, the hips stay.
-    let leaning = BodyFrame {
-        origin: Vec3::new(0.0, 0.0, -0.3),
-        ..upright
-    };
-    assert!((hip(&leaning) - hip(&upright)).length() < 1e-5);
-    assert!((shoulder(&leaning) - shoulder(&upright) - Vec3::new(0.0, 0.0, -0.3)).length() < 1e-5);
+    assert!(grenade_pouch(&frame, &POUCHES, Hand::Right, ChestGrabbers::Neither).is_none());
+    assert!(c4_pouch(&frame, &POUCHES, Hand::Right, ChestGrabbers::Neither).is_none());
 }
 
 #[test]
 fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
+    let frame = standing(&DIMS);
     let shoulders = |c: &[Candidate]| -> Vec<Option<Hand>> {
         c.iter()
             .filter(|c| matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))))
@@ -654,7 +419,7 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
             .collect()
     };
     for dominant in Hand::BOTH {
-        let mut empty = holster_candidates(&STANDING, &DIMS, &HolstersConfig::new());
+        let mut empty = holsters(&frame);
         let count = empty.len();
         reserve_long_guns(&mut empty, dominant, true);
         assert_eq!(
@@ -680,7 +445,7 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
         reserve_long_guns(&mut touched, dominant, true);
         assert!(touched.is_empty());
         // With a gun in a hand, either hand takes one, as a second weapon.
-        let mut armed = holster_candidates(&STANDING, &DIMS, &HolstersConfig::new());
+        let mut armed = holsters(&frame);
         reserve_long_guns(&mut armed, dominant, false);
         assert_eq!(shoulders(&armed), vec![None; 2]);
     }

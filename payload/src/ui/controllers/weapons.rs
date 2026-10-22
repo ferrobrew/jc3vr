@@ -19,8 +19,8 @@ use crate::{
             self, WeaponsStatus,
             config::{
                 BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HeftConfig,
-                HeftTuning, HoldConfig, HolsterAnchor, HolstersConfig, PouchSide, PouchesConfig,
-                RecoilConfig, RightGrip, VolumeSpec,
+                HeftTuning, HoldConfig, HolstersConfig, PouchSide, PouchesConfig, RecoilConfig,
+                RightGrip, VolumeSpec,
             },
             dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
@@ -113,13 +113,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
         tiers.state.map_or("none yet", TierState::label),
         status.candidates,
         yes_no(status.fire_blocked)
-    ));
-    ui.label(format!(
-        "Body volumes placed for: {}",
-        match status.stance {
-            Some(stance) => stance.label(),
-            None => "nothing",
-        }
     ));
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
@@ -803,25 +796,12 @@ fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
             "The hip and shoulder holsters sit on their guns as drawn on the body, or where a drawn \
              gun docks again, and are reached by the drawn hand.",
         );
-    ui.horizontal(|ui| {
-        ui.label("Holsters ride:");
-        for anchor in HolsterAnchor::ALL {
-            ui.selectable_value(&mut h.anchor, anchor, anchor.label());
-        }
-    })
-    .response
-    .on_hover_text(
-        "Rico's skeleton puts the volumes on his hip and shoulder joints, falling back to the \
-         player's body in vehicles, ragdolls, and skydives. The player's body turns with the \
-         estimated torso.",
-    );
     ui.checkbox(
         &mut h.long_guns_dominant,
         "Only the dominant hand draws a long gun with both hands empty",
     );
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
         .on_hover_text("The fallback for drawing without reaching a holster.");
-    ui.add(egui::Slider::new(&mut h.crouch_deadband_m, 0.0..=0.5).text("Crouch deadband (m)"));
     ui.label("Offsets from the landmark, right side (+X right, +Y up, +Z back)");
     volume_settings(ui, "Hip", &mut h.hip);
     volume_settings(ui, "Shoulder", &mut h.shoulder);

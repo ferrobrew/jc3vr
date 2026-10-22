@@ -155,27 +155,28 @@ pub fn divergence(
     })
 }
 
-/// Whether landmarks in the cockpit frame describe an upright body that the holsters can be placed
-/// on: the shoulders a plausible distance below the head and the hips below them, both girdles a
-/// plausible width, and the chest near the head horizontally. A ragdoll, a skydive, or garbage
-/// bone data fails it. The cockpit frame's +Y is up, and lengths are in its metres.
-pub fn upright(landmarks: &SkeletonLandmarks) -> bool {
+/// Whether landmarks describe a body that the volumes can be placed on, in whatever orientation:
+/// the head a plausible distance up the spine from the shoulders and near its line, the shoulders
+/// a plausible distance from the hips, and both girdles a plausible width. Garbage bone data fails
+/// it; a crouch, a lean, a fall, or a skydive does not. Lengths are in the landmarks' metres.
+pub fn plausible(landmarks: &SkeletonLandmarks) -> bool {
     if !landmarks.is_finite() {
         return false;
     }
-    let up = Vec3::Y;
     let chest = landmarks.chest();
-    let hips = landmarks.hip_centre();
-    let head_to_chest = (landmarks.head - chest).dot(up);
-    let chest_to_hips = (chest - hips).dot(up);
+    let spine = chest - landmarks.hip_centre();
+    let Some(up) = spine.try_normalize() else {
+        return false;
+    };
+    let head = landmarks.head - chest;
+    let head_up = head.dot(up);
     let shoulder_width = landmarks.shoulders[0].distance(landmarks.shoulders[1]);
     let hip_width = landmarks.hips[0].distance(landmarks.hips[1]);
-    let flat = |v: Vec3| Vec3::new(v.x, 0.0, v.z);
-    (UPRIGHT_HEAD_TO_CHEST_M.0..=UPRIGHT_HEAD_TO_CHEST_M.1).contains(&head_to_chest)
-        && (UPRIGHT_CHEST_TO_HIPS_M.0..=UPRIGHT_CHEST_TO_HIPS_M.1).contains(&chest_to_hips)
-        && (UPRIGHT_SHOULDER_WIDTH_M.0..=UPRIGHT_SHOULDER_WIDTH_M.1).contains(&shoulder_width)
-        && (UPRIGHT_HIP_WIDTH_M.0..=UPRIGHT_HIP_WIDTH_M.1).contains(&hip_width)
-        && flat(landmarks.head - chest).length() <= UPRIGHT_HEAD_REACH_M
+    (HEAD_TO_CHEST_M.0..=HEAD_TO_CHEST_M.1).contains(&head_up)
+        && (CHEST_TO_HIPS_M.0..=CHEST_TO_HIPS_M.1).contains(&spine.length())
+        && (SHOULDER_WIDTH_M.0..=SHOULDER_WIDTH_M.1).contains(&shoulder_width)
+        && (HIP_WIDTH_M.0..=HIP_WIDTH_M.1).contains(&hip_width)
+        && (head - up * head_up).length() <= HEAD_REACH_M
 }
 
 /// The turn of the line from `left` to `right` away from the model's lateral axis, radians, in
@@ -198,22 +199,21 @@ pub fn lateral_twist(left: Vec3, right: Vec3) -> Option<f32> {
     })
 }
 
-/// The range of the head's height above the middle of the shoulder joints for an upright body,
-/// metres: from a hunch to a stretch.
-const UPRIGHT_HEAD_TO_CHEST_M: (f32, f32) = (0.05, 0.45);
+/// The range of the head's distance up the spine from the middle of the shoulder joints, metres:
+/// from a hunch to a stretch.
+const HEAD_TO_CHEST_M: (f32, f32) = (0.05, 0.45);
 
-/// The range of the shoulders' height above the hips for an upright body, metres: from a deep bend
-/// to a tall adult.
-const UPRIGHT_CHEST_TO_HIPS_M: (f32, f32) = (0.2, 0.8);
+/// The range of the shoulders' distance from the hips, metres: from a deep bend to a tall adult.
+const CHEST_TO_HIPS_M: (f32, f32) = (0.2, 0.8);
 
 /// The range of the distance between the shoulder joints, metres.
-const UPRIGHT_SHOULDER_WIDTH_M: (f32, f32) = (0.2, 0.7);
+const SHOULDER_WIDTH_M: (f32, f32) = (0.2, 0.7);
 
 /// The range of the distance between the hip joints, metres.
-const UPRIGHT_HIP_WIDTH_M: (f32, f32) = (0.05, 0.5);
+const HIP_WIDTH_M: (f32, f32) = (0.05, 0.5);
 
-/// The furthest the head may be from the middle of the shoulders horizontally, metres.
-const UPRIGHT_HEAD_REACH_M: f32 = 0.5;
+/// The furthest the head may be from the spine's line, metres.
+const HEAD_REACH_M: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
@@ -361,18 +361,30 @@ mod tests {
     }
 
     #[test]
-    fn an_upright_skeleton_passes_and_a_fallen_one_does_not() {
+    fn a_body_in_any_orientation_passes_and_a_broken_one_does_not() {
         let dims = BodyDimensions::CHARACTER_ESTIMATE;
         let standing = skeleton(&dims, Vec3::ZERO, 0.4);
-        assert!(upright(&standing));
-        // Lying face down: the hips level with the chest.
+        assert!(plausible(&standing));
+        // Lying face down, as in a skydive.
         let lying = standing.map(|p| Quat::from_rotation_x(deg(-90.0)) * p);
-        assert!(!upright(&lying));
+        assert!(plausible(&lying));
         let broken = SkeletonLandmarks {
             pelvis: Vec3::NAN,
             ..standing
         };
-        assert!(!upright(&broken));
+        assert!(!plausible(&broken));
+        // The hips folded onto the shoulders.
+        let collapsed = SkeletonLandmarks {
+            hips: standing.shoulders,
+            ..standing
+        };
+        assert!(!plausible(&collapsed));
+        // The head torn off the neck.
+        let torn = SkeletonLandmarks {
+            head: standing.head + Vec3::new(1.0, 0.0, 0.0),
+            ..standing
+        };
+        assert!(!plausible(&torn));
     }
 
     #[test]

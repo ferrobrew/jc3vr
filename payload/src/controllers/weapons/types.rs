@@ -8,7 +8,6 @@ use crate::controllers::{
         engine::HeldWeapon,
         foregrip::{GripGeometry, Transition},
         holster::HolsterAction,
-        volumes::Stance,
     },
 };
 
@@ -113,14 +112,12 @@ pub struct WeaponsStatus {
     pub volumes: [Option<GrabVolume>; 2],
     /// How many targets were placed.
     pub candidates: usize,
-    /// The stance the body volumes were placed for.
-    pub stance: Option<Stance>,
     pub wielded: Option<WieldedReadout>,
     /// Whether the fire inputs were held back for a weapon action on the last tick.
     pub fire_blocked: bool,
     /// The most recent grabs, newest last.
     pub events: Vec<GrabEvent>,
     pub grabs: u64,
-    /// How many holsters were moved onto their docked guns on the last tick.
+    /// How many holsters sat on their guns on the last tick.
     pub docks_followed: usize,
 }

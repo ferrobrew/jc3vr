@@ -2,8 +2,6 @@
 //! ([`WeaponsStatus`](crate::controllers::weapons::WeaponsStatus)), the wielded weapon and its
 //! measured geometry, and the bookkeeping the two tick halves share.
 
-use std::time::Instant;
-
 use glam::Vec3;
 use parking_lot::Mutex;
 
@@ -13,7 +11,6 @@ use crate::controllers::{
     grab::{GrabVolume, GripTarget, HandPoints, HolsterSite},
     hands::ik,
     physical_hands::physics::guns,
-    roomscale::{self, posture::EffectivePosture},
     weapons::{
         ads, c4, collide, dual_wield,
         engine::{self, HeldWeapon},
@@ -25,7 +22,6 @@ use crate::controllers::{
         regions::{self, Carry, GunRegion, RegionHit},
         reload,
         types::WeaponsStatus,
-        volumes::Stance,
         wheel,
     },
 };
@@ -68,10 +64,8 @@ pub(crate) fn stand_down() {
     state.status.active = false;
     state.status.volumes = [None; 2];
     state.status.fire_blocked = false;
-    state.status.stance = None;
     state.placed.clear();
     state.points = [None; 2];
-    state.body_y = None;
     state.last_volumes = [None; 2];
     state.touch = None;
     state.slide = None;
@@ -95,8 +89,6 @@ pub(super) struct State {
     pub(super) points: [Option<HandPoints>; 2],
     /// The hand that last held a gun, kept while none is drawn.
     pub(super) last_holder: Option<Hand>,
-    /// The body frame's height on the last tick ([`crate::controllers::weapons::volumes::body_frame`]).
-    pub(super) body_y: Option<f32>,
     /// The volume each hand was in on the last tick, for the cue on entering one.
     pub(super) last_volumes: [Option<GrabVolume>; 2],
     /// The tick's hand the pouches and the wrist detonator are laid out around
@@ -132,26 +124,6 @@ pub(super) struct DockTouch {
 }
 
 impl State {
-    /// The stance for this tick, from the posture (the single source of truth for
-    /// seated versus standing): seated for the seated posture, standing for the standing posture,
-    /// and standing without a recent roomscale frame (the roomscale subsystems off, or not yet
-    /// run). Logs a change of stance.
-    pub(super) fn step_stance(&mut self) -> Stance {
-        let now = Instant::now();
-        let posture = roomscale::frame_shared()
-            .filter(|f| f.fresh(now))
-            .map(|f| f.posture);
-        let stance = match posture {
-            Some(EffectivePosture::Seated) => Stance::Seated,
-            _ => Stance::Standing,
-        };
-        let previous = self.status.stance;
-        if previous.map(Stance::label) != Some(stance.label()) {
-            tracing::debug!(target: "controllers", stance = stance.label(), "holsters: placed for a new stance");
-        }
-        stance
-    }
-
     /// The two-handed geometry of `weapon`, measured afresh when possible.
     pub(super) fn geometry_for(
         &mut self,
@@ -194,7 +166,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
         fire_blocked: false,
         events: Vec::new(),
         grabs: 0,
-        stance: None,
         docks_followed: 0,
     },
     weapon: None,
@@ -204,7 +175,6 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     placed: Vec::new(),
     points: [None; 2],
     last_holder: None,
-    body_y: None,
     last_volumes: [None; 2],
     gun_side: Hand::Right,
     touch: None,

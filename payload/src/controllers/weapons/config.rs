@@ -30,12 +30,6 @@ pub struct HolstersConfig {
     pub shoulder: VolumeSpec,
     /// The explosives holster on the chest.
     pub chest: VolumeSpec,
-    /// How far the head may drop below its standing height before the holsters drop with it, metres.
-    /// Looking down at a holster lowers the head a little without the body crouching, so a small
-    /// drop leaves the volumes where they are; a crouch carries them down.
-    pub crouch_deadband_m: f32,
-    /// Which body the holsters and pouches ride.
-    pub anchor: HolsterAnchor,
     /// Seat the hip and shoulder holsters on their guns as drawn on the character's body, reached
     /// by the drawn hand, so a hand reaches where the gun is seen (see
     /// [`crate::controllers::weapons::docks`]).
@@ -45,30 +39,6 @@ pub struct HolstersConfig {
     /// where they were. The off-hand still draws one as a second weapon while the other hand holds
     /// a gun.
     pub long_guns_dominant: bool,
-}
-
-/// Which body the holsters and pouches ride (see [`crate::controllers::weapons::volumes`]).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum HolsterAnchor {
-    /// The player's own body, estimated from the player's body dimensions and turned to the player's
-    /// estimated torso, and reached by the player's own hands, before the body-scale remap.
-    #[default]
-    Body,
-    /// The character's skeleton: his hip and shoulder joints, so that the volumes sit on the body
-    /// the player sees. Falls back to the player's body where the skeleton is unavailable or not
-    /// upright: in a vehicle, in a ragdoll, or in a skydive.
-    Rico,
-}
-
-impl HolsterAnchor {
-    pub const ALL: [HolsterAnchor; 2] = [HolsterAnchor::Body, HolsterAnchor::Rico];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            HolsterAnchor::Body => "the player's body",
-            HolsterAnchor::Rico => "Rico's skeleton",
-        }
-    }
 }
 
 impl HolstersConfig {
@@ -88,8 +58,6 @@ impl HolstersConfig {
                 offset_m: Vec3::new(0.0, -0.16, -0.14),
                 radius_m: 0.09,
             },
-            crouch_deadband_m: 0.15,
-            anchor: HolsterAnchor::Body,
             follow_docks: true,
             long_guns_dominant: true,
         }
