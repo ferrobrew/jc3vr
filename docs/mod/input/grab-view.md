@@ -40,7 +40,7 @@ The palm marker. A disc over the back of each wrist shows the palms' state for t
 | Off | grey | the physical hands are off, or the controller scheme is not in effect |
 | Not on foot | blue | the palms act only on foot on the ground or falling |
 | No tracked hands | dark grey | no hands to act for |
-| Off the main thread | red | the aim update ran on another thread than the input tick |
+| Off the main thread | red | the palms' tick ran on another thread than the input tick |
 | Not ticking | faint white | the palms have not ticked lately |
 | Not tracked | dark grey | this hand is not tracked |
 | Not free | yellow | the hand holds a gun, the foregrip, or a grenade or charge, or the animation owns it |

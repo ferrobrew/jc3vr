@@ -17,7 +17,7 @@ use crate::controllers::{
     },
 };
 
-/// Why the palms did nothing on the last aim update.
+/// Why the palms did nothing on their last tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Idle {
     /// The physical hands are off, or the controller scheme is not in effect.
@@ -26,7 +26,7 @@ pub enum Idle {
     Mode,
     /// No tracked hands.
     NoHands,
-    /// The aim update ran on another thread than the input tick.
+    /// The palms' tick ran on another thread than the input tick.
     OffThread,
 }
 
@@ -36,7 +36,7 @@ impl Idle {
             Idle::Disabled => "off",
             Idle::Mode => "not on foot on the ground or falling",
             Idle::NoHands => "no tracked hands",
-            Idle::OffThread => "the aim update is off the main thread",
+            Idle::OffThread => "the tick ran off the main thread",
         }
     }
 }
@@ -90,7 +90,7 @@ pub struct PhysicalHandsStatus {
     pub object_pushes: u64,
     /// Ticks a palm shoved an object.
     pub shoves: u64,
-    /// Ticks the aim update ran off the main thread.
+    /// Palms' ticks that ran off the main thread.
     pub off_thread: u64,
     /// The last cast or engine failure.
     pub last_error: Option<String>,

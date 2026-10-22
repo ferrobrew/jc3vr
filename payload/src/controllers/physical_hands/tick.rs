@@ -1,10 +1,17 @@
-//! The palms' simulation tick, after the player aim control's post-simulation update: the probes,
-//! the pushes, the shoves, and the pickups, folded into the readout.
+//! The palms' simulation tick: the probes, the pushes, the shoves, and the pickups, folded into the
+//! readout.
+//!
+//! The tick is due after the player aim control's post-simulation update, which the game world's
+//! update queue may run on one of its worker threads, so the update only notes that a tick is due
+//! ([`after_aim`]), and the tick runs on the game thread at the start of the frame's render update
+//! ([`main_thread_tick`]): after the simulation the aim update belongs to, before the input tick that
+//! reads the palms' targets, and outside the world update and the physics step.
 
 use std::{sync::atomic::Ordering, time::Instant};
 
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3gi::character::character::Character;
+use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
@@ -43,13 +50,42 @@ use crate::{
     headpose, hooks,
 };
 
-/// The palms' tick, after the player aim control's post-simulation update.
+/// Note that a palms' tick is due, `dt` seconds of simulation after the last: called from the
+/// player aim control's post-simulation update, on whichever thread runs it. Ticks noted before the
+/// next [`main_thread_tick`] are run as one, over their summed time.
+pub(crate) fn after_aim(dt: f32) {
+    let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+    let mut pending = PENDING.lock();
+    *pending = Some(pending.unwrap_or(0.0) + dt);
+}
+
+/// Run the palms' tick the aim update left due, if any.
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, called from its aim control's update after
-/// the original has run.
-pub(crate) unsafe fn after_aim(owner: &Character, dt: f32) {
+/// The game thread, outside the world update and the physics step.
+pub(crate) unsafe fn main_thread_tick() {
+    let Some(dt) = PENDING.lock().take() else {
+        return;
+    };
+    // SAFETY: the game thread, outside the world update.
+    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+        return;
+    };
+    // SAFETY: as above, with the owner the live local player.
+    unsafe { run(owner, dt) };
+}
+
+/// The palms' simulation time not yet ticked, while a tick is due.
+static PENDING: Mutex<Option<f32>> = Mutex::new(None);
+
+/// The palms' tick.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread outside the world update
+/// and the physics step.
+unsafe fn run(owner: &Character, dt: f32) {
     physics::observe(dt);
     let config = Config::lock_query(|c| c.controllers.physical_hands);
     let idle = if !config.enabled || !scheme::is_controllers() || !hooks::in_gameplay() {

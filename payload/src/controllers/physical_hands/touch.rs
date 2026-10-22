@@ -2,7 +2,7 @@
 //! vibration of a hand that presses or pulls hard.
 //!
 //! Every function here changes engine state that is the main thread's, and runs from the palms'
-//! tick ([`crate::controllers::physical_hands::after_aim`]) only on that thread.
+//! tick ([`crate::controllers::physical_hands::main_thread_tick`]) only on that thread.
 
 use glam::Vec3;
 
@@ -43,7 +43,7 @@ impl State {
     ///
     /// # Safety
     ///
-    /// As [`crate::controllers::physical_hands::after_aim`], with the touch's object found by this
+    /// As [`crate::controllers::physical_hands::main_thread_tick`], with the touch's object found by this
     /// tick's casts.
     pub(super) unsafe fn touch(
         &mut self,
@@ -113,7 +113,7 @@ impl State {
     ///
     /// # Safety
     ///
-    /// As [`crate::controllers::physical_hands::after_aim`], with the hit found by this tick's
+    /// As [`crate::controllers::physical_hands::main_thread_tick`], with the hit found by this tick's
     /// casts.
     pub(super) unsafe fn shove(
         &mut self,

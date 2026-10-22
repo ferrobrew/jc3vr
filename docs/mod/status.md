@@ -43,7 +43,8 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `BLOWS DEALT` | blows dealt to characters, and the last one's impulse |
 | | `GRAB JOINTS` | how many hands hold what they grip through a joint |
 | | `COLLIDER VIEW` | whether the collider view is on (off, it names the key that shows it), and the bodies it draws out of those in range, its primitives, and the bodies its budget left out ([input/collider-view.md](input/collider-view.md)) |
-| `HANDS IN THE WORLD` | `VEHICLE DOORS` | the grips taken on latched doors, the latches undone, the last door's slot, and whether a hand is on a latch ([input/vehicle-doors.md](input/vehicle-doors.md)) |
+| `HANDS IN THE WORLD` | `PALMS` | whether the palms' tick acts, and with how many casts, or why it stands down; failed when a tick ran off the main thread, which takes away every door, pickup, and climb ([input/physical-hands.md](input/physical-hands.md#threading)) |
+| | `VEHICLE DOORS` | the grips taken on latched doors, the latches undone, the last door's slot, and whether a hand is on a latch ([input/vehicle-doors.md](input/vehicle-doors.md)) |
 | | `CHARACTERS` | the grips taken on characters, the yanks, the knockdowns of the yanks and shoves, the ragdolls dragged, and the occupants pulled out of a seat ([input/character-grabs.md](input/character-grabs.md)) |
 | | `MOVING CLIMBS` | the grips taken on moving bodies, and whether a hand holds on to one ([input/hand-climbing.md](input/hand-climbing.md#moving-bodies)) |
 | | `STUNT POSITIONS` | the stunt position the game holds the player in (hanging from a helicopter, with whether a grip holds it, or on a roof), and the hangs and roofs entered and the hangs let go; a note names the last refused entry ([input/stunt-positions.md](input/stunt-positions.md)) |

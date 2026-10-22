@@ -288,6 +288,7 @@ const SECTIONS: &[Section] = &[
     Section {
         title: "HANDS IN THE WORLD",
         rows: &[
+            row!("PALMS", hands::palms),
             row!("VEHICLE DOORS", hands::doors),
             row!("CHARACTERS", hands::characters),
             row!("MOVING CLIMBS", hands::moving_climbs),

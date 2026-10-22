@@ -1,5 +1,5 @@
-//! The status rows for what the empty hands do in the world: vehicle doors, the characters
-//! they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
+//! The status rows for what the empty hands do in the world: whether the palms act at all, vehicle
+//! doors, the characters they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
 //! up, and articulated objects.
 
 use smol_str::{SmolStr, format_smolstr};
@@ -8,7 +8,7 @@ use crate::{
     controllers::{
         menu::read_config,
         physical_hands::{
-            self, climb, doors,
+            self, Idle, climb, doors,
             grasp::TargetKind,
             physics,
             pickup::PickupStatus,
@@ -18,6 +18,12 @@ use crate::{
     },
     status::{Health, Line},
 };
+
+pub(super) fn palms() -> Line {
+    let on = read_config(|c| c.controllers.physical_hands.enabled);
+    let status = physical_hands::status();
+    palms_line(on, status.idle, status.casts, status.off_thread)
+}
 
 pub(super) fn doors() -> Line {
     let on = read_config(|c| {
@@ -179,6 +185,26 @@ fn characters_line(on: bool, pickup: &PickupStatus, knockdowns: u64) -> Line {
     }
 }
 
+/// The palms' row: everything the empty hands find in the world (doors, pickups, climbs) comes from
+/// the palms' tick, so a tick that stands down silently takes all of it away.
+fn palms_line(on: bool, idle: Option<Idle>, casts: u32, off_thread: u64) -> Line {
+    if !on {
+        return Line::off("");
+    }
+    let off_thread_note =
+        (off_thread > 0).then(|| format_smolstr!("{off_thread} TICKS RAN OFF THE MAIN THREAD"));
+    match (idle, off_thread_note) {
+        (Some(Idle::OffThread), _) => Line::failed(format_smolstr!(
+            "IDLE, OFF THE MAIN THREAD ({off_thread} TICKS)"
+        )),
+        (_, Some(note)) => Line::failed(note),
+        (Some(Idle::Disabled), None) => Line::off("NOT UNDER THE CONTROLLER SCHEME"),
+        (Some(Idle::Mode), None) => Line::waiting("NOT ON FOOT OR FALLING"),
+        (Some(Idle::NoHands), None) => Line::waiting("NO TRACKED HANDS"),
+        (None, None) => Line::ok(format_smolstr!("ACTING, {casts} CASTS")),
+    }
+}
+
 fn doors_line(on: bool, pickup: &PickupStatus, latched: [bool; 2]) -> Line {
     if !on {
         return Line::off("");
@@ -202,6 +228,25 @@ mod tests {
     use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
+
+    #[test]
+    fn the_palms_row_fails_when_a_tick_ran_off_the_main_thread() {
+        assert_eq!(palms_line(false, None, 4, 0).health, Health::Off);
+        assert_eq!(palms_line(true, None, 4, 0), Line::ok("ACTING, 4 CASTS"));
+        assert_eq!(
+            palms_line(true, Some(Idle::Mode), 0, 0).health,
+            Health::Waiting
+        );
+        assert_eq!(
+            palms_line(true, Some(Idle::OffThread), 0, 12),
+            Line::failed("IDLE, OFF THE MAIN THREAD (12 TICKS)")
+        );
+        // Acting now, but a tick ran off the main thread since the payload loaded.
+        assert_eq!(
+            palms_line(true, None, 4, 3),
+            Line::failed("3 TICKS RAN OFF THE MAIN THREAD")
+        );
+    }
 
     #[test]
     fn the_stunt_row_says_what_holds_the_player() {

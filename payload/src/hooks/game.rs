@@ -88,6 +88,15 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         mark(Phase::UpdateRenderEnter);
         let spf = Clock::get().unwrap().GetSPF(false).min(0.5);
 
+        // The palms' tick the simulation's aim update left due, on the game thread: the world
+        // object manager's update queue may run the aim update on a worker, and the palms change
+        // the world. After the simulation, before the VR frame takes the runtime lock, and before
+        // the input tick inside the render update, which reads the palms' targets.
+        {
+            let _timing = frame_timing::scope(Slot::PhysicalHands);
+            crate::controllers::physical_hands::main_thread_tick();
+        }
+
         // Open the single-pass frame: advance the diagnostics' frame ordinal, fold the previous
         // frame's instanced-exposure counters, and close any G-buffer range left open by it. The
         // range flag is raised around a re-entrant engine call, so an interrupted frame (a torn-down

@@ -234,9 +234,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         return;
     };
     unsafe { finish(aim, owner, &tick, grapple_ray) };
-    let _timing = frame_timing::scope(Slot::PhysicalHands);
-    // SAFETY: the owner is the live local player, after the original update.
-    unsafe { physical_hands::after_aim(owner, dt) };
+    physical_hands::after_aim(dt);
 }
 
 /// Decide whether the aim acts this update and compose the hands into the world.

@@ -21,9 +21,10 @@
 //! - [`config`]: the settings.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
-//! palms are probed rather than simulated: no body is added to the physics world. Each tick,
-//! from the player aim control's post-simulation update ([`tick::after_aim`], the simulation-phase
-//! update where the engine casts its own aim ray), each probe point of each acting palm is cast
+//! palms are probed rather than simulated: no body is added to the physics world. Each simulation
+//! tick, once the player aim control's post-simulation update has run ([`tick::after_aim`]), the
+//! palms' tick runs on the game thread at the start of the frame's render update
+//! ([`tick::main_thread_tick`]), and each probe point of each acting palm is cast
 //! from where it last was in the open to where it is now, through the player aim's ray filter,
 //! which never hits the player. Characters are passed through. What the casts find drives these:
 //!
@@ -86,11 +87,11 @@ use glam::{Quat, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
 pub(crate) use state::input_tick;
 use state::{STALE_AFTER, State};
-pub use status::{HandStatus, PhysicalHandsStatus, ShoveReport, status};
+pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 pub(crate) use targets::targets;
 use tick::free_hands;
-pub(crate) use tick::{after_aim, mode_acts};
+pub(crate) use tick::{after_aim, main_thread_tick, mode_acts};
 
 use crate::{
     config::Config,

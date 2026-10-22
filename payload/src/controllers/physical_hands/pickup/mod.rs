@@ -1,7 +1,7 @@
 //! Picking things up with an empty hand. The design is in `docs/mod/input/physical-hands.md`, the
 //! engine side in `docs/engine/gameplay/item-pickup.md`.
 //!
-//! Each simulation tick, from the palms' tick ([`super::after_aim`]), every empty hand that holds
+//! Each simulation tick, from the palms' tick ([`super::main_thread_tick`]), every empty hand that holds
 //! nothing looks for what it could take: short rays out of the palm, and the surface the palm
 //! presses into ([`reach`]). The nearest object it reaches that a hand takes is the hand's target:
 //! a loose rigid object light enough to move, or a weapon lying in the world.
