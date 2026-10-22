@@ -4,7 +4,7 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 
 | Section | Row | Reads |
 |---|---|---|
-| `SAVED SETTINGS` | `SETTINGS FILE` | the settings file's save state, as the pause menu's `VR: CONTROLS` shows it ([settings.md](settings.md)) |
+| `SAVED SETTINGS` | `SETTINGS FILE` | the settings file's save state ([settings.md](settings.md)) |
 | `RENDERING` | `VR SESSION` | whether a VR frame is rendering, and the session state the runtime last reported; `FAILED` while bring-up is retrying |
 | | `DIRECT EYE BLIT` | how the last frame left the direct route (`vr::direct_status`): both eyes direct, the back buffer unreadable, a failed acquire, the route given up for the session, or not armed (the single-pass collapse, or a mono frame) |
 | | `FRAME TIME` | the median and 95th percentile of the last few seconds of game frame intervals, from the always-on frame timing |

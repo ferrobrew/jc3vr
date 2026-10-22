@@ -15,9 +15,7 @@ pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
 
-use smol_str::SmolStr;
-
-use crate::config::{self, Config, SaveStatus};
+use crate::config::{Config, SaveStatus};
 
 /// A [`Toggle`](crate::pause_menu::model::page::Toggle) over the `bool` at a place in [`Config`].
 macro_rules! config_toggle {
@@ -107,19 +105,14 @@ pub(crate) fn nearest_index(values: &[f32], value: f32) -> usize {
         .map_or(0, |(index, _)| index)
 }
 
-/// The settings file's state, for a readout.
-pub(crate) fn settings_state() -> SmolStr {
-    save_status_label(config::status()).into()
-}
-
 #[cfg(not(test))]
 fn with_config<R>(f: impl FnOnce(&mut Config) -> R) -> R {
-    f(&mut config::CONFIG.lock())
+    f(&mut crate::config::CONFIG.lock())
 }
 
 #[cfg(not(test))]
 fn edit_with(f: impl FnOnce(&mut Config)) {
-    f(&mut config::edit());
+    f(&mut crate::config::edit());
 }
 
 // Tests run each item against a configuration of their own thread, so they can change settings

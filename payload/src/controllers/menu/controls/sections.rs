@@ -3,25 +3,16 @@
 
 use std::sync::atomic::Ordering;
 
-use smol_str::SmolStr;
-
 use crate::{
     controllers::{
         config::LocomotionDirection,
         frame::Hand,
-        menu::{
-            config_choice, config_slider, config_toggle, controls::CONFIRMING_RESET, read_config,
-            settings_state,
-        },
+        menu::{config_choice, config_slider, config_toggle, controls::CONFIRMING_RESET},
         vehicles::config::{ArmPitch, WheelTracking},
     },
     pause_menu::model::{
-        page::{Button, ButtonOutcome, Page, Readout},
+        page::{Button, ButtonOutcome, Page},
         slider::{SliderFormat, SliderRange},
-    },
-    vr::input::{
-        self as vr_input, InputStatus,
-        restart::{self, RestartReason},
     },
 };
 
@@ -34,10 +25,6 @@ pub(super) fn controllers_section(page: Page) -> Page {
         .item(config_choice!(DOMINANT_HAND, &HANDS, &HAND_LABELS, |c| c
             .controllers
             .dominant_hand))
-        .item(Readout {
-            label: "BUTTON LAYOUT".into(),
-            read: button_layout,
-        })
         .text("A CHANGE OF HAND TAKES EFFECT")
         .text("WHEN THE GAME RESTARTS.")
         .item(config_choice!(
@@ -164,10 +151,6 @@ pub(super) fn parachute_and_saved_settings_section(page: Page) -> Page {
         .header("SAVED SETTINGS")
         .text("CHANGES APPLY AT ONCE AND ARE")
         .text("SAVED AUTOMATICALLY.")
-        .item(Readout {
-            label: "SETTINGS FILE".into(),
-            read: settings_state,
-        })
         .item(Button {
             label: "RESET TO DEFAULTS".into(),
             caption: "RESET".into(),
@@ -176,29 +159,6 @@ pub(super) fn parachute_and_saved_settings_section(page: Page) -> Page {
                 ButtonOutcome::Rebuild
             },
         })
-}
-
-/// The button layout the controllers have, for a readout.
-pub(super) fn button_layout() -> SmolStr {
-    let status = vr_input::status();
-    let configured = read_config(|c| c.controllers.dominant_hand);
-    layout_label(&status, configured).into()
-}
-
-/// The button layout `status` reports for a player whose configured hand is `configured`.
-pub(super) fn layout_label(status: &InputStatus, configured: Hand) -> &'static str {
-    match restart::reason(status, configured) {
-        Some(reason) if reason.blocks_input() => "RESTART THE GAME",
-        Some(RestartReason::HandChanged { suggested }) => match suggested {
-            Hand::Left => "LEFT-HANDED UNTIL RESTART",
-            Hand::Right => "RIGHT-HANDED UNTIL RESTART",
-        },
-        _ => match status.suggested_for {
-            Some(Hand::Left) => "LEFT-HANDED",
-            Some(Hand::Right) => "RIGHT-HANDED",
-            None => "NOT STARTED",
-        },
-    }
 }
 
 /// The dominant hand's row, which the reset leaves alone.

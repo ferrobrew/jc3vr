@@ -45,7 +45,7 @@ The save runs from `config::tick`, called once per frame on the game thread at t
 
 On shutdown (`shutdown_startup`), `config::shutdown` stops new saves, waits for the writers (keeping the payload mapped if one does not finish), and writes from the shutdown thread a change still waiting to settle, or the settings whose last save failed.
 
-The pause menu's `VR: CONTROLS` page shows the file's state (`UP TO DATE`, `SAVING`, `FAILED, SEE LOG`, or `NOT SAVED` without a configuration directory), as does the debug window. A change still settling reads as `SAVING` only while it differs from the file: `config::tick` compares the settings with the file's text at most once a second while a change is waiting, so an open debug UI tab, which marks a change every frame, reads as `UP TO DATE` when nothing it shows has moved. A failure outranks a waiting change, so the state reads as failed until a save succeeds.
+The debug window shows the file's state (`UP TO DATE`, `SAVING`, `FAILED, SEE LOG`, or `NOT SAVED` without a configuration directory), as does the Status tab's `SETTINGS FILE` row. A change still settling reads as `SAVING` only while it differs from the file: `config::tick` compares the settings with the file's text at most once a second while a change is waiting, so an open debug UI tab, which marks a change every frame, reads as `UP TO DATE` when nothing it shows has moved. A failure outranks a waiting change, so the state reads as failed until a save succeeds.
 
 ## What is not saved
 

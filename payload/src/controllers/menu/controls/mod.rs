@@ -13,14 +13,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(test))]
 use parking_lot::Mutex;
 use sections::DOMINANT_HAND;
-use smol_str::{SmolStr, format_smolstr};
+use smol_str::SmolStr;
 
 use crate::{
     controllers::{
         menu::{comfort, edit_config, read_config},
         vehicles::{self, config::ArmPitch},
     },
-    pause_menu::model::page::{Button, ButtonOutcome, Item, Page, PageDef, Readout},
+    pause_menu::model::page::{Button, ButtonOutcome, Item, Page, PageDef},
 };
 
 /// The `VR: CONTROLS` page.
@@ -144,24 +144,13 @@ fn pitch_rows(page: Page) -> Page {
     let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
     set_built_pitch(pitch_by);
     match pitch_by {
-        ArmPitch::WristTilt => page
-            .item(Readout {
-                label: "WINGSUIT NEUTRAL TILT".into(),
-                read: neutral_tilt,
-            })
-            .item(Button {
-                label: "CALIBRATE NEUTRAL".into(),
-                caption: "CAPTURE".into(),
-                action: capture_neutral_tilt,
-            }),
+        ArmPitch::WristTilt => page.item(Button {
+            label: "CALIBRATE NEUTRAL".into(),
+            caption: "CAPTURE".into(),
+            action: capture_neutral_tilt,
+        }),
         ArmPitch::Height | ArmPitch::Sweep => page,
     }
-}
-
-/// The wingsuit's neutral wrist tilt, for a readout.
-fn neutral_tilt() -> SmolStr {
-    let tilt = read_config(|c| c.controllers.vehicles.arm_steering.tilt_neutral_deg);
-    format_smolstr!("{tilt:.0} DEG")
 }
 
 /// Take the wrists' tilt as they are held now as the wingsuit's neutral: the tilt that pitches
@@ -219,7 +208,7 @@ mod tests {
     use super::{
         sections::{
             ARM_PITCH_LABELS, DIRECTION_LABELS, DIRECTIONS, HAND_LABELS, HANDS, WHEEL_TRACKING,
-            WHEEL_TRACKING_LABELS, layout_label,
+            WHEEL_TRACKING_LABELS,
         },
         *,
     };
@@ -232,7 +221,6 @@ mod tests {
         },
         grapple::GrappleComfortMode,
         pause_menu::model::rows::encode_page,
-        vr::input::{InputStatus, restart::RestartReason},
     };
 
     #[test]
@@ -298,32 +286,6 @@ mod tests {
         assert_eq!(DIRECTIONS.len(), DIRECTION_LABELS.len());
         assert_eq!(WHEEL_TRACKING.len(), WHEEL_TRACKING_LABELS.len());
         assert_eq!(ArmPitch::ALL.len(), ARM_PITCH_LABELS.len());
-    }
-
-    #[test]
-    fn the_button_layout_says_when_a_restart_is_due() {
-        let attached = |suggested| InputStatus {
-            attached: true,
-            suggested_for: Some(suggested),
-            ..InputStatus::default()
-        };
-        assert_eq!(
-            layout_label(&InputStatus::default(), Hand::Right),
-            "NOT STARTED"
-        );
-        assert_eq!(
-            layout_label(&attached(Hand::Left), Hand::Left),
-            "LEFT-HANDED"
-        );
-        assert_eq!(
-            layout_label(&attached(Hand::Right), Hand::Left),
-            "RIGHT-HANDED UNTIL RESTART"
-        );
-        let failed = InputStatus {
-            restart: Some(RestartReason::StashedForOtherHand),
-            ..InputStatus::default()
-        };
-        assert_eq!(layout_label(&failed, Hand::Left), "RESTART THE GAME");
     }
 
     #[test]

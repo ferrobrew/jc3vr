@@ -4,11 +4,6 @@
 //! tuning (the fades' times, the crouch, the lean, the stick's rates, the view on the grapple) is
 //! in the debug UI.
 
-use std::time::{Duration, Instant};
-
-use parking_lot::Mutex;
-use smol_str::SmolStr;
-
 use crate::{
     controllers::{
         config::{Posture, SeatTransition},
@@ -19,10 +14,10 @@ use crate::{
     },
     headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
-        page::{Button, ButtonOutcome, Choice, Page, PageDef, Readout},
+        page::{Button, ButtonOutcome, Choice, Page, PageDef},
         slider::{SliderFormat, SliderRange},
     },
-    vr::{recenter_count, render_params, request_recenter},
+    vr::request_recenter,
 };
 
 /// The `VR: COMFORT` page.
@@ -41,10 +36,7 @@ fn build() -> Page {
             caption: "RECENTER".into(),
             action: recenter_now,
         })
-        .item(Readout {
-            label: "STATUS".into(),
-            read: recenter_status_text,
-        })
+        .text("LOOK AHEAD, THEN PRESS RECENTER.")
         .header("POSTURE")
         .item(config_choice!("POSTURE", &POSTURES, &POSTURE_LABELS, |c| c
             .controllers
@@ -114,73 +106,8 @@ fn build() -> Page {
 /// frame. The menu runs on the UI capture thread in the middle of a frame, where a recenter in
 /// place could wait on the frame's own runtime lock.
 fn recenter_now() -> ButtonOutcome {
-    // The count is read before the request, which the frame thread may take at once.
-    let press = RecenterPress {
-        at: Instant::now(),
-        count: recenter_count(),
-    };
     request_recenter(manual_recenter_kind());
-    *LAST_PRESS.lock() = Some(press);
     ButtonOutcome::Stay
-}
-
-/// The recenter row's status, refreshed every frame.
-///
-/// The menu updates on a UI worker while the frame thread holds the VR runtime lock and waits for
-/// that worker, so the session check reads the draw-safe render-parameter slot rather than the
-/// runtime state, as the body page does.
-fn recenter_status_text() -> SmolStr {
-    recenter_status(
-        render_params(0).is_some(),
-        *LAST_PRESS.lock(),
-        Instant::now(),
-        recenter_count(),
-    )
-    .into()
-}
-
-/// A press of the recenter button: when, and the recenter count then.
-#[derive(Copy, Clone, Debug)]
-struct RecenterPress {
-    at: Instant,
-    count: u32,
-}
-
-/// The last press of the recenter button.
-static LAST_PRESS: Mutex<Option<RecenterPress>> = Mutex::new(None);
-
-/// How long the outcome of a press shows.
-const OUTCOME_SHOWN: Duration = Duration::from_secs(3);
-/// How long a request may wait for its frame before it counts as not done. A frame takes it at
-/// its start, so a running headset takes it well within this.
-const REQUEST_WAIT: Duration = Duration::from_secs(1);
-
-/// The status for a headset that is `running`, the last press `press`, the time `now`, and the
-/// recenter count `count`: the outcome of a recent press, else the prompt.
-fn recenter_status(
-    running: bool,
-    press: Option<RecenterPress>,
-    now: Instant,
-    count: u32,
-) -> &'static str {
-    if !running {
-        return "NO HEADSET";
-    }
-    if let Some(press) = press {
-        let elapsed = now.saturating_duration_since(press.at);
-        let done = count != press.count;
-        if done && elapsed < OUTCOME_SHOWN {
-            return "RECENTERED";
-        }
-        if !done && elapsed < REQUEST_WAIT {
-            return "RECENTERING";
-        }
-        // A running headset drops a request only without a head pose, which it logs.
-        if !done && elapsed < OUTCOME_SHOWN {
-            return "NOT DONE, SEE LOG";
-        }
-    }
-    "LOOK AHEAD, THEN PRESS"
 }
 
 const POSTURES: [Posture; 3] = [Posture::Auto, Posture::Seated, Posture::Standing];
@@ -223,58 +150,6 @@ mod tests {
     #[test]
     fn the_page_edits_valid_settings_and_resets_to_the_defaults() {
         exercise_page(&build());
-    }
-
-    #[test]
-    fn the_recenter_status_follows_the_request() {
-        let start = Instant::now();
-        let press = Some(RecenterPress {
-            at: start,
-            count: 7,
-        });
-        let at = |ms: u64| start + Duration::from_millis(ms);
-
-        assert_eq!(recenter_status(false, press, at(0), 7), "NO HEADSET");
-        assert_eq!(
-            recenter_status(true, None, at(0), 7),
-            "LOOK AHEAD, THEN PRESS"
-        );
-        assert_eq!(recenter_status(true, press, at(10), 7), "RECENTERING");
-        assert_eq!(recenter_status(true, press, at(10), 8), "RECENTERED");
-        assert_eq!(recenter_status(true, press, at(2_900), 8), "RECENTERED");
-        assert_eq!(
-            recenter_status(true, press, at(3_000), 8),
-            "LOOK AHEAD, THEN PRESS"
-        );
-        assert_eq!(
-            recenter_status(true, press, at(1_000), 7),
-            "NOT DONE, SEE LOG"
-        );
-        assert_eq!(
-            recenter_status(true, press, at(3_000), 7),
-            "LOOK AHEAD, THEN PRESS"
-        );
-        // The count wraps; any change means the request ran.
-        let wrapping = Some(RecenterPress {
-            at: start,
-            count: u32::MAX,
-        });
-        assert_eq!(recenter_status(true, wrapping, at(10), 0), "RECENTERED");
-    }
-
-    #[test]
-    fn the_recenter_texts_fit_the_readout() {
-        // A readout's value fits in about 24 characters beside its label.
-        for text in [
-            "NO HEADSET",
-            "LOOK AHEAD, THEN PRESS",
-            "RECENTERING",
-            "RECENTERED",
-            "NOT DONE, SEE LOG",
-        ] {
-            assert!(text.len() <= 24, "{text}");
-            assert_eq!(text, text.to_uppercase());
-        }
     }
 
     #[test]
