@@ -22,6 +22,7 @@ pub mod hud;
 pub mod performance;
 pub mod previews;
 pub mod render;
+pub mod status;
 pub mod testing;
 mod util;
 pub mod vr;
@@ -34,6 +35,7 @@ pub enum Tab {
     Render,
     Previews,
     Diagnostics,
+    Status,
     Camera,
     Game,
     Hud,
@@ -46,11 +48,12 @@ pub enum Tab {
 
 impl Tab {
     /// Every tab, in the order the default layout lists them.
-    const ALL: [Tab; 12] = [
+    const ALL: [Tab; 13] = [
         Tab::Performance,
         Tab::Render,
         Tab::Previews,
         Tab::Diagnostics,
+        Tab::Status,
         Tab::Camera,
         Tab::Game,
         Tab::Hud,
@@ -85,6 +88,7 @@ impl egui_dock::TabViewer for TabBodies<'_> {
             Tab::Render => render::egui_debug_render(ui),
             Tab::Previews => previews::egui_debug_previews(ui, self.renderer),
             Tab::Diagnostics => diagnostics::egui_debug_diagnostics(ui),
+            Tab::Status => status::egui_debug_status(ui),
             Tab::Camera => camera::egui_debug_camera(ui),
             Tab::Game => game::egui_debug_game(ui),
             Tab::Hud => hud::egui_debug_hud(ui, self.renderer),

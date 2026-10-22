@@ -25,13 +25,13 @@ The legs stay the seat's: the clip puts the feet on the pedals or the footrests 
 
 The body IK's torso lean, which posed the torso in a seat before, stands down once the procedural torso has its full weight, as on foot. With `TORSO IN VEHICLES` off the seat's animation and the body IK's lean pose the torso as before.
 
-The scenario signals `procedural.seated` and `procedural.neck_error_m` read the same, and `testing/scenarios/seated_torso.toml` is the template for a recorded check ([recorder.md](../testing/recorder.md)). The `VR: STATUS` page's `SEATED TORSO` row shows the torso's weight and the neck's distance from the point under the player's head; it is `OK` at full weight once a switch has faded, and `NOT SEATED` outside a seat. The Controllers tab's procedural body section says whether the last pose was the torso on the animation's hips or the body under the head, and whether a switch is still fading.
+The scenario signals `procedural.seated` and `procedural.neck_error_m` read the same, and `testing/scenarios/seated_torso.toml` is the template for a recorded check ([recorder.md](../testing/recorder.md)). The `SEATED TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head; it is `OK` at full weight once a switch has faded, and `NOT SEATED` outside a seat. The Controllers tab's procedural body section says whether the last pose was the torso on the animation's hips or the body under the head, and whether a switch is still fading.
 
 ## Standing on a roof
 
 Standing in a vehicle's stunt area (a car's roof, a boat's deck, a plane's wing; [input/stunt-positions.md](../input/stunt-positions.md)), the torso is procedural on the stunt idle's hips and the legs keep the idle's balance (`stunt_torso`, on by default; `TORSO ON VEHICLE ROOFS` on the `VR: BODY` page). The hand-over case is `standing on a vehicle`: in a stunt position ([`Character::IsInStuntPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInStuntPosition)), in a stunt area ([`Character::IsInStuntArea`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInStuntArea)), not hanging from a helicopter ([`Character::IsStuntHanging`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsStuntHanging)), and not in a stunt traversal. The torso is solved as in a seat. The legs stay the animation's because the roof moves under them: the standing body plants the feet in the world and steps them under the head, which on a vehicle at speed would slide them across the roof, while the stunt idle's balance moves with the vehicle. The hang and a stunt traversal stay the vehicle's animation, as before.
 
-The `VR: STATUS` page's `ROOF TORSO` row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT ON A ROOF` otherwise. The scenario signal `procedural.roof` reads the same, and `testing/scenarios/stunt_positions.toml` covers it.
+The `ROOF TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT ON A ROOF` otherwise. The scenario signal `procedural.roof` reads the same, and `testing/scenarios/stunt_positions.toml` covers it.
 
 ## The wingsuit
 
@@ -47,7 +47,7 @@ The targets are placed at the solve gate from the pose the animation wrote this 
 
 The wingsuit's membrane is skinned between the arms and the body, so arms held far from the wing pose (by the sides, overhead) fold or stretch it as they would in the game's own arm animation; the arms spread as wings keep it as the flight pose has it.
 
-The `VR: STATUS` page's `WINGSUIT ARMS` row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The scenario signal `procedural.wing_arms` reads the same, and `testing/scenarios/wingsuit_arms.toml` is the template for a recorded check. The Controllers tab's procedural body section shows the weight and the hands placed and queued.
+The `WINGSUIT ARMS` status row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The scenario signal `procedural.wing_arms` reads the same, and `testing/scenarios/wingsuit_arms.toml` is the template for a recorded check. The Controllers tab's procedural body section shows the weight and the hands placed and queued.
 
 ## The parachute
 
@@ -59,7 +59,7 @@ The canopy and its lines are a separate model with its own skeleton; whether the
 
 Coming from a jump (the body under the head, legs in the air) the switch of solve fades from the last pose written; coming from a fall past the grace the region blend brings the body in from the animation. Landing hands back to the body under the head, which plants the feet afresh where the stance wants them.
 
-The `VR: STATUS` page's `PARACHUTE BODY` row shows the torso's weight and the flare's share, `OK` at full weight with the legs hanging, `NOT UNDER THE CANOPY` otherwise. The scenario signals `procedural.parachute` and `procedural.parachute_flare` read the same, and `testing/scenarios/parachute_body.toml` is the template for a recorded check. The Controllers tab's procedural body section shows the flare.
+The `PARACHUTE BODY` status row shows the torso's weight and the flare's share, `OK` at full weight with the legs hanging, `NOT UNDER THE CANOPY` otherwise. The scenario signals `procedural.parachute` and `procedural.parachute_flare` read the same, and `testing/scenarios/parachute_body.toml` is the template for a recorded check. The Controllers tab's procedural body section shows the flare.
 
 ## Swimming
 
@@ -69,7 +69,7 @@ The swimming hand tier is yielded in the plan's table ([controllers-and-roomscal
 
 Walking into the water switches from the body under the head to this solve with the torso procedural throughout, and the switch fades from the last pose written; the legs blend to the kick at the region blend's pace. Walking back out fades the other way.
 
-The `VR: STATUS` page's `SWIM TORSO` row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT SWIMMING` otherwise. The scenario signal `procedural.swimming` reads the same, and `testing/scenarios/swim_torso.toml` is the template for a recorded check.
+The `SWIM TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT SWIMMING` otherwise. The scenario signal `procedural.swimming` reads the same, and `testing/scenarios/swim_torso.toml` is the template for a recorded check.
 
 ## The body mirror
 
@@ -79,7 +79,7 @@ It does not render the scene a second time. A second camera would be a third ren
 
 The primitives are submitted from the pass's thread each tick into the overlay's `body mirror` slot, which expires a few ticks after the last submission, and are anchored to the head at an offset, so the figure rides with a player moving fast (a vehicle, the wingsuit) rather than trailing at the tick's rate. It costs a handful of joint reads and some forty primitives a tick while on, and nothing while off. The first pass on a skeleton logs `body mirror: found the figure's bones` at info level with any bone it did not find.
 
-The `VR: STATUS` page's `BODY MIRROR` row says how to switch it on while it is off, and how many of the figure's bones it found while it is on; `NO BONES FOUND` fails it.
+The `BODY MIRROR` status row says how to switch it on while it is off, and how many of the figure's bones it found while it is on; `NO BONES FOUND` fails it.
 
 ## What needs confirming in the headset
 

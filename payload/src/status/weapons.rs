@@ -1,24 +1,27 @@
-//! The status page's rows for the weapons the hands hold: which weapon each hand has and how it
+//! The status rows for the weapons the hands hold: which weapon each hand has and how it
 //! came there, and why the last thing the hands tried with a weapon was refused.
 
 use jc3gi::character::inventory::WeaponSlot;
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::{
-    frame::Hand,
-    hands::grip,
-    menu::{read_config, status::Line},
-    weapons::{
-        self,
-        hold::{self, holder::Cause, second},
-        holster::slot_label,
-        regions::{self, HandRole},
-        reload::{
+use crate::{
+    controllers::{
+        frame::Hand,
+        hands::grip,
+        menu::read_config,
+        weapons::{
             self,
-            chamber::{ActionKind, Chamber},
-            focus::ReloadTarget,
+            hold::{self, holder::Cause, second},
+            holster::slot_label,
+            regions::{self, HandRole},
+            reload::{
+                self,
+                chamber::{ActionKind, Chamber},
+                focus::ReloadTarget,
+            },
         },
     },
+    status::Line,
 };
 
 pub(super) fn left_hand() -> Line {

@@ -1,6 +1,6 @@
 # Stunt positions by grip
 
-The game's stunt positions, standing on a vehicle's roof and hanging from a helicopter ([engine side](../../engine/gameplay/stunt-positions.md)), are held by the player's own grip. A hand that grips a helicopter with the body hanging below it takes the player into the helicopter's hang, and in the hang, letting go of every grip lets go of the helicopter. A mantle onto a vehicle's roof takes the player into the roof's stunt area, where the hands are free. Clinging to a vehicle's side is the moving climb ([hand-climbing.md](hand-climbing.md#moving-bodies)), which carries the player until the game takes over. The code is `payload/src/controllers/physical_hands/stunt/`. It is on by default (`physical_hands.stunt.enabled`, `HOLD STUNT POSITIONS` on the pause menu's `VR: CONTROLS` page) and needs the hand climbing and its moving grips. It has not yet been seen working in the headset.
+The game's stunt positions, standing on a vehicle's roof and hanging from a helicopter ([engine side](../../engine/gameplay/stunt-positions.md)), are held by the player's own grip. A hand that grips a helicopter with the body hanging below it takes the player into the helicopter's hang, and in the hang, letting go of every grip lets go of the helicopter. A mantle onto a vehicle's roof takes the player into the roof's stunt area, where the hands are free. Clinging to a vehicle's side is the moving climb ([hand-climbing.md](hand-climbing.md#moving-bodies)), which carries the player until the game takes over. The code is `payload/src/controllers/physical_hands/stunt/`. It is on by default (`physical_hands.stunt.enabled`, in the debug UI's Controllers tab under "Stunt positions") and needs the hand climbing and its moving grips. It has not yet been seen working in the headset.
 
 ## How the game holds a stunt position
 
@@ -40,13 +40,13 @@ A hand that holds its grip in the hang, and a climbing grip on a helicopter, dec
 
 The settings are `physical_hands.stunt`, under "Stunt positions" in the debug UI's Controllers tab, with the readout beside the climb's: the position the game holds the player in, whether a grip has held in this hang, the hangs and roofs entered, the hangs let go, the entries refused, the last entry's kind, and for each hand whether it holds the hang or grips a helicopter.
 
-The `VR: STATUS` page's `STUNT POSITIONS` row, under `HANDS IN THE WORLD`, shows the position (`HANGING, HOLDING ON`, `HANGING, TAKE HOLD` before a grip has held, `HANGING, LETTING GO`, or `ON A ROOF`) with the counts, and a note naming the last refused entry. The `ROOF TORSO` row, under `PROCEDURAL BODY`, shows the torso's weight on a roof. The recorder's signals are `stunt.hanging`, `stunt.standing`, `stunt.hang_entries`, `stunt.roof_entries`, `stunt.releases`, `stunt.refusals`, and `procedural.roof`, and the template is `testing/scenarios/stunt_positions.toml`.
+The `STUNT POSITIONS` status row, under `HANDS IN THE WORLD`, shows the position (`HANGING, HOLDING ON`, `HANGING, TAKE HOLD` before a grip has held, `HANGING, LETTING GO`, or `ON A ROOF`) with the counts, and a note naming the last refused entry. The `ROOF TORSO` row, under `PROCEDURAL BODY`, shows the torso's weight on a roof. The recorder's signals are `stunt.hanging`, `stunt.standing`, `stunt.hang_entries`, `stunt.roof_entries`, `stunt.releases`, `stunt.refusals`, and `procedural.roof`, and the template is `testing/scenarios/stunt_positions.toml`.
 
 The log has, at info level, `stunt positions: the game holds the player in a stunt position` with the position, `the player left the stunt position`, the two entries above with the grip's point and how far the body hangs or the feet's distance from the area, `every grip opened, so the hang lets go`, and `the game refused the entry` with the reason; the warning above when the game keeps the hang.
 
 ## Headset checklist
 
-With `HOLD STUNT POSITIONS`, `CLIMB WITH THE HANDS`, and `CLIMB MOVING THINGS` on, empty-handed:
+With `physical_hands.stunt.enabled`, `physical_hands.climb.enabled`, and `physical_hands.climb.moving` on, empty-handed:
 
 1. Walk up to a parked helicopter and grip a skid with one hand, then let the body hang below it (crouch, or lift the feet off the ground by pulling): after a moment, `the grip took the player into the helicopter's hang`, a strong pulse, and `STUNT POSITIONS` says `HANGING, HOLDING ON`. Report where the hang puts the player against where the hand gripped, and whether the view jumps.
 2. In the hang, the rendered hands are the hang animation's on the airframe, and the fingers of a held grip close round a bar (the `LEFT GRIP POSE` and `RIGHT GRIP POSE` rows say `stunt handhold`). Have the helicopter lift off and fly: the hands feel a hum that grows with its speed.
@@ -56,7 +56,7 @@ With `HOLD STUNT POSITIONS`, `CLIMB WITH THE HANDS`, and `CLIMB MOVING THINGS` o
 6. Grip a parked car's side, climb it, and mantle onto the roof: `the mantle took the player into the vehicle's stunt area` (or the game's own attach, with `the game holds the player in a stunt position` and no entry line), and `STUNT POSITIONS` says `ON A ROOF`. Report whether the view turned on the entry.
 7. On the roof with the hands free and the car driven off: the player stays on it, the stick moves over the roof, and with `BODY FROM YOUR HEAD` on `FULL` the case is `standing on a vehicle`, `ROOF TORSO` reads `OK`, and leaning moves Rico's back while his legs keep the idle's balance. Grip the roof's edge: the hand stays on it and the body does not move.
 8. Jump off the roof with the game's jump: `the player left the stunt position`, and the climb grips nothing it held.
-9. With `HOLD STUNT POSITIONS` off, gripping a helicopter's skid is the moving climb only, and the hang's open grips drop nothing.
+9. With `physical_hands.stunt.enabled` off, gripping a helicopter's skid is the moving climb only, and the hang's open grips drop nothing.
 
 ## Unverified in the headset
 

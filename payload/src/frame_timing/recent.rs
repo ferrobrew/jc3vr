@@ -1,5 +1,5 @@
 //! The recent frame intervals and their percentiles: the spread the window averages hide, for the
-//! pause menu's status page.
+//! status rows ([`crate::status`]).
 
 /// How many recent intervals are kept: a few seconds at headset rates.
 const CAPACITY: usize = 240;

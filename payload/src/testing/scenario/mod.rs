@@ -1,5 +1,5 @@
 //! The scenario runner: replays a scenario's recording and checks its expectations against the
-//! published signals ([`crate::testing::signals`]), the `VR: STATUS` page's rows, and the log
+//! published signals ([`crate::testing::signals`]), the status rows ([`crate::status`]), and the log
 //! ([`crate::testing::log_tap`]) on every frame of the replay and for a settling time after it,
 //! then writes PASS or FAIL for each expectation to the session log and a summary file in the
 //! session folder.

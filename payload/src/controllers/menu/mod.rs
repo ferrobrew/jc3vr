@@ -1,8 +1,9 @@
-//! The pause menu's VR settings pages: `VR: CONTROLS` ([`controls`]) for the controller and turning
-//! settings, `VR: COMFORT` ([`comfort`]), and `VR: DISPLAY` ([`display`]) for the rendering and the
-//! floating panel, and the glue they and the body page share; and the read-only `VR: STATUS`
-//! ([`status`]), which shows whether each system is live. See `docs/mod/pause-menu.md` for the menu
-//! itself.
+//! The pause menu's VR settings pages: `VR: CONTROLS` ([`controls`]) for the core controller
+//! settings, `VR: COMFORT` ([`comfort`]) for the view, posture, turning, and movement, and
+//! `VR: DISPLAY` ([`display`]) for the rendering and the floating panel, and the glue they and the
+//! body page share. The pages hold only what a player reaches for in the headset; the feature
+//! switches, the tuning, and the status lines ([`crate::status`]) are in the debug UI. See
+//! `docs/mod/pause-menu.md` for the menu itself.
 //!
 //! The pages edit the live configuration, so every change applies at once, and each change goes
 //! through [`crate::config::edit`], so the settings file saves it like any other change the user
@@ -13,7 +14,6 @@
 pub(crate) mod comfort;
 pub(crate) mod controls;
 pub(crate) mod display;
-pub(crate) mod status;
 
 use smol_str::SmolStr;
 
@@ -134,7 +134,7 @@ fn edit_with(f: impl FnOnce(&mut Config)) {
     tests::TEST_CONFIG.with_borrow_mut(f);
 }
 
-fn save_status_label(status: SaveStatus) -> &'static str {
+pub(crate) fn save_status_label(status: SaveStatus) -> &'static str {
     match status {
         SaveStatus::UpToDate => "UP TO DATE",
         SaveStatus::Pending => "SAVING",

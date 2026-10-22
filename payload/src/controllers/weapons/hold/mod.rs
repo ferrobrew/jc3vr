@@ -129,7 +129,7 @@ pub struct HoldStatus {
 }
 
 pub fn status() -> HoldStatus {
-    // Read before the tick's lock: the status page takes one lock at a time.
+    // Read before the tick's lock: the status rows take one lock at a time.
     let take = take::status();
     let tick = TICK.lock();
     HoldStatus {

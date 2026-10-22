@@ -145,6 +145,21 @@ fn c4_settings(ui: &mut Ui, c: &mut C4Config) {
     ui.add(egui::Slider::new(&mut c.release_peak_span_s, 0.0..=0.05).text("Release peak span (s)"));
     ui.add(egui::Slider::new(&mut c.velocity_scale, 0.25..=3.0).text("Velocity scale"));
     ui.add(egui::Slider::new(&mut c.max_speed_mps, 5.0..=60.0).text("Fastest throw (m/s)"));
+    let s = &mut c.stick;
+    ui.checkbox(&mut s.enabled, "Press C4 onto surfaces")
+        .on_hover_text("A held charge pressed onto a surface sticks there.");
+    ui.add_enabled_ui(s.enabled, |ui| {
+        ui.indent("c4 stick", |ui| {
+            ui.add(egui::Slider::new(&mut s.contact_m, 0.005..=0.15).text("Contact distance (m)"));
+            ui.add(egui::Slider::new(&mut s.standoff_m, 0.0..=0.15).text("Standoff (m)"));
+            ui.add(egui::Slider::new(&mut s.push_mps, 0.1..=5.0).text("Push speed (m/s)"));
+            ui.add(
+                egui::Slider::new(&mut s.after_prime_s, 0.0..=2.0)
+                    .text("Sticks after the prime (s)"),
+            );
+            ui.add(egui::Slider::new(&mut s.preview_m, 0.0..=1.0).text("Preview reach (m)"));
+        });
+    });
 }
 
 fn detonator_settings(ui: &mut Ui, d: &mut WristDetonatorConfig) {

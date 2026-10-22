@@ -145,7 +145,7 @@ The skeleton is used while it is younger than a quarter of a second and plausibl
 
 ## Settings
 
-The pause menu's `VR: BODY` page has `BODY FACES YOUR TORSO` (`torso.follow`, on) and `WALKING LEGS` (`legs.gait`, on). Its `VR: COMFORT` page has `POSTURE` (`AUTO`, `SEATED`, or `STANDING`), `BODY FOLLOWS YOU` (`chase.enabled`, on), `LEAN WITHOUT STEPPING` (`lean.enabled`, on), and `STOP AT WALLS` (`pushback.enabled`, on; off leaves only the fade). The debug UI's settings have the rest under "Body rig": the chase's gain, feed-forward, speed limit, and warp distance, the lean's gain, deadband, cap, and shares, and the push-back's thresholds, cap, fade span, and calm time; "Torso and pelvis" has the torso's weights, limits, and time constant and the pelvis's spring, hinge, and lean; the legs' speeds, thresholds, and gains are in the settings file.
+The pause menu's `VR: BODY` page has `BODY FACES YOUR TORSO` (`torso.follow`, on) and `WALKING LEGS` (`legs.gait`, on). Its `VR: COMFORT` page has `POSTURE` (`AUTO`, `SEATED`, or `STANDING`), and `BODY FOLLOWS YOU` (`chase.enabled`, on). The debug UI's settings have `lean.enabled` (on) and `pushback.enabled` (on; off leaves only the fade) under "Body rig", with the rest: the chase's gain, feed-forward, speed limit, and warp distance, the lean's gain, deadband, cap, and shares, and the push-back's thresholds, cap, fade span, and calm time; "Torso and pelvis" has the torso's weights, limits, and time constant and the pelvis's spring, hinge, and lean; the legs' speeds, thresholds, and gains are in the settings file.
 
 ## Readouts and signals
 
@@ -175,4 +175,4 @@ None of this has been run in the headset.
 - A walk's half stance at 1.4 m/s is longer than the reach bound, so a walking foot lands at the bound and leaves a little behind its hip; the run's duty factor of 0.32 keeps its touchdowns under the body. Both need the headset to judge.
 - The torso's defaults (the head's weight against the hands, the neck limit, and the time constant) and the pelvis's lean gains are starting points. Hands held out to one side while the head looks the other way pull the chest toward the hands; whether that reads right needs the headset.
 - The HumanIK hip and shoulder nodes have to be Rico's anatomical left and right, and his post-solve joints a better place for the holsters than the estimated body.
-- The gap measure assumes the steady view: with `STEADY VIEW ON FOOT` off, the anchor is the animated head, which sits a little off the root, and the chase holds the root that far from under the eyes.
+- The gap measure assumes the steady view: with `controllers.locomotion.view.enabled` off, the anchor is the animated head, which sits a little off the root, and the chase holds the root that far from under the eyes.

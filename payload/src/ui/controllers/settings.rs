@@ -12,8 +12,8 @@ use crate::{
     headpose::config::VrTurnMode,
     ui::controllers::{
         aim, climb, collider_view, fingers, grab_view, hand_bodies, hands, haptics, inventory,
-        overlay, physical_hands, rig, roomscale, scope, stunt, summary, torso, unarmed, vehicles,
-        weapons,
+        locomotion, overlay, physical_hands, rig, roomscale, scope, stunt, summary, torso, unarmed,
+        vehicles, weapons,
     },
     vr::input::{self as vr_input, restart},
 };
@@ -216,6 +216,8 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         });
         ui.add(egui::Slider::new(&mut turn.smooth_scale, 0.1..=3.0).text("Smooth turn scale"));
         ui.add(egui::Slider::new(&mut turn.snap_angle_deg, 10.0..=90.0).text("Snap angle (°)"));
+        let l = &mut c.locomotion;
+        locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view);
     });
 
     let c = &mut cfg.controllers;

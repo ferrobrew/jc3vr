@@ -1,41 +1,41 @@
-//! The status page's rows for the controller systems: the gun in the hand, the hand bodies, the
+//! The status rows for the controller systems: the gun in the hand, the hand bodies, the
 //! locomotion, and the procedural body.
 
 use std::time::Instant;
 
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::{
-    body::procedural::{
-        self, ProceduralStatus,
-        authority::Case,
-        config::ProceduralMode,
-        ground::GroundTally,
-        solver::{
-            arms::Side,
-            lower::{LowerPose, LowerStatus, SitLegs},
+use crate::{
+    controllers::{
+        body::procedural::{
+            self, ProceduralStatus,
+            authority::Case,
+            config::ProceduralMode,
+            ground::GroundTally,
+            solver::{
+                arms::Side,
+                lower::{LowerPose, LowerStatus, SitLegs},
+            },
+            twist::TwistStatus,
         },
-        twist::TwistStatus,
-    },
-    frame::Hand,
-    hands::grip::{self, GripRead},
-    locomotion::{
-        self,
-        acts::{self, ActFilterStatus},
-        anchor::{self, AnchorStatus},
-    },
-    menu::{
-        read_config,
-        status::{Health, Line},
-    },
-    physical_hands::{
-        collider_view::{self, ColliderViewStatus},
-        physics::{
-            self, BodyPhase, CallbackStatus, HandBodyStatus,
-            guns::{self, GunBodyStatus},
+        frame::Hand,
+        hands::grip::{self, GripRead},
+        locomotion::{
+            self,
+            acts::{self, ActFilterStatus},
+            anchor::{self, AnchorStatus},
         },
+        menu::read_config,
+        physical_hands::{
+            collider_view::{self, ColliderViewStatus},
+            physics::{
+                self, BodyPhase, CallbackStatus, HandBodyStatus,
+                guns::{self, GunBodyStatus},
+            },
+        },
+        weapons::{grip_watch, heft::HeftClass},
     },
-    weapons::{grip_watch, heft::HeftClass},
+    status::{Health, Line},
 };
 
 pub(super) fn rigid_grip() -> Line {

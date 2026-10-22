@@ -54,7 +54,7 @@ Japanese and Arabic are not drawn: egui has no CJK font here and does not shape 
 
 ## Settings
 
-`controllers.summary`: `enabled` and `hide_game_hints` (both on, both acting only under the controller scheme, and both on the pause menu's `VR: CONTROLS` page), `show_on_glance`, `glance`, `show_on_trackpad_touch`, `show_on_mode_change_s`, `placement`, `width_px`, `row_px`, `max_height_px`, and `fade_s`, all on the Controllers debug tab, which also shows the current heading, the row count, the language, and why the panel is up.
+`controllers.summary`: `enabled` and `hide_game_hints` (both on, both acting only under the controller scheme, and both in the debug UI's Controllers tab, under "Controls summary"), `show_on_glance`, `glance`, `show_on_trackpad_touch`, `show_on_mode_change_s`, `placement`, `width_px`, `row_px`, `max_height_px`, and `fade_s`, all on the Controllers debug tab, which also shows the current heading, the row count, the language, and why the panel is up.
 
 ## Status
 

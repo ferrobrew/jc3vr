@@ -43,6 +43,7 @@ mod recorder;
 mod screenshot;
 mod session;
 mod sim_rate;
+mod status;
 mod stereo;
 mod testing;
 mod thread_role;

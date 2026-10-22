@@ -2,7 +2,7 @@
 
 On foot the game moves Rico by his clips: the movement task's speed is the animation's root speed ([engine: the locomotion task](../../engine/character/hands-locomotion-and-state.md#41-the-locomotion-task-runs-at-idle-and-writes-the-proxy-input-directly)), so a start ramps up through a wind-up clip, a stop decays through a stop clip, a turning start swings the body, and a run surges with every step. The view hung from Rico's animated head as well, so all of that, plus the walk's bob and the idle's sway, reached the headset. Neither matches what the player's own body does, and both are discomforting.
 
-The stick locomotion takes both away from the animation. The code is in `payload/src/controllers/locomotion/`. Every part has its own switch under `controllers.locomotion` and is on by default; the pause menu's `VR: COMFORT` page has the switches and the rates.
+The stick locomotion takes both away from the animation. The code is in `payload/src/controllers/locomotion/`. Every part has its own switch under `controllers.locomotion` and is on by default; the pause menu's `VR: COMFORT` page has `SMOOTH STICK MOVEMENT`, and the debug UI's Controllers tab has the other switches and the rates, under "Locomotion and turning".
 
 ## The velocity
 

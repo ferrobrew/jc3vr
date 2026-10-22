@@ -11,7 +11,7 @@ use serde::Deserialize;
 use tracing::Level;
 
 use crate::{
-    controllers::menu::status::Health,
+    status::Health,
     testing::{
         replay::{Pacing, ReplayOptions, StartMode},
         scenario::expect::{Check, Condition},
@@ -48,7 +48,7 @@ pub(crate) struct Expectation {
 pub(crate) enum Probe {
     /// A published signal. With `delta`, a counter reads how far it grew since the replay started.
     Signal { signal: Signal, delta: bool },
-    /// Whether a `VR: STATUS` row shows the health and the detail asked for.
+    /// Whether a status row shows the health and the detail asked for.
     Status {
         label: &'static str,
         health: Option<Health>,
@@ -143,7 +143,7 @@ impl fmt::Display for Problem {
             }
             Problem::UnknownSignal(name) => write!(f, "there is no signal {name:?}"),
             Problem::UnknownStatusRow(label) => {
-                write!(f, "the VR: STATUS page has no row {label:?}")
+                write!(f, "there is no status row {label:?}")
             }
             Problem::UnknownHealth(word) => {
                 write!(f, "{word:?} is not one of ok, off, waiting, and failed")

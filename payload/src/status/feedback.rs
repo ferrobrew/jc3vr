@@ -1,12 +1,11 @@
-//! The status page's rows for what the hands feel and hear: the haptic cues sent and how the mixer
+//! The status rows for what the hands feel and hear: the haptic cues sent and how the mixer
 //! folded them together, and the impact sounds the hands made.
 
 use smol_str::format_smolstr;
 
-use crate::controllers::{
-    haptics,
-    menu::{read_config, status::Line},
-    physical_hands::sounds,
+use crate::{
+    controllers::{haptics, menu::read_config, physical_hands::sounds},
+    status::Line,
 };
 
 pub(super) fn haptic_cues() -> Line {

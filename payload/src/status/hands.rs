@@ -1,22 +1,22 @@
-//! The status page's rows for what the empty hands do in the world: vehicle doors, the characters
+//! The status rows for what the empty hands do in the world: vehicle doors, the characters
 //! they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
 //! up, and articulated objects.
 
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::{
-    menu::{
-        read_config,
-        status::{Health, Line},
+use crate::{
+    controllers::{
+        menu::read_config,
+        physical_hands::{
+            self, climb, doors,
+            grasp::TargetKind,
+            physics,
+            pickup::PickupStatus,
+            stunt::{self, StuntStatus, solve::StuntKind},
+            vault::{self, VaultStatus},
+        },
     },
-    physical_hands::{
-        self, climb, doors,
-        grasp::TargetKind,
-        physics,
-        pickup::PickupStatus,
-        stunt::{self, StuntStatus, solve::StuntKind},
-        vault::{self, VaultStatus},
-    },
+    status::{Health, Line},
 };
 
 pub(super) fn doors() -> Line {

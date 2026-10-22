@@ -53,9 +53,9 @@ The casts are bounded: two fingers per hand per tick (at most twenty casts), so 
 
 ## Settings and readouts
 
-The settings are `controllers.fingers.grip`: `enabled`, `weapons`, and `contact_fit` (all on), `light_share`, `firm_squeeze`, `blend_s`, and `max_opposition_deg`. The pause menu's `VR: CONTROLS` page has `FINGERS WRAP WHAT THE HAND HOLDS` and `FINGERS WRAP GUNS`; the debug UI's finger section has the rest, and shows per hand the source, the pose, the mode, the share, and the fitted fingers, and each finger's hook.
+The settings are `controllers.fingers.grip`: `enabled`, `weapons`, and `contact_fit` (all on), `light_share`, `firm_squeeze`, `blend_s`, and `max_opposition_deg`. They are in the debug UI's Controllers tab under "Finger curls", which also shows per hand the source, the pose, the mode, the share, and the fitted fingers, and each finger's hook.
 
-`VR: STATUS` has a `FINGERS` section with `LEFT GRIP POSE` and `RIGHT GRIP POSE`: the pose and its source, the share, the fitted fingers, and `LETTING GO` while a released pose opens; `GAME'S GRIP` for a gun left to the game; `HOLDS NOTHING`; `WAITING` while the controllers do not drive the hand; `FAILED` when the finger bones do not resolve. A change of a hand's source is logged at info (`fingers: the hand's grip source changed`, with the hand, the old and new source, and the pose), at most twice a second per hand; the source a hand settles on within that interval is logged when it passes, with the count of the changes in between.
+The debug UI's Status tab has a `FINGERS` section with `LEFT GRIP POSE` and `RIGHT GRIP POSE`: the pose and its source, the share, the fitted fingers, and `LETTING GO` while a released pose opens; `GAME'S GRIP` for a gun left to the game; `HOLDS NOTHING`; `WAITING` while the controllers do not drive the hand; `FAILED` when the finger bones do not resolve. A change of a hand's source is logged at info (`fingers: the hand's grip source changed`, with the hand, the old and new source, and the pose), at most twice a second per hand; the source a hand settles on within that interval is logged when it passes, with the count of the changes in between.
 
 ## Unverified in the headset
 
@@ -67,9 +67,9 @@ The settings are `controllers.fingers.grip`: `enabled`, `weapons`, and `contact_
 ## Headset checklist
 
 1. Draw a pistol. The fingers wrap its grip and the thumb crosses over them; touching the trigger rests the index finger on it, pulling closes it a little, and lifting off points it. `LEFT GRIP POSE` or `RIGHT GRIP POSE` reads `PISTOL GRIP FROM GUN, 100%`, and the log has one `grip source changed` line for the draw.
-2. Turn `FINGERS WRAP GUNS` off: the gun takes the game's grip, the row reads `GAME'S GRIP`, and only the trigger finger moves. Turn it back on.
+2. Turn `fingers.grip.weapons` off: the gun takes the game's grip, the row reads `GAME'S GRIP`, and only the trigger finger moves. Turn it back on.
 3. Take a rifle's foregrip with the off-hand: the off-hand wraps the handguard with the thumb along its side, blending in with the two-handed grip.
-   With `GRAB GUNS ANYWHERE`, brace the rifle on its barrel, magazine, action, and stock in turn: a tight wrap round the barrel, a cup under the magazine, a pinch on the action, and a looser wrap round the stock; `LEFT GRIP POSE` names each pose from `FOREGRIP`. Carry the rifle by its barrel alone: that hand's row names the bar from `GUN`.
+   With `controllers.weapons.regions.enabled`, brace the rifle on its barrel, magazine, action, and stock in turn: a tight wrap round the barrel, a cup under the magazine, a pinch on the action, and a looser wrap round the stock; `LEFT GRIP POSE` names each pose from `FOREGRIP`. Carry the rifle by its barrel alone: that hand's row names the bar from `GUN`.
 4. Take a round or a magazine from the pouch: a pinch between the thumb and the first fingers. A grenade sits in a spread palm; a C4 charge between the thumb and straight fingers.
 5. Pick up a small loose object and squeeze lightly, then hard: the fingers close onto it as the squeeze grows, and the row counts the fitted fingers within a few ticks. Fingers that sit in the air rather than on the object point at a wrong wrist or proportions.
 6. Grab a heavy crate one hand cannot lift: the palm lies flat on it. Press a palm into a wall with the hand empty: the palm flattens.
@@ -78,4 +78,4 @@ The settings are `controllers.fingers.grip`: `enabled`, `weapons`, and `contact_
 9. Drive a car, a bike, a helicopter, and a plane with the physical controls: a wrap round the rim, the bars, the stick, and the lever. With hand tracking, the thumb on the rim follows the real thumb.
 10. Hold the parachute handles, a mounted gun's handles, and the grapple line while reeling: each wraps its bar, the line closest to a fist.
 11. Let go of each: the fingers open back to the controller's curls over a short motion, and the row reads `LETTING GO` briefly, then `HOLDS NOTHING`.
-12. Turn `FINGERS WRAP WHAT THE HAND HOLDS` off: holds on vehicles, mounted guns, and the line close into a fist, and everything else keeps the controller's curls.
+12. Turn `fingers.grip.enabled` off: holds on vehicles, mounted guns, and the line close into a fist, and everything else keeps the controller's curls.

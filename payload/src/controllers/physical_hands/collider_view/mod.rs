@@ -48,7 +48,7 @@ use crate::{
     headpose, hooks,
 };
 
-/// The view's readout for the debug UI and the status page.
+/// The view's readout for the debug UI and the status rows.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ColliderViewStatus {
     /// Whether the view is switched on.

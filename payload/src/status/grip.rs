@@ -1,18 +1,18 @@
-//! The status page's rows for the grip model: what each hand's squeeze would take or holds, and
+//! The status rows for the grip model: what each hand's squeeze would take or holds, and
 //! the markers.
 
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::{
-    frame::Hand,
-    grab::{
-        latch::GripLatch,
-        tick::{self, GrabStatus},
+use crate::{
+    controllers::{
+        frame::Hand,
+        grab::{
+            latch::GripLatch,
+            tick::{self, GrabStatus},
+        },
+        menu::read_config,
     },
-    menu::{
-        read_config,
-        status::{Health, Line},
-    },
+    status::{Health, Line},
 };
 
 pub(super) fn left_grip() -> Line {

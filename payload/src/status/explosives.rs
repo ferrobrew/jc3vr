@@ -1,12 +1,15 @@
-//! The status page's rows for the explosives and magazines the hands handle as objects (the
+//! The status rows for the explosives and magazines the hands handle as objects (the
 //! grenade's pin, the live grenades within reach of a catch, the C4 pressed on, and the magazines
 //! in the world), and for aiming a long gun down its sights.
 
 use smol_str::format_smolstr;
 
-use crate::controllers::{
-    menu::{read_config, status::Line},
-    weapons::{ads, c4, collide, grenade, reload::loose},
+use crate::{
+    controllers::{
+        menu::read_config,
+        weapons::{ads, c4, collide, grenade, reload::loose},
+    },
+    status::Line,
 };
 
 pub(super) fn gun_against_walls() -> Line {

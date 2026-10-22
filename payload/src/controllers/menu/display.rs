@@ -1,7 +1,7 @@
-//! The `VR: DISPLAY` page: the headset's render resolution, the anti-aliasing and sharpening, the
-//! foveated rendering, where the floating panel sits and how the reticle lands on it, and the HUD
-//! parts drawn at the hands and in the world. The rendering internals (the FSR jitter and motion
-//! vectors, the foveation's radii, the mirror) and the panel's follow and depth tuning stay in the
+//! The `VR: DISPLAY` page: the headset's render resolution, the sharpening, the foveated
+//! rendering, where the floating panel sits, and the HUD drawn at the hands. The rendering
+//! internals (the FSR anti-aliasing, jitter, and motion vectors, the foveation's radii, the
+//! mirror), the panel's reticle placement, follow, and depth tuning, and the HUD's parts are in the
 //! debug UI.
 //!
 //! Every setting applies on the next frame, except the size of the headset's own image: it keeps
@@ -9,8 +9,7 @@
 //! once and the image the headset is sent after a restart.
 
 use crate::{
-    controllers::menu::{config_choice, config_slider, config_toggle},
-    hud::ReticleAlign,
+    controllers::menu::{config_slider, config_toggle},
     pause_menu::model::{
         page::{Page, PageDef},
         slider::{SliderFormat, SliderRange},
@@ -36,7 +35,6 @@ fn build() -> Page {
         ))
         .text("THE SCENE RESIZES AT ONCE, THE")
         .text("HEADSET IMAGE AFTER A RESTART.")
-        .item(config_toggle!("FSR ANTI-ALIASING", |c| c.fsr.enabled))
         .item(config_toggle!("FSR SHARPENING", |c| c.fsr.sharpen))
         .item(config_slider!(
             "SHARPNESS",
@@ -60,33 +58,9 @@ fn build() -> Page {
             SliderFormat::new(2, "X"),
             |c| c.hud.panel_scale
         ))
-        .item(config_choice!(
-            "RETICLE PLACEMENT",
-            &RETICLE_ALIGNS,
-            &RETICLE_ALIGN_LABELS,
-            |c| c.hud.reticle_align
-        ))
         .header("HUD")
         .item(config_toggle!("HUD ON THE HANDS", |c| c.hud.atlas.enabled))
-        .item(config_toggle!("AMMO ABOVE GUN HAND", |c| c
-            .hud
-            .atlas
-            .ammo
-            .enabled))
-        .item(config_toggle!("TETHERS ABOVE FOREARM", |c| c
-            .hud
-            .atlas
-            .tether
-            .enabled))
-        .item(config_toggle!("MARKERS IN THE WORLD", |c| c
-            .hud
-            .world_markers
-            .enabled))
 }
-
-const RETICLE_ALIGNS: [ReticleAlign; 2] =
-    [ReticleAlign::PanelSubtense, ReticleAlign::GameProjection];
-const RETICLE_ALIGN_LABELS: [&str; 2] = ["WHERE YOU AIM", "GAME'S PROJECTION"];
 
 // Slider notch counts are multiples of ten: the movie's keyboard step is a tenth of the notches,
 // truncated to an integer.
@@ -110,10 +84,5 @@ mod tests {
     #[test]
     fn the_page_edits_valid_settings_and_resets_to_the_defaults() {
         exercise_page(&build());
-    }
-
-    #[test]
-    fn the_choice_lists_line_up() {
-        assert_eq!(RETICLE_ALIGNS.len(), RETICLE_ALIGN_LABELS.len());
     }
 }

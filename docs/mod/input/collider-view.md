@@ -4,7 +4,7 @@ The collider view draws the physics world's bodies near the player in the world-
 
 ## Using it
 
-Ctrl+Numpad0 (the director keymap's `ToggleColliderView`, [trailer-tooling.md](../trailer-tooling.md)) shows and hides it, as does the button at the top of "Collider view" in the debug UI's Controllers tab, where the readout is. Its settings are `controllers.physical_hands.collider_view`, under "Collider view" in the tab's settings: the radius (6 m), the most bodies (128) and primitives (1536) drawn, and switches for the boxes, the shapes, the static bodies, the contacts and ground, the joints, and the gaze. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it acts only in gameplay. The `VR: STATUS` page has a `COLLIDER VIEW` row under `HAND BODIES`: `OFF` with the key that shows it, `WAITING` until the first read after a physics step, `FAILED` when the world could not be read (the error is in the page's log line), and otherwise the bodies drawn out of those in range, the primitives, and how many bodies the budget left out.
+Ctrl+Numpad0 (the director keymap's `ToggleColliderView`, [trailer-tooling.md](../trailer-tooling.md)) shows and hides it, as does the button at the top of "Collider view" in the debug UI's Controllers tab, where the readout is. Its settings are `controllers.physical_hands.collider_view`, under "Collider view" in the tab's settings: the radius (6 m), the most bodies (128) and primitives (1536) drawn, and switches for the boxes, the shapes, the static bodies, the contacts and ground, the joints, and the gaze. The view draws through the overlay, so it needs `controllers.overlay.enabled`, and it acts only in gameplay. The debug UI's Status tab has a `COLLIDER VIEW` row under `HAND BODIES`: `OFF` with the key that shows it, `WAITING` until the first read after a physics step, `FAILED` when the world could not be read (the error is in the `status:` log line), and otherwise the bodies drawn out of those in range, the primitives, and how many bodies the budget left out.
 
 The colours:
 
@@ -48,7 +48,7 @@ The read costs one pass over every body slot up to the peak id: per slot a few f
 
 ## Threading
 
-The view's own state is a lock taken on the game thread only, by the render update; the overlay store's lock and the readout's are taken under it, briefly, and both are leaves. The contacts are noted under a leaf lock of their own on the game thread, and taken in the render update before the view's state is locked. The status page's row reads the readout's lock on the UI capture thread. Nothing here takes the VR runtime lock ([threading.md](../threading.md)).
+The view's own state is a lock taken on the game thread only, by the render update; the overlay store's lock and the readout's are taken under it, briefly, and both are leaves. The contacts are noted under a leaf lock of their own on the game thread, and taken in the render update before the view's state is locked. The status row reads the readout's lock on the game thread, in the debug UI. Nothing here takes the VR runtime lock ([threading.md](../threading.md)).
 
 ## Unverified
 

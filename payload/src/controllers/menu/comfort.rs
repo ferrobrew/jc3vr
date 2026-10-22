@@ -1,8 +1,8 @@
-//! The `VR: COMFORT` page: recentering the view and steadying it on foot, the stick movement, the
-//! view on the grapple, the posture, the body following the head, the lean it leaves alone, and
-//! the stop at walls, crouching, the comfort fades, and the
-//! view in vehicles: getting in, and the driver's view at the wheel. The recenter is an action, not
-//! a setting.
+//! The `VR: COMFORT` page: recentering the view, the posture, the body following the head, the
+//! fade when the head is in a wall, turning, the stick movement, and the view in vehicles: getting
+//! in, and the driver's view at the wheel. The recenter is an action, not a setting. The comfort
+//! tuning (the fades' times, the crouch, the lean, the stick's rates, the view on the grapple) is
+//! in the debug UI.
 
 use std::time::{Duration, Instant};
 
@@ -12,12 +12,14 @@ use smol_str::SmolStr;
 use crate::{
     controllers::{
         config::{Posture, SeatTransition},
-        menu::{config_choice, config_slider, config_toggle},
+        menu::{
+            config_choice, config_slider, config_toggle, edit_config, nearest_index, read_config,
+        },
         roomscale::manual_recenter_kind,
     },
-    grapple::GrappleComfortMode,
+    headpose::config::{VrTurnConfig, VrTurnMode},
     pause_menu::model::{
-        page::{Button, ButtonOutcome, Page, PageDef, Readout},
+        page::{Button, ButtonOutcome, Choice, Page, PageDef, Readout},
         slider::{SliderFormat, SliderRange},
     },
     vr::{recenter_count, render_params, request_recenter},
@@ -43,41 +45,6 @@ fn build() -> Page {
             label: "STATUS".into(),
             read: recenter_status_text,
         })
-        .item(config_toggle!("STEADY VIEW ON FOOT", |c| c
-            .controllers
-            .locomotion
-            .view
-            .enabled))
-        .header("MOVEMENT")
-        .item(config_toggle!("SMOOTH STICK MOVEMENT", |c| c
-            .controllers
-            .locomotion
-            .stick
-            .enabled))
-        .item(config_slider!(
-            "MOVE ACCELERATION",
-            ACCELERATION_RANGE,
-            SliderFormat::new(1, " M/S2"),
-            |c| c.controllers.locomotion.stick.acceleration_mps2
-        ))
-        .item(config_slider!(
-            "MOVE DECELERATION",
-            ACCELERATION_RANGE,
-            SliderFormat::new(1, " M/S2"),
-            |c| c.controllers.locomotion.stick.deceleration_mps2
-        ))
-        .item(config_toggle!("NO TURNING ANIMATIONS", |c| c
-            .controllers
-            .locomotion
-            .acts
-            .enabled))
-        .header("GRAPPLE")
-        .item(config_choice!(
-            "VIEW ON THE GRAPPLE",
-            &GRAPPLE_MODES,
-            &GRAPPLE_MODE_LABELS,
-            |c| c.headpose.grapple.mode
-        ))
         .header("POSTURE")
         .item(config_choice!("POSTURE", &POSTURES, &POSTURE_LABELS, |c| c
             .controllers
@@ -89,48 +56,46 @@ fn build() -> Page {
             .rig
             .chase
             .enabled))
-        .item(config_toggle!("LEAN WITHOUT STEPPING", |c| c
-            .controllers
-            .body
-            .rig
-            .lean
-            .enabled))
-        .item(config_toggle!("STOP AT WALLS", |c| c
-            .controllers
-            .body
-            .rig
-            .pushback
-            .enabled))
-        .header("CROUCHING")
-        .item(config_toggle!("CROUCH COLLISION", |c| c
-            .controllers
-            .roomscale
-            .crouch
-            .capsule))
-        .item(config_slider!(
-            "SEATED CROUCH DEPTH",
-            SEATED_DROP_RANGE,
-            SliderFormat::new(2, " M"),
-            |c| c.controllers.roomscale.crouch.seated_drop_m
-        ))
-        .header("FADES")
         .item(config_toggle!("FADE WHEN HEAD IS IN WALLS", |c| c
             .controllers
             .roomscale
             .head_fade
             .enabled))
-        .item(config_slider!(
-            "FADE OUT TIME",
-            FADE_TIME_RANGE,
-            SliderFormat::new(2, " S"),
-            |c| c.controllers.roomscale.fade.out_s
+        .header("TURNING")
+        .item(config_choice!(
+            "TURN MODE",
+            &TURN_MODES,
+            &TURN_MODE_LABELS,
+            |c| c.headpose.vr_turn.mode
         ))
         .item(config_slider!(
-            "FADE IN TIME",
-            FADE_TIME_RANGE,
-            SliderFormat::new(2, " S"),
-            |c| c.controllers.roomscale.fade.in_s
+            "SMOOTH TURN SPEED",
+            TURN_SPEED_RANGE,
+            SliderFormat::new(2, "X"),
+            |c| c.headpose.vr_turn.smooth_scale
         ))
+        .item(Choice {
+            label: SNAP_TURN_ANGLE.into(),
+            options: &SNAP_ANGLE_LABELS,
+            get: || {
+                nearest_index(
+                    &SNAP_ANGLES,
+                    read_config(|c| c.headpose.vr_turn.snap_angle_deg),
+                )
+            },
+            set: |index| {
+                if let Some(&angle) = SNAP_ANGLES.get(index) {
+                    edit_config(|c| c.headpose.vr_turn.snap_angle_deg = angle);
+                }
+            },
+            default: nearest_index(&SNAP_ANGLES, VrTurnConfig::new().snap_angle_deg),
+        })
+        .header("MOVEMENT")
+        .item(config_toggle!("SMOOTH STICK MOVEMENT", |c| c
+            .controllers
+            .locomotion
+            .stick
+            .enabled))
         .header("VEHICLES")
         .item(config_choice!(
             "VEHICLE ENTRY",
@@ -143,11 +108,6 @@ fn build() -> Page {
             .vehicles
             .driving_view
             .enabled))
-        .item(config_toggle!("FIT VIEW IN BOATS TOO", |c| c
-            .controllers
-            .vehicles
-            .driving_view
-            .boats))
 }
 
 /// The recenter button: ask for a recenter of the kind the F7 key does, at the start of the next
@@ -233,28 +193,32 @@ const SEAT_TRANSITIONS: [SeatTransition; 3] = [
 ];
 const SEAT_TRANSITION_LABELS: [&str; 3] = ["FOLLOW THE ANIMATION", "FADE", "INSTANT"];
 
-const GRAPPLE_MODES: [GrappleComfortMode; 3] = [
-    GrappleComfortMode::HoldView,
-    GrappleComfortMode::LevelPitch,
-    GrappleComfortMode::Off,
+/// The snap-turn angle's row.
+const SNAP_TURN_ANGLE: &str = "SNAP TURN ANGLE";
+
+const TURN_MODES: [VrTurnMode; 2] = [VrTurnMode::Smooth, VrTurnMode::Snap];
+const TURN_MODE_LABELS: [&str; 2] = ["SMOOTH", "SNAP"];
+
+/// The snap-turn steps offered, degrees. A saved angle between them shows as the nearest.
+const SNAP_ANGLES: [f32; 5] = [15.0, 30.0, 45.0, 60.0, 90.0];
+const SNAP_ANGLE_LABELS: [&str; 5] = [
+    "15 DEGREES",
+    "30 DEGREES",
+    "45 DEGREES",
+    "60 DEGREES",
+    "90 DEGREES",
 ];
-const GRAPPLE_MODE_LABELS: [&str; 3] = ["HOLD STILL", "KEEP LEVEL", "SWING WITH BODY"];
 
 // Slider notch counts are multiples of ten: the movie's keyboard step is a tenth of the notches,
 // truncated to an integer.
 
-/// The stick locomotion's rates, metres per second squared: from a slow, drifting start to all
-/// but instant.
-const ACCELERATION_RANGE: SliderRange = SliderRange::new(2.0, 42.0, 80);
-/// How far the seated crouch lowers the eyes, in centimetres.
-const SEATED_DROP_RANGE: SliderRange = SliderRange::new(0.2, 1.2, 100);
-/// A fade's duration, in hundredths of a second.
-const FADE_TIME_RANGE: SliderRange = SliderRange::new(0.0, 1.0, 100);
+/// The smooth-turn scale, in twentieths.
+const TURN_SPEED_RANGE: SliderRange = SliderRange::new(0.5, 3.0, 50);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::menu::tests::exercise_page;
+    use crate::{controllers::menu::tests::exercise_page, pause_menu::model::page::Item};
 
     #[test]
     fn the_page_edits_valid_settings_and_resets_to_the_defaults() {
@@ -322,6 +286,26 @@ mod tests {
     fn the_choice_lists_line_up() {
         assert_eq!(POSTURES.len(), POSTURE_LABELS.len());
         assert_eq!(SEAT_TRANSITIONS.len(), SEAT_TRANSITION_LABELS.len());
-        assert_eq!(GRAPPLE_MODES.len(), GRAPPLE_MODE_LABELS.len());
+        assert_eq!(TURN_MODES.len(), TURN_MODE_LABELS.len());
+        assert_eq!(SNAP_ANGLES.len(), SNAP_ANGLE_LABELS.len());
+        assert_eq!(
+            SNAP_ANGLES[nearest_index(&SNAP_ANGLES, VrTurnConfig::new().snap_angle_deg)],
+            VrTurnConfig::new().snap_angle_deg,
+            "the default snap angle is offered",
+        );
+    }
+
+    #[test]
+    fn a_snap_angle_between_the_steps_shows_as_the_nearest() {
+        let page = build();
+        let Some(Item::Choice(snap)) = page
+            .items
+            .iter()
+            .find(|item| matches!(item, Item::Choice(c) if c.label == SNAP_TURN_ANGLE))
+        else {
+            panic!("no snap angle choice");
+        };
+        edit_config(|c| c.headpose.vr_turn.snap_angle_deg = 40.0);
+        assert_eq!((snap.get)(), 2);
     }
 }

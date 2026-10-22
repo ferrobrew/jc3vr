@@ -1,6 +1,6 @@
 # Vehicle doors by hand
 
-An empty hand opens a vehicle's doors as a real hand does: a grip on a closed door's handle area takes hold of it, a pull outward undoes the latch, and the door then swings on its hinge with the hand. Let go and it swings on; shove it shut and the game latches it. Hoods, trunks, and the other hatches a vehicle's door controller keeps open the same way. The code is `payload/src/controllers/physical_hands/doors/`; the engine side is in [vehicle-doors.md](../../engine/gameplay/vehicle-doors.md). It is on by default (`physical_hands.doors.enabled`, `OPEN DOORS BY HAND` on the pause menu's `VR: CONTROLS` page) and builds on the pickup and the hand bodies ([physical-hands.md](physical-hands.md#picking-things-up)). It has not yet been seen working in the headset.
+An empty hand opens a vehicle's doors as a real hand does: a grip on a closed door's handle area takes hold of it, a pull outward undoes the latch, and the door then swings on its hinge with the hand. Let go and it swings on; shove it shut and the game latches it. Hoods, trunks, and the other hatches a vehicle's door controller keeps open the same way. The code is `payload/src/controllers/physical_hands/doors/`; the engine side is in [vehicle-doors.md](../../engine/gameplay/vehicle-doors.md). It is on by default (`physical_hands.doors.enabled`, in the debug UI's Controllers tab under "Physical hands") and builds on the pickup and the hand bodies ([physical-hands.md](physical-hands.md#picking-things-up)). It has not yet been seen working in the headset.
 
 ## Finding a door
 
@@ -41,7 +41,7 @@ The doors are found, gripped, and unlatched from the palms' tick (the player aim
 
 ## Settings and readouts
 
-The settings are `physical_hands.doors`, under the pickup's in the debug UI's Controllers tab: the switch, the reach, the handle share, and the pull that unlatches. The readout says which door a hand reaches (its slot and whether it is latched) and whether a hand grips a latch, and counts the latched grips and unlatches with the last door's slot. The `VR: STATUS` page's `VEHICLE DOORS` row, under `HANDS IN THE WORLD`, shows the same counts, the last door, and whether a hand is on a latch. The recorder's signals are `doors.grips`, `doors.unlatches`, and `doors.on_latch`, and the template is `testing/scenarios/vehicle_doors.toml`.
+The settings are `physical_hands.doors`, under the pickup's in the debug UI's Controllers tab: the switch, the reach, the handle share, and the pull that unlatches. The readout says which door a hand reaches (its slot and whether it is latched) and whether a hand grips a latch, and counts the latched grips and unlatches with the last door's slot. The `VEHICLE DOORS` status row, under `HANDS IN THE WORLD`, shows the same counts, the last door, and whether a hand is on a latch. The recorder's signals are `doors.grips`, `doors.unlatches`, and `doors.on_latch`, and the template is `testing/scenarios/vehicle_doors.toml`.
 
 The log has, at info level, `physical hands: doors: a hand gripped a latched door` with the hand, slot, and part, `the latch gave, and the hand holds the door` with the door's body and whether it is joined, and `a grip on a latched door was lost` with the reason.
 
@@ -54,7 +54,7 @@ The log has, at info level, `physical hands: doors: a hand gripped a latched doo
 
 ## Headset checklist
 
-With `OPEN DOORS BY HAND` and `GRIP MARKERS` on:
+With `physical_hands.doors.enabled` and `GRIP MARKERS` on:
 
 1. Walk up to a parked, empty modern saloon and reach toward the driver's door handle: a green marker on it, and the log's `door handles:` line for `modernsaloon` says its front doors come from the table (clip). Near the hinge: no ring.
 2. Grip: `a hand gripped a latched door`, a pulse, and the rendered hand stays on the door while the controller moves. The `VEHICLE DOORS` row says `ON A LATCH`.

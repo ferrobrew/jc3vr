@@ -1,5 +1,5 @@
 //! The vehicle handling's public readout types: what the tick's two halves publish, and what the
-//! debug UI and the status page read back.
+//! debug UI and the status rows read back.
 
 use glam::{Vec2, Vec3};
 
@@ -108,7 +108,7 @@ pub struct VehiclesStatus {
     /// Whether each hand holds its mounted gun's handle, indexed by [`Hand::index`].
     pub mounted_holds: [bool; 2],
 }
-/// What the status page shows of the vehicles: [`status`] without its event list.
+/// What the status rows show of the vehicles: [`status`] without its event list.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct VehicleSummary {
     pub active: bool,

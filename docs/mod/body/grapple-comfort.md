@@ -67,7 +67,7 @@ Both advances share one mutex, and it is the innermost lock in the headpose's SI
 
 ## Configuration
 
-`headpose.grapple`, live-editable in the debug UI's Camera tab (with a live blend readout). The mode is also on the pause menu's `VR: COMFORT` page as `VIEW ON THE GRAPPLE` ([pause-menu.md](../pause-menu.md#settings-pages)):
+`headpose.grapple`, live-editable in the debug UI's Camera tab under "Grapple reel-in comfort" (with a live blend readout):
 
 | Field | Default | Meaning |
 |---|---|---|

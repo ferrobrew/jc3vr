@@ -1,6 +1,6 @@
 # Physical guns
 
-With the hand bodies on ([physical-hands.md](physical-hands.md#hand-bodies)), a gun in a hand is a body of its own in the physics world, joined to the hand bodies that hold it. Its weight hangs from the hands and drags them by its mass, it collides along its whole length, a two-handed hold is two joints, and swung into a character it strikes as the hands do. The drawn gun and the drawn hands follow the physics: each hand is drawn at its body, and the gun at its body. With `PHYSICAL GUNS` off (`physical_hands.bodies.guns.enabled`, on the pause menu's `VR: CONTROLS` page under `PHYSICAL HANDS`), or with the hand bodies off, a held gun has no body, its hands' bodies leave the world as before, and the kinematic weight ([`heft`](../../../payload/src/controllers/weapons/heft/mod.rs)), recoil offset, two-handed pose, and wall probe ([physical-weapons.md, "Guns against walls"](physical-weapons.md#guns-against-walls)) act instead.
+With the hand bodies on ([physical-hands.md](physical-hands.md#hand-bodies)), a gun in a hand is a body of its own in the physics world, joined to the hand bodies that hold it. Its weight hangs from the hands and drags them by its mass, it collides along its whole length, a two-handed hold is two joints, and swung into a character it strikes as the hands do. The drawn gun and the drawn hands follow the physics: each hand is drawn at its body, and the gun at its body. With `physical_hands.bodies.guns.enabled` off (it is on by default; the debug UI's Controllers tab, under "Hand bodies"), or with the hand bodies off, a held gun has no body, its hands' bodies leave the world as before, and the kinematic weight ([`heft`](../../../payload/src/controllers/weapons/heft/mod.rs)), recoil offset, two-handed pose, and wall probe ([physical-weapons.md, "Guns against walls"](physical-weapons.md#guns-against-walls)) act instead.
 
 The code is `payload/src/controllers/physical_hands/physics/guns/`. The engine side is in [havok-bodies.md](../../engine/physics/havok-bodies.md) and [weapon-equip-and-drop.md](../../engine/gameplay/weapon-equip-and-drop.md#one-object-for-its-whole-life). None of this has been run in the headset.
 
@@ -51,7 +51,7 @@ A heavy weapon's own body stays in the world while it is wielded, so such a gun 
 
 ## Grabbing a gun anywhere
 
-With `weapons.regions.enabled` (on; the pause menu's `GRAB GUNS ANYWHERE`, on the `VR: CONTROLS` page beside `HAND GUNS OVER AT THE GRIP`), a long gun (the two-handed, special, and heavy slots) is taken wherever the hand closes on it, in the hands, on a shoulder, or lying in the world, with or without the gun bodies above. A pistol keeps its grip. The code is `payload/src/controllers/weapons/regions/`.
+With `weapons.regions.enabled` (on; the debug UI's Controllers tab, under "Weapons"), a long gun (the two-handed, special, and heavy slots) is taken wherever the hand closes on it, in the hands, on a shoulder, or lying in the world, with or without the gun bodies above. A pistol keeps its grip. The code is `payload/src/controllers/weapons/regions/`.
 
 ### The regions
 
@@ -87,21 +87,21 @@ The fingers take each region's pose ([grip-poses.md](grip-poses.md)): the pistol
 
 ### Its settings, readout, and log
 
-The settings are `controllers.weapons.regions` (`enabled`, `reach_m`, `grip_radius_m`, `rebrace_s`, `draw_wait_s`), under the hold's in the debug UI's Controllers tab, with a readout of each hand's region and role, the counts, and the wielded long gun's shape (its length and which known points it has). The `VR: STATUS` page's `WEAPONS IN HAND` section has `LEFT HAND ON GUN` and `RIGHT HAND ON GUN`: the region, `FIRING`, `BRACING`, or `CARRYING, CANNOT FIRE`, and the counts, with the gun's length and known points in the log's note; `NOT ON A GUN` while waiting, and `GUN'S SHAPE NOT READ` fails. The recorder's signals are `regions.carries`, `regions.braces`, `regions.grips_taken`, `regions.let_go`, and `regions.carrying`, and the template is `testing/scenarios/grab_anywhere.toml`.
+The settings are `controllers.weapons.regions` (`enabled`, `reach_m`, `grip_radius_m`, `rebrace_s`, `draw_wait_s`), under the hold's in the debug UI's Controllers tab, with a readout of each hand's region and role, the counts, and the wielded long gun's shape (its length and which known points it has). The `WEAPONS IN HAND` section of the debug UI's Status tab has `LEFT HAND ON GUN` and `RIGHT HAND ON GUN`: the region, `FIRING`, `BRACING`, or `CARRYING, CANNOT FIRE`, and the counts, with the gun's length and known points in the log's note; `NOT ON A GUN` while waiting, and `GUN'S SHAPE NOT READ` fails. The recorder's signals are `regions.carries`, `regions.braces`, `regions.grips_taken`, `regions.let_go`, and `regions.carrying`, and the template is `testing/scenarios/grab_anywhere.toml`.
 
 The log has, at info level, `regions: the left hand took the gun by its barrel` (or right, and the region) with the cause (`pickup`, `draw`, or `the holding hand let go`) and the anchor; `regions: the gun is no longer carried by its barrel` with the reason; `regions: the left hand braced the gun at its handguard`; and `regions: the left hand took the gun's grip; the other braces it at its stock`.
 
 ## Settings and readout
 
-The settings are `physical_hands.bodies.guns`, under "Hand bodies" in the debug UI's Controllers tab, with the readout beside the hand bodies': the gun bodies made, destroyed, and put back, the shots given, each hand's gun contacts, and for each hand's gun body its id, whether it is in the world, its mass and where it came from, its joints, how far it is off its seat, and its speed. The pause menu's switch is `PHYSICAL GUNS`.
+The settings are `physical_hands.bodies.guns`, under "Hand bodies" in the debug UI's Controllers tab, with the readout beside the hand bodies': the gun bodies made, destroyed, and put back, the shots given, each hand's gun contacts, and for each hand's gun body its id, whether it is in the world, its mass and where it came from, its joints, how far it is off its seat, and its speed. The switch is `physical_hands.bodies.guns.enabled`.
 
-The `VR: STATUS` page's `HAND BODIES` section has `LEFT GUN BODY` and `RIGHT GUN BODY`: `NO GUN BODY` while waiting, or the body's id and mass, `HELD` or `HELD+BRACED`, and the contacts it started, with its mass's source and its deviation in the log's note; `NOT JOINED` or `NOT IN WORLD` fail. The recorder's signals are `guns.made`, `guns.held`, `guns.braced`, `guns.shots`, `guns.contacts`, `guns.reseats`, and `guns.error`, and the template is `testing/scenarios/physical_guns.toml`.
+The `HAND BODIES` status section has `LEFT GUN BODY` and `RIGHT GUN BODY`: `NO GUN BODY` while waiting, or the body's id and mass, `HELD` or `HELD+BRACED`, and the contacts it started, with its mass's source and its deviation in the log's note; `NOT JOINED` or `NOT IN WORLD` fail. The recorder's signals are `guns.made`, `guns.held`, `guns.braced`, `guns.shots`, `guns.contacts`, `guns.reseats`, and `guns.error`, and the template is `testing/scenarios/physical_guns.toml`.
 
 The log has, at info level, `held guns: made a gun body and joined it to its hand` with the hand, weapon, class, body, constraint, mass and its source, the seat's distance (`seat_m`, a few centimetres for a grip), how far the made joint's seat is from it (`seat_error_m`, near zero), and how far the hand's body was off its palm (`hand_off_palm_m`); `held guns: joined the bracing hand to the gun`; `held guns: ended a gun's joint` with its role (`holder` or `brace`) and the reason; `held guns: destroyed a gun body` with the reason; `held guns: could not make a gun body` once per gun with the error; and a hand body's blow says `with_gun`. At debug level, `held guns: no gun body yet` for a gun not yet in the hand or whose hand's body is not on its palm yet, and `held guns: put a gun body back on its seat` with the reason.
 
 ## In the headset
 
-With the hand bodies and `PHYSICAL GUNS` on:
+With the hand bodies and `bodies.guns.enabled` on:
 
 1. Draw a pistol: `held guns: made a gun body and joined it to its hand`, with `mass_from="its own body"`, a mass of a kilogram at most, and `seat_m` of a few centimetres. `RIGHT GUN BODY` reads `OK, #..., HELD`. The pistol sits in the hand as before, and the hand's body stays in the world (no `removed a hand body from the world`).
 2. Wave it quickly: it follows without visible lag; the readout's distance off its seat stays within a few millimetres, the drawn pistol stays within a couple of degrees of the hand, and the hand does not buzz.
@@ -115,26 +115,26 @@ With the hand bodies and `PHYSICAL GUNS` on:
 10. Drop the rifle (open the grip away from the body with `grip_to_hold`): the gun body goes (`the gun left the hand` or `the gun's own body is back in the world`), and the rifle falls with the hand's swing.
 11. Hand a pistol to the other hand at its grip: the old hand's gun body goes and the new hand's is made.
 12. Enter a vehicle, swim, open the parachute, die, and load a save with a gun in hand: each time `destroyed a gun body` before the hand's body is removed or destroyed, and no crash.
-13. Switch `PHYSICAL GUNS` off with a rifle in hand and resume: the gun body goes, the hand's body leaves the world, and the rifle sags and sways as before.
+13. Switch `bodies.guns.enabled` off with a rifle in hand: the gun body goes, the hand's body leaves the world, and the rifle sags and sways as before.
 14. Hold a rocket launcher: no gun body (`NO GUN BODY`), and its kinematic weight and recoil act.
 
-With `GRAB GUNS ANYWHERE` on, once with `PHYSICAL GUNS` off and once with it on:
+With `weapons.regions.enabled` on, once with `bodies.guns.enabled` off and once with it on:
 
 15. Draw a rifle and look at `RIGHT HAND ON GUN`: `GRIP, FIRING`, with the gun's length and its known points in the note. A rifle without a foregrip, a magazine well, or an action in the note still has its handguard and barrel.
 16. Take the rifle's handguard with the left hand behind the native foregrip, then well ahead of it near the muzzle: each time `regions: the left hand braced the gun at its handguard` (then `barrel`), the hand stays where it closed on the gun rather than jumping to the foregrip, the rifle points along the line between the hands, and `LEFT HAND ON GUN` reads `HANDGUARD, BRACING` (then `BARREL`). The fingers wrap the handguard, then close tighter round the barrel.
-17. Slide the left hand along the handguard and the barrel while bracing: the drawn hand follows along the gun, staying on it. With `PHYSICAL GUNS` on, the drawn hand stays where the brace joint holds it.
+17. Slide the left hand along the handguard and the barrel while bracing: the drawn hand follows along the gun, staying on it. With `bodies.guns.enabled` on, the drawn hand stays where the brace joint holds it.
 18. Brace on the magazine and on the stock: `MAGAZINE, BRACING` with a cupped hand, and `STOCK, BRACING` with the rifle not turning toward the left hand.
 19. With `grip_to_hold` on, brace the barrel and let go with the right hand: `regions: the left hand took the gun by its barrel` with `cause="the holding hand let go"`, the rifle hangs from the left hand where it held it without jumping, `LEFT HAND ON GUN` reads `BARREL, CARRYING, CANNOT FIRE`, and the left trigger fires nothing. The muzzle effects and the sight line follow the carried rifle.
 20. Take the carried rifle's pistol grip with the right hand: `regions: the right hand took the gun's grip; the other braces it at its barrel`, then `braced the gun at its barrel`; the right trigger fires again, and the left hand stays on the barrel where it was.
 21. Carry the rifle by the barrel in the left hand, take the barrel with the right, and slide the right hand back onto the pistol grip: it becomes the firing hand the same way.
 22. Kill a soldier and pick his rifle up off the ground by the barrel: `took the gun by its barrel` with `cause="pickup"`; the rifle slides from the ground with the barrel into the palm, and cannot fire until the other hand takes the grip. Pick another up by its grip: no carry, and it fires.
-23. With a rifle on the back, reach over the shoulder and grab its barrel or stock rather than the grip: the rifle draws into the hand at that part (`cause="draw"`), with and without `DRAW LONG GUNS WITHOUT ANIMATION`. Grab it at the grip: it draws at the grip.
+23. With a rifle on the back, reach over the shoulder and grab its barrel or stock rather than the grip: the rifle draws into the hand at that part (`cause="draw"`), with and without `weapons.hold.instant_dock`. Grab it at the grip: it draws at the grip.
 24. With the gun bodies on, carry a rifle by the barrel and swing its stock into a soldier: the blow counts with the gun, and `RIGHT GUN BODY` (or left) shows the carrying hand's gun body.
 25. Holster and drop a carried rifle: `the gun is no longer carried` with `the gun left the hands`; draw it again at the grip: `GRIP, FIRING`.
 26. Empty a rifle that needs its charging handle worked, then grab the handle with the free hand while the chamber waits: the action is worked as before, not braced. Grab the same handle with the chamber loaded: `braced the gun at its action`, with a pinch.
 27. Pump a shotgun braced on its handguard: the pump moves with the hand as before, and the brace does not slide while the pump is out.
 28. Hold a pistol: `GRIP, FIRING`, and no part of it but the grip takes it.
-29. Switch `GRAB GUNS ANYWHERE` off while carrying a rifle by the barrel: it goes back to the grip, and the foregrip braces only at its own point again.
+29. Switch `weapons.regions.enabled` off while carrying a rifle by the barrel: it goes back to the grip, and the foregrip braces only at its own point again.
 
 ## Unverified
 

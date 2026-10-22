@@ -40,6 +40,7 @@ use crate::{
             regions::{self, RegionsStatus, config::RegionsConfig},
             reload::{self, ReloadStatus},
             unarmed_fire::{self, UnarmedFireStatus},
+            wheel::config::{SteerMode, WheelConfig},
         },
     },
     ui::controllers::{
@@ -573,6 +574,11 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         });
     });
     dual_wield_settings(ui, &mut w.dual_wield);
+    ui.checkbox(&mut w.separate_pistols, "Separate pistols")
+        .on_hover_text(
+            "Make the game's pistol pair two weapons, each picked up, held, dropped, reloaded, and \
+         fired on its own. Needs the VR inventory and its carrying.",
+        );
     hold_settings(ui, &mut w.hold);
     regions_settings(ui, &mut w.regions);
 }
@@ -615,6 +621,54 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
             "Let the trigger draw the selected weapon with nothing in the hands, as the game does. \
              Off, weapons come out of the holsters.",
         );
+    ui.checkbox(&mut w.wheel.enabled, "Weapon wheel")
+        .on_hover_text(
+            "Open the game's selection cross with a held input and choose an arm with the hand.",
+        );
+    ui.add_enabled_ui(w.wheel.enabled, |ui| {
+        ui.indent("wheel", |ui| wheel_settings(ui, &mut w.wheel));
+    });
+}
+
+fn wheel_settings(ui: &mut Ui, w: &mut WheelConfig) {
+    ui.checkbox(
+        &mut w.trackpad,
+        "Open with the weapon-select trackpad press",
+    );
+    ui.checkbox(&mut w.stick, "Open with the weapon wheel stick push");
+    ui.add_enabled_ui(w.stick, |ui| {
+        ui.add(egui::Slider::new(&mut w.stick_open, 0.0..=1.0).text("Stick opens at"));
+        ui.add(egui::Slider::new(&mut w.stick_release, 0.0..=1.0).text("Stick closes below"));
+    });
+    ui.horizontal(|ui| {
+        ui.label("Steer by");
+        ui.selectable_value(&mut w.steer, SteerMode::Point, "Pointing the hand");
+        ui.selectable_value(&mut w.steer, SteerMode::Offset, "Moving the hand");
+    });
+    match w.steer {
+        SteerMode::Point => {
+            ui.add(
+                egui::Slider::new(&mut w.point_leave_deg, 1.0..=45.0)
+                    .text("Leave the centre at (°)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut w.point_return_deg, 0.0..=45.0)
+                    .text("Return to the centre at (°)"),
+            );
+        }
+        SteerMode::Offset => {
+            ui.add(
+                egui::Slider::new(&mut w.offset_leave_m, 0.005..=0.2)
+                    .text("Leave the centre at (m)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut w.offset_return_m, 0.0..=0.2)
+                    .text("Return to the centre at (m)"),
+            );
+        }
+    }
+    ui.add(egui::Slider::new(&mut w.hysteresis_deg, 0.0..=44.0).text("Arm hysteresis (°)"));
+    ui.checkbox(&mut w.place_at_hand, "Place the cross where the hand was");
 }
 
 fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
@@ -746,6 +800,17 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
         "The free hand takes a long gun of another slot off its shoulder and fires it with its \
          own trigger.",
     );
+    ui.add_enabled_ui(h.either_hand && h.second_weapon, |ui| {
+        ui.checkbox(&mut h.promote_second, "A lone second gun becomes the main")
+            .on_hover_text(
+                "The second weapon becomes the wielded weapon once nothing else has been wielded \
+                 for a while, so the game's HUD and reload take it over.",
+            );
+        ui.add_enabled(
+            h.promote_second,
+            egui::Slider::new(&mut h.promote_after_s, 0.0..=3.0).text("Becomes the main after (s)"),
+        );
+    });
     ui.horizontal(|ui| {
         ui.label("Right hand gun grip:");
         for grip in RightGrip::ALL {

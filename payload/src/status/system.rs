@@ -1,4 +1,4 @@
-//! The status page's rows for the systems outside the controllers: the settings file, the
+//! The status rows for the systems outside the controllers: the settings file, the
 //! rendering, the controller input's set-up, and the HUD.
 
 use std::sync::OnceLock;
@@ -10,13 +10,14 @@ use crate::{
     config::{self, SaveStatus},
     controllers::{
         frame::Hand,
-        menu::{read_config, save_status_label, status::Line},
+        menu::{read_config, save_status_label},
     },
     frame_timing::{self, FramePercentiles},
     hud::{
         atlas,
         world_markers::{self, DistanceSource},
     },
+    status::Line,
     vr::{
         self, DirectArm, DirectStatus, PublishedStatus, ResolutionStatus,
         input::{self as vr_input, ActionsOrigin, InputStatus, layout, restart, self_check},
@@ -260,7 +261,7 @@ fn fingerprint(hand: Hand) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{controllers::menu::status::Health, vr::input::restart::RestartReason};
+    use crate::{status::Health, vr::input::restart::RestartReason};
 
     #[test]
     fn the_session_reads_rendering_first() {

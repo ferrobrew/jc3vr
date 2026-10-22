@@ -44,8 +44,9 @@
 //!   controllers, so they are gated on the VR source and their own toggles instead of the scheme;
 //! - [`summary`]: the controls summary on the off-hand wrist, and hiding the game's own button
 //!   hints;
-//! - [`menu`]: the pause menu's `VR: CONTROLS` and `VR: COMFORT` pages over these settings (the
-//!   `VR: BODY` page is [`body::menu`]).
+//! - [`menu`]: the pause menu's `VR: CONTROLS`, `VR: COMFORT`, and `VR: DISPLAY` pages over the
+//!   settings a player reaches for in the headset (the `VR: BODY` page is [`body::menu`]); the
+//!   rest are in the debug UI.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`scheme::is_controllers`]), so that the mod behaves as before whenever no

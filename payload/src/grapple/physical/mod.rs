@@ -18,7 +18,7 @@
 //! hands it the grapple hand's distance from the body and injects the retract it returns. It reads
 //! the hook, steps the pull, publishes the reel's drive for the reel task's detour, vibrates the
 //! grapple hand, logs the grapple's events, and publishes the readout ([`status`]) for the
-//! `VR: STATUS` page.
+//! status rows ([`crate::status`]).
 
 pub mod config;
 pub mod pull;

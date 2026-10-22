@@ -16,7 +16,6 @@ pub(crate) const PAGES: &[PageDef] = &[
     menu::controls::PAGE,
     menu::comfort::PAGE,
     menu::display::PAGE,
-    menu::status::PAGE,
 ];
 
 /// The most pages the VR entry can show: one per selector on the settings screen's tab bar. A page

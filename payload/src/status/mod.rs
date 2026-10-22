@@ -1,12 +1,14 @@
-//! The `VR: STATUS` page: a read-only summary of whether each of the mod's systems is live and
-//! healthy, for confirming a headset session at a glance. Each row reads one system's published
-//! state and shows a state word ([`Health`]) and a few numbers; the rows refresh every frame while
-//! the page is shown, and the page logs the same summary once each time it opens.
+//! The status lines: a read-only summary of whether each of the mod's systems is live and healthy,
+//! for confirming a headset session at a glance. Each row reads one system's published state and
+//! gives a state word ([`Health`]) and a few numbers. The debug UI's Status tab shows every row and
+//! logs the summary ([`summary`]) on request, and the scenario runner's status-row probes read the
+//! rows by label ([`read_row`]).
 //!
-//! The rows run on the UI capture thread in the middle of a frame, while the game thread holds the
-//! VR runtime lock and waits on that thread, so they read only atomics and leaf locks that their
-//! modules publish for any thread (see `docs/mod/threading.md`), never the runtime state, and they
-//! take one lock at a time.
+//! A row may be read on any thread, including in the middle of a frame while the game thread holds
+//! the VR runtime lock, so the rows read only atomics and leaf locks that their modules publish for
+//! any thread (see `docs/mod/threading.md`), never the runtime state, and they take one lock at a
+//! time. A caller must not hold the configuration lock while it reads a row, since some rows read
+//! the configuration.
 
 mod body;
 mod controllers;
@@ -21,19 +23,7 @@ mod system;
 mod vehicles;
 mod weapons;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use smol_str::SmolStr;
-
-use crate::pause_menu::model::page::{Page, PageDef, Readout};
-
-/// The `VR: STATUS` page.
-pub(crate) const PAGE: PageDef = PageDef {
-    tab: "STATUS",
-    build,
-    on_close: Some(on_close),
-    on_frame: None,
-};
 
 /// A row's state word.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -119,7 +109,7 @@ pub(crate) fn row_labels() -> impl Iterator<Item = &'static str> {
 }
 
 /// The line of the row labelled `label`, read now, or `None` when no row has that label. The rows
-/// read only published slots, so any thread may ask, as the page's own refresh does.
+/// read only published slots, so any thread may ask.
 pub(crate) fn read_row(label: &str) -> Option<Line> {
     SECTIONS
         .iter()
@@ -128,17 +118,51 @@ pub(crate) fn read_row(label: &str) -> Option<Line> {
         .map(|row| (row.read)())
 }
 
-/// A section of the page: a header over its rows.
+/// Every section's title and its rows' labels and lines, read now, top to bottom.
+pub(crate) fn read_all() -> impl Iterator<Item = (&'static str, Vec<(&'static str, Line)>)> {
+    SECTIONS.iter().map(|section| {
+        let rows = section
+            .rows
+            .iter()
+            .map(|row| (row.label, (row.read)()))
+            .collect();
+        (section.title, rows)
+    })
+}
+
+/// Every row as `label: text`, sections separated by `|`, for the log.
+pub(crate) fn summary() -> String {
+    SECTIONS
+        .iter()
+        .map(|section| {
+            let rows = section
+                .rows
+                .iter()
+                .map(|row| {
+                    let line = (row.read)();
+                    match &line.note {
+                        Some(note) => format!("{}: {} ({note})", row.label, line.text()),
+                        None => format!("{}: {}", row.label, line.text()),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!("{}: {rows}", section.title)
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+/// A section of the summary: a header over its rows.
 struct Section {
     title: &'static str,
     rows: &'static [Row],
 }
 
-/// One row: its label, how to read its line, and the same as the readout's text.
+/// One row: its label, and how to read its line.
 struct Row {
     label: &'static str,
     read: fn() -> Line,
-    show: fn() -> SmolStr,
 }
 
 /// A [`Row`] reading the line `$read` returns.
@@ -147,12 +171,11 @@ macro_rules! row {
         Row {
             label: $label,
             read: $read,
-            show: || $read().text(),
         }
     };
 }
 
-/// The page's sections, top to bottom.
+/// The sections, top to bottom.
 const SECTIONS: &[Section] = &[
     Section {
         title: "SAVED SETTINGS",
@@ -338,59 +361,9 @@ const SECTIONS: &[Section] = &[
     },
 ];
 
-fn build() -> Page {
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        tracing::info!("status: {}", summary());
-    }
-    let mut page = Page::new("VR: STATUS");
-    for section in SECTIONS {
-        page = page.header(section.title);
-        for row in section.rows {
-            page = page.item(Readout {
-                label: row.label.into(),
-                read: row.show,
-            });
-        }
-    }
-    page
-}
-
-/// Let the next opening log the summary again.
-fn on_close() {
-    LOGGED.store(false, Ordering::Relaxed);
-}
-
-/// Whether this stay on the page has logged its summary. The page is rebuilt while it is shown
-/// (the game repopulating the settings), which must not log it again.
-static LOGGED: AtomicBool = AtomicBool::new(false);
-
-/// Every row as `label: text`, sections separated by `|`.
-fn summary() -> String {
-    SECTIONS
-        .iter()
-        .map(|section| {
-            let rows = section
-                .rows
-                .iter()
-                .map(|row| {
-                    let line = (row.read)();
-                    match &line.note {
-                        Some(note) => format!("{}: {} ({note})", row.label, line.text()),
-                        None => format!("{}: {}", row.label, line.text()),
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
-            format!("{}: {rows}", section.title)
-        })
-        .collect::<Vec<_>>()
-        .join(" | ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pause_menu::model::page::Item;
 
     #[test]
     fn lines_read_as_word_then_detail() {
@@ -410,16 +383,5 @@ mod tests {
         labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), count);
-    }
-
-    #[test]
-    fn the_page_is_read_only() {
-        let page = build();
-        assert!(
-            page.items
-                .iter()
-                .all(|item| matches!(item, Item::Header(_) | Item::Readout(_)))
-        );
-        assert_eq!(page.reset_to_defaults(), 0);
     }
 }

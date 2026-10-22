@@ -1,4 +1,4 @@
-//! The status page's rows for the procedural body outside standing play: the torso in a vehicle
+//! The status rows for the procedural body outside standing play: the torso in a vehicle
 //! seat, the wingsuit's arms, the body under the parachute, the torso in the water, the torso on
 //! a vehicle's roof, the body mirror, and the render-rate body. Each reads the last published
 //! status, which the pause stops updating, so a row shows what the body did just before the menu
@@ -8,13 +8,16 @@ use std::time::{Duration, Instant};
 
 use smol_str::format_smolstr;
 
-use crate::controllers::{
-    body::{
-        mirror::{self, MirrorStatus},
-        procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
+use crate::{
+    controllers::{
+        body::{
+            mirror::{self, MirrorStatus},
+            procedural::{self, ProceduralStatus, authority::Case, config::ProceduralMode},
+        },
+        menu::read_config,
+        presentation::{self, PresentationStatus},
     },
-    menu::{read_config, status::Line},
-    presentation::{self, PresentationStatus},
+    status::Line,
 };
 
 pub(super) fn seated_torso() -> Line {

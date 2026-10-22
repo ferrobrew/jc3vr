@@ -1,7 +1,7 @@
 //! The signals a scenario can check: typed reads of the snapshots the mod's systems publish for
-//! the `VR: STATUS` page and the debug UI, and of the page's rows themselves.
+//! the debug UI and the status rows ([`crate::status`]), and of the status rows themselves.
 //!
-//! Every read takes the publishing module's leaf slot or atomics only, as the status page's rows
+//! Every read takes the publishing module's leaf slot or atomics only, as the status rows
 //! do, so the runner may read them from the game thread at the top of the frame.
 
 use std::{fmt, time::Instant};
@@ -16,7 +16,6 @@ use crate::{
         grab::{latch::GripLatch, tick as grab_tick},
         hands::grip,
         locomotion,
-        menu::status::{self as status_page, Health},
         mode::{self, Mode, OnFootVariant},
         physical_hands::{
             self, climb,
@@ -33,6 +32,7 @@ use crate::{
         },
     },
     frame_timing,
+    status::{self as status_page, Health},
     testing::replay,
 };
 
@@ -496,12 +496,12 @@ fn rig_measure(read: impl Fn(&rig_root::FrameReadout) -> f32) -> Value {
     }
 }
 
-/// A `VR: STATUS` row's line, by its label, for a scenario's status-row probe.
+/// A status row's line, by its label, for a scenario's status-row probe.
 pub(crate) fn status_row(label: &str) -> Option<status_page::Line> {
     status_page::read_row(label)
 }
 
-/// The `VR: STATUS` row labelled `label`, matched without regard to case, as the page spells it.
+/// The status row labelled `label`, matched without regard to case, as the rows spell it.
 pub(crate) fn status_row_label(label: &str) -> Option<&'static str> {
     status_page::row_labels().find(|row| row.eq_ignore_ascii_case(label.trim()))
 }

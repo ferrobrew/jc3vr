@@ -1,11 +1,14 @@
-//! The status page's rows for the fingers: each hand's grip pose and what declared it.
+//! The status rows for the fingers: each hand's grip pose and what declared it.
 
 use smol_str::{SmolStr, format_smolstr};
 
-use crate::controllers::{
-    fingers::{self, HandFingersStatus, target::GripMode},
-    frame::Hand,
-    menu::{read_config, status::Line},
+use crate::{
+    controllers::{
+        fingers::{self, HandFingersStatus, target::GripMode},
+        frame::Hand,
+        menu::read_config,
+    },
+    status::Line,
 };
 
 pub(super) fn left_grip() -> Line {

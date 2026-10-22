@@ -61,7 +61,7 @@ use crate::{
     },
 };
 
-/// One hand's finger curls on the last tick, for the debug UI and the status page.
+/// One hand's finger curls on the last tick, for the debug UI and the status rows.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct HandFingersStatus {
     /// Where the curls came from; `None` when the hand was not curled.
@@ -83,7 +83,7 @@ pub struct HandFingersStatus {
 }
 
 /// The last tick's per-hand finger curls, indexed by [`Hand::index`]. A leaf slot of its own, so
-/// that any thread (the status page's, on the UI capture thread) may read it.
+/// that any thread (a status row's, mid-frame) may read it.
 pub fn status() -> [HandFingersStatus; 2] {
     *PUBLISHED.lock()
 }

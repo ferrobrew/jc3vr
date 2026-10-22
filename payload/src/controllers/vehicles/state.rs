@@ -1,4 +1,4 @@
-//! The vehicle handling's tick-to-tick state: the readout the debug UI and the status page read,
+//! The vehicle handling's tick-to-tick state: the readout the debug UI and the status rows read,
 //! the held controls and handles, the mounted gun's hold, and the arm panel the headset reads.
 
 use std::{

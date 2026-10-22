@@ -86,7 +86,7 @@ log = "the game left on foot"          # log lines containing this, at info or a
 at_most = 0
 
 [[expect]]
-status = "CALLBACK"                    # a VR: STATUS row
+status = "CALLBACK"                    # a status row
 detail = "GAME THREAD"
 
 [[expect]]
@@ -98,7 +98,7 @@ below = 0.001
 Each `[[expect]]` names exactly one probe:
 
 - `signal`: a published signal (below). A flag reads true or false; a counter counts since the payload loaded, and with `delta` (the default for a counter) it reads how far it has grown since the replay started; a measure reads a number, or nothing while it is not measured.
-- `status`: a `VR: STATUS` row by its label, in any case. It reads true while the row shows the `health` asked for (`ok`, `off`, `waiting`, or `failed`) and its detail contains `detail`. With neither given, the row must read `OK`.
+- `status`: a status row ([status.md](../status.md)) by its label, in any case. It reads true while the row shows the `health` asked for (`ok`, `off`, `waiting`, or `failed`) and its detail contains `detail`. With neither given, the row must read `OK`.
 - `log`: the number of log lines at info or above, since the replay started, that contain the text. `level` raises the floor to `warn` or `error`, and with a level the text may be empty, which counts every line at that level.
 
 And one condition: `is` for a flag or a status row (true by default), or one of `below`, `above`, `at_least`, `at_most`, and `equals` for a number. A measure needs one; a counter and a log count default to `at_least = 1`.
@@ -115,7 +115,7 @@ The log probes read a tap on the log that queues every event at info or above wh
 
 ### Signals
 
-The signals read the snapshots the mod's systems publish for the `VR: STATUS` page and the debug UI. The Testing tab's Signals section lists them with their live values; the names are:
+The signals read the snapshots the mod's systems publish for the status rows and the debug UI. The Testing tab's Signals section lists them with their live values; the names are:
 
 | Signal | Kind | Reads |
 | --- | --- | --- |
@@ -183,7 +183,7 @@ The signals read the snapshots the mod's systems publish for the `VR: STATUS` pa
 | `legs.moving` | flag | The procedural body's feet walk rather than step standing ([rig.md](../body/rig.md#the-legs)). |
 | `legs.touchdown_lead_m` | measure | How far ahead of its hip the last walking foot landed, while the procedural body poses the legs. |
 
-A signal is added in `payload/src/testing/signals.rs`, reading a published snapshot only, as the status page's rows do.
+A signal is added in `payload/src/testing/signals.rs`, reading a published snapshot only, as the status rows do.
 
 ## The templates
 

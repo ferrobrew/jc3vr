@@ -48,7 +48,7 @@ Each source belongs to one category, and each category has its own switch beside
 
 The shot and the recoil kick are the weapons category's, and also need `game_rumble`, as they always have: the shot is the game's own fire rumble routed to the firing hand.
 
-The pause menu's `VR: CONTROLS` page has the settings under HAPTICS: `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), `CONTACT HAPTICS`, `WEAPON HAPTICS`, `VEHICLE HAPTICS`, `TRAVERSAL HAPTICS`, and `CHORD HAPTICS` (`categories.*`), `GAME RUMBLE`, `ALSO RUMBLE GAMEPAD` (`gamepad_rumble`), and `PER-CUE FREQUENCIES` (`frequencies`). Everything is on by default except `ALSO RUMBLE GAMEPAD`. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the category switches and the vocabulary's shapes replace them.
+The pause menu's `VR: CONTROLS` page has `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), and `GAME RUMBLE` under HAPTICS. The per-category switches (`categories.contact`, `categories.weapons`, `categories.vehicles`, `categories.traversal`, and `categories.interface`), `gamepad_rumble`, and `frequencies` are in the debug UI's Controllers tab under "Haptics". Everything is on by default except `gamepad_rumble`. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the category switches and the vocabulary's shapes replace them.
 
 ## Every source
 
@@ -131,11 +131,11 @@ The game's rumble reaches the controllers through two detours ([controllers.md, 
 
 The debug UI's Controllers tab has a Haptics section: the cues sent per category, the mixer's counts (played, stacked, masked, limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. Its settings hold the switches, the vocabulary's shapes, the mixer's rules, and the cue table; the live controller frame has a test button per primitive for each hand, which plays it at full strength whatever the category switches say.
 
-The pause menu's `VR: STATUS` page has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
+The debug UI's Status tab has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
 
 ## In the headset
 
-1. Open `VR: STATUS`: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency; try `PER-CUE FREQUENCIES` off and compare.
+1. Open the debug UI's Status tab: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency; try `frequencies` off and compare.
 2. Reach into a holster and out again: a faint tick on entering. Draw: a click. `HAPTIC CUES` counts up.
 3. Fire a pistol: a thud on the gun hand only. Fire a long burst from an automatic weapon while reaching into a pouch with the other hand: the burst stays clean on the gun hand, and the pouch tick plays on the other.
 4. Hold a gun on its foregrip and fire a burst while the reel or a vehicle's rumble runs: the shots stand out above the rumble rather than merging into it, and the rumble resumes between shots.
@@ -144,7 +144,7 @@ The pause menu's `VR: STATUS` page has `HAPTIC CUES` under FEEDBACK: the cues se
 7. Take the wheel of a car, turn to the lock and back through centre: a bump at the lock and a tick at centre. Press the horn: a click, and a tick on letting go.
 8. Grapple to a wall: a bump as it fires and a thud as it attaches. Tether two objects and squeeze: a tension on the grapple hand.
 9. Detonate C4: a long thud on both hands.
-10. Switch each category off in `VR: CONTROLS` and repeat one of its steps: nothing from that category, while the others still play. Turn `GAME RUMBLE` off: landings and vehicles no longer rumble, and shots no longer pulse. Lower `HAPTIC STRENGTH`: everything weakens together.
+10. Switch each category off in the debug UI's "Haptics" section and repeat one of its steps: nothing from that category, while the others still play. Turn `GAME RUMBLE` off: landings and vehicles no longer rumble, and shots no longer pulse. Lower `HAPTIC STRENGTH`: everything weakens together.
 
 ## Open questions
 

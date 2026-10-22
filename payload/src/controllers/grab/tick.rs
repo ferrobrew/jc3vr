@@ -2,8 +2,8 @@
 //! placed, then, after the tables have latched the grips, publish the result for the readouts,
 //! submit the markers, and log each grip press.
 //!
-//! The readout is a leaf slot that any thread may read ([`status`]), as the `VR: STATUS` page does
-//! from the UI capture thread (`docs/mod/threading.md`).
+//! The readout is a leaf slot that any thread may read ([`status`]), as the status rows ([`crate::status`])
+//! do in the middle of a frame (`docs/mod/threading.md`).
 
 use std::{
     fmt::Write as _,

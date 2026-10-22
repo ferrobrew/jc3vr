@@ -1,18 +1,21 @@
-//! The status page's rows for the VR inventory: the weapons it tracks, and the ones lying in the
+//! The status rows for the VR inventory: the weapons it tracks, and the ones lying in the
 //! world it keeps from the game's despawn.
 
 use smol_str::format_smolstr;
 
-use crate::controllers::{
-    menu::{read_config, status::Line},
-    weapons::{
-        dual_wield::single::{self, grant::TwinState},
-        holster::slot_label,
-        inventory::{
-            self,
-            restore::{self, LoadOutcome, Origin},
+use crate::{
+    controllers::{
+        menu::read_config,
+        weapons::{
+            dual_wield::single::{self, grant::TwinState},
+            holster::slot_label,
+            inventory::{
+                self,
+                restore::{self, LoadOutcome, Origin},
+            },
         },
     },
+    status::Line,
 };
 
 pub(super) fn tracked() -> Line {

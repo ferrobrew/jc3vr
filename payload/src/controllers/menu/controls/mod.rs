@@ -1,7 +1,8 @@
-//! The `VR: CONTROLS` page: the hand, the scheme, turning, the controller subsystems a player turns
-//! on and off, their few tunings worth changing in the headset, and the saved settings (their
-//! state, and a reset to defaults behind a confirmation). The rest of [`ControllersConfig`] stays
-//! in the debug UI. The HUD placement settings live on `VR: DISPLAY` instead.
+//! The `VR: CONTROLS` page: the hand and movement, the few hand, weapon, haptic, and vehicle
+//! settings a player reaches for in the headset, the wingsuit's neutral calibration, and the saved
+//! settings (their state, and a reset to defaults behind a confirmation). Turning is on
+//! `VR: COMFORT` and the HUD placement on `VR: DISPLAY`; the subsystems' switches and the rest of
+//! [`ControllersConfig`] are in the debug UI.
 //!
 //! [`ControllersConfig`]: crate::controllers::config::ControllersConfig
 
@@ -16,13 +17,10 @@ use smol_str::{SmolStr, format_smolstr};
 
 use crate::{
     controllers::{
-        menu::{comfort, config_slider, edit_config, read_config},
+        menu::{comfort, edit_config, read_config},
         vehicles::{self, config::ArmPitch},
     },
-    pause_menu::model::{
-        page::{Button, ButtonOutcome, Item, Page, PageDef, Readout},
-        slider::{SliderFormat, SliderRange},
-    },
+    pause_menu::model::page::{Button, ButtonOutcome, Item, Page, PageDef, Readout},
 };
 
 /// The `VR: CONTROLS` page.
@@ -45,10 +43,7 @@ fn build() -> Page {
 fn settings_page() -> Page {
     let page = Page::new("VR: CONTROLS").keeping_focus();
     let page = sections::controllers_section(page);
-    let page = sections::turning_section(page);
     let page = sections::hands_and_aim_section(page);
-    let page = sections::grapple_section(page);
-    let page = sections::controls_summary_section(page);
     let page = sections::weapons_section(page);
     let page = sections::haptics_section(page);
     let page = sections::vehicles_section(page);
@@ -133,7 +128,7 @@ fn on_close() {
 }
 
 /// Rebuild the page when the wingsuit's pitch measure changed since it was built, so that the
-/// rows for the measure now chosen show.
+/// calibration rows show only for the measure that has them.
 fn on_frame() -> ButtonOutcome {
     let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
     if built_pitch() == Some(pitch_by) || CONFIRMING_RESET.load(Ordering::Relaxed) {
@@ -143,20 +138,13 @@ fn on_frame() -> ButtonOutcome {
     }
 }
 
-/// The rows of the wingsuit's pitch measure: the wrists' tilt has its full tilt and a capture of
-/// the relaxed tilt as the neutral; the hands' height and the arms' sweep each their full
-/// distance.
+/// The calibration rows of the wingsuit's pitch measure: the wrists' tilt has a capture of the
+/// relaxed tilt as the neutral; the hands' height and the arms' sweep have none.
 fn pitch_rows(page: Page) -> Page {
     let pitch_by = read_config(|c| c.controllers.vehicles.arm_steering.pitch_by);
     set_built_pitch(pitch_by);
     match pitch_by {
         ArmPitch::WristTilt => page
-            .item(config_slider!(
-                "WINGSUIT FULL TILT",
-                TILT_RANGE,
-                SliderFormat::new(0, " DEG"),
-                |c| c.controllers.vehicles.arm_steering.full_tilt_deg
-            ))
             .item(Readout {
                 label: "WINGSUIT NEUTRAL TILT".into(),
                 read: neutral_tilt,
@@ -166,18 +154,7 @@ fn pitch_rows(page: Page) -> Page {
                 caption: "CAPTURE".into(),
                 action: capture_neutral_tilt,
             }),
-        ArmPitch::Height => page.item(config_slider!(
-            "WINGSUIT FULL HEIGHT",
-            REACH_RANGE,
-            SliderFormat::new(2, " M"),
-            |c| c.controllers.vehicles.arm_steering.full_pitch_m
-        )),
-        ArmPitch::Sweep => page.item(config_slider!(
-            "WINGSUIT FULL SWEEP",
-            REACH_RANGE,
-            SliderFormat::new(2, " M"),
-            |c| c.controllers.vehicles.arm_steering.full_sweep_m
-        )),
+        ArmPitch::Height | ArmPitch::Sweep => page,
     }
 }
 
@@ -235,20 +212,14 @@ fn set_built_pitch(pitch_by: ArmPitch) {
 /// Whether the page shows the reset confirmation.
 static CONFIRMING_RESET: AtomicBool = AtomicBool::new(false);
 
-/// The wingsuit's full pitch by wrist tilt, degrees, in degrees.
-const TILT_RANGE: SliderRange = SliderRange::new(10.0, 60.0, 50);
-
-const REACH_RANGE: SliderRange = SliderRange::new(0.1, 0.6, 50);
-
 #[cfg(test)]
 mod tests {
     use glam::{Vec2, Vec3};
 
     use super::{
         sections::{
-            ARM_PITCH_LABELS, DIRECTION_LABELS, DIRECTIONS, GUN_READOUT_LABELS, GUN_READOUTS,
-            HAND_LABELS, HANDS, SCHEME_LABELS, SCHEMES, SNAP_ANGLE_LABELS, SNAP_ANGLES,
-            TURN_MODE_LABELS, TURN_MODES, WHEEL_TRACKING, WHEEL_TRACKING_LABELS, layout_label,
+            ARM_PITCH_LABELS, DIRECTION_LABELS, DIRECTIONS, HAND_LABELS, HANDS, WHEEL_TRACKING,
+            WHEEL_TRACKING_LABELS, layout_label,
         },
         *,
     };
@@ -257,13 +228,9 @@ mod tests {
         controllers::{
             config::{SchemeSetting, SightOverride},
             frame::Hand,
-            menu::{
-                nearest_index,
-                tests::{TEST_CONFIG, exercise_page},
-            },
+            menu::tests::{TEST_CONFIG, exercise_page},
         },
         grapple::GrappleComfortMode,
-        headpose::config::VrTurnConfig,
         pause_menu::model::rows::encode_page,
         vr::input::{InputStatus, restart::RestartReason},
     };
@@ -279,11 +246,14 @@ mod tests {
             *config = Config::new();
             config.controllers.aim.sights.set(sight);
             config.controllers.dominant_hand = Hand::Left;
+            config.controllers.bindings.move_deadzone = 0.3;
+            config.controllers.locomotion.stick.enabled = false;
+            config.headpose.vr_turn.snap_angle_deg = 45.0;
+            // Not on either page: the debug UI's switches and tuning, the body page, and the
+            // display.
             config.controllers.scheme = SchemeSetting::Gamepad;
             config.controllers.locomotion.stick.acceleration_mps2 = 3.0;
-            config.headpose.vr_turn.snap_angle_deg = 45.0;
             config.headpose.grapple.mode = GrappleComfortMode::Off;
-            // Not on either page: the debug UI's tuning, the body page, and the display.
             config.controllers.hands.reach.pull_max = 0.5;
             config.controllers.body.rig.legs.gait = false;
             config.headpose.mouse_sensitivity = 3.0;
@@ -292,18 +262,23 @@ mod tests {
         reset_shown_settings();
         let defaults = Config::new();
         read_config(|config| {
-            assert_eq!(config.controllers.scheme, defaults.controllers.scheme);
             assert_eq!(
-                config.controllers.locomotion.stick.acceleration_mps2,
-                defaults.controllers.locomotion.stick.acceleration_mps2
+                config.controllers.bindings.move_deadzone,
+                defaults.controllers.bindings.move_deadzone
+            );
+            assert_eq!(
+                config.controllers.locomotion.stick.enabled,
+                defaults.controllers.locomotion.stick.enabled
             );
             assert_eq!(
                 config.headpose.vr_turn.snap_angle_deg,
                 defaults.headpose.vr_turn.snap_angle_deg
             );
-            assert_eq!(config.headpose.grapple.mode, defaults.headpose.grapple.mode);
 
             assert_eq!(config.controllers.dominant_hand, Hand::Left);
+            assert_eq!(config.controllers.scheme, SchemeSetting::Gamepad);
+            assert_eq!(config.controllers.locomotion.stick.acceleration_mps2, 3.0);
+            assert_eq!(config.headpose.grapple.mode, GrappleComfortMode::Off);
             assert_eq!(config.controllers.aim.sights.get(7), Some(&sight));
             assert_eq!(config.controllers.hands.reach.pull_max, 0.5);
             assert!(!config.controllers.body.rig.legs.gait);
@@ -319,33 +294,10 @@ mod tests {
 
     #[test]
     fn the_choice_lists_line_up() {
-        assert_eq!(SCHEMES.len(), SCHEME_LABELS.len());
         assert_eq!(HANDS.len(), HAND_LABELS.len());
         assert_eq!(DIRECTIONS.len(), DIRECTION_LABELS.len());
-        assert_eq!(TURN_MODES.len(), TURN_MODE_LABELS.len());
-        assert_eq!(SNAP_ANGLES.len(), SNAP_ANGLE_LABELS.len());
-        assert_eq!(GUN_READOUTS.len(), GUN_READOUT_LABELS.len());
         assert_eq!(WHEEL_TRACKING.len(), WHEEL_TRACKING_LABELS.len());
         assert_eq!(ArmPitch::ALL.len(), ARM_PITCH_LABELS.len());
-        assert_eq!(
-            SNAP_ANGLES[nearest_index(&SNAP_ANGLES, VrTurnConfig::new().snap_angle_deg)],
-            VrTurnConfig::new().snap_angle_deg,
-            "the default snap angle is offered",
-        );
-    }
-
-    #[test]
-    fn a_snap_angle_between_the_steps_shows_as_the_nearest() {
-        let page = build();
-        let Some(Item::Choice(snap)) = page
-            .items
-            .iter()
-            .find(|item| matches!(item, Item::Choice(c) if c.label == "SNAP TURN ANGLE"))
-        else {
-            panic!("no snap angle choice");
-        };
-        edit_config(|c| c.headpose.vr_turn.snap_angle_deg = 40.0);
-        assert_eq!((snap.get)(), 2);
     }
 
     #[test]
@@ -375,28 +327,17 @@ mod tests {
     }
 
     #[test]
-    fn the_wingsuit_rows_follow_the_pitch_measure() {
-        let labels = |pitch_by| {
+    fn the_wingsuit_calibration_follows_the_pitch_measure() {
+        let calibrate = |pitch_by| {
             edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = pitch_by);
             settings_page()
                 .items
                 .iter()
-                .filter_map(value_label)
-                .filter(|label| label.starts_with("WINGSUIT FULL"))
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(labels(ArmPitch::WristTilt), ["WINGSUIT FULL TILT"]);
-        assert_eq!(labels(ArmPitch::Height), ["WINGSUIT FULL HEIGHT"]);
-        assert_eq!(labels(ArmPitch::Sweep), ["WINGSUIT FULL SWEEP"]);
-        let calibrate = |page: &Page| {
-            page.items
-                .iter()
                 .any(|item| matches!(item, Item::Button(b) if b.label == "CALIBRATE NEUTRAL"))
         };
-        assert!(!calibrate(&settings_page()));
-        edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = ArmPitch::WristTilt);
-        assert!(calibrate(&settings_page()));
+        assert!(!calibrate(ArmPitch::Height));
+        assert!(!calibrate(ArmPitch::Sweep));
+        assert!(calibrate(ArmPitch::WristTilt));
         // A change of measure since the build asks for a rebuild, and none is asked after it.
         assert_eq!(on_frame(), ButtonOutcome::Stay);
         edit_config(|c| c.controllers.vehicles.arm_steering.pitch_by = ArmPitch::Height);

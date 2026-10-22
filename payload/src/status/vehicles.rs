@@ -1,21 +1,21 @@
-//! The status page's rows for the vehicles: the plane's flight stick and throttle, the cockpit
+//! The status rows for the vehicles: the plane's flight stick and throttle, the cockpit
 //! buttons, the passenger's aim, and the mounted gun.
 
 use smol_str::format_smolstr;
 
-use crate::controllers::{
-    menu::{
-        read_config,
-        status::{Health, Line},
+use crate::{
+    controllers::{
+        menu::read_config,
+        mode::{VehicleClass, VehicleSeat},
+        vehicles::{
+            self, VehicleSummary,
+            config::{CockpitButtonsConfig, MountedConfig},
+            mounted_recoil,
+            passenger::{self, PassengerStatus},
+            physical::ControlKind,
+        },
     },
-    mode::{VehicleClass, VehicleSeat},
-    vehicles::{
-        self, VehicleSummary,
-        config::{CockpitButtonsConfig, MountedConfig},
-        mounted_recoil,
-        passenger::{self, PassengerStatus},
-        physical::ControlKind,
-    },
+    status::{Health, Line},
 };
 
 pub(super) fn flight_controls() -> Line {

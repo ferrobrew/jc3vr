@@ -371,6 +371,11 @@ fn placed_wheel(ui: &mut Ui, wheel: &WheelFrame) {
 
 pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
+    ui.checkbox(&mut v.passenger_body_by_hand, "Passenger body aims by hand")
+        .on_hover_text(
+            "In a passenger or stunt seat, turn the seated body toward the gun hand's aim point \
+             instead of the gaze's.",
+        );
     ui.label("The wingsuit's head look-steer removal follows the parachute's movement setting.");
     egui::CollapsingHeader::new("Driving view")
         .show(ui, |ui| driving_view_settings(ui, &mut v.driving_view));

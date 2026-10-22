@@ -59,13 +59,13 @@ The fire, the attach (the snap as the hook takes hold), and the yank play their 
 
 ## Threading
 
-The input tick (the game thread, outside the world update) reads the hook, steps the pull, publishes the drive, and sends the pulses after releasing its own lock. The reel's detour runs in the character's update on the game thread and reads the drive from a leaf lock. The readout is published to its own leaf lock, so the `VR: STATUS` rows on the UI capture thread never wait on the input tick ([threading.md](../threading.md)).
+The input tick (the game thread, outside the world update) reads the hook, steps the pull, publishes the drive, and sends the pulses after releasing its own lock. The reel's detour runs in the character's update on the game thread and reads the drive from a leaf lock. The readout is published to its own leaf lock, so the `GRAPPLE` status rows never wait on the input tick ([threading.md](../threading.md)).
 
 ## Settings and readouts
 
-The switches are on `VR: CONTROLS` under `GRAPPLE`: `YANK TO ZIP` (`bindings.yank.enabled`), `PULL TO SPEED THE REEL` and `FASTEST PULLED REEL` (`grapple.reel.enabled` and `max_scale`), `PULL TO TIGHTEN TETHERS` (`grapple.tether.enabled`), `SWING FROM THE LINE BY HAND` (`hands.anchor.hang_swing`), and `PUMP THE SWING` (`grapple.swing.pump`); the line's vibration is behind `TRAVERSAL HAPTICS` under HAPTICS ([haptics.md](haptics.md)). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
+The switches are in the debug UI's Controllers tab: `bindings.yank.enabled`, `grapple.reel.enabled` and `grapple.reel.max_scale`, `grapple.tether.enabled`, and `grapple.swing.pump` under "Bindings", and `hands.anchor.hang_swing` under "Hands"; the line's vibration is behind `haptics.categories.traversal` ([haptics.md](haptics.md)). Everything defaults on. The tuning is under "Physical grapple" in the debug UI's Controllers tab, beside the yank's, and the weapons readout shows the pump and a line for the physical grapple.
 
-`VR: STATUS` has a `GRAPPLE` section:
+The debug UI's Status tab has a `GRAPPLE` section:
 
 - `GRAPPLE STATE`: `INACTIVE`, `FIRING`, `IN FLIGHT`, `ATTACHED`, `REELING IN`, `HANGING`, `REELED IN`, or `TETHER LINE`, or `WAITING, NO HAND INPUT` while the input tick does not run.
 - `ATTACHED TARGET`: `OBJECT` or `SURFACE` with the distance from the head to the attach point, or `NONE`.
@@ -78,7 +78,7 @@ The log has, at info level under the `grapple` target, `physical grapple: the li
 
 ## Headset checklist
 
-With the `GRAPPLE` switches on (the defaults):
+With the physical grapple's switches on (the defaults):
 
 1. Grapple to a wall and let the line hang without pulling: `ATTACHED TARGET` reads `SURFACE` with a plausible distance, `the line attaches` is logged, and the attach pulse is felt.
 2. Hold the grapple button and yank to zip, then keep the hand still: `the hand drives the reel` with a scale near the yank's speed, and the reel is at least as fast as the gamepad's zip. `REEL FROM HAND` shows the scale during the reel and the count after; `the reel ends` follows.

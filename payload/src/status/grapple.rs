@@ -1,14 +1,12 @@
-//! The status page's rows for the physical grapple: where the grapple is, what its line holds, the
+//! The status rows for the physical grapple: where the grapple is, what its line holds, the
 //! reel and the tethers the hand works, the hang swing, and the grapple hand's vibration.
 
 use smol_str::format_smolstr;
 
 use crate::{
-    controllers::{
-        hands::anchor,
-        menu::{read_config, status::Line},
-    },
+    controllers::{hands::anchor, menu::read_config},
     grapple::physical::{self, GrapplePhase, GrappleStatus},
+    status::Line,
 };
 
 pub(super) fn state() -> Line {
