@@ -11,12 +11,14 @@
 //! The egui debug panel has its own pointer, built the same way:
 //!
 //! - [`egui_controller`] turns either controller's aim ray, trigger, upper face button, and
-//!   thumbstick into pointer updates;
+//!   thumbstick into pointer updates, and moves the panel while a hand grabs it;
+//! - [`egui_grab`] decides which hand's grip holds the panel;
 //! - [`egui_route`] gives egui's pointer to the desktop mouse or the controller, whichever was used
 //!   last, and builds the egui events.
 
 mod controller;
 mod egui_controller;
+mod egui_grab;
 mod egui_route;
 mod panel;
 mod route;
@@ -30,7 +32,10 @@ pub use crate::hud::pointer::{
     egui_route::{
         apply_panel_input_options, egui_cursor_uv, egui_panel_events, reset_egui_pointer,
     },
-    panel::{RenderedPanel, publish_camera, publish_egui_panel, publish_panel, rendered_camera},
+    panel::{
+        RenderedCamera, RenderedPanel, publish_camera, publish_egui_panel, publish_panel,
+        rendered_camera,
+    },
     route::{PendingRoute, RoutedPointer, peek_route, reset_route, route_game_pointer},
 };
 pub(crate) use crate::hud::pointer::{

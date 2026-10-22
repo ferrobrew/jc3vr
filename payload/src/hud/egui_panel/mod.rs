@@ -2,13 +2,20 @@
 //!
 //! In VR the flat egui overlay that rides the game back buffer is invisible -- the desktop cursor
 //! lands in neither eye and the overlay is suppressed by `BLOCK_FLIP` -- so the debug UI is redirected
-//! into an offscreen texture and drawn back into the scene as a head-following floating quad, exactly
-//! like the gameplay HUD panel (see [`crate::hud::quad`]), and driven by the desktop mouse re-sourced onto
-//! the panel surface or by either controller's aim ray (see [`crate::hud::pointer`]). Each frame's
-//! corners are published with the camera basis that placed them, for the controller pointer to
-//! intersect, and the cursor dot follows whichever source owns the pointer.
+//! into an offscreen texture and drawn back into the scene as a floating quad, with the gameplay
+//! HUD's quad pipeline (see [`crate::hud::quad`]), and driven by the desktop mouse re-sourced onto the
+//! panel surface or by either controller's aim ray (see [`crate::hud::pointer`]). Each frame's corners
+//! are published with the camera basis that placed them, for the controller pointer to intersect,
+//! and the cursor dot follows whichever source owns the pointer.
 //!
-//! This is a wholly independent panel: its own render target, its own lazy-follow damping, and its own
+//! The panel lives in the player's play space, like a window in a VR runtime's dashboard: its pose
+//! is held in the cockpit frame, the tracked space the head and the hands are composed in, so it
+//! travels with the player and stays where it was left as the head turns ([`slot`]). A hand grabs
+//! it with the grip and carries it, and the thumbstick pushes it along the aim ray while it is held
+//! ([`crate::hud::pointer`]). Its world corners are composed at render time through the rendered
+//! camera's basis, so it does not trail the head when the player moves fast.
+//!
+//! This is a wholly independent panel: its own render target, its own placement, and its own
 //! eye-0-cached corners, so it never touches [`crate::hud::state::HUD_STATE`] and cannot perturb the
 //! gameplay HUD. The whole feature is gated behind [`is_active`] -- an OpenXR session running *and* the
 //! opt-in [`EguiPanelConfig::enabled`](crate::hud::config) flag -- and defaults off, so with it off
@@ -19,21 +26,30 @@
 //! (the same compute-on-eye-0 rule as the gameplay HUD), and the desktop mirror composites the same
 //! panel texture (see [`crate::vr::mirror`]). There is never a second egui pass.
 
+mod placement;
+mod slot;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use glam::{Quat, Vec3, Vec4};
+use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
+pub(crate) use crate::hud::egui_panel::slot::{begin_grab, end_grab, hold_grab, is_placed, recall};
 use crate::{
     config::{self, Config},
+    controllers::frame::{self, Hand, Pose},
     egui_impl::EguiState,
     hud::{
-        config::EguiPanelConfig,
+        config::{CursorConfig, EguiPanelConfig},
         cursor::CursorFrame,
+        egui_panel::{
+            placement::world_panel,
+            slot::{ResolveInput, Summon},
+        },
         pointer::{self, RenderedPanel},
-        quad::{HudQuad, PanelParams, compute_cursor_corners, compute_world_corners},
+        quad::{HudQuad, compute_cursor_corners, compute_world_corners},
         target::HudTarget,
     },
 };
@@ -42,8 +58,8 @@ use crate::{
 /// handoff, on the game thread from the mirror).
 static EGUI_PANEL: Mutex<EguiPanelState> = Mutex::new(EguiPanelState::new());
 
-/// Whether the panel was active last frame, so the world-lock latch is cleared exactly once on the
-/// dismissal edge rather than every idle frame.
+/// Whether the panel was active last frame, so that showing it and dismissing it each act once, on
+/// their edge.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Whether the egui floating panel is active this frame: the opt-in panel is enabled and a VR frame
@@ -98,10 +114,10 @@ pub(crate) fn panel_srv() -> Option<ID3D11ShaderResourceView> {
 }
 
 /// Draw the egui panel for `eye` over `target` (the eye's linear back buffer). On eye 0 -- and only
-/// while [`is_active`] -- the egui frame is rendered into the panel texture, the head-following pose
-/// is chosen, and the world-space corners (panel + cursor) are computed and cached. Both eyes then
-/// draw the cached corners. A no-op while inactive. Called from the render-thread post-draw hook after
-/// the gameplay HUD quad, with the engine context mutex held.
+/// while [`is_active`] -- the egui frame is rendered into the panel texture, the placement is settled,
+/// and the world-space corners (panel + cursor) are computed and cached. Both eyes then draw the
+/// cached corners. A no-op while inactive. Called from the render-thread post-draw hook after the
+/// gameplay HUD quad, with the engine context mutex held.
 pub(crate) fn draw_quad(
     context: &ID3D11DeviceContext,
     device: &Device,
@@ -109,14 +125,15 @@ pub(crate) fn draw_quad(
     eye: usize,
 ) {
     if !is_active() {
-        // On the dismissal edge, drop the world-lock latch so the next open re-anchors at the head.
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
-            EGUI_PANEL.lock().latched_pose = None;
             pointer::publish_egui_panel(None);
         }
         return;
     }
-    WAS_ACTIVE.store(true, Ordering::Relaxed);
+    // Shown again, the panel keeps where it was left, unless that is behind the player.
+    if !WAS_ACTIVE.swap(true, Ordering::Relaxed) {
+        slot::summon(Summon::Shown);
+    }
     let cfg = Config::lock_query(|c| c.hud);
     let mut panel = EGUI_PANEL.lock();
     if eye == 0 {
@@ -125,15 +142,10 @@ pub(crate) fn draw_quad(
     panel.draw(context, device, target);
 }
 
-/// The panel's render target, quad pipeline, world-lock latch, and eye-0 corner cache.
+/// The panel's render target, quad pipeline, and eye-0 corner cache.
 struct EguiPanelState {
     target: Option<HudTarget>,
     quad: Option<HudQuad>,
-    /// The world-locked panel pose `(position, rotation)`, latched the first frame the panel is shown
-    /// and held until it is dismissed -- so the panel stays put in the world (like the pause/map menus)
-    /// rather than chasing the head, which is easier to point at. Cleared on dismissal so the next open
-    /// re-anchors at the current head pose.
-    latched_pose: Option<(Vec3, Quat)>,
     /// World-space panel corners, computed on eye 0 and reused for eye 1 (correct stereo depth).
     cached_corners: Option<[Vec4; 4]>,
     /// The virtual cursor's world-space corners, computed on eye 0 alongside the panel corners.
@@ -145,21 +157,20 @@ impl EguiPanelState {
         Self {
             target: None,
             quad: None,
-            latched_pose: None,
             cached_corners: None,
             cursor_corners: None,
         }
     }
 
     /// Eye-0 setup: (re)create the panel target at the configured resolution, render this frame's egui
-    /// output into it, choose the pose, compute + cache the panel and cursor corners, and publish the
-    /// corners for the controller pointer.
+    /// output into it, settle the placement, compute + cache the panel and cursor corners, and
+    /// publish the corners for the controller pointer.
     fn prepare(
         &mut self,
         context: &ID3D11DeviceContext,
         device: &Device,
         cfg: &EguiPanelConfig,
-        cursor_cfg: &crate::hud::config::CursorConfig,
+        cursor_cfg: &CursorConfig,
     ) {
         self.cached_corners = None;
         self.cursor_corners = None;
@@ -188,39 +199,35 @@ impl EguiPanelState {
 
         // Render the single-use egui output into the panel texture. A no-op if the output was already
         // consumed this frame (e.g. the flat path ran first), which leaves the previous panel content.
-        if let Some(egui_state) = crate::egui_impl::EguiState::get().as_mut() {
+        if let Some(egui_state) = EguiState::get().as_mut() {
             egui_state.render_to(context, target.color_rtv());
         }
 
-        // The pointer's captured camera, with its tracking sample, is preferred over the render
-        // camera, as for the gameplay HUD, so the panel and the controller ray share one basis.
-        let pointer_camera = pointer::rendered_camera();
-        let Some((head_pos, head_rotation)) = pointer_camera
-            .map(|camera| (camera.head.position, camera.head.orientation))
-            .or_else(crate::hud::render_camera_pose)
-        else {
+        // The panel is placed in the cockpit frame and composed into the world through the
+        // pointer's captured camera, the render-time head with the tracking sample that placed it,
+        // so the panel, the head, and the controller rays share one basis.
+        let Some(camera) = pointer::rendered_camera() else {
             return;
         };
-        // World-lock: latch the pose the first frame the panel is shown and hold it, so it stays put
-        // in the world instead of chasing the head. Cleared on dismissal (see `draw_quad`).
-        let (pos, rot) = *self.latched_pose.get_or_insert((head_pos, head_rotation));
-        let aspect = cfg.aspect.max(f32::EPSILON);
-        let params = PanelParams {
-            pos,
-            rot,
-            aspect,
+        let held = slot::grabbing().and_then(|hand| Some((hand, latest_aim(hand)?)));
+        let pose = slot::resolve(ResolveInput {
+            head: camera.cockpit_head,
             distance: cfg.distance,
-            panel_height: crate::hud::panel_height(cfg.scale, cfg.distance, aspect),
-        };
+            held,
+            recenters: crate::vr::recenter_count(),
+        });
+        let aspect = cfg.aspect.max(f32::EPSILON);
+        // The panel's physical size is the size that gives the configured apparent size at the
+        // summoning distance, so pushing it away shrinks it in view as a real window would.
+        let panel_height = crate::hud::panel_height(cfg.scale, cfg.distance, aspect);
+        let params = world_panel(&camera, pose, panel_height, aspect);
         self.cached_corners = compute_world_corners(&params);
-        pointer::publish_egui_panel(pointer_camera.zip(self.cached_corners).map(
-            |(camera, corners)| RenderedPanel {
-                head: camera.head,
-                cockpit_head: camera.cockpit_head,
-                scale: camera.scale,
-                corners,
-            },
-        ));
+        pointer::publish_egui_panel(self.cached_corners.map(|corners| RenderedPanel {
+            head: camera.head,
+            cockpit_head: camera.cockpit_head,
+            scale: camera.scale,
+            corners,
+        }));
         self.cursor_corners = pointer::egui_cursor_uv()
             .and_then(|(u, v)| compute_cursor_corners(&params, CursorFrame { u, v }, cursor_cfg));
     }
@@ -251,4 +258,14 @@ impl EguiPanelState {
             quad.draw_cursor(context, device, target, &cursor_corners);
         }
     }
+}
+
+/// The latest cockpit-frame aim pose of `hand`, sampled for this frame, or `None` while it is not
+/// tracked. The controller frame slot is a leaf, taken and released here before the placement's.
+fn latest_aim(hand: Hand) -> Option<Pose> {
+    frame::with_latest(|frame| {
+        let side = frame.hand(hand);
+        (frame.focused && side.active && side.aim.is_valid()).then_some(side.aim.pose)
+    })
+    .flatten()
 }

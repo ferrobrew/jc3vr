@@ -19,6 +19,11 @@
 //! when it begins with the ray on the panel, and a press held across the ray leaving the panel
 //! drags along the panel's edge.
 //!
+//! A hand grabs the panel by pressing its grip with its ray on the panel ([`GrabTracker`]): the panel
+//! then follows the hand rigidly, and the hand's thumbstick pushes and pulls it along the aim ray
+//! instead of scrolling, until the grip is released. The grip is not a pointer button, so a grab
+//! never clicks.
+//!
 //! A held press stays a click however long it is held, until the hit moves past the click slop
 //! ([`ClickSlop`]): until then the pointer stays where the press began, so a hand's tremor never
 //! turns a press into a drag. Once the hit leaves the slop, the pointer jumps to it and follows it
@@ -38,7 +43,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        frame::{Button, ControllerFrame, Edges, Hand},
+        frame::{Button, ControllerFrame, Edges, Hand, Pose},
         overlay::{
             primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
             store,
@@ -48,6 +53,7 @@ use crate::{
         egui_panel,
         pointer::{
             controller::{ControllerState, TriggerSample},
+            egui_grab::{GrabSample, GrabStep, GrabTracker},
             panel::{PanelHit, aim_at_egui_panel, intersect_panel},
         },
     },
@@ -91,13 +97,18 @@ pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, 
     let samples = input
         .filter(|(frame, _)| enabled && frame.is_fresh_at(now) && egui_panel::is_active())
         .map(|(frame, edges)| Hand::BOTH.map(|hand| sample(frame, edges, hand)));
+    let placed = egui_panel::is_placed();
     let mut state = STATE.lock();
-    let Some(samples) = samples else {
-        if state.hand.is_some() {
+    let Some(mut samples) = samples else {
+        let grabbed = state.grab.hand().is_some();
+        if state.hand.is_some() || grabbed {
             *state = EguiControllerState::new();
             push(ControllerUpdate::GONE);
         }
         drop(state);
+        if grabbed {
+            egui_panel::end_grab();
+        }
         store::clear(Source::PanelPointer);
         return;
     };
@@ -105,8 +116,20 @@ pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, 
         now.saturating_duration_since(last).as_secs_f32()
     });
     state.last_tick = Some(now);
+    let preferred = state.hand.unwrap_or(dominant);
+    let grab = state
+        .grab
+        .step(samples.map(|sample| sample.grab), preferred, placed);
+    // The holding hand's stick moves the panel, so it does not scroll.
+    let push_rate = grab.holding().map_or(0.0, |hand| {
+        let stick = &mut samples[hand.index()].stick;
+        let rate = axis_rate(stick.y);
+        *stick = Vec2::ZERO;
+        rate
+    });
     let (hand, update, laser) = state.step(&samples, dominant, slop, dt, now);
     drop(state);
+    apply_grab(grab, &samples, push_rate, dt);
     push(update);
     draw_laser(hand, laser);
 }
@@ -176,6 +199,9 @@ struct HandSample {
     trigger: TriggerSample,
     secondary: TriggerSample,
     stick: Vec2,
+    /// The hand's cockpit-frame aim pose, while its poses are usable.
+    aim: Option<Pose>,
+    grab: GrabSample,
 }
 
 impl HandSample {
@@ -191,6 +217,23 @@ const MAX_QUEUED: usize = 16;
 static UPDATES: Mutex<VecDeque<ControllerUpdate>> = Mutex::new(VecDeque::new());
 
 static STATE: Mutex<EguiControllerState> = Mutex::new(EguiControllerState::new());
+
+/// Carry the tick's grab to the panel's placement: take hold with the hand's aim pose, move the
+/// held panel with the hand and push it along the ray at `push_rate` for `dt` seconds, or let go.
+fn apply_grab(grab: GrabStep, samples: &[HandSample; 2], push_rate: f32, dt: f32) {
+    match grab {
+        GrabStep::Idle => {}
+        GrabStep::Begin(hand) => {
+            if let Some(aim) = samples[hand.index()].aim {
+                egui_panel::begin_grab(hand, aim);
+            }
+        }
+        GrabStep::Hold(hand) => {
+            egui_panel::hold_grab(hand, samples[hand.index()].aim, push_rate, dt);
+        }
+        GrabStep::Release(_) => egui_panel::end_grab(),
+    }
+}
 
 fn push(update: ControllerUpdate) {
     let mut updates = UPDATES.lock();
@@ -227,14 +270,22 @@ fn read_hand(
         pressed: edges.pressed(hand, button),
         released: edges.released(hand, button),
     };
+    let usable = usable(frame, hand);
+    let hit_inside = hit.is_some_and(|hit| hit.inside);
     HandSample {
         hit,
         trigger: button(Button::TriggerPress),
         secondary: button(Button::BClick),
-        stick: if usable(frame, hand) {
+        stick: if usable {
             side.inputs.thumbstick
         } else {
             Vec2::ZERO
+        },
+        aim: usable.then_some(side.aim.pose),
+        grab: GrabSample {
+            grip: button(Button::SqueezePress),
+            on_panel: hit_inside,
+            usable,
         },
     }
 }
@@ -293,6 +344,7 @@ struct EguiControllerState {
     /// Each hand's trigger as the pointer saw it on the previous tick, in [`Hand::index`] order.
     triggers: [bool; 2],
     last_tick: Option<Instant>,
+    grab: GrabTracker,
 }
 
 /// Where a held primary press began.
@@ -312,6 +364,7 @@ impl EguiControllerState {
             press_origin: None,
             triggers: [false; 2],
             last_tick: None,
+            grab: GrabTracker::new(),
         }
     }
 

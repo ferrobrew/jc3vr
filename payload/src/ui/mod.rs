@@ -10,7 +10,10 @@ use std::{sync::OnceLock, time::Instant};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{self, SaveStatus};
+use crate::{
+    config::{self, SaveStatus},
+    hud::egui_panel,
+};
 
 pub mod camera;
 pub mod controllers;
@@ -265,11 +268,21 @@ pub fn restart_banner(ctx: &egui::Context) {
 }
 
 pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
-    ui.label(
-        egui::RichText::new(format!("Build {}", crate::BUILD_STAMP))
-            .weak()
-            .small(),
-    );
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("Build {}", crate::BUILD_STAMP))
+                .weak()
+                .small(),
+        );
+        if egui_panel::is_active()
+            && ui
+                .small_button("Recall panel")
+                .on_hover_text("Bring the floating panel back in front of your head.")
+                .clicked()
+        {
+            egui_panel::recall();
+        }
+    });
     settings_line(ui);
 
     let mut state_slot = DOCK_STATE.lock();

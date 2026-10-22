@@ -549,22 +549,23 @@ impl Default for CropExtents {
 
 /// The interactive egui debug panel rendered as a 2D surface floating in 3D space in VR (issue #24).
 ///
-/// The panel is an independent floating surface: it has its own offscreen render target, its own
-/// lazy-follow damping, and its own placement, so it never perturbs the gameplay HUD. It only takes
+/// The panel is an independent floating surface: it has its own offscreen render target and its own
+/// placement in the player's tracked space, so it never perturbs the gameplay HUD. It only takes
 /// effect while an OpenXR session is running; on the flat desktop the egui debug overlay stays on the
 /// back buffer as before.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EguiPanelConfig {
     /// Master toggle. When on (and a session is running), the egui debug UI renders into the panel
-    /// texture and floats in front of the head instead of on the flat back buffer. Off by default so
-    /// the working baseline is never disturbed.
+    /// texture and floats in the player's tracked space instead of on the flat back buffer. Off by
+    /// default so the working baseline is never disturbed.
     pub enabled: bool,
-    /// Distance from the eye to the panel, in meters. The panel resizes with distance to keep a
-    /// constant apparent (angular) size.
+    /// How far in front of the head the panel is placed when it is summoned, in meters. The panel's
+    /// physical size is the one that gives it the apparent size [`scale`](EguiPanelConfig::scale) at
+    /// this distance.
     pub distance: f32,
-    /// Apparent-size multiplier for the panel; `1.0` is the comfortable baseline (see
-    /// [`crate::hud::panel_height`]).
+    /// Apparent-size multiplier for the panel at the summoning distance; `1.0` is the comfortable
+    /// baseline (see [`crate::hud::panel_height`]).
     pub scale: f32,
     /// Aspect ratio (width / height) of the panel quad. Kept in step with
     /// [`resolution`](EguiPanelConfig::resolution) so the egui content is not stretched.
@@ -572,8 +573,6 @@ pub struct EguiPanelConfig {
     /// The panel texture's pixel resolution. egui lays out at this size, so it also sets the effective
     /// DPI of the panel content.
     pub resolution: (u32, u32),
-    /// Lazy-follow damping parameters for the panel (independent of the gameplay HUD's follow).
-    pub follow: FollowConfig,
     /// Whether to also composite the panel onto the desktop mirror while a VR session runs. Off by
     /// default: the panel is already visible in the headset, so the desktop mirror shows the
     /// unobstructed scene. Turn it on for a legible desktop copy of the panel.
@@ -601,7 +600,6 @@ impl EguiPanelConfig {
             scale: 0.85,
             aspect: 4.0 / 3.0,
             resolution: (1280, 960),
-            follow: FollowConfig::new(),
             show_on_mirror: false,
             controller_pointer: true,
             click_slop: 0.03,

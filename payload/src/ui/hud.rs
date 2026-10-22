@@ -282,16 +282,17 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
             ui.indent("egui_panel", |ui| {
                 ui.add(
                     egui::Slider::new(&mut cfg.hud.egui_panel.distance, 0.3..=5.0)
-                        .text("Panel distance (m)"),
+                        .text("Panel summon distance (m)"),
+                )
+                .on_hover_text(
+                    "How far in front of the head the panel appears when it is first shown or \
+                     recalled.",
                 );
                 ui.add(
                     egui::Slider::new(&mut cfg.hud.egui_panel.scale, 0.2..=3.0)
                         .text("Panel size (x)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.hud.egui_panel.follow.rotation_halflife, 0.01..=2.0)
-                        .text("Panel rotation halflife (s)"),
-                );
+                )
+                .on_hover_text("The panel's apparent size at the summon distance.");
                 ui.checkbox(
                     &mut cfg.hud.egui_panel.show_on_mirror,
                     "Show panel on desktop mirror (off = headset only)",
@@ -300,7 +301,10 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
                     &mut cfg.hud.egui_panel.controller_pointer,
                     "Point at the panel with the controllers",
                 )
-                .on_hover_text("The trigger clicks, B right-clicks, and the stick scrolls.");
+                .on_hover_text(
+                    "The trigger clicks, B right-clicks, and the stick scrolls. The grip grabs the \
+                     panel, and the stick then pushes and pulls it.",
+                );
                 ui.add(
                     egui::Slider::new(&mut cfg.hud.egui_panel.click_slop, 0.0..=0.15)
                         .text("Controller click slop (panel heights)"),
