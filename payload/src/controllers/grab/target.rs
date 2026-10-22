@@ -28,20 +28,19 @@ pub struct GripTarget {
 
 impl GripTarget {
     /// A target a hand takes within `radius` of `centre`, a point in the cockpit frame reached by
-    /// the hand's `by` point, marked at `centre` the way `mark` says.
+    /// the hand's grip as it is drawn, marked at `centre` the way `mark` says.
     pub fn sphere(
         volume: GrabVolume,
         hand: Option<Hand>,
         centre: Vec3,
         radius: f32,
-        by: HandPoint,
         mark: Mark,
     ) -> Self {
         Self {
             volume,
             hand,
             tier: Tier::of(volume),
-            reach: TargetReach::Sphere { centre, radius, by },
+            reach: TargetReach::Sphere { centre, radius },
             held_by: None,
             mark,
         }
@@ -115,42 +114,11 @@ impl Tier {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TargetReach {
     /// Within `radius` metres of `centre`, a point in the cockpit frame, measured from the hand's
-    /// `by` point.
-    Sphere {
-        centre: Vec3,
-        radius: f32,
-        by: HandPoint,
-    },
+    /// grip as it is drawn.
+    Sphere { centre: Vec3, radius: f32 },
     /// The provider's own reach found the target `distance` metres from the hand, at the player's
     /// scale: the physical hands' casts into the world.
     Measured { distance: f32 },
-}
-
-/// Which point of a hand a target is reached by, in the cockpit frame.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum HandPoint {
-    /// The player's own grip, before the body-scale remap: the sockets and pouches on the player's
-    /// own body are reached there.
-    Player,
-    /// The hand as it is drawn: what lies on the character, a held gun, and the world are reached
-    /// there.
-    Drawn,
-}
-
-/// A hand's points in the cockpit frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HandPoints {
-    pub player: Vec3,
-    pub drawn: Vec3,
-}
-
-impl HandPoints {
-    pub fn get(&self, by: HandPoint) -> Vec3 {
-        match by {
-            HandPoint::Player => self.player,
-            HandPoint::Drawn => self.drawn,
-        }
-    }
 }
 
 /// How a target's marker is drawn.
@@ -200,10 +168,7 @@ impl Mark {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum MarkAt {
     /// A point in the cockpit frame that rides with the player, anchored to the render-time head.
-    /// With `on_body`, it is a socket on the player's own body, reached by the player's own hand
-    /// before the body-scale remap, and drawn shifted with the remapped hand that reaches for it,
-    /// so that the drawn hand meets the drawn marker where the grab happens.
-    Cockpit { point: Vec3, on_body: bool },
+    Cockpit(Vec3),
     /// A point in the cockpit frame on what `hand` holds, anchored to that hand's render-time grip.
     OnHand { hand: Hand, point: Vec3 },
     /// A point that lies in the world.

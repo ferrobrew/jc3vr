@@ -14,7 +14,7 @@ use glam::Vec3;
 use crate::controllers::{
     frame::Hand,
     grab::{
-        Category, GripTarget, HandPoints, Shown,
+        Category, GripTarget, Shown,
         markers::{self, MarkerFrame},
         target::TargetReach,
         tick::Tick,
@@ -183,7 +183,7 @@ fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
     for hand in Hand::BOTH {
         let i = hand.index();
         let resolved = &tick.resolved[i];
-        let points = tick.points[i];
+        let grip = tick.grips[i];
         let mut lines: Vec<TargetLine> = tick
             .targets
             .iter()
@@ -194,13 +194,13 @@ fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
                 let reach = resolved.reaches.iter().find(|r| r.index == index);
                 let chosen = resolved.chosen.is_some_and(|c| c.index == index);
                 let state = TargetState::of(target.held_by == Some(hand), chosen, reach.is_some());
-                let (distance, reach_m) = distance_to(target, points, reach.map(|r| r.distance))?;
+                let (distance, reach_m) = distance_to(target, grip, reach.map(|r| r.distance))?;
                 if state == TargetState::OutOfReach
                     && (distance > radius || target.category() == Category::Body)
                 {
                     return None;
                 }
-                let at = markers::anchor(target, Some(hand), inputs.frame)?;
+                let at = markers::anchor(target, inputs.frame)?;
                 Some(TargetLine {
                     hand,
                     at,
@@ -217,18 +217,18 @@ fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
     out
 }
 
-/// How far a hand at `points` is from `target`'s grab point, and how near it must come, metres at
+/// How far a hand with its drawn grip at `grip` is from `target`'s grab point, and how near it must come, metres at
 /// the player's scale; `in_reach` is the resolver's distance when the hand is within reach. A
 /// target the provider measured is only offered within reach.
 fn distance_to(
     target: &GripTarget,
-    points: Option<HandPoints>,
+    grip: Option<Vec3>,
     in_reach: Option<f32>,
 ) -> Option<(f32, f32)> {
     match target.reach {
-        TargetReach::Sphere { centre, radius, by } => {
-            let distance = in_reach
-                .unwrap_or_else(|| points.map_or(f32::INFINITY, |p| p.get(by).distance(centre)));
+        TargetReach::Sphere { centre, radius } => {
+            let distance =
+                in_reach.unwrap_or_else(|| grip.map_or(f32::INFINITY, |p| p.distance(centre)));
             distance.is_finite().then_some((distance, radius))
         }
         TargetReach::Measured { distance } => {
@@ -316,38 +316,21 @@ mod tests {
 
     use super::*;
     use crate::controllers::{
-        grab::{
-            GrabVolume, HandPoint, HolsterSite, Mark, MarkAt, Reach, Resolved, Tier,
-            markers::test_frame,
-        },
+        grab::{GrabVolume, HolsterSite, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame},
         physical_hands::{
             collider_view::model::Aabb,
             grab_view::model::{CandidateKind, RayOutcome, ReachRay},
         },
     };
 
-    fn sphere(volume: GrabVolume, centre: Vec3, radius: f32, by: HandPoint) -> GripTarget {
+    fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {
         GripTarget::sphere(
             volume,
             None,
             centre,
             radius,
-            by,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: centre,
-                    on_body: false,
-                },
-                0.05,
-            ),
+            Mark::ring(MarkAt::Cockpit(centre), 0.05),
         )
-    }
-
-    fn points(at: Vec3) -> Option<HandPoints> {
-        Some(HandPoints {
-            player: at,
-            drawn: at,
-        })
     }
 
     fn inputs<'a>(
@@ -369,29 +352,13 @@ mod tests {
 
     #[test]
     fn targets_get_lines_by_state_and_far_or_body_ones_get_none() {
-        let near = sphere(
-            GrabVolume::WorldWeapon,
-            Vec3::new(0.0, 1.0, -0.5),
-            0.1,
-            HandPoint::Drawn,
-        );
-        let chosen = sphere(
-            GrabVolume::Foregrip,
-            Vec3::new(0.0, 1.0, -0.05),
-            0.1,
-            HandPoint::Drawn,
-        );
-        let far = sphere(
-            GrabVolume::WorldMagazine,
-            Vec3::new(0.0, 1.0, -5.0),
-            0.1,
-            HandPoint::Drawn,
-        );
+        let near = sphere(GrabVolume::WorldWeapon, Vec3::new(0.0, 1.0, -0.5), 0.1);
+        let chosen = sphere(GrabVolume::Foregrip, Vec3::new(0.0, 1.0, -0.05), 0.1);
+        let far = sphere(GrabVolume::WorldMagazine, Vec3::new(0.0, 1.0, -5.0), 0.1);
         let pouch = sphere(
             GrabVolume::Holster(HolsterSite::Chest),
             Vec3::new(0.0, 1.0, 0.5),
             0.1,
-            HandPoint::Player,
         );
         let reach = Reach {
             index: 1,
@@ -403,7 +370,7 @@ mod tests {
             targets: vec![near, chosen, far, pouch],
             ..Tick::default()
         };
-        tick.points = [points(Vec3::new(0.0, 1.0, 0.0)), None];
+        tick.grips = [Some(Vec3::new(0.0, 1.0, 0.0)), None];
         tick.resolved[0] = Resolved {
             reaches: vec![reach],
             chosen: Some(reach),
@@ -419,21 +386,12 @@ mod tests {
 
     #[test]
     fn a_held_target_is_drawn_only_for_its_holder() {
-        let held = sphere(
-            GrabVolume::Handle,
-            Vec3::new(0.0, 1.0, 0.0),
-            0.1,
-            HandPoint::Drawn,
-        )
-        .held(Hand::Right);
+        let held = sphere(GrabVolume::Handle, Vec3::new(0.0, 1.0, 0.0), 0.1).held(Hand::Right);
         let mut tick = Tick {
             targets: vec![held],
             ..Tick::default()
         };
-        tick.points = [
-            points(Vec3::new(0.0, 1.0, 0.0)),
-            points(Vec3::new(0.0, 1.0, 0.0)),
-        ];
+        tick.grips = [Some(Vec3::new(0.0, 1.0, 0.0)); 2];
         let config = GrabViewConfig::new();
         let frame = test_frame();
         let lines = target_lines(&inputs(&config, &frame, &tick, &[]));

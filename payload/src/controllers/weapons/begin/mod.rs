@@ -14,9 +14,7 @@ use crate::{
         aim::gun,
         body::rig::skeleton,
         frame::{Hand, Pose},
-        grab::{
-            self, Candidate, GrabVolume, GripTarget, HandPoint, HolsterSite, Mark, MarkAt, Shown,
-        },
+        grab::{self, Candidate, GrabVolume, GripTarget, HolsterSite, Mark, MarkAt, Shown},
         hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
         haptics::{self, Event},
         mode::{AirborneVariant, Mode, OnFootVariant},
@@ -339,7 +337,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             Some(gun_hand.other()),
             mouth,
             radius,
-            HandPoint::Drawn,
             Mark::ring(
                 MarkAt::OnHand {
                     hand: gun_hand,
@@ -469,8 +466,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
 
     // The weapon handling's own view of where each hand is, for the release's docking, the heft,
     // and the cue on entering a socket.
-    let points = grab::tick::hand_points(&active);
-    let resolved = grab::resolve::resolve(&targets, points);
+    let grips = grab::tick::hand_grips(&active);
+    let resolved = grab::resolve::resolve(&targets, grips);
     let volumes = resolved.map(|r| r.chosen.map(|c| c.volume));
     let closing_on_foregrip = hold.is_none()
         && foregrip_hand.is_some_and(|h| volumes[h.index()] == Some(GrabVolume::Foregrip));
@@ -480,7 +477,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.status.volumes = volumes;
     state.status.candidates = targets.len();
     state.placed.clone_from(&targets);
-    state.points = points;
+    state.points = grips;
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
     state.second = second_weapon;

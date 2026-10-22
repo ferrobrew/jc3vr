@@ -254,12 +254,6 @@ pub fn lean_allowance() -> Option<Vec2> {
     fresh_readout().map(|r| r.measurement.lean.vector)
 }
 
-/// Where the player's feet are on the latest frame, cockpit `(x, z)`, while the frame half runs:
-/// the ground point under the upright eyes, less the lean.
-pub fn feet() -> Option<Vec2> {
-    fresh_readout().map(|r| r.measurement.feet)
-}
-
 /// Complete the tick's chase request after the post-physics serial pass schedules pose
 /// finalization, at the same boundary where the camera's root and animated-head pair are captured.
 /// This is not the HumanIK solve.

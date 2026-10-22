@@ -4,7 +4,6 @@ use super::{
     latch::{GripLatch, LatchTick},
     markers::{self, colour, test_frame},
     resolve::{Lost, choose, dock_target, losers, resolve},
-    target::TargetReach,
     *,
 };
 use crate::controllers::{
@@ -19,23 +18,12 @@ fn sphere(volume: GrabVolume, x: f32, radius: f32, hand: Option<Hand>) -> GripTa
         hand,
         Vec3::new(x, 0.0, 0.0),
         radius,
-        HandPoint::Drawn,
-        Mark::ring(
-            MarkAt::Cockpit {
-                point: Vec3::new(x, 0.0, 0.0),
-                on_body: false,
-            },
-            0.05,
-        ),
+        Mark::ring(MarkAt::Cockpit(Vec3::new(x, 0.0, 0.0)), 0.05),
     )
 }
 
-fn at(x: f32) -> Option<HandPoints> {
-    let p = Vec3::new(x, 0.0, 0.0);
-    Some(HandPoints {
-        player: p,
-        drawn: p,
-    })
+fn at(x: f32) -> Option<Vec3> {
+    Some(Vec3::new(x, 0.0, 0.0))
 }
 
 /// What `hand` at `x` would take among `targets`.
@@ -74,27 +62,6 @@ fn a_target_for_one_hand_ignores_the_other() {
     let t = [sphere(GrabVolume::Foregrip, 0.0, 0.1, Some(Hand::Left))];
     assert_eq!(takes(&t, Hand::Right, 0.0), None);
     assert_eq!(takes(&t, Hand::Left, 0.0), Some(GrabVolume::Foregrip));
-}
-
-#[test]
-fn each_target_is_reached_by_its_own_point_of_the_hand() {
-    let mut body = sphere(HIP, 0.0, 0.1, None);
-    body.reach = TargetReach::Sphere {
-        centre: Vec3::ZERO,
-        radius: 0.1,
-        by: HandPoint::Player,
-    };
-    let t = [body, sphere(GrabVolume::Foregrip, 1.0, 0.1, None)];
-    let with = |player: f32, drawn: f32| {
-        let points = Some(HandPoints {
-            player: Vec3::new(player, 0.0, 0.0),
-            drawn: Vec3::new(drawn, 0.0, 0.0),
-        });
-        resolve(&t, [None, points])[1].chosen.map(|c| c.volume)
-    };
-    assert_eq!(with(0.0, 5.0), Some(HIP));
-    assert_eq!(with(5.0, 1.0), Some(GrabVolume::Foregrip));
-    assert_eq!(with(1.0, 0.0), None);
 }
 
 #[test]
@@ -285,14 +252,7 @@ fn every_kind_of_target_goes_through_the_resolver_and_the_renderer() {
             None,
             Vec3::ZERO,
             0.1,
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: Vec3::ZERO,
-                    on_body: false,
-                },
-                0.05,
-            ),
+            Mark::ring(MarkAt::Cockpit(Vec3::ZERO), 0.05),
         );
         let resolved = resolve(&[target], [at(0.01), None]);
         assert_eq!(resolved[0].reaches.len(), 1, "{volume:?} is in reach");

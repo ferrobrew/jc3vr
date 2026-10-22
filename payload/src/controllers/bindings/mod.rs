@@ -514,7 +514,6 @@ fn marker_frame(active: &hands::ActiveHands) -> MarkerFrame {
             world_scale: active.world_scale,
         },
         drawn: active.hands,
-        player: active.player_grips,
     }
 }
 

@@ -13,7 +13,7 @@
 //! The joints hang below the head by the body dimensions. The neck pivot sits behind and below the
 //! eyes in the head's frame, so nodding moves the eyes and not the shoulders; the shoulders sit
 //! below the pivot along the torso's heading, and the pelvis a spine's length below the chest.
-//! Where the feet are is the rig's ([`crate::controllers::body::rig::feet`]).
+//! Where the feet stand is the legs' ([`crate::controllers::body::rig::legs`]).
 //!
 //! All positions and headings are in the cockpit frame: +X right, +Y up, -Z forward, metres. A
 //! heading is a yaw about +Y, positive turning -Z toward -X, the convention of

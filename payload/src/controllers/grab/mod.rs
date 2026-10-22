@@ -37,7 +37,7 @@ use glam::Vec3;
 
 pub use crate::controllers::grab::{
     resolve::{Reach, Resolved},
-    target::{GripTarget, HandPoint, HandPoints, Mark, MarkAt, MarkStyle, Shown, Tier},
+    target::{GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
 };
 use crate::controllers::{
     frame::Hand,
@@ -355,9 +355,9 @@ impl Candidate {
         (distance <= self.radius).then_some(distance)
     }
 
-    /// The target this places, reached by the hand's `by` point and marked by `mark`.
-    pub fn target(&self, by: HandPoint, mark: Mark) -> GripTarget {
-        GripTarget::sphere(self.volume, self.hand, self.centre, self.radius, by, mark)
+    /// The target this places, reached by the hand as it is drawn and marked by `mark`.
+    pub fn target(&self, mark: Mark) -> GripTarget {
+        GripTarget::sphere(self.volume, self.hand, self.centre, self.radius, mark)
     }
 }
 

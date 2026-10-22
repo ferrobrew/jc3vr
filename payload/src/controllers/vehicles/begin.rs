@@ -13,7 +13,7 @@ use crate::{
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::Hand,
-        grab::{self, GrabVolume, GripTarget, HandPoint, Mark, MarkAt, MarkStyle, Shown, Tier},
+        grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
         hands::{self, tiers},
         mode::Mode,
         vehicles::{
@@ -137,15 +137,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
             .map(|c| {
                 c.target(
-                    HandPoint::Drawn,
-                    Mark::ring(
-                        MarkAt::Cockpit {
-                            point: c.centre,
-                            on_body: false,
-                        },
-                        CONTROL_MARK_M,
-                    )
-                    .showing(Shown::Always),
+                    Mark::ring(MarkAt::Cockpit(c.centre), CONTROL_MARK_M).showing(Shown::Always),
                 )
             }),
     );
@@ -173,17 +165,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             None,
             at.centre,
             at.radius,
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: at.centre,
-                    on_body: false,
-                },
-                at.radius * 2.0,
-            )
-            .on_surface(at.normal)
-            .styled(MarkStyle::Button)
-            .showing(shown),
+            Mark::ring(MarkAt::Cockpit(at.centre), at.radius * 2.0)
+                .on_surface(at.normal)
+                .styled(MarkStyle::Button)
+                .showing(shown),
         );
         targets.push(match pressed_by {
             Some(hand) => GripTarget {
@@ -229,23 +214,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         // reach.
         targets.extend(
             parachute::reach_candidates(&handles_config, &state.handles, centres).map(|c| {
-                c.target(
-                    HandPoint::Drawn,
-                    Mark::ring(
-                        MarkAt::Cockpit {
-                            point: c.centre,
-                            on_body: false,
-                        },
-                        c.radius,
-                    )
-                    .showing(Shown::Never),
-                )
-                .ranked(Tier::Fallback)
+                c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius).showing(Shown::Never))
+                    .ranked(Tier::Fallback)
             }),
         );
     }
-    let points = grab::tick::hand_points(&active);
-    let volumes = grab::resolve::resolve(&targets, points).map(|r| r.chosen.map(|c| c.volume));
+    let grips = grab::tick::hand_grips(&active);
+    let volumes = grab::resolve::resolve(&targets, grips).map(|r| r.chosen.map(|c| c.volume));
     state.handles_on = handles_on;
     state.handles_config = handles_config;
     state.placement = Some(placement);
@@ -299,14 +274,7 @@ fn control_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> G
         Some(hand),
         point,
         radius,
-        HandPoint::Drawn,
-        Mark::ring(
-            MarkAt::Cockpit {
-                point,
-                on_body: false,
-            },
-            CONTROL_MARK_M,
-        ),
+        Mark::ring(MarkAt::Cockpit(point), CONTROL_MARK_M),
     )
 }
 
@@ -317,15 +285,7 @@ fn handle_target(volume: GrabVolume, point: Vec3, radius: f32, hand: Hand) -> Gr
         Some(hand),
         point,
         radius,
-        HandPoint::Drawn,
-        Mark::ring(
-            MarkAt::Cockpit {
-                point,
-                on_body: false,
-            },
-            radius * 2.0,
-        )
-        .styled(MarkStyle::Handle),
+        Mark::ring(MarkAt::Cockpit(point), radius * 2.0).styled(MarkStyle::Handle),
     )
 }
 

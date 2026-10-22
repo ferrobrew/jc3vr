@@ -4,7 +4,7 @@ use crate::{
     controllers::{
         config::ControllersConfig,
         frame::Hand,
-        grab::{Candidate, GrabVolume, GripTarget, HandPoint, Mark, MarkAt, Shown, Tier},
+        grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown, Tier},
         hands::ActiveHands,
         vehicles::wheel::CockpitTransform,
         weapons::foregrip,
@@ -32,17 +32,7 @@ impl Place {
     /// A holster or a pouch on the character's body, reached by the hand as it is drawn, always
     /// marked.
     pub(super) fn body(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: c.centre,
-                    on_body: false,
-                },
-                mark_size(c.radius),
-            )
-            .showing(Shown::Always),
-        )
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
     }
 
     /// A pouch, and its reach margin: a hand that misses it by a little still takes from it when
@@ -54,7 +44,7 @@ impl Place {
             radius: c.radius + margin.max(0.0),
             ..*c
         }
-        .target(HandPoint::Drawn, pouch.mark.showing(Shown::Never))
+        .target(pouch.mark.showing(Shown::Never))
         .ranked(Tier::Fallback);
         [pouch, around]
     }
@@ -62,56 +52,31 @@ impl Place {
     /// Where a hand touched a gun docked on the body, reached by the hand as it is drawn, as the
     /// gun is.
     pub(super) fn touch(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: c.centre,
-                    on_body: false,
-                },
-                mark_size(c.radius),
-            ),
-        )
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)))
     }
 
     /// A holster or a socket on the character's skeleton, where its gun is, always marked.
     pub(super) fn on_skeleton(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::Cockpit {
-                    point: c.centre,
-                    on_body: false,
-                },
-                mark_size(c.radius),
-            )
-            .showing(Shown::Always),
-        )
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
     }
 
     /// A part of the gun in `holder`'s hand.
     pub(super) fn on_hand(&self, c: &Candidate, holder: Hand) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::OnHand {
-                    hand: holder,
-                    point: c.centre,
-                },
-                mark_size(c.radius),
-            ),
-        )
+        c.target(Mark::ring(
+            MarkAt::OnHand {
+                hand: holder,
+                point: c.centre,
+            },
+            mark_size(c.radius),
+        ))
     }
 
     /// Something lying in the world.
     pub(super) fn world(&self, c: &Candidate) -> GripTarget {
-        c.target(
-            HandPoint::Drawn,
-            Mark::ring(
-                MarkAt::World(self.xf.point_to_world(c.centre)),
-                WORLD_MARK_M,
-            ),
-        )
+        c.target(Mark::ring(
+            MarkAt::World(self.xf.point_to_world(c.centre)),
+            WORLD_MARK_M,
+        ))
     }
 }
 
@@ -131,16 +96,13 @@ pub(super) fn held_foregrip(
         radius: config.weapons.foregrip.radius_m,
         hand: Some(brace),
     }
-    .target(
-        HandPoint::Drawn,
-        Mark::ring(
-            MarkAt::OnHand {
-                hand: hold.holder,
-                point,
-            },
-            FOREGRIP_MARK_M,
-        ),
-    );
+    .target(Mark::ring(
+        MarkAt::OnHand {
+            hand: hold.holder,
+            point,
+        },
+        FOREGRIP_MARK_M,
+    ));
     Some(target.held(brace))
 }
 

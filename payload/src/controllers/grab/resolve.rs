@@ -1,11 +1,13 @@
 //! The resolver: what each hand is within reach of among the tick's targets, and the one its grip
 //! would take. Pure.
 
+use glam::Vec3;
+
 use crate::controllers::{
     frame::Hand,
     grab::{
         GrabVolume,
-        target::{GripTarget, HandPoints, TargetReach, Tier},
+        target::{GripTarget, TargetReach, Tier},
     },
 };
 
@@ -30,20 +32,20 @@ pub struct Resolved {
     pub chosen: Option<Reach>,
 }
 
-/// Resolve each hand among `targets`, with `points` each hand's points (by [`Hand::index`], `None`
-/// for an untracked hand).
-pub fn resolve(targets: &[GripTarget], points: [Option<HandPoints>; 2]) -> [Resolved; 2] {
+/// Resolve each hand among `targets`, with `grips` each hand's grip as it is drawn (by
+/// [`Hand::index`], `None` for an untracked hand).
+pub fn resolve(targets: &[GripTarget], grips: [Option<Vec3>; 2]) -> [Resolved; 2] {
     Hand::BOTH.map(|hand| {
-        let reaches = reaches(hand, targets, points[hand.index()]);
+        let reaches = reaches(hand, targets, grips[hand.index()]);
         let chosen = choose(reaches.iter().copied());
         Resolved { reaches, chosen }
     })
 }
 
-/// Every target of `targets` that `hand`, at `points`, may take and is within reach of. A target
-/// the provider measured is within reach whenever it is offered; a hand without points reaches
-/// only those.
-pub fn reaches(hand: Hand, targets: &[GripTarget], points: Option<HandPoints>) -> Vec<Reach> {
+/// Every target of `targets` that `hand`, with its drawn grip at `grip`, may take and is within
+/// reach of. A target the provider measured is within reach whenever it is offered; a hand without
+/// a grip reaches only those.
+pub fn reaches(hand: Hand, targets: &[GripTarget], grip: Option<Vec3>) -> Vec<Reach> {
     targets
         .iter()
         .enumerate()
@@ -51,8 +53,8 @@ pub fn reaches(hand: Hand, targets: &[GripTarget], points: Option<HandPoints>) -
         .filter_map(|(index, t)| {
             let distance = match t.reach {
                 TargetReach::Measured { distance } => distance,
-                TargetReach::Sphere { centre, radius, by } => {
-                    let point = points?.get(by);
+                TargetReach::Sphere { centre, radius } => {
+                    let point = grip?;
                     if radius.is_nan() || radius <= 0.0 || !point.is_finite() {
                         return None;
                     }
@@ -121,38 +123,38 @@ pub fn losers(reaches: &[Reach], chosen: Reach) -> Vec<(Reach, Lost)> {
         .collect()
 }
 
-/// The socket something a hand holds docks in when its grip opens: of the targets `hand`, at
-/// `points`, is within reach of, the nearest that `fits` what it holds. A hand over both a pouch and
+/// The socket something a hand holds docks in when its grip opens: of the targets `hand`, with its
+/// drawn grip at `grip`, is within reach of, the nearest that `fits` what it holds. A hand over both a pouch and
 /// the gun's own holster puts the gun in the holster.
 pub fn dock_target(
     hand: Hand,
     targets: &[GripTarget],
-    points: Option<HandPoints>,
+    grip: Option<Vec3>,
     fits: impl Fn(GrabVolume) -> bool,
 ) -> Option<GrabVolume> {
-    reaches(hand, targets, points)
+    reaches(hand, targets, grip)
         .into_iter()
         .filter(|r| fits(r.volume))
         .min_by(|a, b| a.distance.total_cmp(&b.distance))
         .map(|r| r.volume)
 }
 
-/// The target `hand`, at `points`, may take that is nearest to coming within its reach without
+/// The target `hand`, with its drawn grip at `grip`, may take that is nearest to coming within its reach without
 /// being there, and how far outside its reach the hand is, metres: for the log of a press that
 /// took nothing. Only a target with a reach around a grab point can be missed.
 pub fn nearest_miss(
     hand: Hand,
     targets: &[GripTarget],
-    points: Option<HandPoints>,
+    grip: Option<Vec3>,
 ) -> Option<(usize, f32)> {
-    let points = points?;
+    let grip = grip?;
     targets
         .iter()
         .enumerate()
         .filter(|(_, t)| t.for_hand(hand) && t.tier != Tier::Touch)
         .filter_map(|(index, t)| match t.reach {
-            TargetReach::Sphere { centre, radius, by } => {
-                let outside = points.get(by).distance(centre) - radius;
+            TargetReach::Sphere { centre, radius } => {
+                let outside = grip.distance(centre) - radius;
                 (outside > 0.0 && outside.is_finite()).then_some((index, outside))
             }
             TargetReach::Measured { .. } => None,

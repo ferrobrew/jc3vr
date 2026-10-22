@@ -73,10 +73,6 @@ pub struct ActiveHands {
     pub head: Pose,
     /// Indexed by [`Hand::index`]; `None` for a hand whose controller is absent or not tracked.
     pub hands: [Option<CockpitHand>; 2],
-    /// Each tracked hand's grip position as the player holds it, before the body-scale remap:
-    /// where the player's own hand is relative to the player's own body, which is where the
-    /// body's pouches and holsters are reached. Indexed and `None` as [`hands`](Self::hands).
-    pub player_grips: [Option<Vec3>; 2],
     /// The VR world scale the head pose composes with.
     pub world_scale: f32,
 }
@@ -151,24 +147,18 @@ pub fn active_hands_raw() -> Option<ActiveHands> {
         orientation: cockpit.orientation,
     };
     let remaps = arm_remaps(&config, head, world_scale);
-    let (hands, player_grips) = frame::with_latest(|frame| {
-        let hands = Hand::BOTH.map(|hand| {
+    let hands = frame::with_latest(|frame| {
+        Hand::BOTH.map(|hand| {
             frame
                 .focused
                 .then(|| cockpit_hand(frame, hand, &config.hands, remaps[hand.index()]))
                 .flatten()
-        });
-        // The remap shifts the grip without turning it, so the grip before the shift is the
-        // controller's own.
-        let player_grips =
-            Hand::BOTH.map(|hand| hands[hand.index()].map(|_| frame.hand(hand).grip.pose.position));
-        (hands, player_grips)
+        })
     })?;
     Some(ActiveHands {
         config,
         head,
         hands,
-        player_grips,
         world_scale,
     })
 }

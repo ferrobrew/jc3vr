@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     config::ControllersConfig,
     frame::Hand,
-    grab::{GrabVolume, GripTarget, HandPoints, HolsterSite},
+    grab::{GrabVolume, GripTarget, HolsterSite},
     hands::ik,
     physical_hands::physics::guns,
     weapons::{
@@ -84,9 +84,10 @@ pub(super) struct State {
     /// The last geometry measured, and the weapon and holding hand it belongs to: a measurement
     /// needs the wrist at full weight, so a tick without one keeps the last.
     measured: Option<(usize, Hand, GripGeometry)>,
-    /// The tick's grip targets and each hand's points, for the docking of what a hand lets go.
+    /// The tick's grip targets and each hand's grip as it is drawn, for the docking of what a hand
+    /// lets go.
     pub(super) placed: Vec<GripTarget>,
-    pub(super) points: [Option<HandPoints>; 2],
+    pub(super) points: [Option<Vec3>; 2],
     /// The hand that last held a gun, kept while none is drawn.
     pub(super) last_holder: Option<Hand>,
     /// The volume each hand was in on the last tick, for the cue on entering one.

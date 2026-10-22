@@ -12,14 +12,9 @@
 
 use std::time::Duration;
 
-use glam::Vec3;
-
 use crate::controllers::{
     frame::Hand,
-    grab::{
-        Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown,
-        target::{HandPoint, TargetReach},
-    },
+    grab::{Category, GripTarget, MarkAt, MarkStyle, Resolved, Shown},
     hands::CockpitHand,
     overlay::{
         primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
@@ -36,8 +31,6 @@ pub struct MarkerFrame {
     pub xf: CockpitTransform,
     /// The hands as they are drawn, by [`Hand::index`].
     pub drawn: [Option<CockpitHand>; 2],
-    /// The player's own grips, before the body-scale remap, by [`Hand::index`].
-    pub player: [Option<Vec3>; 2],
 }
 
 /// Submit the markers of `targets`, resolved for the hands as `resolved` says.
@@ -63,7 +56,7 @@ pub fn primitives(
         let Some(alpha) = alpha(target.mark.shown, state) else {
             continue;
         };
-        let Some(at) = anchor(target, state.reacher, frame) else {
+        let Some(at) = anchor(target, frame) else {
             continue;
         };
         let [r, g, b] = colour(target.category());
@@ -72,7 +65,7 @@ pub fn primitives(
             Some(normal) => Facing::Surface {
                 normal: match target.mark.at {
                     MarkAt::World(_) => normal,
-                    MarkAt::Cockpit { .. } | MarkAt::OnHand { .. } => {
+                    MarkAt::Cockpit(_) | MarkAt::OnHand { .. } => {
                         frame.xf.direction_to_world(normal)
                     }
                 },
@@ -176,25 +169,13 @@ fn alpha(shown: Shown, state: MarkState) -> Option<f32> {
     }
 }
 
-/// Where `target`'s marker is drawn: a socket on the player's own body shifted with the remapped
-/// hand that reaches for it (`reacher`, or the nearest hand that may take it).
-pub(crate) fn anchor(
-    target: &GripTarget,
-    reacher: Option<Hand>,
-    frame: &MarkerFrame,
-) -> Option<Anchor> {
+/// Where `target`'s marker is drawn.
+pub(crate) fn anchor(target: &GripTarget, frame: &MarkerFrame) -> Option<Anchor> {
     match target.mark.at {
         MarkAt::World(point) => point.is_finite().then_some(Anchor::World(point)),
-        MarkAt::Cockpit { point, on_body } => {
-            let point = if on_body {
-                point + body_shift(target, point, reacher, frame)
-            } else {
-                point
-            };
-            point
-                .is_finite()
-                .then(|| Anchor::Head(frame.xf.point_from_head(point)))
-        }
+        MarkAt::Cockpit(point) => point
+            .is_finite()
+            .then(|| Anchor::Head(frame.xf.point_from_head(point))),
         MarkAt::OnHand { hand, point } => {
             let grip = frame.drawn[hand.index()]?.grip;
             let grip_world = frame.xf.point_to_world(grip.position);
@@ -209,43 +190,10 @@ pub(crate) fn anchor(
     }
 }
 
-/// How far the drawn hand is from the player's own for the hand that reaches for a socket on the
-/// body at `point`: `reacher`, the one hand that may take it, or the nearest hand.
-fn body_shift(
-    target: &GripTarget,
-    point: Vec3,
-    reacher: Option<Hand>,
-    frame: &MarkerFrame,
-) -> Vec3 {
-    let shift = |hand: Hand| {
-        let player = frame.player[hand.index()]?;
-        let drawn = frame.drawn[hand.index()]?.grip.position;
-        Some((drawn - player, player.distance(point)))
-    };
-    let by_player = matches!(
-        target.reach,
-        TargetReach::Sphere {
-            by: HandPoint::Player,
-            ..
-        }
-    );
-    if !by_player {
-        return Vec3::ZERO;
-    }
-    let shift = match reacher.or(target.hand) {
-        Some(hand) => shift(hand),
-        None => Hand::BOTH
-            .into_iter()
-            .filter_map(shift)
-            .min_by(|a, b| a.1.total_cmp(&b.1)),
-    };
-    shift.map_or(Vec3::ZERO, |(shift, _)| shift)
-}
-
 /// A frame with no turn, for the tests.
 #[cfg(test)]
 pub(crate) fn test_frame() -> MarkerFrame {
-    use glam::Quat;
+    use glam::{Quat, Vec3};
 
     MarkerFrame {
         xf: CockpitTransform {
@@ -255,7 +203,6 @@ pub(crate) fn test_frame() -> MarkerFrame {
             world_scale: 1.0,
         },
         drawn: [None; 2],
-        player: [None; 2],
     }
 }
 

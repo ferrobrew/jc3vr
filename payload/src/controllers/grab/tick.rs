@@ -21,7 +21,6 @@ use crate::controllers::{
         latch::GripLatch,
         markers::{self, MarkerFrame},
         resolve::{self, losers, nearest_miss},
-        target::HandPoints,
     },
     hands::ActiveHands,
     physical_hands,
@@ -32,8 +31,8 @@ use crate::controllers::{
 pub(crate) struct Tick {
     pub targets: Vec<GripTarget>,
     pub resolved: [Resolved; 2],
-    /// Each hand's points, by [`Hand::index`].
-    pub points: [Option<HandPoints>; 2],
+    /// Each hand's grip as it is drawn, by [`Hand::index`].
+    pub grips: [Option<Vec3>; 2],
     /// Whether each hand moves slowly enough for a fist to take what it comes to.
     pub slow: [bool; 2],
     /// What the providers noted about each hand's reach this tick, logged with its grip press.
@@ -53,27 +52,21 @@ pub(crate) fn resolve(
     notes: [Vec<String>; 2],
     active: Option<&ActiveHands>,
 ) -> Tick {
-    let points = active.map_or([None; 2], hand_points);
-    let resolved = resolve::resolve(&targets, points);
-    let slow = step_speeds(points, Instant::now());
+    let grips = active.map_or([None; 2], hand_grips);
+    let resolved = resolve::resolve(&targets, grips);
+    let slow = step_speeds(grips, Instant::now());
     Tick {
         targets,
         resolved,
-        points,
+        grips,
         slow,
         notes,
     }
 }
 
-/// Each hand's points: the player's own grip before the body-scale remap and the grip as drawn.
-pub(crate) fn hand_points(active: &ActiveHands) -> [Option<HandPoints>; 2] {
-    Hand::BOTH.map(|hand| {
-        let drawn = active.hands[hand.index()]?.grip.position;
-        Some(HandPoints {
-            player: active.player_grips[hand.index()].unwrap_or(drawn),
-            drawn,
-        })
-    })
+/// Each hand's grip as it is drawn, where every target is reached.
+pub(crate) fn hand_grips(active: &ActiveHands) -> [Option<Vec3>; 2] {
+    active.hands.map(|hand| hand.map(|h| h.grip.position))
 }
 
 /// What the input tick hands the grip model after the tables.
@@ -206,7 +199,7 @@ fn log_press(hand: Hand, tick: &Tick, latch: GripLatch, acquired: bool) {
     let missed = match resolved.chosen {
         Some(_) => None,
         None => {
-            nearest_miss(hand, &tick.targets, tick.points[hand.index()]).map(|(index, outside)| {
+            nearest_miss(hand, &tick.targets, tick.grips[hand.index()]).map(|(index, outside)| {
                 format!(
                     "{} is {:.0} mm out of reach",
                     tick.targets[index].volume.label(),
@@ -245,12 +238,12 @@ fn describe(reach: Reach) -> String {
     )
 }
 
-/// Advance the hands' speeds from their drawn points at `now`, and return whether each is slow.
-fn step_speeds(points: [Option<HandPoints>; 2], now: Instant) -> [bool; 2] {
+/// Advance the hands' speeds from their drawn grips at `now`, and return whether each is slow.
+fn step_speeds(grips: [Option<Vec3>; 2], now: Instant) -> [bool; 2] {
     let mut speeds = SPEEDS.lock();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let point = points[i].map(|p| p.drawn);
+        let point = grips[i];
         let last = std::mem::replace(&mut speeds[i], point.map(|p| (p, now)));
         slow_between(last, point.map(|p| (p, now)))
     })

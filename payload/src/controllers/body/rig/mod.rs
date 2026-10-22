@@ -36,10 +36,7 @@ use std::time::{Duration, Instant};
 use glam::Quat;
 use parking_lot::Mutex;
 
-pub use crate::controllers::body::rig::{
-    config::RigConfig,
-    root::{feet, lean_allowance},
-};
+pub use crate::controllers::body::rig::{config::RigConfig, root::lean_allowance};
 use crate::{
     config::Config,
     controllers::{

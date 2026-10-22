@@ -202,7 +202,7 @@ pub(crate) fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
         let i = hand.index();
         state.chosen[i] = tick.resolved[i].chosen.and_then(|chosen| {
             let target = tick.targets.get(chosen.index)?;
-            marker_anchor(target, Some(hand), frame)
+            marker_anchor(target, frame)
         });
     }
     state
