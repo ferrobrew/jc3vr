@@ -103,11 +103,15 @@ The log has, at info level, `reload: the action cycled` with the action, the gun
 
 ## Dual-wield
 
+The [two-handed inventory](two-handed-inventory.md) replaces this; until it lands, this describes what runs.
+
 A single pistol ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)) is a weapon of its own with one gun, and is reloaded as any other: its magazine is its own, half the tuned size rounded up, which the reload reads as its capacity, and its reserve is the character's. The game's own reload fills it to the tuned size, so a load through the game's reload is brought down to the half at once, the rounds over it going back to the reserve. With two single pistols in the hands, one is the wielded weapon and the other the second weapon ([Two weapons](#two-weapons)). The rest of this section is about the game's pair.
 
 With `dual_split` (and the dual-wield split on), each pistol of the game's pair has half the pair's magazine, the dominant hand taking the odd round (`dual.rs`). The game keeps one magazine, so the split keeps a count per hand beside it, and the game's magazine is always their sum; a change the split did not make (the game's own reload while the reload is off) deals the counts again. A shot takes from its hand's count, and a hand at zero is dry while the other still fires. An eject drops that pistol's magazine prop and returns its rounds to the reserve; a load fills only that hand's half from the reserve. The magazine-out flag is not used for a pistol of the pair, since it would stop both.
 
 ## Two weapons
+
+The [two-handed inventory](two-handed-inventory.md) replaces this; until it lands, this describes what runs.
 
 With a second weapon in the other hand ([physical-weapons.md, "A second weapon"](physical-weapons.md#a-second-weapon)), the reload still acts on one weapon at a time: its guns, its well, its chamber, the stop on the game's own reload, and the shots it counts. It turns to whichever weapon is lower (`reload::focus`): one whose magazine is out or empty while the other's is not, or one more than a quarter of its magazine lower than the other's, and back the same way. It does not turn while a round is in a hand or a well is pushed into the belt pouch, so a reload is never cut in half, and each weapon's chamber and split are remembered across a turn, as across a weapon change. The pouch is placed only for a hand holding no gun of either weapon, so with a gun in each hand the reload is the flick to eject and the belt push to load. A turn logs `reload: turned to the second weapon` or `reload: turned to the wielded weapon`, and the readout shows which weapon the reload is on.
 

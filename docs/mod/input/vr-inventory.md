@@ -1,5 +1,7 @@
 # The VR inventory
 
+The [two-handed inventory](two-handed-inventory.md) replaces this mechanism; until it lands, this describes what runs, and new work goes into the two-handed inventory rather than extending it.
+
 The game's inventory holds one weapon per slot. The VR inventory treats every weapon as an object that belongs to the world, a hand, or the body, so the player can carry more than the slots hold and pick up again what they put down. The game stays the source of truth for its slots, which the save, the HUD, the weapon wheel, and the missions read; the mod mirrors them and owns everything beyond them. The engine side is in [weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md), and the hands' part (drawing, holstering, picking up, handing over) in [physical-weapons.md](physical-weapons.md). The code is `payload/src/controllers/weapons/inventory/`.
 
 None of this has been run in the headset. It acts while the bindings inject, under the controller scheme with a controller active.

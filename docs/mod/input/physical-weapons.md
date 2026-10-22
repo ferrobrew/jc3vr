@@ -121,6 +121,8 @@ A weapon let fall leaves the inventory: the slot is empty until another weapon i
 
 ## A second weapon
 
+The [two-handed inventory](two-handed-inventory.md) replaces this; until it lands, this describes what runs.
+
 With `weapons.hold.second_weapon` (off), the free hand can hold a second weapon while the other hand holds the wielded one, and its trigger fires it. The game wields one weapon, the selected slot's, so the second is driven by the mod (`hold::second`):
 
 - A grab at a shoulder holster by the hand without a gun, while the other hand holds the wielded weapon, takes that slot's long gun (the two-handed or special slot, not the wielded one's) as the second weapon instead of being refused. A grab of a weapon the VR inventory carries on a socket, any kind of weapon it carries, does the same ([vr-inventory.md](vr-inventory.md#a-carried-weapon-in-either-hand)). From the holsters, the pistols and the planted explosive are never taken as second weapons. A grab by the second weapon's hand at its own holster puts it back, and at any other holster does nothing.
@@ -146,6 +148,8 @@ Its magazine is its own, and its reserve is the character's. The game's reload a
 With its magazine empty, or while the true reload holds it from firing, its trigger fires nothing, since the weapon's ammunition check would otherwise ask the character to reload, which reloads the wielded weapon, or to switch weapons.
 
 ## Separate pistols
+
+The [two-handed inventory](two-handed-inventory.md) replaces this; until it lands, this describes what runs.
 
 The game's pistols are one weapon with two guns ([weapon-equip-and-drop.md, "The dual-wield weapon"](../../engine/gameplay/weapon-equip-and-drop.md#the-dual-wield-weapon)), so neither pistol could be dropped or held apart from the other. With `weapons.separate_pistols` (on), each pistol is a weapon object of its own, a single pistol (`weapons::dual_wield::single`). It needs `weapons.inventory.enabled` and `weapons.inventory.carry` ([vr-inventory.md](vr-inventory.md)); without them, or with it off, a pair the game hands over stays the game's pair. Pistols already single stay single.
 
@@ -247,6 +251,8 @@ The holding hand rides the gun, and the hand on its foregrip with it, so both ha
 The debug UI's Status tab has `GUN AGAINST WALLS` in the `AIMING` section (against a wall or clear, the contacts, and the turn and pull-back), and the scenario signals `collide.contacts` and `collide.touching` read it (`testing/scenarios/gun_against_walls.toml`).
 
 ## More weapons than slots
+
+The [two-handed inventory](two-handed-inventory.md) replaces this; until it lands, this describes what runs.
 
 The VR inventory ([vr-inventory.md](vr-inventory.md)) carries weapons beyond the inventory's slots. The game's model stays as it is: the inventory holds one weapon per slot ([`Inventory::m_Weapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_Weapons)), and the save, the HUD, the weapon wheel, and the missions read only the slots. What makes the extras clean is what keeps a weapon alive ([weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md)): any strong reference, not the slot as such, so a carry set of the mod's references keeps an extra weapon in the game and out of the spawn system's despawn ranking, and a weapon moves into and out of a slot without being dropped.
 
