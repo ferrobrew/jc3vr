@@ -36,8 +36,9 @@ pub struct HolstersConfig {
     pub crouch_deadband_m: f32,
     /// Which body the holsters and pouches ride.
     pub anchor: HolsterAnchor,
-    /// Move a holster with a gun docked in it to where the gun is on the character's body, so a
-    /// hand reaches where the gun is seen (see [`crate::controllers::weapons::docks`]).
+    /// Seat the hip and shoulder holsters on their guns as drawn on the character's body, reached
+    /// by the drawn hand, so a hand reaches where the gun is seen (see
+    /// [`crate::controllers::weapons::docks`]).
     pub follow_docks: bool,
     /// With no weapon in either hand, only the dominant hand draws a long gun off a shoulder, so
     /// the trigger that fires it, the tethers' retract, the pouches, and the wrist detonator stay

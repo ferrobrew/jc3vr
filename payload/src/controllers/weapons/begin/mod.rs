@@ -12,8 +12,6 @@ use crate::{
     config::Config,
     controllers::{
         aim::gun,
-        body::rig::skeleton,
-        config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{
             self, Candidate, GrabVolume, GripTarget, HandPoint, HolsterSite, Mark, MarkAt, Shown,
@@ -29,7 +27,7 @@ use crate::{
                 player_body::{PlayerBody, body_dimensions, body_points, volume_anchor},
             },
             c4, collide,
-            docks::{self, DockedGun},
+            docks::{self, HolsterGun},
             dual_wield,
             engine::{self, HeldWeapon},
             foregrip, grenade, grip_watch, heft,
@@ -44,7 +42,7 @@ use crate::{
             scope,
             state::{DockTouch, OffTouch, STATE, State},
             types::{TickStart, WieldedReadout},
-            volumes::{self, Anchor, BodyFrame, ChestGrabbers, HeadDrop},
+            volumes::{self, ChestGrabbers, HeadDrop},
         },
     },
 };
@@ -116,11 +114,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             Ticked {
                 weapon,
                 second,
-                docked: if config.weapons.holsters.follow_docks {
-                    docks::docked_guns(owner, config.acting_hand())
-                } else {
-                    Vec::new()
-                },
+                holster_guns: config
+                    .weapons
+                    .holsters
+                    .follow_docks
+                    .then(|| docks::holster_guns(owner, config.acting_hand())),
                 sockets: inventory::actions::socket_points(
                     owner,
                     &config.weapons.inventory,
@@ -252,10 +250,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         if config.weapons.holsters.enabled {
             let mut holsters =
                 volumes::holster_candidates(&body_frame, &dims, &config.weapons.holsters);
-            state.status.docks_followed =
-                follow_docks(&mut holsters, &ticked, &body_frame, &config, &active);
+            let mut seated = seat_on_guns(&mut holsters, &ticked, &active);
+            state.status.docks_followed = seated.len();
             volumes::reserve_long_guns(&mut holsters, config.acting_hand(), empty_handed);
+            volumes::reserve_long_guns(&mut seated, config.acting_hand(), empty_handed);
             targets.extend(holsters.iter().map(|c| place.body(c)));
+            targets.extend(seated.iter().map(|c| place.on_skeleton(c)));
         }
         let grabbers = ChestGrabbers::for_guns(weapon.map_or([false; 2], |w| w.wielded.hands));
         // A pouch with nothing to give is neither offered nor drawn.
@@ -277,14 +277,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let free = Hand::BOTH.map(|h| !gun_hands[h.index()] && second_hand != Some(h));
     state.docked_touch = [None; 2];
     if gameplay {
-        let mut docked = docked_candidates(
-            &mut state,
-            &ticked,
-            &active,
-            body_points,
-            free,
-            &regions_config,
-        );
+        let mut docked = docked_candidates(&mut state, &ticked, &active, free, &regions_config);
         volumes::reserve_long_guns(&mut docked, config.acting_hand(), empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
         let sockets = socket_candidates(
@@ -293,7 +286,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             free,
             config.weapons.inventory.socket_radius_m,
         );
-        targets.extend(sockets.iter().map(|c| place.socket(c)));
+        targets.extend(sockets.iter().map(|c| place.on_skeleton(c)));
     }
     if config.weapons.grenade_throw {
         let throwing = grenade::throwing_hand().or(c4::throwing_hand());
@@ -529,8 +522,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
 struct Ticked {
     weapon: Option<HeldWeapon>,
     second: Option<HeldWeapon>,
-    /// The guns docked on the body, at their points in the world.
-    docked: Vec<(HolsterSite, Vec3)>,
+    /// The holsters' guns, at their grips in the world, docked or where they dock; `None` while
+    /// the holsters do not sit on their guns.
+    holster_guns: Option<Vec<(HolsterSite, Option<Vec3>)>>,
     /// The sockets' grab volumes, in the world.
     sockets: Vec<SocketPoint>,
     /// The character's model-to-world transform.
@@ -628,13 +622,12 @@ const GUN_VOLUME_MARGIN_M: f32 = 0.01;
 const GUN_VOLUME_DEPTH: f32 = 0.95;
 
 /// The volumes on the long guns docked on the shoulders, for each free hand that touches one at a
-/// part other than its grip: a grab there draws the gun from its shoulder as the holster does, and
+/// part other than its grip, as both are drawn: a grab there draws the gun from its shoulder as the holster does, and
 /// the hand takes it where it touched it ([`regions::pend_draw`]). Notes each touch in `state`.
 fn docked_candidates(
     state: &mut State,
     ticked: &Ticked,
     active: &ActiveHands,
-    body_points: [Option<Vec3>; 2],
     free: [bool; 2],
     config: &RegionsConfig,
 ) -> Vec<Candidate> {
@@ -650,11 +643,10 @@ fn docked_candidates(
     };
     let targets = ik::tick_records().current;
     for hand in Hand::BOTH.into_iter().filter(|h| free[h.index()]) {
-        let (Some(point), Some(cockpit)) = (body_points[hand.index()], active.hands[hand.index()])
-        else {
+        let Some(cockpit) = active.hands[hand.index()] else {
             continue;
         };
-        let world = frames.cockpit_to_world(point);
+        let world = frames.cockpit_to_world(cockpit.grip.position);
         let wrist = targets[hand.index()].map_or(frames.view * cockpit.wrist.orientation, |t| {
             t.wrist.orientation
         });
@@ -699,47 +691,30 @@ fn seconds(s: f32) -> Duration {
     Duration::try_from_secs_f32(s).unwrap_or(Duration::ZERO)
 }
 
-/// Move the holsters with guns docked in them onto the guns ([`crate::controllers::weapons::docks`]),
-/// by the guns' displacement from the holsters placed on the character's skeleton. Returns how many
-/// moved.
-fn follow_docks(
-    candidates: &mut [Candidate],
+/// Seat the holsters on their guns ([`crate::controllers::weapons::docks`]), returning the seated
+/// ones. Leaves `candidates` untouched while the guns or the frames cannot be read.
+fn seat_on_guns(
+    candidates: &mut Vec<Candidate>,
     ticked: &Ticked,
-    body_frame: &BodyFrame,
-    config: &ControllersConfig,
     active: &ActiveHands,
-) -> usize {
-    if ticked.docked.is_empty() {
-        return 0;
-    }
+) -> Vec<Candidate> {
+    let Some(read) = &ticked.holster_guns else {
+        return Vec::new();
+    };
     let Some(frames) = ticked
         .character
         .and_then(|c| docks::cockpit_frames(active, c))
     else {
-        return 0;
+        return Vec::new();
     };
-    let Some(skeleton) = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
-    else {
-        return 0;
-    };
-    let anchor = Anchor::Skeleton(skeleton);
-    let on_character = volumes::holster_candidates(
-        &BodyFrame {
-            anchor,
-            ..*body_frame
-        },
-        &body_dimensions(config, &anchor),
-        &config.weapons.holsters,
-    );
-    let guns: Vec<DockedGun> = ticked
-        .docked
+    let guns: Vec<HolsterGun> = read
         .iter()
-        .map(|&(site, point)| DockedGun {
+        .map(|&(site, point)| HolsterGun {
             site,
-            point: frames.world_to_cockpit(point),
+            point: point.map(|p| frames.world_to_cockpit(p)),
         })
         .collect();
-    docks::follow(candidates, &on_character, &guns, docks::MAX_SHIFT_M)
+    docks::seat(candidates, &guns)
 }
 
 /// The sockets' grab volumes in the cockpit frame: a carried weapon for each hand without a gun,

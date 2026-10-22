@@ -75,7 +75,7 @@ A hand touches the gun when its grip point is within `reach_m` (0.05 m) of the b
 A gun is taken by a part other than its grip from the world and from the shoulder too:
 
 - a direct pickup ([physical-weapons.md, "Picking a weapon up into the hand"](physical-weapons.md#picking-a-weapon-up-into-the-hand)) classifies where the hand reached the gun, with the gun's pose before the pickup and the hand's wrist rotation, and with the take's slide the gun slides from where it lay to its anchor in the palm;
-- a long gun docked on a shoulder has a volume on whatever part a free hand touches, which draws it as the shoulder's holster does, and the gun comes into the hand at that part (a draw waits up to `draw_wait_s`, 3 s, for the gun to arrive).
+- a long gun docked on a shoulder has a volume on whatever part a free hand touches, as both are drawn, which draws it as the shoulder's holster does, and the gun comes into the hand at that part (a draw waits up to `draw_wait_s`, 3 s, for the gun to arrive).
 
 A gun taken out of a character's hands or off a rack comes into the hand at its grip.
 
@@ -148,5 +148,5 @@ With `GRAB GUNS ANYWHERE` on, once with `PHYSICAL GUNS` off and once with it on:
 - Whether the model's box fits each gun closely enough for its regions: a box that takes in a scope, a bipod, or a launcher under the barrel moves the handguard and the barrel's line, and the region sizes are judged, not measured.
 - Whether the attach point sits in the palm closely enough that a carried gun's anchor lands in the hand, and whether a gun turned on the wrist as the hand took it reads as held rather than stuck to the hand at an odd angle.
 - Whether the animation graph and the gun aim cope with a long gun carried by its barrel or stock on the hand's attach bone: the weapon is still wielded, so the upper body may hold an aiming pose with the gun pointing elsewhere.
-- Whether a brace sliding along the barrel reads as sliding with the gun bodies' brace joint holding the hand where it took hold, and whether the regions of a gun docked on the back line up with where the player reaches when the volumes ride the player's body rather than the character's.
+- Whether a brace sliding along the barrel reads as sliding with the gun bodies' brace joint holding the hand where it took hold.
 - Whether a pump worked from a brace on the barrel rather than the handguard behaves, since the reload takes any brace for the hand on the pump.

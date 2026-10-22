@@ -66,22 +66,23 @@ impl Place {
         [pouch, around]
     }
 
-    /// Where a hand touched a gun docked on the body.
+    /// Where a hand touched a gun docked on the body, reached by the hand as it is drawn, as the
+    /// gun is.
     pub(super) fn touch(&self, c: &Candidate) -> GripTarget {
         c.target(
-            self.by,
+            HandPoint::Drawn,
             Mark::ring(
                 MarkAt::Cockpit {
                     point: c.centre,
-                    on_body: self.by == HandPoint::Player,
+                    on_body: false,
                 },
                 mark_size(c.radius),
             ),
         )
     }
 
-    /// A socket on the character's skeleton for a carried weapon, always marked.
-    pub(super) fn socket(&self, c: &Candidate) -> GripTarget {
+    /// A holster or a socket on the character's skeleton, where its gun is, always marked.
+    pub(super) fn on_skeleton(&self, c: &Candidate) -> GripTarget {
         c.target(
             HandPoint::Drawn,
             Mark::ring(

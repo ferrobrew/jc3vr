@@ -4,7 +4,7 @@
 //! - [`volumes`]: the body's sockets and pouches (the holsters, the grenade pouch, the reload
 //!   pouch, and the C4 pouch), placed from the player's body dimensions;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
-//! - [`docks`]: the holsters moved onto the guns docked in them;
+//! - [`docks`]: the holsters seated on their guns;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
 //! - [`heft`]: the one-handed weight of a long gun: sag, lag, sway, a stronger kick, and a wider

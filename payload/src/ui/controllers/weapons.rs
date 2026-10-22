@@ -798,8 +798,11 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
 }
 
 fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
-    ui.checkbox(&mut h.follow_docks, "Holsters follow the docked guns")
-        .on_hover_text("A holster with a gun docked in it moves to where the gun is on the body.");
+    ui.checkbox(&mut h.follow_docks, "Holsters sit on their guns")
+        .on_hover_text(
+            "The hip and shoulder holsters sit on their guns as drawn on the body, or where a drawn \
+             gun docks again, and are reached by the drawn hand.",
+        );
     ui.horizontal(|ui| {
         ui.label("Holsters ride:");
         for anchor in HolsterAnchor::ALL {
