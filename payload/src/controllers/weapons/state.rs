@@ -18,7 +18,7 @@ use crate::controllers::{
         grenade, grip_watch, heft,
         hold::{self, second},
         opening::OpenWatch,
-        recoil,
+        pouch_models, recoil,
         regions::{self, Carry, GunRegion, RegionHit},
         reload,
         types::WeaponsStatus,
@@ -43,6 +43,9 @@ pub(crate) fn stand_down() {
     grip_watch::clear();
     recoil::clear();
     grenade::stand_down();
+    // SAFETY: the weapon handling stands down on the input tick, on the game thread outside the
+    // world update.
+    unsafe { pouch_models::stand_down() };
     c4::stand_down();
     c4::wrist::stand_down();
     dual_wield::observe_triggers(None);

@@ -106,6 +106,12 @@ impl Frames {
         self.world_to_cockpit(self.model_to_world(point))
     }
 
+    /// An orientation in the cockpit frame as an orientation in the character's model space.
+    pub fn cockpit_rotation_to_model(&self, rotation: Quat) -> Quat {
+        let (_, character, _) = self.character.to_scale_rotation_translation();
+        (character.inverse() * self.view * rotation).normalize()
+    }
+
     /// A cockpit heading as a heading in the character's model space, or `None` for one that
     /// turns vertical there.
     pub fn cockpit_yaw_to_model(&self, yaw: f32) -> Option<f32> {

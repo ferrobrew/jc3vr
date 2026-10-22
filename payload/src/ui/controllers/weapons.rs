@@ -45,6 +45,7 @@ use crate::{
     },
     ui::controllers::{
         explosives::{ExplosivesReadout, explosives_readout, explosives_settings},
+        pouch_models::pouch_model_settings,
         reload::{reload_readout, reload_settings},
         vec3, vec3_drag, yes_no,
     },
@@ -893,6 +894,7 @@ fn pouch_settings(ui: &mut Ui, p: &mut PouchesConfig) {
     volume_settings(ui, "Grenade pouch", &mut p.grenade);
     volume_settings(ui, "C4 pouch", &mut p.c4);
     volume_settings(ui, "Magazine pouch", &mut p.magazine);
+    pouch_model_settings(ui, &mut p.models);
     if ui.button("Reset pouches").clicked() {
         *p = PouchesConfig {
             grenade_side: p.grenade_side,

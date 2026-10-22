@@ -91,6 +91,54 @@ pub struct PouchesConfig {
     /// is in no other volume: a hand feeling for a pouch lands a little off it, and a press there
     /// must not fire the grapple instead.
     pub reach_margin_m: f32,
+    /// The game's models of what the pouches hold, drawn on them.
+    pub models: PouchModelsConfig,
+}
+
+/// The game's models of what the pouches hold, drawn on the body where the pouches are (see
+/// [`crate::controllers::weapons::pouch_models`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PouchModelsConfig {
+    pub enabled: bool,
+    /// The grenade on the grenade pouch.
+    pub grenade: ModelPlacement,
+    /// The C4 charge on the C4 pouch.
+    pub charge: ModelPlacement,
+    /// The held gun's magazine on the magazine pouch.
+    pub magazine: ModelPlacement,
+}
+
+impl PouchModelsConfig {
+    pub const fn new() -> Self {
+        let on_the_pouch = ModelPlacement {
+            offset_m: Vec3::ZERO,
+            rotation_deg: Vec3::ZERO,
+        };
+        Self {
+            enabled: true,
+            grenade: on_the_pouch,
+            charge: on_the_pouch,
+            magazine: on_the_pouch,
+        }
+    }
+}
+
+impl Default for PouchModelsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Where a model sits relative to its pouch's centre, in the frame of the girdle the pouch rides
+/// (+X right, +Y up the spine, +Z back), given for the right side and mirrored across the body's
+/// midline for the left.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ModelPlacement {
+    /// Metres.
+    pub offset_m: Vec3,
+    /// The model's turn from the girdle's axes: about X, then Y, then Z, degrees.
+    pub rotation_deg: Vec3,
 }
 
 /// Which side of the chest a pouch sits on, by the player's hands: by the hand the guns ride
@@ -130,6 +178,7 @@ impl PouchesConfig {
             c4: pouch,
             magazine: pouch,
             reach_margin_m: 0.05,
+            models: PouchModelsConfig::new(),
         }
     }
 }

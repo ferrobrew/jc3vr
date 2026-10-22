@@ -23,6 +23,7 @@ mod map;
 mod mode;
 mod overlay;
 mod physical_hands;
+mod pouch_models;
 mod presets;
 mod procedural;
 mod reload;

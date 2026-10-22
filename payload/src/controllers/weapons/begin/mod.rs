@@ -13,6 +13,7 @@ use crate::{
     controllers::{
         aim::gun,
         body::rig::skeleton,
+        config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{self, Candidate, GrabVolume, GripTarget, HolsterSite, Mark, MarkAt, Shown},
         hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
@@ -29,6 +30,7 @@ use crate::{
             foregrip, grenade, grip_watch, heft,
             hold::{self, second},
             inventory::{self, actions::SocketPoint},
+            pouch_models::{self, Prop, ShownPouch},
             regions::{
                 self, Carry, GunRegion, GunShape, Observed,
                 config::RegionsConfig,
@@ -331,6 +333,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             _ => targets.push(place.world(c)),
         }
     }
+    let frames = ticked
+        .character
+        .and_then(|c| docks::cockpit_frames(&active, c));
+    let shown = body
+        .as_ref()
+        .filter(|_| gameplay)
+        .map_or_else(Vec::new, |body| shown_props(body, &config, gun_side));
+    // SAFETY: the input tick runs on the main thread outside the world update.
+    unsafe { pouch_models::input_tick(&pouches.models, frames, &shown) };
     if let Some((gun_hand, mouth, radius)) = reload::well(&config.weapons.reload) {
         targets.push(GripTarget::sphere(
             GrabVolume::MagazineWell,
@@ -668,6 +679,47 @@ fn docked_candidates(
 /// A duration of `s` seconds, zero for a value that is not a finite positive number.
 fn seconds(s: f32) -> Duration {
     Duration::try_from_secs_f32(s).unwrap_or(Duration::ZERO)
+}
+
+/// The pouches to draw their models on this tick: each pouch with something to give, wherever it
+/// is placed, whichever hands are free to take from it.
+fn shown_props(body: &BodyFrame, config: &ControllersConfig, gun_side: Hand) -> Vec<ShownPouch> {
+    let pouches = &config.weapons.pouches;
+    let sides = volumes::chest_sides(pouches, gun_side);
+    let on_chest = |prop: Prop, pouch: Candidate, side: Hand| ShownPouch {
+        prop,
+        pouch: Pose {
+            position: pouch.centre,
+            orientation: body.chest,
+        },
+        side,
+        weapon: None,
+    };
+    let mut out = Vec::new();
+    if config.weapons.grenade_throw
+        && grenade::in_stock()
+        && let Some(pouch) = volumes::grenade_pouch(body, pouches, gun_side, ChestGrabbers::Either)
+    {
+        out.push(on_chest(Prop::Grenade, pouch, sides.grenade));
+    }
+    if config.weapons.c4_throw
+        && c4::in_stock()
+        && let Some(pouch) = volumes::c4_pouch(body, pouches, gun_side, ChestGrabbers::Either)
+    {
+        out.push(on_chest(Prop::Charge, pouch, sides.c4));
+    }
+    if let Some(pouch) = reload::stocked_pouch() {
+        out.push(ShownPouch {
+            prop: Prop::Magazine,
+            pouch: Pose {
+                position: pouch.centre,
+                orientation: body.pelvis,
+            },
+            side: pouch.side,
+            weapon: Some(pouch.weapon),
+        });
+    }
+    out
 }
 
 /// Seat the holsters on their guns ([`crate::controllers::weapons::docks`]), returning the seated

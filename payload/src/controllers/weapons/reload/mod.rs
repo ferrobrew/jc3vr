@@ -230,8 +230,27 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     }
     state.tick = Some(tick);
     state.pouch = pouch.map(|p| (p.centre, p.radius));
+    state.stocked_pouch = pouch.filter(|_| stocked).map(|p| StockedPouch {
+        centre: p.centre,
+        side: free.unwrap_or(gun_side.other()),
+        weapon: weapon.address,
+    });
     state.free = free;
     candidates
+}
+
+/// The magazine pouch on a tick it has a round to give: its centre in the cockpit frame, the side
+/// of the body it is on, and the weapon it reloads (a `WeaponBase` address).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct StockedPouch {
+    pub centre: Vec3,
+    pub side: Hand,
+    pub weapon: usize,
+}
+
+/// The magazine pouch on this tick, while it has a round to give.
+pub(super) fn stocked_pouch() -> Option<StockedPouch> {
+    STATE.lock().stocked_pouch
 }
 
 /// What the bindings hand the second half of the reload's input tick.
@@ -439,6 +458,8 @@ struct State {
     status: ReloadStatus,
     tick: Option<Tick>,
     pouch: Option<(Vec3, f32)>,
+    /// The pouch on the tick it has a round to give.
+    stocked_pouch: Option<StockedPouch>,
     free: Option<Hand>,
     /// The magazines in the world that fit the tick's gun, within reach.
     loose_seen: Vec<loose::Sighting>,
@@ -484,6 +505,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     },
     tick: None,
     pouch: None,
+    stocked_pouch: None,
     free: None,
     loose_seen: Vec::new(),
     frames: None,

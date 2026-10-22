@@ -210,6 +210,12 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // updates and the draws follow.
         hands::late::begin_frame();
         presentation::begin_frame();
+        // The pouches' models ride the body as it is drawn: placed at this frame's interpolation
+        // fraction before the engine's render update culls and draws the frame. The game thread,
+        // outside the world update.
+        crate::controllers::weapons::pouch_models::render_frame(
+            (*update_contexts).m_RenderContext.m_Dtf,
+        );
         input::wingsuit::sync();
 
         mark(Phase::OriginalUpdateRender);

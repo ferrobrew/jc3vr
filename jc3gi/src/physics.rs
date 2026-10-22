@@ -1738,8 +1738,29 @@ impl std::convert::AsMut<RaycastFilter> for RaycastFilter {
 #[repr(C, align(8))]
 /// A rigid object (`CRigidObject`): a [`PhysicsGameObject`](crate::physics::PhysicsGameObject) with one rigid body, such as a crate,
 /// a barrel, a gas canister, or a piece of debris. Its body may be static, fixed, keyframed, or
-/// dynamic. Characters, vehicles, and weapons are not rigid objects. Only its type id is bound.
-pub struct RigidObject {}
+/// dynamic. Characters, vehicles, and weapons are not rigid objects. Only some members are
+/// mapped.
+pub struct RigidObject {
+    _field_0: [u8; 1048],
+    /// The object's model instance, or null while its graphics are not loaded. Created from
+    /// [`m_Model`](crate::physics::RigidObject::m_Model) (`CRigidObject::CreateModelInstance`); `UnloadGraphics` releases
+    /// it with a deferred
+    /// [`ModelInstanceManager::AddToDeleteQueue`](crate::graphics_engine::model_instance::ModelInstanceManager::AddToDeleteQueue).
+    pub m_ModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
+    /// The object's model, set by `CRigidObject::CacheModel` from a name
+    /// ([`ModelManager::GetModel`](crate::graphics_engine::model_instance::ModelManager::GetModel)) or
+    /// a compiled-name hash (the cache) and released by `UnloadGraphics`. The object holds it
+    /// whether or not it is in the world or has a model instance.
+    pub m_Model: crate::types::shared_ptr::SharedPtr<
+        crate::graphics_engine::model_instance::Model,
+    >,
+}
+fn _RigidObject_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x430], RigidObject>([0u8; 0x430]);
+    }
+    unreachable!()
+}
 impl RigidObject {
     pub const TYPE_ID_ADDRESS: usize = 0x14060F1F0;
     /// `CRigidObject::TYPE_ID`: the run-time type id of `CRigidObject`, for

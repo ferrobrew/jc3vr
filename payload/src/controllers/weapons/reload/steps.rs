@@ -664,6 +664,7 @@ impl State {
     pub(super) fn clear_tick(&mut self) {
         self.tick = None;
         self.pouch = None;
+        self.stocked_pouch = None;
         self.free = None;
     }
 

@@ -6,7 +6,12 @@
 pub struct Explosive {
     _field_0: [u8; 1200],
     /// The explosive's model instance, or null. [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) pushes the
-    /// interpolated world matrix to it.
+    /// interpolated world matrix to it. The first `UpdatePostSimFromManager` after the explosive
+    /// spawns creates it from [`m_ModelHash`](crate::equipment::explosive::Explosive::m_ModelHash)
+    /// ([`ModelInstanceManager::CreateInstanceFromHash`](crate::graphics_engine::model_instance::ModelInstanceManager::CreateInstanceFromHash),
+    /// at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1), casting no shadow, added to the world),
+    /// clears its [`FLAG_CLIPONDISTANCE`](crate::graphics_engine::model_instance::ModelInstanceFlags::FLAG_CLIPONDISTANCE),
+    /// and shows it; the destructor releases it.
     pub m_ModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
     /// The explosive's physics body (the pointer of a shared pointer), or null until the first
     /// `UpdatePostSimFromManager` after the explosive spawns creates it.
@@ -43,7 +48,12 @@ pub struct Explosive {
     /// The solved launch velocity awaiting application to the physics body, written by
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) from the virtual `VelocityToHitTarget`.
     pub m_DeferredInitialVelocity: crate::types::math::Vector3,
-    _field_5f8: [u8; 12],
+    _field_5f8: [u8; 4],
+    /// The compiled-name hash of the explosive's model, from which
+    /// [`m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance) is created; no instance is created unless the
+    /// model is in the model manager's cache. Zero for an explosive without a model.
+    pub m_ModelHash: u32,
+    _field_600: [u8; 4],
     /// Seconds since the explosive was thrown; [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) resets it.
     pub m_TimeSinceThrow: f32,
     /// Seconds until the explosive detonates. The constructor sets it to the grenade weapon's
@@ -322,7 +332,10 @@ impl std::convert::AsMut<Grenade> for Grenade {
 /// world), so a charge that is dropped
 /// ([`DropExplosive`](crate::equipment::explosive::PlantedExplosive::DropExplosive)) sticks where it lands.
 pub struct PlantedExplosive {
-    _field_0: [u8; 1576],
+    _field_0: [u8; 1572],
+    /// The compiled-name hash of the in-hand model, from which
+    /// [`m_InactiveModelInstance`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelInstance) is created.
+    pub m_InactiveModelHash: u32,
     /// The in-hand model's world matrix as of the previous simulation tick, which
     /// [`UpdateRender`](crate::equipment::explosive::PlantedExplosive::UpdateRender) interpolates from toward
     /// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1).
@@ -332,7 +345,11 @@ pub struct PlantedExplosive {
     /// it to the previous frame's matrix, and the render update draws the in-hand model between
     /// the two.
     pub m_InactiveModelWorldMatrixT1: crate::types::math::Matrix4,
-    /// The in-hand model's instance, or null.
+    /// The in-hand model's instance, or null. The charge's `UpdatePostSimFromManager` creates it
+    /// from [`m_InactiveModelHash`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelHash) in the same update that creates
+    /// the live model's [`Explosive::m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance), hiding the live one and showing this one
+    /// with [`FLAG_CLIPONDISTANCE`](crate::graphics_engine::model_instance::ModelInstanceFlags::FLAG_CLIPONDISTANCE)
+    /// cleared.
     pub m_InactiveModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
     _field_6b0: [u8; 4],
     /// Whether the charge is live, set by [`Activate`](crate::equipment::explosive::PlantedExplosive::Activate).

@@ -2,7 +2,8 @@
 //! "Grenades", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
 //! - [`volumes`]: the body's sockets and pouches (the holsters, the grenade pouch, the reload
-//!   pouch, and the C4 pouch), placed from the player's body dimensions;
+//!   pouch, and the C4 pouch), placed on the character's skeleton;
+//! - [`pouch_models`]: the game's models of what the pouches hold, drawn on them;
 //! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
 //! - [`docks`]: the holsters seated on their guns;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
@@ -76,6 +77,7 @@ pub mod hold;
 pub mod holster;
 pub mod inventory;
 pub mod opening;
+pub mod pouch_models;
 pub mod recoil;
 pub mod regions;
 pub mod reload;

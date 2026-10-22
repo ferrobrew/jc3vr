@@ -913,7 +913,41 @@ impl std::convert::AsMut<NWeaponUtil> for NWeaponUtil {
 /// wielded, and it starts a detonation from the character's detonate input. Only some members
 /// are mapped, at their offsets from the start of the weapon.
 pub struct PlantedExplosiveWeapon {
-    _field_0: [u8; 1848],
+    _field_0: [u8; 1536],
+    /// The compiled-name hash of [`m_PhysicalProjectileModel`](crate::equipment::weapon::PlantedExplosiveWeapon::m_PhysicalProjectileModel)
+    /// (`CPhysicalProjectileWeapon::m_PhysicalProjectileModelHash`), or zero when the model did
+    /// not load.
+    pub m_PhysicalProjectileModelHash: u32,
+    _field_604: [u8; 36],
+    /// The live charge's model (`CPhysicalProjectileWeapon::m_PhysicalProjectileModel`), loaded by
+    /// the physical-projectile weapon's `SetProperties` from the projectile model path in the
+    /// weapon's properties ([`ModelManager::GetModel`](crate::graphics_engine::model_instance::ModelManager::GetModel)).
+    /// The weapon holds it for its lifetime.
+    pub m_PhysicalProjectileModel: crate::types::shared_ptr::SharedPtr<
+        crate::graphics_engine::model_instance::Model,
+    >,
+    _field_638: [u8; 192],
+    /// The placement preview: an instance of the ghost model named in the weapon's properties,
+    /// created by `SetProperties` (casting shadows, outside the world) and shown by
+    /// `SetPropertiesDeferred`
+    /// ([`ModelInstanceManager::ShowModelInstance`](crate::graphics_engine::model_instance::ModelInstanceManager::ShowModelInstance)).
+    /// The weapon's `UpdateRender` moves it to the aimed placement with
+    /// [`ModelInstance::UpdateMatrix`](crate::graphics_engine::model_instance::ModelInstance::UpdateMatrix)
+    /// and pulses its fade alpha while the target is shown; the destructor releases it
+    /// ([`ModelInstanceManager::AddToDeleteQueue`](crate::graphics_engine::model_instance::ModelInstanceManager::AddToDeleteQueue)).
+    pub m_GhostModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
+    /// The in-hand charge's model: despite the name, the model itself rather than an instance of
+    /// it, loaded by `SetProperties` from the inactive model path in the weapon's properties and
+    /// held for the weapon's lifetime, which keeps it in the model manager's cache. A charge's
+    /// in-hand instance
+    /// ([`PlantedExplosive::m_InactiveModelInstance`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelInstance))
+    /// is created from the cache by hash.
+    pub m_InactiveModelInstance: crate::types::shared_ptr::SharedPtr<
+        crate::graphics_engine::model_instance::Model,
+    >,
+    /// The compiled-name hash of [`m_InactiveModelInstance`](crate::equipment::weapon::PlantedExplosiveWeapon::m_InactiveModelInstance).
+    pub m_InactiveModelHash: u32,
+    _field_714: [u8; 36],
     /// The primed charge: the live [`PlantedExplosive`](crate::equipment::explosive::PlantedExplosive)
     /// spawned by [`PrimeExplosive`](crate::equipment::weapon::PlantedExplosiveWeapon::PrimeExplosive) and not yet placed, or null. `px` is
     /// the charge's `CGameObject` subobject
@@ -1466,7 +1500,20 @@ impl std::convert::AsMut<SniperWeapon> for SniperWeapon {
 /// and a later one raises [`WeaponBase::m_ForceFireProjectile`](crate::equipment::weapon::WeaponBase::m_ForceFireProjectile). Only some members are mapped, at
 /// their offsets from the start of the weapon.
 pub struct ThrownGrenadeWeapon {
-    _field_0: [u8; 1800],
+    _field_0: [u8; 1536],
+    /// The compiled-name hash of [`m_PhysicalProjectileModel`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PhysicalProjectileModel)
+    /// (`CPhysicalProjectileWeapon::m_PhysicalProjectileModelHash`), or zero when the model did
+    /// not load.
+    pub m_PhysicalProjectileModelHash: u32,
+    _field_604: [u8; 36],
+    /// The grenade's model (`CPhysicalProjectileWeapon::m_PhysicalProjectileModel`), loaded by the
+    /// physical-projectile weapon's `SetProperties` from the projectile model path in the
+    /// weapon's properties ([`ModelManager::GetModel`](crate::graphics_engine::model_instance::ModelManager::GetModel)).
+    /// The weapon holds it for its lifetime, so the model stays cached while the weapon exists.
+    pub m_PhysicalProjectileModel: crate::types::shared_ptr::SharedPtr<
+        crate::graphics_engine::model_instance::Model,
+    >,
+    _field_638: [u8; 208],
     /// The primed grenade: the live [`Grenade`](crate::equipment::explosive::Grenade) spawned by
     /// [`PrimeGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::PrimeGrenade) and not yet thrown, or null. `px` is the grenade's
     /// `CGameObject` subobject
