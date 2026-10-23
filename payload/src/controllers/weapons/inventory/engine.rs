@@ -15,6 +15,7 @@ use jc3gi::{
 
 use crate::controllers::{
     aim::gun,
+    loadout::{ObjectAddress, WeaponType},
     weapons::{
         engine::slot_from_raw,
         hold::refs::{Strong, Weak},
@@ -88,6 +89,24 @@ pub(crate) unsafe fn kind_of(weapon: &WeaponBase) -> Option<WeaponKind> {
     let tag_hash = unsafe { SpawnSystem::get() }
         .map_or(0, |system| unsafe { system.GetTagHashFromTagIndex(index) });
     Some(WeaponKind { tag_hash, slot })
+}
+
+/// `weapon`'s address, as the loadout binds an item to it.
+pub(crate) fn object_address(weapon: &WeaponBase) -> Option<ObjectAddress> {
+    ObjectAddress::from_address(weapon as *const WeaponBase as usize)
+}
+
+/// `weapon`'s type as the loadout knows it: its spawn tag's hash, its slot, and its size class. `None`
+/// for a weapon of a slot whose items a hand does not hold.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn weapon_type(weapon: &WeaponBase) -> Option<WeaponType> {
+    let kind = unsafe { kind_of(weapon) }?;
+    // Read as the raw value: an unset or unknown class is out of the enum's range.
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    WeaponType::new(kind.tag_hash, kind.slot, class).ok()
 }
 
 /// The weapons in `owner`'s tracked slots.

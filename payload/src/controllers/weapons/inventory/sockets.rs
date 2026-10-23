@@ -13,7 +13,7 @@ use jc3gi::{
     equipment::weapon::WeaponClass,
 };
 
-use crate::controllers::frame::Hand;
+use crate::controllers::{frame::Hand, loadout::Socket};
 
 /// A socket on the body.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -65,6 +65,20 @@ impl SocketId {
     /// The socket a sidecar's `key` names.
     pub fn from_key(key: &str) -> Option<SocketId> {
         SocketId::ALL.into_iter().find(|s| s.key() == key)
+    }
+
+    /// The loadout's socket for this one. The first back socket rides the bone the game docks the
+    /// two-handed slot's weapon on, on the right of the back, and the second the special slot's,
+    /// on the left.
+    pub const fn socket(self) -> Socket {
+        match self {
+            SocketId::BackFirst => Socket::Shoulder(Hand::Right),
+            SocketId::BackSecond => Socket::Shoulder(Hand::Left),
+            SocketId::BackOuter => Socket::BackOuter,
+            SocketId::HipLeft => Socket::Hip(Hand::Left),
+            SocketId::HipRight => Socket::Hip(Hand::Right),
+            SocketId::Chest => Socket::Chest,
+        }
     }
 
     /// The bone the socket's weapon is placed on.

@@ -243,6 +243,7 @@ const SECTIONS: &[Section] = &[
             row!("SAVE SIDECAR", inventory::sidecar),
             row!("LAST LOAD", inventory::last_load),
             row!("KEPT IN THE WORLD", inventory::pinned),
+            row!("LOADOUT TABLE", inventory::loadout),
         ],
     },
     Section {

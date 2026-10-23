@@ -44,6 +44,7 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::ik,
+        loadout::{Restored, live},
         weapons::{
             dual_wield::single,
             hold::refs::Strong,
@@ -639,6 +640,16 @@ unsafe fn adopt(owner: &mut Character, settings: &InventoryConfig, dominant: Han
                     }
                     if record.magazine >= 0 {
                         unsafe { weapon.SetMagazineAmmo(record.magazine) };
+                    }
+                    if let (Some(object), Some(weapon)) = (
+                        inventory_engine::object_address(weapon),
+                        unsafe { inventory_engine::weapon_type(weapon) },
+                    ) {
+                        live::restored(Restored {
+                            object,
+                            weapon,
+                            socket: socket.socket(),
+                        });
                     }
                     tracing::info!(
                         target: "controllers",

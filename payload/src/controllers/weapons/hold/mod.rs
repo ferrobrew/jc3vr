@@ -209,6 +209,11 @@ pub(crate) unsafe fn input_tick(
     holder
 }
 
+/// What brought the wielded weapon into the hands, or `None` for the game's own draw.
+pub(crate) fn origin() -> Option<Cause> {
+    TICK.lock().holder.origin()
+}
+
 /// Leave `hand` pending for the next weapon the game wields, or for `weapon` when it is named.
 pub(crate) fn begin(hand: Hand, cause: Cause, weapon: Option<usize>) {
     TICK.lock().holder.begin(hand, cause, weapon);

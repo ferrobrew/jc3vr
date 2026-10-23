@@ -20,6 +20,14 @@ impl ObjectAddress {
     pub const fn new(address: NonZeroUsize) -> ObjectAddress {
         ObjectAddress(address)
     }
+
+    /// The object at `address`, or `None` for a null one.
+    pub const fn from_address(address: usize) -> Option<ObjectAddress> {
+        match NonZeroUsize::new(address) {
+            Some(address) => Some(ObjectAddress(address)),
+            None => None,
+        }
+    }
 }
 
 impl fmt::Display for ObjectAddress {

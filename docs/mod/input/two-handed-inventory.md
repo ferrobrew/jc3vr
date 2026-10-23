@@ -1,6 +1,6 @@
 # The two-handed inventory
 
-Mostly not built yet: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)) but not wired into the game; everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
+Mostly not built yet: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)), and a live table of it runs beside the old weapon handling without anything reading it yet (["The live table"](#the-live-table)); everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
 
 The local player's two hands are independent. Each holds its own weapon or object, items pass between the hands, weapons dock on the body's sockets and are drawn from them, and the player carries what the body holds rather than what the game's slots allow. Boneworks and Half-Life: Alyx are the guiding light: the player does everything with their own body, even where that adds friction, and nothing docks, draws, or switches by itself.
 
@@ -120,7 +120,7 @@ Switching the control scheme away from the controllers (or turning the mod's wea
 
 ## The core as built
 
-The code is `payload/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to, and nothing feeds it yet: the old weapon handling still runs, and moves onto it in phase 3b. Until then the debug UI's Controllers tab has a `Loadout core` section that drives a sandbox table of its own with made-up objects, showing the items, the primary, the slots in play, the last store's sidecar, and the latest transitions and refusals.
+The code is `payload/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to. The debug UI's Controllers tab has a `Loadout` section whose `Sandbox` header drives a table of its own with made-up objects, showing the items, the primary, the slots in play, the last store's sidecar, and the latest transitions and refusals.
 
 ### Items and their identity
 
@@ -141,7 +141,9 @@ Each transition applies whole and returns its changes (an item entered, moved, l
 - a let-go, recorded as at an ordinary pace or at speed;
 - a loss of a weapon lying in the world: out of the world whatever its departure, or left behind only when it was let go of at speed. It returns to the first free socket that fits it, or, with none free, to the player's feet, so that the body being full never loses a weapon;
 - a game's give, to an empty hand (the dominant first), else a free socket that fits it, else the player's feet;
-- a game's removal of one object, one item, or every weapon, from wherever it is, the hands included;
+- a game's removal of one object or one item from wherever it is, or of every weapon on the body, the hands included; the weapons lying in the world stay, since the game takes what the player holds;
+- a game's drop of an object the player has, wherever it is: a weapon lies in the world as one the player dropped, and anything else leaves;
+- a weapon the mod spawned to stand for one the player has (one of the sidecar's after a load, or the second pistol of a pair split in two), onto its recorded socket when that is free and fits it, otherwise where a weapon goes when the player does not choose;
 - a restored item's object spawned.
 
 Where a weapon goes when the player does not choose (a give with the hands full, a loss, a respawn, a restore) is the socket the game docks its slot on, then the snuggest socket that fits it, the dominant side first.
@@ -158,7 +160,31 @@ Each weapon slot holds one weapon of that slot from the body: the primary hand's
 
 ### The events
 
-A hook or the hands send one event per thing that happened: a take, a dock, a draw, a hand-over, a let-go, a loss, a give, a spawn, a removal, a store about to happen, a cache, a restore, a reset beginning, and a reset completing with the slots the game now holds. The fold applies each whole or refuses it, and returns the transitions and, for a store or a cache, the slots and the sidecar the game should be given before it goes on.
+A hook or the hands send one event per thing that happened: a take, a dock, a draw, a hand-over, a let-go, a loss, a give, a spawn, a removal, a game's drop, a weapon restored onto the body, a store about to happen, a cache, a restore, a reset beginning, and a reset completing with the slots the game now holds. The fold applies each whole or refuses it, and returns the transitions and, for a store or a cache, the slots and the sidecar the game should be given before it goes on.
+
+## The live table
+
+The live table is the one `Loadout` of the local player's items (`loadout::live`), behind one lock, and published with its snapshot at the end of each input tick. While phase 3b moves the old weapon handling onto it, the old handling still moves the weapons and the table is written beside it: every move the old handling makes is also sent to the table as an event, and nothing reads the table but the readouts. The table runs while the VR inventory is on, takes the weapons of the slots the old inventory tracks (the pistols, the two-handed, and the special weapons; the heavy weapons stay the game's until the per-hand tick holds them), and has every socket during the dual-write, since the old handling docks the slots' own weapons on their bones whatever the carry settings.
+
+What feeds it:
+
+- On its first input tick the table starts from the slots, as a load does.
+- The hand moves. The old handling has two hand authorities, the holder of the wielded weapon and the second weapon, and every draw, holster, stow, take, hand-over, and drop it makes changes what one of them holds. The input tick compares what they held at the last tick with what they hold now: a weapon that left the hands docks on the socket it went to (the carry set's, or for a slot's weapon the socket the game docks its slot on) or is let go of, and a weapon that came into a hand is handed over, drawn off its socket, taken off the ground, or, for a weapon the table does not know, taken from where the holder says it came from (a pickup, a character, a rack, or a give).
+- The weapons the old handling no longer keeps: each tick the registry's fate of each one becomes a game's drop for a weapon lying in the world the table still has on the body, and a removal for one another character holds or whose object is gone. A weapon the pins left to the game is removed as forgotten.
+- The spawn reset: its pre-reset event begins the reset and removes the carry set's weapons, which the old handling releases and the reset then removes; the first input tick after its post-reset event completes it with the slots it left. The reset is a respawn when the player's health was spent at its begin, a load when the game loaded the player's save data since, and a travel otherwise. That classification is unverified. A load of the save data also completes a load on its own, so a load that does not reset first still starts the table from its slots.
+- The store of the save data is a store; the table's projection is kept for the readouts.
+- A mission's weapon cache ([`NodeWeaponCache::CacheAllWeaponSlots`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graph_script::NodeWeaponCache##func-CacheAllWeaponSlots)) is a cache before the game's, and with its removal takes every weapon on the body after it. The give-back has no seam of its own, so as in the old handling it is the tracked slots holding a weapon again after they were seen empty, and it restores the cache with what they hold. The old handling stashes the carried weapons for the mission and keeps their objects, so each item the restore leaves waiting for a spawn is bound to a kept weapon of its type.
+- A sidecar weapon the restore respawns onto a socket, and the second pistol of a pair split in two, are restored onto their sockets.
+
+The readouts are a Status row (`LOADOUT TABLE`: where the items are, how many weapons are divergent, and how many events were refused) and the debug UI's `Loadout` section (the table, each divergence, the last store, and the latest transitions and refusals). A divergence is a weapon the table and the old handling disagree about: for every weapon the registry knows, the table should have it in the matching place (a slot's weapon on a socket the game docks that slot on, a hand's in that hand, a carried one on its socket, one in the world in the world, and none of another character's or a mission's stash), and the table should have nothing the registry does not know.
+
+Decisions this step took:
+
+- The hand moves are sent from the one place every old hand move meets, the input tick's view of the two hand authorities, rather than from each call site: the sites interleave (a socket draw starts the holder's pending hand, moves the weapon into its slot, and then adopts it into the hand), and what moved where is known only once the tick settles. A move the table already shows sends nothing, and a hand the table disagrees about is left as the table has it, so the divergence shows what the dual-write misses rather than the table papering over it.
+- The game's drop is a core event of its own. The old handling and the game drop weapons the player has without any hand letting go (a pickup's replaced weapon, the carry set switched off, the game's own drops), and the plan routes the game's automatic moves through the table: the game's word on ownership is final, so the weapon lies in the world, where the pins keep it.
+- A removal of every weapon takes the weapons on the body and leaves those lying in the world: a mission takes what the player holds, not what lies near them.
+- A weapon the game gives without the hands (a mission's give into a slot) is unknown to the table until a hand draws it, and is taken then as a give. Until then it diverges, and one the game then drops is not in the table's world. Phase 4 binds the give's seam.
+- Some divergence is the old model's own: it carries a weapon beside each slot's weapon on the same back bone, so with both back slots filled and a carried long gun the table, which has three places on the back, puts one of them elsewhere; and the dual-wield pair's two guns ride both hips as one item.
 
 ## Phases
 

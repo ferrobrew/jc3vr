@@ -1,10 +1,11 @@
-//! The status rows for the VR inventory: the weapons it tracks, and the ones lying in the
-//! world it keeps from the game's despawn.
+//! The status rows for the VR inventory: the weapons it tracks, the ones lying in the world it
+//! keeps from the game's despawn, and the live loadout table written beside it.
 
 use smol_str::format_smolstr;
 
 use crate::{
     controllers::{
+        loadout::{Place, live},
         menu::read_config,
         weapons::{
             dual_wield::single::{self, grant::TwinState},
@@ -33,6 +34,41 @@ pub(super) fn tracked() -> Line {
         s.with_others(),
         s.resets
     ))
+}
+
+/// The live loadout table: where its items are, and how many weapons it disagrees with the old
+/// handling about.
+pub(super) fn loadout() -> Line {
+    if !read_config(|c| c.controllers.weapons.inventory.enabled) {
+        return Line::off("");
+    }
+    let s = live::status();
+    let Some(snapshot) = &s.snapshot else {
+        return Line::waiting("NO PLAYER YET");
+    };
+    let (mut hands, mut sockets, mut world) = (0, 0, 0);
+    for item in &snapshot.items {
+        match item.place {
+            Place::Hand(_) => hands += 1,
+            Place::Socket(_) => sockets += 1,
+            Place::World(_) => world += 1,
+        }
+    }
+    let detail = format_smolstr!(
+        "{hands} IN HANDS, {sockets} ON SOCKETS, {world} IN THE WORLD, {} DIVERGENT, {} REFUSED",
+        s.divergence.len(),
+        s.refusals
+    );
+    if s.divergence.is_empty() {
+        return Line::ok(detail);
+    }
+    let note = s
+        .divergence
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ");
+    Line::failed(detail).with_note(note)
 }
 
 /// Whether the pistols are two weapons: the slot's pistol, the second pistol of the last pair, and

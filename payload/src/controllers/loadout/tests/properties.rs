@@ -16,8 +16,8 @@ use crate::controllers::{
         socket::{BodyLayout, Socket},
         table::{ItemView, Loadout, Place},
         transition::{
-            Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Take, TakeSource,
-            TransitionError,
+            Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,
+            TakeSource, TransitionError,
         },
     },
 };
@@ -63,6 +63,14 @@ enum Op {
         target: usize,
         value: usize,
         why: usize,
+    },
+    Dropped {
+        object: usize,
+    },
+    Restored {
+        object: usize,
+        kind: usize,
+        socket: usize,
     },
     Store,
     Cache {
@@ -123,6 +131,9 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0..8usize, object.clone()).prop_map(|(row, object)| Op::Spawned { row, object }),
         2 => (0..3usize, 0..OBJECTS, 0..RemovalWhy::ALL.len())
             .prop_map(|(target, value, why)| Op::Remove { target, value, why }),
+        1 => object.clone().prop_map(|object| Op::Dropped { object }),
+        1 => (object.clone(), 0..5usize, 0..Socket::COUNT)
+            .prop_map(|(object, kind, socket)| Op::Restored { object, kind, socket }),
         1 => Just(Op::Store),
         1 => (0..CacheKind::COUNT).prop_map(|kind| Op::Cache { kind }),
         1 => (0..CacheKind::COUNT, slots()).prop_map(|(kind, slots)| Op::Restore { kind, slots }),
@@ -209,6 +220,16 @@ fn concrete(op: &Op, table: &Loadout) -> Applied {
             },
             why: RemovalWhy::ALL[why],
         },
+        Op::Dropped { object: n } => Event::Dropped { object: object(n) },
+        Op::Restored {
+            object: n,
+            kind,
+            socket,
+        } => Event::Restored(Restored {
+            object: object(n),
+            weapon: weapons()[kind],
+            socket: Socket::ALL[socket],
+        }),
         Op::Store => Event::StoreImminent,
         Op::Cache { kind } => Event::Cached(CacheKind::ALL[kind]),
         Op::Restore { kind, slots } => Event::CacheRestored {

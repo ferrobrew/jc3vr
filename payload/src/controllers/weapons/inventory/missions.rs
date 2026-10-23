@@ -13,7 +13,9 @@
 //! as the cache takes it, so the give-back restores it as it was
 //! ([`crate::controllers::weapons::dual_wield::single`]).
 //!
-//! The detour runs on whatever thread runs the graph script, so it only sets flags.
+//! The detour also tells the live loadout table ([`crate::controllers::loadout::live`]) of the
+//! cache and the removal. It runs on whatever thread runs the graph script, so it only sets flags
+//! and folds the table's events.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
@@ -26,6 +28,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     hands::ik,
+    loadout::live,
     weapons::{
         dual_wield::single,
         hold::second::{self, Source},
@@ -104,6 +107,9 @@ fn cache_all_weapon_slots(cache: *mut NodeWeaponCache, inventory: *mut Inventory
         .and_then(|i| i.m_Weapons.get(WeaponSlot::E_SLOT_DUAL_WIELD as usize))
         .map(|slot| slot.px as usize)
         .filter(|&object| object != 0);
+    if ours {
+        live::mission_caching();
+    }
     CACHE_ALL_WEAPON_SLOTS
         .get()
         .unwrap()
@@ -115,6 +121,9 @@ fn cache_all_weapon_slots(cache: *mut NodeWeaponCache, inventory: *mut Inventory
             TOOK_PAIR
         };
         TOOK_PISTOL.store(took, Ordering::Relaxed);
+    }
+    if remove && ours {
+        live::mission_took();
     }
     if remove && ours && carry::count() > 0 {
         STASH_ASKED.store(true, Ordering::Relaxed);

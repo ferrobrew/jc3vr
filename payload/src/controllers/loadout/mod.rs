@@ -14,14 +14,18 @@
 //! - [`reset`]: the spawn reset's re-keying, and the table's snapshots at the game's caches;
 //! - [`projection`]: what the game's slots should hold, and what the sidecar records;
 //! - [`event`]: what the hooks and the hands tell the table, folded into transitions;
-//! - [`sandbox`]: a table of the debug UI's own, driven by hand until the hooks feed the real one.
+//! - [`live`]: the one live table of the local player's items, dual-written beside the old weapon
+//!   handling and published each input tick;
+//! - [`sandbox`]: a table of the debug UI's own, driven by hand with made-up objects.
 //!
-//! Nothing is wired into the game yet: the old weapon handling
-//! ([`crate::controllers::weapons`]) still runs, and moves onto this core in phase 3b.
+//! Nothing reads the live table yet but the readouts: the old weapon handling
+//! ([`crate::controllers::weapons`]) still moves the weapons, and moves onto this core step by step
+//! in phase 3b.
 
 mod binding;
 mod event;
 mod item;
+pub mod live;
 mod projection;
 mod reset;
 pub mod sandbox;
@@ -32,9 +36,13 @@ mod transition;
 #[cfg(test)]
 mod tests;
 
+pub use binding::ObjectAddress;
 pub use event::Event;
-pub use item::ItemKind;
-pub use projection::SlotContent;
-pub use reset::{CacheKind, ResetKind};
+pub use item::{ItemKind, WeaponType};
+pub use projection::{SlotContent, StoreProjection};
+pub use reset::{CacheKind, ResetKind, SlotObject};
 pub use socket::{BodyLayout, Socket};
-pub use transition::{Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Take, TakeSource};
+pub use table::{LoadoutSnapshot, Place};
+pub use transition::{
+    Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
+};

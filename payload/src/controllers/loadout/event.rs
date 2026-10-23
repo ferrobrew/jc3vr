@@ -17,7 +17,8 @@ use crate::controllers::{
         socket::Socket,
         table::Loadout,
         transition::{
-            Give, LostWhy, Release, Removal, RemovalWhy, Take, Transition, TransitionError,
+            Give, LostWhy, Release, Removal, RemovalWhy, Restored, Take, Transition,
+            TransitionError,
         },
     },
 };
@@ -44,6 +45,10 @@ pub enum Event {
     Spawned { item: ItemId, object: ObjectAddress },
     /// The game took items away.
     Removed { target: Removal, why: RemovalWhy },
+    /// The game let go of an object the player had.
+    Dropped { object: ObjectAddress },
+    /// The mod spawned a weapon to stand for one the player has.
+    Restored(Restored),
     /// The game is about to store its save.
     StoreImminent,
     /// The game is about to cache the player's slots.
@@ -93,6 +98,8 @@ impl Loadout {
             Event::Given(give) => Folded::moves(self.give(give)?),
             Event::Spawned { item, object } => Folded::moves(self.spawned(item, object)?),
             Event::Removed { target, why } => Folded::moves(self.remove(target, why)?),
+            Event::Dropped { object } => Folded::moves(self.dropped(object)?),
+            Event::Restored(restored) => Folded::moves(self.restored(restored)?),
             Event::StoreImminent => Folded {
                 transitions: Vec::new(),
                 store: Some(project_store(self)),

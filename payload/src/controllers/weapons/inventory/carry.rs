@@ -125,6 +125,11 @@ pub(crate) unsafe fn seen() -> Vec<(Seen, SocketId)> {
         .collect()
 }
 
+/// The carried weapons' objects.
+pub(crate) fn objects() -> Vec<ObjectKey> {
+    CARRY.lock().iter().map(|c| c.object).collect()
+}
+
 /// Whether `object` is carried.
 pub(crate) fn contains(object: ObjectKey) -> bool {
     CARRY.lock().iter().any(|c| c.object == object)

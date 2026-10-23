@@ -10,7 +10,7 @@ use crate::controllers::{
         socket::{BodyLayout, Socket},
         table::{Departure, Loadout, Place, primary},
         transition::{
-            Cause, Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Take,
+            Cause, Change, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take,
             TakeSource, TransitionError,
         },
     },
@@ -413,9 +413,11 @@ fn a_give_with_the_hands_and_the_back_full_comes_to_the_player_s_feet() {
 }
 
 #[test]
-fn a_removal_takes_every_weapon_from_wherever_it_is_and_leaves_the_rest() {
+fn a_removal_takes_every_weapon_on_the_body_and_leaves_the_rest() {
     let mut t = table();
     let on_hip = docked(&mut t, Socket::Hip(Hand::Right), 3, a_pistol());
+    let lying = take(&mut t, Hand::Right, 5, weapon(a_sniper()));
+    t.let_go(Hand::Right, Release::Dropped).unwrap();
     let held = take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     let prop = take(&mut t, Hand::Left, 2, ItemKind::Prop);
     t.let_go(Hand::Left, Release::Dropped).unwrap();
@@ -430,6 +432,11 @@ fn a_removal_takes_every_weapon_from_wherever_it_is_and_leaves_the_rest() {
     );
     assert_eq!(view(&t, prop), None, "the prop left at its release");
     assert_eq!(place(&t, grenade), Some(Place::Hand(Hand::Left)));
+    assert_eq!(
+        place(&t, lying),
+        Some(Place::World(Departure::Dropped)),
+        "a weapon lying near the player is not the game's to take"
+    );
 }
 
 #[test]
@@ -489,4 +496,71 @@ fn identities_count_up_and_are_never_reused() {
     t.let_go(Hand::Right, Release::Dropped).unwrap();
     let second = take(&mut t, Hand::Right, 1, ItemKind::Prop);
     assert!(second > first);
+}
+
+#[test]
+fn a_game_drop_lays_a_weapon_in_the_world_from_wherever_it_is() {
+    let mut t = table();
+    let rifle = docked(&mut t, Socket::Shoulder(Hand::Right), 1, a_rifle());
+    let pistol = take(&mut t, Hand::Left, 2, weapon(a_pistol()));
+    let prop = take(&mut t, Hand::Right, 3, ItemKind::Prop);
+    t.dropped(object(1)).unwrap();
+    t.dropped(object(2)).unwrap();
+    assert_eq!(place(&t, rifle), Some(Place::World(Departure::Dropped)));
+    assert_eq!(place(&t, pistol), Some(Place::World(Departure::Dropped)));
+    // A prop cannot lie in the world, so it leaves the table.
+    let left = t.dropped(object(3)).unwrap();
+    assert_eq!(
+        left[0].change,
+        Change::Left {
+            from: Place::Hand(Hand::Right)
+        }
+    );
+    assert_eq!(view(&t, prop), None);
+    // A weapon already lying in the world stays as it was.
+    assert_eq!(t.dropped(object(1)), Ok(Vec::new()));
+    assert_eq!(
+        t.dropped(object(9)),
+        Err(TransitionError::UnknownObject(object(9)))
+    );
+    check_invariants(&t);
+}
+
+#[test]
+fn a_restored_weapon_docks_where_it_was_recorded_or_where_it_fits() {
+    let mut t = table();
+    let restore = |t: &mut Loadout, n: usize, weapon: WeaponType, socket: Socket| {
+        let transitions = t
+            .restored(Restored {
+                object: object(n),
+                weapon,
+                socket,
+            })
+            .unwrap();
+        assert_eq!(transitions[0].cause, Cause::Restored);
+        transitions[0].item
+    };
+    let sniper = restore(&mut t, 1, a_sniper(), Socket::BackOuter);
+    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::BackOuter)));
+    // Its socket is taken now, so the next goes where a weapon of its kind goes.
+    let rifle = restore(&mut t, 2, a_rifle(), Socket::BackOuter);
+    assert!(matches!(
+        place(&t, rifle),
+        Some(Place::Socket(Socket::Shoulder(_)))
+    ));
+    // A recorded socket that does not fit is not used.
+    let launcher = restore(&mut t, 3, a_launcher(), Socket::Chest);
+    assert!(matches!(
+        place(&t, launcher),
+        Some(Place::Socket(Socket::Shoulder(_)))
+    ));
+    assert!(matches!(
+        t.restored(Restored {
+            object: object(1),
+            weapon: a_sniper(),
+            socket: Socket::Chest,
+        }),
+        Err(TransitionError::AlreadyInTable { .. })
+    ));
+    check_invariants(&t);
 }

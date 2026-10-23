@@ -59,6 +59,7 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::ik,
+        loadout::{Restored, live},
         weapons::{
             dual_wield::{
                 attach,
@@ -832,6 +833,15 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         return;
     }
     unsafe { deal(owner, slot_pistol, twin_pistol, dealt) };
+    if let (Some(object), Some(weapon)) = (inventory_engine::object_address(twin_pistol), unsafe {
+        inventory_engine::weapon_type(twin_pistol)
+    }) {
+        live::restored(Restored {
+            object,
+            weapon,
+            socket: socket.socket(),
+        });
+    }
     unsafe { share_hands(twin) };
     let side = socket_side(socket).unwrap_or(Hand::Left);
     note(

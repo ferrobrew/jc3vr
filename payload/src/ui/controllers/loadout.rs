@@ -1,30 +1,62 @@
-//! The loadout core: its sandbox table, driven by hand with made-up objects until the hooks feed
-//! the real one. Shows the table, the primary hand, the slot projection, the last store's sidecar,
-//! and the latest transitions and refusals.
+//! The loadout: the live table, dual-written beside the old weapon handling, with where the two
+//! disagree; and the core's sandbox table, driven by hand with made-up objects. Each shows the
+//! table, the primary hand, the slot projection, the last store's sidecar, and the latest
+//! transitions and refusals.
 
 use egui::Ui;
 
 use crate::controllers::{
     frame::Hand,
     loadout::{
-        BodyLayout, CacheKind, Event, Give, GiveSource, ItemKind, LostWhy, Release, Removal,
-        RemovalWhy, ResetKind, SlotContent, Socket, Take, TakeSource,
+        BodyLayout, CacheKind, Event, Give, GiveSource, ItemKind, LoadoutSnapshot, LostWhy,
+        Release, Removal, RemovalWhy, ResetKind, Restored, SlotContent, Socket, StoreProjection,
+        Take, TakeSource,
+        live::LiveStatus,
         sandbox::{self, SandboxStatus},
     },
     weapons::holster::slot_label,
 };
 
-pub(super) fn loadout_readout(ui: &mut Ui, s: &SandboxStatus) {
+pub(super) fn loadout_readout(ui: &mut Ui, live: &LiveStatus, sandbox: &SandboxStatus) {
     ui.label(
-        "Not wired into the game yet: a sandbox table of made-up objects, to watch the \
-         transitions, the refusals, and the projections the hooks will produce.",
+        "The live table, written beside the old weapon handling, which still moves the weapons; \
+         nothing reads the table yet.",
     );
-    let snapshot = &s.snapshot;
+    match &live.snapshot {
+        None => {
+            ui.label("Not running: no player yet, or the VR inventory is off.");
+        }
+        Some(snapshot) => {
+            ui.label(format!(
+                "{} transitions and {} refusals since the payload loaded · {} divergent",
+                live.transitions,
+                live.refusals,
+                live.divergence.len()
+            ));
+            table_readout(ui, snapshot);
+            for divergence in &live.divergence {
+                ui.label(format!("Divergent: {divergence}"));
+            }
+            if let Some(store) = &live.last_store {
+                store_readout(ui, store);
+            }
+            for line in &live.log {
+                ui.label(line);
+            }
+        }
+    }
+    egui::CollapsingHeader::new("Sandbox")
+        .default_open(false)
+        .show(ui, |ui| sandbox_readout(ui, sandbox));
+}
+
+fn sandbox_readout(ui: &mut Ui, s: &SandboxStatus) {
+    ui.label(
+        "A table of its own, of made-up objects, to watch the transitions, the refusals, and the \
+         projections by hand.",
+    );
     ui.label(format!(
-        "Dominant hand: {} · primary: {} · {} items · snapshots held: {}",
-        snapshot.body.dominant().label(),
-        snapshot.primary.map_or("none", Hand::label),
-        snapshot.items.len(),
+        "Snapshots held: {}",
         if s.caches.is_empty() {
             "none".to_owned()
         } else {
@@ -34,6 +66,25 @@ pub(super) fn loadout_readout(ui: &mut Ui, s: &SandboxStatus) {
                 .collect::<Vec<_>>()
                 .join(", ")
         }
+    ));
+    table_readout(ui, &s.snapshot);
+    if let Some(store) = &s.last_store {
+        store_readout(ui, store);
+    }
+    for line in &s.log {
+        ui.label(line);
+    }
+    ui.separator();
+    controls(ui, s);
+}
+
+/// The table's items, its primary hand, and its slots in play.
+fn table_readout(ui: &mut Ui, snapshot: &LoadoutSnapshot) {
+    ui.label(format!(
+        "Dominant hand: {} · primary: {} · {} items",
+        snapshot.body.dominant().label(),
+        snapshot.primary.map_or("none", Hand::label),
+        snapshot.items.len(),
     ));
     for (index, item) in snapshot.items.iter().enumerate() {
         ui.label(format!(
@@ -57,29 +108,26 @@ pub(super) fn loadout_readout(ui: &mut Ui, s: &SandboxStatus) {
             .collect::<Vec<_>>()
             .join(" · ")
     ));
-    if let Some(store) = &s.last_store {
-        ui.label(format!(
-            "Last store (selected: {}): {}",
-            store.projection.selected.map_or("none", slot_label),
-            store
-                .sidecar
-                .iter()
-                .map(|entry| format!(
-                    "{} {} in {:?}, {}",
-                    entry.item,
-                    entry.weapon,
-                    entry.place,
-                    entry.slot.map_or("beyond the slots", slot_label)
-                ))
-                .collect::<Vec<_>>()
-                .join(" · ")
-        ));
-    }
-    for line in &s.log {
-        ui.label(line);
-    }
-    ui.separator();
-    controls(ui, s);
+}
+
+/// A store's slots and sidecar.
+fn store_readout(ui: &mut Ui, store: &StoreProjection) {
+    ui.label(format!(
+        "Last store (selected: {}): {}",
+        store.projection.selected.map_or("none", slot_label),
+        store
+            .sidecar
+            .iter()
+            .map(|entry| format!(
+                "{} {} in {:?}, {}",
+                entry.item,
+                entry.weapon,
+                entry.place,
+                entry.slot.map_or("beyond the slots", slot_label)
+            ))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    ));
 }
 
 /// The sandbox's choices, kept between frames.
@@ -247,6 +295,15 @@ fn controls(ui: &mut Ui, s: &SandboxStatus) {
                 source,
             }));
         }
+        if ui.button("Restore the kind on the socket").clicked()
+            && let Some(ItemKind::Weapon(weapon)) = kinds.get(form.kind).map(|(_, kind)| *kind)
+        {
+            sandbox::send(Event::Restored(Restored {
+                object: sandbox::object(),
+                weapon,
+                socket,
+            }));
+        }
     });
     ui.horizontal(|ui| {
         pick(
@@ -277,6 +334,11 @@ fn controls(ui: &mut Ui, s: &SandboxStatus) {
                 target: Removal::AllWeapons,
                 why,
             });
+        }
+        if ui.button("The game drops the object").clicked()
+            && let Some(object) = row_object
+        {
+            sandbox::send(Event::Dropped { object });
         }
         if ui.button("Spawn the item").clicked()
             && let Some(item) = row_item

@@ -173,6 +173,17 @@ impl GiveSource {
     }
 }
 
+/// A weapon the mod spawned to stand for one the player has: one of the sidecar's weapons after a
+/// load, or the second pistol of a pair split in two. It comes onto the body where it was
+/// recorded, since the hands come back empty after a load.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Restored {
+    pub object: ObjectAddress,
+    pub weapon: WeaponType,
+    /// Where the weapon was, or goes.
+    pub socket: Socket,
+}
+
 /// What a game-side removal takes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Removal {
@@ -180,7 +191,8 @@ pub enum Removal {
     Object(ObjectAddress),
     /// This item, bound or not.
     Item(ItemId),
-    /// Every weapon, wherever it is, the hands' included.
+    /// Every weapon on the body, the hands' included. The weapons lying in the world stay: the game
+    /// takes what the player holds, not what lies near them.
     AllWeapons,
 }
 
@@ -236,6 +248,10 @@ pub enum Cause {
     /// A restored item's object was spawned.
     Spawned,
     Removed(RemovalWhy),
+    /// The game let go of it.
+    Dropped,
+    /// The mod spawned it to stand for one the player has.
+    Restored,
     /// The spawn reset is about to replace the slots' weapons.
     ResetBegan,
     Reset(ResetKind),
@@ -255,6 +271,8 @@ impl fmt::Display for Cause {
             Cause::Given(source) => f.write_str(source.label()),
             Cause::Spawned => f.write_str("spawned again"),
             Cause::Removed(why) => f.write_str(why.label()),
+            Cause::Dropped => f.write_str("the game dropped it"),
+            Cause::Restored => f.write_str("restored onto the body"),
             Cause::ResetBegan => f.write_str("the spawn reset began"),
             Cause::Reset(kind) => write!(f, "the spawn reset ({})", kind.label()),
             Cause::Restore(kind) => write!(f, "the {} restored", kind.label()),
@@ -632,6 +650,64 @@ impl Loadout {
         }])
     }
 
+    /// The game let go of the item bound to `object`, wherever the table has it: a weapon lies in
+    /// the world where it fell, as one the player dropped, and anything else leaves the table. One
+    /// already lying in the world stays as it is.
+    pub fn dropped(&mut self, object: ObjectAddress) -> Result<Vec<Transition>, TransitionError> {
+        let found = self
+            .locate(object)
+            .ok_or(TransitionError::UnknownObject(object))?;
+        if let Place::World(_) = found.place {
+            return Ok(Vec::new());
+        }
+        let (item, from) = self.remove_at(found)?;
+        Ok(vec![match Lying::new(item, Departure::Dropped) {
+            Ok(lying) => {
+                let transition = change(
+                    &lying.item,
+                    Some(from),
+                    Place::World(Departure::Dropped),
+                    Cause::Dropped,
+                );
+                self.world.push(lying);
+                transition
+            }
+            Err(item) => left(&item, from, Cause::Dropped),
+        }])
+    }
+
+    /// A weapon the mod spawned to stand for one the player has comes onto the body: on its
+    /// socket when the body has it free and it fits there, otherwise where a weapon goes when the
+    /// player does not choose.
+    pub fn restored(&mut self, restored: Restored) -> Result<Vec<Transition>, TransitionError> {
+        if let Some(found) = self.locate(restored.object) {
+            return Err(found.already());
+        }
+        let item = Item {
+            id: self.allocate(),
+            kind: ItemKind::Weapon(restored.weapon),
+            binding: Binding::Live(restored.object),
+        };
+        let socket = restored.socket;
+        let item = if self.body.has(socket) && self.sockets[socket.index()].is_none() {
+            match Docked::new(item, socket) {
+                Ok(docked) => {
+                    let transition =
+                        change(&docked.item, None, Place::Socket(socket), Cause::Restored);
+                    self.sockets[socket.index()] = Some(docked);
+                    return Ok(vec![transition]);
+                }
+                Err(item) => item,
+            }
+        } else {
+            item
+        };
+        Ok(self
+            .onto_body(item, None, Cause::Restored)
+            .into_iter()
+            .collect())
+    }
+
     /// The game takes items away, from wherever they are, the hands included.
     pub fn remove(
         &mut self,
@@ -647,7 +723,7 @@ impl Loadout {
                 .locate_item(item)
                 .ok_or(TransitionError::UnknownItem(item))?,
             Removal::AllWeapons => {
-                return Ok(self.remove_where(|item| item.kind.weapon().is_some(), cause));
+                return Ok(self.remove_from_body(|item| item.kind.weapon().is_some(), cause));
             }
         };
         let (item, from) = self.remove_at(found)?;
@@ -656,6 +732,23 @@ impl Loadout {
 
     /// Remove every item `matches` picks, from wherever it is.
     pub(super) fn remove_where(
+        &mut self,
+        matches: impl Fn(&Item) -> bool,
+        cause: Cause,
+    ) -> Vec<Transition> {
+        let mut out = self.remove_from_body(&matches, cause);
+        let (gone, kept) = std::mem::take(&mut self.world)
+            .into_iter()
+            .partition(|lying| matches(&lying.item));
+        self.world = kept;
+        for lying in gone {
+            out.push(left(&lying.item, Place::World(lying.departure), cause));
+        }
+        out
+    }
+
+    /// Remove every item `matches` picks from the hands and the sockets.
+    fn remove_from_body(
         &mut self,
         matches: impl Fn(&Item) -> bool,
         cause: Cause,
@@ -676,13 +769,6 @@ impl Loadout {
             {
                 out.push(left(&docked.item, Place::Socket(socket), cause));
             }
-        }
-        let (gone, kept) = std::mem::take(&mut self.world)
-            .into_iter()
-            .partition(|lying| matches(&lying.item));
-        self.world = kept;
-        for lying in gone {
-            out.push(left(&lying.item, Place::World(lying.departure), cause));
         }
         out
     }

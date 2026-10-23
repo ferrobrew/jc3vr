@@ -8,7 +8,9 @@
 //! At the pre-reset event the carried weapons are recorded for the respawn, and at the post-reset
 //! event the respawn is set due ([`crate::controllers::weapons::inventory::restore`]). The player
 //! save data's store ([`StorePlayerSaveData`]) and load ([`LoadPlayerSaveData`]) are detoured too:
-//! before a store the save sidecar is written, and after a load it is read.
+//! before a store the save sidecar is written, and after a load it is read. Each also tells the
+//! live loadout table ([`crate::controllers::loadout::live`]) that a reset began or ended, a store
+//! is imminent, or a load happened.
 //!
 //! The handler runs for every character's inventory, on whatever thread resets the spawn system,
 //! so the detour compares the inventory's character with the published local player before it
@@ -28,6 +30,7 @@ use crate::{
     config::Config,
     controllers::{
         hands::ik,
+        loadout::live,
         weapons::inventory::{self, restore},
     },
 };
@@ -71,18 +74,24 @@ fn handle_event(inventory: *mut Inventory, event: *const EventImpl, data: *mut c
     let reset = unsafe { reset_event(inventory, event) };
     if reset == Some(ResetEvent::Pre) {
         tracing::info!(target: "controllers", "inventory: the spawn system is resetting");
-        inventory::on_reset();
+        // SAFETY: the reset event names the local player's live inventory and character.
+        let died = unsafe { inventory.as_ref() }
+            .and_then(|i| unsafe { i.m_Character.as_ref() })
+            .is_some_and(|character| unsafe { character.GetHealth() } <= 0);
+        inventory::on_reset(died);
     }
     HANDLE_EVENT.get().unwrap().call(inventory, event, data);
     if reset == Some(ResetEvent::Post) {
         tracing::info!(target: "controllers", "inventory: the spawn system has reset");
         restore::on_post_reset();
+        live::reset_ended();
     }
 }
 
 #[detour(address = jc3gi::save::StorePlayerSaveData_ADDRESS)]
 fn store_player_save_data(save_data: *const PlayerSaveData, archive: *mut c_void) {
     let settings = Config::lock_query(|c| c.controllers.weapons.inventory);
+    live::store_imminent();
     // SAFETY: the store is given live save data.
     unsafe { restore::on_store(save_data, &settings) };
     STORE_PLAYER_SAVE_DATA
@@ -100,4 +109,5 @@ fn load_player_save_data(save_data: *mut PlayerSaveData, archive: *mut c_void, v
     let settings = Config::lock_query(|c| c.controllers.weapons.inventory);
     // SAFETY: the load was given live save data.
     unsafe { restore::on_load(save_data, &settings) };
+    live::loaded();
 }
