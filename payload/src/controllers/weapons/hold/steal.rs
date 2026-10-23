@@ -60,7 +60,7 @@ use crate::controllers::{
         engine::{self, slot_from_raw},
         hold::{
             pickup::{self, Refusal, TakeOptions},
-            refs::Weak,
+            refs::{Strong, Weak},
             world::{self, TargetKind, WorldTarget},
         },
     },
@@ -88,6 +88,14 @@ impl fmt::Display for StealRefusal {
 }
 
 impl std::error::Error for StealRefusal {}
+
+/// Note characters' guns out to `range_m` from the player rather than within reach: the grapple's
+/// snatch takes them from range ([`crate::controllers::snatch`]). Zero keeps the notice to reach.
+/// Called every input tick.
+pub(crate) fn widen_notice(range_m: f32) {
+    let range = if range_m.is_finite() { range_m } else { 0.0 };
+    NOTICE_RANGE.store(range.max(NOTICE_RANGE_M).to_bits(), Ordering::Relaxed);
+}
 
 /// Publish where the local player is, for the detour's first test, or `None` to stop noting
 /// characters. Called every input tick.
@@ -134,7 +142,8 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
     );
     let at = Mat4::from(character.m_WorldMatrixT1).w_axis.truncate();
     let distance_sq = at.distance_squared(probe);
-    if distance_sq.is_nan() || distance_sq > NOTICE_RANGE_M * NOTICE_RANGE_M {
+    let range = f32::from_bits(NOTICE_RANGE.load(Ordering::Relaxed));
+    if distance_sq.is_nan() || distance_sq > range * range {
         return;
     }
     let Some((weapon, slot)) = (unsafe { wielded(character) }) else {
@@ -198,10 +207,40 @@ pub(crate) unsafe fn take(
     target: &WorldTarget,
     options: TakeOptions,
 ) -> Result<WeaponSlot, StealRefusal> {
+    let freed = unsafe { release(hand, target) }?;
+    // SAFETY: the strong reference keeps the dropped gun alive.
+    let weapon = unsafe { &mut *freed.weapon };
+    let taken = unsafe { pickup::take(hand, weapon, options) }.map_err(StealRefusal::Pickup)?;
+    STEALS.fetch_add(1, Ordering::Relaxed);
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        slot = slot_label(taken),
+        "hold: took the gun out of a character's hands into the {} hand",
+        hand.label()
+    );
+    Ok(taken)
+}
+
+/// A gun a character let go of: dropped into the world with its bodies, held alive.
+pub(crate) struct Freed {
+    pub weapon: *mut WeaponBase,
+    /// Keeps the gun alive while held.
+    pub alive: Strong,
+}
+
+/// Make `target`'s character let go of its gun and stagger, leaving the gun lying in the world, for
+/// a take into `hand` that follows: the grab's take, or the grapple's snatch, which pulls it in
+/// first. A take the hand could not make is refused before the character lets go.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, StealRefusal> {
     let TargetKind::Held { character } = target.kind else {
         return Err(StealRefusal::Gone);
     };
-    // Hold the character alive through the take.
+    // Hold the character alive through the release.
     let alive = {
         let seen = SEEN.lock();
         seen.iter()
@@ -229,21 +268,16 @@ pub(crate) unsafe fn take(
     unsafe { pickup::takeable(player, weapon) }.map_err(StealRefusal::Pickup)?;
     // Refused before the character lets go, so a hand that cannot take it leaves it in its hands.
     unsafe { pickup::route(weapon, Some(hand)) }.map_err(StealRefusal::Pickup)?;
+    // SAFETY: the weapon's own weak reference to itself, live while it is.
+    let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
+        .lock()
+        .ok_or(StealRefusal::Gone)?;
     let player_at = Mat4::from(player.m_WorldMatrixT1).w_axis.truncate();
     unsafe { weapon.OnDrop() };
     unsafe { victim.m_Inventory.DropWeapon(slot, true) };
     unsafe { stagger(victim, player_at) };
-    let taken = unsafe { pickup::take(hand, weapon, options) }.map_err(StealRefusal::Pickup)?;
-    STEALS.fetch_add(1, Ordering::Relaxed);
     SEEN.lock().retain(|s| s.character != character);
-    tracing::info!(
-        target: "controllers",
-        hand = hand.label(),
-        slot = slot_label(taken),
-        "hold: took the gun out of a character's hands into the {} hand",
-        hand.label()
-    );
-    Ok(taken)
+    Ok(Freed { weapon, alive })
 }
 
 /// The takes from characters' hands since the payload loaded.
@@ -275,6 +309,9 @@ static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 static PROBE: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static ARMED: AtomicBool = AtomicBool::new(false);
 static STEALS: AtomicU64 = AtomicU64::new(0);
+/// How far from the player a character's gun is noted, metres, as `f32` bits: at least
+/// [`NOTICE_RANGE_M`].
+static NOTICE_RANGE: AtomicU32 = AtomicU32::new(NOTICE_RANGE_M.to_bits());
 
 /// The gun `character` wields and its slot.
 unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)> {

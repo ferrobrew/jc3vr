@@ -194,6 +194,10 @@ pub enum Event {
     GrappleAttach,
     /// A yank of the grapple hand.
     Yank,
+    /// The grapple hand's grip arming a snatch on a target out of reach.
+    SnatchArm,
+    /// A snatch refused or failed.
+    SnatchRefused,
     /// The tethers starting to retract under the grapple hand's pull.
     TetherRetract,
     /// A hand gripping the world to climb.
@@ -212,7 +216,7 @@ pub enum Event {
 }
 
 impl Event {
-    pub const ALL: [Event; 51] = [
+    pub const ALL: [Event; 53] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -258,6 +262,8 @@ impl Event {
         Event::GrappleFire,
         Event::GrappleAttach,
         Event::Yank,
+        Event::SnatchArm,
+        Event::SnatchRefused,
         Event::TetherRetract,
         Event::ClimbGrip,
         Event::ClimbRelease,
@@ -315,6 +321,8 @@ impl Event {
             Event::GrappleFire => Cue::new(Primitive::Bump, 0.4, Category::Traversal),
             Event::GrappleAttach => Cue::new(Primitive::Thud, 0.5, Category::Traversal),
             Event::Yank => Cue::new(Primitive::Bump, 0.6, Category::Traversal),
+            Event::SnatchArm => Cue::new(Primitive::Tick, 0.5, Category::Traversal),
+            Event::SnatchRefused => Cue::new(Primitive::Buzz, 0.6, Category::Traversal),
             Event::TetherRetract => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
             Event::ClimbGrip => Cue::new(Primitive::Bump, 0.75, Category::Traversal),
             Event::ClimbRelease => Cue::new(Primitive::Click, 0.25, Category::Traversal),
@@ -372,6 +380,8 @@ impl Event {
             Event::GrappleFire => "grapple fire",
             Event::GrappleAttach => "grapple attach",
             Event::Yank => "yank",
+            Event::SnatchArm => "snatch armed",
+            Event::SnatchRefused => "snatch refused",
             Event::TetherRetract => "tether retract",
             Event::ClimbGrip => "climb grip",
             Event::ClimbRelease => "climb release",

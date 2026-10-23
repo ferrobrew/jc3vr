@@ -25,8 +25,11 @@ The pulls act only while the button is held: a hand moved back in the course of 
 | Reeling in | A yank | The reel takes the game's retract boost for `reel.boost_s` |
 | Tethers attached, on foot or falling, no line of the grapple's own, the grapple button held | Pulling back from where the hand reached | The game's retract input, which tightens the tethers |
 | Hanging from the line | Holding the hand off where it took the line, and moving it | The body swings against the hand: the hold, plus a pump while the hand moves |
+| On foot, the grapple hand empty, no line out, the grapple button up, the grip pressed at a thing out of reach under the aim | A yank while the grip is held | The grapple snatch: the hook pulls the thing into the hand ([grapple-snatch.md](grapple-snatch.md)) |
 
 Pointing at the first object and firing, then at the second and firing, is the grapple's hand aim with the grapple button's held `FIRE_GRAPPLE` ([controllers-and-roomscale.md](controllers-and-roomscale.md#the-grapple)); the second fire comes from the same hand.
+
+The snatch's yank is its own detector, with its own thresholds (`weapons.snatch.yank`), armed only while the grip holds a remote target with no line out, so it never meets the zip's yank, which needs the grapple button held on an attached line. The grapple's aim sees weapons lying in the world while the snatch is on, so the button works on a gun too: a hold tethers it through the game's tethers, and a tap tosses it to the player's feet rather than zip Rico to it ([grapple-snatch.md](grapple-snatch.md#the-grapple-button-at-a-gun)).
 
 ## The pull
 

@@ -100,6 +100,61 @@ fn a_fallback_is_taken_only_when_no_target_is_in_reach() {
 }
 
 #[test]
+fn a_remote_target_is_taken_only_when_nothing_at_all_is_in_reach() {
+    let remote = GripTarget::measured(
+        GrabVolume::Snatch,
+        Hand::Left,
+        10.0,
+        Mark::ring(MarkAt::World(Vec3::NEG_Z * 10.0), 0.1),
+    );
+    assert_eq!(remote.tier, Tier::Remote);
+    let climb = GripTarget::measured(
+        GrabVolume::Climb,
+        Hand::Left,
+        0.0,
+        Mark::ring(MarkAt::World(Vec3::ZERO), 0.05),
+    );
+    let crate_in_reach = GripTarget::measured(
+        GrabVolume::Pickup(PickupKind::Prop),
+        Hand::Left,
+        0.1,
+        Mark::ring(MarkAt::World(Vec3::X), 0.05),
+    );
+    // A reach margin, which has no marker of its own, still wins.
+    let margin = sphere(GrabVolume::GrenadePouch, 0.0, 0.2, None).ranked(Tier::Fallback);
+    assert_eq!(takes(&[remote], Hand::Left, 0.0), Some(GrabVolume::Snatch));
+    assert_eq!(
+        takes(&[remote, crate_in_reach], Hand::Left, 0.0),
+        Some(GrabVolume::Pickup(PickupKind::Prop))
+    );
+    assert_eq!(
+        takes(&[remote, climb], Hand::Left, 0.0),
+        Some(GrabVolume::Climb)
+    );
+    assert_eq!(
+        takes(&[remote, margin], Hand::Left, 0.0),
+        Some(GrabVolume::GrenadePouch)
+    );
+    let resolved = &resolve(&[remote, climb], [at(0.0), None])[0];
+    let lost = losers(&resolved.reaches, resolved.chosen.unwrap());
+    assert_eq!(lost[0].1, Lost::Remote);
+}
+
+#[test]
+fn a_fist_never_arms_a_snatch() {
+    let mut latch = GripLatch::default();
+    assert_eq!(latch.step(tick(PRESS, None)), None);
+    assert_eq!(latch.step(tick(HELD, Some(GrabVolume::Snatch))), None);
+    assert!(is_fist(latch), "a closed hand passing over a remote target");
+    let mut pressed = GripLatch::default();
+    assert_eq!(
+        pressed.step(tick(PRESS, Some(GrabVolume::Snatch))),
+        Some(GrabVolume::Snatch),
+        "a press aimed at it arms it"
+    );
+}
+
+#[test]
 fn a_held_target_is_kept_over_anything_nearer() {
     let wheel = sphere(
         GrabVolume::VehicleControl(ControlKind::Wheel),
@@ -203,6 +258,7 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::GrenadePin,
         GrabVolume::LiveGrenade,
         GrabVolume::WorldMagazine,
+        GrabVolume::Snatch,
     ];
     out.extend(
         [
@@ -236,7 +292,8 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::WorldWeapon
             | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade
-            | GrabVolume::WorldMagazine => {}
+            | GrabVolume::WorldMagazine
+            | GrabVolume::Snatch => {}
         }
     }
     out
@@ -256,7 +313,7 @@ fn every_kind_of_target_goes_through_the_resolver_and_the_renderer() {
         assert_eq!(resolved[0].reaches.len(), 1, "{volume:?} is in reach");
         match target.tier {
             Tier::Touch => assert_eq!(resolved[0].chosen, None, "{volume:?}"),
-            Tier::Target | Tier::Fallback => assert_eq!(
+            Tier::Target | Tier::Fallback | Tier::Remote => assert_eq!(
                 resolved[0].chosen.map(|c| c.volume),
                 Some(volume),
                 "{volume:?} is taken"

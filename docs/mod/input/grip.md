@@ -17,7 +17,7 @@ Everything a hand can take is one `GripTarget` (`grab/target.rs`):
 
 - what a squeeze takes, a `GrabVolume`, which also names the subsystem that acts on the grab (`GrabVolume::consumer`);
 - the one hand that may take it, or either;
-- its tier: a target, a fallback, or a touch target (below);
+- its tier: a target, a fallback, a remote target, or a touch target (below);
 - its reach: a grab point in the cockpit frame with a radius around it, reached by one of the hand's two points, or a distance the providing subsystem measured itself;
 - the hand that holds it now, if one does;
 - its marker: where it is drawn, the surface it lies on, its size, its style, and when it shows.
@@ -43,6 +43,7 @@ Each subsystem only provides and consumes. The input tick (`bindings::input_tick
 1. A touch target is never taken. It is worked by the hand without a squeeze (a cockpit button pressed by the palm, a gun's magazine well that a round goes into on contact), and is in the list only for its marker.
 2. Of the targets in reach, the nearest grab point wins. Equally near ones go to the first placed, and each provider places what a hand holds first, so a hand keeps what it holds.
 3. With no target in reach, the nearest fallback wins. The fallbacks are a surface to climb, the helicopter to hang from, and the reach margins around the pouches and the parachute's handles. A hand that reaches for anything resting on a surface touches that surface too, so a surface ranks below everything a hand reaches for on purpose; and a hand feeling for a pouch lands a little off it more often than not, so a press just outside a pouch still takes from it when nothing else is near.
+4. With nothing at all in reach, not even a fallback, a remote target wins: the thing out of reach under the grapple's aim that the empty grapple hand would snatch ([grapple-snatch.md](grapple-snatch.md)). Its reach is measured, so it is always in reach when offered, and it is offered only to the grapple hand, empty, on foot, with the hook free and the grapple button up. A fist never takes it: only a press aimed at it arms the snatch, so a closed hand swung past a gun under the aim does nothing.
 
 The physical hands' reach is measured by their own casts on the simulation tick, so its targets come with their distance and are in reach whenever they are offered. A surface to climb is offered only where the reach found one: a hand that merely presses into something the reach did not find offers nothing, since a grip there would have nothing to hold.
 

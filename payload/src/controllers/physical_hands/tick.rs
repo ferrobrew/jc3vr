@@ -622,7 +622,7 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
 /// Which hands hold nothing a palm would get in the way of: no gun, not the foregrip, no grenade or
 /// charge, nothing of the loadout table's but a prop the pickup carries, and the controller drives
 /// the hand.
-pub(super) fn free_hands() -> [bool; 2] {
+pub(crate) fn free_hands() -> [bool; 2] {
     let wielded = weapons::status()
         .wielded
         .map_or([false; 2], |w| w.weapon.wielded.hands);

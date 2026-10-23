@@ -112,6 +112,8 @@ pub enum Cause {
     Steal,
     /// A weapon taken off a rack, or the copy a rack hands out.
     Rack,
+    /// A weapon the grapple's snatch pulled into the hand.
+    Snatch,
 }
 
 impl Cause {
@@ -121,6 +123,7 @@ impl Cause {
             Cause::Pickup => "pickup",
             Cause::Steal => "taken from a character",
             Cause::Rack => "rack",
+            Cause::Snatch => "snatched with the grapple",
         }
     }
 
@@ -131,6 +134,7 @@ impl Cause {
             Cause::Pickup => live::Expect::Take(TakeSource::World),
             Cause::Steal => live::Expect::Take(TakeSource::Character),
             Cause::Rack => live::Expect::Take(TakeSource::Rack),
+            Cause::Snatch => live::Expect::Take(TakeSource::Snatch),
         }
     }
 
@@ -141,12 +145,9 @@ impl Cause {
             live::Expect::Take(TakeSource::World) => Some(Cause::Pickup),
             live::Expect::Take(TakeSource::Character) => Some(Cause::Steal),
             live::Expect::Take(TakeSource::Rack | TakeSource::RackCopy) => Some(Cause::Rack),
+            live::Expect::Take(TakeSource::Snatch) => Some(Cause::Snatch),
             live::Expect::Take(
-                TakeSource::Locker
-                | TakeSource::Give
-                | TakeSource::Snatch
-                | TakeSource::Pouch
-                | TakeSource::Catch,
+                TakeSource::Locker | TakeSource::Give | TakeSource::Pouch | TakeSource::Catch,
             ) => None,
         }
     }

@@ -1,10 +1,15 @@
 //! The status rows for the physical grapple: where the grapple is, what its line holds, the
-//! reel and the tethers the hand works, the hang swing, and the grapple hand's vibration.
+//! reel and the tethers the hand works, the hang swing, the snatch, and the grapple hand's
+//! vibration.
 
 use smol_str::format_smolstr;
 
 use crate::{
-    controllers::{hands::anchor, menu::read_config},
+    controllers::{
+        hands::anchor,
+        menu::read_config,
+        snatch::{self, SnatchStatus},
+    },
     grapple::physical::{self, GrapplePhase, GrappleStatus},
     status::Line,
 };
@@ -46,12 +51,41 @@ pub(super) fn swing() -> Line {
     }
 }
 
+pub(super) fn snatch() -> Line {
+    let enabled = read_config(|c| c.controllers.weapons.snatch.enabled);
+    snatch_line(enabled, &snatch::status())
+}
+
 pub(super) fn haptics() -> Line {
     if !read_config(|c| c.controllers.haptics.categories.traversal) {
         return Line::off("");
     }
     let status = physical::status();
     Line::ok(format_smolstr!("{:.2}", status.haptic))
+}
+
+fn snatch_line(enabled: bool, status: &SnatchStatus) -> Line {
+    if !enabled {
+        return Line::off("");
+    }
+    if !status.live {
+        return Line::waiting("NO HAND INPUT");
+    }
+    let target = match (status.target, status.unoffered) {
+        (Some(target), _) => format_smolstr!("{}, {:.1} M", target.kind, target.distance_m),
+        (None, Some(why)) => format_smolstr!("{why}"),
+        (None, None) => "NO TARGET".into(),
+    };
+    let line = Line::ok(format_smolstr!(
+        "{}, {target}, {} TAKEN OF {}",
+        status.phase,
+        status.taken,
+        status.fired
+    ));
+    match &status.last_refusal {
+        Some(refusal) => line.with_note(format!("last: {refusal}")),
+        None => line,
+    }
 }
 
 fn state_line(status: &GrappleStatus) -> Line {
@@ -148,5 +182,43 @@ mod tests {
             "OK, 2 ATTACHED, PULL 0.50, TENSION 0.75, 3 PULLS"
         );
         assert_eq!(tethers_line(false, &live).text(), "OFF, 2 ATTACHED");
+    }
+
+    #[test]
+    fn the_snatch_row_reads_the_readout() {
+        let idle = SnatchStatus::default();
+        assert_eq!(snatch_line(false, &idle).text(), "OFF");
+        assert_eq!(snatch_line(true, &idle).text(), "WAITING, NO HAND INPUT");
+        let aimed = SnatchStatus {
+            live: true,
+            phase: "ARMED",
+            target: Some(snatch::TargetReadout {
+                kind: "WEAPON ON THE GROUND",
+                distance_m: 9.96,
+            }),
+            fired: 3,
+            taken: 2,
+            last_refusal: Some("snatch: the weapon snagged".to_owned()),
+            ..SnatchStatus::default()
+        };
+        let line = snatch_line(true, &aimed);
+        assert_eq!(
+            line.text(),
+            "OK, ARMED, WEAPON ON THE GROUND, 10.0 M, 2 TAKEN OF 3"
+        );
+        assert_eq!(
+            line.note.as_deref(),
+            Some("last: snatch: the weapon snagged")
+        );
+        let busy = SnatchStatus {
+            live: true,
+            phase: "IDLE",
+            unoffered: Some("HAND NOT EMPTY"),
+            ..SnatchStatus::default()
+        };
+        assert_eq!(
+            snatch_line(true, &busy).text(),
+            "OK, IDLE, HAND NOT EMPTY, 0 TAKEN OF 0"
+        );
     }
 }

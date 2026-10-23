@@ -86,6 +86,22 @@ pub unsafe fn cast(
     max_distance: f32,
     options: &CastOptions,
 ) -> Result<Option<RayHit>, RaycastError> {
+    unsafe { cast_on(ray, max_distance, options, PhysicsSystem::QUERY_LAYER) }
+}
+
+/// [`cast`] on the query layer `layer` (a [`PfxLayer`](jc3gi::physics::PfxLayer)) in place of the
+/// player aim's: [`VEHICLE_RAYCAST`](jc3gi::physics::PfxLayer::VEHICLE_RAYCAST) also meets the
+/// weapons lying in the world, which the aim's layer does not.
+///
+/// # Safety
+///
+/// As [`cast`].
+pub unsafe fn cast_on(
+    ray: &Ray,
+    max_distance: f32,
+    options: &CastOptions,
+    layer: i32,
+) -> Result<Option<RayHit>, RaycastError> {
     if !(max_distance.is_finite() && max_distance > 0.0) {
         return Err(RaycastError::InvalidDistance);
     }
@@ -129,7 +145,7 @@ pub unsafe fn cast(
             &mut info.base,
             (&raw mut filter).cast::<RaycastFilter>(),
             0,
-            PhysicsSystem::QUERY_LAYER,
+            layer,
         )
     };
     let fraction = info.base.m_HitDistance;

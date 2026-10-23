@@ -34,6 +34,8 @@
 //! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
 //!   foregrip, the weapon actions that run with the hands on the controllers, recoil, and
 //!   the dual-wield split;
+//! - [`snatch`]: the grapple snatch: the empty grapple hand pulls a weapon out of reach into itself
+//!   on the game's hook;
 //! - [`physical_hands`]: each empty hand's palm colliding with the world: pushing the body off
 //!   surfaces, holding the hand at them, and striking characters and objects;
 //! - [`vehicles`]: vehicles, mounted guns, the wingsuit, and the parachute: the opt-in physical
@@ -78,6 +80,7 @@ pub mod presentation;
 pub mod presets;
 pub mod roomscale;
 pub mod scheme;
+pub mod snatch;
 pub mod summary;
 pub mod vehicles;
 pub mod weapons;
@@ -95,6 +98,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(roomscale::hook_library())
         .with_hook_library(body::rig::root::hook_library())
         .with_hook_library(weapons::hook_library())
+        .with_hook_library(snatch::hook_library())
         .with_hook_library(haptics::hook_library())
         .with_hook_library(vehicles::hook_library())
 }

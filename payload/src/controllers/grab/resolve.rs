@@ -89,6 +89,8 @@ pub fn choose(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
 pub enum Lost {
     /// A target was in reach, and this is a fallback.
     Fallback,
+    /// Something was in reach, and this is out of reach, for the grapple to snatch.
+    Remote,
     /// The palm works it, not the grip.
     Touch,
     /// The chosen one's grab point is nearer, by this many metres.
@@ -99,6 +101,7 @@ impl Lost {
     pub fn describe(self) -> String {
         match self {
             Lost::Fallback => "a fallback, and a target is in reach".to_owned(),
+            Lost::Remote => "out of reach, and something is in reach".to_owned(),
             Lost::Touch => "worked by the palm, not the grip".to_owned(),
             Lost::Farther(by) => format!("{:.0} mm farther", by * 1000.0),
         }
@@ -113,6 +116,8 @@ pub fn losers(reaches: &[Reach], chosen: Reach) -> Vec<(Reach, Lost)> {
         .map(|r| {
             let lost = if r.tier == Tier::Touch {
                 Lost::Touch
+            } else if r.tier == Tier::Remote && chosen.tier != Tier::Remote {
+                Lost::Remote
             } else if r.tier > chosen.tier {
                 Lost::Fallback
             } else {

@@ -82,6 +82,7 @@ mod status;
 use std::num::NonZeroUsize;
 
 pub use bodies::BodyError;
+pub(crate) use bodies::BodyState;
 pub use config::PhysicalHandsConfig;
 use glam::{Quat, Vec3};
 use jc3gi::{character::character::Character, types::math::Vector3};
@@ -90,8 +91,7 @@ use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 pub(crate) use targets::targets;
-use tick::free_hands;
-pub(crate) use tick::{after_aim, main_thread_tick, mode_acts};
+pub(crate) use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 use crate::{
     config::Config,
@@ -181,6 +181,16 @@ pub(crate) unsafe fn set_body_velocities(
 pub(crate) unsafe fn body_pose(body: u32, owner: NonZeroUsize) -> Result<(Vec3, Quat), BodyError> {
     let state = unsafe { bodies::read(body, owner) }?;
     Ok((state.pose.centre, state.pose.orientation))
+}
+
+/// The dynamic body `body`'s state, game space, after checking it still belongs to `owner`: a
+/// weapon the grapple's snatch pulls in.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn body_state(body: u32, owner: NonZeroUsize) -> Result<BodyState, BodyError> {
+    unsafe { bodies::read(body, owner) }
 }
 
 pub(crate) unsafe fn push_body(character: &mut Character) {

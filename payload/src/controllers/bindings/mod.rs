@@ -13,7 +13,8 @@
 //!   a tap, a double tap that releases the tethers, a hold that tethers or tightens, and a sharp
 //!   pull that zips;
 //! - [`yank`] detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
-//!   held;
+//!   held, and the snatch's own yank while the grip holds a remote target
+//!   ([`crate::controllers::snatch`]);
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
@@ -67,7 +68,7 @@ use crate::{
         hands::{self, tiers},
         haptics::{self, Event},
         mode::{self, Detection, Mode},
-        physical_hands, roomscale, scheme, summary,
+        physical_hands, roomscale, scheme, snatch, summary,
         vehicles::{self, wheel::CockpitTransform},
         weapons,
     },
@@ -155,6 +156,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         unsafe { weapons::inventory::stand_down() };
         vehicles::stand_down();
         grapple::physical::stand_down();
+        snatch::stand_down();
         grab::tick::stand_down();
         return InputTickOutput::default();
     }
@@ -224,6 +226,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         }
         vehicles::stand_down();
         grapple::physical::stand_down();
+        snatch::stand_down();
         grab::tick::stand_down();
         state.report = TickReport {
             detection,
@@ -242,6 +245,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         weapons::stand_down();
         vehicles::stand_down();
         grapple::physical::stand_down();
+        snatch::stand_down();
         grab::tick::stand_down();
         edges = Default::default();
         semantic_edges = Default::default();
@@ -312,20 +316,6 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             active.as_ref().map_or(1.0, |a| a.world_scale),
         ));
     }
-    let targets = grab::tick::resolve(provided.targets, provided.notes, active.as_ref());
-    let mut controls = Controls::from_frame(
-        &frame,
-        &edges,
-        &config.bindings,
-        dominant,
-        move_rotation,
-        targets.chosen(),
-    );
-    for hand in Hand::BOTH {
-        controls.hands[hand.index()].grab_slow = targets.slow[hand.index()];
-    }
-    controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
-    controls.masked_inputs = panel_chord::masked_inputs(chord);
     let profiles = Hand::BOTH.map(|hand| frame.hand(hand).profile);
     let semantic_input = match &semantic {
         Some(semantic) => SemanticInput::from_frame(
@@ -341,6 +331,34 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             dominant,
         ),
     };
+    let grapple_hand = dominant.other();
+    // The hand's pulls act only while the grapple button is held.
+    let grapple_held = grapple_button_held(&semantic_input, detection.mode);
+    if !in_menu {
+        // SAFETY: the input tick runs on the main thread outside the world update.
+        provided.extend(unsafe {
+            snatch::targets(&snatch::OfferInput {
+                hand: grapple_hand,
+                detection: &detection,
+                button_held: grapple_held,
+                config: &config,
+            })
+        });
+    }
+    let targets = grab::tick::resolve(provided.targets, provided.notes, active.as_ref());
+    let mut controls = Controls::from_frame(
+        &frame,
+        &edges,
+        &config.bindings,
+        dominant,
+        move_rotation,
+        targets.chosen(),
+    );
+    for hand in Hand::BOTH {
+        controls.hands[hand.index()].grab_slow = targets.slow[hand.index()];
+    }
+    controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
+    controls.masked_inputs = panel_chord::masked_inputs(chord);
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
@@ -352,10 +370,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     controls.ragdolling = mode::last_snapshot()
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
-    let grapple_hand = dominant.other();
     let grapple_distance = grapple_hand_distance(grapple_hand, &config.bindings.yank);
-    // The hand's pulls act only while the grapple button is held.
-    let grapple_held = grapple_button_held(&semantic_input, detection.mode);
     let line = line_attached();
     let yank = state.yank.step(
         dt,
@@ -463,6 +478,22 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 want: Want::Analog(value),
             });
         }
+        // SAFETY: the input tick runs on the main thread outside the world update.
+        unsafe {
+            snatch::finish_tick(
+                &snatch::FinishInput {
+                    hand: grapple_hand,
+                    grabs: grabs_for(step.grabs, Consumer::Snatch),
+                    grips: finish.grips,
+                    distance: grapple_hand_distance(grapple_hand, &config.weapons.snatch.yank),
+                    button_held: grapple_held,
+                    detection: &detection,
+                    dt,
+                    config: &config,
+                },
+                &mut step.desired,
+            )
+        };
         physical_hands::climb::finish_tick(
             finish.grips.map(|g| g.held()),
             grabs_for(step.grabs, Consumer::Climb),

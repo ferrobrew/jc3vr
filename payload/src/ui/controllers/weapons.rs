@@ -16,6 +16,7 @@ use crate::{
             tiers::{self, TierState, TierStatus},
         },
         loadout::slot_label,
+        snatch::{self, SnatchConfig},
         weapons::{
             self, WeaponsStatus,
             config::{
@@ -370,6 +371,22 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         ),
         None => format!("Yanks: {yanks}"),
     });
+    let n = snatch::status();
+    ui.label(format!(
+        "Snatch: {} · target {} · fired {} · taken {} · failed {} · tosses {}",
+        n.phase,
+        n.target.map_or_else(
+            || n.unoffered.unwrap_or("none").to_owned(),
+            |t| format!("{} at {:.1} m", t.kind, t.distance_m)
+        ),
+        n.fired,
+        n.taken,
+        n.failed,
+        n.tosses
+    ));
+    if let Some(refusal) = &n.last_refusal {
+        ui.label(format!("Snatch: last refusal: {refusal}"));
+    }
 }
 
 fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
@@ -557,6 +574,48 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         );
     hold_settings(ui, &mut w.hold);
     regions_settings(ui, &mut w.regions);
+    snatch_settings(ui, &mut w.snatch);
+}
+
+fn snatch_settings(ui: &mut Ui, s: &mut SnatchConfig) {
+    ui.checkbox(&mut s.enabled, "Grapple snatch").on_hover_text(
+        "Grip with the empty grapple hand at a weapon out of reach under the grapple's aim, \
+             then yank the hand back: the hook pulls the weapon into the hand. The grapple's aim \
+             also sees weapons on the ground: a tap tosses one to your feet, a hold tethers it.",
+    );
+    ui.add_enabled_ui(s.enabled, |ui| {
+        ui.indent("snatch", |ui| {
+            ui.add(egui::Slider::new(&mut s.range_m, 2.0..=60.0).text("Range (m)"));
+            ui.add(
+                egui::Slider::new(&mut s.cone_deg, 1.0..=20.0).text("Cone for guns in hands (°)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut s.yank.min_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut s.yank.min_distance_m, 0.05..=0.4).text("Yank length (m)"),
+            );
+            ui.add(egui::Slider::new(&mut s.yank.window_s, 0.05..=0.6).text("Yank window (s)"));
+            ui.add(egui::Slider::new(&mut s.max_speed_mps, 2.0..=40.0).text("Fastest pull (m/s)"));
+            ui.add(
+                egui::Slider::new(&mut s.max_accel_mps2, 5.0..=300.0).text("Hardest pull (m/s²)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut s.stiffness_per_s, 0.5..=15.0).text("Pull stiffness (1/s)"),
+            );
+            ui.add(egui::Slider::new(&mut s.arc, 0.0..=0.8).text("Pull arc"));
+            ui.add(
+                egui::Slider::new(&mut s.capture_radius_m, 0.1..=1.0).text("Capture radius (m)"),
+            );
+            ui.add(
+                egui::Slider::new(&mut s.stall_distance_m, 0.01..=0.5).text("Stall distance (m)"),
+            );
+            ui.add(egui::Slider::new(&mut s.stall_window_s, 0.1..=2.0).text("Stall window (s)"));
+            ui.add(
+                egui::Slider::new(&mut s.attach_timeout_s, 0.5..=6.0).text("Hook flight limit (s)"),
+            );
+        });
+    });
 }
 
 fn regions_settings(ui: &mut Ui, r: &mut RegionsConfig) {

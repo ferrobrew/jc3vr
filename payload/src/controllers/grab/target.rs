@@ -92,6 +92,9 @@ pub enum Tier {
     /// Taken only when no target is in reach: a surface to climb, the helicopter to hang from, and
     /// a pouch or a parachute handle the hand misses by a little.
     Fallback,
+    /// Taken only when nothing at all is in reach, not even a fallback: a thing out of reach that
+    /// the grapple snatches into the hand (see [`crate::controllers::snatch`]).
+    Remote,
     /// Worked by the hand without a squeeze, such as a cockpit button or a gun's magazine well:
     /// marked, never taken.
     Touch,
@@ -102,6 +105,7 @@ impl Tier {
     pub const fn of(volume: GrabVolume) -> Self {
         match volume {
             GrabVolume::Climb | GrabVolume::StuntHold => Tier::Fallback,
+            GrabVolume::Snatch => Tier::Remote,
             GrabVolume::CockpitButton(_) | GrabVolume::MagazineWell | GrabVolume::ChargeSurface => {
                 Tier::Touch
             }

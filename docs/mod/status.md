@@ -58,6 +58,7 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `REEL FROM HAND` | the reel's scale from the grapple hand's pull while it drives a reel, whether a yank boosts it, and the reels and boosts since load |
 | | `TETHERS` | the tethers attached, the retract the pull drives, the tension while they are squeezed, and the pulls since load |
 | | `HANG SWING` | the hang ticks the hand swung, and how many of them its motion pumped |
+| | `SNATCH` | what the snatch is doing (idle, armed, freeing, hook out, pulling), the target offered to the grapple hand and its distance or why none is offered, and the snatches taken of those fired; a note names the last refusal ([input/grapple-snatch.md](input/grapple-snatch.md)) |
 | | `LINE HAPTICS` | the grapple hand's line level, the stronger of the tension's and the reel's |
 | `LOCOMOTION` | `STICK VELOCITY` | whether the stick drives the body's velocity this tick, and its speed |
 | | `ACT FILTER` | acts dropped and swapped (and refused swaps) since load |

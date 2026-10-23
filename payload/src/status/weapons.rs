@@ -243,6 +243,8 @@ enum HowHeld {
     Stolen,
     /// Taken off a rack, or a rack's copy.
     Rack,
+    /// Pulled into the hand by the grapple's snatch.
+    Snatched,
     /// Drawn by the game on its own (the weapon wheel, a switch, an automatic draw).
     Game,
     /// Armed in the hand beside the wielded weapon.
@@ -256,6 +258,7 @@ impl HowHeld {
             HowHeld::PickedUp => "PICKED UP",
             HowHeld::Stolen => "STOLEN",
             HowHeld::Rack => "RACK",
+            HowHeld::Snatched => "SNATCHED",
             HowHeld::Game => "GAME'S DRAW",
             HowHeld::Beside => "BESIDE THE WIELDED",
         }
@@ -284,6 +287,7 @@ fn in_hand(
             Some(Cause::Pickup) => HowHeld::PickedUp,
             Some(Cause::Steal) => HowHeld::Stolen,
             Some(Cause::Rack) => HowHeld::Rack,
+            Some(Cause::Snatch) => HowHeld::Snatched,
             None => HowHeld::Game,
         },
     ))

@@ -7,10 +7,14 @@
 //! fist that stays closed and moves fast stays a fist: a punch does not take what it strikes,
 //! which the hand bodies deal as a blow instead, and a fist swung past the hip draws nothing. A
 //! press with nothing in reach on a grip a game action reads (a vehicle's weapon, the wingsuit's
-//! secondary weapon) drives that action for the whole press. Whatever the press took, it holds
+//! secondary weapon) drives that action for the whole press. A fist never takes a remote target:
+//! only a press aimed at it does. Whatever the press took, it holds
 //! until the grip opens.
 
-use crate::controllers::{bindings::controls::ButtonControl, grab::GrabVolume};
+use crate::controllers::{
+    bindings::controls::ButtonControl,
+    grab::{GrabVolume, Tier},
+};
 
 /// What a grip press is doing.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -77,7 +81,9 @@ impl GripLatch {
             let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
             let closed_s = closed_s + dt;
             let takes = closed_s <= FIST_WINDOW_S || slow;
-            *self = match target.filter(|_| takes) {
+            // A remote target is armed only by a press aimed at it, never by a closed hand passing
+            // across it.
+            *self = match target.filter(|v| takes && Tier::of(*v) != Tier::Remote) {
                 Some(volume) => GripLatch::Grab(volume),
                 None => GripLatch::Fist { closed_s },
             };

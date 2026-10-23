@@ -18,7 +18,9 @@
 //!
 //! [`tick`] gathers them, resolves each hand ([`resolve`]): of the targets a hand is within reach
 //! of, the one whose grab point is nearest wins, with the fallbacks (a surface to climb, the
-//! helicopter to hang from, a reach margin) taken only when nothing else is. It publishes the
+//! helicopter to hang from, a reach margin) taken only when nothing else is, and a remote target
+//! for the grapple's snatch ([`crate::controllers::snatch`]) only when not even those are. It
+//! publishes the
 //! result for the readouts and the markers ([`markers`]), and logs each grip press with what the
 //! hand was within reach of and why the others lost. The grip takes the chosen target through
 //! [`latch::GripLatch`], continuously while it is held, and lets go of what it took when it opens;
@@ -105,6 +107,9 @@ pub enum GrabVolume {
     /// the hand holding a weapon that fits it to dock it there (see
     /// [`crate::controllers::weapons::docks`]).
     Socket(Socket),
+    /// A thing out of reach under the grapple's aim, for the empty grapple hand to snatch (see
+    /// [`crate::controllers::snatch`]).
+    Snatch,
 }
 
 impl GrabVolume {
@@ -132,6 +137,7 @@ impl GrabVolume {
             GrabVolume::LiveGrenade => "live grenade",
             GrabVolume::WorldMagazine => "magazine in the world",
             GrabVolume::Socket(socket) => socket_label(socket),
+            GrabVolume::Snatch => "target to snatch",
         }
     }
 
@@ -147,6 +153,7 @@ impl GrabVolume {
             | GrabVolume::WeaponAction
             | GrabVolume::MagazineWell
             | GrabVolume::WorldWeapon
+            | GrabVolume::Snatch
             | GrabVolume::Pickup(PickupKind::Weapon) => Category::Weapon,
             GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
@@ -187,6 +194,7 @@ impl GrabVolume {
             GrabVolume::Pickup(_) => Consumer::Pickup,
             GrabVolume::Climb => Consumer::Climb,
             GrabVolume::StuntHold => Consumer::Stunt,
+            GrabVolume::Snatch => Consumer::Snatch,
         }
     }
 }
@@ -225,6 +233,7 @@ pub enum Consumer {
     Pickup,
     Climb,
     Stunt,
+    Snatch,
 }
 
 /// The grabs of `grabs` (by [`Hand::index`]) that `consumer` acts on.

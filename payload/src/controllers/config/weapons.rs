@@ -2,17 +2,20 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::{
-    ads::config::AdsConfig,
-    collide::config::CollideConfig,
-    config::{
-        C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
-        PouchesConfig, RecoilConfig, ScopeConfig,
+use crate::controllers::{
+    snatch::SnatchConfig,
+    weapons::{
+        ads::config::AdsConfig,
+        collide::config::CollideConfig,
+        config::{
+            C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
+            PouchesConfig, RecoilConfig, ScopeConfig,
+        },
+        inventory::config::InventoryConfig,
+        regions::config::RegionsConfig,
+        reload::config::ReloadConfig,
+        wheel::config::WheelConfig,
     },
-    inventory::config::InventoryConfig,
-    regions::config::RegionsConfig,
-    reload::config::ReloadConfig,
-    wheel::config::WheelConfig,
 };
 
 /// Physical weapon handling. Acts only under the controller scheme.
@@ -87,6 +90,9 @@ pub struct WeaponsConfig {
     /// The VR inventory: the weapons the player owns, holds, and lets go of, and the ones kept
     /// from the game's despawn.
     pub inventory: InventoryConfig,
+    /// The grapple snatch: a grip of the empty grapple hand at a weapon out of reach, and a yank,
+    /// pull it into the hand on the game's hook.
+    pub snatch: SnatchConfig,
 }
 
 impl WeaponsConfig {
@@ -115,6 +121,7 @@ impl WeaponsConfig {
             ads: AdsConfig::new(),
             collide: CollideConfig::new(),
             inventory: InventoryConfig::new(),
+            snatch: SnatchConfig::new(),
         }
     }
 }

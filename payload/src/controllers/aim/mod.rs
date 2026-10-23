@@ -7,6 +7,7 @@
 //! - [`raycast`]: a scene raycast that ignores the player;
 //! - [`gun`]: the guns aim along their hands' sight lines, through the per-weapon update;
 //! - [`grapple`]: the grapple slot is filled from the off-hand's ray by the game's own targeting;
+//! - [`grapple_weapons`]: inside that, the grapple's aim also sees the weapons lying in the world;
 //! - [`targets`]: the game's own aim candidates, which the target selections below share;
 //! - [`assist`]: per-hand aim assist over those candidates;
 //! - [`sights`]: each weapon's sight correction, looked up from the config and the embedded sight
@@ -27,6 +28,7 @@
 
 pub mod assist;
 pub mod grapple;
+pub mod grapple_weapons;
 pub mod gun;
 pub mod ray;
 pub mod raycast;
@@ -74,6 +76,7 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_POST_SIM_BINDER)
         .with_hook_library(grapple::hook_library())
+        .with_hook_library(grapple_weapons::hook_library())
         .with_hook_library(gun::hook_library())
 }
 

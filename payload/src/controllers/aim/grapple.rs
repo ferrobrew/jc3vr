@@ -13,7 +13,8 @@
 //!   fills every slot from the grapple ray with the engine's own filter, range, holey-geometry, and
 //!   target resolution; the grapple slot is taken out of it. The second pass, without the override,
 //!   refills every other slot from the camera exactly as the game does, and the grapple slot is put
-//!   back.
+//!   back. Inside the first pass the grapple's aim also sees the weapons lying in the world
+//!   ([`grapple_weapons`]).
 //! - The grapple target scoring ([`set_target_grapple_fitness`]) runs under the override, so that
 //!   entity attachment and tethering select their target the way the game does, but around the
 //!   hand's ray. Its visibility check ([`is_target_visible_cast`]) is a synchronous cast from the
@@ -45,6 +46,7 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::aim::{
+    grapple_weapons,
     ray::DIRECT_AIM_START_OFFSET,
     raycast::{self, CastOptions},
     targets,
@@ -113,7 +115,7 @@ fn update_direct_aim(aim: *mut PlayerAimControl) {
     if VIEW.with(Cell::get).is_none() || aim.is_null() {
         return original();
     }
-    with_grapple_view(original);
+    grapple_weapons::in_grapple_pass(|| with_grapple_view(original));
     let grapple = unsafe { GrappleSlot::take(&mut *aim) };
     unsafe { clear_other_slots(&mut *aim) };
     original();

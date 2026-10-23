@@ -164,6 +164,7 @@ pub(crate) unsafe fn take(
         TakeRoute::Table { hand } => {
             let source = match (options.cause, from_rack) {
                 (Cause::Steal, _) => TakeSource::Character,
+                (Cause::Snatch, _) => TakeSource::Snatch,
                 (Cause::Rack, true) => TakeSource::Rack,
                 (Cause::Rack, false) => TakeSource::Locker,
                 (Cause::Pickup | Cause::Draw, _) => TakeSource::World,

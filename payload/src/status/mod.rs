@@ -320,6 +320,7 @@ const SECTIONS: &[Section] = &[
             row!("REEL FROM HAND", grapple::reel),
             row!("TETHERS", grapple::tethers),
             row!("HANG SWING", grapple::swing),
+            row!("SNATCH", grapple::snatch),
             row!("LINE HAPTICS", grapple::haptics),
         ],
     },
