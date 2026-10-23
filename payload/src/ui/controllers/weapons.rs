@@ -15,6 +15,7 @@ use crate::{
             anchor::{self, AnchorStatus},
             tiers::{self, TierState, TierStatus},
         },
+        loadout::slot_label,
         weapons::{
             self, WeaponsStatus,
             config::{
@@ -31,11 +32,10 @@ use crate::{
             hold::{
                 self, Cause, HoldStatus,
                 act::{self, DockStatus},
+                armed::{self, ArmedReadout},
                 dock::SnapKind,
-                second::{self, SecondStatus, Source},
                 tick::{self, TickStatus},
             },
-            holster::slot_label,
             recoil::{self, RecoilStatus},
             regions::{self, RegionsStatus, config::RegionsConfig},
             reload::{self, ReloadStatus},
@@ -61,7 +61,7 @@ pub(super) struct WeaponsReadout {
     hold: HoldStatus,
     regions: RegionsStatus,
     dock: DockStatus,
-    second: SecondStatus,
+    armed: [Option<ArmedReadout>; 2],
     tick: TickStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
@@ -86,7 +86,7 @@ impl WeaponsReadout {
             hold: hold::status(),
             regions: regions::status(),
             dock: act::status(),
-            second: second::status(),
+            armed: armed::status(),
             tick: tick::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
@@ -156,7 +156,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     dual_wield_readout(ui, &readout.dual_wield);
     hold_readout(ui, &readout.hold, &readout.dock);
     regions_readout(ui, &readout.regions);
-    second_readout(ui, &readout.second);
+    armed_readout(ui, &readout.armed);
     tick_readout(ui, &readout.tick, &readout.empty);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
@@ -302,12 +302,15 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         h.take.rack_copies,
         h.take.last_refusal.as_deref().unwrap_or("none")
     ));
+    let sliding = |hand: Hand| d.snapping[hand.index()].map_or("nothing", SnapKind::label);
     ui.label(format!(
-        "Docking: sliding {} · grip holds the gun in {} · draws {} · holsters {} · drops {} · last throw {} · last refusal: {}",
-        d.snapping.map_or("nothing", SnapKind::label),
-        d.grip_holds.map_or("no hand", Hand::label),
+        "Docking: sliding left {} right {} · grip holds left {} right {} · draws {} · docks {} · drops {} · last throw {} · last refusal: {}",
+        sliding(Hand::Left),
+        sliding(Hand::Right),
+        yes_no(d.grip_holds[0]),
+        yes_no(d.grip_holds[1]),
         d.draws,
-        d.holsters,
+        d.docks,
         d.drops,
         d.last_throw_mps
             .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s")),
@@ -344,25 +347,16 @@ fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
     };
 }
 
-fn second_readout(ui: &mut Ui, s: &SecondStatus) {
+fn armed_readout(ui: &mut Ui, armed: &[Option<ArmedReadout>; 2]) {
+    let hand = |hand: Hand| {
+        armed[hand.index()].map_or("nothing".to_owned(), |a| {
+            format!("{} ({}/{})", slot_label(a.slot), a.magazine.0, a.magazine.1)
+        })
+    };
     ui.label(format!(
-        "Second weapon: {}{} · trigger {} · updates {} · dropped {} · made wielded {} · last \
-         refusal: {}",
-        s.held.map_or("none".to_owned(), |(hand, slot)| format!(
-            "{} in the {} hand",
-            slot_label(slot),
-            hand.label()
-        )),
-        match s.source {
-            Some(Source::Carried(socket)) => format!(", carried, from the {}", socket.label()),
-            Some(Source::Slot) => ", from its slot".to_owned(),
-            None => String::new(),
-        },
-        if s.trigger { "pulled" } else { "up" },
-        s.updates,
-        s.drops,
-        s.promotions,
-        s.last_refusal.map_or("none".to_owned(), |r| r.to_string())
+        "Armed beside the wielded weapon: left {} · right {}",
+        hand(Hand::Left),
+        hand(Hand::Right)
     ));
 }
 
@@ -805,21 +799,18 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
         ui.add(egui::Slider::new(&mut h.snap_s, 0.0..=0.5).text("Slide time (s)"));
         ui.checkbox(&mut h.grip_to_hold, "Hold the grip to hold a gun")
             .on_hover_text(
-                "Opening the grip on a gun taken by a grab holsters it at its own holster and \
+                "Opening the grip on a gun docks it on a socket under the hand that takes it, and \
                  lets it fall anywhere else.",
             );
         ui.add(egui::Slider::new(&mut h.max_throw_mps, 0.0..=30.0).text("Fastest throw (m/s)"));
     });
     ui.add_enabled(
         h.either_hand,
-        egui::Checkbox::new(
-            &mut h.second_weapon,
-            "Hold a second long gun in the free hand",
-        ),
+        egui::Checkbox::new(&mut h.second_weapon, "Hold a weapon in each hand"),
     )
     .on_hover_text(
-        "The free hand takes a long gun of another slot off its shoulder and fires it with its \
-         own trigger.",
+        "Either hand draws any weapon off the body while the other holds one, and fires it with \
+         its own trigger. Off, a hand draws only while the other holds no weapon.",
     );
     ui.add_enabled(
         h.either_hand,
@@ -843,9 +834,12 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
     );
     ui.checkbox(
         &mut h.magazine_pips,
-        "Show the second gun's magazine over its hand",
+        "Show the magazine of the gun beside the wielded one over its hand",
     )
-    .on_hover_text("Pips over the hand holding the second weapon count its rounds.");
+    .on_hover_text(
+        "Pips over the hand holding a gun the game does not wield count its rounds; the HUD \
+         shows the wielded one's.",
+    );
     ui.checkbox(
         &mut h.drop_replaced,
         "A pickup lets the replaced weapon fall",

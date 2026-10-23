@@ -17,7 +17,7 @@ use crate::controllers::{
         engine::{self, HeldWeapon},
         foregrip::{self, GripGeometry},
         grenade, grip_watch, heft,
-        hold::{self, second},
+        hold::{self, armed},
         opening::OpenWatch,
         pouch_models, recoil,
         regions::{self, Carry, GunRegion, RegionHit},
@@ -57,15 +57,15 @@ pub(crate) fn stand_down() {
     hold::act::clear();
     hold::tick::stand_down();
     hold::take::stand_down();
-    hold::pips::submit(None);
+    hold::pips::submit([None; 2]);
     regions::stand_down();
     // SAFETY: the input tick runs on the main thread outside the world update.
-    unsafe { second::stand_down() };
+    unsafe { armed::stand_down() };
     reload::stand_down();
     wheel::stand_down();
     let mut state = STATE.lock();
     state.weapon = None;
-    state.second = None;
+    state.beside = None;
     state.status.active = false;
     state.status.volumes = [None; 2];
     state.status.fire_blocked = false;
@@ -82,8 +82,8 @@ pub(super) struct State {
     pub(super) status: WeaponsStatus,
     /// The tick's wielded weapon and its two-handed geometry.
     pub(super) weapon: Option<(HeldWeapon, Option<GripGeometry>)>,
-    /// The tick's second weapon.
-    pub(super) second: Option<HeldWeapon>,
+    /// The tick's gun a hand holds beside the wielded weapon.
+    pub(super) beside: Option<HeldWeapon>,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub(super) gameplay: bool,
     /// The last geometry measured, and the weapon and holding hand it belongs to: a measurement
@@ -175,7 +175,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
         docks_followed: 0,
     },
     weapon: None,
-    second: None,
+    beside: None,
     gameplay: false,
     measured: None,
     placed: Vec::new(),

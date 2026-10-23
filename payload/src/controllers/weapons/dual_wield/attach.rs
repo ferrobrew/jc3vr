@@ -117,30 +117,12 @@ pub(crate) unsafe fn input_tick(owner: &Character, settings: Option<Settings>) -
     published
 }
 
-/// The index of the pistol that belongs to `hand`, while the layout has its settings.
-pub(crate) fn gun_of(hand: Hand) -> Option<usize> {
-    let settings = TICK.lock().settings?;
-    draw::gun_hands(settings.dominant, settings.by_handedness)
-        .into_iter()
-        .position(|h| h == hand)
-}
-
-/// A hip grab by `hand` while the pair is not wielded: the draw brings out only `hand`'s pistol.
+/// A pickup by `hand` while the pair is not wielded: the draw brings out only `hand`'s pistol.
 pub(crate) fn begin_draw(hand: Hand) {
     TICK.lock().change(|h| {
         h.begin_draw(hand);
         true
     });
-}
-
-/// Draw `hand`'s pistol while the pair is wielded. Returns whether it was drawn.
-pub(crate) fn draw(hand: Hand) -> bool {
-    TICK.lock().change(|h| h.draw(hand))
-}
-
-/// Holster `hand`'s pistol while the other hand holds its own. Returns whether it was holstered.
-pub(crate) fn holster(hand: Hand) -> bool {
-    TICK.lock().change(|h| h.holster(hand))
 }
 
 /// Whether the pistols' layout owns the attach bones of the weapon at `address`.

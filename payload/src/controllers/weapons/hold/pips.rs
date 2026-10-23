@@ -1,8 +1,8 @@
-//! The second weapon's magazine, shown as pips over its hand.
+//! The magazine of each gun a hand holds that the game does not wield, shown as pips over its hand.
 //!
-//! The game's HUD reads out only the selected weapon's magazine, and the second weapon is never
-//! selected ([`crate::controllers::weapons::hold::second`]): a slot's long gun or any weapon the VR
-//! inventory carries, which is in no slot at all. So while it is held, a row of pips
+//! The game's HUD reads out only the selected weapon's magazine, and a weapon armed in a hand
+//! beside it ([`crate::controllers::weapons::hold::armed`]) is never selected: a slot's weapon or
+//! one the VR inventory carries, which is in no slot at all. So while it is held, a row of pips
 //! floats above the hand holding it on the overlay, anchored to that hand's grip so that it rides
 //! the controller at frame rate: a filled pip for each share of the magazine left, a ring for each
 //! share spent, and the whole row red when the magazine is empty or out.
@@ -46,12 +46,37 @@ pub fn row(magazine: i32, capacity: i32) -> Vec<Pip> {
         .collect()
 }
 
-/// Show `hand`'s second weapon's magazine, or take the pips away with `None`.
-pub(crate) fn submit(shown: Option<(Hand, i32, i32, bool)>) {
-    let Some((hand, magazine, capacity, out)) = shown else {
+/// A magazine shown over a hand.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct Shown {
+    pub magazine: i32,
+    pub capacity: i32,
+    /// The magazine is out of the gun.
+    pub out: bool,
+}
+
+/// Show the magazine over each hand that has one in `shown`, by [`Hand::index`], or take the pips
+/// away where it has none.
+pub(crate) fn submit(shown: [Option<Shown>; 2]) {
+    if shown == [None; 2] {
         store::clear(Source::MagazinePips);
         return;
-    };
+    }
+    let mut prims: Vec<Primitive> = Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| Some((hand, shown[hand.index()]?)))
+        .flat_map(|(hand, shown)| primitives(hand, shown))
+        .collect();
+    store::submit(Source::MagazinePips, &mut prims, TTL);
+}
+
+/// The row of pips over `hand` for `shown`.
+fn primitives(hand: Hand, shown: Shown) -> Vec<Primitive> {
+    let Shown {
+        magazine,
+        capacity,
+        out,
+    } = shown;
     let pips = if out {
         row(0, capacity)
     } else {
@@ -59,8 +84,7 @@ pub(crate) fn submit(shown: Option<(Hand, i32, i32, bool)>) {
     };
     let empty = out || magazine <= 0;
     let count = pips.len();
-    let mut prims: Vec<Primitive> = pips
-        .into_iter()
+    pips.into_iter()
         .enumerate()
         .map(|(i, pip)| {
             // Centred over the fist, along the grip's forward (-Z) axis.
@@ -85,8 +109,7 @@ pub(crate) fn submit(shown: Option<(Hand, i32, i32, bool)>) {
                 depth: DepthMode::Always,
             }
         })
-        .collect();
-    store::submit(Source::MagazinePips, &mut prims, TTL);
+        .collect()
 }
 
 /// The most pips a row shows.

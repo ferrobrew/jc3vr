@@ -1,5 +1,5 @@
-//! Placing the body's grab volumes: the holsters, the grenade pouch, the magazine pouch, and the C4
-//! pouch. Pure.
+//! Placing the body's grab volumes: the sockets' landmarks, the grenade pouch, the magazine pouch,
+//! and the C4 pouch. Pure.
 //!
 //! The volumes ride the character's skeleton, the body the player sees, carried into the cockpit
 //! frame: what the player sees on the body is what they reach for, and the hands reach it as they
@@ -13,7 +13,7 @@
 //!
 //! - the hips, level with the shoulder joints' width, at the hip joints;
 //! - the shoulder joints;
-//! - the chest, at the middle of the shoulder joints, for the chest holster;
+//! - the chest, at the middle of the shoulder joints, for the chest socket;
 //! - the chest's front on each side, below and inside the shoulder joint, for the grenade and C4
 //!   pouches ([`chest_sides`] says which pouch takes which side);
 //! - the belt's front on the side of the hand without a gun, for the magazine pouch: above the hip
@@ -73,13 +73,15 @@ impl BodyFrame {
     }
 }
 
-/// The holster volumes on the body `frame`, in the order the sites are listed. Every holster may
-/// be grabbed with either hand.
-pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Candidate> {
+/// The sockets' volumes at the body's landmarks on `frame`: each hip, each shoulder, and the chest,
+/// in that order, for either hand. The outer back has no landmark of its own. The sockets are
+/// placed here only while they do not sit on their weapons
+/// ([`HolstersConfig::follow_docks`](crate::controllers::weapons::config::HolstersConfig::follow_docks)).
+pub fn socket_landmarks(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Candidate> {
     let mut out = Vec::with_capacity(5);
     for side in Hand::BOTH {
         out.push(place(
-            GrabVolume::Holster(Socket::Hip(side)),
+            GrabVolume::Socket(Socket::Hip(side)),
             hip(frame, side),
             frame.pelvis,
             &config.hip,
@@ -89,7 +91,7 @@ pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Can
     }
     for side in Hand::BOTH {
         out.push(place(
-            GrabVolume::Holster(Socket::Shoulder(side)),
+            GrabVolume::Socket(Socket::Shoulder(side)),
             frame.skeleton.shoulders[side.index()],
             frame.chest,
             &config.shoulder,
@@ -98,7 +100,7 @@ pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Can
         ));
     }
     out.push(place(
-        GrabVolume::Holster(Socket::Chest),
+        GrabVolume::Socket(Socket::Chest),
         frame.skeleton.chest(),
         frame.chest,
         &config.chest,
@@ -108,16 +110,19 @@ pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Can
     out
 }
 
-/// Keep the long guns' draws for the dominant hand while neither hand holds a weapon (`empty`):
-/// the shoulder holsters and the long guns docked on them are offered to the dominant hand alone,
-/// so a long gun drawn by reaching with the off-hand does not move the layout that follows the gun
-/// hand. With a weapon in a hand, either hand may take one, as a second weapon or to holster it.
+/// Keep the draws off the back for the dominant hand while neither hand holds a weapon (`empty`):
+/// the back's sockets and the long guns docked on them are offered to the dominant hand alone, so
+/// a long gun drawn by reaching with the off-hand does not move the layout that follows the gun
+/// hand. With a weapon in a hand, either hand may take one.
 pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty: bool) {
     if !empty {
         return;
     }
     candidates.retain_mut(|c| {
-        if !matches!(c.volume, GrabVolume::Holster(Socket::Shoulder(_))) {
+        if !matches!(
+            c.volume,
+            GrabVolume::Socket(Socket::Shoulder(_) | Socket::BackOuter)
+        ) {
             return true;
         }
         match c.hand {
@@ -156,7 +161,7 @@ pub fn chest_sides(pouches: &PouchesConfig, gun_side: Hand) -> ChestSides {
 /// may be in either hand whichever hand is dominant ([`crate::controllers::weapons::hold`]), and a
 /// layout keyed off the dominant hand would then put the magazine pouch on the gun's side, out of
 /// the free hand's reach. Remembering the last holder keeps the pouches from changing sides each
-/// time a gun is holstered.
+/// time a gun is docked.
 pub fn gun_side(holder: Option<Hand>, last_holder: Option<Hand>, dominant: Hand) -> Hand {
     holder.or(last_holder).unwrap_or(dominant)
 }
@@ -250,8 +255,8 @@ pub const HIP_HEIGHT_FRACTION: f32 = 0.53;
 const BELT_RISE_FRACTION: f32 = 0.17;
 
 /// How far out from the midline the belt's front landmark sits, as a fraction of the shoulder
-/// width: toward the middle of the belt, well inside the hip holster on that side, so that a hand
-/// feeling for the pouch does not land in the holster.
+/// width: toward the middle of the belt, well inside the hip socket on that side, so that a hand
+/// feeling for the pouch does not land in the socket.
 const BELT_OUT_FRACTION: f32 = 0.12;
 
 /// How far in front of the hip joints' line the front of the belly is, metres.
@@ -262,7 +267,7 @@ const BELLY_FRONT_M: f32 = 0.03 + body::EYES_FORWARD_OF_SHOULDERS;
 const CHEST_POUCH_DROP_FRACTION: f32 = 0.22;
 
 /// How far out from the midline the chest pouches' landmark sits, as a fraction of the shoulder
-/// width: about under the shoulder joint, clear of the chest holster in the middle.
+/// width: about under the shoulder joint, clear of the chest socket in the middle.
 const CHEST_POUCH_OUT_FRACTION: f32 = 0.52;
 
 /// How far in front of the shoulder joints' line the front of the chest is, metres: a little deeper

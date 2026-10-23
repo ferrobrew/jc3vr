@@ -35,7 +35,7 @@ fn takes(targets: &[GripTarget], hand: Hand, x: f32) -> Option<GrabVolume> {
         .map(|c| c.volume)
 }
 
-const HIP: GrabVolume = GrabVolume::Holster(Socket::Hip(Hand::Right));
+const HIP: GrabVolume = GrabVolume::Socket(Socket::Hip(Hand::Right));
 
 #[test]
 fn a_point_outside_every_reach_takes_nothing() {
@@ -47,7 +47,7 @@ fn a_point_outside_every_reach_takes_nothing() {
 
 #[test]
 fn the_nearest_grab_point_wins_whatever_its_reach() {
-    // A large holster reach and a small pouch beside it: the hand takes whichever grab point it is
+    // A large socket reach and a small pouch beside it: the hand takes whichever grab point it is
     // nearer, not the one it is deepest in.
     let t = [
         sphere(HIP, 0.0, 0.3, None),
@@ -157,7 +157,7 @@ fn the_losers_say_why_they_lost() {
 
 #[test]
 fn a_release_docks_in_the_nearest_socket_that_fits() {
-    let socket = GrabVolume::Holster(Socket::Shoulder(Hand::Right));
+    let socket = GrabVolume::Socket(Socket::Shoulder(Hand::Right));
     let t = [
         sphere(GrabVolume::MagazinePouch, 0.0, 0.1, None),
         sphere(socket, 0.08, 0.2, None),
@@ -203,7 +203,6 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::GrenadePin,
         GrabVolume::LiveGrenade,
         GrabVolume::WorldMagazine,
-        GrabVolume::Socket(Socket::ALL[0]),
     ];
     out.extend(
         [
@@ -218,7 +217,7 @@ fn every_kind() -> Vec<GrabVolume> {
     // Adding a kind breaks this match until it is listed above.
     for volume in &out {
         match volume {
-            GrabVolume::Holster(_)
+            GrabVolume::Socket(_)
             | GrabVolume::Foregrip
             | GrabVolume::Handle
             | GrabVolume::GrenadePouch
@@ -237,8 +236,7 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::WorldWeapon
             | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade
-            | GrabVolume::WorldMagazine
-            | GrabVolume::Socket(_) => {}
+            | GrabVolume::WorldMagazine => {}
         }
     }
     out

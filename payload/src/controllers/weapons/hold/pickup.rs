@@ -21,8 +21,7 @@
 //!
 //! While pistols are single ([`crate::controllers::weapons::dual_wield::single`]), a pistol taken
 //! from the world is one pistol. With the slot's pistol already there and the other hand holding
-//! the wielded weapon, it is held beside it as the second weapon, carried on a free hip socket,
-//! rather than taking the slot.
+//! the wielded weapon, it is held beside it, kept by the carry set, rather than taking the slot.
 
 use std::fmt;
 
@@ -38,11 +37,11 @@ use crate::{
     controllers::{
         aim::gun,
         frame::{Hand, Pose},
+        loadout::{live, slot_label},
         weapons::{
             dual_wield::{self, single},
             engine::{self, slot_from_raw},
-            hold::{self, Cause, act, equip, second},
-            holster::slot_label,
+            hold::{self, Cause, act, armed, equip},
             inventory::{self, carry, engine as inventory_engine, sockets::fit_of},
             regions::{self, CarryCause, WorldTouch},
         },
@@ -219,10 +218,10 @@ pub(crate) unsafe fn take(
     Ok(slot)
 }
 
-/// Take the single pistol `weapon`, lying in the world, into `hand` as the second weapon beside
-/// the weapon the other hand wields: it is carried on a free hip socket and drawn off it into the
-/// hand at once. Refused, touching nothing, when second weapons are off, the other hand does not
-/// hold the wielded weapon, a second weapon is already held, or no hip socket is free.
+/// Take the single pistol `weapon`, lying in the world, into `hand` beside the weapon the other
+/// hand wields: the carry set keeps it, and the table takes it into the hand at once. Refused,
+/// touching nothing, when a weapon in each hand is off, the other hand does not hold the wielded
+/// weapon, `hand` holds something, or no socket that would take it is free.
 ///
 /// # Safety
 ///
@@ -240,10 +239,10 @@ unsafe fn take_beside(
         )
     });
     if !(hold.either_hand && hold.second_weapon) {
-        return Err("second weapons are off");
+        return Err("a weapon in each hand is off");
     }
-    if second::hand().is_some() {
-        return Err("a second weapon is already held");
+    if live::in_hand(hand).is_some() || armed::in_hand(hand).is_some() {
+        return Err("the hand holds a weapon already");
     }
     let other_wields = unsafe { engine::held_weapon(owner) }
         .is_some_and(|w| w.wielded.hands[hand.other().index()] && !w.wielded.hands[hand.index()]);
@@ -262,8 +261,8 @@ unsafe fn take_beside(
     unsafe { single::taken_from_world(owner, weapon) };
     let object = unsafe { carry::carry_loose(owner, strong, socket) }
         .map_err(|_| "the pistol was not carried")?;
-    if let Err(refusal) = unsafe { second::take_carried(hand, object) } {
-        tracing::info!(target: "controllers", %refusal, "hold: the pistol stays on the hip");
+    if !unsafe { hold::take_into(hand, object) } {
+        tracing::info!(target: "controllers", "hold: the pistol stays on the body");
         return Ok(());
     }
     tracing::info!(

@@ -9,7 +9,20 @@ use std::{fmt, num::NonZeroU32};
 
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
 
-use crate::controllers::weapons::holster::slot_label;
+/// The name of an inventory slot, for the readouts and the log.
+pub const fn slot_label(slot: WeaponSlot) -> &'static str {
+    match slot {
+        WeaponSlot::E_SLOT_DUAL_WIELD => "pistols",
+        WeaponSlot::E_SLOT_TWO_HANDED => "two-handed",
+        WeaponSlot::E_SLOT_HEAVY => "heavy",
+        WeaponSlot::E_SLOT_HAND_GRENADE => "grenade",
+        WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE => "explosives",
+        WeaponSlot::E_SLOT_FOW => "FOW",
+        WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL => "special",
+        WeaponSlot::E_SLOT_BEACON => "beacon",
+        _ => "none",
+    }
+}
 
 /// An item's identity, assigned by the table and stable for the session.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

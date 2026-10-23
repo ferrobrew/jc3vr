@@ -188,6 +188,22 @@ pub struct LoadoutSnapshot {
     pub projection: Projection,
 }
 
+impl LoadoutSnapshot {
+    /// The item in `hand`.
+    pub fn held(&self, hand: Hand) -> Option<&ItemView> {
+        self.items
+            .iter()
+            .find(|item| item.place == Place::Hand(hand))
+    }
+
+    /// The item on `socket`.
+    pub fn docked(&self, socket: Socket) -> Option<&ItemView> {
+        self.items
+            .iter()
+            .find(|item| item.place == Place::Socket(socket))
+    }
+}
+
 /// One item in the table. Deliberately neither `Copy` nor `Clone`: it is moved between the
 /// containers, never duplicated.
 #[derive(Debug, PartialEq, Eq)]

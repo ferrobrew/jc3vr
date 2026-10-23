@@ -42,6 +42,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     frame::{Hand, Pose},
+    loadout::slot_label,
     weapons::{
         dual_wield,
         engine::{self, slot_from_raw},
@@ -52,7 +53,6 @@ use crate::controllers::{
             steal,
             world::{TargetKind, WorldTarget},
         },
-        holster::slot_label,
         inventory,
     },
 };

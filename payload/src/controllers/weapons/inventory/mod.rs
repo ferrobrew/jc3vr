@@ -10,9 +10,6 @@
 //! - [`carry`]: the table's weapons on the body that no slot holds, kept alive, placed, and shown;
 //! - [`reconcile`]: the game's slots, its wielded weapon, and the weapons armed in the hands, made
 //!   to follow the table each tick;
-//! - [`actions`]: drawing a weapon off its socket and putting a held one onto a socket, as events
-//!   for the table;
-//! - [`decide`]: what a grab of a socket and the second weapon's release do;
 //! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
 //! - [`missions`]: the carried weapons stashed while a mission holds the player's weapons;
 //! - [`engine`]: the engine reads behind them;
@@ -29,10 +26,8 @@
 //! tick on the main thread outside the world update, except the reset's detour, which takes the
 //! state's lock only for the local player's inventory.
 
-pub(crate) mod actions;
 pub(crate) mod carry;
 pub mod config;
-pub mod decide;
 pub(crate) mod engine;
 mod missions;
 pub mod persist;
@@ -55,7 +50,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, Place, SlotObject, Socket, live},
     weapons::{
         dual_wield::single,
-        hold::{armed, refs::Strong, second},
+        hold::{armed, refs::Strong},
         inventory::{config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World},
     },
 };
@@ -88,10 +83,8 @@ pub struct InventoryStatus {
     pub resets: u64,
     /// Whether the carried weapons are stashed while a mission holds the player's weapons.
     pub stashed: bool,
-    /// Weapons drawn off a socket into a hand, held weapons put onto a socket, and weapons a pickup
-    /// would have replaced that kept their place on the body, since the payload loaded.
-    pub draws: u64,
-    pub stows: u64,
+    /// Weapons a pickup would have replaced that kept their place on the body, since the payload
+    /// loaded.
     pub carried_replaced: u64,
 }
 
@@ -149,7 +142,6 @@ pub(crate) unsafe fn input_tick(
         if state.status.active {
             state.release_all("the inventory is off");
             drop(state);
-            second::carry_released();
             unsafe { carry::drop_all() };
             restore::clear();
             single::clear();
@@ -157,7 +149,6 @@ pub(crate) unsafe fn input_tick(
         return None;
     }
     if !inputs.settings.carry && carry::count() > 0 {
-        second::carry_released();
         unsafe { carry::drop_all() };
     }
     state.status.active = true;
@@ -346,19 +337,10 @@ fn on_reset(died: bool) {
     state.status.resets += 1;
     state.release_all("the spawn system reset");
     drop(state);
-    second::carry_released();
     let carried = carry::release_all();
     if carried > 0 {
         tracing::info!(target: "controllers", carried, "inventory: released the carried weapons");
     }
-}
-
-fn count_draw() {
-    STATE.lock().status.draws += 1;
-}
-
-fn count_stow() {
-    STATE.lock().status.stows += 1;
 }
 
 fn count_carried_replaced() {
@@ -396,8 +378,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         forgotten: 0,
         resets: 0,
         stashed: false,
-        draws: 0,
-        stows: 0,
         carried_replaced: 0,
     },
 });

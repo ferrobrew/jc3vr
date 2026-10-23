@@ -185,6 +185,9 @@ pub enum MarkStyle {
     Handle,
     /// A disc lying on a face, ringed while a hand is in front of it: a button.
     Button,
+    /// A small disc in the refusal colour: a place on the body that does not take what the hand
+    /// holds, shown while the hand is near so that it knows before it opens.
+    NoFit,
 }
 
 /// When a marker shows.

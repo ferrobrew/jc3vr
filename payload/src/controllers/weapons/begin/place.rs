@@ -4,7 +4,7 @@ use crate::{
     controllers::{
         config::ControllersConfig,
         frame::Hand,
-        grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown, Tier},
+        grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
         hands::ActiveHands,
         vehicles::wheel::CockpitTransform,
         weapons::foregrip,
@@ -29,8 +29,7 @@ impl Place {
         }
     }
 
-    /// A holster or a pouch on the character's body, reached by the hand as it is drawn, always
-    /// marked.
+    /// A pouch on the character's body, reached by the hand as it is drawn, always marked.
     pub(super) fn body(&self, c: &Candidate) -> GripTarget {
         c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
     }
@@ -55,9 +54,17 @@ impl Place {
         c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)))
     }
 
-    /// A holster or a socket on the character's skeleton, where its gun is, always marked.
+    /// A socket on the character's skeleton, where its weapon is or would sit, always marked.
     pub(super) fn on_skeleton(&self, c: &Candidate) -> GripTarget {
         c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
+    }
+
+    /// A socket that does not take what the hand holds: marked while the hand is near, never taken.
+    pub(super) fn no_fit(&self, c: &Candidate) -> GripTarget {
+        c.target(
+            Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).styled(MarkStyle::NoFit),
+        )
+        .ranked(Tier::Touch)
     }
 
     /// A part of the gun in `holder`'s hand.

@@ -48,8 +48,6 @@ use crate::controllers::{
 /// What a squeeze takes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GrabVolume {
-    /// A weapon holster on the body.
-    Holster(Socket),
     /// The held two-handed weapon's foregrip.
     Foregrip,
     /// The held gun's grip, for the hand without the gun, which takes the gun from the other hand
@@ -103,16 +101,15 @@ pub enum GrabVolume {
     /// A magazine lying in the world that fits the held gun, for the hand without a gun while the
     /// gun's magazine is out (see [`crate::controllers::weapons::reload::loose`]).
     WorldMagazine,
-    /// A socket on the body for a weapon carried beyond the slots: the carried weapon there, for a
-    /// hand without a gun to draw, or the free socket, for the hand holding a weapon that fits it
-    /// to put it there (see [`crate::controllers::weapons::inventory`]).
+    /// A socket on the body: the weapon on it, for an empty hand to draw, or the free socket, for
+    /// the hand holding a weapon that fits it to dock it there (see
+    /// [`crate::controllers::weapons::docks`]).
     Socket(Socket),
 }
 
 impl GrabVolume {
     pub const fn label(self) -> &'static str {
         match self {
-            GrabVolume::Holster(site) => holster_label(site),
             GrabVolume::Foregrip => "foregrip",
             GrabVolume::Handle => "gun grip",
             GrabVolume::GrenadePouch => "grenade pouch",
@@ -134,15 +131,14 @@ impl GrabVolume {
             GrabVolume::GrenadePin => "grenade pin",
             GrabVolume::LiveGrenade => "live grenade",
             GrabVolume::WorldMagazine => "magazine in the world",
-            GrabVolume::Socket(socket) => socket.label(),
+            GrabVolume::Socket(socket) => socket_label(socket),
         }
     }
 
     /// The kind of thing this is, which its marker's colour shows.
     pub const fn category(self) -> Category {
         match self {
-            GrabVolume::Holster(_)
-            | GrabVolume::Socket(_)
+            GrabVolume::Socket(_)
             | GrabVolume::GrenadePouch
             | GrabVolume::MagazinePouch
             | GrabVolume::C4Pouch => Category::Body,
@@ -171,8 +167,7 @@ impl GrabVolume {
     /// The subsystem that acts on a grab of this.
     pub const fn consumer(self) -> Consumer {
         match self {
-            GrabVolume::Holster(_)
-            | GrabVolume::Foregrip
+            GrabVolume::Foregrip
             | GrabVolume::Handle
             | GrabVolume::GrenadePouch
             | GrabVolume::MagazinePouch
@@ -308,15 +303,15 @@ impl Category {
     }
 }
 
-/// The name of the holster on `socket`. The sides are the body's own, not the dominant hand's.
-pub const fn holster_label(socket: Socket) -> &'static str {
+/// The name of the grab volume on `socket`. The sides are the body's own, not the dominant hand's.
+pub const fn socket_label(socket: Socket) -> &'static str {
     match socket {
-        Socket::Hip(Hand::Left) => "left hip holster",
-        Socket::Hip(Hand::Right) => "right hip holster",
-        Socket::Shoulder(Hand::Left) => "left shoulder holster",
-        Socket::Shoulder(Hand::Right) => "right shoulder holster",
-        Socket::BackOuter => "outer back holster",
-        Socket::Chest => "chest holster",
+        Socket::Hip(Hand::Left) => "left hip socket",
+        Socket::Hip(Hand::Right) => "right hip socket",
+        Socket::Shoulder(Hand::Left) => "left shoulder socket",
+        Socket::Shoulder(Hand::Right) => "right shoulder socket",
+        Socket::BackOuter => "outer back socket",
+        Socket::Chest => "chest socket",
     }
 }
 

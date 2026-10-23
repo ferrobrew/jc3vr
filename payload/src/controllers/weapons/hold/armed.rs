@@ -1,8 +1,8 @@
 //! The weapons a hand holds that the game does not wield: each is armed in its hand by the mod.
 //!
-//! The game wields one weapon, the selected slot's. A weapon the loadout table holds in a hand
-//! beside it (a slot's long gun, or one the VR inventory carries beyond the slots) stays in the
-//! holstered state, so the game's inventory, selection, HUD, and saves see a slot's weapon as
+//! The game wields one weapon, the selected slot's: the primary hand's. A weapon the loadout table
+//! holds in the other hand (a slot's weapon, or one the VR inventory carries beyond the slots)
+//! stays in the holstered state, so the game's inventory, selection, HUD, and saves see a slot's weapon as
 //! holstered, and its bodies stay out of the physics world. Arming it in its hand ([`arm`]):
 //!
 //! - its guns' holstered entries in the attach-bone table name the hand's attach bone, written at
@@ -31,7 +31,10 @@ use std::{
 };
 
 use jc3gi::{
-    character::{character::Character, inventory::Inventory},
+    character::{
+        character::Character,
+        inventory::{Inventory, WeaponSlot},
+    },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
 use parking_lot::Mutex;
@@ -40,7 +43,16 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::ik,
-    weapons::{hold::layout, inventory::carry},
+    weapons::{
+        dual_wield::single,
+        engine::{self, HeldWeapon, Wielded},
+        heft::HeftClass,
+        hold::{
+            layout,
+            pips::{self, Shown},
+        },
+        inventory::{carry, engine::slot_of},
+    },
 };
 
 /// Why a weapon was not armed.
@@ -63,6 +75,19 @@ impl fmt::Display for ArmRefusal {
 }
 
 impl std::error::Error for ArmRefusal {}
+
+/// One armed weapon, as the readouts show it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ArmedReadout {
+    pub slot: WeaponSlot,
+    /// Its magazine and the magazine's size as of the last input tick.
+    pub magazine: (i32, i32),
+}
+
+/// The weapons armed in the hands as of the last input tick, by [`Hand::index`].
+pub fn status() -> [Option<ArmedReadout>; 2] {
+    *READOUTS.lock()
+}
 
 /// The hand the weapon at `address` is armed in.
 pub(crate) fn hand_of(address: usize) -> Option<Hand> {
@@ -221,6 +246,76 @@ pub(crate) unsafe fn carried_for(inventory: &Inventory) -> Vec<&'static WeaponBa
         .collect()
 }
 
+/// The weapon armed in `hand` as the weapon handling sees a weapon in the hands: every gun in that
+/// hand.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn held_weapon(owner: &Character, hand: Hand) -> Option<HeldWeapon> {
+    let weapon = unsafe { weapon_of(owner, hand) }?;
+    let slot = unsafe { slot_of(weapon) }?;
+    // Read as the raw value: an unset or unknown class is out of the enum's range.
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    Some(HeldWeapon {
+        address: weapon as *const WeaponBase as usize,
+        wielded: Wielded {
+            slot,
+            hands: Hand::BOTH.map(|h| h == hand),
+        },
+        holder: Some(hand),
+        two_handed: false,
+        class: HeftClass::of(class, false),
+    })
+}
+
+/// Read each armed weapon's magazine for the readouts, and show it over its hand while `shown`.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character when given, on the main thread outside the
+/// world update.
+pub(crate) unsafe fn show_magazines(owner: Option<&Character>, shown: bool) {
+    let read = Hand::BOTH.map(|hand| {
+        let weapon = unsafe { weapon_of(owner?, hand) }?;
+        let slot = unsafe { slot_of(weapon) }?;
+        let capacity = unsafe { single::magazine_size(weapon) };
+        Some((
+            ArmedReadout {
+                slot,
+                magazine: (weapon.m_MagazineAmmo, capacity),
+            },
+            Shown {
+                magazine: weapon.m_MagazineAmmo,
+                capacity,
+                out: weapon.m_WeaponIsWithoutMagazine,
+            },
+        ))
+    });
+    *READOUTS.lock() = read.map(|r| r.map(|(readout, _)| readout));
+    pips::submit(read.map(|r| r.map(|(_, shown)| shown).filter(|_| shown)));
+}
+
+/// Disarm the weapons in the hands, left on the body where the game has them, or forget them when
+/// there is no local player. Called when the weapon handling stands down.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn stand_down() {
+    *READOUTS.lock() = [None; 2];
+    let Some(owner) = (unsafe { engine::local_player() }) else {
+        for hand in Hand::BOTH {
+            forget(hand);
+        }
+        return;
+    };
+    for hand in Hand::BOTH {
+        let weapon = unsafe { weapon_of(owner, hand) };
+        unsafe { disarm(owner, hand, weapon, true) };
+    }
+}
+
 /// One armed weapon.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Armed {
@@ -233,6 +328,7 @@ pub(crate) struct Armed {
 static HANDS: Mutex<[Option<Armed>; 2]> = Mutex::new([None; 2]);
 /// The armed weapons' addresses, or zero, by [`Hand::index`]: the detours' check before any lock.
 static ARMED: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
+static READOUTS: Mutex<[Option<ArmedReadout>; 2]> = Mutex::new([None; 2]);
 
 /// The weapon armed in `hand`, when `owner`'s inventory or the carry set holds it.
 ///

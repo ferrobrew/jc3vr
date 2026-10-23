@@ -4,18 +4,18 @@
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{WeaponBase, WeaponGripHand, WeaponState},
+    equipment::weapon::{WeaponBase, WeaponGripHand},
     types::math::{Matrix4, Vector3},
 };
 
 use crate::controllers::{
     aim::gun,
     frame::{Hand, Pose},
-    loadout::Socket,
+    loadout::{LoadoutSnapshot, Socket},
     weapons::{
+        docks,
         engine::slot_from_raw,
-        hold::{armed, pickup::gun_pose},
-        holster::site_slot,
+        hold::pickup::gun_pose,
         regions::{
             WorldTouch,
             shape::{Carry, GunRegion, GunShape, MagazineWell, classify, into_gun, turn_on_wrist},
@@ -112,7 +112,7 @@ pub(crate) unsafe fn world_carry(
     })
 }
 
-/// A long gun docked on a shoulder.
+/// A long gun docked on a socket of the body.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct DockedLongGun {
     pub site: Socket,
@@ -122,25 +122,21 @@ pub(crate) struct DockedLongGun {
     pub shape: GunShape,
 }
 
-/// The long guns docked on `owner`'s shoulders, in the holstered
-/// state, with their poses and shapes. The second weapon is in a hand, not docked.
+/// The long guns the loadout table has docked on `owner`'s sockets, with their poses and shapes.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn docked_long_guns(owner: &Character, dominant: Hand) -> Vec<DockedLongGun> {
+pub(crate) unsafe fn docked_long_guns(
+    owner: &Character,
+    snapshot: &LoadoutSnapshot,
+    dominant: Hand,
+) -> Vec<DockedLongGun> {
     let mut out = Vec::new();
-    for side in Hand::BOTH {
-        let site = Socket::Shoulder(side);
-        let Some(slot) = site_slot(site) else {
-            continue;
-        };
-        let Some(weapon) = (unsafe { owner.m_Inventory.m_Weapons[slot as usize].px.as_ref() })
-        else {
-            continue;
-        };
-        let address = weapon as *const WeaponBase as usize;
-        if weapon.m_State != WeaponState::E_WS_HOLSTERED || armed::is(address) {
+    for (site, weapon) in unsafe { docks::socket_weapons(owner, snapshot) } {
+        // Read as the raw value: an unset slot is out of the enum's range.
+        let slot = unsafe { (&raw const weapon.m_EquipSlot).cast::<i32>().read() };
+        if !slot_from_raw(slot).is_some_and(is_long) {
             continue;
         }
         // A docked gun is taken by the hand that draws it, with its other hand's grip opposite.
@@ -151,7 +147,7 @@ pub(crate) unsafe fn docked_long_guns(owner: &Character, dominant: Hand) -> Vec<
         };
         out.push(DockedLongGun {
             site,
-            weapon: address,
+            weapon: weapon as *const WeaponBase as usize,
             pose,
             shape,
         });

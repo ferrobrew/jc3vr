@@ -5,11 +5,10 @@ use smol_str::format_smolstr;
 
 use crate::{
     controllers::{
-        loadout::{Place, live},
+        loadout::{Place, live, slot_label},
         menu::read_config,
         weapons::{
             dual_wield::single::{self, grant::TwinState},
-            holster::slot_label,
             inventory::{
                 self,
                 restore::{self, LoadOutcome, Origin},
@@ -215,9 +214,7 @@ pub(super) fn carried() -> Line {
         list
     };
     Line::ok(format_smolstr!(
-        "{list}; {} DRAWN, {} PUT AWAY, {} KEPT FROM PICKUPS",
-        s.draws,
-        s.stows,
+        "{list}; {} KEPT FROM PICKUPS",
         s.carried_replaced
     ))
 }

@@ -13,8 +13,8 @@ use crate::controllers::{
         Take, TakeSource,
         live::LiveStatus,
         sandbox::{self, SandboxStatus},
+        slot_label,
     },
-    weapons::holster::slot_label,
 };
 
 pub(super) fn loadout_readout(ui: &mut Ui, live: &LiveStatus, sandbox: &SandboxStatus) {

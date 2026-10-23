@@ -4,10 +4,11 @@
 use crate::controllers::{
     frame::Hand,
     grab::{GrabVolume, GripTarget},
+    loadout::grab::SocketRefusal,
     weapons::{
         engine::HeldWeapon,
         foregrip::{GripGeometry, Transition},
-        holster::HolsterAction,
+        hold::equip::DockRefusal,
     },
 };
 
@@ -27,9 +28,8 @@ pub struct TickStart {
 /// What a grab did, for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum GrabOutcome {
-    Holster(HolsterAction),
-    /// A holster grab with no local player to act on.
-    NoCharacter,
+    /// A grab of a socket on the body.
+    Socket(SocketOutcome),
     Foregrip(Transition),
     /// A grab of the held gun's grip by the free hand, which took the gun when `moved`.
     Handover {
@@ -54,18 +54,36 @@ pub enum GrabOutcome {
     Take {
         taken: bool,
     },
-    /// A grab of a socket for a weapon carried beyond the slots: a carried weapon drawn, or the
-    /// held one put there, when `done`.
-    Socket {
-        done: bool,
-    },
+}
+
+/// What a grab of a socket did.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SocketOutcome {
+    /// The weapon on it came into the hand.
+    Drew,
+    /// The hand's weapon went onto it.
+    Docked,
+    /// The table refused the move.
+    Refused(SocketRefusal),
+    /// The table allowed the move, but the game could not carry it out.
+    Failed(DockRefusal),
+}
+
+impl SocketOutcome {
+    pub fn label(self) -> String {
+        match self {
+            SocketOutcome::Drew => "drew off the socket".to_owned(),
+            SocketOutcome::Docked => "docked on the socket".to_owned(),
+            SocketOutcome::Refused(refusal) => refusal.to_string(),
+            SocketOutcome::Failed(refusal) => refusal.to_string(),
+        }
+    }
 }
 
 impl GrabOutcome {
     pub fn label(self) -> String {
         match self {
-            GrabOutcome::Holster(action) => action.label(),
-            GrabOutcome::NoCharacter => "no character".to_owned(),
+            GrabOutcome::Socket(outcome) => outcome.label(),
             GrabOutcome::Foregrip(Transition::Grabbed) => "foregrip grabbed".to_owned(),
             GrabOutcome::Foregrip(Transition::Released(r)) => {
                 format!("foregrip released ({})", r.label())
@@ -81,8 +99,6 @@ impl GrabOutcome {
             GrabOutcome::C4 => "charge asked for".to_owned(),
             GrabOutcome::Take { taken: true } => "weapon taken".to_owned(),
             GrabOutcome::Take { taken: false } => "weapon not taken".to_owned(),
-            GrabOutcome::Socket { done: true } => "socket used".to_owned(),
-            GrabOutcome::Socket { done: false } => "socket refused".to_owned(),
         }
     }
 }
@@ -118,6 +134,6 @@ pub struct WeaponsStatus {
     /// The most recent grabs, newest last.
     pub events: Vec<GrabEvent>,
     pub grabs: u64,
-    /// How many holsters sat on their guns on the last tick.
+    /// How many sockets' volumes sat on their weapons on the last tick.
     pub docks_followed: usize,
 }

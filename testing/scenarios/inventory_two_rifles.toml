@@ -10,8 +10,9 @@ signal = "inventory.carried"
 at_least = 1
 
 [[expect]]
-name = "the carried rifle was drawn"
-signal = "inventory.draws"
+name = "both rifles were drawn off the body"
+signal = "weapons.draws"
+at_least = 2
 
 [[expect]]
 name = "and the other is carried at the end"

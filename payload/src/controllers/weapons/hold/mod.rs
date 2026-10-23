@@ -43,14 +43,14 @@
 //! inventory's weapons against the table's published hands before taking any lock, and they never
 //! touch the VR state.
 //!
-//! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). A long gun can
-//! be drawn and holstered without the game's acts, sliding between its dock and the hand, and let
-//! go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]). The free hand can hold
-//! a second weapon, a slot's or one the VR inventory carries beyond the slots, which the mod fires
-//! ([`second`]); the weapons beyond the slots are the VR inventory's
-//! ([`crate::controllers::weapons::inventory`]). A free hand can also take a gun out of a
-//! living character's hands ([`steal`]) or off a rack ([`rack`]), through the volumes the take places on weapons that have
-//! no body in the world ([`take`] and [`world`]).
+//! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). Any weapon is
+//! drawn off its socket and docked on one without the game's acts, sliding between the socket and
+//! the hand, and let go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]); each
+//! hand holds its own, and the one the game does not wield is armed in its hand and fired by the
+//! mod ([`armed`] and [`tick`]). The weapons beyond the slots are the VR inventory's
+//! ([`crate::controllers::weapons::inventory`]). A free hand can also take a gun out of a living
+//! character's hands ([`steal`]) or off a rack ([`rack`]), through the volumes the take places on
+//! weapons that have no body in the world ([`take`] and [`world`]).
 
 pub mod act;
 pub(crate) mod armed;
@@ -61,7 +61,6 @@ pub mod pickup;
 pub mod pips;
 pub mod rack;
 pub(crate) mod refs;
-pub mod second;
 pub mod steal;
 pub mod take;
 pub mod tick;
@@ -227,9 +226,8 @@ pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
 ///
 /// # Safety
 ///
-/// `owner` must be the live local player character, on the main thread outside the world update.
+/// The main thread, outside the world update.
 pub(crate) unsafe fn input_tick(
-    owner: &Character,
     wielded: Option<usize>,
     enabled: bool,
     arrival: Option<live::Arrival>,
@@ -251,7 +249,7 @@ pub(crate) unsafe fn input_tick(
             rack::arrived(address, arrival.hand);
         }
     }
-    unsafe { act::tick(owner, wielded, dt) };
+    unsafe { act::tick(dt) };
     wielded.and_then(owned_holder)
 }
 
@@ -286,6 +284,29 @@ pub(crate) unsafe fn adopt(weapon: usize) {
     if let Some(arrival) = live::adopt(held) {
         took(arrival);
     }
+}
+
+/// Take the weapon at `object` into `hand` at once, a weapon the carry set or a slot keeps alive
+/// that the table has on the body or does not know yet (the second pistol of a pair split while
+/// both pistols were drawn, a pistol picked up beside the wielded weapon): the table takes the
+/// move, the reconcile carries it out, and the grip watch is armed. Returns whether the table holds
+/// it there.
+///
+/// # Safety
+///
+/// `object` must be a live weapon, on the main thread outside the world update.
+pub(crate) unsafe fn take_into(hand: Hand, object: usize) -> bool {
+    // SAFETY: forwarded from the caller.
+    let Some(held) = (unsafe { inventory::held_of(object) }) else {
+        return false;
+    };
+    if !live::arrive(hand, held) {
+        return false;
+    }
+    // SAFETY: forwarded from the caller.
+    unsafe { inventory::reconcile::now() };
+    act::arm(hand);
+    true
 }
 
 /// Hand the wielded weapon to `hand`. Returns whether it moved.
@@ -424,8 +445,8 @@ pub(crate) fn record_pickup(refusal: Option<String>) {
     }
 }
 
-/// Note why the last thing the hands tried with a weapon (a pickup, a take, a draw, a holster, a
-/// drop, or a second weapon) did not happen, for the readout.
+/// Note why the last thing the hands tried with a weapon (a pickup, a take, a draw, a dock, or a
+/// drop) did not happen, for the readout.
 pub(crate) fn refused(why: impl ToString) {
     *LAST_REFUSAL.lock() = Some(why.to_string());
 }

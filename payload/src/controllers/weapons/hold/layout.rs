@@ -6,8 +6,8 @@
 //! the side changes. A gun on any other bone (a holster or back bone, or one the game moves off the
 //! hands) is left where the game put it. A weapon of more than one gun (the dual-wield pair, when
 //! its own layout does not own it) keeps a gun in each hand, so held in the left hand its layout is
-//! mirrored rather than gathered into one hand ([`placed_bone`]). A holstered gun docks on one of
-//! the hip holster or back attach bones ([`dock_bone`]).
+//! mirrored rather than gathered into one hand ([`placed_bone`]). A docked gun sits on one of the
+//! hip holster, back attach, or chest explosive bones ([`dock_bone`]).
 
 use jc3gi::character::character::SafeBoneIndex;
 
@@ -55,17 +55,19 @@ pub fn hip_bone(hand: Hand) -> u32 {
     }
 }
 
-/// The dock bone a holstered gun on `bone` sits on: a hip holster or a back attach bone.
+/// The dock bone a docked gun on `bone` sits on: a hip holster, a back attach, or the chest's
+/// explosive bone, the bones the sockets place weapons on.
 pub fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
     DOCK_BONES.into_iter().find(|&safe| safe as u32 == bone)
 }
 
-/// The bones a holstered gun docks on.
-const DOCK_BONES: [SafeBoneIndex; 4] = [
+/// The bones a docked gun sits on.
+const DOCK_BONES: [SafeBoneIndex; 5] = [
     SafeBoneIndex::RIGHT_HOLSTER,
     SafeBoneIndex::LEFT_HOLSTER,
     SafeBoneIndex::BACK_ATTACH,
     SafeBoneIndex::BACK_ATTACH_2,
+    SafeBoneIndex::EQUIPPED_EXPLOSIVE,
 ];
 
 /// Each hand attach bone, its hand, and its counterpart on the other hand.

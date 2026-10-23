@@ -32,16 +32,14 @@ pub(crate) struct Held {
 pub(crate) enum Whereabouts {
     /// Onto the body where the game docks its slot, or the nearest socket that fits it.
     Slot,
-    /// Onto this socket, or the nearest that fits it when it is taken.
-    Carried(Socket),
     /// Out of the player's keeping: dropped, taken, or gone.
     Away,
 }
 
 /// The event for `object` having left `hand` for `whereabouts`, when the table holds it there: a
-/// dock onto the socket it went to (the carry set's, or for a slot's weapon the socket the game
-/// docks its slot on), or a let-go. `None` when the table does not hold it in that hand, or no
-/// socket of the table's that fits it is free.
+/// dock onto the socket the game docks its slot on, or the nearest free one that fits it, or a
+/// let-go. `None` when the table does not hold it in that hand, or no socket of the table's that
+/// fits it is free.
 pub(crate) fn departure(
     table: &Loadout,
     hand: Hand,
@@ -52,18 +50,16 @@ pub(crate) fn departure(
     if held.binding != Binding::Live(object) {
         return None;
     }
-    let preferred = match whereabouts {
-        Whereabouts::Away => {
-            return Some(Event::LetGo {
-                hand,
-                release: Release::Dropped,
-            });
+    match whereabouts {
+        Whereabouts::Away => Some(Event::LetGo {
+            hand,
+            release: Release::Dropped,
+        }),
+        Whereabouts::Slot => {
+            let socket = dock_socket(table, held.kind.weapon()?)?;
+            Some(Event::Dock { hand, socket })
         }
-        Whereabouts::Carried(socket) => Some(socket),
-        Whereabouts::Slot => None,
-    };
-    let socket = dock_socket(table, held.kind.weapon()?, preferred)?;
-    Some(Event::Dock { hand, socket })
+    }
 }
 
 /// The event for `held` having come into `hand`: a hand-over from the other hand, a draw off its
@@ -97,14 +93,9 @@ pub(crate) fn arrival(
     }
 }
 
-/// The socket a weapon of `weapon` docks on in `table`: `preferred` when the body has it free,
-/// otherwise the first free socket of the body's preference for it, the game's own dock for its
-/// slot first.
-pub(crate) fn dock_socket(
-    table: &Loadout,
-    weapon: WeaponType,
-    preferred: Option<Socket>,
-) -> Option<Socket> {
+/// The socket a weapon of `weapon` docks on in `table` when no hand chose one: the first free
+/// socket of the body's preference for it, the game's own dock for its slot first.
+fn dock_socket(table: &Loadout, weapon: WeaponType) -> Option<Socket> {
     let body = table.body();
     let free = |socket: Socket| {
         body.has(socket)
@@ -113,9 +104,7 @@ pub(crate) fn dock_socket(
                 .items()
                 .any(|item| item.place == Place::Socket(socket))
     };
-    preferred
-        .filter(|&socket| free(socket))
-        .or_else(|| body.preference(weapon).find(|&socket| free(socket)))
+    body.preference(weapon).find(|&socket| free(socket))
 }
 
 #[cfg(test)]
@@ -199,26 +188,6 @@ mod tests {
             Some(Event::Draw {
                 socket,
                 hand: Hand::Left
-            })
-        );
-    }
-
-    #[test]
-    fn a_carried_weapon_docks_on_the_carry_set_s_socket_when_it_is_free() {
-        let mut t = Loadout::new(BodyLayout::full(Hand::Right));
-        let event = arrival(&t, Hand::Right, rifle(), TakeSource::World);
-        apply(&mut t, event);
-        let event = departure(
-            &t,
-            Hand::Right,
-            rifle().object,
-            Whereabouts::Carried(Socket::BackOuter),
-        );
-        assert_eq!(
-            event,
-            Some(Event::Dock {
-                hand: Hand::Right,
-                socket: Socket::BackOuter
             })
         );
     }

@@ -48,7 +48,7 @@ use crate::controllers::{
         live::expect::landing,
         projection::{StoreProjection, project_store},
         reset::{CacheKind, ResetKind, SlotObject},
-        socket::BodyLayout,
+        socket::{BodyLayout, Socket},
         table::{Loadout, LoadoutSnapshot, Place},
         transition::{Removal, RemovalWhy, Restored, TakeSource},
     },
@@ -278,6 +278,24 @@ pub(crate) fn depart(hand: Hand, object: ObjectAddress, whereabouts: Whereabouts
         live.fold(event);
     }
     live.publish_places();
+}
+
+/// The hands docked the weapon at `object`, held in `hand`, on `socket`: the table takes the move at
+/// once. Returns whether the table has it there.
+pub(crate) fn dock(hand: Hand, object: ObjectAddress, socket: Socket) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return false;
+    }
+    let holds = live
+        .table
+        .held(hand)
+        .is_some_and(|item| item.binding == Binding::Live(object));
+    if holds {
+        live.fold(Event::Dock { hand, socket });
+    }
+    live.publish_places();
+    live.place_of(object) == Some(Place::Socket(socket))
 }
 
 /// Every live object the table's items are bound to, and where each is, as of now.

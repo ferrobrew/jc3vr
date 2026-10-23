@@ -5,10 +5,9 @@ use egui::Ui;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::Socket,
+    loadout::{Socket, slot_label},
     weapons::{
         dual_wield::single,
-        holster::slot_label,
         inventory::{InventoryStatus, config::InventoryConfig, restore::RestoreStatus},
     },
 };
@@ -49,15 +48,13 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         s.resets
     ));
     ui.label(format!(
-        "Carried: {}{} · drawn {} · put away {} · kept from pickups {} · with others {}",
+        "Carried: {}{} · kept from pickups {} · with others {}",
         s.carried.len(),
         if s.stashed {
             " (stashed for a mission)"
         } else {
             ""
         },
-        s.draws,
-        s.stows,
         s.carried_replaced,
         s.with_others
     ));

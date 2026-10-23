@@ -8,11 +8,11 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::grip,
+        loadout::slot_label,
         menu::read_config,
         weapons::{
             self,
-            hold::{self, Cause, second},
-            holster::slot_label,
+            hold::{self, Cause, armed},
             regions::{self, HandRole},
             reload::{
                 self,
@@ -131,30 +131,31 @@ fn hand_on_gun(hand: Hand) -> Line {
     }
 }
 
-pub(super) fn second_weapon() -> Line {
+pub(super) fn armed() -> Line {
     if !read_config(|c| {
         let hold = c.controllers.weapons.hold;
         hold.either_hand && hold.second_weapon
     }) {
         return Line::off("");
     }
-    let second = second::status();
-    match second.held {
-        None => Line::ok("NONE"),
-        Some((hand, slot)) => Line::ok(format_smolstr!(
-            "{}{} IN {}, {}",
-            slot_label(slot).to_uppercase(),
-            if matches!(second.source, Some(second::Source::Carried(_))) {
-                " (CARRIED)"
-            } else {
-                ""
-            },
-            hand.label().to_uppercase(),
-            second.magazine.map_or(
-                "NO MAGAZINE".into(),
-                |(magazine, capacity)| format_smolstr!("{magazine}/{capacity}")
-            ),
-        )),
+    let armed = armed::status();
+    let held: Vec<String> = Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| {
+            let a = armed[hand.index()]?;
+            Some(format!(
+                "{} IN {}, {}/{}",
+                slot_label(a.slot).to_uppercase(),
+                hand.label().to_uppercase(),
+                a.magazine.0,
+                a.magazine.1
+            ))
+        })
+        .collect();
+    if held.is_empty() {
+        Line::ok("NONE")
+    } else {
+        Line::ok(SmolStr::new(held.join("; ")))
     }
 }
 
@@ -222,8 +223,8 @@ fn hand(hand: Hand) -> Line {
         .wielded
         .map(|w| (w.weapon.wielded.slot, w.weapon.wielded.hands));
     let origin = hold::status().origin;
-    let second = second::status().held;
-    match in_hand(hand, wielded, origin, second) {
+    let beside = armed::status()[hand.index()].map(|a| (hand, a.slot));
+    match in_hand(hand, wielded, origin, beside) {
         Some((slot, how)) => Line::ok(format_smolstr!(
             "{}, {}",
             slot_label(slot).to_uppercase(),
@@ -244,8 +245,8 @@ enum HowHeld {
     Rack,
     /// Drawn by the game on its own (the weapon wheel, a switch, an automatic draw).
     Game,
-    /// Held as the second weapon, taken from its place on the body.
-    Second,
+    /// Armed in the hand beside the wielded weapon.
+    Beside,
 }
 
 impl HowHeld {
@@ -256,24 +257,24 @@ impl HowHeld {
             HowHeld::Stolen => "STOLEN",
             HowHeld::Rack => "RACK",
             HowHeld::Game => "GAME'S DRAW",
-            HowHeld::Second => "SECOND, DOCKED",
+            HowHeld::Beside => "BESIDE THE WIELDED",
         }
     }
 }
 
 /// The weapon `hand` holds and how it came there, from the wielded weapon's slot and the hands its
-/// guns ride (`wielded`), what brought it into the hands (`origin`), and the second weapon's hand
-/// and slot.
+/// guns ride (`wielded`), what brought it into the hands (`origin`), and the hand and slot of a
+/// weapon armed beside it (`beside`).
 fn in_hand(
     hand: Hand,
     wielded: Option<(WeaponSlot, [bool; 2])>,
     origin: Option<Cause>,
-    second: Option<(Hand, WeaponSlot)>,
+    beside: Option<(Hand, WeaponSlot)>,
 ) -> Option<(WeaponSlot, HowHeld)> {
-    if let Some((second_hand, slot)) = second
-        && second_hand == hand
+    if let Some((beside_hand, slot)) = beside
+        && beside_hand == hand
     {
-        return Some((slot, HowHeld::Second));
+        return Some((slot, HowHeld::Beside));
     }
     let (slot, hands) = wielded?;
     hands[hand.index()].then_some((
@@ -317,15 +318,15 @@ mod tests {
     }
 
     #[test]
-    fn the_second_weapon_names_its_own_hand() {
+    fn a_weapon_beside_the_wielded_one_names_its_own_hand() {
         let left_rifle = Some((RIFLE, [true, false]));
-        let second = Some((Hand::Right, SPECIAL));
+        let beside = Some((Hand::Right, SPECIAL));
         assert_eq!(
-            in_hand(Hand::Right, left_rifle, Some(Cause::Pickup), second),
-            Some((SPECIAL, HowHeld::Second))
+            in_hand(Hand::Right, left_rifle, Some(Cause::Pickup), beside),
+            Some((SPECIAL, HowHeld::Beside))
         );
         assert_eq!(
-            in_hand(Hand::Left, left_rifle, Some(Cause::Pickup), second),
+            in_hand(Hand::Left, left_rifle, Some(Cause::Pickup), beside),
             Some((RIFLE, HowHeld::PickedUp))
         );
     }

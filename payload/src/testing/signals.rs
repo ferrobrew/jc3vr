@@ -26,7 +26,7 @@ use crate::{
         scheme, vehicles,
         weapons::{
             self, ads, c4, collide, grenade, grip_watch,
-            hold::second,
+            hold::{act, armed},
             inventory, regions,
             reload::{self, loose},
         },
@@ -187,11 +187,13 @@ signals! {
     WeaponInLeftHand => "weapons.in_left_hand", Flag, "The wielded weapon's first gun rides the left hand.";
     WeaponInRightHand => "weapons.in_right_hand", Flag, "The wielded weapon's first gun rides the right hand.";
     TwoHanded => "weapons.two_handed", Flag, "The wielded weapon is held in both hands' reach.";
-    SecondInLeftHand => "weapons.second_in_left_hand", Flag, "A second weapon is held in the left hand.";
-    SecondInRightHand => "weapons.second_in_right_hand", Flag, "A second weapon is held in the right hand.";
-    SecondCarried => "weapons.second_carried", Flag, "The second weapon is one the VR inventory carries beyond the slots.";
-    SecondDrops => "weapons.second_drops", Counter, "Second weapons let fall from the hand.";
-    SecondPromotions => "weapons.second_promotions", Counter, "Second weapons that became the wielded weapon.";
+    ArmedInLeftHand => "weapons.armed_in_left_hand", Flag, "A weapon the game does not wield is armed in the left hand.";
+    ArmedInRightHand => "weapons.armed_in_right_hand", Flag, "A weapon the game does not wield is armed in the right hand.";
+    ArmedCarried => "weapons.armed_carried", Flag, "A weapon armed in a hand is one the carry set keeps beyond the slots.";
+    WeaponDraws => "weapons.draws", Counter, "Weapons drawn off a socket into a hand.";
+    WeaponDocks => "weapons.docks", Counter, "Weapons docked from a hand onto a socket.";
+    WeaponDrops => "weapons.drops", Counter, "Weapons let go of from a hand.";
+    Promotions => "weapons.promotions", Counter, "Weapons armed in a hand that became the wielded weapon in the same hand.";
     WeaponGrabs => "weapons.grabs", Counter, "Grabs the weapon handling saw.";
     GrenadePins => "grenade.pins_pulled", Counter, "Pins pulled from grenades taken from the pouch.";
     GrenadesThrown => "grenade.thrown", Counter, "Grenades thrown from the pouch.";
@@ -217,8 +219,6 @@ signals! {
     RegionLetGo => "regions.let_go", Counter, "Long guns left carried in the bracing hand when the holding hand let go.";
     RegionCarrying => "regions.carrying", Flag, "A hand carries the wielded gun by a part other than its grip.";
     InventoryCarried => "inventory.carried", Measure, "Weapons the inventory carries beyond the slots.";
-    InventoryDraws => "inventory.draws", Counter, "Carried weapons drawn off their sockets into a hand.";
-    InventoryStows => "inventory.stows", Counter, "Held weapons put onto a free socket.";
     InventoryRestored => "inventory.restored", Counter, "Carried weapons respawned onto their sockets after a reset or a load.";
     InventorySidecarWrites => "inventory.sidecar_writes", Counter, "Save sidecars written.";
     InventoryStashed => "inventory.stashed", Flag, "The carried weapons are stashed while a mission holds the player's weapons.";
@@ -399,14 +399,18 @@ impl Signal {
                     .wielded
                     .is_some_and(|w| w.weapon.two_handed),
             ),
-            Signal::SecondInLeftHand => flag(second::hand() == Some(Hand::Left)),
-            Signal::SecondInRightHand => flag(second::hand() == Some(Hand::Right)),
-            Signal::SecondCarried => flag(matches!(
-                second::status().source,
-                Some(second::Source::Carried(_))
-            )),
-            Signal::SecondDrops => count(second::status().drops),
-            Signal::SecondPromotions => count(second::status().promotions),
+            Signal::ArmedInLeftHand => flag(armed::in_hand(Hand::Left).is_some()),
+            Signal::ArmedInRightHand => flag(armed::in_hand(Hand::Right).is_some()),
+            Signal::ArmedCarried => flag(
+                Hand::BOTH
+                    .into_iter()
+                    .filter_map(armed::in_hand)
+                    .any(inventory::carry::contains),
+            ),
+            Signal::WeaponDraws => count(act::status().draws),
+            Signal::WeaponDocks => count(act::status().docks),
+            Signal::WeaponDrops => count(act::status().drops),
+            Signal::Promotions => count(inventory::reconcile::status().promotions),
             Signal::WeaponGrabs => count(weapons::status().grabs),
             Signal::GrenadePins => count(grenade::status().pins_pulled),
             Signal::GrenadesThrown => count(grenade::status().thrown),
@@ -440,8 +444,6 @@ impl Signal {
             Signal::AdsWelded => count(ads::status().welded),
             Signal::GunContacts => count(collide::status().contacts),
             Signal::InventoryCarried => Value::Number(inventory::status().carried.len() as f64),
-            Signal::InventoryDraws => count(inventory::status().draws),
-            Signal::InventoryStows => count(inventory::status().stows),
             Signal::InventoryRestored => count(inventory::restore::status().restored),
             Signal::InventorySidecarWrites => count(inventory::restore::status().writes),
             Signal::InventoryStashed => flag(inventory::status().stashed),

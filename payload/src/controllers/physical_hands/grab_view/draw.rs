@@ -357,7 +357,7 @@ mod tests {
         let chosen = sphere(GrabVolume::Foregrip, Vec3::new(0.0, 1.0, -0.05), 0.1);
         let far = sphere(GrabVolume::WorldMagazine, Vec3::new(0.0, 1.0, -5.0), 0.1);
         let pouch = sphere(
-            GrabVolume::Holster(Socket::Chest),
+            GrabVolume::Socket(Socket::Chest),
             Vec3::new(0.0, 1.0, 0.5),
             0.1,
         );

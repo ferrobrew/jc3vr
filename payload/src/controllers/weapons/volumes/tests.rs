@@ -44,13 +44,13 @@ fn standing(dims: &BodyDimensions) -> BodyFrame {
     frame_of(ideal_skeleton(dims, 0.0))
 }
 
-fn holsters(frame: &BodyFrame) -> Vec<Candidate> {
-    holster_candidates(frame, &HolstersConfig::new())
+fn landmarks(frame: &BodyFrame) -> Vec<Candidate> {
+    socket_landmarks(frame, &HolstersConfig::new())
 }
 
-/// Every volume, holsters and pouches, for a player whose dominant hand is `dominant`.
+/// Every volume, the sockets and the pouches, for a player whose dominant hand is `dominant`.
 fn every_volume_for(frame: &BodyFrame, pouches: &PouchesConfig, dominant: Hand) -> Vec<Candidate> {
-    let mut c = holsters(frame);
+    let mut c = landmarks(frame);
     c.extend(grenade_pouch(
         frame,
         pouches,
@@ -79,17 +79,17 @@ fn centre(c: &[Candidate], volume: GrabVolume) -> Vec3 {
     find(c, volume).centre
 }
 
-const RIGHT_HIP: GrabVolume = GrabVolume::Holster(Socket::Hip(Hand::Right));
-const LEFT_HIP: GrabVolume = GrabVolume::Holster(Socket::Hip(Hand::Left));
-const RIGHT_SHOULDER: GrabVolume = GrabVolume::Holster(Socket::Shoulder(Hand::Right));
-const CHEST: GrabVolume = GrabVolume::Holster(Socket::Chest);
+const RIGHT_HIP: GrabVolume = GrabVolume::Socket(Socket::Hip(Hand::Right));
+const LEFT_HIP: GrabVolume = GrabVolume::Socket(Socket::Hip(Hand::Left));
+const RIGHT_SHOULDER: GrabVolume = GrabVolume::Socket(Socket::Shoulder(Hand::Right));
+const CHEST: GrabVolume = GrabVolume::Socket(Socket::Chest);
 
 /// The least gap the defaults leave between two volumes, metres, so that a hand at one does not
 /// brush the other.
 const MIN_GAP_M: f32 = 0.01;
 
-/// The least gap the defaults leave between a pouch and a holster, metres: a hand feeling for a
-/// pouch lands a little off it more often than not, and a press that lands in a holster instead
+/// The least gap the defaults leave between a pouch and a socket, metres: a hand feeling for a
+/// pouch lands a little off it more often than not, and a press that lands in a socket instead
 /// draws or switches a weapon.
 const MIN_POUCH_HOLSTER_GAP_M: f32 = 0.04;
 
@@ -97,15 +97,15 @@ fn assert_apart(c: &[Candidate], context: &str) {
     for (i, a) in c.iter().enumerate() {
         for b in &c[i + 1..] {
             let gap = a.centre.distance(b.centre) - a.radius - b.radius;
-            let holster = |c: &Candidate| matches!(c.volume, GrabVolume::Holster(_));
+            let socket = |c: &Candidate| matches!(c.volume, GrabVolume::Socket(_));
             let pouch = |c: &Candidate| {
                 matches!(
                     c.volume,
                     GrabVolume::GrenadePouch | GrabVolume::MagazinePouch | GrabVolume::C4Pouch
                 )
             };
-            let pouch_and_holster = (pouch(a) && holster(b)) || (holster(a) && pouch(b));
-            let min = if pouch_and_holster {
+            let pouch_and_socket = (pouch(a) && socket(b)) || (socket(a) && pouch(b));
+            let min = if pouch_and_socket {
                 MIN_POUCH_HOLSTER_GAP_M
             } else {
                 MIN_GAP_M
@@ -121,8 +121,8 @@ fn assert_apart(c: &[Candidate], context: &str) {
 }
 
 #[test]
-fn the_holsters_sit_where_the_body_has_them() {
-    let c = holsters(&standing(&DIMS));
+fn the_sockets_sit_where_the_body_has_them() {
+    let c = landmarks(&standing(&DIMS));
     let right_hip = centre(&c, RIGHT_HIP);
     let left_hip = centre(&c, LEFT_HIP);
     let right_shoulder = centre(&c, RIGHT_SHOULDER);
@@ -175,7 +175,7 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
         assert!(grenade.x > 0.0 && c4.x < 0.0 && magazine.x < 0.0);
         assert!((grenade.x + c4.x).abs() < 1e-5 && (grenade.y - c4.y).abs() < 1e-5);
         // The chest pouches on the upper chest, below the shoulders and above the belt; the
-        // magazine pouch at the waist, above the hip holster.
+        // magazine pouch at the waist, above the hip socket.
         assert!(grenade.y < shoulders.y - 0.1 && grenade.y > magazine.y + 0.2);
         assert!(magazine.y > hip.y && magazine.y < -0.5, "{magazine}");
         // In front of the body, a few centimetres ahead of the eyes' vertical line rather than
@@ -183,7 +183,7 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
         for pouch in [grenade, c4, magazine] {
             assert!(pouch.z < 0.0 && pouch.z > -0.12, "{pouch}");
         }
-        // The magazine pouch is at the front of the hip, inside the hip holster.
+        // The magazine pouch is at the front of the hip, inside the hip socket.
         assert!(magazine.x > hip.x + 0.05 && magazine.z < hip.z - 0.1);
     }
 }
@@ -288,8 +288,8 @@ fn a_hand_at_a_volume_grabs_it_and_a_hand_in_front_grabs_nothing() {
     // A hand held out in front at chest height, as when firing the grapple.
     let out_front = Vec3::new(0.0, -0.3, -0.45);
     assert_eq!(grab_volume(out_front, Hand::Left, &c), None);
-    // A hand hanging relaxed at the side, a little forward of the holster, still reaches it.
-    let c = holsters(&frame);
+    // A hand hanging relaxed at the side, a little forward of the socket, still reaches it.
+    let c = landmarks(&frame);
     let hip = centre(&c, RIGHT_HIP);
     assert!(grab_volume(hip + Vec3::new(0.0, 0.0, -0.08), Hand::Right, &c).is_some());
 }
@@ -331,7 +331,7 @@ fn the_hip_volumes_ride_the_pelvis_and_the_shoulder_volumes_ride_the_chest() {
         let moved = a.centre.distance(b.centre) > 1e-3;
         let on_chest = matches!(
             a.volume,
-            GrabVolume::Holster(Socket::Shoulder(_) | Socket::Chest)
+            GrabVolume::Socket(Socket::Shoulder(_) | Socket::Chest)
                 | GrabVolume::GrenadePouch
                 | GrabVolume::C4Pouch
         );
@@ -414,12 +414,12 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
     let frame = standing(&DIMS);
     let shoulders = |c: &[Candidate]| -> Vec<Option<Hand>> {
         c.iter()
-            .filter(|c| matches!(c.volume, GrabVolume::Holster(Socket::Shoulder(_))))
+            .filter(|c| matches!(c.volume, GrabVolume::Socket(Socket::Shoulder(_))))
             .map(|c| c.hand)
             .collect()
     };
     for dominant in Hand::BOTH {
-        let mut empty = holsters(&frame);
+        let mut empty = landmarks(&frame);
         let count = empty.len();
         reserve_long_guns(&mut empty, dominant, true);
         assert_eq!(
@@ -432,12 +432,12 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
         assert!(
             empty
                 .iter()
-                .filter(|c| !matches!(c.volume, GrabVolume::Holster(Socket::Shoulder(_))))
+                .filter(|c| !matches!(c.volume, GrabVolume::Socket(Socket::Shoulder(_))))
                 .all(|c| c.hand.is_none())
         );
         // A long gun docked under the off-hand's touch is not offered to it.
         let mut touched = vec![Candidate {
-            volume: GrabVolume::Holster(Socket::Shoulder(Hand::Left)),
+            volume: GrabVolume::Socket(Socket::Shoulder(Hand::Left)),
             centre: Vec3::ZERO,
             radius: 0.1,
             hand: Some(dominant.other()),
@@ -445,7 +445,7 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
         reserve_long_guns(&mut touched, dominant, true);
         assert!(touched.is_empty());
         // With a gun in a hand, either hand takes one, as a second weapon.
-        let mut armed = holsters(&frame);
+        let mut armed = landmarks(&frame);
         reserve_long_guns(&mut armed, dominant, false);
         assert_eq!(shoulders(&armed), vec![None; 2]);
     }

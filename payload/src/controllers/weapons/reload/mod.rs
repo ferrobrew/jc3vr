@@ -169,7 +169,7 @@ pub(super) struct BeginInputs<'a> {
     /// The weapons in the hands: the wielded weapon, then the second weapon. Each one's guns are
     /// reloaded in the hands its [`Wielded::hands`] marks.
     ///
-    /// [`Wielded::hands`]: crate::controllers::weapons::holster::Wielded::hands
+    /// [`Wielded::hands`]: crate::controllers::weapons::engine::Wielded::hands
     pub weapons: [Option<&'a HeldWeapon>; 2],
     /// The hands holding any gun, of these weapons or another, by [`Hand::index`].
     pub occupied: [bool; 2],

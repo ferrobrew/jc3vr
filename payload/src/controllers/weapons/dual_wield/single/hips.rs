@@ -4,8 +4,7 @@
 //! single pistol in the slot has one gun, so it takes one hip, its home ([`home_for`]); the other
 //! hip is a socket for a carried pistol, which then sits in that hip's holster rather than beside
 //! it ([`hip_offset`]). With the slots a projection of the loadout table, the slot's pistol's home is
-//! the hip the table has it on. A hand's grab at a hip acts on the pistol that sits there
-//! ([`hip_grab`]).
+//! the hip the table has it on.
 
 use glam::Vec3;
 
@@ -66,49 +65,6 @@ pub fn split_hands(drawn: [bool; 2], gun_hands: [Hand; 2]) -> (Option<Hand>, Opt
     }
 }
 
-/// What a hand's grab at a hip does while the pistols are single.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum HipGrab {
-    /// The hip is the slot's pistol's home: its holster, as for any weapon of one gun.
-    Slot,
-    /// The hip's socket: draw the carried pistol there, put one back, or dock a pistol there, as
-    /// a grab of the socket does.
-    Socket(Socket),
-    /// Holster the slot's pistol, held in the grabbing hand, on this hip, which becomes its home.
-    Rehome,
-    /// Nothing sits here for this hand.
-    Nothing,
-}
-
-/// A hip grab, as [`hip_grab`] sees it.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct HipView {
-    /// The hip grabbed.
-    pub side: Hand,
-    /// The slot's single pistol's home, when the slot holds one.
-    pub slot_home: Option<Hand>,
-    /// Whether the hip has a socket in the inventory's layout.
-    pub socket: bool,
-    /// Whether a carried pistol sits on the hip's socket, or is kept for it while in a hand.
-    pub socket_taken: bool,
-    /// Whether the grabbing hand holds the slot's pistol.
-    pub holds_slot: bool,
-}
-
-/// What a grab at a hip does.
-pub fn hip_grab(view: HipView) -> HipGrab {
-    if view.slot_home == Some(view.side) {
-        return HipGrab::Slot;
-    }
-    if view.holds_slot && !view.socket_taken {
-        return HipGrab::Rehome;
-    }
-    if view.socket {
-        return HipGrab::Socket(hip_socket(view.side));
-    }
-    HipGrab::Nothing
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,68 +112,5 @@ mod tests {
             "the slot's pistol stays in the hand that holds a pistol"
         );
         assert_eq!(split_hands([false, false], right_first), (None, None));
-    }
-
-    fn view(side: Hand) -> HipView {
-        HipView {
-            side,
-            slot_home: Some(Hand::Right),
-            socket: true,
-            socket_taken: true,
-            holds_slot: false,
-        }
-    }
-
-    #[test]
-    fn a_hip_grab_acts_on_the_pistol_that_sits_there() {
-        assert_eq!(hip_grab(view(Hand::Right)), HipGrab::Slot);
-        assert_eq!(
-            hip_grab(view(Hand::Left)),
-            HipGrab::Socket(Socket::Hip(Hand::Left))
-        );
-        let empty_left = HipView {
-            socket_taken: false,
-            ..view(Hand::Left)
-        };
-        assert_eq!(
-            hip_grab(empty_left),
-            HipGrab::Socket(Socket::Hip(Hand::Left)),
-            "a free socket takes what the hand holds"
-        );
-        let no_socket = HipView {
-            socket: false,
-            socket_taken: false,
-            ..view(Hand::Left)
-        };
-        assert_eq!(hip_grab(no_socket), HipGrab::Nothing);
-    }
-
-    #[test]
-    fn the_slot_s_pistol_holstered_at_the_free_hip_moves_home() {
-        let rehome = HipView {
-            socket_taken: false,
-            holds_slot: true,
-            ..view(Hand::Left)
-        };
-        assert_eq!(hip_grab(rehome), HipGrab::Rehome);
-        let no_socket = HipView {
-            socket: false,
-            ..rehome
-        };
-        assert_eq!(hip_grab(no_socket), HipGrab::Rehome);
-        let taken = HipView {
-            socket_taken: true,
-            ..rehome
-        };
-        assert_eq!(
-            hip_grab(taken),
-            HipGrab::Socket(Socket::Hip(Hand::Left)),
-            "a hip with a pistol on it is that pistol's"
-        );
-        let at_home = HipView {
-            holds_slot: true,
-            ..view(Hand::Right)
-        };
-        assert_eq!(hip_grab(at_home), HipGrab::Slot);
     }
 }

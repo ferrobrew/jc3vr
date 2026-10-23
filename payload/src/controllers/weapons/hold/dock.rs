@@ -1,29 +1,29 @@
 //! Docking a held weapon on the body and taking it off, as one object: the short snap between the
-//! dock and the hand, and the grip release that holsters or drops the weapon. Pure.
+//! socket and the hand, and the watch on the grip that lets go of it. Pure.
 //!
-//! A draw or a holster without the game's act equips or unequips the weapon in one call, which
-//! moves its guns between a dock bone and a hand attach bone at a stroke. [`Snap`] hides the
-//! switch: for its duration the rigid grip places the gun's hand attach bone part of the way between
-//! the dock's pose and the hand's grip ([`Snap::toward_hand`]), easing in and out, so the gun slides
-//! out of the holster into the hand, or out of the hand into the holster, and the bone table
-//! switches where the two poses meet. A draw switches at its start and slides toward the hand; a
-//! holster slides toward the dock and switches at its end.
+//! A draw or a dock moves the weapon's guns between a socket's bone and a hand attach bone at a
+//! stroke. [`Snap`] hides the switch: for its duration the rigid grip places the gun's hand attach
+//! bone part of the way between the socket's pose and the hand's grip ([`Snap::toward_hand`]),
+//! easing in and out, so the gun slides off the socket into the hand, or out of the hand onto the
+//! socket, and the bone table switches where the two poses meet. A draw switches at its start and
+//! slides toward the hand; a dock slides toward the socket and switches at its end.
 //!
 //! A gun taken from the world (off the ground, out of a character's hands, or off a rack) slides
 //! the same way from where it was in the world ([`SnapFrom::World`]), so it is seen to leave its
 //! place rather than appear in the hand.
 //!
 //! With the grip held to hold a gun, [`ReleaseWatch`] reports the holding hand's grip opening
-//! after it took the gun by a grab, and [`on_release`] decides what the release does.
+//! after it took the gun by a grab; what the release does is the table's decision
+//! ([`crate::controllers::loadout::grab::release`]).
 
 use crate::controllers::frame::{Hand, Pose};
 
 /// Which way a snap moves the gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SnapKind {
-    /// From the dock into the hand.
+    /// From the socket into the hand.
     Draw,
-    /// From the hand onto the dock.
+    /// From the hand onto the socket.
     Holster,
 }
 
@@ -31,7 +31,7 @@ impl SnapKind {
     pub const fn label(self) -> &'static str {
         match self {
             SnapKind::Draw => "draw",
-            SnapKind::Holster => "holster",
+            SnapKind::Holster => "dock",
         }
     }
 }
@@ -136,6 +136,12 @@ impl ReleaseWatch {
         self.armed = Some(hand);
     }
 
+    /// Stop watching a gun that left the hand for another, keeping the grip's last state, so that
+    /// a grip already held when the new gun arrived is not taken for a press.
+    pub fn unarm(&mut self) {
+        self.armed = None;
+    }
+
     /// Stop watching. The gun stays in the hand, and is the grip's again once the grip closes on
     /// it ([`Self::latch_press`]): after a stand-down (a tracking loss, a lost focus, the debug
     /// panel) a gun held through it is kept rather than dropped by the masked grip.
@@ -177,27 +183,6 @@ impl ReleaseWatch {
 
     pub fn armed(&self) -> Option<Hand> {
         self.armed
-    }
-}
-
-/// What opening the grip on a held gun does.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Release {
-    /// Holster it: the hand is at the weapon's own holster, or the weapon cannot fall.
-    Holster,
-    /// Let it fall.
-    Drop,
-}
-
-/// What a release does, with the hand in the weapon's own holster when `at_own_holster`, and a
-/// weapon that can be let fall when `droppable`. A weapon that cannot fall (a dual-wield pistol,
-/// which the game keeps in its pair) goes back to its hip wherever the hand opens, as any gun let
-/// go of leaves the hand.
-pub fn on_release(at_own_holster: bool, droppable: bool) -> Release {
-    if at_own_holster || !droppable {
-        Release::Holster
-    } else {
-        Release::Drop
     }
 }
 
@@ -333,10 +318,20 @@ mod tests {
     }
 
     #[test]
-    fn a_release_holsters_at_the_holster_and_drops_elsewhere() {
-        assert_eq!(on_release(true, true), Release::Holster);
-        assert_eq!(on_release(true, false), Release::Holster);
-        assert_eq!(on_release(false, true), Release::Drop);
-        assert_eq!(on_release(false, false), Release::Holster);
+    fn a_new_gun_under_a_held_grip_waits_for_a_fresh_press() {
+        let mut w = ReleaseWatch::new();
+        let held = [true, false];
+        assert_eq!(w.latch_press(Some(Hand::Left), held), Some(Hand::Left));
+        // Another gun comes into the hand while the grip stays closed.
+        w.unarm();
+        assert_eq!(w.latch_press(Some(Hand::Left), held), None);
+        assert_eq!(w.observe(Some(Hand::Left), held), None);
+        assert_eq!(
+            w.observe(Some(Hand::Left), [false; 2]),
+            None,
+            "opening the grip does not let the new gun go"
+        );
+        w.latch_press(Some(Hand::Left), [false; 2]);
+        assert_eq!(w.latch_press(Some(Hand::Left), held), Some(Hand::Left));
     }
 }

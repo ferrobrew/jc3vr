@@ -59,7 +59,10 @@ pub fn primitives(
         let Some(at) = anchor(target, frame) else {
             continue;
         };
-        let [r, g, b] = colour(target.category());
+        let [r, g, b] = match target.mark.style {
+            MarkStyle::NoFit => NO_FIT_COLOUR,
+            _ => colour(target.category()),
+        };
         let facing = match target.mark.normal {
             None => Facing::Billboard,
             Some(normal) => Facing::Surface {
@@ -106,6 +109,7 @@ pub fn primitives(
                 };
                 prims.push(sprite(size, shape));
             }
+            MarkStyle::NoFit => prims.push(sprite(size * NO_FIT_SHARE, Shape::Disc)),
         }
     }
     prims
@@ -228,5 +232,9 @@ const RING_THICKNESS: f32 = 0.15;
 const CHOSEN_THICKNESS: f32 = 0.3;
 /// The share of a handle's marker its centre dot spans.
 const HANDLE_DOT_SHARE: f32 = 0.3;
+/// The colour of a place that does not take what the hand holds.
+const NO_FIT_COLOUR: [f32; 3] = [1.0, 0.2, 0.2];
+/// The share of its size a no-fit marker's disc spans.
+const NO_FIT_SHARE: f32 = 0.4;
 /// The smallest a marker is drawn, metres.
 const MIN_SIZE_M: f32 = 0.02;

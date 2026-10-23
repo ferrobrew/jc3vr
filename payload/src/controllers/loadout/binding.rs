@@ -10,7 +10,7 @@ use std::{fmt, num::NonZeroUsize};
 
 use jc3gi::character::inventory::WeaponSlot;
 
-use crate::controllers::weapons::holster::slot_label;
+use crate::controllers::loadout::item::slot_label;
 
 /// A live game object's address: a weapon, a prop's rigid object, or a held grenade or charge.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

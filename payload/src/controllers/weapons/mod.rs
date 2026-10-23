@@ -1,11 +1,11 @@
 //! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads",
 //! "Grenades", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
 //!
-//! - [`volumes`]: the body's sockets and pouches (the holsters, the grenade pouch, the reload
-//!   pouch, and the C4 pouch), placed on the character's skeleton;
+//! - [`volumes`]: the sockets' landmarks and the pouches (the grenade pouch, the reload pouch, and
+//!   the C4 pouch), placed on the character's skeleton;
 //! - [`pouch_models`]: the game's models of what the pouches hold, drawn on them;
-//! - [`holster`]: what a grab at a holster does: draw its slot or holster the held weapon;
-//! - [`docks`]: the holsters seated on their guns;
+//! - [`docks`]: the sockets' volumes, seated on the weapons the loadout table has docked and where a
+//!   held weapon would dock;
 //! - [`foregrip`]: the two-handed weapon's foregrip and the two-handed pose;
 //! - [`recoil`]: the recoil offset between the controller and the gun, with its return spring;
 //! - [`heft`]: the one-handed weight of a long gun: sag, lag, sway, a stronger kick, and a wider
@@ -14,8 +14,8 @@
 //! - [`grip_watch`]: a diagnostic watch on how each held gun sits in its hand;
 //! - [`dual_wield`]: each dual-wielded pistol drawn by its own hand and fired by its own hand's
 //!   trigger;
-//! - [`hold`]: which hand holds the wielded weapon (the hand that drew it, took it off the
-//!   ground, or was handed it), the attach bones that put it there, and the direct pickup;
+//! - [`hold`]: the weapons in the hands as the loadout table has them, the attach bones that put
+//!   them there, the draws, docks, and drops at the sockets, and the direct pickup;
 //! - [`regions`]: a long gun's parts, derived from its model's box and its known points, and a
 //!   gun taken, braced, or carried by whichever part the hand closes on;
 //! - [`inventory`]: every weapon the player owns, holds, or let go of nearby, and the ones it
@@ -41,18 +41,19 @@
 //!    own grip before the body-scale remap while they ride the player's body, each pouch with a
 //!    reach margin a hand that misses it by a little still takes it within; the held gun's parts,
 //!    reached by the hand on the gun; the weapons in the world without a body (in characters'
-//!    hands, on racks, in lockers); and the grenade's pin, a live grenade, a magazine in the world,
-//!    and the carried weapons' sockets. A braced foregrip is offered to its hand as held.
-//! 2. [`finish_tick`] acts on the grabs the grip model hands it: a holster grab draws or holsters,
-//!    a grab of the held gun's grip by the free hand hands the gun over, a foregrip grab braces the
-//!    gun, a grenade-pouch grab primes a grenade for the throw, a C4-pouch grab primes a charge,
-//!    and a reload-pouch grab takes a round for the reload. Opening the grip on a gun docks it in
-//!    the nearest socket that fits it under the hand, or lets it fall
+//!    hands, on racks, in lockers); and the grenade's pin, a live grenade, and a magazine in the
+//!    world. A braced foregrip is offered to its hand as held.
+//! 2. [`finish_tick`] acts on the grabs the grip model hands it: a socket grab draws or docks as
+//!    the loadout table decides ([`crate::controllers::loadout::grab`]), a grab of the held gun's
+//!    grip by the free hand hands the gun over, a foregrip grab braces the gun, a grenade-pouch
+//!    grab primes a grenade for the throw, a C4-pouch grab primes a charge, and a reload-pouch grab
+//!    takes a round for the reload. Opening the grip on a gun docks it on the nearest socket under
+//!    the hand that takes it, or lets it fall
 //!    ([`crate::controllers::grab::resolve::dock_target`]). It runs the throws, the wrist
-//!    detonator, and the reload, and holds the fire inputs back while a reload, a draw, or a
-//!    holster plays (the action-runs hand tier) and while the reload holds the gun from firing.
+//!    detonator, and the reload, and holds the fire inputs back while a reload plays (the
+//!    action-runs hand tier) and while the reload holds the gun from firing.
 //!
-//! A gun is held while its grip is: nothing here draws or holsters except a grab and its release.
+//! A gun is held while its grip is: nothing here draws or docks except a grab and its release.
 //! The markers on the targets are the grip model's ([`crate::controllers::grab::markers`]).
 //! Everything acts only while the bindings inject, which is only under the controller scheme with
 //! a controller active.
@@ -74,7 +75,6 @@ pub mod grenade;
 pub mod grip_watch;
 pub mod heft;
 pub mod hold;
-pub mod holster;
 pub mod inventory;
 pub mod opening;
 pub mod pouch_models;
@@ -125,19 +125,17 @@ mod tests {
             controls::ButtonControl,
             hold::{Desired, MapKind, Target, Want},
         },
-        config::ControllersConfig,
         frame::Hand,
         grab::GrabVolume,
-        loadout::Socket,
+        loadout::{Socket, grab::SocketRefusal},
         mode::{AirborneVariant, Mode, OnFootVariant},
         weapons::{
             begin::{entered_body_volumes, gameplay},
-            engine::HeldWeapon,
-            finish::{cues_grab, docks_without_act, hold_fire_back, primary_trigger_idle},
+            engine::{HeldWeapon, Wielded},
+            finish::{cues_grab, hold_fire_back, primary_trigger_idle},
             foregrip::Transition,
-            heft, holster,
-            holster::HolsterAction,
-            types::GrabOutcome,
+            heft,
+            types::{GrabOutcome, SocketOutcome},
         },
     };
 
@@ -151,8 +149,8 @@ mod tests {
     }
 
     #[test]
-    fn a_hand_entering_a_holster_or_a_pouch_is_cued_once() {
-        let hip = Some(GrabVolume::Holster(Socket::Hip(Hand::Right)));
+    fn a_hand_entering_a_socket_or_a_pouch_is_cued_once() {
+        let hip = Some(GrabVolume::Socket(Socket::Hip(Hand::Right)));
         let pouch = Some(GrabVolume::MagazinePouch);
         let foregrip = Some(GrabVolume::Foregrip);
         assert_eq!(
@@ -175,19 +173,17 @@ mod tests {
             [false, false]
         );
         assert!(cues_grab(GrabOutcome::Foregrip(Transition::Grabbed)));
-        assert!(cues_grab(GrabOutcome::Holster(HolsterAction::Holster {
-            slot: WeaponSlot::E_SLOT_TWO_HANDED
-        })));
-        assert!(!cues_grab(GrabOutcome::Holster(HolsterAction::Refused {
-            slot: WeaponSlot::E_SLOT_TWO_HANDED
-        })));
+        assert!(cues_grab(GrabOutcome::Socket(SocketOutcome::Docked)));
+        assert!(!cues_grab(GrabOutcome::Socket(SocketOutcome::Refused(
+            SocketRefusal::Occupied(Socket::Chest)
+        ))));
         assert!(!cues_grab(GrabOutcome::Magazine));
     }
 
     fn rifle_in(hand: Hand) -> HeldWeapon {
         HeldWeapon {
             address: 0x1000,
-            wielded: holster::Wielded {
+            wielded: Wielded {
                 slot: WeaponSlot::E_SLOT_TWO_HANDED,
                 hands: Hand::BOTH.map(|h| h == hand),
             },
@@ -215,7 +211,7 @@ mod tests {
         assert!(!primary_trigger_idle(left_rifle, &triggers(true, true)));
         // No trigger pulled holds nothing back.
         assert!(!primary_trigger_idle(left_rifle, &triggers(false, false)));
-        // Mirrored: a second weapon's trigger in the left hand does not fire the right-held gun.
+        // Mirrored: the trigger of a gun in the left hand does not fire the right-held gun.
         let right_rifle = Some(rifle_in(Hand::Right));
         assert!(primary_trigger_idle(right_rifle, &triggers(true, false)));
         assert!(!primary_trigger_idle(right_rifle, &triggers(false, true)));
@@ -224,34 +220,6 @@ mod tests {
         pair.wielded.hands = [true; 2];
         assert!(!primary_trigger_idle(Some(pair), &triggers(true, false)));
         assert!(!primary_trigger_idle(None, &triggers(true, true)));
-    }
-
-    #[test]
-    fn pistols_dock_only_when_each_hand_draws_its_own() {
-        let mut config = ControllersConfig::new();
-        let pistols = WeaponSlot::E_SLOT_DUAL_WIELD;
-        let rifle = WeaponSlot::E_SLOT_TWO_HANDED;
-        assert!(docks_without_act(&config, pistols, false));
-        assert!(docks_without_act(&config, rifle, false));
-        config.weapons.dual_wield.independent_draw = false;
-        assert!(!docks_without_act(&config, pistols, false));
-        assert!(docks_without_act(&config, rifle, false));
-        config.weapons.dual_wield.independent_draw = true;
-        config.weapons.hold.pistol_dock = false;
-        assert!(!docks_without_act(&config, pistols, false));
-        config.weapons.hold.pistol_dock = true;
-        config.weapons.hold.instant_dock = false;
-        assert!(
-            docks_without_act(&config, pistols, false),
-            "the switches are separate"
-        );
-        assert!(!docks_without_act(&config, rifle, false));
-        assert!(!docks_without_act(&config, WeaponSlot::E_SLOT_HEAVY, false));
-        // A single pistol docks as a weapon of one gun, whatever the pair's own switches.
-        config.weapons.dual_wield.independent_draw = false;
-        assert!(docks_without_act(&config, pistols, true));
-        config.weapons.hold.pistol_dock = false;
-        assert!(!docks_without_act(&config, pistols, true));
     }
 
     #[test]

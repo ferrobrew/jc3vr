@@ -52,6 +52,7 @@ use crate::controllers::{
     aim::gun,
     frame::{Hand, Pose},
     hands::ik,
+    loadout::slot_label,
     weapons::{
         engine::{self, slot_from_raw},
         hold::{
@@ -59,7 +60,6 @@ use crate::controllers::{
             refs::Weak,
             world::{self, TargetKind, WorldTarget},
         },
-        holster::slot_label,
     },
 };
 

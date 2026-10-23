@@ -25,9 +25,8 @@
 //! ([`crate::controllers::weapons::inventory::reconcile`]): a table weapon the reconcile takes out
 //! of its slot comes into the set ([`keep`]), and one it puts into a slot leaves it ([`release`]).
 //! So the set holds every table weapon on the body that no slot holds, and which socket each sits
-//! on is the table's ([`home`], [`on_socket`], [`taken`]). A slot's weapon the table has on a
-//! socket other than the one the game docks its slot on is placed there too ([`place_slots`] and
-//! [`place`]).
+//! on is the table's ([`taken`]). A slot's weapon the table has on a socket other than the one the
+//! game docks its slot on is placed there too ([`place_slots`] and [`place`]).
 //!
 //! The placement and visibility detours run on the simulation's threads for the local player's
 //! inventory only, and take the set's lock; the input tick changes the set only outside the world
@@ -56,7 +55,7 @@ use crate::controllers::{
     loadout::{Place, Socket, live},
     weapons::{
         dual_wield::single,
-        hold::{refs::Strong, steal},
+        hold::refs::Strong,
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
             persist::Record,
@@ -129,18 +128,6 @@ pub(crate) fn contains(object: ObjectKey) -> bool {
     CARRY.lock().iter().any(|c| c.object == object)
 }
 
-/// The socket `object` sits on, or for a carried weapon a hand holds, the socket it last sat on.
-pub(crate) fn home(object: ObjectKey) -> Option<Socket> {
-    match live::place_of(object) {
-        Some(Place::Socket(socket)) => Some(socket),
-        _ => CARRY
-            .lock()
-            .iter()
-            .find(|c| c.object == object)
-            .map(|c| c.socket),
-    }
-}
-
 /// Take `object` out of the carry set, handing over its strong reference.
 pub(crate) fn release(object: ObjectKey) -> Option<Strong> {
     take(object).map(|c| c.strong)
@@ -155,19 +142,6 @@ pub(crate) fn taken() -> Vec<Socket> {
             Place::Hand(_) | Place::World(_) => None,
         })
         .collect()
-}
-
-/// The weapon a grab of `socket` draws: the one the table has there, when it is carried, or a
-/// slot's weapon on a socket other than its slot's own dock, which no holster offers.
-///
-/// # Safety
-///
-/// The main thread, outside the world update.
-pub(crate) unsafe fn on_socket(socket: Socket) -> Option<ObjectKey> {
-    unsafe { socket_items() }
-        .into_iter()
-        .find(|item| item.socket == socket)
-        .map(|item| item.object)
 }
 
 /// Keep `weapon`, a table weapon on the body the reconcile takes out of its slot, alive in the set,
@@ -226,25 +200,6 @@ pub(crate) fn count() -> usize {
 /// Set each socket's offset from its bone, in the character's frame, from the settings.
 pub(crate) fn set_offsets(offset_of: impl Fn(Socket) -> Vec3) {
     *OFFSETS.lock() = Socket::ALL.map(&offset_of);
-}
-
-/// The grip of each weapon a socket's grab draws ([`on_socket`]), in the world: where a hand
-/// closes on it.
-///
-/// # Safety
-///
-/// The main thread, outside the world update.
-pub(crate) unsafe fn grips() -> Vec<(Socket, Vec3)> {
-    if stashed() {
-        return Vec::new();
-    }
-    unsafe { socket_items() }
-        .into_iter()
-        .filter_map(|item| {
-            let (points, _) = unsafe { steal::gun_points(item.weapon) }?;
-            Some((item.socket, points[0]))
-        })
-        .collect()
 }
 
 /// Take the weapon `strong` keeps alive, which no inventory holds, into the carry set on `socket`:
@@ -504,47 +459,6 @@ unsafe fn refresh_hud() {
     if let Some(hud) = unsafe { HUDUI::get() } {
         unsafe { hud.InitWeapons() };
     }
-}
-
-/// A weapon a socket's grab draws, on that socket.
-struct SocketItem {
-    socket: Socket,
-    object: ObjectKey,
-    weapon: &'static WeaponBase,
-}
-
-/// The weapons a socket's grab draws: each one the table has on a socket that is carried, or that
-/// is a slot's weapon on a socket other than its slot's own dock, which no holster offers.
-unsafe fn socket_items() -> Vec<SocketItem> {
-    let owner = unsafe { Character::GetLocalPlayerCharacter().as_ref() };
-    let in_slot = |object: ObjectKey| {
-        owner.is_some_and(|o| {
-            o.m_Inventory
-                .m_Weapons
-                .iter()
-                .any(|slot| slot.px as usize == object)
-        })
-    };
-    live::on_body()
-        .into_iter()
-        .filter_map(|(object, place)| {
-            let Place::Socket(socket) = place else {
-                return None;
-            };
-            let object = object.get();
-            if !contains(object) && !in_slot(object) {
-                return None;
-            }
-            // SAFETY: the carry set or the slot keeps the weapon alive.
-            let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
-            let docked = !contains(object) && unsafe { at_own_dock(weapon, socket) };
-            (!docked).then_some(SocketItem {
-                socket,
-                object,
-                weapon,
-            })
-        })
-        .collect()
 }
 
 /// Whether the game's own placement puts the slot's weapon `weapon` on `socket`: the socket it

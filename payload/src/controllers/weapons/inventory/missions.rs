@@ -31,7 +31,6 @@ use crate::controllers::{
     loadout::live,
     weapons::{
         dual_wield::single,
-        hold::second::{self, Source},
         inventory::{carry, reconcile},
     },
 };
@@ -53,9 +52,7 @@ pub(super) unsafe fn input_tick(slots_filled: bool) {
         _ => {}
     }
     if STASH_ASKED.swap(false, Ordering::Relaxed) {
-        if matches!(second::source(), Some(Source::Carried(_))) {
-            unsafe { second::put_back(None) };
-        }
+        // The table took the hands' weapons with the rest, so the reconcile disarms any held.
         if unsafe { carry::set_stashed(true) } {
             tracing::info!(
                 target: "controllers",

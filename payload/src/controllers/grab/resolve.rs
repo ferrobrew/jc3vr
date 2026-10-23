@@ -124,8 +124,8 @@ pub fn losers(reaches: &[Reach], chosen: Reach) -> Vec<(Reach, Lost)> {
 }
 
 /// The socket something a hand holds docks in when its grip opens: of the targets `hand`, with its
-/// drawn grip at `grip`, is within reach of, the nearest that `fits` what it holds. A hand over both a pouch and
-/// the gun's own holster puts the gun in the holster.
+/// drawn grip at `grip`, is within reach of, the nearest that `fits` what it holds. A hand over both
+/// a pouch and a socket that fits the gun docks the gun on the socket.
 pub fn dock_target(
     hand: Hand,
     targets: &[GripTarget],

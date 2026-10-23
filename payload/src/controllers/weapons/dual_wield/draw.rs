@@ -2,14 +2,12 @@
 //! Pure.
 //!
 //! The game draws and holsters the dual-wield slot as one weapon: both pistols come out together
-//! and go away together. With independent draws, each hand holds its own pistol: a hand draws its
-//! pistol at a hip holster and puts it back there, and a pistol that is not drawn waits on the
-//! hip holster on its hand's side while the weapon is wielded ([`bones`]).
+//! and go away together. With independent draws, a pistol that is not drawn waits on the hip
+//! holster on its hand's side while the weapon is wielded ([`bones`]).
 //!
-//! [`Holding`] follows the game's weapon ([`Holding::observe`]) and the hip grabs. A draw of the
-//! slot that a hip grab started ([`Holding::begin_draw`]) brings out only that hand's pistol; a
-//! draw the game started on its own (the weapon wheel, a switch, an automatic draw) brings out
-//! both, as in the game.
+//! [`Holding`] follows the game's weapon ([`Holding::observe`]). A draw of the slot that a direct
+//! pickup started for one hand ([`Holding::begin_draw`]) brings out only that hand's pistol; any
+//! other draw brings out both, as in the game.
 
 use jc3gi::character::character::SafeBoneIndex;
 
@@ -73,28 +71,10 @@ impl Holding {
         self.wielded = wielded;
     }
 
-    /// A hip grab by `hand` while the pistols are not wielded: the draw it asks the game for
-    /// brings out only `hand`'s pistol.
+    /// A pickup by `hand` while the pistols are not wielded: the draw it asks the game for brings
+    /// out only `hand`'s pistol.
     pub fn begin_draw(&mut self, hand: Hand) {
         self.pending = Some(PendingDraw { hand, age_s: 0.0 });
-    }
-
-    /// Draw `hand`'s pistol while the pistols are wielded. Returns whether it was drawn.
-    pub fn draw(&mut self, hand: Hand) -> bool {
-        let drawn = &mut self.drawn[hand.index()];
-        let changed = self.wielded && !*drawn;
-        *drawn |= self.wielded;
-        changed
-    }
-
-    /// Holster `hand`'s pistol while the other hand still holds its own. Returns whether it was
-    /// holstered; the last pistol is holstered by the game's own holster.
-    pub fn holster(&mut self, hand: Hand) -> bool {
-        let changed = self.wielded && self.drawn[hand.index()] && self.drawn[hand.other().index()];
-        if changed {
-            self.drawn[hand.index()] = false;
-        }
-        changed
     }
 
     /// The hands whose pistols are out: while wielded, the drawn ones; otherwise the hands the
@@ -205,42 +185,6 @@ mod tests {
         assert_eq!(h.pending(), None);
         h.observe(WEAPON, true, TICK);
         assert_eq!(h.drawn(), [true; 2]);
-    }
-
-    #[test]
-    fn the_second_hand_draws_and_holsters_its_own() {
-        let mut h = wielded_by(Some(Hand::Right));
-        assert!(h.draw(Hand::Left));
-        assert!(!h.draw(Hand::Left), "a drawn pistol is not drawn again");
-        assert_eq!(h.drawn(), [true; 2]);
-        assert!(h.holster(Hand::Right));
-        assert_eq!(h.drawn(), [true, false]);
-        assert!(
-            !h.holster(Hand::Left),
-            "the last pistol goes through the game's holster"
-        );
-        assert_eq!(h.drawn(), [true, false]);
-    }
-
-    #[test]
-    fn nothing_is_drawn_or_holstered_while_not_wielded() {
-        let mut h = Holding::new();
-        h.observe(WEAPON, false, TICK);
-        assert!(!h.draw(Hand::Left));
-        assert!(!h.holster(Hand::Left));
-        h.observe(WEAPON, true, TICK);
-        assert_eq!(h.drawn(), [true; 2]);
-    }
-
-    #[test]
-    fn holstering_resets_and_the_next_draw_starts_over() {
-        let mut h = wielded_by(Some(Hand::Right));
-        h.draw(Hand::Left);
-        h.observe(WEAPON, false, TICK);
-        assert!(!h.wielded());
-        h.begin_draw(Hand::Left);
-        h.observe(WEAPON, true, TICK);
-        assert_eq!(h.drawn(), [true, false]);
     }
 
     #[test]

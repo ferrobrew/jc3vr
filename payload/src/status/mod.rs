@@ -228,7 +228,7 @@ const SECTIONS: &[Section] = &[
             row!("TAKE FROM RACKS", weapons::racks),
             row!("LEFT ACTION", weapons::left_action),
             row!("RIGHT ACTION", weapons::right_action),
-            row!("SECOND WEAPON", weapons::second_weapon),
+            row!("ARMED BESIDE", weapons::armed),
             row!("RIGHT HAND GRIP", weapons::right_grip),
             row!("HOLSTERS", weapons::docks),
             row!("LAST REFUSAL", weapons::last_refusal),

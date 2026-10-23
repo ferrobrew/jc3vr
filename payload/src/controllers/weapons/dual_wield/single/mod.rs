@@ -20,9 +20,9 @@
 //! a second pistol of its kind, the twin, is spawned and carried on the other hip by the VR
 //! inventory's carry set, half the pair's magazine in each ([`grant`]). A pistol taken from the
 //! world is one pistol ([`pickup_item`]). Each is then picked up, held, dropped, and reloaded on
-//! its own, through the paths every weapon takes: the slot's is the wielded weapon, a carried one
-//! is held beside it as the second weapon, and a drop is a drop of that object. Which hip each
-//! sits on is [`hips`].
+//! its own, through the paths every weapon takes: each is its own item of the loadout table's, in
+//! whichever hand or on whichever socket the table has it, and a drop is a drop of that object.
+//! Which hip each sits on is [`hips`].
 //!
 //! The set of single pistols ([`set`]) is the VR inventory's to keep: an object leaves it at the
 //! first input tick after the inventory stops tracking it, and while the hands stand down only
@@ -70,7 +70,7 @@ use crate::{
                 },
             },
             engine::slot_from_raw,
-            hold::{self, layout, refs::Strong, second},
+            hold::{self, layout, refs::Strong},
             inventory::{
                 carry,
                 config::InventoryConfig,
@@ -260,34 +260,6 @@ pub(crate) unsafe fn apply_home(inventory: *mut Inventory) {
     }
 }
 
-/// Make `side` the hip of the slot's single pistol at `object`: called before a holster of it
-/// there, so the holster's slide already ends on that hip.
-///
-/// # Safety
-///
-/// `object` must be the live weapon in the local player's pistol slot, on the main thread outside
-/// the world update.
-pub(crate) unsafe fn rehome(object: ObjectKey, side: Hand) {
-    if set::contains(object) {
-        set_home(object, side);
-        // SAFETY: the caller's weapon is live.
-        let weapon = unsafe { &mut *(object as *mut WeaponBase) };
-        if let Some(first) = unsafe { gun_mut(weapon, 0) }
-            && let Some(entry) = first
-                .m_lBoneAttachementPerWeaponState
-                .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        {
-            *entry = layout::hip_bone(side);
-        }
-        tracing::info!(
-            target: "controllers",
-            side = side.label(),
-            "single pistols: the slot's pistol now sits on the {} hip",
-            side.label()
-        );
-    }
-}
-
 /// The single pistol `weapon` was taken from the world by the mod without the game's pickup: its
 /// stored rounds go to `owner`'s reserve and are cleared, as the game's pickup does, and it counts
 /// as taken.
@@ -374,13 +346,6 @@ pub(crate) fn cover_mission(slot_single: bool) {
 /// Whether the slot's weapon is a single pistol, as of the last input tick.
 pub(crate) fn slot_single() -> bool {
     STATE.lock().slot_single
-}
-
-/// Whether the hips hold single pistols, as of the last input tick: the slot's weapon is one, or
-/// the slot is empty while pistols are made single, so each hip is the hip of the pistol on it.
-pub(crate) fn hips_single() -> bool {
-    let state = STATE.lock();
-    state.slot_single || (!state.slot_filled && active())
 }
 
 /// What the VR inventory hands the single pistols each input tick.
@@ -847,7 +812,7 @@ unsafe fn park(owner: &mut Character, strong: Strong, why: &str) {
 
 /// A pair split while in the hands keeps a pistol in each hand that held one: the slot's pistol
 /// stays in its hand, and with both drawn the second pistol comes off its hip into the other hand
-/// as the second weapon at once.
+/// at once.
 unsafe fn share_hands(twin: ObjectKey) {
     let attach = attach::status();
     let Some(gun_hands) = attach.gun_hands.filter(|_| attach.wielded) else {
@@ -862,9 +827,9 @@ unsafe fn share_hands(twin: ObjectKey) {
         hold.either_hand && hold.second_weapon
     });
     if let Some(hand) = twin_hand.filter(|_| second_allowed)
-        && let Err(refusal) = unsafe { second::take_carried(hand, twin) }
+        && !unsafe { hold::take_into(hand, twin) }
     {
-        tracing::info!(target: "controllers", %refusal, "single pistols: the second pistol stays on its hip");
+        tracing::info!(target: "controllers", "single pistols: the second pistol stays on its hip");
     }
 }
 

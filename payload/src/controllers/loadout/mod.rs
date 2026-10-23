@@ -14,6 +14,7 @@
 //! - [`reset`]: the spawn reset's re-keying, and the table's snapshots at the game's caches;
 //! - [`projection`]: what the game's slots should hold, and what the sidecar records;
 //! - [`event`]: what the hooks and the hands tell the table, folded into transitions;
+//! - [`grab`]: what a hand does at a socket, decided against the table's snapshot;
 //! - [`live`]: the one live table of the local player's items, dual-written beside the old weapon
 //!   handling and published each input tick;
 //! - [`sandbox`]: a table of the debug UI's own, driven by hand with made-up objects.
@@ -24,6 +25,7 @@
 
 mod binding;
 mod event;
+pub mod grab;
 mod item;
 pub mod live;
 mod projection;
@@ -38,7 +40,7 @@ mod tests;
 
 pub use binding::ObjectAddress;
 pub use event::Event;
-pub use item::{ItemId, ItemKind, WeaponType};
+pub use item::{ItemId, ItemKind, WeaponType, slot_label};
 pub use projection::{Projection, SlotContent, StoreProjection};
 pub use reset::{CacheKind, ResetKind, SlotObject};
 pub use socket::{BodyLayout, Socket};

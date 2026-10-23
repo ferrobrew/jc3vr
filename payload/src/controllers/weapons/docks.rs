@@ -1,94 +1,204 @@
-//! Holster volumes on the guns docked on the body.
+//! The sockets' grab volumes, seated from the loadout table's snapshot.
 //!
-//! The holsters are placed from the body's landmarks and the configured offsets
-//! ([`crate::controllers::weapons::volumes`]), but a docked gun sits where its dock bone puts it on
-//! the character's skeleton: a rifle across the back, a pistol on the thigh, wherever the animation
-//! and the procedural body have that bone. So each hip and shoulder holster is seated on its gun
-//! ([`seat`]), and reached by the hand as it is drawn, so the player reaches for the gun they see,
-//! wherever it moves:
+//! A docked weapon sits where its socket's bone puts it on the character's skeleton (a rifle across
+//! the back, a pistol on the thigh), wherever the animation and the procedural body have that bone,
+//! so each socket's volume is seated where the player sees the weapon, and reached by the hand as
+//! it is drawn:
 //!
-//! - a holster whose gun is docked sits on the gun's grip;
-//! - a holster whose gun is out of it (in a hand) sits where the gun docks again: its dock bone,
-//!   carried out to where the gun's grip was on that bone when it was last seen docked;
-//! - a holster with no gun in its slot is not offered, since there is nothing on the body there;
-//! - a holster whose gun's place cannot be read stays on the landmarks.
+//! - a socket holding a weapon has a volume on the weapon's grip, for an empty hand to draw it;
+//! - a free socket that takes the weapon a hand holds has a volume where that weapon would sit
+//!   there, for that hand to dock it: where its grip was on the socket's bone when it was last
+//!   seen there, or else on the socket's bone, moved by the socket's offset when the game does not
+//!   dock the weapon's slot there itself;
+//! - a socket of the body that does not take the weapon a hand holds (taken, or too small for it,
+//!   or any socket for a weapon that docks nowhere yet, [`act::dockable`]) is marked for that
+//!   hand, never taken, so the hand knows before it opens.
 //!
-//! The chest holster carries the planted explosive, which shows nothing on the body, so it stays on
-//! the landmarks.
-//!
-//! The guns' points are read on the input tick from their last placement, in the world, and carried
-//! into the cockpit frame the volumes live in ([`cockpit_frames`]).
+//! What each grab does is the table's decision ([`crate::controllers::loadout::grab`]). The points
+//! are read on the input tick from the guns' last placement, in the world, and carried into the
+//! cockpit frame the volumes live in ([`cockpit_frames`]).
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::{WeaponBase, WeaponData, WeaponGripHand, WeaponState},
-    types::math::Matrix4,
+    character::character::Character,
+    equipment::weapon::{WeaponBase, WeaponState},
 };
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        aim::gun,
         body::rig::frames::Frames,
         frame::Hand,
-        grab::{Candidate, GrabVolume},
         hands::{ActiveHands, grip},
-        loadout::Socket,
+        loadout::{
+            LoadoutSnapshot, Place, Socket,
+            grab::{self, GrabRules, SocketMove},
+        },
         weapons::{
-            hold::{armed, layout},
-            holster::site_slot,
+            hold::{act, armed, steal},
+            inventory::{
+                carry,
+                engine::{ObjectKey, slot_of},
+                sockets::{self, Offsets},
+            },
         },
     },
     headpose,
 };
 
-/// A holster's gun, and where a hand closes on it: its grip, docked or where it docks, in the
-/// frame the volumes are placed in. `None` when that place cannot be read.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HolsterGun {
-    pub site: Socket,
-    pub point: Option<Vec3>,
+/// What a socket's volume is for.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum SocketUse {
+    /// The weapon on it, for an empty hand to draw.
+    Draw,
+    /// The free socket, for the hand holding a weapon that fits it to dock it.
+    Dock,
+    /// A socket that does not take what the hand holds: marked, never taken.
+    NoFit,
 }
 
-/// Seat the hip and shoulder holsters in `candidates` on their guns in `guns`: each holster whose
-/// gun has a point is moved there and out of `candidates` into the returned list, each whose gun
-/// has none stays, and each with no gun in `guns` is removed. The chest holster and every other
-/// volume stay.
-pub fn seat(candidates: &mut Vec<Candidate>, guns: &[HolsterGun]) -> Vec<Candidate> {
-    let mut seated = Vec::new();
-    candidates.retain(|c| {
-        let GrabVolume::Holster(site) = c.volume else {
-            return true;
+/// One socket's volume for one hand, in the world.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct SocketPoint {
+    pub socket: Socket,
+    pub hand: Hand,
+    pub point: Vec3,
+    pub usage: SocketUse,
+}
+
+/// What the volumes are placed from.
+pub(crate) struct SocketInputs<'a> {
+    pub snapshot: &'a LoadoutSnapshot,
+    /// The hands that hold nothing, by [`Hand::index`]: only they draw.
+    pub free: [bool; 2],
+    pub rules: GrabRules,
+    /// Where a weapon sits on each socket relative to its bone, for a socket the game does not
+    /// dock it on.
+    pub offsets: &'a Offsets,
+}
+
+/// The sockets' volumes for each hand, in the world.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> Vec<SocketPoint> {
+    let snapshot = inputs.snapshot;
+    let to_world = Mat4::from(owner.m_WorldMatrixT1);
+    let docked = unsafe { socket_weapons(owner, snapshot) };
+    let mut grips = GRIPS.lock();
+    let mut out = Vec::new();
+    let mut seen = Vec::new();
+    for &(socket, weapon) in &docked {
+        let object = weapon as *const WeaponBase as ObjectKey;
+        let Some(point) = (unsafe { grip_point(weapon) }) else {
+            continue;
         };
-        if site == Socket::Chest {
-            return true;
+        if let Some(bone) = unsafe { bone_world(owner, to_world, socket) }
+            && let Some(local) = grip_on_bone(bone, point)
+        {
+            grips.retain(|g| !(g.object == object && g.socket == socket));
+            grips.push(DockGrip {
+                object,
+                socket,
+                local,
+            });
         }
-        match guns.iter().find(|g| g.site == site) {
-            None => false,
-            Some(HolsterGun { point: None, .. }) => true,
-            Some(HolsterGun {
-                point: Some(point), ..
-            }) => {
-                seated.push(Candidate {
-                    centre: *point,
-                    ..*c
+        seen.push(object);
+        for hand in Hand::BOTH {
+            let draws = inputs.free[hand.index()]
+                && grab::grab(snapshot, hand, socket, inputs.rules)
+                    == Ok(SocketMove::Draw { socket, hand });
+            if draws {
+                out.push(SocketPoint {
+                    socket,
+                    hand,
+                    point,
+                    usage: SocketUse::Draw,
                 });
-                false
             }
         }
-    });
-    seated
+    }
+    for hand in Hand::BOTH {
+        let Some(object) = held_object(snapshot, hand) else {
+            continue;
+        };
+        seen.push(object);
+        // SAFETY: the table holds the weapon in a hand, and a slot or the carry set keeps it
+        // alive.
+        let dockable = unsafe { act::dockable(object) };
+        for socket in Socket::ALL {
+            let usage = if !dockable && snapshot.body.has(socket) {
+                SocketUse::NoFit
+            } else if grab::fits(snapshot, hand, socket) {
+                SocketUse::Dock
+            } else if grab::refusing(snapshot, hand).any(|s| s == socket) {
+                SocketUse::NoFit
+            } else {
+                continue;
+            };
+            let on_it = docked.iter().find(|(s, _)| *s == socket);
+            let point = match on_it {
+                Some(&(_, weapon)) => unsafe { grip_point(weapon) },
+                None => unsafe {
+                    dock_point(owner, to_world, socket, object, &grips, inputs.offsets)
+                },
+            };
+            if let Some(point) = point {
+                out.push(SocketPoint {
+                    socket,
+                    hand,
+                    point,
+                    usage,
+                });
+            }
+        }
+    }
+    grips.retain(|g| seen.contains(&g.object));
+    out
+}
+
+/// The weapons the table has on the body's sockets that are seen there: each one live (a slot or
+/// the carry set keeps it), holstered, and not armed in a hand.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+pub(crate) unsafe fn socket_weapons(
+    owner: &Character,
+    snapshot: &LoadoutSnapshot,
+) -> Vec<(Socket, &'static WeaponBase)> {
+    snapshot
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Place::Socket(socket) = item.place else {
+                return None;
+            };
+            let object = item.binding.address()?.get();
+            let in_slot = owner
+                .m_Inventory
+                .m_Weapons
+                .iter()
+                .any(|slot| slot.px as usize == object);
+            if !(in_slot || carry::contains(object)) || armed::is(object) {
+                return None;
+            }
+            // SAFETY: the slot, or the carry set, keeps the weapon alive.
+            let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
+            (weapon.m_State == WeaponState::E_WS_HOLSTERED).then_some((socket, weapon))
+        })
+        .collect()
 }
 
 /// Where a grip at `grip` in the world is on a bone at `bone` (bone-to-world), in the bone's frame;
-/// `None` for an offset longer than [`MAX_GRIP_OFFSET_M`], which no dock gives, or a bad read.
+/// `None` for an offset longer than [`MAX_GRIP_OFFSET_M`], which no socket gives, or a bad read.
 pub fn grip_on_bone(bone: Mat4, grip: Vec3) -> Option<Vec3> {
     let local = bone.inverse().transform_point3(grip);
     (local.is_finite() && local.length() <= MAX_GRIP_OFFSET_M).then_some(local)
 }
 
-/// The longest grip offset from a dock bone, metres.
+/// The longest grip offset from a socket's bone, metres.
 pub const MAX_GRIP_OFFSET_M: f32 = 0.6;
 
 /// The transforms between the world and the cockpit frame on this input tick, with `character`
@@ -104,135 +214,67 @@ pub(crate) fn cockpit_frames(active: &ActiveHands, character: Mat4) -> Option<Fr
     frames.is_usable().then_some(frames)
 }
 
-/// The guns of `owner`'s holsters, at their grips in the world: each
-/// shoulder's long gun, and each pistol of the pistol slot on the hip it holsters on. A gun on its
-/// dock bone is at its grip there (a long gun's grip, [`WeaponBase::GetGripPosition`], or its
-/// origin without one; a pistol's origin); a gun off it is where it would be on the bone, by where
-/// its grip was there when it was last seen docked, or at the bone without that. A gun that docks on
-/// no dock bone has no point.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn holster_guns(owner: &Character) -> Vec<(Socket, Option<Vec3>)> {
-    let to_world = Mat4::from(owner.m_WorldMatrixT1);
-    let mut grips = GRIPS.lock();
-    let mut seen = Vec::new();
-    let mut out = Vec::new();
-    for side in Hand::BOTH {
-        let site = Socket::Shoulder(side);
-        let Some(weapon) = site_slot(site).and_then(|slot| unsafe { slot_weapon(owner, slot) })
-        else {
-            continue;
-        };
-        let Some(first) = unsafe { gun::guns(weapon) }.next().flatten() else {
-            continue;
-        };
-        // The second weapon is in a hand, whatever its state says.
-        let docked = weapon.m_State == WeaponState::E_WS_HOLSTERED
-            && !armed::is(weapon as *const WeaponBase as usize);
-        let at = || {
-            let mut grip = Matrix4::from(Mat4::IDENTITY);
-            if unsafe {
-                weapon.GetGripPosition(WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT, &mut grip)
-            } {
-                Mat4::from(grip).w_axis.truncate()
-            } else {
-                gun_origin(first)
-            }
-        };
-        let point = unsafe { place(owner, to_world, first, docked, at, &mut grips) };
-        seen.push(first as *const WeaponData as usize);
-        out.push((site, point));
-    }
-    if let Some(pair) = unsafe { slot_weapon(owner, WeaponSlot::E_SLOT_DUAL_WIELD) } {
-        for gun in unsafe { gun::guns(pair) }.flatten() {
-            let Some(side) = holstered_bone(gun).and_then(|bone| {
-                Hand::BOTH
-                    .into_iter()
-                    .find(|&h| layout::hip_bone(h) == bone)
-            }) else {
-                continue;
-            };
-            // A pistol waits on its hip while the other of the pair is drawn.
-            let docked = gun
-                .m_lBoneAttachementPerWeaponState
-                .get(pair.m_State as usize)
-                .is_some_and(|&bone| bone == layout::hip_bone(side));
-            let point =
-                unsafe { place(owner, to_world, gun, docked, || gun_origin(gun), &mut grips) };
-            seen.push(gun as *const WeaponData as usize);
-            out.push((Socket::Hip(side), point));
-        }
-    }
-    grips.retain(|g| seen.contains(&g.gun));
-    out
-}
-
-/// A docked gun's grip on its dock bone, as last seen.
+/// A docked weapon's grip on its socket's bone, as last seen.
 #[derive(Debug, Copy, Clone)]
 struct DockGrip {
-    gun: usize,
-    bone: u32,
+    object: ObjectKey,
+    socket: Socket,
     local: Vec3,
 }
 
-/// The guns' grips on their dock bones, for the guns in the holsters' slots.
+/// The weapons' grips on their sockets' bones, for the weapons the table has on the body.
 static GRIPS: Mutex<Vec<DockGrip>> = Mutex::new(Vec::new());
 
-/// The weapon in `owner`'s `slot`.
-unsafe fn slot_weapon(owner: &Character, slot: WeaponSlot) -> Option<&WeaponBase> {
-    unsafe { owner.m_Inventory.m_Weapons.get(slot as usize)?.px.as_ref() }
+/// The object of the weapon `hand` holds in `snapshot`.
+fn held_object(snapshot: &LoadoutSnapshot, hand: Hand) -> Option<ObjectKey> {
+    snapshot
+        .held(hand)
+        .filter(|item| item.kind.weapon().is_some())
+        .and_then(|item| item.binding.address())
+        .map(|address| address.get())
 }
 
-/// The gun's origin in the world, from its last placement.
-fn gun_origin(gun: &WeaponData) -> Vec3 {
-    Mat4::from(gun.m_WorldMatrixT1).w_axis.truncate()
+/// Where a hand closes on `weapon`, in the world: its grip, or its first gun's origin without one.
+unsafe fn grip_point(weapon: &WeaponBase) -> Option<Vec3> {
+    let (points, _) = unsafe { steal::gun_points(weapon) }?;
+    points[0].is_finite().then_some(points[0])
 }
 
-/// The dock bone `gun` rides when holstered.
-fn holstered_bone(gun: &WeaponData) -> Option<u32> {
-    gun.m_lBoneAttachementPerWeaponState
-        .get(WeaponState::E_WS_HOLSTERED as usize)
-        .copied()
-        .filter(|&bone| layout::dock_bone(bone).is_some())
+/// The bone `socket` places a weapon on, bone-to-world.
+unsafe fn bone_world(owner: &Character, to_world: Mat4, socket: Socket) -> Option<Mat4> {
+    let pose = unsafe { grip::bone_model_pose(owner, sockets::bone(socket)) }?;
+    let bone = to_world * Mat4::from_rotation_translation(pose.orientation, pose.position);
+    bone.is_finite().then_some(bone)
 }
 
-/// Where a hand closes on `gun` in its holster: at `grip()` while it is `docked`, noting where that
-/// is on its dock bone in `grips`, and otherwise where the noted grip is on the bone now.
-unsafe fn place(
+/// Where the grip of the weapon at `object` would be on the free `socket`, in the world: where it
+/// was on the socket's bone when last seen there, or else at the bone, moved by the socket's offset
+/// when the game does not dock the weapon's slot there.
+unsafe fn dock_point(
     owner: &Character,
     to_world: Mat4,
-    gun: &WeaponData,
-    docked: bool,
-    grip: impl FnOnce() -> Vec3,
-    grips: &mut Vec<DockGrip>,
+    socket: Socket,
+    object: ObjectKey,
+    grips: &[DockGrip],
+    offsets: &Offsets,
 ) -> Option<Vec3> {
-    let bone = holstered_bone(gun)?;
-    let safe = layout::dock_bone(bone)?;
-    let pose = unsafe { grip::bone_model_pose(owner, safe) }?;
-    let bone_world = to_world * Mat4::from_rotation_translation(pose.orientation, pose.position);
-    let key = gun as *const WeaponData as usize;
-    if docked {
-        let point = grip();
-        if !point.is_finite() {
-            return None;
-        }
-        if let Some(local) = grip_on_bone(bone_world, point) {
-            grips.retain(|g| g.gun != key);
-            grips.push(DockGrip {
-                gun: key,
-                bone,
-                local,
-            });
-        }
-        return Some(point);
-    }
-    let local = grips
+    let bone = unsafe { bone_world(owner, to_world, socket) }?;
+    if let Some(grip) = grips
         .iter()
-        .find(|g| g.gun == key && g.bone == bone)
-        .map_or(Vec3::ZERO, |g| g.local);
-    let point = bone_world.transform_point3(local);
+        .find(|g| g.object == object && g.socket == socket)
+    {
+        return Some(bone.transform_point3(grip.local)).filter(|p| p.is_finite());
+    }
+    // SAFETY: the table holds the weapon in a hand, and a slot or the carry set keeps it alive.
+    let native = unsafe { (object as *const WeaponBase).as_ref() }
+        .and_then(|weapon| unsafe { slot_of(weapon) })
+        .is_some_and(|slot| socket.is_native(slot));
+    let offset = if native {
+        Vec3::ZERO
+    } else {
+        to_world.transform_vector3(offsets.of(socket))
+    };
+    let point = bone.w_axis.truncate() + offset;
     point.is_finite().then_some(point)
 }
 
@@ -241,65 +283,6 @@ mod tests {
     use glam::Quat;
 
     use super::*;
-
-    fn volume(volume: GrabVolume, centre: Vec3) -> Candidate {
-        Candidate {
-            volume,
-            centre,
-            radius: 0.1,
-            hand: None,
-        }
-    }
-
-    const BACK: Socket = Socket::Shoulder(Hand::Right);
-    const HIP: Socket = Socket::Hip(Hand::Left);
-
-    fn placed() -> Vec<Candidate> {
-        vec![
-            volume(GrabVolume::Holster(BACK), Vec3::new(0.2, 1.4, 0.1)),
-            volume(GrabVolume::Holster(HIP), Vec3::new(-0.2, 0.9, 0.0)),
-            volume(
-                GrabVolume::Holster(Socket::Chest),
-                Vec3::new(0.0, 1.2, -0.1),
-            ),
-        ]
-    }
-
-    #[test]
-    fn a_holster_sits_on_its_gun() {
-        let mut candidates = placed();
-        let gun = Vec3::new(0.1, 1.3, 0.25);
-        let seated = seat(
-            &mut candidates,
-            &[
-                HolsterGun {
-                    site: BACK,
-                    point: Some(gun),
-                },
-                HolsterGun {
-                    site: HIP,
-                    point: None,
-                },
-            ],
-        );
-        assert_eq!(seated.len(), 1);
-        assert_eq!(seated[0].volume, GrabVolume::Holster(BACK));
-        assert_eq!(seated[0].centre, gun);
-        assert_eq!(seated[0].radius, 0.1);
-        // The hip's gun could not be placed, so its holster stays on the landmarks with the chest's.
-        assert_eq!(candidates, placed()[1..]);
-    }
-
-    #[test]
-    fn a_holster_without_a_gun_is_not_offered() {
-        let mut candidates = placed();
-        let seated = seat(&mut candidates, &[]);
-        assert!(seated.is_empty());
-        assert_eq!(
-            candidates.iter().map(|c| c.volume).collect::<Vec<_>>(),
-            [GrabVolume::Holster(Socket::Chest)]
-        );
-    }
 
     #[test]
     fn a_grip_noted_on_its_bone_follows_the_bone() {

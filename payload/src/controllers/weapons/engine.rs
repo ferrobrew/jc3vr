@@ -14,10 +14,18 @@ use crate::controllers::{
     config::AimConfig,
     frame::{Hand, Pose},
     hands::{ik::TickTarget, late, pose as hand_pose},
-    weapons::{config::ForegripConfig, foregrip::GripGeometry, heft::HeftClass, holster::Wielded},
+    weapons::{config::ForegripConfig, foregrip::GripGeometry, heft::HeftClass},
 };
 
-/// The local player's wielded weapon.
+/// A weapon in the hands: its slot and the hands holding one of its guns.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Wielded {
+    pub slot: WeaponSlot,
+    /// Which hands hold one of its guns, indexed by [`Hand::index`].
+    pub hands: [bool; 2],
+}
+
+/// A weapon of the local player's in the hands: the wielded one, or one armed in a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HeldWeapon {
     pub address: usize,
