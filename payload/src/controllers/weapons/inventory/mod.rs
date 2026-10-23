@@ -48,10 +48,10 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::{ObjectAddress, Place, SlotObject, Socket, TakeSource, live},
+    loadout::{ObjectAddress, Place, SlotObject, Socket, live},
     weapons::{
         dual_wield::single,
-        hold::{self, holder::Cause, refs::Strong, second},
+        hold::{refs::Strong, second},
         inventory::{config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World},
     },
 };
@@ -105,22 +105,27 @@ pub fn status() -> InventoryStatus {
 /// What the weapon handling hands the inventory each input tick.
 pub(crate) struct TickInputs {
     pub settings: InventoryConfig,
-    /// The dominant hand, whose hip takes a pistol first.
+    /// The dominant hand, whose hip takes a pistol first, and which a weapon the game wields on
+    /// its own lands in when it is free.
     pub dominant: Hand,
-    /// The wielded weapon and the hand holding it.
-    pub wielded: Option<(ObjectKey, Option<Hand>)>,
+    /// The weapon the game wields in the hands.
+    pub wielded: Option<ObjectKey>,
     /// The weapon the mod drives in a hand, and that hand.
     pub driven: Option<(ObjectKey, Hand)>,
     /// Whether the pistols are made separate ([`single`]).
     pub separate_pistols: bool,
 }
 
-/// Fold one input tick of the old handling into the loadout table, and act on the pins.
+/// Fold one input tick of the old handling into the loadout table, and act on the pins. Returns
+/// the wielded weapon's arrival in a hand, when it came into one this tick.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
+pub(crate) unsafe fn input_tick(
+    owner: &mut Character,
+    inputs: &TickInputs,
+) -> Option<live::Arrival> {
     if inputs.settings.enabled {
         let slots = unsafe { live_slots(owner) };
         live::begin_tick(inputs.dominant, &slots);
@@ -138,7 +143,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             restore::clear();
             single::clear();
         }
-        return;
+        return None;
     }
     if !inputs.settings.carry && carry::count() > 0 {
         second::carry_released();
@@ -168,6 +173,19 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
         // SAFETY: the carry set keeps the weapon alive.
         unsafe { state.world.watch(&*(seen.object as *const WeaponBase)) };
     }
+    // SAFETY: the hands' weapons were read live this tick.
+    let wielded = inputs.wielded.and_then(|object| unsafe { held_of(object) });
+    let second = inputs
+        .driven
+        .and_then(|(object, hand)| Some((hand, unsafe { held_of(object) }?)));
+    for held in wielded.iter().chain(second.iter().map(|(_, held)| held)) {
+        // SAFETY: as above; a heavy weapon is in no tracked slot, and is watched here.
+        unsafe {
+            state
+                .world
+                .watch(&*(held.object.get() as *const WeaponBase))
+        };
+    }
     let live_slots: Vec<SlotObject> = slots
         .iter()
         .filter_map(|(s, _)| live_slot(s.object))
@@ -182,8 +200,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             ))
         })
         .collect();
-    let (hands, sources) = unsafe { old_hands(inputs) };
-    let old = old_places(&live_slots, &live_carried, hands);
+    let old = old_places(&live_slots, &live_carried, wielded, second);
     // The table's weapons the old handling keeps nowhere, and the ones another character took,
     // are asked what became of them.
     let unplaced: Vec<ObjectAddress> = live::bound()
@@ -193,11 +210,11 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
         .chain(state.world.with_others())
         .collect();
     let fates = unsafe { state.world.fates(&unplaced, owner, player) };
-    live::input_tick(&live::Tick {
+    let arrival = live::input_tick(&live::Tick {
         slots: &live_slots,
         carried: &live_carried,
-        hands,
-        sources,
+        wielded,
+        second,
         fates: &fates,
         old: &old,
     });
@@ -265,72 +282,63 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             },
         )
     };
+    arrival
 }
 
-/// What the old hand authorities hold, by [`Hand::index`], and where a weapon the table does not
-/// know came from when it comes into each hand: the wielded weapon in its holder's hand, from where
-/// the holder says it came, and the second weapon in its own, from the ground.
+/// The weapon at `object`, read live this tick, as the table takes one into a hand: a weapon of
+/// a tracked slot, or a heavy weapon, which the table holds only while a hand holds it.
 ///
 /// # Safety
 ///
-/// The weapons `inputs` names must be live, as read this tick.
-unsafe fn old_hands(inputs: &TickInputs) -> ([Option<live::Held>; 2], [TakeSource; 2]) {
-    let held = |object: ObjectKey| {
-        // SAFETY: the hands' weapons were read live this tick.
-        let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
-        Some(live::Held {
-            object: engine::object_address(weapon)?,
-            weapon: unsafe { engine::weapon_type(weapon) }
-                .filter(|w| engine::TRACKED_SLOTS.contains(&w.slot()))?,
-        })
-    };
-    let mut hands = [None; 2];
-    let mut sources = [TakeSource::World; 2];
-    if let Some((object, Some(hand))) = inputs.wielded {
-        hands[hand.index()] = held(object);
-        sources[hand.index()] = match hold::origin() {
-            Some(Cause::Pickup) => TakeSource::World,
-            Some(Cause::Steal) => TakeSource::Character,
-            Some(Cause::Rack) => TakeSource::Rack,
-            Some(Cause::Draw) | None => TakeSource::Give,
-        };
-    }
-    if let Some((object, hand)) = inputs.driven {
-        hands[hand.index()] = held(object);
-    }
-    (hands, sources)
+/// `object` must be a live weapon, read this tick.
+pub(crate) unsafe fn held_of(object: ObjectKey) -> Option<live::Held> {
+    let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
+    Some(live::Held {
+        object: engine::object_address(weapon)?,
+        weapon: unsafe { engine::weapon_type(weapon) }.filter(|w| {
+            engine::TRACKED_SLOTS.contains(&w.slot()) || w.slot() == WeaponSlot::E_SLOT_HEAVY
+        })?,
+    })
 }
 
-/// Where the old handling keeps each weapon: in a hand, carried on its socket (or stashed by a
-/// mission), or holstered in its slot.
+/// Where the old handling keeps each weapon: wielded in the hands, the second weapon in its hand,
+/// carried on its socket (or stashed by a mission), or holstered in its slot.
 fn old_places(
     slots: &[SlotObject],
     carried: &[(ObjectAddress, u32, Socket)],
-    hands: [Option<live::Held>; 2],
+    wielded: Option<live::Held>,
+    second: Option<(Hand, live::Held)>,
 ) -> Vec<(ObjectAddress, live::OldPlace)> {
-    let hand_of = |object: ObjectAddress| {
-        Hand::BOTH
-            .into_iter()
-            .find(|hand| hands[hand.index()].is_some_and(|h| h.object == object))
+    let in_hands = |object: ObjectAddress| {
+        if wielded.is_some_and(|w| w.object == object) {
+            return Some(live::OldPlace::Wielded);
+        }
+        second
+            .filter(|(_, held)| held.object == object)
+            .map(|(hand, _)| live::OldPlace::Hand(hand))
     };
     let stashed = carry::stashed();
     let slot_places = slots.iter().map(|slot| {
-        let place = match hand_of(slot.object) {
-            Some(hand) => live::OldPlace::Hand(hand),
-            None => live::OldPlace::Slot(slot.weapon.slot()),
-        };
+        let place = in_hands(slot.object).unwrap_or(live::OldPlace::Slot(slot.weapon.slot()));
         (slot.object, place)
     });
     let carried_places = carried.iter().map(|&(object, _, socket)| {
-        let place = match hand_of(object) {
-            Some(hand) => live::OldPlace::Hand(hand),
+        let place = match in_hands(object) {
+            Some(place) => place,
             // A mission's stash keeps the carried weapons, which the mission took.
             None if stashed => live::OldPlace::Elsewhere,
             None => live::OldPlace::Socket(socket),
         };
         (object, place)
     });
-    slot_places.chain(carried_places).collect()
+    let mut places: Vec<_> = slot_places.chain(carried_places).collect();
+    // A heavy weapon is in no tracked slot; while wielded, it is in the hands.
+    if let Some(w) = wielded
+        && !places.iter().any(|(object, _)| *object == w.object)
+    {
+        places.push((w.object, live::OldPlace::Wielded));
+    }
+    places
 }
 
 /// The weapons in `owner`'s tracked slots, as the live table reads them.

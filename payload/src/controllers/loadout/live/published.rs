@@ -1,0 +1,81 @@
+//! The live table as the placement and the other detours read it: each hand's weapon, lock-free,
+//! and the place of every item the table has on the body.
+//!
+//! The detours run on the simulation's worker threads for every character, so the hands are
+//! published as one object address per hand ([`hand_of`], [`in_hand`]), compared before any lock.
+//! The places on the body ([`place_of`]) are behind a leaf lock of their own, which only the local
+//! player's placement takes. Both are written from the table under its lock, after every fold that
+//! can move an item: at the end of each input tick, and at once for the moves the hands make
+//! between ticks, so the next placement already follows them.
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    frame::Hand,
+    loadout::{
+        binding::ObjectAddress,
+        item::ItemKind,
+        table::{Loadout, Place},
+    },
+};
+
+/// The hand holding the weapon at `address`, when the table has it in one.
+pub(crate) fn hand_of(address: usize) -> Option<Hand> {
+    if address == 0 {
+        return None;
+    }
+    Hand::BOTH
+        .into_iter()
+        .find(|hand| HANDS[hand.index()].load(Ordering::Relaxed) == address)
+}
+
+/// The weapon in `hand`, when the table has one there.
+pub(crate) fn in_hand(hand: Hand) -> Option<usize> {
+    match HANDS[hand.index()].load(Ordering::Relaxed) {
+        0 => None,
+        address => Some(address),
+    }
+}
+
+/// Where on the body the table has the object at `address`: a hand or a socket.
+pub(crate) fn place_of(address: usize) -> Option<Place> {
+    PLACES
+        .lock()
+        .iter()
+        .find(|(object, _)| object.get() == address)
+        .map(|&(_, place)| place)
+}
+
+/// Publish `table`'s hands and its places on the body.
+pub(super) fn publish(table: &Loadout) {
+    for hand in Hand::BOTH {
+        let weapon = table
+            .held(hand)
+            .filter(|item| matches!(item.kind, ItemKind::Weapon(_)))
+            .and_then(|item| item.binding.address())
+            .map_or(0, ObjectAddress::get);
+        HANDS[hand.index()].store(weapon, Ordering::Relaxed);
+    }
+    let mut places = PLACES.lock();
+    places.clear();
+    places.extend(table.items().filter_map(|item| {
+        let object = item.binding.address()?;
+        match item.place {
+            Place::Hand(_) | Place::Socket(_) => Some((object, item.place)),
+            Place::World(_) => None,
+        }
+    }));
+}
+
+/// Publish an empty table: the table stopped.
+pub(super) fn clear() {
+    for hand in &HANDS {
+        hand.store(0, Ordering::Relaxed);
+    }
+    PLACES.lock().clear();
+}
+
+static HANDS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
+static PLACES: Mutex<Vec<(ObjectAddress, Place)>> = Mutex::new(Vec::new());

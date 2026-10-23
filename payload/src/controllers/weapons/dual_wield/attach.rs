@@ -143,6 +143,11 @@ pub(crate) fn holster(hand: Hand) -> bool {
     TICK.lock().change(|h| h.holster(hand))
 }
 
+/// Whether the pistols' layout owns the attach bones of the weapon at `address`.
+pub(crate) fn owns(address: usize) -> bool {
+    address != 0 && OWNED.load(Ordering::Relaxed) == address
+}
+
 /// Stop owning the attach bones; the game's end-of-pass rewrite restores its own layout.
 pub(crate) fn clear() {
     OWNED.store(0, Ordering::Relaxed);

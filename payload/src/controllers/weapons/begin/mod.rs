@@ -67,11 +67,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         },
     );
     let holding = config.weapons.hold;
-    // A weapon the game wields on its own goes to the hand without the second weapon.
-    let second_hand = second::hand();
-    let hold_settings = holding.either_hand.then_some(hold::Settings {
-        fallback: second_hand.map_or(config.acting_hand(), Hand::other),
-    });
     // SAFETY: the input tick runs on the main thread outside the world update.
     let ticked = unsafe {
         engine::local_player().map_or(Ticked::default(), |owner| {
@@ -86,7 +81,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             }
             second::show_magazine(Some(owner), gameplay && holding.magazine_pips);
             let pair = dual_wield::attach::input_tick(owner, settings);
-            let holder = hold::input_tick(owner, hold_settings, pair.is_some());
+            // The table lands the wielded weapon in a hand first; the hold then follows it there.
+            let wielded = hold::wielded(owner);
+            let arrival = inventory::input_tick(
+                owner,
+                &inventory::TickInputs {
+                    settings: config.weapons.inventory,
+                    dominant: config.acting_hand(),
+                    wielded,
+                    driven: second::driven(),
+                    separate_pistols: config.weapons.separate_pistols,
+                },
+            );
+            let holder = hold::input_tick(owner, wielded, holding.either_hand, arrival);
             let weapon =
                 engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder));
             let second = second::held_weapon(owner);
@@ -99,16 +106,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             } else {
                 guns::GunHolds::default()
             });
-            inventory::input_tick(
-                owner,
-                &inventory::TickInputs {
-                    settings: config.weapons.inventory,
-                    dominant: config.acting_hand(),
-                    wielded: weapon.map(|w| (w.address, w.holder)),
-                    driven: second.and_then(|w| Some((w.address, w.holder?))),
-                    separate_pistols: config.weapons.separate_pistols,
-                },
-            );
             Ticked {
                 weapon,
                 second,

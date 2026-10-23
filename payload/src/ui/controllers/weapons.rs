@@ -29,10 +29,9 @@ use crate::{
             grip_watch::{self, GripWatchStatus},
             heft::{self, HeftStatus},
             hold::{
-                self, HoldStatus,
+                self, Cause, HoldStatus,
                 act::{self, DockStatus},
                 dock::SnapKind,
-                holder::Cause,
                 second::{self, SecondStatus, Source},
             },
             holster::slot_label,
@@ -273,11 +272,12 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
         "Hold: weapon in {} · bones owned {} · waiting {} · handovers {} · writes {} · snaps {}",
         h.holder.map_or("no hand", Hand::label),
         yes_no(h.owned),
-        h.pending.map_or("nothing".to_owned(), |p| format!(
-            "{} for the {} hand",
-            p.cause.label(),
-            p.hand.label()
-        )),
+        h.pending
+            .map_or("nothing".to_owned(), |(hand, cause)| format!(
+                "{} for the {} hand",
+                cause.label(),
+                hand.label()
+            )),
         h.handovers,
         h.writes,
         h.snaps

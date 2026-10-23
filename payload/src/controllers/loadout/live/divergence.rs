@@ -27,6 +27,9 @@ pub(crate) enum OldPlace {
     /// In its slot, holstered on the game's dock bone.
     Slot(WeaponSlot),
     Hand(Hand),
+    /// Wielded by the game, in whichever hand the table has it: the table says which hand holds
+    /// the wielded weapon.
+    Wielded,
     /// In the carry set, on this socket.
     Socket(Socket),
     /// Not the player's: stashed by a mission.
@@ -38,6 +41,7 @@ impl fmt::Display for OldPlace {
         match self {
             OldPlace::Slot(slot) => write!(f, "in the {} slot", slot_label(*slot)),
             OldPlace::Hand(hand) => write!(f, "in the {} hand", hand.label()),
+            OldPlace::Wielded => f.write_str("wielded"),
             OldPlace::Socket(socket) => write!(f, "carried on {socket}"),
             OldPlace::Elsewhere => f.write_str("not the player's"),
         }
@@ -85,6 +89,7 @@ pub(crate) fn diverging(
     let agree = |old: OldPlace, table: Option<Place>| match (old, table) {
         (OldPlace::Slot(slot), Some(Place::Socket(socket))) => socket.is_native(slot),
         (OldPlace::Hand(old), Some(Place::Hand(table))) => old == table,
+        (OldPlace::Wielded, Some(Place::Hand(_))) => true,
         (OldPlace::Socket(old), Some(Place::Socket(table))) => old == table,
         (OldPlace::Elsewhere, None) => true,
         _ => false,

@@ -46,8 +46,7 @@ use crate::controllers::{
         dual_wield,
         engine::{self, slot_from_raw},
         hold::{
-            self, act,
-            holder::Cause,
+            self, Cause, act,
             pickup::{self, Refusal, TakeOptions},
             refs::Strong,
             steal,

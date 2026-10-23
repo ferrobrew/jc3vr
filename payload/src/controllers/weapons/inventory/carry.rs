@@ -8,12 +8,13 @@
 //! The mod does the first two:
 //!
 //! - it places each carried weapon after the inventory's own placement
-//!   ([`Inventory::UpdateAttachmentTransforms`], from the hold's detour), through the weapon's
+//!   ([`Inventory::UpdateAttachmentTransforms`], from the hold's detour), where the loadout table
+//!   has it ([`crate::controllers::loadout::live::place_of`]): on a socket, through the weapon's
 //!   placement virtual ([`WeaponBase::UpdateAttachmentTransforms`]) with its guns' holstered
-//!   attach-bone entries naming the socket's bone, and then moves the guns by the socket's offset
-//!   in the character's frame ([`place`]);
-//! - it shows or hides the carried weapons whenever the inventory's weapons are
-//!   ([`Inventory::UpdateWeaponVisibility`], detoured);
+//!   attach-bone entries naming the socket's bone, and then moved by the socket's offset in the
+//!   character's frame; in a hand, on the hand's bone that the second weapon writes ([`place`]);
+//! - it shows or hides the carried weapons the table has on the body whenever the inventory's
+//!   weapons are ([`Inventory::UpdateWeaponVisibility`], detoured);
 //! - it ends each pose-finalization pass for them as the game ends it for the slots' weapons
 //!   ([`end_pass`], from the hold's detour of [`Inventory::UpdateInventoryPostFinalizePose`]):
 //!   a skip of the render interpolation lasts until then, and no inventory clears it for a carried
@@ -53,7 +54,7 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::ik,
-    loadout::Socket,
+    loadout::{Place, Socket, live},
     weapons::{
         dual_wield::single,
         hold::{refs::Strong, steal},
@@ -207,9 +208,9 @@ pub(crate) fn count() -> usize {
     COUNT.load(Ordering::Relaxed)
 }
 
-/// Set every carried weapon's offset from its socket's bone, in the character's frame, from the
-/// settings.
+/// Set each socket's offset from its bone, in the character's frame, from the settings.
 pub(crate) fn set_offsets(offset_of: impl Fn(Socket) -> Vec3) {
+    *OFFSETS.lock() = Socket::ALL.map(&offset_of);
     for carried in CARRY.lock().iter_mut() {
         carried.offset = offset_of(carried.socket);
     }
@@ -508,6 +509,7 @@ pub(crate) unsafe fn place(
         return;
     }
     let to_world = Mat4::from(character.m_WorldMatrixT1);
+    let offsets = *OFFSETS.lock();
     let carry = CARRY.lock();
     for carried in carry.iter() {
         // SAFETY: the set's strong reference keeps the weapon alive.
@@ -515,12 +517,16 @@ pub(crate) unsafe fn place(
         if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             continue;
         }
-        // A weapon in a hand rides the hand's bone, which the second weapon's own writes name.
-        if carried.in_hand.is_some() {
-            unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
-            continue;
-        }
-        let bone = sockets::bone(carried.socket) as u32;
+        let socket = match live::place_of(carried.object) {
+            Some(Place::Socket(socket)) => socket,
+            // A weapon in a hand rides the hand's bone, which the second weapon's own writes name.
+            Some(Place::Hand(_)) => {
+                unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
+                continue;
+            }
+            Some(Place::World(_)) | None => continue,
+        };
+        let bone = sockets::bone(socket) as u32;
         for data in unsafe { guns_mut(weapon) } {
             if let Some(entry) = data
                 .m_lBoneAttachementPerWeaponState
@@ -530,7 +536,7 @@ pub(crate) unsafe fn place(
             }
         }
         unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
-        let shift = to_world.transform_vector3(carried.offset);
+        let shift = to_world.transform_vector3(offsets[socket.index()]);
         if shift == Vec3::ZERO || !shift.is_finite() {
             continue;
         }
@@ -607,6 +613,8 @@ impl Carried {
 }
 
 static CARRY: Mutex<Vec<Carried>> = Mutex::new(Vec::new());
+/// Each socket's offset from its bone, in the character's frame, by [`Socket::index`].
+static OFFSETS: Mutex<[Vec3; Socket::COUNT]> = Mutex::new([Vec3::ZERO; Socket::COUNT]);
 /// How many weapons are carried: the detours' check before any lock.
 static COUNT: AtomicUsize = AtomicUsize::new(0);
 /// Whether the carried weapons are stashed for a mission.
@@ -682,6 +690,9 @@ fn update_weapon_visibility(inventory: *mut Inventory, visible: bool) {
     }
     let visible = visible && !stashed();
     for carried in CARRY.lock().iter() {
+        if live::place_of(carried.object).is_none() {
+            continue;
+        }
         // SAFETY: the set's strong reference keeps the weapon alive.
         unsafe { (*carried.weapon()).SetVisible(visible, false, false) };
     }

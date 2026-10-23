@@ -11,7 +11,7 @@ use crate::{
         menu::read_config,
         weapons::{
             self,
-            hold::{self, holder::Cause, second},
+            hold::{self, Cause, second},
             holster::slot_label,
             regions::{self, HandRole},
             reload::{

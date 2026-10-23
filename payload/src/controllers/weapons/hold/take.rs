@@ -21,8 +21,7 @@ use crate::controllers::{
         config::HoldConfig,
         docks, engine,
         hold::{
-            self,
-            holder::Cause,
+            self, Cause,
             pickup::TakeOptions,
             rack::{self, RackRefusal},
             steal::{self, StealRefusal},

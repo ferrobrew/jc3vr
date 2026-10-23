@@ -749,7 +749,7 @@ fn act_with_game(
             if independent && slot == WeaponSlot::E_SLOT_DUAL_WIELD {
                 dual_wield::attach::begin_draw(hand);
             }
-            hold::begin(hand, hold::holder::Cause::Draw, None);
+            hold::begin(hand, hold::Cause::Draw, None);
             // The game acts on a slot select when its input is released, so a one-tick click
             // selects.
             desired.push(Desired {

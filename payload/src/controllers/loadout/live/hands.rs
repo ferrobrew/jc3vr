@@ -1,11 +1,10 @@
 //! The old weapon handling's hand moves, as events for the live table. Pure.
 //!
-//! The old handling keeps two hand authorities, the holder of the wielded weapon and the second
-//! weapon, and every draw, holster, stow, take, hand-over, and drop it makes changes what one of
-//! them holds. Each input tick compares what they held at the last tick with what they hold now: a
-//! weapon that left a hand is a [`departure`], and one that came into a hand an [`arrival`]. Each is
-//! made against the table as it is at that moment, departures first, so a weapon handed from one
-//! hand to the other finds the other hand empty.
+//! The old handling keeps two weapons in the hands, the wielded weapon and the second weapon, and
+//! every draw, holster, stow, take, hand-over, and drop it makes changes one of them. A weapon the
+//! table has in a hand that the old handling no longer has there is a [`departure`], and one that
+//! came into a hand an [`arrival`]. Each is made against the table as it is at that moment,
+//! departures first, so a weapon handed from one hand to the other finds the other hand empty.
 //!
 //! A move the table already shows sends nothing, and a hand the table disagrees about is left as
 //! the table has it: the divergence readout

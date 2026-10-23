@@ -2,12 +2,15 @@
 //! and published as a snapshot each input tick.
 //!
 //! For now the table is dual-written beside the old weapon handling
-//! ([`crate::controllers::weapons`]), which still moves the weapons, and only the readouts and the
-//! pins of the weapons lying in the world read it. Every move the old handling makes is also sent
-//! here as an event:
+//! ([`crate::controllers::weapons`]), which still moves the weapons between the slots, the carry
+//! set, and the world. The table says which hand holds what: the placement reads its hands and its
+//! places on the body ([`published`]), and a weapon the game wields lands in the hand a grab
+//! expected, or in a free hand for the game's own draw ([`expect`]). Every move the old handling
+//! makes is also sent here as an event:
 //!
-//! - the hand moves (the draws, holsters, stows, takes, hand-overs, and drops of the holder of the
-//!   wielded weapon and of the second weapon) at the input tick that sees them ([`hands`]);
+//! - the hand moves (the draws, holsters, stows, takes, hand-overs, and drops of the wielded weapon
+//!   and of the second weapon), at once from the call that makes them where it can, and otherwise
+//!   at the input tick that sees them ([`hands`]);
 //! - what the game did with a weapon the old handling no longer keeps in a slot, the carry set, or
 //!   a hand (its fate, from the inventory's weak reference to it): a weapon the game dropped lies in
 //!   the world, and one gone or taken by another character leaves;
@@ -23,27 +26,32 @@
 //!
 //! The table is behind one lock. The input tick and the detours (the reset's, the store's, and the
 //! mission cache's, on whatever thread the game runs them) fold their events under it, and make no
-//! engine call and take no other lock while they hold it. The readouts read the published status,
-//! a leaf lock of its own.
+//! engine call and take no other lock while they hold it but the published places' and the
+//! status's, leaf locks of their own, which the placement and the readouts read.
 
 mod divergence;
+mod expect;
 mod hands;
+mod published;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use parking_lot::Mutex;
 
 pub use crate::controllers::loadout::live::divergence::Divergence;
 pub(crate) use crate::controllers::loadout::live::{
     divergence::OldPlace,
+    expect::{Expect, Pending},
     hands::{Held, Whereabouts},
+    published::{hand_of, in_hand, place_of},
 };
 use crate::controllers::{
     frame::Hand,
     loadout::{
         binding::{Awaiting, Binding, ObjectAddress},
         event::Event,
-        live::divergence::diverging,
+        item::ItemKind,
+        live::{divergence::diverging, expect::landing},
         projection::StoreProjection,
         reset::{CacheKind, ResetKind, SlotObject},
         socket::{BodyLayout, Socket},
@@ -89,11 +97,10 @@ pub(crate) struct Tick<'a> {
     pub slots: &'a [SlotObject],
     /// The carry set's weapons: each one's object, its spawn tag's hash, and its socket.
     pub carried: &'a [(ObjectAddress, u32, Socket)],
-    /// What each hand holds, by [`Hand::index`]: the wielded weapon in its holder's hand, the
-    /// second weapon in its own.
-    pub hands: [Option<Held>; 2],
-    /// Where a weapon the table does not know came from when it comes into each hand.
-    pub sources: [TakeSource; 2],
+    /// The weapon the game wields in the hands.
+    pub wielded: Option<Held>,
+    /// The second weapon, and the hand the old handling holds it in.
+    pub second: Option<(Hand, Held)>,
     /// What became of the table's weapons the old handling no longer keeps in a slot, the carry
     /// set, or a hand.
     pub fates: &'a [(ObjectAddress, Fate)],
@@ -110,12 +117,15 @@ pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject]) {
     live.table.set_body(BodyLayout::full(dominant));
     if !live.started {
         live.started = true;
-        live.hands = [None; 2];
+        live.pending = None;
+        live.origins = [None; 2];
+        live.last = None;
         live.reset = ResetWatch::default();
         live.fold(Event::ResetCompleted {
             kind: ResetKind::Load,
             slots: slots.to_vec(),
         });
+        live.publish_places();
         return;
     }
     if live.reset.completed {
@@ -143,17 +153,32 @@ pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject]) {
         }
         MissionWatch::Idle | MissionWatch::Taken | MissionWatch::Emptied => {}
     }
+    live.publish_places();
+}
+
+/// A weapon the game wields that came into a hand this tick, and the expectation it met (`None`
+/// for the game's own draw).
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct Arrival {
+    pub hand: Hand,
+    pub expect: Option<Expect>,
 }
 
 /// Fold one input tick of the old handling into the table, check the table against it, and
-/// publish the table.
-pub(crate) fn input_tick(tick: &Tick) {
+/// publish the table. Returns the wielded weapon's arrival in a hand, when it came into one.
+pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
     let mut live = LIVE.lock();
     if !live.started {
-        return;
+        return None;
     }
+    let now = Instant::now();
+    let dt_s = live
+        .last
+        .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
+    live.last = Some(now);
+    live.pending = live.pending.and_then(|p| p.aged(dt_s));
     live.rebind_kept(tick.carried);
-    live.hand_moves(tick);
+    let arrival = live.hand_moves(tick);
     for &(object, fate) in tick.fates {
         let place = live.place_of(object);
         let event = match (fate, place) {
@@ -181,6 +206,7 @@ pub(crate) fn input_tick(tick: &Tick) {
         );
         live.diverged = divergence.len();
     }
+    live.publish_places();
     let published = live.published();
     drop(live);
     let mut status = STATUS.lock();
@@ -189,6 +215,92 @@ pub(crate) fn input_tick(tick: &Tick) {
         divergence,
         ..published
     };
+    arrival
+}
+
+/// `hand` expects the next weapon the game wields, or `weapon` when it is named, to come into it
+/// as `expect` says: a grab started a draw or a take that the game carries out.
+pub(crate) fn expect(hand: Hand, expect: Expect, weapon: Option<ObjectAddress>) {
+    LIVE.lock().pending = Some(Pending::new(hand, expect, weapon));
+}
+
+/// The hand expecting a weapon, while one is.
+pub(crate) fn pending() -> Option<Pending> {
+    LIVE.lock().pending
+}
+
+/// What brought the weapon in `hand` there, as far as the hands know: the expectation it met, or
+/// `None` for the game's own draw.
+pub(crate) fn origin(hand: Hand) -> Option<Expect> {
+    LIVE.lock().origins[hand.index()]
+}
+
+/// The game now wields `held`, which a call the mod made put into the hands (an equip or a
+/// pickup): it lands in the hand that expected it, or in a free one, at once rather than at the
+/// next input tick, so that the next placement already puts it there. Left to the next input tick
+/// when that hand still holds the weapon the call replaced, whose departure the tick sees first.
+/// Returns its arrival, when it landed now.
+pub(crate) fn adopt(held: Held) -> Option<Arrival> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    let arrival = live.land(held);
+    live.publish_places();
+    arrival
+}
+
+/// Hand the weapon at `object` from the other hand to `to`, when the table has it there and `to`
+/// is empty. Returns whether it moved.
+pub(crate) fn hand_over(to: Hand, object: ObjectAddress) -> bool {
+    let mut live = LIVE.lock();
+    let from = to.other();
+    let movable = live.started
+        && live.table.held(to).is_none()
+        && live
+            .table
+            .held(from)
+            .is_some_and(|item| item.binding == Binding::Live(object));
+    if !movable {
+        return false;
+    }
+    live.fold(Event::HandOver { from });
+    let moved = live.hand_holding(object) == Some(to);
+    if moved {
+        live.origins[to.index()] = live.origins[from.index()].take();
+    }
+    live.publish_places();
+    moved
+}
+
+/// The old handling put `held` into `hand` (the second weapon, taken off the body): the table
+/// takes the move at once. Returns whether the table holds it there.
+pub(crate) fn arrive(hand: Hand, held: Held) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return false;
+    }
+    if let Some(event) = hands::arrival(&live.table, hand, held, TakeSource::World) {
+        live.fold(event);
+        if live.hand_holding(held.object) == Some(hand) {
+            live.origins[hand.index()] = Some(Expect::Draw);
+        }
+    }
+    live.publish_places();
+    live.hand_holding(held.object) == Some(hand)
+}
+
+/// The old handling took the weapon at `object` out of `hand` to `whereabouts` (the second weapon,
+/// put back or let fall): the table takes the move at once.
+pub(crate) fn depart(hand: Hand, object: ObjectAddress, whereabouts: Whereabouts) {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    if let Some(event) = hands::departure(&live.table, hand, object, whereabouts) {
+        live.fold(event);
+    }
+    live.publish_places();
 }
 
 /// Every live object the table's items are bound to, and where each is, as of now.
@@ -223,7 +335,10 @@ pub(crate) fn stop() {
     live.started = false;
     live.table = Loadout::new(live.table.body());
     live.mission = MissionWatch::Idle;
+    live.pending = None;
+    live.origins = [None; 2];
     live.push("loadout: the table stopped, the inventory is off".to_owned());
+    published::clear();
     let published = live.published();
     drop(live);
     *STATUS.lock() = published;
@@ -247,6 +362,7 @@ pub(crate) fn reset_began(died: bool, released: &[ObjectAddress]) {
             });
         }
     }
+    live.publish_places();
 }
 
 /// The spawn reset is done: the next input tick reports the slots it left.
@@ -290,6 +406,7 @@ pub(crate) fn mission_took() {
         target: Removal::AllWeapons,
         why: RemovalWhy::Mission,
     });
+    live.publish_places();
 }
 
 /// The mod spawned `restored` to stand for a weapon the player has, and the old handling carries it
@@ -298,6 +415,7 @@ pub(crate) fn restored(restored: Restored) {
     let mut live = LIVE.lock();
     if live.started {
         live.fold(Event::Restored(restored));
+        live.publish_places();
     }
 }
 
@@ -308,8 +426,12 @@ struct Live {
     table: Loadout,
     /// Whether the table runs: it starts from the slots on the first tick with the inventory on.
     started: bool,
-    /// What the old hand authorities held at the last tick, by [`Hand::index`].
-    hands: [Option<ObjectAddress>; 2],
+    /// The hand expecting the next weapon the game wields: per-hand runtime state, not a place.
+    pending: Option<Pending>,
+    /// What brought each hand's weapon there, by [`Hand::index`], for the readouts.
+    origins: [Option<Expect>; 2],
+    /// When the last input tick ran, for the expectation's age.
+    last: Option<Instant>,
     reset: ResetWatch,
     mission: MissionWatch,
     transitions: u64,
@@ -341,6 +463,27 @@ enum MissionWatch {
 }
 
 impl Live {
+    const fn new() -> Live {
+        Live {
+            table: Loadout::new(BodyLayout::full(Hand::Right)),
+            started: false,
+            pending: None,
+            origins: [None; 2],
+            last: None,
+            reset: ResetWatch {
+                completed: false,
+                died: false,
+                loaded: false,
+            },
+            mission: MissionWatch::Idle,
+            transitions: 0,
+            refusals: 0,
+            last_store: None,
+            log: Vec::new(),
+            diverged: 0,
+        }
+    }
+
     /// Fold `event`, logging what it did or why it was refused.
     fn fold(&mut self, event: Event) {
         let store = matches!(event, Event::StoreImminent);
@@ -363,16 +506,22 @@ impl Live {
         }
     }
 
-    /// The old hands' moves since the last tick: first each weapon that left a hand for somewhere
-    /// no hand is, then each that came into one.
-    fn hand_moves(&mut self, tick: &Tick) {
-        let now = tick.hands.map(|held| held.map(|h| h.object));
-        let before = std::mem::replace(&mut self.hands, now);
+    /// The old handling's hand moves the table has not seen yet: first each weapon in a hand of the
+    /// table's that the old handling no longer has there (neither wielded nor the second weapon),
+    /// then the second weapon coming into its hand, then the wielded weapon landing in a hand when
+    /// the table has it in none. Returns the wielded weapon's arrival.
+    fn hand_moves(&mut self, tick: &Tick) -> Option<Arrival> {
+        let wielded = tick.wielded.map(|h| h.object);
+        let second = tick.second.map(|(_, h)| h.object);
         for hand in Hand::BOTH {
-            let Some(object) = before[hand.index()] else {
+            let Some(object) = self
+                .table
+                .held(hand)
+                .and_then(|item| item.binding.address())
+            else {
                 continue;
             };
-            if now.contains(&Some(object)) {
+            if Some(object) == wielded || Some(object) == second {
                 continue;
             }
             let whereabouts = whereabouts(tick, object);
@@ -380,18 +529,73 @@ impl Live {
                 self.fold(event);
             }
         }
-        for hand in Hand::BOTH {
-            let Some(held) = tick.hands[hand.index()] else {
-                continue;
-            };
-            if before[hand.index()] == Some(held.object) {
-                continue;
-            }
-            if let Some(event) = hands::arrival(&self.table, hand, held, tick.sources[hand.index()])
-            {
-                self.fold(event);
+        if let Some((hand, held)) = tick.second
+            && let Some(event) = hands::arrival(&self.table, hand, held, TakeSource::World)
+        {
+            self.fold(event);
+            if self.hand_holding(held.object) == Some(hand) {
+                self.origins[hand.index()] = Some(Expect::Draw);
             }
         }
+        self.land(tick.wielded?)
+    }
+
+    /// Land the weapon `held` the game wields in a hand, when the table has it in none: the hand
+    /// that expected it, or a free one. Nothing is folded while that hand holds something, and the
+    /// expectation is kept: the weapon is left to the game's layout until the hand empties, rather
+    /// than refused anew every tick.
+    fn land(&mut self, held: Held) -> Option<Arrival> {
+        if self.hand_holding(held.object).is_some() {
+            return None;
+        }
+        let free = Hand::BOTH.map(|hand| self.table.held(hand).is_none());
+        let (hand, expect, used) = landing(
+            self.pending,
+            held.object,
+            free,
+            self.table.body().dominant(),
+        );
+        if !free[hand.index()] {
+            return None;
+        }
+        if used {
+            self.pending = None;
+        }
+        let source = match expect {
+            Some(Expect::Take(source)) => source,
+            Some(Expect::Draw) | None => TakeSource::Give,
+        };
+        let event = hands::arrival(&self.table, hand, held, source)?;
+        self.fold(event);
+        if self.hand_holding(held.object) != Some(hand) {
+            return None;
+        }
+        self.origins[hand.index()] = expect;
+        Some(Arrival { hand, expect })
+    }
+
+    /// The hand the table holds the object at `object` in.
+    fn hand_holding(&self, object: ObjectAddress) -> Option<Hand> {
+        Hand::BOTH.into_iter().find(|&hand| {
+            self.table
+                .held(hand)
+                .is_some_and(|item| item.binding == Binding::Live(object))
+        })
+    }
+
+    /// Publish the hands and the places on the body for the detours, forgetting the origin of a
+    /// hand that holds nothing.
+    fn publish_places(&mut self) {
+        for hand in Hand::BOTH {
+            let weapon = self
+                .table
+                .held(hand)
+                .is_some_and(|item| matches!(item.kind, ItemKind::Weapon(_)));
+            if !weapon {
+                self.origins[hand.index()] = None;
+            }
+        }
+        published::publish(&self.table);
     }
 
     /// Bind each item waiting to be spawned again to a weapon of its type the carry set kept and
@@ -453,22 +657,7 @@ fn whereabouts(tick: &Tick, object: ObjectAddress) -> Whereabouts {
     }
 }
 
-static LIVE: Mutex<Live> = Mutex::new(Live {
-    table: Loadout::new(BodyLayout::full(Hand::Right)),
-    started: false,
-    hands: [None; 2],
-    reset: ResetWatch {
-        completed: false,
-        died: false,
-        loaded: false,
-    },
-    mission: MissionWatch::Idle,
-    transitions: 0,
-    refusals: 0,
-    last_store: None,
-    log: Vec::new(),
-    diverged: 0,
-});
+static LIVE: Mutex<Live> = Mutex::new(Live::new());
 
 static STATUS: Mutex<LiveStatus> = Mutex::new(LiveStatus {
     snapshot: None,
@@ -478,3 +667,164 @@ static STATUS: Mutex<LiveStatus> = Mutex::new(LiveStatus {
     last_store: None,
     log: Vec::new(),
 });
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+
+    use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::controllers::loadout::item::WeaponType;
+
+    fn object(n: usize) -> ObjectAddress {
+        ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))
+    }
+
+    fn rifle() -> SlotObject {
+        SlotObject {
+            object: object(1),
+            weapon: WeaponType::new(
+                0x301,
+                WeaponSlot::E_SLOT_TWO_HANDED,
+                WeaponClass::E_WEAPON_CLASS_ASSAULT_RIFLE as i32,
+            )
+            .unwrap(),
+        }
+    }
+
+    fn pistol() -> SlotObject {
+        SlotObject {
+            object: object(2),
+            weapon: WeaponType::new(
+                0x302,
+                WeaponSlot::E_SLOT_DUAL_WIELD,
+                WeaponClass::E_WEAPON_CLASS_PISTOL as i32,
+            )
+            .unwrap(),
+        }
+    }
+
+    fn held(slot: SlotObject) -> Held {
+        Held {
+            object: slot.object,
+            weapon: slot.weapon,
+        }
+    }
+
+    /// A running table started from `slots`, as a load does.
+    fn started(slots: &[SlotObject]) -> Live {
+        let mut live = Live::new();
+        live.started = true;
+        live.fold(Event::ResetCompleted {
+            kind: ResetKind::Load,
+            slots: slots.to_vec(),
+        });
+        live
+    }
+
+    fn tick<'a>(
+        slots: &'a [SlotObject],
+        wielded: Option<SlotObject>,
+        second: Option<(Hand, SlotObject)>,
+    ) -> Tick<'a> {
+        Tick {
+            slots,
+            carried: &[],
+            wielded: wielded.map(held),
+            second: second.map(|(hand, slot)| (hand, held(slot))),
+            fates: &[],
+            old: &[],
+        }
+    }
+
+    #[test]
+    fn a_drawn_weapon_lands_in_the_hand_that_expected_it() {
+        let slots = [rifle()];
+        let mut live = started(&slots);
+        live.pending = Some(Pending::new(Hand::Left, Expect::Draw, None));
+        let arrival = live.hand_moves(&tick(&slots, Some(rifle()), None));
+        assert_eq!(
+            arrival,
+            Some(Arrival {
+                hand: Hand::Left,
+                expect: Some(Expect::Draw)
+            })
+        );
+        assert_eq!(live.hand_holding(rifle().object), Some(Hand::Left));
+        assert_eq!(live.pending, None, "the expectation is used up");
+        assert_eq!(
+            live.hand_moves(&tick(&slots, Some(rifle()), None)),
+            None,
+            "it stays where it landed"
+        );
+    }
+
+    #[test]
+    fn the_game_s_own_draw_lands_in_the_dominant_hand() {
+        let slots = [rifle()];
+        let mut live = started(&slots);
+        let arrival = live.hand_moves(&tick(&slots, Some(rifle()), None));
+        assert_eq!(
+            arrival,
+            Some(Arrival {
+                hand: Hand::Right,
+                expect: None
+            })
+        );
+    }
+
+    #[test]
+    fn a_weapon_the_game_puts_away_leaves_its_hand_before_the_next_lands() {
+        let slots = [rifle(), pistol()];
+        let mut live = started(&slots);
+        live.hand_moves(&tick(&slots, Some(rifle()), None));
+        assert_eq!(live.hand_holding(rifle().object), Some(Hand::Right));
+        live.hand_moves(&tick(&slots, Some(pistol()), None));
+        assert_eq!(live.hand_holding(pistol().object), Some(Hand::Right));
+        let docked = live
+            .table
+            .items()
+            .find(|item| item.binding == Binding::Live(rifle().object))
+            .map(|item| item.place);
+        assert!(
+            matches!(docked, Some(Place::Socket(socket)) if socket.is_native(WeaponSlot::E_SLOT_TWO_HANDED)),
+            "the rifle docks on its own socket, not {docked:?}"
+        );
+    }
+
+    #[test]
+    fn the_second_weapon_stays_in_its_hand_beside_the_wielded_one() {
+        let slots = [rifle(), pistol()];
+        let mut live = started(&slots);
+        live.hand_moves(&tick(&slots, Some(pistol()), None));
+        live.hand_moves(&tick(&slots, Some(pistol()), Some((Hand::Left, rifle()))));
+        assert_eq!(live.hand_holding(pistol().object), Some(Hand::Right));
+        assert_eq!(live.hand_holding(rifle().object), Some(Hand::Left));
+        live.hand_moves(&tick(&slots, Some(pistol()), Some((Hand::Left, rifle()))));
+        assert_eq!(
+            live.hand_holding(rifle().object),
+            Some(Hand::Left),
+            "a held second weapon is not taken for a departure"
+        );
+    }
+
+    #[test]
+    fn a_weapon_the_game_wields_waits_while_its_hand_is_full() {
+        let slots = [rifle(), pistol()];
+        let mut live = started(&slots);
+        live.hand_moves(&tick(&slots, Some(pistol()), Some((Hand::Left, rifle()))));
+        live.pending = Some(Pending::new(Hand::Left, Expect::Draw, Some(object(9))));
+        let refusals = live.refusals;
+        assert_eq!(
+            live.land(Held {
+                object: object(9),
+                weapon: rifle().weapon
+            }),
+            None
+        );
+        assert_eq!(live.refusals, refusals, "nothing is refused");
+        assert!(live.pending.is_some(), "the expectation is kept");
+    }
+}

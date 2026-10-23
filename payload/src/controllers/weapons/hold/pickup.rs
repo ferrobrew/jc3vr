@@ -41,7 +41,7 @@ use crate::{
         weapons::{
             dual_wield::{self, single},
             engine::{self, slot_from_raw},
-            hold::{self, act, equip, holder::Cause, second},
+            hold::{self, Cause, act, equip, second},
             holster::slot_label,
             inventory::{self, carry, engine as inventory_engine, sockets::fit_of},
             regions::{self, CarryCause, WorldTouch},
@@ -197,7 +197,7 @@ pub(crate) unsafe fn take(
         return Err(Refusal::NotWielded);
     }
     if !pair {
-        hold::adopt(address, hand);
+        unsafe { hold::adopt(address) };
     }
     if let Some(carry) = carry {
         regions::begin_carry(address, hand, carry, CarryCause::Pickup);

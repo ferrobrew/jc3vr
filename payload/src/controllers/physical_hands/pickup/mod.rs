@@ -62,7 +62,7 @@ use crate::{
         weapons::{
             self, FinishInputs,
             hold::{
-                holder::Cause,
+                Cause,
                 pickup::{Refusal, TakeOptions},
             },
             regions::WorldTouch,

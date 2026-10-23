@@ -15,22 +15,26 @@
 //! The rigid grip reads the snap in the placement detour ([`snap_view`]) to place the gun's attach
 //! bone between the dock and the hand.
 
-use jc3gi::character::{
-    character::{Character, SafeBoneIndex},
-    inventory::WeaponSlot,
+use jc3gi::{
+    character::{
+        character::{Character, SafeBoneIndex},
+        inventory::WeaponSlot,
+    },
+    equipment::weapon::WeaponBase,
 };
 use parking_lot::Mutex;
 
 use crate::controllers::{
+    aim::gun,
     frame::{Hand, Pose},
+    loadout::{ObjectAddress, live},
     weapons::{
         dual_wield::{self, single},
         engine,
         hold::{
-            self,
+            self, Cause,
             dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
             equip::{self, DockRefusal, Docked, Thrown},
-            holder::Cause,
             layout,
         },
     },
@@ -111,7 +115,7 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
     drop(state);
     // The pistols' own layout owns the pair's bones.
     if !pistols {
-        hold::adopt(docked.weapon, hand);
+        unsafe { hold::adopt(docked.weapon) };
     }
     tracing::info!(
         target: "controllers",
@@ -210,7 +214,7 @@ pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal>
         return Ok(());
     }
     drop(state);
-    unsafe { finish_holster(owner, target.weapon) }
+    unsafe { finish_holster(owner, hand, target.weapon) }
 }
 
 /// Drop the weapon `hand` holds, with the hand's motion capped at `max_speed_mps`.
@@ -220,6 +224,8 @@ pub(crate) unsafe fn holster(hand: Hand, snap_s: f32) -> Result<(), DockRefusal>
 /// The main thread, outside the world update.
 pub(crate) unsafe fn drop_held(hand: Hand, max_speed_mps: f32) -> Result<Thrown, DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
+    let dropped = unsafe { gun::held_weapon(owner) }
+        .and_then(|w| ObjectAddress::from_address(w as *const WeaponBase as usize));
     let result = unsafe { equip::drop_held(owner, max_speed_mps) };
     let mut state = STATE.lock();
     match result {
@@ -227,6 +233,9 @@ pub(crate) unsafe fn drop_held(hand: Hand, max_speed_mps: f32) -> Result<Thrown,
             state.status.drops += 1;
             state.status.last_throw_mps = thrown.set.then(|| thrown.linear.length());
             drop(state);
+            if let Some(object) = dropped {
+                live::depart(hand, object, live::Whereabouts::Away);
+            }
             tracing::info!(
                 target: "controllers",
                 hand = hand.label(),
@@ -344,7 +353,7 @@ pub(crate) unsafe fn tick(owner: &Character, wielded: Option<usize>, dt: f32) {
         return;
     }
     let _ = match finish {
-        Finish::Unequip => unsafe { finish_holster(owner, finished.weapon) },
+        Finish::Unequip => unsafe { finish_holster(owner, finished.hand, finished.weapon) },
         Finish::HolsterPistol(hand) => finish_holster_pistol(hand),
         Finish::Nothing => Ok(()),
     };
@@ -483,14 +492,17 @@ fn finish_holster_pistol(hand: Hand) -> Result<(), DockRefusal> {
     Ok(())
 }
 
-/// Unequip `weapon` now, counting and logging the holster.
-unsafe fn finish_holster(owner: &Character, weapon: usize) -> Result<(), DockRefusal> {
+/// Unequip `weapon`, in `hand`, now, counting and logging the holster.
+unsafe fn finish_holster(owner: &Character, hand: Hand, weapon: usize) -> Result<(), DockRefusal> {
     let result = unsafe { equip::holster(owner, weapon) };
     let mut state = STATE.lock();
     match result {
         Ok(()) => {
             state.status.holsters += 1;
             drop(state);
+            if let Some(object) = ObjectAddress::from_address(weapon) {
+                live::depart(hand, object, live::Whereabouts::Slot);
+            }
             tracing::info!(target: "controllers", "hold: holstered the weapon without the game's holster");
         }
         Err(refusal) => {

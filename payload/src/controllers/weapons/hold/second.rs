@@ -30,14 +30,16 @@
 //! other hand has been empty a moment ([`promote_tick`]), and is let go of (left holstered) when
 //! the game wields it, takes it from its slot, or the weapon handling stands down.
 //!
-//! The detours run on the simulation's worker threads for every character, so they compare against
-//! the second weapon's address before taking any lock. A carried second weapon is in no slot;
-//! the carry set keeps it alive while it is the second weapon, and the input tick changes either
-//! only outside the world update.
+//! The loadout table holds it in its hand ([`crate::controllers::loadout::live`]): a take lands it
+//! there at once ([`live::arrive`]), and putting it back or letting it fall takes it out
+//! ([`live::depart`]). The detours run on the simulation's worker threads for every character, so
+//! they compare against the table's published hands before taking any lock. A carried second
+//! weapon is in no slot; the carry set keeps it alive while it is the second weapon, and the input
+//! tick changes either only outside the world update.
 
 use std::{
     fmt,
-    sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -58,20 +60,19 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::ik,
-    loadout::Socket,
+    loadout::{ObjectAddress, Socket, live},
     weapons::{
         dual_wield::single,
         engine::{self, HeldWeapon, slot_from_raw},
         heft::HeftClass,
         hold::{
-            self,
+            self, Cause,
             dock::ReleaseWatch,
             equip::{self, Thrown},
-            holder::Cause,
             layout, pips,
         },
         holster::{Wielded, slot_label},
-        inventory::{carry, decide::AloneWatch},
+        inventory::{self, carry, decide::AloneWatch},
         reload,
     },
 };
@@ -158,20 +159,14 @@ pub fn status() -> SecondStatus {
     }
 }
 
-/// Whether the weapon at `weapon` is the second weapon.
+/// Whether the weapon at `weapon` is the second weapon, in the hand the table holds it in.
 pub(crate) fn is(weapon: usize) -> bool {
-    weapon != 0 && ADDRESS.load(Ordering::Relaxed) == weapon
+    live::hand_of(weapon).is_some() && held_address() == Some(weapon)
 }
 
-/// The hand holding the second weapon.
+/// The hand holding the second weapon, as the table has it.
 pub(crate) fn hand() -> Option<Hand> {
-    (ADDRESS.load(Ordering::Relaxed) != 0)
-        .then(|| match HAND.load(Ordering::Relaxed) {
-            1 => Some(Hand::Left),
-            2 => Some(Hand::Right),
-            _ => None,
-        })
-        .flatten()
+    held_address().and_then(live::hand_of)
 }
 
 /// The second weapon, when `owner`'s inventory or the carry set holds it.
@@ -180,10 +175,7 @@ pub(crate) fn hand() -> Option<Hand> {
 ///
 /// `owner` must be the live local player character.
 pub(crate) unsafe fn weapon(owner: &Character) -> Option<&'static WeaponBase> {
-    let address = ADDRESS.load(Ordering::Relaxed);
-    if address == 0 {
-        return None;
-    }
+    let address = held_address()?;
     let in_slot = owner
         .m_Inventory
         .m_Weapons
@@ -200,10 +192,17 @@ pub(crate) unsafe fn weapon(owner: &Character) -> Option<&'static WeaponBase> {
 /// On the main thread outside the world update, or inside the world update on a thread placing
 /// or updating the local player's weapons.
 pub(crate) unsafe fn carried_weapon() -> Option<&'static WeaponBase> {
-    if !CARRIED.load(Ordering::Relaxed) {
+    let held = STATE.lock().held?;
+    if !matches!(held.source, Source::Carried(_)) {
         return None;
     }
-    unsafe { (ADDRESS.load(Ordering::Relaxed) as *const WeaponBase).as_ref() }
+    unsafe { (held.weapon as *const WeaponBase).as_ref() }
+}
+
+/// The second weapon and the hand it was taken into, as the old handling holds it, for the
+/// table's feed.
+pub(crate) fn driven() -> Option<(usize, Hand)> {
+    STATE.lock().held.map(|h| (h.weapon, h.hand))
 }
 
 /// The slot of the second weapon.
@@ -223,6 +222,7 @@ pub(crate) fn source() -> Option<Source> {
 /// `owner` must be the live local player character, on the main thread outside the world update.
 pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
     let held = STATE.lock().held?;
+    let hand = live::hand_of(held.weapon)?;
     let weapon = unsafe { self::weapon(owner) }?;
     // Read as the raw value: an unset or unknown class is out of the enum's range.
     let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
@@ -230,9 +230,9 @@ pub(crate) unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
         address: held.weapon,
         wielded: Wielded {
             slot: held.slot,
-            hands: Hand::BOTH.map(|h| h == held.hand),
+            hands: Hand::BOTH.map(|h| h == hand),
         },
-        holder: Some(held.hand),
+        holder: Some(hand),
         two_handed: false,
         class: HeftClass::of(class, false),
     })
@@ -258,8 +258,8 @@ pub(crate) unsafe fn take_carried(hand: Hand, object: usize) -> Result<(), Secon
     unsafe { taken(hand, result) }
 }
 
-/// Put the second weapon back where it belongs: its holster, or its socket (or `socket`, when it
-/// is a carried weapon that should dock there from now on).
+/// Put the second weapon back where it belongs: its holster, or its socket. With `socket`, it docks
+/// there instead: a carried weapon from now on, and a slot's weapon the caller then carries there.
 ///
 /// # Safety
 ///
@@ -275,7 +275,11 @@ pub(crate) unsafe fn put_back(socket: Option<Socket>) {
     {
         carry::set_in_hand(held.weapon, Some(held.hand), Some(socket));
     }
-    unsafe { release(owner, true) };
+    let to = match socket {
+        Some(socket) => Release::Onto(socket),
+        None => Release::Back,
+    };
+    unsafe { release(owner, true, to) };
 }
 
 /// Let the second weapon fall from its hand with the hand's motion, the linear part capped at
@@ -289,7 +293,7 @@ pub(crate) unsafe fn let_fall(max_speed_mps: f32) -> Result<Thrown, SecondRefusa
     let owner = unsafe { engine::local_player() }.ok_or(SecondRefusal::NoCharacter)?;
     let held = STATE.lock().held.ok_or(SecondRefusal::NothingHeld)?;
     let address = held.weapon;
-    unsafe { release(owner, true) };
+    unsafe { release(owner, true, Release::Away) };
     // A carried weapon's strong reference is kept until the drop is done.
     let strong = match held.source {
         Source::Carried(_) => Some(carry::release(address).ok_or(SecondRefusal::NotDone)?),
@@ -400,7 +404,8 @@ pub(crate) unsafe fn validate(owner: &mut Character) {
     };
     let used = std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
     if weapon.m_State != WeaponState::E_WS_HOLSTERED || !used {
-        unsafe { release(owner, false) };
+        // Where the game took it is the input tick's to see.
+        unsafe { release(owner, false, Release::Kept) };
         tracing::info!(target: "controllers", "hold: the game took the second weapon");
     }
 }
@@ -409,7 +414,11 @@ pub(crate) unsafe fn validate(owner: &mut Character) {
 /// touching it, since the carry set's reference was what kept it alive. Called from the spawn
 /// system's reset, on whatever thread runs it, and when carrying is switched off.
 pub(crate) fn carry_released() {
-    if CARRIED.load(Ordering::Relaxed) {
+    let carried = STATE
+        .lock()
+        .held
+        .is_some_and(|h| matches!(h.source, Source::Carried(_)));
+    if carried {
         forget();
         tracing::info!(target: "controllers", "hold: the carried second weapon was let go of with the carry set");
     }
@@ -457,7 +466,7 @@ pub(crate) unsafe fn apply(weapon: &mut WeaponBase) {
     if !is(address) {
         return;
     }
-    let Some(hand) = hand() else {
+    let Some(hand) = live::hand_of(address) else {
         return;
     };
     let bone = layout::hand_bone(hand);
@@ -494,7 +503,7 @@ pub(crate) unsafe fn stand_down() {
         return;
     }
     match unsafe { engine::local_player() } {
-        Some(owner) => unsafe { release(owner, true) },
+        Some(owner) => unsafe { release(owner, true, Release::Back) },
         None => forget(),
     }
 }
@@ -534,12 +543,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     drops: 0,
     promotions: 0,
 });
-/// The second weapon's address, or zero: the detours' check before any lock.
-static ADDRESS: AtomicUsize = AtomicUsize::new(0);
-/// Whether the second weapon is a carried one, in no slot.
-static CARRIED: AtomicBool = AtomicBool::new(false);
-/// The hand holding it: one for the left, two for the right.
-static HAND: AtomicU8 = AtomicU8::new(0);
 static TRIGGER: AtomicBool = AtomicBool::new(false);
 static TARGET: Mutex<Option<(Vec3, Instant)>> = Mutex::new(None);
 static UPDATES: AtomicU64 = AtomicU64::new(0);
@@ -555,16 +558,19 @@ unsafe fn taken(hand: Hand, result: Result<Held, SecondRefusal>) -> Result<(), S
             state.held = Some(held);
             state.alone = AloneWatch::new();
             state.arm_pending = Some(hand);
-            HAND.store(
-                match hand {
-                    Hand::Left => 1,
-                    Hand::Right => 2,
-                },
-                Ordering::Relaxed,
-            );
-            CARRIED.store(matches!(held.source, Source::Carried(_)), Ordering::Relaxed);
-            ADDRESS.store(held.weapon, Ordering::Relaxed);
             std::mem::drop(state);
+            // SAFETY: the weapon was taken live this tick, on the main thread.
+            let in_hand = unsafe { inventory::held_of(held.weapon) }
+                .is_some_and(|table| live::arrive(hand, table));
+            if !in_hand {
+                if let Some(owner) = unsafe { engine::local_player() } {
+                    unsafe { release(owner, true, Release::Back) };
+                }
+                let refusal = SecondRefusal::NotDone;
+                STATE.lock().last_refusal = Some(refusal);
+                hold::refused(refusal);
+                return Err(refusal);
+            }
             tracing::info!(
                 target: "controllers",
                 hand = hand.label(),
@@ -661,13 +667,42 @@ unsafe fn live(owner: &Character, held: &Held) -> Option<&'static mut WeaponBase
     }
 }
 
+/// Where a released second weapon goes, as the table takes it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Release {
+    /// Back where it belongs: its slot's holster, or its socket.
+    Back,
+    /// Onto this socket.
+    Onto(Socket),
+    /// Out of the player's keeping: it falls.
+    Away,
+    /// Wherever the game put it, which the input tick sees.
+    Kept,
+}
+
 /// Restore the second weapon's table and scale, stop using it when `stop` and it is still the
-/// player's, put a carried one back on its socket, and forget it.
-unsafe fn release(owner: &mut Character, stop: bool) {
+/// player's, put a carried one back on its socket, tell the table where it went (`to`), and forget
+/// it.
+unsafe fn release(owner: &mut Character, stop: bool, to: Release) {
     let Some(held) = STATE.lock().held else {
         return;
     };
     forget();
+    if let Some(object) = ObjectAddress::from_address(held.weapon) {
+        let whereabouts = match (to, held.source) {
+            (Release::Back, Source::Slot) => Some(live::Whereabouts::Slot),
+            // A put-back onto another socket has already moved the carried weapon's home there.
+            (Release::Back, Source::Carried(socket)) => Some(live::Whereabouts::Carried(
+                carry::home(held.weapon).unwrap_or(socket),
+            )),
+            (Release::Onto(socket), _) => Some(live::Whereabouts::Carried(socket)),
+            (Release::Away, _) => Some(live::Whereabouts::Away),
+            (Release::Kept, _) => None,
+        };
+        if let Some(whereabouts) = whereabouts {
+            live::depart(held.hand, object, whereabouts);
+        }
+    }
     let Some(weapon) = (unsafe { live(owner, &held) }) else {
         return;
     };
@@ -722,7 +757,8 @@ unsafe fn promote(owner: &mut Character, held: Held) -> Result<(), SecondRefusal
     if !wielded {
         return Err(SecondRefusal::NotDone);
     }
-    hold::adopt(held.weapon, held.hand);
+    // SAFETY: the weapon is wielded now, on the main thread.
+    unsafe { hold::adopt(held.weapon) };
     Ok(())
 }
 
@@ -733,10 +769,12 @@ fn forget() {
     state.release.disarm();
     state.arm_pending = None;
     std::mem::drop(state);
-    ADDRESS.store(0, Ordering::Relaxed);
-    CARRIED.store(false, Ordering::Relaxed);
-    HAND.store(0, Ordering::Relaxed);
     TRIGGER.store(false, Ordering::Relaxed);
+}
+
+/// The second weapon's address, while one is held.
+fn held_address() -> Option<usize> {
+    STATE.lock().held.map(|h| h.weapon)
 }
 
 /// The weapon in `inventory`'s `slot`.
@@ -768,8 +806,8 @@ unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
 /// The second weapon of `inventory`, when the inventory is the local player's and holds it, or it
 /// is a carried weapon.
 unsafe fn second_in(inventory: *mut Inventory) -> Option<&'static mut WeaponBase> {
-    let address = ADDRESS.load(Ordering::Relaxed);
-    if address == 0 {
+    // The table's hands first: the detours run for every character, before any lock.
+    if Hand::BOTH.map(live::in_hand) == [None; 2] {
         return None;
     }
     let inventory = unsafe { inventory.as_ref() }?;
@@ -777,7 +815,10 @@ unsafe fn second_in(inventory: *mut Inventory) -> Option<&'static mut WeaponBase
     if local == 0 || inventory.m_Character as usize != local {
         return None;
     }
-    if CARRIED.load(Ordering::Relaxed) {
+    let held = STATE.lock().held?;
+    let address = held.weapon;
+    live::hand_of(address)?;
+    if matches!(held.source, Source::Carried(_)) {
         // SAFETY: the carry set keeps a carried second weapon alive while it is the second weapon.
         return unsafe { (address as *mut WeaponBase).as_mut() };
     }

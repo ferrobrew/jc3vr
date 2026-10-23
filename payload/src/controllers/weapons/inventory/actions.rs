@@ -19,13 +19,11 @@ use crate::{
         aim::gun,
         frame::Hand,
         hands::grip,
-        loadout::Socket,
+        loadout::{ObjectAddress, Socket, live},
         weapons::{
             dual_wield, engine as weapons_engine,
             hold::{
-                self, act,
-                holder::Cause,
-                pickup,
+                self, Cause, act, pickup,
                 second::{self, SecondRefusal, Source},
             },
             holster::slot_label,
@@ -236,8 +234,12 @@ pub(crate) unsafe fn stow(
     if !settings.layout(dominant).accepts(socket, fit) || carry::taken().contains(&socket) {
         return Err(SocketRefusal::DoesNotFit);
     }
-    unsafe { carry::carry_from_slot(owner, slot, socket, settings.offsets.of(socket)) }
-        .map_err(SocketRefusal::Carry)?;
+    let object =
+        unsafe { carry::carry_from_slot(owner, slot, socket, settings.offsets.of(socket)) }
+            .map_err(SocketRefusal::Carry)?;
+    if let Some(object) = ObjectAddress::from_address(object) {
+        live::depart(hand, object, live::Whereabouts::Carried(socket));
+    }
     inventory::count_stow();
     tracing::info!(
         target: "controllers",
@@ -280,7 +282,7 @@ pub(crate) unsafe fn stow_second(
         Some(Source::Carried(_)) => unsafe { second::put_back(Some(socket)) },
         Some(Source::Slot) => {
             let slot = second::slot().ok_or(SocketRefusal::Empty)?;
-            unsafe { second::put_back(None) };
+            unsafe { second::put_back(Some(socket)) };
             unsafe { carry::carry_from_slot(owner, slot, socket, settings.offsets.of(socket)) }
                 .map_err(SocketRefusal::Carry)?;
         }
@@ -380,7 +382,7 @@ unsafe fn draw(
     }
     let occupant = unsafe { carry::promote(owner, object) }.map_err(SocketRefusal::Carry)?;
     if !pistols {
-        hold::adopt(object, hand);
+        unsafe { hold::adopt(object) };
     }
     if let Some(from) = from {
         act::slide_in(object, hand, from, grab.snap_s);
