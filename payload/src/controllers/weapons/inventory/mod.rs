@@ -13,6 +13,7 @@
 //! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
 //! - [`missions`]: the missions' holds of the player's weapons and the checkpoint snapshot;
 //! - [`challenges`]: the challenges' holds of the player's weapons;
+//! - [`lost`]: the lost-weapon return;
 //! - [`traversal`]: the base layer's weapon tasks refused, and the forced neutral state undone;
 //! - [`gives`]: the game's gives, placed by the table rather than equipped;
 //! - [`ammo`]: the ammunition auto-pickup, for every weapon the table has on the body;
@@ -36,6 +37,7 @@ mod challenges;
 pub mod config;
 pub(crate) mod engine;
 pub(crate) mod gives;
+pub mod lost;
 mod missions;
 pub mod persist;
 pub mod pins;
@@ -171,6 +173,7 @@ pub(crate) unsafe fn input_tick(
             unsafe { carry::drop_all() };
             restore::clear();
             single::clear();
+            lost::clear();
         }
         return None;
     }
@@ -239,6 +242,40 @@ pub(crate) unsafe fn input_tick(
         fates: &fates,
         others: &others,
     });
+    let returning: Vec<(lost::Lying, Option<Strong>)> = live::bound()
+        .into_iter()
+        .filter_map(|(object, place)| match place {
+            Place::World(departure) => Some((object, departure)),
+            Place::Hand(_) | Place::Socket(_) => None,
+        })
+        .map(|(object, departure)| {
+            let strong = state.world.strong_of(object);
+            // SAFETY: the strong reference keeps the weapon alive while it is read.
+            let at = strong
+                .as_ref()
+                .and_then(|s| unsafe { engine::origin(&*engine::weapon_of(s)) });
+            (
+                lost::Lying {
+                    object,
+                    departure,
+                    at,
+                },
+                strong,
+            )
+        })
+        .collect();
+    unsafe {
+        lost::input_tick(
+            owner,
+            lost::LostTick {
+                enabled: inputs.settings.return_lost && inputs.settings.carry,
+                lost_speed_mps: inputs.settings.lost_speed_mps,
+                rules: inputs.settings.lost_rules(),
+                player,
+                lying: returning,
+            },
+        )
+    };
     let lying: Vec<ObjectAddress> = live::bound()
         .into_iter()
         .filter(|(_, place)| matches!(place, Place::World(_)))

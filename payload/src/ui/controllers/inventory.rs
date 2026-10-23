@@ -11,6 +11,7 @@ use crate::controllers::{
         inventory::{
             InventoryStatus,
             config::InventoryConfig,
+            lost,
             restore::RestoreStatus,
             traversal::{self, Task},
         },
@@ -51,6 +52,15 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         s.pins,
         s.forgotten,
         s.resets
+    ));
+    let l = lost::status();
+    ui.label(format!(
+        "Lost weapons: speed {:.1} m/s{} · returned out of the world {}, left behind {}, to the feet {}",
+        l.speed_mps,
+        if l.fast { " (fast)" } else { "" },
+        l.out_of_world,
+        l.left_behind,
+        l.to_feet
     ));
     let t = traversal::status();
     ui.label(format!(
@@ -143,6 +153,22 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
                  the back like a long gun, never wielded from the heavy slot. Off, it is the \
                  game's: wielded from its slot and dropped when put away.",
             );
+        ui.checkbox(&mut c.return_lost, "Bring lost weapons back")
+            .on_hover_text(
+                "A weapon that fell out of the world, or that was let go of at speed and left \
+                 behind, comes back to a free socket, else the feet.",
+            );
+        ui.add_enabled_ui(c.return_lost, |ui| {
+            ui.add(
+                egui::Slider::new(&mut c.lost_speed_mps, 2.0..=40.0)
+                    .text("Travelling fast from (m/s)"),
+            );
+            ui.add(egui::Slider::new(&mut c.left_behind_m, 5.0..=100.0).text("Left behind past (m)"));
+            ui.add(
+                egui::Slider::new(&mut c.lost_depth_m, 1.0..=50.0)
+                    .text("Out of the world below the sea by (m)"),
+            );
+        });
         ui.checkbox(
             &mut c.pin_world,
             "Keep dropped weapons nearby from despawning",

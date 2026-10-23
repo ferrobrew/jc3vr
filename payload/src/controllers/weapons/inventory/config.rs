@@ -3,7 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::inventory::{pins::PinSettings, sockets::Offsets};
+use crate::controllers::weapons::inventory::{
+    lost::LostRules, pins::PinSettings, sockets::Offsets,
+};
 
 /// The VR inventory. Acts only under the controller scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -48,6 +50,18 @@ pub struct InventoryConfig {
     /// drops them. Off, a heavy weapon is the game's: its pickup wields it from its slot and puts
     /// the other hand's weapon away, it docks nowhere, and it is dropped when put away.
     pub heavy_on_back: bool,
+    /// Bring a lost weapon back to a free socket that fits it, else the player's feet: one out of
+    /// the world (below the sea's level by `lost_depth_m`), or one let go of while the player
+    /// travelled at `lost_speed_mps` or faster and left farther than `left_behind_m` behind. Off,
+    /// a lost weapon stays where it is, and is forgotten once far enough away.
+    pub return_lost: bool,
+    /// The speed from which the player travels fast, so a let-go is one at speed, metres per
+    /// second.
+    pub lost_speed_mps: f32,
+    /// How far from the player a weapon let go of at speed is left behind, metres.
+    pub left_behind_m: f32,
+    /// How far below the sea's level a weapon is out of the world, metres.
+    pub lost_depth_m: f32,
 }
 
 impl InventoryConfig {
@@ -65,6 +79,19 @@ impl InventoryConfig {
             project_slots: true,
             keep_through_traversal: true,
             heavy_on_back: true,
+            return_lost: true,
+            lost_speed_mps: 10.0,
+            left_behind_m: 30.0,
+            lost_depth_m: 10.0,
+        }
+    }
+
+    /// The lost-weapon return's rules these settings give.
+    pub const fn lost_rules(&self) -> LostRules {
+        LostRules {
+            sea_level_m: SEA_LEVEL_M,
+            lost_depth_m: self.lost_depth_m,
+            left_behind_m: self.left_behind_m,
         }
     }
 
@@ -86,6 +113,10 @@ impl Default for InventoryConfig {
         Self::new()
     }
 }
+
+/// The height of the world's sea, metres: the game's water plane is at the world's zero height
+/// (unverified).
+const SEA_LEVEL_M: f32 = 0.0;
 
 /// The most weapons lying in the world the table keeps.
 const MAX_TRACKED: usize = 24;

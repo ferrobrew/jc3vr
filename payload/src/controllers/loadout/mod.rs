@@ -46,7 +46,7 @@ pub use item::{ItemId, ItemKind, WeaponType, slot_label};
 pub use projection::{Projection, SlotContent, StoreProjection};
 pub use reset::{CacheKind, ResetKind, SlotObject};
 pub use socket::{BodyLayout, Socket};
-pub use table::{LoadoutSnapshot, Place};
+pub use table::{Departure, LoadoutSnapshot, Place};
 pub use transition::{
     Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
 };

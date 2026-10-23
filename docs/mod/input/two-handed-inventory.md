@@ -53,7 +53,14 @@ A weapon a hand lets go of stays where it falls, protected from the despawn whil
 - out of the world: it fell through the terrain or below the world's floor, or sank out of reach in water;
 - left behind at speed: it left the hand while the player travelled fast (the wingsuit, a vehicle, the parachute, or a fall), so the player never chose to leave it there.
 
-Swapping a weapon on the ground for another, or walking away from one, never brings it back. Retrieving a weapon left behind is the grapple snatch's job. Not built yet: the core records a let-go at speed and returns a lost weapon, and the adapter that tells it a weapon fell out of the world or was left behind is phase 5's.
+Swapping a weapon on the ground for another, or walking away from one, never brings it back. Retrieving a weapon dropped at an ordinary pace is the grapple snatch's job.
+
+As built (`weapons::inventory::lost`, `weapons.inventory.return_lost`, on): each input tick measures the player's speed from the change of their position, smoothed over a quarter second, and the player travels fast from `lost_speed_mps` (10 m/s, above a run and below any vehicle, glide, or fall worth the name); a hand's let-go while they do is recorded at speed (`live::set_fast`). A weapon lying in the world is out of the world once it is more than `lost_depth_m` (10 m) below the sea's level, which only sinking out of reach or falling through the terrain takes it to, and a weapon let go of at speed is left behind once it is farther than `left_behind_m` (30 m) from the player, a distance rather than a time, since the speed that left it makes the distance come quickly and a weapon dropped from a slow glide stays within reach longer. Each lost weapon is told to the table (`loadout: … moved from the world (let go of at speed) to the outer back: left behind at speed`), which returns it to the first free socket that fits it, and the carry set takes it there; with none free the table has it at the player's feet, and the carry set holds it on the body for one tick and lets it fall from there at the next (`inventory: brought a lost weapon back to …`). The judgement runs before the pins, so a weapon is returned before it is far enough to be forgotten. The thresholds are in the debug UI's Controllers tab, under "VR inventory", beside the readout of the speed and the returns. Off, a lost weapon stays where it is, pinned while near, and is forgotten once far; a let-go is then always at an ordinary pace.
+
+Decisions taken here:
+
+- The world's floor is the sea's level less a margin rather than a probe of the terrain under the weapon: no terrain query is bound, and a weapon that falls through the terrain keeps falling until it passes any margin.
+- A weapon returned to the feet is not lost again for being left behind: its departure is the return's, not the let-go at speed.
 
 ## Sockets
 
@@ -520,7 +527,7 @@ Which of the base layer's states own its unequip and hide-in-vehicle tasks is an
 
 - How the seats' poses take a gun armed in a hand, and whether a gun fired from a seat by the mod's tick plays as the wielded one did on a motorcycle.
 - Whether anything else of the game's (the boost wingsuit's own guns, a mounted gun's start of use) puts away a gun in a hand that the refused tasks no longer do.
-- Whether a lost weapon's return reads well, and the speed that counts as travelling fast.
+- Whether a lost weapon's return reads well, and the speed that counts as travelling fast; that the world's sea is at its zero height.
 - How a one-handed heavy weapon's lift limit feels.
 - Which missions use the graph script's weapon cache to take the player's weapons, and whether every such mission removes the slots' weapons through it.
 - Whether the post-reset event is always handled after the save data's load, and whether a new game loads player save data at all; the two-minute and same-character limits on the reset's record stay as a guard beside the frontend's.

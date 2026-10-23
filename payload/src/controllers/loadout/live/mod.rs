@@ -50,7 +50,9 @@ use crate::controllers::{
         reset::{CacheKind, ResetKind, SlotObject},
         socket::{BodyLayout, Socket},
         table::{Loadout, LoadoutSnapshot, Place},
-        transition::{Give, GiveSource, Removal, RemovalWhy, Restored, Take, TakeSource},
+        transition::{
+            Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, Take, TakeSource,
+        },
     },
 };
 
@@ -385,9 +387,29 @@ pub(crate) fn depart(hand: Hand, object: ObjectAddress, whereabouts: Whereabouts
         return;
     }
     if let Some(event) = hands::departure(&live.table, hand, object, whereabouts) {
+        let event = live.at_pace(event);
         live.fold(event);
     }
     live.publish_places();
+}
+
+/// Whether the player travels fast now (the wingsuit, a vehicle, the parachute, a fall), as the
+/// inventory measures it each input tick: a let-go while it holds is a let-go at speed, which a
+/// weapon left behind comes back from.
+pub(crate) fn set_fast(fast: bool) {
+    LIVE.lock().fast = fast;
+}
+
+/// The weapon at `object`, lying in the world, is lost rather than dropped (`why`): it returns to
+/// the first free socket that fits it, else the player's feet. Returns where the table has it now.
+pub(crate) fn lost(object: ObjectAddress, why: LostWhy) -> Option<Place> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::Lost { object, why });
+    live.publish_places();
+    live.place_of(object)
 }
 
 /// The hands docked the weapon at `object`, held in `hand`, on `socket`: the table takes the move at
@@ -416,6 +438,11 @@ pub(crate) fn free_socket(weapon: WeaponType, preferred: Option<Socket>) -> Opti
     live.started
         .then(|| hands::free_socket(&live.table, weapon, preferred))
         .flatten()
+}
+
+/// The body's sockets in the order a weapon of `weapon` goes onto them when no hand chooses one.
+pub(crate) fn body_preference(weapon: WeaponType) -> Vec<Socket> {
+    LIVE.lock().table.body().preference(weapon).collect()
 }
 
 /// Every live object the table's weapons are bound to, and where each is, as of now.
@@ -650,6 +677,8 @@ struct Live {
     pending: Option<Pending>,
     /// What brought each hand's weapon there, by [`Hand::index`], for the readouts.
     origins: [Option<Expect>; 2],
+    /// Whether the player travels fast, as of the last input tick.
+    fast: bool,
     /// The weapon the game's forced neutral state unequipped, which its hand keeps until the
     /// reconcile wields or arms it again: per-hand runtime state, not a place.
     neutral: Option<ObjectAddress>,
@@ -714,6 +743,7 @@ impl Live {
             started: false,
             pending: None,
             origins: [None; 2],
+            fast: false,
             neutral: None,
             last: None,
             reset: ResetWatch {
@@ -806,6 +836,7 @@ impl Live {
                 continue;
             };
             if let Some(event) = hands::departure(&self.table, hand, object, whereabouts) {
+                let event = self.at_pace(event);
                 self.fold(event);
             }
         }
@@ -860,6 +891,20 @@ impl Live {
         }
         self.origins[hand.index()] = expect;
         Some(Arrival { hand, expect })
+    }
+
+    /// `event` as at the player's pace: a let-go while the player travels fast is one at speed.
+    fn at_pace(&self, event: Event) -> Event {
+        match event {
+            Event::LetGo {
+                hand,
+                release: Release::Dropped,
+            } if self.fast => Event::LetGo {
+                hand,
+                release: Release::AtSpeed,
+            },
+            other => other,
+        }
     }
 
     /// The hand the table holds the object at `object` in.

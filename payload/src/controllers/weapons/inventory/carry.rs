@@ -59,6 +59,7 @@ use crate::controllers::{
         hold::refs::Strong,
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, strong_to},
+            lost,
             persist::Record,
             sockets,
         },
@@ -342,6 +343,8 @@ pub(crate) unsafe fn place(
                 unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
                 continue;
             }
+            // A lost weapon brought to the feet rides the body for the tick before it falls.
+            Some(Place::World(_)) if lost::falling(carried.object) => carried.socket,
             Some(Place::World(_)) | None => continue,
         };
         unsafe { write_bone(weapon, socket) };

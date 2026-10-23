@@ -182,6 +182,14 @@ impl World {
             .collect()
     }
 
+    /// A strong reference to the weapon at `object`, while it lives.
+    pub(super) fn strong_of(&self, object: ObjectAddress) -> Option<Strong> {
+        self.handles
+            .iter()
+            .find(|h| h.object == object)
+            .and_then(|h| h.weak.lock())
+    }
+
     /// Release every reference.
     pub(super) fn clear(&mut self) {
         self.handles.clear();
