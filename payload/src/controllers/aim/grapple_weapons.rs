@@ -11,7 +11,8 @@
 //! slot's game object, the grapplable flag, the last-valid grapple cache, and the latch of the
 //! fire. The camera's pass, the gun's aim, and every other query see the world as before.
 //!
-//! The weapon found is published ([`aimed`]) for the snatch's targeting.
+//! The weapon found, or else the object the aim's own ray hit, is published ([`aimed`]) for the
+//! snatch's targeting.
 
 use std::{
     cell::Cell,
@@ -45,15 +46,20 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&CHECK_DIRECT_TARGETS_BINDER)
 }
 
-/// A weapon lying in the world under the grapple's aim.
+/// The object under the grapple's aim: a weapon lying in the world the weapon cast found, or else
+/// the object the aim's own ray hit.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct AimedWeapon {
-    /// The weapon (its `CWeaponBase`).
+pub(crate) struct Aimed {
+    /// The object (its physics game object: a `CWeaponBase` for a weapon).
     pub object: NonZeroUsize,
+    /// Whether it is a weapon lying in the world.
+    pub weapon: bool,
     /// The body the ray hit.
     pub body: u32,
     /// Where the ray hit it, world space.
     pub point: Vec3,
+    /// The surface normal there, toward the ray's origin.
+    pub normal: Vec3,
     /// How far along the ray, metres.
     pub distance: f32,
 }
@@ -66,9 +72,9 @@ pub(crate) fn set_enabled(enabled: bool) {
     }
 }
 
-/// The weapon under the grapple's aim at the last aim update, with a strong reference that keeps
+/// The object under the grapple's aim at the last aim update, with a strong reference that keeps
 /// it alive while held, when it still lives and the update was recent.
-pub(crate) fn aimed() -> Option<(AimedWeapon, Strong)> {
+pub(crate) fn aimed() -> Option<(Aimed, Strong)> {
     let aimed = AIMED.lock();
     let (weapon, weak, at) = aimed.as_ref()?;
     if at.elapsed() > AIMED_FOR {
@@ -111,7 +117,7 @@ const MAX_STEPS: usize = 3;
 const STEP_PAST_M: f32 = 0.02;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static AIMED: Mutex<Option<(AimedWeapon, Weak, Instant)>> = Mutex::new(None);
+static AIMED: Mutex<Option<(Aimed, Weak, Instant)>> = Mutex::new(None);
 
 thread_local! {
     /// Whether this thread is in the grapple's pass of the direct-aim raycast.
@@ -153,7 +159,7 @@ unsafe fn merge_weapon(
 ) {
     let found = unsafe { find_weapon(aim, info, ray_start, ray_dir) };
     let Some((hit, object, length)) = found else {
-        *AIMED.lock() = None;
+        *AIMED.lock() = unsafe { aimed_hit(aim, info, ray_start, ray_dir) };
         return;
     };
     // SAFETY: checked non-null by the search, and the hit object is live during its cast.
@@ -175,15 +181,57 @@ unsafe fn merge_weapon(
     // SAFETY: the weapon's own weak reference to itself, live while it is.
     let weak = unsafe { Weak::of(&weapon.m_WeakThis) };
     *AIMED.lock() = Some((
-        AimedWeapon {
+        Aimed {
             object,
+            weapon: true,
             body: hit.body,
             point: hit.position,
+            normal: hit.normal,
             distance: hit.distance,
         },
         weak,
         Instant::now(),
     ));
+}
+
+/// The object the aim's own ray hit, to publish, when it hit one.
+///
+/// # Safety
+///
+/// As [`merge_weapon`].
+unsafe fn aimed_hit(
+    aim: *mut PlayerAimControl,
+    info: *mut CastRayInfo,
+    ray_start: *const Vector3,
+    ray_dir: *const Vector3,
+) -> Option<(Aimed, Weak, Instant)> {
+    let aim = unsafe { aim.as_ref() }?;
+    let info = unsafe { info.as_ref() }?;
+    let object = NonZeroUsize::new(info.m_GameObject as usize)?;
+    let fraction = info.base.m_HitDistance;
+    let length = aim.m_RayCastDistance;
+    if !(0.0..1.0).contains(&fraction) || !(length.is_finite() && length > 0.0) {
+        return None;
+    }
+    let start = Vec3::from_array(unsafe { ray_start.as_ref() }?.data);
+    let direction = Vec3::from_array(unsafe { ray_dir.as_ref() }?.data);
+    let distance = fraction * length;
+    let game_object =
+        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *const GameObject;
+    // SAFETY: the hit object is live during its cast, and so is its weak reference to itself.
+    let weak = unsafe { Weak::of(&(*game_object).m_WeakThis) };
+    Some((
+        Aimed {
+            object,
+            weapon: false,
+            body: info.base.m_BodyId,
+            point: start + direction * distance,
+            normal: Vec3::from_array(info.base.m_Normal.data),
+            distance,
+        },
+        weak,
+        Instant::now(),
+    ))
 }
 
 /// The nearest weapon lying in the world along the ray, short of its closest hit, with the ray's

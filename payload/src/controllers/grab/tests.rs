@@ -102,7 +102,7 @@ fn a_fallback_is_taken_only_when_no_target_is_in_reach() {
 #[test]
 fn a_remote_target_is_taken_only_when_nothing_at_all_is_in_reach() {
     let remote = GripTarget::measured(
-        GrabVolume::Snatch,
+        GrabVolume::Snatch(RemoteKind::Weapon),
         Hand::Left,
         10.0,
         Mark::ring(MarkAt::World(Vec3::NEG_Z * 10.0), 0.1),
@@ -122,7 +122,10 @@ fn a_remote_target_is_taken_only_when_nothing_at_all_is_in_reach() {
     );
     // A reach margin, which has no marker of its own, still wins.
     let margin = sphere(GrabVolume::GrenadePouch, 0.0, 0.2, None).ranked(Tier::Fallback);
-    assert_eq!(takes(&[remote], Hand::Left, 0.0), Some(GrabVolume::Snatch));
+    assert_eq!(
+        takes(&[remote], Hand::Left, 0.0),
+        Some(GrabVolume::Snatch(RemoteKind::Weapon))
+    );
     assert_eq!(
         takes(&[remote, crate_in_reach], Hand::Left, 0.0),
         Some(GrabVolume::Pickup(PickupKind::Prop))
@@ -144,12 +147,15 @@ fn a_remote_target_is_taken_only_when_nothing_at_all_is_in_reach() {
 fn a_fist_never_arms_a_snatch() {
     let mut latch = GripLatch::default();
     assert_eq!(latch.step(tick(PRESS, None)), None);
-    assert_eq!(latch.step(tick(HELD, Some(GrabVolume::Snatch))), None);
+    assert_eq!(
+        latch.step(tick(HELD, Some(GrabVolume::Snatch(RemoteKind::Weapon)))),
+        None
+    );
     assert!(is_fist(latch), "a closed hand passing over a remote target");
     let mut pressed = GripLatch::default();
     assert_eq!(
-        pressed.step(tick(PRESS, Some(GrabVolume::Snatch))),
-        Some(GrabVolume::Snatch),
+        pressed.step(tick(PRESS, Some(GrabVolume::Snatch(RemoteKind::Weapon)))),
+        Some(GrabVolume::Snatch(RemoteKind::Weapon)),
         "a press aimed at it arms it"
     );
 }
@@ -258,7 +264,9 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::GrenadePin,
         GrabVolume::LiveGrenade,
         GrabVolume::WorldMagazine,
-        GrabVolume::Snatch,
+        GrabVolume::Snatch(RemoteKind::Weapon),
+        GrabVolume::Snatch(RemoteKind::Object),
+        GrabVolume::Snatch(RemoteKind::Door),
     ];
     out.extend(
         [
@@ -293,7 +301,7 @@ fn every_kind() -> Vec<GrabVolume> {
             | GrabVolume::GrenadePin
             | GrabVolume::LiveGrenade
             | GrabVolume::WorldMagazine
-            | GrabVolume::Snatch => {}
+            | GrabVolume::Snatch(_) => {}
         }
     }
     out

@@ -109,7 +109,7 @@ pub enum GrabVolume {
     Socket(Socket),
     /// A thing out of reach under the grapple's aim, for the empty grapple hand to snatch (see
     /// [`crate::controllers::snatch`]).
-    Snatch,
+    Snatch(RemoteKind),
 }
 
 impl GrabVolume {
@@ -137,7 +137,9 @@ impl GrabVolume {
             GrabVolume::LiveGrenade => "live grenade",
             GrabVolume::WorldMagazine => "magazine in the world",
             GrabVolume::Socket(socket) => socket_label(socket),
-            GrabVolume::Snatch => "target to snatch",
+            GrabVolume::Snatch(RemoteKind::Weapon) => "weapon to snatch",
+            GrabVolume::Snatch(RemoteKind::Object) => "object to snatch",
+            GrabVolume::Snatch(RemoteKind::Door) => "car door to pull open",
         }
     }
 
@@ -153,13 +155,14 @@ impl GrabVolume {
             | GrabVolume::WeaponAction
             | GrabVolume::MagazineWell
             | GrabVolume::WorldWeapon
-            | GrabVolume::Snatch
+            | GrabVolume::Snatch(RemoteKind::Weapon)
             | GrabVolume::Pickup(PickupKind::Weapon) => Category::Weapon,
             GrabVolume::VehicleControl(_)
             | GrabVolume::CockpitButton(_)
             | GrabVolume::ParachuteHandle(_)
             | GrabVolume::MountedHandle(_)
             | GrabVolume::StuntHold
+            | GrabVolume::Snatch(RemoteKind::Door)
             | GrabVolume::Pickup(PickupKind::Door) => Category::Vehicle,
             GrabVolume::Pickup(PickupKind::Character) => Category::Character,
             GrabVolume::GrenadePin | GrabVolume::LiveGrenade | GrabVolume::ChargeSurface => {
@@ -167,6 +170,7 @@ impl GrabVolume {
             }
             GrabVolume::Climb => Category::Climb,
             GrabVolume::Pickup(PickupKind::Prop | PickupKind::Hinged)
+            | GrabVolume::Snatch(RemoteKind::Object)
             | GrabVolume::WorldMagazine => Category::Prop,
         }
     }
@@ -194,7 +198,7 @@ impl GrabVolume {
             GrabVolume::Pickup(_) => Consumer::Pickup,
             GrabVolume::Climb => Consumer::Climb,
             GrabVolume::StuntHold => Consumer::Stunt,
-            GrabVolume::Snatch => Consumer::Snatch,
+            GrabVolume::Snatch(_) => Consumer::Snatch,
         }
     }
 }
@@ -266,6 +270,17 @@ impl PickupKind {
             PickupKind::Character => "character",
         }
     }
+}
+
+/// What a remote target for the grapple's snatch is.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum RemoteKind {
+    /// A weapon: on the ground, or on a character.
+    Weapon,
+    /// A loose object.
+    Object,
+    /// A vehicle's closed door, pulled open on the line.
+    Door,
 }
 
 /// The kinds of target, each with its marker's colour.

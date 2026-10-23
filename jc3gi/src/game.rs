@@ -177,10 +177,17 @@ impl std::convert::AsMut<Game> for Game {
 /// virtuals are bound.
 pub struct GameObject {
     vftable: *const crate::game::GameObjectVftable,
+    _field_8: [u8; 88],
+    /// A weak reference to the object itself (`m_WeakThis`), from which the engine hands out
+    /// references to the object: the player aim's direct hit takes the slot's game object from it
+    /// ([`PlayerAimControl::CheckDirectTargets`](crate::aim::aim::PlayerAimControl::CheckDirectTargets)),
+    /// and a grapple target info its target object
+    /// ([`HookTargetInfo::SetupTargetFromGameObject`](crate::equipment::wire_end::HookTargetInfo::SetupTargetFromGameObject)).
+    pub m_WeakThis: crate::types::shared_ptr::WeakPtrGameObject,
 }
 fn _GameObject_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x8], GameObject>([0u8; 0x8]);
+        ::std::mem::transmute::<[u8; 0x70], GameObject>([0u8; 0x70]);
     }
     unreachable!()
 }

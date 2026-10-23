@@ -146,21 +146,26 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
     if distance_sq.is_nan() || distance_sq > range * range {
         return;
     }
-    let Some((weapon, slot)) = (unsafe { wielded(character) }) else {
+    let wielded = unsafe { wielded(character) }.and_then(|(weapon, slot)| {
+        // SAFETY: the character's wielded weapon is live for its pass.
+        let (points, gun) = unsafe { gun_points(&*weapon) }?;
+        Some(Wielded {
+            weapon: weapon as usize,
+            slot,
+            points,
+            gun,
+        })
+    });
+    let holstered = unsafe { holstered(character) };
+    if wielded.is_none() && holstered.iter().all(Option::is_none) {
         return;
-    };
-    // SAFETY: the character's wielded weapon is live for its pass.
-    let Some((points, gun)) = (unsafe { gun_points(&*weapon) }) else {
-        return;
-    };
+    }
     let address = character as *const Character as usize;
     let now = Instant::now();
     let mut seen = SEEN.lock();
     if let Some(entry) = seen.iter_mut().find(|s| s.character == address) {
-        entry.weapon = weapon as usize;
-        entry.slot = slot;
-        entry.points = points;
-        entry.gun = gun;
+        entry.wielded = wielded;
+        entry.holstered = holstered;
         entry.at = now;
         return;
     }
@@ -171,10 +176,8 @@ pub(crate) unsafe fn observe(inventory: *mut Inventory) {
         character: address,
         // SAFETY: the character's own weak reference to itself is live while it is.
         weak: unsafe { Weak::of(&character.m_WeakThis) },
-        weapon: weapon as usize,
-        slot,
-        points,
-        gun,
+        wielded,
+        holstered,
         at: now,
     });
 }
@@ -185,14 +188,44 @@ pub(crate) fn targets(to_cockpit: impl Fn(Vec3) -> Vec3) -> Vec<WorldTarget> {
     let mut seen = SEEN.lock();
     seen.retain(|s| s.at.elapsed() <= SEEN_FOR);
     seen.iter()
-        .map(|s| WorldTarget {
-            kind: TargetKind::Held {
+        .filter_map(|s| {
+            let w = s.wielded?;
+            Some(WorldTarget {
+                kind: TargetKind::Held {
+                    character: s.character,
+                },
+                weapon: w.weapon,
+                slot: w.slot,
+                points: w.points.map(&to_cockpit),
+                gun: w.gun,
+            })
+        })
+        .collect()
+}
+
+/// A gun holstered on a character's body, as noted.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HolsteredTarget {
+    pub character: usize,
+    pub weapon: usize,
+    pub slot: WeaponSlot,
+    /// The gun's origin, world space.
+    pub point: Vec3,
+}
+
+/// The guns holstered on characters noted recently, out of their hands. Forgets the characters not
+/// noted for a while.
+pub(crate) fn holstered_targets() -> Vec<HolsteredTarget> {
+    let mut seen = SEEN.lock();
+    seen.retain(|s| s.at.elapsed() <= SEEN_FOR);
+    seen.iter()
+        .flat_map(|s| {
+            s.holstered.iter().flatten().map(|h| HolsteredTarget {
                 character: s.character,
-            },
-            weapon: s.weapon,
-            slot: s.slot,
-            points: s.points.map(&to_cockpit),
-            gun: s.gun,
+                weapon: h.weapon,
+                slot: h.slot,
+                point: h.point,
+            })
         })
         .collect()
 }
@@ -280,6 +313,56 @@ pub(crate) unsafe fn release(hand: Hand, target: &WorldTarget) -> Result<Freed, 
     Ok(Freed { weapon, alive })
 }
 
+/// Make `target`'s character drop the gun holstered on its body and stagger, leaving the gun lying
+/// in the world, for the grapple's snatch into `hand`. The character keeps what it wields, and its
+/// selection is left alone. A take the hand could not make is refused before the gun leaves.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn release_holstered(
+    hand: Hand,
+    target: &HolsteredTarget,
+) -> Result<Freed, StealRefusal> {
+    let alive = {
+        let seen = SEEN.lock();
+        seen.iter()
+            .find(|s| s.character == target.character)
+            .and_then(|s| s.weak.lock())
+    };
+    let Some(_alive) = alive else {
+        return Err(StealRefusal::Gone);
+    };
+    if target.character == ik::local_character() {
+        return Err(StealRefusal::Gone);
+    }
+    // SAFETY: the strong reference keeps the character alive.
+    let victim = unsafe { &mut *(target.character as *mut Character) };
+    let held = unsafe { holstered(victim) };
+    if !held
+        .iter()
+        .flatten()
+        .any(|h| h.weapon == target.weapon && h.slot == target.slot)
+    {
+        return Err(StealRefusal::Gone);
+    }
+    // SAFETY: the character's inventory holds the weapon, and the character is held alive.
+    let weapon = unsafe { &mut *(target.weapon as *mut WeaponBase) };
+    let player =
+        unsafe { engine::local_player() }.ok_or(StealRefusal::Pickup(Refusal::NoCharacter))?;
+    unsafe { pickup::takeable(player, weapon) }.map_err(StealRefusal::Pickup)?;
+    unsafe { pickup::route(weapon, Some(hand)) }.map_err(StealRefusal::Pickup)?;
+    // SAFETY: the weapon's own weak reference to itself, live while it is.
+    let alive = unsafe { Weak::of(&weapon.m_WeakThis) }
+        .lock()
+        .ok_or(StealRefusal::Gone)?;
+    let player_at = Mat4::from(player.m_WorldMatrixT1).w_axis.truncate();
+    unsafe { weapon.OnDrop() };
+    unsafe { victim.m_Inventory.DropWeapon(target.slot, false) };
+    unsafe { stagger(victim, player_at) };
+    Ok(Freed { weapon, alive })
+}
+
 /// The takes from characters' hands since the payload loaded.
 pub(crate) fn steals() -> u64 {
     STEALS.load(Ordering::Relaxed)
@@ -292,18 +375,40 @@ const SEEN_FOR: Duration = Duration::from_millis(500);
 /// The most characters noted at once.
 const MAX_SEEN: usize = 16;
 
-/// A character noted with a gun in its hands.
+/// A character noted with a gun in its hands or on its body.
 struct Seen {
     character: usize,
     weak: Weak,
+    wielded: Option<Wielded>,
+    holstered: [Option<Holstered>; HOLSTER_SLOTS.len()],
+    at: Instant,
+}
+
+/// The gun a noted character wields.
+#[derive(Copy, Clone)]
+struct Wielded {
     weapon: usize,
     slot: WeaponSlot,
     /// The gun's segment in the world: the holding hand's grip, and the other hand's grip or the
     /// gun's origin.
     points: [Vec3; 2],
     gun: Pose,
-    at: Instant,
 }
+
+/// A gun a noted character carries holstered on its body, seen on it.
+#[derive(Copy, Clone)]
+struct Holstered {
+    weapon: usize,
+    slot: WeaponSlot,
+    point: Vec3,
+}
+
+/// The slots of the guns a character holsters where they are seen.
+const HOLSTER_SLOTS: [WeaponSlot; 3] = [
+    WeaponSlot::E_SLOT_DUAL_WIELD,
+    WeaponSlot::E_SLOT_TWO_HANDED,
+    WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
+];
 
 static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 static PROBE: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
@@ -335,6 +440,33 @@ unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)
             | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
     )
     .then_some((pointer, slot))
+}
+
+/// The guns `character` carries holstered and visible on its body, by [`HOLSTER_SLOTS`], each
+/// with its first gun's origin.
+unsafe fn holstered(character: &Character) -> [Option<Holstered>; HOLSTER_SLOTS.len()] {
+    HOLSTER_SLOTS.map(|slot| {
+        let weapon = unsafe {
+            character
+                .m_Inventory
+                .m_Weapons
+                .get(slot as usize)?
+                .px
+                .as_ref()
+        }?;
+        // Read as the raw value, so that a state the enum does not name is not misread.
+        let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
+        if state != WeaponState::E_WS_HOLSTERED as i32 {
+            return None;
+        }
+        let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+        let point = Mat4::from(first.m_WorldMatrixT1).w_axis.truncate();
+        point.is_finite().then_some(Holstered {
+            weapon: weapon as *const WeaponBase as usize,
+            slot,
+            point,
+        })
+    })
 }
 
 /// The gun's segment in the world (the holding hand's grip, and the other hand's grip or the

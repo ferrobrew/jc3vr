@@ -66,6 +66,7 @@ pub mod palm;
 pub mod physics;
 pub mod pickup;
 pub mod push;
+pub(crate) mod remote;
 pub mod rigid;
 pub mod shove;
 pub mod sounds;

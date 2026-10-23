@@ -2,6 +2,8 @@
 
 An empty hand opens a vehicle's doors as a real hand does: a grip on a closed door's handle area takes hold of it, a pull outward undoes the latch, and the door then swings on its hinge with the hand. Let go and it swings on; shove it shut and the game latches it. Hoods, trunks, and the other hatches a vehicle's door controller keeps open the same way. The code is `payload/src/controllers/physical_hands/doors/`; the engine side is in [vehicle-doors.md](../../engine/gameplay/vehicle-doors.md). It is on by default (`physical_hands.doors.enabled`, in the debug UI's Controllers tab under "Physical hands") and builds on the pickup and the hand bodies ([physical-hands.md](physical-hands.md#picking-things-up)). It has not yet been seen working in the headset.
 
+The grapple snatch pulls a closed door open from range on the line, through the same reach and unlatch, with the grapple's aim point standing in for the palm ([grapple-snatch.md](grapple-snatch.md#phase-4-car-doors)).
+
 ## Finding a door
 
 Every door of every vehicle near the player is offered by its handle, whatever the reach's rays hit (`doors/scan.rs`). The vehicles are those the game's target system keeps within 6 m of a free palm.

@@ -105,7 +105,7 @@ impl Tier {
     pub const fn of(volume: GrabVolume) -> Self {
         match volume {
             GrabVolume::Climb | GrabVolume::StuntHold => Tier::Fallback,
-            GrabVolume::Snatch => Tier::Remote,
+            GrabVolume::Snatch(_) => Tier::Remote,
             GrabVolume::CockpitButton(_) | GrabVolume::MagazineWell | GrabVolume::ChargeSurface => {
                 Tier::Touch
             }

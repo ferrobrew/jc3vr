@@ -11,6 +11,7 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
         wire_end::{HookTargetInfo, WireEndState},
     },
+    physics::PhysicsGameObject,
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
 
@@ -37,13 +38,18 @@ pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
     (hook.m_State != GrapplingHookState::GHS_INACTIVE).then_some(Refusal::HookBusy)
 }
 
-/// Fire the hook at `weapon` as a ghost wire, latched at the weapon's origin, and return the wire
-/// it fired.
+/// Fire the hook as a ghost wire at the physics game object `object`, latched at `local` in the
+/// object's space with `at` its world position now, and return the wire it fired.
 ///
 /// # Safety
 ///
-/// `weapon` must be live and held alive, on the main thread outside the world update.
-pub(super) unsafe fn fire(weapon: &WeaponBase, at: Vec3) -> Result<NonZeroUsize, Refusal> {
+/// `object` must be a live physics game object held alive, on the main thread outside the world
+/// update.
+pub(super) unsafe fn fire(
+    object: NonZeroUsize,
+    local: Vec3,
+    at: Vec3,
+) -> Result<NonZeroUsize, Refusal> {
     let hook = unsafe { local_hook() }.ok_or(Refusal::NoPlayer)?;
     if let Some(refusal) = busy(hook) {
         return Err(refusal);
@@ -53,10 +59,10 @@ pub(super) unsafe fn fire(weapon: &WeaponBase, at: Vec3) -> Result<NonZeroUsize,
     info.m_TargetPosition = vector(at);
     info.m_WasInRange = true;
     info.m_BoneIndex = NO_BONE;
-    let game_object = (weapon as *const WeaponBase as usize
-        + WeaponBase::GAME_OBJECT_BASE_OFFSET as usize) as *mut _;
+    let game_object =
+        (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *mut _;
     unsafe {
-        info.SetupTargetFromGameObject(game_object, &vector(Vec3::ZERO));
+        info.SetupTargetFromGameObject(game_object, &vector(local));
         hook.FireHookCustom(&mut info, ptr::null_mut(), true);
         // The fire copied the target info into the wire's end; this copy's weak reference is ours.
         info.m_TargetGameObject.Assign(&null_weak());

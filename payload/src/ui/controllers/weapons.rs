@@ -614,6 +614,27 @@ fn snatch_settings(ui: &mut Ui, s: &mut SnatchConfig) {
             ui.add(
                 egui::Slider::new(&mut s.attach_timeout_s, 0.5..=6.0).text("Hook flight limit (s)"),
             );
+            ui.checkbox(&mut s.holstered, "Guns holstered on characters")
+                .on_hover_text(
+                    "A character drops the gun on its body and staggers. Needs the steal.",
+                );
+            ui.checkbox(&mut s.props, "Loose objects")
+                .on_hover_text("An object one hand can carry comes into the hand's hold.");
+            ui.checkbox(&mut s.doors, "Car doors").on_hover_text(
+                "The line pulls a closed door of a still vehicle open at its handle.",
+            );
+            ui.add_enabled_ui(s.doors, |ui| {
+                ui.add(
+                    egui::Slider::new(&mut s.door_reach_m, 0.1..=1.5).text("Door handle reach (m)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut s.door_max_vehicle_speed_mps, 0.0..=10.0)
+                        .text("Fastest vehicle (m/s)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut s.door_swing_mps, 0.0..=10.0).text("Door swing (m/s)"),
+                );
+            });
         });
     });
 }

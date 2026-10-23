@@ -39,6 +39,20 @@ pub struct SnatchConfig {
     /// How long a gun a character lets go of may take to lie in the world before the snatch gives
     /// up on it, seconds.
     pub free_timeout_s: f32,
+    /// Snatch a gun holstered on a character's body, as from its hands: the character drops it
+    /// and staggers. Needs the steal (`weapons.hold.steal`).
+    pub holstered: bool,
+    /// Snatch a loose object one hand can carry, into the hand's ordinary hold.
+    pub props: bool,
+    /// Pull a vehicle's closed door open with the line, at its handle under the aim.
+    pub doors: bool,
+    /// How near the grapple's aim must hit a door's handle area, metres.
+    pub door_reach_m: f32,
+    /// The fastest a vehicle may move for the line to pull its door open, metres per second.
+    pub door_max_vehicle_speed_mps: f32,
+    /// How hard the line swings a door outward once it comes open: the door's mass times this,
+    /// metres per second.
+    pub door_swing_mps: f32,
 }
 
 impl SnatchConfig {
@@ -64,6 +78,12 @@ impl SnatchConfig {
             stall_window_s: 0.5,
             attach_timeout_s: 2.5,
             free_timeout_s: 0.5,
+            holstered: true,
+            props: true,
+            doors: true,
+            door_reach_m: 0.5,
+            door_max_vehicle_speed_mps: 2.0,
+            door_swing_mps: 3.0,
         }
     }
 }

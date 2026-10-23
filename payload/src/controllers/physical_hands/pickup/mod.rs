@@ -43,8 +43,8 @@ use jc3gi::{
     equipment::weapon::WeaponBase, input::input_action_map::Action, vehicle::vehicle::DoorSlot,
 };
 pub(super) use reach::{REACH_DIRECTIONS, ReachTuning, reach};
-pub(super) use state::PickupState;
-use state::{Held, HeldKind, Request};
+use state::{Held, HeldKind};
+pub(super) use state::{PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
 
 use crate::{
