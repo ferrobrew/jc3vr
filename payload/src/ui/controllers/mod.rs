@@ -18,6 +18,7 @@ mod hand_bodies;
 mod hands;
 mod haptics;
 mod inventory;
+mod loadout;
 mod locomotion;
 mod map;
 mod mode;
@@ -52,10 +53,11 @@ use crate::{
         frame::{self as controller_frame, InteractionProfile},
         gamepad_setting,
         hands::{ik as hand_ik, late, tiers},
-        haptics as controller_haptics, locomotion as controller_locomotion, map as controller_map,
-        mode as controller_mode, overlay as controller_overlay,
-        physical_hands as controller_physical_hands, roomscale as controller_roomscale, scheme,
-        summary as controller_summary,
+        haptics as controller_haptics,
+        loadout::sandbox as loadout_sandbox,
+        locomotion as controller_locomotion, map as controller_map, mode as controller_mode,
+        overlay as controller_overlay, physical_hands as controller_physical_hands,
+        roomscale as controller_roomscale, scheme, summary as controller_summary,
         weapons::inventory as controller_inventory,
     },
     hud::{pointer, summary_panel},
@@ -105,6 +107,7 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
     let weapons_readout = weapons::WeaponsReadout::read();
     let inventory_status = controller_inventory::status();
     let restore_status = controller_inventory::restore::status();
+    let loadout_status = loadout_sandbox::status();
     let haptics_status = controller_haptics::status();
     let scope_readout = scope::ScopeReadout::read();
     let vehicles_readout = vehicles::VehiclesReadout::read();
@@ -215,6 +218,10 @@ pub fn egui_debug_controllers(ui: &mut Ui) {
             .show(ui, |ui| {
                 inventory::inventory_readout(ui, &inventory_status, &restore_status)
             });
+
+        egui::CollapsingHeader::new("Loadout core")
+            .default_open(false)
+            .show(ui, |ui| loadout::loadout_readout(ui, &loadout_status));
 
         egui::CollapsingHeader::new("Haptics")
             .default_open(true)

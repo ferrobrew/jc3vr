@@ -69,5 +69,7 @@ jiff = "0.2.29"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+proptest = "1.11.0"
+test-case = "3.3.1"
 # The synthetic recordings are held to this build's decoder and semantic schema.
 tracking-synth = { path = "../tools/tracking-synth" }

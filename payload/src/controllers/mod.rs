@@ -66,6 +66,7 @@ pub mod gamepad_setting;
 pub mod grab;
 pub mod hands;
 pub mod haptics;
+pub mod loadout;
 pub mod locomotion;
 pub mod map;
 pub(crate) mod menu;

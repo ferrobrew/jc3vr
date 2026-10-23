@@ -1,6 +1,6 @@
 # The two-handed inventory
 
-Not built yet: this is the design and the plan of record. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
+Mostly not built yet: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)) but not wired into the game; everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
 
 The local player's two hands are independent. Each holds its own weapon or object, items pass between the hands, weapons dock on the body's sockets and are drawn from them, and the player carries what the body holds rather than what the game's slots allow. Boneworks and Half-Life: Alyx are the guiding light: the player does everything with their own body, even where that adds friction, and nothing docks, draws, or switches by itself.
 
@@ -110,7 +110,7 @@ The game has no per-hand hold layer: its hand poses are per weapon class, one cl
 
 The table is the one source of truth for the player's items, owned by one module, and nothing else holds any of that state.
 
-- The core is pure: the table, its places, and its transitions (take, dock, draw, hand over, let go, lose, a game-side give or removal), with its invariants in the types: each item is in exactly one place, a hand holds at most one item, and the primary follows from the hands. It is tested without the game.
+- The core is pure: the table, its places, and its transitions, with its invariants in the types, tested without the game. It is built; see ["The core as built"](#the-core-as-built).
 - The hooks are thin adapters. A detour decides nothing: it turns what the game wanted (a pickup, a give, a removal, a save about to be stored, a mission cache) into an event for the table, or reads the table's published snapshot. One reconcile step per tick makes the game match the table: the slot projection, each weapon's state and user, its placement and visibility, and its tick.
 - The readouts are one: a Status row and a debug UI section show the whole table, and the log records every transition with its cause, so a bug is either the table being wrong or the reconcile not applying it.
 
@@ -118,11 +118,53 @@ The existing pieces fold into it: the second weapon's tick becomes every hand's,
 
 Switching the control scheme away from the controllers (or turning the mod's weapon handling off) projects the table back into the game's slots, so nothing is lost; switching back rebuilds the table from the slots and the sidecar. Gamepad play is expected to be rough meanwhile.
 
+## The core as built
+
+The code is `payload/src/controllers/loadout/`. It is pure, apart from the object address an item is bound to, and nothing feeds it yet: the old weapon handling still runs, and moves onto it in phase 3b. Until then the debug UI's Controllers tab has a `Loadout core` section that drives a sandbox table of its own with made-up objects, showing the items, the primary, the slots in play, the last store's sidecar, and the latest transitions and refusals.
+
+### Items and their identity
+
+An item is a weapon (its spawn tag's hash, its slot, and its size class), a prop, a grenade, or a C4 charge. Its identity is the table's own, assigned when it enters the table and never reused in a session. Beside it the table keeps the object the item is now: a live address, or nothing while it waits for one, either for its slot's new object across a spawn reset or for a spawn of its type after a restore. The address is the one place the core meets the game; the hooks and the reconcile turn it into an object.
+
+### The places and their invariants
+
+There are six sockets: each hip, each shoulder (where the game docks its two-handed and special slots' weapons, the two-handed on the dominant side), a third place across the back, and the chest. The size classes are, smallest first, the pistol, the submachine gun, the long gun, and the heavy weapon. The hips and the chest take submachine guns and smaller, and the back's three places take everything, the heavy weapons included. How many places the back and the hips have, and whether there is a chest socket, follow the settings and the dominant hand, as the carried weapons' sockets did; a socket a smaller layout lacks keeps the weapon already on it until the player draws it.
+
+The table's layout carries the invariants. An item is a value that cannot be copied, owned by exactly one container: a hand, a socket, or the world. Each hand and socket holds at most one. A socket's item can only be made through a check that it fits, and only a weapon can lie in the world, so a prop, a grenade, or a charge let go of leaves the table. No two live items share an object, and the primary is never stored: it is the dominant hand when that holds a weapon, otherwise the other hand when it does, otherwise none.
+
+### The transitions
+
+Each transition applies whole and returns its changes (an item entered, moved, left, was bound to a new object, or lost its object), each with its cause for the log, or is refused with a typed error and leaves the table as it was:
+
+- a take into an empty hand, from the ground, a rack, a rack's copy, a locker, a character's hands, a mission's give, the grapple snatch, a pouch, or out of the air; each source brings only its kinds (a pouch a grenade or a charge, a catch a grenade, the ground a weapon or a prop, the rest weapons), and a weapon lying in the world taken again keeps its identity;
+- a dock of a hand's weapon on a socket the body has, which is free and fits it; a draw from a socket into an empty hand; a hand-over to an empty other hand;
+- a let-go, recorded as at an ordinary pace or at speed;
+- a loss of a weapon lying in the world: out of the world whatever its departure, or left behind only when it was let go of at speed. It returns to the first free socket that fits it, or, with none free, to the player's feet, so that the body being full never loses a weapon;
+- a game's give, to an empty hand (the dominant first), else a free socket that fits it, else the player's feet;
+- a game's removal of one object, one item, or every weapon, from wherever it is, the hands included;
+- a restored item's object spawned.
+
+Where a weapon goes when the player does not choose (a give with the hands full, a loss, a respawn, a restore) is the socket the game docks its slot on, then the snuggest socket that fits it, the dominant side first.
+
+### The spawn reset and the caches
+
+At the reset's start every weapon the play projection puts in a slot waits for its slot's new object; a slot already waited for stays as it is. At its end the weapons in the world leave the table, and each new slot object re-binds the item waiting for that slot with the same type, so it keeps its identity and its place. A new object nothing waits for goes onto the body, and an item whose slot the game emptied or gave another type leaves. A respawn also empties the hands: their weapons go onto the body and anything else leaves. A travel keeps the hands, and a load starts the table again from the slots.
+
+At each of the game's caches (a checkpoint, a mission taking the player's weapons, a challenge) the table snapshots the weapons on the body with their places and the slots the store projection gave them. A checkpoint's restore returns the table to the snapshot: what was gained since leaves, and every item comes back to its socket, all taken out before any goes back so that two that swapped places swap back. A mission's or a challenge's restore brings the snapshot's weapons back beside what the player holds since. Either way the hands come back empty, the restored slots' objects re-bind the snapshot's items by slot and type, and a snapshot's weapon whose object is gone waits to be spawned again.
+
+### The projection
+
+Each weapon slot holds one weapon of that slot from the body: the primary hand's, then the other hand's, then the one on the socket the game docks the slot on, then the other sockets' in order, the oldest first among equals. Only a weapon bound to a live object goes into a slot, and one in the world never does. The primary hand's weapon is selected. In play the heavy slot stays empty; for a store or a cache it holds a heavy weapon too, and the sidecar records every weapon on the body with its hand or socket and its slot, or none for one beyond the slots. The consumables' slots stay the game's.
+
+### The events
+
+A hook or the hands send one event per thing that happened: a take, a dock, a draw, a hand-over, a let-go, a loss, a give, a spawn, a removal, a store about to happen, a cache, a restore, a reset beginning, and a reset completing with the slots the game now holds. The fold applies each whole or refuses it, and returns the transitions and, for a store or a cache, the slots and the sidecar the game should be given before it goes on.
+
 ## Phases
 
 1. The RE pass. Answers the questions below, and binds what the core and the reconcile need. Done, apart from the open points under "RE answers".
 2. The relaxed body. The weapon-wielded condition reads false for the local player's base layer, on its own ahead of the rest, since the combat stance is wrong today whatever the inventory does.
-3. The core and the reconcile. The table, its transitions, the slot projection, the per-hand tick and reload, the primary, the readouts; the existing hands and sockets moved onto it.
+3. The core and the reconcile. The table, its transitions, the slot projection, the per-hand tick and reload, the primary, the readouts; the existing hands and sockets moved onto it. The pure core is done (3a); the reconcile and the move of the existing mechanisms onto it are 3b.
 4. The takes. Every source lands in the table and the grabbing hand: the ground, racks and lockers, characters' hands, missions' gives; the game's pickup detoured.
 5. Traversal and persistence. Vehicles and seats with armed hands, the wingsuit, the parachute, swimming, the base layer's holster tasks, saves, the checkpoint snapshot, missions and challenges, the spawn reset's re-keying, death and respawn, the lost-weapon return, the scheme switch.
 6. The grapple snatch, on top of the takes ([grapple-snatch.md](grapple-snatch.md)): the first feature built on the table, and its end-to-end test.
