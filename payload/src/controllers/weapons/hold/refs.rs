@@ -84,6 +84,25 @@ impl Strong {
         (!strong.0.px.is_null()).then_some(strong)
     }
 
+    /// Take over the strong reference `shared`, which the caller no longer releases.
+    ///
+    /// # Safety
+    ///
+    /// `shared` must be a strong reference whose release falls to the caller.
+    pub(crate) unsafe fn adopt(shared: SharedPtr<GameObject>) -> Option<Self> {
+        (!shared.px.is_null()).then_some(Strong(shared))
+    }
+
+    /// Give the strong reference up to a callee that releases it.
+    pub(crate) fn into_raw(self) -> SharedPtr<GameObject> {
+        let shared = SharedPtr {
+            px: self.0.px,
+            pn: self.0.pn,
+        };
+        std::mem::forget(self);
+        shared
+    }
+
     /// The object's `CGameObject` subobject.
     pub(crate) fn object(&self) -> *mut GameObject {
         self.0.px

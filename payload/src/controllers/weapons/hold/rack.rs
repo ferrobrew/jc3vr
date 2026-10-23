@@ -19,8 +19,9 @@
 //! - a weapon the rack hands over goes straight into the grabbing hand, as a weapon off the ground
 //!   does, after the call that starts the game's own pickup of it ([`WeaponBase::PickupStart`]);
 //! - a rack with unlimited stock hands out a copy instead: starting the pickup asks the inventory
-//!   for a new weapon of the same kind, which spawns a few frames later and is equipped. The hand
-//!   is left pending for it, and the rack's own weapon is hidden from the grab until the copy is
+//!   for a new weapon of the same kind, which spawns a few frames later and is a give the table
+//!   takes into the hand left expecting it, without the game's equip, so the other hand keeps what
+//!   it holds. The hand is left pending for it, and the rack's own weapon is hidden from the grab until the copy is
 //!   in the hand; the copy then slides into the hand from where the rack's weapon was, so it is
 //!   seen to leave the rack, and the rack's weapon fades back in a moment later, restocked.
 
@@ -53,7 +54,6 @@ use crate::controllers::{
             steal,
             world::{TargetKind, WorldTarget},
         },
-        inventory,
     },
 };
 
@@ -171,13 +171,8 @@ pub(crate) unsafe fn take(
         return Err(RackRefusal::Pickup(Refusal::AnimationForbids));
     }
     let from = unsafe { pickup::gun_pose(weapon) };
-    // The copy goes into the slot and drops its occupant, so the occupant leaves the slot first
-    // when the loadout table has it on the body.
-    if !owner.m_Inventory.m_Weapons[slot as usize].px.is_null()
-        && unsafe { inventory::reconcile::vacate(owner, slot) }
-    {
-        tracing::info!(target: "controllers", slot = slot_label(slot), "hold: the weapon the rack's copy replaces keeps its place");
-    }
+    // The copy is a give, which the table takes into the hand left expecting it
+    // ([`crate::controllers::weapons::inventory::gives`]); the slot's weapon keeps its place.
     hold::begin(hand, Cause::Rack, None);
     unsafe { weapon.PickupStart(pickup::activator(owner)) };
     unsafe { weapon.SetVisible(false, false, false) };

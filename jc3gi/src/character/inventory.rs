@@ -57,8 +57,11 @@ pub struct Inventory {
     /// The slot whose arriving respawn-table weapon is equipped
     /// ([`E_EQUIP`](crate::character::inventory::EquipMode::E_EQUIP)), or [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE), in which case an
     /// arriving weapon is equipped only into the selected slot
-    /// ([`E_EQUIP_IF_IN_SELECTED_SLOT`](crate::character::inventory::EquipMode::E_EQUIP_IF_IN_SELECTED_SLOT)). The pre-reset
-    /// event records the selected slot here.
+    /// ([`E_EQUIP_IF_IN_SELECTED_SLOT`](crate::character::inventory::EquipMode::E_EQUIP_IF_IN_SELECTED_SLOT)). An arriving
+    /// weapon of any other slot is not equipped ([`E_DONT_EQUIP`](crate::character::inventory::EquipMode::E_DONT_EQUIP)), and
+    /// the arrival of the named slot's weapon sets it back to [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE)
+    /// ([`WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned)). The pre-reset event records the selected slot
+    /// here.
     pub m_WeaponToSpawnEquippedWeapon: crate::character::inventory::WeaponSlot,
     /// Per respawn-table entry, whether rounds beyond the magazine go to the reserve on arrival.
     pub m_WeaponToSpawnExtraAmmo: [bool; 8],

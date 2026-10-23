@@ -12,6 +12,7 @@
 //!   to follow the table each tick;
 //! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
 //! - [`missions`]: the carried weapons stashed while a mission holds the player's weapons;
+//! - [`gives`]: the game's gives, placed by the table rather than equipped;
 //! - [`engine`]: the engine reads behind them;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
@@ -29,6 +30,7 @@
 pub(crate) mod carry;
 pub mod config;
 pub(crate) mod engine;
+pub(crate) mod gives;
 mod missions;
 pub mod persist;
 pub mod pins;
@@ -64,6 +66,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(reset::hook_library())
         .with_hook_library(carry::hook_library())
         .with_hook_library(missions::hook_library())
+        .with_hook_library(gives::hook_library())
 }
 
 /// The inventory's readout.
@@ -137,8 +140,10 @@ pub(crate) unsafe fn input_tick(
         live::begin_tick(inputs.dominant, &slots);
         unsafe { restore::input_tick(owner, &inputs.settings) };
         unsafe { use_item::input_tick(owner) };
+        unsafe { gives::input_tick(owner) };
     } else {
         unsafe { use_item::stand_down() };
+        unsafe { gives::stand_down() };
         if STATE.lock().status.active {
             unsafe { reconcile::project_back(owner) };
         }
@@ -367,6 +372,7 @@ fn on_reset(died: bool) {
         .filter_map(ObjectAddress::from_address)
         .collect();
     live::reset_began(died, &released);
+    gives::on_reset();
     let slot_single = single::slot_single();
     restore::on_pre_reset(carry::records(), slot_single);
     single::on_reset(Some(slot_single));

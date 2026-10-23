@@ -153,14 +153,21 @@ pub enum GiveSource {
     SupplyDrop,
     /// A new game's starting loadout.
     NewGame,
+    /// A give the game's respawn table delivers whose caller is not told apart: a mission's, a
+    /// challenge's, the graph script's, an event's, or a reward.
+    Game,
+    /// The copy a rack with unlimited stock gives the game's own pickup.
+    RackCopy,
 }
 
 impl GiveSource {
-    pub const ALL: [GiveSource; 4] = [
+    pub const ALL: [GiveSource; 6] = [
         GiveSource::Mission,
         GiveSource::Challenge,
         GiveSource::SupplyDrop,
         GiveSource::NewGame,
+        GiveSource::Game,
+        GiveSource::RackCopy,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -169,6 +176,8 @@ impl GiveSource {
             GiveSource::Challenge => "a challenge's loadout",
             GiveSource::SupplyDrop => "a supply drop",
             GiveSource::NewGame => "a new game's loadout",
+            GiveSource::Game => "the game's give",
+            GiveSource::RackCopy => "a rack's copy",
         }
     }
 }

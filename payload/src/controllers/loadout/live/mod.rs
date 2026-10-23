@@ -45,12 +45,12 @@ use crate::controllers::{
         binding::{Awaiting, Binding, ObjectAddress},
         event::Event,
         item::{ItemKind, WeaponType},
-        live::expect::landing,
+        live::expect::{copy_hand, landing},
         projection::{StoreProjection, project_store},
         reset::{CacheKind, ResetKind, SlotObject},
         socket::{BodyLayout, Socket},
         table::{Loadout, LoadoutSnapshot, Place},
-        transition::{Removal, RemovalWhy, Restored, TakeSource},
+        transition::{Give, GiveSource, Removal, RemovalWhy, Restored, Take, TakeSource},
     },
 };
 
@@ -220,6 +220,56 @@ pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
 /// Whether the table runs.
 pub(crate) fn running() -> bool {
     LIVE.lock().started
+}
+
+/// Whether a spawn reset or a load is under way: begun, or done and not yet folded into the table.
+pub(crate) fn resetting() -> bool {
+    let live = LIVE.lock();
+    live.started && (live.reset.began || live.reset.completed)
+}
+
+/// Whether a mission holds the player's weapons with its cache, its give-back still to come.
+pub(crate) fn mission_holds() -> bool {
+    let live = LIVE.lock();
+    live.started && live.mission != MissionWatch::Idle
+}
+
+/// The game gave the player `held` from `source`, the weapon in its slot and not equipped: a hand
+/// expecting a rack's copy takes it (the copy a grab of a rack with unlimited stock asked for), and
+/// otherwise the table's give rule places it, an empty hand first (the dominant first), else a
+/// free socket that fits it, else the player's feet. Returns where the table has it, and the hand
+/// that took a rack's copy.
+pub(crate) fn given(held: Held, source: GiveSource) -> Option<(Place, Option<Hand>)> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    let free = Hand::BOTH.map(|hand| live.table.held(hand).is_none());
+    let copy = copy_hand(live.pending, held.object, free);
+    match copy {
+        Some(hand) => {
+            live.pending = None;
+            live.fold(Event::Take(Take {
+                hand,
+                object: held.object,
+                kind: ItemKind::Weapon(held.weapon),
+                source: TakeSource::RackCopy,
+            }));
+            if live.hand_holding(held.object) == Some(hand) {
+                live.origins[hand.index()] = Some(Expect::Take(TakeSource::RackCopy));
+            }
+        }
+        None => {
+            live.fold(Event::Given(Give {
+                object: held.object,
+                weapon: held.weapon,
+                source,
+            }));
+        }
+    }
+    live.publish_places();
+    let place = live.place_of(held.object)?;
+    Some((place, copy.filter(|&hand| place == Place::Hand(hand))))
 }
 
 /// `hand` expects the next weapon the game wields, or `weapon` when it is named, to come into it
@@ -405,6 +455,7 @@ pub(crate) fn reset_began(died: bool, released: &[ObjectAddress]) {
         return;
     }
     live.reset.died |= died;
+    live.reset.began = true;
     live.fold(Event::ResetBegan);
     for &object in released {
         if live.place_of(object).is_some() {
@@ -512,6 +563,8 @@ struct Live {
 /// A spawn reset or a load waiting for the next input tick to report the slots it left.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 struct ResetWatch {
+    /// The reset's pre-reset event came, and its completion has not been folded yet.
+    began: bool,
     completed: bool,
     /// The player's health was spent at the reset's begin.
     died: bool,
@@ -538,6 +591,7 @@ impl Live {
             origins: [None; 2],
             last: None,
             reset: ResetWatch {
+                began: false,
                 completed: false,
                 died: false,
                 loaded: false,

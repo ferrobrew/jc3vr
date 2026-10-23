@@ -44,7 +44,10 @@ use crate::{
                 pickup::{self, TakeOptions},
                 refs::Strong,
             },
-            inventory::engine::{slot_of, strong_to, weapon_of},
+            inventory::{
+                engine::{slot_of, strong_to, weapon_of},
+                gives,
+            },
         },
     },
 };
@@ -188,11 +191,17 @@ fn pickup_item(weapon: *mut WeaponBase, activator: *mut GameObject) {
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::PickupStart_ADDRESS)]
 fn pickup_start(weapon: *mut WeaponBase, activator: *mut GameObject) {
-    if is_local_player(activator) {
-        // SAFETY: the pickup is given a live weapon.
-        if let Some(w) = unsafe { weapon.as_ref() } {
-            single::pickup_started(w);
-        }
+    // SAFETY: the pickup is given a live weapon.
+    let local = unsafe { weapon.as_ref() }.filter(|_| is_local_player(activator));
+    let Some(w) = local else {
+        PICKUP_START.get().unwrap().call(weapon, activator);
+        return;
+    };
+    single::pickup_started(w);
+    if w.m_InfinitePickup {
+        // The start gives a copy, which the table then places.
+        gives::within_copy_start(|| PICKUP_START.get().unwrap().call(weapon, activator));
+    } else {
+        PICKUP_START.get().unwrap().call(weapon, activator);
     }
-    PICKUP_START.get().unwrap().call(weapon, activator);
 }

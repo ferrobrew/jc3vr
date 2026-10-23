@@ -89,6 +89,26 @@ pub(crate) fn landing(
     }
 }
 
+/// The hand a weapon the game gives (`object`) comes into as a rack's copy: the hand left
+/// expecting one by a grab of a rack, when it is free (`free`, by [`Hand::index`]) and the
+/// expectation is for this weapon or any. `None` for any other give, which the table's give rule
+/// places.
+pub(crate) fn copy_hand(
+    pending: Option<Pending>,
+    object: ObjectAddress,
+    free: [bool; 2],
+) -> Option<Hand> {
+    pending
+        .filter(|p| {
+            matches!(
+                p.expect,
+                Expect::Take(TakeSource::Rack | TakeSource::RackCopy)
+            ) && p.claims(object)
+        })
+        .map(|p| p.hand)
+        .filter(|hand| free[hand.index()])
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
@@ -142,6 +162,29 @@ mod tests {
             landing(Some(pending), object(1), [true; 2], Hand::Right),
             (Hand::Left, Some(Expect::Take(TakeSource::World)), true)
         );
+    }
+
+    #[test]
+    fn a_rack_s_copy_comes_into_the_hand_that_asked_for_it() {
+        let rack = Pending::new(Hand::Left, Expect::Take(TakeSource::Rack), None);
+        assert_eq!(
+            copy_hand(Some(rack), object(1), [true; 2]),
+            Some(Hand::Left)
+        );
+        let mut left_full = [true; 2];
+        left_full[Hand::Left.index()] = false;
+        assert_eq!(
+            copy_hand(Some(rack), object(1), left_full),
+            None,
+            "the hand filled since"
+        );
+        let draw = Pending::new(Hand::Left, Expect::Draw, None);
+        assert_eq!(
+            copy_hand(Some(draw), object(1), [true; 2]),
+            None,
+            "any other give takes the give rule"
+        );
+        assert_eq!(copy_hand(None, object(1), [true; 2]), None);
     }
 
     #[test]
