@@ -35,7 +35,7 @@ use crate::{
                 config::InventoryConfig,
                 decide::{self, GrabDecision, HandsView},
                 engine as inventory_engine,
-                registry::ObjectKey,
+                engine::ObjectKey,
                 sockets::{self, Fit, fit_of},
             },
         },

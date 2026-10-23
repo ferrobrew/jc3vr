@@ -18,9 +18,9 @@
 //!   handling and published each input tick;
 //! - [`sandbox`]: a table of the debug UI's own, driven by hand with made-up objects.
 //!
-//! Nothing reads the live table yet but the readouts: the old weapon handling
-//! ([`crate::controllers::weapons`]) still moves the weapons, and moves onto this core step by step
-//! in phase 3b.
+//! Only the readouts and the pins of the weapons lying in the world read the live table yet: the
+//! old weapon handling ([`crate::controllers::weapons`]) still moves the weapons, and moves onto
+//! this core step by step in phase 3b.
 
 mod binding;
 mod event;

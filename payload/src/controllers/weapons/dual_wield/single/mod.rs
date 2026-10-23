@@ -75,7 +75,7 @@ use crate::{
                 carry,
                 config::InventoryConfig,
                 engine as inventory_engine,
-                registry::ObjectKey,
+                engine::ObjectKey,
                 restore,
                 sockets::{Fit, Layout, fit_of},
             },

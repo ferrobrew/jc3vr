@@ -2,15 +2,14 @@
 //!
 //! The spawn system despawns a dropped weapon by its distance from the player and the view, and
 //! skips any object something else holds a strong reference to
-//! (`docs/engine/gameplay/weapon-ownership-and-despawn.md`). So a weapon the player let go of is
-//! pinned (held by a strong reference) while it is near: within the pin radius, and once pinned,
-//! until it is past the release radius, so a weapon at the edge does not flicker. At most a set
-//! number are pinned, the nearest first, since a pinned weapon keeps its resources loaded. A
-//! weapon left unpinned and far away, or beyond the most the registry keeps, is forgotten: the
-//! game's own clean-up takes it from there. A weapon another character took is never pinned, and
-//! is forgotten once that character is as far away.
+//! (`docs/engine/gameplay/weapon-ownership-and-despawn.md`). So a weapon the loadout table has
+//! lying in the world is pinned (held by a strong reference) while it is near: within the pin
+//! radius, and once pinned, until it is past the release radius, so a weapon at the edge does not
+//! flicker. At most a set number are pinned, the nearest first, since a pinned weapon keeps its
+//! resources loaded. A weapon left unpinned and far away, or beyond the most the table keeps in
+//! the world, is forgotten: it leaves the table, and the game's own clean-up takes it from there.
 
-use crate::controllers::weapons::inventory::registry::{Entry, EntryId, Location};
+use crate::controllers::loadout::ObjectAddress;
 
 /// How the pins are chosen.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -26,35 +25,36 @@ pub struct PinSettings {
     pub max_pinned: usize,
     /// An unpinned weapon this far away is forgotten, metres.
     pub forget_m: f32,
-    /// The most weapons in the world the registry keeps.
+    /// The most weapons in the world the table keeps.
     pub max_tracked: usize,
+}
+
+/// A weapon the table has lying in the world, as the pins see it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WorldWeapon {
+    pub object: ObjectAddress,
+    /// How far it is from the player, metres, when that could be read.
+    pub distance_m: Option<f32>,
+    /// Whether it is pinned now.
+    pub pinned: bool,
 }
 
 /// The changes to the pins one tick makes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PinPlan {
-    pub pin: Vec<EntryId>,
-    pub unpin: Vec<EntryId>,
-    pub forget: Vec<EntryId>,
+    pub pin: Vec<ObjectAddress>,
+    pub unpin: Vec<ObjectAddress>,
+    pub forget: Vec<ObjectAddress>,
 }
 
-/// The pins for `entries` under `settings`.
-pub fn plan(entries: &[Entry], settings: &PinSettings) -> PinPlan {
+/// The pins for the weapons in `world` under `settings`.
+pub fn plan(world: &[WorldWeapon], settings: &PinSettings) -> PinPlan {
     let forget_m = finite_or(settings.forget_m, f32::INFINITY);
-    let npc_far = entries.iter().filter(|e| {
-        e.location == Location::Npc && e.distance_m.is_some_and(|d| d.is_finite() && d > forget_m)
-    });
-    let npc_forget: Vec<EntryId> = npc_far.map(|e| e.id).collect();
     let radius = finite_or(settings.radius_m, 0.0).max(0.0);
     let release = finite_or(settings.release_m, radius).max(radius);
-    let mut world: Vec<(EntryId, Option<f32>, bool)> = entries
+    let mut world: Vec<(ObjectAddress, Option<f32>, bool)> = world
         .iter()
-        .filter_map(|e| match e.location {
-            Location::World { pinned } => {
-                Some((e.id, e.distance_m.filter(|d| d.is_finite()), pinned))
-            }
-            _ => None,
-        })
+        .map(|w| (w.object, w.distance_m.filter(|d| d.is_finite()), w.pinned))
         .collect();
     // The nearest first; a weapon whose distance could not be read last.
     world.sort_by(|a, b| match (a.1, b.1) {
@@ -74,24 +74,23 @@ pub fn plan(entries: &[Entry], settings: &PinSettings) -> PinPlan {
     let mut plan = PinPlan::default();
     let mut kept = 0;
     let mut tracked = 0;
-    for (id, distance, pinned) in world {
+    for (object, distance, pinned) in world {
         let want = wants(distance, pinned) && kept < settings.max_pinned;
         if want {
             kept += 1;
         }
         match (want, pinned) {
-            (true, false) => plan.pin.push(id),
-            (false, true) => plan.unpin.push(id),
+            (true, false) => plan.pin.push(object),
+            (false, true) => plan.unpin.push(object),
             _ => {}
         }
         let far = distance.is_some_and(|d| d > forget_m);
         if !want && (far || tracked >= settings.max_tracked) {
-            plan.forget.push(id);
+            plan.forget.push(object);
         } else {
             tracked += 1;
         }
     }
-    plan.forget.extend(npc_forget);
     plan
 }
 
@@ -101,10 +100,9 @@ fn finite_or(value: f32, fallback: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use jc3gi::character::inventory::WeaponSlot;
+    use std::num::NonZeroUsize;
 
     use super::*;
-    use crate::controllers::weapons::inventory::registry::WeaponKind;
 
     const SETTINGS: PinSettings = PinSettings {
         enabled: true,
@@ -115,24 +113,22 @@ mod tests {
         max_tracked: 4,
     };
 
-    fn world(id: u32, distance_m: Option<f32>, pinned: bool) -> Entry {
-        Entry {
-            id: EntryId(id),
-            object: id as usize * 0x100,
-            kind: WeaponKind {
-                tag_hash: 1,
-                slot: WeaponSlot::E_SLOT_TWO_HANDED,
-            },
-            magazine: 0,
-            location: Location::World { pinned },
+    fn object(n: usize) -> ObjectAddress {
+        ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x100))
+    }
+
+    fn world(n: usize, distance_m: Option<f32>, pinned: bool) -> WorldWeapon {
+        WorldWeapon {
+            object: object(n),
             distance_m,
+            pinned,
         }
     }
 
     #[test]
     fn a_near_weapon_is_pinned_and_released_past_the_hysteresis() {
         let p = plan(&[world(1, Some(5.0), false)], &SETTINGS);
-        assert_eq!(p.pin, vec![EntryId(1)]);
+        assert_eq!(p.pin, vec![object(1)]);
         // Between the radii a pinned weapon keeps its pin and an unpinned one gets none.
         assert_eq!(
             plan(&[world(1, Some(10.0), true)], &SETTINGS),
@@ -144,31 +140,31 @@ mod tests {
                 .is_empty()
         );
         let p = plan(&[world(1, Some(13.0), true)], &SETTINGS);
-        assert_eq!(p.unpin, vec![EntryId(1)]);
+        assert_eq!(p.unpin, vec![object(1)]);
         assert!(p.forget.is_empty(), "not far enough to forget");
     }
 
     #[test]
     fn the_cap_keeps_the_nearest() {
-        let entries = [
+        let weapons = [
             world(1, Some(7.0), true),
             world(2, Some(2.0), false),
             world(3, Some(4.0), false),
         ];
-        let p = plan(&entries, &SETTINGS);
-        assert_eq!(p.pin, vec![EntryId(2), EntryId(3)]);
-        assert_eq!(p.unpin, vec![EntryId(1)], "the farthest gives way");
+        let p = plan(&weapons, &SETTINGS);
+        assert_eq!(p.pin, vec![object(2), object(3)]);
+        assert_eq!(p.unpin, vec![object(1)], "the farthest gives way");
     }
 
     #[test]
     fn far_or_excess_weapons_are_forgotten() {
         let p = plan(&[world(1, Some(80.0), false)], &SETTINGS);
-        assert_eq!(p.forget, vec![EntryId(1)]);
-        let many: Vec<Entry> = (1..=6)
+        assert_eq!(p.forget, vec![object(1)]);
+        let many: Vec<WorldWeapon> = (1..=6)
             .map(|i| world(i, Some(20.0 + i as f32), false))
             .collect();
         let p = plan(&many, &SETTINGS);
-        assert_eq!(p.forget, vec![EntryId(5), EntryId(6)]);
+        assert_eq!(p.forget, vec![object(5), object(6)]);
     }
 
     #[test]
@@ -191,24 +187,6 @@ mod tests {
             ..SETTINGS
         };
         let p = plan(&[world(1, Some(1.0), true), world(2, None, true)], &off);
-        assert_eq!(p.unpin, vec![EntryId(1), EntryId(2)]);
-    }
-
-    #[test]
-    fn a_weapon_another_character_took_is_forgotten_when_far() {
-        let mut taken = world(1, Some(80.0), false);
-        taken.location = Location::Npc;
-        let mut near = world(2, Some(5.0), false);
-        near.location = Location::Npc;
-        let p = plan(&[taken, near], &SETTINGS);
-        assert_eq!(p.forget, vec![EntryId(1)]);
-        assert!(p.pin.is_empty(), "never pinned");
-    }
-
-    #[test]
-    fn only_weapons_in_the_world_are_planned() {
-        let mut slot = world(1, Some(0.0), false);
-        slot.location = Location::MainSlot(WeaponSlot::E_SLOT_TWO_HANDED);
-        assert_eq!(plan(&[slot], &SETTINGS), PinPlan::default());
+        assert_eq!(p.unpin, vec![object(1), object(2)]);
     }
 }

@@ -20,7 +20,7 @@ use crate::controllers::{
 pub(super) fn loadout_readout(ui: &mut Ui, live: &LiveStatus, sandbox: &SandboxStatus) {
     ui.label(
         "The live table, written beside the old weapon handling, which still moves the weapons; \
-         nothing reads the table yet.",
+         only the pins of the weapons lying in the world read it yet.",
     );
     match &live.snapshot {
         None => {

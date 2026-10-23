@@ -59,9 +59,8 @@ use crate::controllers::{
         hold::{refs::Strong, steal},
         holster::slot_label,
         inventory::{
-            engine::{self as inventory_engine, kind_of, shared_view, strong_to},
+            engine::{self as inventory_engine, ObjectKey, Seen, kind_of, shared_view, strong_to},
             persist::Record,
-            registry::{ObjectKey, Seen},
             sockets,
         },
     },
@@ -101,7 +100,7 @@ impl fmt::Display for CarryRefusal {
 
 impl std::error::Error for CarryRefusal {}
 
-/// The carried weapons and their sockets, as the registry sees them.
+/// The carried weapons and their sockets, as the inventory's tick reads them.
 ///
 /// # Safety
 ///

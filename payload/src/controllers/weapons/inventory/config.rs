@@ -15,8 +15,8 @@ use crate::controllers::{
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct InventoryConfig {
-    /// Track the weapons the player owns, holds, and lets go of: the registry everything else here
-    /// builds on.
+    /// Track the weapons the player owns, holds, and lets go of in the loadout table, which
+    /// everything else here builds on.
     pub enabled: bool,
     /// Keep the weapons the player let go of nearby from the game's despawn while they are near.
     pub pin_world: bool,
@@ -95,5 +95,5 @@ impl Default for InventoryConfig {
     }
 }
 
-/// The most weapons in the world the registry keeps.
+/// The most weapons lying in the world the table keeps.
 const MAX_TRACKED: usize = 24;

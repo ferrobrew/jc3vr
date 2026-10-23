@@ -2,19 +2,23 @@
 //! and published as a snapshot each input tick.
 //!
 //! For now the table is dual-written beside the old weapon handling
-//! ([`crate::controllers::weapons`]), which still moves the weapons, and nothing reads it but the
-//! readouts. Every move the old handling makes is also sent here as an event:
+//! ([`crate::controllers::weapons`]), which still moves the weapons, and only the readouts and the
+//! pins of the weapons lying in the world read it. Every move the old handling makes is also sent
+//! here as an event:
 //!
 //! - the hand moves (the draws, holsters, stows, takes, hand-overs, and drops of the holder of the
 //!   wielded weapon and of the second weapon) at the input tick that sees them ([`hands`]);
-//! - what the game does with a weapon the player no longer holds (the registry's fates): a weapon
-//!   the game dropped lies in the world, and one gone or taken by another character leaves;
+//! - what the game did with a weapon the old handling no longer keeps in a slot, the carry set, or
+//!   a hand (its fate, from the inventory's weak reference to it): a weapon the game dropped lies in
+//!   the world, and one gone or taken by another character leaves;
 //! - a weapon lying in the world the pins left to the game leaves;
 //! - the spawn reset's begin and end, the store of the save, the mission's weapon cache, its
 //!   removal and its give-back, and the weapons the sidecar restores or the split pistol pair adds.
 //!
-//! The divergence readout ([`divergence`]) compares the table with the old handling each tick, so
-//! a move the dual-write misses shows before anything is made to read the table. Until the heavy
+//! The divergence readout ([`divergence`]) compares the table with the old handling's slots, carry
+//! set, and hands each tick, so a move the dual-write misses shows before anything is made to read
+//! the table. The weapons lying in the world are the table's alone: the pins read them from it
+//! ([`crate::controllers::weapons::inventory::pins`]). Until the heavy
 //! weapons are the mod's to hold, the table takes only the weapons the old inventory tracks.
 //!
 //! The table is behind one lock. The input tick and the detours (the reset's, the store's, and the
@@ -68,7 +72,7 @@ pub fn status() -> LiveStatus {
     STATUS.lock().clone()
 }
 
-/// What became of a weapon the old handling knew and no longer keeps.
+/// What became of a weapon the old handling no longer keeps.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Fate {
     /// It lies in the world.
@@ -90,11 +94,10 @@ pub(crate) struct Tick<'a> {
     pub hands: [Option<Held>; 2],
     /// Where a weapon the table does not know came from when it comes into each hand.
     pub sources: [TakeSource; 2],
-    /// What became of the weapons the old handling knew and no longer keeps.
+    /// What became of the table's weapons the old handling no longer keeps in a slot, the carry
+    /// set, or a hand.
     pub fates: &'a [(ObjectAddress, Fate)],
-    /// The weapons lying in the world the pins left to the game.
-    pub forgotten: &'a [ObjectAddress],
-    /// Where the old handling has every weapon it knows.
+    /// Where the old handling has every weapon it keeps.
     pub old: &'a [(ObjectAddress, OldPlace)],
 }
 
@@ -167,14 +170,6 @@ pub(crate) fn input_tick(tick: &Tick) {
         };
         live.fold(event);
     }
-    for &object in tick.forgotten {
-        if matches!(live.place_of(object), Some(Place::World(_))) {
-            live.fold(Event::Removed {
-                target: Removal::Object(object),
-                why: RemovalWhy::Forgotten,
-            });
-        }
-    }
     let snapshot = live.table.snapshot();
     let divergence = diverging(tick.old, &snapshot);
     if divergence.len() != live.diverged {
@@ -194,6 +189,28 @@ pub(crate) fn input_tick(tick: &Tick) {
         divergence,
         ..published
     };
+}
+
+/// Every live object the table's items are bound to, and where each is, as of now.
+pub(crate) fn bound() -> Vec<(ObjectAddress, Place)> {
+    let live = LIVE.lock();
+    live.table
+        .items()
+        .filter_map(|item| Some((item.binding.address()?, item.place)))
+        .collect()
+}
+
+/// The pins left `objects`, lying in the world, to the game: they leave the table.
+pub(crate) fn forgotten(objects: &[ObjectAddress]) {
+    let mut live = LIVE.lock();
+    for &object in objects {
+        if matches!(live.place_of(object), Some(Place::World(_))) {
+            live.fold(Event::Removed {
+                target: Removal::Object(object),
+                why: RemovalWhy::Forgotten,
+            });
+        }
+    }
 }
 
 /// Stop the table: the old inventory is off, so the game's slots are the player's weapons again.

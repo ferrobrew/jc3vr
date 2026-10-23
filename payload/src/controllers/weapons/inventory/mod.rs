@@ -3,7 +3,8 @@
 //! `docs/mod/input/vr-inventory.md`, the engine side in
 //! `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
 //!
-//! - [`registry`]: the weapons and where each is, mirrored from the game's slots each input tick;
+//! - [`world`]: the game's side of the loadout table's weapons, what became of each the old
+//!   handling no longer keeps, and the pins' references;
 //! - [`pins`]: which weapons lying in the world are kept from the game's despawn;
 //! - [`sockets`]: the places on the body a weapon beyond the slots docks;
 //! - [`carry`]: the weapons carried beyond the slots, their placement and visibility;
@@ -17,7 +18,8 @@
 //! - [`config`]: the settings.
 //!
 //! Each input tick also feeds the live loadout table ([`crate::controllers::loadout::live`]),
-//! written beside the registry and checked against it.
+//! written beside the old handling and checked against it. The table is the record of every weapon
+//! the player has, the ones lying in the world included, which the pins read.
 //!
 //! A weapon is kept alive and out of the game's despawn by a strong reference: an inventory slot
 //! is one, and the inventory takes its own for a weapon it pins. Everything here runs on the input
@@ -32,10 +34,10 @@ pub(crate) mod engine;
 mod missions;
 pub mod persist;
 pub mod pins;
-pub mod registry;
 mod reset;
 pub mod restore;
 pub mod sockets;
+mod world;
 
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -46,20 +48,11 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::{ObjectAddress, SlotObject, Socket, TakeSource, live},
+    loadout::{ObjectAddress, Place, SlotObject, Socket, TakeSource, live},
     weapons::{
         dual_wield::single,
-        hold::{
-            self,
-            holder::Cause,
-            refs::{Strong, Weak},
-            second,
-        },
-        holster::slot_label,
-        inventory::{
-            config::InventoryConfig,
-            registry::{Entry, Location, ObjectKey, Observation, Registry, Role, Transition},
-        },
+        hold::{self, holder::Cause, refs::Strong, second},
+        inventory::{config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World},
     },
 };
 
@@ -76,8 +69,14 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub struct InventoryStatus {
     /// Whether the last input tick ran the inventory.
     pub active: bool,
-    /// Every weapon the registry knows.
-    pub entries: Vec<Entry>,
+    /// How many weapons the loadout table has on the body, the hands included.
+    pub owned: usize,
+    /// The weapons the table has lying in the world, each with its distance and its pin.
+    pub world: Vec<WorldWeapon>,
+    /// The carried weapons: each one's slot and socket.
+    pub carried: Vec<(WeaponSlot, Socket)>,
+    /// How many weapons the player let go of another character holds.
+    pub with_others: usize,
     /// Weapons pinned and forgotten since the payload loaded.
     pub pins: u64,
     pub forgotten: u64,
@@ -93,36 +92,9 @@ pub struct InventoryStatus {
 }
 
 impl InventoryStatus {
-    /// The carried weapons: each one's slot and socket.
-    pub fn carried(&self) -> impl Iterator<Item = (WeaponSlot, Socket)> + '_ {
-        self.entries.iter().filter_map(|e| match e.location {
-            Location::Socket(socket) => Some((e.kind.slot, socket)),
-            _ => None,
-        })
-    }
-
-    /// How many of the player's weapons another character holds.
-    pub fn with_others(&self) -> usize {
-        self.entries
-            .iter()
-            .filter(|e| e.location == Location::Npc)
-            .count()
-    }
-
-    /// How many weapons in the world are pinned, and how many the registry knows there.
-    pub fn world(&self) -> (usize, usize) {
-        let world = self
-            .entries
-            .iter()
-            .filter(|e| matches!(e.location, Location::World { .. }));
-        let (mut pinned, mut all) = (0, 0);
-        for entry in world {
-            all += 1;
-            if entry.location == (Location::World { pinned: true }) {
-                pinned += 1;
-            }
-        }
-        (pinned, all)
+    /// How many weapons in the world are pinned.
+    pub fn pinned(&self) -> usize {
+        self.world.iter().filter(|w| w.pinned).count()
     }
 }
 
@@ -143,7 +115,7 @@ pub(crate) struct TickInputs {
     pub separate_pistols: bool,
 }
 
-/// Fold one input tick into the registry and act on the pins.
+/// Fold one input tick of the old handling into the loadout table, and act on the pins.
 ///
 /// # Safety
 ///
@@ -176,23 +148,16 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
     let player = engine::position(owner);
     let slots = unsafe { engine::slots(owner) };
     unsafe { missions::input_tick(!slots.is_empty()) };
-    for (seen, weapon) in &slots {
-        if !state.handles.iter().any(|h| h.object == seen.object) {
-            state.handles.push(Handle {
-                object: seen.object,
-                // SAFETY: the slot keeps the weapon alive.
-                weak: unsafe { engine::weak_to(weapon) },
-                pin: None,
-            });
-        }
+    for (_, weapon) in &slots {
+        // SAFETY: the slot keeps the weapon alive.
+        unsafe { state.world.watch(weapon) };
     }
-    let seen: Vec<_> = slots.into_iter().map(|(seen, _)| seen).collect();
     let offsets = inputs.settings.offsets;
     // A carried pistol sits in a hip holster the slot's pistol does not take.
-    let pistol = seen
+    let pistol = slots
         .iter()
-        .find(|s| s.kind.slot == WeaponSlot::E_SLOT_DUAL_WIELD)
-        .map(|s| s.object);
+        .find(|(s, _)| s.kind.slot == WeaponSlot::E_SLOT_DUAL_WIELD)
+        .map(|(s, _)| s.object);
     let pair = pistol.is_some_and(|object| !single::is(object));
     let home = single::slot_home().filter(|_| pistol.is_some_and(single::is));
     carry::set_offsets(|socket| {
@@ -200,46 +165,13 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
     });
     let carried = unsafe { carry::seen() };
     for (seen, _) in &carried {
-        if !state.handles.iter().any(|h| h.object == seen.object) {
-            state.handles.push(Handle {
-                object: seen.object,
-                // SAFETY: the carry set keeps the weapon alive.
-                weak: unsafe { engine::weak_to(&*(seen.object as *const WeaponBase)) },
-                pin: None,
-            });
-        }
+        // SAFETY: the carry set keeps the weapon alive.
+        unsafe { state.world.watch(&*(seen.object as *const WeaponBase)) };
     }
-    let mut hands = [None; 2];
-    if let Some((object, Some(hand))) = inputs.wielded {
-        hands[hand.index()] = Some((object, Role::Wielded));
-    }
-    if let Some((object, hand)) = inputs.driven {
-        hands[hand.index()] = Some((object, Role::Driven));
-    }
-    let fates: Vec<(ObjectKey, registry::Fate)> = state
-        .registry
-        .unplaced(&seen, &carried)
-        .into_iter()
-        .map(|object| {
-            let fate = match state.handles.iter().find(|h| h.object == object) {
-                Some(handle) => unsafe { engine::fate(&handle.weak, owner, player) },
-                None => registry::Fate::Gone,
-            };
-            (object, fate)
-        })
-        .collect();
-    let live_fates: Vec<(ObjectAddress, live::Fate)> = fates
+    let live_slots: Vec<SlotObject> = slots
         .iter()
-        .filter_map(|&(object, fate)| {
-            let fate = match fate {
-                registry::Fate::Lying { .. } => live::Fate::Lying,
-                registry::Fate::HeldByOther { .. } => live::Fate::HeldByOther,
-                registry::Fate::Gone => live::Fate::Gone,
-            };
-            Some((ObjectAddress::from_address(object)?, fate))
-        })
+        .filter_map(|(s, _)| live_slot(s.object))
         .collect();
-    let live_slots: Vec<SlotObject> = seen.iter().filter_map(|s| live_slot(s.object)).collect();
     let live_carried: Vec<(ObjectAddress, u32, Socket)> = carried
         .iter()
         .filter_map(|(s, socket)| {
@@ -250,83 +182,73 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             ))
         })
         .collect();
-    let transitions = state.registry.observe(&Observation {
-        slots: seen,
-        carried,
-        hands,
-        fates,
-    });
-    for transition in &transitions {
-        log(transition);
-    }
-    let forgotten = state.apply_pins(&inputs.settings);
-    state.prune();
-    let old: Vec<(ObjectAddress, live::OldPlace)> = state
-        .registry
-        .entries()
-        .iter()
-        .filter_map(|e| {
-            let place = match e.location {
-                Location::MainSlot(slot) => live::OldPlace::Slot(slot),
-                Location::Hand(hand, _) => live::OldPlace::Hand(hand),
-                // A mission's stash keeps the carried weapons, which the mission took.
-                Location::Socket(_) if carry::stashed() => live::OldPlace::Elsewhere,
-                Location::Socket(socket) => live::OldPlace::Socket(socket),
-                Location::World { .. } => live::OldPlace::World,
-                Location::Npc => live::OldPlace::Elsewhere,
-            };
-            Some((ObjectAddress::from_address(e.object)?, place))
-        })
+    let (hands, sources) = unsafe { old_hands(inputs) };
+    let old = old_places(&live_slots, &live_carried, hands);
+    // The table's weapons the old handling keeps nowhere, and the ones another character took,
+    // are asked what became of them.
+    let unplaced: Vec<ObjectAddress> = live::bound()
+        .into_iter()
+        .map(|(object, _)| object)
+        .filter(|object| !old.iter().any(|(o, _)| o == object))
+        .chain(state.world.with_others())
         .collect();
-    let held = |object: ObjectKey| {
-        // SAFETY: the hands' weapons were read live this tick.
-        let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
-        Some(live::Held {
-            object: engine::object_address(weapon)?,
-            weapon: unsafe { engine::weapon_type(weapon) }
-                .filter(|w| engine::TRACKED_SLOTS.contains(&w.slot()))?,
-        })
-    };
-    let mut live_hands = [None; 2];
-    let mut sources = [TakeSource::World; 2];
-    if let Some((object, Some(hand))) = inputs.wielded {
-        live_hands[hand.index()] = held(object);
-        sources[hand.index()] = match hold::origin() {
-            Some(Cause::Pickup) => TakeSource::World,
-            Some(Cause::Steal) => TakeSource::Character,
-            Some(Cause::Rack) => TakeSource::Rack,
-            Some(Cause::Draw) | None => TakeSource::Give,
-        };
-    }
-    if let Some((object, hand)) = inputs.driven {
-        live_hands[hand.index()] = held(object);
-    }
-    state.status.entries = state.registry.entries().to_vec();
-    state.status.stashed = carry::stashed();
-    let tracked: Vec<ObjectKey> = state.registry.entries().iter().map(|e| e.object).collect();
-    // The single pistols lying in the world are kept to their first gun too.
-    let world_singles: Vec<Strong> = state
-        .handles
-        .iter()
-        .filter(|h| single::is(h.object))
-        .filter(|h| {
-            state
-                .registry
-                .find(h.object)
-                .is_some_and(|e| matches!(e.location, Location::World { .. }))
-        })
-        .filter_map(|h| h.weak.lock())
-        .collect();
-    drop(state);
+    let fates = unsafe { state.world.fates(&unplaced, owner, player) };
     live::input_tick(&live::Tick {
         slots: &live_slots,
         carried: &live_carried,
-        hands: live_hands,
+        hands,
         sources,
-        fates: &live_fates,
-        forgotten: &forgotten,
+        fates: &fates,
         old: &old,
     });
+    let lying: Vec<ObjectAddress> = live::bound()
+        .into_iter()
+        .filter(|(_, place)| matches!(place, Place::World(_)))
+        .map(|(object, _)| object)
+        .collect();
+    let plan = pins::plan(&state.world.world(&lying), &inputs.settings.pins());
+    state.status.pins += state.world.apply(&plan);
+    if !plan.forget.is_empty() {
+        state.status.forgotten += plan.forget.len() as u64;
+        live::forgotten(&plan.forget);
+    }
+    let bound = live::bound();
+    let kept: Vec<ObjectAddress> = bound.iter().map(|(object, _)| *object).collect();
+    let lying: Vec<ObjectAddress> = bound
+        .iter()
+        .filter(|(_, place)| matches!(place, Place::World(_)))
+        .map(|(object, _)| *object)
+        .collect();
+    let taken: Vec<ObjectAddress> = fates
+        .iter()
+        .filter(|(_, fate)| *fate == live::Fate::HeldByOther)
+        .map(|(object, _)| *object)
+        .collect();
+    let forget_m = inputs.settings.pins().forget_m;
+    state.world.settle(&kept, &lying, &taken, forget_m);
+    let world = state.world.world(&lying);
+    state.status.owned = bound.len() - world.len();
+    state.status.world = world;
+    state.status.carried = carried
+        .iter()
+        .map(|(seen, socket)| (seen.kind.slot, *socket))
+        .collect();
+    state.status.with_others = state.world.held_by_others();
+    state.status.stashed = carry::stashed();
+    let tracked: Vec<ObjectKey> = kept
+        .iter()
+        .copied()
+        .chain(state.world.with_others())
+        .map(ObjectAddress::get)
+        .collect();
+    // The single pistols lying in the world are kept to their first gun too.
+    let singles: Vec<ObjectAddress> = lying
+        .iter()
+        .copied()
+        .filter(|object| single::is(object.get()))
+        .collect();
+    let world_singles: Vec<Strong> = state.world.strong(&singles);
+    drop(state);
     for strong in &world_singles {
         // SAFETY: the strong reference keeps the weapon alive while it is written.
         unsafe { single::hide_extra(&mut *engine::weapon_of(strong)) };
@@ -343,6 +265,72 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             },
         )
     };
+}
+
+/// What the old hand authorities hold, by [`Hand::index`], and where a weapon the table does not
+/// know came from when it comes into each hand: the wielded weapon in its holder's hand, from where
+/// the holder says it came, and the second weapon in its own, from the ground.
+///
+/// # Safety
+///
+/// The weapons `inputs` names must be live, as read this tick.
+unsafe fn old_hands(inputs: &TickInputs) -> ([Option<live::Held>; 2], [TakeSource; 2]) {
+    let held = |object: ObjectKey| {
+        // SAFETY: the hands' weapons were read live this tick.
+        let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
+        Some(live::Held {
+            object: engine::object_address(weapon)?,
+            weapon: unsafe { engine::weapon_type(weapon) }
+                .filter(|w| engine::TRACKED_SLOTS.contains(&w.slot()))?,
+        })
+    };
+    let mut hands = [None; 2];
+    let mut sources = [TakeSource::World; 2];
+    if let Some((object, Some(hand))) = inputs.wielded {
+        hands[hand.index()] = held(object);
+        sources[hand.index()] = match hold::origin() {
+            Some(Cause::Pickup) => TakeSource::World,
+            Some(Cause::Steal) => TakeSource::Character,
+            Some(Cause::Rack) => TakeSource::Rack,
+            Some(Cause::Draw) | None => TakeSource::Give,
+        };
+    }
+    if let Some((object, hand)) = inputs.driven {
+        hands[hand.index()] = held(object);
+    }
+    (hands, sources)
+}
+
+/// Where the old handling keeps each weapon: in a hand, carried on its socket (or stashed by a
+/// mission), or holstered in its slot.
+fn old_places(
+    slots: &[SlotObject],
+    carried: &[(ObjectAddress, u32, Socket)],
+    hands: [Option<live::Held>; 2],
+) -> Vec<(ObjectAddress, live::OldPlace)> {
+    let hand_of = |object: ObjectAddress| {
+        Hand::BOTH
+            .into_iter()
+            .find(|hand| hands[hand.index()].is_some_and(|h| h.object == object))
+    };
+    let stashed = carry::stashed();
+    let slot_places = slots.iter().map(|slot| {
+        let place = match hand_of(slot.object) {
+            Some(hand) => live::OldPlace::Hand(hand),
+            None => live::OldPlace::Slot(slot.weapon.slot()),
+        };
+        (slot.object, place)
+    });
+    let carried_places = carried.iter().map(|&(object, _, socket)| {
+        let place = match hand_of(object) {
+            Some(hand) => live::OldPlace::Hand(hand),
+            // A mission's stash keeps the carried weapons, which the mission took.
+            None if stashed => live::OldPlace::Elsewhere,
+            None => live::OldPlace::Socket(socket),
+        };
+        (object, place)
+    });
+    slot_places.chain(carried_places).collect()
 }
 
 /// The weapons in `owner`'s tracked slots, as the live table reads them.
@@ -401,95 +389,33 @@ fn count_carried_replaced() {
     STATE.lock().status.carried_replaced += 1;
 }
 
-/// One weapon the inventory holds references to.
-struct Handle {
-    object: ObjectKey,
-    /// Tells whether the weapon still lives without keeping it alive.
-    weak: Weak,
-    /// The pin's strong reference, while the weapon lies in the world pinned.
-    pin: Option<Strong>,
-}
-
 struct State {
-    registry: Registry,
-    handles: Vec<Handle>,
+    world: World,
     status: InventoryStatus,
 }
 
 impl State {
-    /// Plan the pins and carry them out: a pin takes a strong reference, an unpin releases it, and
-    /// a forgotten weapon leaves the registry.
-    /// Returns the weapons forgotten.
-    fn apply_pins(&mut self, settings: &InventoryConfig) -> Vec<ObjectAddress> {
-        let plan = pins::plan(self.registry.entries(), &settings.pins());
-        for id in plan.pin {
-            let Some(object) = self.registry.get(id).map(|e| e.object) else {
-                continue;
-            };
-            let strong = self
-                .handles
-                .iter()
-                .find(|h| h.object == object)
-                .and_then(|h| h.weak.lock());
-            let Some(strong) = strong else {
-                continue;
-            };
-            if let Some(handle) = self.handles.iter_mut().find(|h| h.object == object) {
-                handle.pin = Some(strong);
-            }
-            if let Some(transition) = self.registry.set_pinned(id, true) {
-                self.status.pins += 1;
-                log(&transition);
-            }
-        }
-        for id in plan.unpin {
-            if let Some(transition) = self.registry.set_pinned(id, false) {
-                log(&transition);
-            }
-        }
-        let mut forgotten = Vec::new();
-        for id in plan.forget {
-            let object = self.registry.get(id).map(|e| e.object);
-            if let Some(transition) = self.registry.remove(id, registry::GoneWhy::Forgotten) {
-                self.status.forgotten += 1;
-                log(&transition);
-                forgotten.extend(object.and_then(ObjectAddress::from_address));
-            }
-        }
-        forgotten
-    }
-
-    /// Release the pins of weapons no longer pinned and the handles of weapons no longer known.
-    fn prune(&mut self) {
-        let registry = &self.registry;
-        self.handles.retain(|h| registry.find(h.object).is_some());
-        for handle in &mut self.handles {
-            let pinned = registry
-                .find(handle.object)
-                .is_some_and(|e| e.location == (Location::World { pinned: true }));
-            if !pinned {
-                handle.pin = None;
-            }
-        }
-    }
-
     fn release_all(&mut self, why: &str) {
-        let transitions = self.registry.reset();
-        if !transitions.is_empty() {
-            tracing::info!(target: "controllers", weapons = transitions.len(), why, "inventory: released every weapon");
+        if self.status.active {
+            tracing::info!(target: "controllers", why, "inventory: released every weapon");
         }
-        self.handles.clear();
+        self.world.clear();
         self.status.active = false;
-        self.status.entries.clear();
+        self.status.owned = 0;
+        self.status.world.clear();
+        self.status.carried.clear();
+        self.status.with_others = 0;
     }
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    registry: Registry::new(),
-    handles: Vec::new(),
+    world: World::new(),
     status: InventoryStatus {
         active: false,
-        entries: Vec::new(),
+        owned: 0,
+        world: Vec::new(),
+        carried: Vec::new(),
+        with_others: 0,
         pins: 0,
         forgotten: 0,
         resets: 0,
@@ -499,40 +425,3 @@ static STATE: Mutex<State> = Mutex::new(State {
         carried_replaced: 0,
     },
 });
-
-/// Log a registry change.
-fn log(transition: &Transition) {
-    match *transition {
-        Transition::Added { id, kind, to } => tracing::info!(
-            target: "controllers",
-            entry = id.0,
-            tag = format_args!("{:#010x}", kind.tag_hash),
-            "inventory: tracking a weapon of the {} slot, {}",
-            slot_label(kind.slot),
-            to.label()
-        ),
-        Transition::Moved { id, kind, from, to } => tracing::info!(
-            target: "controllers",
-            entry = id.0,
-            tag = format_args!("{:#010x}", kind.tag_hash),
-            from = %from.label(),
-            "inventory: a weapon of the {} slot is {}",
-            slot_label(kind.slot),
-            to.label()
-        ),
-        Transition::Gone {
-            id,
-            kind,
-            from,
-            why,
-        } => tracing::info!(
-            target: "controllers",
-            entry = id.0,
-            tag = format_args!("{:#010x}", kind.tag_hash),
-            from = %from.label(),
-            "inventory: no longer tracking a weapon of the {} slot: {}",
-            slot_label(kind.slot),
-            why.label()
-        ),
-    }
-}

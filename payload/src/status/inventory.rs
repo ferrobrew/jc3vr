@@ -27,11 +27,11 @@ pub(super) fn tracked() -> Line {
     if !s.active {
         return Line::waiting("NO PLAYER YET");
     }
-    let owned = s.entries.iter().filter(|e| e.location.owned()).count();
-    let (_, world) = s.world();
     Line::ok(format_smolstr!(
-        "{owned} OWNED, {world} IN THE WORLD, {} WITH OTHERS, {} RESETS",
-        s.with_others(),
+        "{} OWNED, {} IN THE WORLD, {} WITH OTHERS, {} RESETS",
+        s.owned,
+        s.world.len(),
+        s.with_others,
         s.resets
     ))
 }
@@ -115,7 +115,7 @@ pub(super) fn pinned() -> Line {
         return Line::off("");
     }
     let s = inventory::status();
-    let (pinned, world) = s.world();
+    let (pinned, world) = (s.pinned(), s.world.len());
     Line::ok(format_smolstr!(
         "{pinned} OF {world} KEPT, {} PINNED, {} LEFT TO THE GAME",
         s.pins,
@@ -205,11 +205,12 @@ pub(super) fn carried() -> Line {
     }
     let s = inventory::status();
     let carried: Vec<String> = s
-        .carried()
+        .carried
+        .iter()
         .map(|(slot, socket)| {
             format!(
                 "{} ON {}",
-                slot_label(slot).to_uppercase(),
+                slot_label(*slot).to_uppercase(),
                 socket.label().to_uppercase()
             )
         })

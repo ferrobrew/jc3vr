@@ -1,4 +1,5 @@
-//! The VR inventory: every weapon it tracks and where each is, the pins, and its settings.
+//! The VR inventory: the carried weapons, the weapons lying in the world and their pins, and its
+//! settings.
 
 use egui::Ui;
 
@@ -36,19 +37,20 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         r.restored,
         r.spawning
     ));
-    let (pinned, world) = s.world();
     ui.label(format!(
-        "Active: {} · {} weapons · {pinned} of {world} in the world kept · pins {} · left to the \
-         game {} · resets {}",
+        "Active: {} · {} on the body · {} of {} in the world kept · pins {} · left to the game {} \
+         · resets {}",
         super::yes_no(s.active),
-        s.entries.len(),
+        s.owned,
+        s.pinned(),
+        s.world.len(),
         s.pins,
         s.forgotten,
         s.resets
     ));
     ui.label(format!(
         "Carried: {}{} · drawn {} · put away {} · kept from pickups {} · with others {}",
-        s.carried().count(),
+        s.carried.len(),
         if s.stashed {
             " (stashed for a mission)"
         } else {
@@ -57,7 +59,7 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         s.draws,
         s.stows,
         s.carried_replaced,
-        s.with_others()
+        s.with_others
     ));
     let p = single::status();
     ui.label(format!(
@@ -76,20 +78,24 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
     if let Some(last) = &p.last {
         ui.label(format!("Last: {last}"));
     }
-    for entry in &s.entries {
+    for (slot, socket) in &s.carried {
         ui.label(format!(
-            "#{} {} ({:#010x}) · {} · magazine {}{}{}",
-            entry.id.0,
-            slot_label(entry.kind.slot),
-            entry.kind.tag_hash,
-            entry.location.label(),
-            entry.magazine,
-            if single::is(entry.object) {
+            "Carried: {} on the {}",
+            slot_label(*slot),
+            socket.label()
+        ));
+    }
+    for weapon in &s.world {
+        ui.label(format!(
+            "In the world: object {}{}{}{}",
+            weapon.object,
+            if weapon.pinned { " · kept" } else { "" },
+            if single::is(weapon.object.get()) {
                 " · single pistol"
             } else {
                 ""
             },
-            entry
+            weapon
                 .distance_m
                 .map_or(String::new(), |d| format!(" · {d:.1} m away"))
         ));

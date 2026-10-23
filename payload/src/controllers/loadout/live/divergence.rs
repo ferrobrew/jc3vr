@@ -1,9 +1,10 @@
 //! Where the live table and the old weapon handling disagree. Pure.
 //!
-//! While the table is dual-written beside the old handling, nothing reads it, so the only check
-//! that the dual-write is complete is to compare the two: for every weapon the old handling knows,
-//! the table should have it in the matching place, and the table should have nothing the old
-//! handling does not know. Each disagreement is a [`Divergence`], shown by the readouts, so a move
+//! While the table is dual-written beside the old handling, the only check that the dual-write is
+//! complete is to compare the two: for every weapon the old handling keeps in a slot, the carry
+//! set, or a hand, the table should have it in the matching place, and the table should have
+//! nothing on the body the old handling does not keep. The weapons lying in the world are the
+//! table's alone, so they are not compared. Each disagreement is a [`Divergence`], shown by the readouts, so a move
 //! the dual-write misses shows before anything is made to read the table.
 
 use std::fmt;
@@ -28,9 +29,7 @@ pub(crate) enum OldPlace {
     Hand(Hand),
     /// In the carry set, on this socket.
     Socket(Socket),
-    /// Lying in the world.
-    World,
-    /// Not the player's: with another character, or stashed by a mission.
+    /// Not the player's: stashed by a mission.
     Elsewhere,
 }
 
@@ -40,7 +39,6 @@ impl fmt::Display for OldPlace {
             OldPlace::Slot(slot) => write!(f, "in the {} slot", slot_label(*slot)),
             OldPlace::Hand(hand) => write!(f, "in the {} hand", hand.label()),
             OldPlace::Socket(socket) => write!(f, "carried on {socket}"),
-            OldPlace::World => f.write_str("in the world"),
             OldPlace::Elsewhere => f.write_str("not the player's"),
         }
     }
@@ -70,9 +68,9 @@ impl fmt::Display for Divergence {
     }
 }
 
-/// Every disagreement between `old`, where the old handling has each weapon it knows, and
+/// Every disagreement between `old`, where the old handling has each weapon it keeps, and
 /// `snapshot`. A slot's weapon matches a socket the game docks that slot on; an item waiting for an
-/// object is not compared.
+/// object, or lying in the world, is not compared.
 pub(crate) fn diverging(
     old: &[(ObjectAddress, OldPlace)],
     snapshot: &LoadoutSnapshot,
@@ -88,7 +86,7 @@ pub(crate) fn diverging(
         (OldPlace::Slot(slot), Some(Place::Socket(socket))) => socket.is_native(slot),
         (OldPlace::Hand(old), Some(Place::Hand(table))) => old == table,
         (OldPlace::Socket(old), Some(Place::Socket(table))) => old == table,
-        (OldPlace::World, Some(Place::World(_))) | (OldPlace::Elsewhere, None) => true,
+        (OldPlace::Elsewhere, None) => true,
         _ => false,
     };
     let known = old.iter().filter_map(|&(object, old)| {
@@ -100,6 +98,9 @@ pub(crate) fn diverging(
         })
     });
     let unknown = snapshot.items.iter().filter_map(|item| {
+        if let Place::World(_) = item.place {
+            return None;
+        }
         let object = item.binding.address()?;
         (!old.iter().any(|&(o, _)| o == object)).then_some(Divergence {
             object,
@@ -175,7 +176,6 @@ mod tests {
         let old = [
             (object(1), OldPlace::Hand(Hand::Right)),
             (object(2), OldPlace::Slot(WeaponSlot::E_SLOT_TWO_HANDED)),
-            (object(3), OldPlace::World),
             (object(4), OldPlace::Elsewhere),
         ];
         assert_eq!(diverging(&old, &t.snapshot()), Vec::new());
@@ -188,7 +188,7 @@ mod tests {
         take(&mut t, Hand::Left, 2);
         let old = [
             (object(1), OldPlace::Hand(Hand::Left)),
-            (object(3), OldPlace::World),
+            (object(3), OldPlace::Socket(Socket::Chest)),
         ];
         let found = diverging(&old, &t.snapshot());
         assert_eq!(
@@ -201,7 +201,7 @@ mod tests {
                 },
                 Divergence {
                     object: object(3),
-                    old: Some(OldPlace::World),
+                    old: Some(OldPlace::Socket(Socket::Chest)),
                     table: None,
                 },
                 Divergence {
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(
             found[1].to_string(),
             format!(
-                "object {}: the old handling has it in the world, the table does not have it",
+                "object {}: the old handling has it carried on the chest, the table does not have it",
                 object(3)
             )
         );

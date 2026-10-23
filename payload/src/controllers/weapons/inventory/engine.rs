@@ -1,5 +1,5 @@
-//! The VR inventory's engine reads: a weapon's kind and magazine, where a weapon outside the slots
-//! is, and the strong and weak references the inventory keeps weapons by.
+//! The VR inventory's engine reads: a weapon's kind and magazine, what became of a weapon outside
+//! the slots, and the strong and weak references the inventory keeps weapons by.
 //!
 //! Everything here runs on the input tick, on the main thread outside the world update, unless a
 //! function says otherwise.
@@ -19,9 +19,39 @@ use crate::controllers::{
     weapons::{
         engine::slot_from_raw,
         hold::refs::{Strong, Weak},
-        inventory::registry::{Fate, ObjectKey, Seen, WeaponKind},
     },
 };
+
+/// A live weapon object's address, the key the inventory's stores keep it by.
+pub type ObjectKey = usize;
+
+/// What kind of weapon a weapon is: its spawn tag's hash, the form the save keeps a weapon's type
+/// in, and its inventory slot.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct WeaponKind {
+    pub tag_hash: u32,
+    pub slot: WeaponSlot,
+}
+
+/// A weapon seen in an inventory slot or in the mod's keeping.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Seen {
+    pub object: ObjectKey,
+    pub kind: WeaponKind,
+    pub magazine: i32,
+}
+
+/// What became of a weapon that is in no slot and not carried.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Fate {
+    /// It lies in the world (or anywhere else outside a character), at this distance from the
+    /// player when it could be read.
+    Lying { distance_m: Option<f32> },
+    /// Another character holds it, at this distance from the player when it could be read.
+    HeldByOther { distance_m: Option<f32> },
+    /// The object is gone.
+    Gone,
+}
 
 /// The slots whose weapons the inventory tracks and carries: the pistols, the two-handed weapons,
 /// and the special weapons. The heavy slot's weapons drop on holstering, the grenade, the planted
@@ -150,10 +180,7 @@ pub(crate) unsafe fn fate(weak: &Weak, owner: &Character, player: Vec3) -> Fate 
     {
         return Fate::HeldByOther { distance_m };
     }
-    Fate::Lying {
-        distance_m,
-        magazine: weapon.m_MagazineAmmo,
-    }
+    Fate::Lying { distance_m }
 }
 
 /// `owner`'s `CGameObject` subobject, as a weapon's holder names it.

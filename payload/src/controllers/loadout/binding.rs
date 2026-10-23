@@ -28,6 +28,10 @@ impl ObjectAddress {
             None => None,
         }
     }
+
+    pub const fn get(self) -> usize {
+        self.0.get()
+    }
 }
 
 impl fmt::Display for ObjectAddress {
