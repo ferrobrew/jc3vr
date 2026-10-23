@@ -13,6 +13,7 @@
 //! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
 //! - [`missions`]: the carried weapons stashed while a mission holds the player's weapons;
 //! - [`gives`]: the game's gives, placed by the table rather than equipped;
+//! - [`ammo`]: the ammunition auto-pickup, for every weapon the table has on the body;
 //! - [`engine`]: the engine reads behind them;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`config`]: the settings.
@@ -27,6 +28,7 @@
 //! tick on the main thread outside the world update, except the reset's detour, which takes the
 //! state's lock only for the local player's inventory.
 
+mod ammo;
 pub(crate) mod carry;
 pub mod config;
 pub(crate) mod engine;
@@ -67,6 +69,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(carry::hook_library())
         .with_hook_library(missions::hook_library())
         .with_hook_library(gives::hook_library())
+        .with_hook_library(ammo::hook_library())
 }
 
 /// The inventory's readout.
@@ -144,6 +147,7 @@ pub(crate) unsafe fn input_tick(
     } else {
         unsafe { use_item::stand_down() };
         unsafe { gives::stand_down() };
+        ammo::clear();
         if STATE.lock().status.active {
             unsafe { reconcile::project_back(owner) };
         }
@@ -290,6 +294,15 @@ pub(crate) unsafe fn input_tick(
         )
     };
     unsafe { reconcile::apply(owner) };
+    let slot_objects: Vec<usize> = owner
+        .m_Inventory
+        .m_Weapons
+        .iter()
+        .map(|slot| slot.px as usize)
+        .filter(|&object| object != 0)
+        .collect();
+    // SAFETY: the slots were read live this tick.
+    unsafe { ammo::publish(&slot_objects) };
     arrival
 }
 
