@@ -1,87 +1,52 @@
-//! A second weapon in the other hand, fired by the mod: the design's "two weapons, one per hand".
+//! A second weapon in the other hand: the design's "two weapons, one per hand".
 //!
 //! The game wields one weapon, the selected slot's. While it is in one hand, the free hand can hold
 //! a second weapon there: a long gun of another slot taken off its shoulder ([`take`]), or any
 //! weapon the VR inventory carries beyond the slots, taken off its socket ([`take_carried`]). The
-//! second weapon stays in the holstered state, so the game's inventory, selection, HUD, and saves
-//! see a slot's weapon as holstered, and its bodies stay out of the physics world:
-//!
-//! - its guns' holstered entries in the attach-bone table name the hand's attach bone, written at
-//!   the same three points as the held weapon's ([`apply`], from the hold's detours), and its
-//!   holstered scale ([`WeaponData::m_HolsteredScaleValue`]) is one while it is in the hand, both
-//!   restored when it goes back. A slot's weapon is placed by the inventory, and a carried one by
-//!   the carry set ([`crate::controllers::weapons::inventory::carry`]);
-//! - it is given a user ([`WeaponBase::StartUsing`]), so its fire code runs as the player's, and
-//!   loses it when it goes back ([`WeaponBase::StopUsing`], which leaves a holstered weapon
-//!   holstered);
-//! - after the inventory's own weapon updates ([`Inventory::UpdateWeapons_Parallel`] and
-//!   [`Inventory::UpdateWeapons_Serial`]), the mod updates it the same way, through its
-//!   [`WeaponBase::UpdateFromUserPostSim_Parallel`] and `_Serial` virtuals, with the hand's trigger
-//!   as the fire input while the animation allows shooting
-//!   ([`Inventory::GetAnimationAllowsShooting`]), the magazine holds a round, and the true reload
-//!   does not hold the gun, and the gun's own sight line's aim point.
-//!
-//! The rigid grip, the gun aim, the per-shot seam, and the render-time late update treat it as a
-//! held weapon ([`is`]). Its magazine is its own, shown in pips over its hand ([`pips`]); the true
-//! reload turns to it when it runs lower than the wielded weapon
-//! ([`crate::controllers::weapons::reload::focus`]), while the HUD's readout and the game's reload
-//! act stay the selected weapon's. It goes back to the body at a grab of its holster or its socket
-//! by its hand, falls when its grip opens elsewhere ([`let_fall`]), becomes the wielded weapon when the
+//! second weapon is armed in its hand ([`crate::controllers::weapons::hold::armed`]): it stays in
+//! the holstered state, rides the hand's attach bone, and has the player as its user, and the
+//! per-hand tick fires it from its hand's trigger ([`crate::controllers::weapons::hold::tick`]).
+//! Its magazine is its own, shown in pips over its hand ([`pips`]), and the true reload reloads it
+//! as it does the gun in the other hand, while the HUD's readout and the game's reload act stay
+//! the selected weapon's. It goes back to the body at a grab of its holster or its socket by its
+//! hand, falls when its grip opens elsewhere ([`let_fall`]), becomes the wielded weapon when the
 //! other hand has been empty a moment ([`promote_tick`]), and is let go of (left holstered) when
 //! the game wields it, takes it from its slot, or the weapon handling stands down.
 //!
 //! The loadout table holds it in its hand ([`crate::controllers::loadout::live`]): a take lands it
 //! there at once ([`live::arrive`]), and putting it back or letting it fall takes it out
-//! ([`live::depart`]). The detours run on the simulation's worker threads for every character, so
-//! they compare against the table's published hands before taking any lock. A carried second
-//! weapon is in no slot; the carry set keeps it alive while it is the second weapon, and the input
-//! tick changes either only outside the world update.
+//! ([`live::depart`]). A carried second weapon is in no slot; the carry set keeps it alive while it
+//! is the second weapon, and the input tick changes either only outside the world update.
 
-use std::{
-    fmt,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    time::{Duration, Instant},
-};
+use std::{fmt, time::Instant};
 
-use detours_macro::detour;
-use glam::Vec3;
 use jc3gi::{
     character::{
         character::Character,
         inventory::{Inventory, WeaponSlot},
     },
-    equipment::weapon::{WeaponBase, WeaponData, WeaponInputs, WeaponState},
-    types::math::Vector3,
+    equipment::weapon::{WeaponBase, WeaponState},
 };
 use parking_lot::Mutex;
-use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
     frame::Hand,
-    hands::ik,
     loadout::{ObjectAddress, Socket, live},
     weapons::{
         dual_wield::single,
         engine::{self, HeldWeapon, slot_from_raw},
         heft::HeftClass,
         hold::{
-            self, Cause,
+            self, Cause, armed,
             dock::ReleaseWatch,
             equip::{self, Thrown},
-            layout, pips,
+            pips, tick,
         },
         holster::{Wielded, slot_label},
         inventory::{self, carry, decide::AloneWatch},
-        reload,
     },
 };
-
-pub(crate) fn hook_library() -> HookLibrary {
-    HookLibrary::new()
-        .with_static_binder(&UPDATE_WEAPONS_PARALLEL_BINDER)
-        .with_static_binder(&UPDATE_WEAPONS_SERIAL_BINDER)
-}
 
 /// Why a second weapon was not taken, put back, dropped, or made the wielded weapon.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -146,22 +111,19 @@ pub struct SecondStatus {
 }
 
 pub fn status() -> SecondStatus {
+    let hand = hand();
+    let tick = tick::status();
     let state = STATE.lock();
     SecondStatus {
         held: state.held.map(|h| (h.hand, h.slot)),
         source: state.held.map(|h| h.source),
-        trigger: TRIGGER.load(Ordering::Relaxed),
-        updates: UPDATES.load(Ordering::Relaxed),
+        trigger: hand.is_some_and(|h| tick.fire[h.index()]),
+        updates: hand.map_or(0, |h| tick.updates[h.index()]),
         drops: state.drops,
         promotions: state.promotions,
         last_refusal: state.last_refusal,
         magazine: state.magazine,
     }
-}
-
-/// Whether the weapon at `weapon` is the second weapon, in the hand the table holds it in.
-pub(crate) fn is(weapon: usize) -> bool {
-    live::hand_of(weapon).is_some() && held_address() == Some(weapon)
 }
 
 /// The hand holding the second weapon, as the table has it.
@@ -182,21 +144,15 @@ pub(crate) unsafe fn weapon(owner: &Character) -> Option<&'static WeaponBase> {
         .iter()
         .find(|slot| slot.px as usize == address)
         .and_then(|slot| unsafe { slot.px.as_ref() });
-    in_slot.or_else(|| unsafe { carried_weapon() })
-}
-
-/// The second weapon when it is a carried one, which the carry set keeps alive.
-///
-/// # Safety
-///
-/// On the main thread outside the world update, or inside the world update on a thread placing
-/// or updating the local player's weapons.
-pub(crate) unsafe fn carried_weapon() -> Option<&'static WeaponBase> {
-    let held = STATE.lock().held?;
-    if !matches!(held.source, Source::Carried(_)) {
-        return None;
-    }
-    unsafe { (held.weapon as *const WeaponBase).as_ref() }
+    let carried = || {
+        let held = STATE.lock().held?;
+        if !(matches!(held.source, Source::Carried(_)) && carry::contains(address)) {
+            return None;
+        }
+        // SAFETY: the carry set keeps a weapon it holds alive.
+        unsafe { (address as *const WeaponBase).as_ref() }
+    };
+    in_slot.or_else(carried)
 }
 
 /// The second weapon and the hand it was taken into, as the old handling holds it, for the
@@ -446,52 +402,6 @@ pub(crate) unsafe fn show_magazine(owner: Option<&Character>, shown: bool) {
     pips::submit(readout.filter(|_| shown));
 }
 
-/// Publish the second weapon's hand's trigger for its updates.
-pub(crate) fn set_trigger(pulled: bool) {
-    TRIGGER.store(pulled, Ordering::Relaxed);
-}
-
-/// Publish the second weapon's aim point, from its gun's sight line, at the aim update.
-pub(crate) fn publish_target(target: Option<Vec3>) {
-    *TARGET.lock() = target.map(|t| (t, Instant::now()));
-}
-
-/// Write the second weapon's hand into its holstered entries, when `weapon` is it.
-///
-/// # Safety
-///
-/// `weapon` must be live, on the thread updating its holder.
-pub(crate) unsafe fn apply(weapon: &mut WeaponBase) {
-    let address = weapon as *mut WeaponBase as usize;
-    if !is(address) {
-        return;
-    }
-    let Some(hand) = live::hand_of(address) else {
-        return;
-    };
-    let bone = layout::hand_bone(hand);
-    for gun in unsafe { guns_mut(weapon) } {
-        if let Some(entry) = gun
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        {
-            *entry = bone;
-        }
-    }
-}
-
-/// Write the second weapon's hand into its holstered entries, when `inventory` holds it or it is a
-/// carried weapon and `inventory` is the local player's.
-///
-/// # Safety
-///
-/// `inventory` must be null or live, on the thread updating its owner.
-pub(crate) unsafe fn apply_owned(inventory: *mut Inventory) {
-    if let Some(weapon) = unsafe { second_in(inventory) } {
-        unsafe { apply(weapon) };
-    }
-}
-
 /// Stop: let the second weapon go, left as the game has it. Called when the weapon handling
 /// stands down.
 ///
@@ -515,8 +425,6 @@ struct Held {
     slot: WeaponSlot,
     hand: Hand,
     source: Source,
-    /// Each gun's holstered bone and holstered scale before it came into the hand.
-    saved: [Option<(u32, f32)>; gun::MAX_GUNS],
 }
 
 struct State {
@@ -543,13 +451,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     drops: 0,
     promotions: 0,
 });
-static TRIGGER: AtomicBool = AtomicBool::new(false);
-static TARGET: Mutex<Option<(Vec3, Instant)>> = Mutex::new(None);
-static UPDATES: AtomicU64 = AtomicU64::new(0);
-
-/// How long the aim update's point stays current for the second weapon's update.
-const MAX_TARGET_AGE: Duration = Duration::from_millis(250);
-
 /// Record a take's result: publish the weapon, or note the refusal.
 unsafe fn taken(hand: Hand, result: Result<Held, SecondRefusal>) -> Result<(), SecondRefusal> {
     let mut state = STATE.lock();
@@ -618,8 +519,7 @@ unsafe fn take_from_carry(hand: Hand, object: usize) -> Result<Held, SecondRefus
     Ok(held)
 }
 
-/// Put the holstered `weapon` in `hand`: its holstered entries name the hand's bone, its
-/// holstered scale is one, and the character uses it.
+/// Put the holstered `weapon` in `hand`, armed there ([`armed::arm`]).
 unsafe fn into_hand(
     owner: &mut Character,
     weapon: &mut WeaponBase,
@@ -627,30 +527,12 @@ unsafe fn into_hand(
     slot: WeaponSlot,
     source: Source,
 ) -> Result<Held, SecondRefusal> {
-    if weapon.m_State != WeaponState::E_WS_HOLSTERED || !weapon.m_User[0].is_null() {
-        return Err(SecondRefusal::NotHolstered);
-    }
-    let bone = layout::hand_bone(hand);
-    let mut saved = [None; gun::MAX_GUNS];
-    for (gun, slot_saved) in unsafe { guns_mut(weapon) }.zip(saved.iter_mut()) {
-        let Some(entry) = gun
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        else {
-            continue;
-        };
-        *slot_saved = Some((*entry, gun.m_HolsteredScaleValue));
-        *entry = bone;
-        gun.m_HolsteredScaleValue = 1.0;
-    }
-    unsafe { skip_interpolation(weapon) };
-    unsafe { weapon.StartUsing(owner) };
+    unsafe { armed::arm(owner, weapon, hand) }.map_err(|_| SecondRefusal::NotHolstered)?;
     Ok(Held {
         weapon: weapon as *mut WeaponBase as usize,
         slot,
         hand,
         source,
-        saved,
     })
 }
 
@@ -703,35 +585,16 @@ unsafe fn release(owner: &mut Character, stop: bool, to: Release) {
             live::depart(held.hand, object, whereabouts);
         }
     }
-    let Some(weapon) = (unsafe { live(owner, &held) }) else {
+    let weapon = unsafe { live(owner, &held) };
+    let alive = weapon.is_some();
+    unsafe { armed::disarm(owner, held.hand, weapon, stop) };
+    if !alive {
         return;
-    };
-    unsafe { restore(weapon, &held) };
-    let used = std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
-    if stop && used && weapon.m_State == WeaponState::E_WS_HOLSTERED {
-        unsafe { weapon.StopUsing() };
     }
     if matches!(held.source, Source::Carried(_)) {
         carry::set_in_hand(held.weapon, None, None);
     }
     tracing::info!(target: "controllers", "hold: the second weapon is back on the body");
-}
-
-/// Put back the guns' holstered entries and scales the hand took over.
-unsafe fn restore(weapon: &mut WeaponBase, held: &Held) {
-    for (gun, saved) in unsafe { guns_mut(weapon) }.zip(held.saved) {
-        let Some((bone, scale)) = saved else {
-            continue;
-        };
-        if let Some(entry) = gun
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-        {
-            *entry = bone;
-        }
-        gun.m_HolsteredScaleValue = scale;
-    }
-    unsafe { skip_interpolation(weapon) };
 }
 
 /// Make `held` the wielded weapon, in the hand it is in.
@@ -740,7 +603,8 @@ unsafe fn promote(owner: &mut Character, held: Held) -> Result<(), SecondRefusal
         return Err(SecondRefusal::NotDone);
     }
     let weapon = unsafe { live(owner, &held) }.ok_or(SecondRefusal::NothingHeld)?;
-    unsafe { restore(weapon, &held) };
+    // Its user stays: the equip that follows makes it the wielded weapon's.
+    unsafe { armed::disarm(owner, held.hand, Some(&mut *weapon), false) };
     forget();
     if matches!(held.source, Source::Carried(_)) {
         carry::set_in_hand(held.weapon, None, None);
@@ -769,7 +633,6 @@ fn forget() {
     state.release.disarm();
     state.arm_pending = None;
     std::mem::drop(state);
-    TRIGGER.store(false, Ordering::Relaxed);
 }
 
 /// The second weapon's address, while one is held.
@@ -780,123 +643,4 @@ fn held_address() -> Option<usize> {
 /// The weapon in `inventory`'s `slot`.
 unsafe fn weapon_in(inventory: &Inventory, slot: WeaponSlot) -> Option<&'static mut WeaponBase> {
     unsafe { inventory.m_Weapons.get(slot as usize)?.px.as_mut() }
-}
-
-/// The weapon's guns, to write.
-unsafe fn guns_mut(weapon: &mut WeaponBase) -> impl Iterator<Item = &'static mut WeaponData> {
-    let list = &weapon.m_lWeaponData;
-    let begin = list.m_Begin;
-    let count = if begin.is_null() || list.m_End < begin {
-        0
-    } else {
-        unsafe { list.m_End.offset_from(begin) as usize }
-    };
-    (0..count.min(gun::MAX_GUNS)).filter_map(move |i| unsafe { (*begin.add(i)).as_mut() })
-}
-
-unsafe fn skip_interpolation(weapon: &mut WeaponBase) {
-    let count = unsafe { gun::guns(weapon) }.count();
-    for index in 0..count {
-        if let Ok(index) = i32::try_from(index) {
-            unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
-        }
-    }
-}
-
-/// The second weapon of `inventory`, when the inventory is the local player's and holds it, or it
-/// is a carried weapon.
-unsafe fn second_in(inventory: *mut Inventory) -> Option<&'static mut WeaponBase> {
-    // The table's hands first: the detours run for every character, before any lock.
-    if Hand::BOTH.map(live::in_hand) == [None; 2] {
-        return None;
-    }
-    let inventory = unsafe { inventory.as_ref() }?;
-    let local = ik::local_character();
-    if local == 0 || inventory.m_Character as usize != local {
-        return None;
-    }
-    let held = STATE.lock().held?;
-    let address = held.weapon;
-    live::hand_of(address)?;
-    if matches!(held.source, Source::Carried(_)) {
-        // SAFETY: the carry set keeps a carried second weapon alive while it is the second weapon.
-        return unsafe { (address as *mut WeaponBase).as_mut() };
-    }
-    inventory
-        .m_Weapons
-        .iter()
-        .find(|slot| slot.px as usize == address)
-        .and_then(|slot| unsafe { slot.px.as_mut() })
-}
-
-/// The second weapon's inputs and aim point for one update, or `None` without a current aim point.
-/// An empty magazine fires nothing: the weapon's ammunition check would otherwise ask the character
-/// to reload, which reloads the wielded weapon, or switch weapons.
-unsafe fn update_arguments(
-    inventory: &Inventory,
-    weapon: &WeaponBase,
-) -> Option<(WeaponInputs, Vector3)> {
-    let (target, at) = (*TARGET.lock())?;
-    if at.elapsed() > MAX_TARGET_AGE || !target.is_finite() {
-        return None;
-    }
-    let loaded = weapon.m_MagazineAmmo > 0 && !weapon.m_WeaponIsWithoutMagazine;
-    let address = weapon as *const WeaponBase as usize;
-    let held_by_reload = hand().is_some_and(|h| reload::holds_fire(address, h));
-    let fire = loaded
-        && !held_by_reload
-        && TRIGGER.load(Ordering::Relaxed)
-        && unsafe { inventory.GetAnimationAllowsShooting() };
-    Some((
-        WeaponInputs {
-            m_PrimaryFireInput: if fire { 1.0 } else { 0.0 },
-            m_SecondaryFireInput: 0.0,
-        },
-        Vector3 {
-            data: target.to_array(),
-        },
-    ))
-}
-
-#[detour(address = jc3gi::character::inventory::Inventory::UpdateWeapons_Parallel_ADDRESS)]
-fn update_weapons_parallel(
-    inventory: *mut Inventory,
-    dt: f32,
-    muzzle_target: *const Vector3,
-    grenade_target: *const Vector3,
-) {
-    UPDATE_WEAPONS_PARALLEL
-        .get()
-        .unwrap()
-        .call(inventory, dt, muzzle_target, grenade_target);
-    let Some(weapon) = (unsafe { second_in(inventory) }) else {
-        return;
-    };
-    // SAFETY: `second_in` found the inventory live.
-    let Some((inputs, aim)) = (unsafe { update_arguments(&*inventory, weapon) }) else {
-        return;
-    };
-    unsafe { weapon.UpdateFromUserPostSim_Parallel(dt, &aim, &inputs) };
-    UPDATES.fetch_add(1, Ordering::Relaxed);
-}
-
-#[detour(address = jc3gi::character::inventory::Inventory::UpdateWeapons_Serial_ADDRESS)]
-fn update_weapons_serial(
-    inventory: *mut Inventory,
-    dt: f32,
-    muzzle_target: *const Vector3,
-    grenade_target: *const Vector3,
-) {
-    UPDATE_WEAPONS_SERIAL
-        .get()
-        .unwrap()
-        .call(inventory, dt, muzzle_target, grenade_target);
-    let Some(weapon) = (unsafe { second_in(inventory) }) else {
-        return;
-    };
-    // SAFETY: `second_in` found the inventory live.
-    let Some((inputs, aim)) = (unsafe { update_arguments(&*inventory, weapon) }) else {
-        return;
-    };
-    unsafe { weapon.UpdateFromUserPostSim_Serial(dt, &aim, &inputs) };
 }

@@ -17,7 +17,6 @@ use crate::{
             reload::{
                 self,
                 chamber::{ActionKind, Chamber},
-                focus::ReloadTarget,
             },
         },
     },
@@ -50,19 +49,19 @@ fn action(hand: Hand) -> Line {
         return Line::off("");
     }
     let status = reload::status();
-    let Some(weapon) = status.weapon else {
+    if status.weapons.iter().all(Option::is_none) {
         return Line::waiting("NO WEAPON RELOADED BY HAND");
+    }
+    let Some(weapon) = status.weapons[hand.index()] else {
+        return Line::ok("NO GUN");
     };
-    let Some(travel) = weapon.actions[hand.index()] else {
-        return Line::ok(match weapon.chambers[hand.index()] {
-            Some(_) => "NOTHING TO WORK",
-            None => "NO GUN",
-        });
+    let Some(travel) = weapon.action else {
+        return Line::ok("NOTHING TO WORK");
     };
     let kind = weapon.plan.action;
-    let chamber = match weapon.chambers[hand.index()] {
-        Some(Chamber::Empty) => "CHAMBER EMPTY",
-        _ => "CHAMBERED",
+    let chamber = match weapon.chamber {
+        Chamber::Empty => "CHAMBER EMPTY",
+        Chamber::Chambered => "CHAMBERED",
     };
     let place = if travel.locked_back {
         "LOCKED BACK".into()
@@ -140,11 +139,10 @@ pub(super) fn second_weapon() -> Line {
         return Line::off("");
     }
     let second = second::status();
-    let focus = reload::status().focus;
     match second.held {
         None => Line::ok("NONE"),
         Some((hand, slot)) => Line::ok(format_smolstr!(
-            "{}{} IN {}, {}, RELOAD ON {}",
+            "{}{} IN {}, {}",
             slot_label(slot).to_uppercase(),
             if matches!(second.source, Some(second::Source::Carried(_))) {
                 " (CARRIED)"
@@ -156,10 +154,6 @@ pub(super) fn second_weapon() -> Line {
                 "NO MAGAZINE".into(),
                 |(magazine, capacity)| format_smolstr!("{magazine}/{capacity}")
             ),
-            match focus {
-                ReloadTarget::Primary => "THE WIELDED",
-                ReloadTarget::Second => "IT",
-            }
         )),
     }
 }

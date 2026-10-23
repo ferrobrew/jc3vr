@@ -7,7 +7,7 @@
 //!   every animated reload the game starts goes through that one call, from the reload button, the
 //!   automatic reload of an empty or magazine-less gun, the predicted reload, a reserve refill, an
 //!   animation's request, and the launchers' and the sniper rifles' own reloads. For the local
-//!   player, while the input tick reloads the wielded weapon by hand and has done so recently, the
+//!   player, while the input tick reloads either hand's weapon by hand and has done so recently, the
 //!   start is refused, so no reload act is ever queued and the game's reload state machine is
 //!   never entered. With the reload button left to the game, a start while the button is held goes
 //!   through.
@@ -16,8 +16,8 @@
 //!   or that sits in the belt pouch cannot fire. The input tick already keeps its trigger from the
 //!   game; the check clears the gun's shot as well, so that a buffered shot cannot slip through.
 //! - The shots ([`on_shot`], from the per-shot seam in [`crate::controllers::weapons::fire`]): each
-//!   shot of the reloaded weapon, the hand it came from, and the rounds left, which the input tick
-//!   folds into the chamber and the split magazines.
+//!   shot of a weapon reloaded by hand, the hand it came from, and the rounds left, which the input
+//!   tick folds into that weapon's chambers and split magazines.
 //!
 //! [`Character::StartReloadingWieldingWeapon`]: jc3gi::character::character::Character::StartReloadingWieldingWeapon
 
@@ -30,17 +30,19 @@ use crate::controllers::frame::Hand;
 /// What the input tick publishes for the detours.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub(super) struct Published {
-    /// The address of the weapon the input tick reloads by hand, or zero.
-    pub weapon: usize,
+    /// The address of the weapon of each hand's gun that the input tick reloads by hand, or zero,
+    /// by [`Hand::index`].
+    pub weapons: [usize; 2],
     /// The reload button is left to the game's own reload.
     pub button_native: bool,
-    /// The bolt or the pump is worked by hand after every shot, in place of the game's cycling.
-    pub manual_action: bool,
+    /// Each hand's weapon's bolt or pump is worked by hand after every shot, in place of the game's
+    /// cycling, by [`Hand::index`].
+    pub manual_action: [bool; 2],
     /// The hands whose guns may not fire, by [`Hand::index`].
     pub held: [bool; 2],
 }
 
-/// A shot of the reloaded weapon.
+/// A shot of a weapon reloaded by hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct Shot {
     pub weapon: usize,
@@ -85,7 +87,11 @@ pub(super) fn stops_reload(character: usize, local: usize, reload_input: f32) ->
     let Some(p) = shared.fresh() else {
         return false;
     };
-    let stop = decide_stop(p.weapon != 0, p.button_native, reload_input > 0.0);
+    let stop = decide_stop(
+        p.weapons.iter().any(|&w| w != 0),
+        p.button_native,
+        reload_input > 0.0,
+    );
     if stop {
         shared.refused += 1;
     }
@@ -95,9 +101,7 @@ pub(super) fn stops_reload(character: usize, local: usize, reload_input: f32) ->
 /// Whether the gun of `weapon` in `hand` may not fire now.
 pub(super) fn holds_fire(weapon: usize, hand: Hand) -> bool {
     let shared = SHARED.lock();
-    shared
-        .fresh()
-        .is_some_and(|p| p.weapon == weapon && p.held[hand.index()])
+    shared.fresh().is_some_and(|p| holds(&p, weapon, hand))
 }
 
 /// Whether the game's own cycling of `weapon`'s bolt or pump is suppressed.
@@ -105,13 +109,13 @@ pub(super) fn manual_action(weapon: usize) -> bool {
     SHARED
         .lock()
         .fresh()
-        .is_some_and(|p| p.weapon == weapon && p.manual_action)
+        .is_some_and(|p| cycles_by_hand(&p, weapon))
 }
 
-/// Record a shot of `weapon` from `hand`, when it is the reloaded weapon.
+/// Record a shot of `weapon` from `hand`, when it is a weapon reloaded by hand.
 pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
     let mut shared = SHARED.lock();
-    if shared.fresh().is_none_or(|p| p.weapon != weapon) || shared.shots.len() >= MAX_SHOTS {
+    if shared.fresh().is_none_or(|p| !reloads(&p, weapon)) || shared.shots.len() >= MAX_SHOTS {
         return;
     }
     shared.shots.push(Shot {
@@ -125,6 +129,24 @@ pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
 /// left to the game and held.
 pub(super) fn decide_stop(reloaded_by_hand: bool, button_native: bool, button_held: bool) -> bool {
     reloaded_by_hand && !(button_native && button_held)
+}
+
+/// Whether `published` holds the gun of `weapon` in `hand` from firing.
+fn holds(published: &Published, weapon: usize, hand: Hand) -> bool {
+    weapon != 0 && published.weapons[hand.index()] == weapon && published.held[hand.index()]
+}
+
+/// Whether `published` has `weapon`'s bolt or pump worked by hand.
+fn cycles_by_hand(published: &Published, weapon: usize) -> bool {
+    weapon != 0
+        && Hand::BOTH.into_iter().any(|hand| {
+            published.weapons[hand.index()] == weapon && published.manual_action[hand.index()]
+        })
+}
+
+/// Whether `published` reloads `weapon` by hand.
+fn reloads(published: &Published, weapon: usize) -> bool {
+    weapon != 0 && published.weapons.contains(&weapon)
 }
 
 /// How long the input tick's state stands without a refresh. Past it the detours stop acting, so
@@ -150,9 +172,9 @@ impl Shared {
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     published: Published {
-        weapon: 0,
+        weapons: [0; 2],
         button_native: false,
-        manual_action: false,
+        manual_action: [false; 2],
         held: [false; 2],
     },
     at: None,
@@ -171,5 +193,43 @@ mod tests {
         assert!(decide_stop(true, true, false));
         assert!(!decide_stop(true, true, true));
         assert!(!decide_stop(false, false, false));
+    }
+
+    const WIELDED: usize = 0x1000;
+    const SECOND: usize = 0x2000;
+
+    fn two_weapons() -> Published {
+        Published {
+            weapons: [SECOND, WIELDED],
+            button_native: false,
+            manual_action: [true, false],
+            held: [false, true],
+        }
+    }
+
+    #[test]
+    fn each_hand_is_held_for_its_own_weapon() {
+        let p = two_weapons();
+        assert!(holds(&p, WIELDED, Hand::Right));
+        assert!(!holds(&p, SECOND, Hand::Left));
+        assert!(!holds(&p, WIELDED, Hand::Left));
+        assert!(!holds(&p, 0, Hand::Left));
+    }
+
+    #[test]
+    fn the_manual_action_is_its_own_weapons() {
+        let p = two_weapons();
+        assert!(cycles_by_hand(&p, SECOND));
+        assert!(!cycles_by_hand(&p, WIELDED));
+        assert!(!cycles_by_hand(&Published::default(), 0));
+    }
+
+    #[test]
+    fn shots_of_either_weapon_are_kept() {
+        let p = two_weapons();
+        assert!(reloads(&p, WIELDED));
+        assert!(reloads(&p, SECOND));
+        assert!(!reloads(&p, 0x3000));
+        assert!(!reloads(&Published::default(), 0));
     }
 }

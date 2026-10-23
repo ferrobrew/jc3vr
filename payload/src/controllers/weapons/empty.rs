@@ -28,6 +28,16 @@
 //! whose reload the true reload stops ([`crate::controllers::weapons::reload`]). A gun the true
 //! reload holds from firing (its chamber empty or its magazine out) has its shot cleared here as
 //! well; its trigger already clicks at the input tick.
+//!
+//! With the per-hand tick ([`crate::controllers::weapons::hold::tick`]), every gun in a hand runs
+//! its own check, and each check asks the character to reload the wielded weapon whenever its own
+//! magazine runs low, and cancels the character's reload every tick for a gun that does not reload
+//! by magazine. Inside a marked check both requests are refused for the local player
+//! ([`refuses_check_request`], from the detours on [`Character::StartReloadingWieldingWeapon`] and
+//! [`Character::CancelReload`]), so one hand's gun never reloads or interrupts the other's; the
+//! true reload reloads each gun by hand.
+//!
+//! [`Character::StartReloadingWieldingWeapon`]: jc3gi::character::character::Character::StartReloadingWieldingWeapon
 
 use std::{
     cell::Cell,
@@ -36,7 +46,7 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::{
-    character::inventory::Inventory,
+    character::{character::Character, inventory::Inventory},
     equipment::weapon::{WeaponBase, WeaponData},
 };
 use re_utilities::hook_library::HookLibrary;
@@ -44,9 +54,10 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
+        hands::ik,
         haptics::{self, Event},
         scheme,
-        weapons::{fire, reload},
+        weapons::{fire, hold::tick, reload},
     },
 };
 
@@ -54,6 +65,7 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CHECK_IF_RELOAD_SHOULD_BE_TRIGGERED_BASE_BINDER)
         .with_static_binder(&TRY_TO_SWITCH_TO_VALID_WEAPON_BINDER)
+        .with_static_binder(&CANCEL_RELOAD_BINDER)
 }
 
 /// The empty-weapon readout.
@@ -65,6 +77,8 @@ pub struct EmptyStatus {
     pub allowed: u64,
     /// Pulls of an empty gun at their press edge.
     pub dry_fires: u64,
+    /// The ammunition checks' reload requests and cancels refused for the local player.
+    pub requests_refused: u64,
 }
 
 pub fn status() -> EmptyStatus {
@@ -72,7 +86,21 @@ pub fn status() -> EmptyStatus {
         suppressed: SUPPRESSED.load(Ordering::Relaxed),
         allowed: ALLOWED.load(Ordering::Relaxed),
         dry_fires: DRY_FIRES.load(Ordering::Relaxed),
+        requests_refused: REQUESTS_REFUSED.load(Ordering::Relaxed),
     }
+}
+
+/// Whether to refuse a reload start or a cancel of `character`'s reload made now: it is the local
+/// player's, inside a marked ammunition check on this thread, and the per-hand tick acts. Counts a
+/// refusal.
+pub(crate) fn refuses_check_request(character: *const Character) -> bool {
+    let local = ik::local_character();
+    let refuse =
+        CHECK.get().is_some() && tick::per_hand() && local != 0 && character as usize == local;
+    if refuse {
+        REQUESTS_REFUSED.fetch_add(1, Ordering::Relaxed);
+    }
+    refuse
 }
 
 /// What the switch detour does with a call.
@@ -117,6 +145,7 @@ pub fn is_reloadable_dry_fire(
 static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
 static ALLOWED: AtomicU64 = AtomicU64::new(0);
 static DRY_FIRES: AtomicU64 = AtomicU64::new(0);
+static REQUESTS_REFUSED: AtomicU64 = AtomicU64::new(0);
 
 /// A marked ammunition check in progress on this thread.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -180,6 +209,15 @@ fn check_if_reload_should_be_triggered_base(
     if let Some(hand) = hand {
         haptics::play(hand, Event::DryFire);
     }
+}
+
+/// The character's reload cancel, refused inside the local player's marked ammunition check.
+#[detour(address = jc3gi::character::character::Character::CancelReload_ADDRESS)]
+fn cancel_reload(character: *mut Character) {
+    if refuses_check_request(character) {
+        return;
+    }
+    CANCEL_RELOAD.get().unwrap().call(character);
 }
 
 #[detour(address = jc3gi::character::inventory::Inventory::TryToSwitchToValidWeapon_ADDRESS)]

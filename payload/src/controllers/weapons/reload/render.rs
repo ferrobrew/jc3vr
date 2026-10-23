@@ -1,5 +1,6 @@
-//! The reload's model parts: an action's part where its travel has it, and a magazine part carried
-//! in the hand that took it from the pouch. The input tick publishes what to draw ([`publish`]).
+//! The reload's model parts: each hand's gun's action part where its travel has it, and a magazine
+//! part carried in the hand that took it from the pouch. The input tick publishes what to draw
+//! ([`publish`]), each part with the weapon it belongs to.
 //! The late update of the held gun's parts ([`crate::controllers::hands::parts`]) asks for each
 //! separate part's matrix ([`adjust`]) on the render thread, and the gun's own skeleton takes the
 //! pump or the bolt bone from [`bone_part`] ([`crate::controllers::weapons::reload::bones`]).
@@ -24,6 +25,8 @@ use crate::controllers::{frame::Hand, hands::late, weapons::reload::chamber::Act
 /// Gun `gun`'s action part where the reload has it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct ActionPart {
+    /// The address of the weapon the gun belongs to.
+    pub weapon: usize,
     /// The gun's index in the weapon, which a separate part names as its own.
     pub gun: u32,
     /// The gun's address, whose skeleton carries a pump or a bolt bone.
@@ -38,11 +41,15 @@ pub(super) struct ActionPart {
     /// A bolt's turn up at full lift, radians, signed so that it turns the handle's side toward
     /// the gun's top about the model's +Z.
     pub lift_rad: f32,
+    /// The weapon's magazine is empty, which holds a slide back on its own.
+    pub magazine_empty: bool,
 }
 
 /// A magazine part carried in a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct HeldPart {
+    /// The address of the weapon the held round is for.
+    pub weapon: usize,
     pub hand: Hand,
     /// How far ahead of the grip the top of the held round is, in the world's metres.
     pub top_world_m: f32,
@@ -53,36 +60,39 @@ pub(super) struct HeldPart {
 /// What the input tick publishes for the render thread.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(super) struct Published {
-    pub weapon: usize,
+    /// The weapons the parts may belong to, or zero, for the check before the lock.
+    pub weapons: [usize; 2],
+    /// Each hand's gun's action part, by [`Hand::index`].
     pub actions: [Option<ActionPart>; 2],
-    /// The game's magazine is empty, which holds a slide back on its own.
-    pub magazine_empty: bool,
     pub held: Option<HeldPart>,
 }
 
 pub(super) fn publish(published: Published) {
     *RENDER.lock() = Some(published);
-    PUBLISHED_WEAPON.store(published.weapon, Ordering::Relaxed);
+    for (stored, weapon) in PUBLISHED_WEAPONS.iter().zip(published.weapons) {
+        stored.store(weapon, Ordering::Relaxed);
+    }
 }
 
 pub(super) fn clear() {
     *RENDER.lock() = None;
-    PUBLISHED_WEAPON.store(0, Ordering::Relaxed);
+    for stored in &PUBLISHED_WEAPONS {
+        stored.store(0, Ordering::Relaxed);
+    }
 }
 
 /// The action part of the gun at `gun_address` of the weapon at `weapon`, for its skeleton. Every
-/// character's guns ask, on the simulation's workers, so any weapon but the published one is
+/// character's guns ask, on the simulation's workers, so any weapon but the published ones is
 /// turned away before the lock.
 pub(super) fn bone_part(weapon: usize, gun_address: usize) -> Option<ActionPart> {
-    if weapon == 0 || PUBLISHED_WEAPON.load(Ordering::Relaxed) != weapon {
+    if !published(weapon) {
         return None;
     }
-    let published = (*RENDER.lock()).filter(|p| p.weapon == weapon)?;
-    published
+    (*RENDER.lock())?
         .actions
         .into_iter()
         .flatten()
-        .find(|a| a.gun_address == gun_address)
+        .find(|a| a.weapon == weapon && a.gun_address == gun_address)
 }
 
 /// The matrix to push for `part` of the weapon at `weapon` in place of `matrix` (the engine's
@@ -94,13 +104,16 @@ pub(crate) fn adjust(
     matrix: Mat4,
     dtf: f32,
 ) -> Option<Mat4> {
-    let published = (*RENDER.lock()).filter(|p| p.weapon == weapon)?;
+    if !published(weapon) {
+        return None;
+    }
+    let published = (*RENDER.lock())?;
     if part.m_Type == WeaponComponentType::E_WEAPON_COMPONENT_BARREL_RECOIL {
         let action = published
             .actions
             .into_iter()
             .flatten()
-            .find(|a| a.gun == part.m_WeaponDataIndex)?;
+            .find(|a| a.weapon == weapon && a.gun == part.m_WeaponDataIndex)?;
         if !matches!(action.kind, ActionKind::Slide | ActionKind::Bolt) {
             return None;
         }
@@ -109,14 +122,14 @@ pub(crate) fn adjust(
         let recoil = unsafe {
             &*(part as *const ModelAttachementWeaponComponent).cast::<BarrelRecoilWeaponComponent>()
         };
-        let game_share = if recoil.m_MaxRecoilOnEmptyAmmo && published.magazine_empty {
+        let game_share = if recoil.m_MaxRecoilOnEmptyAmmo && action.magazine_empty {
             1.0
         } else {
             0.0
         };
         return slide_matrix(matrix, action.share, game_share, recoil.m_RecoilMaxLength);
     }
-    let held = published.held?;
+    let held = published.held.filter(|h| h.weapon == weapon)?;
     if part.m_NameHash != ModelAttachementWeaponComponent::MAGAZINE_NAME_HASH {
         return None;
     }
@@ -155,9 +168,17 @@ pub(super) fn bone_joint(position: Vec3, orientation: Quat, part: ActionPart) ->
     (position + back, (turn * orientation).normalize())
 }
 
+/// Whether `weapon` is one [`RENDER`] may hold parts of, checked without the lock.
+fn published(weapon: usize) -> bool {
+    weapon != 0
+        && PUBLISHED_WEAPONS
+            .iter()
+            .any(|w| w.load(Ordering::Relaxed) == weapon)
+}
+
 static RENDER: Mutex<Option<Published>> = Mutex::new(None);
-/// The weapon [`RENDER`] holds, or zero, for the skeletons' check before the lock.
-static PUBLISHED_WEAPON: AtomicUsize = AtomicUsize::new(0);
+/// The weapons [`RENDER`] holds parts of, or zero, for the checks before the lock.
+static PUBLISHED_WEAPONS: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 
 #[cfg(test)]
 mod tests {
@@ -176,6 +197,7 @@ mod tests {
     #[test]
     fn a_bone_moves_back_by_its_share_and_turns_by_its_lift() {
         let part = ActionPart {
+            weapon: 1,
             gun: 0,
             gun_address: 1,
             kind: ActionKind::Bolt,
@@ -183,6 +205,7 @@ mod tests {
             lift: 1.0,
             travel_m: 0.08,
             lift_rad: std::f32::consts::FRAC_PI_2,
+            magazine_empty: false,
         };
         let (position, orientation) = bone_joint(Vec3::new(0.0, 0.1, -0.2), Quat::IDENTITY, part);
         assert!((position - Vec3::new(0.0, 0.1, -0.16)).length() < 1e-6);
@@ -200,6 +223,7 @@ mod tests {
     #[test]
     fn a_held_magazine_points_the_way_the_hand_does_with_its_top_ahead() {
         let held = HeldPart {
+            weapon: 1,
             hand: Hand::Left,
             top_world_m: 0.07,
             part_top_m: 0.05,

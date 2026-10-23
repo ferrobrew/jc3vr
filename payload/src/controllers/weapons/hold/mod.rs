@@ -53,6 +53,7 @@
 //! no body in the world ([`take`] and [`world`]).
 
 pub mod act;
+pub(crate) mod armed;
 pub mod dock;
 pub mod equip;
 pub mod layout;
@@ -63,6 +64,7 @@ pub(crate) mod refs;
 pub mod second;
 pub mod steal;
 pub mod take;
+pub mod tick;
 pub mod world;
 
 use std::{
@@ -93,7 +95,7 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_ATTACHMENT_TRANSFORMS_BINDER)
         .with_static_binder(&UPDATE_INVENTORY_POST_FINALIZE_POSE_BINDER)
-        .with_hook_library(second::hook_library())
+        .with_hook_library(tick::hook_library())
 }
 
 /// What a grab that brings a weapon into a hand is.
@@ -510,7 +512,7 @@ fn update_attachment_transforms(
     for weapon in unsafe { held_in(inventory) } {
         unsafe { apply(weapon, true) };
     }
-    unsafe { second::apply_owned(inventory) };
+    unsafe { armed::apply_in(inventory) };
     unsafe { dual_wield::single::apply_home(inventory) };
     // The rigid grip pins the attach bones after the layouts above have chosen them.
     let placement = unsafe { grip::before_placement(inventory, character) };
@@ -535,7 +537,7 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
     for weapon in unsafe { held_in(inventory) } {
         unsafe { apply(weapon, false) };
     }
-    unsafe { second::apply_owned(inventory) };
+    unsafe { armed::apply_in(inventory) };
     unsafe { dual_wield::single::apply_home(inventory) };
     // No inventory ends the pass for the carried weapons.
     unsafe { inventory::carry::end_pass(inventory) };

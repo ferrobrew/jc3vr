@@ -155,6 +155,33 @@ impl GameCameraManager {
             f(self as *mut Self as _, hint, debug_name)
         }
     }
+    pub const RemoveHint_ADDRESS: usize = 0x140799BA0;
+    /// Drops a reference to camera hint `hint`, erasing it from the hint table when its count
+    /// reaches zero; an absent hint is left alone. `debug_name` is unused.
+    pub unsafe fn RemoveHint(&mut self, hint: u32, debug_name: *const u8) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                hint: u32,
+                debug_name: *const u8,
+            ) = ::std::mem::transmute(Self::RemoveHint_ADDRESS);
+            f(self as *mut Self as _, hint, debug_name)
+        }
+    }
+    pub const HasHint_ADDRESS: usize = 0x140799B30;
+    /// Whether camera hint `hint` is in the hint table, with any reference count.
+    /// [`WeaponBase::StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) adds a weapon's use hint
+    /// only when this is false, and [`WeaponBase::StopUsingBase`](crate::equipment::weapon::WeaponBase::StopUsingBase)
+    /// removes it only when this is true, so a hint shared by two weapons in use holds one
+    /// reference and goes with the first weapon to stop.
+    pub unsafe fn HasHint(&self, hint: u32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self, hint: u32) -> bool = ::std::mem::transmute(
+                Self::HasHint_ADDRESS,
+            );
+            f(self as *const Self as _, hint)
+        }
+    }
     pub const ResetCamera_ADDRESS: usize = 0x14077BCE0;
     /// Resets the camera control context, the camera director, and the camera tree; when
     /// `transform` is non-null, also initializes the camera manager's transform to it and stores it

@@ -28,6 +28,13 @@ impl EventIdSymbolTable {
     }
 }
 impl EventIdSymbolTable {
+    /// The upper-body actions' abort: every `S_UB_*` state of `rico_partial_global` (the draws,
+    /// holsters, switches, reloads, pumps, bolts, pickups, throws, and explosives' actions) has an
+    /// unconditional transition on it back to the layer's idle, `S_GLOBAL_PARTIAL_NULL`, so a clip
+    /// still playing fires none of its remaining track messages. The parachute arm states, the
+    /// detonations, and the explosive reloads (`S_JC_UB_*`) do not take it. Read in the shipped
+    /// graph data.
+    pub const ACT_ABORT_WEAPON_PARTIAL: &::std::ffi::CStr = c"ACT_ABORT_WEAPON_PARTIAL";
     /// The heavy weapon's standing turn a quarter to the left: one of the on-spot acts
     /// [`QueueAimRelativeOnSpotActions`](crate::input::locomotion::NStateTask_LocoUtil::QueueAimRelativeOnSpotActions)
     /// queues for a player wielding a heavy weapon when the aim is more than a sixth of a turn from

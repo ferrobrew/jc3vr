@@ -596,6 +596,12 @@ pub struct HoldConfig {
     pub promote_second: bool,
     /// How long the second weapon is held alone before it becomes the wielded weapon, seconds.
     pub promote_after_s: f32,
+    /// Fire every gun in a hand from that hand's own trigger: the wielded weapon too takes its
+    /// hand's fire input in place of the game's, each gun's ammunition check never reloads or
+    /// interrupts the other hand's, and each gun keeps its own aim mode and camera hint. Off, the
+    /// wielded weapon fires from the game's own fire input, and a gun beside it fires only while
+    /// its magazine holds a round. Needs `either_hand`.
+    pub per_hand_tick: bool,
 }
 
 impl HoldConfig {
@@ -620,6 +626,7 @@ impl HoldConfig {
             take_slide: true,
             promote_second: true,
             promote_after_s: 0.5,
+            per_hand_tick: true,
         }
     }
 }

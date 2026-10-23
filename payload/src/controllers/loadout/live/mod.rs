@@ -43,7 +43,7 @@ pub(crate) use crate::controllers::loadout::live::{
     divergence::OldPlace,
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
-    published::{hand_of, in_hand, place_of},
+    published::{hand_of, in_hand, item_of, place_of},
 };
 use crate::controllers::{
     frame::Hand,

@@ -14,7 +14,7 @@ use crate::controllers::{
     loadout::Socket,
     weapons::{
         engine::slot_from_raw,
-        hold::{pickup::gun_pose, second},
+        hold::{armed, pickup::gun_pose},
         holster::site_slot,
         regions::{
             WorldTouch,
@@ -140,7 +140,7 @@ pub(crate) unsafe fn docked_long_guns(owner: &Character, dominant: Hand) -> Vec<
             continue;
         };
         let address = weapon as *const WeaponBase as usize;
-        if weapon.m_State != WeaponState::E_WS_HOLSTERED || second::is(address) {
+        if weapon.m_State != WeaponState::E_WS_HOLSTERED || armed::is(address) {
             continue;
         }
         // A docked gun is taken by the hand that draws it, with its other hand's grip opposite.

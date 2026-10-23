@@ -38,6 +38,7 @@ use crate::{
                 self,
                 dock::{self, Release},
                 second::{self, Source},
+                tick,
             },
             holster::{self, HolsterAction},
             inventory::{
@@ -466,11 +467,17 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             .iter()
             .all(|h| !gun_hands[h.index()] || reload_held[h.index()]);
 
-    second::set_trigger(
-        gameplay && second::hand().is_some_and(|hand| triggers[hand.index()].held()),
-    );
     // Only a hand on the grip fires the gun.
     let carried = weapon.and_then(|(w, _)| regions::carrying(w.address));
+    tick::publish_fire(hand_fire(&HandFire {
+        gameplay,
+        triggers: &triggers,
+        holder: weapon.and_then(|(w, _)| w.holder),
+        carrier: carried.map(|(hand, _)| hand),
+        holstering: hold::act::holstering(),
+        action_running: Hand::BOTH
+            .map(|h| config.weapons.block_fire_during_actions && weapon_action_running(h)),
+    }));
     let explosive = grenade::throwing_hand().or_else(c4::throwing_hand);
     let fire_blocked = reload_blocks
         || explosive_holds_fire(explosive, gun_hands, second::hand())
@@ -850,6 +857,34 @@ unsafe fn release_second(hand: Hand, dock: Option<GrabVolume>) {
     }
 }
 
+/// What decides each hand's own fire input.
+pub(super) struct HandFire<'a> {
+    pub gameplay: bool,
+    pub triggers: &'a [ButtonControl; 2],
+    /// The hand holding the wielded weapon.
+    pub holder: Option<Hand>,
+    /// The hand carrying the wielded gun by a part other than its grip, which cannot fire it.
+    pub carrier: Option<Hand>,
+    /// A holster's slide is moving the wielded weapon onto its dock.
+    pub holstering: bool,
+    /// A reload, a draw, or a holster plays with each hand, and holds its fire back, by
+    /// [`Hand::index`].
+    pub action_running: [bool; 2],
+}
+
+/// Each hand's own fire input, by [`Hand::index`]: its trigger pulled in gameplay while nothing
+/// holds its gun back. The true reload's hold on a gun and the shooting permission are checked at
+/// the gun's update.
+pub(super) fn hand_fire(f: &HandFire) -> [bool; 2] {
+    Hand::BOTH.map(|hand| {
+        let wielding = f.holder == Some(hand);
+        f.gameplay
+            && f.triggers[hand.index()].held()
+            && f.carrier != Some(hand)
+            && !(wielding && (f.holstering || f.action_running[hand.index()]))
+    })
+}
+
 /// Drop the fire inputs from the tables' output.
 pub(super) fn hold_fire_back(desired: &mut Vec<Desired>) {
     desired
@@ -943,6 +978,54 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_hand_fires_from_its_own_trigger_unless_its_gun_is_held_back() {
+        let pulled = |down| ButtonControl {
+            down,
+            ..ButtonControl::default()
+        };
+        let triggers = [pulled(true), pulled(true)];
+        let free = HandFire {
+            gameplay: true,
+            triggers: &triggers,
+            holder: Some(Hand::Right),
+            carrier: None,
+            holstering: false,
+            action_running: [false; 2],
+        };
+        assert_eq!(hand_fire(&free), [true, true]);
+        assert_eq!(
+            hand_fire(&HandFire {
+                holstering: true,
+                ..free
+            }),
+            [true, false],
+            "a holster's slide holds only the wielded gun's hand"
+        );
+        assert_eq!(
+            hand_fire(&HandFire {
+                carrier: Some(Hand::Left),
+                ..free
+            }),
+            [false, true]
+        );
+        assert_eq!(
+            hand_fire(&HandFire {
+                gameplay: false,
+                ..free
+            }),
+            [false, false]
+        );
+        let idle = [pulled(false), pulled(true)];
+        assert_eq!(
+            hand_fire(&HandFire {
+                triggers: &idle,
+                ..free
+            }),
+            [false, true]
+        );
+    }
 
     #[test]
     fn a_grenade_in_the_hand_holds_fire_back_unless_the_other_hand_has_a_gun() {

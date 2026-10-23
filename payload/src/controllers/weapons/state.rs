@@ -55,6 +55,7 @@ pub(crate) fn stand_down() {
     unsafe { dual_wield::single::stand_down() };
     hold::clear();
     hold::act::clear();
+    hold::tick::stand_down();
     hold::take::stand_down();
     hold::pips::submit(None);
     regions::stand_down();

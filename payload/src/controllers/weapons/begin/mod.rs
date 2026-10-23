@@ -37,8 +37,7 @@ use crate::{
                 config::RegionsConfig,
                 engine::{self as region_engine, DockedLongGun},
             },
-            reload::{self, focus::ReloadTarget},
-            scope,
+            reload, scope,
             state::{DockTouch, OffTouch, STATE, State},
             types::{TickStart, WieldedReadout},
             volumes::{self, BodyFrame, ChestGrabbers},
@@ -94,6 +93,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 },
             );
             let holder = hold::input_tick(owner, wielded, holding.either_hand, arrival);
+            hold::tick::input_tick(owner, wielded, holding.either_hand && holding.per_hand_tick);
             let weapon =
                 engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder));
             let second = second::held_weapon(owner);
@@ -301,19 +301,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
     };
     targets.extend(taken.iter().map(|c| place.world(c)));
-    // SAFETY: both weapons were read this tick, on the main thread outside the world update.
-    let reload_target = unsafe {
-        reload::focus(
-            weapon.and_then(|w| reload::fill_of(w.address)),
-            second_weapon.and_then(|w| reload::fill_of(w.address)),
-        )
-    };
-    let reloaded = match reload_target {
-        ReloadTarget::Primary => weapon,
-        ReloadTarget::Second => second_weapon,
-    };
     let reload_candidates = reload::begin_tick(&reload::BeginInputs {
-        weapon: reloaded.as_ref(),
+        weapons: [weapon.as_ref(), second_weapon.as_ref()],
         occupied: free.map(|f| !f),
         active: &active,
         config: &config,

@@ -22,7 +22,7 @@ use crate::controllers::{
             math::{lerp_transform, pose_matrix},
         },
     },
-    weapons::hold::second,
+    weapons::hold::armed,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -79,7 +79,7 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     if !matches!(
         state,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    ) && !second::is(weapon as *const WeaponBase as usize)
+    ) && !armed::is(weapon as *const WeaponBase as usize)
     {
         return;
     }

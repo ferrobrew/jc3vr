@@ -38,6 +38,7 @@ use crate::{
         hands::{ik::TickTarget, late},
         weapons::{
             dual_wield::single,
+            empty,
             reload::{chamber::ActionKind, dual::Transfer, frames, gate, loose::EjectRounds},
         },
     },
@@ -360,7 +361,10 @@ fn start_reloading_wielding_weapon(character: *mut Character) {
         c.m_WeaponInputs[WeaponInput::E_INPUT_RELOAD as usize]
     });
     let local = crate::controllers::hands::ik::local_character();
-    if gate::stops_reload(character as usize, local, reload_input) {
+    // The per-hand tick's guns each ask for the wielded weapon's reload from their own check.
+    if empty::refuses_check_request(character)
+        || gate::stops_reload(character as usize, local, reload_input)
+    {
         return;
     }
     START_RELOADING_WIELDING_WEAPON

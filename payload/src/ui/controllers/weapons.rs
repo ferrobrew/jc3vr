@@ -33,6 +33,7 @@ use crate::{
                 act::{self, DockStatus},
                 dock::SnapKind,
                 second::{self, SecondStatus, Source},
+                tick::{self, TickStatus},
             },
             holster::slot_label,
             recoil::{self, RecoilStatus},
@@ -61,6 +62,7 @@ pub(super) struct WeaponsReadout {
     regions: RegionsStatus,
     dock: DockStatus,
     second: SecondStatus,
+    tick: TickStatus,
     anchor: AnchorStatus,
     yanks: (u64, Option<Yank>),
     grenade: GrenadeStatus,
@@ -85,6 +87,7 @@ impl WeaponsReadout {
             regions: regions::status(),
             dock: act::status(),
             second: second::status(),
+            tick: tick::status(),
             anchor: anchor::status(),
             yanks: bindings::yank_status(),
             grenade: grenade::status(),
@@ -154,6 +157,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     hold_readout(ui, &readout.hold, &readout.dock);
     regions_readout(ui, &readout.regions);
     second_readout(ui, &readout.second);
+    tick_readout(ui, &readout.tick, &readout.empty);
     grapple_readout(ui, &readout.anchor, readout.yanks);
     grenade_readout(ui, &readout.grenade);
     explosives_readout(ui, &readout.explosives);
@@ -359,6 +363,22 @@ fn second_readout(ui: &mut Ui, s: &SecondStatus) {
         s.drops,
         s.promotions,
         s.last_refusal.map_or("none".to_owned(), |r| r.to_string())
+    ));
+}
+
+fn tick_readout(ui: &mut Ui, t: &TickStatus, e: &EmptyStatus) {
+    ui.label(format!(
+        "Per-hand tick: {} · fire left {} right {} · updates left {} right {} · wielded inputs \
+         handed over {} · aim modes set {} · hints put back {} · reload requests refused {}",
+        if t.per_hand { "on" } else { "off" },
+        if t.fire[0] { "pulled" } else { "up" },
+        if t.fire[1] { "pulled" } else { "up" },
+        t.updates[0],
+        t.updates[1],
+        t.substituted,
+        t.aim_modes,
+        t.hints,
+        e.requests_refused
     ));
 }
 
@@ -800,6 +820,15 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
     .on_hover_text(
         "The free hand takes a long gun of another slot off its shoulder and fires it with its \
          own trigger.",
+    );
+    ui.add_enabled(
+        h.either_hand,
+        egui::Checkbox::new(&mut h.per_hand_tick, "Fire each gun from its own hand"),
+    )
+    .on_hover_text(
+        "Every gun in a hand, the wielded one too, fires from that hand's trigger, and one gun's \
+         ammunition check never reloads the other's. Off, the wielded gun fires from the game's \
+         own fire input.",
     );
     ui.add_enabled_ui(h.either_hand && h.second_weapon, |ui| {
         ui.checkbox(&mut h.promote_second, "A lone second gun becomes the main")

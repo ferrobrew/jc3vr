@@ -11,7 +11,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::weapons::reload::config::ReloadConfig;
+use crate::controllers::{frame::Hand, weapons::reload::config::ReloadConfig};
 
 /// Where the insertion is.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -215,6 +215,17 @@ pub fn held_round(grip: Vec3, pointing: Vec3, top_m: f32, velocity: Vec3) -> Opt
     .filter(|h| h.top.is_finite() && h.velocity.is_finite())
 }
 
+/// The hand whose gun a round from the pouch is for, from the hands holding a gun (`gun_hands`, by
+/// [`Hand::index`]), the hand that would take the round (`taker`, `None` while no hand is free),
+/// and the `dominant` hand: the gun in the other hand from the taker, or without a taker, the
+/// dominant hand's gun and then the other hand's. `None` without a gun.
+pub fn loading_hand(gun_hands: [bool; 2], taker: Option<Hand>, dominant: Hand) -> Option<Hand> {
+    let first = taker.map_or(dominant, Hand::other);
+    [first, first.other()]
+        .into_iter()
+        .find(|hand| gun_hands[hand.index()])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +360,30 @@ mod tests {
         assert!((held.top - Vec3::new(0.0, 0.0, -0.07)).length() < 1e-6);
         assert_eq!(held.axis, Vec3::NEG_Z);
         assert!(held_round(Vec3::ZERO, Vec3::ZERO, 0.07, Vec3::ZERO).is_none());
+    }
+
+    #[test]
+    fn a_round_from_the_free_hand_is_for_the_gun_in_the_other() {
+        assert_eq!(
+            loading_hand([false, true], Some(Hand::Left), Hand::Left),
+            Some(Hand::Right)
+        );
+        assert_eq!(
+            loading_hand([true, false], Some(Hand::Right), Hand::Right),
+            Some(Hand::Left)
+        );
+    }
+
+    #[test]
+    fn with_both_hands_full_the_dominant_hands_gun_is_loaded_first() {
+        assert_eq!(
+            loading_hand([true, true], None, Hand::Right),
+            Some(Hand::Right)
+        );
+        assert_eq!(
+            loading_hand([true, false], None, Hand::Right),
+            Some(Hand::Left)
+        );
+        assert_eq!(loading_hand([false, false], None, Hand::Right), None);
     }
 }

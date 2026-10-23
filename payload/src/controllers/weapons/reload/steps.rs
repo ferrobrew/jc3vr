@@ -1,5 +1,5 @@
-//! The reload's input-tick steps over the tick's weapon: the shots folded in, the ejects, the
-//! two-handed load, the belt pushes, the action's work, and the fire hold.
+//! The reload's input-tick steps over the hands' guns, each with its own weapon: the shots folded
+//! in, the ejects, the two-handed load, the belt pushes, the action's work, and the fire hold.
 
 use glam::Vec3;
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
@@ -10,6 +10,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume},
     hands::{ActiveHands, ik},
     haptics::{self, Event},
+    loadout::live::item_of,
     weapons::{
         self,
         dual_wield::single,
@@ -17,19 +18,20 @@ use crate::controllers::{
         foregrip::set_pump_slide,
         regions::{action_back, action_volume},
         reload::{
-            FinishInputs, GunTick, MAX_EVENTS, MAX_RECORDS, Record, State, Tick, WeaponReadout,
+            FinishInputs, GunTick, MAX_EVENTS, State, Tick, WeaponReadout, WeaponTick,
             action::locks_back,
             belt::{BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
             config::{ReloadButton, ReloadConfig},
             dual::{self, SplitMagazines},
-            eject::FlickDetector,
+            eject::{self, FlickDetector},
             engine,
             frames::{self, GunFrame},
             gate,
             insert::{self, InsertEvent, InsertInputs, InsertStage, Well},
             loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
+            records::RecordKey,
             travel::ActionTravel,
             wells,
         },
@@ -37,93 +39,93 @@ use crate::controllers::{
 };
 
 impl State {
-    /// Read the weapon, its plan, and its guns' frames.
+    /// Read the hands' weapons, their plans, and their guns' frames.
     ///
     /// # Safety
     ///
-    /// Main thread, outside the world update, with `weapon` read this tick.
+    /// Main thread, outside the world update, with `weapons` read this tick.
     pub(super) unsafe fn read_tick(
         &mut self,
-        weapon: &HeldWeapon,
+        weapons: [Option<&HeldWeapon>; 2],
         active: &ActiveHands,
         config: &ControllersConfig,
     ) -> Option<Tick> {
-        let reload = &config.weapons.reload;
-        let base = unsafe { (weapon.address as *const WeaponBase).as_ref() }?;
-        let holder = weapon.holder?;
-        let reading = unsafe { engine::read(base) };
-        let entry = wells::lookup(reading.name_hash);
-        let plan = plan::plan(
-            WeaponFacts {
-                class: reading.class,
-                capacity: reading.capacity,
-                exempt: reading.exempt,
-            },
-            entry,
-            reload.well_offset_m,
-            reload.action.default_travel_m,
-        )?;
-        let reserve = unsafe { engine::reserve(base) };
-        let split = weapon.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
-            && !single::is(weapon.address)
-            && reload.dual_split
-            && config.weapons.dual_wield.split;
-        // The gun as it is shown: turned onto the line between the hands by the two-handed pose
-        // and by its weight, so the well and the handle are where the player sees them.
+        // The guns as they are shown: turned onto the line between the hands by the two-handed pose
+        // and by their weight, so the wells and the handles are where the player sees them.
         let posed = weapons::weighted_hands(active);
         let targets = ik::tick_records().current;
+        let mut read = [None; 2];
         let mut guns = [None; 2];
+        let mut marked = [false; 2];
+        for (slot, weapon) in weapons.into_iter().enumerate() {
+            let Some(weapon) = weapon else {
+                continue;
+            };
+            let Some(base) = (unsafe { (weapon.address as *const WeaponBase).as_ref() }) else {
+                continue;
+            };
+            let Some(weapon_tick) = (unsafe { weapon_tick(weapon, base, config) }) else {
+                continue;
+            };
+            for hand in Hand::BOTH {
+                let i = hand.index();
+                // A hand holds one gun; the wielded weapon's comes first.
+                if !weapon.wielded.hands[i] || marked[i] {
+                    continue;
+                }
+                marked[i] = true;
+                let Some(cockpit) = posed[i] else {
+                    continue;
+                };
+                let Some(index) = (unsafe { engine::gun_index(base, hand) }) else {
+                    continue;
+                };
+                let fresh = targets[i].and_then(|target| unsafe {
+                    engine::measure_gun(base, index, target, active.world_scale)
+                });
+                if let Some(fresh) = fresh {
+                    self.measured[i] = Some((weapon.address, fresh));
+                }
+                let in_wrist = self.measured[i]
+                    .filter(|(address, _)| *address == weapon.address)
+                    .map(|(_, pose)| pose);
+                let plan = &weapon_tick.plan;
+                let frame = in_wrist.map(|p| GunFrame::of(cockpit.wrist, p, active.world_scale));
+                let well = frames::well(plan.well, frame.as_ref(), cockpit.wrist, hand)
+                    .map(|(mouth, axis)| Well { mouth, axis });
+                let handle = frame
+                    .zip(plan.handle)
+                    .map(|(f, h)| (f.point(h), f.rearward()));
+                guns[i] = Some(GunTick {
+                    weapon: slot,
+                    index,
+                    wrist: cockpit.wrist,
+                    frame,
+                    well,
+                    handle,
+                });
+            }
+            read[slot] = Some(weapon_tick);
+        }
         for hand in Hand::BOTH {
-            let i = hand.index();
-            if !weapon.wielded.hands[i] {
-                self.measured[i] = None;
-                continue;
+            if !marked[hand.index()] {
+                self.measured[hand.index()] = None;
             }
-            let Some(cockpit) = posed[i] else {
-                continue;
-            };
-            let Some(index) = (unsafe { engine::gun_index(base, hand) }) else {
-                continue;
-            };
-            let fresh = targets[i].and_then(|target| unsafe {
-                engine::measure_gun(base, index, target, active.world_scale)
-            });
-            if let Some(fresh) = fresh {
-                self.measured[i] = Some((weapon.address, fresh));
-            }
-            let in_wrist = self.measured[i]
-                .filter(|(address, _)| *address == weapon.address)
-                .map(|(_, pose)| pose);
-            let frame = in_wrist.map(|p| GunFrame::of(cockpit.wrist, p, active.world_scale));
-            let well = frames::well(plan.well, frame.as_ref(), cockpit.wrist, hand)
-                .map(|(mouth, axis)| Well { mouth, axis });
-            let handle = frame
-                .zip(plan.handle)
-                .map(|(f, h)| (f.point(h), f.rearward()));
-            guns[i] = Some(GunTick {
-                index,
-                wrist: cockpit.wrist,
-                frame,
-                well,
-                handle,
-            });
+        }
+        if read.iter().all(Option::is_none) {
+            return None;
         }
         Some(Tick {
-            weapon: weapon.address,
-            holder,
+            weapons: read,
             dominant: config.acting_hand(),
-            split,
-            plan,
-            from_table: entry.is_some(),
-            reading,
-            reserve,
             guns,
             hands: active.hands,
             world_scale: active.world_scale,
         })
     }
 
-    /// The action handle's grab volume, while a gun's chamber waits on it and a hand is free.
+    /// The action handle's grab volume, while a gun's chamber or action waits on it and a hand is
+    /// free: the first such gun's.
     pub(super) fn handle_candidate(
         &mut self,
         tick: &Tick,
@@ -131,23 +133,23 @@ impl State {
         reload: &ReloadConfig,
     ) -> Option<Candidate> {
         let free = free?;
-        if !chambering(&tick.plan, reload) || tick.plan.action == ActionKind::Pump {
-            return None;
-        }
         let action = &reload.action;
-        let record = *self.record(tick);
-        let gun_hand = Hand::BOTH.into_iter().find(|h| {
-            let i = h.index();
-            tick.guns[i].is_some()
-                && (record.chambers[i] == Chamber::Empty
-                    || (action.physical && !record.travels[i].in_battery(action)))
+        let (weapon, gun, record) = Hand::BOTH.into_iter().find_map(|hand| {
+            let (weapon, gun) = tick.gun(hand)?;
+            if !chambering(&weapon.plan, reload) || weapon.plan.action == ActionKind::Pump {
+                return None;
+            }
+            let record = *self.records.get(weapon.key);
+            let e = gun.entry();
+            (record.chambers[e] == Chamber::Empty
+                || (action.physical && !record.travels[e].in_battery(action)))
+            .then_some((weapon, gun, record))
         })?;
-        let gun = tick.guns[gun_hand.index()]?;
         let (handle, rearward) = gun.handle?;
         // The handle rides the part, so a slide held back is taken where it is.
         let back = if action.physical {
-            let travel = &record.travels[gun_hand.index()];
-            action_back(travel.position, tick.plan.travel_m, tick.world_scale)
+            let travel = &record.travels[gun.entry()];
+            action_back(travel.position, weapon.plan.travel_m, tick.world_scale)
         } else {
             0.0
         };
@@ -160,20 +162,6 @@ impl State {
         ))
     }
 
-    pub(super) fn record(&mut self, tick: &Tick) -> &mut Record {
-        let index = match self.records.iter().position(|(w, _)| *w == tick.weapon) {
-            Some(index) => index,
-            None => {
-                if self.records.len() >= MAX_RECORDS {
-                    self.records.remove(0);
-                }
-                self.records.push((tick.weapon, Record::default()));
-                self.records.len() - 1
-            }
-        };
-        &mut self.records[index].1
-    }
-
     /// The tick's steps; returns the hands whose guns may not fire.
     pub(super) fn step(
         &mut self,
@@ -182,15 +170,14 @@ impl State {
         config: &ControllersConfig,
     ) -> [bool; 2] {
         let reload = &config.weapons.reload;
-        let dominant = config.acting_hand();
-        let gun_hands = tick.guns.map(|g| g.is_some());
         let dt = if inputs.dt.is_finite() {
             inputs.dt.max(0.0)
         } else {
             0.0
         };
-        if self.drawn != Some((tick.weapon, gun_hands)) {
-            self.drawn = Some((tick.weapon, gun_hands));
+        let drawn = Hand::BOTH.map(|hand| tick.gun(hand).map(|(weapon, _)| weapon.address));
+        if self.drawn != Some(drawn) {
+            self.drawn = Some(drawn);
             self.since_draw_s = 0.0;
             self.status.insertion.reset();
             self.status.insert_hands = None;
@@ -199,48 +186,21 @@ impl State {
         } else {
             self.since_draw_s += dt;
         }
-        let chambering = chambering(&tick.plan, reload);
-        self.fold_shots(tick, reload, chambering);
-        self.sync(tick, dominant, reload);
+        for weapon in tick.weapons.iter().flatten() {
+            self.records.touch(weapon.key);
+        }
+        self.fold_shots(tick, reload);
+        self.sync(tick, reload);
 
         self.ejects(tick, inputs, config);
         self.insert(tick, inputs, config);
         self.belt(tick, config, dt);
-        self.work(tick, inputs, config, chambering);
+        self.work(tick, inputs, config);
 
         self.last_grips = tick.hands.map(|h| h.map(|h| h.grip.position));
-        let record = *self.record(tick);
-        self.status.weapon = Some(WeaponReadout {
-            name_hash: tick.reading.name_hash,
-            plan: tick.plan,
-            from_table: tick.from_table,
-            magazine: tick.reading.magazine,
-            capacity: tick.reading.capacity,
-            reserve: tick.reserve,
-            unlimited: tick.reading.unlimited,
-            out: tick.reading.out,
-            chambers: Hand::BOTH
-                .map(|h| gun_hands[h.index()].then_some(record.chambers[h.index()])),
-            actions: Hand::BOTH.map(|h| {
-                (gun_hands[h.index()] && chambering && reload.action.physical)
-                    .then_some(record.travels[h.index()])
-            }),
-            split: record.split.filter(|_| tick.split),
-        });
+        self.status.weapons = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
         self.status.belt = self.belts.map(|b| b.stage);
-        let held = Hand::BOTH.map(|hand| {
-            let i = hand.index();
-            gun_hands[i]
-                && (self.belts[i].holds_fire()
-                    || (chambering && record.chambers[i] == Chamber::Empty)
-                    || (chambering
-                        && reload.action.physical
-                        && !record.travels[i].in_battery(&reload.action))
-                    || match record.split.filter(|_| tick.split) {
-                        Some(split) => !split.can_fire(hand),
-                        None => tick.reading.out,
-                    })
-        });
+        let held = Hand::BOTH.map(|hand| self.fire_hold(tick, hand, reload));
         for hand in Hand::BOTH {
             if held[hand.index()] && inputs.triggers[hand.index()].pressed {
                 self.status.counts.dry_fires += 1;
@@ -250,30 +210,79 @@ impl State {
         held
     }
 
-    /// Fold the weapon's shots into the chambers and the split.
-    fn fold_shots(&mut self, tick: &Tick, reload: &ReloadConfig, chambering: bool) {
-        let shots = gate::take_shots();
-        let capacity = tick.reading.capacity;
-        let dominant_split = tick.split;
+    /// `hand`'s gun and its weapon, for the readout.
+    fn readout(&mut self, tick: &Tick, hand: Hand, reload: &ReloadConfig) -> Option<WeaponReadout> {
+        let (weapon, gun) = tick.gun(hand)?;
+        let record = *self.records.get(weapon.key);
+        let e = gun.entry();
+        Some(WeaponReadout {
+            address: weapon.address,
+            name_hash: weapon.reading.name_hash,
+            plan: weapon.plan,
+            from_table: weapon.from_table,
+            magazine: weapon.reading.magazine,
+            capacity: weapon.reading.capacity,
+            reserve: weapon.reserve,
+            unlimited: weapon.reading.unlimited,
+            out: weapon.reading.out,
+            chamber: record.chambers[e],
+            action: (chambering(&weapon.plan, reload) && reload.action.physical)
+                .then_some(record.travels[e]),
+            split: record.split.filter(|_| weapon.split),
+        })
+    }
+
+    /// Whether `hand`'s gun may not fire: it sits in the belt pouch, its chamber is empty, its
+    /// action is out of battery, or its magazine is out.
+    fn fire_hold(&mut self, tick: &Tick, hand: Hand, reload: &ReloadConfig) -> bool {
+        let Some((weapon, gun)) = tick.gun(hand) else {
+            return false;
+        };
+        let record = *self.records.get(weapon.key);
+        let e = gun.entry();
+        let chambering = chambering(&weapon.plan, reload);
+        self.belts[hand.index()].holds_fire()
+            || (chambering && record.chambers[e] == Chamber::Empty)
+            || (chambering
+                && reload.action.physical
+                && !record.travels[e].in_battery(&reload.action))
+            || match record.split.filter(|_| weapon.split) {
+                Some(split) => !split.can_fire(hand),
+                None => weapon.reading.out,
+            }
+    }
+
+    /// Fold each weapon's shots into its chambers and its split.
+    fn fold_shots(&mut self, tick: &Tick, reload: &ReloadConfig) {
         let dominant = tick.dominant;
         let mut locked = false;
-        let record = self.record(tick);
-        for shot in shots.into_iter().filter(|s| s.weapon == tick.weapon) {
-            if dominant_split {
+        for shot in gate::take_shots() {
+            let Some(weapon) = tick.weapon(shot.weapon) else {
+                continue;
+            };
+            let entry = tick
+                .gun(shot.hand)
+                .filter(|(w, _)| w.address == shot.weapon)
+                .map(|(_, gun)| gun.entry());
+            let capacity = weapon.reading.capacity;
+            let record = self.records.get(weapon.key);
+            if weapon.split {
                 let split = record.split.get_or_insert_with(|| {
                     SplitMagazines::dealt(shot.magazine + 1, capacity, dominant)
                 });
                 split.on_shot(shot.hand, shot.magazine, capacity, dominant);
             }
-            if chambering {
-                let left = match record.split.filter(|_| dominant_split) {
+            if chambering(&weapon.plan, reload)
+                && let Some(entry) = entry
+            {
+                let left = match record.split.filter(|_| weapon.split) {
                     Some(split) => split.hands[shot.hand.index()].rounds,
                     None => shot.magazine,
                 };
-                record.chambers[shot.hand.index()] =
-                    chamber::after_shot(left, tick.plan.action, reload.manual_action);
-                if locks_back(&tick.plan, reload) && left <= 0 {
-                    record.travels[shot.hand.index()].lock_back();
+                record.chambers[entry] =
+                    chamber::after_shot(left, weapon.plan.action, reload.manual_action);
+                if locks_back(&weapon.plan, reload) && left <= 0 {
+                    record.travels[entry].lock_back();
                     locked = true;
                 }
             }
@@ -285,27 +294,32 @@ impl State {
         }
     }
 
-    /// Bring the record in line with the game: deal the split, and empty the chamber of a weapon
-    /// first seen with an empty magazine.
-    fn sync(&mut self, tick: &Tick, dominant: Hand, reload: &ReloadConfig) {
-        let magazine = tick.reading.magazine;
-        let capacity = tick.reading.capacity;
-        let record = self.record(tick);
-        let previous = record.last_magazine.replace(magazine);
-        if tick.split {
-            match &mut record.split {
-                Some(split) => {
-                    split.sync(magazine, capacity, dominant);
+    /// Bring each weapon's record in line with the game: deal the split, and empty the chambers of
+    /// a weapon first seen with an empty magazine.
+    fn sync(&mut self, tick: &Tick, reload: &ReloadConfig) {
+        for weapon in tick.weapons.iter().flatten() {
+            let magazine = weapon.reading.magazine;
+            let capacity = weapon.reading.capacity;
+            let record = self.records.get(weapon.key);
+            let previous = record.last_magazine.replace(magazine);
+            if weapon.split {
+                match &mut record.split {
+                    Some(split) => {
+                        split.sync(magazine, capacity, tick.dominant);
+                    }
+                    None => {
+                        record.split =
+                            Some(SplitMagazines::dealt(magazine, capacity, tick.dominant))
+                    }
                 }
-                None => record.split = Some(SplitMagazines::dealt(magazine, capacity, dominant)),
+            } else {
+                record.split = None;
             }
-        } else {
-            record.split = None;
-        }
-        if previous.is_none() && magazine <= 0 {
-            record.chambers = [Chamber::Empty; 2];
-            if locks_back(&tick.plan, reload) {
-                record.travels.iter_mut().for_each(ActionTravel::lock_back);
+            if previous.is_none() && magazine <= 0 {
+                record.chambers = [Chamber::Empty; 2];
+                if locks_back(&weapon.plan, reload) {
+                    record.travels.iter_mut().for_each(ActionTravel::lock_back);
+                }
             }
         }
     }
@@ -316,11 +330,11 @@ impl State {
         let tapped = self.tap.step(inputs.reload_button, inputs.dt, reload.tap_s);
         let mut targets = [false; 2];
         if tapped && reload.button == ReloadButton::Eject {
-            if tick.split {
-                targets = tick.guns.map(|g| g.is_some());
-            } else {
-                targets[tick.holder.index()] = true;
-            }
+            let guns = Hand::BOTH.map(|hand| {
+                let gun = tick.guns[hand.index()]?;
+                Some((gun.weapon, tick.weapons[gun.weapon]?.split))
+            });
+            targets = eject::tap_targets(guns, tick.dominant);
         }
         for hand in Hand::BOTH {
             let i = hand.index();
@@ -336,48 +350,41 @@ impl State {
                 targets[i] = true;
             }
         }
-        if !tick.plan.load.ejects() {
-            return;
-        }
         for hand in Hand::BOTH.into_iter().filter(|h| targets[h.index()]) {
-            self.eject(tick, hand, config);
+            if let Some((weapon, gun)) = tick.gun(hand)
+                && weapon.plan.load.ejects()
+            {
+                self.eject(weapon, gun, hand, config);
+            }
         }
     }
 
-    /// Eject `hand`'s gun's magazine, when it is in.
-    fn eject(&mut self, tick: &Tick, hand: Hand, config: &ControllersConfig) -> bool {
-        let Some(gun) = tick.guns[hand.index()] else {
-            return false;
-        };
-        let unlimited = tick.reading.unlimited;
-        let record = self.record(tick);
-        let ejected = match record.split.as_mut().filter(|_| tick.split) {
+    /// Eject the magazine of `gun` of `weapon`, in `hand`, when it is in.
+    fn eject(
+        &mut self,
+        weapon: &WeaponTick,
+        gun: &GunTick,
+        hand: Hand,
+        config: &ControllersConfig,
+    ) {
+        let unlimited = weapon.reading.unlimited;
+        let loose = config.weapons.reload.loose.enabled;
+        let record = self.records.get(weapon.key);
+        let ejected = match record.split.as_mut().filter(|_| weapon.split) {
             Some(split) => match split.eject(hand, unlimited) {
                 Some(transfer) => {
                     // SAFETY: main thread, outside the world update; the weapon was read this tick.
                     unsafe {
-                        engine::drop_magazine(
-                            tick.weapon,
-                            gun.index,
-                            false,
-                            config.weapons.reload.loose.enabled,
-                        );
-                        engine::transfer(tick.weapon, transfer);
+                        engine::drop_magazine(weapon.address, gun.index, false, loose);
+                        engine::transfer(weapon.address, transfer);
                     }
                     true
                 }
                 None => false,
             },
-            None if !tick.reading.out => {
+            None if !weapon.reading.out => {
                 // SAFETY: as above.
-                unsafe {
-                    engine::drop_magazine(
-                        tick.weapon,
-                        gun.index,
-                        true,
-                        config.weapons.reload.loose.enabled,
-                    )
-                };
+                unsafe { engine::drop_magazine(weapon.address, gun.index, true, loose) };
                 true
             }
             None => false,
@@ -387,13 +394,14 @@ impl State {
             self.event(format!("{hand:?} ejected"));
             haptics::play(hand, Event::Eject);
         }
-        ejected
     }
 
-    /// The two-handed load: take from the pouch, carry to the well, seat.
+    /// The two-handed load: take from the pouch, carry to the well of the gun in the other hand,
+    /// seat.
     fn insert(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
         let reload = &config.weapons.reload;
-        let has_ammo = tick.reading.unlimited || tick.reserve > 0;
+        let gun_hands = tick.gun_hands();
+        let loading = |taker: Hand| insert::loading_hand(gun_hands, Some(taker), tick.dominant);
         let taker = Hand::BOTH
             .into_iter()
             .find(|h| inputs.grabs[h.index()] == Some(GrabVolume::MagazinePouch));
@@ -402,16 +410,13 @@ impl State {
             .find(|h| inputs.grabs[h.index()] == Some(GrabVolume::WorldMagazine))
             .filter(|_| !self.status.insertion.holding())
             .and_then(|hand| {
+                let gun_hand = loading(hand)?;
                 let grip = tick.hands[hand.index()]?.grip.position;
-                loose::nearest(&self.loose_seen, grip, reload.loose.radius_m).map(|s| (hand, s))
+                loose::nearest(&self.loose_seen, grip, reload.loose.radius_m)
+                    .map(|s| (hand, gun_hand, s))
             });
         let mut taken = false;
-        if let Some((hand, sighting)) = from_world {
-            let gun_hand = if tick.guns[hand.other().index()].is_some() {
-                hand.other()
-            } else {
-                tick.holder
-            };
+        if let Some((hand, gun_hand, sighting)) = from_world {
             loose::take(hand, sighting);
             self.status.insert_hands = Some((hand, gun_hand));
             taken = true;
@@ -420,13 +425,10 @@ impl State {
                 sighting.magazine.rounds
             ));
             haptics::play(hand, Event::PouchTake);
-        } else if let Some(hand) = taker.filter(|_| !self.status.insertion.holding()) {
-            if has_ammo {
-                let gun_hand = if tick.guns[hand.other().index()].is_some() {
-                    hand.other()
-                } else {
-                    tick.holder
-                };
+        } else if let Some(hand) = taker.filter(|_| !self.status.insertion.holding())
+            && let Some(gun_hand) = loading(hand)
+        {
+            if tick.gun(gun_hand).is_some_and(|(w, _)| w.has_ammo()) {
                 self.status.insert_hands = Some((hand, gun_hand));
                 taken = true;
                 haptics::play(hand, Event::PouchTake);
@@ -438,11 +440,10 @@ impl State {
         let Some((hand, gun_hand)) = self.status.insert_hands else {
             return;
         };
-        let can_take = self.can_take(tick, gun_hand);
+        let target = tick.gun(gun_hand);
+        let can_take = target.is_some_and(|(weapon, _)| self.can_take(weapon, gun_hand));
         let grip = self.grip_motion(tick, hand, inputs.dt);
-        let well = tick.guns[gun_hand.index()]
-            .and_then(|g| g.well)
-            .filter(|_| can_take);
+        let well = target.and_then(|(_, gun)| gun.well).filter(|_| can_take);
         let event = self.status.insertion.step(
             InsertInputs {
                 taken,
@@ -484,15 +485,18 @@ impl State {
         // A magazine part rides the hand while it is held, and hides again when it is dropped
         // with the gun's magazine still out. A magazine from the world is its own object in the
         // hand, so the part stays hidden until it seats.
-        if tick.plan.part_top_m.is_some() && !world_magazine {
+        if let Some((weapon, _)) = target
+            && weapon.plan.part_top_m.is_some()
+            && !world_magazine
+        {
             match event {
                 // SAFETY (both): main thread, outside the world update; the weapon was read this
                 // tick.
                 Some(InsertEvent::Taken) => unsafe {
-                    engine::show_magazine_part(tick.weapon, true)
+                    engine::show_magazine_part(weapon.address, true)
                 },
                 Some(InsertEvent::Dropped) => unsafe {
-                    engine::show_magazine_part(tick.weapon, false)
+                    engine::show_magazine_part(weapon.address, false)
                 },
                 _ => {}
             }
@@ -502,17 +506,25 @@ impl State {
                 pulse_both(Event::WellCatch);
             }
             Some(InsertEvent::Seated) => {
-                // SAFETY (both): main thread, outside the world update; the weapon was read this
-                // tick.
-                let loaded = match unsafe { loose::seat() } {
-                    Some(rounds) => {
-                        unsafe { engine::load_rounds(tick.weapon, rounds) };
-                        if tick.plan.action == ActionKind::None {
-                            self.record(tick).chambers[gun_hand.index()] = Chamber::Chambered;
+                let loaded = match target {
+                    // SAFETY (both): main thread, outside the world update; the weapon was read
+                    // this tick.
+                    Some((weapon, gun)) => match unsafe { loose::seat() } {
+                        Some(rounds) => {
+                            unsafe { engine::load_rounds(weapon.address, rounds) };
+                            if weapon.plan.action == ActionKind::None {
+                                self.records.get(weapon.key).chambers[gun.entry()] =
+                                    Chamber::Chambered;
+                            }
+                            true
                         }
-                        true
+                        None => self.load(weapon, gun, gun_hand, tick.dominant),
+                    },
+                    // The gun left the hand, so a magazine from the world goes back to it.
+                    None => {
+                        loose::let_go();
+                        false
                     }
-                    None => self.load(tick, gun_hand, config),
                 };
                 if loaded {
                     self.status.counts.seats += 1;
@@ -528,13 +540,13 @@ impl State {
         }
     }
 
-    /// The belt pushes of each gun.
+    /// The belt pushes of each hand's gun.
     fn belt(&mut self, tick: &Tick, config: &ControllersConfig, dt: f32) {
         let reload = &config.weapons.reload;
-        let has_ammo = tick.reading.unlimited || tick.reserve > 0;
         for hand in Hand::BOTH {
             let i = hand.index();
-            let well = tick.guns[i].and_then(|g| g.well);
+            let target = tick.gun(hand);
+            let well = target.and_then(|(_, gun)| gun.well);
             let velocity = match (well, self.last_mouths[i]) {
                 (Some(w), Some(last)) if dt > 1e-4 => (w.mouth - last) / dt,
                 _ => Vec3::ZERO,
@@ -542,10 +554,11 @@ impl State {
             self.last_mouths[i] = well.map(|w| w.mouth);
             let holding_for_it = self.status.insert_hands.is_some_and(|(_, g)| g == hand);
             let eligible = reload.belt.enabled
-                && has_ammo
                 && !holding_for_it
                 && self.since_draw_s >= reload.belt.after_draw_s
-                && self.can_belt(tick, hand);
+                && target.is_some_and(|(weapon, _)| {
+                    weapon.has_ammo() && self.can_belt(weapon, hand, tick.dominant)
+                });
             let inputs = well
                 .zip(self.pouch)
                 .map(|(w, (centre, radius))| PushInputs {
@@ -559,87 +572,95 @@ impl State {
             if !self.belts[i].step(inputs, &reload.belt) {
                 continue;
             }
+            let Some((weapon, gun)) = target else {
+                continue;
+            };
             // A magazine still in drops as the fresh one goes in; the split returns its rounds
             // itself, and the game's reload returns the rest.
-            if tick.plan.load.ejects() {
-                let record = *self.record(tick);
-                let magazine_in = match record.split.filter(|_| tick.split) {
+            if weapon.plan.load.ejects() {
+                let record = *self.records.get(weapon.key);
+                let magazine_in = match record.split.filter(|_| weapon.split) {
                     Some(split) => !split.hands[i].out,
-                    None => !tick.reading.out,
+                    None => !weapon.reading.out,
                 };
-                if let Some(gun) = tick.guns[i].filter(|_| magazine_in) {
+                if magazine_in {
                     // SAFETY: main thread, outside the world update; the weapon was read this
                     // tick.
                     unsafe {
                         engine::drop_magazine(
-                            tick.weapon,
+                            weapon.address,
                             gun.index,
-                            !tick.split,
+                            !weapon.split,
                             reload.loose.enabled,
                         )
                     };
                 }
             }
-            if self.load(tick, hand, config) {
+            if self.load(weapon, gun, hand, tick.dominant) {
                 self.status.counts.belt_reloads += 1;
                 self.event(format!("{hand:?} belt reload"));
-                let record = self.record(tick);
-                record.chambers[i] = Chamber::Chambered;
-                record.travels[i].close();
+                let record = self.records.get(weapon.key);
+                record.chambers[gun.entry()] = Chamber::Chambered;
+                record.travels[gun.entry()].close();
                 haptics::play(hand, Event::BeltSeat);
             }
         }
     }
 
-    /// Whether `gun_hand`'s gun can take a round from the hand now.
-    fn can_take(&mut self, tick: &Tick, gun_hand: Hand) -> bool {
-        let record = *self.record(tick);
-        match tick.plan.load {
-            LoadKind::Magazine | LoadKind::Cylinder => match record.split.filter(|_| tick.split) {
-                Some(split) => split.hands[gun_hand.index()].out,
-                None => tick.reading.out,
-            },
-            LoadKind::Shell | LoadKind::Rocket => tick.reading.magazine < tick.reading.capacity,
+    /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now.
+    fn can_take(&mut self, weapon: &WeaponTick, gun_hand: Hand) -> bool {
+        let record = *self.records.get(weapon.key);
+        match weapon.plan.load {
+            LoadKind::Magazine | LoadKind::Cylinder => {
+                match record.split.filter(|_| weapon.split) {
+                    Some(split) => split.hands[gun_hand.index()].out,
+                    None => weapon.reading.out,
+                }
+            }
+            LoadKind::Shell | LoadKind::Rocket => weapon.reading.magazine < weapon.reading.capacity,
         }
     }
 
-    /// Whether `hand`'s gun can be reloaded from the belt now: anything short of a full, seated
-    /// magazine.
-    fn can_belt(&mut self, tick: &Tick, hand: Hand) -> bool {
-        let record = *self.record(tick);
-        match record.split.filter(|_| tick.split) {
+    /// Whether `weapon`'s gun in `hand` can be reloaded from the belt now: anything short of a
+    /// full, seated magazine.
+    fn can_belt(&mut self, weapon: &WeaponTick, hand: Hand, dominant: Hand) -> bool {
+        let record = *self.records.get(weapon.key);
+        let reading = &weapon.reading;
+        match record.split.filter(|_| weapon.split) {
             Some(split) => {
                 let h = split.hands[hand.index()];
-                h.out || h.rounds < dual::hand_capacity(tick.reading.capacity, hand, tick.dominant)
+                h.out || h.rounds < dual::hand_capacity(reading.capacity, hand, dominant)
             }
-            None => tick.reading.out || tick.reading.magazine < tick.reading.capacity,
+            None => reading.out || reading.magazine < reading.capacity,
         }
     }
 
-    /// Load `gun_hand`'s gun: a whole magazine or one shell. Returns whether anything loaded.
-    fn load(&mut self, tick: &Tick, gun_hand: Hand, config: &ControllersConfig) -> bool {
-        let unlimited = tick.reading.unlimited;
-        let reserve = tick.reserve;
-        let capacity = tick.reading.capacity;
-        let dominant = config.acting_hand();
-        let record = self.record(tick);
+    /// Load `gun` of `weapon`, in `gun_hand`: a whole magazine or one shell. Returns whether
+    /// anything loaded.
+    fn load(&mut self, weapon: &WeaponTick, gun: &GunTick, gun_hand: Hand, dominant: Hand) -> bool {
+        let unlimited = weapon.reading.unlimited;
+        let capacity = weapon.reading.capacity;
+        let record = self.records.get(weapon.key);
         // SAFETY (each engine call): main thread, outside the world update; the weapon was read
         // this tick.
-        let loaded = match (tick.plan.load, record.split.as_mut().filter(|_| tick.split)) {
-            (LoadKind::Shell, _) => unsafe { engine::load_one(tick.weapon) },
+        let loaded = match (
+            weapon.plan.load,
+            record.split.as_mut().filter(|_| weapon.split),
+        ) {
+            (LoadKind::Shell, _) => unsafe { engine::load_one(weapon.address) },
             (_, Some(split)) => {
-                match split.load(gun_hand, capacity, dominant, reserve, unlimited) {
+                match split.load(gun_hand, capacity, dominant, weapon.reserve, unlimited) {
                     Some(transfer) => {
-                        unsafe { engine::transfer(tick.weapon, transfer) };
+                        unsafe { engine::transfer(weapon.address, transfer) };
                         true
                     }
                     None => false,
                 }
             }
-            (_, None) => unsafe { engine::load_full(tick.weapon) },
+            (_, None) => unsafe { engine::load_full(weapon.address) },
         };
-        if loaded && tick.plan.action == ActionKind::None {
-            record.chambers[gun_hand.index()] = Chamber::Chambered;
+        if loaded && weapon.plan.action == ActionKind::None {
+            record.chambers[gun.entry()] = Chamber::Chambered;
         }
         loaded
     }
@@ -672,7 +693,7 @@ impl State {
         loose::let_go();
         self.clear_tick();
         self.status.active = false;
-        self.status.weapon = None;
+        self.status.weapons = [None; 2];
         self.status.insertion.reset();
         self.status.insert_hands = None;
         self.status.work.reset();
@@ -697,6 +718,45 @@ pub(super) fn chambering(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
         _ => plan.handle.is_some(),
     };
     workable && (reload.chamber || (reload.manual_action && plan.action.manual()))
+}
+
+/// The tick's view of `weapon`, which `base` is, and its plan. `None` for a weapon the reload
+/// leaves to the game, or one with no gun in a hand.
+///
+/// # Safety
+///
+/// As [`State::read_tick`].
+unsafe fn weapon_tick(
+    weapon: &HeldWeapon,
+    base: &WeaponBase,
+    config: &ControllersConfig,
+) -> Option<WeaponTick> {
+    let reload = &config.weapons.reload;
+    weapon.holder?;
+    let reading = unsafe { engine::read(base) };
+    let entry = wells::lookup(reading.name_hash);
+    let plan = plan::plan(
+        WeaponFacts {
+            class: reading.class,
+            capacity: reading.capacity,
+            exempt: reading.exempt,
+        },
+        entry,
+        reload.well_offset_m,
+        reload.action.default_travel_m,
+    )?;
+    Some(WeaponTick {
+        address: weapon.address,
+        key: RecordKey::new(item_of(weapon.address), weapon.address),
+        split: weapon.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
+            && !single::is(weapon.address)
+            && reload.dual_split
+            && config.weapons.dual_wield.split,
+        plan,
+        from_table: entry.is_some(),
+        reading,
+        reserve: unsafe { engine::reserve(base) },
+    })
 }
 
 fn pulse_both(event: Event) {

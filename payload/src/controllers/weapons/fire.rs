@@ -32,7 +32,7 @@ use crate::{
         haptics::rumble,
         physical_hands::physics::guns,
         scheme, vehicles,
-        weapons::{dual_wield, heft, hold::second, recoil, reload},
+        weapons::{dual_wield, heft, hold::armed, recoil, reload},
     },
 };
 
@@ -130,7 +130,7 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
         &config.weapons.recoil,
         heft::one_hand_kick(hand),
     );
-    if !second::is(weapon as usize) {
+    if !armed::is(weapon as usize) {
         dual_wield::on_shot(hand);
     }
     reload::on_shot(weapon as usize, hand, w.m_MagazineAmmo);
@@ -148,7 +148,7 @@ pub(super) unsafe fn gun_hand(weapon: &WeaponBase, gun_data: *const WeaponData) 
     if !matches!(
         weapon.m_State,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-    ) && !second::is(weapon as *const WeaponBase as usize)
+    ) && !armed::is(weapon as *const WeaponBase as usize)
     {
         return None;
     }

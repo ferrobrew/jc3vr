@@ -1,4 +1,4 @@
-//! The true reload: the reloaded weapon, its magazine, chambers, and split, the round in hand, the
+//! The true reload: each hand's reloaded weapon, its magazine, chamber, and split, the round in hand, the
 //! belt pushes, the action's work, the counters, and the reload's settings.
 
 use egui::Ui;
@@ -7,7 +7,7 @@ use crate::{
     controllers::{
         frame::Hand,
         weapons::reload::{
-            ReloadStatus,
+            ReloadStatus, WeaponReadout,
             belt::PushStage,
             chamber::{ActionKind, Chamber, WorkStage},
             config::{ActionConfig, BeltConfig, ReloadButton, ReloadConfig},
@@ -45,39 +45,22 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
         l.last_rounds
             .map_or(String::new(), |n| format!(" (last held {n})"))
     ));
-    let Some(w) = &r.weapon else {
+    if r.weapons.iter().all(Option::is_none) {
         return;
-    };
+    }
     ui.indent("reload", |ui| {
-        ui.label(format!(
-            "weapon {:#010x} · {} · action {} · well {} · travel {:.3} m",
-            w.name_hash,
-            w.plan.load.label(),
-            w.plan.action.label(),
-            wells::lookup(w.name_hash).map_or("at the wrist".to_owned(), |e| format!(
-                "{} ({}, graded {})",
-                e.weapon,
-                e.kind.label(),
-                e.grade.label()
-            )),
-            w.plan.travel_m
-        ));
-        ui.label(format!(
-            "magazine {}/{}{} · reserve {}",
-            w.magazine,
-            w.capacity,
-            if w.out { " (out)" } else { "" },
-            if w.unlimited {
-                "unlimited".to_owned()
-            } else {
-                w.reserve.to_string()
-            }
-        ));
         for hand in Hand::BOTH {
             let i = hand.index();
-            let Some(chamber) = w.chambers[i] else {
+            let Some(w) = &r.weapons[i] else {
                 continue;
             };
+            // The dual-wield pair's weapon is in both hands, and is shown once.
+            let first = Hand::BOTH
+                .into_iter()
+                .find(|h| r.weapons[h.index()].is_some_and(|o| o.address == w.address));
+            if first == Some(hand) {
+                weapon_lines(ui, w);
+            }
             let split = w.split.map_or(String::new(), |s| {
                 let h = s.hands[i];
                 format!(
@@ -89,7 +72,7 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
             ui.label(format!(
                 "{} gun: chamber {}{split} · belt {} · fire {} · turn {:.0}°/s",
                 hand.label(),
-                match chamber {
+                match w.chamber {
                     Chamber::Chambered => "loaded",
                     Chamber::Empty => "empty",
                 },
@@ -120,7 +103,7 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
             r.insertion.dropped
         ));
         for hand in Hand::BOTH {
-            let Some(t) = w.actions[hand.index()] else {
+            let Some((w, t)) = r.weapons[hand.index()].and_then(|w| Some((w, w.action?))) else {
                 continue;
             };
             ui.label(format!(
@@ -150,6 +133,34 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
             ui.label(format!("  {event}"));
         }
     });
+}
+
+/// The weapon's plan and its magazine.
+fn weapon_lines(ui: &mut Ui, w: &WeaponReadout) {
+    ui.label(format!(
+        "weapon {:#010x} · {} · action {} · well {} · travel {:.3} m",
+        w.name_hash,
+        w.plan.load.label(),
+        w.plan.action.label(),
+        wells::lookup(w.name_hash).map_or("at the wrist".to_owned(), |e| format!(
+            "{} ({}, graded {})",
+            e.weapon,
+            e.kind.label(),
+            e.grade.label()
+        )),
+        w.plan.travel_m
+    ));
+    ui.label(format!(
+        "magazine {}/{}{} · reserve {}",
+        w.magazine,
+        w.capacity,
+        if w.out { " (out)" } else { "" },
+        if w.unlimited {
+            "unlimited".to_owned()
+        } else {
+            w.reserve.to_string()
+        }
+    ));
 }
 
 pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {

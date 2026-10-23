@@ -3,7 +3,8 @@
 //!
 //! The detours run on the simulation's worker threads for every character, so the hands are
 //! published as one object address per hand ([`hand_of`], [`in_hand`]), compared before any lock.
-//! The places on the body ([`place_of`]) are behind a leaf lock of their own, which only the local
+//! The places on the body and the items there ([`place_of`], [`item_of`]) are behind a leaf lock
+//! of their own, which only the local
 //! player's placement takes. Both are written from the table under its lock, after every fold that
 //! can move an item: at the end of each input tick, and at once for the moves the hands make
 //! between ticks, so the next placement already follows them.
@@ -16,7 +17,7 @@ use crate::controllers::{
     frame::Hand,
     loadout::{
         binding::ObjectAddress,
-        item::ItemKind,
+        item::{ItemId, ItemKind},
         table::{Loadout, Place},
     },
 };
@@ -44,8 +45,17 @@ pub(crate) fn place_of(address: usize) -> Option<Place> {
     PLACES
         .lock()
         .iter()
-        .find(|(object, _)| object.get() == address)
-        .map(|&(_, place)| place)
+        .find(|(object, _, _)| object.get() == address)
+        .map(|&(_, _, place)| place)
+}
+
+/// The item the table binds to the object at `address` on the body.
+pub(crate) fn item_of(address: usize) -> Option<ItemId> {
+    PLACES
+        .lock()
+        .iter()
+        .find(|(object, _, _)| object.get() == address)
+        .map(|&(_, item, _)| item)
 }
 
 /// Publish `table`'s hands and its places on the body.
@@ -63,7 +73,7 @@ pub(super) fn publish(table: &Loadout) {
     places.extend(table.items().filter_map(|item| {
         let object = item.binding.address()?;
         match item.place {
-            Place::Hand(_) | Place::Socket(_) => Some((object, item.place)),
+            Place::Hand(_) | Place::Socket(_) => Some((object, item.id, item.place)),
             Place::World(_) => None,
         }
     }));
@@ -78,4 +88,4 @@ pub(super) fn clear() {
 }
 
 static HANDS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
-static PLACES: Mutex<Vec<(ObjectAddress, Place)>> = Mutex::new(Vec::new());
+static PLACES: Mutex<Vec<(ObjectAddress, ItemId, Place)>> = Mutex::new(Vec::new());

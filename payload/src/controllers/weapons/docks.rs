@@ -36,7 +36,7 @@ use crate::{
         hands::{ActiveHands, grip},
         loadout::Socket,
         weapons::{
-            hold::{layout, second},
+            hold::{armed, layout},
             holster::site_slot,
         },
     },
@@ -130,7 +130,7 @@ pub(crate) unsafe fn holster_guns(owner: &Character) -> Vec<(Socket, Option<Vec3
         };
         // The second weapon is in a hand, whatever its state says.
         let docked = weapon.m_State == WeaponState::E_WS_HOLSTERED
-            && !second::is(weapon as *const WeaponBase as usize);
+            && !armed::is(weapon as *const WeaponBase as usize);
         let at = || {
             let mut grip = Matrix4::from(Mat4::IDENTITY);
             if unsafe {

@@ -421,18 +421,19 @@ impl Signal {
             Signal::ActionsLockedBack => count(reload::status().counts.lock_backs),
             Signal::ActionHeld => flag(
                 reload::status()
-                    .weapon
-                    .is_some_and(|w| w.actions.iter().flatten().any(|t| t.grip.is_some())),
+                    .weapons
+                    .iter()
+                    .flatten()
+                    .filter_map(|w| w.action)
+                    .any(|t| t.grip.is_some()),
             ),
             Signal::ActionTravel => reload::status()
-                .weapon
-                .and_then(|w| {
-                    w.actions
-                        .into_iter()
-                        .flatten()
-                        .map(|t| t.position)
-                        .reduce(f32::max)
-                })
+                .weapons
+                .iter()
+                .flatten()
+                .filter_map(|w| w.action)
+                .map(|t| t.position)
+                .reduce(f32::max)
                 .map_or(Value::Missing, |p| Value::Number(f64::from(p))),
             Signal::AdsSighted => count(ads::status().sighted),
             Signal::AdsShouldered => count(ads::status().shouldered),

@@ -60,7 +60,10 @@ use crate::{
         hands::{self, ik, late, pose as hand_pose},
         mode::{self, Mode},
         physical_hands, scheme, vehicles,
-        weapons::{c4, collide, grenade, hold::second},
+        weapons::{
+            c4, collide, grenade,
+            hold::{armed, tick as hold_tick},
+        },
     },
     frame_timing::{self, Slot},
     headpose, hooks,
@@ -317,18 +320,22 @@ unsafe fn finish(
         }
         None => (None, [None; 2]),
     };
-    // The second weapon in the free hand aims along its own sight line too.
-    let second_hand = cfg
-        .gun
-        .then(|| unsafe { second::weapon(owner) })
-        .flatten()
-        .zip(second::hand())
-        .filter(|&(_, hand)| gun_rays[hand.index()].is_none())
-        .map(|(weapon, hand)| {
+    // A gun armed in a hand beside the wielded weapon aims along its own sight line too.
+    let mut armed_hands = [false; 2];
+    if cfg.gun {
+        for hand in Hand::BOTH {
+            if gun_rays[hand.index()].is_some() {
+                continue;
+            }
+            // SAFETY: the owner is the live local player character, on the thread updating it.
+            let Some(weapon) = (unsafe { armed::weapon_of(owner, hand) }) else {
+                continue;
+            };
             let (_, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
             gun_rays[hand.index()] = rays[hand.index()];
-            hand
-        });
+            armed_hands[hand.index()] = true;
+        }
+    }
 
     let vehicle = unsafe { owner.GetVehiclePtr() } as usize;
     let options = CastOptions {
@@ -375,7 +382,9 @@ unsafe fn finish(
         }
     });
     gun::publish(held, gun_targets);
-    second::publish_target(second_hand.and_then(|hand| gun_targets[hand.index()]));
+    hold_tick::publish_targets(
+        Hand::BOTH.map(|hand| gun_targets[hand.index()].filter(|_| armed_hands[hand.index()])),
+    );
     let seat = match mode::current().mode {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,

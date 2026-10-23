@@ -64,7 +64,7 @@ use crate::{
             config::RightGrip,
             hold::{
                 act::{self, SnapStart, SnapView},
-                second,
+                armed,
             },
             regions::{self, Carry, carry_offset},
         },
@@ -481,8 +481,8 @@ struct PinRead {
     animated_in_wrist: Quat,
 }
 
-/// The local player's weapons in the hands: a slot weapon in a wielding state, or the second weapon
-/// ([`second`]), whose user is `character`.
+/// The local player's weapons in the hands: a slot weapon in a wielding state, or a weapon
+/// armed in a hand ([`armed`]), whose user is `character`.
 fn held_weapons<'a>(
     inventory: &'a Inventory,
     character: &'a Character,
@@ -492,12 +492,12 @@ fn held_weapons<'a>(
         let held = matches!(
             weapon.m_State,
             WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
-        ) || second::is(weapon as *const WeaponBase as usize);
+        ) || armed::is(weapon as *const WeaponBase as usize);
         held.then_some(weapon)
     });
-    // A second weapon the VR inventory carries is in no slot.
+    // A weapon armed in a hand that the VR inventory carries is in no slot.
     // SAFETY: the placement runs inside the world update for the local player's inventory.
-    let carried = unsafe { second::carried_weapon() };
+    let carried: Vec<&'a WeaponBase> = unsafe { armed::carried_for(inventory) };
     in_slots
         .chain(carried)
         .filter(move |weapon| std::ptr::eq(weapon.m_User[0].cast::<Character>(), character))

@@ -47,7 +47,7 @@ use crate::{
         vehicles,
         weapons::{
             dual_wield::{self, single},
-            hold,
+            hold::{self, tick as hold_tick},
         },
     },
 };
@@ -211,7 +211,15 @@ fn update_from_user_post_sim(
     let split = unsafe { input.as_ref() }
         .filter(|_| Config::lock_query(|c| c.controllers.weapons.dual_wield.split))
         .and_then(|i| unsafe { dual_wield::before_update(w, i) });
-    let input = split.as_ref().map_or(input, |i| i as *const WeaponInputs);
+    // Otherwise the weapon in a hand takes its hand's own fire input in place of the game's.
+    let own = match split {
+        Some(_) => None,
+        None => unsafe { input.as_ref() }.and_then(|i| unsafe { hold_tick::substitute(w, i) }),
+    };
+    let input = split
+        .as_ref()
+        .or(own.as_ref())
+        .map_or(input, |i| i as *const WeaponInputs);
     match hand_target(w) {
         Some(target) => {
             let target = Vector3 {

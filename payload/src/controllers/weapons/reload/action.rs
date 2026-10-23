@@ -13,12 +13,13 @@ use crate::controllers::{
     weapons::{
         foregrip::{self, set_pump_slide},
         reload::{
-            FinishInputs, GunTick, State, Tick,
+            FinishInputs, GunTick, State, Tick, WeaponTick,
             chamber::{self, ActionKind, Chamber, WorkEvent, WorkInputs},
             config::ReloadConfig,
             engine,
             plan::ReloadPlan,
             render,
+            steps::chambering,
             travel::{ActionTravel, TravelEvents, TravelInputs},
         },
     },
@@ -26,140 +27,127 @@ use crate::controllers::{
 
 impl State {
     /// The action's work by the free hand.
-    pub(super) fn work(
-        &mut self,
-        tick: &Tick,
-        inputs: &FinishInputs,
-        config: &ControllersConfig,
-        chambering: bool,
-    ) {
+    pub(super) fn work(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
         let reload = &config.weapons.reload;
         if reload.action.physical {
             self.status.work.reset();
-            self.work_travel(tick, inputs, reload, chambering);
-            self.publish_render(tick, reload, chambering);
+            self.work_travel(tick, inputs, reload);
+            self.publish_render(tick, reload);
             return;
         }
         set_pump_slide(None);
-        let record = *self.record(tick);
-        let kind = tick.plan.action;
-        let gun_hand = Hand::BOTH
+        // The gesture works one gun: the first whose chamber is empty, or else the first with an
+        // action to work.
+        let workable_gun = |hand: Hand| {
+            tick.gun(hand)
+                .filter(|(w, _)| workable(&w.plan, reload))
+                .map(|(w, g)| (hand, w, g))
+        };
+        let target = Hand::BOTH
             .into_iter()
-            .find(|h| {
-                tick.guns[h.index()].is_some() && record.chambers[h.index()] == Chamber::Empty
-            })
-            .unwrap_or(tick.holder);
+            .filter_map(workable_gun)
+            .find(|(_, w, g)| self.records.get(w.key).chambers[g.entry()] == Chamber::Empty)
+            .or_else(|| Hand::BOTH.into_iter().find_map(workable_gun));
         let worker = self.free.filter(|h| {
             self.status
                 .insert_hands
                 .is_none_or(|(holding, _)| holding != *h)
         });
         let hold = foregrip::status().hold.filter(|h| h.engaged);
-        let inputs = (chambering && kind != ActionKind::None)
-            .then_some(())
-            .and(worker)
-            .zip(tick.guns[gun_hand.index()])
-            .and_then(|(worker, gun)| {
-                let hand = tick.hands[worker.index()]?.grip.position;
-                let (handle, rearward) = match kind {
-                    // The pump rides the foregrip, so its rest is wherever the hand holds it.
-                    ActionKind::Pump => (gun.frame?.pose.position, gun.frame?.rearward()),
-                    _ => gun.handle?,
-                };
-                Some(WorkInputs {
-                    kind,
-                    handle,
-                    rearward,
-                    travel_m: tick.plan.travel_m,
-                    hand,
-                    grip_pressed: inputs.grabs[worker.index()] == Some(GrabVolume::WeaponAction),
-                    grip_held: inputs.grips[worker.index()].held(),
-                    on_foregrip: hold.is_some_and(|h| h.holder.other() == worker),
-                    needed: record.chambers[gun_hand.index()] == Chamber::Empty,
-                })
-            });
-        let event = self.status.work.step(inputs, &reload.action);
-        match event {
-            Some(WorkEvent::Pulled) => {
+        let work_inputs = target.zip(worker).and_then(|((_, weapon, gun), worker)| {
+            let kind = weapon.plan.action;
+            let hand = tick.hands[worker.index()]?.grip.position;
+            let (handle, rearward) = match kind {
+                // The pump rides the foregrip, so its rest is wherever the hand holds it.
+                ActionKind::Pump => (gun.frame?.pose.position, gun.frame?.rearward()),
+                _ => gun.handle?,
+            };
+            Some(WorkInputs {
+                kind,
+                handle,
+                rearward,
+                travel_m: weapon.plan.travel_m,
+                hand,
+                grip_pressed: inputs.grabs[worker.index()] == Some(GrabVolume::WeaponAction),
+                grip_held: inputs.grips[worker.index()].held(),
+                on_foregrip: hold.is_some_and(|h| h.holder.other() == worker),
+                needed: self.records.get(weapon.key).chambers[gun.entry()] == Chamber::Empty,
+            })
+        });
+        let event = self.status.work.step(work_inputs, &reload.action);
+        match (event, target) {
+            (Some(WorkEvent::Pulled), _) => {
                 if let Some(worker) = worker {
                     haptics::play(worker, Event::Rack);
                 }
             }
-            Some(WorkEvent::Worked) => {
-                let rounds = match record.split.filter(|_| tick.split) {
-                    Some(split) => split.hands[gun_hand.index()].rounds,
-                    None => tick.reading.magazine,
-                };
-                let magazine_in = match record.split.filter(|_| tick.split) {
-                    Some(split) => !split.hands[gun_hand.index()].out,
-                    None => !tick.reading.out,
-                };
+            (Some(WorkEvent::Worked), Some((gun_hand, weapon, gun))) => {
+                let kind = weapon.plan.action;
+                let (rounds, magazine_in) = self.magazine(weapon, gun_hand);
                 let chamber = chamber::after_work(rounds, magazine_in);
-                self.record(tick).chambers[gun_hand.index()] = chamber;
+                self.records.get(weapon.key).chambers[gun.entry()] = chamber;
                 self.status.counts.racks += 1;
                 self.event(format!("{} worked", kind.label()));
                 // SAFETY: main thread, outside the world update; the weapon was read this tick.
-                unsafe { engine::cycled(tick.weapon, kind, true) };
+                unsafe { engine::cycled(weapon.address, kind, true) };
                 if chamber == Chamber::Chambered {
                     haptics::play(gun_hand, Event::Chambered);
                 }
             }
             _ => {}
         }
-        self.publish_render(tick, reload, chambering);
+        self.publish_render(tick, reload);
     }
 
-    /// The physical action's work: each gun's part on its travel, the worked gun's taken by the
-    /// free hand, or by the hand on the foregrip for a pump.
-    fn work_travel(
-        &mut self,
-        tick: &Tick,
-        inputs: &FinishInputs,
-        reload: &ReloadConfig,
-        chambering: bool,
-    ) {
+    /// The physical action's work: each gun's part on its travel, with its own weapon's plan, the
+    /// worked gun's taken by the free hand, or by the hand on the foregrip for a pump.
+    fn work_travel(&mut self, tick: &Tick, inputs: &FinishInputs, reload: &ReloadConfig) {
         let action = &reload.action;
-        let kind = tick.plan.action;
-        if !chambering || kind == ActionKind::None {
-            set_pump_slide(None);
-            return;
-        }
-        let record = *self.record(tick);
         let worker = self.free.filter(|h| {
             self.status
                 .insert_hands
                 .is_none_or(|(holding, _)| holding != *h)
         });
-        let has_gun = |h: &Hand| tick.guns[h.index()].is_some();
-        let worked = Hand::BOTH
-            .into_iter()
-            .filter(has_gun)
-            .find(|h| record.travels[h.index()].grip.is_some())
+        let guns = Hand::BOTH.map(|hand| {
+            tick.gun(hand)
+                .filter(|(w, _)| workable(&w.plan, reload))
+                .map(|(w, g)| (*w, *g, *self.records.get(w.key)))
+        });
+        let with_gun = || Hand::BOTH.into_iter().filter(|h| guns[h.index()].is_some());
+        let worked = with_gun()
+            .find(|h| {
+                guns[h.index()]
+                    .is_some_and(|(_, g, record)| record.travels[g.entry()].grip.is_some())
+            })
             .or_else(|| {
-                Hand::BOTH.into_iter().filter(has_gun).find(|h| {
-                    let i = h.index();
-                    record.chambers[i] == Chamber::Empty || !record.travels[i].in_battery(action)
+                with_gun().find(|h| {
+                    guns[h.index()].is_some_and(|(_, g, record)| {
+                        let e = g.entry();
+                        record.chambers[e] == Chamber::Empty
+                            || !record.travels[e].in_battery(action)
+                    })
                 })
             })
-            .unwrap_or(tick.holder);
-        let foregrip_hand = foregrip::status()
-            .hold
-            .filter(|h| h.engaged && h.weapon == tick.weapon)
-            .map(|h| h.holder.other());
-        let travel_m = tick.plan.travel_m / tick.world_scale;
+            .or_else(|| with_gun().next());
+        let foregrip = foregrip::status().hold.filter(|h| h.engaged);
         let mut pump_slide = None;
         for gun_hand in Hand::BOTH {
-            let i = gun_hand.index();
-            let Some(gun) = tick.guns[i] else {
+            let Some((weapon, gun, record)) = guns[gun_hand.index()] else {
                 continue;
             };
-            let (rounds, magazine_in) = self.magazine(tick, gun_hand);
-            let worker = worker.filter(|_| gun_hand == worked);
+            let e = gun.entry();
+            let kind = weapon.plan.action;
+            let travel_m = weapon.plan.travel_m / tick.world_scale;
+            let foregrip_hand = foregrip
+                .filter(|h| h.weapon == weapon.address)
+                .map(|h| h.holder.other());
+            let (rounds, magazine_in) = self.magazine(&weapon, gun_hand);
+            let worker = worker.filter(|_| worked == Some(gun_hand));
             let hand = worker.and_then(|w| Some(tick.hands[w.index()]?.grip.position));
-            let mut travel = record.travels[i];
-            let Some(geometry) = travel_geometry(tick, &gun) else {
+            let mut travel = record.travels[e];
+            let Some(geometry) = travel_geometry(&weapon.plan, &gun) else {
                 travel.release();
-                self.record(tick).travels[i] = travel;
+                self.records.get(weapon.key).travels[e] = travel;
                 continue;
             };
             let travel_inputs = TravelInputs {
@@ -174,22 +162,23 @@ impl State {
                     .is_some_and(|w| inputs.grabs[w.index()] == Some(GrabVolume::WeaponAction)),
                 grip_held: worker.is_some_and(|w| inputs.grips[w.index()].held()),
                 on_foregrip: worker.is_some_and(|w| foregrip_hand == Some(w)),
-                needed: record.chambers[i] == Chamber::Empty,
+                needed: record.chambers[e] == Chamber::Empty,
                 magazine_in,
                 feeds: magazine_in && rounds > 0,
                 dt: inputs.dt,
             };
             let events = travel.step(&travel_inputs, action);
-            self.record(tick).travels[i] = travel;
+            self.records.get(weapon.key).travels[e] = travel;
             self.on_travel(
-                tick,
+                &weapon,
+                &gun,
                 gun_hand,
                 worker.filter(|_| travel.grip.is_some() || events.let_go),
                 events,
                 (rounds, magazine_in),
             );
-            if kind == ActionKind::Pump && travel.position > 0.0 {
-                pump_slide = Some((tick.weapon, travel.position * travel_m));
+            if kind == ActionKind::Pump && travel.position > 0.0 && pump_slide.is_none() {
+                pump_slide = Some((weapon.address, travel.position * travel_m));
             }
         }
         set_pump_slide(pump_slide);
@@ -199,13 +188,14 @@ impl State {
     /// chamber loaded by a cycle. `worker` is the hand on the handle, when one is.
     fn on_travel(
         &mut self,
-        tick: &Tick,
+        weapon: &WeaponTick,
+        gun: &GunTick,
         gun_hand: Hand,
         worker: Option<Hand>,
         events: TravelEvents,
         (rounds, magazine_in): (i32, bool),
     ) {
-        let kind = tick.plan.action;
+        let kind = weapon.plan.action;
         let felt = worker.unwrap_or(gun_hand);
         if events.grabbed {
             self.event(format!("{} taken", kind.label()));
@@ -249,12 +239,12 @@ impl State {
         }
         if events.cycled {
             let chamber = chamber::after_work(rounds, magazine_in);
-            self.record(tick).chambers[gun_hand.index()] = chamber;
+            self.records.get(weapon.key).chambers[gun.entry()] = chamber;
             self.status.counts.racks += 1;
             self.event(format!("{} worked", kind.label()));
             // The hand moved the part already, so the gun's own clip is not played over it.
             // SAFETY: main thread, outside the world update; the weapon was read this tick.
-            unsafe { engine::cycled(tick.weapon, kind, false) };
+            unsafe { engine::cycled(weapon.address, kind, false) };
             if chamber == Chamber::Chambered {
                 haptics::play(gun_hand, Event::Chambered);
             }
@@ -268,76 +258,83 @@ impl State {
         }
     }
 
-    /// The rounds in `hand`'s gun's magazine, and whether the magazine is in.
-    fn magazine(&mut self, tick: &Tick, hand: Hand) -> (i32, bool) {
-        let record = *self.record(tick);
-        match record.split.filter(|_| tick.split) {
+    /// The rounds in the magazine of `weapon`'s gun in `hand`, and whether the magazine is in.
+    fn magazine(&mut self, weapon: &WeaponTick, hand: Hand) -> (i32, bool) {
+        let record = *self.records.get(weapon.key);
+        match record.split.filter(|_| weapon.split) {
             Some(split) => {
                 let h = split.hands[hand.index()];
                 (h.rounds, !h.out)
             }
-            None => (tick.reading.magazine, !tick.reading.out),
+            None => (weapon.reading.magazine, !weapon.reading.out),
         }
     }
 
     /// Let go of every remembered weapon's actions, leaving the parts where they are.
     pub(super) fn release_actions(&mut self) {
-        for (_, record) in &mut self.records {
+        for record in self.records.iter_mut() {
             record.travels.iter_mut().for_each(ActionTravel::release);
         }
     }
 
-    /// Publish the action parts and the held magazine part for the render thread.
-    fn publish_render(&mut self, tick: &Tick, reload: &ReloadConfig, chambering: bool) {
-        let record = *self.record(tick);
+    /// Publish each hand's action part with its own weapon, and the held magazine part with the
+    /// weapon its round is for, for the render thread.
+    fn publish_render(&mut self, tick: &Tick, reload: &ReloadConfig) {
         let physical = reload.action.physical;
         let working = matches!(self.status.work.stage, chamber::WorkStage::Held { .. });
-        let worked_gun = Hand::BOTH.into_iter().find(|h| {
-            tick.guns[h.index()].is_some() && record.chambers[h.index()] == Chamber::Empty
+        let records = Hand::BOTH.map(|hand| {
+            tick.gun(hand)
+                .map(|(weapon, gun)| (*self.records.get(weapon.key), gun.entry()))
         });
-        let kind = tick.plan.action;
-        let lift_rad = side_sign(&tick.plan) * reload.action.bolt_lift_deg.to_radians();
+        let worked_gun = Hand::BOTH.into_iter().find(|&hand| {
+            tick.gun(hand)
+                .is_some_and(|(w, _)| workable(&w.plan, reload))
+                && records[hand.index()].is_some_and(|(r, e)| r.chambers[e] == Chamber::Empty)
+        });
         let actions = Hand::BOTH.map(|hand| {
             let i = hand.index();
-            let gun = tick.guns[i]?;
-            if !chambering {
+            let (weapon, gun) = tick.gun(hand)?;
+            let (record, e) = records[i]?;
+            if !chambering(&weapon.plan, reload) {
                 return None;
             }
+            let kind = weapon.plan.action;
             let (share, lift) = if physical {
-                (record.travels[i].position, record.travels[i].lift)
+                (record.travels[e].position, record.travels[e].lift)
             } else if kind != ActionKind::Slide {
                 return None;
             } else if working && worked_gun == Some(hand) {
                 (self.status.work.progress, 0.0)
-            } else if record.chambers[i] == Chamber::Empty {
+            } else if record.chambers[e] == Chamber::Empty {
                 (1.0, 0.0)
             } else {
                 return None;
             };
             Some(render::ActionPart {
+                weapon: weapon.address,
                 gun: gun.index as u32,
                 // SAFETY: main thread, outside the world update; the weapon was read this tick.
-                gun_address: unsafe { engine::gun_address(tick.weapon, gun.index) }.unwrap_or(0),
+                gun_address: unsafe { engine::gun_address(weapon.address, gun.index) }.unwrap_or(0),
                 kind,
                 share,
                 lift,
-                travel_m: tick.plan.travel_m,
-                lift_rad,
+                travel_m: weapon.plan.travel_m,
+                lift_rad: side_sign(&weapon.plan) * reload.action.bolt_lift_deg.to_radians(),
+                magazine_empty: weapon.reading.magazine <= 0,
             })
         });
-        let held =
-            self.status
-                .insert_hands
-                .zip(tick.plan.part_top_m)
-                .map(|((hand, _), part_top_m)| render::HeldPart {
-                    hand,
-                    top_world_m: reload.held_top_m * tick.world_scale,
-                    part_top_m,
-                });
+        let held = self.status.insert_hands.and_then(|(hand, gun_hand)| {
+            let (weapon, _) = tick.gun(gun_hand)?;
+            Some(render::HeldPart {
+                weapon: weapon.address,
+                hand,
+                top_world_m: reload.held_top_m * tick.world_scale,
+                part_top_m: weapon.plan.part_top_m?,
+            })
+        });
         render::publish(render::Published {
-            weapon: tick.weapon,
+            weapons: tick.weapons.map(|w| w.map_or(0, |w| w.address)),
             actions,
-            magazine_empty: tick.reading.magazine <= 0,
             held,
         });
     }
@@ -346,6 +343,11 @@ impl State {
 /// Whether the plan's slide catches at the rear on an empty magazine.
 pub(super) fn locks_back(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
     plan.action == ActionKind::Slide && reload.action.physical && reload.action.lock_back
+}
+
+/// Whether the plan's action is the mod's to work.
+fn workable(plan: &ReloadPlan, reload: &ReloadConfig) -> bool {
+    chambering(plan, reload) && plan.action != ActionKind::None
 }
 
 /// Where a gun's action lies in the cockpit frame.
@@ -358,10 +360,11 @@ struct TravelGeometry {
     up: Vec3,
 }
 
-/// The tick's gun's action geometry, or `None` while the gun's frame or handle is unknown.
-fn travel_geometry(tick: &Tick, gun: &GunTick) -> Option<TravelGeometry> {
+/// The action geometry of `gun`, whose weapon's plan is `plan`, or `None` while the gun's frame or
+/// handle is unknown.
+fn travel_geometry(plan: &ReloadPlan, gun: &GunTick) -> Option<TravelGeometry> {
     let frame = gun.frame?;
-    let (handle, rearward) = match (tick.plan.action, gun.handle) {
+    let (handle, rearward) = match (plan.action, gun.handle) {
         (_, Some(handle)) => handle,
         (ActionKind::Pump, None) => (frame.pose.position, frame.rearward()),
         _ => return None,
@@ -369,9 +372,7 @@ fn travel_geometry(tick: &Tick, gun: &GunTick) -> Option<TravelGeometry> {
     Some(TravelGeometry {
         handle,
         rearward: rearward.try_normalize()?,
-        side: frame
-            .direction(Vec3::X * side_sign(&tick.plan))
-            .try_normalize()?,
+        side: frame.direction(Vec3::X * side_sign(plan)).try_normalize()?,
         up: frame.direction(Vec3::Y).try_normalize()?,
     })
 }
