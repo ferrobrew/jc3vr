@@ -65,7 +65,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::Kick` | a shot of a weapon with no fire rumble, scaled by its kick | bump | 1.0 | weapons | `haptics::rumble`, from `weapons::fire` |
 | `Event::DryFire` | a trigger pull of an empty gun that cannot fire | click | 0.4 | weapons | `weapons::empty`, `weapons::reload::steps` |
 | `Event::VolumeEnter` | a hand enters a holster or a pouch | tick | 0.3 | weapons | `weapons` |
-| `Event::VolumeGrab` | a draw, a holster, or a foregrip grab or release | click | 0.5 | weapons | `weapons` |
+| `Event::VolumeGrab` | a draw, a dock (by a grab or by opening the grip over the socket), a handover, a take, or a foregrip grab or release | click | 0.5 | weapons | `weapons` |
 | `Event::Eject` | the magazine or the rounds are ejected | click | 0.6 | weapons | `weapons::reload::steps` |
 | `Event::PouchTake` | a round or a magazine comes out of the pouch | click | 0.25 | weapons | `weapons::reload::steps` |
 | `Event::PouchEmpty` | a grab at an empty ammunition pouch | tick | 0.75 | weapons | `weapons::reload::steps` |

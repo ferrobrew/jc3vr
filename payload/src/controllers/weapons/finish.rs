@@ -636,8 +636,12 @@ fn release(
     match grab::release(&snapshot, hand, over, unsafe { droppable(object) }) {
         Release::Dock(socket) => {
             // SAFETY: as above.
-            if let Err(refusal) = unsafe { hold::act::dock(hand, socket, settings.snap_s) } {
-                tracing::debug!(target: "controllers", %refusal, "hold: the weapon was not docked");
+            match unsafe { hold::act::dock(hand, socket, settings.snap_s) } {
+                // A dock by opening the grip confirms as a dock by a grab does.
+                Ok(()) => haptics::play(hand, Event::VolumeGrab),
+                Err(refusal) => {
+                    tracing::debug!(target: "controllers", %refusal, "hold: the weapon was not docked");
+                }
             }
         }
         Release::LetGo => {

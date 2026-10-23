@@ -57,7 +57,7 @@ Swapping a weapon on the ground for another, or walking away from one, never bri
 
 ## Sockets
 
-The sockets are on Rico's skeleton ([body/rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)): the two hips, the two shoulders, a third place across the back, and the chest ([The places and their invariants](#the-places-and-their-invariants)). The pouches are beside them. Each socket takes its size class or smaller, mirrored for handedness. A held weapon shows before the hand opens whether the socket under it fits, by a red marker on each socket that does not, and a dock by a grab confirms with the grab cue. Props have no socket and no backpack: letting go of one drops it. Grenades and C4 stay consumables drawn from their pouches. Not built yet: a dock by opening the grip confirms with no cue, and a heavy weapon docks nowhere ([The grabs against the table](#the-grabs-against-the-table)).
+The sockets are on Rico's skeleton ([body/rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)): the two hips, the two shoulders, a third place across the back, and the chest ([The places and their invariants](#the-places-and-their-invariants)). The pouches are beside them. Each socket takes its size class or smaller, mirrored for handedness. A held weapon shows before the hand opens whether the socket under it fits, by a red marker on each socket that does not, and a dock, by a grab or by opening the grip over the socket, confirms with the grab cue. Props have no socket and no backpack: letting go of one drops it. Grenades and C4 stay consumables drawn from their pouches. Not built yet: a heavy weapon docks nowhere ([The grabs against the table](#the-grabs-against-the-table)).
 
 ## Ammunition and reload
 
