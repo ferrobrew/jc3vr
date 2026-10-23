@@ -8,6 +8,7 @@ use crate::controllers::{
     loadout::{Socket, slot_label},
     weapons::{
         dual_wield::single,
+        hold::use_item,
         inventory::{
             InventoryStatus,
             config::InventoryConfig,
@@ -73,6 +74,10 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
             .join(", "),
         t.neutral,
         t.neutral_kept
+    ));
+    ui.label(format!(
+        "Swimming pickups that kept the slot's weapon: {}",
+        use_item::swim_vacates()
     ));
     ui.label(format!(
         "Carried: {}{} · kept from pickups {} · with others {}",

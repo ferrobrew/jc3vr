@@ -636,6 +636,7 @@ fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
     let words = unsafe { StateWords::of(c) };
     let holstering = words.is_some_and(|w| unsafe { w.has(StateBitFlag::SB_IS_HOLSTERING_WEAPON) });
     let held = unsafe { weapons::unarmed_fire::hold_back(c, holstering) };
+    unsafe { weapons::hold::use_item::before_weapon_handling(c) };
     update_local_weapon_handling(c, words, original);
     if let Some(held) = held {
         unsafe { held.restore(c) };

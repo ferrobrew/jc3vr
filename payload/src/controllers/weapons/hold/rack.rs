@@ -54,6 +54,7 @@ use crate::controllers::{
             steal,
             world::{TargetKind, WorldTarget},
         },
+        inventory::engine::slot_of,
     },
 };
 
@@ -329,6 +330,26 @@ unsafe fn walk(owner: &Character, mut visit: impl FnMut(&WeaponBase, Strong) -> 
             return;
         }
     }
+}
+
+/// The slot of the first weapon `owner`'s valid interaction entries offer, as a swimming
+/// character's pickup takes it, with whether the table would take that weapon.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character.
+pub(crate) unsafe fn first_offered(
+    owner: &Character,
+    takes: impl Fn(&WeaponBase) -> bool,
+) -> Option<WeaponSlot> {
+    let mut found = None;
+    unsafe {
+        walk(owner, |weapon, _| {
+            found = takes(weapon).then(|| slot_of(weapon)).flatten();
+            true
+        })
+    };
+    found
 }
 
 /// The most entries a walk visits, a bound against a corrupt array.

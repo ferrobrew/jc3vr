@@ -21,10 +21,17 @@
 //! The pickup runs wherever the character's track messages are handled, so the detour takes only
 //! its own queue's lock and reads only the weapon's own fields.
 
-use std::cell::Cell;
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use detours_macro::detour;
-use jc3gi::{character::character::Character, equipment::weapon::WeaponBase, game::GameObject};
+use jc3gi::{
+    character::character::{Character, WeaponInput},
+    equipment::weapon::WeaponBase,
+    game::GameObject,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -38,11 +45,12 @@ use crate::{
             hold::{
                 self, Cause,
                 pickup::{self, TakeOptions},
+                rack,
                 refs::Strong,
             },
             inventory::{
                 engine::{self as inventory_engine, slot_of, strong_to, weapon_of},
-                gives,
+                gives, reconcile,
             },
         },
     },
@@ -138,6 +146,48 @@ unsafe fn take(owner: &mut Character, weapon: &mut WeaponBase) {
         }
     }
 }
+
+/// Before the local player's weapon handling: a swimming character's pickup drops the weapon in
+/// the picked weapon's slot before it picks up ([`Inventory::UpdateWeaponHandling`]), so while the
+/// table takes that pickup, the slot's weapon is taken out of its slot first, onto its socket or
+/// in its hand as the table has it, and the drop finds the slot empty. The reconcile gives the slot
+/// back to whichever weapon the projection prefers at the next tick.
+///
+/// [`Inventory::UpdateWeaponHandling`]: jc3gi::character::inventory::Inventory::UpdateWeaponHandling
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the thread running its weapon handling.
+pub(crate) unsafe fn before_weapon_handling(owner: &mut Character) {
+    let use_item = owner.m_WeaponInputs[WeaponInput::E_INPUT_USE_ITEM as usize];
+    let picking = use_item > 0.0
+        && unsafe { owner.IsSwimming() }
+        && unsafe { owner.m_Inventory.GetAnimationAllowsPickup() };
+    if !picking || !live::running() {
+        return;
+    }
+    let takes = |weapon: &WeaponBase| {
+        table_takes(weapon)
+            && matches!(
+                unsafe { pickup::route(weapon, None) },
+                Ok(TakeRoute::Table { .. })
+            )
+    };
+    let Some(slot) = (unsafe { rack::first_offered(owner, takes) }) else {
+        return;
+    };
+    if unsafe { reconcile::vacate(owner, slot) } {
+        SWIM_VACATES.fetch_add(1, Ordering::Relaxed);
+        tracing::info!(target: "controllers", ?slot, "hold: a swimming pickup's slot was emptied first, its weapon kept where the table has it");
+    }
+}
+
+/// The swimming pickups whose slot was emptied first, since the payload loaded.
+pub fn swim_vacates() -> u64 {
+    SWIM_VACATES.load(Ordering::Relaxed)
+}
+
+static SWIM_VACATES: AtomicU64 = AtomicU64::new(0);
 
 /// Whether `activator` is the local player's `CGameObject` subobject.
 fn is_local_player(activator: *mut GameObject) -> bool {
