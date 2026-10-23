@@ -22,8 +22,11 @@
 //! 4. the character staggers ([`Character::HitReaction`], an impulse between its stumble and its
 //!    knockdown thresholds, toward the player);
 //! 5. the gun goes straight into the grabbing hand as a weapon off the ground does
-//!    ([`crate::controllers::weapons::hold::pickup::take`]), sliding there from where it was in the
-//!    character's hands.
+//!    ([`crate::controllers::weapons::hold::pickup::take`]): through the loadout table, so the other
+//!    hand keeps what it holds, sliding there from where it was in the character's hands.
+//!
+//! Whether the hand can take it is checked before the character lets go, so a refused take leaves
+//! the gun in the character's hands.
 //!
 //! The detour runs on the simulation's worker threads: it reads the published player position from
 //! atomics before it touches anything, and takes the registry's lock only for characters within
@@ -224,6 +227,8 @@ pub(crate) unsafe fn take(
     let player =
         unsafe { engine::local_player() }.ok_or(StealRefusal::Pickup(Refusal::NoCharacter))?;
     unsafe { pickup::takeable(player, weapon) }.map_err(StealRefusal::Pickup)?;
+    // Refused before the character lets go, so a hand that cannot take it leaves it in its hands.
+    unsafe { pickup::route(weapon, Some(hand)) }.map_err(StealRefusal::Pickup)?;
     let player_at = Mat4::from(player.m_WorldMatrixT1).w_axis.truncate();
     unsafe { weapon.OnDrop() };
     unsafe { victim.m_Inventory.DropWeapon(slot, true) };

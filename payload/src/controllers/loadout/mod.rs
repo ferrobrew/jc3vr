@@ -15,6 +15,7 @@
 //! - [`projection`]: what the game's slots should hold, and what the sidecar records;
 //! - [`event`]: what the hooks and the hands tell the table, folded into transitions;
 //! - [`grab`]: what a hand does at a socket, decided against the table's snapshot;
+//! - [`take`]: where a weapon taken from the world goes, decided against the table's snapshot;
 //! - [`live`]: the one live table of the local player's items, dual-written beside the old weapon
 //!   handling and published each input tick;
 //! - [`sandbox`]: a table of the debug UI's own, driven by hand with made-up objects.
@@ -33,6 +34,7 @@ mod reset;
 pub mod sandbox;
 mod socket;
 mod table;
+pub mod take;
 mod transition;
 
 #[cfg(test)]

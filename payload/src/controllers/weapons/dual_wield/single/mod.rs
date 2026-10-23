@@ -57,7 +57,6 @@ use crate::{
     config::Config,
     controllers::{
         frame::Hand,
-        hands::ik,
         loadout::{Place, Restored, Socket, live},
         weapons::{
             dual_wield::single::{
@@ -75,10 +74,7 @@ use crate::{
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
-    HookLibrary::new()
-        .with_static_binder(&SET_VISIBLE_BASE_BINDER)
-        .with_static_binder(&PICKUP_ITEM_BINDER)
-        .with_static_binder(&PICKUP_START_BINDER)
+    HookLibrary::new().with_static_binder(&SET_VISIBLE_BASE_BINDER)
 }
 
 /// The single pistols' readout.
@@ -757,12 +753,6 @@ unsafe fn gun_mut(
     unsafe { (*weapon.m_lWeaponData.m_Begin.add(index)).as_mut() }
 }
 
-/// Whether `activator` is the local player's `CGameObject` subobject.
-fn is_local_player(activator: *mut GameObject) -> bool {
-    let local = ik::local_character();
-    local != 0 && activator as usize == local + Character::GAME_OBJECT_BASE_OFFSET as usize
-}
-
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::SetVisibleBase_ADDRESS)]
 fn set_visible_base(weapon: *mut WeaponBase, visible: bool, fade: bool, force: bool) {
     SET_VISIBLE_BASE
@@ -778,33 +768,30 @@ fn set_visible_base(weapon: *mut WeaponBase, visible: bool, fade: bool, force: b
     }
 }
 
-/// The local player's pickup of a pistol from the world: while pistols are made single, the
-/// pistol taken is one pistol, made single before the inventory's add equips and shows it.
-#[detour(address = jc3gi::equipment::weapon::WeaponBase::PickupItem_ADDRESS)]
-fn pickup_item(weapon: *mut WeaponBase, activator: *mut GameObject) {
-    if ACTIVE.load(Ordering::Relaxed) && is_local_player(activator) {
-        // SAFETY: the pickup is given a live weapon.
-        if let Some(w) = unsafe { weapon.as_mut() }.filter(|w| !w.m_InfinitePickup)
-            && unsafe { designate(w, "a pistol taken from the world") }
-        {
-            PICKED.fetch_add(1, Ordering::Relaxed);
-        }
+/// The local player's pickup of `weapon` from the world, through the game's pickup: while pistols
+/// are made single, the pistol taken is one pistol, made single before the inventory's add equips
+/// and shows it. From the pickup's detour ([`crate::controllers::weapons::hold::use_item`]).
+///
+/// # Safety
+///
+/// `weapon` must be live, on the thread completing its pickup.
+pub(crate) unsafe fn designate_picked(weapon: &mut WeaponBase) {
+    if ACTIVE.load(Ordering::Relaxed)
+        && unsafe { designate(weapon, "a pistol taken from the world") }
+    {
+        PICKED.fetch_add(1, Ordering::Relaxed);
     }
-    PICKUP_ITEM.get().unwrap().call(weapon, activator);
 }
 
-/// The local player's pickup start of a rack's pistol with unlimited stock asks the inventory for
-/// a copy, which arrives a few frames later through the inventory's add: the copy is one pistol.
-#[detour(address = jc3gi::equipment::weapon::WeaponBase::PickupStart_ADDRESS)]
-fn pickup_start(weapon: *mut WeaponBase, activator: *mut GameObject) {
-    if ACTIVE.load(Ordering::Relaxed) && is_local_player(activator) {
-        // SAFETY: the pickup is given a live weapon.
-        let copies = unsafe { weapon.as_ref() }.is_some_and(|w| {
-            w.m_InfinitePickup && unsafe { slot_of(w) } == Some(WeaponSlot::E_SLOT_DUAL_WIELD)
-        });
-        if copies {
-            RACK_COPY_ASKED.store(true, Ordering::Relaxed);
-        }
+/// The local player's pickup start of `weapon`: a rack's pistol with unlimited stock asks the
+/// inventory for a copy, which arrives a few frames later through the inventory's add, and the copy
+/// is one pistol. From the pickup start's detour
+/// ([`crate::controllers::weapons::hold::use_item`]).
+pub(crate) fn pickup_started(weapon: &WeaponBase) {
+    let copies = ACTIVE.load(Ordering::Relaxed)
+        && weapon.m_InfinitePickup
+        && unsafe { slot_of(weapon) } == Some(WeaponSlot::E_SLOT_DUAL_WIELD);
+    if copies {
+        RACK_COPY_ASKED.store(true, Ordering::Relaxed);
     }
-    PICKUP_START.get().unwrap().call(weapon, activator);
 }

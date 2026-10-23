@@ -43,7 +43,9 @@
 //! inventory's weapons against the table's published hands before taking any lock, and they never
 //! touch the VR state.
 //!
-//! A weapon grabbed off the ground goes into the grabbing hand at once ([`pickup`]). Any weapon is
+//! A weapon grabbed off the ground goes into the grabbing hand at once through the table, without
+//! the game's equip, so the other hand keeps what it holds ([`pickup`]), and the game's own
+//! use-item pickup is routed into the same take ([`use_item`]). Any weapon is
 //! drawn off its socket and docked on one without the game's acts, sliding between the socket and
 //! the hand, and let go of to fall with the hand's motion ([`act`], [`dock`], and [`equip`]); each
 //! hand holds its own, and the one the game does not wield is armed in its hand and fired by the
@@ -64,6 +66,7 @@ pub(crate) mod refs;
 pub mod steal;
 pub mod take;
 pub mod tick;
+pub(crate) mod use_item;
 pub mod world;
 
 use std::{
@@ -95,6 +98,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_ATTACHMENT_TRANSFORMS_BINDER)
         .with_static_binder(&UPDATE_INVENTORY_POST_FINALIZE_POSE_BINDER)
         .with_hook_library(tick::hook_library())
+        .with_hook_library(use_item::hook_library())
 }
 
 /// What a grab that brings a weapon into a hand is.

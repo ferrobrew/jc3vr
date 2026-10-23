@@ -217,6 +217,11 @@ pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
     arrival
 }
 
+/// Whether the table runs.
+pub(crate) fn running() -> bool {
+    LIVE.lock().started
+}
+
 /// `hand` expects the next weapon the game wields, or `weapon` when it is named, to come into it
 /// as `expect` says: a grab started a draw or a take that the game carries out.
 pub(crate) fn expect(hand: Hand, expect: Expect, weapon: Option<ObjectAddress>) {
@@ -283,6 +288,25 @@ pub(crate) fn arrive(hand: Hand, held: Held) -> bool {
         live.fold(event);
         if live.hand_holding(held.object) == Some(hand) {
             live.origins[hand.index()] = Some(Expect::Draw);
+        }
+    }
+    live.publish_places();
+    live.hand_holding(held.object) == Some(hand)
+}
+
+/// `hand` took `held` from `source` (off the ground, a rack, a locker, or a character's hands), the
+/// weapon kept alive by the carry set: the table takes it into the hand at once, as a weapon of its
+/// own, or as the same item for one it has lying in the world. Returns whether the table holds it
+/// there.
+pub(crate) fn take(hand: Hand, held: Held, source: TakeSource) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return false;
+    }
+    if let Some(event) = hands::arrival(&live.table, hand, held, source) {
+        live.fold(event);
+        if live.hand_holding(held.object) == Some(hand) {
+            live.origins[hand.index()] = Some(Expect::Take(source));
         }
     }
     live.publish_places();

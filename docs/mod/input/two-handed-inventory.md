@@ -38,7 +38,7 @@ The game's word on ownership is final. A mission or challenge that removes the p
 
 Nothing moves an item but the player. Not built yet, unless marked built:
 
-- Every take (from the ground, a rack or locker, a character's hands, a mission's give, the grapple snatch) lands in the table and then in the grabbing hand. The game's equip never runs, so a take never touches the other hand. Built: the takes land in the grabbing hand, and the reconcile puts the other hand's weapon back where the table has it; the game's pickup still runs and equips (phase 4).
+- Every take (from the ground, a rack or locker, a character's hands, the game's use-item pickup, a mission's give, the grapple snatch) lands in the table and then in the grabbing hand. The game's equip never runs, so a take never touches the other hand. Built for the ground, the racks and lockers, the characters' hands, and the use-item pickup ([The takes](#the-takes)); not built yet: the gives and the snatch.
 - Entering a vehicle, gliding, opening the parachute, falling, and swimming leave the hands as they are. The base layer's state tasks that holster or hide the wielded weapon (on vehicle entry, the wingsuit, free fall, diving, the ragdoll, and death), stop its use, or drop a heavy weapon are patched out for the local player, and the neutral state the game forces on every teleport, revive, and cutscene setup, which unequips the wielded weapon, is undone by the reconcile. A hand holding a gun cannot take the steering wheel or a control, so the player drives one-handed or docks first; a gun in a hand in a seat fires, since the mod ticks it rather than the game's wielded tick, which skips non-motorcycle seats (phase 5). Today a weapon the game puts away on its own leaves its hand in the table, docked or let go of.
 - The game's weapon cycling, the slot selects, the weapon wheel, and the automatic switch away from an empty weapon become requests on the table or go away. Built: the sockets never select a slot, and the automatic switch is off by default; the wheel and the cycling are still the game's, and the weapon they draw lands in a free hand.
 - Ammunition pickups credit the reserve for any weapon in the table: the auto-pickup's weapon check (`Inventory::HasWeaponWithAmmoType`) is patched to see the table, and its only caller credits the ammunition itself.
@@ -90,7 +90,7 @@ The game has no per-hand hold layer: its hand poses are per weapon class, one cl
 | Track messages | Not needed: no reload or equip clip plays | For the mod's own moves |
 | The weapon acts (draw, holster, switch, reload) | Cut; the IK places the arms and the guns | For the mod's own moves |
 | Selection, cycling, the wheel, the automatic switch | Requests on the table, or cut | The automatic switch only |
-| The game's pickup (`WeaponBase::PickupItem`) | Detoured into the table's take | No (phase 4) |
+| The game's pickup (`WeaponBase::PickupItem`) | Detoured into the table's take | Yes, but for the heavy weapons and the embedded power core |
 | The HUD's ammunition and reticle | The mod's pips and reticle; the game's counter shows the primary meanwhile | Yes |
 | The camera's recoil and hints | Already the mod's | Yes |
 | The hand subsystems (the weight, the recoil, the sights, the scope, the wall collision, the regions, the foregrip, the handover) | Keyed by the hand, each acting on that hand's gun (see "The gun in either hand") | Yes |
@@ -310,6 +310,35 @@ Decisions taken here:
 - The anchored grapple tier reads the table one tick behind, as it read the wielded weapon, and the anchor's blend absorbs the tick. A hand holding anything stays free rather than holding the line with its item, since putting a gun or a prop on the line would move it without the player.
 - Whether a held item uses the grapple hand's trigger is decided per press: a gun always does, and a grenade only for a press that begins while the trigger can pull its pin. The press stays the grenade's until the trigger opens, so the tethers never start retracting under a trigger the player pulled for the pin.
 
+## The takes
+
+Every take of a weapon from the world lands in the table and then in a hand, and the game's equip never runs, so a take never touches the other hand. Where it goes is one decision against the table's snapshot (`loadout::take`): the grabbing hand when it is free, or for the game's use-item pickup, which no hand grabs, a free hand, the dominant first; a hand that holds something takes nothing, and with both hands full the use-item pickup takes nothing either.
+
+A take through the table (`weapons::hold::pickup::take_by_table`) makes the weapon the player's without the game's pickup ([`WeaponBase::OnPickup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnPickup): the holder, the holstered state, the bodies out of the world, the pickup interaction off, the HUD's pickup notice), credits its stored rounds to the reserve, as the game's pickup does ([`Inventory::AddAmmo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-AddAmmo)), and has the carry set keep it. The table takes it into the hand with its source, and the reconcile follows at once: the weapon is wielded when its hand is the primary, after the projection gives it its slot, and armed in its hand otherwise. A weapon whose slot is taken goes into the table beside the slot's weapon, which stays on its socket or in the other hand; the projection then decides which of them the slot holds, and the other is kept by the carry set. The log line names both hands: `hold: took the weapon into the left hand through the table; the right hand keeps what it holds`, with the slot, the source, and what the other hand holds.
+
+The sources:
+
+- the ground: the physical hands' direct pickup of a weapon they reach, and the weapon handling's take of one (`physical_hands::pickup`, `weapons::hold::pickup`), as `taken off the ground`, the same item again for a weapon the table has lying in the world;
+- the racks and the lockers (`weapons::hold::rack`): a rack's weapon after the game's pickup start, which takes it off the rack and tells the rack, as `taken off a rack`, and a locker's weapon, offered lying in the world, as `taken out of a locker`;
+- the characters' hands (`weapons::hold::steal`), as `taken from a character's hands`. The hand and the route are checked before the character lets go, so a refused take leaves the gun in its hands;
+- the game's use-item pickup (`weapons::hold::use_item`): the pickup's completion ([`WeaponBase::PickupItem`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-PickupItem)) is detoured for the local player. It may run wherever the character's track messages are handled, so the detour keeps the weapon alive and queues it, and the next input tick takes it into a free hand, or puts it back into the world with both hands full. A weapon with infinite pickups, whose copy comes from the pickup's start, only loses its stored rounds there, without the pickup's unequip.
+
+The game's own pickup takes the weapon, equipping it and putting the wielded weapon away, only where the table cannot hold it in a hand of its own: while the table does not run, with `weapons.hold.either_hand` off, for a heavy weapon, for the embedded power core, and with `weapons.hold.second_weapon` off while the other hand holds a weapon.
+
+The switches and what each falls back to:
+
+- `weapons.hold.direct_pickup` off: a grab of a weapon on the ground clicks the use-item action, whose pickup the table still takes into a free hand while it runs; the steal and the racks need it, so they take nothing.
+- `weapons.hold.steal` off: no volumes on the guns in characters' hands. `weapons.hold.racks` off: no volumes on the racks' weapons; the game's use-item action still takes them, through the table.
+- `weapons.hold.either_hand` off: every take is the game's pickup, which equips the weapon and puts the wielded weapon away, the game's layout standing.
+- `weapons.hold.second_weapon` off: a take while the other hand holds a weapon is the game's pickup, which swaps the weapons, as one weapon at a time asks.
+- `weapons.inventory.enabled` or `weapons.inventory.project_slots` off: the table does not run, and every take is the game's pickup, with the weapon the pickup replaces dropped first when `weapons.hold.drop_replaced` is on.
+
+Decisions taken here:
+
+- The use-item pickup with both hands full takes nothing and leaves the weapon where it lies, rather than docking it on a socket: nothing moves an item but the player, and the player chooses the hand by freeing one.
+- The game's pickup line is not played for a take through the table, and a swimming character's pickup still drops the slot's weapon before it picks up, which the table sees as the game's drop; the swimming path is the traversal pass's (phase 5).
+- A heavy weapon is still taken through the game's pickup, since the heavy slot stays the game's and the reconcile never arms one in a hand; it takes the other hand's weapon away until phase 5 patches the heavy weapon's drops.
+
 ## One socket notion
 
 The loadout's sockets are the mod's only notion of a place on the body. The sockets' grab volumes (`GrabVolume::Socket`), the carry set, and the sidecar all name a `loadout::Socket`. The adapters in `inventory::sockets` give what the game's side needs of one: the bone and the offset a weapon the mod places is placed by, and the name the sidecar keeps it under. The sidecar's names are `back_first` for the right shoulder, `back_second` for the left, `back_outer`, `hip_left`, `hip_right`, and `chest`, and the settings keep their offset fields' names.
@@ -394,7 +423,7 @@ Settings that earlier builds had and this one does not (the game's-act draws, th
 1. The RE pass. Answers the questions below, and binds what the core and the reconcile need. Built, apart from the open points under "RE answers".
 2. The relaxed body. The weapon-wielded condition reads false for the local player's base layer. Built.
 3. The core and the reconcile. The table, its transitions, the slot projection, the per-hand tick and reload, the primary, the readouts; the hands, the sockets, the pistols, and the props and explosives moved onto it. Built.
-4. The takes. Every source lands in the table and the grabbing hand without the game's equip: the ground, racks and lockers, characters' hands, missions' gives; the game's pickup detoured. Not built yet.
+4. The takes. Every source lands in the table and the grabbing hand without the game's equip: the ground, racks and lockers, characters' hands, missions' gives; the game's pickup detoured. Built for the ground, the racks and lockers, the characters' hands, and the game's pickup ([The takes](#the-takes)); the gives and the ammunition's weapon check are not built yet.
 5. Traversal and persistence. Vehicles and seats with armed hands, the wingsuit, the parachute, swimming, the base layer's holster tasks and the heavy weapon's drops, the checkpoint snapshot's seams, the challenges, the spawn reset's classification, death and respawn, the lost-weapon return, the scheme switch. Not built yet.
 6. The grapple snatch, on top of the takes ([grapple-snatch.md](grapple-snatch.md)): the first feature built on the table, and its end-to-end test. Not built yet.
 7. Polish: the per-hand finger poses from the class clips. Not built yet.

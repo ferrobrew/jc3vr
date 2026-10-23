@@ -510,9 +510,11 @@ pub struct HoldConfig {
     pub handover: bool,
     /// The radius of the gun's grip volume the free hand grabs to take the gun, metres.
     pub handle_radius_m: f32,
-    /// Take a weapon off the ground straight into the grabbing hand, as the game picks a weapon
-    /// up while swimming, with its magazine as it was and no pickup animation. Off, a grab clicks
-    /// the game's use-item action and the game picks the weapon up its own way.
+    /// Take a weapon off the ground straight into the grabbing hand, with its magazine as it was
+    /// and no pickup animation: through the loadout table while it runs, so the other hand keeps
+    /// what it holds, and otherwise through the game's pickup, which puts the wielded weapon away.
+    /// Off, a grab clicks the game's use-item action, whose pickup the table takes into a free
+    /// hand while it runs.
     pub direct_pickup: bool,
     /// How long a draw off a socket or a dock onto one slides the gun between the socket and the
     /// hand, seconds.

@@ -53,7 +53,7 @@ use crate::controllers::{
         c4,
         dual_wield::single,
         grenade,
-        hold::{armed, refs::Strong},
+        hold::{armed, refs::Strong, use_item},
         inventory::{config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World},
     },
 };
@@ -136,7 +136,9 @@ pub(crate) unsafe fn input_tick(
         let slots = unsafe { live_slots(owner) };
         live::begin_tick(inputs.dominant, &slots);
         unsafe { restore::input_tick(owner, &inputs.settings) };
+        unsafe { use_item::input_tick(owner) };
     } else {
+        unsafe { use_item::stand_down() };
         if STATE.lock().status.active {
             unsafe { reconcile::project_back(owner) };
         }
