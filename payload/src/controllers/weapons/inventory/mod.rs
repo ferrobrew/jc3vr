@@ -47,9 +47,12 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::{ObjectAddress, Place, SlotObject, Socket, live},
+    loadout::{ItemKind, ObjectAddress, Place, SlotObject, Socket, TakeSource, live},
+    physical_hands,
     weapons::{
+        c4,
         dual_wield::single,
+        grenade,
         hold::{armed, refs::Strong},
         inventory::{config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World},
     },
@@ -127,6 +130,8 @@ pub(crate) unsafe fn input_tick(
     inputs: &TickInputs,
 ) -> Option<live::Arrival> {
     let on = inputs.settings.enabled && inputs.settings.project_slots;
+    // Read before the inventory's lock: each is behind its own subsystem's lock.
+    let others = held_others();
     if on {
         let slots = unsafe { live_slots(owner) };
         live::begin_tick(inputs.dominant, &slots);
@@ -211,6 +216,7 @@ pub(crate) unsafe fn input_tick(
         wielded,
         armed,
         fates: &fates,
+        others: &others,
     });
     let lying: Vec<ObjectAddress> = live::bound()
         .into_iter()
@@ -294,6 +300,39 @@ pub(crate) unsafe fn held_of(object: ObjectKey) -> Option<live::Held> {
             engine::TRACKED_SLOTS.contains(&w.slot()) || w.slot() == WeaponSlot::E_SLOT_HEAVY
         })?,
     })
+}
+
+/// What the hands hold that is not a weapon, from the subsystems that hold them: the physical
+/// hands' props, the throw's grenade or the caught one, and the C4 throw's charge, each with the
+/// hands that threw theirs since the last tick.
+fn held_others() -> live::HeldOthers {
+    let mut hands = [None; 2];
+    for (hand, prop) in Hand::BOTH.into_iter().zip(physical_hands::held_props()) {
+        hands[hand.index()] = prop.map(|object| live::HeldOther {
+            object: ObjectAddress::new(object),
+            kind: ItemKind::Prop,
+            source: TakeSource::World,
+        });
+    }
+    let grenade =
+        grenade::held().map(|(hand, object, source)| (hand, object, ItemKind::Grenade, source));
+    let charge =
+        c4::held().map(|(hand, object)| (hand, object, ItemKind::Charge, TakeSource::Pouch));
+    for (hand, object, kind, source) in grenade.into_iter().chain(charge) {
+        if let Some(object) = ObjectAddress::from_address(object) {
+            hands[hand.index()] = Some(live::HeldOther {
+                object,
+                kind,
+                source,
+            });
+        }
+    }
+    let grenades = grenade::take_thrown();
+    let charges = c4::take_thrown();
+    live::HeldOthers {
+        hands,
+        thrown: Hand::BOTH.map(|h| grenades[h.index()] || charges[h.index()]),
+    }
 }
 
 /// The weapons in `owner`'s tracked slots, as the live table reads them.

@@ -234,7 +234,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         }));
     }
     if gameplay && let Some(body) = &body {
-        let grabbers = ChestGrabbers::for_guns(weapon.map_or([false; 2], |w| w.wielded.hands));
+        // A hand holding a gun, a prop, or an explosive takes nothing from the chest.
+        let grabbers = ChestGrabbers::for_guns(Hand::BOTH.map(|h| {
+            gun_hands[h.index()] || armed_hands[h.index()] || ticked.table_hands[h.index()]
+        }));
         // A pouch with nothing to give is neither offered nor drawn.
         if config.weapons.grenade_throw
             && grenade::in_stock()

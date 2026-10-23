@@ -290,7 +290,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         desired,
     );
     // A hand holds nothing when it holds no gun (the C4 the game's planting mode wields is not one),
-    // no weapon armed in it, no grenade, and no round.
+    // no weapon armed in it, nothing of the loadout table's, no grenade, and no round.
     let gun_hands = weapon.map_or([false; 2], |(w, _)| {
         if w.wielded.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
             [false; 2]
@@ -302,6 +302,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let free = Hand::BOTH.map(|h| {
         !gun_hands[h.index()]
             && !armed_hands[h.index()]
+            && live::held_kind(h).is_none()
             && grenade::throwing_hand() != Some(h)
             && reload::holding_hand() != Some(h)
     });

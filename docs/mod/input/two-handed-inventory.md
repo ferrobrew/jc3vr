@@ -1,6 +1,6 @@
 # The two-handed inventory
 
-Partly built: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)), a live table of it is the only writer of where the player's weapons are (["The live table"](#the-live-table)), every gun in a hand fires from its own hand (["The per-hand tick"](#the-per-hand-tick)), the game's slots follow the table (["The slots as a projection"](#the-slots-as-a-projection)), the grabs at the sockets are decided against it (["The grabs against the table"](#the-grabs-against-the-table)), and two pistols are a pistol in each hand (["The pistols as plain items"](#the-pistols-as-plain-items)); everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
+Partly built: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)), a live table of it is the only writer of where the player's weapons are (["The live table"](#the-live-table)), every gun in a hand fires from its own hand (["The per-hand tick"](#the-per-hand-tick)), the game's slots follow the table (["The slots as a projection"](#the-slots-as-a-projection)), the grabs at the sockets are decided against it (["The grabs against the table"](#the-grabs-against-the-table)), two pistols are a pistol in each hand (["The pistols as plain items"](#the-pistols-as-plain-items)), and the props, grenades, and charges the hands hold are the table's too (["Props and explosives in the table"](#props-and-explosives-in-the-table)); everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
 
 The local player's two hands are independent. Each holds its own weapon or object, items pass between the hands, weapons dock on the body's sockets and are drawn from them, and the player carries what the body holds rather than what the game's slots allow. Boneworks and Half-Life: Alyx are the guiding light: the player does everything with their own body, even where that adds friction, and nothing docks, draws, or switches by itself.
 
@@ -273,6 +273,21 @@ Decisions taken here:
 - A pair split while it is in a hand, its second gun in the other, keeps a pistol in each hand: the slot's pistol stays in the table's hand, and the twin comes into the other hand at once when that hand is empty and a weapon in each hand is on (`weapons.hold.second_weapon`), otherwise onto its hip.
 - The sidecar records each carried weapon on the socket the table has it on, rather than the one it came into the carry set on.
 - A tap of the reload button ejects the dominant hand's gun, or the other hand's when the dominant holds none; with the pair's split gone, a tap no longer ejects both of the pair's pistols, and the pair has the one magazine.
+
+## Props and explosives in the table
+
+From step 9 of phase 3b everything a hand holds is in the table. Each input tick the table is fed what the holding subsystems have in each hand (`loadout::live::HeldOthers`): the loose object the physical hands' pickup carries, the throw's primed grenade or a caught one, and the C4 throw's primed charge. A hand that took one takes it (from the world, the pouch, or out of the air), and a hand whose prop is let go of, lost, or torn away, whose grenade or charge was thrown or pressed on, lets it go, which takes it out of the table; a grenade that went off in the hand, or one the game took back, is removed as gone.
+
+What a hand holds is then one condition, read from the table (`loadout::live::held_kind`): a hand holding a prop, a grenade, or a charge draws nothing off a socket, takes nothing from the pouches, takes no gun out of a character's hands or off a rack, and is not offered the other hand's gun; a hand holding a weapon, a grenade, or a charge has no palm, and one carrying a prop keeps the palm it holds the prop with, which neither probes nor pushes. The physical hands, the throws, and the catch keep their own state of how they hold it (the pickup's joint or carry, the stage, the pin), as per-hand runtime state beside the table.
+
+The props, the grenades, and the charges are behind their own switches (`physical_hands.pickup.enabled`, `weapons.grenade_throw`, `weapons.grenade.catch.enabled`, `weapons.c4_throw`); off, the hands hold none, and nothing enters the table.
+
+Decisions taken here:
+
+- Only a loose object a hand carries is an item. A hand's grip on something hinged, a vehicle's door, or a character is the world's, held by the physical hands alone.
+- A prop both hands hold is the item of the hand that took it first; the other hand's hold is a grip on that item, not an item of its own.
+- The table is fed from the holding subsystems' state at each input tick rather than at each of their changes, since the throws' stages move on the weapons' updates on the simulation's threads. A grenade primed and thrown between two input ticks never enters the table.
+- A respawn takes the hands' props and explosives out of the table, as the core does; a prop the pickup still holds after it comes back in at the next tick.
 
 ## One socket notion
 

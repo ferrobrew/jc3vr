@@ -37,7 +37,7 @@ use parking_lot::Mutex;
 pub(crate) use crate::controllers::loadout::live::{
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
-    published::{hand_of, in_hand, item_of, place_of},
+    published::{hand_of, held_kind, in_hand, item_of, place_of},
 };
 use crate::controllers::{
     frame::Hand,
@@ -95,6 +95,27 @@ pub(crate) struct Tick<'a> {
     pub armed: [Option<ObjectAddress>; 2],
     /// What became of the table's weapons that are in no slot, the carry set, or a hand.
     pub fates: &'a [(ObjectAddress, Fate)],
+    /// What the hands hold that is not a weapon.
+    pub others: &'a HeldOthers,
+}
+
+/// What the hands hold that is not a weapon, as the physical hands and the throws have it: each
+/// hand's prop, grenade, or charge, by [`Hand::index`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct HeldOthers {
+    pub hands: [Option<HeldOther>; 2],
+    /// The hands that threw what they held since the last input tick.
+    pub thrown: [bool; 2],
+}
+
+/// Something that is not a weapon in a hand.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct HeldOther {
+    pub object: ObjectAddress,
+    /// A prop, a grenade, or a charge.
+    pub kind: ItemKind,
+    /// Where the hand took it from.
+    pub source: TakeSource,
 }
 
 /// Start the input tick's feed: start the table from the slots on its first tick, complete a spawn
@@ -167,6 +188,7 @@ pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
     live.pending = live.pending.and_then(|p| p.aged(dt_s));
     live.rebind_kept(tick.carried);
     let arrival = live.hand_moves(tick);
+    live.sync_others(tick.others);
     for &(object, fate) in tick.fates {
         let place = live.place_of(object);
         let event = match (fate, place) {
@@ -308,11 +330,12 @@ pub(crate) fn free_socket(weapon: WeaponType, preferred: Option<Socket>) -> Opti
         .flatten()
 }
 
-/// Every live object the table's items are bound to, and where each is, as of now.
+/// Every live object the table's weapons are bound to, and where each is, as of now.
 pub(crate) fn bound() -> Vec<(ObjectAddress, Place)> {
     let live = LIVE.lock();
     live.table
         .items()
+        .filter(|item| item.kind.weapon().is_some())
         .filter_map(|item| Some((item.binding.address()?, item.place)))
         .collect()
 }
@@ -538,6 +561,7 @@ impl Live {
             let Some(object) = self
                 .table
                 .held(hand)
+                .filter(|item| item.kind.weapon().is_some())
                 .and_then(|item| item.binding.address())
             else {
                 continue;
@@ -553,6 +577,22 @@ impl Live {
             }
         }
         self.land(tick.wielded?)
+    }
+
+    /// The hands' props, grenades, and charges as the physical hands and the throws have them: a
+    /// hand that let go of one, or whose grenade went off, leaves it, and one that took one takes
+    /// it ([`hands::other_departure`], [`hands::other_arrival`]).
+    fn sync_others(&mut self, others: &HeldOthers) {
+        for hand in Hand::BOTH {
+            let wanted = others.hands[hand.index()];
+            let thrown = others.thrown[hand.index()];
+            if let Some(event) = hands::other_departure(&self.table, hand, wanted, thrown) {
+                self.fold(event);
+            }
+            if let Some(event) = hands::other_arrival(&self.table, hand, wanted) {
+                self.fold(event);
+            }
+        }
     }
 
     /// Land the weapon `held` the game wields in a hand, when the table has it in none: the hand
@@ -754,8 +794,14 @@ mod tests {
                     .map(|(_, slot)| slot.object)
             }),
             fates: &[],
+            others: &NO_OTHERS,
         }
     }
+
+    const NO_OTHERS: HeldOthers = HeldOthers {
+        hands: [None; 2],
+        thrown: [false; 2],
+    };
 
     /// Draw `slot`'s weapon off its socket into `hand`, as a take of the second weapon does.
     fn draw(live: &mut Live, hand: Hand, slot: SlotObject) {

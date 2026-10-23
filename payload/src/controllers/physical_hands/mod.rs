@@ -98,6 +98,13 @@ use crate::{
     controllers::{hands::CockpitHand, physical_hands::state::STATE},
 };
 
+/// The loose object each hand carries, by [`Hand::index`](crate::controllers::frame::Hand::index),
+/// for the loadout table: a prop, not a grip on something hinged, a door, or a character, which are
+/// the world's.
+pub(crate) fn held_props() -> [Option<NonZeroUsize>; 2] {
+    STATE.lock().pickup.props()
+}
+
 /// When the hands are composed for: the simulation tick, or a frame rendered between ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DrawTime {

@@ -193,6 +193,21 @@ pub fn throwing_hand() -> Option<Hand> {
     STATE.lock().stage.hand()
 }
 
+/// The charge a hand holds, for the loadout table: the throw's primed charge in its hand.
+pub(crate) fn held() -> Option<(Hand, usize)> {
+    let state = STATE.lock();
+    let hand = state
+        .stage
+        .hand()
+        .filter(|_| state.stage.charge_in_hand())?;
+    Some((hand, state.primed?))
+}
+
+/// The hands that threw or pressed on a charge since the last call, by [`Hand::index`].
+pub(crate) fn take_thrown() -> [bool; 2] {
+    std::mem::take(&mut STATE.lock().thrown)
+}
+
 /// The hand holding a charge that may be pressed onto a surface now, with the hand's grip in the
 /// world: the charge is held, has been out of the pouch long enough, and the hand has not opened.
 pub(crate) fn stick_candidate(tuning: &C4Config) -> Option<(Hand, Pose)> {
@@ -369,6 +384,10 @@ struct PendingDetonation {
 
 struct State {
     stage: Stage,
+    /// The primed charge in the throw's hand, as the weapon's last update left it.
+    primed: Option<usize>,
+    /// The hands that threw or pressed on a charge since the last read, by [`Hand::index`].
+    thrown: [bool; 2],
     status: C4Status,
     /// The controllers' grips in the world, from the last aim update.
     grips: [Option<Pose>; 2],
@@ -387,6 +406,8 @@ struct State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     stage: Stage::Idle,
+    primed: None,
+    thrown: [false; 2],
     status: C4Status {
         stage: Stage::Idle,
         weapon_seen: false,
@@ -453,7 +474,12 @@ fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome) {
     tracing::debug!(target: "controllers", ?hand, outcome = %outcome.label(), "c4");
     match outcome {
         Outcome::Primed => state.status.primed += 1,
-        Outcome::Thrown(_) => state.status.thrown += 1,
+        Outcome::Thrown(_) => {
+            state.status.thrown += 1;
+            if let Some(hand) = hand {
+                state.thrown[hand.index()] = true;
+            }
+        }
         _ => {}
     }
     state.status.events.push(C4Event { hand, outcome });
@@ -518,9 +544,11 @@ fn update_from_user_serial(
                 (None, grip) => grip,
             };
             let primed = act(w, user, action, grip);
+            let charge = primed_charge(w).map(|charge| charge as usize);
             let (next, outcome) = stage::after_action(next, action, primed);
             state.stage = next;
             state.status.stage = next;
+            state.primed = charge.filter(|_| next.charge_in_hand());
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
                 pulses.extend(outcome_pulse(hand, outcome));
@@ -892,6 +920,8 @@ mod tests {
     fn fresh() -> State {
         State {
             stage: Stage::Idle,
+            primed: None,
+            thrown: [false; 2],
             status: C4Status::default(),
             grips: [None; 2],
             detonation: None,

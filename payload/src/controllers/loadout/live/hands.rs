@@ -2,8 +2,9 @@
 //!
 //! A weapon the table has in a hand that has left it (the game holstered or dropped it, or the
 //! hands put it back or let it fall) is a [`departure`], and one that came into a hand an
-//! [`arrival`]. Each is made against the table as it is at that moment,
-//! departures first, so a weapon handed from one hand to the other finds the other hand empty.
+//! [`arrival`]. Each is made against the table as it is at that moment, departures first, so a
+//! weapon handed from one hand to the other finds the other hand empty. A prop, a grenade, or a
+//! charge that left a hand or came into one is an [`other_departure`] or an [`other_arrival`].
 //!
 //! A move the table already shows sends nothing, and a hand the table disagrees about is left as
 //! the table has it.
@@ -14,9 +15,10 @@ use crate::controllers::{
         binding::{Binding, ObjectAddress},
         event::Event,
         item::{ItemKind, WeaponType},
+        live::HeldOther,
         socket::Socket,
         table::{Loadout, Place},
-        transition::{Release, Take, TakeSource},
+        transition::{Release, Removal, RemovalWhy, Take, TakeSource},
     },
 };
 
@@ -91,6 +93,55 @@ pub(crate) fn arrival(
             source,
         })),
     }
+}
+
+/// The event for the prop, grenade, or charge the table has in `hand` having left it, when the
+/// hand no longer holds it (`wanted` is what the hand holds now): a let-go for a prop, or for a
+/// grenade or a charge the hand threw (`thrown`), and otherwise a removal, the object gone (a
+/// grenade that went off in the hand, a charge the game took back). `None` when the hand still
+/// holds it, or the table has no such item there.
+pub(crate) fn other_departure(
+    table: &Loadout,
+    hand: Hand,
+    wanted: Option<HeldOther>,
+    thrown: bool,
+) -> Option<Event> {
+    let held = table
+        .held(hand)
+        .filter(|item| item.kind.weapon().is_none())?;
+    if wanted.is_some_and(|w| held.binding == Binding::Live(w.object)) {
+        return None;
+    }
+    if thrown || held.kind == ItemKind::Prop {
+        return Some(Event::LetGo {
+            hand,
+            release: Release::Dropped,
+        });
+    }
+    Some(Event::Removed {
+        target: Removal::Object(held.binding.address()?),
+        why: RemovalWhy::Gone,
+    })
+}
+
+/// The event for `wanted`, a prop, a grenade, or a charge, having come into `hand`: a take from
+/// where the hand took it. `None` when the hand holds something, or the table already has the
+/// object (a prop the other hand holds too, which is the first hand's).
+pub(crate) fn other_arrival(
+    table: &Loadout,
+    hand: Hand,
+    wanted: Option<HeldOther>,
+) -> Option<Event> {
+    let wanted = wanted?;
+    let known = table
+        .items()
+        .any(|item| item.binding == Binding::Live(wanted.object));
+    (table.held(hand).is_none() && !known).then_some(Event::Take(Take {
+        hand,
+        object: wanted.object,
+        kind: wanted.kind,
+        source: wanted.source,
+    }))
 }
 
 /// The socket a weapon of `weapon` goes onto in `table` when no hand chose one: `preferred` when the
@@ -237,6 +288,68 @@ mod tests {
         assert_eq!(
             departure(&t, Hand::Right, rifle().object, Whereabouts::Away),
             None
+        );
+    }
+
+    fn other(n: usize, kind: ItemKind, source: TakeSource) -> HeldOther {
+        HeldOther {
+            object: object(n),
+            kind,
+            source,
+        }
+    }
+
+    #[test]
+    fn a_prop_comes_into_the_hand_and_leaves_with_its_let_go() {
+        let mut t = Loadout::new(BodyLayout::full(Hand::Right));
+        let prop = other(7, ItemKind::Prop, TakeSource::World);
+        let event = other_arrival(&t, Hand::Left, Some(prop));
+        apply(&mut t, event);
+        assert_eq!(place(&t, prop.object), Some(Place::Hand(Hand::Left)));
+        assert_eq!(other_arrival(&t, Hand::Left, Some(prop)), None);
+        assert_eq!(other_departure(&t, Hand::Left, Some(prop), false), None);
+        assert_eq!(
+            other_arrival(&t, Hand::Right, Some(prop)),
+            None,
+            "a prop both hands hold is the first hand's"
+        );
+        let event = other_departure(&t, Hand::Left, None, false);
+        assert_eq!(
+            event,
+            Some(Event::LetGo {
+                hand: Hand::Left,
+                release: Release::Dropped
+            })
+        );
+        apply(&mut t, event);
+        assert_eq!(place(&t, prop.object), None, "a prop let go of leaves");
+    }
+
+    #[test]
+    fn a_grenade_thrown_is_let_go_of_and_one_gone_is_removed() {
+        let grenade = other(8, ItemKind::Grenade, TakeSource::Pouch);
+        for (thrown, let_go) in [(true, true), (false, false)] {
+            let mut t = Loadout::new(BodyLayout::full(Hand::Right));
+            let event = other_arrival(&t, Hand::Right, Some(grenade));
+            apply(&mut t, event);
+            let event = other_departure(&t, Hand::Right, None, thrown);
+            assert_eq!(matches!(event, Some(Event::LetGo { .. })), let_go);
+            apply(&mut t, event);
+            assert_eq!(place(&t, grenade.object), None);
+        }
+    }
+
+    #[test]
+    fn a_hand_holding_a_weapon_takes_no_grenade() {
+        let mut t = Loadout::new(BodyLayout::full(Hand::Right));
+        let event = arrival(&t, Hand::Right, rifle(), TakeSource::World);
+        apply(&mut t, event);
+        let charge = other(9, ItemKind::Charge, TakeSource::Pouch);
+        assert_eq!(other_arrival(&t, Hand::Right, Some(charge)), None);
+        assert_eq!(
+            other_departure(&t, Hand::Right, None, false),
+            None,
+            "a weapon is not the others' to move"
         );
     }
 

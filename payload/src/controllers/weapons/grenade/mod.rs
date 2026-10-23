@@ -74,6 +74,7 @@ use crate::{
             held::{self, Held, Slot},
         },
         haptics::{self, Event},
+        loadout::TakeSource,
         motion::{self, ReleaseEstimate},
         overlay::{
             primitive::{
@@ -159,6 +160,27 @@ pub fn status() -> GrenadeStatus {
     status.catch = catch::counts();
     status.caught_hand = catch::caught().map(|c| c.hand);
     status
+}
+
+/// The grenade a hand holds, for the loadout table: the throw's primed grenade in its hand, or a
+/// caught one in the hand that caught it, with where the hand took it from.
+pub(crate) fn held() -> Option<(Hand, usize, TakeSource)> {
+    let (stage, primed) = {
+        let state = STATE.lock();
+        (state.stage, state.primed)
+    };
+    if let (Some(hand), Some(object)) = (stage.hand().filter(|_| stage.grenade_in_hand()), primed) {
+        return Some((hand, object, TakeSource::Pouch));
+    }
+    catch::caught().map(|c| (c.hand, c.explosive, TakeSource::Catch))
+}
+
+/// The hands that threw a grenade since the last call, by [`Hand::index`]: from the pouch, or a
+/// caught one thrown on.
+pub(crate) fn take_thrown() -> [bool; 2] {
+    let pouch = std::mem::take(&mut STATE.lock().thrown);
+    let caught = catch::take_thrown();
+    Hand::BOTH.map(|h| pouch[h.index()] || caught[h.index()])
 }
 
 /// The hand a throw holds, from the grab at the pouch until the grenade leaves it, or the hand
@@ -399,6 +421,10 @@ const WARNING_URGENT: Rgba = [1.0, 0.15, 0.1, 0.95];
 
 struct State {
     stage: Stage,
+    /// The primed grenade in the throw's hand, as the weapon's last update left it.
+    primed: Option<usize>,
+    /// The hands that threw a grenade since the last read, by [`Hand::index`].
+    thrown: [bool; 2],
     /// The held grenade's pin, while the pin is on.
     pin: Option<Pin>,
     /// The live grenades within reach on the last input tick.
@@ -412,6 +438,8 @@ struct State {
 
 static STATE: Mutex<State> = Mutex::new(State {
     stage: Stage::Idle,
+    primed: None,
+    thrown: [false; 2],
     pin: None,
     sightings: Vec::new(),
     status: GrenadeStatus {
@@ -563,7 +591,12 @@ fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome) {
     }
     match outcome {
         Outcome::Primed => state.status.primed += 1,
-        Outcome::Thrown(_) => state.status.thrown += 1,
+        Outcome::Thrown(_) => {
+            state.status.thrown += 1;
+            if let Some(hand) = hand {
+                state.thrown[hand.index()] = true;
+            }
+        }
         Outcome::Gone => state.status.gone += 1,
         _ => {}
     }
@@ -651,6 +684,9 @@ fn update_from_user(
     let (next, outcome) = stage::after_update(state.stage, primed.is_some());
     state.stage = next;
     state.status.stage = next;
+    state.primed = primed
+        .filter(|_| next.grenade_in_hand())
+        .map(|explosive| explosive as usize);
     if let Some(outcome) = outcome {
         report(&mut state, hand, outcome);
         if outcome == Outcome::Primed

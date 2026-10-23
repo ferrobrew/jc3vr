@@ -198,13 +198,19 @@ pub(crate) fn caught() -> Option<Caught> {
 pub(crate) fn let_go(thrown: bool) {
     held::hold(Slot::CaughtGrenade, None);
     let mut state = STATE.lock();
-    if state.caught.take().is_some() {
+    if let Some(caught) = state.caught.take() {
         if thrown {
             state.counts.thrown += 1;
+            state.thrown[caught.hand.index()] = true;
         } else {
             state.counts.lost += 1;
         }
     }
+}
+
+/// The hands that threw a caught grenade on since the last call, by [`Hand::index`].
+pub(crate) fn take_thrown() -> [bool; 2] {
+    std::mem::take(&mut STATE.lock().thrown)
 }
 
 pub fn counts() -> CatchCounts {
@@ -229,12 +235,15 @@ struct Tracked {
 struct State {
     tracked: Vec<Tracked>,
     caught: Option<Caught>,
+    /// The hands that threw a caught grenade on since the last read, by [`Hand::index`].
+    thrown: [bool; 2],
     counts: CatchCounts,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     tracked: Vec::new(),
     caught: None,
+    thrown: [false; 2],
     counts: CatchCounts {
         tracked: 0,
         in_reach: 0,

@@ -82,6 +82,13 @@ impl PickupState {
             .then_some((GripSource::Character, None))
     }
 
+    /// The loose object each hand carries, by [`Hand::index`]: a hold of a prop, not a grip on
+    /// something hinged, a door, or a character.
+    pub(crate) fn props(&self) -> [Option<NonZeroUsize>; 2] {
+        self.held
+            .map(|h| h.filter(|h| h.kind == HeldKind::Prop).map(|h| h.object))
+    }
+
     /// The objects the hands hold, as addresses, zero for none.
     pub(crate) fn held_objects(&self) -> [usize; 2] {
         self.held.map(|h| h.map_or(0, |h| h.object.get()))
