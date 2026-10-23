@@ -11,7 +11,7 @@
 
 use jc3gi::character::inventory::WeaponSlot;
 
-use crate::controllers::{frame::Hand, weapons::inventory::sockets::SocketId};
+use crate::controllers::{frame::Hand, loadout::Socket};
 
 /// An entry's identity, stable for the session.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -45,7 +45,7 @@ pub enum Location {
     /// In a hand.
     Hand(Hand, Role),
     /// Carried beyond the slots, docked on a socket of the body.
-    Socket(SocketId),
+    Socket(Socket),
     /// Lying in the world after the player let go of it; `pinned` while the mod keeps it from the
     /// game's despawn.
     World { pinned: bool },
@@ -120,7 +120,7 @@ pub struct Observation {
     /// The weapons in the inventory slots the registry tracks.
     pub slots: Vec<Seen>,
     /// The weapons the mod carries beyond the slots, and the socket each is docked on.
-    pub carried: Vec<(Seen, SocketId)>,
+    pub carried: Vec<(Seen, Socket)>,
     /// The weapon in each hand, by [`Hand::index`], and how it is driven.
     pub hands: [Option<(ObjectKey, Role)>; 2],
     /// The fate of each known weapon that is in no slot, from [`Registry::unplaced`].
@@ -208,7 +208,7 @@ impl Registry {
 
     /// The known weapons that are neither among `slots` nor `carried`, whose fate the next
     /// observation must say.
-    pub fn unplaced(&self, slots: &[Seen], carried: &[(Seen, SocketId)]) -> Vec<ObjectKey> {
+    pub fn unplaced(&self, slots: &[Seen], carried: &[(Seen, Socket)]) -> Vec<ObjectKey> {
         self.entries
             .iter()
             .filter(|e| {
@@ -614,7 +614,7 @@ mod tests {
         let mut r = Registry::new();
         let carried = vec![(
             seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL),
-            SocketId::BackOuter,
+            Socket::BackOuter,
         )];
         r.observe(&Observation {
             slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL)],
@@ -624,9 +624,9 @@ mod tests {
         });
         assert_eq!(
             location(&r, SNIPER),
-            Some(Location::Socket(SocketId::BackOuter))
+            Some(Location::Socket(Socket::BackOuter))
         );
-        assert!(Location::Socket(SocketId::BackOuter).owned());
+        assert!(Location::Socket(Socket::BackOuter).owned());
         assert!(r.unplaced(&[], &carried).contains(&RIFLE));
         assert!(!r.unplaced(&[], &carried).contains(&SNIPER));
         r.observe(&Observation {
@@ -649,7 +649,7 @@ mod tests {
             slots: vec![seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED)],
             carried: vec![(
                 seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED),
-                SocketId::BackFirst,
+                Socket::Shoulder(Hand::Right),
             )],
             hands: [None; 2],
             fates: vec![],
@@ -659,7 +659,7 @@ mod tests {
             slots: vec![seen(SNIPER, WeaponSlot::E_SLOT_TWO_HANDED)],
             carried: vec![(
                 seen(RIFLE, WeaponSlot::E_SLOT_TWO_HANDED),
-                SocketId::BackFirst,
+                Socket::Shoulder(Hand::Right),
             )],
             hands: [None, Some((SNIPER, Role::Wielded))],
             fates: vec![],
@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(r.find(SNIPER).unwrap().id, ids.1);
         assert_eq!(
             location(&r, RIFLE),
-            Some(Location::Socket(SocketId::BackFirst))
+            Some(Location::Socket(Socket::Shoulder(Hand::Right)))
         );
     }
 }

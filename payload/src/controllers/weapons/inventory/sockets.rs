@@ -1,11 +1,13 @@
-//! The places on the body a carried weapon docks: which there are, which weapons each takes, and
-//! which a weapon goes to. Pure.
+//! The carried weapons' side of the loadout's sockets ([`Socket`]): the bone and the offset a
+//! weapon carried on each is placed by, the name the save sidecar keeps it under, which sockets the
+//! settings give the carry set, and which a carried weapon goes to. Pure.
 //!
 //! The slots' own weapons keep the game's dock bones. A carried weapon, one beyond the slots,
 //! docks on a socket: one of those bones (or the chest's explosive bone) with an offset in the
 //! character's frame, so it sits beside the slot's weapon rather than inside it. The back holds
 //! long guns, the hips pistols, and the chest a submachine gun, and how many back and hip sockets
-//! there are is a setting.
+//! there are is a setting. The back's sockets fill the right shoulder first, then the left, then
+//! the outer place, whatever the dominant hand, as the game's own docks do.
 
 use glam::Vec3;
 use jc3gi::{
@@ -15,81 +17,35 @@ use jc3gi::{
 
 use crate::controllers::{frame::Hand, loadout::Socket};
 
-/// A socket on the body.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SocketId {
-    /// The back, beside the first back dock bone's weapon.
-    BackFirst,
-    /// The back, beside the second back dock bone's weapon.
-    BackSecond,
-    /// The back, outside both, for a third long gun.
-    BackOuter,
-    HipLeft,
-    HipRight,
-    Chest,
+/// The stable name the save sidecar keeps `socket` under: the names of the carried weapons' sockets
+/// before they were the loadout's, so that existing sidecars load. The first back socket is the
+/// right shoulder's and the second the left's.
+pub const fn key(socket: Socket) -> &'static str {
+    match socket {
+        Socket::Shoulder(Hand::Right) => "back_first",
+        Socket::Shoulder(Hand::Left) => "back_second",
+        Socket::BackOuter => "back_outer",
+        Socket::Hip(Hand::Left) => "hip_left",
+        Socket::Hip(Hand::Right) => "hip_right",
+        Socket::Chest => "chest",
+    }
 }
 
-impl SocketId {
-    pub const ALL: [SocketId; 6] = [
-        SocketId::BackFirst,
-        SocketId::BackSecond,
-        SocketId::BackOuter,
-        SocketId::HipLeft,
-        SocketId::HipRight,
-        SocketId::Chest,
-    ];
+/// The socket a sidecar's `key` names.
+pub fn from_key(key: &str) -> Option<Socket> {
+    Socket::ALL.into_iter().find(|&s| self::key(s) == key)
+}
 
-    pub const fn label(self) -> &'static str {
-        match self {
-            SocketId::BackFirst => "back (first)",
-            SocketId::BackSecond => "back (second)",
-            SocketId::BackOuter => "back (outer)",
-            SocketId::HipLeft => "left hip",
-            SocketId::HipRight => "right hip",
-            SocketId::Chest => "chest",
-        }
-    }
-
-    /// The stable name the save sidecar uses.
-    pub const fn key(self) -> &'static str {
-        match self {
-            SocketId::BackFirst => "back_first",
-            SocketId::BackSecond => "back_second",
-            SocketId::BackOuter => "back_outer",
-            SocketId::HipLeft => "hip_left",
-            SocketId::HipRight => "hip_right",
-            SocketId::Chest => "chest",
-        }
-    }
-
-    /// The socket a sidecar's `key` names.
-    pub fn from_key(key: &str) -> Option<SocketId> {
-        SocketId::ALL.into_iter().find(|s| s.key() == key)
-    }
-
-    /// The loadout's socket for this one. The first back socket rides the bone the game docks the
-    /// two-handed slot's weapon on, on the right of the back, and the second the special slot's,
-    /// on the left.
-    pub const fn socket(self) -> Socket {
-        match self {
-            SocketId::BackFirst => Socket::Shoulder(Hand::Right),
-            SocketId::BackSecond => Socket::Shoulder(Hand::Left),
-            SocketId::BackOuter => Socket::BackOuter,
-            SocketId::HipLeft => Socket::Hip(Hand::Left),
-            SocketId::HipRight => Socket::Hip(Hand::Right),
-            SocketId::Chest => Socket::Chest,
-        }
-    }
-
-    /// The bone the socket's weapon is placed on.
-    pub const fn bone(self) -> SafeBoneIndex {
-        match self {
-            SocketId::BackFirst | SocketId::BackOuter => SafeBoneIndex::BACK_ATTACH,
-            SocketId::BackSecond => SafeBoneIndex::BACK_ATTACH_2,
-            SocketId::HipLeft => SafeBoneIndex::LEFT_HOLSTER,
-            SocketId::HipRight => SafeBoneIndex::RIGHT_HOLSTER,
-            SocketId::Chest => SafeBoneIndex::EQUIPPED_EXPLOSIVE,
-        }
+/// The bone a weapon carried on `socket` is placed on: each shoulder's the back dock bone the game
+/// docks that side's slot weapon on, the outer back's the right one, the hips' their holster bones,
+/// and the chest's the planted explosive's.
+pub const fn bone(socket: Socket) -> SafeBoneIndex {
+    match socket {
+        Socket::Shoulder(Hand::Right) | Socket::BackOuter => SafeBoneIndex::BACK_ATTACH,
+        Socket::Shoulder(Hand::Left) => SafeBoneIndex::BACK_ATTACH_2,
+        Socket::Hip(Hand::Left) => SafeBoneIndex::LEFT_HOLSTER,
+        Socket::Hip(Hand::Right) => SafeBoneIndex::RIGHT_HOLSTER,
+        Socket::Chest => SafeBoneIndex::EQUIPPED_EXPLOSIVE,
     }
 }
 
@@ -131,52 +87,47 @@ pub struct Layout {
 
 impl Layout {
     /// Whether `socket` exists in this layout.
-    pub fn has(&self, socket: SocketId) -> bool {
-        let dominant_hip = match self.dominant {
-            Hand::Left => SocketId::HipLeft,
-            Hand::Right => SocketId::HipRight,
-        };
+    pub fn has(&self, socket: Socket) -> bool {
         match socket {
-            SocketId::BackFirst => self.back >= 1,
-            SocketId::BackSecond => self.back >= 2,
-            SocketId::BackOuter => self.back >= 3,
-            SocketId::HipLeft | SocketId::HipRight if socket == dominant_hip => self.hips >= 1,
-            SocketId::HipLeft | SocketId::HipRight => self.hips >= 2,
-            SocketId::Chest => self.chest,
+            Socket::Shoulder(Hand::Right) => self.back >= 1,
+            Socket::Shoulder(Hand::Left) => self.back >= 2,
+            Socket::BackOuter => self.back >= 3,
+            Socket::Hip(side) if side == self.dominant => self.hips >= 1,
+            Socket::Hip(_) => self.hips >= 2,
+            Socket::Chest => self.chest,
         }
     }
 
     /// The sockets a weapon of `fit` may dock on, the first choice first.
-    pub fn choices(&self, fit: Fit) -> Vec<SocketId> {
-        let (first_hip, second_hip) = match self.dominant {
-            Hand::Left => (SocketId::HipLeft, SocketId::HipRight),
-            Hand::Right => (SocketId::HipRight, SocketId::HipLeft),
-        };
-        let order: &[SocketId] = match fit {
+    pub fn choices(&self, fit: Fit) -> Vec<Socket> {
+        let first_hip = Socket::Hip(self.dominant);
+        let second_hip = Socket::Hip(self.dominant.other());
+        let order: &[Socket] = match fit {
             Fit::LongGun => &[
-                SocketId::BackFirst,
-                SocketId::BackSecond,
-                SocketId::BackOuter,
+                Socket::Shoulder(Hand::Right),
+                Socket::Shoulder(Hand::Left),
+                Socket::BackOuter,
             ],
             Fit::Pistol => &[first_hip, second_hip],
-            Fit::Smg => &[SocketId::Chest, first_hip, second_hip],
+            Fit::Smg => &[Socket::Chest, first_hip, second_hip],
         };
         order.iter().copied().filter(|s| self.has(*s)).collect()
     }
 
     /// The socket a weapon of `fit` docks on, with `taken` occupied: the first free choice.
-    pub fn choose(&self, fit: Fit, taken: &[SocketId]) -> Option<SocketId> {
+    pub fn choose(&self, fit: Fit, taken: &[Socket]) -> Option<Socket> {
         self.choices(fit).into_iter().find(|s| !taken.contains(s))
     }
 
     /// Whether a weapon of `fit` may dock on `socket`.
-    pub fn accepts(&self, socket: SocketId, fit: Fit) -> bool {
+    pub fn accepts(&self, socket: Socket, fit: Fit) -> bool {
         self.choices(fit).contains(&socket)
     }
 }
 
 /// Where each socket's weapon sits relative to its bone, in the character's frame (x across, y up,
-/// z backward), metres.
+/// z backward), metres. The fields keep the settings file's names, the first back socket being the
+/// right shoulder's and the second the left's.
 #[derive(Debug, Copy, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Offsets {
@@ -201,14 +152,14 @@ impl Offsets {
     }
 
     /// The offset of `socket`, or zero for one that is not finite.
-    pub fn of(&self, socket: SocketId) -> Vec3 {
+    pub fn of(&self, socket: Socket) -> Vec3 {
         let offset = match socket {
-            SocketId::BackFirst => self.back_first,
-            SocketId::BackSecond => self.back_second,
-            SocketId::BackOuter => self.back_outer,
-            SocketId::HipLeft => self.hip_left,
-            SocketId::HipRight => self.hip_right,
-            SocketId::Chest => self.chest,
+            Socket::Shoulder(Hand::Right) => self.back_first,
+            Socket::Shoulder(Hand::Left) => self.back_second,
+            Socket::BackOuter => self.back_outer,
+            Socket::Hip(Hand::Left) => self.hip_left,
+            Socket::Hip(Hand::Right) => self.hip_right,
+            Socket::Chest => self.chest,
         };
         if offset.is_finite() {
             offset
@@ -260,9 +211,9 @@ mod tests {
     fn long_guns_fill_the_back_in_order_and_then_none_is_free() {
         let mut taken = Vec::new();
         for expected in [
-            SocketId::BackFirst,
-            SocketId::BackSecond,
-            SocketId::BackOuter,
+            Socket::Shoulder(Hand::Right),
+            Socket::Shoulder(Hand::Left),
+            Socket::BackOuter,
         ] {
             let socket = FULL.choose(Fit::LongGun, &taken).unwrap();
             assert_eq!(socket, expected);
@@ -273,35 +224,44 @@ mod tests {
 
     #[test]
     fn pistols_take_the_dominant_hip_first() {
-        assert_eq!(FULL.choose(Fit::Pistol, &[]), Some(SocketId::HipRight));
+        assert_eq!(
+            FULL.choose(Fit::Pistol, &[]),
+            Some(Socket::Hip(Hand::Right))
+        );
         let left = Layout {
             dominant: Hand::Left,
             ..FULL
         };
-        assert_eq!(left.choose(Fit::Pistol, &[]), Some(SocketId::HipLeft));
+        assert_eq!(left.choose(Fit::Pistol, &[]), Some(Socket::Hip(Hand::Left)));
         assert_eq!(
-            FULL.choose(Fit::Pistol, &[SocketId::HipRight]),
-            Some(SocketId::HipLeft)
+            FULL.choose(Fit::Pistol, &[Socket::Hip(Hand::Right)]),
+            Some(Socket::Hip(Hand::Left))
         );
         let one_hip = Layout { hips: 1, ..FULL };
-        assert_eq!(one_hip.choose(Fit::Pistol, &[SocketId::HipRight]), None);
-        assert!(!one_hip.has(SocketId::HipLeft));
+        assert_eq!(
+            one_hip.choose(Fit::Pistol, &[Socket::Hip(Hand::Right)]),
+            None
+        );
+        assert!(!one_hip.has(Socket::Hip(Hand::Left)));
     }
 
     #[test]
     fn a_smg_takes_the_chest_then_the_hips() {
-        assert_eq!(FULL.choose(Fit::Smg, &[]), Some(SocketId::Chest));
+        assert_eq!(FULL.choose(Fit::Smg, &[]), Some(Socket::Chest));
         assert_eq!(
-            FULL.choose(Fit::Smg, &[SocketId::Chest]),
-            Some(SocketId::HipRight)
+            FULL.choose(Fit::Smg, &[Socket::Chest]),
+            Some(Socket::Hip(Hand::Right))
         );
         let no_chest = Layout {
             chest: false,
             ..FULL
         };
-        assert_eq!(no_chest.choose(Fit::Smg, &[]), Some(SocketId::HipRight));
-        assert!(!FULL.accepts(SocketId::Chest, Fit::Pistol));
-        assert!(FULL.accepts(SocketId::HipLeft, Fit::Smg));
+        assert_eq!(
+            no_chest.choose(Fit::Smg, &[]),
+            Some(Socket::Hip(Hand::Right))
+        );
+        assert!(!FULL.accepts(Socket::Chest, Fit::Pistol));
+        assert!(FULL.accepts(Socket::Hip(Hand::Left), Fit::Smg));
     }
 
     #[test]
@@ -313,18 +273,34 @@ mod tests {
     }
 
     #[test]
-    fn the_keys_round_trip() {
-        for socket in SocketId::ALL {
-            assert_eq!(SocketId::from_key(socket.key()), Some(socket));
+    fn the_keys_round_trip_and_keep_their_names() {
+        for socket in Socket::ALL {
+            assert_eq!(from_key(key(socket)), Some(socket));
         }
-        assert_eq!(SocketId::from_key("shoulder"), None);
+        assert_eq!(from_key("back_first"), Some(Socket::Shoulder(Hand::Right)));
+        assert_eq!(from_key("back_second"), Some(Socket::Shoulder(Hand::Left)));
+        assert_eq!(from_key("shoulder"), None);
+    }
+
+    #[test]
+    fn the_back_fills_from_the_right_whatever_the_hand() {
+        let left = Layout {
+            dominant: Hand::Left,
+            back: 1,
+            ..FULL
+        };
+        assert_eq!(
+            left.choose(Fit::LongGun, &[]),
+            Some(Socket::Shoulder(Hand::Right))
+        );
+        assert!(!left.has(Socket::Shoulder(Hand::Left)));
     }
 
     #[test]
     fn a_bad_offset_reads_as_none() {
         let mut offsets = Offsets::new();
         offsets.chest = Vec3::NAN;
-        assert_eq!(offsets.of(SocketId::Chest), Vec3::ZERO);
-        assert_eq!(offsets.of(SocketId::BackOuter), Vec3::new(0.0, -0.05, 0.14));
+        assert_eq!(offsets.of(Socket::Chest), Vec3::ZERO);
+        assert_eq!(offsets.of(Socket::BackOuter), Vec3::new(0.0, -0.05, 0.14));
     }
 }

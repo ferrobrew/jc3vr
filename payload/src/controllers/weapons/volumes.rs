@@ -30,7 +30,8 @@ use glam::{Mat3, Quat, Vec3};
 use crate::controllers::{
     body::{self, rig::frames::SkeletonLandmarks},
     frame::Hand,
-    grab::{Candidate, GrabVolume, HolsterSite},
+    grab::{Candidate, GrabVolume},
+    loadout::Socket,
     weapons::config::{HolstersConfig, PouchSide, PouchesConfig, VolumeSpec},
 };
 
@@ -78,7 +79,7 @@ pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Can
     let mut out = Vec::with_capacity(5);
     for side in Hand::BOTH {
         out.push(place(
-            GrabVolume::Holster(HolsterSite::Hip(side)),
+            GrabVolume::Holster(Socket::Hip(side)),
             hip(frame, side),
             frame.pelvis,
             &config.hip,
@@ -88,7 +89,7 @@ pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Can
     }
     for side in Hand::BOTH {
         out.push(place(
-            GrabVolume::Holster(HolsterSite::Shoulder(side)),
+            GrabVolume::Holster(Socket::Shoulder(side)),
             frame.skeleton.shoulders[side.index()],
             frame.chest,
             &config.shoulder,
@@ -97,7 +98,7 @@ pub fn holster_candidates(frame: &BodyFrame, config: &HolstersConfig) -> Vec<Can
         ));
     }
     out.push(place(
-        GrabVolume::Holster(HolsterSite::Chest),
+        GrabVolume::Holster(Socket::Chest),
         frame.skeleton.chest(),
         frame.chest,
         &config.chest,
@@ -116,7 +117,7 @@ pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty:
         return;
     }
     candidates.retain_mut(|c| {
-        if !matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))) {
+        if !matches!(c.volume, GrabVolume::Holster(Socket::Shoulder(_))) {
             return true;
         }
         match c.hand {

@@ -59,7 +59,7 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::ik,
-        loadout::{Restored, live},
+        loadout::{Restored, Socket, live},
         weapons::{
             dual_wield::{
                 attach,
@@ -77,7 +77,7 @@ use crate::{
                 engine as inventory_engine,
                 registry::ObjectKey,
                 restore,
-                sockets::{Fit, Layout, SocketId, fit_of},
+                sockets::{Fit, Layout, fit_of},
             },
         },
     },
@@ -266,10 +266,10 @@ pub(crate) unsafe fn apply_home(inventory: *mut Inventory) {
 /// carry set's own choice.
 pub(crate) fn promote_socket(
     promoted: ObjectKey,
-    from: SocketId,
+    from: Socket,
     occupant: ObjectKey,
-    free: impl Fn(SocketId) -> bool,
-) -> Option<SocketId> {
+    free: impl Fn(Socket) -> bool,
+) -> Option<Socket> {
     if !(set::contains(promoted) && set::contains(occupant)) {
         return None;
     }
@@ -284,7 +284,7 @@ pub(crate) fn promote_socket(
 
 /// The carried single pistol `object`, on `from`, moved into an empty slot: its hip is the slot's
 /// home from now on.
-pub(crate) fn entered_slot(object: ObjectKey, from: SocketId) {
+pub(crate) fn entered_slot(object: ObjectKey, from: Socket) {
     if set::contains(object)
         && let Some(side) = socket_side(from)
     {
@@ -739,7 +739,7 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
 
 /// The free socket a twin of `fit` goes onto: the hip the slot's pistol does not take, when it is
 /// free, or the first free socket that fits it.
-fn twin_socket(layout: &Layout, fit: Fit) -> Option<SocketId> {
+fn twin_socket(layout: &Layout, fit: Fit) -> Option<Socket> {
     let taken = carry::taken();
     let home = slot_home().unwrap_or(Hand::Right);
     let other = hip_socket(home.other());
@@ -839,7 +839,7 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         live::restored(Restored {
             object,
             weapon,
-            socket: socket.socket(),
+            socket,
         });
     }
     unsafe { share_hands(twin) };

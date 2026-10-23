@@ -58,6 +58,7 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::ik,
+    loadout::Socket,
     weapons::{
         dual_wield::single,
         engine::{self, HeldWeapon, slot_from_raw},
@@ -70,7 +71,7 @@ use crate::controllers::{
             layout, pips,
         },
         holster::{Wielded, slot_label},
-        inventory::{carry, decide::AloneWatch, sockets::SocketId},
+        inventory::{carry, decide::AloneWatch},
         reload,
     },
 };
@@ -121,7 +122,7 @@ pub enum Source {
     /// Its inventory slot, on its holster.
     Slot,
     /// A socket of the body, carried beyond the slots.
-    Carried(SocketId),
+    Carried(Socket),
 }
 
 /// The second weapon's readout.
@@ -263,7 +264,7 @@ pub(crate) unsafe fn take_carried(hand: Hand, object: usize) -> Result<(), Secon
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(crate) unsafe fn put_back(socket: Option<SocketId>) {
+pub(crate) unsafe fn put_back(socket: Option<Socket>) {
     let Some(owner) = (unsafe { engine::local_player() }) else {
         forget();
         return;

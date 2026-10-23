@@ -77,7 +77,6 @@ pub(crate) fn diverging(
     old: &[(ObjectAddress, OldPlace)],
     snapshot: &LoadoutSnapshot,
 ) -> Vec<Divergence> {
-    let dominant = snapshot.body.dominant();
     let table_place = |object: ObjectAddress| {
         snapshot
             .items
@@ -86,9 +85,7 @@ pub(crate) fn diverging(
             .map(|item| item.place)
     };
     let agree = |old: OldPlace, table: Option<Place>| match (old, table) {
-        (OldPlace::Slot(slot), Some(Place::Socket(socket))) => {
-            socket.native_slot(dominant) == Some(slot)
-        }
+        (OldPlace::Slot(slot), Some(Place::Socket(socket))) => socket.is_native(slot),
         (OldPlace::Hand(old), Some(Place::Hand(table))) => old == table,
         (OldPlace::Socket(old), Some(Place::Socket(table))) => old == table,
         (OldPlace::World, Some(Place::World(_))) | (OldPlace::Elsewhere, None) => true,
@@ -162,7 +159,7 @@ mod tests {
         take(&mut t, Hand::Left, 2);
         let native = Socket::ALL
             .into_iter()
-            .find(|s| s.native_slot(Hand::Right) == Some(WeaponSlot::E_SLOT_TWO_HANDED))
+            .find(|s| s.is_native(WeaponSlot::E_SLOT_TWO_HANDED))
             .unwrap();
         t.fold(Event::Dock {
             hand: Hand::Left,

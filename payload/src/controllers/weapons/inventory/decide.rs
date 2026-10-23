@@ -3,7 +3,7 @@
 //! A hand may hold the wielded weapon, the second weapon (driven by the mod beside the wielded
 //! one), or nothing. A socket may hold a carried weapon, or be free.
 
-use crate::controllers::weapons::inventory::sockets::SocketId;
+use crate::controllers::loadout::Socket;
 
 /// What the hands hold, as a grab of a socket sees them.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -64,7 +64,7 @@ pub fn grab(occupied: bool, hands: HandsView) -> GrabDecision {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ReleasedAt {
     /// A socket's volume.
-    Socket(SocketId),
+    Socket(Socket),
     /// A holster that takes the second weapon back: its own slot's holster, or any holster for a
     /// carried weapon.
     OwnHolster,
@@ -76,7 +76,7 @@ pub enum ReleasedAt {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SecondRelease {
     /// Dock it on the socket.
-    Dock(SocketId),
+    Dock(Socket),
     /// Put it back where it belongs.
     PutBack,
     /// Let it fall with the hand's motion.
@@ -131,6 +131,7 @@ impl AloneWatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::frame::Hand;
 
     fn hands() -> HandsView {
         HandsView {
@@ -184,8 +185,8 @@ mod tests {
     #[test]
     fn the_second_weapon_docks_goes_back_or_falls() {
         assert_eq!(
-            second_release(ReleasedAt::Socket(SocketId::HipLeft)),
-            SecondRelease::Dock(SocketId::HipLeft)
+            second_release(ReleasedAt::Socket(Socket::Hip(Hand::Left))),
+            SecondRelease::Dock(Socket::Hip(Hand::Left))
         );
         assert_eq!(
             second_release(ReleasedAt::OwnHolster),

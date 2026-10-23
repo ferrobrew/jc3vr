@@ -19,6 +19,7 @@ use crate::{
         aim::gun,
         frame::Hand,
         hands::grip,
+        loadout::Socket,
         weapons::{
             dual_wield, engine as weapons_engine,
             hold::{
@@ -35,7 +36,7 @@ use crate::{
                 decide::{self, GrabDecision, HandsView},
                 engine as inventory_engine,
                 registry::ObjectKey,
-                sockets::{Fit, SocketId, fit_of},
+                sockets::{self, Fit, fit_of},
             },
         },
     },
@@ -44,7 +45,7 @@ use crate::{
 /// A socket's grab volume, in the world.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct SocketPoint {
-    pub socket: SocketId,
+    pub socket: Socket,
     pub point: Vec3,
     /// The hand the volume is for: a free socket's is the hand holding a weapon that fits it, to
     /// put it there; a carried weapon's is `None`, for any hand without a gun.
@@ -94,7 +95,7 @@ pub(crate) enum SocketAction {
 /// What the weapon handling hands a socket grab.
 pub(crate) struct SocketGrab {
     pub hand: Hand,
-    pub socket: SocketId,
+    pub socket: Socket,
     /// The wielded weapon and the hands holding its guns.
     pub wielded: Option<(ObjectKey, [bool; 2])>,
     /// The second weapon and its hand.
@@ -218,7 +219,7 @@ pub(crate) unsafe fn grab(grab: &SocketGrab) -> Result<SocketAction, SocketRefus
 pub(crate) unsafe fn stow(
     owner: &mut Character,
     hand: Hand,
-    socket: SocketId,
+    socket: Socket,
     in_both_hands: bool,
 ) -> Result<(), SocketRefusal> {
     let (settings, dominant) = settings();
@@ -259,7 +260,7 @@ pub(crate) unsafe fn stow(
 pub(crate) unsafe fn stow_second(
     owner: &mut Character,
     hand: Hand,
-    socket: SocketId,
+    socket: Socket,
 ) -> Result<(), SocketRefusal> {
     let (settings, dominant) = settings();
     let object = unsafe { second::weapon(owner) }
@@ -351,9 +352,9 @@ unsafe fn socket_point(
     owner: &Character,
     to_world: Mat4,
     settings: &InventoryConfig,
-    socket: SocketId,
+    socket: Socket,
 ) -> Option<Vec3> {
-    let bone = unsafe { grip::bone_model_pose(owner, socket.bone()) }?;
+    let bone = unsafe { grip::bone_model_pose(owner, sockets::bone(socket)) }?;
     let point = to_world.transform_point3(bone.position)
         + to_world.transform_vector3(settings.offsets.of(socket));
     point.is_finite().then_some(point)

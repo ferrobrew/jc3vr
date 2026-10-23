@@ -32,8 +32,9 @@ use crate::{
         aim::gun,
         body::rig::frames::Frames,
         frame::Hand,
-        grab::{Candidate, GrabVolume, HolsterSite},
+        grab::{Candidate, GrabVolume},
         hands::{ActiveHands, grip},
+        loadout::Socket,
         weapons::{
             hold::{layout, second},
             holster::site_slot,
@@ -46,7 +47,7 @@ use crate::{
 /// frame the volumes are placed in. `None` when that place cannot be read.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HolsterGun {
-    pub site: HolsterSite,
+    pub site: Socket,
     pub point: Option<Vec3>,
 }
 
@@ -60,7 +61,7 @@ pub fn seat(candidates: &mut Vec<Candidate>, guns: &[HolsterGun]) -> Vec<Candida
         let GrabVolume::Holster(site) = c.volume else {
             return true;
         };
-        if site == HolsterSite::Chest {
+        if site == Socket::Chest {
             return true;
         }
         match guns.iter().find(|g| g.site == site) {
@@ -103,7 +104,7 @@ pub(crate) fn cockpit_frames(active: &ActiveHands, character: Mat4) -> Option<Fr
     frames.is_usable().then_some(frames)
 }
 
-/// The guns of `owner`'s holsters (the shoulders by `dominant`), at their grips in the world: each
+/// The guns of `owner`'s holsters, at their grips in the world: each
 /// shoulder's long gun, and each pistol of the pistol slot on the hip it holsters on. A gun on its
 /// dock bone is at its grip there (a long gun's grip, [`WeaponBase::GetGripPosition`], or its
 /// origin without one; a pistol's origin); a gun off it is where it would be on the bone, by where
@@ -113,17 +114,15 @@ pub(crate) fn cockpit_frames(active: &ActiveHands, character: Mat4) -> Option<Fr
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn holster_guns(
-    owner: &Character,
-    dominant: Hand,
-) -> Vec<(HolsterSite, Option<Vec3>)> {
+pub(crate) unsafe fn holster_guns(owner: &Character) -> Vec<(Socket, Option<Vec3>)> {
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
     let mut grips = GRIPS.lock();
     let mut seen = Vec::new();
     let mut out = Vec::new();
     for side in Hand::BOTH {
-        let site = HolsterSite::Shoulder(side);
-        let Some(weapon) = (unsafe { slot_weapon(owner, site_slot(site, dominant)) }) else {
+        let site = Socket::Shoulder(side);
+        let Some(weapon) = site_slot(site).and_then(|slot| unsafe { slot_weapon(owner, slot) })
+        else {
             continue;
         };
         let Some(first) = unsafe { gun::guns(weapon) }.next().flatten() else {
@@ -163,7 +162,7 @@ pub(crate) unsafe fn holster_guns(
             let point =
                 unsafe { place(owner, to_world, gun, docked, || gun_origin(gun), &mut grips) };
             seen.push(gun as *const WeaponData as usize);
-            out.push((HolsterSite::Hip(side), point));
+            out.push((Socket::Hip(side), point));
         }
     }
     grips.retain(|g| seen.contains(&g.gun));
@@ -252,15 +251,15 @@ mod tests {
         }
     }
 
-    const BACK: HolsterSite = HolsterSite::Shoulder(Hand::Right);
-    const HIP: HolsterSite = HolsterSite::Hip(Hand::Left);
+    const BACK: Socket = Socket::Shoulder(Hand::Right);
+    const HIP: Socket = Socket::Hip(Hand::Left);
 
     fn placed() -> Vec<Candidate> {
         vec![
             volume(GrabVolume::Holster(BACK), Vec3::new(0.2, 1.4, 0.1)),
             volume(GrabVolume::Holster(HIP), Vec3::new(-0.2, 0.9, 0.0)),
             volume(
-                GrabVolume::Holster(HolsterSite::Chest),
+                GrabVolume::Holster(Socket::Chest),
                 Vec3::new(0.0, 1.2, -0.1),
             ),
         ]
@@ -298,7 +297,7 @@ mod tests {
         assert!(seated.is_empty());
         assert_eq!(
             candidates.iter().map(|c| c.volume).collect::<Vec<_>>(),
-            [GrabVolume::Holster(HolsterSite::Chest)]
+            [GrabVolume::Holster(Socket::Chest)]
         );
     }
 

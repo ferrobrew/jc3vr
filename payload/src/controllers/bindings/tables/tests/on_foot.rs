@@ -117,13 +117,13 @@ fn a_grip_press_in_reach_grabs_once_and_holds_through_the_press() {
     let mut b = Bindings::default();
     let grab = controls(Hand::Right, |_, off| {
         off.grip = down();
-        off.grab_volume = Some(GrabVolume::Holster(HolsterSite::Chest));
+        off.grab_volume = Some(GrabVolume::Holster(Socket::Chest));
     });
     let step = b.sim_step(ON_FOOT, &grab, DT, &CONFIG);
     assert!(step.desired.is_empty(), "{:?}", step.desired);
     assert_eq!(
         step.grabs[Hand::Left.index()],
-        Some(GrabVolume::Holster(HolsterSite::Chest))
+        Some(GrabVolume::Holster(Socket::Chest))
     );
     // Leaving the target mid-press keeps the press a grab, reported once.
     let held = |c: &mut HandControls| {

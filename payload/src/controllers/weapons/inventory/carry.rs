@@ -53,6 +53,7 @@ use crate::controllers::{
     aim::gun,
     frame::Hand,
     hands::ik,
+    loadout::Socket,
     weapons::{
         dual_wield::single,
         hold::{refs::Strong, steal},
@@ -61,7 +62,7 @@ use crate::controllers::{
             engine::{self as inventory_engine, kind_of, shared_view, strong_to},
             persist::Record,
             registry::{ObjectKey, Seen},
-            sockets::SocketId,
+            sockets,
         },
     },
 };
@@ -105,7 +106,7 @@ impl std::error::Error for CarryRefusal {}
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(crate) unsafe fn seen() -> Vec<(Seen, SocketId)> {
+pub(crate) unsafe fn seen() -> Vec<(Seen, Socket)> {
     CARRY
         .lock()
         .iter()
@@ -136,7 +137,7 @@ pub(crate) fn contains(object: ObjectKey) -> bool {
 }
 
 /// The socket `object` docks on, when it is carried.
-pub(crate) fn home(object: ObjectKey) -> Option<SocketId> {
+pub(crate) fn home(object: ObjectKey) -> Option<Socket> {
     CARRY
         .lock()
         .iter()
@@ -146,7 +147,7 @@ pub(crate) fn home(object: ObjectKey) -> Option<SocketId> {
 
 /// Mark the carried `object` as driven in `hand`, or back on its socket with `None`; with `socket`,
 /// it docks there from now on. Returns whether it is carried.
-pub(crate) fn set_in_hand(object: ObjectKey, hand: Option<Hand>, socket: Option<SocketId>) -> bool {
+pub(crate) fn set_in_hand(object: ObjectKey, hand: Option<Hand>, socket: Option<Socket>) -> bool {
     let mut carry = CARRY.lock();
     let Some(carried) = carry.iter_mut().find(|c| c.object == object) else {
         return false;
@@ -164,12 +165,12 @@ pub(crate) fn release(object: ObjectKey) -> Option<Strong> {
 }
 
 /// The sockets taken, including those kept for a carried weapon in a hand.
-pub(crate) fn taken() -> Vec<SocketId> {
+pub(crate) fn taken() -> Vec<Socket> {
     CARRY.lock().iter().map(|c| c.socket).collect()
 }
 
 /// The carried weapon on `socket`, not counting one a hand holds.
-pub(crate) fn on_socket(socket: SocketId) -> Option<ObjectKey> {
+pub(crate) fn on_socket(socket: Socket) -> Option<ObjectKey> {
     CARRY
         .lock()
         .iter()
@@ -209,7 +210,7 @@ pub(crate) fn count() -> usize {
 
 /// Set every carried weapon's offset from its socket's bone, in the character's frame, from the
 /// settings.
-pub(crate) fn set_offsets(offset_of: impl Fn(SocketId) -> Vec3) {
+pub(crate) fn set_offsets(offset_of: impl Fn(Socket) -> Vec3) {
     for carried in CARRY.lock().iter_mut() {
         carried.offset = offset_of(carried.socket);
     }
@@ -220,7 +221,7 @@ pub(crate) fn set_offsets(offset_of: impl Fn(SocketId) -> Vec3) {
 /// # Safety
 ///
 /// The main thread, outside the world update.
-pub(crate) unsafe fn grips() -> Vec<(SocketId, Vec3)> {
+pub(crate) unsafe fn grips() -> Vec<(Socket, Vec3)> {
     if stashed() {
         return Vec::new();
     }
@@ -247,7 +248,7 @@ pub(crate) unsafe fn grips() -> Vec<(SocketId, Vec3)> {
 pub(crate) unsafe fn carry_from_slot(
     owner: &mut Character,
     slot: WeaponSlot,
-    socket: SocketId,
+    socket: Socket,
     offset: Vec3,
 ) -> Result<ObjectKey, CarryRefusal> {
     if !inventory_engine::TRACKED_SLOTS.contains(&slot) {
@@ -296,7 +297,7 @@ pub(crate) unsafe fn carry_from_slot(
 pub(crate) unsafe fn carry_loose(
     owner: &mut Character,
     strong: Strong,
-    socket: SocketId,
+    socket: Socket,
     offset: Vec3,
 ) -> Result<ObjectKey, CarryRefusal> {
     let pointer = inventory_engine::weapon_of(&strong);
@@ -520,7 +521,7 @@ pub(crate) unsafe fn place(
             unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
             continue;
         }
-        let bone = carried.socket.bone() as u32;
+        let bone = sockets::bone(carried.socket) as u32;
         for data in unsafe { guns_mut(weapon) } {
             if let Some(entry) = data
                 .m_lBoneAttachementPerWeaponState
@@ -593,7 +594,7 @@ struct Carried {
     object: ObjectKey,
     strong: Strong,
     /// The socket it docks on, which is kept for it while a hand holds it.
-    socket: SocketId,
+    socket: Socket,
     /// Its offset from the socket's bone, in the character's frame.
     offset: Vec3,
     /// The hand driving it, while it is out of its socket.

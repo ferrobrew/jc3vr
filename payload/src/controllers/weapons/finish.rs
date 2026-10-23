@@ -15,12 +15,13 @@ use crate::{
         config::ControllersConfig,
         fingers::grip::{self, Grip, GripSource},
         frame::{self, Hand},
-        grab::{GrabVolume, HolsterSite, resolve::dock_target},
+        grab::{GrabVolume, resolve::dock_target},
         hands::{
             self, ActiveHands, pose as hand_pose,
             tiers::{self, HandTier, TierState},
         },
         haptics::{self, Event},
+        loadout::Socket,
         weapons::{
             c4,
             dual_wield::{
@@ -43,7 +44,6 @@ use crate::{
                 actions::{self, SocketGrab, SocketRefusal},
                 carry,
                 decide::{self, ReleasedAt, SecondRelease},
-                sockets::SocketId,
             },
             regions::{self, Carry, CarryCause, GunRegion},
             reload,
@@ -204,7 +204,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 let wielded = weapon.map(|(w, _)| w.wielded);
                 // A hip with single pistols is the hip of the pistol that sits there.
                 let hip = match site {
-                    HolsterSite::Hip(side) if single::hips_single() => {
+                    Socket::Hip(side) if single::hips_single() => {
                         Some(single_hip_grab(side, hand, weapon.map(|(w, _)| w), &config))
                     }
                     _ => None,
@@ -218,8 +218,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                     }
                     Some(HipGrab::Nothing) => continue,
                     Some(HipGrab::Rehome) => {
-                        let (Some(w), HolsterSite::Hip(side)) = (weapon.map(|(w, _)| w), site)
-                        else {
+                        let (Some(w), Socket::Hip(side)) = (weapon.map(|(w, _)| w), site) else {
                             continue;
                         };
                         // SAFETY: the wielded weapon was read this tick, on the main thread outside
@@ -239,14 +238,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                                 && config.weapons.hold.second_weapon,
                             held: second::hand().zip(second::slot()),
                         };
-                        match holster::decide(
-                            site,
-                            hand,
-                            config.acting_hand(),
-                            wielded,
-                            independent,
-                            second_weapon,
-                        ) {
+                        match holster::decide(site, hand, wielded, independent, second_weapon) {
                             Some(action) => act(action, hand, &config, desired),
                             None => continue,
                         }
@@ -327,11 +319,11 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         let single_pistol = single::is(w.address);
         let at_own = |site| match site {
             // A single pistol goes back to its own hip, or to a free one, which becomes its own.
-            HolsterSite::Hip(side) if single_pistol => {
+            Socket::Hip(side) if single_pistol => {
                 single::slot_home() == Some(side)
                     || !carry::taken().contains(&single::hips::hip_socket(side))
             }
-            _ => holster::site_slot(site, config.acting_hand()) == w.wielded.slot,
+            _ => holster::site_slot(site) == Some(w.wielded.slot),
         };
         // A free socket that fits takes the gun, or its own holster does, whichever is nearer.
         let dock = docked_at(hand, |v| match v {
@@ -353,7 +345,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             _ => false,
         };
         let at_own_holster = matches!(dock, Some(GrabVolume::Holster(_)));
-        if let Some(GrabVolume::Holster(HolsterSite::Hip(side))) = dock
+        if let Some(GrabVolume::Holster(Socket::Hip(side))) = dock
             && single_pistol
             && single::slot_home() != Some(side)
         {
@@ -388,7 +380,8 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         let dock = docked_at(hand, |v| match v {
             GrabVolume::Socket(_) => true,
             GrabVolume::Holster(site) => {
-                carried_second || own_slot == Some(holster::site_slot(site, config.acting_hand()))
+                carried_second
+                    || own_slot.is_some_and(|slot| holster::site_slot(site) == Some(slot))
             }
             _ => false,
         });
@@ -898,7 +891,7 @@ fn single_hip_grab(
 /// nothing worth reporting: a free socket with nothing to put there.
 fn grab_socket(
     hand: Hand,
-    socket: SocketId,
+    socket: Socket,
     weapon: Option<engine::HeldWeapon>,
     config: &ControllersConfig,
 ) -> Option<GrabOutcome> {

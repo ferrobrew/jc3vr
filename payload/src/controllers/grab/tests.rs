@@ -8,8 +8,8 @@ use super::{
 };
 use crate::controllers::{
     bindings::controls::ButtonControl,
+    loadout::Socket,
     overlay::primitive::{Anchor, Primitive},
-    weapons::inventory::sockets::SocketId,
 };
 
 fn sphere(volume: GrabVolume, x: f32, radius: f32, hand: Option<Hand>) -> GripTarget {
@@ -35,7 +35,7 @@ fn takes(targets: &[GripTarget], hand: Hand, x: f32) -> Option<GrabVolume> {
         .map(|c| c.volume)
 }
 
-const HIP: GrabVolume = GrabVolume::Holster(HolsterSite::Hip(Hand::Right));
+const HIP: GrabVolume = GrabVolume::Holster(Socket::Hip(Hand::Right));
 
 #[test]
 fn a_point_outside_every_reach_takes_nothing() {
@@ -157,7 +157,7 @@ fn the_losers_say_why_they_lost() {
 
 #[test]
 fn a_release_docks_in_the_nearest_socket_that_fits() {
-    let socket = GrabVolume::Holster(HolsterSite::Shoulder(Hand::Right));
+    let socket = GrabVolume::Holster(Socket::Shoulder(Hand::Right));
     let t = [
         sphere(GrabVolume::MagazinePouch, 0.0, 0.1, None),
         sphere(socket, 0.08, 0.2, None),
@@ -203,7 +203,7 @@ fn every_kind() -> Vec<GrabVolume> {
         GrabVolume::GrenadePin,
         GrabVolume::LiveGrenade,
         GrabVolume::WorldMagazine,
-        GrabVolume::Socket(SocketId::ALL[0]),
+        GrabVolume::Socket(Socket::ALL[0]),
     ];
     out.extend(
         [

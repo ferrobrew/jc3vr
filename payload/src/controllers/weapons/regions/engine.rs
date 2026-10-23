@@ -11,7 +11,7 @@ use jc3gi::{
 use crate::controllers::{
     aim::gun,
     frame::{Hand, Pose},
-    grab::HolsterSite,
+    loadout::Socket,
     weapons::{
         engine::slot_from_raw,
         hold::{pickup::gun_pose, second},
@@ -115,14 +115,14 @@ pub(crate) unsafe fn world_carry(
 /// A long gun docked on a shoulder.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct DockedLongGun {
-    pub site: HolsterSite,
+    pub site: Socket,
     pub weapon: usize,
     /// The gun's pose in the world.
     pub pose: Pose,
     pub shape: GunShape,
 }
 
-/// The long guns docked on `owner`'s shoulders (the shoulders by `dominant`), in the holstered
+/// The long guns docked on `owner`'s shoulders, in the holstered
 /// state, with their poses and shapes. The second weapon is in a hand, not docked.
 ///
 /// # Safety
@@ -131,8 +131,10 @@ pub(crate) struct DockedLongGun {
 pub(crate) unsafe fn docked_long_guns(owner: &Character, dominant: Hand) -> Vec<DockedLongGun> {
     let mut out = Vec::new();
     for side in Hand::BOTH {
-        let site = HolsterSite::Shoulder(side);
-        let slot = site_slot(site, dominant);
+        let site = Socket::Shoulder(side);
+        let Some(slot) = site_slot(site) else {
+            continue;
+        };
         let Some(weapon) = (unsafe { owner.m_Inventory.m_Weapons[slot as usize].px.as_ref() })
         else {
             continue;

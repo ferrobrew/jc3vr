@@ -40,7 +40,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::weapons::inventory::sockets::SocketId;
+use crate::controllers::{loadout::Socket, weapons::inventory::sockets};
 
 /// The format's version.
 pub const VERSION: u32 = 1;
@@ -130,7 +130,7 @@ impl Fingerprint {
 pub struct Record {
     pub tag_hash: u32,
     pub magazine: i32,
-    pub socket: SocketId,
+    pub socket: Socket,
     /// Whether the weapon is one pistol of the pistol slot rather than the game's pair
     /// ([`crate::controllers::weapons::dual_wield::single`]).
     pub single: bool,
@@ -188,7 +188,7 @@ impl Sidecar {
                 .map(|r| FileRecord {
                     tag_hash: r.tag_hash,
                     magazine: r.magazine,
-                    socket: r.socket.key().to_owned(),
+                    socket: sockets::key(r.socket).to_owned(),
                     single: r.single,
                 })
                 .collect(),
@@ -211,7 +211,7 @@ impl Sidecar {
             .carried
             .into_iter()
             .map(|r| {
-                SocketId::from_key(&r.socket)
+                sockets::from_key(&r.socket)
                     .map(|socket| Record {
                         tag_hash: r.tag_hash,
                         magazine: r.magazine,
@@ -291,6 +291,7 @@ fn is_false(value: &bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::frame::Hand;
 
     fn fingerprint() -> Fingerprint {
         let mut slots = [0; SLOTS];
@@ -309,13 +310,13 @@ mod tests {
                 Record {
                     tag_hash: 0x5555_6666,
                     magazine: 12,
-                    socket: SocketId::BackFirst,
+                    socket: Socket::Shoulder(Hand::Right),
                     single: false,
                 },
                 Record {
                     tag_hash: 0xFFFF_FFFF,
                     magazine: -1,
-                    socket: SocketId::HipLeft,
+                    socket: Socket::Hip(Hand::Left),
                     single: true,
                 },
             ],
@@ -429,7 +430,7 @@ mod tests {
     fn a_load_restores_only_the_types_the_game_knows() {
         let (restored, skipped) = sidecar().restorable(|hash| hash != 0xFFFF_FFFF);
         assert_eq!(restored.len(), 1);
-        assert_eq!(restored[0].socket, SocketId::BackFirst);
+        assert_eq!(restored[0].socket, Socket::Shoulder(Hand::Right));
         assert_eq!(skipped, 1);
     }
 }

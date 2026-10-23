@@ -564,3 +564,28 @@ fn a_restored_weapon_docks_where_it_was_recorded_or_where_it_fits() {
     ));
     check_invariants(&t);
 }
+
+#[test]
+fn the_game_s_docks_do_not_mirror_for_handedness() {
+    for dominant in Hand::BOTH {
+        let body = BodyLayout::full(dominant);
+        assert_eq!(
+            body.preference(a_rifle()).next(),
+            Some(Socket::Shoulder(Hand::Right)),
+            "the two-handed slot docks on the right whatever the hand"
+        );
+        assert_eq!(
+            body.preference(a_launcher()).next(),
+            Some(Socket::Shoulder(Hand::Right))
+        );
+        assert_eq!(
+            body.preference(a_sniper()).next(),
+            Some(Socket::Shoulder(Hand::Left))
+        );
+        assert_eq!(
+            body.preference(a_pistol()).next(),
+            Some(Socket::Hip(dominant)),
+            "a pistol takes the dominant hip first"
+        );
+    }
+}

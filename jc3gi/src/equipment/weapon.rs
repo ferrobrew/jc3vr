@@ -3094,7 +3094,16 @@ impl WeaponBase {
     /// [`LEFT_HOLSTER`](crate::character::character::SafeBoneIndex::LEFT_HOLSTER) except when
     /// dual-wielding, where it rides
     /// [`ATTACH_HAND_LEFT`](crate::character::character::SafeBoneIndex::ATTACH_HAND_LEFT); with a single
-    /// gun wielded the second waits on its holster. A bone a state task moves a gun to lasts only
+    /// gun wielded the second waits on its holster. For the
+    /// [`E_SLOT_TWO_HANDED`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED) and
+    /// [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY) slots it puts the guns on
+    /// [`ATTACH_HAND_RIGHT`](crate::character::character::SafeBoneIndex::ATTACH_HAND_RIGHT) when wielding
+    /// and on [`BACK_ATTACH`](crate::character::character::SafeBoneIndex::BACK_ATTACH) when holstered; for
+    /// [`E_SLOT_TWO_HANDED_SPECIAL`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL) the same, except that
+    /// the holstered guns ride
+    /// [`BACK_ATTACH_2`](crate::character::character::SafeBoneIndex::BACK_ATTACH_2) while the holder is
+    /// the player (`CWeaponBase::IsHolderPlayer`). Nothing in the table follows the player's
+    /// handedness. A bone a state task moves a gun to lasts only
     /// until the end of the pass it was written in. The
     /// disassembler mislabels it `CWeaponBase::CalculateAttachOffsets`.
     pub unsafe fn UpdatePostFinalizePose(&mut self) {

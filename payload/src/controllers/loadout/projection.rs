@@ -180,7 +180,6 @@ struct Candidate {
 
 fn candidates(loadout: &Loadout) -> Vec<Candidate> {
     let primary = loadout.primary();
-    let dominant = loadout.body().dominant();
     loadout
         .items()
         .filter(|item| matches!(item.binding, Binding::Live(_)))
@@ -189,7 +188,7 @@ fn candidates(loadout: &Loadout) -> Vec<Candidate> {
             let rank = match item.place {
                 Place::Hand(hand) if Some(hand) == primary => 0,
                 Place::Hand(_) => 1,
-                Place::Socket(socket) if socket.native_slot(dominant) == Some(weapon.slot()) => 2,
+                Place::Socket(socket) if socket.is_native(weapon.slot()) => 2,
                 Place::Socket(socket) => 3 + socket.index(),
                 Place::World(_) => return None,
             };

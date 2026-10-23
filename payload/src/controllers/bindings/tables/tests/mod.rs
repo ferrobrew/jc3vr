@@ -6,7 +6,8 @@ use jc3gi::input::input_action_map::Action::{self, *};
 use super::*;
 use crate::{
     controllers::{
-        bindings::{controls::HandControls, grab::HolsterSite, intents::simulate::simulate},
+        bindings::{controls::HandControls, intents::simulate::simulate},
+        loadout::Socket,
         mode::{OnFootVariant, VehicleSeat},
     },
     vr::input::semantic::{SemanticSet, defaults::default_binding},

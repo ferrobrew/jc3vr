@@ -2,11 +2,13 @@
 
 use egui::Ui;
 
-use crate::controllers::weapons::{
-    dual_wield::single,
-    holster::slot_label,
-    inventory::{
-        InventoryStatus, config::InventoryConfig, restore::RestoreStatus, sockets::SocketId,
+use crate::controllers::{
+    frame::Hand,
+    loadout::Socket,
+    weapons::{
+        dual_wield::single,
+        holster::slot_label,
+        inventory::{InventoryStatus, config::InventoryConfig, restore::RestoreStatus},
     },
 };
 
@@ -117,14 +119,14 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
             ui.add(egui::Slider::new(&mut c.hip_sockets, 0..=2).text("Pistols on the hips"));
             ui.checkbox(&mut c.chest_socket, "A submachine gun on the chest");
             ui.add(egui::Slider::new(&mut c.socket_radius_m, 0.03..=0.3).text("Socket radius (m)"));
-            for socket in SocketId::ALL {
+            for socket in Socket::ALL {
                 let offset = match socket {
-                    SocketId::BackFirst => &mut c.offsets.back_first,
-                    SocketId::BackSecond => &mut c.offsets.back_second,
-                    SocketId::BackOuter => &mut c.offsets.back_outer,
-                    SocketId::HipLeft => &mut c.offsets.hip_left,
-                    SocketId::HipRight => &mut c.offsets.hip_right,
-                    SocketId::Chest => &mut c.offsets.chest,
+                    Socket::Shoulder(Hand::Right) => &mut c.offsets.back_first,
+                    Socket::Shoulder(Hand::Left) => &mut c.offsets.back_second,
+                    Socket::BackOuter => &mut c.offsets.back_outer,
+                    Socket::Hip(Hand::Left) => &mut c.offsets.hip_left,
+                    Socket::Hip(Hand::Right) => &mut c.offsets.hip_right,
+                    Socket::Chest => &mut c.offsets.chest,
                 };
                 super::vec3_drag(
                     ui,

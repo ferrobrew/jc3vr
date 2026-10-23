@@ -127,7 +127,8 @@ mod tests {
         },
         config::ControllersConfig,
         frame::Hand,
-        grab::{GrabVolume, HolsterSite},
+        grab::GrabVolume,
+        loadout::Socket,
         mode::{AirborneVariant, Mode, OnFootVariant},
         weapons::{
             begin::{entered_body_volumes, gameplay},
@@ -151,7 +152,7 @@ mod tests {
 
     #[test]
     fn a_hand_entering_a_holster_or_a_pouch_is_cued_once() {
-        let hip = Some(GrabVolume::Holster(HolsterSite::Hip(Hand::Right)));
+        let hip = Some(GrabVolume::Holster(Socket::Hip(Hand::Right)));
         let pouch = Some(GrabVolume::MagazinePouch);
         let foregrip = Some(GrabVolume::Foregrip);
         assert_eq!(

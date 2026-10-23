@@ -79,10 +79,10 @@ fn centre(c: &[Candidate], volume: GrabVolume) -> Vec3 {
     find(c, volume).centre
 }
 
-const RIGHT_HIP: GrabVolume = GrabVolume::Holster(HolsterSite::Hip(Hand::Right));
-const LEFT_HIP: GrabVolume = GrabVolume::Holster(HolsterSite::Hip(Hand::Left));
-const RIGHT_SHOULDER: GrabVolume = GrabVolume::Holster(HolsterSite::Shoulder(Hand::Right));
-const CHEST: GrabVolume = GrabVolume::Holster(HolsterSite::Chest);
+const RIGHT_HIP: GrabVolume = GrabVolume::Holster(Socket::Hip(Hand::Right));
+const LEFT_HIP: GrabVolume = GrabVolume::Holster(Socket::Hip(Hand::Left));
+const RIGHT_SHOULDER: GrabVolume = GrabVolume::Holster(Socket::Shoulder(Hand::Right));
+const CHEST: GrabVolume = GrabVolume::Holster(Socket::Chest);
 
 /// The least gap the defaults leave between two volumes, metres, so that a hand at one does not
 /// brush the other.
@@ -331,7 +331,7 @@ fn the_hip_volumes_ride_the_pelvis_and_the_shoulder_volumes_ride_the_chest() {
         let moved = a.centre.distance(b.centre) > 1e-3;
         let on_chest = matches!(
             a.volume,
-            GrabVolume::Holster(HolsterSite::Shoulder(_) | HolsterSite::Chest)
+            GrabVolume::Holster(Socket::Shoulder(_) | Socket::Chest)
                 | GrabVolume::GrenadePouch
                 | GrabVolume::C4Pouch
         );
@@ -414,7 +414,7 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
     let frame = standing(&DIMS);
     let shoulders = |c: &[Candidate]| -> Vec<Option<Hand>> {
         c.iter()
-            .filter(|c| matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))))
+            .filter(|c| matches!(c.volume, GrabVolume::Holster(Socket::Shoulder(_))))
             .map(|c| c.hand)
             .collect()
     };
@@ -432,12 +432,12 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
         assert!(
             empty
                 .iter()
-                .filter(|c| !matches!(c.volume, GrabVolume::Holster(HolsterSite::Shoulder(_))))
+                .filter(|c| !matches!(c.volume, GrabVolume::Holster(Socket::Shoulder(_))))
                 .all(|c| c.hand.is_none())
         );
         // A long gun docked under the off-hand's touch is not offered to it.
         let mut touched = vec![Candidate {
-            volume: GrabVolume::Holster(HolsterSite::Shoulder(Hand::Left)),
+            volume: GrabVolume::Holster(Socket::Shoulder(Hand::Left)),
             centre: Vec3::ZERO,
             radius: 0.1,
             hand: Some(dominant.other()),

@@ -15,9 +15,10 @@ use crate::{
         body::rig::skeleton,
         config::ControllersConfig,
         frame::{Hand, Pose},
-        grab::{self, Candidate, GrabVolume, GripTarget, HolsterSite, Mark, MarkAt, Shown},
+        grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown},
         hands::{self, ActiveHands, CockpitHand, ik, pose as hand_pose},
         haptics::{self, Event},
+        loadout::Socket,
         mode::{AirborneVariant, Mode, OnFootVariant},
         physical_hands::physics::guns,
         weapons::{
@@ -115,7 +116,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                     .weapons
                     .holsters
                     .follow_docks
-                    .then(|| docks::holster_guns(owner, config.acting_hand())),
+                    .then(|| docks::holster_guns(owner)),
                 sockets: inventory::actions::socket_points(
                     owner,
                     &config.weapons.inventory,
@@ -514,7 +515,7 @@ struct Ticked {
     second: Option<HeldWeapon>,
     /// The holsters' guns, at their grips in the world, docked or where they dock; `None` while
     /// the holsters do not sit on their guns.
-    holster_guns: Option<Vec<(HolsterSite, Option<Vec3>)>>,
+    holster_guns: Option<Vec<(Socket, Option<Vec3>)>>,
     /// The sockets' grab volumes, in the world.
     sockets: Vec<SocketPoint>,
     /// The character's model-to-world transform.

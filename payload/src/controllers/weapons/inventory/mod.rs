@@ -59,7 +59,6 @@ use crate::controllers::{
         inventory::{
             config::InventoryConfig,
             registry::{Entry, Location, ObjectKey, Observation, Registry, Role, Transition},
-            sockets::SocketId,
         },
     },
 };
@@ -95,7 +94,7 @@ pub struct InventoryStatus {
 
 impl InventoryStatus {
     /// The carried weapons: each one's slot and socket.
-    pub fn carried(&self) -> impl Iterator<Item = (WeaponSlot, SocketId)> + '_ {
+    pub fn carried(&self) -> impl Iterator<Item = (WeaponSlot, Socket)> + '_ {
         self.entries.iter().filter_map(|e| match e.location {
             Location::Socket(socket) => Some((e.kind.slot, socket)),
             _ => None,
@@ -247,7 +246,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
             Some((
                 ObjectAddress::from_address(s.object)?,
                 s.kind.tag_hash,
-                socket.socket(),
+                *socket,
             ))
         })
         .collect();
@@ -272,7 +271,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, inputs: &TickInputs) {
                 Location::Hand(hand, _) => live::OldPlace::Hand(hand),
                 // A mission's stash keeps the carried weapons, which the mission took.
                 Location::Socket(_) if carry::stashed() => live::OldPlace::Elsewhere,
-                Location::Socket(socket) => live::OldPlace::Socket(socket.socket()),
+                Location::Socket(socket) => live::OldPlace::Socket(socket),
                 Location::World { .. } => live::OldPlace::World,
                 Location::Npc => live::OldPlace::Elsewhere,
             };

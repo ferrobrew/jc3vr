@@ -25,8 +25,8 @@ pub struct HolstersConfig {
     pub stick_click_cycles: bool,
     /// The pistol holsters on both hips: the dual-wield slot.
     pub hip: VolumeSpec,
-    /// The holsters over the shoulders: the two-handed slot over the dominant shoulder and the
-    /// special slot over the other.
+    /// The holsters over the shoulders: the two-handed slot over the right shoulder and the special
+    /// slot over the left, where the game docks them.
     pub shoulder: VolumeSpec,
     /// The explosives holster on the chest.
     pub chest: VolumeSpec,

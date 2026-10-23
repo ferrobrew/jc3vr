@@ -1,9 +1,9 @@
 //! The body's sockets: the places on Rico's body a weapon docks, which there are, which weapons
 //! each takes, and which a weapon goes to when the player does not choose. Pure.
 //!
-//! One notion covers what were the holster sites and the carried weapons' sockets: the two hips,
-//! the two shoulders (where the game docks its two-handed and special slots' weapons), a third
-//! place across the back, and the chest. Each takes items of its size class or smaller
+//! One notion covers the holster sites and the carried weapons' sockets: the two hips, the two
+//! shoulders (where the game docks its two-handed slot's weapon, on the right, and its special
+//! slot's, on the left), a third place across the back, and the chest. Each takes items of its size class or smaller
 //! ([`Socket::class`]), and which of the hips and shoulders exist follows the dominant hand, so the
 //! layout mirrors for handedness ([`BodyLayout`]).
 
@@ -21,7 +21,8 @@ use crate::controllers::{
 pub enum Socket {
     /// The hip on this side.
     Hip(Hand),
-    /// The shoulder on this side, where the game's long guns dock across the back.
+    /// The shoulder on this side, where the game's long guns dock across the back: the two-handed
+    /// and heavy slots' on the right, the special slot's on the left.
     Shoulder(Hand),
     /// Across the back outside both shoulders, for a third long gun.
     BackOuter,
@@ -65,27 +66,36 @@ impl Socket {
         size <= self.class()
     }
 
-    /// The game slot whose weapon docks here by the game's own placement, with `dominant` the
-    /// dominant hand: the dominant shoulder carries the two-handed slot, the other shoulder the
-    /// special slot, and the hips the pistols.
-    pub fn native_slot(self, dominant: Hand) -> Option<WeaponSlot> {
+    /// Whether the game docks a weapon of `slot` here by its own placement. The game's choice is
+    /// per slot and never mirrored for handedness: the two-handed and heavy slots' weapons dock on
+    /// the right of the back, the special slot's on the left, and the pistols on the hips.
+    pub fn is_native(self, slot: WeaponSlot) -> bool {
         match self {
-            Socket::Hip(_) => Some(WeaponSlot::E_SLOT_DUAL_WIELD),
-            Socket::Shoulder(side) if side == dominant => Some(WeaponSlot::E_SLOT_TWO_HANDED),
-            Socket::Shoulder(_) => Some(WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL),
-            Socket::BackOuter | Socket::Chest => None,
+            Socket::Hip(_) => slot == WeaponSlot::E_SLOT_DUAL_WIELD,
+            Socket::Shoulder(Hand::Right) => matches!(
+                slot,
+                WeaponSlot::E_SLOT_TWO_HANDED | WeaponSlot::E_SLOT_HEAVY
+            ),
+            Socket::Shoulder(Hand::Left) => slot == WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
+            Socket::BackOuter | Socket::Chest => false,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Socket::Hip(Hand::Left) => "left hip",
+            Socket::Hip(Hand::Right) => "right hip",
+            Socket::Shoulder(Hand::Left) => "left shoulder",
+            Socket::Shoulder(Hand::Right) => "right shoulder",
+            Socket::BackOuter => "back (outer)",
+            Socket::Chest => "chest",
         }
     }
 }
 
 impl fmt::Display for Socket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Socket::Hip(hand) => write!(f, "the {} hip", hand.label()),
-            Socket::Shoulder(hand) => write!(f, "the {} shoulder", hand.label()),
-            Socket::BackOuter => f.write_str("the back (outer)"),
-            Socket::Chest => f.write_str("the chest"),
-        }
+        write!(f, "the {}", self.label())
     }
 }
 
@@ -171,7 +181,7 @@ impl BodyLayout {
         };
         let native = Socket::ALL
             .into_iter()
-            .filter(move |s| s.native_slot(dominant) == Some(weapon.slot()))
+            .filter(move |s| s.is_native(weapon.slot()))
             .min_by_key(|s| by_size.iter().position(|b| b == s));
         native
             .into_iter()

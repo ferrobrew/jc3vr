@@ -8,8 +8,9 @@ use parking_lot::Mutex;
 use crate::controllers::{
     config::ControllersConfig,
     frame::Hand,
-    grab::{GrabVolume, GripTarget, HolsterSite},
+    grab::{GrabVolume, GripTarget},
     hands::ik,
+    loadout::Socket,
     physical_hands::physics::guns,
     weapons::{
         ads, c4, collide, dual_wield,
@@ -122,7 +123,7 @@ pub(super) struct OffTouch {
 /// Where a hand touches a long gun docked on a shoulder, and how it would carry it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct DockTouch {
-    pub(super) site: HolsterSite,
+    pub(super) site: Socket,
     pub(super) weapon: usize,
     pub(super) carry: Carry,
 }

@@ -316,7 +316,8 @@ mod tests {
 
     use super::*;
     use crate::controllers::{
-        grab::{GrabVolume, HolsterSite, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame},
+        grab::{GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame},
+        loadout::Socket,
         physical_hands::{
             collider_view::model::Aabb,
             grab_view::model::{CandidateKind, RayOutcome, ReachRay},
@@ -356,7 +357,7 @@ mod tests {
         let chosen = sphere(GrabVolume::Foregrip, Vec3::new(0.0, 1.0, -0.05), 0.1);
         let far = sphere(GrabVolume::WorldMagazine, Vec3::new(0.0, 1.0, -5.0), 0.1);
         let pouch = sphere(
-            GrabVolume::Holster(HolsterSite::Chest),
+            GrabVolume::Holster(Socket::Chest),
             Vec3::new(0.0, 1.0, 0.5),
             0.1,
         );

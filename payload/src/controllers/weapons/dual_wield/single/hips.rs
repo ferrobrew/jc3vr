@@ -10,21 +10,21 @@
 
 use glam::Vec3;
 
-use crate::controllers::{frame::Hand, weapons::inventory::sockets::SocketId};
+use crate::controllers::{frame::Hand, loadout::Socket};
 
 /// The hip socket on `side`.
-pub const fn hip_socket(side: Hand) -> SocketId {
+pub const fn hip_socket(side: Hand) -> Socket {
     match side {
-        Hand::Left => SocketId::HipLeft,
-        Hand::Right => SocketId::HipRight,
+        Hand::Left => Socket::Hip(Hand::Left),
+        Hand::Right => Socket::Hip(Hand::Right),
     }
 }
 
 /// The side of a hip socket, or `None` for another socket.
-pub const fn socket_side(socket: SocketId) -> Option<Hand> {
+pub const fn socket_side(socket: Socket) -> Option<Hand> {
     match socket {
-        SocketId::HipLeft => Some(Hand::Left),
-        SocketId::HipRight => Some(Hand::Right),
+        Socket::Hip(Hand::Left) => Some(Hand::Left),
+        Socket::Hip(Hand::Right) => Some(Hand::Right),
         _ => None,
     }
 }
@@ -45,7 +45,7 @@ pub fn home_for(carried: [bool; 2]) -> Hand {
 /// whose home is the other hip, or no pistol), and at its `configured` offset otherwise.
 /// `slot_home` is the slot's single pistol's home, and `pair` whether the slot holds the game's
 /// pair, which takes both hips.
-pub fn hip_offset(socket: SocketId, slot_home: Option<Hand>, pair: bool, configured: Vec3) -> Vec3 {
+pub fn hip_offset(socket: Socket, slot_home: Option<Hand>, pair: bool, configured: Vec3) -> Vec3 {
     match socket_side(socket) {
         Some(side) if !pair && slot_home != Some(side) => Vec3::ZERO,
         _ => configured,
@@ -86,7 +86,7 @@ pub enum HipGrab {
     Slot,
     /// The hip's socket: draw the carried pistol there, put one back, or dock a pistol there, as
     /// a grab of the socket does.
-    Socket(SocketId),
+    Socket(Socket),
     /// Holster the slot's pistol, held in the grabbing hand, on this hip, which becomes its home.
     Rehome,
     /// Nothing sits here for this hand.
@@ -138,8 +138,8 @@ mod tests {
 
     #[test]
     fn a_carried_pistol_sits_in_the_holster_the_slot_does_not_take() {
-        let left = SocketId::HipLeft;
-        let right = SocketId::HipRight;
+        let left = Socket::Hip(Hand::Left);
+        let right = Socket::Hip(Hand::Right);
         assert_eq!(
             hip_offset(left, Some(Hand::Right), false, OFFSET),
             Vec3::ZERO
@@ -149,7 +149,7 @@ mod tests {
         // The game's pair takes both hips.
         assert_eq!(hip_offset(left, None, true, OFFSET), OFFSET);
         // Other sockets keep their offsets.
-        assert_eq!(hip_offset(SocketId::Chest, None, false, OFFSET), OFFSET);
+        assert_eq!(hip_offset(Socket::Chest, None, false, OFFSET), OFFSET);
     }
 
     #[test]
@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(hip_grab(view(Hand::Right)), HipGrab::Slot);
         assert_eq!(
             hip_grab(view(Hand::Left)),
-            HipGrab::Socket(SocketId::HipLeft)
+            HipGrab::Socket(Socket::Hip(Hand::Left))
         );
         let empty_left = HipView {
             socket_taken: false,
@@ -214,7 +214,7 @@ mod tests {
         };
         assert_eq!(
             hip_grab(empty_left),
-            HipGrab::Socket(SocketId::HipLeft),
+            HipGrab::Socket(Socket::Hip(Hand::Left)),
             "a free socket takes what the hand holds"
         );
         let no_socket = HipView {
@@ -244,7 +244,7 @@ mod tests {
         };
         assert_eq!(
             hip_grab(taken),
-            HipGrab::Socket(SocketId::HipLeft),
+            HipGrab::Socket(Socket::Hip(Hand::Left)),
             "a hip with a pistol on it is that pistol's"
         );
         let at_home = HipView {

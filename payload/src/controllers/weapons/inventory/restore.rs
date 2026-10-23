@@ -648,7 +648,7 @@ unsafe fn adopt(owner: &mut Character, settings: &InventoryConfig, dominant: Han
                         live::restored(Restored {
                             object,
                             weapon,
-                            socket: socket.socket(),
+                            socket,
                         });
                     }
                     tracing::info!(
