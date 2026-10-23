@@ -67,7 +67,7 @@ The switches are in the debug UI's Controllers tab: `bindings.yank.enabled`, `gr
 
 The debug UI's Status tab has a `GRAPPLE` section:
 
-- `GRAPPLE STATE`: `INACTIVE`, `FIRING`, `IN FLIGHT`, `ATTACHED`, `REELING IN`, `HANGING`, `REELED IN`, or `TETHER LINE`, or `WAITING, NO HAND INPUT` while the input tick does not run.
+- `GRAPPLE STATE`: `INACTIVE`, `FIRING`, `IN FLIGHT`, `ATTACHED`, `REELING IN`, `HANGING`, `REELED IN`, or `SCRIPTED WIRE` (a wire fired outside the reel flow, as the vehicle grapple does), or `WAITING, NO HAND INPUT` while the input tick does not run.
 - `ATTACHED TARGET`: `OBJECT` or `SURFACE` with the distance from the head to the attach point, or `NONE`.
 - `REEL FROM HAND`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
 - `TETHERS`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.

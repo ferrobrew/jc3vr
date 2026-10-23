@@ -97,8 +97,9 @@ pub enum GrapplePhase {
     Hanging,
     /// The character is reeled onto the attach point: a wall perch, a stunt, or upside down.
     ReeledIn,
-    /// The line is held open outside the reel, as the tether flow does.
-    TetherLine,
+    /// A scripted wire is out, fired outside the reel flow (the vehicle and stunt-position
+    /// grapples' custom fire).
+    ScriptedWire,
 }
 
 impl GrapplePhase {
@@ -111,7 +112,7 @@ impl GrapplePhase {
             GrapplePhase::ReelingIn => "REELING IN",
             GrapplePhase::Hanging => "HANGING",
             GrapplePhase::ReeledIn => "REELED IN",
-            GrapplePhase::TetherLine => "TETHER LINE",
+            GrapplePhase::ScriptedWire => "SCRIPTED WIRE",
         }
     }
 }
@@ -510,7 +511,7 @@ fn phase(
         {
             GrapplePhase::ReeledIn
         }
-        GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE => GrapplePhase::TetherLine,
+        GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE => GrapplePhase::ScriptedWire,
         _ if attached => GrapplePhase::Attached,
         _ => GrapplePhase::InFlight,
     }
@@ -617,7 +618,7 @@ mod tests {
                 false,
                 &idle
             ),
-            GrapplePhase::TetherLine
+            GrapplePhase::ScriptedWire
         );
     }
 
