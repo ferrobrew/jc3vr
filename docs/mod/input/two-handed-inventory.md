@@ -18,7 +18,7 @@ One table holds every item the player has: each is in exactly one place, the lef
 
 The primary hand is the dominant hand when it holds a weapon, otherwise the other hand. The primary follows from the hands and is never set on its own.
 
-The grapple hand is a hand like the other: it holds anything the other can. The grapple is not an item: it stays a device on the grapple hand's wrist, worked by its button whatever the hand holds. A hand that holds something is not pinned to the line while hanging from it, and the grapple hand's trigger retracts the tethers only while its held item, if any, does not use the trigger. Not built yet: the anchored tier frees only the hand of the wielded weapon, so a gun armed in the grapple hand is taken onto the line.
+The grapple hand is a hand like the other: it holds anything the other can. The grapple is not an item: it stays a device on the grapple hand's wrist, worked by its button whatever the hand holds. A hand that holds something is not pinned to the line while hanging from it, and the grapple hand's trigger retracts the tethers only while its held item, if any, does not use the trigger. The anchored tier frees a grapple hand that holds anything the table has in it, or a gun of the wielded weapon (`hands::tiers`); a gun in the grapple hand moves the retract to its stick click, and a grenade there holds its trigger only for a press that pulls its pin ([physical-weapons.md, "Grenades as objects"](physical-weapons.md#grenades-as-objects)). A prop or a charge leaves the trigger to the tethers.
 
 ### The game's slots are a projection
 
@@ -297,7 +297,7 @@ Decisions taken here:
 
 Everything a hand holds is in the table. Each input tick the table is fed what the holding subsystems have in each hand (`loadout::live::HeldOthers`): the loose object the physical hands' pickup carries, the throw's primed grenade or a caught one, and the C4 throw's primed charge. A hand that took one takes it (from the world, the pouch, or out of the air), and a hand whose prop is let go of, lost, or torn away, whose grenade or charge was thrown or pressed on, lets it go, which takes it out of the table; a grenade that went off in the hand, or one the game took back, is removed as gone.
 
-What a hand holds is then one condition, read from the table (`loadout::live::held_kind`): a hand holding a prop, a grenade, or a charge draws nothing off a socket, takes nothing from the pouches, takes no gun out of a character's hands or off a rack, and is not offered the other hand's gun; a hand holding a weapon, a grenade, or a charge has no palm, and one carrying a prop keeps the palm it holds the prop with, which neither probes nor pushes. The physical hands, the throws, and the catch keep their own state of how they hold it (the pickup's joint or carry, the stage, the pin), as per-hand runtime state beside the table.
+What a hand holds is then one condition, read from the table (`loadout::live::held_kind`): a hand holding a prop, a grenade, or a charge draws nothing off a socket, takes nothing from the pouches, takes no gun out of a character's hands or off a rack, is not offered the other hand's gun, and is not pinned to the grapple line; a hand holding a weapon, a grenade, or a charge has no palm, and one carrying a prop keeps the palm it holds the prop with, which neither probes nor pushes. The physical hands, the throws, and the catch keep their own state of how they hold it (the pickup's joint or carry, the stage, the pin), as per-hand runtime state beside the table.
 
 The props, the grenades, and the charges are behind their own switches (`physical_hands.pickup.enabled`, `weapons.grenade_throw`, `weapons.grenade.catch.enabled`, `weapons.c4_throw`); off, the hands hold none, and nothing enters the table.
 
@@ -307,6 +307,8 @@ Decisions taken here:
 - A prop both hands hold is the item of the hand that took it first; the other hand's hold is a grip on that item, not an item of its own.
 - The table is fed from the holding subsystems' state at each input tick rather than at each of their changes, since the throws' stages move on the weapons' updates on the simulation's threads. A grenade primed and thrown between two input ticks never enters the table.
 - A respawn takes the hands' props and explosives out of the table, as the core does; a prop the pickup still holds after it comes back in at the next tick.
+- The anchored grapple tier reads the table one tick behind, as it read the wielded weapon, and the anchor's blend absorbs the tick. A hand holding anything stays free rather than holding the line with its item, since putting a gun or a prop on the line would move it without the player.
+- Whether a held item uses the grapple hand's trigger is decided per press: a gun always does, and a grenade only for a press that begins while the trigger can pull its pin. The press stays the grenade's until the trigger opens, so the tethers never start retracting under a trigger the player pulled for the pin.
 
 ## One socket notion
 

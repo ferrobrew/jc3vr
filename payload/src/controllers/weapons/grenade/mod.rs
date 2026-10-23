@@ -286,6 +286,10 @@ pub(super) fn input_tick(
     {
         state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
     }
+    // Whether the holding hand's trigger can pull the pin, before this tick's pull.
+    let pin_pullable = tuning.pin.trigger
+        && matches!(state.stage, Stage::Held { .. })
+        && state.pin == Some(Pin::In);
     if let Stage::Held { hand, .. } = state.stage {
         let puller = if inputs.pin_grab == Some(hand.other()) {
             Some(Puller::OtherHand)
@@ -311,14 +315,24 @@ pub(super) fn input_tick(
         state.pin = None;
     }
     state.status.pin = state.pin;
-    // The trigger of a hand holding a grenade is the pin's, not the tether retract's.
+    // The trigger of a hand holding a grenade is the pin's while it pulls it, not the tether
+    // retract's: a caught grenade, or one whose pin is out or not pulled by the trigger, leaves
+    // the trigger to the tethers.
     let grenade_hand = Some(state.stage)
         .filter(|s| s.grenade_in_hand())
         .and_then(Stage::hand)
         .or_else(|| catch::caught().map(|c| c.hand));
+    let claimed = grenade_hand.is_some_and(|hand| {
+        trigger_claimed(
+            state.trigger_claimed,
+            pin_pullable,
+            inputs.triggers[hand.index()],
+        )
+    });
+    state.trigger_claimed = claimed;
     if let Some(hand) = grenade_hand
         && hand != inputs.dominant
-        && inputs.triggers[hand.index()].held()
+        && claimed
     {
         desired.retain(|d| {
             !(d.target.map == MapKind::Player
@@ -416,6 +430,14 @@ const MAX_EVENTS: usize = 6;
 /// button.
 const OFF_HAND_TRIGGER_ACTIONS: [Action; 2] = [Action::RETRACT_GRAPPLE, Action::L2];
 
+/// Whether the grenade hand's trigger is the grenade's on this tick, given whether it was on the
+/// last (`claimed`): a press that begins while the trigger can pull the grenade's pin (`pullable`)
+/// is the grenade's until the trigger opens, and no other press is. A press held on from before the
+/// grenade came into the hand stays what it was.
+fn trigger_claimed(claimed: bool, pullable: bool, trigger: ButtonControl) -> bool {
+    trigger.held() && (claimed || (pullable && trigger.pressed))
+}
+
 const WARNING_CALM: Rgba = [0.4, 1.0, 0.4, 0.8];
 const WARNING_URGENT: Rgba = [1.0, 0.15, 0.1, 0.95];
 
@@ -434,6 +456,8 @@ struct State {
     grips: [Option<Pose>; 2],
     /// Seconds until the next warning pulse.
     next_pulse_s: f32,
+    /// Whether the grenade hand's trigger press is the grenade's ([`trigger_claimed`]).
+    trigger_claimed: bool,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -466,6 +490,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     },
     grips: [None; 2],
     next_pulse_s: 0.0,
+    trigger_claimed: false,
 });
 
 /// The launch planned for the weapon update in progress on this thread, for the launch hook.
@@ -995,6 +1020,22 @@ mod tests {
     use glam::Quat;
 
     use super::*;
+
+    #[test]
+    fn the_trigger_belongs_to_the_grenade_only_for_a_press_that_pulls_the_pin() {
+        let trigger = |down, pressed| ButtonControl {
+            down,
+            pressed,
+            released: false,
+        };
+        // A press with the pin in and the trigger pulling it is the grenade's while it is held.
+        assert!(trigger_claimed(false, true, trigger(true, true)));
+        assert!(trigger_claimed(true, false, trigger(true, false)));
+        assert!(!trigger_claimed(true, false, trigger(false, false)));
+        // A press held on from before, or one with nothing for the trigger to pull, is not.
+        assert!(!trigger_claimed(false, true, trigger(true, false)));
+        assert!(!trigger_claimed(false, false, trigger(true, true)));
+    }
 
     #[test]
     fn the_fuse_warns_only_in_its_last_seconds() {

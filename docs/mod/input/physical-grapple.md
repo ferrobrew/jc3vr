@@ -14,7 +14,7 @@ The grapple is the off-hand's upper face button (Y on the left Touch controller,
 | A hold with nothing new under the aim, tethers attached | Tightens the tethers: the retract rises from 0.35 to 0.7 over a second, and pulling the hand back while holding tightens harder (the larger of the two wins) |
 | A sharp pull of the hand while the button is held, a line attached | Zips along the line, as a tap would |
 
-The pulls act only while the button is held: a hand moved back in the course of play never zips or tightens. The L trigger still retracts the tethers on its own while the left hand holds no gun.
+The pulls act only while the button is held: a hand moved back in the course of play never zips or tightens. The L trigger still retracts the tethers on its own while the left hand holds nothing that uses the trigger: no gun, and no grenade whose pin the press pulls.
 
 ## What the hand does
 
