@@ -8,7 +8,12 @@ use crate::controllers::{
     loadout::{Socket, slot_label},
     weapons::{
         dual_wield::single,
-        inventory::{InventoryStatus, config::InventoryConfig, restore::RestoreStatus},
+        inventory::{
+            InventoryStatus,
+            config::InventoryConfig,
+            restore::RestoreStatus,
+            traversal::{self, Task},
+        },
     },
 };
 
@@ -46,6 +51,18 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
         s.pins,
         s.forgotten,
         s.resets
+    ));
+    let t = traversal::status();
+    ui.label(format!(
+        "Traversal: {} · refused {} · forced neutral states {}, kept in the hand {}",
+        if t.keeping { "kept" } else { "the game's" },
+        Task::ALL
+            .iter()
+            .map(|task| format!("{} {}", task.label(), t.refused[task_index(*task)]))
+            .collect::<Vec<_>>()
+            .join(", "),
+        t.neutral,
+        t.neutral_kept
     ));
     ui.label(format!(
         "Carried: {}{} · kept from pickups {} · with others {}",
@@ -111,6 +128,16 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
                  into the slots and the game's own one-weapon model runs.",
         );
         ui.checkbox(
+            &mut c.keep_through_traversal,
+            "Keep the hands as they are through traversal",
+        )
+        .on_hover_text(
+            "Vehicles, seats, the wingsuit, falls, dives, and the ragdoll put nothing away: the \
+                 graph's holster, hide, stop-use, and heavy-weapon drop tasks are refused for the \
+                 player, and a gun in a hand in a seat fires. Off, the game puts the wielded weapon \
+                 away and the table follows.",
+        );
+        ui.checkbox(
             &mut c.pin_world,
             "Keep dropped weapons nearby from despawning",
         );
@@ -144,4 +171,8 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
             }
         });
     });
+}
+
+fn task_index(task: Task) -> usize {
+    Task::ALL.iter().position(|t| *t == task).unwrap_or(0)
 }

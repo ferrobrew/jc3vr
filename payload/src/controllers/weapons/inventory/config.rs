@@ -37,6 +37,12 @@ pub struct InventoryConfig {
     /// put back into the slots and stops, and the game's own one-weapon model runs, as with the
     /// inventory off.
     pub project_slots: bool,
+    /// Leave the hands and the body as they are through traversal: the base layer's tasks that put
+    /// the wielded weapon away, hide the slots' weapons in a seat, stop a weapon's use, or drop a
+    /// heavy weapon are refused for the local player, the forced neutral state's unequip is undone,
+    /// and where the game's update skips the wielded weapon (a seat, the boost wingsuit) the gun in
+    /// a hand is fired by the mod's. Off, the game's tasks run and the table follows them.
+    pub keep_through_traversal: bool,
 }
 
 impl InventoryConfig {
@@ -52,6 +58,7 @@ impl InventoryConfig {
             offsets: Offsets::new(),
             persist: true,
             project_slots: true,
+            keep_through_traversal: true,
         }
     }
 

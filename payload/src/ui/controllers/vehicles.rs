@@ -376,6 +376,12 @@ pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
             "In a passenger or stunt seat, turn the seated body toward the gun hand's aim point \
              instead of the gaze's.",
         );
+    ui.checkbox(&mut v.free_hands_only, "Only a free hand takes a control")
+        .on_hover_text(
+            "A hand holding a gun, a prop, a grenade, or a charge takes no wheel, control, \
+             button, mounted gun's handle, or parachute handle, and the wingsuit's arms steer only \
+             with both hands free.",
+        );
     ui.label("The wingsuit's head look-steer removal follows the parachute's movement setting.");
     egui::CollapsingHeader::new("Driving view")
         .show(ui, |ui| driving_view_settings(ui, &mut v.driving_view));

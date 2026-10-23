@@ -1041,6 +1041,20 @@ impl Character {
             f(self as *const Self as _)
         }
     }
+    pub const HasBoostWingsuit_ADDRESS: usize = 0x14077ECC0;
+    /// Whether the character has the boost wingsuit, the wingsuit with guns: the flag on its aim
+    /// control, false without one. While it has it and flies the wingsuit
+    /// ([`IsUsingWingsuit`](crate::character::character::Character::IsUsingWingsuit)), the inventory's weapon updates
+    /// ([`Inventory::UpdateWeapons_Parallel`](crate::character::inventory::Inventory::UpdateWeapons_Parallel))
+    /// update the wingsuit's guns in place of the wielded weapon.
+    pub unsafe fn HasBoostWingsuit(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::HasBoostWingsuit_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const IsUsingParachute_ADDRESS: usize = 0x14075F550;
     /// Whether the parachute is deployed:
     /// [`SB_IS_PARACHUTING`](crate::state::StateBitFlag::SB_IS_PARACHUTING).

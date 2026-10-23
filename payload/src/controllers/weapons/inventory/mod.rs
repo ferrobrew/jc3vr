@@ -40,6 +40,7 @@ pub mod reconcile;
 mod reset;
 pub mod restore;
 pub mod sockets;
+pub mod traversal;
 mod world;
 
 use jc3gi::{
@@ -70,6 +71,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(missions::hook_library())
         .with_hook_library(gives::hook_library())
         .with_hook_library(ammo::hook_library())
+        .with_hook_library(traversal::hook_library())
 }
 
 /// The inventory's readout.
@@ -136,6 +138,7 @@ pub(crate) unsafe fn input_tick(
     inputs: &TickInputs,
 ) -> Option<live::Arrival> {
     let on = inputs.settings.enabled && inputs.settings.project_slots;
+    traversal::publish(on && inputs.settings.keep_through_traversal);
     // Read before the inventory's lock: each is behind its own subsystem's lock.
     let others = held_others();
     if on {

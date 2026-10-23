@@ -26,6 +26,11 @@ pub struct VehiclesConfig {
     /// of the gaze's, so the body leans and points the gun where the hand does. Off, the body turns
     /// toward the gaze as the game's does, while the gun still aims by the hand.
     pub passenger_body_by_hand: bool,
+    /// A hand holding anything of the loadout table's (a weapon, a prop, a grenade, or a charge)
+    /// takes no control, button, mounted gun's handle, or parachute handle, and the wingsuit's arms
+    /// steer only while neither hand holds anything: the player drives one-handed, or docks first.
+    /// Off, a holding hand takes them as an empty one does.
+    pub free_hands_only: bool,
     /// Mounted guns and gunner seats aimed by the hands on the handles.
     pub mounted: MountedConfig,
     /// The physical controls of the driver's seat.
@@ -43,6 +48,7 @@ impl VehiclesConfig {
         Self {
             driver_weapons_by_hand: true,
             passenger_body_by_hand: true,
+            free_hands_only: true,
             mounted: MountedConfig::new(),
             physical: PhysicalControlsConfig::new(),
             arm_steering: ArmSteeringConfig::new(),

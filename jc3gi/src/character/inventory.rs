@@ -304,8 +304,9 @@ impl Inventory {
     /// with the same aim targets. It calls each active weapon's
     /// [`UpdateFromUserPostSim_Parallel`](crate::equipment::weapon::WeaponBase::UpdateFromUserPostSim_Parallel):
     /// the mounted gun in [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY) while the owner is in a
-    /// mounted-gun state, otherwise the boost wingsuit's guns while wingsuiting or else the wielding
-    /// weapon, all with `muzzle_target`, and then the selected grenade with `grenade_target`. The
+    /// mounted-gun state, otherwise the boost wingsuit's guns while the owner has the boost wingsuit
+    /// ([`Character::HasBoostWingsuit`](crate::character::character::Character::HasBoostWingsuit)) and flies
+    /// it, or else the wielding weapon, all with `muzzle_target`, and then the selected grenade with `grenade_target`. The
     /// fire inputs passed down come from the owner's
     /// [`m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs), zeroed while shooting
     /// (or throwing) is not allowed: the primary input unless

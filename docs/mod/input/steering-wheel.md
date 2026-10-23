@@ -10,6 +10,8 @@ So on each input tick while the player drives, the fit finds the vehicle's steer
 
 The meshes whose box misleads have an override in `WHEEL_OVERRIDES`: the circuit racer, the ladbil, the old bus, the old jeep, and the transport boat. An override gives the hub, radius, and tilt in the part's own space, so it still rides deformation. The values were placed from the boxes and the seated driver's point in the shipped data and are a starting point to tune in the headset. The table is keyed by the part's name rather than by [`m_VehicleTypeNameHash`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_VehicleTypeNameHash): the part names are read from the running game, one per model, while the type hash appears to be one per variant (the old jeep has six) and its source is unverified. The debug UI shows the type hash beside the part's name, for a later table that needs it.
 
+A hand holding a gun, a prop, a grenade, or a charge does not take the wheel or the handlebars while `vehicles.free_hands_only` (on) holds: the player drives with the free hand, or docks first ([two-handed-inventory.md, "Traversal"](two-handed-inventory.md#traversal)). A hand already on the wheel keeps it.
+
 ## Turning the wheel
 
 The design follows the VR wheels of other games: Sacchan's SaccGroundVehicle for VRChat (hold to grip, per-hand accumulators seeded from the current steering, ±450° for a car) and BNG's VR Interaction Framework wheel (position-tracked, hold to grip, ±360°, a linear return).

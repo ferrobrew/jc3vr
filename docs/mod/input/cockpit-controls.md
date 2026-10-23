@@ -2,6 +2,8 @@
 
 The physical controls of the driver's seat ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) include the plane's flight stick and throttle and the helicopter's cyclic and collective, and the cockpit's buttons are worked by hand alongside the controller's. This covers how the sticks and levers move and feel, and the horn, the nitrous, and the landing gear. The wheel and the handlebars are in [steering-wheel.md](steering-wheel.md). The code is in `payload/src/controllers/vehicles/physical/`: `sticks.rs` for the sticks, `levers.rs` for the levers, `cues.rs` for their haptic cues, and `control_haptics.rs` one level up for the pulses. The settings are under `controllers.vehicles.physical`, with the plane's own under `physical.flight`.
 
+A hand holding anything of the loadout table's takes no stick, lever, or button while `vehicles.free_hands_only` (on) holds, as for the wheel ([steering-wheel.md](steering-wheel.md)).
+
 ## The sticks
 
 A stick is grabbed like every physical control: a grip press with the hand's grip within `physical.grab_radius_m` of the stick's top takes it, and releasing the grip, or moving further than `physical.release_distance_m` from it, lets go. The grab is relative. The hand's offset from the top is taken when it grabs, wherever the top is at that moment, so a hand that takes the stick off-centre, or takes it again while it is still springing back, moves it only by moving. The holding hand is drawn on the top at that offset.

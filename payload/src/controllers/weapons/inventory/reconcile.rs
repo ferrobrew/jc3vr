@@ -47,6 +47,7 @@ use crate::{
             inventory::{
                 carry,
                 engine::{self as inventory_engine, ObjectKey, shared_view},
+                traversal,
             },
         },
     },
@@ -327,6 +328,19 @@ unsafe fn put_in(owner: &mut Character, slot: WeaponSlot, object: ObjectKey, hom
 unsafe fn primary(owner: &mut Character, snapshot: &LoadoutSnapshot) {
     let wielded = unsafe { gun::held_weapon(owner) }.map(|w| w as *const WeaponBase as usize);
     if wielded.is_some_and(|w| home_of(snapshot, w).is_none()) {
+        return;
+    }
+    // Where the game's weapon updates skip the wielded weapon (a seat, the boost wingsuit), the
+    // mod's update fires a gun in a hand: nothing is wielded, and the hands' weapons are armed.
+    if unsafe { traversal::wield_skipped(owner) } {
+        if let Some(current) = wielded {
+            unsafe { abort_clips(owner) };
+            // SAFETY: the table has it on the body, in a slot while wielded.
+            let current = unsafe { &mut *(current as *mut WeaponBase) };
+            unsafe { current.OnUnequip() };
+            UNEQUIPS.fetch_add(1, Ordering::Relaxed);
+            tracing::info!(target: "controllers", "reconcile: the game's update skips the wielded weapon here; unequipped it to arm it in its hand");
+        }
         return;
     }
     let primary = snapshot

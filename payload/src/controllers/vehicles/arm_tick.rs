@@ -8,6 +8,7 @@ use crate::controllers::{
     config::ControllersConfig,
     frame::Hand,
     hands::ActiveHands,
+    loadout::live,
     mode::{AirborneVariant, Mode},
     vehicles::{
         arm_steering::{self as arm, ArmBody, ArmHand},
@@ -36,6 +37,12 @@ pub(super) fn arm_tick(
 ) -> Option<ArmReadout> {
     let config = &active.config.vehicles.arm_steering;
     if !arms_act(mode, &active.config) {
+        return None;
+    }
+    // An arm holding something is not spread to steer by: the stick steers until both are free.
+    if active.config.vehicles.free_hands_only
+        && Hand::BOTH.into_iter().any(|h| live::held_kind(h).is_some())
+    {
         return None;
     }
     let hand = |hand: Hand| {

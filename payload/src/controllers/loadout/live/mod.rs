@@ -439,11 +439,24 @@ pub(crate) fn stop() {
     live.mission = MissionWatch::Idle;
     live.pending = None;
     live.origins = [None; 2];
+    live.neutral = None;
     live.push("loadout: the table stopped, the inventory is off".to_owned());
     published::clear();
     let published = live.published();
     drop(live);
     *STATUS.lock() = published;
+}
+
+/// The game's forced neutral state unequipped the weapon at `object`: while the table holds it in
+/// a hand, the hand keeps it rather than the next input tick taking the unequip for a holster, and
+/// the reconcile wields or arms it again. Returns whether a hand holds it.
+pub(crate) fn neutral_forced(object: ObjectAddress) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started || live.hand_holding(object).is_none() {
+        return false;
+    }
+    live.neutral = Some(object);
+    true
 }
 
 /// The spawn reset is about to replace the slots' weapons, and the inventory releases the carry
@@ -456,6 +469,7 @@ pub(crate) fn reset_began(died: bool, released: &[ObjectAddress]) {
     }
     live.reset.died |= died;
     live.reset.began = true;
+    live.neutral = None;
     live.fold(Event::ResetBegan);
     for &object in released {
         if live.place_of(object).is_some() {
@@ -550,6 +564,9 @@ struct Live {
     pending: Option<Pending>,
     /// What brought each hand's weapon there, by [`Hand::index`], for the readouts.
     origins: [Option<Expect>; 2],
+    /// The weapon the game's forced neutral state unequipped, which its hand keeps until the
+    /// reconcile wields or arms it again: per-hand runtime state, not a place.
+    neutral: Option<ObjectAddress>,
     /// When the last input tick ran, for the expectation's age.
     last: Option<Instant>,
     reset: ResetWatch,
@@ -589,6 +606,7 @@ impl Live {
             started: false,
             pending: None,
             origins: [None; 2],
+            neutral: None,
             last: None,
             reset: ResetWatch {
                 began: false,
@@ -635,6 +653,13 @@ impl Live {
     /// has it in none. Returns the wielded weapon's arrival.
     fn hand_moves(&mut self, tick: &Tick) -> Option<Arrival> {
         let wielded = tick.wielded.map(|h| h.object);
+        // The forced neutral state's weapon is kept until it is wielded or armed again, or no hand
+        // holds it.
+        self.neutral = self.neutral.filter(|&object| {
+            Some(object) != wielded
+                && !tick.armed.contains(&Some(object))
+                && self.hand_holding(object).is_some()
+        });
         for hand in Hand::BOTH {
             let Some(object) = self
                 .table
@@ -644,7 +669,10 @@ impl Live {
             else {
                 continue;
             };
-            if Some(object) == wielded || tick.armed.contains(&Some(object)) {
+            if Some(object) == wielded
+                || tick.armed.contains(&Some(object))
+                || Some(object) == self.neutral
+            {
                 continue;
             }
             let Some(whereabouts) = whereabouts(tick, object) else {

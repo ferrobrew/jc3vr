@@ -15,6 +15,7 @@ use crate::{
         frame::Hand,
         grab::{self, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
         hands::{self, tiers},
+        loadout::live,
         mode::Mode,
         vehicles::{
             arm_tick::arms_act,
@@ -127,8 +128,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             );
         }
     }
+    // A hand holding something of the table's takes no new control or handle: it keeps only the
+    // one it holds.
     let holding = Hand::BOTH.map(|hand| {
-        state.controls.holds[hand.index()].is_some() || state.mounted_grip.holds[hand.index()]
+        state.controls.holds[hand.index()].is_some()
+            || state.mounted_grip.holds[hand.index()]
+            || (config.vehicles.free_hands_only && live::held_kind(hand).is_some())
     });
     let controls = physical::candidates(&placement, &state.controls, offered, grips);
     targets.extend(
@@ -160,9 +165,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             Button::Horn => Shown::InReach,
             Button::Nitrous => Shown::Always,
         };
+        // A button is pressed by a free hand, or by the one already pressing it.
+        let pressers: Vec<Hand> = Hand::BOTH
+            .into_iter()
+            .filter(|&h| pressed_by == Some(h) || !holding[h.index()])
+            .collect();
+        let only = match pressers.as_slice() {
+            [] => continue,
+            [hand] => Some(*hand),
+            _ => None,
+        };
         let target = GripTarget::sphere(
             GrabVolume::CockpitButton(button),
-            None,
+            only,
             at.centre,
             at.radius,
             Mark::ring(MarkAt::Cockpit(at.centre), at.radius * 2.0)
@@ -206,17 +221,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             if state.handles.holds[hand.index()].is_some() {
                 grip::declare(hand, Grip::new(GripSource::ParachuteHandle));
                 targets.insert(0, target.held(hand));
-            } else {
+            } else if !holding[hand.index()] {
                 targets.push(target);
             }
         }
         // A hand that misses a free handle by a little still takes it when nothing else is in
         // reach.
         targets.extend(
-            parachute::reach_candidates(&handles_config, &state.handles, centres).map(|c| {
-                c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius).showing(Shown::Never))
-                    .ranked(Tier::Fallback)
-            }),
+            parachute::reach_candidates(&handles_config, &state.handles, centres)
+                .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
+                .map(|c| {
+                    c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius).showing(Shown::Never))
+                        .ranked(Tier::Fallback)
+                }),
         );
     }
     let grips = grab::tick::hand_grips(&active);
