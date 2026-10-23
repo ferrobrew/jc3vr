@@ -8,7 +8,7 @@ use super::fixtures::*;
 use crate::controllers::{
     frame::Hand,
     loadout::{
-        projection::{ProjectionMode, SlotContent, project},
+        projection::{SlotContent, project},
         socket::Socket,
         table::Place,
         take::{GameTake, TakeOffer, TakeRefusal, TakeRoute, TakeRules, route},
@@ -19,10 +19,12 @@ use crate::controllers::{
 const BOTH: TakeRules = TakeRules {
     either_hand: true,
     both_hands: true,
+    heavy: true,
 };
 const ONE: TakeRules = TakeRules {
     either_hand: true,
     both_hands: false,
+    heavy: true,
 };
 
 fn offer(hand: Option<Hand>, weapon: crate::controllers::loadout::WeaponType) -> TakeOffer {
@@ -65,7 +67,7 @@ fn a_pistol_stolen_with_the_left_hand_leaves_the_right_hand_s_rifle_alone() {
         Some(Hand::Right),
         "the rifle stays the wielded one"
     );
-    let projection = project(&t, ProjectionMode::Play);
+    let projection = project(&t);
     let in_slot = |slot| {
         projection
             .slots
@@ -137,14 +139,27 @@ fn the_game_takes_what_the_table_cannot_hold() {
             offer(Some(Hand::Left), a_rifle()),
             TakeRules {
                 either_hand: false,
-                both_hands: true
+                both_hands: true,
+                heavy: true,
             }
         ),
         Ok(TakeRoute::Game(GameTake::GameLayout))
     );
     assert_eq!(
-        route(Some(&s), offer(Some(Hand::Left), a_launcher()), BOTH),
+        route(
+            Some(&s),
+            offer(Some(Hand::Left), a_launcher()),
+            TakeRules {
+                heavy: false,
+                ..BOTH
+            }
+        ),
         Ok(TakeRoute::Game(GameTake::Heavy))
+    );
+    assert_eq!(
+        route(Some(&s), offer(Some(Hand::Left), a_launcher()), BOTH),
+        Ok(TakeRoute::Table { hand: Hand::Left }),
+        "a heavy weapon is the table's, and leaves the other hand as it is"
     );
     assert_eq!(
         route(

@@ -19,9 +19,7 @@ use crate::controllers::{
     loadout::{
         binding::{Awaiting, Binding, ObjectAddress},
         item::{ItemId, ItemKind, WeaponType},
-        projection::{
-            BodyPlace, ProjectionMode, SlotContent, StoreProjection, project, project_store,
-        },
+        projection::{BodyPlace, SlotContent, StoreProjection, project, project_store},
         table::{Docked, Item, Loadout, Place},
         transition::{Cause, Change, Transition, TransitionError, change, left},
     },
@@ -134,7 +132,7 @@ impl Loadout {
     /// now waits for its slot's new object. A second begin before the reset completes changes
     /// nothing.
     pub fn begin_reset(&mut self) -> Vec<Transition> {
-        let projection = project(self, ProjectionMode::Play);
+        let projection = project(self);
         let mut out = Vec::new();
         for fill in projection.slots {
             let SlotContent::Weapon { item, .. } = fill.content else {

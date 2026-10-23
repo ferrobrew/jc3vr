@@ -208,7 +208,7 @@ pub(crate) unsafe fn carry_loose(
     // SAFETY: the strong reference keeps the weapon alive.
     let weapon = unsafe { &mut *pointer };
     if unsafe { inventory_engine::slot_of(weapon) }
-        .is_none_or(|slot| !inventory_engine::TRACKED_SLOTS.contains(&slot))
+        .is_none_or(|slot| !inventory_engine::tracks(slot))
     {
         return Err(CarryRefusal::Unsupported);
     }

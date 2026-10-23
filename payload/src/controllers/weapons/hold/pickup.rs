@@ -199,6 +199,7 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
         TakeRules {
             either_hand: hold.either_hand,
             both_hands: hold.either_hand && hold.second_weapon,
+            heavy: inventory_engine::heavy_tracked(),
         },
     )
     .map_err(Refusal::Hands)

@@ -160,7 +160,7 @@ fn table_places() -> bool {
 
 /// The slots whose gives the table places: the ones it tracks.
 fn tracked(slot: WeaponSlot) -> bool {
-    engine::TRACKED_SLOTS.contains(&slot)
+    engine::tracks(slot)
 }
 
 /// A strong `boost::shared_ptr<CWeaponBase>` given up from `strong`, for a callee that releases it.

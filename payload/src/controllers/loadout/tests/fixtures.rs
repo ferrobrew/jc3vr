@@ -11,7 +11,7 @@ use crate::controllers::{
     loadout::{
         binding::{Binding, ObjectAddress},
         item::{ItemId, ItemKind, WeaponType},
-        projection::{ProjectionMode, SLOTS, SlotContent, project},
+        projection::{SLOTS, SlotContent, project},
         socket::{BodyLayout, Socket},
         table::{ItemView, Loadout, Place, primary},
         transition::{Change, Take, TakeSource, Transition},
@@ -168,20 +168,18 @@ pub(super) fn check_invariants(table: &Loadout) {
     }
     let hands = Hand::BOTH.map(|hand| table.held(hand).map(|item| item.kind));
     assert_eq!(table.primary(), primary(hands, table.body().dominant()));
-    for mode in [ProjectionMode::Play, ProjectionMode::Store] {
-        check_projection(table, mode, &items);
-    }
+    check_projection(table, &items);
 }
 
-fn check_projection(table: &Loadout, mode: ProjectionMode, items: &[ItemView]) {
-    let projection = project(table, mode);
+fn check_projection(table: &Loadout, items: &[ItemView]) {
+    let projection = project(table);
     for (fill, slot) in projection.slots.iter().zip(SLOTS) {
         assert_eq!(fill.slot, slot);
         match fill.content {
             SlotContent::Weapon { item, weapon } => {
                 assert!(
-                    !(mode == ProjectionMode::Play && slot == WeaponSlot::E_SLOT_HEAVY),
-                    "a heavy weapon is in the heavy slot in play"
+                    slot != WeaponSlot::E_SLOT_HEAVY,
+                    "a heavy weapon is in the heavy slot"
                 );
                 assert_eq!(weapon.slot(), slot);
                 let view = items.iter().find(|i| i.id == item);

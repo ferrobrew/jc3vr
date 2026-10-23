@@ -22,7 +22,7 @@ use crate::controllers::{
     loadout::{
         binding::Binding,
         item::{ItemId, ItemKind},
-        projection::{Projection, ProjectionMode, project},
+        projection::{Projection, project},
         reset::Caches,
         socket::{BodyLayout, Socket},
     },
@@ -104,7 +104,7 @@ impl Loadout {
             body: self.body,
             items: self.items().collect(),
             primary: self.primary(),
-            projection: project(self, ProjectionMode::Play),
+            projection: project(self),
         }
     }
 

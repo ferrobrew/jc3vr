@@ -178,10 +178,6 @@ pub(crate) unsafe fn store(store: &StoreProjection) {
     }
 }
 
-/// The slots the reconcile makes follow the table: the heavy slot and the consumables stay the
-/// game's.
-const SLOTS: [WeaponSlot; 3] = inventory_engine::TRACKED_SLOTS;
-
 static OUT: AtomicU64 = AtomicU64::new(0);
 static IN: AtomicU64 = AtomicU64::new(0);
 static EQUIPS: AtomicU64 = AtomicU64::new(0);
@@ -197,7 +193,8 @@ unsafe fn slots(
     projection: &Projection,
 ) -> bool {
     let mut changed = false;
-    for slot in SLOTS {
+    // The consumables' slots stay the game's, and the heavy slot while heavy weapons do.
+    for slot in inventory_engine::tracked_slots() {
         let Some(fill) = projection.slots.iter().find(|f| f.slot == slot) else {
             continue;
         };
@@ -268,6 +265,10 @@ unsafe fn take_out(
     socket: Socket,
 ) -> bool {
     let object = weapon as *mut WeaponBase as usize;
+    // A heavy weapon's unequip drops it, so a wielded one stays the game's.
+    if slot == WeaponSlot::E_SLOT_HEAVY && is_wielded(weapon) {
+        return false;
+    }
     if !unsafe { carry::keep(weapon, socket) } {
         return false;
     }
@@ -419,7 +420,9 @@ unsafe fn hands(owner: &mut Character, snapshot: &LoadoutSnapshot) {
         // SAFETY: the slot, or the carry set, keeps the weapon alive.
         let weapon = unsafe { &mut *(object as *mut WeaponBase) };
         let heavy = unsafe { inventory_engine::slot_of(weapon) } == Some(WeaponSlot::E_SLOT_HEAVY);
-        if heavy || weapon.m_State != WeaponState::E_WS_HOLSTERED {
+        if (heavy && !inventory_engine::heavy_tracked())
+            || weapon.m_State != WeaponState::E_WS_HOLSTERED
+        {
             continue;
         }
         match unsafe { armed::arm(owner, weapon, hand) } {

@@ -139,6 +139,7 @@ pub(crate) unsafe fn input_tick(
 ) -> Option<live::Arrival> {
     let on = inputs.settings.enabled && inputs.settings.project_slots;
     traversal::publish(on && inputs.settings.keep_through_traversal);
+    engine::set_heavy_tracked(inputs.settings.heavy_on_back);
     // Read before the inventory's lock: each is behind its own subsystem's lock.
     let others = held_others();
     if on {
@@ -319,9 +320,8 @@ pub(crate) unsafe fn held_of(object: ObjectKey) -> Option<live::Held> {
     let weapon = unsafe { (object as *const WeaponBase).as_ref() }?;
     Some(live::Held {
         object: engine::object_address(weapon)?,
-        weapon: unsafe { engine::weapon_type(weapon) }.filter(|w| {
-            engine::TRACKED_SLOTS.contains(&w.slot()) || w.slot() == WeaponSlot::E_SLOT_HEAVY
-        })?,
+        weapon: unsafe { engine::weapon_type(weapon) }
+            .filter(|w| engine::tracks(w.slot()) || w.slot() == WeaponSlot::E_SLOT_HEAVY)?,
     })
 }
 

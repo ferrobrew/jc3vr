@@ -9,7 +9,7 @@ use crate::controllers::{
     loadout::{
         binding::{Awaiting, Binding},
         item::{ItemId, ItemKind, WeaponType},
-        projection::{ProjectionMode, SlotContent, project},
+        projection::{SlotContent, project},
         reset::{CacheKind, ResetKind, SlotObject},
         socket::{BodyLayout, Socket},
         table::{Departure, ItemView, Loadout, Place},
@@ -267,7 +267,7 @@ fn a_returned_weapon_lies_at_the_feet_after_a_restore_with_the_back_full() {
 
 /// The item the play projection puts in `slot`.
 fn slot_item(table: &Loadout, slot: WeaponSlot) -> Option<ItemView> {
-    let projection = project(table, ProjectionMode::Play);
+    let projection = project(table);
     let fill = projection.slots.into_iter().find(|f| f.slot == slot)?;
     match fill.content {
         SlotContent::Weapon { item, .. } => view(table, item),

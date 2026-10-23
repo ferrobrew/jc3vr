@@ -43,6 +43,11 @@ pub struct InventoryConfig {
     /// and where the game's update skips the wielded weapon (a seat, the boost wingsuit) the gun in
     /// a hand is fired by the mod's. Off, the game's tasks run and the table follows them.
     pub keep_through_traversal: bool,
+    /// Keep the heavy weapons beyond the slots like the long guns: taken into a hand through the
+    /// table, armed there, docked on the back, and never wielded from the heavy slot, whose unequip
+    /// drops them. Off, a heavy weapon is the game's: its pickup wields it from its slot and puts
+    /// the other hand's weapon away, it docks nowhere, and it is dropped when put away.
+    pub heavy_on_back: bool,
 }
 
 impl InventoryConfig {
@@ -59,6 +64,7 @@ impl InventoryConfig {
             persist: true,
             project_slots: true,
             keep_through_traversal: true,
+            heavy_on_back: true,
         }
     }
 

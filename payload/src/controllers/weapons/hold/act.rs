@@ -35,7 +35,11 @@ use crate::controllers::{
             equip::{self, DockRefusal, Thrown},
             layout,
         },
-        inventory::{self, carry, engine::slot_of, reconcile, sockets},
+        inventory::{
+            self, carry,
+            engine::{heavy_tracked, slot_of},
+            reconcile, sockets,
+        },
     },
 };
 
@@ -170,9 +174,10 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
     }
 }
 
-/// Whether the weapon at `object` docks on a socket at all. A heavy weapon does not yet: the game
-/// drops a heavy weapon it unequips, so docked it would fall off the body, and it is let go of
-/// instead until that drop is patched.
+/// Whether the weapon at `object` docks on a socket at all. A heavy weapon does only while the
+/// inventory keeps heavy weapons beyond the slots
+/// ([`heavy_tracked`]): the game drops a heavy
+/// weapon it unequips from its slot, so docked from the slot it would fall off the body.
 ///
 /// # Safety
 ///
@@ -181,7 +186,7 @@ pub(crate) unsafe fn dockable(object: usize) -> bool {
     // SAFETY: forwarded from the caller.
     unsafe { (object as *const WeaponBase).as_ref() }
         .and_then(|weapon| unsafe { slot_of(weapon) })
-        .is_some_and(|slot| slot != WeaponSlot::E_SLOT_HEAVY)
+        .is_some_and(|slot| slot != WeaponSlot::E_SLOT_HEAVY || heavy_tracked())
 }
 
 /// Slide the gun of `weapon` in `hand` into the hand from `from`, its pose in the world before the

@@ -8,8 +8,8 @@
 //! weapons in the hands that took them, the detour does not run it: it keeps the weapon alive and
 //! queues it, and the next input tick takes it through the table into a free hand, the dominant
 //! first ([`crate::controllers::weapons::hold::pickup::take_by_table`]), or puts it back into the
-//! world with both hands full. A weapon of the heavy slot and the embedded power core are left to
-//! the game's pickup, and a weapon with infinite pickups, which the pickup puts into no slot, only
+//! world with both hands full. A weapon of the heavy slot while heavy weapons stay the game's, and
+//! the embedded power core, are left to the game's pickup, and a weapon with infinite pickups, which the pickup puts into no slot, only
 //! loses its stored rounds, as the pickup would do, without the unequip.
 //!
 //! The mod's own calls of the pickup ([`own_pickup`], for the takes the table leaves to the game)
@@ -24,11 +24,7 @@
 use std::cell::Cell;
 
 use detours_macro::detour;
-use jc3gi::{
-    character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::WeaponBase,
-    game::GameObject,
-};
+use jc3gi::{character::character::Character, equipment::weapon::WeaponBase, game::GameObject};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -45,7 +41,7 @@ use crate::{
                 refs::Strong,
             },
             inventory::{
-                engine::{slot_of, strong_to, weapon_of},
+                engine::{self as inventory_engine, slot_of, strong_to, weapon_of},
                 gives,
             },
         },
@@ -153,14 +149,7 @@ fn is_local_player(activator: *mut GameObject) -> bool {
 /// the weapons ride the hands that took them, and the weapon is one the table holds in a hand.
 fn table_takes(weapon: &WeaponBase) -> bool {
     let either_hand = Config::lock_query(|c| c.controllers.weapons.hold.either_hand);
-    let tracked = unsafe { slot_of(weapon) }.is_some_and(|slot| {
-        matches!(
-            slot,
-            WeaponSlot::E_SLOT_DUAL_WIELD
-                | WeaponSlot::E_SLOT_TWO_HANDED
-                | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
-        )
-    });
+    let tracked = unsafe { slot_of(weapon) }.is_some_and(inventory_engine::tracks);
     either_hand && tracked && live::running()
 }
 

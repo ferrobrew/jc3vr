@@ -137,6 +137,12 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
                  player, and a gun in a hand in a seat fires. Off, the game puts the wielded weapon \
                  away and the table follows.",
         );
+        ui.checkbox(&mut c.heavy_on_back, "Heavy weapons dock on the back")
+            .on_hover_text(
+                "A heavy weapon is taken into a hand through the table, armed there, and docked on \
+                 the back like a long gun, never wielded from the heavy slot. Off, it is the \
+                 game's: wielded from its slot and dropped when put away.",
+            );
         ui.checkbox(
             &mut c.pin_world,
             "Keep dropped weapons nearby from despawning",

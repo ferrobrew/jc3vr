@@ -26,7 +26,7 @@ The game's slots are made to match the table, never the other way round:
 
 - the primary hand's weapon is in its slot, selected, and wielded, for the consumers the mod feeds rather than patches;
 - before the game stores its save, and before a mission caches the player's weapons, the slots are rewritten to a sensible loadout of what the table holds, and the mod's sidecar records the rest ([Saves, resets, and loads](#saves-resets-and-loads)). The save stores only the slots and the ammunition reserves, so the projection covers the game's half. Not built yet: the challenges' cache;
-- a held heavy weapon is never projected into the heavy slot outside a store or a cache: a weapon in that slot replaces the body's idle and strafe with the minigun's, and the base layer drops it, holstered or not, on grapple fire, grenade throws, falls, the parachute's and the wingsuit's opening, vehicle entry, and swimming. Not built yet: the heavy slot stays the game's until those drops are patched (phase 5).
+- a heavy weapon is never projected into the heavy slot: a weapon in that slot replaces the body's idle and strafe with the minigun's, the base layer drops it, holstered or not, on grapple fire, grenade throws, falls, the parachute's and the wingsuit's opening, vehicle entry, and swimming, and its unequip drops it. Built ([Heavy weapons](#heavy-weapons)).
 
 The table takes a snapshot of its own at each mission checkpoint, since the mission manager caches the slots at every checkpoint and a death, failure, or checkpoint restart restores that cache: a slot of another weapon type is replaced (the old object despawned), a slot the cache had empty is emptied, and the occupied slots' ammunition reserves are zeroed first. Weapons outside the slots are kept by a restore, never removed or duplicated, but share reserves with the slots. Not built yet: the core takes the snapshot and restores it, and the seams that tell it of the checkpoint's cache and restore are phase 5's.
 
@@ -57,7 +57,7 @@ Swapping a weapon on the ground for another, or walking away from one, never bri
 
 ## Sockets
 
-The sockets are on Rico's skeleton ([body/rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)): the two hips, the two shoulders, a third place across the back, and the chest ([The places and their invariants](#the-places-and-their-invariants)). The pouches are beside them. Each socket takes its size class or smaller, mirrored for handedness. A held weapon shows before the hand opens whether the socket under it fits, by a red marker on each socket that does not, and a dock, by a grab or by opening the grip over the socket, confirms with the grab cue. Props have no socket and no backpack: letting go of one drops it. Grenades and C4 stay consumables drawn from their pouches. Not built yet: a heavy weapon docks nowhere ([The grabs against the table](#the-grabs-against-the-table)).
+The sockets are on Rico's skeleton ([body/rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)): the two hips, the two shoulders, a third place across the back, and the chest ([The places and their invariants](#the-places-and-their-invariants)). The pouches are beside them. Each socket takes its size class or smaller, mirrored for handedness. A held weapon shows before the hand opens whether the socket under it fits, by a red marker on each socket that does not, and a dock, by a grab or by opening the grip over the socket, confirms with the grab cue. Props have no socket and no backpack: letting go of one drops it. Grenades and C4 stay consumables drawn from their pouches. A heavy weapon docks on the back's three places like a long gun ([Heavy weapons](#heavy-weapons)).
 
 ## Ammunition and reload
 
@@ -90,7 +90,7 @@ The game has no per-hand hold layer: its hand poses are per weapon class, one cl
 | Track messages | Not needed: no reload or equip clip plays | For the mod's own moves |
 | The weapon acts (draw, holster, switch, reload) | Cut; the IK places the arms and the guns | For the mod's own moves |
 | Selection, cycling, the wheel, the automatic switch | Requests on the table, or cut | The automatic switch only |
-| The game's pickup (`WeaponBase::PickupItem`) | Detoured into the table's take | Yes, but for the heavy weapons and the embedded power core |
+| The game's pickup (`WeaponBase::PickupItem`) | Detoured into the table's take | Yes, but for the embedded power core |
 | The HUD's ammunition and reticle | The mod's pips and reticle; the game's counter shows the primary meanwhile | Yes |
 | The camera's recoil and hints | Already the mod's | Yes |
 | The hand subsystems (the weight, the recoil, the sights, the scope, the wall collision, the regions, the foregrip, the handover) | Keyed by the hand, each acting on that hand's gun (see "The gun in either hand") | Yes |
@@ -157,7 +157,7 @@ At each of the game's caches (a checkpoint, a mission taking the player's weapon
 
 ### The projection
 
-Each weapon slot holds one weapon of that slot from the body: the primary hand's, then the other hand's, then the one on the socket the game docks the slot on, then the other sockets' in order, the oldest first among equals. Only a weapon bound to a live object goes into a slot, and one in the world never does. The primary hand's weapon is selected. In play the heavy slot stays empty; for a store or a cache it holds a heavy weapon too, and the sidecar records every weapon on the body with its hand or socket and its slot, or none for one beyond the slots. The consumables' slots stay the game's.
+Each weapon slot holds one weapon of that slot from the body: the primary hand's, then the other hand's, then the one on the socket the game docks the slot on, then the other sockets' in order, the oldest first among equals. Only a weapon bound to a live object goes into a slot, and one in the world never does. The primary hand's weapon is selected. The heavy slot stays empty, in play and for a store or a cache alike ([Heavy weapons](#heavy-weapons)), and for a store or a cache the sidecar records every weapon on the body with its hand or socket and its slot, or none for one beyond the slots. The consumables' slots stay the game's.
 
 ### The events
 
@@ -169,7 +169,7 @@ What a hand does at a socket is decided against the table's snapshot (`loadout::
 
 ## The live table
 
-The live table is the one `Loadout` of the local player's items (`loadout::live`), behind one lock, and published with its snapshot at the end of each input tick. It is the only writer of where the items are: the grabs, the takes, the holding subsystems, and the game's own draws and holsters send it events, and the reconcile makes the game's slots, its wielded weapon, and the weapons armed in the hands follow it ([The slots as a projection](#the-slots-as-a-projection)). The table runs while the VR inventory is on, takes the weapons of the slots the inventory tracks (the pistols, the two-handed, and the special weapons) and a heavy weapon while a hand holds it, and has every socket.
+The live table is the one `Loadout` of the local player's items (`loadout::live`), behind one lock, and published with its snapshot at the end of each input tick. It is the only writer of where the items are: the grabs, the takes, the holding subsystems, and the game's own draws and holsters send it events, and the reconcile makes the game's slots, its wielded weapon, and the weapons armed in the hands follow it ([The slots as a projection](#the-slots-as-a-projection)). The table runs while the VR inventory is on, takes the weapons of the slots the inventory tracks (the pistols, the two-handed, the special, and the heavy weapons), and has every socket.
 
 The table says which hand holds what, and the placement follows it ([physical-weapons.md, "Either hand"](physical-weapons.md#either-hand)). It publishes each hand's weapon as one object address per hand, which the placement detours compare against before any lock, what each hand holds of any kind, and the place of every item on the body, each behind a leaf lock of its own (`loadout::live::published`), after every fold that can move an item: at the end of the input tick, and at once for the moves the hands make between ticks. Every gun in a hand rides its hand's attach bones, and the carry set places each weapon beyond the slots where the table has it: on its socket's bone and offset, or in a hand. A weapon the game wields lands in a hand of the table's (`loadout::live::expect`): the hand a take left expecting it (a pickup, a take from a character or a rack, for up to three seconds), or for the game's own draw the dominant hand when it is empty, otherwise the other. The expectation is per-hand runtime state beside the table.
 
@@ -191,7 +191,7 @@ Decisions taken while wiring it:
 - The hand moves are sent from the call that makes them where the call knows the move, and otherwise from the input tick's view of the hands. The table leads the hands: a weapon the game wields lands in a hand of the table's rather than the table following a hand chosen elsewhere, so the placement has one source. A move the table already shows sends nothing, and a hand the table disagrees about is left as the table has it.
 - A weapon the game wields lands only in a hand the table has empty; with both hands full it is put away again.
 - The hold needs the table: with the VR inventory off, the game's own layout stands, as with `weapons.hold.either_hand` off.
-- A heavy weapon is the table's while a hand holds it, so its hand is the table's like any other's. The heavy slot stays the game's: the game drops a heavy weapon it holsters, which the table sees as a let-go.
+- A heavy weapon is the table's like any other, kept beyond the slots ([Heavy weapons](#heavy-weapons)).
 - The game's drop is a core event of its own: the game drops weapons the player has without any hand letting go (the carry set switched off, the game's own drops), and its word on ownership is final, so the weapon lies in the world, where the pins keep it.
 - A removal of every weapon takes the weapons on the body and leaves those lying in the world: a mission takes what the player holds, not what lies near them.
 - A weapon the game gives outside a reset and a mission's hold is placed by the table at the give's seam ([The takes](#the-takes)). One the reset owns, or one given while a mission holds the player's weapons, is unknown to the table until a hand draws it or the reset's completion or the give-back binds it, and is taken then as a give; one the game then drops is not in the table's world.
@@ -243,14 +243,14 @@ The game's slots are made to match the table each input tick (`weapons::inventor
 - The primary hand's weapon is wielded: moving the primary unequips the old weapon and equips the new one, with no act, after aborting a draw, holster, or switch clip still playing ([`EventIdSymbolTable::ACT_ABORT_WEAPON_PARTIAL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::symbol_table::EventIdSymbolTable)), and only while the inventory's permissions allow a draw or a holster. With no weapon in the hands, a weapon of the table's the game wields is unequipped. A weapon the game wields that the table does not have on the body (a grenade, the planted explosive, a mounted gun) is left to the game.
 - Every other weapon a hand holds is armed there, and a hand's armed weapon that left it, or that the game now wields, is disarmed. When the primary moves to a hand whose weapon is armed, that weapon is disarmed and wielded in the same hand.
 - A slot's weapon on a socket other than the one the game docks its slot on is placed there by the mod: its holstered attach-bone entries name the socket's bone at the hold's write points, and the socket's offset moves it after the inventory's placement.
-- Before the game stores its save, and before a mission caches the slots, the tracked slots are given the store projection's content. In play they already hold it, since the two projections differ only in the heavy slot.
+- Before the game stores its save, and before a mission caches the slots, the tracked slots are given the store projection's content. In play they already hold it, since the two projections are the same; this catches a move the hands made since the last pass.
 - Before the game's own pickup puts a weapon into a taken slot, the slot's weapon leaves the slot and stays on its socket.
 
 The projection is behind `weapons.inventory.project_slots` (on), in the debug UI's Controllers tab. Off, the table is put back into the game's slots as a store would write them, the hands' armed weapons are disarmed, the table stops, and the game's own one-weapon model runs: the carried weapons left over fall where they are, as with the inventory off, and the hold keeps the game's layout. This is the plan's scheme-switch behaviour.
 
 Decisions taken here:
 
-- The heavy slot stays the game's: the reconcile leaves it alone, so a heavy weapon is wielded from its slot while a hand holds it and dropped by the game when it is put away. Emptying it in play needs the base layer's heavy-weapon drops patched and a removal of a wielded heavy weapon read in the IDB, which phase 5 does.
+- The heavy slot is emptied of a heavy weapon the table has on the body, as the other tracked slots are of a weapon the projection does not put there ([Heavy weapons](#heavy-weapons)).
 - The store and cache seams apply the store projection only to the tracked slots, for the same reason.
 - A weapon the game holsters or drops on its own (its holster act, a vehicle's entry) leaves its hand in the table at the next input tick, docked or let go of; undoing those is phase 5's. A weapon armed in a hand, or one the carry set keeps off the slots, is never taken for such a departure.
 - A weapon the game wields while both hands of the table are full is unequipped again, since it can land in no hand.
@@ -272,7 +272,7 @@ The switches: `weapons.holsters.enabled` off places no socket volumes, so nothin
 Decisions taken here:
 
 - The chest socket takes a submachine gun, as every socket takes its size class; there is no select of the planted explosive at the chest. The C4 pouch gives a charge in the hand.
-- A heavy weapon docks nowhere yet: the game drops a heavy weapon it unequips, so docked it would fall off the body. Every socket is marked as refusing it and opening the grip lets it go, until phase 5 patches the drop.
+- A heavy weapon docks on the back like a long gun, since it is never in its slot and so never unequipped ([Heavy weapons](#heavy-weapons)).
 - The game's pistol pair, which stays one object when the pistols are not made separate, is drawn and docked whole; it cannot lie in the world, so opening the grip on it away from a socket puts it on the first free socket the body prefers for it, and with none free it stays in the hand.
 - A grab of a socket by the hand reaching for a pouch beside it draws what is there, whatever the other hand holds: the hands are equal, and the nearest grab point decides between the socket and the pouch.
 - A draw refused by the animation ([`Inventory::GetAnimationAllowsDrawing`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-GetAnimationAllowsDrawing)) and a dock of the wielded weapon refused by it ([`Inventory::GetAnimationAllowsHolstering`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-GetAnimationAllowsHolstering)) do nothing, rather than leave the table and the game disagreeing until the next tick.
@@ -330,7 +330,7 @@ A give the reset owns is left to the game: the records are forgotten at the rese
 
 The ammunition auto-pickup credits a weapon lying in the world's stored rounds while the player's inventory holds a weapon of its ammunition type ([engine: item-pickup.md](../../engine/gameplay/item-pickup.md#picking-up-a-weapon)), and its check reads the slots alone. The check's detour (`weapons::inventory::ammo`, on [`Inventory::HasWeaponWithAmmoType`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-HasWeaponWithAmmoType)) also answers yes for the local player's inventory when a weapon the table has in a hand or on a socket is of that type, so a rifle carried beyond the slots collects its rounds as the slot's does. Its one caller credits the rounds itself, so nothing else changes. The types are published as a mask at the end of each input tick, after the reconcile, and read without a lock, since the credit runs wherever the pickup interaction activates; they are cleared when the table stops, and the check is the game's alone then.
 
-The game's own pickup takes the weapon, equipping it and putting the wielded weapon away, only where the table cannot hold it in a hand of its own: while the table does not run, with `weapons.hold.either_hand` off, for a heavy weapon, for the embedded power core, and with `weapons.hold.second_weapon` off while the other hand holds a weapon.
+The game's own pickup takes the weapon, equipping it and putting the wielded weapon away, only where the table cannot hold it in a hand of its own: while the table does not run, with `weapons.hold.either_hand` off, for a heavy weapon with `weapons.inventory.heavy_on_back` off, for the embedded power core, and with `weapons.hold.second_weapon` off while the other hand holds a weapon.
 
 The switches and what each falls back to:
 
@@ -346,7 +346,7 @@ Decisions taken here:
 - The game's pickup line is not played for a take through the table, and a swimming character's pickup still drops the slot's weapon before it picks up, which the table sees as the game's drop; the swimming path is the traversal pass's (phase 5).
 - The source of a give is not told apart beyond a rack's copy: the give's callers (the missions, the challenges, the graph script, the events, the rewards) all reach it with the same arguments, and the table's rule is the same for each.
 - A give is handed over on the next input tick rather than inside the arrival, which runs wherever the spawn system calls back: the slot's occupant and the reconcile are the main thread's. The weapon lives on the queue's reference for that tick.
-- A heavy weapon is still taken through the game's pickup, since the heavy slot stays the game's and the reconcile never arms one in a hand; it takes the other hand's weapon away until phase 5 patches the heavy weapon's drops.
+- A heavy weapon is taken through the table like any other, so its take leaves the other hand's weapon where it is ([Heavy weapons](#heavy-weapons)).
 
 ## Traversal
 
@@ -367,6 +367,23 @@ Decisions taken here:
 - In a seat the hands' guns are armed rather than the mod ticking the wielded weapon a second way: arming is what the per-hand tick already does for the other hand, and the fan-out's choice of what to update stays the game's.
 - The wingsuit's arms do not steer with a hand that holds something, rather than steering by the free arm alone: the bank is the difference between the two arms, which one arm cannot give. The parachute's handle is the free hand's alone, the other side's handle staying neutral.
 
+## Heavy weapons
+
+A heavy weapon is kept beyond the slots like every other weapon the player has, and is never wielded from the heavy slot (`weapons.inventory.heavy_on_back`, on). Its unequip ([`WeaponBase::OnUnequip`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnUnequip)) drops whatever the heavy slot holds rather than holstering it, and the base layer's drop task, the forced neutral state, and the holster input's heavy drop all drop it through the slot ([engine: weapon-equip-and-drop.md](../../engine/gameplay/weapon-equip-and-drop.md#dropping)). With the slot empty none of them reaches it, and the drop task is refused besides ([Traversal](#traversal)).
+
+- A take of a heavy weapon goes through the table ([The takes](#the-takes)): the carry set keeps it, the hand holds it, and the other hand keeps what it holds. The game's use-item pickup of one is routed the same way, and a heavy give goes by the give rule.
+- In a hand it is armed and fired by the per-hand tick, as the second weapon is; the primary's heavy weapon is not wielded, since no slot holds it, so the game's wielded-weapon consumers follow the other hand's weapon when it has one, and none otherwise.
+- It docks on the right shoulder, the left shoulder, or the outer back, which take heavy weapons, and is drawn from there.
+- The reconcile treats the heavy slot as a tracked slot whose projection is always empty: a heavy weapon of the table's found in it (the game's own pickup while the table was off, a restore) is taken out into the carry set. A wielded one is left to the game, since its unequip would drop it.
+- The store and the caches leave it out of the slot too: the save stores the heavy slot's type as none ([engine: weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md)), and the graph script's give-back skips the heavy slot, so a heavy weapon put there would be lost; beyond the slots, the sidecar and the reset's record carry it.
+
+Off, a heavy weapon is the game's as before: its pickup wields it from its slot and puts the other hand's weapon away, every socket refuses it, and it is dropped when put away. The heavy weapons do not restrict anything yet: the player can grapple, throw, glide, and swim while holding one.
+
+Decisions taken here:
+
+- The heavy slot stays empty at the store and the caches as well as in play, against the plan's first intent of projecting it there: the game discards it at both seams, so a heavy weapon is recorded where it survives, beyond the slots.
+- A spent single-use launcher, which the game drops through the heavy slot, stays where the table has it until the player lets go, since the slot is empty; that the launcher's drop goes through the slot alone is read from the symbol dump and unverified.
+
 ## One socket notion
 
 The loadout's sockets are the mod's only notion of a place on the body. The sockets' grab volumes (`GrabVolume::Socket`), the carry set, and the sidecar all name a `loadout::Socket`. The adapters in `inventory::sockets` give what the game's side needs of one: the bone and the offset a weapon the mod places is placed by, and the name the sidecar keeps it under. The sidecar's names are `back_first` for the right shoulder, `back_second` for the left, `back_outer`, `hip_left`, `hip_right`, and `chest`, and the settings keep their offset fields' names.
@@ -375,7 +392,7 @@ The game docks a holstered weapon by its slot, never mirrored for handedness ([`
 
 ## The weapons in the world
 
-The inventory (`weapons::inventory`; the code is `payload/src/controllers/weapons/inventory/`) is the game's side of the table's weapons, with `weapons.inventory.enabled` (on; it and the inventory's other switches are in the debug UI's Controllers tab, under "VR inventory"). It covers the pistols, the two-handed weapons, and the special weapons, and a heavy weapon while a hand holds it; the grenade, the planted explosive, the beacon, and the sun gun stay the game's alone. The engine side is in [weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md).
+The inventory (`weapons::inventory`; the code is `payload/src/controllers/weapons/inventory/`) is the game's side of the table's weapons, with `weapons.inventory.enabled` (on; it and the inventory's other switches are in the debug UI's Controllers tab, under "VR inventory"). It covers the pistols, the two-handed weapons, the special weapons, and the heavy weapons; the grenade, the planted explosive, the beacon, and the sun gun stay the game's alone. The engine side is in [weapon-ownership-and-despawn.md](../../engine/gameplay/weapon-ownership-and-despawn.md).
 
 The inventory (`inventory::world`) keeps a weak reference to each weapon it has seen in a slot, the carry set, or a hand ([`WeaponBase::m_WeakThis`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_WeakThis)), which tells whether it still lives without keeping it alive, and each input tick asks what became of each of the table's weapons that is in no slot, the carry set, or a hand: a weapon whose holder ([`WeaponBase::m_Holder`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_Holder)) is another character is that character's and leaves the table; one whose object is gone leaves it; any other is lying in the world, with its distance from the player.
 

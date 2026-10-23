@@ -10,12 +10,12 @@
 //!   the other sockets' in order, the oldest first among equals. Only a weapon bound to a live
 //!   object goes into a slot, and a weapon lying in the world never does;
 //! - the primary hand's weapon is selected;
-//! - in play the heavy slot stays empty, since a weapon in it replaces the body's idle and strafe
-//!   with the minigun's and is dropped by the base layer on a grapple, a throw, a fall, the
-//!   parachute's and the wingsuit's opening, a vehicle's entry, and swimming;
-//! - for a store or a cache the heavy slot holds a heavy weapon too, and the sidecar records every
-//!   weapon on the body with its hand or socket and its slot, if any, since the save keeps only
-//!   the slots;
+//! - the heavy slot stays empty, in play and for a store or a cache alike: a weapon in it replaces
+//!   the body's idle and strafe with the minigun's, its unequip drops it, the save stores its type
+//!   as none, and the graph script's restore skips it, so a heavy weapon is always beyond the
+//!   slots, kept by the carry set and recorded by the sidecar;
+//! - for a store or a cache the sidecar records every weapon on the body with its hand or socket
+//!   and its slot, if any, since the save keeps only the slots;
 //! - the grenade, the planted explosive, the beacon, and the other consumables' slots stay the
 //!   game's.
 
@@ -30,13 +30,6 @@ use crate::controllers::{
         table::{Loadout, Place},
     },
 };
-
-/// Which projection: the one held while playing, or the one written for a store or a cache.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ProjectionMode {
-    Play,
-    Store,
-}
 
 /// What one of the game's slots should hold.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -111,17 +104,16 @@ pub const SLOTS: [WeaponSlot; 8] = [
     WeaponSlot::E_SLOT_BEACON,
 ];
 
-/// What the game's slots should hold for `mode`.
-pub fn project(loadout: &Loadout, mode: ProjectionMode) -> Projection {
+/// What the game's slots should hold, in play and for a store or a cache alike.
+pub fn project(loadout: &Loadout) -> Projection {
     let candidates = candidates(loadout);
     let slots = SLOTS.map(|slot| SlotFill {
         slot,
         content: match slot {
-            WeaponSlot::E_SLOT_HEAVY if mode == ProjectionMode::Play => SlotContent::Empty,
+            WeaponSlot::E_SLOT_HEAVY => SlotContent::Empty,
             WeaponSlot::E_SLOT_DUAL_WIELD
             | WeaponSlot::E_SLOT_TWO_HANDED
-            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
-            | WeaponSlot::E_SLOT_HEAVY => candidates
+            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL => candidates
                 .iter()
                 .filter(|c| c.weapon.slot() == slot)
                 .min_by_key(|c| (c.rank, c.item))
@@ -146,7 +138,7 @@ pub fn project(loadout: &Loadout, mode: ProjectionMode) -> Projection {
 /// What a store or a cache writes: the store projection, and every weapon on the body for the
 /// sidecar.
 pub fn project_store(loadout: &Loadout) -> StoreProjection {
-    let projection = project(loadout, ProjectionMode::Store);
+    let projection = project(loadout);
     let sidecar = loadout
         .items()
         .filter_map(|item| {

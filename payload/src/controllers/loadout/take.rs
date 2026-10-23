@@ -5,8 +5,8 @@
 //! hand, or for the game's use-item pickup, which no hand grabs, into a free hand, the dominant
 //! first. The game's pickup, whose equip puts the wielded weapon away and so takes the other hand's
 //! gun, runs only where the table cannot hold the weapon in a hand of its own: while the table does
-//! not run or the weapons keep the game's own layout, for a weapon of the heavy slot (which stays
-//! the game's), for the embedded power core (whose pickup spawns and equips another weapon), and
+//! not run or the weapons keep the game's own layout, for a weapon of the heavy slot while heavy
+//! weapons stay the game's, for the embedded power core (whose pickup spawns and equips another weapon), and
 //! with a weapon in each hand off while the other hand holds one.
 
 use std::fmt;
@@ -35,6 +35,9 @@ pub struct TakeRules {
     pub either_hand: bool,
     /// Whether a hand may take a weapon while the other hand holds one.
     pub both_hands: bool,
+    /// Whether the table takes a weapon of the heavy slot, which then docks on the back like a long
+    /// gun, rather than the game's pickup wielding it from its slot.
+    pub heavy: bool,
 }
 
 /// How a take is carried out.
@@ -55,7 +58,7 @@ pub enum GameTake {
     TableStopped,
     /// The weapons keep the game's own layout rather than the hand that took them.
     GameLayout,
-    /// A weapon of the heavy slot, which stays the game's.
+    /// A weapon of the heavy slot, while heavy weapons stay the game's.
     Heavy,
     /// A pickup that gives another weapon in its place.
     Swaps,
@@ -68,7 +71,7 @@ impl GameTake {
         match self {
             GameTake::TableStopped => "the table does not run",
             GameTake::GameLayout => "the weapons keep the game's layout",
-            GameTake::Heavy => "a heavy weapon stays the game's",
+            GameTake::Heavy => "heavy weapons stay the game's",
             GameTake::Swaps => "its pickup gives another weapon",
             GameTake::OneWeapon => "a weapon in each hand is off",
         }
@@ -109,7 +112,7 @@ pub fn route(
     if !rules.either_hand {
         return Ok(TakeRoute::Game(GameTake::GameLayout));
     }
-    if offer.weapon.slot() == WeaponSlot::E_SLOT_HEAVY {
+    if offer.weapon.slot() == WeaponSlot::E_SLOT_HEAVY && !rules.heavy {
         return Ok(TakeRoute::Game(GameTake::Heavy));
     }
     if offer.swaps {
