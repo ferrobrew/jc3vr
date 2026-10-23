@@ -46,8 +46,12 @@ pub(super) fn down_the_sights() -> Line {
         return Line::waiting("NO LONG GUN MEASURED");
     }
     Line::ok(format_smolstr!(
-        "{}, SIGHTED {}, SHOULDERED {}, WELDED {}{}",
+        "{}{}, SIGHTED {}, SHOULDERED {}, WELDED {}{}",
         if s.scoped { "SCOPED" } else { "IRON SIGHTS" },
+        s.raised.map_or(String::new(), |h| format!(
+            " IN THE {} HAND",
+            h.label().to_uppercase()
+        )),
         s.sighted,
         s.shouldered,
         s.welded,

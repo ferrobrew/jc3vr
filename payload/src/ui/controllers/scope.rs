@@ -67,13 +67,14 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         c.casts
     ));
     ui.label(format!(
-        "Down the sights: {} · stock {:.0}% · sights {:.0}% · weld {:.0}% · eye off the line {} · \
-         sighted {} · shouldered {} · welded {}",
+        "Down the sights: {} · raised {} · stock {:.0}% · sights {:.0}% · weld {:.0}% · eye off \
+         the line {} · sighted {} · shouldered {} · welded {}",
         match (ads.weapon, ads.scoped) {
             (false, _) => "no long gun measured",
             (true, false) => "long gun",
             (true, true) => "scoped long gun",
         },
+        ads.raised.map_or("none", |h| h.label()),
         ads.shoulder * 100.0,
         ads.eye * 100.0,
         ads.weld * 100.0,

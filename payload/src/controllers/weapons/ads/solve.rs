@@ -113,15 +113,20 @@ pub struct AdsSolution {
     pub eye_offset_m: Option<f32>,
 }
 
-/// Solve the pose.
-pub fn solve(inputs: &AdsInputs, config: &AdsConfig) -> AdsSolution {
-    let mut solution = AdsSolution {
+impl AdsSolution {
+    /// A pose that takes no hold: the gun where the hands hold it.
+    pub const NONE: AdsSolution = AdsSolution {
         moved: RigidMove::IDENTITY,
         shoulder: 0.0,
         eye: 0.0,
         weld: 0.0,
         eye_offset_m: None,
     };
+}
+
+/// Solve the pose.
+pub fn solve(inputs: &AdsInputs, config: &AdsConfig) -> AdsSolution {
+    let mut solution = AdsSolution::NONE;
     if config.shoulder
         && let Some(pocket) = inputs.pocket
         && let Some((step, weight)) = shoulder_move(inputs, pocket, config)

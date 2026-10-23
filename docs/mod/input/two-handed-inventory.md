@@ -14,7 +14,7 @@ So the mod owns weapon handling for the local player. The game keeps three jobs:
 
 ### The loadout table
 
-One table holds every item the player has: each is in exactly one place, the left hand, the right hand, a body socket, or the world (kept near the player). Items are weapons, the props a hand picks up, and a grenade or a C4 charge while a hand holds one. Both hands are the same type: a gun in either hand has its own hand's trigger, aim, recoil, reload, and pips, and a heavy weapon held in one hand is simply very heavy and lifts only so far. Each hand's gun is weighed as its own ([The gun in either hand](#the-gun-in-either-hand)). Not built yet: the foregrip, the sights, the scope, the regions, and the handover act on the wielded weapon alone, so a gun armed beside it has none of them.
+One table holds every item the player has: each is in exactly one place, the left hand, the right hand, a body socket, or the world (kept near the player). Items are weapons, the props a hand picks up, and a grenade or a C4 charge while a hand holds one. Both hands are the same type: a gun in either hand has its own hand's trigger, aim, recoil, reload, and pips, and a heavy weapon held in one hand is simply very heavy and lifts only so far. Each hand's gun is weighed as its own ([The gun in either hand](#the-gun-in-either-hand)). Not built yet: the foregrip, the regions, and the handover act on the wielded weapon alone, so a gun armed beside it has none of them.
 
 The primary hand is the dominant hand when it holds a weapon, otherwise the other hand. The primary follows from the hands and is never set on its own.
 
@@ -223,9 +223,12 @@ The subsystems that act on a gun in a hand key it by the hand, not by the game's
 - The weight (`weapons::heft`): each hand's gun has its own weight, spring, and freeze, so a rifle armed in the off-hand beside a pistol sags, trails, and sways as it would alone, and kicks and spreads as a rifle held in one hand. A round carried to the reload freezes the gun in the other hand, and a hand closing on a foregrip freezes the gun it closes on.
 - The recoil (`weapons::recoil`): each hand has its own spring, kicked by the shots of the gun in that hand, and the one-handed kick scale is that hand's gun's weight.
 - The wall collision (`weapons::collide`): each hand's long gun has its own probe, cast each aim update, its own wall, and its own push, so two long guns are stopped at a wall each by what it points into.
+- The sights (`weapons::ads`): each hand's long gun is solved for the eye, and the one raised to it is lined up (`ads::raised`): the gun whose sights or scope's weld take the most hold of the eye, then whose stock takes the most hold of the shoulder, then whose sight line passes nearest the eye. A gun whose pose takes no hold is not raised. The aiming eye is the raised gun's hand's side by default.
+- The scope (`weapons::scope`): each hand's scoped gun is identified, its sight line anchored to its own wrist, and its lens placed, and the lens drawn is the scope raised to the eye (`scope::chosen`): a scope an eye is at, then one placed with a sight line, then the eyepiece nearest an eye.
 
 Decisions taken here:
 
+- The sights and the scope are single (one aiming eye, one lens), so they act on one gun at a time, picked each frame by how far it is raised to the eye rather than by which gun the game wields: the hands are equal, and the gun at the eye is the one the player is looking down. The pick keeps no state of its own: each gun's hold fades in as it comes to the eye, so the pick passes from one gun to the other as the second rises past the first.
 - The per-hand state is keyed by the hand rather than by the item. A gun's weight and its recoil are of the hand holding it: a gun handed over or drawn again starts at rest in its new hand, and a hand that takes another gun drops the last one's spring.
 
 ## The slots as a projection

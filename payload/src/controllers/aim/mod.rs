@@ -140,6 +140,9 @@ pub struct AimStatus {
     pub grapple: Option<GrappleAim>,
     /// The wielded weapon the guns' aim points were published for.
     pub weapon: Option<HeldWeapon>,
+    /// The weapon armed in each hand beside the wielded one, aimed along its own sight line, by
+    /// [`Hand::index`].
+    pub armed: [Option<HeldWeapon>; 2],
     /// The last raycast failure, if the last update had one.
     pub raycast_error: Option<RaycastError>,
     /// Each gun hand's aim-assist correction on the last update, indexed by [`Hand::index`].
@@ -322,6 +325,7 @@ unsafe fn finish(
     };
     // A gun armed in a hand beside the wielded weapon aims along its own sight line too.
     let mut armed_hands = [false; 2];
+    let mut armed_weapons = [None; 2];
     if cfg.gun {
         for hand in Hand::BOTH {
             if gun_rays[hand.index()].is_some() {
@@ -331,9 +335,10 @@ unsafe fn finish(
             let Some(weapon) = (unsafe { armed::weapon_of(owner, hand) }) else {
                 continue;
             };
-            let (_, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
+            let (armed, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
             gun_rays[hand.index()] = rays[hand.index()];
             armed_hands[hand.index()] = true;
+            armed_weapons[hand.index()] = Some(armed);
         }
     }
 
@@ -429,6 +434,7 @@ unsafe fn finish(
         hands,
         grapple,
         weapon: held,
+        armed: armed_weapons,
         raycast_error,
         assist,
         assist_corrections: status.assist_corrections + corrections,
@@ -467,6 +473,7 @@ static STATUS: Mutex<AimStatus> = Mutex::new(AimStatus {
     hands: [None; 2],
     grapple: None,
     weapon: None,
+    armed: [None; 2],
     raycast_error: None,
     assist: [None; 2],
     assist_corrections: 0,

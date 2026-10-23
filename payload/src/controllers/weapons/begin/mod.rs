@@ -130,7 +130,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
     };
     let (weapon, beside) = (ticked.weapon, ticked.beside);
-    scope::input_tick(weapon.map(|w| w.address));
+    scope::input_tick(ticked.guns.map(|g| g.map(|w| w.address)));
     // SAFETY: the weapon was read this tick, on the main thread outside the world update.
     if let Some(w) = weapon
         && let Some(base) = unsafe { (w.address as *const WeaponBase).as_ref() }
@@ -186,21 +186,20 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     });
     // A gun carried by a part other than its grip is not aimed.
     let carried = weapon.and_then(|w| regions::carrying(w.address));
-    ads::observe(
-        weapon
-            .zip(geometry)
-            .filter(|_| carried.is_none())
-            .and_then(|(w, g)| {
-                Some(ads::AdsWeapon {
-                    holder: w.holder?,
-                    sight: ads::solve::WristSight {
-                        origin: g.sight,
-                        direction: g.barrel,
-                    },
-                    scoped: scope::is_scoped(w.address),
-                })
-            }),
-    );
+    ads::observe(Hand::BOTH.map(|hand| {
+        let w = guns[hand.index()]?;
+        let g = geometries[hand.index()]?;
+        regions::carrying(w.address)
+            .is_none()
+            .then(|| ads::AdsWeapon {
+                holder: hand,
+                sight: ads::solve::WristSight {
+                    origin: g.sight,
+                    direction: g.barrel,
+                },
+                scoped: scope::is_scoped(w.address),
+            })
+    }));
     collide::observe(Hand::BOTH.map(|hand| {
         geometries[hand.index()].map(|g| collide::CollideWeapon {
             holder: hand,

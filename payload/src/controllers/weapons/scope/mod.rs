@@ -26,8 +26,11 @@
 //!    scoped weapon is held;
 //! 3. [`draw`], for each eye after the overlay: the lens, on the sighting eye only.
 //!
-//! The scoped weapon is identified on the input tick ([`input_tick`]) by its class, the sniper
-//! class, which is what the game gives its scoped rifles.
+//! The scoped weapons are identified on the input tick ([`input_tick`]) by their class, the sniper
+//! class, which is what the game gives its scoped rifles: the gun in either hand, the wielded weapon
+//! or one armed beside it. There is one lens, so with a scoped gun in each hand the lens is the one
+//! raised to the eye ([`chosen`]): a scope an eye is at, then the one whose eyepiece is nearest an
+//! eye.
 
 pub mod lens;
 mod renderer;
@@ -47,8 +50,8 @@ use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 use crate::{
     config::Config,
     controllers::{
-        aim::{self, HandSource, sights::SightSource},
-        frame::Hand,
+        aim::{self, AimStatus, HandSource, gun::HeldWeapon, sights::SightSource},
+        frame::{Hand, Pose},
         hands::late,
         overlay::view::{self, EyeView},
         scheme,
@@ -76,7 +79,7 @@ pub enum LensIdle {
     Disabled,
     /// The gamepad scheme is in effect, outside gameplay, or in cinematic mode.
     Inactive,
-    /// The wielded weapon is not a scoped one.
+    /// No gun in the hands is a scoped one.
     NoScope,
     /// The scoped weapon's sight line is not aimed by a tracked hand.
     NoSightLine,
@@ -132,23 +135,27 @@ pub fn status() -> ScopeStatus {
     STATUS.lock().clone()
 }
 
-/// Identify the wielded weapon, at `weapon`, as scoped or not. Called on the input tick, on the main
-/// thread outside the world update, while the bindings inject.
-pub(crate) fn input_tick(weapon: Option<usize>) {
-    // SAFETY: the address is the local player's wielded weapon, read on the main thread outside
+/// Identify the gun in each hand, by [`Hand::index`], as scoped or not. Called on the input tick,
+/// on the main thread outside the world update, while the bindings inject.
+pub(crate) fn input_tick(guns: [Option<usize>; 2]) {
+    // SAFETY: each address is a local player's weapon in a hand, read on the main thread outside
     // the world update; the class is read as its raw value.
-    let scoped = weapon.filter(|&address| {
-        unsafe { (address as *const WeaponBase).as_ref() }.is_some_and(|w| {
-            let class = unsafe { (&raw const w.m_Class).cast::<i32>().read() };
-            class == WeaponClass::E_WEAPON_CLASS_SNIPER as i32
+    let scoped = guns.map(|gun| {
+        gun.filter(|&address| {
+            unsafe { (address as *const WeaponBase).as_ref() }.is_some_and(|w| {
+                let class = unsafe { (&raw const w.m_Class).cast::<i32>().read() };
+                class == WeaponClass::E_WEAPON_CLASS_SNIPER as i32
+            })
         })
     });
-    *SCOPED.lock() = scoped.map(|address| (address, Instant::now()));
+    *SCOPED.lock() = Some((scoped, Instant::now()));
 }
 
-/// Whether the weapon at `address` is the scoped weapon the last input tick identified.
+/// Whether the weapon at `address` is a scoped weapon in a hand, as the last input tick identified.
 pub(crate) fn is_scoped(address: usize) -> bool {
-    SCOPED.lock().is_some_and(|(a, _)| a == address)
+    SCOPED
+        .lock()
+        .is_some_and(|(scoped, _)| scoped.contains(&Some(address)))
 }
 
 /// Plan the frame's lens. Called once per render dispatch at the end of `RenderEngine::PostDraw`,
@@ -164,7 +171,7 @@ pub(crate) fn tick(eye: usize) {
         )
     });
     let mut state = STATE.lock();
-    let plan = plan(enabled, &config, &mut state.anchor);
+    let plan = plan(enabled, &config, &mut state.anchors);
     let mut status = STATUS.lock();
     status.scope = plan.scope;
     status.eyepiece_distance_m = plan.eyepiece_distance_m;
@@ -311,8 +318,9 @@ struct State {
     renderer: Option<Renderer>,
     /// Set when the pipeline could not be built, so that it is not retried every frame.
     failed: bool,
-    /// The sight line in the holding wrist's frame, and the aim update it was taken from.
-    anchor: Option<(u64, SightAnchor)>,
+    /// Each hand's scoped gun's sight line in its wrist's frame, and the aim update it was taken
+    /// from, by [`Hand::index`].
+    anchors: [Option<(u64, SightAnchor)>; 2],
     plan: Plan,
     config: ScopeConfig,
 }
@@ -340,7 +348,7 @@ impl State {
 static STATE: Mutex<State> = Mutex::new(State {
     renderer: None,
     failed: false,
-    anchor: None,
+    anchors: [None; 2],
     plan: Plan {
         armed: false,
         lens: None,
@@ -362,8 +370,8 @@ static STATUS: Mutex<ScopeStatus> = Mutex::new(ScopeStatus {
     error: None,
 });
 
-/// The wielded weapon the last input tick found scoped, and when.
-static SCOPED: Mutex<Option<(usize, Instant)>> = Mutex::new(None);
+/// The gun in each hand the last input tick found scoped, by [`Hand::index`], and when.
+static SCOPED: Mutex<Option<([Option<usize>; 2], Instant)>> = Mutex::new(None);
 
 /// How long an input tick's identification of the scoped weapon stands. The input tick runs at the
 /// simulation rate while the bindings inject, so an older one belongs to a menu or the gamepad
@@ -374,13 +382,13 @@ const MAX_SCOPED_AGE: Duration = Duration::from_millis(250);
 /// other eye's copy is the previous frame's when the first eye sights in two-pass stereo.
 const MAX_COPY_AGE: Duration = Duration::from_millis(100);
 
-/// Plan the frame's lens, re-anchoring the sight line to the holding wrist when the aim has run
-/// since the anchor was taken.
-fn plan(enabled: bool, config: &ScopeConfig, anchor: &mut Option<(u64, SightAnchor)>) -> Plan {
-    let idle = |idle| Plan {
-        idle: Some(idle),
-        ..Plan::default()
-    };
+/// Plan the frame's lens, re-anchoring each scoped gun's sight line to its wrist when the aim has
+/// run since its anchor was taken, and taking the lens of the scope raised to the eye.
+fn plan(
+    enabled: bool,
+    config: &ScopeConfig,
+    anchors: &mut [Option<(u64, SightAnchor)>; 2],
+) -> Plan {
     if !enabled {
         return idle(LensIdle::Disabled);
     }
@@ -390,27 +398,75 @@ fn plan(enabled: bool, config: &ScopeConfig, anchor: &mut Option<(u64, SightAnch
     let scoped = SCOPED
         .lock()
         .filter(|(_, at)| at.elapsed() < MAX_SCOPED_AGE)
-        .map(|(address, _)| address);
+        .map_or([None; 2], |(scoped, _)| scoped);
     let aim = aim::status();
-    let Some(weapon) = aim.weapon.filter(|w| Some(w.address) == scoped) else {
-        *anchor = None;
-        return idle(LensIdle::NoScope);
+    let frame = FrameInputs {
+        aim: &aim,
+        wrists: late::drawn_hands(hooks::camera::last_dtf()).map(|h| h.map(|h| h.wrist)),
+        eyes: eye_positions(),
+        config,
     };
-    let Some(hand) = weapon.gun_hands.iter().flatten().next().copied() else {
-        return idle(LensIdle::NoSightLine);
-    };
+    let plans = Hand::BOTH.map(|hand| {
+        let planned = scoped[hand.index()]
+            .and_then(|address| scoped_weapon(&aim, hand, address))
+            .map(|weapon| plan_hand(hand, &weapon, &frame, &mut anchors[hand.index()]));
+        if planned.is_none() {
+            anchors[hand.index()] = None;
+        }
+        planned
+    });
+    chosen(&plans)
+        .and_then(|hand| plans[hand.index()])
+        .unwrap_or_else(|| idle(LensIdle::NoScope))
+}
+
+/// A plan that draws nothing, for `idle`.
+fn idle(idle: LensIdle) -> Plan {
+    Plan {
+        idle: Some(idle),
+        ..Plan::default()
+    }
+}
+
+/// What every hand's lens is planned from in a frame.
+struct FrameInputs<'a> {
+    aim: &'a AimStatus,
+    /// Each hand's wrist as drawn this frame, by [`Hand::index`].
+    wrists: [Option<Pose>; 2],
+    /// Both eyes' world positions.
+    eyes: [Option<Vec3>; 2],
+    config: &'a ScopeConfig,
+}
+
+/// The aim's view of the scoped gun at `address` in `hand`: the wielded weapon when its first gun
+/// rides that hand, or the weapon armed there.
+fn scoped_weapon(aim: &AimStatus, hand: Hand, address: usize) -> Option<HeldWeapon> {
+    let wielded = aim
+        .weapon
+        .filter(|w| w.address == address && w.gun_hands.iter().flatten().next() == Some(&hand));
+    wielded.or(aim.armed[hand.index()].filter(|w| w.address == address))
+}
+
+/// The lens of the scoped `weapon` in `hand`, re-anchoring its sight line in `anchor`.
+fn plan_hand(
+    hand: Hand,
+    weapon: &HeldWeapon,
+    frame: &FrameInputs,
+    anchor: &mut Option<(u64, SightAnchor)>,
+) -> Plan {
     let scope = Some(ScopeReadout {
         hash: weapon.hash,
         hand,
         sight: weapon.sight.source,
     });
-    let dtf = hooks::camera::last_dtf();
-    let Some(wrist) = late::drawn_hands(dtf)[hand.index()].map(|h| h.wrist) else {
-        return Plan {
-            scope,
-            ..idle(LensIdle::NoSightLine)
-        };
+    let no_sight_line = Plan {
+        scope,
+        ..idle(LensIdle::NoSightLine)
     };
+    let Some(wrist) = frame.wrists[hand.index()] else {
+        return no_sight_line;
+    };
+    let aim = frame.aim;
     let hand_aim = aim.hands[hand.index()].filter(|h| matches!(h.source, HandSource::Gun { .. }));
     if let Some(h) = hand_aim
         && anchor.is_none_or(|(updates, a)| updates != aim.updates || a.hand != hand)
@@ -419,21 +475,14 @@ fn plan(enabled: bool, config: &ScopeConfig, anchor: &mut Option<(u64, SightAnch
         *anchor = Some((aim.updates, SightAnchor::new(hand, &h.ray, wrist, focus)));
     }
     let Some((_, a)) = anchor.filter(|(_, a)| a.hand == hand) else {
-        return Plan {
-            scope,
-            ..idle(LensIdle::NoSightLine)
-        };
+        return no_sight_line;
     };
     let Some(sight) = a.place(wrist) else {
-        return Plan {
-            scope,
-            ..idle(LensIdle::NoSightLine)
-        };
+        return no_sight_line;
     };
-    let lens = Lens::new(&sight, a.focus_m, config);
-    let eyes = eye_positions();
-    let eyepiece_distance_m = lens::nearest_eye(lens.eyepiece, eyes).map(|(_, d)| d);
-    let sighting = lens::sighting_eye(&lens, eyes, config.max_eye_distance_m);
+    let lens = Lens::new(&sight, a.focus_m, frame.config);
+    let eyepiece_distance_m = lens::nearest_eye(lens.eyepiece, frame.eyes).map(|(_, d)| d);
+    let sighting = lens::sighting_eye(&lens, frame.eyes, frame.config.max_eye_distance_m);
     Plan {
         armed: true,
         lens: Some(lens),
@@ -442,6 +491,27 @@ fn plan(enabled: bool, config: &ScopeConfig, anchor: &mut Option<(u64, SightAnch
         eyepiece_distance_m,
         idle: sighting.is_none().then_some(LensIdle::NotAtEye),
     }
+}
+
+/// The hand whose scope has the lens, of each hand's plan by [`Hand::index`]: the scope raised to
+/// the eye. A scope an eye is at wins over one placed away from the eyes, which wins over one
+/// without a sight line, and between two alike the one whose eyepiece is nearest an eye wins.
+fn chosen(plans: &[Option<Plan>; 2]) -> Option<Hand> {
+    let rank = |p: &Plan| {
+        (
+            p.sighting.is_some(),
+            p.lens.is_some(),
+            -p.eyepiece_distance_m.unwrap_or(f32::INFINITY),
+        )
+    };
+    Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| Some((hand, plans[hand.index()]?)))
+        .max_by(|(_, a), (_, b)| {
+            let (a, b) = (rank(a), rank(b));
+            a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.total_cmp(&b.2))
+        })
+        .map(|(hand, _)| hand)
 }
 
 /// Both eyes' world positions this frame: the centre camera moved by each eye's offset. `None`
@@ -482,4 +552,44 @@ fn report(error: anyhow::Error) {
         tracing::error!("{message}");
     }
     status.error = Some(message);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at_eye(distance: f32, sighting: bool) -> Plan {
+        Plan {
+            armed: true,
+            lens: Some(Lens::new(
+                &aim::ray::Ray::new(Vec3::ZERO, Vec3::NEG_Z).unwrap(),
+                100.0,
+                &ScopeConfig::new(),
+            )),
+            sighting: sighting.then_some(0),
+            eyepiece_distance_m: Some(distance),
+            ..Plan::default()
+        }
+    }
+
+    #[test]
+    fn the_lens_is_the_scope_raised_to_the_eye() {
+        let (left, right) = (Hand::Left.index(), Hand::Right.index());
+        let mut plans = [None; 2];
+        assert_eq!(chosen(&plans), None);
+        // A lone scope has the lens, even away from the eyes.
+        plans[right] = Some(at_eye(0.4, false));
+        assert_eq!(chosen(&plans), Some(Hand::Right));
+        // A scope an eye is at wins over one nearer an eye but not at it.
+        plans[left] = Some(at_eye(0.05, true));
+        plans[right] = Some(at_eye(0.02, false));
+        assert_eq!(chosen(&plans), Some(Hand::Left));
+        // Two at the eyes: the nearer eyepiece.
+        plans[right] = Some(at_eye(0.02, true));
+        assert_eq!(chosen(&plans), Some(Hand::Right));
+        // A scope without a sight line loses to one placed.
+        plans[right] = Some(idle(LensIdle::NoSightLine));
+        plans[left] = Some(at_eye(0.5, false));
+        assert_eq!(chosen(&plans), Some(Hand::Left));
+    }
 }

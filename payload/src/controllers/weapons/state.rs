@@ -39,7 +39,7 @@ pub(crate) fn stand_down() {
     guns::publish(guns::GunHolds::default());
     heft::observe([None; 2]);
     heft::freeze([false; 2]);
-    ads::observe(None);
+    ads::observe([None; 2]);
     collide::observe([None; 2]);
     grip_watch::clear();
     recoil::clear();
