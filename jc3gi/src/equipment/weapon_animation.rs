@@ -68,9 +68,19 @@ impl std::convert::AsMut<WeaponTypeCondition> for WeaponTypeCondition {
 #[repr(C, align(8))]
 /// The animation-graph condition on the wielded weapon (`CWeaponWieldedCondition`, registered by
 /// the character manager's condition registration), configured with a `WeaponType` slot. Rico's
-/// graphs use it as `C_WEAPON_WIELDED` (any slot) and `C_PLANTED_EXPLOSIVE_WIELDED`. Its layout is
-/// unmapped.
-pub struct WeaponWieldedCondition {}
+/// graphs use it as `C_WEAPON_WIELDED` (any slot) and `C_PLANTED_EXPLOSIVE_WIELDED`.
+pub struct WeaponWieldedCondition {
+    _field_0: [u8; 16],
+    /// The condition's slot (a `CInventory::EWeaponSlot`), or negative for any slot.
+    pub m_WeaponType: i32,
+    _field_14: [u8; 4],
+}
+fn _WeaponWieldedCondition_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], WeaponWieldedCondition>([0u8; 0x18]);
+    }
+    unreachable!()
+}
 impl WeaponWieldedCondition {
     pub const Evaluate_ADDRESS: usize = 0x1407DF310;
     /// Evaluates the condition for the character owning `instance`. For a negative slot it is

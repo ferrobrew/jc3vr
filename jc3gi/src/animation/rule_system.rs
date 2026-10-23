@@ -99,10 +99,14 @@ pub struct StateMachineInstance {
     _field_0: [u8; 24],
     /// The state the machine is currently in.
     pub m_CurrentState: *mut crate::animation::rule_system::State,
+    /// The game object the machine animates (`CStateMachineInstance::GetUserData`): for a
+    /// character's machines, its [`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)
+    /// subobject. The graph's conditions read their character through it.
+    pub m_UserData: *mut crate::game::GameObject,
 }
 fn _StateMachineInstance_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x20], StateMachineInstance>([0u8; 0x20]);
+        ::std::mem::transmute::<[u8; 0x28], StateMachineInstance>([0u8; 0x28]);
     }
     unreachable!()
 }

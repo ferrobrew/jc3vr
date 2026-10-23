@@ -34,6 +34,11 @@ pub(super) fn unarmed_readout(ui: &mut Ui, unarmed: &UnarmedStatus, hand_ik: &[H
         "Weapon modifiers kept off the body: {}",
         yes_no(unarmed.weapon_suppressed)
     ));
+    ui.label(format!(
+        "Relaxed locomotion: {} ({} wielded checks read unarmed)",
+        yes_no(unarmed.wielded_relaxed),
+        unarmed.relaxed_evaluations
+    ));
     let layers = MASKABLE_LAYERS
         .iter()
         .enumerate()
@@ -83,6 +88,12 @@ pub(super) fn unarmed_settings(ui: &mut Ui, c: &mut UnarmedBodyConfig) {
             ui.checkbox(&mut c.release_weapon_grip, "Release the game's weapon grip")
                 .on_hover_text(
                     "Never put a hand on a two-handed weapon's grip; only the foregrip grab does.",
+                );
+            ui.checkbox(&mut c.relaxed_locomotion, "Relaxed locomotion")
+                .on_hover_text(
+                    "The body walks, turns, and stands as it does unarmed whatever is held: the \
+                     graph's weapon-wielded check reads false on every layer but the upper-body \
+                     actions.",
                 );
         });
     });

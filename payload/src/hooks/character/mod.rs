@@ -11,6 +11,8 @@
 //! - [`modifiers`]: the weapon-agnostic body, which keeps the weapon's animation modifiers off the
 //!   body's rule systems;
 //! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose;
+//! - [`wielded`]: the relaxed locomotion, which reads the graph's weapon-wielded condition false
+//!   for the local player's body;
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, for the procedural body's
 //!   hand-over table;
 //! - the `SECONDARY` hand pass's entry, where the game's secondary hand targets are switched off
@@ -41,6 +43,7 @@ pub(crate) mod head;
 pub(crate) mod layers;
 pub(crate) mod modifiers;
 pub(crate) mod signals;
+pub(crate) mod wielded;
 
 pub(crate) use acts::resolve_act_id;
 pub(crate) use body_ik::{BODY_IK_TARGET, body_ik_status};
@@ -56,6 +59,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(layers::hook_library())
         .with_hook_library(modifiers::hook_library())
         .with_hook_library(signals::hook_library())
+        .with_hook_library(wielded::hook_library())
 }
 
 /// Pre-call seam for headset-driven upper-body IK. Runs at the entry of the pose-finalization pass,

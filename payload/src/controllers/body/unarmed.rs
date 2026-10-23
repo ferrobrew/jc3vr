@@ -12,14 +12,22 @@
 //!   holster's unequip) and segments still drive the game, but the layers set in
 //!   [`UnarmedBodyConfig`] are left out of the pose ([`crate::hooks::character::layers`]);
 //! - the game's off-hand weapon grip, switched off for both hands at the `SECONDARY` pass's entry
-//!   ([`crate::controllers::hands::ik::before_secondary`]).
+//!   ([`crate::controllers::hands::ik::before_secondary`]);
+//! - the graph's weapon-wielded condition (`C_WEAPON_WIELDED`), which switches the base layer's
+//!   locomotion, walk starts, turns, and stunt turns to their combat families, whose clips are a
+//!   rifle's whatever is held. While the unarmed body applies it reads false on every layer but the
+//!   upper-body actions, so the body keeps its relaxed families ([`relaxes_wielded`],
+//!   [`crate::hooks::character::wielded`]).
 //!
 //! The decision is made once per tick at the entry of the local player's pose-finalization pass
 //! ([`tick`]), which also publishes the masked layers' blenders for the pose job. The modifier pass
 //! and the pose job of the next tick read it. The settings are `controllers.body.unarmed`.
 
 use std::{
-    sync::LazyLock,
+    sync::{
+        LazyLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -79,6 +87,9 @@ pub struct UnarmedBodyConfig {
     /// Switch the game's off-hand weapon grip off for both hands, driven or not, so that only the
     /// foregrip grab puts a hand on a two-handed weapon.
     pub release_weapon_grip: bool,
+    /// Keep the body's relaxed locomotion, turns, and stance whatever is held: the graph's
+    /// weapon-wielded condition reads false on every layer but the upper-body actions.
+    pub relaxed_locomotion: bool,
 }
 
 impl UnarmedBodyConfig {
@@ -89,6 +100,7 @@ impl UnarmedBodyConfig {
             mask_synced_partial: true,
             mask_additive: true,
             release_weapon_grip: true,
+            relaxed_locomotion: true,
         }
     }
 }
@@ -212,6 +224,27 @@ pub fn keeps_weapon_modifier(suppression: ModifierSuppression, layer: usize) -> 
     }
 }
 
+/// Whether the weapon-wielded condition of the any-slot kind (`any_slot`) reads false on the rule
+/// system at `layer` (`None` when it is not found among the character's), while the locomotion is
+/// `relaxed` ([`wielded_relaxed`]): every layer but the upper-body actions, so their draws,
+/// holsters, and reloads keep the transitions they key on it. A condition on one slot (the planted
+/// explosive's) is left alone.
+pub fn relaxes_wielded(relaxed: bool, any_slot: bool, layer: Option<usize>) -> bool {
+    relaxed && any_slot && layer.is_some_and(|l| l != AnimationLayer::GLOBAL_PARTIAL as usize)
+}
+
+/// Whether the weapon-wielded condition is relaxed for the local player this tick: the unarmed
+/// body applies with relaxed locomotion. Read on the characters' update threads, so it is published
+/// as an atomic by [`tick`].
+pub fn wielded_relaxed() -> bool {
+    WIELDED_RELAXED.load(Ordering::Relaxed)
+}
+
+/// Count one weapon-wielded evaluation that the relaxed locomotion read as false, for the readout.
+pub fn count_relaxed_wielded() {
+    RELAXED_EVALUATIONS.fetch_add(1, Ordering::Relaxed);
+}
+
 /// What the unarmed body decided on its last tick, for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct UnarmedStatus {
@@ -225,12 +258,17 @@ pub struct UnarmedStatus {
     pub skipped: [u64; MASKABLE_LAYERS.len()],
     /// Whether the latest modifier pass kept the weapon's modifiers off the body.
     pub weapon_suppressed: bool,
+    /// Whether the weapon-wielded condition is relaxed this tick.
+    pub wielded_relaxed: bool,
+    /// How many weapon-wielded evaluations read false since injection.
+    pub relaxed_evaluations: u64,
 }
 
 /// The latest status.
 pub fn status() -> UnarmedStatus {
     let mut status = *STATE.lock();
     status.skipped = hooks::character::layers::skipped();
+    status.relaxed_evaluations = RELAXED_EVALUATIONS.load(Ordering::Relaxed);
     status
 }
 
@@ -265,6 +303,8 @@ pub unsafe fn tick(character: *mut Character) {
         }
     });
     hooks::character::layers::publish(published);
+    let relaxed = config.relaxed_locomotion && verdict == UnarmedVerdict::Applies;
+    WIELDED_RELAXED.store(relaxed, Ordering::Relaxed);
     let mut state = STATE.lock();
     *state = UnarmedStatus {
         at: Some(Instant::now()),
@@ -273,6 +313,8 @@ pub unsafe fn tick(character: *mut Character) {
         layers: blenders.len(),
         skipped: [0; MASKABLE_LAYERS.len()],
         weapon_suppressed: state.weapon_suppressed,
+        wielded_relaxed: relaxed,
+        relaxed_evaluations: 0,
     };
 }
 
@@ -299,6 +341,9 @@ const FRESH: Duration = Duration::from_millis(250);
 
 static STATE: LazyLock<Mutex<UnarmedStatus>> =
     LazyLock::new(|| Mutex::new(UnarmedStatus::default()));
+
+static WIELDED_RELAXED: AtomicBool = AtomicBool::new(false);
+static RELAXED_EVALUATIONS: AtomicU64 = AtomicU64::new(0);
 
 /// Each animation layer's blender address, indexed by layer, zero where a layer has none.
 ///
@@ -331,6 +376,23 @@ mod tests {
             gameplay: true,
             tier: Some(TierState::OnFoot),
         }
+    }
+
+    #[test]
+    fn the_wielded_condition_relaxes_on_every_layer_but_the_actions() {
+        let base = Some(AnimationLayer::MAINBODY as usize);
+        let actions = Some(AnimationLayer::GLOBAL_PARTIAL as usize);
+        assert!(relaxes_wielded(true, true, base));
+        assert!(relaxes_wielded(
+            true,
+            true,
+            Some(AnimationLayer::SYNCED_PARTIAL as usize)
+        ));
+        assert!(!relaxes_wielded(true, true, actions));
+        // A slot's condition, the locomotion not relaxed, or a machine not among the character's.
+        assert!(!relaxes_wielded(true, false, base));
+        assert!(!relaxes_wielded(false, true, base));
+        assert!(!relaxes_wielded(true, true, None));
     }
 
     #[test]
