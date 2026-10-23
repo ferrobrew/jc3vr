@@ -151,6 +151,8 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         frame::take_edges();
         semantic_frame::take();
         weapons::stand_down();
+        // SAFETY: the input tick runs on the main thread outside the world update.
+        unsafe { weapons::inventory::stand_down() };
         vehicles::stand_down();
         grapple::physical::stand_down();
         grab::tick::stand_down();
@@ -214,6 +216,12 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         state.recovery.suspend();
         state.publish_recovery();
         weapons::stand_down();
+        // Leaving the controllers puts the loadout table back into the game's slots; a pause of
+        // the controllers (the debug panel, a lost frame) keeps it.
+        if matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
+            // SAFETY: the input tick runs on the main thread outside the world update.
+            unsafe { weapons::inventory::stand_down() };
+        }
         vehicles::stand_down();
         grapple::physical::stand_down();
         grab::tick::stand_down();

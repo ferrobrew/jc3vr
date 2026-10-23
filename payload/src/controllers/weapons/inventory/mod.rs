@@ -48,6 +48,8 @@ pub mod sockets;
 pub mod traversal;
 mod world;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
@@ -55,16 +57,21 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    frame::Hand,
-    loadout::{ItemKind, ObjectAddress, Place, SlotObject, Socket, TakeSource, live},
-    physical_hands,
-    weapons::{
-        c4,
-        dual_wield::single,
-        grenade,
-        hold::{armed, refs::Strong, use_item},
-        inventory::{config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World},
+use crate::{
+    config::Config,
+    controllers::{
+        frame::Hand,
+        loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
+        physical_hands,
+        weapons::{
+            c4,
+            dual_wield::single,
+            engine as weapons_engine, grenade,
+            hold::{armed, refs::Strong, use_item},
+            inventory::{
+                config::InventoryConfig, engine::ObjectKey, pins::WorldWeapon, world::World,
+            },
+        },
     },
 };
 
@@ -133,8 +140,10 @@ pub(crate) struct TickInputs {
 /// when it came into one this tick.
 ///
 /// The table runs while the inventory is on and its slots are a projection of the table
-/// (`project_slots`). Switching either off puts the table back into the game's slots first, and
-/// then lets the game's own one-weapon model run, the carried weapons falling where they are.
+/// (`project_slots`). Switching either off, or the scheme away from the controllers, stops it
+/// ([`stop`]): the table is put back into the game's slots, and the game's own one-weapon model
+/// runs. The weapons the slots cannot hold stay carried, stashed until the table runs again,
+/// which starts it from the slots and brings them back onto their sockets.
 ///
 /// # Safety
 ///
@@ -156,27 +165,12 @@ pub(crate) unsafe fn input_tick(
         unsafe { restore::input_tick(owner, &inputs.settings) };
         unsafe { use_item::input_tick(owner) };
         unsafe { gives::input_tick(owner) };
+        unsafe { resume() };
     } else {
-        unsafe { use_item::stand_down() };
-        unsafe { gives::stand_down() };
-        ammo::clear();
-        if STATE.lock().status.active {
-            unsafe { reconcile::project_back(owner) };
-        }
-        live::stop();
-    }
-    let mut state = STATE.lock();
-    if !on {
-        if state.status.active {
-            state.release_all("the inventory is off");
-            drop(state);
-            unsafe { carry::drop_all() };
-            restore::clear();
-            single::clear();
-            lost::clear();
-        }
+        unsafe { stop(owner, "the inventory is off", inputs.settings.carry) };
         return None;
     }
+    let mut state = STATE.lock();
     if !inputs.settings.carry && carry::count() > 0 {
         unsafe { carry::drop_all() };
     }
@@ -352,6 +346,99 @@ pub(crate) unsafe fn input_tick(
     unsafe { ammo::publish(&slot_objects) };
     arrival
 }
+
+/// Stop the table for the scheme leaving the controllers. Called on every input tick the bindings
+/// do not inject; it does nothing once stopped.
+///
+/// # Safety
+///
+/// The main thread, outside the world update.
+pub(crate) unsafe fn stand_down() {
+    let Some(owner) = (unsafe { weapons_engine::local_player() }) else {
+        return;
+    };
+    let carry = Config::lock_query(|c| c.controllers.weapons.inventory.carry);
+    unsafe { stop(owner, "the controllers are not in use", carry) };
+}
+
+/// Stop the table (`why` for the log): put it back into the game's slots, so the game's own
+/// one-weapon model takes over with the best of what the player has, and keep the weapons the
+/// slots cannot hold carried and stashed (`keep`) until the table runs again, or let them fall
+/// where they are without `keep`. Does nothing while the table is stopped.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the main thread outside the world update.
+unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
+    unsafe { use_item::stand_down() };
+    unsafe { gives::stand_down() };
+    ammo::clear();
+    lost::clear();
+    traversal::publish(false);
+    let active = STATE.lock().status.active;
+    if active {
+        unsafe { reconcile::project_back(owner) };
+    }
+    live::stop();
+    if !active {
+        return;
+    }
+    STATE.lock().release_all(why);
+    if keep && carry::count() > 0 {
+        unsafe { carry::set_stashed(true) };
+        KEPT_STOPPED.store(true, Ordering::Relaxed);
+        tracing::info!(
+            target: "controllers",
+            carried = carry::count(),
+            why,
+            "inventory: the table stopped; the weapons beyond the slots are kept stashed"
+        );
+    } else {
+        unsafe { carry::drop_all() };
+        restore::clear();
+        single::clear();
+    }
+}
+
+/// The table runs again after a stop that kept the weapons beyond the slots: it started from the
+/// slots, and each kept weapon comes back onto its socket, with any a reset recorded meanwhile.
+///
+/// # Safety
+///
+/// The main thread, outside the world update, after the table's start.
+unsafe fn resume() {
+    if !KEPT_STOPPED.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    let kept = unsafe { carry::seen() };
+    for (seen, socket) in &kept {
+        // SAFETY: the carry set keeps the weapon alive.
+        let Some(weapon) = (unsafe { (seen.object as *const WeaponBase).as_ref() }) else {
+            continue;
+        };
+        let (Some(object), Some(weapon)) = (engine::object_address(weapon), unsafe {
+            engine::weapon_type(weapon)
+        }) else {
+            continue;
+        };
+        live::restored(Restored {
+            object,
+            weapon,
+            socket: *socket,
+        });
+    }
+    unsafe { carry::set_stashed(false) };
+    let respawning = restore::give_back();
+    tracing::info!(
+        target: "controllers",
+        kept = kept.len(),
+        respawning,
+        "inventory: the table runs again; the kept weapons are back on the body"
+    );
+}
+
+/// Whether the last stop kept the weapons beyond the slots for the table's next start.
+static KEPT_STOPPED: AtomicBool = AtomicBool::new(false);
 
 /// The weapon at `object`, read live this tick, as the table takes one into a hand: a weapon of
 /// a tracked slot, or a heavy weapon, which the table holds only while a hand holds it.

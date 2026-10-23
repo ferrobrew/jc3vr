@@ -124,7 +124,7 @@ The table is the one source of truth for the player's items, owned by one module
 
 What each hand does to the object it holds (the armed weapon's bones and user, the slide between a socket and the hand, the grip watch, the pickup's joint, the throw's stage) is per-hand runtime state beside the table, not an item's place.
 
-Switching the control scheme away from the controllers (or turning the mod's weapon handling off) projects the table back into the game's slots, so nothing is lost; switching back rebuilds the table from the slots and the sidecar. Gamepad play is expected to be rough meanwhile.
+Switching the control scheme away from the controllers (or turning the mod's weapon handling off) projects the table back into the game's slots, so nothing is lost; switching back rebuilds the table from the slots and the sidecar. Gamepad play is expected to be rough meanwhile. Built: the stop (`inventory::stop`) runs when the scheme becomes the gamepad's, when the bindings or the controllers are switched off, and when `weapons.inventory.enabled` or `project_slots` is switched off; a pause of the controllers (the debug panel up, a frame without controllers, lost tracking) keeps the table. The table is put back into the slots as a store would write them, the hands' armed weapons are disarmed, and the weapons the slots cannot hold stay in the carry set, stashed: hidden, with no grab volume, and recorded by the sidecar at a save (`inventory: the table stopped; the weapons beyond the slots are kept stashed`). When the table runs again it starts from the slots, as a load does, and each kept weapon comes back onto its socket, with any a reset recorded meanwhile respawned (`inventory: the table runs again; the kept weapons are back on the body`). The hands come back empty, since the game's one weapon was wielded in between. With `weapons.inventory.carry` off the stop lets them fall instead.
 
 ## The core as built
 
@@ -253,7 +253,7 @@ The game's slots are made to match the table each input tick (`weapons::inventor
 - Before the game stores its save, and before a mission caches the slots, the tracked slots are given the store projection's content. In play they already hold it, since the two projections are the same; this catches a move the hands made since the last pass.
 - Before the game's own pickup puts a weapon into a taken slot, the slot's weapon leaves the slot and stays on its socket.
 
-The projection is behind `weapons.inventory.project_slots` (on), in the debug UI's Controllers tab. Off, the table is put back into the game's slots as a store would write them, the hands' armed weapons are disarmed, the table stops, and the game's own one-weapon model runs: the carried weapons left over fall where they are, as with the inventory off, and the hold keeps the game's layout. This is the plan's scheme-switch behaviour.
+The projection is behind `weapons.inventory.project_slots` (on), in the debug UI's Controllers tab. Off, the table stops as for the scheme switch ([The architecture](#the-architecture)): it is put back into the game's slots as a store would write them, the hands' armed weapons are disarmed, the game's own one-weapon model runs, the carried weapons left over are kept stashed until the table runs again, and the hold keeps the game's layout.
 
 Decisions taken here:
 
@@ -262,6 +262,7 @@ Decisions taken here:
 - A weapon the game holsters or drops on its own (its holster act, a vehicle's entry) leaves its hand in the table at the next input tick, docked or let go of; undoing those is phase 5's. A weapon armed in a hand, or one the carry set keeps off the slots, is never taken for such a departure.
 - A weapon the game wields while both hands of the table are full is unequipped again, since it can land in no hand.
 - Switching the projection off is the scheme switch rather than a mode where the table moves the hands and the game keeps its slots: the table's moves need the reconcile to happen in the game at all.
+- The weapons beyond the slots are kept stashed across a stop rather than dropped or respawned from the sidecar: their objects stay the player's, so switching back neither duplicates them nor depends on a save.
 
 ## The grabs against the table
 
@@ -418,7 +419,7 @@ A carried weapon is placed after each placement of the inventory's own weapons (
 
 A weapon picked up into a slot that holds another weapon (a pickup into the hand, a take from a character's hands, a take off a rack, or a rack's copy) does not drop the slot's weapon: before the pickup, the slot's weapon leaves its slot ([`Inventory::RemoveWeapon`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-RemoveWeapon), unequipped first if it was wielded) and stays where the table has it, on its socket. A change of the slots leaves the HUD's weapon list to be rebuilt from the slots ([`HUDUI::InitWeapons`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##func-InitWeapons)).
 
-Switching `weapons.inventory.enabled` or `weapons.inventory.project_slots` off first puts the table back into the slots, as a store would write them, and then lets every carried weapon left over fall where it is; switching `weapons.inventory.carry` off lets them fall ([`WeaponBase::OnDrop`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnDrop), `inventory: dropped the carried weapons`), so the body keeps only what the slots hold. The spawn system's reset releases them. A weapon an area clean-up takes out of the spawn system while it is carried lives on through the carry set's reference, outside the spawn system, and is recorded and respawned at the next reset as usual.
+Switching `weapons.inventory.enabled` or `weapons.inventory.project_slots` off first puts the table back into the slots, as a store would write them, and keeps every carried weapon left over stashed until the table runs again ([The architecture](#the-architecture)); switching `weapons.inventory.carry` off lets them fall ([`WeaponBase::OnDrop`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##vfunc-OnDrop), `inventory: dropped the carried weapons`), so the body keeps only what the slots hold. The spawn system's reset releases them. A weapon an area clean-up takes out of the spawn system while it is carried lives on through the carry set's reference, outside the spawn system, and is recorded and respawned at the next reset as usual.
 
 ## The caches and the resets
 
