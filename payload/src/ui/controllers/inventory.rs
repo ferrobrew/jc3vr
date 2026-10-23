@@ -60,12 +60,11 @@ pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreSta
     ));
     let p = single::status();
     ui.label(format!(
-        "Single pistols: {} · active {} · slot's single {} (hip {}) · second pistol {:?} · split \
-         {} · arrived as one {} · taken as one {} · pairs kept {}",
+        "Single pistols: {} · active {} · slot's single {} · second pistol {:?} · split {} · \
+         arrived as one {} · taken as one {} · pairs kept {}",
         p.singles,
         super::yes_no(p.active),
         super::yes_no(p.slot_single),
-        p.slot_home.map_or("none", |h| h.label()),
         p.twin,
         p.splits,
         p.ones,

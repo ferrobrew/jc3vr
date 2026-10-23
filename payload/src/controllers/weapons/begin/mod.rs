@@ -1,12 +1,11 @@
-//! The first half of the weapon handling's input tick: read the wielded weapon, place the pistols,
-//! and provide the weapon handling's grip targets ([`crate::controllers::grab`]): the sockets and
-//! pouches on the body, the held gun's parts, the weapons and grenades in the world, and the
-//! grenade's pin.
+//! The first half of the weapon handling's input tick: read the weapons in the hands, and provide
+//! the weapon handling's grip targets ([`crate::controllers::grab`]): the sockets and pouches on
+//! the body, the held gun's parts, the weapons and grenades in the world, and the grenade's pin.
 
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
-use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
+use jc3gi::equipment::weapon::WeaponBase;
 
 use crate::{
     config::Config,
@@ -26,7 +25,6 @@ use crate::{
             c4, collide,
             config::HolstersConfig,
             docks::{self, SocketInputs, SocketPoint, SocketUse},
-            dual_wield,
             engine::{self, HeldWeapon},
             foregrip, grenade, grip_watch, heft,
             hold::{self, armed},
@@ -47,9 +45,8 @@ use crate::{
 
 mod place;
 
-/// The first half of the weapon handling's input tick: read the weapon, place the pistols, and
-/// return the weapon handling's grip targets and whether the dual-wield split acts. Called while
-/// the bindings inject, before the tables.
+/// The first half of the weapon handling's input tick: read the weapons in the hands and return
+/// the weapon handling's grip targets. Called while the bindings inject, before the tables.
 pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let config = Config::lock_query(|c| c.controllers);
     let Some(active) = hands::active_hands_raw() else {
@@ -57,20 +54,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         return TickStart::default();
     };
     let gameplay = gameplay(mode);
-    let dual = config.weapons.dual_wield;
-    let settings = (dual.split && (dual.independent_draw || dual.place_by_handedness)).then_some(
-        dual_wield::attach::Settings {
-            dominant: config.acting_hand(),
-            independent: dual.independent_draw,
-            by_handedness: dual.place_by_handedness,
-        },
-    );
     let holding = config.weapons.hold;
     // SAFETY: the input tick runs on the main thread outside the world update.
     let ticked = unsafe {
         engine::local_player().map_or(Ticked::default(), |owner| {
             armed::show_magazines(Some(owner), gameplay && holding.magazine_pips);
-            let pair = dual_wield::attach::input_tick(owner, settings);
             // The table lands the wielded weapon in a hand first; the hold then follows it there.
             let wielded = hold::wielded(owner);
             let arrival = inventory::input_tick(
@@ -84,8 +72,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             );
             let holder = hold::input_tick(wielded, holding.either_hand, arrival);
             hold::tick::input_tick(owner, wielded, holding.either_hand && holding.per_hand_tick);
-            let weapon =
-                engine::held_weapon(owner).map(|w| with_holder(with_pair(w, pair), holder));
+            let weapon = engine::held_weapon(owner).map(|w| with_holder(w, holder));
             // The gun a hand holds beside the wielded weapon, armed there.
             let beside = Hand::BOTH.into_iter().find_map(|hand| {
                 armed::held_weapon(owner, hand)
@@ -155,14 +142,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             weapon: w.address,
         })
     }));
-    let dual_wield = weapon
-        .filter(|w| {
-            dual.split
-                && !dual_wield::single::is(w.address)
-                && w.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
-                && w.wielded.hands.contains(&true)
-        })
-        .map(|w| w.wielded.hands);
     let armed_hands = Hand::BOTH.map(|h| armed::in_hand(h).is_some());
     let held = weapon
         .filter(|w| hold::owned_holder(w.address).is_some())
@@ -304,7 +283,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             active: &active,
             settings: &holding,
             free,
-            independent_pistols: dual.split && dual.independent_draw,
             gameplay,
         })
     };
@@ -498,11 +476,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     for hand in Hand::BOTH.into_iter().filter(|h| entered[h.index()]) {
         haptics::play(hand, Event::VolumeEnter);
     }
-    TickStart {
-        targets,
-        dual_wield,
-        held,
-    }
+    TickStart { targets, held }
 }
 
 /// What the weapon handling read of the local player on the input tick.
@@ -803,21 +777,6 @@ pub(super) fn weighted_hands(active: &ActiveHands) -> [Option<CockpitHand>; 2] {
         &active.config.weapons.heft,
     );
     hands
-}
-
-/// The wielded weapon as the dual-wield pair's owned layout has it: a pistol is in a hand only
-/// while that hand has it drawn, and the first drawn pistol's hand holds the weapon.
-fn with_pair(mut weapon: HeldWeapon, pair: Option<dual_wield::attach::Pair>) -> HeldWeapon {
-    if let Some(pair) = pair.filter(|p| p.wielded)
-        && weapon.wielded.slot == WeaponSlot::E_SLOT_DUAL_WIELD
-    {
-        weapon.wielded.hands = pair.drawn;
-        weapon.holder = pair
-            .gun_hands
-            .into_iter()
-            .find(|hand| pair.drawn[hand.index()]);
-    }
-    weapon
 }
 
 /// The wielded weapon as the hold has it: every gun in the holding hand, which holds the weapon.

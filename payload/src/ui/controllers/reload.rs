@@ -1,4 +1,4 @@
-//! The true reload: each hand's reloaded weapon, its magazine, chamber, and split, the round in hand, the
+//! The true reload: each hand's reloaded weapon, its magazine and chamber, the round in hand, the
 //! belt pushes, the action's work, the counters, and the reload's settings.
 
 use egui::Ui;
@@ -61,16 +61,8 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
             if first == Some(hand) {
                 weapon_lines(ui, w);
             }
-            let split = w.split.map_or(String::new(), |s| {
-                let h = s.hands[i];
-                format!(
-                    " · split magazine {}{}",
-                    h.rounds,
-                    if h.out { " (out)" } else { "" }
-                )
-            });
             ui.label(format!(
-                "{} gun: chamber {}{split} · belt {} · fire {} · turn {:.0}°/s",
+                "{} gun: chamber {} · belt {} · fire {} · turn {:.0}°/s",
                 hand.label(),
                 match w.chamber {
                     Chamber::Chambered => "loaded",

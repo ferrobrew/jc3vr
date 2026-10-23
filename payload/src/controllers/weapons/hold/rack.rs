@@ -179,13 +179,6 @@ pub(crate) unsafe fn take(
         tracing::info!(target: "controllers", slot = slot_label(slot), "hold: the weapon the rack's copy replaces keeps its place");
     }
     hold::begin(hand, Cause::Rack, None);
-    // A copy of a pistol is one pistol while pistols are single, and has no pair to draw from.
-    if options.independent_pistols
-        && slot == WeaponSlot::E_SLOT_DUAL_WIELD
-        && !dual_wield::single::active()
-    {
-        dual_wield::attach::begin_draw(hand);
-    }
     unsafe { weapon.PickupStart(pickup::activator(owner)) };
     unsafe { weapon.SetVisible(false, false, false) };
     *COPY.lock() = Some(Copy {

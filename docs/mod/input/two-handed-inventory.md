@@ -1,6 +1,6 @@
 # The two-handed inventory
 
-Partly built: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)), a live table of it is the only writer of where the player's weapons are (["The live table"](#the-live-table)), every gun in a hand fires from its own hand (["The per-hand tick"](#the-per-hand-tick)), the game's slots follow the table (["The slots as a projection"](#the-slots-as-a-projection)), and the grabs at the sockets are decided against it (["The grabs against the table"](#the-grabs-against-the-table)); everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
+Partly built: this is the design and the plan of record. The pure core is built (["The core as built"](#the-core-as-built)), a live table of it is the only writer of where the player's weapons are (["The live table"](#the-live-table)), every gun in a hand fires from its own hand (["The per-hand tick"](#the-per-hand-tick)), the game's slots follow the table (["The slots as a projection"](#the-slots-as-a-projection)), the grabs at the sockets are decided against it (["The grabs against the table"](#the-grabs-against-the-table)), and two pistols are a pistol in each hand (["The pistols as plain items"](#the-pistols-as-plain-items)); everything else is design. It replaces the mechanisms described in [vr-inventory.md](vr-inventory.md) and the second weapon and separate pistols of [physical-weapons.md](physical-weapons.md), and the [grapple snatch](grapple-snatch.md) is built on top of it.
 
 The local player's two hands are independent. Each holds its own weapon or object, items pass between the hands, weapons dock on the body's sockets and are drawn from them, and the player carries what the body holds rather than what the game's slots allow. Boneworks and Half-Life: Alyx are the guiding light: the player does everything with their own body, even where that adds friction, and nothing docks, draws, or switches by itself.
 
@@ -259,6 +259,20 @@ Decisions taken here:
 - A draw refused by the animation ([`Inventory::GetAnimationAllowsDrawing`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-GetAnimationAllowsDrawing)) and a dock of the wielded weapon refused by it ([`Inventory::GetAnimationAllowsHolstering`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-GetAnimationAllowsHolstering)) do nothing, rather than leave the table and the game disagreeing until the next tick.
 - With the table not running, a grip release is not watched: guns stay in the hand until the game puts them away, since there is no socket to dock on.
 - The hand holding a weapon the game does not wield declares a gun grip for its fingers, as the wielded weapon's hand does.
+
+## The pistols as plain items
+
+From step 8 of phase 3b a pistol is an item like any other weapon. A pair the game hands over is split into two single pistols (`weapons::dual_wield::single`): the slot keeps one, and the twin is spawned and restored onto the hip the slot's pistol does not take, or the socket the table prefers when that hip is taken. Two pistols are a pistol in each hand, each its own item, drawn, docked, held, fired by its own hand's per-hand tick, and reloaded on its own, each on its own hip. The pair's own layout (its pistols' attach bones and their draws by hand), the trigger split that pinned which gun of the pair fired, and the reload's half magazines of the pair are gone, and so is the single pistols' own record of the slot pistol's hip.
+
+The game docks the pistol slot's first gun on the right hip, so a single pistol in the slot is the game's to place on the right hip alone; on the left hip the mod places it, as it does any weapon on a socket other than its slot's own. A pistol on a hip sits in the hip's holster, with no offset, unless the slot holds the game's pair, whose two pistols take both holsters, and a carried weapon on a hip then sits beside it by the hip's offset.
+
+The single pistols are behind `weapons.separate_pistols` (on). Off, a pair stays the game's: one item with a gun in each hand (`weapons::hold::layout`), drawn and docked whole, fired by the game's own fire input from either trigger, which alternates its guns, and reloaded as one weapon of one magazine.
+
+Decisions taken here:
+
+- A pair split while it is in a hand, its second gun in the other, keeps a pistol in each hand: the slot's pistol stays in the table's hand, and the twin comes into the other hand at once when that hand is empty and a weapon in each hand is on (`weapons.hold.second_weapon`), otherwise onto its hip.
+- The sidecar records each carried weapon on the socket the table has it on, rather than the one it came into the carry set on.
+- A tap of the reload button ejects the dominant hand's gun, or the other hand's when the dominant holds none; with the pair's split gone, a tap no longer ejects both of the pair's pistols, and the pair has the one magazine.
 
 ## One socket notion
 

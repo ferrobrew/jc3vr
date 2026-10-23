@@ -6,8 +6,8 @@
 //! ([`gate`]), and the player reloads by hand:
 //!
 //! - **Eject.** A tap of the reload button ejects the dominant hand's gun's magazine, or the other
-//!   hand's while the dominant hand holds no gun (both pistols' when dual-wielded), and a flick of
-//!   a gun hand ejects that gun's ([`eject`]). The game drops the
+//!   hand's while the dominant hand holds no gun, and a flick of a gun hand ejects that gun's
+//!   ([`eject`]). The game drops the
 //!   magazine as a prop from the gun, with the gun's velocity, and hides the magazine part. The
 //!   magazine keeps the rounds left in it as an object in the world, to be picked up and seated
 //!   again ([`loose`]); with that off, they go back to the reserve when the next magazine seats,
@@ -24,13 +24,12 @@
 //!   or a pump is worked after every shot ([`chamber`]). The action is a part that follows the
 //!   hand through its travel ([`travel`]), drawn on a separate slide part or on the gun's own
 //!   skeleton ([`render`], [`bones`]).
-//! - **Dual-wield.** Each pistol has its own half of the magazine ([`dual`]).
-//! - **Two weapons.** With a second weapon in the other hand, the reload acts on each hand's gun at
-//!   once, each with its own weapon's plan, magazine, and chamber. With both hands full, no hand is
-//!   free to take a round, so a flick ejects and the belt push loads.
+//! - **Two weapons.** With a gun in each hand, the reload acts on each hand's gun at once, each
+//!   with its own weapon's plan, magazine, and chamber. With both hands full, no hand is free to
+//!   take a round, so a flick ejects and the belt push loads.
 //!
-//! What the reload remembers of a weapon, its chambers, its action, and its split, outlives the
-//! weapon's time in the hands ([`records`]).
+//! What the reload remembers of a weapon, its chambers and its action, outlives the weapon's time
+//! in the hands ([`records`]).
 //!
 //! What a weapon loads and how is its plan ([`plan`]). The minigun, the mounted guns, and the
 //! special weapons keep the game's reload. With the reload off, every weapon does.
@@ -40,7 +39,6 @@ pub mod belt;
 mod bones;
 pub mod chamber;
 pub mod config;
-pub mod dual;
 pub mod eject;
 mod engine;
 pub mod frames;
@@ -72,7 +70,6 @@ use crate::controllers::{
             belt::{BeltPush, PushStage},
             chamber::{ActionWork, Chamber},
             config::{ReloadButton, ReloadConfig},
-            dual::SplitMagazines,
             eject::{FlickDetector, TapDetector},
             engine::Reading,
             frames::GunFrame,
@@ -97,7 +94,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 pub struct ReloadStatus {
     /// Whether the last input tick reloaded a weapon by hand.
     pub active: bool,
-    /// The weapon of each hand's gun, by [`Hand::index`]; the dual-wield pair's is in both hands.
+    /// The weapon of each hand's gun, by [`Hand::index`]; the game's dual-wield pair's is in both
+    /// hands.
     pub weapons: [Option<WeaponReadout>; 2],
     pub insertion: Insertion,
     /// The hand holding a round, and the gun's hand it is for.
@@ -117,7 +115,7 @@ pub struct ReloadStatus {
 /// A hand's gun and its weapon as the last input tick saw them.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct WeaponReadout {
-    /// The weapon's address, which tells the dual-wield pair's two readouts for one weapon.
+    /// The weapon's address, which tells the game's dual-wield pair's two readouts for one weapon.
     pub address: usize,
     pub name_hash: u32,
     pub plan: ReloadPlan,
@@ -133,8 +131,6 @@ pub struct WeaponReadout {
     pub chamber: Chamber,
     /// The hand's gun's action on its travel, with the physical action on.
     pub action: Option<ActionTravel>,
-    /// The dual-wield split, when it acts.
-    pub split: Option<SplitMagazines>,
 }
 
 /// The reload's counters since the payload loaded.
@@ -158,15 +154,9 @@ pub fn status() -> ReloadStatus {
     status
 }
 
-/// The hands whose guns may not fire, as of the last input tick, for the dual-wield split's
-/// triggers.
-pub(crate) fn fire_held() -> [bool; 2] {
-    STATE.lock().status.fire_held
-}
-
 /// What the first half of the weapon handling's input tick hands the reload.
 pub(super) struct BeginInputs<'a> {
-    /// The weapons in the hands: the wielded weapon, then the second weapon. Each one's guns are
+    /// The weapons in the hands: the wielded weapon, then the one beside it. Each one's guns are
     /// reloaded in the hands its [`Wielded::hands`] marks.
     ///
     /// [`Wielded::hands`]: crate::controllers::weapons::engine::Wielded::hands
@@ -331,10 +321,8 @@ unsafe fn loose_sightings(
     let Some((weapon, gun)) = free.and_then(|free| tick.gun(free.other())) else {
         return (Vec::new(), None);
     };
-    let wants = reload.loose.enabled
-        && !weapon.split
-        && weapon.plan.load == plan::LoadKind::Magazine
-        && weapon.reading.out;
+    let wants =
+        reload.loose.enabled && weapon.plan.load == plan::LoadKind::Magazine && weapon.reading.out;
     if !wants {
         return (Vec::new(), None);
     }
@@ -399,7 +387,7 @@ struct Tick {
     /// The weapons the reload acts on, in the order of [`BeginInputs::weapons`]. A weapon the
     /// reload leaves to the game is not among them.
     weapons: [Option<WeaponTick>; 2],
-    /// The dominant hand, which takes the split's odd round and whose gun a tap ejects first.
+    /// The dominant hand, whose gun a tap ejects first.
     dominant: Hand,
     /// Each hand's gun, by [`Hand::index`].
     guns: [Option<GunTick>; 2],
@@ -432,8 +420,6 @@ struct WeaponTick {
     address: usize,
     /// The weapon's record.
     key: RecordKey,
-    /// Whether the weapon is the dual-wield pair, split per hand.
-    split: bool,
     plan: ReloadPlan,
     from_table: bool,
     reading: Reading,

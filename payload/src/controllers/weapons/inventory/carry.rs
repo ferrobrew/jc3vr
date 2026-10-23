@@ -25,8 +25,8 @@
 //! ([`crate::controllers::weapons::inventory::reconcile`]): a table weapon the reconcile takes out
 //! of its slot comes into the set ([`keep`]), and one it puts into a slot leaves it ([`release`]).
 //! So the set holds every table weapon on the body that no slot holds, and which socket each sits
-//! on is the table's ([`taken`]). A slot's weapon the table has on a socket other than the one the
-//! game docks its slot on is placed there too ([`place_slots`] and [`place`]).
+//! on is the table's. A slot's weapon the table has on a socket other than the one the game docks
+//! its slot on is placed there too ([`place_slots`] and [`place`]).
 //!
 //! The placement and visibility detours run on the simulation's threads for the local player's
 //! inventory only, and take the set's lock; the input tick changes the set only outside the world
@@ -51,6 +51,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     aim::gun,
+    frame::Hand,
     hands::ik,
     loadout::{Place, Socket, live},
     weapons::{
@@ -131,17 +132,6 @@ pub(crate) fn contains(object: ObjectKey) -> bool {
 /// Take `object` out of the carry set, handing over its strong reference.
 pub(crate) fn release(object: ObjectKey) -> Option<Strong> {
     take(object).map(|c| c.strong)
-}
-
-/// The sockets the table has taken.
-pub(crate) fn taken() -> Vec<Socket> {
-    live::on_body()
-        .into_iter()
-        .filter_map(|(_, place)| match place {
-            Place::Socket(socket) => Some(socket),
-            Place::Hand(_) | Place::World(_) => None,
-        })
-        .collect()
 }
 
 /// Keep `weapon`, a table weapon on the body the reconcile takes out of its slot, alive in the set,
@@ -246,7 +236,8 @@ pub(crate) unsafe fn carry_loose(
     Ok(object)
 }
 
-/// The carried weapons as the save sidecar records them: each one's type, magazine, and socket.
+/// The carried weapons as the save sidecar records them: each one's type, magazine, and socket, the
+/// one the loadout table has it on, or for a weapon in a hand the one it came into the set on.
 pub(crate) fn records() -> Vec<Record> {
     CARRY
         .lock()
@@ -255,10 +246,14 @@ pub(crate) fn records() -> Vec<Record> {
             // SAFETY: the set's strong reference keeps the weapon alive.
             let weapon = unsafe { &*c.weapon() };
             let kind = unsafe { kind_of(weapon) }?;
+            let socket = match live::place_of(c.object) {
+                Some(Place::Socket(socket)) => socket,
+                _ => c.socket,
+            };
             Some(Record {
                 tag_hash: kind.tag_hash,
                 magazine: weapon.m_MagazineAmmo,
-                socket: c.socket,
+                socket,
                 single: single::is(c.object),
             })
         })
@@ -462,10 +457,19 @@ unsafe fn refresh_hud() {
 }
 
 /// Whether the game's own placement puts the slot's weapon `weapon` on `socket`: the socket it
-/// docks the weapon's slot on. A pistol's slot docks on either hip, which the single pistols' home
-/// chooses ([`single`]).
+/// docks the weapon's slot on. The game docks the pistol slot's first gun on the right hip, so a
+/// single pistol, whose first gun is all it shows ([`single`]), is the game's on that hip alone,
+/// while the game's pair takes both.
 unsafe fn at_own_dock(weapon: &WeaponBase, socket: Socket) -> bool {
-    unsafe { inventory_engine::slot_of(weapon) }.is_some_and(|slot| socket.is_native(slot))
+    let Some(slot) = (unsafe { inventory_engine::slot_of(weapon) }) else {
+        return false;
+    };
+    match socket {
+        Socket::Hip(side) if single::is(weapon as *const WeaponBase as usize) => {
+            side == Hand::Right
+        }
+        _ => socket.is_native(slot),
+    }
 }
 
 /// The weapons of `inventory`'s slots the table has on a socket other than their slot's own dock.

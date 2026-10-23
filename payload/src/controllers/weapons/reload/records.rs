@@ -1,5 +1,5 @@
 //! What the reload remembers about each weapon across ticks and weapon changes: each gun's chamber
-//! and action, the dual-wield split, and the magazine as last seen. Pure.
+//! and action, and the magazine as last seen. Pure.
 //!
 //! A weapon is remembered by its loadout item ([`ItemId`]) while the loadout table holds it, so a
 //! record survives the spawn reset's replacement of the weapon object with a new one of the same
@@ -10,7 +10,7 @@
 
 use crate::controllers::{
     loadout::ItemId,
-    weapons::reload::{chamber::Chamber, dual::SplitMagazines, travel::ActionTravel},
+    weapons::reload::{chamber::Chamber, travel::ActionTravel},
 };
 
 /// Which weapon a record is for.
@@ -39,7 +39,6 @@ pub(super) struct Record {
     pub chambers: [Chamber; GUN_ENTRIES],
     /// Each gun's action on its travel, by [`gun_entry`].
     pub travels: [ActionTravel; GUN_ENTRIES],
-    pub split: Option<SplitMagazines>,
     /// The game's magazine as of the last tick.
     pub last_magazine: Option<i32>,
 }

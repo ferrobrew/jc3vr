@@ -39,7 +39,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             empty,
-            reload::{chamber::ActionKind, dual::Transfer, frames, gate, loose::EjectRounds},
+            reload::{chamber::ActionKind, frames, gate, loose::EjectRounds},
         },
     },
     hooks::character::acts::resolve_act_id,
@@ -144,25 +144,20 @@ pub unsafe fn measure_gun(
 
 /// Drop the magazine of gun `index` of the weapon at `address` as the game's throw-away-magazine
 /// message does: the spare prop thrown from the magazine part (hiding it) or from the gun, the next
-/// spare requested, and, with `set_out`, the magazine-out flag set.
+/// spare requested, and the magazine-out flag set.
 ///
 /// # Safety
 ///
 /// `address` must be the live weapon read this tick; main thread, outside the world update.
-pub unsafe fn drop_magazine(address: usize, index: usize, set_out: bool, loose: bool) {
+pub unsafe fn drop_magazine(address: usize, index: usize, loose: bool) {
     let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
         return;
     };
     let character = weapon.m_User[0] as *mut Character;
     let part = unsafe { magazine_part(weapon) }
         .map_or(WeaponData::NO_MAGAZINE_MODEL_NAME_HASH, |p| p.m_NameHash);
-    // A magazine that stays in the world takes the gun's rounds with it; a split pistol's go back
-    // to the reserve through the split, so its magazine drops empty.
-    let rounds = if set_out {
-        weapon.m_MagazineAmmo.max(0)
-    } else {
-        0
-    };
+    // A magazine that stays in the world takes the gun's rounds with it.
+    let rounds = weapon.m_MagazineAmmo.max(0);
     let Some(gun) = (unsafe { gun_mut(weapon, index) }) else {
         return;
     };
@@ -175,12 +170,10 @@ pub unsafe fn drop_magazine(address: usize, index: usize, set_out: bool, loose: 
     if thrown {
         unsafe { gun.SpawnMagazineObject() };
     }
-    if loose && set_out && thrown {
+    if loose && thrown {
         unsafe { weapon.SetMagazineAmmo(0) };
     }
-    if set_out {
-        weapon.m_WeaponIsWithoutMagazine = true;
-    }
+    weapon.m_WeaponIsWithoutMagazine = true;
 }
 
 /// Seat a magazine of `rounds` from the world into the weapon at `address`: the rounds still
@@ -286,29 +279,6 @@ pub unsafe fn load_one(address: usize) -> bool {
     }
     weapon.m_WeaponIsWithoutMagazine = false;
     true
-}
-
-/// Apply a split magazine's transfer to the weapon at `address`: its magazine and its reserve.
-///
-/// # Safety
-///
-/// As [`drop_magazine`].
-pub unsafe fn transfer(address: usize, transfer: Transfer) {
-    let Some(weapon) = (unsafe { (address as *mut WeaponBase).as_mut() }) else {
-        return;
-    };
-    unsafe { weapon.SetMagazineAmmo(transfer.magazine.max(0)) };
-    if transfer.reserve_delta != 0
-        && let Some(user) = unsafe { user_mut(weapon) }
-    {
-        let ammo_type = weapon.m_AmmunitionType;
-        let inventory: &mut Inventory = &mut user.m_Inventory;
-        let reserve = unsafe { inventory.GetAmmoCount(ammo_type) };
-        unsafe {
-            inventory.SetAmmoCount(ammo_type, (reserve + transfer.reserve_delta).max(0), true)
-        };
-    }
-    unsafe { show_magazine(weapon) };
 }
 
 /// Tell the weapon at `address` that its action was worked by hand: the bolt rifle's lock cleared

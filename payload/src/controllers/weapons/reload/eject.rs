@@ -5,9 +5,8 @@
 //! is the gun hand turning faster than the flick speed, measured from the change in the hand's
 //! orientation between two ticks, and it ejects once per cooldown.
 //!
-//! A tap ejects the dominant hand's gun when it holds one, and otherwise the other hand's; the
-//! dual-wield pair's tap ejects both pistols ([`tap_targets`]). A flick ejects the gun of the hand
-//! that flicked.
+//! A tap ejects the dominant hand's gun when it holds one, and otherwise the other hand's
+//! ([`tap_targets`]). A flick ejects the gun of the hand that flicked.
 
 use glam::Quat;
 
@@ -107,20 +106,13 @@ impl FlickDetector {
     }
 }
 
-/// The hands whose guns a tap ejects, by [`Hand::index`], from each hand's gun (`guns`: the weapon
-/// it belongs to, as an index among the hands' weapons, and whether that weapon is the split
-/// dual-wield pair) and the `dominant` hand: the dominant hand's gun when it holds one, otherwise
-/// the other hand's, and with the pair, every gun of the pair.
-pub fn tap_targets(guns: [Option<(usize, bool)>; 2], dominant: Hand) -> [bool; 2] {
-    let Some((tapped, (weapon, split))) = [dominant, dominant.other()]
+/// The hands whose guns a tap ejects, by [`Hand::index`], from the hands that hold a gun (`guns`)
+/// and the `dominant` hand: the dominant hand's gun when it holds one, otherwise the other hand's.
+pub fn tap_targets(guns: [bool; 2], dominant: Hand) -> [bool; 2] {
+    let tapped = [dominant, dominant.other()]
         .into_iter()
-        .find_map(|hand| Some((hand, guns[hand.index()]?)))
-    else {
-        return [false; 2];
-    };
-    Hand::BOTH.map(|hand| {
-        hand == tapped || (split && guns[hand.index()].is_some_and(|(w, _)| w == weapon))
-    })
+        .find(|hand| guns[hand.index()]);
+    Hand::BOTH.map(|hand| Some(hand) == tapped)
 }
 
 #[cfg(test)]
@@ -196,30 +188,13 @@ mod tests {
 
     #[test]
     fn a_tap_ejects_the_dominant_hands_gun_first() {
-        let both = [Some((0, false)), Some((1, false))];
-        assert_eq!(tap_targets(both, Hand::Right), [false, true]);
-        assert_eq!(tap_targets(both, Hand::Left), [true, false]);
+        assert_eq!(tap_targets([true; 2], Hand::Right), [false, true]);
+        assert_eq!(tap_targets([true; 2], Hand::Left), [true, false]);
     }
 
     #[test]
     fn a_tap_ejects_the_other_hands_gun_when_the_dominant_hand_has_none() {
-        assert_eq!(
-            tap_targets([Some((0, false)), None], Hand::Right),
-            [true, false]
-        );
-        assert_eq!(tap_targets([None, None], Hand::Right), [false, false]);
-    }
-
-    #[test]
-    fn a_tap_ejects_both_pistols_of_the_pair() {
-        assert_eq!(
-            tap_targets([Some((0, true)), Some((0, true))], Hand::Right),
-            [true, true]
-        );
-        // A second weapon beside one pistol of the pair is not ejected with it.
-        assert_eq!(
-            tap_targets([Some((1, false)), Some((0, true))], Hand::Right),
-            [false, true]
-        );
+        assert_eq!(tap_targets([true, false], Hand::Right), [true, false]);
+        assert_eq!(tap_targets([false; 2], Hand::Right), [false, false]);
     }
 }

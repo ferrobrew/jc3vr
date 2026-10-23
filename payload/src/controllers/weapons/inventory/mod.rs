@@ -130,7 +130,7 @@ pub(crate) unsafe fn input_tick(
     if on {
         let slots = unsafe { live_slots(owner) };
         live::begin_tick(inputs.dominant, &slots);
-        unsafe { restore::input_tick(owner, &inputs.settings, inputs.dominant) };
+        unsafe { restore::input_tick(owner, &inputs.settings) };
     } else {
         if STATE.lock().status.active {
             unsafe { reconcile::project_back(owner) };
@@ -160,16 +160,12 @@ pub(crate) unsafe fn input_tick(
         unsafe { state.world.watch(weapon) };
     }
     let offsets = inputs.settings.offsets;
-    // A carried pistol sits in a hip holster the slot's pistol does not take.
-    let pistol = slots
+    // A pistol on a hip sits in its holster, unless the game's pair takes both holsters.
+    let pair = slots
         .iter()
         .find(|(s, _)| s.kind.slot == WeaponSlot::E_SLOT_DUAL_WIELD)
-        .map(|(s, _)| s.object);
-    let pair = pistol.is_some_and(|object| !single::is(object));
-    let home = single::slot_home().filter(|_| pistol.is_some_and(single::is));
-    carry::set_offsets(|socket| {
-        single::hips::hip_offset(socket, home, pair || !single::active(), offsets.of(socket))
-    });
+        .is_some_and(|(s, _)| !single::is(s.object));
+    carry::set_offsets(|socket| sockets::placed_offset(&offsets, socket, pair));
     let carried = unsafe { carry::seen() };
     for (seen, _) in &carried {
         // SAFETY: the carry set keeps the weapon alive.

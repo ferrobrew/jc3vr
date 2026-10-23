@@ -69,10 +69,7 @@ use crate::{
         mode::{self, Detection, Mode},
         physical_hands, roomscale, scheme, summary,
         vehicles::{self, wheel::CockpitTransform},
-        weapons::{
-            self,
-            dual_wield::{self, TriggerInput, TriggerTick},
-        },
+        weapons,
     },
     grapple, headpose,
     hud::{
@@ -339,34 +336,14 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
-    // The hands whose triggers fire a pistol: those holding one, in a mode whose triggers fire.
-    let fires_guns = dual_wield::triggers_fire_pistols(detection.mode);
-    let pistols = start
-        .dual_wield
-        .filter(|_| fires_guns)
-        .unwrap_or([false; 2]);
-    // The off-hand's trigger fires the gun it holds: a pistol of the pair, or a weapon the hold
-    // put in that hand.
+    // The off-hand's trigger fires the gun it holds, in a mode whose triggers fire the hand weapons.
+    let fires_guns = tables::triggers_fire_hand_weapons(detection.mode);
     let held = start.held.filter(|_| fires_guns).unwrap_or([false; 2]);
-    controls.dual_wield = pistols[dominant.other().index()] || held[dominant.other().index()];
-    // A pistol the reload holds (its chamber or its magazine empty) fires nothing, so the split
-    // never picks it; its trigger only clicks.
-    let reload_held = weapons::reload::fire_held();
+    controls.dual_wield = held[dominant.other().index()];
     controls.sight_chord = config.aim.sight_tuning.enabled && sights::tuning::lining_up();
     controls.ragdolling = mode::last_snapshot()
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
-    dual_wield::observe_triggers(start.dual_wield.map(|_| TriggerTick {
-        dominant,
-        triggers: Hand::BOTH.map(|hand| {
-            let fires = pistols[hand.index()] && !reload_held[hand.index()];
-            let trigger = &controls.hands[hand.index()].trigger_press;
-            TriggerInput {
-                held: fires && trigger.held(),
-                pressed: fires && trigger.pressed,
-            }
-        }),
-    }));
     let grapple_hand = dominant.other();
     let grapple_distance = grapple_hand_distance(grapple_hand, &config.bindings.yank);
     // The hand's pulls act only while the grapple button is held.

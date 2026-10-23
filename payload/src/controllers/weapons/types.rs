@@ -17,9 +17,6 @@ use crate::controllers::{
 pub struct TickStart {
     /// The weapon handling's grip targets.
     pub targets: Vec<GripTarget>,
-    /// The hands holding a pistol of the dual-wield slot while the dual-wield split acts (with the
-    /// split on, a pistol in at least one hand, in any mode), indexed by [`Hand::index`].
-    pub dual_wield: Option<[bool; 2]>,
     /// The hands holding a gun of the wielded weapon while the hold puts it in either hand,
     /// indexed by [`Hand::index`]: a hand's trigger fires the gun it holds, and only that hand's.
     pub held: Option<[bool; 2]>,

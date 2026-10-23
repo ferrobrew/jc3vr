@@ -49,8 +49,6 @@ pub(crate) fn stand_down() {
     unsafe { pouch_models::stand_down() };
     c4::stand_down();
     c4::wrist::stand_down();
-    dual_wield::observe_triggers(None);
-    dual_wield::attach::clear();
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { dual_wield::single::stand_down() };
     hold::clear();

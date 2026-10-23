@@ -39,10 +39,10 @@ use crate::{
         frame::{Hand, Pose},
         loadout::{live, slot_label},
         weapons::{
-            dual_wield::{self, single},
+            dual_wield::single,
             engine::{self, slot_from_raw},
             hold::{self, Cause, act, armed, equip},
-            inventory::{self, carry, engine as inventory_engine, sockets::fit_of},
+            inventory::{self, carry, engine as inventory_engine},
             regions::{self, CarryCause, WorldTouch},
         },
     },
@@ -103,8 +103,6 @@ impl std::error::Error for Refusal {}
 /// How a direct pickup treats the weapons around it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TakeOptions {
-    /// A dual-wield pair taken this way draws only the grabbing hand's pistol.
-    pub independent_pistols: bool,
     /// A weapon already in the slot is dropped to the ground first, rather than dropped or
     /// despawned by the game's inventory add.
     pub drop_replaced: bool,
@@ -182,10 +180,6 @@ pub(crate) unsafe fn take(
             regions::engine::world_carry(weapon, hand, gun, &touch)
         });
     hold::begin(hand, options.cause, Some(address));
-    let pair = slot == WeaponSlot::E_SLOT_DUAL_WIELD && !single;
-    if options.independent_pistols && pair {
-        dual_wield::attach::begin_draw(hand);
-    }
     let activator = activator(owner);
     if from_rack {
         unsafe { weapon.PickupStart(activator) };
@@ -196,9 +190,7 @@ pub(crate) unsafe fn take(
     if !wielded {
         return Err(Refusal::NotWielded);
     }
-    if !pair {
-        unsafe { hold::adopt(address) };
-    }
+    unsafe { hold::adopt(address) };
     // The pickup unequipped the weapon the other hand may hold, which stays there, armed.
     unsafe { inventory::reconcile::apply(owner) };
     if let Some(carry) = carry {
@@ -231,13 +223,7 @@ unsafe fn take_beside(
     hand: Hand,
     weapon: &mut WeaponBase,
 ) -> Result<(), &'static str> {
-    let (hold, inventory, dominant) = Config::lock_query(|c| {
-        (
-            c.controllers.weapons.hold,
-            c.controllers.weapons.inventory,
-            c.controllers.acting_hand(),
-        )
-    });
+    let hold = Config::lock_query(|c| c.controllers.weapons.hold);
     if !(hold.either_hand && hold.second_weapon) {
         return Err("a weapon in each hand is off");
     }
@@ -249,13 +235,10 @@ unsafe fn take_beside(
     if !other_wields {
         return Err("the other hand does not hold the wielded weapon");
     }
-    // Read as the raw value: an unset or unknown class is out of the enum's range.
-    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
-    let fit = fit_of(WeaponSlot::E_SLOT_DUAL_WIELD, class).ok_or("the pistol fits no socket")?;
-    let socket = inventory
-        .layout(dominant)
-        .choose(fit, &carry::taken())
-        .ok_or("no socket is free for the pistol")?;
+    // The carry set keeps it for the socket it would go onto, should the hand let it go there.
+    let weapon_type =
+        unsafe { inventory_engine::weapon_type(weapon) }.ok_or("the pistol is not a weapon")?;
+    let socket = live::free_socket(weapon_type, None).ok_or("no socket would take the pistol")?;
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or("the pistol is gone")?;
     unsafe { single::designate(weapon, "a pistol taken from the world") };
     unsafe { single::taken_from_world(owner, weapon) };

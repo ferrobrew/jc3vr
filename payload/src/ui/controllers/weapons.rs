@@ -23,7 +23,6 @@ use crate::{
                 HeftTuning, HoldConfig, HolstersConfig, PouchSide, PouchesConfig, RecoilConfig,
                 RightGrip, VolumeSpec,
             },
-            dual_wield::{self, DualWieldStatus},
             empty::{self, EmptyStatus},
             foregrip::{self, ForegripStatus},
             grenade::{self, GrenadeStatus},
@@ -57,7 +56,6 @@ pub(super) struct WeaponsReadout {
     foregrip: ForegripStatus,
     tiers: TierStatus,
     recoil: RecoilStatus,
-    dual_wield: DualWieldStatus,
     hold: HoldStatus,
     regions: RegionsStatus,
     dock: DockStatus,
@@ -82,7 +80,6 @@ impl WeaponsReadout {
             foregrip: foregrip::status(),
             tiers: tiers::status(),
             recoil: recoil::status(),
-            dual_wield: dual_wield::status(),
             hold: hold::status(),
             regions: regions::status(),
             dock: act::status(),
@@ -140,20 +137,8 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
                 r.offsets[hand.index()].z,
                 r.kicks[hand.index()]
             ));
-            let d = &readout.dual_wield;
-            ui.label(format!(
-                "trigger {} fires gun {} · shots {}",
-                if d.triggers[hand.index()].held {
-                    "held"
-                } else {
-                    "up"
-                },
-                d.guns[hand.index()].map_or("none".to_owned(), |g| g.to_string()),
-                d.shots[hand.index()]
-            ));
         }
     });
-    dual_wield_readout(ui, &readout.dual_wield);
     hold_readout(ui, &readout.hold, &readout.dock);
     regions_readout(ui, &readout.regions);
     armed_readout(ui, &readout.armed);
@@ -241,34 +226,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
             event.outcome.label()
         ));
     }
-}
-
-fn dual_wield_readout(ui: &mut Ui, d: &DualWieldStatus) {
-    ui.label(format!(
-        "Dual wield: split {} · last update handed {} · pinned gun {}",
-        if d.active { "acting" } else { "idle" },
-        d.chosen.map_or("no hand", Hand::label),
-        d.pinned.map_or("none".to_owned(), |g| g.to_string()),
-    ));
-    let a = &d.attach;
-    let drawn = |hand: Hand| {
-        if a.drawn[hand.index()] {
-            "drawn"
-        } else {
-            "holstered"
-        }
-    };
-    ui.label(format!(
-        "Pistol bones: owned {} · wielded {} · left {} · right {} · first pistol in {} · waiting draw {} · writes {} · snaps {}",
-        yes_no(a.owned),
-        yes_no(a.wielded),
-        drawn(Hand::Left),
-        drawn(Hand::Right),
-        a.gun_hands.map_or("the game's layout", |h| h[0].label()),
-        a.pending.map_or("none", Hand::label),
-        a.writes,
-        a.snaps
-    ));
 }
 
 fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {

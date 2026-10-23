@@ -83,7 +83,7 @@ impl State {
             }
             (Some(WorkEvent::Worked), Some((gun_hand, weapon, gun))) => {
                 let kind = weapon.plan.action;
-                let (rounds, magazine_in) = self.magazine(weapon, gun_hand);
+                let (rounds, magazine_in) = self.magazine(weapon);
                 let chamber = chamber::after_work(rounds, magazine_in);
                 self.records.get(weapon.key).chambers[gun.entry()] = chamber;
                 self.status.counts.racks += 1;
@@ -141,7 +141,7 @@ impl State {
             let foregrip_hand = foregrip
                 .filter(|h| h.weapon == weapon.address)
                 .map(|h| h.holder.other());
-            let (rounds, magazine_in) = self.magazine(&weapon, gun_hand);
+            let (rounds, magazine_in) = self.magazine(&weapon);
             let worker = worker.filter(|_| worked == Some(gun_hand));
             let hand = worker.and_then(|w| Some(tick.hands[w.index()]?.grip.position));
             let mut travel = record.travels[e];
@@ -258,16 +258,9 @@ impl State {
         }
     }
 
-    /// The rounds in the magazine of `weapon`'s gun in `hand`, and whether the magazine is in.
-    fn magazine(&mut self, weapon: &WeaponTick, hand: Hand) -> (i32, bool) {
-        let record = *self.records.get(weapon.key);
-        match record.split.filter(|_| weapon.split) {
-            Some(split) => {
-                let h = split.hands[hand.index()];
-                (h.rounds, !h.out)
-            }
-            None => (weapon.reading.magazine, !weapon.reading.out),
-        }
+    /// The rounds in `weapon`'s magazine, and whether the magazine is in.
+    fn magazine(&self, weapon: &WeaponTick) -> (i32, bool) {
+        (weapon.reading.magazine, !weapon.reading.out)
     }
 
     /// Let go of every remembered weapon's actions, leaving the parts where they are.

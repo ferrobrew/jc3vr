@@ -25,8 +25,9 @@
 //!
 //! With the switch off, the wielded weapon fires from the game's own fire input, and an armed
 //! weapon fires only while its magazine holds a round, since its ammunition check would otherwise
-//! ask the character to reload, which reloads the wielded weapon. The dual-wield pair is left to
-//! its own split ([`crate::controllers::weapons::dual_wield`]).
+//! ask the character to reload, which reloads the wielded weapon. The game's dual-wield pair, one
+//! weapon with a gun in each hand, fires from the game's own fire input, which alternates its guns
+//! ([`crate::controllers::weapons::dual_wield`]).
 //!
 //! The detours run on the simulation's worker threads; they read only the published inputs and
 //! the armed weapons' addresses, and lock nothing but this module's short locks.
@@ -54,11 +55,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     frame::Hand,
     loadout::live,
-    weapons::{
-        dual_wield::{self, single},
-        hold::armed,
-        reload,
-    },
+    weapons::{dual_wield::single, hold::armed, reload},
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -168,7 +165,7 @@ pub(crate) unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Op
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
     );
     let pair = weapon.m_EquipSlot == WeaponSlot::E_SLOT_DUAL_WIELD && !single::is(address);
-    if !wielded || pair || dual_wield::attach::owns(address) {
+    if !wielded || pair {
         return None;
     }
     // SAFETY: the weapon's user is the live local player while it updates.

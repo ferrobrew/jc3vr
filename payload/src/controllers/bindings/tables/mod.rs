@@ -309,7 +309,7 @@ pub fn context_masks(mode: Mode, ctx: &TableCtx, dominant: Hand) -> Vec<Mask> {
     let mut masks = Vec::new();
     let set = SemanticSet::of(mode.action_set());
     if ctx.dual_wield
-        && triggers_fire_pistols(mode)
+        && triggers_fire_hand_weapons(mode)
         && let Some(pistol) = fire_off_hand_pistol(set)
     {
         masks.push(Mask {
@@ -332,7 +332,7 @@ pub fn context_masks(mode: Mode, ctx: &TableCtx, dominant: Hand) -> Vec<Mask> {
 
 /// Whether the hands' triggers fire the hand weapons in `mode`: everywhere but the wingsuit, a
 /// driver's seat, and the menus.
-const fn triggers_fire_pistols(mode: Mode) -> bool {
+pub(crate) const fn triggers_fire_hand_weapons(mode: Mode) -> bool {
     match mode {
         Mode::OnFoot(_) => true,
         Mode::Airborne(variant) => !matches!(variant, AirborneVariant::Wingsuit),

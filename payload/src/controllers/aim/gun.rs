@@ -33,22 +33,19 @@ use jc3gi::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    config::Config,
-    controllers::{
-        aim::{
-            TickHands,
-            ray::{self, Ray},
-            sights::{self, ResolvedSight},
-        },
-        config::AimConfig,
-        frame::Hand,
-        hands::late,
-        vehicles,
-        weapons::{
-            dual_wield::{self, single},
-            hold::{self, tick as hold_tick},
-        },
+use crate::controllers::{
+    aim::{
+        TickHands,
+        ray::{self, Ray},
+        sights::{self, ResolvedSight},
+    },
+    config::AimConfig,
+    frame::Hand,
+    hands::late,
+    vehicles,
+    weapons::{
+        dual_wield::single,
+        hold::{self, tick as hold_tick},
     },
 };
 
@@ -180,8 +177,7 @@ pub fn character_aim_point(dominant: Hand) -> Option<Vec3> {
 }
 
 /// The weapons' per-tick update from their user, handed the aiming hand's point for the player's
-/// wielded weapon. For dual-wielded pistols, the split first picks the gun that may fire and the
-/// trigger it fires with ([`dual_wield::before_update`]), so the point is that gun's hand's.
+/// weapons in the hands, and each its own hand's fire input ([`hold_tick::substitute`]).
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::UpdateFromUserPostSim_ParallelBase_ADDRESS)]
 fn update_from_user_post_sim(
     weapon: *mut WeaponBase,
@@ -208,18 +204,9 @@ fn update_from_user_post_sim(
     // The shot's hand and the gun aim read the attach bones, which a state task may have moved
     // since the hold last wrote them.
     unsafe { hold::before_update(w) };
-    let split = unsafe { input.as_ref() }
-        .filter(|_| Config::lock_query(|c| c.controllers.weapons.dual_wield.split))
-        .and_then(|i| unsafe { dual_wield::before_update(w, i) });
-    // Otherwise the weapon in a hand takes its hand's own fire input in place of the game's.
-    let own = match split {
-        Some(_) => None,
-        None => unsafe { input.as_ref() }.and_then(|i| unsafe { hold_tick::substitute(w, i) }),
-    };
-    let input = split
-        .as_ref()
-        .or(own.as_ref())
-        .map_or(input, |i| i as *const WeaponInputs);
+    // The weapon in a hand takes its hand's own fire input in place of the game's.
+    let own = unsafe { input.as_ref() }.and_then(|i| unsafe { hold_tick::substitute(w, i) });
+    let input = own.as_ref().map_or(input, |i| i as *const WeaponInputs);
     match hand_target(w) {
         Some(target) => {
             let target = Vector3 {

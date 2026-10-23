@@ -11,9 +11,9 @@
 //! ([`layout`]), and everything downstream that derives a gun's hand from its attach bone (the gun
 //! aim, the shot's hand, the rigid grip, the recoil, the heft, the haptics, the reload, and the
 //! render-time late update) follows. The grenade, the planted explosive, and the beacon are left
-//! to the game. The dual-wield pair keeps its own layout
-//! ([`crate::controllers::weapons::dual_wield::attach`]), one pistol per hand. The table holds the
-//! hands only while the VR inventory runs it; without it the game's own layout stands.
+//! to the game. A weapon of two guns (the game's dual-wield pair, while the pistols are not made
+//! separate) keeps a gun in each hand ([`layout::placed_bone`]). The table holds the hands only
+//! while the VR inventory runs it; without it the game's own layout stands.
 //!
 //! The game rewrites every gun's attach-bone table at the end of the character's
 //! pose-finalization pass ([`WeaponBase::UpdatePostFinalizePose`]), and the character's state
@@ -87,7 +87,7 @@ use crate::controllers::{
     frame::Hand,
     hands::{grip, late},
     loadout::{ObjectAddress, TakeSource, live},
-    weapons::{dual_wield, engine::slot_from_raw, inventory},
+    weapons::{engine::slot_from_raw, inventory},
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -221,8 +221,7 @@ pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
 
 /// Follow the local player's wielded weapon (`wielded`, from [`wielded`]) for one input tick, after
 /// the table's feed has landed it in a hand (`arrival`, when it came into one this tick), and
-/// publish whether the mod owns its attach bones: while `enabled`, and the weapon is not the
-/// dual-wield pair the pistols' own layout owns. Returns the holding hand.
+/// publish whether the mod owns its attach bones: while `enabled`. Returns the holding hand.
 ///
 /// # Safety
 ///
@@ -265,8 +264,7 @@ pub(crate) fn begin(hand: Hand, cause: Cause, weapon: Option<usize>) {
 
 /// The weapon at `weapon` came into the hands by a call the mod made (an equip or a pickup): land
 /// it in the table at once, rather than at the next input tick, so that the next placement already
-/// puts it in its hand. Only while the hold is on, and never for the dual-wield pair, whose own
-/// layout owns its bones.
+/// puts it in its hand. Only while the hold is on.
 ///
 /// # Safety
 ///
@@ -340,8 +338,10 @@ pub(crate) fn clear() {
 
 /// The hand holding `weapon`, while the mod owns its attach bones.
 pub(crate) fn owned_holder(weapon: usize) -> Option<Hand> {
-    let owned = ENABLED.load(Ordering::Relaxed) && !dual_wield::attach::owns(weapon);
-    owned.then(|| live::hand_of(weapon)).flatten()
+    ENABLED
+        .load(Ordering::Relaxed)
+        .then(|| live::hand_of(weapon))
+        .flatten()
 }
 
 /// Write the holding hand's bones into `weapon`'s attach-bone table, when the table holds `weapon`
@@ -532,12 +532,10 @@ fn update_attachment_transforms(
     p4: f32,
     transform_type: u32,
 ) {
-    unsafe { dual_wield::attach::apply_owned(inventory, true) };
     for weapon in unsafe { held_in(inventory) } {
         unsafe { apply(weapon, true) };
     }
     unsafe { armed::apply_in(inventory) };
-    unsafe { dual_wield::single::apply_home(inventory) };
     unsafe { inventory::carry::place_slots(inventory) };
     // The rigid grip pins the attach bones after the layouts above have chosen them.
     let placement = unsafe { grip::before_placement(inventory, character) };
@@ -558,12 +556,10 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
         .get()
         .unwrap()
         .call(inventory);
-    unsafe { dual_wield::attach::apply_owned(inventory, false) };
     for weapon in unsafe { held_in(inventory) } {
         unsafe { apply(weapon, false) };
     }
     unsafe { armed::apply_in(inventory) };
-    unsafe { dual_wield::single::apply_home(inventory) };
     unsafe { inventory::carry::place_slots(inventory) };
     // No inventory ends the pass for the carried weapons.
     unsafe { inventory::carry::end_pass(inventory) };

@@ -17,12 +17,12 @@
 //! - its magazine holds half the tuned size ([`magazine`]), with the reserve shared.
 //!
 //! The player's pistols become two such objects. A pair the game hands over keeps the slot, and
-//! a second pistol of its kind, the twin, is spawned and carried on the other hip by the VR
-//! inventory's carry set, half the pair's magazine in each ([`grant`]). A pistol taken from the
-//! world is one pistol ([`pickup_item`]). Each is then picked up, held, dropped, and reloaded on
-//! its own, through the paths every weapon takes: each is its own item of the loadout table's, in
-//! whichever hand or on whichever socket the table has it, and a drop is a drop of that object.
-//! Which hip each sits on is [`hips`].
+//! a second pistol of its kind, the twin, is spawned and carried by the VR inventory's carry set on
+//! the hip the slot's pistol does not take, half the pair's magazine in each ([`grant`]). A pistol
+//! taken from the world is one pistol ([`pickup_item`]). Each is then picked up, held, docked,
+//! dropped, and reloaded on its own, through the paths every weapon takes: each is its own item of
+//! the loadout table's, in whichever hand or on whichever socket the table has it, and a drop is a
+//! drop of that object.
 //!
 //! The set of single pistols ([`set`]) is the VR inventory's to keep: an object leaves it at the
 //! first input tick after the inventory stops tracking it, and while the hands stand down only
@@ -32,12 +32,11 @@
 //! The settings switch only the making of new ones; pistols already single stay single.
 
 pub mod grant;
-pub mod hips;
 pub mod magazine;
 mod set;
 
 use std::{
-    sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::Instant,
 };
 
@@ -61,23 +60,15 @@ use crate::{
         hands::ik,
         loadout::{Place, Restored, Socket, live},
         weapons::{
-            dual_wield::{
-                attach,
-                single::{
-                    grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
-                    hips::{hip_socket, home_for, socket_side},
-                    magazine::Dealt,
-                },
+            dual_wield::single::{
+                grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
+                magazine::Dealt,
             },
             engine::slot_from_raw,
-            hold::{self, layout, refs::Strong},
+            hold::{self, refs::Strong},
             inventory::{
-                carry,
-                config::InventoryConfig,
-                engine as inventory_engine,
-                engine::ObjectKey,
+                carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey,
                 restore,
-                sockets::{Fit, Layout, fit_of},
             },
         },
     },
@@ -97,9 +88,8 @@ pub struct SingleStatus {
     pub active: bool,
     /// How many single pistols the player owns or let go of nearby.
     pub singles: usize,
-    /// Whether the slot's weapon is a single pistol, and its hip.
+    /// Whether the slot's weapon is a single pistol.
     pub slot_single: bool,
-    pub slot_home: Option<Hand>,
     /// Where the slot's pair is in getting its twin.
     pub twin: TwinState,
     /// Pairs split in two, pistols that arrived as one, pistols taken from the world as one, and
@@ -118,7 +108,6 @@ pub fn status() -> SingleStatus {
         active: ACTIVE.load(Ordering::Relaxed),
         singles: set::len(),
         slot_single: state.slot_single,
-        slot_home: slot_home(),
         twin: state.grants.state(),
         splits: state.splits,
         ones: state.ones,
@@ -218,48 +207,6 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
     );
 }
 
-/// The slot's single pistol's hip, while the slot holds one.
-pub(crate) fn slot_home() -> Option<Hand> {
-    home().map(|(_, side)| side)
-}
-
-/// Write the slot's single pistol's hip into its holstered attach bone, when `inventory` is the
-/// local player's and holds it. Called at the hold's write points, which the game's own rewrite
-/// of the table at the end of each pass would otherwise undo.
-///
-/// # Safety
-///
-/// `inventory` must be null or live, on the thread updating its owner.
-pub(crate) unsafe fn apply_home(inventory: *mut Inventory) {
-    let Some((object, side)) = home() else {
-        return;
-    };
-    let Some(inventory) = (unsafe { inventory.as_ref() }) else {
-        return;
-    };
-    let local = ik::local_character();
-    if local == 0 || inventory.m_Character as usize != local {
-        return;
-    }
-    let in_slot = inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)
-        .is_some_and(|slot| slot.px as usize == object);
-    if !in_slot {
-        return;
-    }
-    let bone = layout::hip_bone(side);
-    // SAFETY: the slot keeps the weapon alive.
-    let weapon = unsafe { &mut *(object as *mut WeaponBase) };
-    if let Some(first) = unsafe { gun_mut(weapon, 0) }
-        && let Some(entry) = first
-            .m_lBoneAttachementPerWeaponState
-            .get_mut(WeaponState::E_WS_HOLSTERED as usize)
-    {
-        *entry = bone;
-    }
-}
-
 /// The single pistol `weapon` was taken from the world by the mod without the game's pickup: its
 /// stored rounds go to `owner`'s reserve and are cleared, as the game's pickup does, and it counts
 /// as taken.
@@ -292,7 +239,6 @@ pub(crate) fn on_reset(slot_single: Option<bool>) {
     for object in set::all() {
         set::remove(object);
     }
-    clear_home();
     std::mem::take(&mut *PARKED.lock());
     let mut state = STATE.lock();
     state.grants.clear();
@@ -320,7 +266,6 @@ pub(crate) unsafe fn pistol_not_restored(owner: &mut Character, tag_hash: u32) {
         STATE.lock().unrestored.push(tag_hash);
         return;
     };
-    clear_home();
     // The game shows both guns again as it would any pair it holds.
     let shown = unsafe { gun_mut(weapon, 0) }
         .and_then(|gun| unsafe { gun.m_BaseModelInstance.as_ref() })
@@ -360,7 +305,7 @@ pub(crate) struct Tick<'a> {
 
 /// Follow the player's pistols for one input tick: forget single pistols the inventory no longer
 /// tracks, keep the owned ones to one gun and half a magazine, split a pair the game handed over,
-/// take a twin that came into the carry set, and put a carried pistol into an empty slot.
+/// and take a twin that came into the carry set.
 ///
 /// # Safety
 ///
@@ -377,14 +322,13 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     let slot_object = slot.as_ref().map(|w| *w as *const WeaponBase as usize);
     let slot_is_single = slot_object.is_some_and(set::contains);
     unsafe { keep_owned(owner, slot_object) };
-    unsafe { follow_home(slot_object.filter(|_| slot_is_single)) };
     if RACK_COPY_ASKED.swap(false, Ordering::Relaxed) {
         STATE.lock().grants.cover_rack_copy();
     }
-    let layout = tick.settings.layout(tick.dominant);
-    let fit = slot.as_ref().and_then(|w| unsafe { fit_of_weapon(w) });
     let guns = slot.as_ref().is_some_and(|w| unsafe { gun_count(w) } >= 2);
-    let twin_socket = fit.and_then(|fit| twin_socket(&layout, fit));
+    let twin_socket = slot
+        .as_ref()
+        .and_then(|w| unsafe { twin_socket(w, tick.dominant) });
     let grant = {
         let mut state = STATE.lock();
         let now = Instant::now();
@@ -416,7 +360,6 @@ pub(crate) fn clear() {
     for object in set::all() {
         set::remove(object);
     }
-    clear_home();
     std::mem::take(&mut *PARKED.lock());
     STATE.lock().grants.clear();
 }
@@ -517,54 +460,10 @@ static STATE: Mutex<State> = Mutex::new(State {
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Set by the pickup start's detour for a rack's copy; the input tick covers the copy.
 static RACK_COPY_ASKED: AtomicBool = AtomicBool::new(false);
-/// The slot's single pistol and its hip, packed into one word so a reader on another thread never
-/// pairs one pistol with another's hip: the object's address in the low bits and the hip's code
-/// ([`side_code`]) in the top byte, or zero without one.
-static HOME: AtomicUsize = AtomicUsize::new(0);
 /// Pistols taken from the world as one pistol since the payload loaded.
 static PICKED: AtomicU64 = AtomicU64::new(0);
 /// Twins that were not wanted, hidden and kept out of reach until the next reset ([`park`]).
 static PARKED: Mutex<Vec<Strong>> = Mutex::new(Vec::new());
-
-const SIDE_LEFT: u8 = 1;
-const SIDE_RIGHT: u8 = 2;
-
-const fn side_code(side: Hand) -> u8 {
-    match side {
-        Hand::Left => SIDE_LEFT,
-        Hand::Right => SIDE_RIGHT,
-    }
-}
-
-const fn side_of(code: u8) -> Hand {
-    if code == SIDE_LEFT {
-        Hand::Left
-    } else {
-        Hand::Right
-    }
-}
-
-fn set_home(object: ObjectKey, side: Hand) {
-    HOME.store(
-        (object & HOME_OBJECT_MASK) | ((side_code(side) as usize) << HOME_SIDE_SHIFT),
-        Ordering::Relaxed,
-    );
-}
-
-fn clear_home() {
-    HOME.store(0, Ordering::Relaxed);
-}
-
-/// The slot's single pistol and its hip, when there is one.
-fn home() -> Option<(ObjectKey, Hand)> {
-    let word = HOME.load(Ordering::Relaxed);
-    let object = word & HOME_OBJECT_MASK;
-    (object != 0).then(|| (object, side_of((word >> HOME_SIDE_SHIFT) as u8)))
-}
-
-/// Where the hip's code sits in [`HOME`]: above every user-space address.
-const HOME_SIDE_SHIFT: u32 = 56;
-const HOME_OBJECT_MASK: usize = (1 << HOME_SIDE_SHIFT) - 1;
 
 /// Keep the pistols the player owns to one gun and half a magazine: the slot's and the carried
 /// ones.
@@ -581,29 +480,6 @@ unsafe fn keep_owned(owner: &mut Character, slot: Option<usize>) {
         pin(weapon);
         unsafe { clamp_magazine(owner, weapon) };
     }
-}
-
-/// Give the slot's single pistol its hip when it is new to the slot: the right, unless a carried
-/// pistol sits there and the left is free. A pistol the mod moved into the slot already has one.
-unsafe fn follow_home(single: Option<usize>) {
-    let Some(object) = single else {
-        clear_home();
-        return;
-    };
-    // The hip the loadout table has it on is its home.
-    if let Some(side) = match live::place_of(object) {
-        Some(Place::Socket(socket)) => socket_side(socket),
-        _ => None,
-    } {
-        set_home(object, side);
-        return;
-    }
-    if home().is_some_and(|(o, _)| o == object) {
-        return;
-    }
-    let taken = carry::taken();
-    let carried = Hand::BOTH.map(|side| taken.contains(&hip_socket(side)));
-    set_home(object, home_for(carried));
 }
 
 /// Carry out the grant's decision.
@@ -669,24 +545,20 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
     }
 }
 
-/// The free socket a twin of `fit` goes onto: the hip the slot's pistol does not take, when it is
-/// free, or the first free socket that fits it.
-fn twin_socket(layout: &Layout, fit: Fit) -> Option<Socket> {
-    let taken = carry::taken();
-    let home = slot_home().unwrap_or(Hand::Right);
-    let other = hip_socket(home.other());
-    if layout.accepts(other, fit) && !taken.contains(&other) {
-        return Some(other);
-    }
-    layout.choose(fit, &taken)
-}
-
-/// What fits `weapon` on the body, read as raw values: an unset slot or class is out of its enum's
-/// range.
-unsafe fn fit_of_weapon(weapon: &WeaponBase) -> Option<Fit> {
-    let slot = unsafe { slot_of(weapon) }?;
-    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
-    fit_of(slot, class)
+/// The free socket a twin of the slot's pair `pair` goes onto: the hip the slot's pistol does not
+/// take, when it is free, or the first free socket that fits it. The slot's pistol takes the hip
+/// the loadout table has it on, or the dominant hand's.
+///
+/// # Safety
+///
+/// `pair` must be live.
+unsafe fn twin_socket(pair: &WeaponBase, dominant: Hand) -> Option<Socket> {
+    let weapon = unsafe { inventory_engine::weapon_type(pair) }?;
+    let home = match live::place_of(pair as *const WeaponBase as usize) {
+        Some(Place::Socket(Socket::Hip(side))) => side,
+        _ => dominant,
+    };
+    live::free_socket(weapon, Some(Socket::Hip(home.other())))
 }
 
 /// A twin came: carry it on the hip the slot's pistol does not take, and deal the pair's magazine
@@ -713,17 +585,10 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         unsafe { park(owner, strong, "it came for a pair no longer in the slot") };
         return;
     };
-    let layout = tick.settings.layout(tick.dominant);
-    // The pair becomes the slot's pistol first, so its home is known when the socket is chosen.
     // SAFETY: the slot keeps the pair alive.
     let slot_pistol = unsafe { &mut *(pair as *mut WeaponBase) };
-    let taken = carry::taken();
-    let carried = Hand::BOTH.map(|side| taken.contains(&hip_socket(side)));
-    set_home(pair, home_for(carried));
-    let socket = unsafe { fit_of_weapon(slot_pistol) }.and_then(|fit| twin_socket(&layout, fit));
-    let Some(socket) = socket else {
+    let Some(socket) = (unsafe { twin_socket(slot_pistol, tick.dominant) }) else {
         STATE.lock().grants.refused(pair);
-        clear_home();
         note(
             |s| s.pairs += 1,
             "no socket is free for the second pistol".to_owned(),
@@ -738,7 +603,6 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         Ok(twin) => twin,
         Err(refusal) => {
             STATE.lock().grants.refused(pair);
-            clear_home();
             tracing::warn!(target: "controllers", %refusal, "single pistols: the second pistol was not carried; the pair stays the game's");
             if let Some(keep) = keep {
                 unsafe { park(owner, keep, "the carry set refused it") };
@@ -758,7 +622,6 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
         set::remove(pair);
         set::remove(twin);
         STATE.lock().grants.refused(pair);
-        clear_home();
         if let Some(strong) = carry::release(twin) {
             unsafe { park(owner, strong, "the pair could not be made two pistols") };
         }
@@ -774,14 +637,10 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
             socket,
         });
     }
-    unsafe { share_hands(twin) };
-    let side = socket_side(socket).unwrap_or(Hand::Left);
+    unsafe { share_hands(pair, twin) };
     note(
         |s| s.splits += 1,
-        format!(
-            "the pair is two pistols; the second is on the {} hip",
-            side.label()
-        ),
+        format!("the pair is two pistols; the second is on {socket}"),
     );
     tracing::info!(
         target: "controllers",
@@ -810,25 +669,19 @@ unsafe fn park(owner: &mut Character, strong: Strong, why: &str) {
     tracing::warn!(target: "controllers", why, "single pistols: a second pistol is not wanted; it is hidden and kept out of reach");
 }
 
-/// A pair split while in the hands keeps a pistol in each hand that held one: the slot's pistol
-/// stays in its hand, and with both drawn the second pistol comes off its hip into the other hand
-/// at once.
-unsafe fn share_hands(twin: ObjectKey) {
-    let attach = attach::status();
-    let Some(gun_hands) = attach.gun_hands.filter(|_| attach.wielded) else {
+/// A pair split while in a hand, its second gun shown in the other, keeps a pistol in each hand:
+/// the slot's pistol stays in its hand, and with the other hand empty the second pistol comes off
+/// its hip into that hand at once.
+unsafe fn share_hands(pair: ObjectKey, twin: ObjectKey) {
+    let Some(hand) = live::hand_of(pair) else {
         return;
     };
-    let (slot_hand, twin_hand) = hips::split_hands(attach.drawn, gun_hands);
-    if let Some(hand) = slot_hand {
-        hold::hand_over(hand);
-    }
-    let second_allowed = Config::lock_query(|c| {
+    let other = hand.other();
+    let both_hands = Config::lock_query(|c| {
         let hold = c.controllers.weapons.hold;
         hold.either_hand && hold.second_weapon
     });
-    if let Some(hand) = twin_hand.filter(|_| second_allowed)
-        && !unsafe { hold::take_into(hand, twin) }
-    {
+    if both_hands && live::in_hand(other).is_none() && !unsafe { hold::take_into(other, twin) } {
         tracing::info!(target: "controllers", "single pistols: the second pistol stays on its hip");
     }
 }

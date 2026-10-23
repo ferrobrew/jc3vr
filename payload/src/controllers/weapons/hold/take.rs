@@ -62,7 +62,6 @@ pub(crate) struct TakeInputs<'a> {
     pub settings: &'a HoldConfig,
     /// The hands holding no gun, by [`Hand::index`].
     pub free: [bool; 2],
-    pub independent_pistols: bool,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub gameplay: bool,
 }
@@ -133,7 +132,6 @@ pub(crate) unsafe fn finish_grab(hand: Hand, inputs: &TakeInputs) -> bool {
         None => Err(TakeRefusal::NothingInReach),
         Some(target) => {
             let options = TakeOptions {
-                independent_pistols: inputs.independent_pistols,
                 drop_replaced: inputs.settings.drop_replaced,
                 slide_s: if inputs.settings.take_slide {
                     inputs.settings.snap_s

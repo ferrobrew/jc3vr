@@ -3,13 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::{
-    frame::Hand,
-    weapons::inventory::{
-        pins::PinSettings,
-        sockets::{Layout, Offsets},
-    },
-};
+use crate::controllers::weapons::inventory::{pins::PinSettings, sockets::Offsets};
 
 /// The VR inventory. Acts only under the controller scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -70,16 +64,6 @@ impl InventoryConfig {
             offsets: Offsets::new(),
             persist: true,
             project_slots: true,
-        }
-    }
-
-    /// The sockets these settings give, for `dominant`.
-    pub fn layout(&self, dominant: Hand) -> Layout {
-        Layout {
-            back: self.back_sockets.min(3),
-            hips: self.hip_sockets.min(2),
-            chest: self.chest_socket,
-            dominant,
         }
     }
 

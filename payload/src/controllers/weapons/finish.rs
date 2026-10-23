@@ -213,12 +213,10 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 let Some(active) = active.as_ref() else {
                     continue;
                 };
-                let dual = config.weapons.dual_wield;
                 let inputs = hold::take::TakeInputs {
                     active,
                     settings: &config.weapons.hold,
                     free: [true; 2],
-                    independent_pistols: dual.split && dual.independent_draw,
                     gameplay,
                 };
                 // SAFETY: the input tick runs on the main thread outside the world update.

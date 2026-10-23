@@ -179,18 +179,12 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         }
     }
     drop(state);
-    let (holding, dual, regions) = Config::lock_query(|c| {
-        (
-            c.controllers.weapons.hold,
-            c.controllers.weapons.dual_wield,
-            c.controllers.weapons.regions,
-        )
-    });
+    let (holding, regions) =
+        Config::lock_query(|c| (c.controllers.weapons.hold, c.controllers.weapons.regions));
     let targets = ik::tick_records().current;
     for (hand, reach) in weapons {
         let refusal = if holding.direct_pickup {
             let options = TakeOptions {
-                independent_pistols: dual.split && dual.independent_draw,
                 drop_replaced: holding.drop_replaced,
                 slide_s: if holding.take_slide {
                     holding.snap_s

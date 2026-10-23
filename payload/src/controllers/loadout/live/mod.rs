@@ -37,14 +37,14 @@ use parking_lot::Mutex;
 pub(crate) use crate::controllers::loadout::live::{
     expect::{Expect, Pending},
     hands::{Held, Whereabouts},
-    published::{hand_of, in_hand, item_of, on_body, place_of},
+    published::{hand_of, in_hand, item_of, place_of},
 };
 use crate::controllers::{
     frame::Hand,
     loadout::{
         binding::{Awaiting, Binding, ObjectAddress},
         event::Event,
-        item::ItemKind,
+        item::{ItemKind, WeaponType},
         live::expect::landing,
         projection::{StoreProjection, project_store},
         reset::{CacheKind, ResetKind, SlotObject},
@@ -296,6 +296,16 @@ pub(crate) fn dock(hand: Hand, object: ObjectAddress, socket: Socket) -> bool {
     }
     live.publish_places();
     live.place_of(object) == Some(Place::Socket(socket))
+}
+
+/// The socket a weapon of `weapon` would go onto now when no hand chooses one: `preferred` when the
+/// body has it free and it fits, otherwise the first free socket of the body's preference for it.
+/// `None` with no such socket free, or while the table does not run.
+pub(crate) fn free_socket(weapon: WeaponType, preferred: Option<Socket>) -> Option<Socket> {
+    let live = LIVE.lock();
+    live.started
+        .then(|| hands::free_socket(&live.table, weapon, preferred))
+        .flatten()
 }
 
 /// Every live object the table's items are bound to, and where each is, as of now.

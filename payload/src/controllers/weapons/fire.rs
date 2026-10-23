@@ -10,9 +10,8 @@
 //!   ([`crate::controllers::haptics::rumble`]);
 //! - after the shot, the change in the recoil is the shot's kick, which kicks the hand's recoil
 //!   offset ([`crate::controllers::weapons::recoil`]), by the class's one-handed kick scale for a
-//!   long gun in one hand ([`crate::controllers::weapons::heft`]), the dual-wield split learns which
-//!   hand fired ([`crate::controllers::weapons::dual_wield`]), and the reload learns the shot's hand
-//!   and the rounds left ([`crate::controllers::weapons::reload`]). A gun whose body the hands
+//!   long gun in one hand ([`crate::controllers::weapons::heft`]), and the reload learns the shot's
+//!   hand and the rounds left ([`crate::controllers::weapons::reload`]). A gun whose body the hands
 //!   hold is kicked by an impulse on that body instead of the offset
 //!   ([`crate::controllers::physical_hands::physics::guns`]). A weapon without a fire rumble of its own
 //!   still pulses the hand with the kick alone.
@@ -130,9 +129,6 @@ fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
         &config.weapons.recoil,
         heft::one_hand_kick(hand),
     );
-    if !armed::is(weapon as usize) {
-        dual_wield::on_shot(hand);
-    }
     reload::on_shot(weapon as usize, hand, w.m_MagazineAmmo);
     if !shot.rumbled {
         rumble::kick(hand, pitch.hypot(yaw));

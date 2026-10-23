@@ -234,3 +234,26 @@ fn a_dual_wielding_passenger_fires_from_either_trigger() {
     let step = b.sim_step(mode, &c, DT, &CONFIG);
     assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
 }
+
+#[test]
+fn the_modes_whose_triggers_fire_the_hand_weapons() {
+    let seat = |driver| {
+        Mode::Vehicle(VehicleSeat {
+            class: VehicleClass::Car,
+            driver,
+        })
+    };
+    let cases = [
+        (Mode::OnFoot(OnFootVariant::Ground), true),
+        (Mode::OnFoot(OnFootVariant::Swimming), true),
+        (Mode::Airborne(AirborneVariant::Falling), true),
+        (Mode::Airborne(AirborneVariant::Parachute), true),
+        (Mode::Airborne(AirborneVariant::Wingsuit), false),
+        (seat(false), true),
+        (seat(true), false),
+        (Mode::Ui, false),
+    ];
+    for (mode, fires) in cases {
+        assert_eq!(triggers_fire_hand_weapons(mode), fires, "{mode:?}");
+    }
+}

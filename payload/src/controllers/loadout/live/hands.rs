@@ -56,7 +56,7 @@ pub(crate) fn departure(
             release: Release::Dropped,
         }),
         Whereabouts::Slot => {
-            let socket = dock_socket(table, held.kind.weapon()?)?;
+            let socket = free_socket(table, held.kind.weapon()?, None)?;
             Some(Event::Dock { hand, socket })
         }
     }
@@ -93,9 +93,14 @@ pub(crate) fn arrival(
     }
 }
 
-/// The socket a weapon of `weapon` docks on in `table` when no hand chose one: the first free
-/// socket of the body's preference for it, the game's own dock for its slot first.
-fn dock_socket(table: &Loadout, weapon: WeaponType) -> Option<Socket> {
+/// The socket a weapon of `weapon` goes onto in `table` when no hand chose one: `preferred` when the
+/// body has it free and it fits, otherwise the first free socket of the body's preference for it,
+/// the game's own dock for its slot first.
+pub(crate) fn free_socket(
+    table: &Loadout,
+    weapon: WeaponType,
+    preferred: Option<Socket>,
+) -> Option<Socket> {
     let body = table.body();
     let free = |socket: Socket| {
         body.has(socket)
@@ -104,7 +109,9 @@ fn dock_socket(table: &Loadout, weapon: WeaponType) -> Option<Socket> {
                 .items()
                 .any(|item| item.place == Place::Socket(socket))
     };
-    body.preference(weapon).find(|&socket| free(socket))
+    preferred
+        .filter(|&socket| free(socket))
+        .or_else(|| body.preference(weapon).find(|&socket| free(socket)))
 }
 
 #[cfg(test)]

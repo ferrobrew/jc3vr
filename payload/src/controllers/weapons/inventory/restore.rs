@@ -42,7 +42,6 @@ use parking_lot::Mutex;
 use crate::{
     config::{self, paths},
     controllers::{
-        frame::Hand,
         hands::ik,
         loadout::{Restored, live},
         weapons::{
@@ -53,7 +52,6 @@ use crate::{
                 config::InventoryConfig,
                 engine::{self as inventory_engine, kind_of, weapon_of},
                 persist::{Fingerprint, RESERVES, Record, SLOTS, Sidecar},
-                sockets::fit_of,
             },
         },
     },
@@ -239,7 +237,7 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, dominant: Hand) {
+pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig) {
     let enabled = settings.enabled && settings.carry;
     let plan = {
         let mut plan = PLAN.lock();
@@ -260,7 +258,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
         single::cover_respawn(chosen.slot_pistol_single);
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
-    unsafe { adopt(owner, settings, dominant) };
+    unsafe { adopt(owner) };
 }
 
 /// Ask the spawn system for the second pistol of a pair of the type `tag_hash`, at the player, for
@@ -597,7 +595,7 @@ unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
 
 /// Adopt each weapon the spawn system has handed over onto its socket, and give up on spawns that
 /// never came.
-unsafe fn adopt(owner: &mut Character, settings: &InventoryConfig, dominant: Hand) {
+unsafe fn adopt(owner: &mut Character) {
     let generation = PLAN.lock().generation;
     let spawned = std::mem::take(&mut *SPAWNED.lock());
     for (asked_in, strong) in spawned {
@@ -620,15 +618,9 @@ unsafe fn adopt(owner: &mut Character, settings: &InventoryConfig, dominant: Han
         let Some(record) = record else {
             continue;
         };
-        // Read as the raw value: an unset or unknown class is out of the enum's range.
-        let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
-        let layout = settings.layout(dominant);
-        let taken = carry::taken();
-        let socket = fit_of(kind.slot, class).and_then(|fit| {
-            (layout.accepts(record.socket, fit) && !taken.contains(&record.socket))
-                .then_some(record.socket)
-                .or_else(|| layout.choose(fit, &taken))
-        });
+        // The recorded socket when it is free, otherwise where the table puts a weapon of its type.
+        let socket = unsafe { inventory_engine::weapon_type(weapon) }
+            .and_then(|weapon| live::free_socket(weapon, Some(record.socket)));
         let restored = socket.is_some_and(|socket| {
             match unsafe { carry::carry_loose(owner, strong, socket) } {
                 Ok(object) => {
