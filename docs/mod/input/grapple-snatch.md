@@ -1,6 +1,6 @@
 # Grapple snatch
 
-Not built yet: this is the design and the plan of record. It is built after the [two-handed inventory](two-handed-inventory.md), whose takes it ends in: the snatch's arrival lands the item in the loadout table and the grabbing hand, never through the game's equip.
+Not built yet: this is the design and the plan of record. It is built after the [two-handed inventory](two-handed-inventory.md), whose takes it ends in: the snatch's arrival lands the item in the loadout table and the grabbing hand, never through the game's equip. It is the first feature built on the inventory, and its test: a snatch takes an item from anywhere into the grabbing hand while the other hand holds whatever it holds, which exercises the table, the hands' independence, and the reconcile end to end.
 
 The grapple hand pulls things to itself. The grapple button keeps doing what it does in the game (a tap fires, a hold tethers to and between targets), and the grip pulls: with the empty grapple hand pointed at something out of reach, a squeeze and a yank back toward the body fire the game's hook at it and snatch it from wherever it is (the ground, a rack or a locker, a character's hands, a holster on a character's body) into the hand, in the held position. From there it is an ordinary held thing: hand it to the other hand, holster it, carry it, or drop it. Weapons are the core of the feature. Props and car doors follow, the doors pulled open on the line rather than into the hand.
 
