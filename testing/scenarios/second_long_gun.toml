@@ -1,6 +1,6 @@
 # Template: fill testing/recordings/second_long_gun.jc3trk, then run. See docs/mod/testing/recorder.md.
 name = "a long gun in each hand"
-description = "Recorded right-handed with two long guns in the shoulder slots (controllers.md, the weapon handling). Draw one long gun with the right hand, draw the other from the left shoulder with the left hand, fire each with its own trigger, then holster both."
+description = "Recorded right-handed with two long guns in the shoulder slots (physical-weapons.md, a weapon in each hand). Draw one long gun with the right hand, draw the other from the left shoulder with the left hand, fire each with its own trigger, then dock both."
 recording = "../recordings/second_long_gun.jc3trk"
 
 [[expect]]

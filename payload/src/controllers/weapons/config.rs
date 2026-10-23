@@ -1,5 +1,5 @@
-//! The weapon-handling settings (the holsters, the pouches, the foregrip, the recoil, the weight,
-//! the dual-wield split, the grenade throw, the C4 throw, and the scopes), held in
+//! The weapon-handling settings (the sockets, the pouches, the foregrip, the recoil, the weight, the
+//! hands' hold, the grenade throw, the C4 throw, and the scopes), held in
 //! [`WeaponsConfig`](crate::controllers::config::WeaponsConfig) beside the other weapon-handling
 //! subsystems' toggles. The reload's are in [`crate::controllers::weapons::reload::config`].
 
@@ -11,33 +11,33 @@ use crate::controllers::weapons::{
     grenade::config::{GrenadeCatchConfig, GrenadePinConfig},
 };
 
-/// The body holsters (see [`crate::controllers::weapons`]). They act only under the controller
-/// scheme, so they default on.
+/// The body's sockets (see [`crate::controllers::weapons::docks`]). They act only under the
+/// controller scheme, so they default on.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HolstersConfig {
-    /// Draw a weapon with a grip press at its holster, and holster the held weapon with a grip
-    /// press at its own holster.
+    /// Draw a weapon with a grip press at the socket it sits on, and dock the held weapon on a
+    /// socket that fits it. Off, no socket is reached, and a gun let go of falls.
     pub enabled: bool,
-    /// Keep the move stick's click cycling to the next weapon while the holsters are on, as a
-    /// fallback for players who cannot reach them. Off the holsters, the click always cycles.
-    /// Under the dual-wield split the click retracts the tethers instead.
+    /// Keep the move stick's click cycling to the next weapon while the sockets are on, as a
+    /// fallback for players who cannot reach them. Off the sockets, the click always cycles. With
+    /// a gun in the off-hand the click retracts the tethers instead.
     pub stick_click_cycles: bool,
-    /// The pistol holsters on both hips: the dual-wield slot.
+    /// The sockets on both hips: how near a hand must come, and where they are on the body
+    /// without `follow_docks`.
     pub hip: VolumeSpec,
-    /// The holsters over the shoulders: the two-handed slot over the right shoulder and the special
-    /// slot over the left, where the game docks them.
+    /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
+    /// the left one where it docks the special slot, and the outer back's reach.
     pub shoulder: VolumeSpec,
-    /// The explosives holster on the chest.
+    /// The socket on the chest.
     pub chest: VolumeSpec,
-    /// Seat the hip and shoulder holsters on their guns as drawn on the character's body, reached
-    /// by the drawn hand, so a hand reaches where the gun is seen (see
-    /// [`crate::controllers::weapons::docks`]).
+    /// Reach each socket where its weapon is seen on the character's body, or where a held weapon
+    /// would sit on it, as drawn (see [`crate::controllers::weapons::docks`]). Off, the hips, the
+    /// shoulders, and the chest are reached at the body's landmarks.
     pub follow_docks: bool,
-    /// With no weapon in either hand, only the dominant hand draws a long gun off a shoulder, so
-    /// the trigger that fires it, the tethers' retract, the pouches, and the wrist detonator stay
-    /// where they were. The off-hand still draws one as a second weapon while the other hand holds
-    /// a gun.
+    /// With no weapon in either hand, only the dominant hand draws a long gun off the back, so the
+    /// trigger that fires it, the tethers' retract, the pouches, and the wrist detonator stay where
+    /// they were. The off-hand still draws one while the other hand holds a weapon.
     pub long_guns_dominant: bool,
 }
 
@@ -497,40 +497,6 @@ impl Default for HeftTuning {
     }
 }
 
-/// Dual-wielded pistols (see [`crate::controllers::weapons::dual_wield`]). Acts only under the
-/// controller scheme, so it defaults on.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DualWieldConfig {
-    /// Fire each pistol with its own hand's trigger and aim it with its own hand's ray. While it
-    /// acts, the off-hand's trigger fires the off-hand pistol and the off-hand's stick click
-    /// retracts the tethers instead.
-    pub split: bool,
-    /// Put the first pistol in the dominant hand and the second in the other, moving the pistols'
-    /// attach bones when the game's layout has them the other way round. Needs `split`.
-    pub place_by_handedness: bool,
-    /// Draw each pistol with its own hand: a hand grabbing a hip holster draws or holsters only its
-    /// own pistol, and a pistol not drawn waits on the hip on its hand's side. Needs `split`, which
-    /// keeps an undrawn pistol from firing.
-    pub independent_draw: bool,
-}
-
-impl DualWieldConfig {
-    pub const fn new() -> Self {
-        Self {
-            split: true,
-            place_by_handedness: true,
-            independent_draw: true,
-        }
-    }
-}
-
-impl Default for DualWieldConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Which hand holds the weapon (see [`crate::controllers::weapons::hold`]). Acts only under the
 /// controller scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -548,36 +514,28 @@ pub struct HoldConfig {
     /// up while swimming, with its magazine as it was and no pickup animation. Off, a grab clicks
     /// the game's use-item action and the game picks the weapon up its own way.
     pub direct_pickup: bool,
-    /// Draw and holster the long guns on the shoulders without the game's draw and holster
-    /// animations: the gun slides between its place on the body and the hand over `snap_s`, and is
-    /// the same object throughout. Off, a holster grab plays the game's draw or holster.
-    pub instant_dock: bool,
-    /// Draw and holster each dual-wield pistol at its hip without the game's draw and holster
-    /// animations, sliding between the hip and the hand as the long guns do. Needs each hand to
-    /// draw its own pistol.
-    pub pistol_dock: bool,
-    /// How long a draw or a holster without the game's animation slides the gun, seconds.
+    /// How long a draw off a socket or a dock onto one slides the gun between the socket and the
+    /// hand, seconds.
     pub snap_s: f32,
-    /// Hold a gun taken by a grab (a draw at a holster, a pickup, or a handover) only while its
-    /// grip is held: opening the grip at the gun's own holster holsters it, and anywhere else lets
-    /// it fall, with the hand's motion. The dual-wield pistols stay in the hands. Off, guns are
-    /// sticky: a gun stays in the hand until it is holstered.
+    /// Hold a gun only while its grip is held: opening the grip over a socket that takes it docks
+    /// it there, and anywhere else lets it fall, with the hand's motion. The game's pistol pair,
+    /// which cannot fall, goes back onto the body. Off, guns are sticky: a gun stays in the hand
+    /// until a grab of a socket docks it.
     pub grip_to_hold: bool,
     /// The fastest a let-go gun leaves the hand, metres per second, against tracking glitches.
     pub max_throw_mps: f32,
     /// Before a direct pickup into a slot that already holds a weapon, let that weapon fall to the
-    /// ground, rather than have the game drop or despawn it. The VR inventory carries it on a free
-    /// socket instead when one is free; this is what happens when none is.
+    /// ground, rather than have the game drop or despawn it. The VR inventory keeps it where it is
+    /// on the body instead; this is what happens with the inventory off.
     pub drop_replaced: bool,
-    /// Let the free hand take a long gun of another slot off its shoulder, or a weapon the VR
-    /// inventory carries off its socket, while the other hand holds a weapon, and fire it with its
-    /// own trigger: a second weapon, which the game keeps
-    /// holstered while the mod drives it. Needs `either_hand`.
+    /// Let a hand draw a weapon off the body, or take one, while the other hand holds a weapon, and
+    /// fire each from its own trigger. Off, a hand draws only while the other holds no weapon.
+    /// Needs `either_hand`.
     pub second_weapon: bool,
     /// Which grip a gun held in the right hand takes on the wrist.
     pub right_grip: RightGrip,
-    /// Show the second weapon's magazine as pips over its hand, since the game's HUD shows only the
-    /// wielded weapon's.
+    /// Show the magazine of a gun beside the wielded one as pips over its hand, since the game's
+    /// HUD shows only the wielded weapon's.
     pub magazine_pips: bool,
     /// Take a gun out of a living character's hands with a grab of the gun: the character lets
     /// go of it and staggers, and the gun goes straight into the grabbing hand. Needs
@@ -606,8 +564,6 @@ impl HoldConfig {
             handover: true,
             handle_radius_m: 0.07,
             direct_pickup: true,
-            instant_dock: true,
-            pistol_dock: true,
             snap_s: 0.12,
             grip_to_hold: true,
             max_throw_mps: 15.0,

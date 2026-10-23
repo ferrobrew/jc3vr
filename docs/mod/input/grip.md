@@ -24,7 +24,7 @@ Everything a hand can take is one `GripTarget` (`grab/target.rs`):
 
 A hand reaches every target as it is drawn: the holsters and pouches on Rico's body, a held gun's parts, what lies on the character, the world, and the cockpit.
 
-The holsters and pouches ride Rico's skeleton, the body the player sees, through a crouch, a lean, a fall, or the parachute, so what the player sees on the body is where they reach ([controllers.md](controllers.md#holsters-pouches-the-foregrip-and-the-action-runs-tier), [rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)). Where Rico's body and the player's disagree, the rig closes the gap, rather than the volumes following the player's body.
+The holsters and pouches ride Rico's skeleton, the body the player sees, through a crouch, a lean, a fall, or the parachute, so what the player sees on the body is where they reach ([controllers.md](controllers.md#sockets-pouches-the-foregrip-and-the-action-runs-tier), [rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)). Where Rico's body and the player's disagree, the rig closes the gap, rather than the volumes following the player's body.
 
 The providers place their targets on every input tick:
 
@@ -59,7 +59,7 @@ A press and release between two ticks is a fresh press even while the last one i
 
 ## Letting go
 
-What letting go does is the holder's, with one shared rule for docking (`grab::resolve::dock_target`): of the targets the opening hand is within reach of, the nearest that fits what it holds takes it. A gun goes onto a free socket that fits it or its own holster, whichever is nearer under the hand; the second weapon goes onto any socket or back to its own holster; anything else falls with the hand's velocity. A hand over both a pouch and the gun's own holster puts the gun in the holster, because a pouch does not fit a gun.
+What letting go does is the holder's, with one shared rule for docking (`grab::resolve::dock_target`): of the targets the opening hand is within reach of, the nearest that fits what it holds takes it. A weapon goes onto the free socket under the hand that fits it, as the loadout table decides ([two-handed-inventory.md](two-handed-inventory.md#the-grabs-against-the-table)), and anywhere else is let go of with the hand's velocity, as is anything else. A hand over both a pouch and a socket puts the gun on the socket, because a pouch does not fit a gun.
 
 A grenade or a charge is let go when the fingers open, not when the press ends (`weapons/opening.rs`): a throwing hand relaxes its squeeze before the fingers leave the handle, so a release read from the press drops the grenade mid-throw. The fingers are read from the grip's value, the Index controller's capacitive sense or the Touch controller's pull, closed above 0.6 and open below 0.35, and a controller without a value falls back to the press. The throw's velocity comes from the fastest moment of the last quarter second before the fingers opened ([controllers.md, "Grenades, aim assist, and reloads"](controllers.md#grenades-aim-assist-and-reloads)), and the release is logged at info level with its speed. While a hand holds a grenade or a charge, the fire input is held back unless the other hand holds a gun, since with nothing wielded it would draw one into the hand with the explosive.
 

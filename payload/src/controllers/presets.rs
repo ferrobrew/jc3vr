@@ -89,9 +89,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.haptics.game_rumble = weapons;
     c.haptics.categories.weapons = weapons;
     c.haptics.categories.traversal = weapons;
-    c.weapons.dual_wield.split = weapons;
-    c.weapons.dual_wield.place_by_handedness = weapons;
-    c.weapons.dual_wield.independent_draw = weapons;
     c.weapons.reload.enabled = weapons;
     c.weapons.grenade_throw = weapons;
     c.weapons.grenade.warning_overlay = weapons;

@@ -1,6 +1,6 @@
 # Template: fill testing/recordings/inventory_save_load.jc3trk, then run. See docs/mod/testing/recorder.md.
 name = "carried rifles across a save and a load"
-description = "Recorded right-handed with two extra rifles carried on the back, standing at a safehouse (vr-inventory.md, the checklist, item 18). Save at the safehouse, open the pause menu, load the save just made, and stand still until the load ends."
+description = "Recorded right-handed with two extra rifles carried on the back, standing at a safehouse (two-handed-inventory.md, the checklist, item 17). Save at the safehouse, open the pause menu, load the save just made, and stand still until the load ends."
 recording = "../recordings/inventory_save_load.jc3trk"
 settle_s = 15.0
 

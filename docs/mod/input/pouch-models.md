@@ -1,6 +1,6 @@
 # The pouches' models
 
-The grenade, C4, and magazine pouches on Rico's body have no model of their own in the game, so the mod draws the game's own models on them: a grenade on the grenade pouch, the C4 charge as it shows in the hand on the C4 pouch, and the held gun's magazine on the magazine pouch. What the player sees on the body is what a hand reaching there takes ([grip.md](grip.md), [controllers.md, "Holsters, pouches, the foregrip, and the action-runs tier"](controllers.md#holsters-pouches-the-foregrip-and-the-action-runs-tier)). The code is `payload/src/controllers/weapons/pouch_models.rs`, and the setting is `weapons.pouches.models` (on), in the debug UI's weapon handling settings under the pouches.
+The grenade, C4, and magazine pouches on Rico's body have no model of their own in the game, so the mod draws the game's own models on them: a grenade on the grenade pouch, the C4 charge as it shows in the hand on the C4 pouch, and the held gun's magazine on the magazine pouch. What the player sees on the body is what a hand reaching there takes ([grip.md](grip.md), [controllers.md, "Sockets, pouches, the foregrip, and the action-runs tier"](controllers.md#sockets-pouches-the-foregrip-and-the-action-runs-tier)). The code is `payload/src/controllers/weapons/pouch_models.rs`, and the setting is `weapons.pouches.models` (on), in the debug UI's weapon handling settings under the pouches.
 
 None of this has been run in the headset.
 

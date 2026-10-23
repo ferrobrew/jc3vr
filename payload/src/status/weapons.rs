@@ -167,7 +167,7 @@ pub(super) fn docks() -> Line {
         return Line::off("");
     }
     Line::ok(format_smolstr!(
-        "{} ON THEIR GUNS",
+        "{} ON THEIR WEAPONS",
         weapons::status().docks_followed
     ))
 }

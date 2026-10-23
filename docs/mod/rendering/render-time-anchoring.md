@@ -19,7 +19,7 @@ Overlay markers and readouts:
 - The wingsuit guide is anchored to the hands.
 - The physical hands' palm boxes, their press rings and shove lines, and the line from a held object's grab point to where the hand would have it (`physical_hands/draw.rs`) are anchored to the head.
 - The debug panel (`hud/egui_panel/`, [hud.md](../hud.md#where-the-debug-panel-lives)) is placed in the cockpit frame and composed into the world on eye 0 through the render-time head, and while a hand holds it, from that hand's aim pose in the controller frame sampled for the frame being drawn.
-- The body mirror's figure is anchored to the head. The grenade fuse ring, the wrist detonator, the second weapon's magazine pips, the ghost hands, the gizmos, and the debug panel's pointer are anchored to the hands. The gun's laser starts at the hand and ends at its hit, a world point.
+- The body mirror's figure is anchored to the head. The grenade fuse ring, the wrist detonator, the armed weapons' magazine pips, the ghost hands, the gizmos, and the debug panel's pointer are anchored to the hands. The gun's laser starts at the hand and ends at its hit, a world point.
 
 Models in a hand:
 

@@ -76,7 +76,7 @@ pub(super) fn separate_pistols() -> Line {
         s.picked + s.ones
     );
     let line = match (s.slot_single, s.twin) {
-        (true, _) => Line::ok(format_smolstr!("SLOT'S IS ONE PISTOL, {counts}")),
+        (true, _) => Line::ok(format_smolstr!("THE SLOT'S PISTOL IS SINGLE, {counts}")),
         (false, TwinState::Pending { .. }) => {
             Line::waiting(format_smolstr!("SECOND PISTOL COMING, {counts}"))
         }

@@ -49,9 +49,6 @@ pub struct ReloadConfig {
     pub manual_action: bool,
     /// The slide, charging handle, bolt, and pump.
     pub action: ActionConfig,
-    /// Give each dual-wielded pistol its own magazine: half the weapon's, run dry, ejected, and
-    /// reloaded on its own.
-    pub dual_split: bool,
     /// Ejected magazines that stay in the world with their rounds.
     pub loose: LooseMagazineConfig,
 }
@@ -75,7 +72,6 @@ impl ReloadConfig {
             chamber: true,
             manual_action: true,
             action: ActionConfig::new(),
-            dual_split: true,
             loose: LooseMagazineConfig::new(),
         }
     }

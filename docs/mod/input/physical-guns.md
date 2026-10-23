@@ -111,7 +111,7 @@ With the hand bodies and `bodies.guns.enabled` on:
 6. Aim down the sights with the rifle: the sights still come onto the eye.
 7. Swing the rifle's butt into a soldier: `a hand struck a character` with `with_gun=true`, harder than a punch at the same speed, and the gun row's hits climb.
 8. Reload the rifle from the pouch: the magazine well is on the drawn gun.
-9. Holster the rifle at the shoulder, with and without `instant_dock`: `destroyed a gun body` with `the gun left the hand` before the slide, and the rifle slides to the back. Draw it again: a new gun body once it is in the hand.
+9. Dock the rifle at the shoulder: `destroyed a gun body` with `the gun left the hand` before the slide, and the rifle slides to the back. Draw it again: a new gun body once it is in the hand.
 10. Drop the rifle (open the grip away from the body with `grip_to_hold`): the gun body goes (`the gun left the hand` or `the gun's own body is back in the world`), and the rifle falls with the hand's swing.
 11. Hand a pistol to the other hand at its grip: the old hand's gun body goes and the new hand's is made.
 12. Enter a vehicle, swim, open the parachute, die, and load a save with a gun in hand: each time `destroyed a gun body` before the hand's body is removed or destroyed, and no crash.
@@ -128,7 +128,7 @@ With `weapons.regions.enabled` on, once with `bodies.guns.enabled` off and once 
 20. Take the carried rifle's pistol grip with the right hand: `regions: the right hand took the gun's grip; the other braces it at its barrel`, then `braced the gun at its barrel`; the right trigger fires again, and the left hand stays on the barrel where it was.
 21. Carry the rifle by the barrel in the left hand, take the barrel with the right, and slide the right hand back onto the pistol grip: it becomes the firing hand the same way.
 22. Kill a soldier and pick his rifle up off the ground by the barrel: `took the gun by its barrel` with `cause="pickup"`; the rifle slides from the ground with the barrel into the palm, and cannot fire until the other hand takes the grip. Pick another up by its grip: no carry, and it fires.
-23. With a rifle on the back, reach over the shoulder and grab its barrel or stock rather than the grip: the rifle draws into the hand at that part (`cause="draw"`), with and without `weapons.hold.instant_dock`. Grab it at the grip: it draws at the grip.
+23. With a rifle on the back, reach over the shoulder and grab its barrel or stock rather than the grip: the rifle draws into the hand at that part (`cause="draw"`). Grab it at the grip: it draws at the grip.
 24. With the gun bodies on, carry a rifle by the barrel and swing its stock into a soldier: the blow counts with the gun, and `RIGHT GUN BODY` (or left) shows the carrying hand's gun body.
 25. Holster and drop a carried rifle: `the gun is no longer carried` with `the gun left the hands`; draw it again at the grip: `GRIP, FIRING`.
 26. Empty a rifle that needs its charging handle worked, then grab the handle with the free hand while the chamber waits: the action is worked as before, not braced. Grab the same handle with the chamber loaded: `braced the gun at its action`, with a pinch.

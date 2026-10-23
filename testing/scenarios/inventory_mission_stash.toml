@@ -1,6 +1,6 @@
 # Template: fill testing/recordings/inventory_mission_stash.jc3trk, then run. See docs/mod/testing/recorder.md.
 name = "carried weapons stashed while a mission holds the player's weapons"
-description = "Recorded with a rifle carried on the back, starting a mission that takes the player's weapons and playing until it gives them back (vr-inventory.md, the checklist, item 23)."
+description = "Recorded with a rifle carried on the back, starting a mission that takes the player's weapons and playing until it gives them back (two-handed-inventory.md, the checklist, item 22)."
 recording = "../recordings/inventory_mission_stash.jc3trk"
 settle_s = 5.0
 

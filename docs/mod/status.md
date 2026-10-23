@@ -21,17 +21,17 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `FLIP WATCH` | the grip watch's snaps and sweeps since load; a snap fails the row |
 | | `ANIMATED GRIP OFFSET` | how far the clips hold each weight class's gun from the bind pose's grip, in degrees, last seen with the hand on its controller at full weight; a diagnostic for the unverified assumption that the two agree, so it shows numbers rather than a verdict |
 | | `ATTACH BONE CHANGES` | the grip watch's attach-bone changes per hand |
-| `WEAPONS IN HAND` | `LEFT HAND`, `RIGHT HAND` | the weapon's slot in each hand and how it came there: docked, picked up, stolen, off a rack, the game's draw, or the second weapon ([input/physical-weapons.md](input/physical-weapons.md)) |
+| `WEAPONS IN HAND` | `LEFT HAND`, `RIGHT HAND` | the weapon's slot in each hand and how it came there: docked, picked up, stolen, off a rack, the game's draw, or beside the wielded weapon ([input/physical-weapons.md](input/physical-weapons.md)) |
 | | `LEFT HAND ON GUN`, `RIGHT HAND ON GUN` | with `controllers.weapons.regions.enabled` on, the part of the wielded gun each hand holds and whether it fires it from the grip, braces it, or carries it unable to fire, with the carries, braces, and grips taken since load ([input/physical-guns.md](input/physical-guns.md#grabbing-a-gun-anywhere)) |
 | | `TAKE FROM HANDS` | the guns in other characters' hands within reach of a grab, and the takes since load |
 | | `TAKE FROM RACKS` | the weapons on racks within reach of a grab, the weapons racks handed over, and the copies asked of racks with unlimited stock |
 | | `LEFT ACTION`, `RIGHT ACTION` | with the physical action on, each held gun's action on its travel: how far its part is back (and a bolt's turn up), whether a hand holds it or the slide is locked back, the chamber, and the actions worked since load ([input/reload.md](input/reload.md#the-physical-action)) |
-| | `SECOND WEAPON` | the second weapon's slot and hand, and its magazine |
+| | `ARMED BESIDE` | each weapon armed in a hand beside the wielded one, its slot and hand, and its magazine ([input/physical-weapons.md](input/physical-weapons.md#a-weapon-in-each-hand)) |
 | | `RIGHT HAND GRIP` | which grip the right hand took for a gun (its own, or the left hand's mirrored), and the angle between the two ([input/physical-weapons.md](input/physical-weapons.md#the-right-hands-grip)) |
-| | `HOLSTERS` | how many holsters were moved onto the guns docked in them on the last tick |
-| | `LAST REFUSAL` | why the last pickup, take, draw, holster, drop, or second weapon was refused |
-| `INVENTORY` | `TRACKED WEAPONS` | how many weapons the VR inventory tracks as the player's, in the world, and with other characters, and the spawn system resets it saw ([input/vr-inventory.md](input/vr-inventory.md)) |
-| | `CARRIED` | each weapon carried beyond the slots and its socket (and whether they are stashed for a mission), the carried weapons drawn and the held ones put away since load, and the weapons pickups would have dropped that went onto a socket instead |
+| | `SOCKETS` | how many sockets' volumes sat on the weapons docked on them on the last tick ([input/physical-weapons.md](input/physical-weapons.md#the-sockets)) |
+| | `LAST REFUSAL` | why the last pickup, take, draw, dock, or drop was refused |
+| `INVENTORY` | `TRACKED WEAPONS` | how many weapons the loadout table has on the body and in the world, how many the player let go of another character holds, and the spawn system resets the inventory saw ([input/two-handed-inventory.md](input/two-handed-inventory.md#the-weapons-in-the-world)) |
+| | `CARRIED` | each weapon on the body beyond the slots and its socket (and whether they are stashed for a mission), and the weapons pickups would have replaced that kept their place on the body ([input/two-handed-inventory.md](input/two-handed-inventory.md#the-weapons-beyond-the-slots)) |
 | | `SAVE SIDECAR` | how many times the save sidecar has been written and how many carried weapons the last one held, or that the last write failed (the error is logged) |
 | | `LAST LOAD` | what the last load made of the sidecar (matched with the weapons to restore, none, unreadable, or another save's), and how many carried weapons the last respawn put back, from the load or the reset |
 | | `KEPT IN THE WORLD` | how many of the weapons lying in the world are kept from the game's despawn, the pins since load, and the weapons left to the game |

@@ -126,10 +126,6 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
             "Keep the carried weapons across saves and loads",
         );
         ui.add_enabled_ui(c.carry, |ui| {
-            ui.add(egui::Slider::new(&mut c.back_sockets, 0..=3).text("Long guns on the back"));
-            ui.add(egui::Slider::new(&mut c.hip_sockets, 0..=2).text("Pistols on the hips"));
-            ui.checkbox(&mut c.chest_socket, "A submachine gun on the chest");
-            ui.add(egui::Slider::new(&mut c.socket_radius_m, 0.03..=0.3).text("Socket radius (m)"));
             for socket in Socket::ALL {
                 let offset = match socket {
                     Socket::Shoulder(Hand::Right) => &mut c.offsets.back_first,

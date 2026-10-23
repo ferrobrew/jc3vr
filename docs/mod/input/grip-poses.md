@@ -11,7 +11,7 @@ Each system that puts something in a hand declares it on each of its ticks while
 | Magazine | the weapon handling's input tick, a round in hand for the reload | magazine pinch | held |
 | Grenade | the same, a grenade in hand or caught | grenade palm | held |
 | C4 | the same, a charge in hand | charge pinch | held |
-| Gun | the same, each hand with a gun of the wielded weapon and the second weapon's hand | pistol grip, or the pose of the part a hand carries a long gun by | held |
+| Gun | the same, each hand with a gun of the wielded weapon and each hand with a weapon armed in it | pistol grip, or the pose of the part a hand carries a long gun by | held |
 | Foregrip | the same, the off-hand on the foregrip, at the two-handed grip's weight | the pose of the part it braces the gun at: foregrip on the handguard | held |
 | Character | the palms' tick: a character held, or its ragdoll | collar grab | grip |
 | Door | the palms' tick: a latched door's handle area, or the door once open | door handle | grip |

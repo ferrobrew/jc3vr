@@ -151,16 +151,15 @@ The signals read the snapshots the mod's systems publish for the status rows and
 | `procedural.roof` | flag | The torso is posed on the stunt idle's hips standing on a vehicle's roof. |
 | `procedural.neck_error_m` | measure | How far the solved neck is from the point under the player's head, while the procedural body poses the torso. |
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
-| `weapons.second_in_left_hand`, `.second_in_right_hand` | flag | A second weapon is held in that hand. |
-| `weapons.second_carried` | flag | The second weapon is one the VR inventory carries beyond the slots. |
-| `weapons.second_drops`, `.second_promotions` | counter | Second weapons let fall from the hand, and armed weapons the reconcile made the primary's, wielded in the same hand. |
+| `weapons.armed_in_left_hand`, `.armed_in_right_hand` | flag | A weapon the game does not wield is armed in that hand. |
+| `weapons.armed_carried` | flag | A weapon armed in a hand is one the carry set keeps beyond the slots. |
+| `weapons.draws`, `.docks`, `.drops`, `.promotions` | counter | Weapons drawn off a socket into a hand, docked from a hand onto a socket, and let go of from a hand, and armed weapons the reconcile made the primary's, wielded in the same hand. |
 | `weapons.grabs`, `grip.flips`, `grip.pins` | counter | Weapon grabs, guns snapping on the wrist, and attach bones pinned. |
 | `collide.contacts` | counter | Times a held long gun came against a wall. |
 | `collide.touching` | flag | A held long gun is against a wall. |
 | `regions.carries`, `.braces`, `.grips_taken`, `.let_go` | counter | Long guns taken by a part other than the grip, braced where the second hand closed on them, grips taken from a carrying hand or slid along to, and long guns left carried in the bracing hand when the holding hand let go ([physical-guns.md](../input/physical-guns.md#grabbing-a-gun-anywhere)). |
 | `regions.carrying` | flag | A hand carries the wielded gun by a part other than its grip. |
 | `inventory.carried` | measure | Weapons the VR inventory carries beyond the slots. |
-| `inventory.draws`, `.stows` | counter | Carried weapons drawn off their sockets, and held weapons put onto a free socket. |
 | `inventory.restored`, `.sidecar_writes` | counter | Carried weapons respawned onto their sockets after a reset or a load, and save sidecars written. |
 | `inventory.stashed` | flag | The carried weapons are stashed while a mission holds the player's weapons. |
 | `inventory.with_others` | measure | Weapons the player let go of that another character holds. |

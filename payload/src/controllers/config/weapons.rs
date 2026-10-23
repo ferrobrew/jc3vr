@@ -6,8 +6,8 @@ use crate::controllers::weapons::{
     ads::config::AdsConfig,
     collide::config::CollideConfig,
     config::{
-        C4Config, DualWieldConfig, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig,
-        HolstersConfig, PouchesConfig, RecoilConfig, ScopeConfig,
+        C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
+        PouchesConfig, RecoilConfig, ScopeConfig,
     },
     inventory::config::InventoryConfig,
     regions::config::RegionsConfig,
@@ -19,7 +19,7 @@ use crate::controllers::weapons::{
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WeaponsConfig {
-    /// Draw and holster weapons with a grip press at the body holsters.
+    /// Draw and dock weapons with a grip at the body's sockets.
     pub holsters: HolstersConfig,
     /// The pouches on the front of the body: the magazines, the grenades, and the C4.
     pub pouches: PouchesConfig,
@@ -34,14 +34,11 @@ pub struct WeaponsConfig {
     /// The one-handed weight of long guns: sag, lag, sway, a stronger kick, and a wider spread,
     /// all gone while the off-hand braces the weapon on its foregrip.
     pub heft: HeftConfig,
-    /// Dual-wielded pistols split onto both hands, each fired by its own trigger and aimed by its
-    /// own hand.
-    pub dual_wield: DualWieldConfig,
     /// Make the two pistols two weapons: the pair the game hands over becomes the slot's pistol
-    /// and a second one carried on the other hip, each picked up, held, dropped, reloaded, and
-    /// fired on its own, and a pistol taken from the world is one pistol. Needs the VR inventory
-    /// and its carrying; without them, or while the second pistol has not come, the pistols stay
-    /// the game's pair.
+    /// and a second one carried on the other hip, each its own item, picked up, held, docked,
+    /// dropped, reloaded, and fired on its own, and a pistol taken from the world is one pistol.
+    /// Needs the VR inventory and its carrying; without them, or while the second pistol has not
+    /// come, the pistols stay the game's pair, one item with a gun in each hand.
     pub separate_pistols: bool,
     /// Which hand holds the weapon: the hand that drew it, picked it up, or was handed it.
     pub hold: HoldConfig,
@@ -101,7 +98,6 @@ impl WeaponsConfig {
             block_fire_during_actions: true,
             recoil: RecoilConfig::new(),
             heft: HeftConfig::new(),
-            dual_wield: DualWieldConfig::new(),
             separate_pistols: true,
             hold: HoldConfig::new(),
             regions: RegionsConfig::new(),

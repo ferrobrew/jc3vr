@@ -19,9 +19,9 @@ use crate::{
         weapons::{
             self, WeaponsStatus,
             config::{
-                BracedHeftConfig, DualWieldConfig, ForegripConfig, GrenadeConfig, HeftConfig,
-                HeftTuning, HoldConfig, HolstersConfig, PouchSide, PouchesConfig, RecoilConfig,
-                RightGrip, VolumeSpec,
+                BracedHeftConfig, ForegripConfig, GrenadeConfig, HeftConfig, HeftTuning,
+                HoldConfig, HolstersConfig, PouchSide, PouchesConfig, RecoilConfig, RightGrip,
+                VolumeSpec,
             },
             empty::{self, EmptyStatus},
             foregrip::{self, ForegripStatus},
@@ -502,8 +502,11 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
 }
 
 pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
-    ui.checkbox(&mut w.holsters.enabled, "Holsters")
-        .on_hover_text("Draw and holster weapons with a grip press at the body holsters.");
+    ui.checkbox(&mut w.holsters.enabled, "Sockets on the body")
+        .on_hover_text(
+            "Draw a weapon with a grip press at the socket it sits on, and dock a held one on a \
+             socket that fits it.",
+        );
     ui.add_enabled_ui(w.holsters.enabled, |ui| {
         ui.indent("holsters", |ui| holster_settings(ui, &mut w.holsters));
     });
@@ -545,7 +548,6 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
             braced_heft_settings(ui, &mut w.heft.braced)
         });
     });
-    dual_wield_settings(ui, &mut w.dual_wield);
     ui.checkbox(&mut w.separate_pistols, "Separate pistols")
         .on_hover_text(
             "Make the game's pistol pair two weapons, each picked up, held, dropped, reloaded, and \
@@ -591,7 +593,7 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.fire_draws_weapon, "Fire draws a weapon")
         .on_hover_text(
             "Let the trigger draw the selected weapon with nothing in the hands, as the game does. \
-             Off, weapons come out of the holsters.",
+             Off, weapons come off the body's sockets.",
         );
     ui.checkbox(&mut w.wheel.enabled, "Weapon wheel")
         .on_hover_text(
@@ -709,28 +711,6 @@ fn recoil_settings(ui: &mut Ui, r: &mut RecoilConfig) {
     ui.add(egui::Slider::new(&mut r.two_hand_kick_scale, 0.0..=1.0).text("Two-hand kick"));
 }
 
-fn dual_wield_settings(ui: &mut Ui, d: &mut DualWieldConfig) {
-    ui.checkbox(&mut d.split, "Dual-wield split").on_hover_text(
-        "Each pistol fires from its own hand's trigger; the off-hand's stick click retracts \
-         tethers while the off-hand holds a pistol.",
-    );
-    ui.add_enabled(
-        d.split,
-        egui::Checkbox::new(&mut d.independent_draw, "Draw each pistol by hand"),
-    )
-    .on_hover_text(
-        "A hip holster grab draws or holsters only the grabbing hand's pistol; an undrawn \
-         pistol waits on the hip.",
-    );
-    ui.add_enabled(
-        d.split,
-        egui::Checkbox::new(
-            &mut d.place_by_handedness,
-            "First pistol in the dominant hand",
-        ),
-    );
-}
-
 fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
     ui.checkbox(&mut h.either_hand, "Hold weapons in either hand")
         .on_hover_text(
@@ -743,17 +723,8 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
         ui.add(egui::Slider::new(&mut h.handle_radius_m, 0.02..=0.2).text("Gun grip radius (m)"));
     });
     ui.add_enabled_ui(h.either_hand, |ui| {
-        ui.checkbox(
-            &mut h.instant_dock,
-            "Draw and holster long guns without the game's animation",
-        )
-        .on_hover_text("The gun slides between the shoulder and the hand as one object.");
-        ui.checkbox(
-            &mut h.pistol_dock,
-            "Draw and holster pistols without the game's animation",
-        )
-        .on_hover_text("Each pistol slides between its hip and its hand; needs independent draws.");
-        ui.add(egui::Slider::new(&mut h.snap_s, 0.0..=0.5).text("Slide time (s)"));
+        ui.add(egui::Slider::new(&mut h.snap_s, 0.0..=0.5).text("Slide time (s)"))
+            .on_hover_text("How long a gun slides between a socket and the hand.");
         ui.checkbox(&mut h.grip_to_hold, "Hold the grip to hold a gun")
             .on_hover_text(
                 "Opening the grip on a gun docks it on a socket under the hand that takes it, and \
@@ -826,22 +797,23 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
 }
 
 fn holster_settings(ui: &mut Ui, h: &mut HolstersConfig) {
-    ui.checkbox(&mut h.follow_docks, "Holsters sit on their guns")
+    ui.checkbox(&mut h.follow_docks, "Sockets sit on their weapons")
         .on_hover_text(
-            "The hip and shoulder holsters sit on their guns as drawn on the body, or where a drawn \
-             gun docks again, and are reached by the drawn hand.",
+            "Each socket is reached where its weapon is seen on the body, or where a held weapon \
+             would sit on it. Off, the hips, the shoulders, and the chest are reached at the \
+             landmarks below.",
         );
     ui.checkbox(
         &mut h.long_guns_dominant,
         "Only the dominant hand draws a long gun with both hands empty",
     );
     ui.checkbox(&mut h.stick_click_cycles, "Move stick click cycles weapons")
-        .on_hover_text("The fallback for drawing without reaching a holster.");
+        .on_hover_text("The fallback for drawing without reaching a socket.");
     ui.label("Offsets from the landmark, right side (+X right, +Y up, +Z back)");
     volume_settings(ui, "Hip", &mut h.hip);
     volume_settings(ui, "Shoulder", &mut h.shoulder);
     volume_settings(ui, "Chest", &mut h.chest);
-    if ui.button("Reset holsters").clicked() {
+    if ui.button("Reset sockets").clicked() {
         *h = HolstersConfig {
             enabled: h.enabled,
             ..HolstersConfig::new()

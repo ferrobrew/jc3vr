@@ -197,7 +197,6 @@ fn settings(ui: &mut Ui, r: &mut ReloadConfig) {
         "Work the bolt and the pump after every shot",
     );
     action_settings(ui, &mut r.action);
-    ui.checkbox(&mut r.dual_split, "A magazine per dual-wielded pistol");
     ui.checkbox(&mut r.loose.enabled, "Magazines stay in the world")
         .on_hover_text(
             "An ejected magazine keeps its rounds, and a magazine on the ground that fits the gun \

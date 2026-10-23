@@ -1,6 +1,6 @@
 //! The VR inventory: every weapon the player owns, holds, or has let go of nearby, as one object
 //! that belongs to the world, a hand, or the body. The design is in
-//! `docs/mod/input/vr-inventory.md`, the engine side in
+//! `docs/mod/input/two-handed-inventory.md`, the engine side in
 //! `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
 //!
 //! - [`world`]: the game's side of the loadout table's weapons, what became of each the old

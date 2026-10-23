@@ -121,7 +121,7 @@ Each default is rounded onto the primitive its source belongs to. The pressure a
 
 ## The game's rumble
 
-The game's rumble reaches the controllers through two detours ([controllers.md, "Recoil, haptics, dual-wield, and the grapple hand"](controllers.md#recoil-haptics-dual-wield-and-the-grapple-hand)): the weapon's own fire rumble inside a shot of a gun in a hand plays as `Event::Shot` on that hand, and the rumble manager's per-frame motor strength plays as `Sustain::GameRumble`, the low motor on the left hand and the high motor on the right. The gamepad itself is silenced unless `gamepad_rumble` is on. The forward sends every motor value, zero included, so the game's rumble stops on the controllers the frame it stops on the pad.
+The game's rumble reaches the controllers through two detours ([controllers.md, "Recoil, haptics, and the grapple hand"](controllers.md#recoil-haptics-and-the-grapple-hand)): the weapon's own fire rumble inside a shot of a gun in a hand plays as `Event::Shot` on that hand, and the rumble manager's per-frame motor strength plays as `Sustain::GameRumble`, the low motor on the left hand and the high motor on the right. The gamepad itself is silenced unless `gamepad_rumble` is on. The forward sends every motor value, zero included, so the game's rumble stops on the controllers the frame it stops on the pad.
 
 ## Threading
 

@@ -199,6 +199,48 @@ fn a_file_from_before_the_rig_loads_its_posture_and_skips_the_retired_settings()
 }
 
 #[test]
+fn a_file_from_before_the_two_handed_inventory_skips_the_retired_weapon_settings() {
+    let mut table = defaults_table();
+    let weapons = ["controllers", "weapons"];
+    for (path, value) in [
+        (&["hold", "instant_dock"][..], true.into()),
+        (&["hold", "pistol_dock"][..], false.into()),
+        (&["dual_wield", "split"][..], true.into()),
+        (&["dual_wield", "place_by_handedness"][..], true.into()),
+        (&["dual_wield", "independent_draw"][..], false.into()),
+        (&["reload", "dual_split"][..], true.into()),
+        (&["inventory", "back_sockets"][..], Value::Integer(1)),
+        (&["inventory", "hip_sockets"][..], Value::Integer(2)),
+        (&["inventory", "chest_socket"][..], false.into()),
+        (&["inventory", "socket_radius_m"][..], 0.2.into()),
+    ] {
+        let full: Vec<&str> = weapons.iter().chain(path).copied().collect();
+        set(&mut table, &full, value);
+    }
+    set(
+        &mut table,
+        &["controllers", "weapons", "hold", "second_weapon"],
+        false.into(),
+    );
+    let Loaded { config, report } = load(table);
+    assert!(!config.controllers.weapons.hold.second_weapon);
+    assert_eq!(
+        report.ignored,
+        [
+            "controllers.weapons.dual_wield",
+            "controllers.weapons.hold.instant_dock",
+            "controllers.weapons.hold.pistol_dock",
+            "controllers.weapons.inventory.back_sockets",
+            "controllers.weapons.inventory.chest_socket",
+            "controllers.weapons.inventory.hip_sockets",
+            "controllers.weapons.inventory.socket_radius_m",
+            "controllers.weapons.reload.dual_split",
+        ]
+    );
+    assert!(report.reset.is_empty());
+}
+
+#[test]
 fn a_mistyped_setting_is_reset_alone() {
     let mut table = defaults_table();
     set(
