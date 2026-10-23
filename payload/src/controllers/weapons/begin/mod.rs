@@ -73,11 +73,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             let holder = hold::input_tick(wielded, holding.either_hand, arrival);
             hold::tick::input_tick(owner, wielded, holding.either_hand && holding.per_hand_tick);
             let weapon = engine::held_weapon(owner).map(|w| with_holder(w, holder));
+            let guns = engine::in_hands(weapon, Hand::BOTH.map(|h| armed::held_weapon(owner, h)));
             // The gun a hand holds beside the wielded weapon, armed there.
-            let beside = Hand::BOTH.into_iter().find_map(|hand| {
-                armed::held_weapon(owner, hand)
-                    .filter(|w| weapon.is_none_or(|wielded| wielded.address != w.address))
-            });
+            let beside = Hand::BOTH
+                .into_iter()
+                .filter_map(|h| guns[h.index()])
+                .find(|w| weapon.is_none_or(|wielded| wielded.address != w.address));
             // The guns the hands hold, for their bodies.
             guns::publish(if gameplay {
                 guns::read_holds([
@@ -119,6 +120,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             };
             Ticked {
                 weapon,
+                guns,
                 beside,
                 table_hands,
                 sockets,
@@ -135,12 +137,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     {
         unsafe { grip_watch::observe(base, w.class) };
     }
-    heft::observe(weapon.filter(|_| gameplay).and_then(|w| {
-        Some(heft::HeftTarget {
-            hand: w.holder?,
-            class: w.class,
-            weapon: w.address,
-        })
+    let guns = ticked.guns;
+    heft::observe(Hand::BOTH.map(|hand| {
+        guns[hand.index()]
+            .filter(|_| gameplay)
+            .map(|w| heft::HeftTarget {
+                hand,
+                class: w.class,
+                weapon: w.address,
+            })
     }));
     let armed_hands = Hand::BOTH.map(|h| armed::in_hand(h).is_some());
     let held = weapon
@@ -154,9 +159,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let gun_side = volumes::gun_side(holder, state.last_holder, config.acting_hand());
     state.last_holder = holder.or(state.last_holder);
     state.gun_side = gun_side;
+    // Each hand's long gun is measured on its own wrist.
+    let geometries = Hand::BOTH.map(|hand| {
+        guns[hand.index()]
+            .filter(|w| w.two_handed && gameplay)
+            .and_then(|w| state.geometry_for(hand, &w, &config, active.world_scale))
+    });
     let geometry = weapon
-        .filter(|w| w.two_handed && gameplay)
-        .and_then(|w| state.geometry_for(&w, &config, active.world_scale));
+        .and_then(|w| w.holder)
+        .and_then(|hand| geometries[hand.index()]);
     let regions_config = config.weapons.regions;
     let long = weapon.filter(|w| regions_config.enabled && gameplay && w.two_handed);
     // SAFETY: the weapon was read this tick, on the main thread outside the world update.
@@ -461,7 +472,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let volumes = resolved.map(|r| r.chosen.map(|c| c.volume));
     let closing_on_foregrip = hold.is_none()
         && foregrip_hand.is_some_and(|h| volumes[h.index()] == Some(GrabVolume::Foregrip));
-    heft::freeze(reload::holding_hand().is_some() || closing_on_foregrip);
+    // A hand carrying a round holds still the gun in the other hand, whose well it reaches for, and
+    // a hand closing on a foregrip holds still the gun it closes on.
+    let carrying_round = reload::holding_hand();
+    heft::freeze(Hand::BOTH.map(|hand| {
+        carrying_round == Some(hand.other())
+            || (closing_on_foregrip && foregrip_hand == Some(hand.other()))
+    }));
 
     state.status.active = true;
     state.status.volumes = volumes;
@@ -486,6 +503,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
 #[derive(Default)]
 struct Ticked {
     weapon: Option<HeldWeapon>,
+    /// The gun in each hand, by [`Hand::index`]: the wielded weapon and the ones armed beside it.
+    guns: [Option<HeldWeapon>; 2],
     /// The gun a hand holds beside the wielded weapon.
     beside: Option<HeldWeapon>,
     /// Which hands the loadout table has something in, by [`Hand::index`].

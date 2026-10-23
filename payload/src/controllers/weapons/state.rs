@@ -37,8 +37,8 @@ pub fn status() -> WeaponsStatus {
 pub(crate) fn stand_down() {
     foregrip::clear();
     guns::publish(guns::GunHolds::default());
-    heft::observe(None);
-    heft::freeze(false);
+    heft::observe([None; 2]);
+    heft::freeze([false; 2]);
     ads::observe(None);
     collide::observe(None);
     grip_watch::clear();
@@ -84,9 +84,10 @@ pub(super) struct State {
     pub(super) beside: Option<HeldWeapon>,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub(super) gameplay: bool,
-    /// The last geometry measured, and the weapon and holding hand it belongs to: a measurement
-    /// needs the wrist at full weight, so a tick without one keeps the last.
-    measured: Option<(usize, Hand, GripGeometry)>,
+    /// The last geometry measured on each hand's wrist, by [`Hand::index`], and the weapon it
+    /// belongs to: a measurement needs the wrist at full weight, so a tick without one keeps the
+    /// last.
+    measured: [Option<(usize, GripGeometry)>; 2],
     /// The tick's grip targets and each hand's grip as it is drawn, for the docking of what a hand
     /// lets go.
     pub(super) placed: Vec<GripTarget>,
@@ -128,14 +129,17 @@ pub(super) struct DockTouch {
 }
 
 impl State {
-    /// The two-handed geometry of `weapon`, measured afresh when possible.
+    /// The two-handed geometry of `weapon` in `holder`, measured afresh when possible.
     pub(super) fn geometry_for(
         &mut self,
+        holder: Hand,
         weapon: &HeldWeapon,
         config: &ControllersConfig,
         world_scale: f32,
     ) -> Option<GripGeometry> {
-        let holder = weapon.holder?;
+        if weapon.holder != Some(holder) {
+            return None;
+        }
         let target = ik::tick_records().current[holder.index()];
         // SAFETY: the weapon was read this tick on the main thread outside the world update.
         let fresh = target.and_then(|target| unsafe {
@@ -149,14 +153,14 @@ impl State {
         });
         match fresh {
             Some(geometry) => {
-                self.measured = Some((weapon.address, holder, geometry));
+                self.measured[holder.index()] = Some((weapon.address, geometry));
                 Some(geometry)
             }
-            // A geometry measured on the other hand's wrist is wrong for this one.
-            None => self
-                .measured
-                .filter(|(address, hand, _)| *address == weapon.address && *hand == holder)
-                .map(|(_, _, geometry)| geometry),
+            // A geometry measured on the other hand's wrist is wrong for this one, so each hand
+            // keeps its own.
+            None => self.measured[holder.index()]
+                .filter(|(address, _)| *address == weapon.address)
+                .map(|(_, geometry)| geometry),
         }
     }
 }
@@ -175,7 +179,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     weapon: None,
     beside: None,
     gameplay: false,
-    measured: None,
+    measured: [None; 2],
     placed: Vec::new(),
     points: [None; 2],
     last_holder: None,

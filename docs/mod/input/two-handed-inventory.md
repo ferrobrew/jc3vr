@@ -14,7 +14,7 @@ So the mod owns weapon handling for the local player. The game keeps three jobs:
 
 ### The loadout table
 
-One table holds every item the player has: each is in exactly one place, the left hand, the right hand, a body socket, or the world (kept near the player). Items are weapons, the props a hand picks up, and a grenade or a C4 charge while a hand holds one. Both hands are the same type: a gun in either hand has its own hand's trigger, aim, recoil, reload, and pips, and a heavy weapon held in one hand is simply very heavy and lifts only so far. Not built yet: the foregrip, the heft, the sights, the scope, the wall collision, and the handover act on the wielded weapon alone, so a gun armed beside it has none of them.
+One table holds every item the player has: each is in exactly one place, the left hand, the right hand, a body socket, or the world (kept near the player). Items are weapons, the props a hand picks up, and a grenade or a C4 charge while a hand holds one. Both hands are the same type: a gun in either hand has its own hand's trigger, aim, recoil, reload, and pips, and a heavy weapon held in one hand is simply very heavy and lifts only so far. Each hand's gun is weighed as its own ([The gun in either hand](#the-gun-in-either-hand)). Not built yet: the foregrip, the sights, the scope, the wall collision, the regions, and the handover act on the wielded weapon alone, so a gun armed beside it has none of them.
 
 The primary hand is the dominant hand when it holds a weapon, otherwise the other hand. The primary follows from the hands and is never set on its own.
 
@@ -215,6 +215,17 @@ Decisions taken here:
 - The game's fan-out keeps updating the wielded weapon, and only its input is the hand's: updating it a second time from the mod would advance its timers twice a frame, and the fan-out's own choice of what to update (the mounted gun, the boost wingsuit's guns, the grenade) stays the game's. A seat that skips the wielded weapon's update still skips it; that is phase 5's.
 - The requests are refused only inside the ammunition check, so the reload input's own reload start still goes through to the game. With the true reload off, an empty gun no longer reloads on its own; its reload input does.
 - The armed guns' aim mode follows the wielded weapon's rather than reading the player's, which the bindings do not reach from the character; the two are the same whenever a weapon is wielded, and normal aim otherwise.
+
+## The gun in either hand
+
+The subsystems that act on a gun in a hand key it by the hand, not by the game's wielded weapon. Each input tick reads the gun in each hand (`weapons::engine::in_hands`): the wielded weapon in the hand its first gun rides, and a weapon armed in a hand in its own. A long gun armed in a hand is a long gun by its slot, since it stays in the holstered state, and each hand's long gun is measured on its own wrist, its geometry kept per hand.
+
+- The weight (`weapons::heft`): each hand's gun has its own weight, spring, and freeze, so a rifle armed in the off-hand beside a pistol sags, trails, and sways as it would alone, and kicks and spreads as a rifle held in one hand. A round carried to the reload freezes the gun in the other hand, and a hand closing on a foregrip freezes the gun it closes on.
+- The recoil (`weapons::recoil`): each hand has its own spring, kicked by the shots of the gun in that hand, and the one-handed kick scale is that hand's gun's weight.
+
+Decisions taken here:
+
+- The per-hand state is keyed by the hand rather than by the item. A gun's weight and its recoil are of the hand holding it: a gun handed over or drawn again starts at rest in its new hand, and a hand that takes another gun drops the last one's spring.
 
 ## The slots as a projection
 

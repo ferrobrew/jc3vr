@@ -247,7 +247,7 @@ pub(crate) unsafe fn carried_for(inventory: &Inventory) -> Vec<&'static WeaponBa
 }
 
 /// The weapon armed in `hand` as the weapon handling sees a weapon in the hands: every gun in that
-/// hand.
+/// hand, and a long gun by its slot, since it stays in the holstered state.
 ///
 /// # Safety
 ///
@@ -257,6 +257,8 @@ pub(crate) unsafe fn held_weapon(owner: &Character, hand: Hand) -> Option<HeldWe
     let slot = unsafe { slot_of(weapon) }?;
     // Read as the raw value: an unset or unknown class is out of the enum's range.
     let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    // Held in the hand rather than mounted, a long gun is held in both hands' reach.
+    let two_handed = engine::long_slot(slot);
     Some(HeldWeapon {
         address: weapon as *const WeaponBase as usize,
         wielded: Wielded {
@@ -264,8 +266,8 @@ pub(crate) unsafe fn held_weapon(owner: &Character, hand: Hand) -> Option<HeldWe
             hands: Hand::BOTH.map(|h| h == hand),
         },
         holder: Some(hand),
-        two_handed: false,
-        class: HeftClass::of(class, false),
+        two_handed,
+        class: HeftClass::of(class, two_handed),
     })
 }
 

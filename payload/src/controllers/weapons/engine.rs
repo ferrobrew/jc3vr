@@ -33,10 +33,37 @@ pub struct HeldWeapon {
     /// The hand its first gun rides.
     pub holder: Option<Hand>,
     /// Whether it is held in both hands' reach: a two-handed, special, or heavy weapon, wielded
-    /// rather than mounted.
+    /// rather than mounted, or armed in a hand.
     pub two_handed: bool,
     /// The weight class its one-handed tuning comes from.
     pub class: HeftClass,
+}
+
+/// The gun in each hand, by [`Hand::index`]: the wielded weapon in the hand its first gun rides,
+/// and the weapon armed in a hand (`armed`, by [`Hand::index`]) in its own hand. A hand holds one
+/// gun at most; the wielded weapon's second gun (the game's pistol pair) is not a gun of the hand
+/// it rides.
+pub fn in_hands(
+    wielded: Option<HeldWeapon>,
+    armed: [Option<HeldWeapon>; 2],
+) -> [Option<HeldWeapon>; 2] {
+    Hand::BOTH.map(|hand| match wielded {
+        Some(w) if w.holder == Some(hand) => Some(w),
+        _ => armed[hand.index()]
+            .filter(|a| wielded.is_none_or(|w| w.address != a.address))
+            .filter(|a| a.holder == Some(hand)),
+    })
+}
+
+/// Whether a weapon of `slot` is a long gun, held in both hands' reach: the two-handed, the
+/// special, and the heavy slots.
+pub fn long_slot(slot: WeaponSlot) -> bool {
+    matches!(
+        slot,
+        WeaponSlot::E_SLOT_TWO_HANDED
+            | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
+            | WeaponSlot::E_SLOT_HEAVY
+    )
 }
 
 /// The local player character.
@@ -70,13 +97,7 @@ pub unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
         hands[hand.index()] = true;
         holder.get_or_insert(hand);
     }
-    let two_handed = weapon.m_State == WeaponState::E_WS_WIELDING
-        && matches!(
-            slot,
-            WeaponSlot::E_SLOT_TWO_HANDED
-                | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL
-                | WeaponSlot::E_SLOT_HEAVY
-        );
+    let two_handed = weapon.m_State == WeaponState::E_WS_WIELDING && long_slot(slot);
     // Read as the raw value: an unset or unknown class is out of the enum's range.
     let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
     Some(HeldWeapon {
@@ -194,4 +215,70 @@ pub(super) fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
         WeaponSlot::E_SLOT_BEACON,
     ];
     SLOTS.into_iter().find(|&s| s as i32 == slot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gun(address: usize, slot: WeaponSlot, hand: Hand) -> HeldWeapon {
+        let two_handed = long_slot(slot);
+        HeldWeapon {
+            address,
+            wielded: Wielded {
+                slot,
+                hands: Hand::BOTH.map(|h| h == hand),
+            },
+            holder: Some(hand),
+            two_handed,
+            class: HeftClass::of(0, two_handed),
+        }
+    }
+
+    #[test]
+    fn each_hand_has_its_own_gun_whichever_the_game_wields() {
+        let pistol = gun(0x10, WeaponSlot::E_SLOT_DUAL_WIELD, Hand::Right);
+        let rifle = gun(0x20, WeaponSlot::E_SLOT_TWO_HANDED, Hand::Left);
+        let mut armed = [None; 2];
+        armed[Hand::Left.index()] = Some(rifle);
+        let hands = in_hands(Some(pistol), armed);
+        assert_eq!(hands[Hand::Right.index()], Some(pistol));
+        assert_eq!(hands[Hand::Left.index()], Some(rifle));
+        // Mirrored: the long gun wielded in the left hand, a pistol armed in the right.
+        let mut armed = [None; 2];
+        armed[Hand::Right.index()] = Some(gun(0x10, WeaponSlot::E_SLOT_DUAL_WIELD, Hand::Right));
+        let left_rifle = gun(0x20, WeaponSlot::E_SLOT_TWO_HANDED, Hand::Left);
+        let hands = in_hands(Some(left_rifle), armed);
+        assert_eq!(hands[Hand::Left.index()], Some(left_rifle));
+        assert_eq!(hands[Hand::Right.index()].map(|w| w.address), Some(0x10));
+        // A gun armed in one hand alone is that hand's.
+        let mut armed = [None; 2];
+        armed[Hand::Left.index()] = Some(rifle);
+        assert_eq!(in_hands(None, armed), armed);
+    }
+
+    #[test]
+    fn the_pair_is_a_gun_of_its_first_hand_alone() {
+        let mut pair = gun(0x10, WeaponSlot::E_SLOT_DUAL_WIELD, Hand::Right);
+        pair.wielded.hands = [true; 2];
+        assert_eq!(in_hands(Some(pair), [None; 2]), [None, Some(pair)]);
+    }
+
+    #[test]
+    fn the_wielded_weapon_is_never_also_an_armed_one() {
+        let rifle = gun(0x20, WeaponSlot::E_SLOT_TWO_HANDED, Hand::Right);
+        // A weapon armed in the hand the wielded weapon left, being disarmed this tick.
+        let mut armed = [None; 2];
+        armed[Hand::Left.index()] = Some(gun(0x20, WeaponSlot::E_SLOT_TWO_HANDED, Hand::Left));
+        assert_eq!(in_hands(Some(rifle), armed), [None, Some(rifle)]);
+    }
+
+    #[test]
+    fn only_the_long_slots_are_long_guns() {
+        assert!(long_slot(WeaponSlot::E_SLOT_TWO_HANDED));
+        assert!(long_slot(WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL));
+        assert!(long_slot(WeaponSlot::E_SLOT_HEAVY));
+        assert!(!long_slot(WeaponSlot::E_SLOT_DUAL_WIELD));
+        assert!(!long_slot(WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE));
+    }
 }

@@ -441,24 +441,26 @@ fn empty_readout(ui: &mut Ui, e: &EmptyStatus) {
 }
 
 fn heft_readout(ui: &mut Ui, h: &HeftStatus) {
-    let Some(target) = h.target else {
+    ui.label(format!("Weight: scatter widened {} times", h.widened_shots));
+    for hand in Hand::BOTH {
+        let s = &h.hands[hand.index()];
+        let Some(target) = s.target else {
+            ui.label(format!("  {} hand: no weapon", hand.label()));
+            continue;
+        };
         ui.label(format!(
-            "Weight: no weapon · scatter widened {} times",
-            h.widened_shots
+            "  {} hand: {} · unbraced {:.2} · reach {:.2} · sag {:.1}° · sway pitch {:+.2}° yaw {:+.2}° · lag {:.1}° · total {:.1}°",
+            hand.label(),
+            target.class.label(),
+            s.share,
+            s.reach,
+            s.sag_deg,
+            s.sway_deg.x,
+            s.sway_deg.y,
+            s.lag_deg,
+            s.offset_deg
         ));
-        return;
-    };
-    ui.label(format!(
-        "Weight: {} in the {} hand · unbraced {:.2} · reach {:.2}",
-        target.class.label(),
-        target.hand.label(),
-        h.share,
-        h.reach
-    ));
-    ui.label(format!(
-        "  sag {:.1}° · sway pitch {:+.2}° yaw {:+.2}° · lag {:.1}° · total {:.1}° · scatter widened {} times",
-        h.sag_deg, h.sway_deg.x, h.sway_deg.y, h.lag_deg, h.offset_deg, h.widened_shots
-    ));
+    }
 }
 
 fn grip_watch_readout(ui: &mut Ui, g: &GripWatchStatus) {
