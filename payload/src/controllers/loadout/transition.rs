@@ -685,12 +685,25 @@ impl Loadout {
         }])
     }
 
-    /// A weapon the mod spawned to stand for one the player has comes onto the body: on its
-    /// socket when the body has it free and it fits there, otherwise where a weapon goes when the
-    /// player does not choose.
+    /// A weapon the mod spawned to stand for one the player has comes onto the body. An item of its
+    /// type that waits to be spawned again (a cache's restored weapon whose object is gone) is
+    /// bound to it where the table has that item; otherwise it comes onto its socket when the body
+    /// has it free and it fits there, or where a weapon goes when the player does not choose.
     pub fn restored(&mut self, restored: Restored) -> Result<Vec<Transition>, TransitionError> {
         if let Some(found) = self.locate(restored.object) {
             return Err(found.already());
+        }
+        let waiting = self
+            .items()
+            .filter(|item| item.binding == Binding::Awaiting(Awaiting::Respawn))
+            .filter(|item| {
+                item.kind.weapon().map(WeaponType::tag_hash) == Some(restored.weapon.tag_hash())
+            })
+            // The one on the recorded socket first.
+            .min_by_key(|item| item.place != Place::Socket(restored.socket))
+            .map(|item| item.id);
+        if let Some(id) = waiting {
+            return self.spawned(id, restored.object);
         }
         let item = Item {
             id: self.allocate(),

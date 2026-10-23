@@ -230,7 +230,8 @@ impl Loadout {
     }
 
     /// The game restored its cache, and its slots hold `slots`. A checkpoint's restore returns the
-    /// table to its snapshot: what the player gained since leaves the table. A mission's or a
+    /// table to its snapshot, which stays for the next restart: what the player gained since leaves
+    /// the table. A mission's or a challenge's restore uses its snapshot up. A mission's or a
     /// challenge's brings the snapshot's weapons back beside what the player holds since. Either
     /// way the hands come back empty: a weapon the snapshot had in a hand goes onto a socket, and a
     /// snapshot's weapon whose object is gone waits to be spawned again.
@@ -240,9 +241,14 @@ impl Loadout {
         slots: &[SlotObject],
     ) -> Result<Vec<Transition>, TransitionError> {
         check_slots(slots)?;
-        let snapshot = self.caches.0[kind.index()]
-            .clone()
-            .ok_or(TransitionError::NoCache(kind))?;
+        // A checkpoint's snapshot stands for every restart from it; a mission's or a challenge's
+        // give-back is the end of its hold, so its snapshot is used up.
+        let held = &mut self.caches.0[kind.index()];
+        let snapshot = match kind {
+            CacheKind::Checkpoint => held.clone(),
+            CacheKind::Mission | CacheKind::Challenge => held.take(),
+        }
+        .ok_or(TransitionError::NoCache(kind))?;
         let cause = Cause::Restore(kind);
         let mut out = Vec::new();
         if kind == CacheKind::Checkpoint {

@@ -32,6 +32,15 @@ Every entry to the load state therefore resets. The load state is entered for a 
 
 On a death the order is: `GoToRestartPoint` calls `ReInit`, which revives the character (forcing its neutral state, [`Character::ForceNeutralState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-ForceNeutralState), which unequips the wielded weapon), returns to normal aim, teleports with the load state, fills the slot weapons' reserves ([`Inventory::GiveMaxAmmoToAllWeaponInInventory`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-GiveMaxAmmoToAllWeaponInInventory)), and writes the inventory's reset flags ([`Inventory::m_SpawnSystemResetFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_SpawnSystemResetFlags)). With a mission active, `GoToRestartPoint` then replays the checkpoint's weapons ([weapon-gives-and-restores.md](weapon-gives-and-restores.md#the-mission-managers-checkpoint-cache)), whose gives are written into the respawn table before the reset. The load state resets on the next frame.
 
+### Which entry is which
+
+The reset itself does not say what it is for, and by the time it runs the respawn has already revived the character, so the health is full again at its pre-reset event. What precedes it does say:
+
+- `ReInit` revives the character and teleports with the load state, and nothing else calls the revive with that teleport. Its callers are `GoToRestartPoint`, twice (with the restart point's transform, and with none when the restart point is not found, which respawns at the default location), and the player's post-physics update on a request flag of the player's, also with no transform. So every `GoToRestartPoint` (a death, a mission's reset or failure, the teleport to a mission's start, the return to a challenge's start) is a respawn: the character is revived and its neutral state forced.
+- The frontend's reset is the quit to the menu; what follows is a load or a new game.
+- A load of the player's save data comes before the reset of a load or a continue.
+- Any other entry (a fast travel, a challenge's start, retry, restart, or abort, the map's teleport) is a teleport that keeps the character as it is.
+
 ### The inventory's handlers
 
 Each inventory subscribes both events ([`m_SpawnSystemPreReset`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##field-m_SpawnSystemPreReset) and `m_SpawnSystemPostReset`) and handles them in [`Inventory::HandleEvent`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-HandleEvent), telling them apart with [`EventMatches`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/event##func-EventMatches).

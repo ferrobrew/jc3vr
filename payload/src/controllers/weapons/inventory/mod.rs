@@ -11,7 +11,9 @@
 //! - [`reconcile`]: the game's slots, its wielded weapon, and the weapons armed in the hands, made
 //!   to follow the table each tick;
 //! - [`persist`] and [`restore`]: the carried weapons across resets, saves, and loads;
-//! - [`missions`]: the carried weapons stashed while a mission holds the player's weapons;
+//! - [`missions`]: the missions' holds of the player's weapons and the checkpoint snapshot;
+//! - [`challenges`]: the challenges' holds of the player's weapons;
+//! - [`traversal`]: the base layer's weapon tasks refused, and the forced neutral state undone;
 //! - [`gives`]: the game's gives, placed by the table rather than equipped;
 //! - [`ammo`]: the ammunition auto-pickup, for every weapon the table has on the body;
 //! - [`engine`]: the engine reads behind them;
@@ -30,6 +32,7 @@
 
 mod ammo;
 pub(crate) mod carry;
+mod challenges;
 pub mod config;
 pub(crate) mod engine;
 pub(crate) mod gives;
@@ -69,6 +72,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(reset::hook_library())
         .with_hook_library(carry::hook_library())
         .with_hook_library(missions::hook_library())
+        .with_hook_library(challenges::hook_library())
         .with_hook_library(gives::hook_library())
         .with_hook_library(ammo::hook_library())
         .with_hook_library(traversal::hook_library())
@@ -144,7 +148,9 @@ pub(crate) unsafe fn input_tick(
     let others = held_others();
     if on {
         let slots = unsafe { live_slots(owner) };
-        live::begin_tick(inputs.dominant, &slots);
+        let spawning = engine::tracked_slots()
+            .any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
+        live::begin_tick(inputs.dominant, &slots, spawning);
         unsafe { restore::input_tick(owner, &inputs.settings) };
         unsafe { use_item::input_tick(owner) };
         unsafe { gives::input_tick(owner) };
@@ -174,7 +180,7 @@ pub(crate) unsafe fn input_tick(
     state.status.active = true;
     let player = engine::position(owner);
     let slots = unsafe { engine::slots(owner) };
-    unsafe { missions::input_tick(!slots.is_empty()) };
+    unsafe { missions::input_tick() };
     for (_, weapon) in &slots {
         // SAFETY: the slot keeps the weapon alive.
         unsafe { state.world.watch(weapon) };
@@ -382,15 +388,15 @@ fn live_slot(object: ObjectKey) -> Option<SlotObject> {
 
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
 /// since the reset removes the weapons in the world and replaces the slots' weapons.
-fn on_reset(died: bool) {
+fn on_reset() {
     let released: Vec<ObjectAddress> = carry::objects()
         .into_iter()
         .filter_map(ObjectAddress::from_address)
         .collect();
-    live::reset_began(died, &released);
+    live::reset_began(&released);
     gives::on_reset();
     let slot_single = single::slot_single();
-    restore::on_pre_reset(carry::records(), slot_single);
+    restore::on_pre_reset(carry::records(), slot_single, carry::stashed());
     single::on_reset(Some(slot_single));
     let mut state = STATE.lock();
     state.status.resets += 1;

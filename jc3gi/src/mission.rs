@@ -159,17 +159,24 @@ impl ROMObject {
         }
     }
     pub const RestoreWeaponsAndAmmo_ADDRESS: usize = 0x140AC8840;
-    /// Restores the loadout recorded by [`PostInit`](crate::mission::ROMObject::PostInit), called at the challenge's end
-    /// and on the object's exit: per slot, a recorded empty slot is despawned
-    /// ([`Inventory::DespawnWeapon`](crate::character::inventory::Inventory::DespawnWeapon)) and any other
-    /// gets a give of the recorded type and magazine; then every reserve but the beacons' and
-    /// flares' is restored, and an autosave is requested.
-    pub unsafe fn RestoreWeaponsAndAmmo() {
+    /// Restores the loadout recorded by [`PostInit`](crate::mission::ROMObject::PostInit) onto the local player. Every
+    /// slot is emptied first: with `despawn` set its weapon is despawned at once
+    /// ([`Inventory::DespawnWeapon`](crate::character::inventory::Inventory::DespawnWeapon)), and without
+    /// it the weapon is only taken out ([`Inventory::RemoveWeapon`](crate::character::inventory::Inventory::RemoveWeapon)).
+    /// Each slot recorded with a weapon then gets its recorded type and magazine: a give
+    /// ([`Inventory::GivePlayerWeapon`](crate::character::inventory::Inventory::GivePlayerWeapon)) with
+    /// `despawn` set, and without it only the respawn table's entry, which the spawn reset that
+    /// follows spawns. Then every reserve but the beacons' and flares' is restored, and an autosave
+    /// is requested. The challenge object's destruction calls it with `despawn` set; for one kind
+    /// of challenge the destruction instead marks the challenge manager, and the load state's reset
+    /// step ([`GameStateLoad::ResetSystems`](crate::game::GameStateLoad::ResetSystems)) calls it with
+    /// `despawn` clear.
+    pub unsafe fn RestoreWeaponsAndAmmo(despawn: bool) {
         unsafe {
-            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+            let f: unsafe extern "system" fn(despawn: bool) = ::std::mem::transmute(
                 Self::RestoreWeaponsAndAmmo_ADDRESS,
             );
-            f()
+            f(despawn)
         }
     }
 }

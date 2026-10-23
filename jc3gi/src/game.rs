@@ -503,7 +503,10 @@ impl GameStateLoad {
     }
     pub const ResetSystems_ADDRESS: usize = 0x1409BABB0;
     /// The load state's reset step, called only by [`OnEnter`](crate::game::GameStateLoad::OnEnter): aborts an active
-    /// challenge unless the no-unload flag is set, resets the dialogue, resets the spawn system
+    /// challenge unless the no-unload flag is set, gives back a challenge's loadout its
+    /// destruction left to the reset
+    /// ([`ROMObject::RestoreWeaponsAndAmmo`](crate::mission::ROMObject::RestoreWeaponsAndAmmo)), resets the
+    /// dialogue, resets the spawn system
     /// ([`SpawnSystem::ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)), and resets the heat.
     /// The disassembler mislabels it `IConsole::GetLoadingLock`.
     pub unsafe fn ResetSystems() {

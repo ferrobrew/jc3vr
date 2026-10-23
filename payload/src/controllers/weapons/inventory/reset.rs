@@ -12,6 +12,13 @@
 //! live loadout table ([`crate::controllers::loadout::live`]) that a reset began or ended, a store
 //! is imminent, or a load happened.
 //!
+//! What the reset is for comes from the seams before it: the player's respawn
+//! ([`Player::ReInit`], which revives the player and teleports with the load state: a death, a
+//! mission's failure or restart, the teleport to a mission's start, and the return to a challenge's
+//! start) makes it a respawn, the frontend's reset ([`GameStateFrontend::ResetSystems`], the quit
+//! to the menu) and a load of the save data make it a load, and any other entry to the load state
+//! (a fast travel, a challenge's start, retry, or abort) is a travel.
+//!
 //! The handler runs for every character's inventory, on whatever thread resets the spawn system,
 //! so the detour compares the inventory's character with the published local player before it
 //! takes any lock.
@@ -20,9 +27,10 @@ use std::ffi::c_void;
 
 use detours_macro::detour;
 use jc3gi::{
-    character::inventory::Inventory,
+    character::{inventory::Inventory, player::Player},
     event::{EventImpl, EventMatches},
     save::PlayerSaveData,
+    types::math::Matrix4,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -38,6 +46,8 @@ use crate::{
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&HANDLE_EVENT_BINDER)
+        .with_static_binder(&RE_INIT_BINDER)
+        .with_static_binder(&FRONTEND_RESET_SYSTEMS_BINDER)
         .with_static_binder(&STORE_PLAYER_SAVE_DATA_BINDER)
         .with_static_binder(&LOAD_PLAYER_SAVE_DATA_BINDER)
 }
@@ -74,11 +84,7 @@ fn handle_event(inventory: *mut Inventory, event: *const EventImpl, data: *mut c
     let reset = unsafe { reset_event(inventory, event) };
     if reset == Some(ResetEvent::Pre) {
         tracing::info!(target: "controllers", "inventory: the spawn system is resetting");
-        // SAFETY: the reset event names the local player's live inventory and character.
-        let died = unsafe { inventory.as_ref() }
-            .and_then(|i| unsafe { i.m_Character.as_ref() })
-            .is_some_and(|character| unsafe { character.GetHealth() } <= 0);
-        inventory::on_reset(died);
+        inventory::on_reset();
     }
     HANDLE_EVENT.get().unwrap().call(inventory, event, data);
     if reset == Some(ResetEvent::Post) {
@@ -113,4 +119,26 @@ fn load_player_save_data(save_data: *mut PlayerSaveData, archive: *mut c_void, v
     // SAFETY: the load was given live save data.
     unsafe { restore::on_load(save_data, &settings) };
     live::loaded();
+}
+
+/// The player's respawn: the spawn reset its teleport enters is a respawn. Only the local player is
+/// a `CPlayer`.
+#[detour(address = jc3gi::character::player::Player::ReInit_ADDRESS)]
+fn re_init(player: *mut Player, transform: *mut Matrix4, teleport_flags: u32, reset_flags: u32) {
+    tracing::info!(target: "controllers", "inventory: the game is respawning the player");
+    live::respawning();
+    RE_INIT
+        .get()
+        .unwrap()
+        .call(player, transform, teleport_flags, reset_flags);
+}
+
+/// The frontend's reset of the game's systems, the quit to the menu: whatever follows starts the
+/// table again, and no reset's record of the carried weapons carries into it.
+#[detour(address = jc3gi::game::GameStateFrontend::ResetSystems_ADDRESS)]
+fn frontend_reset_systems() {
+    tracing::info!(target: "controllers", "inventory: the frontend is resetting the game's systems");
+    live::frontend_reset();
+    restore::on_frontend();
+    FRONTEND_RESET_SYSTEMS.get().unwrap().call();
 }

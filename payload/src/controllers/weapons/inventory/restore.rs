@@ -141,16 +141,34 @@ pub fn status() -> RestoreStatus {
 /// The spawn system is resetting: record the carried weapons, which the reset's release of the
 /// carry set lets go, for the respawn, and whether the pistol slot held one pistol. Any spawn still
 /// on its way belongs to the world before the reset and is forgotten.
-pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool) {
+///
+/// A respawn the mission manager replays a checkpoint for records the carried weapons as they were
+/// at that checkpoint instead ([`checkpoint_restoring`]). While a mission or a challenge holds the
+/// player's weapons (`stashed`), the record is held back until the give-back ([`give_back`]),
+/// rather than respawned onto the body during the hold.
+pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stashed: bool) {
     let mut plan = PLAN.lock();
     plan.generation = plan.generation.wrapping_add(1);
     plan.spawning.clear();
-    plan.from_reset = Some(Pending {
+    let (records, slot_pistol_single) = match plan.checkpoint_next.take() {
+        Some(checkpoint) => checkpoint,
+        None => (records, slot_pistol_single),
+    };
+    let pending = Pending {
         records,
         slot_pistol_single: Some(slot_pistol_single),
         at: Instant::now(),
         character: ik::local_character(),
-    });
+    };
+    if stashed {
+        // A second reset during the hold keeps the first record: the weapons are not carried then.
+        if plan.held.is_none() {
+            plan.held = Some(pending);
+        }
+        plan.from_reset = None;
+    } else {
+        plan.from_reset = Some(pending);
+    }
     plan.due = false;
     std::mem::drop(plan);
     SPAWNED.lock().clear();
@@ -160,6 +178,42 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool) {
 /// The spawn system has reset: the next input tick with the player respawns the carried weapons.
 pub(crate) fn on_post_reset() {
     PLAN.lock().due = true;
+}
+
+/// The mission manager snapshots the slots at a checkpoint: keep the carried weapons as they are
+/// now (`records`), and whether the pistol slot holds one pistol, for a restart from it.
+pub(crate) fn checkpoint_cached(records: Vec<Record>, slot_pistol_single: bool) {
+    PLAN.lock().checkpoint = Some((records, slot_pistol_single));
+}
+
+/// The mission manager replays its checkpoint for the player's respawn: the reset that follows
+/// respawns the checkpoint's carried weapons rather than the ones carried now.
+pub(crate) fn checkpoint_restoring() {
+    let mut plan = PLAN.lock();
+    plan.checkpoint_next = plan.checkpoint.clone();
+}
+
+/// A mission's or a challenge's give-back: a reset's record held back during its hold is due now.
+/// Returns whether there was one.
+pub(crate) fn give_back() -> bool {
+    let mut plan = PLAN.lock();
+    let Some(mut held) = plan.held.take() else {
+        return false;
+    };
+    held.at = Instant::now();
+    plan.from_reset = Some(held);
+    plan.due = true;
+    true
+}
+
+/// The frontend reset the game's systems: nothing recorded carries into what follows but a load's
+/// accepted sidecar.
+pub(crate) fn on_frontend() {
+    let mut plan = PLAN.lock();
+    plan.from_reset = None;
+    plan.held = None;
+    plan.checkpoint = None;
+    plan.checkpoint_next = None;
 }
 
 /// The game is storing the player's save data: write the sidecar with the carried weapons and the
@@ -310,6 +364,9 @@ pub(crate) fn clear() {
     plan.spawning.clear();
     plan.from_load = None;
     plan.from_reset = None;
+    plan.held = None;
+    plan.checkpoint = None;
+    plan.checkpoint_next = None;
     plan.due = false;
     std::mem::drop(plan);
     SPAWNED.lock().clear();
@@ -335,6 +392,12 @@ struct Spawning {
 struct Plan {
     from_load: Option<Pending>,
     from_reset: Option<Pending>,
+    /// A reset's record held back while a mission or a challenge holds the player's weapons.
+    held: Option<Pending>,
+    /// The carried weapons at the last mission checkpoint, and whether the pistol slot held one
+    /// pistol, and the same taken for the reset of a restart from it.
+    checkpoint: Option<(Vec<Record>, bool)>,
+    checkpoint_next: Option<(Vec<Record>, bool)>,
     /// Whether a reset has finished and the respawn is waiting for the player.
     due: bool,
     spawning: Vec<Spawning>,
@@ -346,6 +409,9 @@ struct Plan {
 static PLAN: Mutex<Plan> = Mutex::new(Plan {
     from_load: None,
     from_reset: None,
+    held: None,
+    checkpoint: None,
+    checkpoint_next: None,
     due: false,
     spawning: Vec::new(),
     generation: 0,

@@ -119,10 +119,11 @@ pub(crate) struct HeldOther {
 }
 
 /// Start the input tick's feed: start the table from the slots on its first tick, complete a spawn
-/// reset or a load since the last tick, and watch for a mission's give-back. `slots` are the
-/// tracked slots' weapons. Called before anything restores a weapon this tick, so a restore lands
-/// in the table that the reset left.
-pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject]) {
+/// reset or a load since the last tick, and a checkpoint's, a mission's, or a challenge's restore.
+/// `slots` are the tracked slots' weapons, and `spawning` whether a slot's spawn is still on its
+/// way: a completion waits for the slots to settle, up to [`SETTLE_WAIT`]. Called before anything
+/// restores a weapon this tick, so a restore lands in the table that the reset left.
+pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject], spawning: bool) {
     let mut live = LIVE.lock();
     live.table.set_body(BodyLayout::full(dominant));
     if !live.started {
@@ -138,30 +139,42 @@ pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject]) {
         live.publish_places();
         return;
     }
+    let now = Instant::now();
+    let settled = |since: Option<Instant>| {
+        !spawning || since.is_some_and(|at| now.saturating_duration_since(at) >= SETTLE_WAIT)
+    };
     if live.reset.completed {
-        let kind = if live.reset.died {
-            ResetKind::Respawn
-        } else if live.reset.loaded {
-            ResetKind::Load
-        } else {
-            ResetKind::Travel
-        };
-        live.reset = ResetWatch::default();
-        live.fold(Event::ResetCompleted {
-            kind,
-            slots: slots.to_vec(),
-        });
-    }
-    match live.mission {
-        MissionWatch::Taken if slots.is_empty() => live.mission = MissionWatch::Emptied,
-        MissionWatch::Emptied if !slots.is_empty() => {
-            live.mission = MissionWatch::Idle;
-            live.fold(Event::CacheRestored {
-                cache: CacheKind::Mission,
+        let since = *live.reset.completed_at.get_or_insert(now);
+        if settled(Some(since)) {
+            let kind = live.reset.kind();
+            let checkpoint = live.reset.checkpoint && kind == ResetKind::Respawn;
+            live.reset = ResetWatch::default();
+            live.fold(Event::ResetCompleted {
+                kind,
                 slots: slots.to_vec(),
             });
+            if checkpoint {
+                live.fold(Event::CacheRestored {
+                    cache: CacheKind::Checkpoint,
+                    slots: slots.to_vec(),
+                });
+            }
         }
-        MissionWatch::Idle | MissionWatch::Taken | MissionWatch::Emptied => {}
+    }
+    // A give-back waits for the reset too, when one is under way.
+    if !(live.reset.began || live.reset.completed) {
+        for cache in [CacheKind::Mission, CacheKind::Challenge] {
+            let watch = live.held_by(cache);
+            if let Hold::Restoring(since) = watch
+                && settled(Some(since))
+            {
+                *live.hold_mut(cache) = Hold::Idle;
+                live.fold(Event::CacheRestored {
+                    cache,
+                    slots: slots.to_vec(),
+                });
+            }
+        }
     }
     live.publish_places();
 }
@@ -228,10 +241,11 @@ pub(crate) fn resetting() -> bool {
     live.started && (live.reset.began || live.reset.completed)
 }
 
-/// Whether a mission holds the player's weapons with its cache, its give-back still to come.
+/// Whether a mission or a challenge holds the player's weapons with its cache, its give-back still
+/// to come or not yet folded.
 pub(crate) fn mission_holds() -> bool {
     let live = LIVE.lock();
-    live.started && live.mission != MissionWatch::Idle
+    live.started && (live.mission != Hold::Idle || live.challenge != Hold::Idle)
 }
 
 /// The game gave the player `held` from `source`, the weapon in its slot and not equipped: a hand
@@ -436,7 +450,9 @@ pub(crate) fn stop() {
     }
     live.started = false;
     live.table = Loadout::new(live.table.body());
-    live.mission = MissionWatch::Idle;
+    live.mission = Hold::Idle;
+    live.challenge = Hold::Idle;
+    live.reset = ResetWatch::default();
     live.pending = None;
     live.origins = [None; 2];
     live.neutral = None;
@@ -459,15 +475,27 @@ pub(crate) fn neutral_forced(object: ObjectAddress) -> bool {
     true
 }
 
+/// The game is respawning the player ([`jc3gi::character::player::Player::ReInit`]): the spawn
+/// reset its teleport enters is a respawn.
+pub(crate) fn respawning() {
+    LIVE.lock().reset.respawn = true;
+}
+
+/// The frontend reset the game's systems (the quit to the menu): whatever follows starts the table
+/// again from the slots, as a load does.
+pub(crate) fn frontend_reset() {
+    let mut live = LIVE.lock();
+    live.reset.frontend = true;
+    live.reset.began = true;
+}
+
 /// The spawn reset is about to replace the slots' weapons, and the inventory releases the carry
-/// set's weapons (`released`), which the reset then removes. `died` is whether the local player's
-/// health was spent, the reset then being a respawn.
-pub(crate) fn reset_began(died: bool, released: &[ObjectAddress]) {
+/// set's weapons (`released`), which the reset then removes.
+pub(crate) fn reset_began(released: &[ObjectAddress]) {
     let mut live = LIVE.lock();
     if !live.started {
         return;
     }
-    live.reset.died |= died;
     live.reset.began = true;
     live.neutral = None;
     live.fold(Event::ResetBegan);
@@ -482,7 +510,7 @@ pub(crate) fn reset_began(died: bool, released: &[ObjectAddress]) {
     live.publish_places();
 }
 
-/// The spawn reset is done: the next input tick reports the slots it left.
+/// The spawn reset is done: the next input tick reports the slots it left, once they settle.
 pub(crate) fn reset_ended() {
     LIVE.lock().reset.completed = true;
 }
@@ -514,6 +542,61 @@ pub(crate) fn mission_caching() -> Option<StoreProjection> {
     live.fold(Event::Cached(CacheKind::Mission))
 }
 
+/// The mission manager is about to snapshot the slots at a checkpoint. Returns the slots the
+/// snapshot should take.
+pub(crate) fn checkpoint_caching() -> Option<StoreProjection> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::Cached(CacheKind::Checkpoint))
+}
+
+/// The mission manager replayed its checkpoint snapshot onto the slots, after the player's
+/// respawn: the respawn's completion restores the table's checkpoint snapshot too.
+pub(crate) fn checkpoint_restoring() {
+    let mut live = LIVE.lock();
+    if live.started && live.table.caches_held().any(|c| c == CacheKind::Checkpoint) {
+        live.reset.checkpoint = true;
+    }
+}
+
+/// A challenge is about to record the player's loadout. Returns the slots the record should take,
+/// or `None` while the table runs a challenge's snapshot already (a retry or a restart keeps the
+/// first).
+pub(crate) fn challenge_caching() -> Option<StoreProjection> {
+    let mut live = LIVE.lock();
+    if !live.started || live.table.caches_held().any(|c| c == CacheKind::Challenge) {
+        return None;
+    }
+    live.fold(Event::Cached(CacheKind::Challenge))
+}
+
+/// A challenge took the local player's weapons: every weapon on the body leaves the table until its
+/// give-back.
+pub(crate) fn challenge_took() {
+    let mut live = LIVE.lock();
+    if !live.started || live.challenge != Hold::Idle {
+        return;
+    }
+    live.challenge = Hold::Taken;
+    live.fold(Event::Removed {
+        target: Removal::AllWeapons,
+        why: RemovalWhy::Challenge,
+    });
+    live.publish_places();
+}
+
+/// A mission's or a challenge's give-back ran (the graph script's cache restore, a challenge's end
+/// or abort): once the slots settle, the table's snapshot comes back beside what the player holds.
+pub(crate) fn given_back(cache: CacheKind) {
+    let mut live = LIVE.lock();
+    if !live.started || !live.table.caches_held().any(|c| c == cache) {
+        return;
+    }
+    *live.hold_mut(cache) = Hold::Restoring(Instant::now());
+}
+
 /// What a store would write now, while the table runs, without telling the table of a store: for
 /// putting the table back into the game's slots when the table stops.
 pub(crate) fn store_projection_now() -> Option<StoreProjection> {
@@ -528,14 +611,14 @@ pub(crate) fn snapshot_now() -> Option<LoadoutSnapshot> {
     live.started.then(|| live.table.snapshot())
 }
 
-/// A mission took the local player's weapons with its cache: the give-back is watched for, as the
-/// slots holding a weapon again after they were seen empty.
+/// A mission took the local player's weapons with its cache: everything on the body leaves the
+/// table until the give-back ([`given_back`]).
 pub(crate) fn mission_took() {
     let mut live = LIVE.lock();
     if !live.started {
         return;
     }
-    live.mission = MissionWatch::Taken;
+    live.mission = Hold::Taken;
     live.fold(Event::Removed {
         target: Removal::AllWeapons,
         why: RemovalWhy::Mission,
@@ -552,6 +635,9 @@ pub(crate) fn restored(restored: Restored) {
         live.publish_places();
     }
 }
+
+/// The longest a completion waits for the slots' spawns to arrive.
+const SETTLE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// How many log lines the readouts keep.
 const LOG_LINES: usize = 24;
@@ -570,7 +656,8 @@ struct Live {
     /// When the last input tick ran, for the expectation's age.
     last: Option<Instant>,
     reset: ResetWatch,
-    mission: MissionWatch,
+    mission: Hold,
+    challenge: Hold,
     transitions: u64,
     refusals: u64,
     last_store: Option<StoreProjection>,
@@ -583,20 +670,41 @@ struct ResetWatch {
     /// The reset's pre-reset event came, and its completion has not been folded yet.
     began: bool,
     completed: bool,
-    /// The player's health was spent at the reset's begin.
-    died: bool,
+    /// When the completion was first seen, for the wait on the slots' spawns.
+    completed_at: Option<Instant>,
+    /// The game respawned the player before the reset ([`respawning`]).
+    respawn: bool,
     /// The game loaded the player's save data since the last completion.
     loaded: bool,
+    /// The frontend reset the game's systems since the last completion.
+    frontend: bool,
+    /// The mission manager replayed its checkpoint snapshot for this respawn.
+    checkpoint: bool,
 }
 
-/// The give-back of a mission that took the player's weapons, which has no seam of its own.
+impl ResetWatch {
+    /// What the reset was: a load of the save data or the frontend starts the table again, the
+    /// player's respawn empties the hands, and anything else (a fast travel, a challenge's start,
+    /// retry, or abort) is a travel.
+    fn kind(&self) -> ResetKind {
+        if self.loaded || self.frontend {
+            ResetKind::Load
+        } else if self.respawn {
+            ResetKind::Respawn
+        } else {
+            ResetKind::Travel
+        }
+    }
+}
+
+/// A mission's or a challenge's hold of the player's weapons.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum MissionWatch {
+enum Hold {
     Idle,
-    /// The mission took the weapons; the slots are not yet seen empty.
+    /// The weapons are taken, and the give-back is still to come.
     Taken,
-    /// The slots have been seen empty since; the next weapon in them is the give-back.
-    Emptied,
+    /// The give-back ran at this moment; it is folded once the slots settle.
+    Restoring(Instant),
 }
 
 impl Live {
@@ -611,14 +719,33 @@ impl Live {
             reset: ResetWatch {
                 began: false,
                 completed: false,
-                died: false,
+                completed_at: None,
+                respawn: false,
                 loaded: false,
+                frontend: false,
+                checkpoint: false,
             },
-            mission: MissionWatch::Idle,
+            mission: Hold::Idle,
+            challenge: Hold::Idle,
             transitions: 0,
             refusals: 0,
             last_store: None,
             log: Vec::new(),
+        }
+    }
+
+    fn held_by(&self, cache: CacheKind) -> Hold {
+        match cache {
+            CacheKind::Mission => self.mission,
+            CacheKind::Challenge => self.challenge,
+            CacheKind::Checkpoint => Hold::Idle,
+        }
+    }
+
+    fn hold_mut(&mut self, cache: CacheKind) -> &mut Hold {
+        match cache {
+            CacheKind::Challenge => &mut self.challenge,
+            CacheKind::Mission | CacheKind::Checkpoint => &mut self.mission,
         }
     }
 

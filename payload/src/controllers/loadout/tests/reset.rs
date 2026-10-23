@@ -13,7 +13,7 @@ use crate::controllers::{
         reset::{CacheKind, ResetKind, SlotObject},
         socket::{BodyLayout, Socket},
         table::{Departure, ItemView, Loadout, Place},
-        transition::{Cause, Change, Release, Removal, RemovalWhy, TransitionError},
+        transition::{Cause, Change, Release, Removal, RemovalWhy, Restored, TransitionError},
     },
 };
 
@@ -207,6 +207,27 @@ fn a_restored_weapon_whose_object_is_gone_waits_for_its_spawn() {
 }
 
 #[test]
+fn a_weapon_the_mod_respawns_binds_the_restored_item_waiting_for_it() {
+    let (mut t, [_, _, extra]) = armed();
+    t.cache(CacheKind::Checkpoint);
+    t.remove(Removal::Item(extra), RemovalWhy::Gone).unwrap();
+    t.restore(CacheKind::Checkpoint, &[]).unwrap();
+    let before = t.items().count();
+    let out = t
+        .restored(Restored {
+            object: object(21),
+            weapon: a_rifle(),
+            socket: Socket::Shoulder(Hand::Left),
+        })
+        .unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].item, extra, "the waiting item keeps its identity");
+    assert_eq!(binding(&t, extra), Some(Binding::Live(object(21))));
+    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::BackOuter)));
+    assert_eq!(t.items().count(), before, "nothing is duplicated");
+}
+
+#[test]
 fn a_mission_s_give_back_brings_the_snapshot_back_beside_what_was_taken_since() {
     let (mut t, [rifle, pistol, extra]) = armed();
     t.cache(CacheKind::Mission);
@@ -243,6 +264,24 @@ fn a_restore_without_a_snapshot_is_refused() {
     assert_eq!(
         t.caches_held().collect::<Vec<_>>(),
         vec![CacheKind::Challenge]
+    );
+}
+
+#[test]
+fn a_give_back_uses_its_snapshot_up_and_a_checkpoint_keeps_its_own() {
+    let (mut t, _) = armed();
+    t.cache(CacheKind::Checkpoint);
+    t.cache(CacheKind::Challenge);
+    t.restore(CacheKind::Challenge, &[]).unwrap();
+    t.restore(CacheKind::Checkpoint, &[]).unwrap();
+    assert_eq!(
+        t.caches_held().collect::<Vec<_>>(),
+        vec![CacheKind::Checkpoint],
+        "a second death at the checkpoint restores it again"
+    );
+    assert_eq!(
+        t.restore(CacheKind::Challenge, &[]),
+        Err(TransitionError::NoCache(CacheKind::Challenge))
     );
 }
 
