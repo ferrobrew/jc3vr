@@ -28,15 +28,10 @@ pub(super) fn loadout_readout(ui: &mut Ui, live: &LiveStatus, sandbox: &SandboxS
         }
         Some(snapshot) => {
             ui.label(format!(
-                "{} transitions and {} refusals since the payload loaded · {} divergent",
-                live.transitions,
-                live.refusals,
-                live.divergence.len()
+                "{} transitions and {} refusals since the payload loaded",
+                live.transitions, live.refusals,
             ));
             table_readout(ui, snapshot);
-            for divergence in &live.divergence {
-                ui.label(format!("Divergent: {divergence}"));
-            }
             if let Some(store) = &live.last_store {
                 store_readout(ui, store);
             }

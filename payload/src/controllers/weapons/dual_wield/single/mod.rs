@@ -59,13 +59,13 @@ use crate::{
     controllers::{
         frame::Hand,
         hands::ik,
-        loadout::{Restored, Socket, live},
+        loadout::{Place, Restored, Socket, live},
         weapons::{
             dual_wield::{
                 attach,
                 single::{
                     grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
-                    hips::{hip_socket, home_for, promote_sides, socket_side},
+                    hips::{hip_socket, home_for, socket_side},
                     magazine::Dealt,
                 },
             },
@@ -260,38 +260,6 @@ pub(crate) unsafe fn apply_home(inventory: *mut Inventory) {
     }
 }
 
-/// The carried single pistol `promoted`, on `from`, moves into the slot, whose occupant comes out:
-/// returns the socket the occupant goes onto, its own hip's when that is free, and makes the
-/// newcomer's hip the slot's home. `None` when either is not a single pistol on a hip, for the
-/// carry set's own choice.
-pub(crate) fn promote_socket(
-    promoted: ObjectKey,
-    from: Socket,
-    occupant: ObjectKey,
-    free: impl Fn(Socket) -> bool,
-) -> Option<Socket> {
-    if !(set::contains(promoted) && set::contains(occupant)) {
-        return None;
-    }
-    let promoted_side = socket_side(from)?;
-    let home = home()
-        .filter(|&(object, _)| object == occupant)
-        .map(|(_, side)| side)?;
-    let (occupant_side, new_home) = promote_sides(promoted_side, home, free(hip_socket(home)));
-    set_home(promoted, new_home);
-    Some(hip_socket(occupant_side))
-}
-
-/// The carried single pistol `object`, on `from`, moved into an empty slot: its hip is the slot's
-/// home from now on.
-pub(crate) fn entered_slot(object: ObjectKey, from: Socket) {
-    if set::contains(object)
-        && let Some(side) = socket_side(from)
-    {
-        set_home(object, side);
-    }
-}
-
 /// Make `side` the hip of the slot's single pistol at `object`: called before a holster of it
 /// there, so the holster's slide already ends on that hip.
 ///
@@ -452,7 +420,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
     let fit = slot.as_ref().and_then(|w| unsafe { fit_of_weapon(w) });
     let guns = slot.as_ref().is_some_and(|w| unsafe { gun_count(w) } >= 2);
     let twin_socket = fit.and_then(|fit| twin_socket(&layout, fit));
-    let (grant, dt) = {
+    let grant = {
         let mut state = STATE.lock();
         let now = Instant::now();
         let dt = state
@@ -461,7 +429,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
         state.last_tick = Some(now);
         state.slot_single = slot_is_single;
         state.slot_filled = slot_object.is_some();
-        let grant = state.grants.observe(GrantTick {
+        state.grants.observe(GrantTick {
             enabled,
             slot: slot_object,
             single: slot_is_single,
@@ -469,15 +437,11 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: &Tick) {
             stashed: carry::stashed(),
             socket_free: twin_socket.is_some(),
             dt,
-        });
-        (grant, dt)
+        })
     };
     unsafe { act_on(owner, grant) };
     for strong in restore::take_twins() {
         unsafe { take_twin(owner, strong, tick) };
-    }
-    if enabled {
-        unsafe { refill(owner, dt) };
     }
 }
 
@@ -566,8 +530,6 @@ struct State {
     unrestored: Vec<u32>,
     slot_single: bool,
     slot_filled: bool,
-    /// How long the slot has been empty, seconds.
-    empty_s: f32,
     last_tick: Option<Instant>,
     splits: u64,
     ones: u64,
@@ -580,16 +542,12 @@ static STATE: Mutex<State> = Mutex::new(State {
     unrestored: Vec::new(),
     slot_single: false,
     slot_filled: false,
-    empty_s: 0.0,
     last_tick: None,
     splits: 0,
     ones: 0,
     pairs: 0,
     last: None,
 });
-/// How long the pistol slot stays empty before a carried pistol is put into it, seconds: long
-/// enough for a weapon the game is putting there to arrive first.
-const REFILL_AFTER_S: f32 = 0.5;
 /// Whether new pistols are made single, for the detours.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Set by the pickup start's detour for a rack's copy; the input tick covers the copy.
@@ -667,10 +625,19 @@ unsafe fn follow_home(single: Option<usize>) {
         clear_home();
         return;
     };
+    // The hip the loadout table has it on is its home.
+    if let Some(side) = match live::place_of(object) {
+        Some(Place::Socket(socket)) => socket_side(socket),
+        _ => None,
+    } {
+        set_home(object, side);
+        return;
+    }
     if home().is_some_and(|(o, _)| o == object) {
         return;
     }
-    let carried = Hand::BOTH.map(|side| carry::on_socket(hip_socket(side)).is_some());
+    let taken = carry::taken();
+    let carried = Hand::BOTH.map(|side| taken.contains(&hip_socket(side)));
     set_home(object, home_for(carried));
 }
 
@@ -785,7 +752,8 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
     // The pair becomes the slot's pistol first, so its home is known when the socket is chosen.
     // SAFETY: the slot keeps the pair alive.
     let slot_pistol = unsafe { &mut *(pair as *mut WeaponBase) };
-    let carried = Hand::BOTH.map(|side| carry::on_socket(hip_socket(side)).is_some());
+    let taken = carry::taken();
+    let carried = Hand::BOTH.map(|side| taken.contains(&hip_socket(side)));
     set_home(pair, home_for(carried));
     let socket = unsafe { fit_of_weapon(slot_pistol) }.and_then(|fit| twin_socket(&layout, fit));
     let Some(socket) = socket else {
@@ -801,8 +769,7 @@ unsafe fn take_twin(owner: &mut Character, strong: Strong, tick: &Tick) {
     // A second reference, so a twin the carry set refuses is still the mod's to put away.
     // SAFETY: the strong reference keeps the twin alive.
     let keep = unsafe { inventory_engine::strong_to(&*inventory_engine::weapon_of(&strong)) };
-    let offset = tick.settings.offsets.of(socket);
-    let twin = match unsafe { carry::carry_loose(owner, strong, socket, offset) } {
+    let twin = match unsafe { carry::carry_loose(owner, strong, socket) } {
         Ok(twin) => twin,
         Err(refusal) => {
             STATE.lock().grants.refused(pair);
@@ -907,45 +874,6 @@ unsafe fn deal(owner: &mut Character, slot: &mut WeaponBase, twin: &mut WeaponBa
     unsafe { twin.SetMagazineAmmo(dealt.twin) };
     if dealt.over > 0 && !unsafe { slot.HasUnlimitedAmmo() } {
         unsafe { return_rounds(owner, slot, dealt.over) };
-    }
-}
-
-/// Put a carried single pistol into the pistol slot once it has been empty a moment, unequipped,
-/// so the HUD and the weapon wheel show the pistols again. Not while the carried weapons are
-/// stashed, nor while a respawn may still fill the slot.
-unsafe fn refill(owner: &mut Character, dt: f32) {
-    let empty = unsafe { slot_weapon(owner) }.is_none();
-    let quiet = !carry::stashed() && restore::status().spawning == 0;
-    let due = {
-        let mut state = STATE.lock();
-        state.empty_s = if empty { state.empty_s + dt } else { 0.0 };
-        empty && quiet && state.empty_s >= REFILL_AFTER_S && !state.grants.respawn_pending()
-    };
-    if !due {
-        return;
-    }
-    let candidate = Hand::BOTH.into_iter().find_map(|side| {
-        let socket = hip_socket(side);
-        carry::on_socket(socket)
-            .filter(|&object| set::contains(object))
-            .map(|object| (object, socket))
-    });
-    let Some((object, socket)) = candidate else {
-        return;
-    };
-    match unsafe { carry::promote_unequipped(owner, object) } {
-        Ok(()) => {
-            entered_slot(object, socket);
-            tracing::info!(
-                target: "controllers",
-                socket = socket.label(),
-                "single pistols: the pistol on the {} is the slot's now",
-                socket.label()
-            );
-        }
-        Err(refusal) => {
-            tracing::debug!(target: "controllers", %refusal, "single pistols: the empty slot was not refilled");
-        }
     }
 }
 

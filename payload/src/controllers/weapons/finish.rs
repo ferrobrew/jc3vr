@@ -328,7 +328,7 @@ pub(crate) fn finish_tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         };
         // A free socket that fits takes the gun, or its own holster does, whichever is nearer.
         let dock = docked_at(hand, |v| match v {
-            GrabVolume::Socket(socket) => carry::on_socket(socket).is_none(),
+            GrabVolume::Socket(socket) => !carry::taken().contains(&socket),
             GrabVolume::Holster(site) => at_own(site),
             _ => false,
         });

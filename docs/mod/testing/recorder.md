@@ -153,7 +153,7 @@ The signals read the snapshots the mod's systems publish for the status rows and
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
 | `weapons.second_in_left_hand`, `.second_in_right_hand` | flag | A second weapon is held in that hand. |
 | `weapons.second_carried` | flag | The second weapon is one the VR inventory carries beyond the slots. |
-| `weapons.second_drops`, `.second_promotions` | counter | Second weapons let fall from the hand, and second weapons that became the wielded weapon. |
+| `weapons.second_drops`, `.second_promotions` | counter | Second weapons let fall from the hand, and armed weapons the reconcile made the primary's, wielded in the same hand. |
 | `weapons.grabs`, `grip.flips`, `grip.pins` | counter | Weapon grabs, guns snapping on the wrist, and attach bones pinned. |
 | `collide.contacts` | counter | Times a held long gun came against a wall. |
 | `collide.touching` | flag | A held long gun is against a wall. |

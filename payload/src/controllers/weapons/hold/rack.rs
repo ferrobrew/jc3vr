@@ -171,12 +171,12 @@ pub(crate) unsafe fn take(
         return Err(RackRefusal::Pickup(Refusal::AnimationForbids));
     }
     let from = unsafe { pickup::gun_pose(weapon) };
-    // The copy goes into the slot and drops its occupant, so the occupant goes onto a free socket
-    // first when there is one.
+    // The copy goes into the slot and drops its occupant, so the occupant leaves the slot first
+    // when the loadout table has it on the body.
     if !owner.m_Inventory.m_Weapons[slot as usize].px.is_null()
-        && unsafe { inventory::actions::carry_replaced(owner, slot) }
+        && unsafe { inventory::reconcile::vacate(owner, slot) }
     {
-        tracing::info!(target: "controllers", slot = slot_label(slot), "hold: carried the weapon the rack's copy replaces");
+        tracing::info!(target: "controllers", slot = slot_label(slot), "hold: the weapon the rack's copy replaces keeps its place");
     }
     hold::begin(hand, Cause::Rack, None);
     // A copy of a pistol is one pistol while pistols are single, and has no pair to draw from.

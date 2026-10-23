@@ -54,21 +54,10 @@ pub(super) fn loadout() -> Line {
             Place::World(_) => world += 1,
         }
     }
-    let detail = format_smolstr!(
-        "{hands} IN HANDS, {sockets} ON SOCKETS, {world} IN THE WORLD, {} DIVERGENT, {} REFUSED",
-        s.divergence.len(),
+    Line::ok(format_smolstr!(
+        "{hands} IN HANDS, {sockets} ON SOCKETS, {world} IN THE WORLD, {} REFUSED",
         s.refusals
-    );
-    if s.divergence.is_empty() {
-        return Line::ok(detail);
-    }
-    let note = s
-        .divergence
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("; ");
-    Line::failed(detail).with_note(note)
+    ))
 }
 
 /// Whether the pistols are two weapons: the slot's pistol, the second pistol of the last pair, and

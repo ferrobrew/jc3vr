@@ -1,15 +1,12 @@
-//! The old weapon handling's hand moves, as events for the live table. Pure.
+//! The hands' moves, as events for the live table. Pure.
 //!
-//! The old handling keeps two weapons in the hands, the wielded weapon and the second weapon, and
-//! every draw, holster, stow, take, hand-over, and drop it makes changes one of them. A weapon the
-//! table has in a hand that the old handling no longer has there is a [`departure`], and one that
-//! came into a hand an [`arrival`]. Each is made against the table as it is at that moment,
+//! A weapon the table has in a hand that has left it (the game holstered or dropped it, or the
+//! hands put it back or let it fall) is a [`departure`], and one that came into a hand an
+//! [`arrival`]. Each is made against the table as it is at that moment,
 //! departures first, so a weapon handed from one hand to the other finds the other hand empty.
 //!
 //! A move the table already shows sends nothing, and a hand the table disagrees about is left as
-//! the table has it: the divergence readout
-//! ([`crate::controllers::loadout::live::divergence`]) shows what the dual-write misses rather
-//! than the table papering over it.
+//! the table has it.
 
 use crate::controllers::{
     frame::Hand,
@@ -30,12 +27,12 @@ pub(crate) struct Held {
     pub weapon: WeaponType,
 }
 
-/// Where the old handling has a weapon that left a hand.
+/// Where a weapon that left a hand went.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Whereabouts {
-    /// Back in its slot, holstered on the game's dock bone.
+    /// Onto the body where the game docks its slot, or the nearest socket that fits it.
     Slot,
-    /// In the carry set, on this socket.
+    /// Onto this socket, or the nearest that fits it when it is taken.
     Carried(Socket),
     /// Out of the player's keeping: dropped, taken, or gone.
     Away,

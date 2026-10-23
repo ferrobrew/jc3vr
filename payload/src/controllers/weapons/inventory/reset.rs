@@ -31,7 +31,7 @@ use crate::{
     controllers::{
         hands::ik,
         loadout::live,
-        weapons::inventory::{self, restore},
+        weapons::inventory::{self, reconcile, restore},
     },
 };
 
@@ -91,7 +91,10 @@ fn handle_event(inventory: *mut Inventory, event: *const EventImpl, data: *mut c
 #[detour(address = jc3gi::save::StorePlayerSaveData_ADDRESS)]
 fn store_player_save_data(save_data: *const PlayerSaveData, archive: *mut c_void) {
     let settings = Config::lock_query(|c| c.controllers.weapons.inventory);
-    live::store_imminent();
+    if let Some(store) = live::store_imminent() {
+        // SAFETY: the store runs on the game thread, outside the world update.
+        unsafe { reconcile::store(&store) };
+    }
     // SAFETY: the store is given live save data.
     unsafe { restore::on_store(save_data, &settings) };
     STORE_PLAYER_SAVE_DATA

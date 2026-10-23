@@ -3,10 +3,9 @@
 //! The game holsters the dual-wield slot's weapon on its hip bones, its first gun on the right. A
 //! single pistol in the slot has one gun, so it takes one hip, its home ([`home_for`]); the other
 //! hip is a socket for a carried pistol, which then sits in that hip's holster rather than beside
-//! it ([`hip_offset`]). Moving a carried pistol into the slot swaps them where they are: the slot's
-//! pistol goes onto its own hip's socket and the newcomer's hip becomes the slot's home
-//! ([`promote_sides`]), so neither pistol moves on the body. A hand's grab at a hip acts on the
-//! pistol that sits there ([`hip_grab`]).
+//! it ([`hip_offset`]). With the slots a projection of the loadout table, the slot's pistol's home is
+//! the hip the table has it on. A hand's grab at a hip acts on the pistol that sits there
+//! ([`hip_grab`]).
 
 use glam::Vec3;
 
@@ -49,18 +48,6 @@ pub fn hip_offset(socket: Socket, slot_home: Option<Hand>, pair: bool, configure
     match socket_side(socket) {
         Some(side) if !pair && slot_home != Some(side) => Vec3::ZERO,
         _ => configured,
-    }
-}
-
-/// Where the two pistols go when the carried pistol on the `promoted` hip moves into the slot and
-/// the slot's single pistol, at home on `occupant_home`, comes out: the occupant onto its own
-/// hip's socket when that is free and not the newcomer's, and the newcomer's hip becomes the
-/// slot's home; otherwise the two trade hips. Returns the occupant's side and the slot's new home.
-pub fn promote_sides(promoted: Hand, occupant_home: Hand, home_socket_free: bool) -> (Hand, Hand) {
-    if occupant_home != promoted && home_socket_free {
-        (occupant_home, promoted)
-    } else {
-        (promoted, occupant_home)
     }
 }
 
@@ -150,26 +137,6 @@ mod tests {
         assert_eq!(hip_offset(left, None, true, OFFSET), OFFSET);
         // Other sockets keep their offsets.
         assert_eq!(hip_offset(Socket::Chest, None, false, OFFSET), OFFSET);
-    }
-
-    #[test]
-    fn a_promotion_leaves_both_pistols_where_they_sit() {
-        // The twin on the left moves into the slot; the slot's pistol, home on the right, goes
-        // onto the right hip's socket, and the slot's home is now the left.
-        assert_eq!(
-            promote_sides(Hand::Left, Hand::Right, true),
-            (Hand::Right, Hand::Left)
-        );
-        // With its own hip's socket taken, the two trade.
-        assert_eq!(
-            promote_sides(Hand::Left, Hand::Right, false),
-            (Hand::Left, Hand::Right)
-        );
-        // A newcomer from the slot's own side trades too.
-        assert_eq!(
-            promote_sides(Hand::Right, Hand::Right, true),
-            (Hand::Right, Hand::Right)
-        );
     }
 
     #[test]

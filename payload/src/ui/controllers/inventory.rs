@@ -106,6 +106,15 @@ pub(super) fn inventory_settings(ui: &mut Ui, c: &mut InventoryConfig) {
     ui.checkbox(&mut c.enabled, "Track the player's weapons");
     ui.add_enabled_ui(c.enabled, |ui| {
         ui.checkbox(
+            &mut c.project_slots,
+            "The game's slots follow the hands and the body",
+        )
+        .on_hover_text(
+            "The loadout table alone moves the weapons, and the game's slots, its wielded \
+                 weapon, and the weapons armed in the hands follow it. Off, the table is put back \
+                 into the slots and the game's own one-weapon model runs.",
+        );
+        ui.checkbox(
             &mut c.pin_world,
             "Keep dropped weapons nearby from despawning",
         );

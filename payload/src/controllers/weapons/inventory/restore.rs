@@ -630,8 +630,7 @@ unsafe fn adopt(owner: &mut Character, settings: &InventoryConfig, dominant: Han
                 .or_else(|| layout.choose(fit, &taken))
         });
         let restored = socket.is_some_and(|socket| {
-            let offset = settings.offsets.of(socket);
-            match unsafe { carry::carry_loose(owner, strong, socket, offset) } {
+            match unsafe { carry::carry_loose(owner, strong, socket) } {
                 Ok(object) => {
                     // SAFETY: the carry set keeps the weapon alive.
                     let weapon = unsafe { &mut *(object as *mut WeaponBase) };

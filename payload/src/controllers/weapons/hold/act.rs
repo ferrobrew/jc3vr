@@ -37,6 +37,7 @@ use crate::controllers::{
             equip::{self, DockRefusal, Docked, Thrown},
             layout,
         },
+        inventory::{self, reconcile},
     },
 };
 
@@ -89,17 +90,23 @@ pub fn status() -> DockStatus {
 /// The main thread, outside the world update.
 pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(), DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
-    hold::begin(hand, Cause::Draw, None);
     // The game's pair has a pistol per hand; a single pistol is a weapon of one gun.
     let pistols = slot == WeaponSlot::E_SLOT_DUAL_WIELD && !single::slot_single();
     let gun = if pistols {
+        hold::begin(hand, Cause::Draw, None);
         // Only this hand's pistol comes out; the layout shows the other on its hip.
         dual_wield::attach::begin_draw(hand);
         dual_wield::attach::gun_of(hand).ok_or(DockRefusal::Unsupported)?
     } else {
         0
     };
-    let result = unsafe { equip::draw(owner, slot, gun) };
+    // The pair is one weapon in both hands, which the game wields; any other weapon is a draw the
+    // loadout table takes, and the reconcile wields or arms it.
+    let result = if pistols {
+        unsafe { equip::draw(owner, slot, gun) }
+    } else {
+        unsafe { table_draw(owner, hand, slot) }
+    };
     let mut state = STATE.lock();
     let docked = match result {
         Ok(docked) => docked,
@@ -124,6 +131,22 @@ pub(crate) unsafe fn draw(hand: Hand, slot: WeaponSlot, snap_s: f32) -> Result<(
         hand.label()
     );
     Ok(())
+}
+
+/// Draw `slot`'s weapon into `hand` through the loadout table: a draw off its socket, which the
+/// reconcile carries out at once. Returns where it was docked.
+unsafe fn table_draw(
+    owner: &mut Character,
+    hand: Hand,
+    slot: WeaponSlot,
+) -> Result<Docked, DockRefusal> {
+    let docked = unsafe { equip::docked(owner, slot) }?;
+    let held = unsafe { inventory::held_of(docked.weapon) }.ok_or(DockRefusal::Unsupported)?;
+    if !live::arrive(hand, held) {
+        return Err(DockRefusal::NotDone);
+    }
+    unsafe { reconcile::apply(owner) };
+    Ok(docked)
 }
 
 /// Draw `hand`'s pistol of the wielded pair off its hip, sliding it into the hand over `snap_s`
@@ -236,6 +259,7 @@ pub(crate) unsafe fn drop_held(hand: Hand, max_speed_mps: f32) -> Result<Thrown,
             if let Some(object) = dropped {
                 live::depart(hand, object, live::Whereabouts::Away);
             }
+            unsafe { reconcile::now() };
             tracing::info!(
                 target: "controllers",
                 hand = hand.label(),
@@ -503,6 +527,7 @@ unsafe fn finish_holster(owner: &Character, hand: Hand, weapon: usize) -> Result
             if let Some(object) = ObjectAddress::from_address(weapon) {
                 live::depart(hand, object, live::Whereabouts::Slot);
             }
+            unsafe { reconcile::now() };
             tracing::info!(target: "controllers", "hold: holstered the weapon without the game's holster");
         }
         Err(refusal) => {

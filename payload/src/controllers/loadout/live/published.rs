@@ -58,6 +58,15 @@ pub(crate) fn item_of(address: usize) -> Option<ItemId> {
         .map(|&(_, item, _)| item)
 }
 
+/// Every object the table has on the body, and where.
+pub(crate) fn on_body() -> Vec<(ObjectAddress, Place)> {
+    PLACES
+        .lock()
+        .iter()
+        .map(|&(object, _, place)| (object, place))
+        .collect()
+}
+
 /// Publish `table`'s hands and its places on the body.
 pub(super) fn publish(table: &Loadout) {
     for hand in Hand::BOTH {

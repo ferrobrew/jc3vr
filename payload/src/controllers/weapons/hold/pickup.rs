@@ -158,10 +158,11 @@ pub(crate) unsafe fn take(
             }
         }
     }
-    // The weapon the pickup replaces goes onto a free socket when there is one.
+    // The weapon the pickup replaces stays where the loadout table has it on the body, out of the
+    // slot the pickup takes.
     let carried = occupant != 0
         && occupant != address
-        && unsafe { inventory::actions::carry_replaced(owner, slot) };
+        && unsafe { inventory::reconcile::vacate(owner, slot) };
     if options.drop_replaced
         && !carried
         && occupant != 0
@@ -199,6 +200,8 @@ pub(crate) unsafe fn take(
     if !pair {
         unsafe { hold::adopt(address) };
     }
+    // The pickup unequipped the weapon the other hand may hold, which stays there, armed.
+    unsafe { inventory::reconcile::apply(owner) };
     if let Some(carry) = carry {
         regions::begin_carry(address, hand, carry, CarryCause::Pickup);
     }
@@ -257,7 +260,7 @@ unsafe fn take_beside(
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or("the pistol is gone")?;
     unsafe { single::designate(weapon, "a pistol taken from the world") };
     unsafe { single::taken_from_world(owner, weapon) };
-    let object = unsafe { carry::carry_loose(owner, strong, socket, inventory.offsets.of(socket)) }
+    let object = unsafe { carry::carry_loose(owner, strong, socket) }
         .map_err(|_| "the pistol was not carried")?;
     if let Err(refusal) = unsafe { second::take_carried(hand, object) } {
         tracing::info!(target: "controllers", %refusal, "hold: the pistol stays on the hip");

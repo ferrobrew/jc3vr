@@ -39,7 +39,7 @@ mod tests;
 pub use binding::ObjectAddress;
 pub use event::Event;
 pub use item::{ItemId, ItemKind, WeaponType};
-pub use projection::{SlotContent, StoreProjection};
+pub use projection::{Projection, SlotContent, StoreProjection};
 pub use reset::{CacheKind, ResetKind, SlotObject};
 pub use socket::{BodyLayout, Socket};
 pub use table::{LoadoutSnapshot, Place};

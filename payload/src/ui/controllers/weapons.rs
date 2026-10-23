@@ -830,17 +830,6 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
          ammunition check never reloads the other's. Off, the wielded gun fires from the game's \
          own fire input.",
     );
-    ui.add_enabled_ui(h.either_hand && h.second_weapon, |ui| {
-        ui.checkbox(&mut h.promote_second, "A lone second gun becomes the main")
-            .on_hover_text(
-                "The second weapon becomes the wielded weapon once nothing else has been wielded \
-                 for a while, so the game's HUD and reload take it over.",
-            );
-        ui.add_enabled(
-            h.promote_second,
-            egui::Slider::new(&mut h.promote_after_s, 0.0..=3.0).text("Becomes the main after (s)"),
-        );
-    });
     ui.horizontal(|ui| {
         ui.label("Right hand gun grip:");
         for grip in RightGrip::ALL {

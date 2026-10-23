@@ -1,7 +1,8 @@
-//! What the hands do with the carry set on the input tick: draw a carried weapon off its socket,
-//! into the slot or as the second weapon beside the wielded one; put a held weapon onto a free
-//! socket; and carry the weapon a pickup replaces rather than drop it. And where the sockets' grab
-//! volumes go.
+//! What the hands do at the sockets on the input tick: draw a weapon off its socket, as the
+//! primary hand's or as the second weapon beside the wielded one, and put a held weapon onto a
+//! free socket. Each is an event for the loadout table, which the reconcile then carries out in the
+//! game's slots and hands ([`crate::controllers::weapons::inventory::reconcile`]). And where the
+//! sockets' grab volumes go.
 //!
 //! Everything here runs on the input tick, on the main thread outside the world update.
 
@@ -19,21 +20,20 @@ use crate::{
         aim::gun,
         frame::Hand,
         hands::grip,
-        loadout::{ObjectAddress, Socket, live},
+        loadout::{ObjectAddress, Place, Socket, live},
         weapons::{
             dual_wield, engine as weapons_engine,
             hold::{
-                self, Cause, act, pickup,
-                second::{self, SecondRefusal, Source},
+                act, pickup,
+                second::{self, SecondRefusal},
             },
-            holster::slot_label,
             inventory::{
                 self, carry,
-                carry::CarryRefusal,
                 config::InventoryConfig,
                 decide::{self, GrabDecision, HandsView},
                 engine as inventory_engine,
                 engine::ObjectKey,
+                reconcile,
                 sockets::{self, Fit, fit_of},
             },
         },
@@ -60,7 +60,6 @@ pub(crate) enum SocketRefusal {
     Empty,
     /// The held weapon does not fit the socket, or is not one the inventory carries.
     DoesNotFit,
-    Carry(CarryRefusal),
     Second(SecondRefusal),
 }
 
@@ -71,7 +70,6 @@ impl fmt::Display for SocketRefusal {
             SocketRefusal::OtherHandFull => write!(f, "socket: the other hand holds a weapon"),
             SocketRefusal::Empty => write!(f, "socket: nothing is carried there"),
             SocketRefusal::DoesNotFit => write!(f, "socket: the weapon does not fit there"),
-            SocketRefusal::Carry(refusal) => write!(f, "socket: {refusal}"),
             SocketRefusal::Second(refusal) => write!(f, "socket: {refusal}"),
         }
     }
@@ -166,7 +164,7 @@ pub(crate) unsafe fn socket_points(
 pub(crate) unsafe fn grab(grab: &SocketGrab) -> Result<SocketAction, SocketRefusal> {
     let owner = unsafe { weapons_engine::local_player() }.ok_or(SocketRefusal::NoCharacter)?;
     let SocketGrab { hand, socket, .. } = *grab;
-    let carried = carry::on_socket(socket);
+    let carried = unsafe { carry::on_socket(socket) };
     let view = HandsView {
         holds_wielded: grab.wielded.is_some_and(|(_, hands)| hands[hand.index()]),
         holds_second: grab.second.is_some_and(|(_, h)| h == hand),
@@ -221,7 +219,7 @@ pub(crate) unsafe fn stow(
     in_both_hands: bool,
 ) -> Result<(), SocketRefusal> {
     let (settings, dominant) = settings();
-    if !(settings.enabled && settings.carry) || carry::on_socket(socket).is_some() {
+    if !(settings.enabled && settings.carry) || carry::taken().contains(&socket) {
         return Err(SocketRefusal::DoesNotFit);
     }
     let weapon = unsafe { gun::held_weapon(owner) }.ok_or(SocketRefusal::Empty)?;
@@ -234,12 +232,13 @@ pub(crate) unsafe fn stow(
     if !settings.layout(dominant).accepts(socket, fit) || carry::taken().contains(&socket) {
         return Err(SocketRefusal::DoesNotFit);
     }
-    let object =
-        unsafe { carry::carry_from_slot(owner, slot, socket, settings.offsets.of(socket)) }
-            .map_err(SocketRefusal::Carry)?;
-    if let Some(object) = ObjectAddress::from_address(object) {
-        live::depart(hand, object, live::Whereabouts::Carried(socket));
+    let object = ObjectAddress::from_address(weapon as *const WeaponBase as usize)
+        .ok_or(SocketRefusal::Empty)?;
+    live::depart(hand, object, live::Whereabouts::Carried(socket));
+    if live::place_of(object.get()) != Some(Place::Socket(socket)) {
+        return Err(SocketRefusal::DoesNotFit);
     }
+    unsafe { reconcile::apply(owner) };
     inventory::count_stow();
     tracing::info!(
         target: "controllers",
@@ -252,9 +251,7 @@ pub(crate) unsafe fn stow(
     Ok(())
 }
 
-/// Put the second weapon, held in `hand`, onto `socket`: a carried one docks there (its own
-/// socket, or a free one that fits it, which becomes its own), and a slot's weapon leaves its slot
-/// into the carry set there.
+/// Put the second weapon, held in `hand`, onto the free `socket` that fits it.
 ///
 /// # Safety
 ///
@@ -278,16 +275,10 @@ pub(crate) unsafe fn stow_second(
     {
         return Err(SocketRefusal::DoesNotFit);
     }
-    match second::source() {
-        Some(Source::Carried(_)) => unsafe { second::put_back(Some(socket)) },
-        Some(Source::Slot) => {
-            let slot = second::slot().ok_or(SocketRefusal::Empty)?;
-            unsafe { second::put_back(Some(socket)) };
-            unsafe { carry::carry_from_slot(owner, slot, socket, settings.offsets.of(socket)) }
-                .map_err(SocketRefusal::Carry)?;
-        }
-        None => return Err(SocketRefusal::Empty),
+    if second::source().is_none() {
+        return Err(SocketRefusal::Empty);
     }
+    unsafe { second::put_back(Some(socket)) };
     inventory::count_stow();
     tracing::info!(
         target: "controllers",
@@ -298,50 +289,6 @@ pub(crate) unsafe fn stow_second(
         socket.label()
     );
     Ok(())
-}
-
-/// Before a pickup into `slot`, which holds another weapon, carry that weapon on a free socket so
-/// that the pickup does not drop it. Returns whether it was carried.
-///
-/// # Safety
-///
-/// `owner` must be the live local player character, on the main thread outside the world update.
-pub(crate) unsafe fn carry_replaced(owner: &mut Character, slot: WeaponSlot) -> bool {
-    let (settings, dominant) = settings();
-    if !(settings.enabled && settings.carry) {
-        return false;
-    }
-    let Some(occupant) = (unsafe { owner.m_Inventory.m_Weapons[slot as usize].px.as_ref() }) else {
-        return false;
-    };
-    let Some(fit) = (unsafe { fit_of_weapon(occupant) }) else {
-        return false;
-    };
-    let layout = settings.layout(dominant);
-    let taken = carry::taken();
-    // The slot's single pistol stays on its own hip.
-    let home = dual_wield::single::slot_home()
-        .filter(|_| dual_wield::single::is(occupant as *const WeaponBase as usize))
-        .map(dual_wield::single::hips::hip_socket)
-        .filter(|&socket| layout.accepts(socket, fit) && !taken.contains(&socket));
-    let Some(socket) = home.or_else(|| layout.choose(fit, &taken)) else {
-        tracing::info!(
-            target: "controllers",
-            slot = slot_label(slot),
-            "inventory: no socket is free for the weapon the pickup replaces"
-        );
-        return false;
-    };
-    match unsafe { carry::carry_from_slot(owner, slot, socket, settings.offsets.of(socket)) } {
-        Ok(_) => {
-            inventory::count_carried_replaced();
-            true
-        }
-        Err(refusal) => {
-            tracing::info!(target: "controllers", %refusal, "inventory: the weapon the pickup replaces was not carried");
-            false
-        }
-    }
 }
 
 /// The settings the actions read and the dominant hand.
@@ -362,28 +309,30 @@ unsafe fn socket_point(
     point.is_finite().then_some(point)
 }
 
-/// Draw the carried weapon `object` into `grab`'s hand: into its slot and equipped, sliding from
-/// where it sat on the socket.
+/// Draw the weapon `object` off its socket into `grab`'s hand, sliding from where it sat: the table
+/// takes the draw, and the reconcile puts it into its slot and wields it when the hand is the
+/// primary, or arms it there beside the other hand's weapon.
 unsafe fn draw(
     owner: &mut Character,
     object: ObjectKey,
     grab: &SocketGrab,
 ) -> Result<(), SocketRefusal> {
     let hand = grab.hand;
-    // SAFETY: the carry set keeps the weapon alive until the promotion hands it to the slot.
+    // SAFETY: the carry set or the slot keeps the weapon alive.
     let weapon = unsafe { &*(object as *const WeaponBase) };
     let from = unsafe { pickup::gun_pose(weapon) };
-    let slot = unsafe { inventory_engine::slot_of(weapon) };
-    hold::begin(hand, Cause::Draw, Some(object));
     // The game's pair has a pistol per hand; a single pistol is a weapon of one gun.
+    let slot = unsafe { inventory_engine::slot_of(weapon) };
     let pistols = slot == Some(WeaponSlot::E_SLOT_DUAL_WIELD) && !dual_wield::single::is(object);
     if pistols && grab.independent_pistols {
         dual_wield::attach::begin_draw(hand);
     }
-    let occupant = unsafe { carry::promote(owner, object) }.map_err(SocketRefusal::Carry)?;
-    if !pistols {
-        unsafe { hold::adopt(object) };
+    let held = unsafe { inventory::held_of(object) }.ok_or(SocketRefusal::DoesNotFit)?;
+    if !live::arrive(hand, held) {
+        return Err(SocketRefusal::OtherHandFull);
     }
+    unsafe { reconcile::apply(owner) };
+    act::arm(hand);
     if let Some(from) = from {
         act::slide_in(object, hand, from, grab.snap_s);
     }
@@ -392,8 +341,7 @@ unsafe fn draw(
         target: "controllers",
         hand = hand.label(),
         socket = grab.socket.label(),
-        occupant_carried = occupant.is_some(),
-        "inventory: drew a carried weapon off the {} into the {} hand",
+        "inventory: drew a weapon off the {} into the {} hand",
         grab.socket.label(),
         hand.label()
     );

@@ -45,6 +45,12 @@ pub struct InventoryConfig {
     /// Keep the carried weapons across saves and loads, in a sidecar file beside the settings,
     /// tied to the save by a fingerprint of its slots and reserves.
     pub persist: bool,
+    /// Make the game's slots a projection of the loadout table each tick, the table being the only
+    /// writer of where the weapons are: the slots hold what the table has on the body, the primary
+    /// hand's weapon is wielded, and every other weapon in a hand is armed there. Off, the table is
+    /// put back into the slots and stops, and the game's own one-weapon model runs, as with the
+    /// inventory off.
+    pub project_slots: bool,
 }
 
 impl InventoryConfig {
@@ -63,6 +69,7 @@ impl InventoryConfig {
             socket_radius_m: 0.12,
             offsets: Offsets::new(),
             persist: true,
+            project_slots: true,
         }
     }
 

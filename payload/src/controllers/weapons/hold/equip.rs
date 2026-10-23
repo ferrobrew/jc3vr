@@ -140,6 +140,34 @@ pub(crate) unsafe fn draw(
     Ok(docked)
 }
 
+/// Where `slot`'s holstered weapon sits on its dock, for a draw the loadout table takes and the
+/// reconcile carries out (wielding it, or arming it beside the other hand's weapon): its first
+/// gun's dock bone and pose there.
+///
+/// # Safety
+///
+/// As [`draw`].
+pub(crate) unsafe fn docked(owner: &Character, slot: WeaponSlot) -> Result<Docked, DockRefusal> {
+    if !docks(slot) {
+        return Err(DockRefusal::Unsupported);
+    }
+    if !unsafe { owner.m_Inventory.GetAnimationAllowsDrawing() } {
+        return Err(DockRefusal::AnimationForbids);
+    }
+    let weapon = unsafe { slot_weapon(&owner.m_Inventory, slot) }.ok_or(DockRefusal::EmptySlot)?;
+    if weapon.m_State != WeaponState::E_WS_HOLSTERED {
+        return Err(DockRefusal::NotHolstered);
+    }
+    let address = weapon as *mut WeaponBase as usize;
+    Ok(
+        unsafe { dock_of(owner, weapon, 0, WeaponState::E_WS_HOLSTERED) }.unwrap_or(Docked {
+            weapon: address,
+            dock: 0,
+            offset: None,
+        }),
+    )
+}
+
 /// Where the wielded weapon's gun `gun` docks, for a holster's snap: its holstered bone, and no
 /// offset (the caller knows it from the draw, when there was one). A long gun has one gun; for the
 /// pistols it is the holstering hand's.

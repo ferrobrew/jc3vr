@@ -299,6 +299,9 @@ pub(crate) fn hand_over(hand: Hand) -> bool {
     }
     TICK.lock().handovers += 1;
     act::arm(hand);
+    // The primary may have changed hands with it.
+    // SAFETY: handovers are made on the input tick, on the main thread outside the world update.
+    unsafe { inventory::reconcile::now() };
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
@@ -514,6 +517,7 @@ fn update_attachment_transforms(
     }
     unsafe { armed::apply_in(inventory) };
     unsafe { dual_wield::single::apply_home(inventory) };
+    unsafe { inventory::carry::place_slots(inventory) };
     // The rigid grip pins the attach bones after the layouts above have chosen them.
     let placement = unsafe { grip::before_placement(inventory, character) };
     UPDATE_ATTACHMENT_TRANSFORMS
@@ -539,6 +543,7 @@ fn update_inventory_post_finalize_pose(inventory: *mut Inventory) {
     }
     unsafe { armed::apply_in(inventory) };
     unsafe { dual_wield::single::apply_home(inventory) };
+    unsafe { inventory::carry::place_slots(inventory) };
     // No inventory ends the pass for the carried weapons.
     unsafe { inventory::carry::end_pass(inventory) };
     // The guns are placed for the pass, so another character's gun is where it is drawn.

@@ -92,42 +92,6 @@ pub fn second_release(at: ReleasedAt) -> SecondRelease {
     }
 }
 
-/// Watches for the second weapon held alone, which it then becomes the wielded weapon after a
-/// while.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct AloneWatch {
-    alone_s: Option<f32>,
-}
-
-impl AloneWatch {
-    pub const fn new() -> Self {
-        Self { alone_s: None }
-    }
-
-    /// Fold in one tick of `dt` seconds: `second` whether a second weapon is held, and `wielded`
-    /// whether any other weapon is wielded. Returns whether the second weapon has been held alone
-    /// for `after_s`, once, after which the watch starts over.
-    pub fn observe(&mut self, second: bool, wielded: bool, dt: f32, after_s: f32) -> bool {
-        if !second || wielded {
-            self.alone_s = None;
-            return false;
-        }
-        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        let alone = self.alone_s.map_or(0.0, |s| s + dt);
-        let after = if after_s.is_finite() {
-            after_s.max(0.0)
-        } else {
-            0.0
-        };
-        if alone >= after {
-            self.alone_s = None;
-            return true;
-        }
-        self.alone_s = Some(alone);
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,43 +157,5 @@ mod tests {
             SecondRelease::PutBack
         );
         assert_eq!(second_release(ReleasedAt::Elsewhere), SecondRelease::Fall);
-    }
-
-    #[test]
-    fn a_lone_second_weapon_is_promoted_after_a_while_once() {
-        let mut w = AloneWatch::new();
-        let tick = 0.1;
-        assert!(
-            !w.observe(true, true, tick, 0.45),
-            "the wielded weapon is there"
-        );
-        let mut ticks = 0;
-        while !w.observe(true, false, tick, 0.45) {
-            ticks += 1;
-            assert!(ticks < 10);
-        }
-        assert_eq!(ticks, 5, "the wait's worth of ticks after the first");
-        assert!(!w.observe(true, false, tick, 0.45), "it starts over");
-    }
-
-    #[test]
-    fn the_wielded_weapon_coming_back_resets_the_watch() {
-        let mut w = AloneWatch::new();
-        for _ in 0..4 {
-            assert!(!w.observe(true, false, 0.1, 0.45));
-        }
-        assert!(!w.observe(true, true, 0.1, 0.45));
-        for _ in 0..5 {
-            assert!(!w.observe(true, false, 0.1, 0.45));
-        }
-        assert!(w.observe(true, false, 0.1, 0.45));
-        assert!(
-            !w.observe(false, false, 0.1, 0.0),
-            "no second weapon, nothing to promote"
-        );
-        assert!(
-            w.observe(true, false, f32::NAN, 0.0),
-            "at once with no wait"
-        );
     }
 }

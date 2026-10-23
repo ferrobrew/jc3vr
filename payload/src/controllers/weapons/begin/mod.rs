@@ -11,7 +11,6 @@ use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 use crate::{
     config::Config,
     controllers::{
-        aim::gun,
         body::rig::skeleton,
         config::ControllersConfig,
         frame::{Hand, Pose},
@@ -69,15 +68,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // SAFETY: the input tick runs on the main thread outside the world update.
     let ticked = unsafe {
         engine::local_player().map_or(Ticked::default(), |owner| {
-            if holding.either_hand && holding.second_weapon && gameplay {
-                second::validate(owner);
-                if holding.promote_second {
-                    let wielded = gun::held_weapon(owner).map(|w| w as *const WeaponBase as usize);
-                    second::promote_tick(owner, wielded, holding.promote_after_s);
-                }
-            } else {
-                second::stand_down();
-            }
             second::show_magazine(Some(owner), gameplay && holding.magazine_pips);
             let pair = dual_wield::attach::input_tick(owner, settings);
             // The table lands the wielded weapon in a hand first; the hold then follows it there.
@@ -88,7 +78,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                     settings: config.weapons.inventory,
                     dominant: config.acting_hand(),
                     wielded,
-                    driven: second::driven(),
                     separate_pistols: config.weapons.separate_pistols,
                 },
             );

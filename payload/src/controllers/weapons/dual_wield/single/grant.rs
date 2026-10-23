@@ -164,11 +164,6 @@ impl Grants {
         self.respawn = single.map(|single| (single, RESPAWN_COVER_S));
     }
 
-    /// Whether a respawn may still bring the slot's pistol back.
-    pub fn respawn_pending(&self) -> bool {
-        self.respawn.is_some()
-    }
-
     /// A mission took the slots' weapons, the pistol slot holding one pistol or not.
     pub fn cover_mission(&mut self, single: bool) {
         self.mission = Some(single);
