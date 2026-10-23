@@ -278,10 +278,18 @@ fn a_point_round_trips_through_the_gun_frame_at_any_scale() {
     }
 }
 
+/// The regions each hand holds its own gun by, by [`Hand::index`].
+fn holding(left: Option<GunRegion>, right: Option<GunRegion>) -> [Option<GunRegion>; 2] {
+    let mut holders = [None; 2];
+    holders[Hand::Left.index()] = left;
+    holders[Hand::Right.index()] = right;
+    holders
+}
+
 #[test]
 fn the_hands_on_a_gun_read_as_firing_bracing_or_carrying() {
-    let hands = hands_on_gun(
-        Some((Hand::Right, GunRegion::Grip)),
+    let hands = hands_on_guns(
+        holding(None, Some(GunRegion::Grip)),
         Some((Hand::Left, GunRegion::Handguard)),
     );
     assert_eq!(
@@ -297,7 +305,7 @@ fn the_hands_on_a_gun_read_as_firing_bracing_or_carrying() {
             }),
         ]
     );
-    let carried = hands_on_gun(Some((Hand::Left, GunRegion::Barrel)), None);
+    let carried = hands_on_guns(holding(Some(GunRegion::Barrel), None), None);
     assert_eq!(
         carried[Hand::Left.index()],
         Some(HandOnGun {
@@ -306,10 +314,28 @@ fn the_hands_on_a_gun_read_as_firing_bracing_or_carrying() {
         })
     );
     assert_eq!(carried[Hand::Right.index()], None);
-    // A brace by the holding hand itself is not a second hand.
-    let same = hands_on_gun(
-        Some((Hand::Left, GunRegion::Grip)),
+    // A brace by a hand holding a gun of its own is not a brace.
+    let same = hands_on_guns(
+        holding(Some(GunRegion::Grip), None),
         Some((Hand::Left, GunRegion::Barrel)),
     );
     assert_eq!(same[Hand::Left.index()].unwrap().role, HandRole::Firing);
+}
+
+#[test]
+fn each_hand_carries_or_fires_its_own_gun() {
+    // A rifle carried by its barrel in the left hand beside a pistol fired from the right.
+    let hands = hands_on_guns(
+        holding(Some(GunRegion::Barrel), Some(GunRegion::Grip)),
+        None,
+    );
+    assert_eq!(hands[Hand::Left.index()].unwrap().role, HandRole::Carrying);
+    assert_eq!(hands[Hand::Right.index()].unwrap().role, HandRole::Firing);
+}
+
+#[test]
+fn a_carry_ends_when_its_hand_holds_another_gun_or_none() {
+    assert_eq!(carry_gone(0x10, Some(0x10)), None);
+    assert!(carry_gone(0x10, Some(0x20)).is_some());
+    assert!(carry_gone(0x10, None).is_some());
 }

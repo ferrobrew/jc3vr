@@ -51,7 +51,7 @@ A heavy weapon's own body stays in the world while it is wielded, so such a gun 
 
 ## Grabbing a gun anywhere
 
-With `weapons.regions.enabled` (on; the debug UI's Controllers tab, under "Weapons"), a long gun (the two-handed, special, and heavy slots) is taken wherever the hand closes on it, in the hands, on a shoulder, or lying in the world, with or without the gun bodies above. A pistol keeps its grip. The code is `payload/src/controllers/weapons/regions/`.
+With `weapons.regions.enabled` (on; the debug UI's Controllers tab, under "Weapons"), a long gun (the two-handed, special, and heavy slots) is taken wherever the hand closes on it, in the hands, on a shoulder, or lying in the world, with or without the gun bodies above. A pistol keeps its grip. Each hand carries its own gun, the wielded weapon or one armed beside it, so a long gun drawn by its barrel into one hand while the other holds a pistol stays carried there; a brace, a touch along the gun, and a grip taken from a carrying hand need the other hand free, so they act on the long gun held in one hand while the other is free ([two-handed-inventory.md, "The gun in either hand"](two-handed-inventory.md#the-gun-in-either-hand)). The code is `payload/src/controllers/weapons/regions/`.
 
 ### The regions
 
@@ -79,7 +79,7 @@ A gun is taken by a part other than its grip from the world and from the shoulde
 
 A gun taken out of a character's hands or off a rack comes into the hand at its grip.
 
-The carry ends when the gun leaves the hands, goes to the other hand, or another gun is wielded, and with the regions switched off or out of gameplay; the gun is then at its grip again. With the gun bodies on, every change of the holding hand remakes the gun body on its new seat, so a carried gun's body is joined where the hand holds it.
+The carry ends when the gun leaves its hand, goes to the other hand, or another gun is in that hand, and with the regions switched off or out of gameplay; the gun is then at its grip again. With the gun bodies on, every change of the holding hand remakes the gun body on its new seat, so a carried gun's body is joined where the hand holds it.
 
 The action's region is also where the reload places the action's handle while the chamber waits on it (`regions::action_volume`): a grip press there works the action, and anywhere else on the action it braces the gun.
 

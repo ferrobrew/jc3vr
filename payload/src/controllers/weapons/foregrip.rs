@@ -1,10 +1,12 @@
 //! The two-handed weapon's foregrip: the off-hand grabs it, and the line between the hands then
 //! sets the weapon's direction.
 //!
-//! A two-handed weapon rides the hand the game attaches it to (the holding hand) and aims by that
-//! hand alone. The foregrip is a grab volume for the other hand around the weapon's own grip point
-//! for that hand (`WeaponBase::GetGripPosition`), or, for a weapon without one, a point along the
-//! barrel. While the off-hand holds it:
+//! A two-handed weapon rides its holding hand and aims by that hand alone. The foregrip acts on the
+//! long gun held in one hand while the other is free, the wielded weapon or one armed in a hand
+//! ([`crate::controllers::weapons::engine::lone_gun`]): a brace takes the other hand, so there is
+//! one hold at most, keyed by its holding hand and its weapon. The foregrip is a grab volume for
+//! the other hand around the weapon's own grip point for that hand (`WeaponBase::GetGripPosition`),
+//! or, for a weapon without one, a point along the barrel. While the off-hand holds it:
 //!
 //! - the holding hand's poses turn about its grip so that the foregrip lies on the line from the
 //!   holding hand to the off-hand, up to a limit, and less as the hands close in;

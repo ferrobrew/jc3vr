@@ -307,10 +307,10 @@ pub(crate) unsafe fn take_into(hand: Hand, object: usize) -> bool {
     true
 }
 
-/// Hand the wielded weapon to `hand`. Returns whether it moved.
-pub(crate) fn hand_over(hand: Hand) -> bool {
-    let wielded = WIELDED.load(Ordering::Relaxed);
-    let Some(object) = ObjectAddress::from_address(wielded) else {
+/// Hand `weapon`, the weapon the other hand holds (wielded or armed there), to `hand`. Returns
+/// whether it moved.
+pub(crate) fn hand_over(hand: Hand, weapon: usize) -> bool {
+    let Some(object) = ObjectAddress::from_address(weapon) else {
         return false;
     };
     if !live::hand_over(hand, object) {

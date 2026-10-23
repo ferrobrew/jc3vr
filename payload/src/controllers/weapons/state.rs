@@ -63,6 +63,7 @@ pub(crate) fn stand_down() {
     wheel::stand_down();
     let mut state = STATE.lock();
     state.weapon = None;
+    state.lone = None;
     state.beside = None;
     state.status.active = false;
     state.status.volumes = [None; 2];
@@ -80,6 +81,9 @@ pub(super) struct State {
     pub(super) status: WeaponsStatus,
     /// The tick's wielded weapon and its two-handed geometry.
     pub(super) weapon: Option<(HeldWeapon, Option<GripGeometry>)>,
+    /// The tick's gun held in one hand while the other is free, wielded or armed, and its
+    /// two-handed geometry when it is a long gun ([`crate::controllers::weapons::engine::lone_gun`]).
+    pub(super) lone: Option<(HeldWeapon, Option<GripGeometry>)>,
     /// The tick's gun a hand holds beside the wielded weapon.
     pub(super) beside: Option<HeldWeapon>,
     /// Whether the tick's mode is one the weapon handling acts in.
@@ -99,7 +103,7 @@ pub(super) struct State {
     /// The tick's hand the pouches and the wrist detonator are laid out around
     /// ([`crate::controllers::weapons::volumes::gun_side`]).
     pub(super) gun_side: Hand,
-    /// Where the hand without the wielded long gun touches it on this tick.
+    /// Where the free hand touches the lone long gun on this tick.
     pub(super) touch: Option<OffTouch>,
     /// Where the bracing hand has slid to along the gun on this tick, in the holding wrist's frame.
     pub(super) slide: Option<(Vec3, GunRegion)>,
@@ -111,7 +115,7 @@ pub(super) struct State {
     pub(super) opening: OpenWatch,
 }
 
-/// Where the hand without the wielded long gun touches it.
+/// Where the free hand touches the lone long gun.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct OffTouch {
     pub(super) hand: Hand,
@@ -177,6 +181,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
         docks_followed: 0,
     },
     weapon: None,
+    lone: None,
     beside: None,
     gameplay: false,
     measured: [None; 2],

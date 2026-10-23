@@ -55,6 +55,16 @@ pub fn in_hands(
     })
 }
 
+/// The gun held in one hand while the other is free, of the gun in each hand (`guns`) and whether
+/// each hand is free (`free`, holding no gun or other item), both by [`Hand::index`]: the gun the
+/// free hand may take over, touch, or, for a long gun, brace. With a gun in each hand neither hand
+/// is free, so there is one at most.
+pub fn lone_gun(guns: [Option<HeldWeapon>; 2], free: [bool; 2]) -> Option<HeldWeapon> {
+    Hand::BOTH
+        .into_iter()
+        .find_map(|hand| guns[hand.index()].filter(|_| free[hand.other().index()]))
+}
+
 /// Whether a weapon of `slot` is a long gun, held in both hands' reach: the two-handed, the
 /// special, and the heavy slots.
 pub fn long_slot(slot: WeaponSlot) -> bool {
@@ -271,6 +281,30 @@ mod tests {
         let mut armed = [None; 2];
         armed[Hand::Left.index()] = Some(gun(0x20, WeaponSlot::E_SLOT_TWO_HANDED, Hand::Left));
         assert_eq!(in_hands(Some(rifle), armed), [None, Some(rifle)]);
+    }
+
+    #[test]
+    fn the_gun_with_the_other_hand_free_is_the_lone_one() {
+        let (left, right) = (Hand::Left.index(), Hand::Right.index());
+        let rifle = gun(0x20, WeaponSlot::E_SLOT_TWO_HANDED, Hand::Left);
+        let pistol = gun(0x10, WeaponSlot::E_SLOT_DUAL_WIELD, Hand::Right);
+        let mut guns = [None; 2];
+        guns[left] = Some(rifle);
+        // Armed or wielded alike: a gun with the other hand free is the lone gun.
+        assert_eq!(lone_gun(guns, [false, true]), Some(rifle));
+        assert_eq!(lone_gun([None, Some(pistol)], [true, false]), Some(pistol));
+        // With the other hand holding anything, there is none.
+        assert_eq!(lone_gun(guns, [false; 2]), None);
+        guns[right] = Some(pistol);
+        assert_eq!(lone_gun(guns, [false; 2]), None);
+        // Two long guns leave neither hand free.
+        guns[right] = Some(gun(
+            0x30,
+            WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
+            Hand::Right,
+        ));
+        assert_eq!(lone_gun(guns, [false; 2]), None);
+        assert_eq!(lone_gun([None; 2], [true; 2]), None);
     }
 
     #[test]

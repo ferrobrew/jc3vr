@@ -148,6 +148,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             })
     }));
     let armed_hands = Hand::BOTH.map(|h| armed::in_hand(h).is_some());
+    let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
+    let free = Hand::BOTH.map(|h| {
+        !gun_hands[h.index()] && !armed_hands[h.index()] && !ticked.table_hands[h.index()]
+    });
     let held = weapon
         .filter(|w| hold::owned_holder(w.address).is_some())
         .map(|w| w.wielded.hands)
@@ -168,8 +172,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     let geometry = weapon
         .and_then(|w| w.holder)
         .and_then(|hand| geometries[hand.index()]);
+    // The gun held in one hand while the other is free, wielded or armed: everything the free hand
+    // does to it (the handover, and on a long gun the foregrip and a touch along it) acts on it.
+    let lone = engine::lone_gun(guns, free).filter(|_| gameplay);
+    let braced = lone.filter(|w| w.two_handed);
+    let braced_geometry = braced
+        .and_then(|w| w.holder)
+        .and_then(|hand| geometries[hand.index()]);
     let regions_config = config.weapons.regions;
-    let long = weapon.filter(|w| regions_config.enabled && gameplay && w.two_handed);
+    let long = braced.filter(|_| regions_config.enabled);
     // SAFETY: the weapon was read this tick, on the main thread outside the world update.
     let shape = long.and_then(|w| unsafe {
         region_engine::shape(
@@ -178,14 +189,16 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         )
     });
     regions::observe(&Observed {
-        weapon: weapon.map(|w| (w.address, w.holder)),
-        long: long.is_some(),
-        shape,
+        guns: guns.map(|g| {
+            g.filter(|w| regions_config.enabled && gameplay && w.two_handed)
+                .map(|w| w.address)
+        }),
+        lone: long.map(|w| (w.address, shape)),
         now: Instant::now(),
         draw_wait: seconds(regions_config.draw_wait_s),
     });
+    let carried = braced.and_then(|w| regions::carrying(w.address));
     // A gun carried by a part other than its grip is not aimed.
-    let carried = weapon.and_then(|w| regions::carrying(w.address));
     ads::observe(Hand::BOTH.map(|hand| {
         let w = guns[hand.index()]?;
         let g = geometries[hand.index()]?;
@@ -225,7 +238,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     {
         targets.push(target);
     }
-    let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
     let empty_handed = config.weapons.holsters.long_guns_dominant
         && gun_hands == [false; 2]
         && ticked.table_hands == [false; 2];
@@ -262,9 +274,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
     }
-    let free = Hand::BOTH.map(|h| {
-        !gun_hands[h.index()] && !armed_hands[h.index()] && !ticked.table_hands[h.index()]
-    });
     state.docked_touch = [None; 2];
     if gameplay {
         let mut docked = docked_candidates(&mut state, &ticked, &active, free, &regions_config);
@@ -354,20 +363,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 .showing(Shown::Always),
         ));
     }
-    // A hand holding something of its own braces nothing and takes nothing from the other hand.
-    let foregrip_hand = weapon
-        .and_then(|w| w.holder)
-        .map(Hand::other)
-        .filter(|&h| !armed_hands[h.index()] && !ticked.table_hands[h.index()]);
-    let handover_allowed = holding.handover
-        && gameplay
-        && weapon.is_some_and(|w| {
-            hold::owned_holder(w.address).is_some_and(|holder| {
-                let other = holder.other();
-                !armed_hands[other.index()] && !ticked.table_hands[other.index()]
-            })
-        });
-    let on_gun = match (long, geometry, shape) {
+    // A hand holding something of its own braces nothing and takes nothing from the other hand, so
+    // only the lone gun's free hand does.
+    let foregrip_hand = braced.and_then(|w| w.holder).map(Hand::other);
+    let handover_allowed =
+        holding.handover && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
+    let on_gun = match (long, braced_geometry, shape) {
         (Some(w), Some(g), Some(shape)) => w.holder.and_then(|holder| {
             Some(GunOnHand {
                 hand: weighted_hands(&active)[holder.index()]?,
@@ -377,7 +378,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         }),
         _ => None,
     };
-    let holder = weapon.and_then(|w| w.holder);
+    let holder = braced.and_then(|w| w.holder);
     state.touch = None;
     state.slide = None;
     state.promote = None;
@@ -417,7 +418,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 }
                 _ => {}
             }
-            if let Some(h) = hold.filter(|h| weapon.is_some_and(|w| w.address == h.weapon)) {
+            if let Some(h) = hold.filter(|h| braced.is_some_and(|w| w.address == h.weapon)) {
                 let carrying = carried.is_some();
                 match brace_moves(&gun, h.holder.other(), &active, &regions_config, carrying) {
                     Some(BraceMove::OntoGrip) => state.promote = Some(h.holder.other()),
@@ -432,7 +433,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         None => {
             if config.weapons.foregrip.enabled
                 && hold.is_none()
-                && let (Some(g), Some(w), Some(off)) = (geometry, weapon, foregrip_hand)
+                && let (Some(g), Some(w), Some(off)) = (braced_geometry, braced, foregrip_hand)
                 && let Some(holder) = w.holder
                 && let Some(holding_hand) = weighted_hands(&active)[holder.index()]
             {
@@ -447,7 +448,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 ));
             }
             if handover_allowed
-                && let Some(w) = weapon
+                && let Some(w) = lone
                 && let Some(holder) = hold::owned_holder(w.address)
                 && let Some(grip) = weighted_hands(&active)[holder.index()]
             {
@@ -486,6 +487,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.points = grips;
     state.status.wielded = weapon.map(|weapon| WieldedReadout { weapon, geometry });
     state.weapon = weapon.map(|w| (w, geometry));
+    state.lone = lone.map(|w| (w, braced_geometry));
     state.beside = beside;
     state.gameplay = gameplay;
     let entered = entered_body_volumes(state.last_volumes, volumes);
@@ -516,7 +518,7 @@ struct Ticked {
     docked_long: Vec<DockedLongGun>,
 }
 
-/// The wielded long gun on its holding hand, as the regions place it.
+/// The lone long gun on its holding hand, as the regions place it.
 struct GunOnHand {
     /// The holding hand as the gun is shown on it.
     hand: CockpitHand,
