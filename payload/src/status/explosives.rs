@@ -17,26 +17,23 @@ pub(super) fn gun_against_walls() -> Line {
         return Line::off("");
     }
     let s = collide::status();
-    if !s.weapon {
+    if !s.weapon() {
         return Line::waiting("NO LONG GUN MEASURED");
     }
+    let touching = s.hands.iter().find(|h| h.touching);
     Line::ok(format_smolstr!(
         "{}, {} CONTACTS{}",
-        if s.touching {
+        if touching.is_some() {
             "AGAINST A WALL"
         } else {
             "CLEAR"
         },
         s.contacts,
-        if s.touching {
-            format!(
-                ", TURNED {:.0} DEG, PULLED BACK {:.0} CM",
-                s.turn_deg,
-                s.retract_m * 100.0
-            )
-        } else {
-            String::new()
-        }
+        touching.map_or(String::new(), |h| format!(
+            ", TURNED {:.0} DEG, PULLED BACK {:.0} CM",
+            h.turn_deg,
+            h.retract_m * 100.0
+        ))
     ))
 }
 

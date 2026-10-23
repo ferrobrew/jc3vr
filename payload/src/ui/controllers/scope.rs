@@ -6,12 +6,13 @@ use egui::Ui;
 use crate::{
     controllers::{
         aim::sights::SightSource,
+        frame::Hand,
         weapons::{
             ads::{
                 self, AdsStatus,
                 config::{AdsConfig, AimingEye},
             },
-            collide::{self, config::CollideConfig},
+            collide::{self, HandCollideStatus, config::CollideConfig},
             config::{LensPath, LensSource, ScopeConfig},
             scope::{
                 self, ScopeStatus,
@@ -49,15 +50,19 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         ads,
     } = readout;
     let c = collide::status();
+    let against = |h: &HandCollideStatus| match (h.weapon, h.touching) {
+        (false, _) => "no long gun".to_owned(),
+        (true, false) => "clear".to_owned(),
+        (true, true) => format!(
+            "against a wall, turned {:.0}°, pulled back {:.1} cm",
+            h.turn_deg,
+            h.retract_m * 100.0
+        ),
+    };
     ui.label(format!(
-        "Against walls: {} · turned {:.0}° · pulled back {:.1} cm · contacts {} · probes {}",
-        match (c.weapon, c.touching) {
-            (false, _) => "no long gun measured",
-            (true, false) => "clear",
-            (true, true) => "against a wall",
-        },
-        c.turn_deg,
-        c.retract_m * 100.0,
+        "Against walls: left {} · right {} · contacts {} · probes {}",
+        against(&c.hands[Hand::Left.index()]),
+        against(&c.hands[Hand::Right.index()]),
         c.contacts,
         c.casts
     ));

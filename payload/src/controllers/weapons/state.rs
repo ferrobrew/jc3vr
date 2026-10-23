@@ -40,7 +40,7 @@ pub(crate) fn stand_down() {
     heft::observe([None; 2]);
     heft::freeze([false; 2]);
     ads::observe(None);
-    collide::observe(None);
+    collide::observe([None; 2]);
     grip_watch::clear();
     recoil::clear();
     grenade::stand_down();

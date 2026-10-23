@@ -9,7 +9,8 @@
 //! follow, and each pose pushes the gun out of it ([`solve`]): turned about the grip, away from
 //! the wall, so it slides along it, and pulled back into the hands when it meets the wall head-on.
 //! The holding hand rides the gun, and the hand on its foregrip with it, so the hands follow where
-//! the gun is stopped.
+//! the gun is stopped. Each hand's long gun, the wielded weapon or one armed beside it, has its own
+//! probe and its own wall.
 //!
 //! The probe is cast along the gun's pose before the push ([`apply`] notes it), so the push never
 //! feeds back into where the wall is looked for. The pose is applied last on the cockpit-frame
@@ -34,6 +35,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::CockpitHand,
         weapons::{
+            ads::solve::RigidMove,
             collide::{
                 config::CollideConfig,
                 solve::{Barrel, Wall},
@@ -44,7 +46,7 @@ use crate::{
     headpose,
 };
 
-/// The long gun the hands hold, as the input tick measured it.
+/// A long gun in a hand, as the input tick measured it.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CollideWeapon {
     pub holder: Hand,
@@ -54,38 +56,64 @@ pub struct CollideWeapon {
     pub barrel: Vec3,
 }
 
-/// The collision's readout.
+/// One hand's gun against the walls.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct CollideStatus {
-    /// Whether a long gun is measured.
+pub struct HandCollideStatus {
+    /// Whether the hand's long gun is measured.
     pub weapon: bool,
     /// Whether the gun is against a wall on the last pose.
     pub touching: bool,
     pub turn_deg: f32,
     pub retract_m: f32,
-    /// Times the gun came against a wall.
+}
+
+/// The collision's readout.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct CollideStatus {
+    /// Each hand's long gun, by [`Hand::index`].
+    pub hands: [HandCollideStatus; 2],
+    /// Times a gun came against a wall.
     pub contacts: u64,
     pub casts: u64,
+}
+
+impl CollideStatus {
+    /// Whether either hand's long gun is measured.
+    pub fn weapon(&self) -> bool {
+        self.hands.iter().any(|h| h.weapon)
+    }
+
+    /// Whether either hand's gun is against a wall.
+    pub fn touching(&self) -> bool {
+        self.hands.iter().any(|h| h.touching)
+    }
 }
 
 pub fn status() -> CollideStatus {
     STATE.lock().status
 }
 
-/// Note the held long gun for the poses that follow, or `None` without one.
-pub(crate) fn observe(weapon: Option<CollideWeapon>) {
-    let mut state = STATE.lock();
-    state.weapon = weapon;
-    state.status.weapon = weapon.is_some();
-    if weapon.is_none() {
-        state.probe = None;
-        state.wall = None;
-        state.status.touching = false;
+/// Note the long gun in each hand for the poses that follow, by [`Hand::index`], or `None` for a
+/// hand without one. A gun is taken only in its own hand's place.
+pub(crate) fn observe(weapons: [Option<CollideWeapon>; 2]) {
+    let mut guard = STATE.lock();
+    let state = &mut *guard;
+    for hand in Hand::BOTH {
+        let weapon = weapons[hand.index()].filter(|w| w.holder == hand);
+        let h = &mut state.hands[hand.index()];
+        h.weapon = weapon;
+        let status = &mut state.status.hands[hand.index()];
+        status.weapon = weapon.is_some();
+        if weapon.is_none() {
+            h.probe = None;
+            h.wall = None;
+            *status = HandCollideStatus::default();
+        }
     }
 }
 
-/// Push the gun the hands hold out of the wall its probe last met. `head` is the head's cockpit
-/// pose and `world_scale` the VR world scale the cockpit composes with.
+/// Push each hand's gun out of the wall its probe last met. `head` is the head's cockpit pose and
+/// `world_scale` the VR world scale the cockpit composes with.
 pub fn apply(
     hands: &mut [Option<CockpitHand>; 2],
     head: Pose,
@@ -95,27 +123,91 @@ pub fn apply(
     if !config.enabled {
         return;
     }
-    let (weapon, wall) = {
-        let state = STATE.lock();
-        (state.weapon, state.wall)
-    };
-    let Some(weapon) = weapon else {
-        return;
-    };
-    let Some(holder) = hands[weapon.holder.index()] else {
-        return;
-    };
-    let barrel = barrel_of(holder, &weapon, config);
     let frame = WorldFrame::now(head, world_scale);
-    let mut state = STATE.lock();
-    state.probe = Some(frame.barrel_to_world(barrel));
-    let wall = wall
+    let support = foregrip::status().hold.filter(|h| h.engaged);
+    for hand in Hand::BOTH {
+        let Some(push) = push_hand(hand, hands, &frame, config) else {
+            continue;
+        };
+        if let Some(held) = hands[hand.index()] {
+            hands[hand.index()] = Some(push.hand(held));
+        }
+        // The hand on this gun's foregrip rides with it.
+        let off = hand.other();
+        if support.is_some_and(|h| h.holder == hand)
+            && let Some(bracing) = hands[off.index()]
+        {
+            hands[off.index()] = Some(push.hand(bracing));
+        }
+    }
+}
+
+/// Cast each hand's gun's probe from its pose before the push, and keep the wall it meets.
+///
+/// # Safety
+///
+/// The simulation thread outside the physics step, with `owner` the live local player character.
+pub(crate) unsafe fn probe(owner: &Character) {
+    let probes = STATE.lock().hands.map(|h| h.probe);
+    let options = CastOptions {
+        ignore: [owner as *const Character as usize, 0],
+        see_through: true,
+        material: false,
+    };
+    for hand in Hand::BOTH {
+        let Some(probe) = probes[hand.index()] else {
+            continue;
+        };
+        let Some(ray) = Ray::new(probe.grip, probe.direction) else {
+            continue;
+        };
+        // SAFETY: forwarded from the caller.
+        let hit = unsafe { raycast::cast(&ray, probe.length.max(1e-3), &options) };
+        let mut state = STATE.lock();
+        state.status.casts += 1;
+        // A miss keeps the last wall a moment past its sighting (see `keep_s`), so a probe that
+        // just missed does not drop the push and let the gun bounce back in.
+        if let Ok(Some(hit)) = hit {
+            // A wall faces the grip: a normal facing away is taken from the probe.
+            let normal = hit
+                .normal
+                .try_normalize()
+                .filter(|n| n.dot(ray.direction) < 0.0)
+                .unwrap_or(-ray.direction);
+            state.hands[hand.index()].wall = Some(SeenWall {
+                wall: Wall {
+                    point: hit.position,
+                    normal,
+                },
+                at: Instant::now(),
+            });
+        }
+    }
+}
+
+/// The push of `hand`'s gun out of its wall, noting the probe for the next cast and the readout.
+fn push_hand(
+    hand: Hand,
+    hands: &[Option<CockpitHand>; 2],
+    frame: &WorldFrame,
+    config: &CollideConfig,
+) -> Option<RigidMove> {
+    let mut guard = STATE.lock();
+    let state = &mut *guard;
+    let h = &mut state.hands[hand.index()];
+    let weapon = h.weapon?;
+    let holder = hands[hand.index()]?;
+    let barrel = barrel_of(holder, &weapon, config);
+    h.probe = Some(frame.barrel_to_world(barrel));
+    let wall = h
+        .wall
         .filter(|w| w.at.elapsed() <= Duration::from_secs_f32(config.keep_s.max(0.0)))
         .map(|w| frame.wall_to_cockpit(w.wall));
     let push =
         wall.and_then(|w| solve::solve(barrel, w, config.max_turn_deg, config.max_retract_m));
     let touching = push.is_some();
-    if touching && !state.status.touching {
+    let status = &mut state.status.hands[hand.index()];
+    if touching && !status.touching {
         state.status.contacts += 1;
         let now = Instant::now();
         if state
@@ -123,66 +215,14 @@ pub fn apply(
             .is_none_or(|at| now.saturating_duration_since(at) >= LOG_INTERVAL)
         {
             state.last_log = Some(now);
-            tracing::info!(target: "controllers", hand = ?weapon.holder, "collide: the held gun met a wall");
+            tracing::info!(target: "controllers", hand = ?hand, "collide: the held gun met a wall");
         }
     }
-    state.status.touching = touching;
-    state.status.turn_deg = push.map_or(0.0, |p| p.turn_deg);
-    state.status.retract_m = push.map_or(0.0, |p| p.retract_m);
-    drop(state);
-    let Some(push) = push else {
-        return;
-    };
-    hands[weapon.holder.index()] = Some(push.moved.hand(holder));
-    let support = foregrip::status()
-        .hold
-        .filter(|h| h.engaged && h.holder == weapon.holder)
-        .map(|h| h.holder.other());
-    if let Some(h) = support
-        && let Some(hand) = hands[h.index()]
-    {
-        hands[h.index()] = Some(push.moved.hand(hand));
-    }
-}
-
-/// Cast the gun's probe from its pose before the push, and keep the wall it meets.
-///
-/// # Safety
-///
-/// The simulation thread outside the physics step, with `owner` the live local player character.
-pub(crate) unsafe fn probe(owner: &Character) {
-    let Some(probe) = STATE.lock().probe else {
-        return;
-    };
-    let Some(ray) = Ray::new(probe.grip, probe.direction) else {
-        return;
-    };
-    let options = CastOptions {
-        ignore: [owner as *const Character as usize, 0],
-        see_through: true,
-        material: false,
-    };
-    // SAFETY: forwarded from the caller.
-    let hit = unsafe { raycast::cast(&ray, probe.length.max(1e-3), &options) };
-    let mut state = STATE.lock();
-    state.status.casts += 1;
-    // A miss keeps the last wall a moment past its sighting (see `keep_s`), so a probe that just
-    // missed does not drop the push and let the gun bounce back in.
-    if let Ok(Some(hit)) = hit {
-        // A wall faces the grip: a normal facing away is taken from the probe.
-        let normal = hit
-            .normal
-            .try_normalize()
-            .filter(|n| n.dot(ray.direction) < 0.0)
-            .unwrap_or(-ray.direction);
-        state.wall = Some(SeenWall {
-            wall: Wall {
-                point: hit.position,
-                normal,
-            },
-            at: Instant::now(),
-        });
-    }
+    let status = &mut state.status.hands[hand.index()];
+    status.touching = touching;
+    status.turn_deg = push.map_or(0.0, |p| p.turn_deg);
+    status.retract_m = push.map_or(0.0, |p| p.retract_m);
+    push.map(|p| p.moved)
 }
 
 /// The gun's segment in the cockpit frame: from the holding grip to past the muzzle.
@@ -249,25 +289,37 @@ struct SeenWall {
     at: Instant,
 }
 
-struct State {
+/// One hand's long gun and the wall its probe met.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct HandCollide {
     weapon: Option<CollideWeapon>,
     /// The gun's segment before the push, world space, for the next probe.
     probe: Option<Barrel>,
     wall: Option<SeenWall>,
+}
+
+struct State {
+    hands: [HandCollide; 2],
     last_log: Option<Instant>,
     status: CollideStatus,
 }
 
+const IDLE_HAND: HandCollideStatus = HandCollideStatus {
+    weapon: false,
+    touching: false,
+    turn_deg: 0.0,
+    retract_m: 0.0,
+};
+
 static STATE: Mutex<State> = Mutex::new(State {
-    weapon: None,
-    probe: None,
-    wall: None,
+    hands: [HandCollide {
+        weapon: None,
+        probe: None,
+        wall: None,
+    }; 2],
     last_log: None,
     status: CollideStatus {
-        weapon: false,
-        touching: false,
-        turn_deg: 0.0,
-        retract_m: 0.0,
+        hands: [IDLE_HAND; 2],
         contacts: 0,
         casts: 0,
     },
@@ -298,6 +350,55 @@ mod tests {
         assert!(wall.point.distance(barrel.grip) < 1e-4);
         assert!(wall.normal.distance(barrel.direction) < 1e-5);
         assert!((world.length - 0.96).abs() < 1e-5);
+    }
+
+    #[test]
+    fn each_gun_in_a_hand_meets_its_own_wall() {
+        // The only test that drives the shared state.
+        let pose = |position| Pose {
+            position,
+            orientation: Quat::IDENTITY,
+        };
+        let at = |x: f32| CockpitHand {
+            wrist: pose(Vec3::new(x, 0.0, 0.0)),
+            grip: pose(Vec3::new(x, 0.0, 0.0)),
+            aim: pose(Vec3::new(x, 0.0, 0.0)),
+        };
+        let rifle = |holder| CollideWeapon {
+            holder,
+            muzzle: Vec3::new(0.0, 0.0, -0.8),
+            barrel: Vec3::NEG_Z,
+        };
+        // A gun is taken only in its own hand's place.
+        observe([Some(rifle(Hand::Right)), None]);
+        assert!(!status().weapon());
+        observe([Some(rifle(Hand::Left)), Some(rifle(Hand::Right))]);
+        assert!(status().hands.iter().all(|h| h.weapon));
+        // A wall ahead of the right gun's muzzle alone.
+        STATE.lock().hands[Hand::Right.index()].wall = Some(SeenWall {
+            wall: Wall {
+                point: Vec3::new(0.3, 0.0, -0.5),
+                normal: Vec3::Z,
+            },
+            at: Instant::now(),
+        });
+        let frame = WorldFrame {
+            head_world: Vec3::ZERO,
+            head_cockpit: Vec3::ZERO,
+            body: Quat::IDENTITY,
+            world_scale: 1.0,
+        };
+        let hands = [Some(at(-0.3)), Some(at(0.3))];
+        let config = CollideConfig::new();
+        assert!(push_hand(Hand::Right, &hands, &frame, &config).is_some());
+        assert!(push_hand(Hand::Left, &hands, &frame, &config).is_none());
+        let s = status();
+        assert!(s.hands[Hand::Right.index()].touching);
+        assert!(!s.hands[Hand::Left.index()].touching);
+        // Both probes are kept for the next cast.
+        assert!(STATE.lock().hands.iter().all(|h| h.probe.is_some()));
+        observe([None; 2]);
+        assert!(!status().weapon() && !status().touching());
     }
 
     #[test]

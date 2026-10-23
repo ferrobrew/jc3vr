@@ -451,7 +451,7 @@ impl Signal {
             Signal::InventoryKept => Value::Number(inventory::status().pinned() as f64),
             Signal::InventoryPins => count(inventory::status().pins),
             Signal::InventoryResets => count(inventory::status().resets),
-            Signal::GunTouching => flag(collide::status().touching),
+            Signal::GunTouching => flag(collide::status().touching()),
             Signal::RegionCarries => count(regions::status().carries),
             Signal::RegionBraces => count(regions::status().braces),
             Signal::RegionGripsTaken => count(regions::status().grips_taken),

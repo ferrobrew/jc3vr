@@ -201,9 +201,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 })
             }),
     );
-    collide::observe(weapon.zip(geometry).and_then(|(w, g)| {
-        Some(collide::CollideWeapon {
-            holder: w.holder?,
+    collide::observe(Hand::BOTH.map(|hand| {
+        geometries[hand.index()].map(|g| collide::CollideWeapon {
+            holder: hand,
             muzzle: g.muzzle,
             barrel: g.barrel,
         })
