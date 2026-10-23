@@ -334,6 +334,11 @@ impl SpawnSystem {
     /// every spawned object of every resource definition and every object queued for despawn, and
     /// posts `spawn.post_reset_all_spawn_rules`, which its receivers handle later. An object that
     /// something else still holds a strong reference to outlives the reset, outside the system.
+    /// The load state's reset step
+    /// ([`GameStateLoad::ResetSystems`](crate::game::GameStateLoad::ResetSystems)) and the frontend's
+    /// ([`GameStateFrontend::ResetSystems`](crate::game::GameStateFrontend::ResetSystems)) call it, so a
+    /// death, a mission failure or checkpoint restart, a fast travel, a challenge's start, retry,
+    /// restart, or abort, a load, and the quit to the menu all reset.
     pub unsafe fn ResetSystem(&mut self) -> i32 {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) -> i32 = ::std::mem::transmute(

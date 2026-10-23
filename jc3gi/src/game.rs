@@ -459,6 +459,73 @@ impl GameState {
     }
 }
 #[repr(C, align(8))]
+/// The game's frontend state (`CGameStateFrontend`), the main menu. Its layout is unmapped.
+pub struct GameStateFrontend {}
+impl GameStateFrontend {
+    pub const ResetSystems_ADDRESS: usize = 0x1409AC700;
+    /// The frontend's reset of the game systems on the quit to the menu, which resets the spawn
+    /// system ([`SpawnSystem::ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)).
+    pub unsafe fn ResetSystems() {
+        unsafe {
+            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+                Self::ResetSystems_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<GameStateFrontend> for GameStateFrontend {
+    fn as_ref(&self) -> &GameStateFrontend {
+        self
+    }
+}
+impl std::convert::AsMut<GameStateFrontend> for GameStateFrontend {
+    fn as_mut(&mut self) -> &mut GameStateFrontend {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The game's load state (`CGameStateLoad`), entered for a load, a continue, a new game, a world
+/// reload, and every teleport with the load state
+/// ([`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer)). Its layout is unmapped.
+pub struct GameStateLoad {}
+impl GameStateLoad {
+    pub const OnEnter_ADDRESS: usize = 0x1409FEC80;
+    /// The load state's entry. It runs [`ResetSystems`](crate::game::GameStateLoad::ResetSystems), so every entry to
+    /// the load state resets the spawn system.
+    pub unsafe fn OnEnter() {
+        unsafe {
+            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+                Self::OnEnter_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const ResetSystems_ADDRESS: usize = 0x1409BABB0;
+    /// The load state's reset step, called only by [`OnEnter`](crate::game::GameStateLoad::OnEnter): aborts an active
+    /// challenge unless the no-unload flag is set, resets the dialogue, resets the spawn system
+    /// ([`SpawnSystem::ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)), and resets the heat.
+    /// The disassembler mislabels it `IConsole::GetLoadingLock`.
+    pub unsafe fn ResetSystems() {
+        unsafe {
+            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+                Self::ResetSystems_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<GameStateLoad> for GameStateLoad {
+    fn as_ref(&self) -> &GameStateLoad {
+        self
+    }
+}
+impl std::convert::AsMut<GameStateLoad> for GameStateLoad {
+    fn as_mut(&mut self) -> &mut GameStateLoad {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// `CGameStateRun`: the in-game state's static update functions.
 pub struct GameStateRun {}
 impl GameStateRun {

@@ -58,7 +58,10 @@ pub struct Player {
     /// [`m_AimPos`](crate::aim::aim::PlayerAimControl::m_AimPos)) is the target the arm aim IK tasks steer
     /// toward.
     pub m_AimControl: *mut crate::aim::aim::PlayerAimControl,
-    _field_160: [u8; 4760],
+    _field_160: [u8; 4728],
+    /// Whether the player is the local player; the weapons' fire statistics read it.
+    pub m_LocalPlayer: bool,
+    _field_13d9: [u8; 31],
     /// The damage of the player's melee hit, in health points, from the player's settings. The
     /// melee input task tests it against the target's health to choose a killing act, and the melee
     /// hit message ([`Character::HandleTrackMessage`](crate::character::character::Character::HandleTrackMessage))
@@ -90,7 +93,13 @@ impl Player {
     /// falling without a parachute or when the character has none of the aimable weapon slots
     /// filled. On a change it records [`m_AimModeChangeTime`](crate::character::player::Player::m_AimModeChangeTime), adds or
     /// removes the precision-aim camera hint (adding it only when `add_camera_hint` is set), sets
-    /// the aim control's aim state, and forwards the mode to the selected weapon (or draws it).
+    /// the aim control's aim state, and forwards the mode to the selected weapon
+    /// ([`Character::GetSelectedWeapon`](crate::character::character::Character::GetSelectedWeapon)) only,
+    /// and only while the player is that weapon's user
+    /// ([`WeaponBase::IsCharacterUsingWeapon`](crate::equipment::weapon::WeaponBase::IsCharacterUsingWeapon));
+    /// otherwise it draws the selected weapon when that weapon has a precision hint. It skips the
+    /// forward while planting. Any other weapon the player uses keeps the mode it was given at
+    /// [`WeaponBase::StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing).
     ///
     /// Precision aim is entered from three places: the player's weapon handling
     /// (`CInventory::UpdateWeaponHandling`) on the precision-aim input, for a weapon with
@@ -122,6 +131,33 @@ impl Player {
                 Self::UpdateAimMode_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const ReInit_ADDRESS: usize = 0x140C54EE0;
+    /// Respawns the player at `transform` (`CPlayer::ReInit`): revives the character (which forces
+    /// its neutral state, [`Character::ForceNeutralState`](crate::character::character::Character::ForceNeutralState)),
+    /// returns to normal aim, teleports with the load state
+    /// ([`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer)), fills the slot
+    /// weapons' reserves
+    /// ([`Inventory::GiveMaxAmmoToAllWeaponInInventory`](crate::character::inventory::Inventory::GiveMaxAmmoToAllWeaponInInventory)),
+    /// and writes `inventory_reset_flags` to
+    /// [`Inventory::m_SpawnSystemResetFlags`](crate::character::inventory::Inventory::m_SpawnSystemResetFlags).
+    /// The mission manager's restart ([`MissionManager::GoToRestartPoint`](crate::mission::MissionManager::GoToRestartPoint))
+    /// and the player's post-physics update call it.
+    pub unsafe fn ReInit(
+        &mut self,
+        transform: *mut crate::types::math::Matrix4,
+        teleport_flags: u32,
+        inventory_reset_flags: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *mut crate::types::math::Matrix4,
+                teleport_flags: u32,
+                inventory_reset_flags: u32,
+            ) = ::std::mem::transmute(Self::ReInit_ADDRESS);
+            f(self as *mut Self as _, transform, teleport_flags, inventory_reset_flags)
         }
     }
 }

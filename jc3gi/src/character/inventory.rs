@@ -21,7 +21,7 @@ pub struct Inventory {
     _field_0: [u8; 32],
     /// The weapon in each slot, indexed by [`WeaponSlot`](crate::character::inventory::WeaponSlot) (up to
     /// [`E_NUM_WEAPON_SLOTS`](crate::character::inventory::WeaponSlot::E_NUM_WEAPON_SLOTS)); a null pointer for an empty slot.
-    /// `CCharacter::GetWeaponInInventory` returns a reference to an entry.
+    /// [`Character::GetWeaponInInventory`](crate::character::character::Character::GetWeaponInInventory) returns a reference to an entry.
     pub m_Weapons: [crate::types::shared_ptr::SharedPtr<
         crate::equipment::weapon::WeaponBase,
     >; 8],
@@ -41,9 +41,38 @@ pub struct Inventory {
     /// ([`LoadPlayerSaveData`](crate::save::LoadPlayerSaveData)) writes the saved types here, and the
     /// post-reset event ([`m_SpawnSystemPostReset`](crate::character::inventory::Inventory::m_SpawnSystemPostReset)) requests a spawn
     /// of each entry; each spawned weapon replaces the slot's occupant through the character's
-    /// pickup.
+    /// pickup. [`GivePlayerWeapon`](crate::character::inventory::Inventory::GivePlayerWeapon) writes an entry and requests its spawn,
+    /// and [`WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned) clears it once the weapon arrives.
     pub m_WeaponToSpawn: [i32; 8],
-    _field_108: [u8; 124],
+    /// The loadout the pre-reset event copies into [`m_WeaponToSpawn`](crate::character::inventory::Inventory::m_WeaponToSpawn) in
+    /// place of the slots' current weapons when
+    /// [`RESPAWN_RESET_LOADOUT`](crate::character::inventory::SpawnSystemResetFlags::RESPAWN_RESET_LOADOUT) is set: a spawn tag
+    /// index per slot, or zero.
+    pub m_WeaponToSpawnReset: [i32; 8],
+    /// The magazine each respawn-table entry arrives with.
+    pub m_WeaponToSpawnAmmunition: [i32; 8],
+    /// Per respawn-table entry, whether the arriving weapon's add drops the slot's occupant into
+    /// the world rather than despawning it ([`AddWeapon`](crate::character::inventory::Inventory::AddWeapon)).
+    pub m_WeaponToSpawnDropOld: [bool; 8],
+    /// The slot whose arriving respawn-table weapon is equipped
+    /// ([`E_EQUIP`](crate::character::inventory::EquipMode::E_EQUIP)), or [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE), in which case an
+    /// arriving weapon is equipped only into the selected slot
+    /// ([`E_EQUIP_IF_IN_SELECTED_SLOT`](crate::character::inventory::EquipMode::E_EQUIP_IF_IN_SELECTED_SLOT)). The pre-reset
+    /// event records the selected slot here.
+    pub m_WeaponToSpawnEquippedWeapon: crate::character::inventory::WeaponSlot,
+    /// Per respawn-table entry, whether rounds beyond the magazine go to the reserve on arrival.
+    pub m_WeaponToSpawnExtraAmmo: [bool; 8],
+    /// Per slot, whether a spawn of the slot's respawn-table entry is in flight.
+    /// [`RequestWeaponSpawn`](crate::character::inventory::Inventory::RequestWeaponSpawn) does nothing for a slot already pending.
+    pub m_WeaponPendingSpawn: [bool; 8],
+    _field_164: [u8; 24],
+    /// Per slot, whether the slot's occupant is marked for removal. [`ForceRemoveWeapon`](crate::character::inventory::Inventory::ForceRemoveWeapon),
+    /// [`ForceRemoveAllWeapons`](crate::character::inventory::Inventory::ForceRemoveAllWeapons), and the post-reset event set the
+    /// marks; [`UpdatePrePhysics`](crate::character::inventory::Inventory::UpdatePrePhysics) carries them out through
+    /// [`Internal_RemoveWeapon`](crate::character::inventory::Inventory::Internal_RemoveWeapon);
+    /// [`CancelRemoveWeapon`](crate::character::inventory::Inventory::CancelRemoveWeapon) and an arriving respawn-table weapon of the
+    /// expected type ([`WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned)) clear one.
+    pub m_WeaponToRemove: [bool; 8],
     /// Whether the current animation permits shooting; one half of
     /// [`GetAnimationAllowsShooting`](crate::character::inventory::Inventory::GetAnimationAllowsShooting).
     pub m_DoesAnimationAllowShooting: bool,
@@ -67,7 +96,8 @@ pub struct Inventory {
     pub m_DoesAnimationAllowPickup: bool,
     /// Whether the current animation permits switching weapons: recomputed by
     /// [`UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions). A deferred switch, a
-    /// committed slot selection (`CCharacter::SwitchWeapon`), and
+    /// committed slot selection
+    /// ([`Character::SwitchWeapon`](crate::character::character::Character::SwitchWeapon)), and
     /// [`TryToSwitchToValidWeapon`](crate::character::inventory::Inventory::TryToSwitchToValidWeapon) all wait on it.
     pub m_DoesAnimationAllowSwitchingWeapons: bool,
     /// Whether the character may plant explosives: recomputed by
@@ -147,13 +177,15 @@ pub struct Inventory {
     /// every slot's occupant for removal, clears the character's next selected slot, and requests a
     /// spawn of every slot's respawn entry and of the grappling device.
     pub m_SpawnSystemPostReset: crate::event::ReceiveEvent,
-    _field_3f0: [u8; 4],
+    /// How the next spawn reset rebuilds the slots, read and cleared by the pre-reset event.
+    /// [`Player::ReInit`](crate::character::player::Player::ReInit) writes it.
+    pub m_SpawnSystemResetFlags: crate::character::inventory::SpawnSystemResetFlags,
     /// The slot the weapon selection commits when every slot-select input is released, or
     /// [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE). While a slot-select input is held,
     /// [`UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling) rewrites it every frame with the winning
     /// slot, or with [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE) when the winner is the wielded weapon's slot or
     /// holds no weapon. On a frame with every slot-select input zero and this set, it switches to
-    /// the slot (`CCharacter::SwitchWeapon`) when the animation allows switching, or selects and
+    /// the slot ([`Character::SwitchWeapon`](crate::character::character::Character::SwitchWeapon)) when the animation allows switching, or selects and
     /// draws it with nothing wielded, and resets it to [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE); otherwise it
     /// stays set and the commit is retried every frame. Entering a vehicle seat other than a
     /// motorcycle's resets it.
@@ -273,7 +305,15 @@ impl Inventory {
     /// weapon, all with `muzzle_target`, and then the selected grenade with `grenade_target`. The
     /// fire inputs passed down come from the owner's
     /// [`m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs), zeroed while shooting
-    /// (or throwing) is not allowed. The disassembler mislabels it `CGrapplingHook::GetFireInputEnabled`.
+    /// (or throwing) is not allowed: the primary input unless
+    /// [`GetAnimationAllowsShooting`](crate::character::inventory::Inventory::GetAnimationAllowsShooting) holds, and the grenade
+    /// input unless [`m_DoesAnimationAllowGrenades`](crate::character::inventory::Inventory::m_DoesAnimationAllowGrenades) is set and
+    /// [`SB_DISABLE_USE_GRENADES`](crate::state::StateBitFlag::SB_DISABLE_USE_GRENADES) is clear. The
+    /// secondary input is always zero. For the player, a riding state
+    /// ([`Character::IsInRidingInVehicleState`](crate::character::character::Character::IsInRidingInVehicleState))
+    /// skips the wielding weapon unless the ride is a motorcycle, and skips the grenade in any
+    /// riding state. Nothing inside a weapon reads the shooting permission, so a weapon updated
+    /// directly bypasses it. The disassembler mislabels it `CGrapplingHook::GetFireInputEnabled`.
     pub unsafe fn UpdateWeapons_Parallel(
         &mut self,
         dt: f32,
@@ -354,7 +394,16 @@ impl Inventory {
     }
     pub const UpdateInventoryPermissions_ADDRESS: usize = 0x14091B3E0;
     /// Recomputes the inventory's per-frame permissions from the owner's state (it consults the
-    /// grapple reel-in predicates among others).
+    /// grapple reel-in predicates among others). Shooting is cleared while pre-reeling or reeling
+    /// in without the shoot-while-reeling upgrade, every permission while the grappling hook holds
+    /// an object, and the grenade permission and two others while the wielded weapon's
+    /// [`m_PrecisionCameraHash`](crate::equipment::weapon::WeaponBase::m_PrecisionCameraHash) hint is
+    /// active. It then ANDs each permission with the inverse of its disable state bit
+    /// ([`SB_DISABLE_SHOOT`](crate::state::StateBitFlag::SB_DISABLE_SHOOT) and its siblings), writes the
+    /// permission bytes ([`m_DoesAnimationAllowShooting`](crate::character::inventory::Inventory::m_DoesAnimationAllowShooting)
+    /// onward), and clears the disable bits. The disable bits are therefore per-frame requests:
+    /// the graph's `NSetInventoryPermissions` state tasks set them during the animation update
+    /// ([`NSetInventoryPermissions_SetPermissions`](crate::character::inventory::NSetInventoryPermissions_SetPermissions)), and this latches and clears them.
     pub unsafe fn UpdateInventoryPermissions(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -475,7 +524,8 @@ impl Inventory {
     /// [`E_SLOT_TWO_HANDED_SPECIAL`](crate::character::inventory::WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL) weapon. A weapon
     /// qualifies when its magazine is not empty or the inventory holds ammunition of its type; the
     /// order does not depend on the wielded slot, which is skipped only because it is empty. The
-    /// first that qualifies is switched to through `CCharacter::SelectWeapon`, and the function
+    /// first that qualifies is switched to through
+    /// [`Character::SelectWeapon`](crate::character::character::Character::SelectWeapon), and the function
     /// returns true. It does nothing and returns false while
     /// [`m_DoesAnimationAllowSwitchingWeapons`](crate::character::inventory::Inventory::m_DoesAnimationAllowSwitchingWeapons) is
     /// clear, while the owner's
@@ -485,7 +535,7 @@ impl Inventory {
     /// It has two callers. [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase)
     /// calls it when the player pulls the trigger of a weapon that is empty and cannot reload,
     /// which is the game's automatic switch away from an empty weapon. The `NWeaponEquipTask`
-    /// state task calls it on entry when its character wields nothing and the task is not
+    /// state task ([`NWeaponEquipTask_OnEnter`](crate::equipment::weapon_animation::NWeaponEquipTask_OnEnter)) calls it on entry when its character wields nothing and the task is not
     /// configured to equip a fixed slot.
     pub unsafe fn TryToSwitchToValidWeapon(&mut self) -> bool {
         unsafe {
@@ -661,6 +711,298 @@ impl Inventory {
             f(self as *mut Self as _, visible)
         }
     }
+    pub const GivePlayerWeapon_ADDRESS: usize = 0x140947980;
+    /// Gives the character a weapon of spawn tag index `tag_index` in `slot` through the respawn
+    /// table: writes the slot's entry ([`m_WeaponToSpawn`](crate::character::inventory::Inventory::m_WeaponToSpawn) and its
+    /// [`m_WeaponToSpawnAmmunition`](crate::character::inventory::Inventory::m_WeaponToSpawnAmmunition),
+    /// [`m_WeaponToSpawnExtraAmmo`](crate::character::inventory::Inventory::m_WeaponToSpawnExtraAmmo), and
+    /// [`m_WeaponToSpawnDropOld`](crate::character::inventory::Inventory::m_WeaponToSpawnDropOld) entries, and with
+    /// `start_equipped` [`m_WeaponToSpawnEquippedWeapon`](crate::character::inventory::Inventory::m_WeaponToSpawnEquippedWeapon))
+    /// and requests its spawn ([`RequestWeaponSpawn`](crate::character::inventory::Inventory::RequestWeaponSpawn)). The weapon
+    /// arrives later through [`InventoryWeaponSpawnCallback`](crate::character::inventory::InventoryWeaponSpawnCallback) and
+    /// [`WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned). Every game-side give takes this path: missions and
+    /// their checkpoint restores, challenges, the graph script's `SpawnWeapons` node, the
+    /// `equip weapon` event, a rack's infinite pickups
+    /// ([`WeaponBase::m_InfinitePickup`](crate::equipment::weapon::WeaponBase::m_InfinitePickup)), and the
+    /// game-completion reward.
+    pub unsafe fn GivePlayerWeapon(
+        &mut self,
+        tag_index: i32,
+        ammo: i32,
+        slot: crate::character::inventory::WeaponSlot,
+        start_equipped: bool,
+        extra_ammo_to_inventory: bool,
+        drop_old: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tag_index: i32,
+                ammo: i32,
+                slot: crate::character::inventory::WeaponSlot,
+                start_equipped: bool,
+                extra_ammo_to_inventory: bool,
+                drop_old: bool,
+            ) = ::std::mem::transmute(Self::GivePlayerWeapon_ADDRESS);
+            f(
+                self as *mut Self as _,
+                tag_index,
+                ammo,
+                slot,
+                start_equipped,
+                extra_ammo_to_inventory,
+                drop_old,
+            )
+        }
+    }
+    pub const RequestWeaponSpawn_ADDRESS: usize = 0x140942510;
+    /// Requests the spawn of `slot`'s respawn-table entry from the spawn system, with
+    /// [`InventoryWeaponSpawnCallback`](crate::character::inventory::InventoryWeaponSpawnCallback) as the callback, unless one is already pending
+    /// ([`m_WeaponPendingSpawn`](crate::character::inventory::Inventory::m_WeaponPendingSpawn)). The disassembler swaps its name with
+    /// [`RequestSpawnGrapplingDevice`](crate::character::inventory::Inventory::RequestSpawnGrapplingDevice): it labels this function
+    /// `CInventory::RequestSpawnGrapplingDevice`.
+    pub unsafe fn RequestWeaponSpawn(&mut self, slot: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, slot: i32) = ::std::mem::transmute(
+                Self::RequestWeaponSpawn_ADDRESS,
+            );
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const RequestSpawnGrapplingDevice_ADDRESS: usize = 0x14091C470;
+    /// Requests the spawn of the character's grappling device. The disassembler labels it
+    /// `CInventory::RequestWeaponSpawn`; see [`RequestWeaponSpawn`](crate::character::inventory::Inventory::RequestWeaponSpawn).
+    pub unsafe fn RequestSpawnGrapplingDevice(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RequestSpawnGrapplingDevice_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const WeaponSpawned_ADDRESS: usize = 0x140932B30;
+    /// Hands a weapon spawned for the respawn table to the character. `weapon` is a
+    /// `boost::shared_ptr<CWeaponBase>` passed by value, so it points at the caller's copy, which
+    /// this function releases. When the weapon's spawn tag index is the slot's
+    /// [`m_WeaponToSpawn`](crate::character::inventory::Inventory::m_WeaponToSpawn) entry (the slot being the weapon's
+    /// [`m_EquipSlot`](crate::equipment::weapon::WeaponBase::m_EquipSlot)), it clears the slot's removal
+    /// mark ([`m_WeaponToRemove`](crate::character::inventory::Inventory::m_WeaponToRemove)), picks the equip mode
+    /// ([`E_EQUIP`](crate::character::inventory::EquipMode::E_EQUIP) for the
+    /// [`m_WeaponToSpawnEquippedWeapon`](crate::character::inventory::Inventory::m_WeaponToSpawnEquippedWeapon) slot, after
+    /// unequipping the wielded weapon; [`E_EQUIP_IF_IN_SELECTED_SLOT`](crate::character::inventory::EquipMode::E_EQUIP_IF_IN_SELECTED_SLOT)
+    /// when that is [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE); [`E_DONT_EQUIP`](crate::character::inventory::EquipMode::E_DONT_EQUIP)
+    /// otherwise), passes the weapon to
+    /// [`Character::PickUpWeapon`](crate::character::character::Character::PickUpWeapon), sets the
+    /// entry's magazine and, with the extra-ammunition flag, moves the overflow into the reserve,
+    /// applies the character's visibility to every slot weapon, and clears the entry. On a tag
+    /// mismatch it removes the slot's occupant ([`Internal_RemoveWeapon`](crate::character::inventory::Inventory::Internal_RemoveWeapon)),
+    /// or despawns the newcomer when the slot is empty. Ordinary world weapons never pass through
+    /// it: it sees only respawn-table weapons, the gives and the respawns after a spawn reset.
+    pub unsafe fn WeaponSpawned(
+        &mut self,
+        weapon: *mut crate::types::shared_ptr::SharedPtr<
+            crate::equipment::weapon::WeaponBase,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::weapon::WeaponBase,
+                >,
+            ) = ::std::mem::transmute(Self::WeaponSpawned_ADDRESS);
+            f(self as *mut Self as _, weapon)
+        }
+    }
+    pub const ForceRemoveWeapon_ADDRESS: usize = 0x1408D5D40;
+    /// Marks `slot`'s occupant for removal ([`m_WeaponToRemove`](crate::character::inventory::Inventory::m_WeaponToRemove)), carried
+    /// out by the next [`UpdatePrePhysics`](crate::character::inventory::Inventory::UpdatePrePhysics). With `reset_ammo` it also
+    /// empties the weapon's magazine and the reserve of its ammunition type, and with
+    /// `clear_spawning` it clears the slot's respawn-table entry.
+    pub unsafe fn ForceRemoveWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+        reset_ammo: bool,
+        clear_spawning: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+                reset_ammo: bool,
+                clear_spawning: bool,
+            ) = ::std::mem::transmute(Self::ForceRemoveWeapon_ADDRESS);
+            f(self as *mut Self as _, slot, reset_ammo, clear_spawning)
+        }
+    }
+    pub const ForceRemoveAllWeapons_ADDRESS: usize = 0x140902D30;
+    /// Marks every slot for removal, like [`ForceRemoveWeapon`](crate::character::inventory::Inventory::ForceRemoveWeapon) on each.
+    pub unsafe fn ForceRemoveAllWeapons(&mut self, clear_spawning: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, clear_spawning: bool) = ::std::mem::transmute(
+                Self::ForceRemoveAllWeapons_ADDRESS,
+            );
+            f(self as *mut Self as _, clear_spawning)
+        }
+    }
+    pub const CancelRemoveWeapon_ADDRESS: usize = 0x1408BB450;
+    /// Clears `slot`'s removal mark ([`m_WeaponToRemove`](crate::character::inventory::Inventory::m_WeaponToRemove)).
+    pub unsafe fn CancelRemoveWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) = ::std::mem::transmute(Self::CancelRemoveWeapon_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const Internal_RemoveWeapon_ADDRESS: usize = 0x14091B280;
+    /// Carries out `slot`'s removal: a mounted gun is stopped and released, any other occupant is
+    /// despawned ([`DespawnWeapon`](crate::character::inventory::Inventory::DespawnWeapon)), and the mark is cleared.
+    pub unsafe fn Internal_RemoveWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) = ::std::mem::transmute(Self::Internal_RemoveWeapon_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const DespawnWeapon_ADDRESS: usize = 0x14091AC10;
+    /// Empties `slot` and despawns its weapon at once
+    /// ([`WeaponBase::Despawn`](crate::equipment::weapon::WeaponBase::Despawn)). The challenges call it
+    /// directly, bypassing the removal marks.
+    pub unsafe fn DespawnWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) = ::std::mem::transmute(Self::DespawnWeapon_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const UpdatePrePhysics_ADDRESS: usize = 0x140932DA0;
+    /// The inventory's pre-physics update: carries out every marked removal
+    /// ([`Internal_RemoveWeapon`](crate::character::inventory::Inventory::Internal_RemoveWeapon)), then updates the secondary attach
+    /// objects.
+    pub unsafe fn UpdatePrePhysics(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::UpdatePrePhysics_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const GetWeapon_ADDRESS: usize = 0x1408BB9C0;
+    /// The weapon reference in `slot` ([`m_Weapons`](crate::character::inventory::Inventory::m_Weapons)). The disassembler mislabels
+    /// it `CPOI::Create`.
+    pub unsafe fn GetWeapon(
+        &self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) -> *const crate::types::shared_ptr::SharedPtr<
+        crate::equipment::weapon::WeaponBase,
+    > {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) -> *const crate::types::shared_ptr::SharedPtr<
+                crate::equipment::weapon::WeaponBase,
+            > = ::std::mem::transmute(Self::GetWeapon_ADDRESS);
+            f(self as *const Self as _, slot)
+        }
+    }
+    pub const HasWeaponWithAmmoType_ADDRESS: usize = 0x1408C6EF0;
+    /// Whether a slot holds a weapon whose
+    /// [`m_AmmunitionType`](crate::equipment::weapon::WeaponBase::m_AmmunitionType) is `ammo_type`. It
+    /// reads only the eight slots. Its one caller is the pickup's automatic ammunition credit
+    /// ([`WeaponBase::ShouldAutoPickup`](crate::equipment::weapon::WeaponBase::ShouldAutoPickup)).
+    pub unsafe fn HasWeaponWithAmmoType(
+        &self,
+        ammo_type: crate::equipment::weapon::AmmunitionType,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                ammo_type: crate::equipment::weapon::AmmunitionType,
+            ) -> bool = ::std::mem::transmute(Self::HasWeaponWithAmmoType_ADDRESS);
+            f(self as *const Self as _, ammo_type)
+        }
+    }
+    pub const AddAmmo_ADDRESS: usize = 0x1408D6190;
+    /// Adds `count` rounds to the reserve of `ammo_type`, up to its cap
+    /// ([`m_MaxAmmunition`](crate::character::inventory::Inventory::m_MaxAmmunition)), and returns how many were added.
+    pub unsafe fn AddAmmo(
+        &mut self,
+        ammo_type: crate::equipment::weapon::AmmunitionType,
+        count: i32,
+    ) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ammo_type: crate::equipment::weapon::AmmunitionType,
+                count: i32,
+            ) -> i32 = ::std::mem::transmute(Self::AddAmmo_ADDRESS);
+            f(self as *mut Self as _, ammo_type, count)
+        }
+    }
+    pub const RespawnPlayerGear_ADDRESS: usize = 0x1409479D0;
+    /// Re-requests the spawn of every respawn-table entry not already pending, and of the
+    /// grappling device. The player's post-physics update calls it once the save data has loaded.
+    pub unsafe fn RespawnPlayerGear(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RespawnPlayerGear_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const RespawnPlayerWeapon_ADDRESS: usize = 0x140942840;
+    /// Requests the respawn table's weapons with the two-handed slot as the equipped slot
+    /// ([`m_WeaponToSpawnEquippedWeapon`](crate::character::inventory::Inventory::m_WeaponToSpawnEquippedWeapon)).
+    pub unsafe fn RespawnPlayerWeapon(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RespawnPlayerWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const GiveMaxAmmoToAllWeaponInInventory_ADDRESS: usize = 0x1408D6010;
+    /// Fills the reserve of each slot weapon's ammunition type. The player's respawn
+    /// ([`Player::ReInit`](crate::character::player::Player::ReInit)) calls it.
+    pub unsafe fn GiveMaxAmmoToAllWeaponInInventory(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::GiveMaxAmmoToAllWeaponInInventory_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SelectValidWeapon_ADDRESS: usize = 0x14091AD40;
+    /// Selects a weapon that has ammunition and returns whether it found one. The meanings of the
+    /// two flags are unverified. [`Character::DrawWeapon`](crate::character::character::Character::DrawWeapon),
+    /// [`DropWeapon`](crate::character::inventory::Inventory::DropWeapon), [`WeaponBase::StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)
+    /// for a mounted gun, the planted explosive's stop, and the store's close call it.
+    pub unsafe fn SelectValidWeapon(&mut self, p1: bool, p2: bool) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                p1: bool,
+                p2: bool,
+            ) -> bool = ::std::mem::transmute(Self::SelectValidWeapon_ADDRESS);
+            f(self as *mut Self as _, p1, p2)
+        }
+    }
 }
 impl std::convert::AsRef<Inventory> for Inventory {
     fn as_ref(&self) -> &Inventory {
@@ -671,6 +1013,19 @@ impl std::convert::AsMut<Inventory> for Inventory {
     fn as_mut(&mut self) -> &mut Inventory {
         self
     }
+}
+crate::__bitflags! {
+    #[doc =
+    " The flags of [`Inventory::m_SpawnSystemResetFlags`](crate::character::inventory::Inventory::m_SpawnSystemResetFlags), which shape what the spawn system's"]
+    #[doc = " pre-reset event records into the respawn table."] pub struct
+    SpawnSystemResetFlags : u32 { const RESPAWN_RESET_LOADOUT = 1usize as _; const
+    FULL_MAGAZINES = 2usize as _; const RESET_GRAPPLING_DEVICE = 4usize as _; }
+}
+fn _SpawnSystemResetFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], SpawnSystemResetFlags>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
@@ -694,4 +1049,125 @@ fn _WeaponSlot_size_check() {
         ::std::mem::transmute::<[u8; 0x4], WeaponSlot>([0u8; 0x4]);
     }
     unreachable!()
+}
+pub const InventoryWeaponSpawnCallback_ADDRESS: usize = 0x140942180;
+/// The spawn callback ([`SpawnCallback`](crate::spawn_system::SpawnCallback)) of the respawn table's
+/// requests, with the inventory as its userdata. It despawns a spawned weapon that is not a
+/// profile item, and hands any other to [`Inventory::WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned).
+pub unsafe fn InventoryWeaponSpawnCallback(
+    objects: *const crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+    >,
+    inventory: *mut crate::character::inventory::Inventory,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            objects: *const crate::types::std_vector::Vector<
+                crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+            >,
+            inventory: *mut crate::character::inventory::Inventory,
+        ) = ::std::mem::transmute(InventoryWeaponSpawnCallback_ADDRESS);
+        f(objects, inventory)
+    }
+}
+pub const NSetInventoryPermissions_TranslatePermissionsFlagToStateBit_ADDRESS: usize = 0x140837E80;
+/// Maps a bit of an `NSetInventoryPermissions` state task's `Flags` property to the state bit it
+/// sets: the shoot flag to [`SB_DISABLE_SHOOT`](crate::state::StateBitFlag::SB_DISABLE_SHOOT), the reload
+/// flag to [`SB_DISABLE_RELOAD`](crate::state::StateBitFlag::SB_DISABLE_RELOAD), the grenade flag to
+/// [`SB_DISABLE_USE_GRENADES`](crate::state::StateBitFlag::SB_DISABLE_USE_GRENADES), and so on through
+/// the disable bits that [`Inventory::UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions) latches.
+pub unsafe fn NSetInventoryPermissions_TranslatePermissionsFlagToStateBit(
+    flag_bit: i32,
+) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(flag_bit: i32) -> i32 = ::std::mem::transmute(
+            NSetInventoryPermissions_TranslatePermissionsFlagToStateBit_ADDRESS,
+        );
+        f(flag_bit)
+    }
+}
+pub const NSetInventoryPermissions_SetPermissions_ADDRESS: usize = 0x140837F50;
+/// Sets the state bits of the permission `flags` (mapped through
+/// [`NSetInventoryPermissions_TranslatePermissionsFlagToStateBit`](crate::character::inventory::NSetInventoryPermissions_TranslatePermissionsFlagToStateBit)) in `model`'s current state-bit
+/// words. The state task's scopes call it: the whole-state scope on entry and every update, and the
+/// segment scope within a named clip segment.
+pub unsafe fn NSetInventoryPermissions_SetPermissions(
+    model: *mut crate::character::character::AnimatedModel,
+    flags: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            model: *mut crate::character::character::AnimatedModel,
+            flags: i32,
+        ) = ::std::mem::transmute(NSetInventoryPermissions_SetPermissions_ADDRESS);
+        f(model, flags)
+    }
+}
+pub const NSetInventoryPermissions_NStateScope_OnEnter_ADDRESS: usize = 0x1408493E0;
+/// The entry of the whole-state scope of the `NSetInventoryPermissions` state task.
+pub unsafe fn NSetInventoryPermissions_NStateScope_OnEnter(
+    context: *mut crate::state::StateContext,
+    properties: *mut ::std::ffi::c_void,
+    instance: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            context: *mut crate::state::StateContext,
+            properties: *mut ::std::ffi::c_void,
+            instance: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(NSetInventoryPermissions_NStateScope_OnEnter_ADDRESS);
+        f(context, properties, instance)
+    }
+}
+pub const NSetInventoryPermissions_NStateScope_Update_ADDRESS: usize = 0x140837FC0;
+/// The update of the whole-state scope of the `NSetInventoryPermissions` state task, which sets
+/// the permission bits on every update of its state.
+pub unsafe fn NSetInventoryPermissions_NStateScope_Update(
+    context: *mut crate::state::StateContext,
+    properties: *mut ::std::ffi::c_void,
+    instance: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            context: *mut crate::state::StateContext,
+            properties: *mut ::std::ffi::c_void,
+            instance: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(NSetInventoryPermissions_NStateScope_Update_ADDRESS);
+        f(context, properties, instance)
+    }
+}
+pub const NSetInventoryPermissions_NSegmentScope_OnEnter_ADDRESS: usize = 0x140838020;
+/// The entry of the segment scope of the `NSetInventoryPermissions` state task.
+pub unsafe fn NSetInventoryPermissions_NSegmentScope_OnEnter(
+    context: *mut crate::state::StateContext,
+    properties: *mut ::std::ffi::c_void,
+    instance: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            context: *mut crate::state::StateContext,
+            properties: *mut ::std::ffi::c_void,
+            instance: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(
+            NSetInventoryPermissions_NSegmentScope_OnEnter_ADDRESS,
+        );
+        f(context, properties, instance)
+    }
+}
+pub const NSetInventoryPermissions_NSegmentScope_Update_ADDRESS: usize = 0x140847810;
+/// The update of the segment scope of the `NSetInventoryPermissions` state task, which sets the
+/// permission bits while the state's clip is inside the task's named segment.
+pub unsafe fn NSetInventoryPermissions_NSegmentScope_Update(
+    context: *mut crate::state::StateContext,
+    properties: *mut ::std::ffi::c_void,
+    instance: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            context: *mut crate::state::StateContext,
+            properties: *mut ::std::ffi::c_void,
+            instance: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(NSetInventoryPermissions_NSegmentScope_Update_ADDRESS);
+        f(context, properties, instance)
+    }
 }

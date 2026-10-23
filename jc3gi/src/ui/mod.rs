@@ -1,5 +1,6 @@
 #![cfg_attr(any(), rustfmt::skip)]
 pub mod comm_map_ui;
+pub mod comm_store_ui;
 pub mod game_pause_utility;
 pub mod hud_ui;
 pub mod locator;

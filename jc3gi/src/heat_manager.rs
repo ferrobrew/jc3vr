@@ -127,6 +127,22 @@ impl HeatManager {
             f(self as *const Self as _)
         }
     }
+    pub const GetHeatPointData_ADDRESS: usize = 0x140A406A0;
+    /// The heat-point tuning (`SHeatPointTuning`): the heat points each kind of offence adds, and
+    /// the ranges they apply within. A weapon's shot
+    /// ([`WeaponBase::Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase))
+    /// reads its firing entry and passes it to
+    /// [`Character::AddHeatPoints`](crate::character::character::Character::AddHeatPoints).
+    pub unsafe fn GetHeatPointData(&self) -> *const ::std::ffi::c_void {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *const ::std::ffi::c_void = ::std::mem::transmute(
+                Self::GetHeatPointData_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
 }
 impl HeatManager {
     /// The [`m_LevelCap`](crate::heat_manager::HeatManager::m_LevelCap) value meaning no cap. Set by `CHeatManager::Reset`.

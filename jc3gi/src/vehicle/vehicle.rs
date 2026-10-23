@@ -287,7 +287,13 @@ pub struct Vehicle {
     /// helicopter's stunt position is a hang from the airframe instead, entered through the
     /// vehicle's interaction context rather than an area.
     pub m_StuntAreas: crate::vehicle::stunt_areas::StuntAreas,
-    _field_4938: [u8; 764],
+    _field_4938: [u8; 714],
+    /// Whether the holstered weapons of the characters seated in the vehicle are hidden: the
+    /// seat states' hide task
+    /// ([`NWeaponHideInVehicleTask_OnEnter`](crate::equipment::weapon_animation::NWeaponHideInVehicleTask_OnEnter))
+    /// makes a holstered slot weapon holstered-invisible while it is set.
+    pub m_HideCharacterWeapons: bool,
+    _field_4c03: [u8; 49],
     /// The world-space point the vehicle's weapons aim at, written by
     /// [`SetAimTargetPosition`](crate::vehicle::vehicle::Vehicle::SetAimTargetPosition).
     pub m_AimingTargetPosition: crate::types::math::Vector3,

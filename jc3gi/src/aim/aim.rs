@@ -731,6 +731,51 @@ impl std::convert::AsMut<VehicleAimBlendState> for VehicleAimBlendState {
         self
     }
 }
+#[repr(C, align(8))]
+/// The on-foot vertical aim blend (`CVerticalAimBlendState`), an animation-graph state that blends
+/// aim samplers by the aim's yaw and pitch and plays the firing recoil. Its layout is unmapped.
+pub struct VerticalAimBlendState {}
+impl VerticalAimBlendState {
+    pub const UpdateSamplers_ADDRESS: usize = 0x14086FF10;
+    /// Weights the state's samplers for the character owning `instance` (a
+    /// `NAnimationSystem::CStateMachineInstance`) over `dt`. The yaw and pitch are measured from
+    /// the left arm when the wielded weapon sits in the left hand
+    /// ([`WeaponBase::IsWieldedInLeftHand`](crate::equipment::weapon::WeaponBase::IsWieldedInLeftHand)), from the right arm for a heavy weapon and the grapple
+    /// fire, and from the head otherwise. When the state's recoil flag is set and a weapon is
+    /// wielded, it drives one recoil sampler per gun of the wielded weapon
+    /// ([`WeaponBase::GetNumRecoilAnimationNeeded`](crate::equipment::weapon::WeaponBase::GetNumRecoilAnimationNeeded)): each sampler's time is that gun's own time
+    /// since its last shot ([`WeaponData::m_TimeSinceLastFire`](crate::equipment::weapon::WeaponData::m_TimeSinceLastFire))
+    /// and its weight the weapon's maximum recoil weight until the clip ends, so the recoil is per
+    /// gun but follows the one wielded weapon. The per-gun time read is inlined here; the two
+    /// functions the disassembler names `CWeaponBase::GetTimeSinceLastFireForSpecificWeaponData`
+    /// are unrelated.
+    pub unsafe fn UpdateSamplers(
+        &mut self,
+        instance: *mut ::std::ffi::c_void,
+        dt: f32,
+        samplers: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                instance: *mut ::std::ffi::c_void,
+                dt: f32,
+                samplers: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::UpdateSamplers_ADDRESS);
+            f(self as *mut Self as _, instance, dt, samplers)
+        }
+    }
+}
+impl std::convert::AsRef<VerticalAimBlendState> for VerticalAimBlendState {
+    fn as_ref(&self) -> &VerticalAimBlendState {
+        self
+    }
+}
+impl std::convert::AsMut<VerticalAimBlendState> for VerticalAimBlendState {
+    fn as_mut(&mut self) -> &mut VerticalAimBlendState {
+        self
+    }
+}
 pub const NAutoAimToTarget_Update_ADDRESS: usize = 0x140809C60;
 /// The character-state task that overrides the aim direction toward a locked target.
 unsafe fn NAutoAimToTarget_Update(

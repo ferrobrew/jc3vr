@@ -544,8 +544,10 @@ impl std::convert::AsMut<GrapplingHook> for GrapplingHook {
 /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) -- during which
 /// `NReeledInController::RotateToGrappleTarget` rotates the character's root toward the target as
 /// the reel pulls them in -- and completes into one of the `GHS_REELED_*` attachment states
-/// depending on the landing surface and pose. `GHS_CUSTOM_ACTIVE_WIRE` is a wire held open outside
-/// the reel flow (tethers).
+/// depending on the landing surface and pose.
+/// [`GHS_CUSTOM_ACTIVE_WIRE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE) is the state of a scripted wire fired
+/// outside the reel flow (`CGrapplingHook::FireHookCustom`, which the vehicle grapple and the
+/// stunt-position grapple use).
 pub enum GrapplingHookState {
     GHS_INITIALIZING = 0isize as _,
     GHS_INACTIVE = 1isize as _,

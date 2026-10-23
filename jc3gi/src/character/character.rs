@@ -289,6 +289,42 @@ impl AnimationController {
             f(self as *mut Self as _, dtf, world_matrix)
         }
     }
+    pub const PlayCustomAnimation_ADDRESS: usize = 0x1404772F0;
+    /// Plays the clip at `path` on the body part `layer`
+    /// (`CAnimationControl::PlayCustomAnimation`): acquires the clip resource by its path, builds
+    /// an [`AnimationInstance`](crate::animation::pose_producer::AnimationInstance) of it over the
+    /// controller's skeleton, hands it to the layer's driver
+    /// ([`AnimationDriverTransition::PlayCustomAnimation`](crate::animation::pose_producer::AnimationDriverTransition::PlayCustomAnimation))
+    /// with the `blend` time, and writes the instance into `result`. `looping` selects the
+    /// instance's loop mode.
+    pub unsafe fn PlayCustomAnimation(
+        &mut self,
+        result: *mut crate::types::shared_ptr::SharedPtr<
+            crate::animation::pose_producer::AnimationInstance,
+        >,
+        layer: u64,
+        path: *const crate::types::std_string::String,
+        blend: f32,
+        looping: bool,
+    ) -> *mut crate::types::shared_ptr::SharedPtr<
+        crate::animation::pose_producer::AnimationInstance,
+    > {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                result: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::animation::pose_producer::AnimationInstance,
+                >,
+                layer: u64,
+                path: *const crate::types::std_string::String,
+                blend: f32,
+                looping: bool,
+            ) -> *mut crate::types::shared_ptr::SharedPtr<
+                crate::animation::pose_producer::AnimationInstance,
+            > = ::std::mem::transmute(Self::PlayCustomAnimation_ADDRESS);
+            f(self as *mut Self as _, result, layer, path, blend, looping)
+        }
+    }
 }
 impl std::convert::AsRef<AnimationController> for AnimationController {
     fn as_ref(&self) -> &AnimationController {
@@ -447,7 +483,11 @@ pub struct Character {
     /// Per-character LOD/update-gating flags; see [`CharacterLodFlags`](crate::character::character::CharacterLodFlags).
     pub m_LodFlags: crate::character::character::CharacterLodFlags,
     _field_278d: [u8; 27],
-    /// The inventory slot of the weapon the character has selected.
+    /// The inventory slot of the weapon the character has selected. Its one writer is
+    /// [`SetSelectedWeaponSlot`](crate::character::character::Character::SetSelectedWeaponSlot); the animation graph's weapon
+    /// conditions read the selected slot's weapon
+    /// ([`WeaponSelectedCondition`](crate::equipment::weapon_animation::WeaponSelectedCondition) and its
+    /// siblings).
     pub m_SelectedWeaponSlot: crate::character::inventory::WeaponSlot,
     _field_27ac: [u8; 68],
     pub m_WorldMatrixT0: crate::types::math::Matrix4,
@@ -1711,6 +1751,250 @@ impl Character {
             f(self as *const Self as _)
         }
     }
+    pub const GetSelectedWeapon_ADDRESS: usize = 0x1407B1120;
+    /// The selected slot's weapon reference
+    /// ([`m_SelectedWeaponSlot`](crate::character::character::Character::m_SelectedWeaponSlot)) whatever its state, so a holstered
+    /// weapon is returned too.
+    pub unsafe fn GetSelectedWeapon(
+        &self,
+    ) -> *const crate::types::shared_ptr::SharedPtr<
+        crate::equipment::weapon::WeaponBase,
+    > {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *const crate::types::shared_ptr::SharedPtr<
+                crate::equipment::weapon::WeaponBase,
+            > = ::std::mem::transmute(Self::GetSelectedWeapon_ADDRESS);
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetWeaponInInventory_ADDRESS: usize = 0x1407A0130;
+    /// The weapon reference in `slot` of the inventory
+    /// ([`Inventory::m_Weapons`](crate::character::inventory::Inventory::m_Weapons)), whatever its state,
+    /// or a shared empty pointer for an out-of-range slot.
+    pub unsafe fn GetWeaponInInventory(
+        &self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) -> *const crate::types::shared_ptr::SharedPtr<
+        crate::equipment::weapon::WeaponBase,
+    > {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) -> *const crate::types::shared_ptr::SharedPtr<
+                crate::equipment::weapon::WeaponBase,
+            > = ::std::mem::transmute(Self::GetWeaponInInventory_ADDRESS);
+            f(self as *const Self as _, slot)
+        }
+    }
+    pub const IsPlantingExplosive_ADDRESS: usize = 0x1407D5BC0;
+    /// Whether the planted explosive is in its planting mode.
+    pub unsafe fn IsPlantingExplosive(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsPlantingExplosive_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const SetSelectedWeaponSlot_ADDRESS: usize = 0x1407C4ED0;
+    /// Writes the selected slot ([`m_SelectedWeaponSlot`](crate::character::character::Character::m_SelectedWeaponSlot)) and, for
+    /// the dual-wield, two-handed, and special slots, the last gun slot, and queues a
+    /// weapon-switched statistic for the local player when the slot changes to an occupied one. It
+    /// does nothing else: no act, no equip, no state change, so a weapon in another slot that was
+    /// wielded stays wielded. It is the selected slot's one writer.
+    pub unsafe fn SetSelectedWeaponSlot(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) = ::std::mem::transmute(Self::SetSelectedWeaponSlot_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const SelectWeapon_ADDRESS: usize = 0x1407F2E70;
+    /// The game's request to switch to `slot`: selects it and draws it
+    /// ([`DrawWeapon`](crate::character::character::Character::DrawWeapon)), holstering for
+    /// [`E_NONE`](crate::character::inventory::WeaponSlot::E_NONE). Its callers are the committed
+    /// selection ([`SwitchWeapon`](crate::character::character::Character::SwitchWeapon)), [`PickUpWeapon`](crate::character::character::Character::PickUpWeapon),
+    /// the switch away from an empty weapon
+    /// ([`Inventory::TryToSwitchToValidWeapon`](crate::character::inventory::Inventory::TryToSwitchToValidWeapon)),
+    /// the graph script's `SpawnWeapons` node
+    /// ([`NGSONodes_SpawnWeapons`](crate::graph_script::NGSONodes_SpawnWeapons)), the player's script
+    /// event handler, the AI, and the network.
+    pub unsafe fn SelectWeapon(
+        &mut self,
+        slot: crate::character::inventory::WeaponSlot,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                slot: crate::character::inventory::WeaponSlot,
+            ) = ::std::mem::transmute(Self::SelectWeapon_ADDRESS);
+            f(self as *mut Self as _, slot)
+        }
+    }
+    pub const SwitchWeapon_ADDRESS: usize = 0x1407F8220;
+    /// Commits the weapon selection's pending slot through [`SelectWeapon`](crate::character::character::Character::SelectWeapon).
+    pub unsafe fn SwitchWeapon(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::SwitchWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const PickUpWeapon_ADDRESS: usize = 0x1407F82A0;
+    /// Takes `weapon` into the inventory with `mode`: fills its magazine to the tuned size
+    /// ([`WeaponBase::GetMagazineSize`](crate::equipment::weapon::WeaponBase::GetMagazineSize)), puts it
+    /// into its slot ([`Inventory::AddWeapon`](crate::character::inventory::Inventory::AddWeapon)), and
+    /// with [`E_EQUIP`](crate::character::inventory::EquipMode::E_EQUIP) selects the slot for the
+    /// dual-wield, two-handed, special, heavy, and FOW slots ([`SelectWeapon`](crate::character::character::Character::SelectWeapon)).
+    /// The respawn hand-over
+    /// ([`Inventory::WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned)) and the
+    /// spawn-and-equip callback call it.
+    pub unsafe fn PickUpWeapon(
+        &mut self,
+        weapon: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::weapon::WeaponBase,
+        >,
+        mode: crate::character::inventory::EquipMode,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::weapon::WeaponBase,
+                >,
+                mode: crate::character::inventory::EquipMode,
+            ) = ::std::mem::transmute(Self::PickUpWeapon_ADDRESS);
+            f(self as *mut Self as _, weapon, mode)
+        }
+    }
+    pub const PutWeaponIntoInventory_ADDRESS: usize = 0x140760A20;
+    /// Puts `weapon` into its slot with `mode`, a direct call of
+    /// [`Inventory::AddWeapon`](crate::character::inventory::Inventory::AddWeapon). The pickup
+    /// ([`WeaponBase::PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem)), a mounted gun's
+    /// [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing), the weapon's track-message
+    /// handling, and the supply drop's cargo call it.
+    pub unsafe fn PutWeaponIntoInventory(
+        &mut self,
+        weapon: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::weapon::WeaponBase,
+        >,
+        mode: crate::character::inventory::EquipMode,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::weapon::WeaponBase,
+                >,
+                mode: crate::character::inventory::EquipMode,
+            ) = ::std::mem::transmute(Self::PutWeaponIntoInventory_ADDRESS);
+            f(self as *mut Self as _, weapon, mode)
+        }
+    }
+    pub const DropAllWeapons_ADDRESS: usize = 0x140760930;
+    /// Drops every slot's weapon
+    /// ([`Inventory::DropWeapon`](crate::character::inventory::Inventory::DropWeapon)). The script "drop
+    /// all weapons" event and the player's reset to the default loadout call it.
+    pub unsafe fn DropAllWeapons(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DropAllWeapons_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const IsLocalPlayerControlled_ADDRESS: usize = 0x1407813D0;
+    /// Whether the character is controlled locally by a player.
+    pub unsafe fn IsLocalPlayerControlled(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsLocalPlayerControlled_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetAiEntityHandle_ADDRESS: usize = 0x14075E060;
+    /// The character's AI entity handle, which identifies it as the source of an AI awareness
+    /// event ([`BroadcastAwarenessEvent`](crate::ai::ai::BroadcastAwarenessEvent)).
+    pub unsafe fn GetAiEntityHandle(&self) -> u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> u32 = ::std::mem::transmute(
+                Self::GetAiEntityHandle_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const AddHeatPoints_ADDRESS: usize = 0x1407C3340;
+    /// Adds `points` of heat (wanted level) to the character within `range`. The meanings of the
+    /// four flags are unverified. A weapon's shot
+    /// ([`WeaponBase::Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase))
+    /// calls it on the weapon's user.
+    pub unsafe fn AddHeatPoints(
+        &mut self,
+        points: i32,
+        p2: bool,
+        p3: bool,
+        p4: bool,
+        range: f32,
+        p6: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                points: i32,
+                p2: bool,
+                p3: bool,
+                p4: bool,
+                range: f32,
+                p6: bool,
+            ) = ::std::mem::transmute(Self::AddHeatPoints_ADDRESS);
+            f(self as *mut Self as _, points, p2, p3, p4, range, p6)
+        }
+    }
+    pub const IsDrawingOrHolsteringWeapon_ADDRESS: usize = 0x14075F420;
+    /// Whether the character is drawing or holstering a weapon: the
+    /// [`SB_IS_DRAWING_WEAPON`](crate::state::StateBitFlag::SB_IS_DRAWING_WEAPON) or
+    /// [`SB_IS_HOLSTERING_WEAPON`](crate::state::StateBitFlag::SB_IS_HOLSTERING_WEAPON) state bit.
+    pub unsafe fn IsDrawingOrHolsteringWeapon(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsDrawingOrHolsteringWeapon_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsNoFiringSet_ADDRESS: usize = 0x14075F600;
+    /// Whether firing is blocked: the [`SB_IS_NO_FIRING`](crate::state::StateBitFlag::SB_IS_NO_FIRING)
+    /// state bit.
+    pub unsafe fn IsNoFiringSet(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsNoFiringSet_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsPredictedReloadingAllowed_ADDRESS: usize = 0x1407D6AD0;
+    /// Whether the ammunition check's predicted reload may start: the character is a player not
+    /// in precision aim, plus a condition on the player's aim control whose meaning is
+    /// unverified.
+    pub unsafe fn IsPredictedReloadingAllowed(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsPredictedReloadingAllowed_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const SetMentalState_ADDRESS: usize = 0x140760BE0;
     /// Sets the character's mental state on its [`m_Avatar`](crate::character::character::Character::m_Avatar) with a hold `timer`.
     /// Unless `force` is set, the write happens only once the avatar's current timer has run out.
@@ -1732,14 +2016,27 @@ impl Character {
     }
     pub const DrawWeapon_ADDRESS: usize = 0x1407608A0;
     /// Draws the selected weapon when the inventory's animation state allows it: selects a valid
-    /// weapon, queues the draw act, and blocks drawing and grenades until the animation re-enables
-    /// them.
-    pub unsafe fn DrawWeapon(&mut self, p1: bool, p2: bool) {
+    /// weapon ([`Inventory::SelectValidWeapon`](crate::character::inventory::Inventory::SelectValidWeapon),
+    /// with the two flags passed through), queues the draw act (`UB_ACT_DRAW`), and blocks drawing
+    /// and grenades until the animation re-enables them. The equip itself happens when the draw
+    /// clip's equip track message reaches
+    /// [`WeaponBase::OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip). Its callers are
+    /// [`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling)
+    /// (a fire input with nothing wielded, the precision-aim draw, the release of a pending
+    /// selection, and the combat mental state's draw), [`SelectWeapon`](crate::character::character::Character::SelectWeapon),
+    /// [`Player::SetAimMode`](crate::character::player::Player::SetAimMode), and the AI.
+    pub unsafe fn DrawWeapon(
+        &mut self,
+        planted_explosive_allowed: bool,
+        only_if_ammo: bool,
+    ) {
         unsafe {
-            let f: unsafe extern "system" fn(this: *mut Self, p1: bool, p2: bool) = ::std::mem::transmute(
-                Self::DrawWeapon_ADDRESS,
-            );
-            f(self as *mut Self as _, p1, p2)
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                planted_explosive_allowed: bool,
+                only_if_ammo: bool,
+            ) = ::std::mem::transmute(Self::DrawWeapon_ADDRESS);
+            f(self as *mut Self as _, planted_explosive_allowed, only_if_ammo)
         }
     }
     pub const HolsterWeapon_ADDRESS: usize = 0x1407F2D80;
@@ -1783,7 +2080,8 @@ impl Character {
     ///   and for the predicted reload of the local player's idle weapon;
     /// - [`Inventory::SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount),
     ///   [`Inventory::GiveMaxAmmo`](crate::character::inventory::Inventory::GiveMaxAmmo),
-    ///   `CInventory::GiveMaxAmmoToAllWeaponInInventory`, `CInventory::SetMaxBeaconsByLevel`, and
+    ///   [`Inventory::GiveMaxAmmoToAllWeaponInInventory`](crate::character::inventory::Inventory::GiveMaxAmmoToAllWeaponInInventory),
+    ///   `CInventory::SetMaxBeaconsByLevel`, and
     ///   `CInventory::SetMaxFlaresByLevel`, when a reserve is refilled from empty while the
     ///   wielded weapon of that kind has an empty magazine;
     /// - [`WeaponBase::HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage),
@@ -1847,7 +2145,14 @@ impl Character {
         }
     }
     pub const ForceNeutralState_ADDRESS: usize = 0x1407FD120;
-    /// Forces the character's animation and control state back to neutral (on foot, idle).
+    /// Forces the character's animation and control state back to neutral (on foot, idle). It
+    /// drops the heavy weapon, stops using the planted explosive, unequips the wielded weapon
+    /// ([`WeaponBase::OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip)), and cancels a primed
+    /// grenade. It runs on every revive, at the start of every teleport ([`UpdateTeleport`](crate::game_world::UpdateTeleport)
+    /// and [`GameWorld::TeleportPlayerInstant`](crate::game_world::GameWorld::TeleportPlayerInstant)), on
+    /// the vehicle exit's upward teleport, from [`SetGodMode`](crate::character::character::Character::SetGodMode), from
+    /// [`SetupForSequence`](crate::character::character::Character::SetupForSequence), when the character is enabled, and from the
+    /// network and the AI's mission-critical teleport.
     pub unsafe fn ForceNeutralState(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(

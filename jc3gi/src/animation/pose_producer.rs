@@ -43,7 +43,31 @@ fn _AnimationDriverTransition_size_check() {
     }
     unreachable!()
 }
-impl AnimationDriverTransition {}
+impl AnimationDriverTransition {
+    pub const PlayCustomAnimation_ADDRESS: usize = 0x140474AB0;
+    /// Starts `instance`, a clip chosen by code rather than by the layer's rule system, on the
+    /// layer, blending it in over `blend` seconds.
+    /// [`AnimationController::PlayCustomAnimation`](crate::character::character::AnimationController::PlayCustomAnimation)
+    /// calls it.
+    pub unsafe fn PlayCustomAnimation(
+        &mut self,
+        instance: *mut crate::types::shared_ptr::SharedPtr<
+            crate::animation::pose_producer::AnimationInstance,
+        >,
+        blend: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                instance: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::animation::pose_producer::AnimationInstance,
+                >,
+                blend: f32,
+            ) = ::std::mem::transmute(Self::PlayCustomAnimation_ADDRESS);
+            f(self as *mut Self as _, instance, blend)
+        }
+    }
+}
 impl std::convert::AsRef<AnimationDriverTransition> for AnimationDriverTransition {
     fn as_ref(&self) -> &AnimationDriverTransition {
         self
@@ -51,6 +75,54 @@ impl std::convert::AsRef<AnimationDriverTransition> for AnimationDriverTransitio
 }
 impl std::convert::AsMut<AnimationDriverTransition> for AnimationDriverTransition {
     fn as_mut(&mut self) -> &mut AnimationDriverTransition {
+        self
+    }
+}
+#[repr(C, align(1))]
+/// One playing clip (`CAnimationInstance`): a clip resource bound to a skeleton, with its
+/// playback time, weight, easing, and loop mode. A [`Blender`](crate::animation::pose_producer::Blender) samples its instances into a pose.
+/// Only its size is bound.
+pub struct AnimationInstance {
+    _field_0: [u8; 288],
+}
+fn _AnimationInstance_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x120], AnimationInstance>([0u8; 0x120]);
+    }
+    unreachable!()
+}
+impl AnimationInstance {
+    pub const Construct_ADDRESS: usize = 0x141E68BD0;
+    /// Constructs an instance of the clip resource `animation` (a `TResourceCachePtr<CAnimation>`,
+    /// one resource handle) over the skeleton resource `skeleton`, configured by `context` (a
+    /// `CAnimationInstance::SCreationContext`: its easing, start and finish trims, speed, mirror
+    /// flag, and loop mode). A context with the mirror flag set binds the clip mirrored.
+    pub unsafe fn Construct(
+        &mut self,
+        animation: *const *mut ::std::ffi::c_void,
+        skeleton: *const *mut ::std::ffi::c_void,
+        context: *const ::std::ffi::c_void,
+    ) -> *mut crate::animation::pose_producer::AnimationInstance {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                animation: *const *mut ::std::ffi::c_void,
+                skeleton: *const *mut ::std::ffi::c_void,
+                context: *const ::std::ffi::c_void,
+            ) -> *mut crate::animation::pose_producer::AnimationInstance = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _, animation, skeleton, context)
+        }
+    }
+}
+impl std::convert::AsRef<AnimationInstance> for AnimationInstance {
+    fn as_ref(&self) -> &AnimationInstance {
+        self
+    }
+}
+impl std::convert::AsMut<AnimationInstance> for AnimationInstance {
+    fn as_mut(&mut self) -> &mut AnimationInstance {
         self
     }
 }
@@ -107,6 +179,36 @@ impl Blender {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
                 Self::HasSamplers_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const AddSampler_ADDRESS: usize = 0x141E6B930;
+    /// Adds `instance` to the blender's samplers: registers its Havok animation control with the
+    /// blender's animated skeleton and keeps a reference to it.
+    pub unsafe fn AddSampler(
+        &mut self,
+        instance: *mut crate::types::shared_ptr::SharedPtr<
+            crate::animation::pose_producer::AnimationInstance,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                instance: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::animation::pose_producer::AnimationInstance,
+                >,
+            ) = ::std::mem::transmute(Self::AddSampler_ADDRESS);
+            f(self as *mut Self as _, instance)
+        }
+    }
+    pub const ClearSamplers_ADDRESS: usize = 0x141E6B9B0;
+    /// Removes every sampler's animation control from the animated skeleton and releases the
+    /// samplers.
+    pub unsafe fn ClearSamplers(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ClearSamplers_ADDRESS,
             );
             f(self as *mut Self as _)
         }
@@ -215,5 +317,42 @@ impl std::convert::AsRef<QsTransform> for QsTransform {
 impl std::convert::AsMut<QsTransform> for QsTransform {
     fn as_mut(&mut self) -> &mut QsTransform {
         self
+    }
+}
+pub const AquireAnimation_ADDRESS: usize = 0x1403EBFD0;
+/// `IAnimationManager::AquireAnimation`: the clip resource for the clip path `path` (transformed
+/// to its compiled name and hashed with `HashString`), from the global resource cache. It writes
+/// the resource handle (a `TResourceCachePtr<CAnimation>`) into `result` and returns it.
+pub unsafe fn AquireAnimation(
+    result: *mut *mut ::std::ffi::c_void,
+    path: *const u8,
+) -> *mut *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            result: *mut *mut ::std::ffi::c_void,
+            path: *const u8,
+        ) -> *mut *mut ::std::ffi::c_void = ::std::mem::transmute(
+            AquireAnimation_ADDRESS,
+        );
+        f(result, path)
+    }
+}
+pub const AquireAnimationFromCache_ADDRESS: usize = 0x1404823D0;
+/// `IAnimationManager::AquireAnimation` with an explicit resource cache: like [`AquireAnimation`](crate::animation::pose_producer::AquireAnimation)
+/// but from `cache`, and writing a null handle for a null or empty `path`.
+pub unsafe fn AquireAnimationFromCache(
+    result: *mut *mut ::std::ffi::c_void,
+    path: *const u8,
+    cache: *mut ::std::ffi::c_void,
+) -> *mut *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            result: *mut *mut ::std::ffi::c_void,
+            path: *const u8,
+            cache: *mut ::std::ffi::c_void,
+        ) -> *mut *mut ::std::ffi::c_void = ::std::mem::transmute(
+            AquireAnimationFromCache_ADDRESS,
+        );
+        f(result, path, cache)
     }
 }

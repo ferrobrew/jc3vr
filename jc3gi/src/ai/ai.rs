@@ -1,4 +1,17 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The kind of an AI awareness event (`EAwareness`), the first argument of
+/// [`BroadcastAwarenessEvent`](crate::ai::ai::BroadcastAwarenessEvent). Only the value the weapons broadcast is mapped.
+pub enum AwarenessEvent {
+    EAwareness_WeaponFire = 4isize as _,
+}
+fn _AwarenessEvent_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], AwarenessEvent>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 pub const AIMechFireGravityGun_ADDRESS: usize = 0x1406231E0;
 /// A behavior-tree action callback (`AIMechFireGravityGun`), dispatched from
 /// `BtCallbackHandler`: fires the gravity gun (the magnet weapon component) of the mech the AI
@@ -68,5 +81,28 @@ pub unsafe fn AiGetClosestEntityInRange(
             registry,
             owner_go,
         )
+    }
+}
+pub const BroadcastAwarenessEvent_ADDRESS: usize = 0x140646EF0;
+/// Queues an AI awareness event of `kind` at `position` from the AI entity `source`, with `size`
+/// bytes of event data copied from `data`: it appends one record to a fixed-capacity buffer
+/// through an atomic counter, so it is safe from the parallel update passes, and drops the event
+/// once the buffer is full. The disassembler mislabels it `ProfilerThreadAddBudget`.
+pub unsafe fn BroadcastAwarenessEvent(
+    kind: crate::ai::ai::AwarenessEvent,
+    position: *const crate::types::math::Vector3,
+    source: u32,
+    data: *const ::std::ffi::c_void,
+    size: u64,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            kind: crate::ai::ai::AwarenessEvent,
+            position: *const crate::types::math::Vector3,
+            source: u32,
+            data: *const ::std::ffi::c_void,
+            size: u64,
+        ) = ::std::mem::transmute(BroadcastAwarenessEvent_ADDRESS);
+        f(kind, position, source, data, size)
     }
 }

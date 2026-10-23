@@ -157,9 +157,18 @@ impl std::convert::AsMut<BarrelSpinWeaponComponent> for BarrelSpinWeaponComponen
 pub struct BulletWeaponBase {}
 impl BulletWeaponBase {
     pub const Fire_Projectile_ADDRESS: usize = 0x140927550;
-    /// The bullet weapons' [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) override: spawns the bullet projectile
-    /// and then calls [`WeaponBase::Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase). It is the only caller of
-    /// [`NWeaponUtil::Trajectory_GetAngleToHitPosition`](crate::equipment::weapon::NWeaponUtil::Trajectory_GetAngleToHitPosition).
+    /// The bullet weapons' [`WeaponBase::Fire_Projectile`](crate::equipment::weapon::WeaponBase::Fire_Projectile) override: builds the shot matrix, takes
+    /// the holder's ignored bodies ([`WeaponBase::GetHolderInformation`](crate::equipment::weapon::WeaponBase::GetHolderInformation)), calls
+    /// [`WeaponBase::Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase), and spawns the bullet. The bullet's owner is the
+    /// weapon's [`WeaponBase::m_User`](crate::equipment::weapon::WeaponBase::m_User), or [`WeaponBase::m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder) when it has no user, and its
+    /// damage-source state comes from that owner when it is a character
+    /// ([`Character::GetCurrentDamageSourceStateInfo`](crate::character::character::Character::GetCurrentDamageSourceStateInfo)).
+    /// The bullet and its tracer carry [`WeaponBase::m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer) as their player flag, and
+    /// the first bullet of a shot also [`WeaponBase::m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer). For a locally
+    /// controlled user it sets the bullet's target point from the aim point along the shot
+    /// direction, led by the velocity of the player aim control's weapon target
+    /// ([`PlayerAimControl::m_Target`](crate::aim::aim::PlayerAimControl::m_Target)) when there is one.
+    /// It is the only caller of [`NWeaponUtil::Trajectory_GetAngleToHitPosition`](crate::equipment::weapon::NWeaponUtil::Trajectory_GetAngleToHitPosition).
     pub unsafe fn Fire_Projectile(
         &mut self,
         weapon_data: *mut crate::equipment::weapon::WeaponData,
@@ -1827,9 +1836,43 @@ pub struct WeaponBase {
     _field_1a8: [u8; 4],
     /// Shots remaining that use the spread ring; decremented once per shot.
     pub m_ProjectileOffsetFireCount: i32,
-    _field_1b0: [u8; 103],
+    _field_1b0: [u8; 64],
+    /// The character a deferred start-using names (a `boost::weak_ptr<CCharacter>`: object pointer
+    /// and weak control block), written by [`StartUsingDeferred`](crate::equipment::weapon::WeaponBase::StartUsingDeferred) and
+    /// cleared when the pre-simulation update ([`UpdatePreSim`](crate::equipment::weapon::WeaponBase::UpdatePreSim)) consumes or
+    /// cancels the request.
+    pub m_DeferredUser: [*mut ::std::ffi::c_void; 2],
+    /// The character a deferred equip names (a `boost::weak_ptr<CCharacter>`), written by
+    /// [`EquipDeferred`](crate::equipment::weapon::WeaponBase::EquipDeferred) and cleared once the equip runs.
+    pub m_DeferredEquiper: [*mut ::std::ffi::c_void; 2],
+    /// A start-using queued by [`StartUsingDeferred`](crate::equipment::weapon::WeaponBase::StartUsingDeferred) for the next
+    /// pre-simulation update.
+    pub m_DeferredStartUsing: bool,
+    /// A stop-using queued for the next pre-simulation update. Queued together with
+    /// [`m_DeferredStartUsing`](crate::equipment::weapon::WeaponBase::m_DeferredStartUsing), the two cancel each other.
+    pub m_DeferredStopUsing: bool,
+    /// An equip queued by [`EquipDeferred`](crate::equipment::weapon::WeaponBase::EquipDeferred) for the next pre-simulation
+    /// update.
+    pub m_DeferredEquip: bool,
+    /// An unequip queued by [`UnequipDeferred`](crate::equipment::weapon::WeaponBase::UnequipDeferred) for the next pre-simulation
+    /// update.
+    pub m_DeferredUnequip: bool,
+    /// A drop queued by [`DropDeferred`](crate::equipment::weapon::WeaponBase::DropDeferred) for the next pre-simulation update.
+    pub m_DeferredDrop: bool,
+    /// A physical recoil impulse on the user's body, set by a shot
+    /// ([`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase)) when
+    /// [`m_PhysicalRecoilStrength`](crate::equipment::weapon::WeaponBase::m_PhysicalRecoilStrength) is non-zero and applied by the
+    /// next pre-simulation update.
+    pub m_DeferredPhysicalRecoil: bool,
+    /// A weapon-fire awareness event for the AI, set by the first shot of a trigger pull
+    /// ([`Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase)) and broadcast by the next
+    /// pre-simulation update ([`UpdatePreSim`](crate::equipment::weapon::WeaponBase::UpdatePreSim)) through
+    /// [`BroadcastAwarenessEvent`](crate::ai::ai::BroadcastAwarenessEvent). It stays pending while
+    /// [`m_NoHeatOnFiring`](crate::equipment::weapon::WeaponBase::m_NoHeatOnFiring) is set.
+    pub m_DeferredAwarenessBroadcast: bool,
     /// Whether picking the weapon up gives the character a copy rather than the weapon itself.
-    /// [`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart) then calls `CInventory::GivePlayerWeapon` with the
+    /// [`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart) then calls
+    /// [`Inventory::GivePlayerWeapon`](crate::character::inventory::Inventory::GivePlayerWeapon) with the
     /// weapon's spawn tag, and [`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem) puts nothing into the inventory:
     /// it only plays the pickup vocal and clears
     /// [`m_StoredNonMagazineAmmo`](crate::equipment::weapon::WeaponBase::m_StoredNonMagazineAmmo). The weapon's pickup handling
@@ -1938,7 +1981,14 @@ pub struct WeaponBase {
     /// Whether aim assist stays on in precision aim. `CPlayer::SetAimMode` leaves the aim
     /// control's aim type untouched when entering precision aim with a weapon that sets this.
     pub m_IsAutoAimInPrecisionAimEnabled: bool,
-    _field_40b: [u8; 21],
+    _field_40b: [u8; 9],
+    /// The weapon's own aim mode, written by [`SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode). Each weapon keeps
+    /// its own: [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) seeds it from the player's
+    /// [`Player::m_AimMode`](crate::character::player::Player::m_AimMode), and later changes of the
+    /// player's mode reach only the selected weapon
+    /// ([`Player::SetAimMode`](crate::character::player::Player::SetAimMode)).
+    pub m_AimMode: crate::aim::aim::AimMode,
+    _field_418: [u8; 8],
     /// The inventory slot the weapon is equipped in.
     pub m_EquipSlot: crate::character::inventory::WeaponSlot,
     /// The weapon's state.
@@ -1959,16 +2009,39 @@ pub struct WeaponBase {
     /// (`CInventory::UpdateWeaponHandling`) enters precision aim on the precision-aim input only
     /// for a weapon that sets it.
     pub m_SupportsPrecisionAim: bool,
-    _field_468: [u8; 20],
-    /// Whether the weapon is registered for pre-simulation updates; the fire path sets it and
-    /// registers the weapon when a deferred action is queued.
+    _field_468: [u8; 4],
+    /// The hash of the camera hint the weapon adds while a locally controlled character uses it:
+    /// [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) adds it when it is not already active and
+    /// [`StopUsingBase`](crate::equipment::weapon::WeaponBase::StopUsingBase) removes it. Camera hints are global and keyed by
+    /// this hash, so two weapons with the same hash share one hint.
+    pub m_CameraHash: u32,
+    /// The camera hint used in place of [`m_CameraHash`](crate::equipment::weapon::WeaponBase::m_CameraHash) while the weapon is
+    /// [`E_WS_MOUNTED`](crate::equipment::weapon::WeaponState::E_WS_MOUNTED).
+    pub m_MountedCameraHash: u32,
+    /// The camera hint [`SetAimModeBase`](crate::equipment::weapon::WeaponBase::SetAimModeBase) adds for a locally controlled user
+    /// entering precision aim, and removes on leaving it.
+    pub m_PrecisionCameraHash: u32,
+    /// The precision camera hint used in place of
+    /// [`m_PrecisionCameraHash`](crate::equipment::weapon::WeaponBase::m_PrecisionCameraHash) while the user hangs from the grapple
+    /// ([`Character::IsGrappleHanging`](crate::character::character::Character::IsGrappleHanging)).
+    pub m_ReeledHangPrecisionCameraHash: u32,
+    /// Whether the weapon is registered for pre-simulation updates
+    /// ([`UpdatePreSim`](crate::equipment::weapon::WeaponBase::UpdatePreSim)). A shot, a reload's start, and each deferred-operation
+    /// request set it and register the weapon when it was clear.
     pub m_RequiresPreSimUpdates: bool,
     _field_47d: [u8; 19],
     /// The weapon type's tuning, or null.
     pub m_Tuning: *const crate::equipment::weapon::WeaponTuning,
     _field_498: [u8; 96],
     /// The character using the weapon (a `boost::weak_ptr<CCharacter>`: object pointer and weak
-    /// control block).
+    /// control block), set by [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) and cleared by
+    /// [`StopUsingBase`](crate::equipment::weapon::WeaponBase::StopUsingBase). Every part of a shot keys off it rather than off
+    /// [`m_State`](crate::equipment::weapon::WeaponBase::m_State) or the user's selected slot:
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) does nothing without a live user
+    /// (outside [`m_LieAboutUser`](crate::equipment::weapon::WeaponBase::m_LieAboutUser) and the turret state), a shot adds heat to
+    /// it ([`Character::AddHeatPoints`](crate::character::character::Character::AddHeatPoints)), the
+    /// weapon-fire awareness event names its AI entity, its precision aim scales the recoil, the
+    /// bullet weapons make it the bullet's owner, and the ammunition check reads its state bits.
     pub m_User: [*mut ::std::ffi::c_void; 2],
     /// The object holding the weapon (`m_Holder`, a weak reference to its `CGameObject`
     /// subobject): a character or a vehicle. [`OnPickup`](crate::equipment::weapon::WeaponBase::OnPickup) sets it and
@@ -1976,15 +2049,21 @@ pub struct WeaponBase {
     /// ([`UpdateAttachmentTransforms`](crate::equipment::weapon::WeaponBase::UpdateAttachmentTransforms)) places its guns on the
     /// holder's bones.
     pub m_Holder: crate::types::shared_ptr::WeakPtrGameObject,
-    _field_518: [u8; 1],
+    /// Whether the weapon acts as though it had a user: while set,
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) runs without a live
+    /// [`m_User`](crate::equipment::weapon::WeaponBase::m_User).
+    pub m_LieAboutUser: bool,
     /// Whether the weapon's user is the local player. The trigger's semi-automatic rule, the fire
     /// rumble ([`RumbleFire`](crate::equipment::weapon::WeaponBase::RumbleFire)), and the fire camera shake apply only while it is
-    /// set.
+    /// set, and it picks the local-player variant of the fire effect
+    /// ([`WeaponData::PlayFireEffect`](crate::equipment::weapon::WeaponData::PlayFireEffect)). [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) sets it from
+    /// [`Character::IsLocalPlayerControlled`](crate::character::character::Character::IsLocalPlayerControlled).
     pub m_IsUserLocalPlayer: bool,
     /// Whether the weapon's user is a player, local or remote. The sniper rifle's bolt lock
     /// ([`SniperWeapon::m_HasFiredThisInput`](crate::equipment::weapon::SniperWeapon::m_HasFiredThisInput)) and the barrel recoil's empty-magazine lock-back
     /// apply only while it is set, and the rocket launcher's own reload request only while it is
-    /// clear.
+    /// clear. The bullet weapons ([`BulletWeaponBase::Fire_Projectile`](crate::equipment::weapon::BulletWeaponBase::Fire_Projectile)) pass it to each bullet and
+    /// tracer as the bullet's player flag.
     pub m_IsUserPlayer: bool,
     _field_51b: [u8; 37],
     /// The weapon's components ([`WeaponComponentBase`](crate::equipment::weapon::WeaponComponentBase)): its model parts
@@ -2200,7 +2279,7 @@ impl WeaponBase {
     /// pickup track message then completes the pickup through [`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem).
     /// A weapon with infinite pickups gives the character a copy instead. The weapon's pickup
     /// interaction calls it when it executes, and on activation for a weapon that
-    /// `ShouldAutoPickup` takes without input.
+    /// [`ShouldAutoPickup`](crate::equipment::weapon::WeaponBase::ShouldAutoPickup) takes without input.
     pub unsafe fn PickupStart(&mut self, activator: *mut crate::game::GameObject) {
         unsafe {
             let f: unsafe extern "system" fn(
@@ -2234,16 +2313,20 @@ impl WeaponBase {
         }
     }
     pub const StartUsing_ADDRESS: usize = 0x140982600;
-    /// Starts `character` using the weapon: sets the user ([`m_User`](crate::equipment::weapon::WeaponBase::m_User)) and
-    /// [`m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer) and
-    /// [`m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer), adds the weapon's camera hint for the locally
-    /// controlled character, and records the use in the statistics. A mounted gun is also put into
-    /// the user's inventory. For the player it leaves precision aim when the weapon does not
-    /// support it ([`m_SupportsPrecisionAim`](crate::equipment::weapon::WeaponBase::m_SupportsPrecisionAim)), and hands the
-    /// player's aim mode to the weapon ([`SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode)). It does not change the
-    /// weapon's state. The equip virtual ([`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip)) calls it, and the inventory's
-    /// add calls it for the hand grenade, the planted explosive, and the beacon, which are in use
-    /// without being wielded.
+    /// Starts `character` using the weapon: registers it for pre-simulation updates, sets the user
+    /// ([`m_User`](crate::equipment::weapon::WeaponBase::m_User)) and [`m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer) and
+    /// [`m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer), adds the weapon's camera hint
+    /// ([`m_CameraHash`](crate::equipment::weapon::WeaponBase::m_CameraHash), or [`m_MountedCameraHash`](crate::equipment::weapon::WeaponBase::m_MountedCameraHash)
+    /// while mounted) for the locally controlled character when that hint is not already active,
+    /// records the use in the statistics, and seeds
+    /// [`m_AimTargetPosition`](crate::equipment::weapon::WeaponBase::m_AimTargetPosition) from the user's weapon aim target
+    /// ([`Character::m_AimTargetPositionWeapons`](crate::character::character::Character::m_AimTargetPositionWeapons)).
+    /// A mounted gun is also put into the user's inventory. For the player it leaves precision aim
+    /// when the weapon does not support it ([`m_SupportsPrecisionAim`](crate::equipment::weapon::WeaponBase::m_SupportsPrecisionAim)),
+    /// which forwards normal aim to the selected weapon, and hands the player's aim mode to the
+    /// weapon ([`SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode)). It does not change the weapon's state. The equip
+    /// virtual ([`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip)) calls it, and the inventory's add calls it for the hand
+    /// grenade, the planted explosive, and the beacon, which are in use without being wielded.
     pub unsafe fn StartUsing(
         &mut self,
         character: *mut crate::character::character::Character,
@@ -2254,6 +2337,299 @@ impl WeaponBase {
                 character: *mut crate::character::character::Character,
             ) = ::std::mem::transmute(Self::StartUsing_ADDRESS);
             f(self as *mut Self as _, character)
+        }
+    }
+    pub const StopUsingBase_ADDRESS: usize = 0x140982D80;
+    /// The base implementation of the [`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing) virtual. It stops fire on
+    /// every gun if firing, stops the components, clears every gun's burst and three of its
+    /// effects, and for a locally controlled user records the statistic, removes the use camera
+    /// hint ([`m_CameraHash`](crate::equipment::weapon::WeaponBase::m_CameraHash), or
+    /// [`m_MountedCameraHash`](crate::equipment::weapon::WeaponBase::m_MountedCameraHash) while mounted) by its hash, and returns
+    /// the weapon to normal aim through [`SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode), which removes its
+    /// precision hints. A mounted gun is torn down, which removes the user's heavy slot and selects
+    /// a valid weapon. It then clears [`m_User`](crate::equipment::weapon::WeaponBase::m_User). A weapon wielding or dual-wielding
+    /// outside the [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY) slot gets
+    /// [`E_WS_HOLSTERED`](crate::equipment::weapon::WeaponState::E_WS_HOLSTERED) written to [`m_State`](crate::equipment::weapon::WeaponBase::m_State)
+    /// directly rather than through [`SetState`](crate::equipment::weapon::WeaponBase::SetState), so the state's physics-world and
+    /// visibility changes do not run. Last it clears
+    /// [`m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer),
+    /// [`m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer), and
+    /// [`m_InputBufferTimer`](crate::equipment::weapon::WeaponBase::m_InputBufferTimer). Because camera hints are keyed by hash,
+    /// it removes a hint another weapon with the same hash still uses.
+    pub unsafe fn StopUsingBase(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::StopUsingBase_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetAimModeBase_ADDRESS: usize = 0x140966E20;
+    /// The base implementation of the [`SetAimMode`](crate::equipment::weapon::WeaponBase::SetAimMode) virtual. When `aim_mode`
+    /// differs from [`m_AimMode`](crate::equipment::weapon::WeaponBase::m_AimMode) it plays the aim-in or aim-out attached-effect
+    /// usage on every gun; it stores the mode; and for a locally controlled user it adds the
+    /// precision camera hint on entering precision aim
+    /// ([`m_PrecisionCameraHash`](crate::equipment::weapon::WeaponBase::m_PrecisionCameraHash), or
+    /// [`m_ReeledHangPrecisionCameraHash`](crate::equipment::weapon::WeaponBase::m_ReeledHangPrecisionCameraHash) while the user
+    /// hangs from the grapple) and removes both on returning to normal aim.
+    pub unsafe fn SetAimModeBase(&mut self, aim_mode: crate::aim::aim::AimMode) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                aim_mode: crate::aim::aim::AimMode,
+            ) = ::std::mem::transmute(Self::SetAimModeBase_ADDRESS);
+            f(self as *mut Self as _, aim_mode)
+        }
+    }
+    pub const IsCharacterUsingWeapon_ADDRESS: usize = 0x1409654C0;
+    /// Whether `character` is the weapon's user ([`m_User`](crate::equipment::weapon::WeaponBase::m_User)).
+    /// [`Player::SetAimMode`](crate::character::player::Player::SetAimMode) forwards a mode change to the
+    /// selected weapon only while this holds for the player's character.
+    pub unsafe fn IsCharacterUsingWeapon(
+        &self,
+        character: *const crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                character: *const crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::IsCharacterUsingWeapon_ADDRESS);
+            f(self as *const Self as _, character)
+        }
+    }
+    pub const IsTargetWithinAimAngle_ADDRESS: usize = 0x140992920;
+    /// Whether a shot from `weapon_data` toward [`m_AimTargetPosition`](crate::equipment::weapon::WeaponBase::m_AimTargetPosition)
+    /// lies within the weapon's fire angle of the gun's barrel.
+    /// [`UpdateWeapon_Parallel`](crate::equipment::weapon::WeaponBase::UpdateWeapon_Parallel) consults it for every slot but the
+    /// hand grenade, the planted explosive, and the beacon, outside barrel fire-direction mode, and
+    /// a shot that fails it is cleared and buffered
+    /// ([`m_InputBufferTimer`](crate::equipment::weapon::WeaponBase::m_InputBufferTimer)).
+    pub unsafe fn IsTargetWithinAimAngle(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) -> bool = ::std::mem::transmute(Self::IsTargetWithinAimAngle_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+    pub const GetHolderInformation_ADDRESS: usize = 0x1409855F0;
+    /// The holder's details for a shot, read from [`m_Holder`](crate::equipment::weapon::WeaponBase::m_Holder). `ignore` receives
+    /// the two physics objects (`CPhysicsGameObject`) the shot's projectiles ignore: the holder's
+    /// own bodies, so a weapon without a holder gives its projectiles none. The meanings of
+    /// `p1`, `p2`, and `p3` are unverified. The bullet weapons
+    /// ([`BulletWeaponBase::Fire_Projectile`](crate::equipment::weapon::BulletWeaponBase::Fire_Projectile)) call it before each shot.
+    pub unsafe fn GetHolderInformation(
+        &mut self,
+        p1: *mut i32,
+        p2: *mut u8,
+        p3: *mut bool,
+        ignore: *mut [*const ::std::ffi::c_void; 2],
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                p1: *mut i32,
+                p2: *mut u8,
+                p3: *mut bool,
+                ignore: *mut [*const ::std::ffi::c_void; 2],
+            ) = ::std::mem::transmute(Self::GetHolderInformation_ADDRESS);
+            f(self as *mut Self as _, p1, p2, p3, ignore)
+        }
+    }
+    pub const StartUsingDeferred_ADDRESS: usize = 0x1409652A0;
+    /// Queues a start-using by `character` for the next pre-simulation update
+    /// ([`UpdatePreSim`](crate::equipment::weapon::WeaponBase::UpdatePreSim)): records [`m_DeferredUser`](crate::equipment::weapon::WeaponBase::m_DeferredUser) and
+    /// sets [`m_DeferredStartUsing`](crate::equipment::weapon::WeaponBase::m_DeferredStartUsing). The update skips it when the
+    /// weapon already has a user, and otherwise unequips the character's wielded weapon and calls
+    /// [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing). Its one caller is the mounted-weapon state task's entry.
+    pub unsafe fn StartUsingDeferred(
+        &mut self,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::StartUsingDeferred_ADDRESS);
+            f(self as *mut Self as _, character)
+        }
+    }
+    pub const EquipDeferred_ADDRESS: usize = 0x1409653B0;
+    /// Queues an equip by `character` for the next pre-simulation update, recording
+    /// [`m_DeferredEquiper`](crate::equipment::weapon::WeaponBase::m_DeferredEquiper) and setting
+    /// [`m_DeferredEquip`](crate::equipment::weapon::WeaponBase::m_DeferredEquip); not for a mounted weapon. Its one caller is
+    /// the AI's equip action, so the game never defers an equip of a player's weapon.
+    pub unsafe fn EquipDeferred(
+        &mut self,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::EquipDeferred_ADDRESS);
+            f(self as *mut Self as _, character)
+        }
+    }
+    pub const UnequipDeferred_ADDRESS: usize = 0x140950F00;
+    /// Queues an unequip for the next pre-simulation update
+    /// ([`m_DeferredUnequip`](crate::equipment::weapon::WeaponBase::m_DeferredUnequip)). The AI's unequip and switch actions, the
+    /// non-player branch of the `NWeaponUnequipTask` state task, and the graph script's
+    /// `SpawnWeapons` node ([`NGSONodes_SpawnWeapons`](crate::graph_script::NGSONodes_SpawnWeapons)) queue
+    /// it.
+    pub unsafe fn UnequipDeferred(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UnequipDeferred_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const DropDeferred_ADDRESS: usize = 0x140950F50;
+    /// Queues a drop for the next pre-simulation update
+    /// ([`m_DeferredDrop`](crate::equipment::weapon::WeaponBase::m_DeferredDrop)), for a weapon not already
+    /// [`E_WS_DROPPED`](crate::equipment::weapon::WeaponState::E_WS_DROPPED). Its one caller is
+    /// [`Inventory::DropWeapon`](crate::character::inventory::Inventory::DropWeapon).
+    pub unsafe fn DropDeferred(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DropDeferred_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdatePreSim_ADDRESS: usize = 0x1409932C0;
+    /// The weapon's pre-simulation update, the `CGameObject::UpdatePreSim` override, run while the
+    /// weapon is registered ([`m_RequiresPreSimUpdates`](crate::equipment::weapon::WeaponBase::m_RequiresPreSimUpdates)).
+    /// `game_object` is the weapon's `CGameObject` subobject
+    /// ([`GAME_OBJECT_BASE_OFFSET`](crate::equipment::weapon::WeaponBase::GAME_OBJECT_BASE_OFFSET)), not the start of the weapon.
+    /// It runs each gun's pre-simulation update ([`WeaponData::UpdatePreSim`](crate::equipment::weapon::WeaponData::UpdatePreSim)) and the components',
+    /// applies a deferred physical recoil
+    /// ([`m_DeferredPhysicalRecoil`](crate::equipment::weapon::WeaponBase::m_DeferredPhysicalRecoil)) to the user's body, and
+    /// broadcasts a pending weapon-fire awareness event
+    /// ([`m_DeferredAwarenessBroadcast`](crate::equipment::weapon::WeaponBase::m_DeferredAwarenessBroadcast)) at the muzzle of the
+    /// gun that fired last ([`m_LastWeaponToFire`](crate::equipment::weapon::WeaponBase::m_LastWeaponToFire)) with the user's AI
+    /// entity ([`Character::GetAiEntityHandle`](crate::character::character::Character::GetAiEntityHandle))
+    /// as its source. With a user, the guns keep their full animation detail while the user's
+    /// [`m_LodFlags`](crate::character::character::Character::m_LodFlags) are clear, and drop it beyond a
+    /// middle distance from the camera otherwise. Then the deferred operations run, in this order:
+    ///
+    /// - [`m_DeferredDrop`](crate::equipment::weapon::WeaponBase::m_DeferredDrop): [`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop);
+    /// - [`m_DeferredUnequip`](crate::equipment::weapon::WeaponBase::m_DeferredUnequip): [`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip), and
+    ///   [`SkipRenderInterpolationForOneFrame`](crate::equipment::weapon::WeaponBase::SkipRenderInterpolationForOneFrame) for every
+    ///   gun;
+    /// - [`m_DeferredEquip`](crate::equipment::weapon::WeaponBase::m_DeferredEquip): [`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip) with
+    ///   [`m_DeferredEquiper`](crate::equipment::weapon::WeaponBase::m_DeferredEquiper), which ends the update;
+    /// - [`m_DeferredStartUsing`](crate::equipment::weapon::WeaponBase::m_DeferredStartUsing) together with
+    ///   [`m_DeferredStopUsing`](crate::equipment::weapon::WeaponBase::m_DeferredStopUsing): both are cleared, with
+    ///   [`m_DeferredUser`](crate::equipment::weapon::WeaponBase::m_DeferredUser);
+    /// - a start-using alone, for a weapon without a user: [`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip) on the
+    ///   deferred user's wielded weapon, then [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing);
+    /// - a stop-using alone, for a weapon with a user: [`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing).
+    pub unsafe fn UpdatePreSim(
+        game_object: *mut ::std::ffi::c_void,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePreSim_ADDRESS);
+            f(game_object, context)
+        }
+    }
+    pub const OnEquipBase_ADDRESS: usize = 0x140991580;
+    /// The base implementation of the [`OnEquip`](crate::equipment::weapon::WeaponBase::OnEquip) virtual.
+    pub unsafe fn OnEquipBase(
+        &mut self,
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::OnEquipBase_ADDRESS);
+            f(self as *mut Self as _, character)
+        }
+    }
+    pub const OnUnequipBase_ADDRESS: usize = 0x140982040;
+    /// The base implementation of the [`OnUnequip`](crate::equipment::weapon::WeaponBase::OnUnequip) virtual.
+    pub unsafe fn OnUnequipBase(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::OnUnequipBase_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const Despawn_ADDRESS: usize = 0x140965210;
+    /// Despawns the weapon (the weapon's `CGameObject::Despawn` override): unequips it, hides it,
+    /// puts its bodies into the physics world, sets its spawn ranking so the spawn system's
+    /// despawn takes it, and stops its fire. The object itself lives on while another strong
+    /// reference holds it, hidden and in the world.
+    /// [`Inventory::DespawnWeapon`](crate::character::inventory::Inventory::DespawnWeapon) calls it.
+    pub unsafe fn Despawn(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Despawn_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const ShouldAutoPickup_ADDRESS: usize = 0x140981C10;
+    /// The weapon pickup interaction's automatic ammunition credit, called on activation with the
+    /// activating object. A power-core weapon returns false. A hand grenade returns true while
+    /// the activator's grenade reserve is below its cap, and the interaction then starts the
+    /// pickup ([`PickupStart`](crate::equipment::weapon::WeaponBase::PickupStart)). Any other weapon that carries stored rounds
+    /// ([`m_StoredNonMagazineAmmo`](crate::equipment::weapon::WeaponBase::m_StoredNonMagazineAmmo)), when the activator's
+    /// inventory holds a weapon of the same ammunition type
+    /// ([`Inventory::HasWeaponWithAmmoType`](crate::character::inventory::Inventory::HasWeaponWithAmmoType))
+    /// and neither the gun nor the character has unlimited ammunition, gives the rounds to the
+    /// reserve ([`Inventory::AddAmmo`](crate::character::inventory::Inventory::AddAmmo)), shows the
+    /// ammunition pickup on the HUD, sends the picked-up-ammunition event, keeps what did not fit,
+    /// and returns false.
+    pub unsafe fn ShouldAutoPickup(
+        &mut self,
+        activator: *mut crate::game::GameObject,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                activator: *mut crate::game::GameObject,
+            ) -> bool = ::std::mem::transmute(Self::ShouldAutoPickup_ADDRESS);
+            f(self as *mut Self as _, activator)
+        }
+    }
+    pub const IsWieldedInLeftHand_ADDRESS: usize = 0x140958F50;
+    /// Whether the weapon's first gun sits on the left hand: its
+    /// [`WeaponData::m_lBoneAttachementPerWeaponState`](crate::equipment::weapon::WeaponData::m_lBoneAttachementPerWeaponState) entry for the current
+    /// [`m_State`](crate::equipment::weapon::WeaponBase::m_State) is the left-hand attach bone. A state task that moves the gun to
+    /// the left hand (`NSetWeaponPredefinedBoneTask`'s `clear_right_hand`) makes it true. It never
+    /// looks at a second gun. The animation condition
+    /// [`WeaponWieldedInLeftHand`](crate::equipment::weapon_animation::WeaponWieldedInLeftHand) and the
+    /// vertical aim blend ([`VerticalAimBlendState::UpdateSamplers`](crate::aim::aim::VerticalAimBlendState::UpdateSamplers))
+    /// read it.
+    pub unsafe fn IsWieldedInLeftHand(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsWieldedInLeftHand_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetNumRecoilAnimationNeeded_ADDRESS: usize = 0x140856EB0;
+    /// The number of recoil samplers the aim blend drives for the weapon: one per gun, and one for
+    /// a non-player's wielded heavy weapon.
+    pub unsafe fn GetNumRecoilAnimationNeeded(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetNumRecoilAnimationNeeded_ADDRESS,
+            );
+            f(self as *const Self as _)
         }
     }
     pub const GetGripPosition_ADDRESS: usize = 0x140966840;
@@ -2334,7 +2710,23 @@ impl WeaponBase {
     /// on `weapon_data`, decrements the forced-fire and projectile-offset counts, and then advances
     /// the fire-point cursor of the gun at [`m_NextWeaponToFire`](crate::equipment::weapon::WeaponBase::m_NextWeaponToFire) and the
     /// gun index itself (held on the first gun for a dual-wield-slot weapon in the wielding
-    /// state).
+    /// state). None of it reads [`m_State`](crate::equipment::weapon::WeaponBase::m_State) or the user's selected slot.
+    ///
+    /// In detail: it consumes a round ([`ConsumeAmmo`](crate::equipment::weapon::WeaponBase::ConsumeAmmo)) when the weapon is
+    /// locally owned and registers the weapon for pre-simulation updates; it scales the recoil for
+    /// the first shot and, while the user's player is in precision aim
+    /// ([`Player::m_AimMode`](crate::character::player::Player::m_AimMode)), by the precision factor; it
+    /// plays the fire effect ([`WeaponData::PlayFireEffect`](crate::equipment::weapon::WeaponData::PlayFireEffect)); for the local player it logs the
+    /// shot's statistics; it sets [`m_DeferredPhysicalRecoil`](crate::equipment::weapon::WeaponBase::m_DeferredPhysicalRecoil)
+    /// when [`m_PhysicalRecoilStrength`](crate::equipment::weapon::WeaponBase::m_PhysicalRecoilStrength) is non-zero and
+    /// [`m_DeferredAwarenessBroadcast`](crate::equipment::weapon::WeaponBase::m_DeferredAwarenessBroadcast) on the first shot of a
+    /// pull; it runs [`RumbleFire`](crate::equipment::weapon::WeaponBase::RumbleFire) and the fire camera shake; and, unless
+    /// [`m_NoHeatOnFiring`](crate::equipment::weapon::WeaponBase::m_NoHeatOnFiring) is set, the user's faction is hostile
+    /// ([`GetRelation`](crate::faction::GetRelation)) to the default faction, or the weapon is the
+    /// planted explosive, it adds heat to the user
+    /// ([`Character::AddHeatPoints`](crate::character::character::Character::AddHeatPoints)) with the heat
+    /// manager's firing tuning ([`HeatManager::GetHeatPointData`](crate::heat_manager::HeatManager::GetHeatPointData)).
+    /// In a restricted area a user in a vehicle a player drives also heats the local player.
     pub unsafe fn Fire_ProjectileBase(
         &mut self,
         weapon_data: *mut crate::equipment::weapon::WeaponData,
@@ -2389,6 +2781,35 @@ impl WeaponBase {
     /// once per pull. It goes on to cancel a reload that should not continue, clear
     /// `should_try_to_fire` while the holder may not fire, and start a predicted reload of a
     /// partly empty magazine.
+    ///
+    /// It runs on every tick for the gun being updated, whatever the input, and its reads and
+    /// requests are the user's, not the weapon's:
+    ///
+    /// - the shot is cleared while the user reloads
+    ///   ([`Character::IsReloading`](crate::character::character::Character::IsReloading)), draws or
+    ///   holsters
+    ///   ([`Character::IsDrawingOrHolsteringWeapon`](crate::character::character::Character::IsDrawingOrHolsteringWeapon)),
+    ///   or has firing blocked
+    ///   ([`Character::IsNoFiringSet`](crate::character::character::Character::IsNoFiringSet)), so the
+    ///   user's reload, draw, or holster of its wielded weapon blocks every weapon it uses;
+    /// - the reload it starts for an empty magazine, for a magazine that is out
+    ///   ([`m_WeaponIsWithoutMagazine`](crate::equipment::weapon::WeaponBase::m_WeaponIsWithoutMagazine)), and for the predicted
+    ///   reload goes through
+    ///   [`Character::StartReloadingWieldingWeapon`](crate::character::character::Character::StartReloadingWieldingWeapon),
+    ///   which reloads the user's wielded weapon rather than this one (an
+    ///   [`E_RELOAD_NO_ANIMATION`](crate::equipment::weapon::ReloadType::E_RELOAD_NO_ANIMATION) weapon times its own reload
+    ///   instead);
+    /// - for a weapon whose [`m_ReloadType`](crate::equipment::weapon::WeaponBase::m_ReloadType) is not
+    ///   [`E_RELOAD_MAGAZINE`](crate::equipment::weapon::ReloadType::E_RELOAD_MAGAZINE), outside the hand-grenade,
+    ///   planted-explosive, and beacon slots, it calls
+    ///   [`Character::CancelReload`](crate::character::character::Character::CancelReload) on the user on
+    ///   every tick [`m_KeepReloading`](crate::equipment::weapon::WeaponBase::m_KeepReloading) is clear, which cancels whatever
+    ///   reload the user is playing;
+    /// - the predicted reload needs a local user, no fire, a magazine below
+    ///   [`m_PredictedReloadAmmunitionLimit`](crate::equipment::weapon::WeaponBase::m_PredictedReloadAmmunitionLimit), more than
+    ///   [`m_PredictedReloadTime`](crate::equipment::weapon::WeaponBase::m_PredictedReloadTime) without fire input,
+    ///   [`CanReload`](crate::equipment::weapon::WeaponBase::CanReload), and
+    ///   [`Character::IsPredictedReloadingAllowed`](crate::character::character::Character::IsPredictedReloadingAllowed).
     pub unsafe fn CheckIfReloadShouldBeTriggeredBase(
         &mut self,
         weapon_data: *mut crate::equipment::weapon::WeaponData,
@@ -2458,6 +2879,16 @@ impl WeaponBase {
     /// only the burst counter ([`WeaponData::m_BurstShotsLeft`](crate::equipment::weapon::WeaponData::m_BurstShotsLeft)) is the gun's. A shot it allows
     /// calls [`Fire_Start`](crate::equipment::weapon::WeaponBase::Fire_Start) once, on `weapon_data` alone; with no shot while
     /// firing, it calls [`Fire_Stop`](crate::equipment::weapon::WeaponBase::Fire_Stop) on every gun.
+    ///
+    /// It does nothing at all unless the weapon has a live user ([`m_User`](crate::equipment::weapon::WeaponBase::m_User)),
+    /// [`m_LieAboutUser`](crate::equipment::weapon::WeaponBase::m_LieAboutUser) is set, or the weapon is in the
+    /// [`E_WS_TURRET`](crate::equipment::weapon::WeaponState::E_WS_TURRET) state; beyond that it reads neither
+    /// [`m_State`](crate::equipment::weapon::WeaponBase::m_State) nor the user's selected slot, so a holstered weapon with a user
+    /// fires. The semi-automatic rule applies only while
+    /// [`m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer) is set. The wall block applies to the
+    /// dual-wield, two-handed, and special slots. The aim-angle check is
+    /// [`IsTargetWithinAimAngle`](crate::equipment::weapon::WeaponBase::IsTargetWithinAimAngle), and the ammunition check
+    /// ([`CheckIfReloadShouldBeTriggered`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggered)) follows it.
     pub unsafe fn UpdateWeapon_Parallel(
         &mut self,
         dt: f32,
@@ -2605,7 +3036,9 @@ impl WeaponBase {
     }
     pub const GetMagazineSize_ADDRESS: usize = 0x140958690;
     /// Returns the tuning's magazine size ([`WeaponTuning::m_magazine_size`](crate::equipment::weapon::WeaponTuning::m_magazine_size)), or zero without
-    /// tuning.
+    /// tuning. [`Character::PickUpWeapon`](crate::character::character::Character::PickUpWeapon) and
+    /// [`Inventory::WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned) fill the
+    /// magazine to it. The disassembler mislabels it `shared_ptr<CWeaponBase>::operator->`.
     pub unsafe fn GetMagazineSize(&self) -> i32 {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
@@ -2792,7 +3225,19 @@ impl WeaponBase {
     /// [`DUAL_WIELDER_BLACKBOARD_VALUE`](crate::equipment::weapon::WeaponBase::DUAL_WIELDER_BLACKBOARD_VALUE). Any other
     /// character wields the dual-wield slot, firing and showing its first gun alone. It plays
     /// no act: the draw animation comes from the character's draw, not from here. It does
-    /// nothing for a dead character. The inventory's add calls it with the equipping mode.
+    /// nothing for a dead character. The base implementation is
+    /// [`OnEquipBase`](crate::equipment::weapon::WeaponBase::OnEquipBase); the mortar, rocket launcher, planted explosive, and
+    /// fire-leech launcher override it.
+    ///
+    /// Every equip the game makes runs it: the inventory's add with an equipping mode
+    /// ([`Inventory::AddWeapon`](crate::character::inventory::Inventory::AddWeapon)), the draw clip's
+    /// equip track message ([`HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage)), the instant
+    /// branch of the `NWeaponEquipTask` state task
+    /// ([`NWeaponEquipTask_OnEnter`](crate::equipment::weapon_animation::NWeaponEquipTask_OnEnter)),
+    /// the exit of the weapon-state task
+    /// ([`NSetWeaponStateTask_OnExit`](crate::equipment::weapon_animation::NSetWeaponStateTask_OnExit)),
+    /// and the deferred equip ([`EquipDeferred`](crate::equipment::weapon::WeaponBase::EquipDeferred)), which only the AI
+    /// queues.
     pub unsafe fn OnEquip(
         &mut self,
         character: *mut crate::character::character::Character,
@@ -2805,7 +3250,18 @@ impl WeaponBase {
     /// Unequips the weapon from its user: cancels the user's reload, sets the holstered state
     /// (which takes its bodies out of the physics world) unless it is mounted, drops it through
     /// the user's inventory instead when it is in the heavy slot, and then stops using it
-    /// ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)). It does nothing without a user.
+    /// ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)). It does nothing without a user. The base
+    /// implementation is [`OnUnequipBase`](crate::equipment::weapon::WeaponBase::OnUnequipBase); the sun gun overrides it.
+    ///
+    /// Every unequip the game makes runs it: the `NWeaponUnequipTask` state task
+    /// ([`NWeaponUnequipTask_OnEnter`](crate::equipment::weapon_animation::NWeaponUnequipTask_OnEnter)),
+    /// [`Character::ForceNeutralState`](crate::character::character::Character::ForceNeutralState),
+    /// the holster clip's unequip track message
+    /// ([`HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage)), the inventory's add when it equips
+    /// another weapon, the pickup ([`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem)), the respawn hand-over
+    /// ([`Inventory::WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned)),
+    /// [`Despawn`](crate::equipment::weapon::WeaponBase::Despawn), the drop ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)), and the deferred unequip
+    /// ([`UnequipDeferred`](crate::equipment::weapon::WeaponBase::UnequipDeferred)).
     pub unsafe fn OnUnequip(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).OnUnequip).read();
@@ -2834,9 +3290,9 @@ impl WeaponBase {
         }
     }
     /// Stops the user using the weapon: stops its fire, its effects, and its components, clears
-    /// the user, and, when the weapon is wielding or dual-wielding outside the heavy slot, sets
-    /// the holstered state. A mounted gun also leaves its user's inventory, which then selects
-    /// another weapon.
+    /// the user, and, when the weapon is wielding or dual-wielding outside the heavy slot,
+    /// holsters it. A mounted gun also leaves its user's inventory, which then selects another
+    /// weapon. The base implementation is [`StopUsingBase`](crate::equipment::weapon::WeaponBase::StopUsingBase).
     pub unsafe fn StopUsing(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).StopUsing).read();
@@ -2983,8 +3439,12 @@ impl WeaponBase {
             f(self as *const Self as _)
         }
     }
-    /// Applies the holder's aim mode: normal or precision aim. `CPlayer::SetAimMode` calls it
-    /// after changing the player's aim mode.
+    /// Applies the holder's aim mode: normal or precision aim. The base implementation is
+    /// [`SetAimModeBase`](crate::equipment::weapon::WeaponBase::SetAimModeBase); the sniper rifle
+    /// ([`SniperWeapon::SetAimMode`](crate::equipment::weapon::SniperWeapon::SetAimMode)) and the mortar override it.
+    /// [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) calls it with the player's mode, and
+    /// [`Player::SetAimMode`](crate::character::player::Player::SetAimMode) calls it after changing
+    /// the player's aim mode, on the selected weapon only.
     pub unsafe fn SetAimMode(&mut self, aim_mode: crate::aim::aim::AimMode) {
         unsafe {
             let f = (&raw const (*self.vftable()).SetAimMode).read();
@@ -3227,7 +3687,19 @@ pub struct WeaponBaseVftable {
     /// [`DUAL_WIELDER_BLACKBOARD_VALUE`](crate::equipment::weapon::WeaponBase::DUAL_WIELDER_BLACKBOARD_VALUE). Any other
     /// character wields the dual-wield slot, firing and showing its first gun alone. It plays
     /// no act: the draw animation comes from the character's draw, not from here. It does
-    /// nothing for a dead character. The inventory's add calls it with the equipping mode.
+    /// nothing for a dead character. The base implementation is
+    /// [`OnEquipBase`](crate::equipment::weapon::WeaponBase::OnEquipBase); the mortar, rocket launcher, planted explosive, and
+    /// fire-leech launcher override it.
+    ///
+    /// Every equip the game makes runs it: the inventory's add with an equipping mode
+    /// ([`Inventory::AddWeapon`](crate::character::inventory::Inventory::AddWeapon)), the draw clip's
+    /// equip track message ([`HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage)), the instant
+    /// branch of the `NWeaponEquipTask` state task
+    /// ([`NWeaponEquipTask_OnEnter`](crate::equipment::weapon_animation::NWeaponEquipTask_OnEnter)),
+    /// the exit of the weapon-state task
+    /// ([`NSetWeaponStateTask_OnExit`](crate::equipment::weapon_animation::NSetWeaponStateTask_OnExit)),
+    /// and the deferred equip ([`EquipDeferred`](crate::equipment::weapon::WeaponBase::EquipDeferred)), which only the AI
+    /// queues.
     pub OnEquip: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
         character: *mut crate::character::character::Character,
@@ -3235,7 +3707,18 @@ pub struct WeaponBaseVftable {
     /// Unequips the weapon from its user: cancels the user's reload, sets the holstered state
     /// (which takes its bodies out of the physics world) unless it is mounted, drops it through
     /// the user's inventory instead when it is in the heavy slot, and then stops using it
-    /// ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)). It does nothing without a user.
+    /// ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)). It does nothing without a user. The base
+    /// implementation is [`OnUnequipBase`](crate::equipment::weapon::WeaponBase::OnUnequipBase); the sun gun overrides it.
+    ///
+    /// Every unequip the game makes runs it: the `NWeaponUnequipTask` state task
+    /// ([`NWeaponUnequipTask_OnEnter`](crate::equipment::weapon_animation::NWeaponUnequipTask_OnEnter)),
+    /// [`Character::ForceNeutralState`](crate::character::character::Character::ForceNeutralState),
+    /// the holster clip's unequip track message
+    /// ([`HandleTrackMessage`](crate::equipment::weapon::WeaponBase::HandleTrackMessage)), the inventory's add when it equips
+    /// another weapon, the pickup ([`PickupItem`](crate::equipment::weapon::WeaponBase::PickupItem)), the respawn hand-over
+    /// ([`Inventory::WeaponSpawned`](crate::character::inventory::Inventory::WeaponSpawned)),
+    /// [`Despawn`](crate::equipment::weapon::WeaponBase::Despawn), the drop ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)), and the deferred unequip
+    /// ([`UnequipDeferred`](crate::equipment::weapon::WeaponBase::UnequipDeferred)).
     pub OnUnequip: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
@@ -3258,9 +3741,9 @@ pub struct WeaponBaseVftable {
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
     /// Stops the user using the weapon: stops its fire, its effects, and its components, clears
-    /// the user, and, when the weapon is wielding or dual-wielding outside the heavy slot, sets
-    /// the holstered state. A mounted gun also leaves its user's inventory, which then selects
-    /// another weapon.
+    /// the user, and, when the weapon is wielding or dual-wielding outside the heavy slot,
+    /// holsters it. A mounted gun also leaves its user's inventory, which then selects another
+    /// weapon. The base implementation is [`StopUsingBase`](crate::equipment::weapon::WeaponBase::StopUsingBase).
     pub StopUsing: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
@@ -3375,8 +3858,12 @@ pub struct WeaponBaseVftable {
     pub IsWeaponAiming: unsafe extern "system" fn(
         this: *const crate::equipment::weapon::WeaponBase,
     ) -> bool,
-    /// Applies the holder's aim mode: normal or precision aim. `CPlayer::SetAimMode` calls it
-    /// after changing the player's aim mode.
+    /// Applies the holder's aim mode: normal or precision aim. The base implementation is
+    /// [`SetAimModeBase`](crate::equipment::weapon::WeaponBase::SetAimModeBase); the sniper rifle
+    /// ([`SniperWeapon::SetAimMode`](crate::equipment::weapon::SniperWeapon::SetAimMode)) and the mortar override it.
+    /// [`StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing) calls it with the player's mode, and
+    /// [`Player::SetAimMode`](crate::character::player::Player::SetAimMode) calls it after changing
+    /// the player's aim mode, on the selected weapon only.
     pub SetAimMode: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
         aim_mode: crate::aim::aim::AimMode,
@@ -3929,6 +4416,21 @@ impl WeaponData {
                 Self::AddToWorld_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const PlayFireEffect_ADDRESS: usize = 0x140959A40;
+    /// Plays the gun's fire effect (the muzzle flash and the shot sound) for one shot.
+    /// `first_shot` is the weapon's [`WeaponBase::m_IsFirstShot`](crate::equipment::weapon::WeaponBase::m_IsFirstShot) and `local_player` its
+    /// [`WeaponBase::m_IsUserLocalPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserLocalPlayer), which picks the local-player variant of the effect.
+    /// [`WeaponBase::Fire_ProjectileBase`](crate::equipment::weapon::WeaponBase::Fire_ProjectileBase) calls it on every shot.
+    pub unsafe fn PlayFireEffect(&mut self, first_shot: bool, local_player: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                first_shot: bool,
+                local_player: bool,
+            ) = ::std::mem::transmute(Self::PlayFireEffect_ADDRESS);
+            f(self as *mut Self as _, first_shot, local_player)
         }
     }
     pub const GetWorldMatrixT1_ADDRESS: usize = 0x1409601E0;
