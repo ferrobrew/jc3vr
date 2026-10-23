@@ -2111,6 +2111,23 @@ impl WeaponBase {
             f()
         }
     }
+    pub const GetGrapplingModeWeapon_ADDRESS: usize = 0x1408CEF90;
+    /// The weapon's override of
+    /// [`PhysicsGameObject::GetGrapplingMode`](crate::physics::PhysicsGameObject::GetGrapplingMode):
+    /// [`E_GM_ReelInNoAttach`](crate::physics::GrapplingMode::E_GM_ReelInNoAttach), so the grapple counts
+    /// a weapon it hits as grapplable. Neither the player's aim ray nor a wire end's casts hit a
+    /// weapon's body, whose [`WEAPONS`](crate::physics::PfxLayer::WEAPONS) layer does not collide with their
+    /// query layer.
+    pub unsafe fn GetGrapplingModeWeapon(&self) -> crate::physics::GrapplingMode {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> crate::physics::GrapplingMode = ::std::mem::transmute(
+                Self::GetGrapplingModeWeapon_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const HasUnlimitedAmmo_ADDRESS: usize = 0x140964F90;
     /// Whether the weapon's rounds come without limit: true when the holder has
     /// [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo), the holder is not a

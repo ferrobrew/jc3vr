@@ -333,18 +333,24 @@ impl PlayerAimControl {
     /// [`m_RayTypeSetting`](crate::aim::aim::PlayerAimControl::m_RayTypeSetting) and range. `collector` is the ray's
     /// `CPlayerAimRaycastFilterCacheFirstHoleyHitAndMinDistanceHit` filter and `non_holey_info`
     /// its `CCastRayInfo`.
+    /// For a slot's hit object that is a weapon with a holder, the holder stands in; the slot's
+    /// target comes only from a live character, a vehicle, a vehicle part, a rigid object, or a
+    /// destruction object; and for the grapple slot it sets
+    /// [`m_DirectGrapplePosIsGrapplable`](crate::aim::aim::PlayerAimControl::m_DirectGrapplePosIsGrapplable) from the object's
+    /// [`GetGrapplingMode`](crate::physics::PhysicsGameObject::GetGrapplingMode). Its one caller is
+    /// [`UpdateDirectAim`](crate::aim::aim::PlayerAimControl::UpdateDirectAim).
     pub unsafe fn CheckDirectTargets(
         &mut self,
-        collector: *const ::std::ffi::c_void,
-        non_holey_info: *mut ::std::ffi::c_void,
+        collector: *const crate::aim::aim::PlayerAimRaycastCollector,
+        non_holey_info: *mut crate::physics::CastRayInfo,
         ray_start: *const crate::types::math::Vector3,
         ray_dir: *const crate::types::math::Vector3,
     ) {
         unsafe {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
-                collector: *const ::std::ffi::c_void,
-                non_holey_info: *mut ::std::ffi::c_void,
+                collector: *const crate::aim::aim::PlayerAimRaycastCollector,
+                non_holey_info: *mut crate::physics::CastRayInfo,
                 ray_start: *const crate::types::math::Vector3,
                 ray_dir: *const crate::types::math::Vector3,
             ) = ::std::mem::transmute(Self::CheckDirectTargets_ADDRESS);
@@ -529,6 +535,137 @@ impl std::convert::AsRef<PlayerAimControl> for PlayerAimControl {
 }
 impl std::convert::AsMut<PlayerAimControl> for PlayerAimControl {
     fn as_mut(&mut self) -> &mut PlayerAimControl {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// The player aim's ray collector (`CPlayerAimRaycastFilterCacheFirstHoleyHitAndMinDistanceHit`):
+/// a [`PlayerAimRaycastFilter`](crate::aim::aim::PlayerAimRaycastFilter) that also records the first hit on holey (see-through) geometry and
+/// the hit nearer than the minimum-distance fraction, beside the closest hit the query writes to
+/// its [`CastRayInfo`](crate::physics::CastRayInfo). [`PlayerAimControl::CheckDirectTargets`](crate::aim::aim::PlayerAimControl::CheckDirectTargets) picks one of the three per slot by
+/// [`m_RayTypeSetting`](crate::aim::aim::PlayerAimControl::m_RayTypeSetting).
+pub struct PlayerAimRaycastCollector {
+    pub base: crate::aim::aim::PlayerAimRaycastFilter,
+    /// Whether a holey hit was recorded. A slot that stops at holey geometry
+    /// ([`HIT_HOLEY`](crate::aim::aim::RayType::HIT_HOLEY)) takes the query's closest hit without one.
+    pub m_HasHoleyHit: bool,
+    _field_d1: [u8; 7],
+    /// The holey hit's object.
+    pub m_HoleyHitObject: *mut ::std::ffi::c_void,
+    /// The holey hit's fraction of the ray.
+    pub m_HoleyHitFraction: f32,
+    pub m_HoleyHitNormal: crate::types::math::Vector3,
+    /// Whether a hit nearer than the minimum-distance fraction was recorded.
+    pub m_HasMinDistanceHit: bool,
+    _field_f1: [u8; 7],
+    pub m_MinDistanceHitObject: *mut ::std::ffi::c_void,
+    _field_100: [u8; 4],
+    pub m_MinDistanceHitFraction: f32,
+    pub m_MinDistanceHitNormal: crate::types::math::Vector3,
+    _field_114: [u8; 12],
+}
+fn _PlayerAimRaycastCollector_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x120], PlayerAimRaycastCollector>([0u8; 0x120]);
+    }
+    unreachable!()
+}
+impl PlayerAimRaycastCollector {
+    /// `CRaycastFilter::CRaycastFilter`: constructs the filter with its two material masks, the
+    /// instance to ignore (may be null), and the world (null selects [`PhysicsSystem::m_World`](crate::physics::PhysicsSystem::m_World)).
+    pub unsafe fn Construct(
+        &mut self,
+        ignore_material_mask: crate::physics::MaterialPassFlags,
+        force_material_mask: crate::physics::MaterialPassFlags,
+        ignore_instance: *mut ::std::ffi::c_void,
+        world: *const crate::physics::hknpWorld,
+    ) -> *mut crate::physics::RaycastFilter {
+        unsafe {
+            self.base
+                .Construct(
+                    ignore_material_mask,
+                    force_material_mask,
+                    ignore_instance,
+                    world,
+                )
+        }
+    }
+    /// Sets or clears [`BULLET_PASS`](crate::physics::MaterialPassFlags::BULLET_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreBulletPass(&mut self, ignore: bool) {
+        unsafe { self.base.SetIgnoreBulletPass(ignore) }
+    }
+    /// Sets or clears [`RAY_PASS`](crate::physics::MaterialPassFlags::RAY_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreRayPass(&mut self, ignore: bool) {
+        unsafe { self.base.SetIgnoreRayPass(ignore) }
+    }
+    /// Sets or clears [`CAMERA_PASS`](crate::physics::MaterialPassFlags::CAMERA_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreCameraPass(&mut self, ignore: bool) {
+        unsafe { self.base.SetIgnoreCameraPass(ignore) }
+    }
+    /// `CPlayerAimRaycastFilter::CPlayerAimRaycastFilter`: constructs the base
+    /// ([`RaycastFilter::Construct`](crate::physics::RaycastFilter::Construct) with the physics system's
+    /// world), clears [`m_IgnoreObject`](crate::aim::aim::PlayerAimRaycastFilter::m_IgnoreObject), and sets the virtual table.
+    pub unsafe fn ConstructPlayerAim(
+        &mut self,
+        ignore_material_mask: crate::physics::MaterialPassFlags,
+        force_material_mask: crate::physics::MaterialPassFlags,
+        ignore_instance: *mut ::std::ffi::c_void,
+    ) -> *mut crate::aim::aim::PlayerAimRaycastFilter {
+        unsafe {
+            self.base
+                .ConstructPlayerAim(
+                    ignore_material_mask,
+                    force_material_mask,
+                    ignore_instance,
+                )
+        }
+    }
+}
+impl PlayerAimRaycastCollector {
+    /// The address of the collector's virtual table.
+    pub const VFTABLE: u64 = 5406822216;
+}
+impl std::convert::AsRef<crate::aim::aim::PlayerAimRaycastFilter>
+for PlayerAimRaycastCollector {
+    fn as_ref(&self) -> &crate::aim::aim::PlayerAimRaycastFilter {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::aim::aim::PlayerAimRaycastFilter>
+for PlayerAimRaycastCollector {
+    fn as_mut(&mut self) -> &mut crate::aim::aim::PlayerAimRaycastFilter {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<crate::physics::IgnoreMaterialFlagFilter>
+for PlayerAimRaycastCollector {
+    fn as_ref(&self) -> &crate::physics::IgnoreMaterialFlagFilter {
+        &self.base.base
+    }
+}
+impl std::convert::AsMut<crate::physics::IgnoreMaterialFlagFilter>
+for PlayerAimRaycastCollector {
+    fn as_mut(&mut self) -> &mut crate::physics::IgnoreMaterialFlagFilter {
+        &mut self.base.base
+    }
+}
+impl std::convert::AsRef<crate::physics::RaycastFilter> for PlayerAimRaycastCollector {
+    fn as_ref(&self) -> &crate::physics::RaycastFilter {
+        &self.base.base.base
+    }
+}
+impl std::convert::AsMut<crate::physics::RaycastFilter> for PlayerAimRaycastCollector {
+    fn as_mut(&mut self) -> &mut crate::physics::RaycastFilter {
+        &mut self.base.base.base
+    }
+}
+impl std::convert::AsRef<PlayerAimRaycastCollector> for PlayerAimRaycastCollector {
+    fn as_ref(&self) -> &PlayerAimRaycastCollector {
+        self
+    }
+}
+impl std::convert::AsMut<PlayerAimRaycastCollector> for PlayerAimRaycastCollector {
+    fn as_mut(&mut self) -> &mut PlayerAimRaycastCollector {
         self
     }
 }

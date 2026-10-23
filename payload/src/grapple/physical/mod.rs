@@ -463,7 +463,7 @@ unsafe fn read_hook() -> Option<HookRead> {
         state: hook.m_State,
         active_wire: !hook.m_ActiveWire.px.is_null(),
         firing: hook.m_WaitingForGrappleFire || hook.m_WaitingForTetherFire,
-        object_target: !hook.m_HookFireInfo.m_TargetGameObject[0].is_null(),
+        object_target: !hook.m_HookFireInfo.m_TargetGameObject.px.is_null(),
         tethers: u32::try_from(unsafe { hook.GetNumDualTethers() }).unwrap_or(0),
         tension: if tension.is_finite() { tension } else { 0.0 },
         squeezing: hook.m_IsSqueezingDualTethers,

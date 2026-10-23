@@ -251,6 +251,21 @@ fn _GameMaterialId_size_check() {
     }
     unreachable!()
 }
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// How the grapple treats a physics game object (`CPhysicsGameObject::EGrapplingMode`), from
+/// [`PhysicsGameObject::GetGrapplingMode`](crate::physics::PhysicsGameObject::GetGrapplingMode).
+pub enum GrapplingMode {
+    E_GM_Normal = 0isize as _,
+    E_GM_ReelInNoAttach = 1isize as _,
+    E_GM_UnGrappable = 2isize as _,
+}
+fn _GrapplingMode_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], GrapplingMode>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(16))]
 /// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
 pub struct IgnoreMaterialFlagFilter {
@@ -1170,6 +1185,17 @@ impl PhysicsGameObject {
             f(self as *mut Self as _)
         }
     }
+    /// How the grapple treats the object; see [`GrapplingMode`](crate::physics::GrapplingMode). The player aim reads it for
+    /// the grapple slot's direct hit
+    /// ([`PlayerAimControl::m_DirectGrapplePosIsGrapplable`](crate::aim::aim::PlayerAimControl::m_DirectGrapplePosIsGrapplable)),
+    /// and a wire end's attach refuses an ungrapplable object
+    /// ([`WireEnd::SetupProxyForAttachment`](crate::equipment::wire_end::WireEnd::SetupProxyForAttachment)).
+    pub unsafe fn GetGrapplingMode(&self) -> crate::physics::GrapplingMode {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetGrapplingMode).read();
+            f(self as *const Self as _)
+        }
+    }
     /// Takes the damage in `msg` and returns the damage dealt. Each kind of object overrides
     /// it: a character (`CCharacter::OnDamage`) takes the health, sends the hit effects, and
     /// runs its hit reaction from the message's impulse, position, and direction; a rigid
@@ -1215,7 +1241,14 @@ pub struct PhysicsGameObjectVftable {
     _vfunc_10: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
     _vfunc_11: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
     _vfunc_12: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
-    _vfunc_13: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
+    /// How the grapple treats the object; see [`GrapplingMode`](crate::physics::GrapplingMode). The player aim reads it for
+    /// the grapple slot's direct hit
+    /// ([`PlayerAimControl::m_DirectGrapplePosIsGrapplable`](crate::aim::aim::PlayerAimControl::m_DirectGrapplePosIsGrapplable)),
+    /// and a wire end's attach refuses an ungrapplable object
+    /// ([`WireEnd::SetupProxyForAttachment`](crate::equipment::wire_end::WireEnd::SetupProxyForAttachment)).
+    pub GetGrapplingMode: unsafe extern "system" fn(
+        this: *const crate::physics::PhysicsGameObject,
+    ) -> crate::physics::GrapplingMode,
     _vfunc_14: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
     _vfunc_15: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
     _vfunc_16: unsafe extern "system" fn(this: *mut crate::physics::PhysicsGameObject),
