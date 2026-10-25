@@ -109,6 +109,10 @@ pub(crate) fn other_departure(
     let held = table
         .held(hand)
         .filter(|item| item.kind.weapon().is_none())?;
+    #[cfg(test)]
+    if table.safe_item(held.id).is_some() {
+        return None;
+    }
     if wanted.is_some_and(|w| held.binding == Binding::Live(w.object)) {
         return None;
     }
@@ -167,13 +171,15 @@ pub(crate) fn free_socket(
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
+    use std::num::{NonZeroU64, NonZeroUsize};
 
     use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::loadout::socket::BodyLayout;
+    use crate::controllers::loadout::{
+        socket::BodyLayout, tests::controlled_safe_binding::ModelLeaseId,
+    };
 
     fn object(n: usize) -> ObjectAddress {
         ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))
@@ -351,6 +357,29 @@ mod tests {
             None,
             "a weapon is not the others' to move"
         );
+    }
+
+    #[test]
+    fn native_other_reconciliation_cannot_remove_an_actor_free_item() {
+        let mut table = Loadout::new(BodyLayout::full(Hand::Right));
+        let safe = table
+            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .unwrap();
+        let before = table.snapshot();
+        for thrown in [false, true] {
+            assert_eq!(other_departure(&table, Hand::Left, None, thrown), None);
+            assert_eq!(
+                other_departure(
+                    &table,
+                    Hand::Left,
+                    Some(other(8, ItemKind::Grenade, TakeSource::Pouch)),
+                    thrown
+                ),
+                None
+            );
+        }
+        assert_eq!(table.snapshot(), before);
+        assert_eq!(table.safe_item(safe.item), Some(safe));
     }
 
     #[test]

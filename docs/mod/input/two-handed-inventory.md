@@ -140,7 +140,11 @@ The code is `payload/src/controllers/loadout/`. It is pure, apart from the objec
 
 ### Items and their identity
 
-An item is a weapon (its spawn tag's hash, its slot, and its size class), a prop, a grenade, or a C4 charge. Its identity is the table's own, assigned when it enters the table and never reused in a session. Beside it the table keeps the object the item is now: a live address, or nothing while it waits for one, either for its slot's new object across a spawn reset or for a spawn of its type after a restore. The address is the one place the core meets the game; the hooks and the reconcile turn it into an object.
+An item is a weapon (its spawn tag's hash, its slot, and its size class), a prop, a grenade, or a C4 charge. Its identity is the table's own, assigned when it enters the table and never reused in a session. A binding keeps a live object address, or waits for its slot's new object across a spawn reset or for a spawn of its type after a restore.
+
+The test-only `loadout::tests::controlled_safe_binding` module defines an actor-free binding with a nonzero `ModelLeaseId` and a movement revision. Its `Loadout` methods resolve, admit, draw, transfer, stow, and retire controlled items in the actual table's existing hand and socket containers. The tests check independent identities, shared native occupancy, stale views, failure atomicity, and exclusion from the weapon-slot projection. World release is refused. The matching `Binding::SafeItem` variant and native-reconciliation guards compile only for tests. Production bindings and native weapon handling are unchanged, and no live safe-item API is exposed.
+
+The controlled model identity is distinct from an object address. It retains no resource, establishes no engine liveness, and has no provider or world generation. A copied view is checked only against the same table lifetime and movement revision. Verified source admission, model-resource retention and validation, identity non-reuse across provider lifetimes, calibrated placement, reset and cleanup integration, and a loose representation remain prerequisites for live safe-grenade behavior. This test-only foundation does not enable actor-free items or complete A4.
 
 ### The places and their invariants
 

@@ -782,6 +782,28 @@ impl Live {
     /// Fold `event`, logging what it did or why it was refused. Returns, for a store or a cache,
     /// the slots and the sidecar the game should be given.
     fn fold(&mut self, event: Event) -> Option<StoreProjection> {
+        #[cfg(test)]
+        {
+            let moved = match &event {
+                Event::Dock { hand, .. } | Event::LetGo { hand, .. } => self.table.held(*hand),
+                Event::HandOver { from } => self.table.held(*from),
+                Event::Draw { socket, .. } => self
+                    .table
+                    .items()
+                    .find(|item| item.place == Place::Socket(*socket)),
+                _ => None,
+            };
+            if moved
+                .and_then(|item| self.table.safe_item(item.id))
+                .is_some()
+            {
+                self.refusals += 1;
+                self.push(
+                    "refused: loadout safe item: native moves require the safe-item API".into(),
+                );
+                return None;
+            }
+        }
         let store = matches!(event, Event::StoreImminent);
         match self.table.fold(event) {
             Ok(folded) => {
@@ -1003,13 +1025,15 @@ static STATUS: Mutex<LiveStatus> = Mutex::new(LiveStatus {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
+    use std::num::{NonZeroU64, NonZeroUsize};
 
     use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponClass};
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::controllers::loadout::item::WeaponType;
+    use crate::controllers::loadout::{
+        item::WeaponType, tests::controlled_safe_binding::ModelLeaseId,
+    };
 
     fn object(n: usize) -> ObjectAddress {
         ObjectAddress::new(NonZeroUsize::MIN.saturating_add(n * 0x10))
@@ -1085,6 +1109,43 @@ mod tests {
     fn draw(live: &mut Live, hand: Hand, slot: SlotObject) {
         let event = hands::arrival(&live.table, hand, held(slot), TakeSource::World).unwrap();
         live.fold(event);
+    }
+
+    #[test]
+    fn native_hand_events_cannot_bypass_safe_item_moves_or_release() {
+        let mut live = started(&[]);
+        let safe = live
+            .table
+            .admit_safe_item(ModelLeaseId::new(NonZeroU64::MIN), Hand::Left)
+            .unwrap();
+        let before = live.table.snapshot();
+        for event in [
+            Event::Dock {
+                hand: Hand::Left,
+                socket: Socket::Chest,
+            },
+            Event::HandOver { from: Hand::Left },
+            Event::LetGo {
+                hand: Hand::Left,
+                release: Release::Dropped,
+            },
+        ] {
+            live.fold(event);
+            assert_eq!(live.table.snapshot(), before);
+        }
+        assert_eq!(live.refusals, 3);
+        let stowed = live
+            .table
+            .move_safe_item(safe, Place::Socket(Socket::Chest))
+            .unwrap();
+        let before = live.table.snapshot();
+        live.fold(Event::Draw {
+            socket: Socket::Chest,
+            hand: Hand::Right,
+        });
+        assert_eq!(live.table.snapshot(), before);
+        assert_eq!(live.table.safe_item(safe.item), Some(stowed));
+        assert_eq!(live.refusals, 4);
     }
 
     #[test]
