@@ -1,22 +1,25 @@
-//! Coherent input publications for capture and a separate recorded-input replay lifecycle.
+//! Coherent input publications with independent bounded capture and gameplay queues.
 //!
 //! Live groups retain host observation time and actual controller publication identity. Replay
-//! never enters the live clock's history. Gameplay continues to use the compatibility snapshots
-//! until the ordered input consumer is integrated.
+//! uses separate storage and never enters the live clock's history. Each consumer drains once;
+//! overflow is an explicit discontinuity, not an inferred button release.
 
 use std::{collections::VecDeque, sync::LazyLock, time::Instant};
 
 use parking_lot::Mutex;
 use tracking_format::input::{
     CapturedInput, ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup,
-    InputRecord, InputStamp, RouteSample,
+    InputRecord, InputStamp, RouteSample, policy::PolicyEvaluation,
 };
 
-use crate::vr::input::semantic::SCHEMA_VERSION;
+use crate::vr::input::{
+    flight_pose::{self, EpochChange},
+    semantic::SCHEMA_VERSION,
+};
 
 /// One producer publication. No display-time comparison or later snapshot read establishes its
 /// controller association; only the publishing call supplies that identity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Publication {
     pub(crate) observed_at: Instant,
     pub(crate) frame_sequence: Option<u64>,
@@ -46,7 +49,7 @@ pub(crate) fn publish_observation(sample: LiveSample, reads_succeeded: bool) {
 impl Published {
     fn publish_observation(&mut self, sample: LiveSample, reads_succeeded: bool) {
         if !sample.focused || !reads_succeeded {
-            self.capture.push(Publication {
+            self.publish(Publication {
                 observed_at: sample.observed_at,
                 frame_sequence: Some(sample.frame_sequence),
                 record: InputRecord::Discontinuity {
@@ -97,11 +100,17 @@ impl Published {
             slot.interrupt(DiscontinuityReason::GenerationChanged, sample.observed_at);
         }
         slot.generation = Some(sample.generation);
-        slot.capture.push(Publication {
+        slot.publish(Publication {
             observed_at: sample.observed_at,
             frame_sequence: Some(sample.frame_sequence),
             record: InputRecord::Group(group),
         });
+    }
+
+    fn publish(&mut self, publication: Publication) {
+        self.latest = Some(publication.clone());
+        self.gameplay.push(publication.clone());
+        self.capture.push(publication);
     }
 
     fn take_capture(&mut self) -> Vec<Publication> {
@@ -114,22 +123,102 @@ pub(crate) fn take_capture() -> Vec<Publication> {
     SLOT.lock().take_capture()
 }
 
+/// Drain the active clock's observations independently of recording. The controller snapshot
+/// identity is retained so a later snapshot cannot authorize an older group's edges.
+/// Return the latest original group only when it belongs to this exact controller publication.
+/// This does not drain or reinterpret the gameplay evidence.
+pub(crate) fn original_group(frame_sequence: u64) -> Option<InputGroup> {
+    let slot = SLOT.lock();
+    if slot.replay_active {
+        return None;
+    }
+    slot.latest
+        .as_ref()
+        .filter(|publication| publication.frame_sequence == Some(frame_sequence))
+        .and_then(|publication| match &publication.record {
+            InputRecord::Group(group) => Some(group.clone()),
+            _ => None,
+        })
+}
+
+pub(crate) fn take_gameplay() -> (bool, Vec<Publication>) {
+    let mut slot = SLOT.lock();
+    let replay = slot.replay_active;
+    let publications = if replay {
+        slot.gameplay.pending.clear();
+        slot.replayed
+            .drain(..)
+            .map(|captured| Publication {
+                observed_at: Instant::now(),
+                frame_sequence: None,
+                record: captured.record,
+            })
+            .collect()
+    } else {
+        slot.gameplay.pending.drain(..).collect()
+    };
+    (replay, publications)
+}
+
+/// Capture a final decision without changing live ownership. A fresh recording has an explicit
+/// unavailable prefix until a recorded real-neutral boundary, rather than inheriting a live episode.
+pub(crate) fn record_policy(evaluation: PolicyEvaluation) {
+    #[cfg(test)]
+    let _serial = TEST_LOCK.lock();
+    SLOT.lock().record_policy(evaluation);
+}
+
+pub(crate) fn begin_capture() {
+    let mut slot = SLOT.lock();
+    slot.capture.pending.clear();
+    slot.capture_boundary = false;
+}
+
+impl Published {
+    fn record_policy(&mut self, mut evaluation: PolicyEvaluation) {
+        if !self.capture_boundary {
+            if evaluation.neutral {
+                evaluation.outcome = tracking_format::input::policy::PolicyOutcome::NeutralBoundary;
+                self.capture_boundary = true;
+            } else {
+                evaluation.outcome =
+                    tracking_format::input::policy::PolicyOutcome::UnavailablePrefix;
+            }
+            evaluation.singles = [tracking_format::input::policy::AcceptedSingle::None; 3];
+            evaluation.single_down = [false; 3];
+            evaluation.withheld = [true; 3];
+            evaluation.command = tracking_format::input::policy::AcceptedCommand::None;
+            evaluation.raw = [0; 3];
+            evaluation.direct = Default::default();
+            evaluation.claims = 0;
+            evaluation.commands = 0;
+        }
+        self.capture.push(Publication {
+            observed_at: Instant::now(),
+            frame_sequence: None,
+            record: InputRecord::Policy(evaluation),
+        });
+    }
+}
+
 pub(crate) fn interrupt(reason: DiscontinuityReason) {
     SLOT.lock().interrupt(reason, Instant::now());
 }
 
 /// Repeated playback starts allocate fresh storage, not a replacement live clock epoch.
 pub(crate) fn begin_replay(available: bool) {
+    flight_pose::source_changed(EpochChange::ReplayStarted);
     SLOT.lock().begin_replay(available);
 }
 
 /// Preserve the recorded envelope and logical stamp in bounded replay storage, never in the live
-/// publication queue. No gameplay consumer is installed by this adapter.
+/// publication queue. The gameplay drain selects only one clock at a time.
 pub(crate) fn publish_replayed(records: &[CapturedInput]) {
     SLOT.lock().publish_replayed(records);
 }
 
 pub(crate) fn end_replay() {
+    flight_pose::source_changed(EpochChange::ReplayEnded);
     SLOT.lock().end_replay(Instant::now());
 }
 
@@ -137,8 +226,11 @@ struct Published {
     sequence: u64,
     generation: Option<u64>,
     capture: CaptureQueue,
+    gameplay: CaptureQueue,
     replayed: VecDeque<CapturedInput>,
     replay_active: bool,
+    capture_boundary: bool,
+    latest: Option<Publication>,
 }
 
 impl Published {
@@ -187,7 +279,10 @@ impl Published {
     }
 
     fn interrupt(&mut self, reason: DiscontinuityReason, at: Instant) {
-        self.capture.push(Publication {
+        if matches!(reason, DiscontinuityReason::ClockChanged) {
+            flight_pose::source_changed(EpochChange::SourceClockChanged);
+        }
+        self.publish(Publication {
             observed_at: at,
             frame_sequence: None,
             record: InputRecord::Discontinuity {
@@ -225,7 +320,7 @@ impl CaptureQueue {
 
 fn record_loss(record: &InputRecord) -> u64 {
     match record {
-        InputRecord::Group(_) => 1,
+        InputRecord::Group(_) | InputRecord::Policy(_) => 1,
         InputRecord::Discontinuity { discarded, .. } => *discarded,
     }
 }
@@ -236,8 +331,11 @@ static SLOT: LazyLock<Mutex<Published>> = LazyLock::new(|| {
         sequence: 0,
         generation: None,
         capture: CaptureQueue::default(),
+        gameplay: CaptureQueue::default(),
         replayed: VecDeque::new(),
         replay_active: false,
+        capture_boundary: false,
+        latest: None,
     })
 });
 
@@ -248,7 +346,7 @@ pub(crate) fn replayed_for_test() -> (bool, Vec<CapturedInput>) {
 }
 
 #[cfg(test)]
-pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static TEST_LOCK: parking_lot::ReentrantMutex<()> = parking_lot::ReentrantMutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -259,8 +357,11 @@ mod tests {
             sequence: 44,
             generation: Some(9),
             capture: CaptureQueue::default(),
+            gameplay: CaptureQueue::default(),
             replayed: VecDeque::new(),
             replay_active: false,
+            capture_boundary: false,
+            latest: None,
         }
     }
 
@@ -348,6 +449,91 @@ mod tests {
         assert!(slot.replayed.is_empty());
         assert_eq!(slot.capture.pending.len(), 2);
         assert_eq!(slot.sequence, 44);
+    }
+
+    #[test]
+    fn capture_and_gameplay_have_independent_single_consumer_drains() {
+        let mut slot = local();
+        slot.interrupt(DiscontinuityReason::Unavailable, Instant::now());
+        assert_eq!(slot.take_capture().len(), 1);
+        assert!(slot.take_capture().is_empty());
+        assert_eq!(slot.gameplay.pending.drain(..).count(), 1);
+        assert!(slot.gameplay.pending.is_empty());
+        slot.interrupt(DiscontinuityReason::ClockChanged, Instant::now());
+        assert_eq!(slot.gameplay.pending.drain(..).count(), 1);
+        assert_eq!(slot.take_capture().len(), 1);
+    }
+
+    #[test]
+    fn gameplay_overflow_is_independent_of_capture_draining() {
+        let mut slot = local();
+        for _ in 0..=HISTORY_CAPACITY {
+            slot.interrupt(DiscontinuityReason::Unavailable, Instant::now());
+            slot.take_capture();
+        }
+        assert_eq!(slot.gameplay.pending.len(), 2);
+        assert!(matches!(
+            slot.gameplay.pending[0].record,
+            InputRecord::Discontinuity {
+                reason: DiscontinuityReason::Overflow,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn policy_only_and_mixed_capture_overflow_count_actual_records() {
+        for mixed in [false, true] {
+            let mut queue = CaptureQueue::default();
+            let policy = PolicyEvaluation {
+                version: tracking_format::input::policy::POLICY_A_VERSION,
+                stamp: InputStamp {
+                    epoch: 1,
+                    clock: ClockDomain::Synthetic,
+                    time_ns: 1,
+                    sync: 1,
+                    sequence: 1,
+                },
+                action_schema: SCHEMA_VERSION,
+                timing: None,
+                context: 0,
+                gameplay: false,
+                outcome: tracking_format::input::policy::PolicyOutcome::Cancelled,
+                neutral: false,
+                singles: [tracking_format::input::policy::AcceptedSingle::None; 3],
+                single_down: [false; 3],
+                withheld: [true; 3],
+                command: tracking_format::input::policy::AcceptedCommand::None,
+                raw: [0; 3],
+                direct: Default::default(),
+                claims: 0,
+                commands: 0,
+            };
+            for index in 0..=HISTORY_CAPACITY {
+                let record = if mixed && index % 2 == 0 {
+                    InputRecord::Group(InputGroup {
+                        stamp: policy.stamp,
+                        order: GroupOrder::UnorderedSync,
+                        source_generation: 1,
+                        binding_generation: 1,
+                        action_schema: SCHEMA_VERSION,
+                        context: 0,
+                        focused: true,
+                        samples: Vec::new(),
+                    })
+                } else {
+                    InputRecord::Policy(policy)
+                };
+                queue.push(Publication {
+                    observed_at: Instant::now(),
+                    frame_sequence: None,
+                    record,
+                });
+            }
+            assert!(
+                matches!(queue.pending[0].record, InputRecord::Discontinuity { discarded, .. } if discarded == HISTORY_CAPACITY as u64)
+            );
+        }
     }
 
     #[test]

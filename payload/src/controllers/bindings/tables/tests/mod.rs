@@ -14,15 +14,13 @@ use crate::{
 };
 
 const DT: f32 = 1.0 / 30.0;
-/// The default configuration, except that a lone stick click acts on the tick it is pressed rather
-/// than after the chord windows, so the per-mode tests read it at once. The chord tests use
-/// [`CHORD_CONFIG`].
+/// The table inputs are already accepted; chord timing does not change their interpretation.
 const CONFIG: BindingsConfig = BindingsConfig {
     stick_chord_window_s: 0.0,
     panel_chord_window_s: 0.0,
     ..BindingsConfig::new()
 };
-/// The default configuration, with its stick click chord window.
+/// The default timing also leaves already-accepted table inputs unchanged.
 const CHORD_CONFIG: BindingsConfig = BindingsConfig::new();
 const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 

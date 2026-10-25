@@ -22,9 +22,9 @@ pub(super) fn bindings(c: &BindingsConfig) -> Result<(), Invalid> {
     positive("bindings.long_press_s", c.long_press_s, 60.0)?;
     range("bindings.crouch_flick", c.crouch_flick, 0.0, 1.0)?;
     range("bindings.menu_stick_push", c.menu_stick_push, 0.0, 1.0)?;
-    nonnegative("bindings.stick_chord_window_s", c.stick_chord_window_s, 1.0)?;
+    positive("bindings.stick_chord_window_s", c.stick_chord_window_s, 1.0)?;
     positive("bindings.recenter_hold_s", c.recenter_hold_s, 60.0)?;
-    nonnegative("bindings.panel_chord_window_s", c.panel_chord_window_s, 1.0)?;
+    positive("bindings.panel_chord_window_s", c.panel_chord_window_s, 1.0)?;
     positive("bindings.yank.min_distance_m", c.yank.min_distance_m, 10.0)?;
     positive("bindings.yank.min_speed_mps", c.yank.min_speed_mps, 100.0)?;
     positive("bindings.yank.window_s", c.yank.window_s, 60.0)?;

@@ -511,7 +511,7 @@ impl State {
                     .last()
                     .map_or(0, |entry| entry.capture_time_ns),
             );
-            let range = input_cursor.advance(&loaded.recording.input, deadline);
+            let range = input_cursor.advance(&loaded.input_replay, deadline);
             history::publish_replayed(&loaded.recording.input[range]);
         }
         let mut recenters = Vec::new();
@@ -815,6 +815,7 @@ mod tests {
                 },
             })
             .to_vec();
+        let input_replay = tracking_format::input::replay::PreparedInput::new(&input);
         Arc::new(Loaded {
             path: PathBuf::from("fixture.tracking"),
             recording: crate::recorder::tracking::format::Recording {
@@ -828,6 +829,7 @@ mod tests {
             times: vec![100, 110],
             semantic: true,
             input_available: true,
+            input_replay,
             warnings: Vec::new(),
         })
     }
@@ -911,12 +913,13 @@ mod tests {
                 discarded: capture_time_ns,
             },
         });
+        let prepared = tracking_format::input::replay::PreparedInput::new(&records);
         for deadlines in [vec![10, 19, 20, 30], vec![30]] {
             let mut cursor = InputReplay::default();
             let mut actual = Vec::new();
             for elapsed in deadlines {
                 let deadline = input_deadline(Pacing::RealTime, elapsed, 0, None, 30);
-                let range = cursor.advance(&records, deadline);
+                let range = cursor.advance(&prepared, deadline);
                 actual.extend_from_slice(&records[range]);
             }
             assert_eq!(actual, records);
@@ -925,21 +928,21 @@ mod tests {
         let mut cursor = InputReplay::default();
         assert_eq!(
             cursor.advance(
-                &records,
+                &prepared,
                 input_deadline(Pacing::FrameLocked, 9999, 0, Some(10), 30)
             ),
             0..1
         );
         assert_eq!(
             cursor.advance(
-                &records,
+                &prepared,
                 input_deadline(Pacing::FrameLocked, 9999, 0, Some(20), 30)
             ),
             1..2
         );
         assert_eq!(
             cursor.advance(
-                &records,
+                &prepared,
                 input_deadline(Pacing::FrameLocked, 0, 0, None, 30)
             ),
             2..3

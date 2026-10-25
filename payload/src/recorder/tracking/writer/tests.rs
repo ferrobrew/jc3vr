@@ -93,7 +93,7 @@ fn batch(time: u64, groups: u64) -> CaptureBatch {
     CaptureBatch {
         bytes: Vec::new(),
         capture_time_ns: time,
-        input_groups: groups,
+        input_records: groups,
     }
 }
 
@@ -319,6 +319,87 @@ fn actual_drain_retains_atomic_batches_and_final_loss() {
             })
             .len()) as u64
     );
+}
+
+#[test]
+fn policy_only_and_mixed_writer_loss_counts_actual_records() {
+    for mixed in [false, true] {
+        let policy = tracking_format::input::policy::PolicyEvaluation {
+            version: tracking_format::input::policy::POLICY_A_VERSION,
+            stamp: tracking_format::input::InputStamp {
+                epoch: 1,
+                clock: tracking_format::input::ClockDomain::Synthetic,
+                time_ns: 1,
+                sync: 1,
+                sequence: 1,
+            },
+            action_schema: 4,
+            timing: None,
+            context: 0,
+            gameplay: false,
+            outcome: tracking_format::input::policy::PolicyOutcome::Cancelled,
+            neutral: false,
+            singles: [tracking_format::input::policy::AcceptedSingle::None; 3],
+            single_down: [false; 3],
+            withheld: [true; 3],
+            command: tracking_format::input::policy::AcceptedCommand::None,
+            raw: [0; 3],
+            direct: Default::default(),
+            claims: 0,
+            commands: 0,
+        };
+        let mut records = vec![InputRecord::Policy(policy)];
+        if mixed {
+            records.push(InputRecord::Group(tracking_format::input::InputGroup {
+                stamp: policy.stamp,
+                order: tracking_format::input::GroupOrder::UnorderedSync,
+                source_generation: 1,
+                binding_generation: 1,
+                action_schema: 4,
+                context: 0,
+                focused: true,
+                samples: Vec::new(),
+            }));
+        }
+        let encoded = records
+            .iter()
+            .flat_map(|record| {
+                tracking_format::encode_input(&CapturedInput {
+                    capture_time_ns: 20,
+                    frame_sequence: None,
+                    record: record.clone(),
+                })
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let count = records.len() as u64;
+        let (mut writer, receiver) = writer();
+        assert!(matches!(writer.send(input_batch(10)), SendOutcome::Queued));
+        assert!(matches!(
+            writer.send(CaptureBatch {
+                bytes: encoded,
+                capture_time_ns: 20,
+                input_records: count
+            }),
+            SendOutcome::Full
+        ));
+        writer.finish();
+        let bytes = Arc::new(Mutex::new(preamble()));
+        run(
+            TestSink {
+                bytes: Arc::clone(&bytes),
+                fault: Fault::None,
+                writes: 0,
+            },
+            &receiver,
+            &writer.shared,
+        )
+        .unwrap();
+        let decoded = tracking_format::decode(&bytes.lock()).unwrap();
+        assert!(
+            matches!(decoded.input.last().map(|entry| &entry.record), Some(InputRecord::Discontinuity { discarded, .. }) if *discarded == count)
+        );
+    }
 }
 
 #[test]

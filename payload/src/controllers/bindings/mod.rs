@@ -18,7 +18,8 @@
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
 //!   ([`HandRecovery`]): its raw controls, and every semantic action on it;
 //! - [`inject`] applies the writes to the player and UI action maps;
-//! - [`panel_chord`] reads the debug panel chord, which acts even while the bindings stand down.
+//! - [`policy_a`] arbitrates the shared system chords before raw, semantic, and pointer consumers,
+//!   retaining ownership while gameplay stands down.
 //!
 //! [`input_tick`] runs from the `InputDeviceManager::Update` post-call detour
 //! ([`crate::hooks::input::look`]), after the device poll and before the game reads its actions.
@@ -32,23 +33,27 @@
 //! and an effector left clicked there reads as a fresh click on every frame.
 
 pub mod controls;
+mod flight;
 pub mod grapple_button;
 pub mod hold;
 pub mod inject;
 pub mod intents;
-pub mod panel_chord;
-#[cfg(test)]
-mod policy_a;
+pub(crate) mod policy_a;
 mod recovery;
+mod report;
 pub mod tables;
+mod trigger_ownership;
 pub mod yank;
 
-use std::time::Instant;
+use std::{sync::LazyLock, time::Instant};
 
 use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
 use parking_lot::Mutex;
 
-pub use crate::controllers::bindings::recovery::{Blocker, HandRecovery};
+pub use crate::controllers::bindings::{
+    recovery::{Blocker, HandRecovery},
+    report::{Idle, ReportedWrite, TickReport, recovery_status},
+};
 use crate::{
     config::Config,
     controllers::{
@@ -57,15 +62,19 @@ use crate::{
             controls::{ButtonControl, Controls, yaw_of},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Phase, Target, Want},
-            inject::{Landing, Outcome},
             intents::SemanticInput,
-            panel_chord::{ChordInput, ChordTick, PanelChord},
+            policy_a::{
+                SystemCommand,
+                runtime::{Runtime, TickInput},
+            },
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
+            report::{publish_recovery_status, report_writes},
             tables::Bindings,
+            trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
             yank::{Yank, YankConfig, YankDetector},
         },
         config::LocomotionDirection,
-        frame::{self, ControllerFrame, Hand},
+        frame::{self, Button, ControllerFrame, Hand},
         grab::{self, Consumer, Provided, grabs_for, markers::MarkerFrame},
         hands::{self, tiers},
         haptics::{self, Event},
@@ -81,7 +90,9 @@ use crate::{
     },
     vr::{
         self,
-        input::semantic::{SemanticSet, frame as semantic_frame, vocabulary::OnFootAction},
+        input::semantic::{
+            SemanticSet, frame as semantic_frame, history, vocabulary::OnFootAction,
+        },
     },
 };
 
@@ -93,46 +104,11 @@ pub struct InputTickOutput {
     pub body_turn: Option<f32>,
 }
 
-/// Why the bindings did not inject on a tick.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Idle {
-    /// The bindings toggle is off.
-    Disabled,
-    /// The gamepad scheme is in effect.
-    GamepadScheme,
-    /// No controller frame, or no active controller.
-    NoControllers,
-    /// The game's device manager is disabled, so its device poll does not run.
-    PollDisabled,
-    /// The mod's panel is up.
-    ModPanel,
-}
-
-/// One injected write, for the debug UI.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ReportedWrite {
-    pub map: MapKind,
-    pub action: Action,
-    pub value: f32,
-    pub phase: Phase,
-    pub outcome: Outcome,
-}
-
-/// The last input tick, for the debug UI.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct TickReport {
-    pub detection: Detection,
-    /// Why nothing was injected, when nothing was.
-    pub idle: Option<Idle>,
-    pub body_turn: f32,
-    pub writes: Vec<ReportedWrite>,
-}
-
 /// Run the controllers' part of the input tick: detect the mode (which selects the action set),
 /// then evaluate and inject the bindings. `dt` is the engine's tick delta, seconds, and `poll` is
 /// whether the device poll that preceded the tick ran.
 pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
-    let (config, neutral_policy) = Config::lock_query(|c| {
+    let (config, neutral_policy, flight_dimensions) = Config::lock_query(|c| {
         (
             c.controllers,
             NeutralPolicy::new(
@@ -141,8 +117,44 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
                 &c.headpose.vr_turn,
                 c.controllers.acting_hand(),
             ),
+            c.body,
         )
     });
+    let desktop = crate::egui_impl::desktop_input_observation();
+    let raw_frame = frame::latest();
+    let source_neutral = raw_frame
+        .as_ref()
+        .and_then(|frame| history::original_group(frame.sequence))
+        .is_some_and(|group| policy_a::runtime::group_neutral(&group, &config.bindings));
+    let controller_neutral = !config.enabled
+        || !scheme::is_controllers()
+        || raw_frame
+            .as_ref()
+            .is_some_and(|frame| neutral_policy.frame_neutral(frame) && source_neutral);
+    let capture_input = mode::DebugUiInput {
+        focused: desktop.focused() == Some(true)
+            && raw_frame.as_ref().is_none_or(|frame| frame.focused),
+        tracking_ready: !config.enabled
+            || !scheme::is_controllers()
+            || raw_frame.as_ref().is_some_and(|frame| {
+                frame.any_active()
+                    && frame
+                        .hands
+                        .iter()
+                        .filter(|hand| hand.active)
+                        .all(|hand| hand.grip.is_valid())
+            }),
+        controls_neutral: controller_neutral && desktop.controls_neutral() == Some(true),
+    };
+    let mut capture_cancelled =
+        mode::update_debug_ui_capture(capture_input).is_some_and(|update| {
+            update.effects.consume_until_neutral
+                || update.effects.clear_pending_events
+                || update.effects.cancel_pointer_and_drag
+        });
+    if capture_cancelled {
+        cancel_capture_routes(poll);
+    }
     if !config.enabled {
         clear_controller();
         update_egui_controller(None, config.acting_hand());
@@ -153,6 +165,16 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         state.publish_recovery();
         frame::take_edges();
         semantic_frame::take();
+        let (replay, publications) = history::take_gameplay();
+        INPUT_POLICY.lock().step(TickInput {
+            publications,
+            replay,
+            frame: None,
+            context: 0,
+            gameplay: false,
+            usable: false,
+            config: &config.bindings,
+        });
         weapons::stand_down();
         // SAFETY: the input tick runs on the main thread outside the world update.
         unsafe { weapons::inventory::stand_down() };
@@ -162,7 +184,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         grab::tick::stand_down();
         return InputTickOutput::default();
     }
-    let detection = mode::tick();
+    let mut detection = mode::tick();
     tiers::tick(dt);
     // SAFETY: the input tick runs on the main thread outside the world update.
     unsafe { hands::anchor::input_tick(&config) };
@@ -170,7 +192,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     let frame = frame::latest()
         .filter(ControllerFrame::any_active)
         .filter(|frame| frame.focused);
-    let idle = if !config.bindings.enabled {
+    let mut idle = if !config.bindings.enabled {
         Some(Idle::Disabled)
     } else if !scheme::is_controllers() {
         Some(Idle::GamepadScheme)
@@ -178,7 +200,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         Some(Idle::NoControllers)
     } else if poll == DevicePoll::Disabled {
         Some(Idle::PollDisabled)
-    } else if mode::last_snapshot().is_some_and(|s| s.ui.mod_panel) {
+    } else if mode::debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
         Some(Idle::ModPanel)
     } else {
         None
@@ -187,33 +209,76 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // replayed then.
     let mut edges = frame::take_edges();
     let (semantic, mut semantic_edges) = semantic_frame::take();
-    let chord = panel_chord_tick(
-        frame
-            .as_ref()
-            .filter(|_| config.bindings.enabled)
-            .map(|frame| ChordInput::of(frame, &edges))
-            .unwrap_or_default(),
-        dt,
-        config.bindings.panel_chord_window_s,
-    );
-    // The debug panel's pointer reads the controllers while the bindings stand down for the
-    // panel, so it is stepped here, with the chord's presses masked so that the B press that
-    // opens or closes the panel never right-clicks on it.
-    let panel_input = frame.clone().map(|mut frame| {
+    let (replay, publications) = history::take_gameplay();
+    let mut routed = INPUT_POLICY.lock().step(TickInput {
+        publications,
+        replay,
+        frame: frame.as_ref(),
+        context: policy_context(detection.mode),
+        gameplay: idle.is_none(),
+        usable: config.bindings.enabled
+            && scheme::is_controllers()
+            && frame.as_ref().is_some_and(|frame| {
+                frame
+                    .hands
+                    .iter()
+                    .all(|hand| hand.active && hand.grip.is_valid())
+            }),
+        config: &config.bindings,
+    });
+    let mut panel_toggled = false;
+    for &command in &routed.commands {
+        system_command(command);
+        if command == SystemCommand::TogglePanel {
+            panel_toggled = true;
+            let effects = mode::update_debug_ui_capture(mode::DebugUiInput {
+                controls_neutral: false,
+                ..capture_input
+            });
+            if effects.is_some_and(|update| {
+                update.effects.consume_until_neutral
+                    || update.effects.clear_pending_events
+                    || update.effects.cancel_pointer_and_drag
+            }) {
+                capture_cancelled = true;
+                cancel_capture_routes(poll);
+            }
+            detection = mode::tick();
+            if mode::debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
+                idle = Some(Idle::ModPanel);
+            }
+            break;
+        }
+    }
+    capture_cancelled |= panel_toggled;
+    if capture_cancelled {
+        routed = Default::default();
+    }
+    if frame.is_none() {
+        PANEL_RECOVERY.lock().suspend();
+    }
+    let panel_input = frame.clone().map(|mut consumer| {
         let mut edges = edges;
-        panel_chord::mask(&mut frame, &mut edges, chord);
-        (frame, edges)
+        routed.filter_raw(&mut consumer, &mut edges);
+        let mut recovery = PANEL_RECOVERY.lock();
+        if let Some(original) = frame.as_ref() {
+            recovery.observe(original);
+            recovery.filter_observed(original, &mut consumer, &mut edges, &neutral_policy);
+        }
+        (consumer, edges)
     });
     update_egui_controller(
-        panel_input.as_ref().map(|(frame, edges)| (frame, edges)),
+        panel_input
+            .as_ref()
+            .filter(|_| {
+                mode::debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.pointer)
+            })
+            .map(|(frame, edges)| (frame, edges)),
         config.acting_hand(),
     );
 
     let mut state = STATE.lock();
     state.observe_poll(poll);
-    if chord.toggle {
-        state.bindings.cancel_stick_clicks();
-    }
     let (Some(mut frame), None) = (frame, idle) else {
         clear_controller();
         let writes = state.stand_down(poll);
@@ -259,7 +324,11 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             .as_ref()
             .is_some_and(|s| s.action_set != detection.mode.action_set());
     if set_pending {
+        if let Some(flight) = &mut state.flight {
+            flight.reset();
+        }
         clear_controller();
+        weapons::hold::tick::publish_fire([false; 2]);
         let paused = state.tracker.pause();
         // SAFETY: the input tick runs on the main thread after the device poll.
         let landings = unsafe { inject::apply(&paused) };
@@ -272,10 +341,12 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         };
         return InputTickOutput::default();
     }
+    let original = frame.clone();
+    let original_edges = edges;
+    routed.filter_raw(&mut frame, &mut edges);
     state
         .recovery
-        .filter(&mut frame, &mut edges, &neutral_policy);
-    panel_chord::mask(&mut frame, &mut edges, chord);
+        .filter_observed(&original, &mut frame, &mut edges, &neutral_policy);
     state.publish_recovery();
     if tracking_lost {
         clear_controller();
@@ -299,6 +370,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     // when gameplay resumes.
     let in_menu = detection.mode == Mode::Ui;
     let (start, vehicle) = if in_menu {
+        weapons::reload::cancel_extraction_on_standdown();
         (
             weapons::TickStart::default(),
             vehicles::TickVolumes::default(),
@@ -319,7 +391,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         ));
     }
     let profiles = Hand::BOTH.map(|hand| frame.hand(hand).profile);
-    let semantic_input = match &semantic {
+    let mut semantic_input = match &semantic {
         Some(semantic) => SemanticInput::from_frame(
             semantic,
             &semantic_edges,
@@ -333,9 +405,10 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             dominant,
         ),
     };
+    routed.filter_semantic(&mut semantic_input);
     let grapple_hand = dominant.other();
     // The hand's pulls act only while the grapple button is held.
-    let grapple_held = grapple_button_held(&semantic_input, detection.mode);
+    let mut grapple_held = grapple_button_held(&semantic_input, detection.mode);
     if !in_menu {
         // SAFETY: the input tick runs on the main thread outside the world update.
         provided.extend(unsafe {
@@ -360,7 +433,45 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         controls.hands[hand.index()].grab_slow = targets.slow[hand.index()];
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
-    controls.masked_inputs = panel_chord::masked_inputs(chord);
+    let gun_triggers = config.weapons.hold.either_hand && config.weapons.hold.per_hand_tick;
+    let gun_owners = weapons::capabilities::gun_owners_now();
+    let trigger_owners = gun_owners.map(|gun| TriggerOwner {
+        mode: detection.mode,
+        gun: gun.filter(|_| gun_triggers && !in_menu),
+    });
+    let raw_triggers = Hand::BOTH.map(|hand| {
+        let source = original.hand(hand);
+        RawTrigger {
+            button: ButtonControl {
+                down: source.buttons.contains(Button::TriggerPress),
+                pressed: original_edges.pressed(hand, Button::TriggerPress),
+                released: original_edges.released(hand, Button::TriggerPress),
+            },
+            value: source.inputs.trigger,
+            usable: source.active
+                && source.grip.is_tracked()
+                && !controls.masked_hands[hand.index()],
+        }
+    });
+    let trigger_blocked = state.trigger_ownership.observe(
+        trigger_owners,
+        raw_triggers,
+        config.bindings.trigger_deadzone,
+    );
+    let trigger_routes = semantic_input.clone();
+    state.bindings.cancel_trigger_gestures(trigger_blocked);
+    trigger_ownership::mask_routes(
+        &mut semantic_input,
+        detection.mode,
+        trigger_ownership::masks(trigger_owners, trigger_blocked),
+    );
+    grapple_held = grapple_button_held(&semantic_input, detection.mode);
+    for hand in Hand::BOTH {
+        if trigger_blocked[hand.index()] {
+            controls.hands[hand.index()].trigger_press = ButtonControl::default();
+            controls.hands[hand.index()].trigger = 0.0;
+        }
+    }
     controls.weapon_cycle =
         !config.weapons.holsters.enabled || config.weapons.holsters.stick_click_cycles;
     controls.pointer_hand = owns_menu_trigger();
@@ -407,6 +518,22 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         dt,
         &config.bindings,
     );
+    let flight_tick = flight::Tick {
+        frame: &original,
+        config: &config,
+        dimensions: &flight_dimensions,
+        detection,
+        ready: !controls.masked_hands.contains(&true),
+        ragdoll: controls.ragdolling,
+        grapple: grapple_held || line || physical_grapple.tethers > 0,
+        grabs: step.grabs,
+        dt,
+    };
+    let flight_commands = flight::evaluate(
+        state.flight.get_or_insert_with(Default::default),
+        &flight_tick,
+        &step.desired,
+    );
     summary::refresh(detection.mode, &controls, &config, &frame);
     grab::tick::finish(&grab::tick::Finish {
         tick: &targets,
@@ -429,13 +556,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     if step.sight_capture {
         sights::tuning::request_capture();
     }
-    if step.recenter {
-        // The deferred recenter: the input tick may run while a frame holds the runtime lock.
-        let kind = roomscale::manual_recenter_kind();
-        vr::request_recenter(kind);
-        tracing::info!(target: "controllers", ?kind, "stick click chord: recentering the view");
-        chord_pulse(Hand::BOTH);
-    }
+    let mut trigger_changed = [false; 2];
     if !in_menu {
         let finish = weapons::FinishInputs {
             grabs: grabs_for(step.grabs, Consumer::Weapons),
@@ -445,6 +566,22 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             dt,
         };
         weapons::finish_tick(&finish, &mut step.desired);
+        let after = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
+            mode: detection.mode,
+            gun: gun.filter(|_| gun_triggers),
+        });
+        let changed = state.trigger_ownership.after_finish(after);
+        trigger_changed = changed;
+        if changed.contains(&true) {
+            let fire = weapons::hold::tick::status().fire;
+            weapons::hold::tick::publish_fire(trigger_ownership::retain_fire(fire, changed));
+            for hand in Hand::BOTH {
+                if changed[hand.index()] {
+                    controls.hands[hand.index()].trigger_press = ButtonControl::default();
+                    controls.hands[hand.index()].trigger = 0.0;
+                }
+            }
+        }
         let wheel = weapons::wheel::input_tick(
             &weapons::wheel::TickInputs {
                 mode: detection.mode,
@@ -456,14 +593,6 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         if wheel.by_stick {
             step.body_turn = 0.0;
         }
-        vehicles::finish_tick(
-            detection.mode,
-            grabs_for(step.grabs, Consumer::Vehicles),
-            &controls,
-            &mut step.desired,
-            dt,
-            step.grapple_held,
-        );
         physical_hands::pickup::finish_tick(
             &weapons::FinishInputs {
                 grabs: grabs_for(step.grabs, Consumer::Pickup),
@@ -501,10 +630,48 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
             grabs_for(step.grabs, Consumer::Climb),
         );
         physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
+        let reserve_pitch = flight::commit(
+            state
+                .flight
+                .as_mut()
+                .expect("the gesture state was initialized"),
+            flight_commands,
+            &flight_tick,
+            &mut step.desired,
+        );
+        vehicles::finish_tick(
+            detection.mode,
+            grabs_for(step.grabs, Consumer::Vehicles),
+            &controls,
+            &mut step.desired,
+            dt,
+            step.grapple_held,
+            reserve_pitch,
+        );
     } else {
+        weapons::hold::tick::publish_fire([false; 2]);
         weapons::wheel::pause();
         physical_hands::pickup::pause();
     }
+    let final_owners = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
+        mode: detection.mode,
+        gun: gun.filter(|_| gun_triggers && !in_menu),
+    });
+    let late_changed = state.trigger_ownership.after_finish(final_owners);
+    trigger_changed =
+        Hand::BOTH.map(|hand| trigger_changed[hand.index()] || late_changed[hand.index()]);
+    state.bindings.cancel_trigger_gestures(trigger_changed);
+    if trigger_changed.contains(&true) {
+        let fire = weapons::hold::tick::status().fire;
+        weapons::hold::tick::publish_fire(trigger_ownership::retain_fire(fire, trigger_changed));
+    }
+    trigger_ownership::suppress_changed_routes(
+        &mut step.desired,
+        detection.mode,
+        &controls,
+        &trigger_routes,
+        trigger_changed,
+    );
     let writes = state.tracker.resolve(&step.desired, dt);
     // SAFETY: the input tick runs on the main thread after the device poll.
     let landings = unsafe { inject::apply(&writes) };
@@ -540,33 +707,63 @@ pub fn last_report() -> TickReport {
     STATE.lock().report.clone()
 }
 
-/// Each hand's input recovery at the last input tick, in [`Hand::index`] order. Safe to call with
-/// the config locked: it takes only a lock that is never held while taking another.
-pub fn recovery_status() -> [HandRecovery; 2] {
-    *RECOVERY_STATUS.lock()
-}
-
 /// The yank gesture's readout: how many yanks were detected, and the last one.
 pub fn yank_status() -> (u64, Option<Yank>) {
     let state = STATE.lock();
     (state.yank.count, state.yank.last)
 }
 
-/// Step the debug panel chord ([`panel_chord`]) and act on it. Runs on every input tick that has
-/// the controllers enabled, whether or not the bindings inject, and takes no lock the bindings
-/// hold.
-fn panel_chord_tick(input: ChordInput, dt: f32, window_s: f32) -> ChordTick {
-    let tick = PANEL_CHORD.lock().step(input, dt, window_s);
-    if tick.toggle {
-        let enabled = egui_panel::toggle();
-        tracing::info!(
-            target: "controllers",
-            enabled,
-            "debug panel chord: toggled the debug panel"
-        );
-        chord_pulse([panel_chord::B_HAND]);
+/// Dispatch accepted system commands even while gameplay injection is stopped.
+fn system_command(command: SystemCommand) {
+    match command {
+        SystemCommand::Recenter => {
+            let kind = roomscale::manual_recenter_kind();
+            vr::request_recenter(kind);
+            tracing::info!(target: "controllers", ?kind, "controller input: recentering the view");
+            chord_pulse(Hand::BOTH);
+        }
+        SystemCommand::TogglePanel => {
+            let enabled = egui_panel::toggle();
+            tracing::info!(target: "controllers", enabled, "controller input: toggled the debug panel");
+            chord_pulse([Hand::Right]);
+        }
     }
-    tick
+}
+
+fn policy_context(mode: Mode) -> u64 {
+    let detail = match mode {
+        Mode::OnFoot(variant) => variant as u64,
+        Mode::Airborne(variant) => 2 + variant as u64,
+        Mode::Vehicle(seat) => 5 + (seat.class as u64) * 2 + u64::from(seat.driver),
+        Mode::Ui => 32,
+    };
+    (detail << 8) | mode.action_set() as u64
+}
+
+fn cancel_capture_routes(poll: DevicePoll) {
+    let (replay, publications) = history::take_gameplay();
+    INPUT_POLICY
+        .lock()
+        .cancel_publications(replay, publications);
+    PANEL_RECOVERY.lock().suspend();
+    frame::take_edges();
+    semantic_frame::take();
+    clear_controller();
+    update_egui_controller(
+        None,
+        Config::lock_query(|config| config.controllers.acting_hand()),
+    );
+    let mut state = STATE.lock();
+    state.stand_down(poll);
+    state.recovery.disarm();
+    state.publish_recovery();
+    drop(state);
+    weapons::stand_down();
+    weapons::reload::cancel_extraction_on_standdown();
+    vehicles::stand_down();
+    grapple::physical::stand_down();
+    snatch::stand_down();
+    grab::tick::stand_down();
 }
 
 /// The short pulse that confirms a chord, on each of `hands`.
@@ -576,18 +773,18 @@ fn chord_pulse(hands: impl IntoIterator<Item = Hand>) {
     }
 }
 
-/// The debug panel chord's latches, apart from [`STATE`] so that standing the bindings down does
-/// not reset them.
-static PANEL_CHORD: Mutex<PanelChord> = Mutex::new(PanelChord::new());
-
-static RECOVERY_STATUS: Mutex<[HandRecovery; 2]> = Mutex::new([HandRecovery::Unusable; 2]);
+/// System ownership survives gameplay stand-down and editor open/close transitions.
+static INPUT_POLICY: LazyLock<Mutex<Runtime>> = LazyLock::new(|| Mutex::new(Runtime::default()));
+static PANEL_RECOVERY: Mutex<Recovery> = Mutex::new(Recovery::new());
 
 static STATE: Mutex<State> = Mutex::new(State {
     poll: DevicePoll::Running,
     recovery: Recovery::new(),
     mask_log: MaskLog::new(),
     bindings: Bindings::new(),
+    trigger_ownership: TriggerOwnership::new(),
     tracker: HoldTracker::new(),
+    flight: None,
     yank: YankDetector::new(),
     report: TickReport {
         detection: Detection {
@@ -607,7 +804,9 @@ struct State {
     recovery: Recovery,
     mask_log: MaskLog,
     bindings: Bindings,
+    trigger_ownership: TriggerOwnership,
     tracker: HoldTracker,
+    flight: Option<flight::FlightState>,
     yank: YankDetector,
     report: TickReport,
 }
@@ -618,6 +817,10 @@ impl State {
     fn reset(&mut self, poll: DevicePoll) -> Vec<ActionWrite> {
         self.recovery.disarm();
         self.bindings = Bindings::new();
+        self.trigger_ownership.suspend();
+        if let Some(flight) = &mut self.flight {
+            flight.reset();
+        }
         self.yank = YankDetector::new();
         self.tracker.release_all(poll)
     }
@@ -654,7 +857,7 @@ impl State {
     /// like a broken binding.
     fn publish_recovery(&mut self) {
         let status = self.recovery.status();
-        *RECOVERY_STATUS.lock() = status;
+        publish_recovery_status(status);
         let events = self.mask_log.step(status, Instant::now());
         for (hand, event) in Hand::BOTH.into_iter().zip(events) {
             match event {
@@ -675,21 +878,6 @@ impl State {
             }
         }
     }
-}
-
-/// Pair each write with what became of it, for the report.
-fn report_writes(writes: &[ActionWrite], landings: &[Landing]) -> Vec<ReportedWrite> {
-    writes
-        .iter()
-        .zip(landings)
-        .map(|(w, landing)| ReportedWrite {
-            map: w.target.map,
-            action: w.target.action,
-            value: w.value,
-            phase: w.phase,
-            outcome: landing.outcome,
-        })
-        .collect()
 }
 
 /// The angle from the head's heading to the off-hand controller's, both in the cockpit frame, for

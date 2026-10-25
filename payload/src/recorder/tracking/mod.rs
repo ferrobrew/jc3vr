@@ -296,10 +296,10 @@ fn encode_capture(
     input: &[CapturedInput],
 ) -> Result<CaptureBatch, format::DecodeError> {
     let mut bytes = Vec::new();
-    let mut input_groups = 0u64;
+    let mut input_records = 0u64;
     for entry in input {
-        input_groups = input_groups.saturating_add(match &entry.record {
-            InputRecord::Group(_) => 1,
+        input_records = input_records.saturating_add(match &entry.record {
+            InputRecord::Group(_) | InputRecord::Policy(_) => 1,
             InputRecord::Discontinuity { discarded, .. } => *discarded,
         });
         let encoded = tracking_format::encode_input(entry)?;
@@ -328,7 +328,7 @@ fn encode_capture(
     Ok(CaptureBatch {
         bytes,
         capture_time_ns: frame.time_ns,
-        input_groups,
+        input_records,
     })
 }
 
@@ -551,7 +551,7 @@ fn begin() -> Result<PathBuf, StartError> {
 }
 
 fn discard_before_start() {
-    let _ = history::take_capture();
+    history::begin_capture();
 }
 
 fn stop() {

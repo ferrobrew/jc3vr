@@ -110,7 +110,11 @@ fn a_press_keeps_the_grip_it_began_with() {
     c.hands[1].a = down();
     b.sim_step(Mode::Ui, &c, DT, &CONFIG);
     // Squeezing the grip mid-press does not turn the confirm into the X button.
-    c.hands[1].a = held();
+    c.hands[1].a = ButtonControl {
+        down: true,
+        pressed: false,
+        released: false,
+    };
     c.hands[1].grip = down();
     let step = b.sim_step(Mode::Ui, &c, DT, &CONFIG);
     assert_eq!(wants(&step, MapKind::Ui, GUI_OK), Some(Want::Hold(1.0)));
@@ -325,101 +329,12 @@ fn without_trackpads_the_trackpad_halves_page_nothing() {
     assert!(step.desired.is_empty());
 }
 
-fn held() -> ButtonControl {
-    ButtonControl {
-        down: true,
-        pressed: false,
-        released: false,
-    }
-}
-
-fn clicks(left: ButtonControl, right: ButtonControl) -> Controls {
-    let mut c = Controls::default();
-    c.hands[0].stick_click = left;
-    c.hands[1].stick_click = right;
-    c
-}
-
 #[test]
-fn a_held_stick_click_chord_recenters_once_and_leaks_neither_click() {
-    for mode in [ON_FOOT, Mode::Ui] {
-        let mut b = Bindings::default();
-        let mut recenters = 0;
-        let mut ticks = vec![
-            clicks(down(), ButtonControl::default()),
-            clicks(held(), down()),
-        ];
-        let hold_ticks = (CHORD_CONFIG.recenter_hold_s / DT).ceil() as usize + 5;
-        ticks.extend(std::iter::repeat_n(clicks(held(), held()), hold_ticks));
-        ticks.push(clicks(ButtonControl::default(), held()));
-        ticks.push(clicks(ButtonControl::default(), ButtonControl::default()));
-        for c in &ticks {
-            let step = b.sim_step(mode, c, DT, &CHORD_CONFIG);
-            recenters += usize::from(step.recenter);
-            assert!(step.desired.is_empty(), "{mode:?}: {:?}", step.desired);
-        }
-        assert_eq!(recenters, 1, "{mode:?}");
-    }
-}
-
-#[test]
-fn a_short_stick_click_chord_neither_recenters_nor_acts() {
-    let mut b = Bindings::default();
-    for c in [
-        clicks(down(), down()),
-        clicks(held(), held()),
-        clicks(ButtonControl::default(), held()),
-        clicks(ButtonControl::default(), ButtonControl::default()),
-    ] {
-        let step = b.sim_step(ON_FOOT, &c, DT, &CHORD_CONFIG);
-        assert!(!step.recenter);
-        assert!(step.desired.is_empty());
-    }
-}
-
-#[test]
-fn a_lone_stick_click_still_acts_after_the_chord_window() {
-    // Right-handed: the dominant stick click detonates on foot.
-    let mut b = Bindings::default();
-    let window_ticks = (CHORD_CONFIG.stick_chord_window_s / DT).ceil() as usize;
-    let first = b.sim_step(
-        ON_FOOT,
-        &clicks(ButtonControl::default(), down()),
-        DT,
-        &CHORD_CONFIG,
-    );
-    assert_eq!(player(&first, DETONATE_EXPLOSIVE), None);
-    let mut thrown = None;
-    for tick in 1..=window_ticks + 1 {
-        let step = b.sim_step(
-            ON_FOOT,
-            &clicks(ButtonControl::default(), held()),
-            DT,
-            &CHORD_CONFIG,
-        );
-        if player(&step, DETONATE_EXPLOSIVE).is_some() {
-            thrown = Some(tick);
-            break;
-        }
-    }
-    // The window is a few ticks long; the click waits it out, then acts.
-    assert!(
-        thrown.is_some_and(|tick| tick + 1 >= window_ticks),
-        "{thrown:?}"
-    );
-
-    // A quick tap within the window still reaches the game, as a tap.
-    let mut b = Bindings::default();
-    let tap = ButtonControl {
-        down: false,
-        pressed: true,
-        released: true,
-    };
-    let step = b.sim_step(
-        ON_FOOT,
-        &clicks(ButtonControl::default(), tap),
-        DT,
-        &CHORD_CONFIG,
-    );
+fn the_tables_consume_accepted_clicks_without_recognizing_a_second_chord() {
+    let c = controls(Hand::Right, |dom, off| {
+        dom.stick_click = down();
+        off.stick_click = down();
+    });
+    let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
     assert_eq!(player(&step, DETONATE_EXPLOSIVE), Some(Want::Hold(1.0)));
 }

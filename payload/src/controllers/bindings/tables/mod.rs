@@ -22,9 +22,8 @@
 //! stick's vertical axis by default) down toggles the seated crouch
 //! ([`crate::controllers::roomscale::toggle_seated_crouch`]).
 //!
-//! Holding both stick clicks together recenters the VR view, in every mode ([`stick_chord`]). A lone
-//! stick click waits a short window for the other before it reaches the actions bound to it, so
-//! that the chord never also fires either click's own binding.
+//! The shared input arbiter resolves the system chords before these tables. They consume only
+//! accepted semantic values and never recognize or cancel a second chord.
 //!
 //! The sight tuning chord drives the mod too, and only while the sight tuning tool's marker is placed
 //! ([`Controls::sight_chord`]): on foot, holding both grips and pressing the dominant A captures the
@@ -43,7 +42,6 @@ pub mod declare;
 pub mod describe;
 pub mod menu;
 pub mod sink;
-pub mod stick_chord;
 
 use jc3gi::input::input_action_map::Action;
 
@@ -57,7 +55,6 @@ use crate::{
             tables::{
                 declare::{TableCtx, declare},
                 sink::{EvalSink, Latches, MenuLatch, PadLatch},
-                stick_chord::StickChord,
             },
         },
         config::BindingsConfig,
@@ -71,7 +68,7 @@ use crate::{
     },
     vr::input::semantic::{
         SemanticSet,
-        bound::Physical,
+        bound::{Physical, PhysicalSet},
         vocabulary::{
             ActionId, GlobalAction, HelicopterAction, LandVehicleAction, MenuAction, OnFootAction,
             PlaneAction, WingsuitAction,
@@ -95,9 +92,6 @@ pub struct Step {
     pub grabs: [Option<GrabVolume>; 2],
     /// The sight tuning capture chord was pressed this tick.
     pub sight_capture: bool,
-    /// Both stick clicks were held together for the recenter hold time this tick
-    /// ([`stick_chord`]).
-    pub recenter: bool,
     /// Each hand's weapon wheel inputs, by [`Hand::index`]: the weapon-select trackpad press with
     /// the quadrant it latched to, and the `weapon_wheel` action's value. The wheel
     /// ([`crate::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
@@ -119,9 +113,10 @@ pub struct Bindings {
     menu: [MenuLatch; 2],
     /// Each hand's pad press latch, by [`Hand::index`].
     pads: [PadLatch; 2],
-    stick_chord: StickChord,
     /// The grapple button's gestures.
     grapple: GrappleButton,
+    /// Trigger sources accepted into the current grapple episode, including inseparable routes.
+    grapple_triggers: [bool; 2],
 }
 
 impl Bindings {
@@ -138,8 +133,8 @@ impl Bindings {
                 page_next: None,
             }; 2],
             pads: [PadLatch { press: None }; 2],
-            stick_chord: StickChord::new(),
             grapple: GrappleButton::new(),
+            grapple_triggers: [false; 2],
         }
     }
 
@@ -148,10 +143,15 @@ impl Bindings {
         self.grips
     }
 
-    /// Forget the stick clicks' current presses, withholding both until both are released: the
-    /// press belongs to the debug panel chord ([`crate::controllers::bindings::panel_chord`]).
-    pub fn cancel_stick_clicks(&mut self) {
-        self.stick_chord.cancel();
+    /// Cancel only a grapple episode attributable to a trigger whose ownership or usability changed.
+    pub(crate) fn cancel_trigger_gestures(&mut self, changed: [bool; 2]) {
+        if Hand::BOTH
+            .into_iter()
+            .any(|hand| changed[hand.index()] && self.grapple_triggers[hand.index()])
+        {
+            self.grapple.cancel();
+            self.grapple_triggers = [false; 2];
+        }
     }
 
     /// Evaluate the tables for `mode`: `controls` are the tick's raw controls, which the gestures,
@@ -164,12 +164,6 @@ impl Bindings {
         dt: f32,
         config: &BindingsConfig,
     ) -> Step {
-        let arbitrated = self.stick_chord.step(
-            controls.hands.map(|h| h.stick_click),
-            dt,
-            config.stick_click_windows(),
-            config.recenter_hold_s,
-        );
         let chord = match mode {
             Mode::OnFoot(_) => SightChord::of(controls),
             _ => SightChord::default(),
@@ -221,7 +215,6 @@ impl Bindings {
         }
         let intents = Intents::build(
             input,
-            arbitrated.clicks,
             &masks,
             Gestures {
                 yank: controls.yank,
@@ -253,6 +246,21 @@ impl Bindings {
                 .map(|&a| intents.button(a))
                 .fold(ButtonControl::default(), merge_buttons);
             grapple_held = button.down;
+            if !self.grapple.pending() {
+                self.grapple_triggers = [false; 2];
+            }
+            for hand in Hand::BOTH {
+                for &id in inputs {
+                    if intents.hand(id, hand).button.held()
+                        && let Some(action) = input.get(id)
+                    {
+                        let bound = action.bound[hand.index()];
+                        self.grapple_triggers[hand.index()] |= bound.contains(Physical::Trigger)
+                            || bound == bound.with_unknown()
+                            || bound == PhysicalSet::EMPTY;
+                    }
+                }
+            }
             self.grapple.apply(
                 GrappleTick {
                     button,
@@ -263,6 +271,9 @@ impl Bindings {
                 actions,
                 &mut out.desired,
             );
+            if !self.grapple.pending() {
+                self.grapple_triggers = [false; 2];
+            }
         }
         let body_turn = body_turn_action(mode).map_or(0.0, |a| intents.raw(a));
         self.system.step(
@@ -295,7 +306,6 @@ impl Bindings {
             crouch_toggle,
             grabs,
             sight_capture: chord.capture,
-            recenter: arbitrated.recenter,
             wheel,
             grapple_held,
         }

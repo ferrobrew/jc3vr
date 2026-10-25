@@ -355,7 +355,7 @@ fn wingsuit<S: Sink>(s: &mut S) {
     // `RETRACT_GRAPPLE` is left off, since it also keeps a stalling wingsuit from closing.
     s.hold(&[p(W::AirBrake)], &[CANCEL, WINGSUIT_AIRBRAKE]);
     s.hold(&[p(W::Boost)], &[WINGSUIT_BOOST]);
-    s.hold(&[p(W::FireGuns)], &[FIRE_WINGSUIT_WEAPON_MAIN, R2]);
+    s.hold(&[p(W::FireGuns)], &[FIRE_WINGSUIT_WEAPON_MAIN]);
     s.hold(&[p(W::FireSecondary)], &[FIRE_WINGSUIT_WEAPON_SECONDARY]);
     // The evade is left unbound: its barrel roll is a roll the player's body never makes
     // (`hooks::input::wingsuit`), so a flick before the press opens the parachute as any press.

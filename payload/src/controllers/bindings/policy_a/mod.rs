@@ -10,6 +10,10 @@
 //! merged routes through their own neutral observation, and leave independent commands alone.
 //! OpenXR binding enumeration does not identify contributors to a merged action value.
 
+mod attribution;
+mod recording;
+pub(crate) mod runtime;
+
 use std::{error::Error, fmt, time::Duration};
 
 /// The only physical controls in this arbiter's overlap domain.
@@ -92,10 +96,14 @@ impl Error for ConfigError {}
 /// A discontinuity cancels pending work and neutralizes only owned single output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResetReason {
+    #[cfg(test)]
     FocusLost,
+    #[cfg(test)]
     TrackingLost,
     MissingOrStaleInput,
+    #[cfg(test)]
     ControllerDisabled,
+    #[cfg(test)]
     SchemeChanged,
     BindingUnresolved,
     BindingChanged,
@@ -105,6 +113,7 @@ pub(crate) enum ResetReason {
 }
 
 /// Verification applies to the physical labels and the coherent source interpretation.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InputEvidence {
     VerifiedUnmasked,
@@ -120,6 +129,7 @@ pub(crate) struct Observation {
     pub(crate) singles_enabled: bool,
     /// Real, unmasked levels, indexed by `Control::index`.
     pub(crate) down: [bool; 3],
+    #[cfg(test)]
     pub(crate) evidence: InputEvidence,
 }
 
@@ -130,6 +140,7 @@ pub(crate) struct ResetRequest {
 }
 
 /// Ends the old history before accepting a new, strictly newer epoch identity.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ClockEpochRequest {
     pub(crate) next: ClockEpoch,
@@ -252,7 +263,7 @@ impl PolicyA {
     }
 
     /// Reset retains the temporal watermark and never treats masked up levels as neutral.
-    /// Even `ClockDiscontinuity` is only a reason here; a new epoch requires `begin_clock_epoch`.
+    /// Even `ClockDiscontinuity` is only a reason here; it does not replace the clock epoch.
     pub(crate) fn reset(&mut self, request: ResetRequest) -> Arbitration {
         let mut out = Arbitration::empty(ObservationStatus::Reset(request.reason));
         self.release_owned(self.last.map_or(Duration::ZERO, |last| last.at), &mut out);
@@ -268,6 +279,7 @@ impl PolicyA {
 
     /// Neutralize old output before replacing the clock; a lower new time is valid only here.
     /// Every observation carries its epoch, so queued observations from the old history stay stale.
+    #[cfg(test)]
     pub(crate) fn begin_clock_epoch(&mut self, request: ClockEpochRequest) -> Arbitration {
         if request.next.0 <= self.epoch.0 {
             return self.reset(ResetRequest {
@@ -298,6 +310,7 @@ impl PolicyA {
         }
         // Only a validated stamp can advance time. Unavailable evidence still cannot arm a press.
         self.last = Some(input.stamp);
+        #[cfg(test)]
         if let InputEvidence::Unavailable(reason) = input.evidence {
             return self.reset(ResetRequest { reason });
         }

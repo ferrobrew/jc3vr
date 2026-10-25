@@ -16,7 +16,6 @@ use crate::controllers::{
         hold::{Desired, MapKind, Target, Want},
         tables::{
             Step,
-            stick_chord::StickChord,
             tests::legacy::{
                 declare::{TableCtx, declare},
                 sink::{EvalSink, Latches, MenuLatch},
@@ -42,7 +41,6 @@ pub struct Bindings {
     crouch_flicked: bool,
     /// Each hand's menu press latches, by [`Hand::index`].
     menu: [MenuLatch; 2],
-    stick_chord: StickChord,
 }
 
 impl Bindings {
@@ -58,7 +56,6 @@ impl Bindings {
                 b: None,
                 stick: None,
             }; 2],
-            stick_chord: StickChord::new(),
         }
     }
 
@@ -70,17 +67,6 @@ impl Bindings {
         dt: f32,
         config: &BindingsConfig,
     ) -> Step {
-        let arbitrated = self.stick_chord.step(
-            controls.hands.map(|h| h.stick_click),
-            dt,
-            config.stick_click_windows(),
-            config.recenter_hold_s,
-        );
-        let mut controls = *controls;
-        for (hand, click) in controls.hands.iter_mut().zip(arbitrated.clicks) {
-            hand.stick_click = click;
-        }
-        let controls = &controls;
         for (latch, hand) in self.menu.iter_mut().zip(&controls.hands) {
             menu::step(latch, hand, config.menu_stick_push);
         }
@@ -145,7 +131,6 @@ impl Bindings {
             crouch_toggle,
             grabs,
             sight_capture: chord.capture,
-            recenter: arbitrated.recenter,
             wheel: Default::default(),
             grapple_held: false,
         }

@@ -1,11 +1,13 @@
 //! On-foot stick locomotion, the per-tick mode detector, and the raw input interpretation and
 //! controller-to-game bindings that drive them.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
-        bindings::yank::YankConfig,
+        bindings::{policy_a::PolicyAConfig, yank::YankConfig},
         frame::{GripPress, Hand, InteractionProfile, PressRules, PressThresholds},
         locomotion::config::{ActFilterConfig, StableViewConfig, StickConfig},
     },
@@ -192,9 +194,8 @@ pub struct BindingsConfig {
     pub stick_chord_window_s: f32,
     /// How long both stick clicks must be held together to recenter the VR view, seconds.
     pub recenter_hold_s: f32,
-    /// How soon after the left stick click the right B must be pressed to show or hide the debug
-    /// panel, seconds ([`crate::controllers::bindings::panel_chord`]). The click is not withheld
-    /// for it: a lone stick click waits only the stick click chord window.
+    /// How soon after the left stick click a fresh right B press can show or hide the debug panel,
+    /// seconds. The left click waits for the longer of this and the recenter join window.
     pub panel_chord_window_s: f32,
     /// The yank gesture: a sharp pull of the grapple hand toward the body zips along an attached
     /// line.
@@ -217,12 +218,26 @@ impl BindingsConfig {
         }
     }
 
-    /// How long a lone stick click waits before it acts, seconds, by [`Hand::index`]: the stick
-    /// click chord window on both hands. The debug panel chord does not lengthen the left click's
-    /// wait, so that the horn, the weapon step, and the dual-wield retract act as soon as the
-    /// recenter chord allows.
-    pub fn stick_click_windows(&self) -> [f32; 2] {
-        [self.stick_chord_window_s; 2]
+    /// The policy's effective timings. Invalid live edits withhold protected input rather than
+    /// silently substituting a different join window.
+    pub(crate) fn policy_a(&self) -> Option<PolicyAConfig> {
+        let recenter_join = Duration::try_from_secs_f32(self.stick_chord_window_s).ok()?;
+        let panel_join = Duration::try_from_secs_f32(self.panel_chord_window_s).ok()?;
+        let recenter_hold = Duration::try_from_secs_f32(self.recenter_hold_s).ok()?;
+        for duration in [recenter_join, panel_join, recenter_hold] {
+            u64::try_from(duration.as_nanos()).ok()?;
+        }
+        (!recenter_join.is_zero()
+            && recenter_join <= Duration::from_secs(1)
+            && !panel_join.is_zero()
+            && panel_join <= Duration::from_secs(1)
+            && !recenter_hold.is_zero()
+            && recenter_hold <= Duration::from_secs(60))
+        .then_some(PolicyAConfig {
+            recenter_join,
+            panel_join,
+            recenter_hold,
+        })
     }
 }
 

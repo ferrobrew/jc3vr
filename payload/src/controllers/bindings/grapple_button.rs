@@ -111,6 +111,15 @@ impl GrappleButton {
         Self { phase: Phase::Idle }
     }
 
+    pub(crate) fn pending(&self) -> bool {
+        self.phase != Phase::Idle
+    }
+
+    /// Invalidate the accepted episode without producing a release or a delayed click.
+    pub(crate) fn cancel(&mut self) {
+        self.phase = Phase::Idle;
+    }
+
     /// Advance one tick.
     pub fn step(&mut self, tick: GrappleTick) -> GrappleOutput {
         let GrappleTick {

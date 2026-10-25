@@ -125,6 +125,8 @@ fn normalise(mut step: Step, mode: Mode) -> Step {
                 }
             })
             .collect();
+        // Suit fire names its own weapon without the handheld gun's trigger alias.
+        step.desired.retain(|d| d.target.action != R2);
     }
     if let Mode::Vehicle(seat) = mode
         && !seat.driver

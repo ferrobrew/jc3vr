@@ -16,7 +16,8 @@
 //! - per set, the first time the set is active,
 //! - in full on the next frame after the controls summary is rebuilt ([`request_refresh`]),
 //! - in full once a second while the debug UI's page is showing ([`note_viewed`]),
-//! - the active sets once a second while the controls summary is showing ([`note_shown`]).
+//! - the active sets at every sync, before sampling, so protected presses are never authorized by
+//!   a UI refresh interval. A same-profile rebind between query and read remains a runtime limitation.
 
 use std::{
     ptr,
@@ -370,7 +371,7 @@ impl SourcesRefresh {
         for (i, set) in SetId::all().enumerate() {
             let is_active = active.contains(&set);
             let first_active = is_active && !self.seen_active[i];
-            if !full && !first_active && !(shown && is_active) {
+            if !full && !first_active && !is_active {
                 continue;
             }
             if is_active {

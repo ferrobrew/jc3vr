@@ -4,9 +4,20 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::controllers::bindings::tables::{
-    coverage::{all_contexts, all_modes, injected, injected_with},
-    tests::equivalence::legacy_layout,
+use crate::{
+    controllers::{
+        bindings::tables::{
+            coverage::{all_contexts, all_modes, injected, injected_with},
+            tests::equivalence::legacy_layout,
+        },
+        vehicles::{
+            config::WingsuitGesturesConfig,
+            wingsuit_gestures::{
+                FlightPose, GestureInput, GestureSample, HandClaims, WingsuitGestures,
+            },
+        },
+    },
+    vr::input::flight_pose::desired_for,
 };
 
 /// The game actions the new layout leaves without a button: grenades come from their pouch and
@@ -24,22 +35,31 @@ const DROPPED: [Action; 6] = [
     BTN_B,
 ];
 
+// Suit gestures use the narrow native actions, not the broad button aliases.
+const WINGSUIT_DROPPED_BUTTON_ALIASES: [Action; 3] = [ENTER_VEHICLE, USE_ITEM, BTN_Y];
+
 #[test]
 fn every_action_reachable_before_stays_reachable() {
     let mut added = BTreeSet::new();
     for mode in all_modes() {
+        let gestures = gesture_actions(mode);
         for (dominant, ctx) in all_contexts() {
             let before = injected_with(mode, dominant, ctx, legacy_layout);
-            let now = injected(mode, dominant, ctx);
+            let mut now = injected(mode, dominant, ctx);
+            added.extend(now.difference(&before).copied());
+            now.extend(gestures.iter().copied());
             let lost: Vec<_> = before
                 .difference(&now)
                 .filter(|a| !DROPPED.contains(a))
+                .filter(|a| {
+                    mode != Mode::Airborne(AirborneVariant::Wingsuit)
+                        || !WINGSUIT_DROPPED_BUTTON_ALIASES.contains(a)
+                })
                 .collect();
             assert!(
                 lost.is_empty(),
                 "{mode:?}, {dominant:?}-handed, {ctx:?}: {lost:?} no longer reachable"
             );
-            added.extend(now.difference(&before).copied());
         }
     }
     // The new layout adds the weapon slot select on the off-hand trackpad, and the cutscene skip
@@ -52,6 +72,81 @@ fn every_action_reachable_before_stays_reachable() {
         SKIP_CUTSCENE,
     ]);
     assert_eq!(added, select);
+}
+
+fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
+    let expected = match mode {
+        Mode::Airborne(AirborneVariant::Falling) => BTreeSet::from([OPEN_WINGSUIT]),
+        Mode::Airborne(AirborneVariant::Wingsuit) => {
+            BTreeSet::from([OPEN_WINGSUIT, CANCEL, WINGSUIT_AIRBRAKE])
+        }
+        _ => return BTreeSet::new(),
+    };
+    let config = WingsuitGesturesConfig::new();
+    let neutral = FlightPose {
+        lateral: [0.0; 2],
+        reach: [1.0 / 3.0; 2],
+        height: [-1.0 / 3.0; 2],
+        angle_deg: [90.0; 2],
+        palm_forward: [0.0; 2],
+    };
+    let flight = FlightPose {
+        lateral: [0.30; 2],
+        reach: [0.30; 2],
+        height: [0.0; 2],
+        angle_deg: [0.0; 2],
+        palm_forward: [0.0; 2],
+    };
+    let brake = FlightPose {
+        palm_forward: [1.0; 2],
+        ..flight
+    };
+    let mut state = WingsuitGestures::default();
+    let mut sample = GestureSample {
+        epoch: 1,
+        sequence: 0,
+        time_ns: 0,
+    };
+    let mut actions = BTreeSet::new();
+    for (pose, count) in [
+        (neutral, 5),
+        (flight, 6),
+        (brake, 6),
+        (flight, 3),
+        (neutral, 9),
+    ] {
+        for _ in 0..count {
+            sample.sequence += 1;
+            sample.time_ns += 50_000_000;
+            let commands = state.step(
+                GestureInput {
+                    sample,
+                    mode,
+                    gameplay: true,
+                    canopy_requested: false,
+                    pose: Some(pose),
+                    occupied: [false; 2],
+                    claims: [HandClaims::default(); 2],
+                },
+                &config,
+            );
+            for desired in desired_for(commands, mode, false).unwrap() {
+                assert_eq!(desired.target.map, MapKind::Player, "{mode:?}: {desired:?}");
+                assert_eq!(
+                    desired.want,
+                    if desired.target.action == OPEN_WINGSUIT {
+                        Want::Click
+                    } else {
+                        Want::Hold(1.0)
+                    },
+                    "{mode:?}: {desired:?}"
+                );
+                actions.insert(desired.target.action);
+            }
+        }
+    }
+    assert_eq!(actions, expected, "{mode:?}: native gesture actions");
+    actions
 }
 
 #[test]

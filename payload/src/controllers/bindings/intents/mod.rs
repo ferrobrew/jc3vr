@@ -7,9 +7,9 @@
 //! physical inputs it is bound to on each hand ([`BoundSet`]). [`Intents::build`] then applies,
 //! in order:
 //!
-//! - the stick-click chord's arbitration: an action bound to a stick click reads that hand's
-//!   arbitrated click instead of its own state, so a lone click waits out the chord window and a
-//!   chord leaks no click ([`crate::controllers::bindings::tables::stick_chord`]);
+//! The shared input arbiter has already filtered the sampled semantic values before this module
+//! applies its contextual masks. Raw stick levels never substitute for semantic action values.
+//!
 //! - the masks ([`Mask`]): a mechanism that claims a physical input on a hand (a grip press
 //!   latched to a grab, the dual-wield split's off-hand trigger, the native UI pointer's trigger,
 //!   the debug panel chord's buttons) or a whole hand (input recovery) puts every action that reads
@@ -143,7 +143,7 @@ impl SemanticInput {
             .get(action.index())
     }
 
-    fn get_mut(&mut self, action: ActionId) -> Option<&mut ActionInput> {
+    pub(crate) fn get_mut(&mut self, action: ActionId) -> Option<&mut ActionInput> {
         [&mut self.global, &mut self.mode]
             .into_iter()
             .find(|s| s.set == action.set)?
@@ -203,12 +203,10 @@ pub struct Intents {
 }
 
 impl Intents {
-    /// Apply the stick-click arbitration, the masks, and the gestures to `input` (see the module
-    /// documentation). `stick_clicks` are each hand's arbitrated stick click, by [`Hand::index`],
-    /// and `grapple_hand` is the hand the yank presses on.
+    /// Apply contextual masks and gestures to already-arbitrated semantic input.
+    /// `grapple_hand` is the hand the yank presses on.
     pub fn build(
         input: &SemanticInput,
-        stick_clicks: [ButtonControl; 2],
         masks: &[Mask],
         gestures: Gestures,
         grapple_hand: Hand,
@@ -223,9 +221,6 @@ impl Intents {
                 for hand in Hand::BOTH {
                     let i = hand.index();
                     let bound = action.bound[i];
-                    if bound.contains(Physical::ThumbstickClick) {
-                        action.hands[i].button = stick_clicks[i];
-                    }
                     if masks.iter().any(|m| m.hand == hand && m.covers(id, bound)) {
                         action.hands[i] = Intent::default();
                     }
@@ -335,7 +330,7 @@ fn read_set(
 /// One hand's [`Intent`] from its value and press, with the deadzone of the input the action reads
 /// by default: the trigger deadzone for a trigger pull, the move deadzone for a stick or a stick
 /// axis, and none for the rest (a trackpad position, a grip).
-fn shape(
+pub(crate) fn shape(
     value: ActionValue,
     button: ButtonControl,
     component: Option<Component>,

@@ -25,6 +25,8 @@ pub(crate) struct Loaded {
     pub(crate) semantic: bool,
     /// Ordered history exists and indexes this build's semantic schema.
     pub(crate) input_available: bool,
+    /// Group/Policy dependencies indexed on the loader thread, never during frame staging.
+    pub(crate) input_replay: tracking_format::input::replay::PreparedInput,
     /// What differs between the recording and this build or its settings.
     pub(crate) warnings: Vec<String>,
 }
@@ -189,18 +191,21 @@ fn prepare(path: &Path, recording: Recording, expected: Expected) -> Result<Load
             tracking_format::input::InputRecord::Group(group) => {
                 group.action_schema == expected.action_schema
             }
-            tracking_format::input::InputRecord::Discontinuity { .. } => true,
+            tracking_format::input::InputRecord::Discontinuity { .. }
+            | tracking_format::input::InputRecord::Policy(_) => true,
         });
     if !input_available {
         warnings.push("the recording has no compatible ordered input history; snapshots replay without ordered input evidence".to_owned());
     }
     let times = recording.frames.iter().map(|f| f.time_ns).collect();
+    let input_replay = tracking_format::input::replay::PreparedInput::new(&recording.input);
     Ok(Loaded {
         path: path.to_owned(),
         recording,
         times,
         semantic,
         input_available,
+        input_replay,
         warnings,
     })
 }

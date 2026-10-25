@@ -140,24 +140,67 @@ fn a_flicked_a_in_the_wingsuit_opens_the_parachute_and_never_evades() {
 }
 
 #[test]
-fn the_wingsuit_closes_on_the_button_that_opened_it_and_boosts_on_the_stick_click() {
+fn the_wingsuit_triggers_keep_physical_sides_and_grips_fire_no_rockets() {
+    let mode = Mode::Airborne(AirborneVariant::Wingsuit);
+    for dominant in Hand::BOTH {
+        for hand in Hand::BOTH {
+            let mut c = Controls {
+                dominant,
+                ..Default::default()
+            };
+            c.hands[hand.index()].trigger_press = down();
+            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            let (own, other) = if hand == Hand::Left {
+                (FIRE_WINGSUIT_WEAPON_MAIN, FIRE_WINGSUIT_WEAPON_SECONDARY)
+            } else {
+                (FIRE_WINGSUIT_WEAPON_SECONDARY, FIRE_WINGSUIT_WEAPON_MAIN)
+            };
+            assert_eq!(player(&step, own), Some(Want::Hold(1.0)));
+            for action in [other, R2, CANCEL, WINGSUIT_AIRBRAKE] {
+                assert_eq!(
+                    player(&step, action),
+                    None,
+                    "{dominant:?}, {hand:?}, {action:?}"
+                );
+            }
+
+            let mut c = Controls {
+                dominant,
+                ..Default::default()
+            };
+            c.hands[hand.index()].grip = down();
+            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            assert_eq!(player(&step, FIRE_WINGSUIT_WEAPON_SECONDARY), None);
+        }
+    }
+}
+
+#[test]
+fn the_wingsuit_uses_physical_right_b_for_boost_and_a_for_canopy() {
     let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
     for dominant in Hand::BOTH {
-        let b_press = controls(dominant, |dom, _| dom.b = down());
-        let on_foot = Bindings::default().sim_step(ON_FOOT, &b_press, DT, &CONFIG);
-        assert_eq!(player(&on_foot, OPEN_WINGSUIT), Some(Want::Hold(1.0)));
-        let step = Bindings::default().sim_step(wingsuit, &b_press, DT, &CONFIG);
-        assert_eq!(player(&step, OPEN_WINGSUIT), Some(Want::Hold(1.0)));
-        assert_eq!(player(&step, WINGSUIT_BOOST), None);
+        let mut c = Controls {
+            dominant,
+            ..Default::default()
+        };
+        c.hands[Hand::Right.index()].b = down();
+        let step = Bindings::default().sim_step(wingsuit, &c, DT, &CONFIG);
+        assert_eq!(player(&step, WINGSUIT_BOOST), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, OPEN_WINGSUIT), None);
+        assert_eq!(player(&step, FIRE_GRAPPLE), None);
+
+        let mut c = Controls {
+            dominant,
+            ..Default::default()
+        };
+        c.hands[Hand::Right.index()].a = down();
+        let step = Bindings::default().sim_step(wingsuit, &c, DT, &CONFIG);
+        assert_eq!(player(&step, OPEN_PARACHUTE), Some(Want::Hold(1.0)));
+        assert_eq!(player(&step, OPEN_WINGSUIT), None);
 
         let click = controls(dominant, |dom, _| dom.stick_click = down());
         let step = Bindings::default().sim_step(wingsuit, &click, DT, &CONFIG);
-        assert_eq!(player(&step, WINGSUIT_BOOST), Some(Want::Hold(1.0)));
-
-        // The off-hand A, the reload on foot, does nothing in the suit.
-        let x = controls(dominant, |_, off| off.a = down());
-        let step = Bindings::default().sim_step(wingsuit, &x, DT, &CONFIG);
-        assert!(step.desired.is_empty(), "{:?}", step.desired);
+        assert_eq!(player(&step, WINGSUIT_BOOST), None);
     }
 }
 
@@ -183,13 +226,17 @@ fn falling_and_the_parachute_keep_the_hand_weapon_bindings() {
 #[test]
 fn the_wingsuit_fires_its_own_weapons_and_boosts() {
     let mut b = Bindings::default();
-    let c = controls(Hand::Right, |dom, _| {
+    let c = controls(Hand::Right, |dom, off| {
         dom.trigger_press = down();
+        off.trigger_press = down();
         dom.b = down();
-        dom.stick_click = down();
     });
     let step = b.sim_step(Mode::Airborne(AirborneVariant::Wingsuit), &c, DT, &CONFIG);
-    for action in [FIRE_WINGSUIT_WEAPON_MAIN, WINGSUIT_BOOST] {
+    for action in [
+        FIRE_WINGSUIT_WEAPON_MAIN,
+        FIRE_WINGSUIT_WEAPON_SECONDARY,
+        WINGSUIT_BOOST,
+    ] {
         assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
     }
     for action in [FIRE_RIGHT, RELOAD, DETONATE_EXPLOSIVE] {

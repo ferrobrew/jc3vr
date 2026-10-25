@@ -58,6 +58,12 @@ pub(super) struct NeutralPolicy {
 }
 
 impl NeutralPolicy {
+    pub(super) fn frame_neutral(&self, frame: &ControllerFrame) -> bool {
+        Hand::BOTH.into_iter().all(|hand| {
+            !frame.hand(hand).active || blocker(frame.hand(hand), self, hand.index()).is_none()
+        })
+    }
+
     pub fn new(
         input: &InputConfig,
         bindings: &BindingsConfig,
@@ -84,6 +90,7 @@ impl NeutralPolicy {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Recovery {
     usable: [bool; 2],
     armed: [bool; 2],
@@ -141,10 +148,10 @@ impl Recovery {
         lost
     }
 
-    /// Mask the entire affected hand until neutral, including the neutral sample's queued edges.
-    /// Only call for a fresh frame from the action set currently being consumed.
-    pub fn filter(
+    /// Evaluate readiness from fresh unmasked evidence, then mask the separate consumer copy.
+    pub(crate) fn filter_observed(
         &mut self,
+        original: &ControllerFrame,
         frame: &mut ControllerFrame,
         edges: &mut Edges,
         config: &NeutralPolicy,
@@ -154,7 +161,7 @@ impl Recovery {
                 continue;
             }
             if self.usable[i] {
-                self.blockers[i] = blocker(&frame.hands[i], config, i);
+                self.blockers[i] = blocker(&original.hands[i], config, i);
                 self.armed[i] = self.blockers[i].is_none();
             }
             frame.hands[i].inputs = Default::default();
@@ -357,7 +364,7 @@ mod tests {
             pressed: published.hands.each_ref().map(|h| h.buttons),
             ..Edges::default()
         };
-        recovery.filter(&mut frame, &mut edges, &policy());
+        recovery.filter_observed(published, &mut frame, &mut edges, &policy());
         (lost, frame, edges)
     }
 
@@ -369,6 +376,8 @@ mod tests {
             mask_log: MaskLog::new(),
             tracker: HoldTracker::new(),
             bindings: Bindings::new(),
+            trigger_ownership: Default::default(),
+            flight: Default::default(),
             yank: YankDetector::new(),
             report: TickReport::default(),
         };
@@ -386,7 +395,9 @@ mod tests {
             }
             let mut frame = sample.clone();
             let mut edges = Edges::default();
-            state.recovery.filter(&mut frame, &mut edges, &policy());
+            state
+                .recovery
+                .filter_observed(sample, &mut frame, &mut edges, &policy());
             let controls = Controls::from_frame(
                 &frame,
                 &edges,
@@ -417,6 +428,30 @@ mod tests {
         }
         assert_eq!(samples[2].hands[1].inputs.trigger, 1.0);
         assert_eq!(state.recovery.armed, [false, true]);
+    }
+
+    #[test]
+    fn policy_then_recovery_uses_original_protected_button_and_consumes_neutral_edges() {
+        let mut recovery = Recovery::new();
+        let mut original = published(1, [true; 2], [0.0; 2]);
+        original.hands[1].buttons.set(Button::ThumbstickClick, true);
+        original.hands[1].inputs.thumbstick_click = true;
+        recovery.observe(&original);
+        let mut consumer = original.clone();
+        let mut edges = Edges::default();
+        crate::controllers::bindings::policy_a::runtime::Tick::default()
+            .filter_raw(&mut consumer, &mut edges);
+        recovery.filter_observed(&original, &mut consumer, &mut edges, &policy());
+        assert!(!recovery.ready(Hand::Right));
+        let original = published(2, [true; 2], [0.0; 2]);
+        let mut consumer = original.clone();
+        edges.pressed[1].set(Button::TriggerPress, true);
+        recovery.observe(&original);
+        crate::controllers::bindings::policy_a::runtime::Tick::default()
+            .filter_raw(&mut consumer, &mut edges);
+        recovery.filter_observed(&original, &mut consumer, &mut edges, &policy());
+        assert!(recovery.ready(Hand::Right));
+        assert_eq!(edges.pressed[1], ButtonSet::EMPTY);
     }
 
     #[test]

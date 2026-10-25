@@ -47,7 +47,8 @@ impl RecordingFormat {
 pub(crate) struct CaptureBatch {
     pub(crate) bytes: Vec<u8>,
     pub(crate) capture_time_ns: u64,
-    pub(crate) input_groups: u64,
+    /// Actual Group and Policy records, plus previously reported discarded records.
+    pub(crate) input_records: u64,
 }
 
 #[derive(Debug)]
@@ -172,7 +173,7 @@ impl Writer {
                     time_ns: batch.capture_time_ns,
                     groups: 0,
                 });
-                loss.groups = loss.groups.saturating_add(batch.input_groups);
+                loss.groups = loss.groups.saturating_add(batch.input_records);
             }
             SendOutcome::Failed(_) => {}
         }

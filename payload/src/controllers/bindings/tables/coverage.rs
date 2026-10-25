@@ -158,10 +158,7 @@ pub fn injected_with(
     for hand in Hand::BOTH {
         let mut click = base;
         click.hands[hand.index()].stick_click = DOWN;
-        run(&[
-            (click, DT),
-            (click, config.stick_click_windows()[hand.index()] * 2.0),
-        ]);
+        run(&[(click, DT), (click, config.stick_chord_window_s * 2.0)]);
     }
     let mut system = base;
     system.hands[0].system = DOWN;
