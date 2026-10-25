@@ -23,6 +23,8 @@ pub mod config;
 pub mod frames;
 pub mod lean;
 pub mod legs;
+#[cfg(test)]
+mod observation;
 pub mod pelvis;
 pub mod root;
 pub mod skeleton;

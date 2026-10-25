@@ -2,6 +2,14 @@
 
 The rig decides who moves Rico's root on each simulation tick, walks the root after the player's head in the standing posture, leaves a lean over the feet alone, holds the view at a wall the root cannot pass, estimates the player's torso and turns Rico to face it, and places his pelvis and his feet. The aim is the Boneworks topology from [head-and-body.md](head-and-body.md#boneworks--bonelab-alignment): the player's body is ground truth, inferred from the head and hands, and Rico's body is posed to match it as far as his skeleton and the game allow. The camera stays on the player's real head throughout: the root follows the head, never the other way round. The code is in `payload/src/controllers/body/rig/`, and the settings are `controllers.body.rig`. The procedural body writes the pose ([procedural-body.md](procedural-body.md)).
 
+## Checked observation contract
+
+`payload/src/controllers/body/rig/observation.rs` defines a pure contract for a raw tracking publication and a corresponding previous/current simulation pair. It is compiled only for tests and has no production consumer. The current body, root-follow, and camera paths below remain unchanged.
+
+The tracking publication identifies its sequence, predicted display time, host publication time, and origin, calibration, scale, and authority versions. Head and grip observations must share that identity. Each simulation side retains its own completed step, root transform, world anchor, cockpit basis, completed compensation, and movement owner. Construction rejects crossed versions, inconsistent pair sides, and invalid finite pose data. Consumer freshness uses the host clock and rejects a future publication before calculating age.
+
+Raw inputs remain unchanged. Derived composition normalizes accepted near-unit rotations and applies the selected anchor, scale, basis, and completed compensation once. The root supplies model conversion rather than another transport term. Unit tests cover distinct pair sides, completed versus blocked movement, coordinate rebases, independent hand validity, stale observations, and noncommuting rotations. These tests do not establish live sampling provenance, moving-support identity, or a roomscale fix.
+
 ## Who moves the root
 
 Several systems want the root: the game's own states, the hand climbing, the animation's authored motions, and the player's head. Exactly one owns it on each tick (`rig::root::owner`), chosen once in the root hook, a post-call detour on the on-foot locomotion task ([`NStateTask_MovementLocomotionTask::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::locomotion::NStateTask_MovementLocomotionTask##func-Update)). The task writes the proxy's wanted velocity every on-foot tick, idle included, and velocity written there goes through the proxy's character context, which handles stairs, slopes, and support. The owners, in precedence order:
