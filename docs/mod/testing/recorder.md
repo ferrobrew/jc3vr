@@ -123,7 +123,7 @@ The log probes read a tap on the log that queues every event at info or above wh
 
 ### Signals
 
-The signals read the snapshots the mod's systems publish for the status rows and the debug UI. The Testing tab's Signals section lists them with their live values; the names are:
+Scenario signals read the snapshots the mod's systems publish for the status rows and the debug UI. Replay Live status has a separate, collapsed Signals table that lists every signal. Its bounded UI snapshot supports the replay-driving flag, recenter count, and the root gap, residual, push-back distance, obstruction flag, push-back count, and projected-ledger count. Other rows report an unsupported UI snapshot source. The table distinguishes not published, busy, current missing values, and stale retained values with their age. Root measurements expire against their source timestamp as well as the publication lifetime; cumulative counters use only the publication lifetime. Scenario expectations keep their own runtime reads. The signal names are:
 
 | Signal | Kind | Reads |
 | --- | --- | --- |

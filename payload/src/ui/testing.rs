@@ -14,7 +14,7 @@ use crate::{
     recorder::tracking,
     testing::{
         replay::{self, Pacing, Phase, ReplayOptions, ReplayOutcome, StartMode},
-        request, scenario,
+        request, scenario, signal_status,
         signals::Signal,
     },
 };
@@ -65,9 +65,6 @@ pub(crate) fn replay_feature(ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Scenarios")
         .default_open(true)
         .show(ui, scenarios_ui);
-    egui::CollapsingHeader::new("Signals")
-        .default_open(false)
-        .show(ui, signals_ui);
 }
 
 pub(crate) fn replay_status(ui: &mut egui::Ui) {
@@ -104,6 +101,9 @@ pub(crate) fn replay_status(ui: &mut egui::Ui) {
     ui.separator();
     ui.label("Scenarios");
     scenarios_status(ui);
+    egui::CollapsingHeader::new("Signals")
+        .default_open(false)
+        .show(ui, signals_ui);
 }
 
 fn recording_ui(ui: &mut egui::Ui) {
@@ -317,13 +317,21 @@ fn scenarios_status(ui: &mut egui::Ui) {
 }
 
 fn signals_ui(ui: &mut egui::Ui) {
+    let snapshot = signal_status::snapshot();
+    let width = ui
+        .available_width()
+        .min(ui.clip_rect().right() - ui.cursor().left());
+    let column_width = ((width - 2.0 * ui.spacing().item_spacing.x) / 3.0).max(1.0);
     egui::Grid::new("testing_signals")
+        .num_columns(3)
+        .min_col_width(column_width)
+        .max_col_width(column_width)
         .striped(true)
         .show(ui, |ui| {
             for signal in Signal::ALL {
-                ui.label(signal.name());
-                ui.label(signal.read().to_string());
-                ui.label(egui::RichText::new(signal.description()).weak());
+                ui.add(egui::Label::new(signal.name()).wrap());
+                ui.add(egui::Label::new(snapshot.get(*signal).to_string()).wrap());
+                ui.add(egui::Label::new(egui::RichText::new(signal.description()).weak()).wrap());
                 ui.end_row();
             }
         });

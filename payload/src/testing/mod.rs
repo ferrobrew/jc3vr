@@ -15,6 +15,7 @@ pub(crate) mod log_tap;
 pub(crate) mod replay;
 pub(crate) mod request;
 pub(crate) mod scenario;
+pub(crate) mod signal_status;
 pub(crate) mod signals;
 
 pub use config::TestingConfig;
@@ -26,6 +27,7 @@ pub(crate) fn update() {
     request::poll();
     replay::update();
     scenario::update();
+    signal_status::publish();
 }
 
 /// Replay this session's last tracking recording from its start marker, or stop the replay that

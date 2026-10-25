@@ -9,7 +9,8 @@ use crate::{
         replay::{self, Phase, ReplayOutcome, ReplayStatus},
         request,
         scenario::{self, ScenarioStatus},
-        signals::Signal,
+        signal_status::{self, Readout, Snapshot},
+        signals::{Signal, Value},
     },
 };
 
@@ -24,6 +25,7 @@ fn actual_replay_status_reads_replay_and_scenario_snapshots_without_a_renderer_o
     let mut expected = status_labels(&status);
     expected.push("Scenarios".to_owned());
     expected.extend(scenario_labels(&scenario::status()));
+    expected.push("Signals".to_owned());
     let save_status = config::status();
     let mut selection = NavigationState {
         feature: FeatureId::Replay,
@@ -34,7 +36,11 @@ fn actual_replay_status_reads_replay_and_scenario_snapshots_without_a_renderer_o
         let context = egui::Context::default();
         let labels = replay_frame(&context, &mut selection, width, Vec::new());
         assert_status_labels(&labels, &expected);
-        for (_, rect) in labels.into_iter().take(12) {
+        for (_, rect) in labels
+            .into_iter()
+            .filter(|(text, _)| text != "Signals")
+            .take(12)
+        {
             for pressed in [true, false] {
                 let labels = replay_frame(
                     &context,
@@ -91,7 +97,6 @@ fn actual_replay_controls_keep_idle_forms_and_instructions_without_activation() 
             "Scenarios",
             "Folder setting:",
             instruction.as_str(),
-            "Signals",
         ] {
             assert!(
                 labels.iter().any(|(text, _)| text == expected),
@@ -119,9 +124,10 @@ fn actual_replay_controls_keep_idle_forms_and_instructions_without_activation() 
             Signal::ALL
                 .iter()
                 .all(|signal| labels.iter().all(|(text, _)| text != signal.name())),
-            "Signals stays collapsed until its getters have a read-only snapshot seam"
+            "Signal rows belong in Replay Status"
         );
         for forbidden in [
+            "Signals",
             "Summary:",
             "Stop",
             "Start recording",
@@ -143,6 +149,92 @@ fn actual_replay_controls_keep_idle_forms_and_instructions_without_activation() 
     }
 }
 
+#[test]
+fn actual_replay_status_expands_every_signal_row_without_commands_or_source_reads() {
+    for width in [420.0, 1100.0] {
+        signal_status::publish();
+        let status = signal_status::snapshot();
+        assert_eq!(
+            status.get(Signal::ReplayDriving),
+            Readout::Current(Value::Bool(replay::is_driving()))
+        );
+        assert_eq!(
+            status.get(Signal::Recenters),
+            Readout::Current(Value::Number(f64::from(crate::vr::recenter_count())))
+        );
+        let before = replay_state();
+        let save_status = config::status();
+        let context = egui::Context::default();
+        context.style_mut_of(egui::Theme::Dark, |style| style.animation_time = 0.0);
+        context.style_mut_of(egui::Theme::Light, |style| style.animation_time = 0.0);
+        let mut selection = NavigationState {
+            feature: FeatureId::Replay,
+            section: FeatureSection::Status,
+        };
+        let original_selection = selection;
+        let collapsed = replay_frame(&context, &mut selection, width, Vec::new());
+        let header = collapsed
+            .iter()
+            .find(|(text, _)| text == "Signals")
+            .expect("Replay Status retains the collapsed Signals header")
+            .1;
+        assert!(
+            Signal::ALL
+                .iter()
+                .all(|signal| collapsed.iter().all(|(text, _)| text != signal.name()))
+        );
+        for pressed in [true, false] {
+            replay_frame(
+                &context,
+                &mut selection,
+                width,
+                pointer_event(header.center(), pressed),
+            );
+        }
+        let labels = replay_frame(&context, &mut selection, width, Vec::new());
+        let first = assert_signal_rows(&labels, &status, width);
+        if width == 420.0 {
+            let font = egui::TextStyle::Body.resolve(&context.style_of(egui::Theme::Dark));
+            let line_height = context.fonts_mut(|fonts| fonts.row_height(&font));
+            assert!(
+                labels[first..]
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .any(|row| row[2].1.height() > line_height * 1.5),
+                "narrow Signals descriptions wrap without hiding their text"
+            );
+        }
+        for (_, rect) in labels[first..].iter().take(12) {
+            for pressed in [true, false] {
+                let after = replay_frame(
+                    &context,
+                    &mut selection,
+                    width,
+                    pointer_event(rect.center(), pressed),
+                );
+                assert_eq!(assert_signal_rows(&after, &status, width), first);
+                assert_eq!(
+                    after[..first]
+                        .iter()
+                        .map(|(text, _)| text)
+                        .collect::<Vec<_>>(),
+                    labels[..first]
+                        .iter()
+                        .map(|(text, _)| text)
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(replay_state(), before);
+                assert_eq!(config::status(), save_status);
+                assert_eq!(selection, original_selection);
+            }
+        }
+        assert_eq!(replay_state(), before);
+        assert_eq!(config::status(), save_status);
+        assert_eq!(selection, original_selection);
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct ReplayState {
     saved_config: serde_json::Value,
@@ -150,6 +242,7 @@ struct ReplayState {
     status: String,
     active: bool,
     driving: bool,
+    recenters: u32,
     scenario_status: String,
     scenario_running: bool,
     scenario_path: Option<PathBuf>,
@@ -167,6 +260,7 @@ fn replay_state() -> ReplayState {
         status: format!("{:?}", replay::status()),
         active: replay::is_active(),
         driving: replay::is_driving(),
+        recenters: crate::vr::recenter_count(),
         scenario_status: format!("{:?}", scenario::status()),
         scenario_running: scenario::is_running(),
         scenario_path: scenario::last_path(),
@@ -246,11 +340,56 @@ fn scenario_labels(status: &ScenarioStatus) -> Vec<String> {
     labels
 }
 
+fn assert_signal_rows(labels: &[(String, egui::Rect)], status: &Snapshot, width: f32) -> usize {
+    let first = labels
+        .iter()
+        .position(|(text, _)| text == Signal::ALL[0].name())
+        .expect("expanding Signals renders its table");
+    assert_eq!(labels.len() - first, Signal::ALL.len() * 3);
+    for (&signal, row) in Signal::ALL.iter().zip(labels[first..].as_chunks::<3>().0) {
+        assert_eq!(row[0].0, signal.name());
+        assert_eq!(row[2].0, signal.description());
+        for (text, rect) in row {
+            assert!(
+                rect.left() >= 0.0 && rect.right() <= width + 1.0,
+                "signal text extends beyond the {width}-point viewport: {text}: {rect:?}"
+            );
+        }
+        assert!(row[0].1.right() <= row[1].1.left() + 1.0);
+        assert!(row[1].1.right() <= row[2].1.left() + 1.0);
+        match status.get(signal) {
+            Readout::Current(value) => assert!(
+                row[1].0 == value.to_string()
+                    || (row[1].0.starts_with("stale (")
+                        && row[1].0.ends_with(&format!("): {value}"))),
+                "unexpected value for {}: {}",
+                signal.name(),
+                row[1].0
+            ),
+            Readout::Stale { value, .. } => {
+                assert!(row[1].0.starts_with("stale ("));
+                assert!(row[1].0.ends_with(&format!("): {value}")));
+            }
+            readout => assert_eq!(row[1].0, readout.to_string()),
+        }
+    }
+    let unsupported = Readout::Unsupported.to_string();
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|(text, _)| text == &unsupported)
+            .count(),
+        Signal::ALL.len() - 8,
+        "only the reviewed atomic and root rows have UI snapshot sources"
+    );
+    first
+}
+
 fn assert_status_labels(labels: &[(String, egui::Rect)], expected: &[String]) {
     assert_eq!(
         labels.len(),
         expected.len(),
-        "Replay Status must contain only replay and scenario snapshot readouts"
+        "Replay Status must contain only replay and scenario readouts and collapsed Signals"
     );
     for ((text, _), expected) in labels.iter().zip(expected) {
         assert_eq!(text, expected);
@@ -264,7 +403,6 @@ fn assert_status_labels(labels: &[(String, egui::Rect)], expected: &[String]) {
         "Run",
         "Stop",
         "Folder setting:",
-        "Signals",
     ] {
         assert!(
             labels.iter().all(|(text, _)| text != forbidden),
@@ -283,7 +421,7 @@ fn replay_frame(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
-                egui::vec2(width, 1600.0),
+                egui::vec2(width, 100_000.0),
             )),
             events,
             ..Default::default()
