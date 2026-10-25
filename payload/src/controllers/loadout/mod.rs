@@ -33,6 +33,7 @@ mod projection;
 mod reset;
 pub mod sandbox;
 mod socket;
+pub(crate) mod spawn_transport;
 mod table;
 pub mod take;
 mod transition;

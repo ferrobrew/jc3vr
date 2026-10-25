@@ -590,6 +590,11 @@ impl RequestBook {
         Ok(())
     }
 
+    /// Transport retirement follows the same request record instead of a second completion flag.
+    pub fn request_outstanding(&self, id: RequestId) -> bool {
+        self.requests.iter().any(|request| request.id == id)
+    }
+
     pub fn counts(&self) -> Counts {
         let members = || self.sources.iter().flat_map(|source| source.members.iter());
         Counts {

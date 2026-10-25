@@ -5,7 +5,7 @@ use egui::Ui;
 
 use crate::controllers::{
     frame::Hand,
-    loadout::{Socket, slot_label},
+    loadout::{Socket, slot_label, spawn_transport},
     weapons::{
         dual_wield::single,
         hold::use_item,
@@ -20,6 +20,12 @@ use crate::controllers::{
 };
 
 pub(super) fn inventory_readout(ui: &mut Ui, s: &InventoryStatus, r: &RestoreStatus) {
+    let transport = spawn_transport::controller().status();
+    ui.label(format!(
+        "Source-member spawn admission: {:?}; native callbacks {}, source qualification {}, ammunition {}, staging {}.",
+        transport.admission, transport.native_callbacks, transport.source_qualification,
+        transport.ammunition, transport.staging,
+    ));
     ui.label(format!(
         "Save sidecar: {} · writes {} · carried in the last {} · last write error: {}",
         r.path
