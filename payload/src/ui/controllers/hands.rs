@@ -31,6 +31,17 @@ pub(super) fn hands_readout(
         "State: {}",
         tiers.state.map_or("none yet", TierState::label)
     ));
+    let p = presentation::status();
+    ui.label(format!(
+        "Render-rate body: {}, {} draws, {:.3} ms a frame (last {:.3}, peak {:.3}), {} ticks{}",
+        p.idle.label(),
+        p.draws,
+        p.mean_cost_us / 1000.0,
+        p.frame_cost_us / 1000.0,
+        p.peak_cost_us / 1000.0,
+        p.ticks,
+        p.rig_error.map_or(String::new(), |e| format!(", {e}")),
+    ));
     let arms = rig::status();
     let player_arm = reach::player_arm_length(&body::player());
     ui.label(format!(
@@ -191,7 +202,7 @@ fn reach_settings(ui: &mut Ui, r: &mut ReachConfig) {
     }
 }
 
-pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
+pub(super) fn presentation_settings(ui: &mut Ui, h: &mut HandsConfig) {
     ui.checkbox(&mut h.ik, "Hand IK")
         .on_hover_text("Drive the wrists to the controllers with HumanIK.");
     ui.checkbox(&mut h.late_update, "Render-time late update")
@@ -207,17 +218,10 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
             "Solve the arms again to the hands",
         );
     });
-    let p = presentation::status();
-    ui.label(format!(
-        "Render-rate body: {}, {} draws, {:.3} ms a frame (last {:.3}, peak {:.3}), {} ticks{}",
-        p.idle.label(),
-        p.draws,
-        p.mean_cost_us / 1000.0,
-        p.frame_cost_us / 1000.0,
-        p.peak_cost_us / 1000.0,
-        p.ticks,
-        p.rig_error.map_or(String::new(), |e| format!(", {e}")),
-    ));
+    egui::CollapsingHeader::new("Arm reach").show(ui, |ui| reach_settings(ui, &mut h.reach));
+}
+
+pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
     ui.checkbox(
         &mut h.suppress_secondary_ik,
         "Switch off the game's secondary hand IK",
@@ -243,7 +247,10 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
     if ui.button("Reset grip offset").clicked() {
         h.grip = GripOffset::INDEX_BEST_GUESS;
     }
-    egui::CollapsingHeader::new("Arm reach").show(ui, |ui| reach_settings(ui, &mut h.reach));
+    ui.collapsing("Advanced tuning", |ui| tier_settings(ui, h));
+}
+
+fn tier_settings(ui: &mut Ui, h: &mut HandsConfig) {
     egui::CollapsingHeader::new("Hand tiers").show(ui, |ui| {
         for state in TierState::ALL {
             let tier = h.tiers.tier_mut(state);
@@ -259,6 +266,9 @@ pub(super) fn hands_settings(ui: &mut Ui, h: &mut HandsConfig) {
             h.tiers = HandTierTable::PLAN;
         }
     });
+}
+
+pub(super) fn anchor_settings(ui: &mut Ui, h: &mut HandsConfig) {
     let a = &mut h.anchor;
     ui.checkbox(&mut a.enabled, "Anchor the grapple hand to the line")
         .on_hover_text("Off, the grapple states yield the hand to the animation.");

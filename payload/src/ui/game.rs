@@ -1,4 +1,4 @@
-//! The Game tab: live game state and patch toggles.
+//! Movement tuning, live game state, and engine experiment controls.
 
 use std::sync::atomic::Ordering;
 
@@ -27,312 +27,48 @@ use crate::{
         },
     },
     sim_rate::{self, SimRate},
-    ui::util::{patch_slider, patchbox},
+    ui::{
+        catalog::{FeatureId, FeatureSection},
+        util::{patch_slider, patchbox},
+    },
 };
 
-pub fn egui_debug_game(ui: &mut egui::Ui) {
-    unsafe {
-        let Some(game) = jc3gi::game::Game::get() else {
-            return;
-        };
-        ui.collapsing("Movement", |ui| {
-            {
-                let mut cfg = config::edit();
-                ui.checkbox(
-                &mut cfg.movement.force_fps_movement,
-                "FPS movement (force aim-relative locomotion on foot)",
-            )
-            .on_hover_text(
-                "Force the aim flags only while each locomotion task updates, so movement queues \
-                 the aim-relative (strafe) acts. Known gaps: the acts are combat-stance \
-                 animations (arms raised), and the no-aim strafe animations are cut content, so \
-                 holstered legs stay forward-run.",
-            );
-                ui.checkbox(
-                &mut cfg.movement.suppress_reverse_look,
-                "Suppress reverse look-behind (vehicles)",
-            )
-            .on_hover_text(
-                "Drop the ACT_REVERSE acts so Rico keeps facing forward while reversing; looking \
-                 behind is the player's job with a player-driven head.",
-            );
-                ui.checkbox(
-                &mut cfg.movement.suppress_idle_fidget,
-                "Suppress idle fidget (one-off idle variations)",
-            )
-            .on_hover_text(
-                "Drop ACT_TO_IDLE_ONE_OFF so Rico stays in the base idle instead of playing the \
-                 periodic weight-shift/look-around fidget, which reads as the body moving on its \
-                 own under the HMD-driven head. NPCs keep their fidgets.",
-            );
-                ui.checkbox(
-                &mut cfg.movement.suppress_idle_breathing,
-                "Suppress idle breathing (freeze the base idle pose)",
-            )
-            .on_hover_text(
-                "Hold the animation clock (dt=0) for the player while standing in the base idle \
-                 state, so the subtle breathing/sway of the idle clip freezes. Movement and other \
-                 states are unaffected. Off by default -- needs in-headset validation.",
-            );
-                ui.checkbox(
-                &mut cfg.movement.face_camera,
-                "Face camera (drive the body yaw from the camera)",
-            )
-            .on_hover_text(
-                "Write the camera's ground-plane forward to the target-face-dir blackboard value \
-                 and force the game's orientation executor into its face-dir tracking mode for \
-                 the local player -- the native rate-limited turn code does the rotating, in \
-                 every on-foot state, holstered included.",
-            );
-                ui.add(
-                    egui::Slider::new(&mut cfg.movement.face_camera_turn_step, 0.5..=45.0)
-                        .text("Face-camera turn step (deg/update)"),
-                );
-                ui.add(
-                egui::Slider::new(&mut cfg.movement.face_camera_input_cone_deg, 0.0..=180.0)
-                    .text("Face-camera input cone (deg; 180 = always pin)"),
-            )
-            .on_hover_text(
-                "While moving, the pin only applies when the move direction is within this cone \
-                 of camera-forward; outside it, the native steer runs (turn-and-run). Idle \
-                 always pins. 180 pins everything; pair with slide strafe.",
-            );
-                ui.checkbox(
-                    &mut cfg.movement.slide_strafe,
-                    "Slide strafe (redirect movement along input while pinned)",
-                )
-                .on_hover_text(
-                    "Override the movement task's displacement direction with the input direction \
-                 (the native speed envelope still applies) and keep the legs in the plain \
-                 forward-run act. Lateral/backward movement slides without matching leg \
-                 animations -- the game ships no neutral strafe clips.",
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.movement.slide_rotation_deg, -180.0..=180.0)
-                        .text("Slide rotation (deg)"),
-                )
-                .on_hover_text(
-                    "Yaw correction applied to the slide direction. Dial until W slides away from \
-                 the camera and D slides right; the consuming frame's convention is unpinned.",
-                );
-                ui.checkbox(
-                    &mut cfg.movement.slide_instant_speed,
-                    "Instant speed (skip the ramp-up while sliding)",
-                )
-                .on_hover_text(
-                    "Floor the movement speed to the blackboard target while sliding. The native \
-                 speed is the animation's root velocity, so the run-start clips ramp it from \
-                 zero; the floor makes the motion uniform from the first frame.",
-                );
-                ui.checkbox(
-                    &mut cfg.movement.slide_skip_starts,
-                    "Skip start wind-up (queue the run cycle directly)",
-                )
-                .on_hover_text(
-                    "Replace the directional run-start acts with the plain forward move act while \
-                 sliding, when the animation state machine accepts it (the game's own TryAct \
-                 pre-flight guards the swap; the native starts run as the fallback).",
-                );
-                ui.checkbox(
-                    &mut cfg.movement.smooth_swim_yaw,
-                    "Smooth swim yaw (right-stick heading in water)",
-                )
-                .on_hover_text(
-                    "Aim both the swim move direction and the body's heading rotation at the \
-                 heading you own with the right stick: the camera has no influence, the left stick \
-                 swims forward along that heading (backward is refused -- there is no backstroke), \
-                 and the game's act-quantized turn steps never trigger. Inert on flatscreen or \
-                 before the right-stick yaw target seeds.",
-                );
-                ui.checkbox(
-                    &mut cfg.headpose.swim_level_view,
-                    "Level the view while swimming (camera follows the head only)",
-                )
-                .on_hover_text(
-                    "Compose the head onto the body's yaw only while swimming, so the camera moves \
-                     exactly with your head and the body's dive pitch just steers the swim. Off, \
-                     the body's pitch adds to your head's and the view swings further than you \
-                     moved. Costs the surface bob and roll.",
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.headpose.vr_turn.swim_scale, 0.1..=2.0)
-                        .text("Swim turn sensitivity (x on-foot look rate)"),
-                )
-                .on_hover_text(
-                    "Scales the right-stick turn rate while swimming. In water the body tracks the \
-                     look input one-for-one, where on foot the game's own executor rate smooths it, \
-                     so the same input turns faster there.",
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.movement.swim_turn_rate_deg_s, 180.0..=540.0)
-                        .text("Swim body turn rate (deg/s)"),
-                )
-                .on_hover_text(
-                    "How fast the body is allowed to rotate toward the heading you own with the \
-                     right stick. Below the look input's own rate (roughly 250 deg/s times the \
-                     sensitivity above) the body lags the target and the turn keeps going after \
-                     you let go.",
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.movement.swim_pitch_limit_deg, 0.0..=80.0)
-                        .text("Swim dive pitch limit (deg)"),
-                )
-                .on_hover_text(
-                    "How far underwater diving and surfacing may pitch the body. Zero pins the \
-                     swimmer level; the control is the head's pitch relative to the body.",
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.movement.swim_pitch_rate_deg_s, 10.0..=180.0)
-                        .text("Swim dive pitch rate (deg/s)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut cfg.movement.swim_pitch_deadzone_deg, 0.0..=45.0)
-                        .text("Swim dive pitch deadzone (deg)"),
-                );
-                ui.checkbox(
-                    &mut cfg.movement.suppress_parachute_look_steer,
-                    "Suppress parachute look-steer (head must not turn the chute)",
-                )
-                .on_hover_text(
-                    "Remove the camera-relative look-steer from the parachute's steering while \
-                     the head is decoupled (VR). The parachute steering helper mixes the camera \
-                     input matrix into the chute's steering and its yaw/pitch velocity springs, \
-                     so turning the head past the deadzone turns the chute with no stick input. \
-                     Stick steering and velocity banking stay.",
-                );
-                ui.checkbox(
-                    &mut cfg.movement.suppress_wingsuit_stall_flip,
-                    "Suppress the wingsuit's stall flip (the body must not loop on its own)",
-                )
-                .on_hover_text(
-                    "Stop the wingsuit's blend state from stalling while the head pose comes \
-                     from the headset, so it never plays the stall clip or the loop that \
-                     recovers from it over a physics body that never loops. Pitching up and \
-                     slowing loses lift and drops instead.",
-                );
-                ui.label(if stall_flip_suppressed() {
-                    "Stall flip: removed"
-                } else {
-                    "Stall flip: the game's"
-                });
-                ui.checkbox(
-                    &mut cfg.movement.suppress_wingsuit_barrel_roll,
-                    "Suppress the wingsuit's barrel roll (the body must not roll on its own)",
-                )
-                .on_hover_text(
-                    "Drop the wingsuit's evade, a barrel roll, for the local player while the head \
-                     pose comes from the headset. Its clip rolls the body a full turn and carries \
-                     it sideways, which the player's own body never does.",
-                );
-                ui.label(format!(
-                    "Barrel rolls dropped: {}",
-                    barrel_rolls_dropped()
-                ));
-            }
-            // The game's own relaxed (no-aim) strafe support, left in the game from the dev menu:
-            // while enabled, `QueueMoveActions` queues `ACT_MOVE_NO_AIM_STRAFE` -- a neutral-stance
-            // strafe act -- instead of steering the body, when the move direction is within the
-            // threshold window of the body's forward. Widening both thresholds to 180 makes every
-            // direction attempt the relaxed strafe: the experiment for whether neutral-stance strafe
-            // animations exist beyond the stock near-backpedal window.
-            patchbox(
-                ui,
-                "Relaxed strafe (the game's no-aim strafe acts)",
-                get_Character_EnableLocoStrafing(),
-            );
-            patch_slider(
-                ui,
-                "Relaxed strafe window (deg)",
-                get_LocoUtil_NoAimStrafeMaxAngle(),
-                0.0..=180.0,
-            );
-            patch_slider(
-                ui,
-                "Relaxed strafe window, alt rule state (deg)",
-                get_LocoUtil_NoAimStrafeMaxAngleAlt(),
-                0.0..=180.0,
-            );
-            ui.label(format!(
-                "Loco task calls: move {}  aim-relative {}  shimmed {}  face-camera {}  slide {}  \
-             starts-skipped {}  speed-floors {}",
-                MOVE_TASK_CALLS.load(Ordering::Relaxed),
-                AIM_RELATIVE_TASK_CALLS.load(Ordering::Relaxed),
-                SHIMMED_CALLS.load(Ordering::Relaxed),
-                FACE_CAMERA_CALLS.load(Ordering::Relaxed),
-                SLIDE_CALLS.load(Ordering::Relaxed),
-                SKIPPED_STARTS.load(Ordering::Relaxed),
-                INSTANT_SPEED_FLOORS.load(Ordering::Relaxed),
-            ));
-            ui.label(format!(
-                "Swim: cores {}  dir-overrides {}  rotate-overrides {}  turn-suppressions {}  \
-                 backward-refusals {}  untargeted {}",
-                SWIM_EVAL_CALLS.load(Ordering::Relaxed),
-                SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
-                SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
-                SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
-                SWIM_BACKWARD_REFUSALS.load(Ordering::Relaxed),
-                SWIM_UNTARGETED.load(Ordering::Relaxed),
-            ));
-            ui.label(format!(
-                "Parachute: look-steer suppressions {}",
-                PARACHUTE_LOOK_STEER_SUPPRESSIONS.load(Ordering::Relaxed),
-            ));
-            match hooks::input::locomotion::debug_blackboard_snapshot() {
-                Some(snapshot) => {
-                    let vec = |v: Option<glam::Vec3>| {
-                        v.map_or_else(
-                            || "<absent>".to_owned(),
-                            |v| format!("({:+.2}, {:+.2}, {:+.2})", v.x, v.y, v.z),
-                        )
-                    };
-                    let float = |f: Option<f32>| {
-                        f.map_or_else(|| "<absent>".to_owned(), |f| format!("{f:+.2}"))
-                    };
-                    ui.label(format!(
-                        "Loco (game-thread capture): input {}  move dir {}  speed {}  aux {}",
-                        float(snapshot.input_magnitude),
-                        vec(snapshot.move_dir),
-                        float(snapshot.speed),
-                        float(snapshot.aux_float),
-                    ));
-                }
-                None => {
-                    ui.label("Loco: <not captured yet>");
-                }
-            }
-            if let Some(character) = Character::GetLocalPlayerCharacter().as_ref() {
-                // The flag values come from the generated bitflags, so the labels can never drift from
-                // the pyxis definition; only the display names are local.
-                const FLAG_NAMES: [(AimState, &str); 4] = [
-                    (AimState::m_AimingEnabled, "Enabled"),
-                    (AimState::m_AimingWeapon, "Weapon"),
-                    (AimState::m_AimingGrapple, "Grapple"),
-                    (AimState::m_WasAiming, "WasAiming"),
-                ];
-                let flags = character.m_AimFlags;
-                let active: Vec<&str> = FLAG_NAMES
-                    .iter()
-                    .filter(|(flag, _)| flags.contains(*flag))
-                    .map(|(_, name)| *name)
-                    .collect();
-                ui.label(format!(
-                    "Game aim flags {:#04x}: {}  timer: {:.2}s (real state; the shim's force is \
-                 scoped to the loco tasks and never visible here)",
-                    flags.bits(),
-                    active.join(" | "),
-                    character.m_AimTimer,
-                ));
-            }
-        });
+pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId, section: FeatureSection) {
+    match (id, section) {
+        (FeatureId::Swimming, FeatureSection::Controls) => {
+            swimming_controls(ui, &mut config::edit());
+        }
+        (FeatureId::Swimming, FeatureSection::Status) => swimming_readout(ui),
+        (FeatureId::Locomotion, FeatureSection::Controls) => {
+            locomotion_controls(ui, &mut config::edit());
+            relaxed_strafe_controls(ui);
+        }
+        (FeatureId::Locomotion, FeatureSection::Status) => locomotion_readout(ui),
+        (FeatureId::Driving, FeatureSection::Controls) => {
+            driving_controls(ui, &mut config::edit());
+        }
+        (FeatureId::Parachute, FeatureSection::Controls) => {
+            parachute_controls(ui, &mut config::edit());
+        }
+        (FeatureId::Parachute, FeatureSection::Status) => parachute_readout(ui),
+        (FeatureId::Wingsuit, FeatureSection::Controls) => {
+            wingsuit_controls(ui, &mut config::edit());
+        }
+        (FeatureId::Wingsuit, FeatureSection::Status) => wingsuit_readout(ui),
+        (FeatureId::Engine, FeatureSection::Controls) => egui_debug_game(ui),
+        (FeatureId::Engine, FeatureSection::Status) => game_readout(ui),
+        (FeatureId::Swimming | FeatureId::Engine, FeatureSection::Visualizations) => {
+            ui.label("No separate visualization is available for this feature. Use Visualizations above for shared views.");
+        }
+        _ => {}
+    }
+}
 
-        ui.collapsing("Game", |ui| {
-            ui.label(format!("Update frequency: {}Hz", game.m_UpdateFrequency));
-            ui.label(format!("Update flags: {:X}", game.m_UpdateFlags));
-            ui.label(format!(
-                "Interpolation method: {:X}",
-                game.m_InterpolationMethod
-            ));
-            {
+pub fn egui_debug_game(ui: &mut egui::Ui) {
+    sim_rate_controls(ui);
+    unsafe {
+        if let Some(game) = jc3gi::game::Game::get() {
+            ui.collapsing("Game", |ui| {
                 let mut interpolation_override = game.m_InterpolationOverride;
                 let before = interpolation_override;
                 egui::ComboBox::from_label("Interpolation override")
@@ -353,50 +89,382 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
                         &interpolation_override.to_le_bytes(),
                     );
                 }
-            }
-            patchbox(ui, "Decouple enabled", &mut game.m_DecoupleEnabled);
-            sim_rate_controls(ui);
-        });
+                patchbox(ui, "Decouple enabled", &mut game.m_DecoupleEnabled);
+            });
 
-        ui.collapsing("Spawn", |ui| {
-            if ui
-                .button("Spawn exploding barrel")
-                .on_hover_text(
-                    "Queue a spawn request for the shipped \"Exploding Barrel\" prop definition \
-                     a few metres along the current view direction. The spawn is asynchronous; \
-                     the barrel appears once its entity has streamed in.",
-                )
-                .clicked()
-                && let Some(spawn_system) = SpawnSystem::get()
-            {
-                let pos = &spawn_system.m_ViewPos;
-                let dir = &spawn_system.m_ViewDir;
-                let mut transform = Matrix4::IDENTITY;
-                for axis in 0..3 {
-                    transform.data[12 + axis] =
-                        pos.data[axis] + dir.data[axis] * BARREL_SPAWN_DISTANCE;
+            ui.collapsing("Spawn", |ui| {
+                if ui
+                    .button("Spawn exploding barrel")
+                    .on_hover_text(
+                        "Queue a spawn request for the shipped \"Exploding Barrel\" prop definition \
+                         a few metres along the current view direction. The spawn is asynchronous; \
+                         the barrel appears once its entity has streamed in.",
+                    )
+                    .clicked()
+                    && let Some(spawn_system) = SpawnSystem::get()
+                {
+                    let pos = &spawn_system.m_ViewPos;
+                    let dir = &spawn_system.m_ViewDir;
+                    let mut transform = Matrix4::IDENTITY;
+                    for axis in 0..3 {
+                        transform.data[12 + axis] =
+                            pos.data[axis] + dir.data[axis] * BARREL_SPAWN_DISTANCE;
+                    }
+                    spawn_system.Spawn(
+                        // The only prop definition tagged "barrel" is the exploding fuel barrel.
+                        c"barrel".as_ptr().cast(),
+                        &transform,
+                        // Skip the LOS/proximity/spawn-block checks: the point is to spawn where
+                        // the player is looking, which those checks exist to prevent.
+                        SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
+                        std::ptr::null(),
+                        std::ptr::null_mut(),
+                    );
                 }
-                spawn_system.Spawn(
-                    // The only prop definition tagged "barrel" is the exploding fuel barrel.
-                    c"barrel".as_ptr().cast(),
-                    &transform,
-                    // Skip the LOS/proximity/spawn-block checks: the point is to spawn where
-                    // the player is looking, which those checks exist to prevent.
-                    SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
-                    std::ptr::null(),
-                    std::ptr::null_mut(),
-                );
-            }
-        });
+            });
+        } else {
+            ui.label("Unavailable: the game state is not initialized.");
+        }
     }
+}
+
+fn swimming_controls(ui: &mut egui::Ui, cfg: &mut Config) {
+    ui.checkbox(
+        &mut cfg.movement.smooth_swim_yaw,
+        "Smooth swim yaw (right-stick heading in water)",
+    )
+    .on_hover_text(
+        "Aim both the swim move direction and the body's heading rotation at the \
+         heading you own with the right stick: the camera has no influence, the left stick \
+         swims forward along that heading (backward is refused -- there is no backstroke), \
+         and the game's act-quantized turn steps never trigger. Inert on flatscreen or \
+         before the right-stick yaw target seeds.",
+    );
+    ui.checkbox(
+        &mut cfg.headpose.swim_level_view,
+        "Level the view while swimming (camera follows the head only)",
+    )
+    .on_hover_text(
+        "Compose the head onto the body's yaw only while swimming, so the camera moves \
+         exactly with your head and the body's dive pitch just steers the swim. Off, \
+         the body's pitch adds to your head's and the view swings further than you \
+         moved. Costs the surface bob and roll.",
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.headpose.vr_turn.swim_scale, 0.1..=2.0)
+            .text("Swim turn sensitivity (x on-foot look rate)"),
+    )
+    .on_hover_text(
+        "Scales the right-stick turn rate while swimming. In water the body tracks the \
+         look input one-for-one, where on foot the game's own executor rate smooths it, \
+         so the same input turns faster there.",
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.swim_turn_rate_deg_s, 180.0..=540.0)
+            .text("Swim body turn rate (deg/s)"),
+    )
+    .on_hover_text(
+        "How fast the body is allowed to rotate toward the heading you own with the \
+         right stick. Below the look input's own rate (roughly 250 deg/s times the \
+         sensitivity above) the body lags the target and the turn keeps going after \
+         you let go.",
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.swim_pitch_limit_deg, 0.0..=80.0)
+            .text("Swim dive pitch limit (deg)"),
+    )
+    .on_hover_text(
+        "How far underwater diving and surfacing may pitch the body. Zero pins the \
+         swimmer level; the control is the head's pitch relative to the body.",
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.swim_pitch_rate_deg_s, 10.0..=180.0)
+            .text("Swim dive pitch rate (deg/s)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.swim_pitch_deadzone_deg, 0.0..=45.0)
+            .text("Swim dive pitch deadzone (deg)"),
+    );
+}
+
+fn swimming_readout(ui: &mut egui::Ui) {
+    ui.label(format!(
+        "Swim: cores {}  dir-overrides {}  rotate-overrides {}  turn-suppressions {}  \
+         backward-refusals {}  untargeted {}",
+        SWIM_EVAL_CALLS.load(Ordering::Relaxed),
+        SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
+        SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
+        SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
+        SWIM_BACKWARD_REFUSALS.load(Ordering::Relaxed),
+        SWIM_UNTARGETED.load(Ordering::Relaxed),
+    ));
+}
+
+fn locomotion_controls(ui: &mut egui::Ui, cfg: &mut Config) {
+    ui.checkbox(
+        &mut cfg.movement.force_fps_movement,
+        "FPS movement (force aim-relative locomotion on foot)",
+    )
+    .on_hover_text(
+        "Force the aim flags only while each locomotion task updates, so movement queues \
+         the aim-relative (strafe) acts. Known gaps: the acts are combat-stance \
+         animations (arms raised), and the no-aim strafe animations are cut content, so \
+         holstered legs stay forward-run.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.suppress_idle_fidget,
+        "Suppress idle fidget (one-off idle variations)",
+    )
+    .on_hover_text(
+        "Drop ACT_TO_IDLE_ONE_OFF so Rico stays in the base idle instead of playing the \
+         periodic weight-shift/look-around fidget, which reads as the body moving on its \
+         own under the HMD-driven head. NPCs keep their fidgets.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.suppress_idle_breathing,
+        "Suppress idle breathing (freeze the base idle pose)",
+    )
+    .on_hover_text(
+        "Hold the animation clock (dt=0) for the player while standing in the base idle \
+         state, so the subtle breathing/sway of the idle clip freezes. Movement and other \
+         states are unaffected. Off by default -- needs in-headset validation.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.face_camera,
+        "Face camera (drive the body yaw from the camera)",
+    )
+    .on_hover_text(
+        "Write the camera's ground-plane forward to the target-face-dir blackboard value \
+         and force the game's orientation executor into its face-dir tracking mode for \
+         the local player -- the native rate-limited turn code does the rotating, in \
+         every on-foot state, holstered included.",
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.face_camera_turn_step, 0.5..=45.0)
+            .text("Face-camera turn step (deg/update)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.face_camera_input_cone_deg, 0.0..=180.0)
+            .text("Face-camera input cone (deg; 180 = always pin)"),
+    )
+    .on_hover_text(
+        "While moving, the pin only applies when the move direction is within this cone \
+         of camera-forward; outside it, the native steer runs (turn-and-run). Idle \
+         always pins. 180 pins everything; pair with slide strafe.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.slide_strafe,
+        "Slide strafe (redirect movement along input while pinned)",
+    )
+    .on_hover_text(
+        "Override the movement task's displacement direction with the input direction \
+         (the native speed envelope still applies) and keep the legs in the plain \
+         forward-run act. Lateral/backward movement slides without matching leg \
+         animations -- the game ships no neutral strafe clips.",
+    );
+    ui.add(
+        egui::Slider::new(&mut cfg.movement.slide_rotation_deg, -180.0..=180.0)
+            .text("Slide rotation (deg)"),
+    )
+    .on_hover_text(
+        "Yaw correction applied to the slide direction. Dial until W slides away from \
+         the camera and D slides right; the consuming frame's convention is unpinned.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.slide_instant_speed,
+        "Instant speed (skip the ramp-up while sliding)",
+    )
+    .on_hover_text(
+        "Floor the movement speed to the blackboard target while sliding. The native \
+         speed is the animation's root velocity, so the run-start clips ramp it from \
+         zero; the floor makes the motion uniform from the first frame.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.slide_skip_starts,
+        "Skip start wind-up (queue the run cycle directly)",
+    )
+    .on_hover_text(
+        "Replace the directional run-start acts with the plain forward move act while \
+         sliding, when the animation state machine accepts it (the game's own TryAct \
+         pre-flight guards the swap; the native starts run as the fallback).",
+    );
+}
+
+fn relaxed_strafe_controls(ui: &mut egui::Ui) {
+    unsafe {
+        if jc3gi::game::Game::get().is_some() {
+            // The game's relaxed strafe acts depend on these native debug flags.
+            patchbox(
+                ui,
+                "Relaxed strafe (the game's no-aim strafe acts)",
+                get_Character_EnableLocoStrafing(),
+            );
+            patch_slider(
+                ui,
+                "Relaxed strafe window (deg)",
+                get_LocoUtil_NoAimStrafeMaxAngle(),
+                0.0..=180.0,
+            );
+            patch_slider(
+                ui,
+                "Relaxed strafe window, alt rule state (deg)",
+                get_LocoUtil_NoAimStrafeMaxAngleAlt(),
+                0.0..=180.0,
+            );
+        } else {
+            ui.label("Unavailable: the game state is not initialized.");
+        }
+    }
+}
+
+fn locomotion_readout(ui: &mut egui::Ui) {
+    ui.label(format!(
+        "Loco task calls: move {}  aim-relative {}  shimmed {}  face-camera {}  slide {}  \
+         starts-skipped {}  speed-floors {}",
+        MOVE_TASK_CALLS.load(Ordering::Relaxed),
+        AIM_RELATIVE_TASK_CALLS.load(Ordering::Relaxed),
+        SHIMMED_CALLS.load(Ordering::Relaxed),
+        FACE_CAMERA_CALLS.load(Ordering::Relaxed),
+        SLIDE_CALLS.load(Ordering::Relaxed),
+        SKIPPED_STARTS.load(Ordering::Relaxed),
+        INSTANT_SPEED_FLOORS.load(Ordering::Relaxed),
+    ));
+    match hooks::input::locomotion::debug_blackboard_snapshot() {
+        Some(snapshot) => {
+            let vec = |v: Option<glam::Vec3>| {
+                v.map_or_else(
+                    || "<absent>".to_owned(),
+                    |v| format!("({:+.2}, {:+.2}, {:+.2})", v.x, v.y, v.z),
+                )
+            };
+            let float =
+                |f: Option<f32>| f.map_or_else(|| "<absent>".to_owned(), |f| format!("{f:+.2}"));
+            ui.label(format!(
+                "Loco (game-thread capture): input {}  move dir {}  speed {}  aux {}",
+                float(snapshot.input_magnitude),
+                vec(snapshot.move_dir),
+                float(snapshot.speed),
+                float(snapshot.aux_float),
+            ));
+        }
+        None => {
+            ui.label("Loco: <not captured yet>");
+        }
+    }
+    unsafe {
+        if jc3gi::game::Game::get().is_some() {
+            if let Some(character) = Character::GetLocalPlayerCharacter().as_ref() {
+                // The flag values come from the generated bitflags, so the labels cannot drift.
+                const FLAG_NAMES: [(AimState, &str); 4] = [
+                    (AimState::m_AimingEnabled, "Enabled"),
+                    (AimState::m_AimingWeapon, "Weapon"),
+                    (AimState::m_AimingGrapple, "Grapple"),
+                    (AimState::m_WasAiming, "WasAiming"),
+                ];
+                let flags = character.m_AimFlags;
+                let active: Vec<&str> = FLAG_NAMES
+                    .iter()
+                    .filter(|(flag, _)| flags.contains(*flag))
+                    .map(|(_, name)| *name)
+                    .collect();
+                ui.label(format!(
+                    "Game aim flags {:#04x}: {}  timer: {:.2}s (real state; the shim's force is \
+                     scoped to the loco tasks and never visible here)",
+                    flags.bits(),
+                    active.join(" | "),
+                    character.m_AimTimer,
+                ));
+            }
+        } else {
+            ui.label("Unavailable: the game state is not initialized.");
+        }
+    }
+}
+
+fn driving_controls(ui: &mut egui::Ui, cfg: &mut Config) {
+    ui.checkbox(
+        &mut cfg.movement.suppress_reverse_look,
+        "Suppress reverse look-behind (vehicles)",
+    )
+    .on_hover_text(
+        "Drop the ACT_REVERSE acts so Rico keeps facing forward while reversing; looking \
+         behind is the player's job with a player-driven head.",
+    );
+}
+
+fn parachute_controls(ui: &mut egui::Ui, cfg: &mut Config) {
+    ui.checkbox(
+        &mut cfg.movement.suppress_parachute_look_steer,
+        "Suppress parachute look-steer (head must not turn the chute)",
+    )
+    .on_hover_text(
+        "Remove the camera-relative look-steer from the parachute's steering while \
+         the head is decoupled (VR). The parachute steering helper mixes the camera \
+         input matrix into the chute's steering and its yaw/pitch velocity springs, \
+         so turning the head past the deadzone turns the chute with no stick input. \
+         Stick steering and velocity banking stay.",
+    );
+}
+
+fn parachute_readout(ui: &mut egui::Ui) {
+    ui.label(format!(
+        "Parachute: look-steer suppressions {}",
+        PARACHUTE_LOOK_STEER_SUPPRESSIONS.load(Ordering::Relaxed),
+    ));
+}
+
+fn wingsuit_controls(ui: &mut egui::Ui, cfg: &mut Config) {
+    ui.checkbox(
+        &mut cfg.movement.suppress_wingsuit_stall_flip,
+        "Suppress the wingsuit's stall flip (the body must not loop on its own)",
+    )
+    .on_hover_text(
+        "Stop the wingsuit's blend state from stalling while the head pose comes \
+         from the headset, so it never plays the stall clip or the loop that \
+         recovers from it over a physics body that never loops. Pitching up and \
+         slowing loses lift and drops instead.",
+    );
+    ui.checkbox(
+        &mut cfg.movement.suppress_wingsuit_barrel_roll,
+        "Suppress the wingsuit's barrel roll (the body must not roll on its own)",
+    )
+    .on_hover_text(
+        "Drop the wingsuit's evade, a barrel roll, for the local player while the head \
+         pose comes from the headset. Its clip rolls the body a full turn and carries \
+         it sideways, which the player's own body never does.",
+    );
+}
+
+fn wingsuit_readout(ui: &mut egui::Ui) {
+    ui.label(if stall_flip_suppressed() {
+        "Stall flip: removed"
+    } else {
+        "Stall flip: the game's"
+    });
+    ui.label(format!("Barrel rolls dropped: {}", barrel_rolls_dropped()));
+}
+
+fn game_readout(ui: &mut egui::Ui) {
+    unsafe {
+        if let Some(game) = jc3gi::game::Game::get() {
+            ui.label(format!("Update frequency: {}Hz", game.m_UpdateFrequency));
+            ui.label(format!("Update flags: {:X}", game.m_UpdateFlags));
+            ui.label(format!(
+                "Interpolation method: {:X}",
+                game.m_InterpolationMethod
+            ));
+        } else {
+            ui.label("Unavailable: the game state is not initialized.");
+        }
+    }
+    sim_rate_readout(ui);
 }
 
 /// How far along the view direction to place a debug-spawned object. Far enough that the object
 /// does not overlap the player, close enough to land in front of them.
 const BARREL_SPAWN_DISTANCE: f32 = 4.0;
 
-/// The sim-rate experiment (`crate::sim_rate`, `docs/mod/performance/sim-rate.md`): the rate, and
-/// what the experiment has applied to the game.
+/// The sim-rate experiment (`crate::sim_rate`, `docs/mod/performance/sim-rate.md`).
 fn sim_rate_controls(ui: &mut egui::Ui) {
     ui.separator();
     let configured = Config::lock_query(|c| c.sim_rate.rate);
@@ -425,6 +493,9 @@ fn sim_rate_controls(ui: &mut egui::Ui) {
     if chosen != configured {
         config::edit().sim_rate.rate = chosen;
     }
+}
+
+fn sim_rate_readout(ui: &mut egui::Ui) {
     let status = sim_rate::status();
     ui.label(format!(
         "Applied {} Hz, physics pin {}, game update frequency {}, interpolation override {}, at \
@@ -443,4 +514,43 @@ fn sim_rate_controls(ui: &mut egui::Ui) {
             .map_or_else(|| "?".to_owned(), |o| o.to_string()),
         status.max_ticks_per_frame,
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn swimming_editor_changes_only_the_selected_config_target_without_runtime() {
+        let context = egui::Context::default();
+        let mut cfg = Config::new();
+        cfg.movement.smooth_swim_yaw = false;
+        let before = serde_json::to_value(&cfg).unwrap();
+        let mut first_control = egui::Pos2::ZERO;
+        for _ in 0..2 {
+            let _ = context.run_ui(egui::RawInput::default(), |ui| {
+                first_control = ui.cursor().min + egui::vec2(8.0, 8.0);
+                swimming_controls(ui, &mut cfg);
+            });
+        }
+        for pressed in [true, false] {
+            let input = egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(first_control),
+                    egui::Event::PointerButton {
+                        pos: first_control,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+                ..Default::default()
+            };
+            let _ = context.run_ui(input, |ui| swimming_controls(ui, &mut cfg));
+        }
+        assert!(cfg.movement.smooth_swim_yaw);
+        let mut expected = before;
+        expected["movement"]["smooth_swim_yaw"] = true.into();
+        assert_eq!(serde_json::to_value(&cfg).unwrap(), expected);
+    }
 }

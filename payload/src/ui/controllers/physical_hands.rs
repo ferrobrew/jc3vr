@@ -12,8 +12,8 @@ use crate::{
             config::{PickupConfig, ShoveConfig},
             doors::{self, DoorsConfig},
             grasp::TargetKind,
-            sounds::{self, ImpactSoundsConfig},
-            vault::{self, VaultConfig},
+            sounds::{ImpactSoundsConfig, SoundsStatus},
+            vault::{VaultConfig, VaultStatus},
         },
     },
     ui::controllers::vec3_drag,
@@ -58,50 +58,31 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
                 ));
                 continue;
             }
-            ui.label(match s.reach {
-                None => "reaches nothing".to_owned(),
+            match s.reach {
+                None => {
+                    ui.label("reaches nothing");
+                }
                 Some(reach) => match reach.kind {
                     TargetKind::Weapon => {
-                        format!("reaches a weapon {:.0} mm away", reach.distance * 1000.0)
+                        ui.label(format!(
+                            "reaches a weapon {:.0} mm away",
+                            reach.distance * 1000.0
+                        ));
                     }
-                    TargetKind::Prop { mass_kg } => format!(
-                        "reaches a {mass_kg:.1} kg object {:.0} mm away",
-                        reach.distance * 1000.0
-                    ),
-                    TargetKind::Character(target) => format!(
-                        "reaches a {} character {:.0} mm away",
-                        if target.seated.is_some() {
-                            "seated"
-                        } else {
-                            "standing"
-                        },
-                        reach.distance * 1000.0
-                    ),
-                    TargetKind::Articulated { mass_kg } => format!(
-                        "reaches a {mass_kg:.0} kg articulated object {:.0} mm away",
-                        reach.distance * 1000.0
-                    ),
-                    TargetKind::Door(door) => format!(
-                        "reaches the {} door ({}) {:.0} mm away",
-                        doors::slot_label(door.slot),
-                        if door.latched { "latched" } else { "open" },
-                        reach.distance * 1000.0
-                    ),
+                    TargetKind::Prop { mass_kg } => {
+                        ui.label(format!(
+                            "reaches a {mass_kg:.1} kg object {:.0} mm away",
+                            reach.distance * 1000.0
+                        ));
+                    }
+                    TargetKind::Articulated { mass_kg } => {
+                        ui.label(format!(
+                            "reaches a {mass_kg:.0} kg articulated object {:.0} mm away",
+                            reach.distance * 1000.0
+                        ));
+                    }
+                    TargetKind::Character(_) | TargetKind::Door(_) => {}
                 },
-            });
-            if let Some(Some(target)) = s.reach.map(|r| match r.kind {
-                TargetKind::Character(target) => Some(target),
-                _ => None,
-            }) && let Some(seated) = target.seated
-            {
-                ui.label(format!(
-                    "the character sits behind the {} door, open {:.0}°",
-                    doors::slot_label(seated.door),
-                    seated.open_deg
-                ));
-            }
-            if s.latched {
-                ui.label("grips a latched door");
             }
             ui.label(match s.press {
                 None => "in the open".to_owned(),
@@ -137,35 +118,6 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
         p.lost,
         p.last_throw_mps
             .map_or(String::new(), |v| format!(" · last throw {v:.1} m/s"))
-    ));
-    ui.label(format!(
-        "Doors: {} latched grips · {} unlatched{}",
-        p.door_grips,
-        p.unlatches,
-        p.last_door.map_or(String::new(), |slot| format!(
-            " · last {}",
-            doors::slot_label(slot)
-        ))
-    ));
-    ui.label(format!(
-        "Characters: {} grips · {} yanked · {} ragdolls taken · {} pulled out of a seat",
-        p.character_grips, p.yanks, p.regrips, p.hijacks
-    ));
-    let v = vault::status();
-    ui.label(format!(
-        "Push up: {} pushes{}{}",
-        v.pushes,
-        if v.lifting {
-            format!(" · lifting {:.2} m/s", v.lift_mps)
-        } else {
-            String::new()
-        },
-        v.last_rise_m
-            .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
-    ));
-    ui.label(format!(
-        "Push up refused off the ground or moving down: {} · at the feet: {}",
-        v.refusals, v.at_the_feet
     ));
     if let Some(error) = &p.last_error {
         ui.label(format!("Last pickup error: {error}"));
@@ -213,16 +165,116 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
             egui::Slider::new(&mut p.object_impulse, 0.0..=4.0).text("Object impulse (× melee)"),
         );
         ui.separator();
-        sounds_settings(ui, &mut p.sounds);
-        ui.separator();
         pickup_settings(ui, &mut p.pickup);
-        ui.separator();
+    });
+}
+
+pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
+    ui.label(
+        "Direct physical interactions. Reach and grapple snatch has separate acquisition settings.",
+    );
+    ui.add_enabled_ui(p.enabled, |ui| {
         doors_settings(ui, &mut p.doors);
         ui.separator();
         characters_settings(ui, &mut p.characters);
         ui.separator();
         vault_settings(ui, &mut p.vault);
     });
+}
+
+pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus, v: &VaultStatus) {
+    ui.columns(2, |columns| {
+        for hand in Hand::BOTH {
+            let ui = &mut columns[hand.index()];
+            let s = &status.hands[hand.index()];
+            ui.strong(hand.label());
+            if !s.acting || s.held.is_some() {
+                continue;
+            }
+            if let Some(reach) = s.reach {
+                match reach.kind {
+                    TargetKind::Character(target) => {
+                        ui.label(format!(
+                            "reaches a {} character {:.0} mm away",
+                            if target.seated.is_some() {
+                                "seated"
+                            } else {
+                                "standing"
+                            },
+                            reach.distance * 1000.0
+                        ));
+                        if let Some(seated) = target.seated {
+                            ui.label(format!(
+                                "the character sits behind the {} door, open {:.0}°",
+                                doors::slot_label(seated.door),
+                                seated.open_deg
+                            ));
+                        }
+                    }
+                    TargetKind::Door(door) => {
+                        ui.label(format!(
+                            "reaches the {} door ({}) {:.0} mm away",
+                            doors::slot_label(door.slot),
+                            if door.latched { "latched" } else { "open" },
+                            reach.distance * 1000.0
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            if s.latched {
+                ui.label("grips a latched door");
+            }
+        }
+    });
+    let p = &status.pickup;
+    ui.label(format!(
+        "Doors: {} latched grips · {} unlatched{}",
+        p.door_grips,
+        p.unlatches,
+        p.last_door.map_or(String::new(), |slot| format!(
+            " · last {}",
+            doors::slot_label(slot)
+        ))
+    ));
+    ui.label(format!(
+        "Characters: {} grips · {} yanked · {} ragdolls taken · {} pulled out of a seat",
+        p.character_grips, p.yanks, p.regrips, p.hijacks
+    ));
+    ui.label(format!(
+        "Push up: {} pushes{}{}",
+        v.pushes,
+        if v.lifting {
+            format!(" · lifting {:.2} m/s", v.lift_mps)
+        } else {
+            String::new()
+        },
+        v.last_rise_m
+            .map_or(String::new(), |r| format!(" · last rise {r:.2} m"))
+    ));
+    ui.label(format!(
+        "Push up refused off the ground or moving down: {} · at the feet: {}",
+        v.refusals, v.at_the_feet
+    ));
+}
+
+pub(super) fn impact_sounds_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
+    ui.add_enabled_ui(p.enabled, |ui| sounds_settings(ui, &mut p.sounds));
+}
+
+pub(super) fn impact_sounds_readout(ui: &mut Ui, status: &SoundsStatus) {
+    ui.label(format!(
+        "Sounds: {} played · {} held back · {} silent · last {}",
+        status.played,
+        status.limited,
+        status.silent,
+        status
+            .last
+            .map_or("-".to_owned(), |(material, kind)| format!(
+                "{} on material {material}",
+                kind.label()
+            ))
+    ));
 }
 
 fn vault_settings(ui: &mut Ui, v: &mut VaultConfig) {
@@ -341,7 +393,6 @@ fn shove_settings(ui: &mut Ui, s: &mut ShoveConfig) {
 }
 
 fn sounds_settings(ui: &mut Ui, s: &mut ImpactSoundsConfig) {
-    let status = sounds::status();
     ui.checkbox(&mut s.enabled, "Impact sounds")
         .on_hover_text("The game's melee impact sound where a hand meets something hard enough.");
     ui.add(
@@ -351,16 +402,4 @@ fn sounds_settings(ui: &mut Ui, s: &mut ImpactSoundsConfig) {
     ui.add(egui::Slider::new(&mut s.min_strike_share, 0.0..=1.0).text("Weakest sounding strike"));
     ui.add(egui::Slider::new(&mut s.hand_cooldown_s, 0.0..=2.0).text("Hand cooldown (s)"));
     ui.add(egui::Slider::new(&mut s.min_interval_s, 0.0..=1.0).text("Shared interval (s)"));
-    ui.label(format!(
-        "Sounds: {} played · {} held back · {} silent · last {}",
-        status.played,
-        status.limited,
-        status.silent,
-        status
-            .last
-            .map_or("-".to_owned(), |(material, kind)| format!(
-                "{} on material {material}",
-                kind.label()
-            ))
-    ));
 }

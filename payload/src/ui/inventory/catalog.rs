@@ -1,4 +1,6 @@
-//! Approved navigation destinations, independent of the live page implementations.
+//! Approved navigation destinations and stable persisted feature keys.
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PageId {
@@ -38,7 +40,7 @@ impl PageId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum FeatureSection {
     #[default]
     Controls,

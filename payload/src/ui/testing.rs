@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// Render the Testing tab body.
-pub(crate) fn render(ui: &mut egui::Ui) {
+pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
     {
         let mut cfg = config::edit();
         ui.checkbox(&mut cfg.testing.enabled, "Test tools available")
@@ -32,6 +32,9 @@ pub(crate) fn render(ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Tracking recording")
         .default_open(true)
         .show(ui, recording_ui);
+}
+
+pub(crate) fn replay_feature(ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Replay")
         .default_open(true)
         .show(ui, replay_ui);

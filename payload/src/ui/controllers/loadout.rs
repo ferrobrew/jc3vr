@@ -1,7 +1,4 @@
-//! The loadout: the live table, dual-written beside the old weapon handling, with where the two
-//! disagree; and the core's sandbox table, driven by hand with made-up objects. Each shows the
-//! table, the primary hand, the slot projection, the last store's sidecar, and the latest
-//! transitions and refusals.
+//! Live inventory and sandbox tables, their slot and store projections, and the sandbox commands.
 
 use egui::Ui;
 
@@ -17,7 +14,7 @@ use crate::controllers::{
     },
 };
 
-pub(super) fn loadout_readout(ui: &mut Ui, live: &LiveStatus, sandbox: &SandboxStatus) {
+pub(super) fn live_readout(ui: &mut Ui, live: &LiveStatus) {
     ui.label(
         "The live table, written beside the old weapon handling, which still moves the weapons; \
          only the pins of the weapons lying in the world read it yet.",
@@ -40,12 +37,9 @@ pub(super) fn loadout_readout(ui: &mut Ui, live: &LiveStatus, sandbox: &SandboxS
             }
         }
     }
-    egui::CollapsingHeader::new("Sandbox")
-        .default_open(false)
-        .show(ui, |ui| sandbox_readout(ui, sandbox));
 }
 
-fn sandbox_readout(ui: &mut Ui, s: &SandboxStatus) {
+pub(super) fn sandbox_readout(ui: &mut Ui, s: &SandboxStatus) {
     ui.label(
         "A table of its own, of made-up objects, to watch the transitions, the refusals, and the \
          projections by hand.",
@@ -69,8 +63,6 @@ fn sandbox_readout(ui: &mut Ui, s: &SandboxStatus) {
     for line in &s.log {
         ui.label(line);
     }
-    ui.separator();
-    controls(ui, s);
 }
 
 /// The table's items, its primary hand, and its slots in play.
@@ -165,7 +157,7 @@ impl Default for Form {
     }
 }
 
-fn controls(ui: &mut Ui, s: &SandboxStatus) {
+pub(super) fn controls(ui: &mut Ui, s: &SandboxStatus) {
     let id = ui.id().with("loadout_sandbox_form");
     let mut form: Form = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
     let presets = sandbox::presets();

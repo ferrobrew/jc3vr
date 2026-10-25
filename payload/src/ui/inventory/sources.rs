@@ -15,6 +15,8 @@ macro_rules! debug_sources {
 
 pub(crate) const DEBUG_SOURCES: &[SourceFile] = debug_sources! {
     "mod.rs" => [Session, MenuPanel, Hud],
+    "overview.rs" => [Session, AllStatus, ActiveTools],
+    "visualizations.rs" => [RootWalls, PhysicalHands, Grapple],
     "camera.rs" => [HeadView, AnimationIk, Locomotion, Grapple],
     "diagnostics.rs" => [RenderDiagnostics, RenderCapture],
     "director.rs" => [DirectorSafety, DirectorSpawn, Video, Keyboard],
@@ -57,11 +59,13 @@ pub(crate) const DEBUG_SOURCES: &[SourceFile] = debug_sources! {
     "controllers/semantic.rs" => [Semantic],
     "controllers/settings.rs" => [Devices, Thresholds, Bindings, MenuPanel, Grapple, Locomotion, AnimationIk],
     "controllers/sights.rs" => [Aim],
+    "controllers/snatch.rs" => [Snatch, CharactersDoors],
     "controllers/stunt.rs" => [Climbing],
     "controllers/summary.rs" => [Wrist],
     "controllers/torso.rs" => [Torso],
     "controllers/unarmed.rs" => [PhysicalHands],
     "controllers/vehicles.rs" => [Driving, VehicleControls, Mounted, Wingsuit, Parachute],
+    "controllers/weapon_selection.rs" => [WeaponSelection],
     "controllers/weapons.rs" => [Hold, Support, Snatch, Reload, Inventory, Explosives, WeaponSelection],
     "render/mod.rs" => [Stereo, Resolution, Graphics],
     "render/capture.rs" => [RenderCapture],

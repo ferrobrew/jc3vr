@@ -1,0 +1,53 @@
+# Debug UI
+
+## Navigation
+
+The debug window opens on Overview. The eight pages are Overview, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, and Capture/testing. A wide window keeps the page list and feature list beside the selected feature. A narrow window uses page and feature selectors. Feature labels remain outside the content scroll area.
+
+Each feature has Controls/tuning, Live status, and Visualizations sections. Content scroll state uses the stable feature key and section, rather than a displayed label or list position. Advanced tuning and Diagnostics groups are closed by default where the migrated feature has such a group. Existing configuration fields, actions, and defaults remain the domain modules' responsibility.
+
+Director time, safety, heat, teleport, spawn, recording, and keyboard tools are features of Capture/testing. Environment time and weather remain under that page. The full controller binding reference and wrist-summary settings remain under Input/bindings. The pause menu retains calibration and the existing comfort, display, and core control settings.
+
+## Input ownership
+
+The header remains outside the feature body. Allow gameplay input requests a read-only overlay. The body, navigation, detached feature controls, and layout actions are disabled when editing capture is unavailable. Readouts still execute. The header reports requested and effective ownership separately. Hiding and reopening through the existing panel route returns to editing. The navigation does not introduce an input binding or change the capture policy.
+
+The read-only boundary is only the UI side of input ownership. The input adapter remains responsible for clearing pending events, consuming held inputs through release, restoring the previous game-device state, and admitting events only with effective capture.
+
+## Visualizations
+
+The global Visualizations button opens a persistent drawer without changing the selected feature. Its bounded inventory edits the existing body mirror, controller gizmo, ghost hand, grip marker, grapple highlight, grapple beam, grab view, grab view contents, and collider view configuration fields in place. Requested switches appear first, grouped as Debug geometry or Gameplay cues. The filter matches view names, group names, and owning feature names. The shared settings group retains the overlay master switch, gun readout selector, mirror distance, and depth policy. Changing pages or input mode does not rewrite saved switches.
+
+The header counts requested Boolean switches in this inventory, including grab view contents. It does not count every visualization in the mod or treat the gun readout selector as a Boolean switch. Each row distinguishes a saved request from a known blocker. Controller and overlay master switches, the grab view parent, cinematic suppression, reported pipeline errors, and applicable producer scheme/gameplay gates have explicit explanations. Parent controls can be enabled in place. A request without a known blocker reports draw unverified because source, pose, camera, and depth availability are not sampled here. The active count remains unknown unless every registered request is blocked or off. Retained primitive counters do not establish a current draw.
+
+The drawer takes a configuration and runtime snapshot before editing. It acquires a configuration edit guard only to apply changed fields after rendering the controls. It uses the existing read-only boundary, so status remains visible while switches, filtering, and settings are disabled without editing capture. The shared controls API accepts an owning feature to select the same inventory's local subset; production feature dispatch still requires registration by its owner.
+
+Temporary Hide active views/Restore remains unfinished. Both buttons are disabled with an explanation. No runtime suppression provider is installed, and no saved configuration switch is changed as a substitute. Sight/scope, preview, HUD, and performance tools remain in their existing feature editors. Opening the drawer does not call a preview renderer, mark previews visible, or activate capture or scan work. Existing preview routes retain their DX11-renderer availability check.
+
+Renderer-free tests pass for the concrete configuration fields, edit isolation, filtering, requested-first ordering, parent blockers, and requested-versus-unverified counts. A retained last pipeline error is diagnostic history, not proof of a current blocker or zero activity. No live desktop, DX11, or headset validation is recorded for the drawer.
+
+## Layout persistence and recovery
+
+The workspace and detached feature views use `ui_layout_v2.json`. Feature views store stable catalog keys and section names. Detach this view opens the selected feature and section in a dock window. Dragging its tab back to the main dock re-docks it. Closing a detached view does not remove its feature from navigation. Recover detached views gathers saved views into the main dock. Restore default layout returns to one workspace on Overview.
+
+An existing `ui_layout.json` is not overwritten. The UI reports that an old layout is available and waits for an explicit action. Migrate old layout converts its tab identities to feature destinations with the dock library's geometry-preserving mapping, including detached surfaces. Restore default layout discards the old arrangement for the new workspace. Both actions leave the original file intact. An invalid or unsupported layout reports a notice and blocks automatic persistence until recovery or reset.
+
+## Migration coverage
+
+Production dispatch uses the approved catalog rather than the legacy row of dock tabs. Controller settings are split into device, thresholds, bindings, menu/panel, movement, body, hands, weapons, and vehicle feature groups. Controller readouts use separate section dispatch. Device status and recovery snapshots are read before configuration editing. Weapon snatch has a separate UI module; weapon hold, support, inventory, reload, explosives, and selection have distinct editor entry points.
+
+Characters and doors own the direct physical editors and readouts; grapple snatch remains separate. Feedback owns haptics and impact sounds. Inventory Live status includes the live loadout table, while Inventory sandbox separates its command form from its read-only snapshots. Driving, physical vehicle controls, mounted guns, wingsuit, and parachute have separate status bodies.
+
+Swimming has its own controls and status. Render trace capture separates commands and options from status, while render diagnostics separates tuning, logging status, and camera visualizations. Graphics experiments owns far-field controls and counters. Config-only movement and simulation-rate controls remain available without a game singleton; native memory controls retain their runtime guards.
+
+The migration is incomplete. HUD, runtime, environment, Director, and testing bodies still contain mixed controls and readouts within their owning feature, and several visualization sections still link to shared owners. Overview reads published input, focus, panel ownership, capture, timing, overlay, and feature-status snapshots without editing settings. All status retains every row; Needs attention includes failures, active captures, waiting states, and unavailable snapshots, with failures and active captures first and stable ordering within each priority. Off remains intentional or unused in the current setup. Missing fresh controller frames leave focus unavailable rather than unfocused. Video recording can remain active while waiting for the host listener, and the capture readouts retain counters and last errors independently of activity. Performance reports collecting until a complete timing window exists. Overlay drawing is last reported data without a freshness signal, not an active-visualization count. Destination buttons open the existing owners. The global visualization workflow remains incomplete as described above.
+
+The historical source gate freezes 1,405 actionable control templates from the pre-migration source, their provenance, reviewed source witnesses, destinations, and four explicit turn-control consolidations. It rejects deleted or changed setting and command evidence, unapproved duplicates, and invalid mappings. It does not execute production routes, expand parameterized controls, prove runtime availability, or activate widgets. Production-body and live reachability checks remain required.
+
+## Verification
+
+The frozen workspace passes Windows all-target, all-feature clippy and the Wine suite, including 2,678 payload tests. Renderer-free tests cover feature selectors and route categories, distinct scroll keys, unavailable previews, explicit legacy migration, normalized active/focus indices, malformed layouts, read errors, and failed atomic replacement. The actual production DockArea test renders main and detached controls through an injected callback without a fake DX11 renderer. It verifies disabled editing, preserved frame time and scale, visible detached content, neutral input on resume, and an unchanged authoritative layout. These callback tests do not prove that every domain feature body exposes all required widgets.
+
+Read-only enforcement occurs inside each fresh dock body, with separate dock-interaction gates and a copied layout. Input neutralization preserves viewport, timing, scale, and other frame metadata rather than replacing the whole input state. Layout reads treat only missing files as absent. Atomic sibling-file replacement preserves the previous saved arrangement on failure.
+
+No live DX11, desktop, or headset validation is recorded. Detached-view geometry, narrow readability, pointer hit regions, scroll restoration, and read-only behavior still require runtime acceptance. A successful renderer-free test does not establish these runtime properties.

@@ -27,7 +27,10 @@ use crate::{
             wheel_render,
         },
     },
-    ui::controllers::{vec3, vec3_drag},
+    ui::{
+        catalog::FeatureId,
+        controllers::{vec3, vec3_drag},
+    },
 };
 
 /// Everything the section shows, read before the config is locked for editing.
@@ -37,6 +40,8 @@ pub(super) struct VehiclesReadout {
     driver_substitutions: u64,
     look_steer_suppressions: u64,
     wheel_turns: u64,
+    mounted_shots: u64,
+    handles_unplaced: u64,
 }
 
 impl VehiclesReadout {
@@ -47,15 +52,37 @@ impl VehiclesReadout {
             driver_substitutions: driver_aim::substitutions(),
             look_steer_suppressions: look_steer::suppressions(),
             wheel_turns: wheel_render::turned(),
+            mounted_shots: vehicles::mounted_recoil::shots(),
+            handles_unplaced: parachute_rig::handles_unplaced(),
         }
     }
 }
 
-pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
-    let status = &readout.status;
-    if !status.active {
+pub(super) fn feature_readout(ui: &mut Ui, readout: &VehiclesReadout, id: FeatureId) {
+    if !readout.status.active {
         ui.label("Inactive: the bindings are not injecting.");
     }
+    match id {
+        FeatureId::Driving => {
+            seat_readout(ui, &readout.status);
+            driving_view_readout(ui, &readout.driving_view);
+            ui.label(format!(
+                "Driver aim points replaced by the hand: {}",
+                readout.driver_substitutions
+            ));
+        }
+        FeatureId::VehicleControls => {
+            seat_readout(ui, &readout.status);
+            physical_readout(ui, readout);
+        }
+        FeatureId::Mounted => mounted_readout(ui, readout),
+        FeatureId::Wingsuit => arms_readout(ui, readout),
+        FeatureId::Parachute => handles_readout(ui, readout),
+        _ => {}
+    }
+}
+
+fn seat_readout(ui: &mut Ui, status: &VehiclesStatus) {
     ui.label(match status.seat {
         Some(seat) => format!(
             "Seat: {:?}, {}",
@@ -68,6 +95,10 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         ),
         None => "Seat: not in a vehicle".to_owned(),
     });
+}
+
+fn physical_readout(ui: &mut Ui, readout: &VehiclesReadout) {
+    let status = &readout.status;
     ui.label(format!(
         "Physical controls offered: {}",
         if status.offered.is_empty() {
@@ -135,7 +166,6 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         status.button_presses,
     ));
     wheel_readout(ui, status, readout.wheel_turns);
-    driving_view_readout(ui, &readout.driving_view);
     for event in status.events.iter().rev() {
         ui.label(match event {
             ControlEvent::Button(event) => format!(
@@ -159,8 +189,10 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
             ),
         });
     }
+}
 
-    ui.separator();
+fn mounted_readout(ui: &mut Ui, readout: &VehiclesReadout) {
+    let status = &readout.status;
     match &status.mounted {
         Some(m) => {
             ui.label(format!(
@@ -180,19 +212,17 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
                 status.mounted_holds[0],
                 status.mounted_holds[1],
                 status.mounted_grip_events,
-                vehicles::mounted_recoil::shots(),
+                readout.mounted_shots,
             ));
         }
         None => {
             ui.label("Mounted gun: none");
         }
     }
-    ui.label(format!(
-        "Driver aim points replaced by the hand: {}",
-        readout.driver_substitutions
-    ));
+}
 
-    ui.separator();
+fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
+    let status = &readout.status;
     match &status.arms {
         Some(a) => {
             ui.label(format!(
@@ -235,6 +265,14 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
             ui.label("Arm steering: not acting");
         }
     }
+    ui.label(format!(
+        "Wingsuit look-steer removals: {}",
+        readout.look_steer_suppressions
+    ));
+}
+
+fn handles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
+    let status = &readout.status;
     match &status.handles {
         Some(h) => {
             let side = |i: usize| {
@@ -260,17 +298,13 @@ pub(super) fn vehicles_readout(ui: &mut Ui, readout: &VehiclesReadout) {
             ));
             ui.label(format!(
                 "Rig handles put back on their cords: {}",
-                parachute_rig::handles_unplaced()
+                readout.handles_unplaced
             ));
         }
         None => {
             ui.label("Parachute handles: not acting");
         }
     }
-    ui.label(format!(
-        "Wingsuit look-steer removals: {}",
-        readout.look_steer_suppressions
-    ));
 }
 
 /// Where the wheel and the handlebars were placed from, the wheel as placed, and the rendered
@@ -369,7 +403,18 @@ fn placed_wheel(ui: &mut Ui, wheel: &WheelFrame) {
     ));
 }
 
-pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
+pub(super) fn feature_settings(ui: &mut Ui, v: &mut VehiclesConfig, id: FeatureId) {
+    match id {
+        FeatureId::Driving => driving_settings(ui, v),
+        FeatureId::VehicleControls => physical_settings(ui, &mut v.physical),
+        FeatureId::Mounted => mounted_settings(ui, &mut v.mounted),
+        FeatureId::Wingsuit => arm_settings(ui, &mut v.arm_steering),
+        FeatureId::Parachute => handle_settings(ui, &mut v.parachute_handles),
+        _ => {}
+    }
+}
+
+fn driving_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.checkbox(&mut v.driver_weapons_by_hand, "Driver weapons aim by hand");
     ui.checkbox(&mut v.passenger_body_by_hand, "Passenger body aims by hand")
         .on_hover_text(
@@ -385,13 +430,6 @@ pub(super) fn vehicles_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     ui.label("The wingsuit's head look-steer removal follows the parachute's movement setting.");
     egui::CollapsingHeader::new("Driving view")
         .show(ui, |ui| driving_view_settings(ui, &mut v.driving_view));
-    egui::CollapsingHeader::new("Mounted guns").show(ui, |ui| mounted_settings(ui, &mut v.mounted));
-    egui::CollapsingHeader::new("Physical controls")
-        .show(ui, |ui| physical_settings(ui, &mut v.physical));
-    egui::CollapsingHeader::new("Arm steering (wingsuit)")
-        .show(ui, |ui| arm_settings(ui, &mut v.arm_steering));
-    egui::CollapsingHeader::new("Parachute handles")
-        .show(ui, |ui| handle_settings(ui, &mut v.parachute_handles));
 }
 
 fn driving_view_settings(ui: &mut Ui, d: &mut DrivingViewConfig) {

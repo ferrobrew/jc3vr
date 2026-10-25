@@ -12,15 +12,15 @@ The debug window's top bar contains `Allow gameplay input`. Opening the panel re
 
 The header reports the requested mode separately from effective input ownership. A focus, tracking/recovery, neutral-input, or game-device acknowledgement blocker remains visible instead of reporting that gameplay is active. Editing saves the prior game-device state, and releasing editing restores that state, including a previously disabled device. Restoration never forces the device enabled while the application lacks focus. Ownership transitions clear queued events and egui's remembered pointer/key state, end panel dragging, and wait for a destination-device acknowledgement followed by a neutral input sample. The input tick must consume the held source episodes during that wait; filtering egui events alone does not establish gameplay safety.
 
-The overlay state belongs to the current editing session. `Allow gameplay input` is not a saved configuration field, does not enable motion controllers or bindings, and does not override native menus or input recovery. Existing docked pages, detached views, visualization settings, and `ui_layout.json` remain unchanged.
+The overlay state belongs to the current editing session. `Allow gameplay input` is not a saved configuration field, does not enable motion controllers or bindings, and does not override native menus or input recovery. The feature navigation and detached views share the disabled editing boundary. Visualization settings remain unchanged by input-mode and page changes. Layout persistence and explicit migration from `ui_layout.json` are described in [debug-ui.md](debug-ui.md).
 
 The capture adapter and header are implemented in `payload/src/egui_impl.rs`, `controllers/mode.rs`, and `ui/mod.rs`. Input-owner wiring for the complete neutral observation and gameplay/controller-pointer gate, plus the desktop F4 visibility notification, is an integration requirement. Until those adapters are connected and verified, the read-only gameplay overlay is not complete. No headset verification is recorded.
 
 ## Debug UI verification foundation
 
-`payload/src/ui/capture.rs` supplies the production ownership policy. `inventory.rs` and `navigation.rs` remain test-only foundations for the approved debug UI reorganization. They do not replace the live docked pages, saved layout, or wrist controls.
+`payload/src/ui/capture.rs` supplies the production ownership policy. The approved catalog and `navigation::feature_body` drive production page and feature selection. `dispatch.rs` connects feature routes to existing controls and readouts. The source inventory and the original injected-snapshot navigation harness remain test-only. The migration's current coverage and remaining section splits are recorded in [debug-ui.md](debug-ui.md#migration-coverage).
 
-The navigation test seam renders with an egui context and injected snapshots without a Direct3D renderer. Tests exercise wide and narrow feature selection with actual pointer and wheel events. The source inventory records existing control-call evidence, including direct widget constructors, and checks migration assignments for missing or duplicated identifiers. Its lexical coverage is not a complete runtime census of dynamic controls. Selection recovery from old page names is tested; migration of saved dock geometry remains unimplemented. Real-context capture-adapter tests cover remembered pointer/key state, stale releases, rapid reopening, focus loss while held, read-only event admission, and disabled-device restoration.
+Renderer-free tests exercise the production selector callback, feature route inventory, independent scroll keys, the disabled edit boundary, and explicit saved-layout migration and recovery. The existing injected-snapshot harness tests actual pointer and wheel selection. The source inventory records control-call evidence and detects missing or duplicated assignments, but it does not prove migration parity without a frozen baseline and reviewed per-control assignments. Those assignments remain incomplete. Compilation and test execution are coordinator-owned after the UI source freeze; no live DX11 or headset verification is recorded.
 
 ## Where the files live
 
@@ -29,7 +29,8 @@ The payload keeps its files in the per-user configuration directory that the `di
 | File | Holds | Written |
 | --- | --- | --- |
 | `settings.toml` | The whole runtime configuration | When a setting changes, as described below |
-| `ui_layout.json` | The debug UI's dock layout | When the layout changes, checked every 60 UI frames |
+| `ui_layout_v2.json` | The debug UI's feature selection and dock layout | Atomic replacement when the layout changes, checked every 60 editing UI frames |
+| `ui_layout.json` | The previous debug UI layout retained for explicit migration | Read during migration; not overwritten |
 | `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed |
 | `inventory.toml` | The VR inventory's save sidecar: the weapons carried beyond the slots, tied to the game's save ([input/two-handed-inventory.md](input/two-handed-inventory.md#saves-resets-and-loads)) | Each time the game stores the player's save data |
 

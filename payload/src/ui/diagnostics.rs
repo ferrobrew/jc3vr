@@ -1,6 +1,4 @@
-//! The Diagnostics tab: observation and bisect tooling — the render-trace dump, the per-eye A/B
-//! isolation levers, live engine cull state, the render-block-type registry, the per-eye camera
-//! snapshot diff, and the log filter. Feature and quality toggles live in the Render tab.
+//! Render-trace capture controls, diagnostic tuning, logging status, and camera snapshot views.
 
 use std::{
     collections::BTreeSet,
@@ -24,13 +22,33 @@ use crate::{
         trace,
     },
     hooks::graphics_engine::terrain,
-    ui::camera::matrix_grid,
+    ui::{
+        camera::matrix_grid,
+        catalog::{FeatureId, FeatureSection},
+    },
 };
 
 /// The frame count for the editable "Dump N frames" trace button, persisted across UI frames.
 pub(crate) static TRACE_FRAME_COUNT: AtomicI32 = AtomicI32::new(60);
 
+pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId, section: FeatureSection) {
+    match (id, section) {
+        (FeatureId::RenderCapture, FeatureSection::Controls) => render_capture_controls(ui),
+        (FeatureId::RenderCapture, FeatureSection::Status) => render_capture_readout(ui),
+        (FeatureId::RenderDiagnostics, FeatureSection::Controls) => egui_debug_diagnostics(ui),
+        (FeatureId::RenderDiagnostics, FeatureSection::Status) => logging_readout(ui),
+        (FeatureId::RenderDiagnostics, FeatureSection::Visualizations) => camera_visualization(ui),
+        _ => {
+            ui.label("No separate visualization is available for this feature. Use Visualizations above for shared views.");
+        }
+    }
+}
+
 pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
+    diagnostics_controls(ui);
+}
+
+fn render_capture_controls(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
     // Deferred so the trace button's start() doesn't re-lock CONFIG (it snapshots the config for the
     // manifest) while this guard is held -- parking_lot is not reentrant, so that self-deadlocks.
@@ -53,14 +71,6 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
             .changed()
         {
             TRACE_FRAME_COUNT.store(count, Ordering::Relaxed);
-        }
-        let remaining = trace::active_frames();
-        if remaining > 0 {
-            ui.label(format!("tracing... {remaining} frames left"));
-        } else if trace::TraceState::last_path().is_some() {
-            ui.label("dumped");
-        } else {
-            ui.label("(writes to traces/<stamp>/)");
         }
     });
     ui.checkbox(
@@ -95,8 +105,27 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
         "Logs (target \"stereo_diff\") which passes draw identically between eyes vs diverge, and \
          what fraction of draws are replayable from one walk. Forces the inline frame tail while on.",
     );
-    ui.separator();
 
+    // Release CONFIG before start(), whose manifest snapshot re-locks it.
+    drop(cfg);
+    if let Some(frames) = start_trace {
+        trace::TraceState::start(frames);
+    }
+}
+
+fn render_capture_readout(ui: &mut egui::Ui) {
+    let remaining = trace::active_frames();
+    if remaining > 0 {
+        ui.label(format!("tracing... {remaining} frames left"));
+    } else if trace::TraceState::last_path().is_some() {
+        ui.label("dumped");
+    } else {
+        ui.label("(writes to traces/<stamp>/)");
+    }
+}
+
+fn diagnostics_controls(ui: &mut egui::Ui) {
+    let mut cfg = config::edit();
     // The #31 flicker-isolation A/B levers -- all default off; enable one at a time to localize the
     // whole-terrain sun-shadow flicker. See `crate::stereo::config::StereoConfig`.
     ui.collapsing("Flicker isolation (#31)", |ui| {
@@ -431,6 +460,30 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
         );
     });
 
+    ui.collapsing("Logging", |ui| {
+        let mut edit = FILTER_EDIT.lock();
+        let mut error = FILTER_ERROR.lock();
+        ui.horizontal(|ui| {
+            ui.text_edit_singleline(&mut *edit)
+                .on_hover_text("RUST_LOG directive syntax, e.g. warn,vr=debug,coord_frame=debug.");
+            if ui.button("Apply").clicked() {
+                *error = crate::logging::set_filter(&edit).err();
+            }
+        });
+    });
+}
+
+fn logging_readout(ui: &mut egui::Ui) {
+    ui.label(match crate::logging::active_spec() {
+        Some(spec) => format!("Active filter: {spec}"),
+        None => "Active filter: (launch RUST_LOG, INFO floor)".to_string(),
+    });
+    if let Some(e) = FILTER_ERROR.lock().as_ref() {
+        ui.colored_label(egui::Color32::LIGHT_RED, e);
+    }
+}
+
+fn camera_visualization(ui: &mut egui::Ui) {
     ui.collapsing("Per-eye render camera (differences in yellow)", |ui| {
         let (s0, s1) = {
             let g = CAMERA_SNAPSHOTS.lock();
@@ -441,31 +494,6 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
             show_camera_snapshot(&mut cols[1], "Eye 1", &s1, &s0);
         });
     });
-
-    ui.collapsing("Logging", |ui| {
-        ui.label(match crate::logging::active_spec() {
-            Some(spec) => format!("Active filter: {spec}"),
-            None => "Active filter: (launch RUST_LOG, INFO floor)".to_string(),
-        });
-        let mut edit = FILTER_EDIT.lock();
-        let mut error = FILTER_ERROR.lock();
-        ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut *edit)
-                .on_hover_text("RUST_LOG directive syntax, e.g. warn,vr=debug,coord_frame=debug.");
-            if ui.button("Apply").clicked() {
-                *error = crate::logging::set_filter(&edit).err();
-            }
-        });
-        if let Some(e) = error.as_ref() {
-            ui.colored_label(egui::Color32::LIGHT_RED, e);
-        }
-    });
-
-    // Release CONFIG before start(), whose manifest snapshot re-locks it.
-    drop(cfg);
-    if let Some(frames) = start_trace {
-        trace::TraceState::start(frames);
-    }
 }
 
 /// The in-progress log-filter text, kept across frames until applied.

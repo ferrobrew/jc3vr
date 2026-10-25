@@ -16,34 +16,25 @@ use crate::{
 };
 
 /// Render the Director tab body.
-pub(crate) fn render(ui: &mut egui::Ui) {
-    egui::CollapsingHeader::new("Overlays")
-        .default_open(true)
-        .show(ui, cinematic_ui);
-    egui::CollapsingHeader::new("Time")
-        .default_open(true)
-        .show(ui, time_ui);
-    egui::CollapsingHeader::new("Actor safety")
-        .default_open(true)
-        .show(ui, safety_ui);
-    egui::CollapsingHeader::new("Heat")
-        .default_open(true)
-        .show(ui, heat_ui);
-    egui::CollapsingHeader::new("Teleport")
-        .default_open(true)
-        .show(ui, teleport_ui);
-    egui::CollapsingHeader::new("Spawn")
-        .default_open(true)
-        .show(ui, spawn_ui);
-    egui::CollapsingHeader::new("Recording")
-        .default_open(true)
-        .show(ui, recording_ui);
-    egui::CollapsingHeader::new("Take markers")
-        .default_open(true)
-        .show(ui, markers_ui);
-    egui::CollapsingHeader::new("Key bindings")
-        .default_open(false)
-        .show(ui, keymap_ui);
+pub(crate) fn feature(ui: &mut egui::Ui, id: crate::ui::catalog::FeatureId) {
+    match id {
+        crate::ui::catalog::FeatureId::DirectorSafety => {
+            cinematic_ui(ui);
+            time_ui(ui);
+            safety_ui(ui);
+            heat_ui(ui);
+        }
+        crate::ui::catalog::FeatureId::DirectorSpawn => {
+            teleport_ui(ui);
+            spawn_ui(ui);
+        }
+        crate::ui::catalog::FeatureId::Video => {
+            recording_ui(ui);
+            markers_ui(ui);
+        }
+        crate::ui::catalog::FeatureId::Keyboard => keymap_ui(ui),
+        _ => {}
+    }
 }
 
 fn cinematic_ui(ui: &mut egui::Ui) {

@@ -3,13 +3,15 @@
 //! The caller owns the Context and supplies read snapshots. This bounded shell exposes widget
 //! rectangles and commands for tests; it neither dispatches legacy page bodies nor edits settings.
 
-use egui::{ComboBox, Panel, Rect, Ui};
+#[cfg(test)]
+use egui::Rect;
+use egui::{ComboBox, Panel, Ui};
 
-use crate::ui::{
-    capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode},
-    inventory::{FEATURES, FeatureId, FeatureSection, PageId},
-};
+#[cfg(test)]
+use crate::ui::capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode};
+use crate::ui::catalog::{FEATURES, FeatureId, FeatureSection, PageId};
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NavigationCommand {
     AllowGameplay,
@@ -18,12 +20,14 @@ pub(crate) enum NavigationCommand {
     OpenVisualizations,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewAvailability<'a> {
     Available,
     Unavailable(&'a str),
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FeatureSnapshot<'a> {
     pub feature: FeatureId,
@@ -31,12 +35,14 @@ pub(crate) struct FeatureSnapshot<'a> {
     pub visualization: ViewAvailability<'a>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NavigationSnapshot<'a> {
     pub ownership: OwnershipSnapshot,
     pub features: &'a [FeatureSnapshot<'a>],
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum NavigationTarget {
     Page(PageId),
@@ -50,6 +56,7 @@ pub(crate) enum NavigationTarget {
     Hide,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NavigationInteraction {
     pub target: NavigationTarget,
@@ -58,6 +65,7 @@ pub(crate) struct NavigationInteraction {
     pub clicked: bool,
 }
 
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct NavigationFrame {
     pub targets: Vec<(NavigationTarget, Rect)>,
@@ -68,6 +76,7 @@ pub(crate) struct NavigationFrame {
     pub narrow: bool,
 }
 
+#[cfg(test)]
 impl NavigationFrame {
     fn record_target(&mut self, target: NavigationTarget, response: &egui::Response) {
         self.targets.push((target, response.rect));
@@ -138,6 +147,7 @@ impl NavigationState {
 }
 
 /// Run inside `Context::run_ui`; no window, GPU renderer, or game singleton is needed.
+#[cfg(test)]
 pub(crate) fn navigation(
     ui: &mut Ui,
     state: &mut NavigationState,
@@ -305,6 +315,99 @@ pub(crate) fn navigation(
         }
     }
     frame
+}
+
+/// The production selectors and scroll boundary, shared with renderer-free dispatch tests.
+pub(crate) fn feature_body(
+    ui: &mut Ui,
+    state: &mut NavigationState,
+    mut render: impl FnMut(&mut Ui, &mut NavigationState),
+) {
+    let narrow = ui.available_width() < 700.0;
+    if !narrow {
+        Panel::left("debug-pages-v2")
+            .resizable(false)
+            .exact_size(150.0)
+            .show(ui, |ui| {
+                for page in PageId::ALL {
+                    if ui
+                        .selectable_label(state.feature.definition().page == page, page.label())
+                        .clicked()
+                    {
+                        state.select_page(page);
+                    }
+                }
+            });
+        Panel::left("debug-features-v2")
+            .resizable(false)
+            .exact_size(200.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("debug-feature-list-v2")
+                    .show(ui, |ui| {
+                        let page = state.feature.definition().page;
+                        for feature in FEATURES.iter().filter(|feature| feature.page == page) {
+                            if ui
+                                .selectable_label(state.feature == feature.id, feature.label)
+                                .clicked()
+                            {
+                                state.feature = feature.id;
+                            }
+                        }
+                    });
+            });
+    } else {
+        ComboBox::from_id_salt("debug-page-v2")
+            .selected_text(state.feature.definition().page.label())
+            .width(ui.available_width().min(360.0))
+            .wrap_mode(egui::TextWrapMode::Truncate)
+            .show_ui(ui, |ui| {
+                for page in PageId::ALL {
+                    if ui
+                        .selectable_label(state.feature.definition().page == page, page.label())
+                        .clicked()
+                    {
+                        state.select_page(page);
+                    }
+                }
+            });
+        ComboBox::from_id_salt(("debug-feature-v2", state.feature.definition().page))
+            .selected_text(state.feature.definition().label)
+            .width(ui.available_width().min(360.0))
+            .wrap_mode(egui::TextWrapMode::Truncate)
+            .show_ui(ui, |ui| {
+                let page = state.feature.definition().page;
+                for feature in FEATURES.iter().filter(|feature| feature.page == page) {
+                    if ui
+                        .selectable_label(state.feature == feature.id, feature.label)
+                        .clicked()
+                    {
+                        state.feature = feature.id;
+                    }
+                }
+            });
+    }
+    ui.heading(format!(
+        "{} > {}",
+        state.feature.definition().page.label(),
+        state.feature.definition().label
+    ));
+    ui.horizontal_wrapped(|ui| {
+        for section in FeatureSection::ALL {
+            ui.selectable_value(&mut state.section, section, section.label());
+        }
+    });
+    egui::ScrollArea::vertical()
+        .id_salt(scroll_key(*state))
+        .show(ui, |ui| render(ui, state));
+}
+
+pub(crate) fn scroll_key(state: NavigationState) -> (&'static str, &'static str, FeatureSection) {
+    (
+        "debug-feature-content-v2",
+        state.feature.definition().key,
+        state.section,
+    )
 }
 
 #[cfg(test)]

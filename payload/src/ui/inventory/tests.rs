@@ -272,7 +272,15 @@ fn legacy_files(root: &std::path::Path, directory: &std::path::Path) -> Vec<Stri
             .replace('\\', "/");
         if matches!(
             relative.split('/').next(),
-            Some("capture" | "inventory" | "navigation")
+            Some(
+                "capture"
+                    | "inventory"
+                    | "navigation"
+                    | "layout"
+                    | "dispatch"
+                    | "overview"
+                    | "visualizations"
+            )
         ) {
             continue;
         }
@@ -281,7 +289,12 @@ fn legacy_files(root: &std::path::Path, directory: &std::path::Path) -> Vec<Stri
         } else if path.extension().is_some_and(|extension| extension == "rs")
             && !matches!(
                 relative.as_str(),
-                "capture.rs" | "inventory.rs" | "navigation.rs" | "util.rs"
+                "capture.rs"
+                    | "inventory.rs"
+                    | "navigation.rs"
+                    | "layout.rs"
+                    | "dispatch.rs"
+                    | "util.rs"
             )
         {
             result.push(relative);

@@ -101,13 +101,12 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         {
             crate::far_field::request_dump(16);
         }
-        stats_table(ui);
     });
 }
 
 /// The per-pass near/far split counters, freshest first. Entries older than a second (passes that
 /// stopped drawing, or the split disabled) are dropped from view.
-fn stats_table(ui: &mut egui::Ui) {
+pub(super) fn readout(ui: &mut egui::Ui) {
     let mut stats = crate::far_field::stats_snapshot();
     stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);
     if stats.is_empty() {

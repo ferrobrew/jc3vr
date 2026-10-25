@@ -7,7 +7,6 @@
 
 use std::{sync::OnceLock, time::Instant};
 
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,22 +18,27 @@ use crate::{
 
 pub mod camera;
 pub(crate) mod capture;
+#[path = "inventory/catalog.rs"]
+pub(crate) mod catalog;
 pub mod controllers;
 pub mod diagnostics;
 pub mod director;
+mod dispatch;
 pub mod environment;
 pub mod game;
 pub mod hud;
 #[cfg(test)]
 pub(crate) mod inventory;
-#[cfg(test)]
+mod layout;
 pub(crate) mod navigation;
+mod overview;
 pub mod performance;
 pub mod previews;
 pub mod render;
 pub mod status;
 pub mod testing;
 mod util;
+pub(crate) mod visualizations;
 pub mod vr;
 
 /// The dockable tabs, in default display order. The serialized names are part of the persisted
@@ -56,8 +60,9 @@ pub enum Tab {
     Testing,
 }
 
+#[cfg(test)]
 impl Tab {
-    /// Every tab, in the order the default layout lists them.
+    /// Every legacy tab, used to test saved-layout migration.
     const ALL: [Tab; 13] = [
         Tab::Performance,
         Tab::Render,
@@ -81,40 +86,123 @@ impl std::fmt::Display for Tab {
     }
 }
 
-struct TabBodies<'a> {
-    renderer: &'a mut egui_directx11::Renderer,
+struct FeatureBodies<'a, F> {
+    render: F,
+    selection: &'a mut navigation::NavigationState,
+    editing: bool,
 }
 
-impl egui_dock::TabViewer for TabBodies<'_> {
-    type Tab = Tab;
+impl<F: FnMut(&mut egui::Ui, &mut navigation::NavigationState)> egui_dock::TabViewer
+    for FeatureBodies<'_, F>
+{
+    type Tab = layout::View;
 
-    fn title(&mut self, tab: &mut Tab) -> egui::WidgetText {
-        tab.to_string().into()
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
+    fn title(&mut self, tab: &mut layout::View) -> egui::WidgetText {
         match tab {
-            Tab::Performance => performance::egui_debug_performance(ui),
-            Tab::Render => render::egui_debug_render(ui),
-            Tab::Previews => previews::egui_debug_previews(ui, self.renderer),
-            Tab::Diagnostics => diagnostics::egui_debug_diagnostics(ui),
-            Tab::Status => status::egui_debug_status(ui),
-            Tab::Camera => camera::egui_debug_camera(ui),
-            Tab::Game => game::egui_debug_game(ui),
-            Tab::Hud => hud::egui_debug_hud(ui, self.renderer),
-            Tab::Environment => environment::render(ui),
-            Tab::Vr => vr::egui_debug_vr(ui),
-            Tab::Director => director::render(ui),
-            Tab::Controllers => controllers::egui_debug_controllers(ui),
-            Tab::Testing => testing::render(ui),
+            layout::View::Workspace => "Features".into(),
+            layout::View::Feature { key, section } => format!(
+                "{}: {}",
+                navigation::NavigationState::recover(Some(key))
+                    .feature
+                    .definition()
+                    .label,
+                section.label()
+            )
+            .into(),
         }
     }
 
-    // No close buttons anywhere: a closed tab would be unrecoverable until relaunch, and the
-    // point of the dock is rearranging, not hiding. Drag a window's tab back to re-dock it.
-    fn closeable(&mut self, _tab: &mut Tab) -> bool {
-        false
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut layout::View) {
+        edit_boundary(ui, self.editing, |ui| match tab {
+            layout::View::Workspace => {
+                navigation::feature_body(ui, self.selection, &mut self.render);
+            }
+            layout::View::Feature { key, section } => {
+                let mut selection = navigation::NavigationState {
+                    feature: navigation::NavigationState::recover(Some(key)).feature,
+                    section: *section,
+                };
+                ui.push_id(("detached-feature", key.as_str(), *section), |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt(navigation::scroll_key(selection))
+                        .show(ui, |ui| (self.render)(ui, &mut selection));
+                });
+            }
+        });
     }
+
+    fn closeable(&mut self, tab: &mut layout::View) -> bool {
+        self.editing && !matches!(tab, layout::View::Workspace)
+    }
+}
+
+fn feature_dock(
+    ui: &mut egui::Ui,
+    dock: &mut egui_dock::DockState<layout::View>,
+    selection: &mut navigation::NavigationState,
+    editing: bool,
+    render: impl FnMut(&mut egui::Ui, &mut navigation::NavigationState),
+) {
+    // Dock windows create fresh UIs, so both their input and their bodies need an explicit gate.
+    if !editing {
+        neutralize_dock_input(ui.ctx());
+        ui.ctx().stop_dragging();
+        ui.ctx().memory_mut(|memory| {
+            if let Some(focused) = memory.focused() {
+                memory.surrender_focus(focused);
+            }
+        });
+    }
+    let mut frozen = dock.clone();
+    let shown = if editing { &mut *dock } else { &mut frozen };
+    egui_dock::DockArea::new(shown)
+        .id(egui::Id::new("jc3vr_features_v2"))
+        .style(egui_dock::Style::from_egui(ui.style().as_ref()))
+        .draggable_tabs(editing)
+        .allowed_splits(if editing {
+            egui_dock::AllowedSplits::All
+        } else {
+            egui_dock::AllowedSplits::None
+        })
+        .tab_context_menus(editing)
+        .secondary_button_context_menu(editing)
+        .show_close_buttons(editing)
+        .show_leaf_collapse_buttons(editing)
+        .show_leaf_close_all_buttons(false)
+        .show_inside(
+            ui,
+            &mut FeatureBodies {
+                render,
+                selection,
+                editing,
+            },
+        );
+}
+
+fn neutralize_dock_input(context: &egui::Context) {
+    let options = context.options(|options| options.input_options);
+    context.input_mut(|input| {
+        let mut raw = input.raw.clone();
+        raw.events.clear();
+        raw.modifiers = egui::Modifiers::default();
+        raw.hovered_files.clear();
+        raw.dropped_files.clear();
+        let mut frame = raw.clone();
+        frame.screen_rect = Some(input.viewport_rect());
+        frame.safe_area_insets = Some(input.safe_area_insets());
+        frame.time = Some(input.time);
+        frame.max_texture_side = Some(input.max_texture_side);
+        // Rebuild private touch, wheel, and gesture state without replacing frame metadata.
+        let mut neutral =
+            egui::InputState::default().begin_pass(frame, false, input.pixels_per_point, options);
+        neutral.raw = raw;
+        neutral.time = input.time;
+        neutral.unstable_dt = input.unstable_dt;
+        neutral.predicted_dt = input.predicted_dt;
+        neutral.stable_dt = input.stable_dt;
+        neutral.focused = input.focused;
+        *input = neutral;
+    });
 }
 
 /// The settings file's path, selectable so it can be copied, and whether it is up to date.
@@ -141,74 +229,6 @@ fn settings_line(ui: &mut egui::Ui) {
             );
         }
     });
-}
-
-/// The dock tree, created (from disk or the default) on first UI frame.
-static DOCK_STATE: Mutex<Option<egui_dock::DockState<Tab>>> = Mutex::new(None);
-
-/// The last layout JSON written to (or read from) disk, to skip redundant writes.
-static LAST_SAVED_LAYOUT: Mutex<Option<String>> = Mutex::new(None);
-
-/// Frames since the layout was last checked for persistence.
-static FRAMES_SINCE_SAVE_CHECK: Mutex<u32> = Mutex::new(0);
-
-/// How often (in UI frames) to check whether the layout changed and save it.
-const SAVE_CHECK_INTERVAL_FRAMES: u32 = 60;
-
-/// The dock-layout file, in the configuration directory beside the settings.
-fn layout_path() -> Option<std::path::PathBuf> {
-    config::paths::file("ui_layout.json")
-}
-
-/// Load the persisted layout, falling back to the default single-group layout. Tabs missing from
-/// the persisted tree (added since it was saved, or orphaned by a rename) are appended so nothing
-/// is unreachable.
-fn load_or_default_dock_state() -> egui_dock::DockState<Tab> {
-    let loaded = layout_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| {
-            let state = serde_json::from_str::<egui_dock::DockState<Tab>>(&s).ok()?;
-            *LAST_SAVED_LAYOUT.lock() = Some(s);
-            Some(state)
-        });
-    let mut state = match loaded {
-        Some(state) => state,
-        None => egui_dock::DockState::new(Tab::ALL.to_vec()),
-    };
-    for tab in Tab::ALL {
-        if state.find_tab(&tab).is_none() {
-            state.main_surface_mut().push_to_first_leaf(tab);
-        }
-    }
-    state
-}
-
-/// Persist the layout if it changed since the last write. Called every UI frame; does the
-/// serialize-and-compare only every [`SAVE_CHECK_INTERVAL_FRAMES`] frames.
-fn save_dock_state_if_changed(state: &egui_dock::DockState<Tab>) {
-    {
-        let mut frames = FRAMES_SINCE_SAVE_CHECK.lock();
-        *frames += 1;
-        if *frames < SAVE_CHECK_INTERVAL_FRAMES {
-            return;
-        }
-        *frames = 0;
-    }
-    let Ok(json) = serde_json::to_string(state) else {
-        return;
-    };
-    let mut last = LAST_SAVED_LAYOUT.lock();
-    if last.as_deref() == Some(json.as_str()) {
-        return;
-    }
-    let Some(path) = layout_path() else {
-        return;
-    };
-    if let Err(e) = std::fs::write(&path, &json) {
-        tracing::warn!("failed to write the UI layout to {}: {e}", path.display());
-        return;
-    }
-    *last = Some(json);
 }
 
 /// The injection confirmation: a large banner announcing this payload's build stamp for the first
@@ -277,7 +297,11 @@ pub fn restart_banner(ctx: &egui::Context) {
 pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     capture_header(ui);
     let editing = debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any());
-    ui.add_enabled_ui(editing, |ui| egui_debug_window_body(ui, renderer));
+    edit_boundary(ui, editing, |ui| egui_debug_window_body(ui, renderer));
+}
+
+fn edit_boundary(ui: &mut egui::Ui, editing: bool, body: impl FnOnce(&mut egui::Ui)) {
+    ui.add_enabled_ui(editing, body);
 }
 
 fn capture_header(ui: &mut egui::Ui) {
@@ -361,18 +385,44 @@ fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rend
     });
     settings_line(ui);
 
-    let mut state_slot = DOCK_STATE.lock();
-    let state = state_slot.get_or_insert_with(load_or_default_dock_state);
-
-    // Close buttons are disabled everywhere on top of the viewer's `closeable = false` (which
-    // already gates the floating-window close buttons): a closed tab is unrecoverable until
-    // relaunch.
-    egui_dock::DockArea::new(state)
-        .id(egui::Id::new("jc3vr_dock"))
-        .style(egui_dock::Style::from_egui(ui.style().as_ref()))
-        .show_close_buttons(false)
-        .show_leaf_close_all_buttons(false)
-        .show_inside(ui, &mut TabBodies { renderer });
-
-    save_dock_state_if_changed(state);
+    let visualizations = visualizations::snapshot();
+    let mut slot = layout::STATE.lock();
+    let state = slot.get_or_insert_with(layout::Layout::load);
+    let editing = debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any());
+    ui.horizontal_wrapped(|ui| {
+        ui.toggle_value(
+            &mut state.drawer,
+            format!("Visualizations: {}", visualizations.summary().label()),
+        );
+        if ui.button("Detach this view").clicked() { state.detach(state.selection); }
+        ui.menu_button("Layout", |ui| {
+            if ui.button("Restore default layout").clicked() { state.reset(); }
+            if ui.button("Recover detached views").clicked() { state.recover(); }
+            if ui.add_enabled(state.has_legacy(), egui::Button::new("Migrate old layout")).clicked() { state.migrate_legacy(); }
+            ui.label("Drag a view tab back to the main dock to re-dock it. Closed views remain reachable from the feature navigation.");
+        });
+    });
+    if !state.notice.is_empty() {
+        ui.label(&state.notice);
+    }
+    if state.drawer {
+        egui::Panel::right("debug-visualization-drawer-v2")
+            .resizable(editing)
+            .default_size(320.0)
+            .show(ui, |ui| {
+                edit_boundary(ui, editing, |ui| {
+                    ui.heading("Visualizations");
+                    visualizations::controls(ui, &visualizations, None);
+                });
+            });
+    }
+    let layout::Layout {
+        dock, selection, ..
+    } = state;
+    feature_dock(ui, dock, selection, editing, |ui, selection| {
+        dispatch::feature(ui, selection, Some(&mut *renderer));
+    });
+    if editing {
+        state.save();
+    }
 }

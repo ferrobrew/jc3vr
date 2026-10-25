@@ -8,7 +8,7 @@ use crate::{
     logging, vr, vr::FreezeMode,
 };
 
-pub fn egui_debug_camera(ui: &mut egui::Ui) {
+pub(crate) fn head_view(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
     let cs = &mut cfg.camera;
     ui.checkbox(&mut cs.enabled, "Enabled");
@@ -44,13 +44,18 @@ pub fn egui_debug_camera(ui: &mut egui::Ui) {
     ui.collapsing("Frozen pose (diagnostic)", |ui| {
         egui_frozen_pose(ui, &mut cfg.vr);
     });
-    ui.collapsing("Grapple reel-in comfort", |ui| {
-        egui_grapple(ui, &mut cfg.headpose.grapple);
-    });
-    ui.collapsing("VR body turn", |ui| {
-        egui_vr_turn(ui, &mut cfg.headpose.vr_turn);
-    });
-    ui.collapsing("Body IK", |ui| egui_debug_body_ik(ui, &mut cfg.body_ik));
+}
+
+pub(crate) fn grapple_comfort(ui: &mut egui::Ui) {
+    egui_grapple(ui, &mut config::edit().headpose.grapple);
+}
+
+pub(crate) fn body_ik(ui: &mut egui::Ui) {
+    egui_debug_body_ik(ui, &mut config::edit().body_ik);
+}
+
+pub(crate) fn turn_advanced(ui: &mut egui::Ui) {
+    egui_vr_turn(ui, &mut config::edit().headpose.vr_turn);
 }
 
 fn egui_debug_body_ik(ui: &mut egui::Ui, ik: &mut BodyIkConfig) {

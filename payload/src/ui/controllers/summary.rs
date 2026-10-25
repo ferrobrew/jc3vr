@@ -21,6 +21,10 @@ pub(super) fn summary_readout(ui: &mut Ui, status: &SummaryStatus, panel: &Panel
         status.locale
     ));
     ui.label(format!(
+        "Current wrist projection: {} binding rows omitted by current eligibility",
+        status.omitted,
+    ));
+    ui.label(format!(
         "Panel opacity {:.2} · glance {} · trackpad {} · mode change {}",
         panel.alpha,
         yes_no(panel.glance),

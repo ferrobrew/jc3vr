@@ -16,7 +16,7 @@ use crate::{
             tiers::{self, TierState, TierStatus},
         },
         loadout::slot_label,
-        snatch::{self, SnatchConfig},
+        snatch,
         weapons::{
             self, WeaponsStatus,
             config::{
@@ -40,7 +40,6 @@ use crate::{
             regions::{self, RegionsStatus, config::RegionsConfig},
             reload::{self, ReloadStatus},
             unarmed_fire::{self, UnarmedFireStatus},
-            wheel::config::{SteerMode, WheelConfig},
         },
     },
     ui::controllers::{
@@ -144,12 +143,6 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
     regions_readout(ui, &readout.regions);
     armed_readout(ui, &readout.armed);
     tick_readout(ui, &readout.tick, &readout.empty);
-    grapple_readout(ui, &readout.anchor, readout.yanks);
-    grenade_readout(ui, &readout.grenade);
-    explosives_readout(ui, &readout.explosives);
-    reload_readout(ui, &readout.reload);
-    empty_readout(ui, &readout.empty);
-    heft_readout(ui, &readout.heft);
     grip_watch_readout(ui, &readout.grip_watch);
     ui.label(format!(
         "Fire with empty hands: draws held back {}",
@@ -226,6 +219,32 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
             event.volume.label(),
             event.outcome.label()
         ));
+    }
+}
+
+pub(super) fn feature_readout(
+    ui: &mut Ui,
+    readout: &WeaponsReadout,
+    id: crate::ui::catalog::FeatureId,
+) {
+    match id {
+        crate::ui::catalog::FeatureId::Grapple => {
+            grapple_readout(ui, &readout.anchor, readout.yanks)
+        }
+        crate::ui::catalog::FeatureId::Explosives => {
+            grenade_readout(ui, &readout.grenade);
+            explosives_readout(ui, &readout.explosives);
+        }
+        crate::ui::catalog::FeatureId::Reload => {
+            reload_readout(ui, &readout.reload);
+            empty_readout(ui, &readout.empty);
+        }
+        crate::ui::catalog::FeatureId::Support => heft_readout(ui, &readout.heft),
+        _ => {
+            ui.label(
+                "The shared weapon snapshot is in Hold, transfer, and grab regions > Live status.",
+            );
+        }
     }
 }
 
@@ -520,7 +539,7 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
     ));
 }
 
-pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+pub(super) fn body_slots_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.holsters.enabled, "Sockets on the body")
         .on_hover_text(
             "Draw a weapon with a grip press at the socket it sits on, and dock a held one on a \
@@ -531,6 +550,9 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     });
     ui.label("Pouches");
     ui.indent("pouches", |ui| pouch_settings(ui, &mut w.pouches));
+}
+
+pub(super) fn support_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.foregrip.enabled, "Foregrip")
         .on_hover_text("Let the off-hand grab a two-handed weapon's foregrip.");
     ui.add_enabled_ui(w.foregrip.enabled, |ui| {
@@ -567,6 +589,9 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
             braced_heft_settings(ui, &mut w.heft.braced)
         });
     });
+}
+
+pub(super) fn hold_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.separate_pistols, "Separate pistols")
         .on_hover_text(
             "Make the game's pistol pair two weapons, each picked up, held, dropped, reloaded, and \
@@ -574,69 +599,6 @@ pub(super) fn weapons_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         );
     hold_settings(ui, &mut w.hold);
     regions_settings(ui, &mut w.regions);
-    snatch_settings(ui, &mut w.snatch);
-}
-
-fn snatch_settings(ui: &mut Ui, s: &mut SnatchConfig) {
-    ui.checkbox(&mut s.enabled, "Grapple snatch").on_hover_text(
-        "Grip with the empty grapple hand at a weapon out of reach under the grapple's aim, \
-             then yank the hand back: the hook pulls the weapon into the hand. The grapple's aim \
-             also sees weapons on the ground: a tap tosses one to your feet, a hold tethers it.",
-    );
-    ui.add_enabled_ui(s.enabled, |ui| {
-        ui.indent("snatch", |ui| {
-            ui.add(egui::Slider::new(&mut s.range_m, 2.0..=60.0).text("Range (m)"));
-            ui.add(
-                egui::Slider::new(&mut s.cone_deg, 1.0..=20.0).text("Cone for guns in hands (°)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut s.yank.min_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut s.yank.min_distance_m, 0.05..=0.4).text("Yank length (m)"),
-            );
-            ui.add(egui::Slider::new(&mut s.yank.window_s, 0.05..=0.6).text("Yank window (s)"));
-            ui.add(egui::Slider::new(&mut s.max_speed_mps, 2.0..=40.0).text("Fastest pull (m/s)"));
-            ui.add(
-                egui::Slider::new(&mut s.max_accel_mps2, 5.0..=300.0).text("Hardest pull (m/s²)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut s.stiffness_per_s, 0.5..=15.0).text("Pull stiffness (1/s)"),
-            );
-            ui.add(egui::Slider::new(&mut s.arc, 0.0..=0.8).text("Pull arc"));
-            ui.add(
-                egui::Slider::new(&mut s.capture_radius_m, 0.1..=1.0).text("Capture radius (m)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut s.stall_distance_m, 0.01..=0.5).text("Stall distance (m)"),
-            );
-            ui.add(egui::Slider::new(&mut s.stall_window_s, 0.1..=2.0).text("Stall window (s)"));
-            ui.add(
-                egui::Slider::new(&mut s.attach_timeout_s, 0.5..=6.0).text("Hook flight limit (s)"),
-            );
-            ui.checkbox(&mut s.holstered, "Guns holstered on characters")
-                .on_hover_text(
-                    "A character drops the gun on its body and staggers. Needs the steal.",
-                );
-            ui.checkbox(&mut s.props, "Loose objects")
-                .on_hover_text("An object one hand can carry comes into the hand's hold.");
-            ui.checkbox(&mut s.doors, "Car doors").on_hover_text(
-                "The line pulls a closed door of a still vehicle open at its handle.",
-            );
-            ui.add_enabled_ui(s.doors, |ui| {
-                ui.add(
-                    egui::Slider::new(&mut s.door_reach_m, 0.1..=1.5).text("Door handle reach (m)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut s.door_max_vehicle_speed_mps, 0.0..=10.0)
-                        .text("Fastest vehicle (m/s)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut s.door_swing_mps, 0.0..=10.0).text("Door swing (m/s)"),
-                );
-            });
-        });
-    });
 }
 
 fn regions_settings(ui: &mut Ui, r: &mut RegionsConfig) {
@@ -654,7 +616,7 @@ fn regions_settings(ui: &mut Ui, r: &mut RegionsConfig) {
 }
 
 /// The settings of the grenade throw, the C4 throw and the wrist detonator, and the true reload.
-pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+pub(super) fn explosive_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
         "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \
          runs from the prime.",
@@ -663,68 +625,10 @@ pub(super) fn breadth_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         ui.indent("grenade", |ui| grenade_settings(ui, &mut w.grenade));
     });
     explosives_settings(ui, w);
-    reload_settings(ui, &mut w.reload);
-    ui.checkbox(
-        &mut w.auto_switch_when_empty,
-        "Switch weapons automatically when empty",
-    )
-    .on_hover_text(
-        "Let the game switch to another weapon when the trigger of an empty weapon that cannot \
-         reload is pulled. Off, the empty weapon stays in the hand and the pull only dry-fires.",
-    );
-    ui.checkbox(&mut w.fire_draws_weapon, "Fire draws a weapon")
-        .on_hover_text(
-            "Let the trigger draw the selected weapon with nothing in the hands, as the game does. \
-             Off, weapons come off the body's sockets.",
-        );
-    ui.checkbox(&mut w.wheel.enabled, "Weapon wheel")
-        .on_hover_text(
-            "Open the game's selection cross with a held input and choose an arm with the hand.",
-        );
-    ui.add_enabled_ui(w.wheel.enabled, |ui| {
-        ui.indent("wheel", |ui| wheel_settings(ui, &mut w.wheel));
-    });
 }
 
-fn wheel_settings(ui: &mut Ui, w: &mut WheelConfig) {
-    ui.checkbox(
-        &mut w.trackpad,
-        "Open with the weapon-select trackpad press",
-    );
-    ui.checkbox(&mut w.stick, "Open with the weapon wheel stick push");
-    ui.add_enabled_ui(w.stick, |ui| {
-        ui.add(egui::Slider::new(&mut w.stick_open, 0.0..=1.0).text("Stick opens at"));
-        ui.add(egui::Slider::new(&mut w.stick_release, 0.0..=1.0).text("Stick closes below"));
-    });
-    ui.horizontal(|ui| {
-        ui.label("Steer by");
-        ui.selectable_value(&mut w.steer, SteerMode::Point, "Pointing the hand");
-        ui.selectable_value(&mut w.steer, SteerMode::Offset, "Moving the hand");
-    });
-    match w.steer {
-        SteerMode::Point => {
-            ui.add(
-                egui::Slider::new(&mut w.point_leave_deg, 1.0..=45.0)
-                    .text("Leave the centre at (°)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut w.point_return_deg, 0.0..=45.0)
-                    .text("Return to the centre at (°)"),
-            );
-        }
-        SteerMode::Offset => {
-            ui.add(
-                egui::Slider::new(&mut w.offset_leave_m, 0.005..=0.2)
-                    .text("Leave the centre at (m)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut w.offset_return_m, 0.0..=0.2)
-                    .text("Return to the centre at (m)"),
-            );
-        }
-    }
-    ui.add(egui::Slider::new(&mut w.hysteresis_deg, 0.0..=44.0).text("Arm hysteresis (°)"));
-    ui.checkbox(&mut w.place_at_hand, "Place the cross where the hand was");
+pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+    reload_settings(ui, &mut w.reload);
 }
 
 fn grenade_settings(ui: &mut Ui, g: &mut GrenadeConfig) {
@@ -873,7 +777,7 @@ fn hold_settings(ui: &mut Ui, h: &mut HoldConfig) {
         ui.checkbox(&mut h.take_slide, "Slide taken guns into the hand")
             .on_hover_text("A gun taken from the world slides from where it was into the hand.");
         ui.add(
-            egui::Slider::new(&mut h.take_radius_m, 0.03..=0.25).text("Take reach along a gun (m)"),
+            egui::Slider::new(&mut h.take_radius_m, 0.03..=0.40).text("Take reach along a gun (m)"),
         );
     });
 }

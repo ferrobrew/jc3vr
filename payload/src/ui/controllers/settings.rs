@@ -5,20 +5,20 @@ use egui::Ui;
 use crate::{
     config,
     controllers::{
-        bindings::{self, Blocker, HandRecovery},
+        bindings::{Blocker, HandRecovery},
         config::{InputConfig, LocomotionDirection, SchemeSetting},
         frame::{self, Button, GripPress, Hand},
     },
-    headpose::config::VrTurnMode,
-    ui::controllers::{
-        aim, climb, collider_view, fingers, grab_view, hand_bodies, hands, haptics, inventory,
-        locomotion, overlay, physical_hands, rig, roomscale, scope, stunt, summary, torso, unarmed,
-        vehicles, weapons,
-    },
+    ui::controllers::{locomotion, unarmed},
     vr::input::{self as vr_input, restart},
 };
 
-pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
+pub(super) fn devices(
+    ui: &mut Ui,
+    cfg: &mut config::Config,
+    status: &vr_input::InputStatus,
+    recovery: [HandRecovery; 2],
+) {
     let c = &mut cfg.controllers;
     ui.checkbox(&mut c.enabled, "Enabled").on_hover_text(
         "Read controller input and publish the controller frame. Off, every controller subsystem \
@@ -43,11 +43,10 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
     );
     // The config lock is held here, so the reason is decided from the hand being edited rather
     // than through `restart::current`, which would take the lock again.
-    if let Some(reason) = restart::reason(&vr_input::status(), c.dominant_hand) {
+    if let Some(reason) = restart::reason(status, c.dominant_hand) {
         ui.colored_label(ui.visuals().warn_fg_color, reason.headline())
             .on_hover_text(reason.detail());
     }
-    let recovery = bindings::recovery_status();
     for hand in Hand::BOTH {
         ui.label(format!(
             "Input {}: {}",
@@ -59,169 +58,176 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
              grip, buttons, and stick rest.",
         );
     }
+}
 
-    egui::CollapsingHeader::new("Input").show(ui, |ui| {
-        ui.add(
-            egui::Slider::new(&mut c.input.trigger_press.press, 0.05..=1.0).text("Trigger press"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.input.trigger_press.release, 0.0..=1.0)
-                .text("Trigger release"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.input.squeeze_press.press, 0.05..=1.0).text("Squeeze press"),
-        )
-        .on_hover_text("The grip press on a controller without grip force (Touch).");
-        ui.add(
-            egui::Slider::new(&mut c.input.squeeze_press.release, 0.0..=1.0)
-                .text("Squeeze release"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.input.squeeze_force_press.press, 0.05..=1.0)
-                .text("Grip force press"),
-        )
-        .on_hover_text(
-            "The grip press on a controller with grip force (Index), whose capacitive squeeze \
-             value is full whenever the hand rests round the handle.",
-        );
-        ui.add(
-            egui::Slider::new(&mut c.input.squeeze_force_press.release, 0.0..=1.0)
-                .text("Grip force release"),
-        );
-        ui.add(
-            egui::Slider::new(&mut c.input.trackpad_press.press, 0.05..=1.0).text("Trackpad press"),
-        )
-        .on_hover_text("The trackpad force that presses a half, which pages the menu tabs.");
-        ui.add(
-            egui::Slider::new(&mut c.input.trackpad_press.release, 0.0..=1.0)
-                .text("Trackpad release"),
-        );
-        grip_readout(ui, &c.input);
-        ui.add(egui::Slider::new(&mut c.input.stick_deadzone, 0.0..=0.9).text("Stick deadzone"));
-        ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
-            .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
-        ui.checkbox(&mut c.input.self_check, "Input self-check")
-            .on_hover_text(
-                "Once per session, log how the runtime treats the action layout (see the \
-             \"Semantic actions\" section).",
+pub(super) fn thresholds(ui: &mut Ui, cfg: &mut config::Config) {
+    let c = &mut cfg.controllers;
+    egui::CollapsingHeader::new("Input")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.add(
+                egui::Slider::new(&mut c.input.trigger_press.press, 0.05..=1.0)
+                    .text("Trigger press"),
             );
-    });
+            ui.add(
+                egui::Slider::new(&mut c.input.trigger_press.release, 0.0..=1.0)
+                    .text("Trigger release"),
+            );
+            ui.add(
+                egui::Slider::new(&mut c.input.squeeze_press.press, 0.05..=1.0)
+                    .text("Squeeze press"),
+            )
+            .on_hover_text("The grip press on a controller without grip force (Touch).");
+            ui.add(
+                egui::Slider::new(&mut c.input.squeeze_press.release, 0.0..=1.0)
+                    .text("Squeeze release"),
+            );
+            ui.add(
+                egui::Slider::new(&mut c.input.squeeze_force_press.press, 0.05..=1.0)
+                    .text("Grip force press"),
+            )
+            .on_hover_text(
+                "The grip press on a controller with grip force (Index), whose capacitive squeeze \
+             value is full whenever the hand rests round the handle.",
+            );
+            ui.add(
+                egui::Slider::new(&mut c.input.squeeze_force_press.release, 0.0..=1.0)
+                    .text("Grip force release"),
+            );
+            ui.add(
+                egui::Slider::new(&mut c.input.trackpad_press.press, 0.05..=1.0)
+                    .text("Trackpad press"),
+            )
+            .on_hover_text("The trackpad force that presses a half, which pages the menu tabs.");
+            ui.add(
+                egui::Slider::new(&mut c.input.trackpad_press.release, 0.0..=1.0)
+                    .text("Trackpad release"),
+            );
+            grip_readout(ui, &c.input);
+            ui.add(
+                egui::Slider::new(&mut c.input.stick_deadzone, 0.0..=0.9).text("Stick deadzone"),
+            );
+            ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
+                .on_hover_text(
+                    "Locate the hand skeleton through XR_EXT_hand_tracking when offered.",
+                );
+        });
+}
 
-    egui::CollapsingHeader::new("Bindings").show(ui, |ui| {
-        let b = &mut c.bindings;
-        ui.checkbox(&mut b.enabled, "Inject bindings").on_hover_text(
+pub(super) fn bindings_settings(ui: &mut Ui, cfg: &mut config::Config) {
+    let c = &mut cfg.controllers;
+    egui::CollapsingHeader::new("Bindings")
+        .default_open(true)
+        .show(ui, |ui| {
+            let b = &mut c.bindings;
+            ui.checkbox(&mut b.enabled, "Inject bindings").on_hover_text(
             "Map the controllers to the game's actions while the controller scheme is in effect.",
         );
-        ui.add(egui::Slider::new(&mut b.move_deadzone, 0.0..=0.6).text("Move stick deadzone"));
-        ui.add(egui::Slider::new(&mut b.trigger_deadzone, 0.0..=0.5).text("Trigger deadzone"));
-        ui.add(egui::Slider::new(&mut b.long_press_s, 0.2..=1.5).text("Commlink long press (s)"));
-        ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
-        ui.add(egui::Slider::new(&mut b.menu_stick_push, 0.2..=0.95).text("Menu stick push"));
-        ui.add(
-            egui::Slider::new(&mut b.stick_chord_window_s, 0.0..=0.3)
-                .text("Stick click chord window (s)"),
-        )
-        .on_hover_text("How long a lone stick click waits for the other before it acts.");
-        ui.add(
-            egui::Slider::new(&mut b.recenter_hold_s, 0.3..=3.0)
-                .text("Recenter chord hold (s)"),
-        )
+            ui.add(egui::Slider::new(&mut b.move_deadzone, 0.0..=0.6).text("Move stick deadzone"));
+            ui.add(egui::Slider::new(&mut b.trigger_deadzone, 0.0..=0.5).text("Trigger deadzone"));
+            ui.add(
+                egui::Slider::new(&mut c.mode.debounce_ticks, 1..=6).text("Mode debounce (ticks)"),
+            );
+        });
+}
+
+pub(super) fn menu_panel(ui: &mut Ui, cfg: &mut config::Config) {
+    let b = &mut cfg.controllers.bindings;
+    ui.add(egui::Slider::new(&mut b.long_press_s, 0.2..=1.5).text("Commlink long press (s)"));
+    ui.add(egui::Slider::new(&mut b.crouch_flick, 0.3..=1.0).text("Seated crouch flick"));
+    ui.add(egui::Slider::new(&mut b.menu_stick_push, 0.2..=0.95).text("Menu stick push"));
+    ui.add(
+        egui::Slider::new(&mut b.stick_chord_window_s, 0.0..=0.3)
+            .text("Stick click chord window (s)"),
+    )
+    .on_hover_text("How long a lone stick click waits for the other before it acts.");
+    ui.add(egui::Slider::new(&mut b.recenter_hold_s, 0.3..=3.0).text("Recenter chord hold (s)"))
         .on_hover_text("Hold both stick clicks this long to recenter the VR view.");
-        ui.add(
-            egui::Slider::new(&mut b.panel_chord_window_s, 0.0..=1.0)
-                .text("Debug panel chord window (s)"),
-        )
-        .on_hover_text(
-            "How soon after the left stick click the right B must be pressed to show or hide the \
+    ui.add(
+        egui::Slider::new(&mut b.panel_chord_window_s, 0.0..=1.0)
+            .text("Debug panel chord window (s)"),
+    )
+    .on_hover_text(
+        "How soon after the left stick click the right B must be pressed to show or hide the \
              debug panel. The click is not held back for it.",
+    );
+}
+
+pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
+    let c = &mut cfg.controllers;
+    let y = &mut c.bindings.yank;
+    ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(
+        "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
+    );
+    ui.add_enabled_ui(y.enabled, |ui| {
+        ui.indent("yank", |ui| {
+            ui.add(egui::Slider::new(&mut y.min_distance_m, 0.05..=0.5).text("Yank pull (m)"));
+            ui.add(egui::Slider::new(&mut y.min_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"));
+            ui.add(egui::Slider::new(&mut y.window_s, 0.05..=0.5).text("Yank window (s)"));
+            ui.add(egui::Slider::new(&mut y.cooldown_s, 0.0..=2.0).text("Yank cooldown (s)"));
+            ui.add(
+                egui::Slider::new(&mut y.body_drop_m, 0.0..=0.6)
+                    .text("Body point below the head (m)"),
+            );
+        });
+    });
+    let g = &mut c.grapple;
+    ui.label("Physical grapple");
+    ui.indent("physical_grapple", |ui| {
+        ui.add(
+            egui::Slider::new(&mut g.pull.speed_hold_s, 0.0..=3.0).text("Pull speed memory (s)"),
         );
-        let y = &mut b.yank;
-        ui.checkbox(&mut y.enabled, "Yank to zip").on_hover_text(
-            "A sharp pull of the grapple hand toward the body taps the grapple while a line is live.",
+        ui.add(egui::Slider::new(&mut g.pull.relax_mps, 0.0..=1.0).text("Pull depth relax (m/s)"));
+        ui.checkbox(&mut g.reel.enabled, "Pull to speed the reel");
+        ui.add(egui::Slider::new(&mut g.reel.min_scale, 0.5..=1.5).text("Reel scale, no pull"));
+        ui.add(egui::Slider::new(&mut g.reel.max_scale, 1.0..=2.5).text("Reel scale, full pull"));
+        ui.add(
+            egui::Slider::new(&mut g.reel.full_speed_mps, 0.5..=5.0).text("Full pull speed (m/s)"),
         );
-        ui.add_enabled_ui(y.enabled, |ui| {
-            ui.indent("yank", |ui| {
-                ui.add(egui::Slider::new(&mut y.min_distance_m, 0.05..=0.5).text("Yank pull (m)"));
-                ui.add(
-                    egui::Slider::new(&mut y.min_speed_mps, 0.5..=5.0).text("Yank speed (m/s)"),
+        ui.add(egui::Slider::new(&mut g.reel.boost_s, 0.0..=2.0).text("Yank boost (s)"));
+        ui.checkbox(
+            &mut g.reel.boost_needs_upgrade,
+            "Boost needs the retract boost upgrade",
+        );
+        ui.checkbox(&mut g.tether.enabled, "Pull to tighten tethers");
+        ui.add(
+            egui::Slider::new(&mut g.tether.deadzone_m, 0.0..=0.3).text("Tether pull deadzone (m)"),
+        );
+        ui.add(egui::Slider::new(&mut g.tether.full_m, 0.1..=0.8).text("Tether full pull (m)"));
+        ui.checkbox(&mut g.swing.pump, "Pump the hang swing");
+        ui.add(egui::Slider::new(&mut g.swing.deadzone_mps, 0.0..=1.5).text("Pump deadzone (m/s)"));
+        ui.add(egui::Slider::new(&mut g.swing.full_mps, 0.2..=4.0).text("Pump full speed (m/s)"));
+        ui.add(egui::Slider::new(&mut g.swing.scale, -3.0..=3.0).text("Pump strength"));
+        ui.add(egui::Slider::new(&mut g.swing.max_scale, 0.0..=4.0).text("Swing cap"));
+    });
+}
+
+pub(super) fn locomotion_settings(ui: &mut Ui, cfg: &mut config::Config) {
+    let c = &mut cfg.controllers;
+    egui::CollapsingHeader::new("Locomotion and turning")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Move relative to");
+                ui.selectable_value(
+                    &mut c.locomotion.direction,
+                    LocomotionDirection::Head,
+                    "Head",
                 );
-                ui.add(egui::Slider::new(&mut y.window_s, 0.05..=0.5).text("Yank window (s)"));
-                ui.add(egui::Slider::new(&mut y.cooldown_s, 0.0..=2.0).text("Yank cooldown (s)"));
-                ui.add(
-                    egui::Slider::new(&mut y.body_drop_m, 0.0..=0.6)
-                        .text("Body point below the head (m)"),
+                ui.selectable_value(
+                    &mut c.locomotion.direction,
+                    LocomotionDirection::OffHand,
+                    "Off-hand",
                 );
             });
+            let l = &mut c.locomotion;
+            locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view);
         });
-        let g = &mut c.grapple;
-        ui.label("Physical grapple");
-        ui.indent("physical_grapple", |ui| {
-            ui.add(
-                egui::Slider::new(&mut g.pull.speed_hold_s, 0.0..=3.0)
-                    .text("Pull speed memory (s)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut g.pull.relax_mps, 0.0..=1.0)
-                    .text("Pull depth relax (m/s)"),
-            );
-            ui.checkbox(&mut g.reel.enabled, "Pull to speed the reel");
-            ui.add(egui::Slider::new(&mut g.reel.min_scale, 0.5..=1.5).text("Reel scale, no pull"));
-            ui.add(egui::Slider::new(&mut g.reel.max_scale, 1.0..=2.5).text("Reel scale, full pull"));
-            ui.add(
-                egui::Slider::new(&mut g.reel.full_speed_mps, 0.5..=5.0)
-                    .text("Full pull speed (m/s)"),
-            );
-            ui.add(egui::Slider::new(&mut g.reel.boost_s, 0.0..=2.0).text("Yank boost (s)"));
-            ui.checkbox(
-                &mut g.reel.boost_needs_upgrade,
-                "Boost needs the retract boost upgrade",
-            );
-            ui.checkbox(&mut g.tether.enabled, "Pull to tighten tethers");
-            ui.add(
-                egui::Slider::new(&mut g.tether.deadzone_m, 0.0..=0.3).text("Tether pull deadzone (m)"),
-            );
-            ui.add(egui::Slider::new(&mut g.tether.full_m, 0.1..=0.8).text("Tether full pull (m)"));
-            ui.checkbox(&mut g.swing.pump, "Pump the hang swing");
-            ui.add(
-                egui::Slider::new(&mut g.swing.deadzone_mps, 0.0..=1.5)
-                    .text("Pump deadzone (m/s)"),
-            );
-            ui.add(egui::Slider::new(&mut g.swing.full_mps, 0.2..=4.0).text("Pump full speed (m/s)"));
-            ui.add(egui::Slider::new(&mut g.swing.scale, -3.0..=3.0).text("Pump strength"));
-            ui.add(egui::Slider::new(&mut g.swing.max_scale, 0.0..=4.0).text("Swing cap"));
-        });
-        ui.add(egui::Slider::new(&mut c.mode.debounce_ticks, 1..=6).text("Mode debounce (ticks)"));
-    });
+}
 
-    egui::CollapsingHeader::new("Locomotion and turning").show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Move relative to");
-            ui.selectable_value(
-                &mut c.locomotion.direction,
-                LocomotionDirection::Head,
-                "Head",
-            );
-            ui.selectable_value(
-                &mut c.locomotion.direction,
-                LocomotionDirection::OffHand,
-                "Off-hand",
-            );
-        });
-        // Turning is shared with the gamepad's look input (`headpose.vr_turn`).
-        let turn = &mut cfg.headpose.vr_turn;
-        ui.horizontal(|ui| {
-            ui.label("Turn");
-            ui.selectable_value(&mut turn.mode, VrTurnMode::Smooth, "Smooth");
-            ui.selectable_value(&mut turn.mode, VrTurnMode::Snap, "Snap");
-        });
-        ui.add(egui::Slider::new(&mut turn.smooth_scale, 0.1..=3.0).text("Smooth turn scale"));
-        ui.add(egui::Slider::new(&mut turn.snap_angle_deg, 10.0..=90.0).text("Snap angle (°)"));
-        let l = &mut c.locomotion;
-        locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view);
-    });
-
+pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut config::Config) {
     let c = &mut cfg.controllers;
-    egui::CollapsingHeader::new("Body and aiming").show(ui, |ui| {
+    egui::CollapsingHeader::new("Body and aiming").default_open(true).show(ui, |ui| {
         let a = &mut c.aim_state;
         ui.checkbox(&mut a.pin, "Aim-state pin (weapon)").on_hover_text(
             "Keep the body in the no-aim animation family while firing still works.",
@@ -249,81 +255,7 @@ pub(super) fn settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut c.body.remap_hands, "Remap hand reach");
     });
 
-    egui::CollapsingHeader::new("Torso and pelvis").show(ui, |ui| {
-        let rig = &mut c.body.rig;
-        torso::torso_settings(ui, &mut rig.torso, &mut rig.pelvis)
-    });
-
-    egui::CollapsingHeader::new("Weapon-agnostic body")
-        .show(ui, |ui| unarmed::unarmed_settings(ui, &mut c.body.unarmed));
-
-    egui::CollapsingHeader::new("Aiming").show(ui, |ui| aim::aim_settings(ui, c));
-
-    egui::CollapsingHeader::new("Hands").show(ui, |ui| hands::hands_settings(ui, &mut c.hands));
-
-    egui::CollapsingHeader::new("Finger curls")
-        .show(ui, |ui| fingers::fingers_settings(ui, &mut c.fingers));
-
-    egui::CollapsingHeader::new("Physical hands").show(ui, |ui| {
-        physical_hands::physical_hands_settings(ui, &mut c.physical_hands)
-    });
-
-    egui::CollapsingHeader::new("Hand bodies").show(ui, |ui| {
-        hand_bodies::hand_bodies_settings(ui, &mut c.physical_hands.bodies)
-    });
-
-    egui::CollapsingHeader::new("Grab view").show(ui, |ui| {
-        grab_view::grab_view_settings(ui, &mut c.physical_hands.grab_view)
-    });
-
-    egui::CollapsingHeader::new("Collider view").show(ui, |ui| {
-        collider_view::collider_view_settings(ui, &mut c.physical_hands.collider_view)
-    });
-
-    egui::CollapsingHeader::new("Hand climbing").show(ui, |ui| {
-        climb::climb_settings(ui, &mut c.physical_hands.climb)
-    });
-
-    egui::CollapsingHeader::new("Stunt positions").show(ui, |ui| {
-        stunt::stunt_settings(ui, &mut c.physical_hands.stunt)
-    });
-
-    egui::CollapsingHeader::new("Overlay")
-        .show(ui, |ui| overlay::overlay_settings(ui, &mut c.overlay));
-
-    egui::CollapsingHeader::new("Controls summary")
-        .show(ui, |ui| summary::summary_settings(ui, &mut c.summary));
-
-    egui::CollapsingHeader::new("Weapons").show(ui, |ui| {
-        let w = &mut c.weapons;
-        weapons::weapons_settings(ui, w);
-        weapons::breadth_settings(ui, w);
-    });
-
-    egui::CollapsingHeader::new("VR inventory").show(ui, |ui| {
-        inventory::inventory_settings(ui, &mut c.weapons.inventory);
-    });
-
-    egui::CollapsingHeader::new("Haptics")
-        .show(ui, |ui| haptics::haptics_settings(ui, &mut c.haptics));
-
-    egui::CollapsingHeader::new("Scopes").show(ui, |ui| {
-        let w = &mut c.weapons;
-        scope::scope_settings(ui, &mut w.scopes, &mut w.scope);
-        scope::ads_settings(ui, &mut w.ads);
-        scope::collide_settings(ui, &mut w.collide);
-    });
-
-    egui::CollapsingHeader::new("Posture and roomscale").show(ui, |ui| {
-        roomscale::roomscale_settings(ui, &mut c.roomscale);
-    });
-
-    egui::CollapsingHeader::new("Body rig").show(ui, |ui| {
-        rig::rig_settings(ui, &mut c.body.rig);
-    });
-
-    egui::CollapsingHeader::new("Vehicles and flight")
-        .show(ui, |ui| vehicles::vehicles_settings(ui, &mut c.vehicles));
+    unarmed::unarmed_settings(ui, &mut c.body.unarmed);
 }
 
 /// Each hand's grip and trackpad readings beside their thresholds, for tuning them.
