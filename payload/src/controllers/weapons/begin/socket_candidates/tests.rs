@@ -78,6 +78,46 @@ fn native_sample(frames: &Frames) -> Sample {
     }
 }
 
+fn occupied_context() -> DrawContext {
+    DrawContext {
+        dominant: Hand::Right,
+        occupied: [true, false],
+    }
+}
+
+fn offer_sample(frames: &Frames) -> Sample {
+    let mut sample = native_sample(frames);
+    let bases = sample.attachments.clone();
+    sample.attachments.clear();
+    for base in bases {
+        let base = Attachment {
+            hand: None,
+            usage: None,
+            occupancy: Occupancy::Occupied { object: Some(11) },
+            ..base
+        };
+        sample.attachments.push(base);
+        for hand in Hand::BOTH {
+            sample.attachments.push(Attachment {
+                hand: Some(hand),
+                usage: Some(SocketUse::Draw),
+                ..base
+            });
+            sample.attachments.push(Attachment {
+                hand: Some(hand),
+                usage: Some(SocketUse::Dock),
+                ..base
+            });
+            sample.attachments.push(Attachment {
+                hand: Some(hand),
+                usage: Some(SocketUse::NoFit),
+                ..base
+            });
+        }
+    }
+    sample
+}
+
 fn assert_provider_and_mirror(
     sample: &Sample,
     draws: &[Candidate],
@@ -89,15 +129,28 @@ fn assert_provider_and_mirror(
     let mut primitives = Vec::new();
     attachment_markers(sample, plane, head, &mut primitives);
     let points = sample.points();
-    assert_eq!(points.len(), draws.len() + others.len());
+    let candidates = draws
+        .iter()
+        .map(|candidate| (candidate, SocketUse::Draw))
+        .chain(others.iter().map(|(candidate, usage)| (candidate, *usage)))
+        .collect::<Vec<_>>();
+    assert_eq!(points.len(), candidates.len());
+    for (candidate, usage) in &candidates {
+        assert!(points.iter().any(|point| {
+            candidate.volume == GrabVolume::Socket(point.socket)
+                && candidate.hand == Some(point.hand)
+                && *usage == point.usage
+        }));
+    }
     assert_eq!(primitives.len(), points.len() * 2);
     for (point, marker) in points.iter().zip(primitives.as_chunks::<2>().0) {
-        let candidate = draws
+        let candidate = candidates
             .iter()
-            .chain(others.iter().map(|(candidate, _)| candidate))
-            .find(|candidate| {
-                candidate.volume == GrabVolume::Socket(point.socket)
+            .find_map(|(candidate, usage)| {
+                (candidate.volume == GrabVolume::Socket(point.socket)
                     && candidate.hand == Some(point.hand)
+                    && *usage == point.usage)
+                    .then_some(*candidate)
             })
             .unwrap();
         assert!(
@@ -113,6 +166,192 @@ fn assert_provider_and_mirror(
             panic!("the production mirror emits a target ring");
         };
         assert!((head + offset).abs_diff_eq(plane.reflect(point.point), 1e-5));
+    }
+}
+
+#[test]
+fn published_offers_match_final_candidates_for_long_gun_restrictions() {
+    let frames = frames(Mat4::IDENTITY);
+    let native = offer_sample(&frames);
+    let original = native.clone();
+    let body = body(Quat::from_rotation_x(0.6));
+    for dominant in Hand::BOTH {
+        for enabled in [false, true] {
+            for occupied in [[false; 2], [true, false], [false, true], [true; 2]] {
+                for follow_docks in [false, true] {
+                    let mut holsters = HolstersConfig::new();
+                    holsters.long_guns_dominant = enabled;
+                    holsters.follow_docks = follow_docks;
+                    let draw = DrawContext { dominant, occupied };
+                    let mut published = None;
+                    let (draws, others) = provide_and_publish(
+                        Some(&native),
+                        Some(&frames),
+                        Some(&body),
+                        &holsters,
+                        draw,
+                        |sample| published = sample,
+                    );
+                    let sample = published.expect("the provider publishes the selected offers");
+                    let unfiltered = native.targets(&frames, Some(&body), &holsters);
+                    let (mut expected_draws, expected_others) =
+                        candidates_from_sample(&unfiltered, &frames, &holsters);
+                    let restricted = enabled && occupied == [false; 2];
+                    volumes::reserve_long_guns(&mut expected_draws, dominant, restricted);
+                    assert_eq!(draws, expected_draws);
+                    assert_eq!(others, expected_others);
+                    let expected_attachments = unfiltered
+                        .attachments
+                        .iter()
+                        .filter(|attachment| {
+                            !(restricted
+                                && attachment.hand == Some(dominant.other())
+                                && attachment.usage == Some(SocketUse::Draw)
+                                && matches!(
+                                    attachment.socket,
+                                    Socket::Shoulder(_) | Socket::BackOuter
+                                ))
+                        })
+                        .copied()
+                        .collect::<Vec<_>>();
+                    assert_eq!(sample.attachments, expected_attachments);
+                    assert_eq!(sample.at, native.at);
+                    assert_provider_and_mirror(&sample, &draws, &others, &frames);
+                }
+            }
+        }
+    }
+    assert_eq!(native, original);
+}
+
+#[test]
+fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
+    let frames = frames(Mat4::IDENTITY);
+    let mut native = offer_sample(&frames);
+    for attachment in &mut native.attachments {
+        if matches!(attachment.socket, Socket::Shoulder(_) | Socket::BackOuter) {
+            attachment.source = PoseSource::UnavailableWeapon { object: Some(11) };
+            attachment.pose = Err(Missing::Weapon);
+        }
+    }
+    let holsters = HolstersConfig::new();
+    for dominant in Hand::BOTH {
+        let mut published = None;
+        let (draws, others) = provide_and_publish(
+            Some(&native),
+            Some(&frames),
+            None,
+            &holsters,
+            DrawContext {
+                dominant,
+                occupied: [false; 2],
+            },
+            |sample| published = sample,
+        );
+        let sample = published.unwrap();
+        for base in native
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.hand.is_none())
+        {
+            assert!(sample.attachments.contains(base));
+        }
+        for socket in [
+            Socket::Shoulder(Hand::Left),
+            Socket::Shoulder(Hand::Right),
+            Socket::BackOuter,
+        ] {
+            let offers = sample
+                .attachments
+                .iter()
+                .filter(|attachment| attachment.socket == socket)
+                .collect::<Vec<_>>();
+            assert!(offers.iter().any(|offer| {
+                offer.hand == Some(dominant)
+                    && offer.usage == Some(SocketUse::Draw)
+                    && offer.pose == Err(Missing::Weapon)
+            }));
+            assert!(!offers.iter().any(|offer| {
+                offer.hand == Some(dominant.other()) && offer.usage == Some(SocketUse::Draw)
+            }));
+            assert!(offers.iter().any(|offer| {
+                offer.hand == Some(dominant.other()) && offer.usage == Some(SocketUse::NoFit)
+            }));
+        }
+        assert_provider_and_mirror(&sample, &draws, &others, &frames);
+    }
+}
+
+#[test]
+fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
+    let frames = frames(Mat4::IDENTITY);
+    let holsters = HolstersConfig::new();
+    for dominant in Hand::BOTH {
+        let mut native = offer_sample(&frames);
+        native.attachments.retain(|attachment| {
+            attachment.socket == Socket::BackOuter
+                && (attachment.hand.is_none()
+                    || (attachment.hand == Some(dominant.other())
+                        && attachment.usage == Some(SocketUse::Draw)))
+        });
+        let base = native.attachments[0];
+        let mut published = None;
+        let (draws, others) = provide_and_publish(
+            Some(&native),
+            Some(&frames),
+            None,
+            &holsters,
+            DrawContext {
+                dominant,
+                occupied: [false; 2],
+            },
+            |sample| published = sample,
+        );
+        let sample = published.unwrap();
+        assert_eq!(sample.attachments, vec![base]);
+        assert_eq!(sample.markers().copied().collect::<Vec<_>>(), vec![base]);
+        assert!(sample.points().is_empty());
+        assert!(draws.is_empty());
+        assert!(others.is_empty());
+        let mut primitives = Vec::new();
+        attachment_markers(
+            &sample,
+            Plane::ahead_of(&sample.character, 1.5).unwrap(),
+            frames.head_world,
+            &mut primitives,
+        );
+        assert_eq!(primitives.len(), 2);
+    }
+}
+
+#[test]
+fn unavailable_provider_clears_published_offers_and_candidates() {
+    let frames = frames(Mat4::IDENTITY);
+    let native = offer_sample(&frames);
+    for (enabled, have_native, have_frames) in [
+        (false, true, true),
+        (true, false, true),
+        (true, true, false),
+    ] {
+        let mut holsters = HolstersConfig::new();
+        holsters.enabled = enabled;
+        let mut published = Some(native.clone());
+        let mut publications = 0;
+        let (draws, others) = provide_and_publish(
+            have_native.then_some(&native),
+            have_frames.then_some(&frames),
+            None,
+            &holsters,
+            occupied_context(),
+            |sample| {
+                publications += 1;
+                published = sample;
+            },
+        );
+        assert_eq!(publications, 1);
+        assert!(published.is_none());
+        assert!(draws.is_empty());
+        assert!(others.is_empty());
     }
 }
 
@@ -136,7 +375,8 @@ fn landmark_provider_and_mirror_share_bent_body_targets_and_configured_offsets()
             holsters.chest.offset_m = offset;
             let native = native_sample(&frames);
             let original = native.clone();
-            let (sample, draws, others) = provide(&native, &frames, Some(&body), &holsters);
+            let (sample, draws, others) =
+                provide(&native, &frames, Some(&body), &holsters, occupied_context());
             assert_eq!(native, original);
             assert_eq!(sample.at, native.at);
             assert_eq!(sample.policy, TargetPolicy::BodyLandmarks);
@@ -181,7 +421,13 @@ fn missing_native_poses_do_not_create_landmark_offers_and_no_fit_keeps_occupancy
     native.attachments[2].usage = Some(SocketUse::NoFit);
     let mut holsters = HolstersConfig::new();
     holsters.follow_docks = false;
-    let (sample, draws, others) = provide(&native, &frames, Some(&body(Quat::IDENTITY)), &holsters);
+    let (sample, draws, others) = provide(
+        &native,
+        &frames,
+        Some(&body(Quat::IDENTITY)),
+        &holsters,
+        occupied_context(),
+    );
     assert_eq!(sample.attachments[0], native.attachments[0]);
     assert_eq!(sample.attachments[1], native.attachments[1]);
     assert_eq!(sample.attachments[2].usage, Some(SocketUse::NoFit));
@@ -199,7 +445,8 @@ fn missing_body_and_follow_docks_keep_the_existing_native_targets() {
     for follow_docks in [false, true] {
         let mut holsters = HolstersConfig::new();
         holsters.follow_docks = follow_docks;
-        let (sample, draws, others) = provide(&native, &frames, None, &holsters);
+        let (sample, draws, others) =
+            provide(&native, &frames, None, &holsters, occupied_context());
         assert_eq!(sample.attachments, native.attachments);
         assert_eq!(
             sample.policy,
@@ -225,6 +472,7 @@ fn platform_rebase_carries_target_and_native_observations_without_refreshing_age
         &source,
         Some(&body(Quat::from_rotation_x(0.6))),
         &holsters,
+        occupied_context(),
     );
     let destination =
         Mat4::from_rotation_translation(Quat::from_rotation_y(1.1), Vec3::new(20.0, 4.0, -7.0));

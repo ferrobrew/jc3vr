@@ -247,13 +247,17 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         && gun_hands == [false; 2]
         && ticked.table_hands == [false; 2];
     if capabilities.dock {
-        let (mut draws, others) = socket_candidates(&ticked, &active, body.as_ref(), &config);
+        let draw = socket_candidates::DrawContext {
+            dominant: config.acting_hand(),
+            occupied: Hand::BOTH
+                .map(|hand| gun_hands[hand.index()] || ticked.table_hands[hand.index()]),
+        };
+        let (draws, others) = socket_candidates(&ticked, &active, body.as_ref(), &config, draw);
         state.status.docks_followed = if config.weapons.holsters.follow_docks {
             draws.len()
         } else {
             0
         };
-        volumes::reserve_long_guns(&mut draws, config.acting_hand(), empty_handed);
         targets.extend(draws.iter().map(|c| place.on_skeleton(c)));
         targets.extend(others.iter().map(|(c, usage)| match usage {
             SocketUse::NoFit => place.no_fit(c),
@@ -759,6 +763,7 @@ fn socket_candidates(
     active: &ActiveHands,
     body: Option<&BodyFrame>,
     config: &ControllersConfig,
+    draw: socket_candidates::DrawContext,
 ) -> (Vec<Candidate>, Vec<(Candidate, SocketUse)>) {
     socket_candidates::socket_candidates(
         ticked.sockets.as_ref(),
@@ -766,6 +771,7 @@ fn socket_candidates(
         ticked.character,
         body,
         &config.weapons.holsters,
+        draw,
     )
 }
 
