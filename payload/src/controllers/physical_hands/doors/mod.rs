@@ -19,6 +19,7 @@
 //! until it has pulled outward past [`DoorsConfig::unlatch_pull_m`], when the latch gives
 //! ([`engine::unlatch`]) and the hold becomes an ordinary one of the door's own body.
 
+pub(crate) mod acquisition;
 pub mod config;
 pub mod engine;
 pub mod geometry;
@@ -33,7 +34,7 @@ use jc3gi::vehicle::vehicle::DoorSlot;
 
 use crate::controllers::physical_hands::{
     contact::SurfaceHit,
-    doors::{engine::DoorError, geometry::pull},
+    doors::{acquisition::PanelBody, engine::DoorError, geometry::pull},
     grasp::{Reach, TargetKind},
 };
 
@@ -101,28 +102,27 @@ pub(crate) unsafe fn reach(
     doors
         .iter()
         .filter_map(|d| {
-            let door_box = d.door_box?;
-            let r = door_box.reach(palm, reach_m)?;
+            let acquired = match acquisition::panel(d, palm, reach_m, config.handle_share, origin) {
+                Ok(acquired) => acquired,
+                Err(_) => return None,
+            };
             let target = DoorTarget {
                 vehicle,
                 vehicle_body: Some(body),
                 part_index: d.part_index,
                 slot: d.slot,
                 latched: d.latched,
-                outward: door_box.outward(origin),
+                outward: acquired.outward,
             };
-            let (object, body) = match d.body {
-                None if d.latched && r.handle >= config.handle_share.clamp(0.0, 1.0) => {
-                    (vehicle, body)
-                }
-                Some(loose) if !d.latched => loose,
-                _ => return None,
+            let (object, body) = match acquired.body {
+                PanelBody::LatchedHandle => (vehicle, body),
+                PanelBody::OpenPanel { object, body } => (object, body),
             };
             Some(Reach {
                 object,
                 body,
-                point: r.point,
-                distance: r.distance,
+                point: acquired.reach.point,
+                distance: acquired.reach.distance,
                 normal: target.outward,
                 kind: TargetKind::Door(target),
             })
