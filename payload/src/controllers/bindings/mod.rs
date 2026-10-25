@@ -699,6 +699,10 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         chosen: Hand::BOTH.map(|hand| {
             targets.chosen()[hand.index()].filter(|_| !controls.hands[hand.index()].grip.released)
         }),
+        selected: Hand::BOTH.map(|hand| {
+            targets.selected_for_summary()[hand.index()]
+                .filter(|_| !controls.hands[hand.index()].grip.released)
+        }),
         grabs: step.grabs,
         before: &summary_before,
         grapple: state.bindings.grapple_permissions(controls.grapple),

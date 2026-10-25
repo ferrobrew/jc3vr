@@ -23,6 +23,8 @@ use crate::{
     },
 };
 
+#[path = "current_tests/doors.rs"]
+mod doors;
 #[path = "current_tests/flight.rs"]
 mod flight;
 

@@ -26,6 +26,8 @@ pub struct GripTarget {
     pub mark: Mark,
     /// The physical provider's already-observed target, when supplied. Diagnostic only.
     pub(crate) observed: Option<crate::controllers::physical_hands::grasp::Reach>,
+    /// A bounded provider-owned offer for the current wrist summary, separate from diagnostics.
+    pub(crate) door_eligibility: Option<crate::controllers::physical_hands::DoorEligibility>,
 }
 
 impl GripTarget {
@@ -46,6 +48,7 @@ impl GripTarget {
             held_by: None,
             mark,
             observed: None,
+            door_eligibility: None,
         }
     }
 
@@ -59,6 +62,7 @@ impl GripTarget {
             held_by: None,
             mark,
             observed: None,
+            door_eligibility: None,
         }
     }
 

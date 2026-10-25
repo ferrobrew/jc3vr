@@ -141,6 +141,11 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
 }
 
 fn mechanic_routing(row: &Row, routing: CurrentRouting) -> bool {
+    if row.effect == Effect::Mod(ModAction::OpenVehicleDoor) {
+        return matches!(row.control, Control::Grip(_))
+            && row.gesture == Gesture::Press
+            && routing.allows(row.control, row.gesture);
+    }
     if row.effect == Effect::Mod(ModAction::BeltReload) {
         return matches!(row.control, Control::Motion(_))
             && row.gesture == Gesture::Press
@@ -174,6 +179,9 @@ fn mode_wide(action: Action) -> bool {
             | Action::PLANT_EXPLOSIVE
     )
 }
+
+#[cfg(test)]
+mod doors_tests;
 
 #[cfg(test)]
 mod tests {

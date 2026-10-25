@@ -18,7 +18,7 @@ use crate::controllers::{
     },
     config::ControllersConfig,
     frame::Hand,
-    grab::GrabVolume,
+    grab::{GrabVolume, GripTarget, PickupKind},
     hands::{
         late,
         tiers::{self, HandTier, TierState},
@@ -66,6 +66,7 @@ pub(super) struct Refresh<'a> {
     pub ready: [bool; 2],
     pub trigger_blocked: [bool; 2],
     pub chosen: [Option<GrabVolume>; 2],
+    pub selected: [Option<GripTarget>; 2],
     pub grabs: [Option<GrabVolume>; 2],
     pub before: &'a BeforeFinish,
     pub grapple: GrapplePermissions,
@@ -78,6 +79,11 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
     let reload = current_reload(guns);
     let fire = fire_ready(input.ready, input.config, guns);
     let reload_permissions = read_reload_permissions(input.config);
+    let doors = Hand::BOTH.map(|hand| {
+        input.selected[hand.index()]
+            .and_then(|target| target.door_eligibility)
+            .is_some_and(|offer| offer.current(hand, &input.config.physical_hands))
+    });
     capture_current(
         input,
         BeforeFinish {
@@ -89,6 +95,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
         },
         fire,
         reload_permissions,
+        doors,
     )
 }
 
@@ -97,6 +104,7 @@ fn capture_current(
     current: BeforeFinish,
     fire: [bool; 2],
     reload_permissions: ReloadPermissions,
+    doors: [bool; 2],
 ) -> Eligibility {
     let guns = current.guns;
     let reload = current.reload;
@@ -140,6 +148,21 @@ fn capture_current(
     }
     for hand in Hand::BOTH {
         let i = hand.index();
+        if doors[i]
+            && input.ready[i]
+            && chosen[i] == Some(GrabVolume::Pickup(PickupKind::Door))
+            && input.selected[i].is_some_and(|target| {
+                target.volume == GrabVolume::Pickup(PickupKind::Door)
+                    && target.hand == Some(hand)
+                    && target.held_by.is_none()
+            })
+        {
+            mechanics.push(Row {
+                control: Control::Grip(hand),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(ModAction::OpenVehicleDoor),
+            });
+        }
         if input.config.weapons.reload.enabled
             && input.config.weapons.reload.flick_eject
             && flick_ready(&reload, guns, hand)

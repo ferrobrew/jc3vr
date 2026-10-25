@@ -44,6 +44,15 @@ impl Tick {
     pub fn chosen(&self) -> [Option<GrabVolume>; 2] {
         self.resolved.clone().map(|r| r.chosen.map(|c| c.volume))
     }
+
+    /// The actual selected provider targets for summary-only eligibility, before losing identity.
+    pub(crate) fn selected_for_summary(&self) -> [Option<GripTarget>; 2] {
+        Hand::BOTH.map(|hand| {
+            self.resolved[hand.index()]
+                .chosen
+                .and_then(|chosen| self.targets.get(chosen.index).copied())
+        })
+    }
 }
 
 /// Resolve the hands of `active` among `targets`, with the providers' `notes`.

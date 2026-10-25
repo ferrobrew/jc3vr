@@ -91,7 +91,9 @@ pub(crate) use state::input_tick;
 use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
-pub(crate) use targets::targets;
+#[cfg(test)]
+pub(crate) use targets::test_support::DoorProvider;
+pub(crate) use targets::{DoorEligibility, targets};
 pub(crate) use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
 use crate::{

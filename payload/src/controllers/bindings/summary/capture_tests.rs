@@ -3,6 +3,8 @@ use crate::controllers::{
     mode::OnFootVariant, summary::eligibility, weapons::reload::eligible_belt_for_test,
 };
 
+mod doors;
+
 fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
     BeforeFinish {
         guns,
@@ -44,6 +46,7 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
                 ready,
                 trigger_blocked: [true; 2],
                 chosen: [None; 2],
+                selected: [None; 2],
                 grabs: [None; 2],
                 before: &before,
                 grapple: GrapplePermissions::default(),
@@ -53,6 +56,7 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
             owner_state(physical_guns),
             [false; 2],
             ReloadPermissions::default(),
+            [false; 2],
         )
     };
     let snapshot = capture(guns, 7, ready, Some(lease));
