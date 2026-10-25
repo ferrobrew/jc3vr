@@ -219,6 +219,16 @@ impl GameObject {
             f(self as *const Self as _, type_id)
         }
     }
+    /// Copies the object's current world transform into `out` and reports whether a transform
+    /// is available. The skeletal animated object's implementation copies its current world
+    /// matrix without changing the object. The adjacent mutable overload forwards to this
+    /// const overload.
+    pub unsafe fn GetTransform(&self, out: *mut crate::types::math::Matrix4) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetTransform).read();
+            f(self as *const Self as _, out)
+        }
+    }
     /// Enables or disables the object. A rigid object's override
     /// ([`RigidObject`](crate::physics::RigidObject)) records the state and, when it changes, adds its
     /// body to the physics world on enabling and removes it on disabling. A gun's spare
@@ -356,7 +366,14 @@ pub struct GameObjectVftable {
     _vfunc_18: unsafe extern "system" fn(this: *mut crate::game::GameObject),
     _vfunc_19: unsafe extern "system" fn(this: *mut crate::game::GameObject),
     _vfunc_20: unsafe extern "system" fn(this: *mut crate::game::GameObject),
-    _vfunc_21: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// Copies the object's current world transform into `out` and reports whether a transform
+    /// is available. The skeletal animated object's implementation copies its current world
+    /// matrix without changing the object. The adjacent mutable overload forwards to this
+    /// const overload.
+    pub GetTransform: unsafe extern "system" fn(
+        this: *const crate::game::GameObject,
+        out: *mut crate::types::math::Matrix4,
+    ) -> bool,
     _vfunc_22: unsafe extern "system" fn(this: *mut crate::game::GameObject),
     _vfunc_23: unsafe extern "system" fn(this: *mut crate::game::GameObject),
     _vfunc_24: unsafe extern "system" fn(this: *mut crate::game::GameObject),
