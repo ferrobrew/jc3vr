@@ -1,8 +1,8 @@
 //! The encoding of each of the tracking file's types, in both directions.
 
 use crate::{
-    ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
-    SessionSample, SessionState, StartMarker,
+    ControllerSample, EyeSample, Frame, FrameSchema, HeadSample, Header, RecenterEvent,
+    SemanticSample, SessionSample, SessionState, StartMarker,
     model::{
         ActionSetKind, ActionState, ActionValue, Button, ButtonSet, HAND_JOINT_COUNT, Hand,
         HandFrame, HandInputs, HandJoint, InteractionProfile, RecenterCause, RecenterKind,
@@ -60,7 +60,7 @@ pub(crate) fn read_header(input: &mut Decoder) -> Result<Header, DecodeError> {
     })
 }
 
-pub(crate) fn frame(out: &mut Encoder, frame: &Frame) {
+pub(crate) fn frame(out: &mut Encoder, frame: &Frame, schema: FrameSchema) {
     out.u64(frame.time_ns);
     out.i64(frame.display_time_ns);
     let mut flags = 0;
@@ -91,7 +91,7 @@ pub(crate) fn frame(out: &mut Encoder, frame: &Frame) {
         out.bool(controllers.focused);
         out.u8(controllers.action_set.index() as u8);
         for hand in &controllers.hands {
-            hand_frame(out, hand);
+            hand_frame(out, hand, schema);
         }
     }
     if let Some(semantic) = &frame.semantic {
@@ -113,7 +113,7 @@ pub(crate) fn frame(out: &mut Encoder, frame: &Frame) {
     }
 }
 
-pub(crate) fn read_frame(input: &mut Decoder) -> Result<Frame, DecodeError> {
+pub(crate) fn read_frame(input: &mut Decoder, schema: FrameSchema) -> Result<Frame, DecodeError> {
     let time_ns = input.u64()?;
     let display_time_ns = input.i64()?;
     let flags = input.u8()?;
@@ -138,8 +138,8 @@ pub(crate) fn read_frame(input: &mut Decoder) -> Result<Frame, DecodeError> {
     let controllers = if bit(flags, FRAME_CONTROLLERS) {
         let focused = input.bool("the focus flag")?;
         let action_set = read_action_set(input)?;
-        let left = read_hand_frame(input)?;
-        let right = read_hand_frame(input)?;
+        let left = read_hand_frame(input, schema)?;
+        let right = read_hand_frame(input, schema)?;
         Some(ControllerSample {
             focused,
             action_set,
@@ -280,7 +280,7 @@ fn read_stage(input: &mut Decoder) -> Result<Stage, DecodeError> {
     })
 }
 
-fn hand_frame(out: &mut Encoder, hand: &HandFrame) {
+fn hand_frame(out: &mut Encoder, hand: &HandFrame, schema: FrameSchema) {
     let mut flags = 0u8;
     set_bit(&mut flags, 0, hand.active);
     set_bit(&mut flags, 1, hand.joints.is_some());
@@ -304,14 +304,20 @@ fn hand_frame(out: &mut Encoder, hand: &HandFrame) {
             out.pose(&joint.pose);
             out.f32(joint.radius);
             let mut flags = 0u8;
-            set_bit(&mut flags, 0, joint.valid);
-            set_bit(&mut flags, 1, joint.tracked);
+            set_bit(&mut flags, 0, joint.valid());
+            set_bit(&mut flags, 1, joint.tracked());
+            if schema == FrameSchema::V4 {
+                set_bit(&mut flags, 2, joint.position_valid);
+                set_bit(&mut flags, 3, joint.orientation_valid);
+                set_bit(&mut flags, 4, joint.position_tracked);
+                set_bit(&mut flags, 5, joint.orientation_tracked);
+            }
             out.u8(flags);
         }
     }
 }
 
-fn read_hand_frame(input: &mut Decoder) -> Result<HandFrame, DecodeError> {
+fn read_hand_frame(input: &mut Decoder, schema: FrameSchema) -> Result<HandFrame, DecodeError> {
     let flags = input.u8()?;
     let offset = input.offset();
     let profile = match input.u8()? {
@@ -344,12 +350,34 @@ fn read_hand_frame(input: &mut Decoder) -> Result<HandFrame, DecodeError> {
         for joint in &mut joints {
             let pose = input.pose()?;
             let radius = input.f32()?;
+            let offset = input.offset();
             let flags = input.u8()?;
+            let (position_valid, orientation_valid, position_tracked, orientation_tracked) =
+                match schema {
+                    FrameSchema::Legacy => {
+                        (bit(flags, 0), bit(flags, 0), bit(flags, 1), bit(flags, 1))
+                    }
+                    FrameSchema::V4 => {
+                        if flags & 0xc0 != 0 {
+                            return Err(invalid(offset, "joint reserved flags", flags.into()));
+                        }
+                        let components =
+                            (bit(flags, 2), bit(flags, 3), bit(flags, 4), bit(flags, 5));
+                        if bit(flags, 0) != (components.0 && components.1)
+                            || bit(flags, 1) != (components.2 && components.3)
+                        {
+                            return Err(invalid(offset, "joint aggregate flags", flags.into()));
+                        }
+                        components
+                    }
+                };
             *joint = HandJoint {
                 pose,
                 radius,
-                valid: bit(flags, 0),
-                tracked: bit(flags, 1),
+                position_valid,
+                orientation_valid,
+                position_tracked,
+                orientation_tracked,
             };
         }
         Some(joints)

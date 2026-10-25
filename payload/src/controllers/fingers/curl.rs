@@ -94,7 +94,7 @@ pub fn select(
     }
 }
 
-/// The curls from a tracked hand skeleton, or `None` when a joint they read is not valid.
+/// The curls from a tracked hand skeleton, or `None` when an orientation they read is not valid.
 ///
 /// Every `XR_EXT_hand_tracking` joint has -Z along its bone toward the fingertip and +Y out of the
 /// back of the hand, on both hands, so a joint's flexion is its rotation relative to its parent
@@ -105,7 +105,7 @@ pub fn from_joints(hand: Hand, joints: &[HandJoint; HAND_JOINT_COUNT]) -> Option
     let mut curls = FingerCurls::default();
     for finger in Finger::ALL {
         let chain = chain(finger);
-        if chain.iter().any(|&j| !joints[j].valid) {
+        if chain.iter().any(|&j| !joints[j].orientation_valid) {
             return None;
         }
         let orientation = |k: usize| joints[chain[k]].pose.orientation;
@@ -257,8 +257,10 @@ mod tests {
         let mut joints = [HandJoint {
             pose: Pose::default(),
             radius: 0.01,
-            valid: true,
-            tracked: true,
+            position_valid: true,
+            orientation_valid: true,
+            position_tracked: true,
+            orientation_tracked: true,
         }; HAND_JOINT_COUNT];
         for finger in Finger::ALL {
             let mut orientation = Quat::from_rotation_z(0.3);
@@ -311,10 +313,43 @@ mod tests {
     }
 
     #[test]
-    fn an_invalid_joint_gives_no_curls() {
+    fn curls_use_valid_orientations_without_positions_or_tracking() {
+        let mut joints = skeleton(0.5, 0.2);
+        let expected = from_joints(Hand::Right, &joints).unwrap();
+        for joint in &mut joints {
+            joint.position_valid = false;
+            joint.position_tracked = false;
+            joint.orientation_tracked = false;
+            joint.pose.position = Vec3::splat(f32::NAN);
+        }
+        assert_eq!(from_joints(Hand::Right, &joints), Some(expected));
+        let frame = HandFrame {
+            active: true,
+            joints: Some(joints),
+            ..HandFrame::default()
+        };
+        assert_eq!(
+            select(FingerSource::Auto, Hand::Right, &frame),
+            Some((CurlSource::Joints, expected))
+        );
+    }
+
+    #[test]
+    fn an_unavailable_orientation_falls_back_without_reading_its_pose() {
         let mut joints = skeleton(0.2, 0.0);
-        joints[13].valid = false;
+        joints[13].orientation_valid = false;
+        joints[13].pose.orientation = Quat::from_xyzw(f32::NAN, 0.0, 0.0, 0.0);
         assert!(from_joints(Hand::Right, &joints).is_none());
+        let frame = HandFrame {
+            active: true,
+            joints: Some(joints),
+            ..HandFrame::default()
+        };
+        assert_eq!(
+            select(FingerSource::Auto, Hand::Right, &frame),
+            Some((CurlSource::Estimate, estimate(&frame.inputs, frame.profile)))
+        );
+        assert_eq!(select(FingerSource::Joints, Hand::Right, &frame), None);
     }
 
     #[test]

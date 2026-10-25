@@ -609,10 +609,10 @@ fn joints_to_cockpit(
         HandJoint {
             pose: to_cockpit(joint.pose, baseline),
             radius: joint.radius,
-            valid: flags.contains(xr::SpaceLocationFlags::POSITION_VALID)
-                && flags.contains(xr::SpaceLocationFlags::ORIENTATION_VALID),
-            tracked: flags.contains(xr::SpaceLocationFlags::POSITION_TRACKED)
-                && flags.contains(xr::SpaceLocationFlags::ORIENTATION_TRACKED),
+            position_valid: flags.contains(xr::SpaceLocationFlags::POSITION_VALID),
+            orientation_valid: flags.contains(xr::SpaceLocationFlags::ORIENTATION_VALID),
+            position_tracked: flags.contains(xr::SpaceLocationFlags::POSITION_TRACKED),
+            orientation_tracked: flags.contains(xr::SpaceLocationFlags::ORIENTATION_TRACKED),
         }
     })
 }
@@ -668,6 +668,56 @@ mod tests {
         assert_eq!(tracked.pose.position, Vec3::new(0.1, 1.2, -0.3));
         assert_eq!(tracked.linear_velocity, Some(Vec3::X));
         assert_eq!(tracked.angular_velocity, None);
+    }
+
+    #[test]
+    fn joint_sampling_preserves_every_independent_xr_flag_combination() {
+        let flag_bits = [
+            xr::SpaceLocationFlags::POSITION_VALID,
+            xr::SpaceLocationFlags::ORIENTATION_VALID,
+            xr::SpaceLocationFlags::POSITION_TRACKED,
+            xr::SpaceLocationFlags::ORIENTATION_TRACKED,
+        ];
+        let locations = std::array::from_fn(|i| {
+            let flags = flag_bits.iter().enumerate().fold(
+                xr::SpaceLocationFlags::EMPTY,
+                |flags, (bit, flag)| {
+                    if i & (1 << bit) != 0 {
+                        flags | *flag
+                    } else {
+                        flags
+                    }
+                },
+            );
+            xr::HandJointLocation {
+                location_flags: flags,
+                pose: xr::Posef {
+                    position: xr::Vector3f {
+                        x: i as f32 * 0.1,
+                        y: 1.2,
+                        z: -0.3,
+                    },
+                    orientation: xr::Quaternionf {
+                        x: 0.0,
+                        y: 0.6,
+                        z: 0.0,
+                        w: 0.8,
+                    },
+                },
+                radius: i as f32 * 0.001,
+            }
+        });
+        let joints = joints_to_cockpit(&locations, None);
+        for (i, joint) in joints.iter().enumerate() {
+            assert_eq!(joint.position_valid, i & 1 != 0);
+            assert_eq!(joint.orientation_valid, i & 2 != 0);
+            assert_eq!(joint.position_tracked, i & 4 != 0);
+            assert_eq!(joint.orientation_tracked, i & 8 != 0);
+            assert_eq!(joint.pose.position, Vec3::new(i as f32 * 0.1, 1.2, -0.3));
+            assert_eq!(joint.pose.orientation, Quat::from_xyzw(0.0, 0.6, 0.0, 0.8));
+            assert_eq!(joint.pose, to_cockpit(locations[i].pose, None));
+            assert_eq!(joint.radius.to_bits(), locations[i].radius.to_bits());
+        }
     }
 
     #[test]

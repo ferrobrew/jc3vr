@@ -3,8 +3,8 @@
 use std::mem::size_of;
 
 use crate::{
-    DecodeError, DecodeErrorKind, Frame, MAGIC, RECORD_FRAMING, Recording, TAG_FRAME, TAG_INPUT,
-    VERSION,
+    DecodeError, DecodeErrorKind, Frame, FrameSchema, MAGIC, RECORD_FRAMING, Recording, TAG_FRAME,
+    TAG_INPUT, VERSION,
     chunk::{
         CHUNK_HEADER_BYTES, Chunk, MAX_CHUNK_BYTES, OPTIONAL_TAG_BIT, TAG_CHUNK, bounded, invalid,
     },
@@ -88,20 +88,25 @@ pub fn decode_with_limits(bytes: &[u8], limits: DecodeLimits) -> Result<Recordin
         }
         let tag = reader.u8()?;
         let len = reader.u32()? as usize;
-        if version == 3 {
-            if tag != TAG_CHUNK && tag & OPTIONAL_TAG_BIT == 0 {
+        if version >= 3 {
+            let direct_v4 = version == 4 && (tag == TAG_FRAME || tag == TAG_INPUT);
+            if tag != TAG_CHUNK && !direct_v4 && tag & OPTIONAL_TAG_BIT == 0 {
                 return Err(invalid(
                     "required outer tag",
                     u64::from(tag),
                     reader.offset() - RECORD_FRAMING,
                 ));
             }
-            bounded(
-                len,
-                MAX_CHUNK_BYTES + CHUNK_HEADER_BYTES,
-                "outer payload bytes",
-                reader.offset(),
-            )?;
+            if direct_v4 {
+                record_bound(tag, len, reader.offset())?;
+            } else {
+                bounded(
+                    len,
+                    MAX_CHUNK_BYTES + CHUNK_HEADER_BYTES,
+                    "outer payload bytes",
+                    reader.offset(),
+                )?;
+            }
         } else {
             record_bound(tag, len, reader.offset())?;
         }
@@ -110,7 +115,7 @@ pub fn decode_with_limits(bytes: &[u8], limits: DecodeLimits) -> Result<Recordin
             break;
         }
         let mut payload = reader.sub(len)?;
-        if version == 3 && tag == TAG_CHUNK {
+        if version >= 3 && tag == TAG_CHUNK {
             let offset = payload.offset();
             let chunk = Chunk::read(&mut payload)?;
             budget.chunk(offset)?;
@@ -160,7 +165,8 @@ fn read_chunk_records(
 fn append(tag: u8, payload: &mut Decoder, recording: &mut Recording) -> Result<(), DecodeError> {
     match tag {
         TAG_FRAME => {
-            recording.frames.push(codec::read_frame(payload)?);
+            let schema = FrameSchema::for_version(recording.version)?;
+            recording.frames.push(codec::read_frame(payload, schema)?);
             payload.finish("frame")?;
         }
         TAG_INPUT if recording.version >= 2 => {

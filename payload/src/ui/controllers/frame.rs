@@ -5,7 +5,7 @@ use glam::Vec3;
 
 use crate::{
     controllers::{
-        frame::{self, Hand, HandFrame, TrackedPose},
+        frame::{self, Hand, HandFrame, HandJoint, TrackedPose},
         haptics::{self, vocabulary::Primitive},
     },
     ui::controllers::{euler_deg, profile_label, vec3, yes_no},
@@ -62,7 +62,7 @@ fn hand_readout(ui: &mut Ui, hand: Hand, h: &HandFrame) {
     ui.label(match &h.joints {
         Some(joints) => format!(
             "joints: {} of {} tracked",
-            joints.iter().filter(|j| j.tracked).count(),
+            tracked_joint_count(joints),
             joints.len()
         ),
         None => "joints: none".to_owned(),
@@ -75,6 +75,10 @@ fn hand_readout(ui: &mut Ui, hand: Hand, h: &HandFrame) {
             }
         }
     });
+}
+
+fn tracked_joint_count(joints: &[HandJoint]) -> usize {
+    joints.iter().filter(|joint| joint.is_tracked()).count()
 }
 
 fn pose_readout(ui: &mut Ui, name: &str, p: &TrackedPose) {
@@ -96,4 +100,23 @@ fn pose_readout(ui: &mut Ui, name: &str, p: &TrackedPose) {
         speed(p.linear_velocity),
         speed(p.angular_velocity)
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_joint_count_requires_both_tracked_components_not_validity() {
+        let joints: [HandJoint; 16] = std::array::from_fn(|flags| HandJoint {
+            position_valid: flags & 1 != 0,
+            orientation_valid: flags & 2 != 0,
+            position_tracked: flags & 4 != 0,
+            orientation_tracked: flags & 8 != 0,
+            ..HandJoint::default()
+        });
+        assert_eq!(tracked_joint_count(&joints), 4);
+        assert_eq!(tracked_joint_count(&joints[12..13]), 1);
+        assert_eq!(tracked_joint_count(&joints[3..4]), 0);
+    }
 }

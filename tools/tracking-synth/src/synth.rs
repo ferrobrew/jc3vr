@@ -122,7 +122,7 @@ pub fn recording(
         header: header(script, schema),
         frames,
         input: Vec::new(),
-        version: 1,
+        version: tracking_format::VERSION,
         truncated: false,
         skipped_records: 0,
     })
@@ -130,9 +130,9 @@ pub fn recording(
 
 /// The bytes of a recording's file.
 pub fn encode(recording: &Recording) -> Vec<u8> {
-    let mut bytes = tracking_format::encode_preamble(&recording.header);
+    let mut bytes = tracking_format::encode_latest_preamble(&recording.header);
     for frame in &recording.frames {
-        bytes.extend(tracking_format::encode_frame(frame));
+        bytes.extend(tracking_format::encode_latest_frame(frame));
     }
     bytes
 }

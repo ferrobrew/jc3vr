@@ -154,19 +154,25 @@ pub(crate) fn encode_preamble(header: &Header) -> Vec<u8> {
     tracking_format::encode_preamble(&convert::header_to_file(header))
 }
 
-/// The normal recorder uses the version 2 uncompressed container.
+/// The normal recorder uses the version 4 uncompressed container with input records.
 pub(crate) fn encode_input_preamble(header: &Header) -> Vec<u8> {
-    tracking_format::encode_input_preamble(&convert::header_to_file(header))
+    tracking_format::encode_latest_preamble(&convert::header_to_file(header))
 }
 
-/// Controlled compression experiments store atomic capture batches in the version 3 container.
+/// Controlled compression experiments store atomic capture batches in the version 4 container.
 pub(crate) fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
-    tracking_format::encode_chunked_preamble(&convert::header_to_file(header))
+    tracking_format::encode_latest_chunked_preamble(&convert::header_to_file(header))
 }
 
-/// One frame's record.
+/// One version 4 frame record, preserving every independent joint flag.
 pub(crate) fn encode_frame(frame: &Frame) -> Vec<u8> {
-    tracking_format::encode_frame(&convert::frame_to_file(frame))
+    tracking_format::encode_latest_frame(&convert::frame_to_file(frame))
+}
+
+/// A version 1 through 3 frame record, lossily reducing joint flags to their conjunctions.
+#[cfg(test)]
+pub(crate) fn encode_legacy_frame(frame: &Frame) -> Vec<u8> {
+    tracking_format::encode_legacy_frame(&convert::frame_to_file(frame))
 }
 
 /// Read a whole file.

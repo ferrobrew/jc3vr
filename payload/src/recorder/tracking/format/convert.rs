@@ -213,13 +213,17 @@ fn hand_frame_to_file(hand: &HandFrame) -> wire::HandFrame {
                 |HandJoint {
                      pose,
                      radius,
-                     valid,
-                     tracked,
+                     position_valid,
+                     orientation_valid,
+                     position_tracked,
+                     orientation_tracked,
                  }| wire::HandJoint {
                     pose: pose_to_file(pose),
                     radius,
-                    valid,
-                    tracked,
+                    position_valid,
+                    orientation_valid,
+                    position_tracked,
+                    orientation_tracked,
                 },
             )
         }),
@@ -516,13 +520,17 @@ fn hand_frame_from_file(hand: wire::HandFrame) -> HandFrame {
                 |wire::HandJoint {
                      pose,
                      radius,
-                     valid,
-                     tracked,
+                     position_valid,
+                     orientation_valid,
+                     position_tracked,
+                     orientation_tracked,
                  }| HandJoint {
                     pose: pose_from_file(pose),
                     radius,
-                    valid,
-                    tracked,
+                    position_valid,
+                    orientation_valid,
+                    position_tracked,
+                    orientation_tracked,
                 },
             )
         }),

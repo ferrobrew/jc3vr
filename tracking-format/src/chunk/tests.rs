@@ -47,8 +47,10 @@ fn frame(sequence: u64) -> Frame {
                 orientation: Quat::from_xyzw(value, 0.0, -0.0, 1.0),
             },
             radius: value,
-            valid: index % 2 == 0,
-            tracked: index % 3 == 0,
+            position_valid: index % 2 == 0,
+            orientation_valid: index % 2 == 0,
+            position_tracked: index % 3 == 0,
+            orientation_tracked: index % 3 == 0,
         }
     });
     let hand = HandFrame {

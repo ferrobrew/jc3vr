@@ -1,6 +1,14 @@
 use tracking_format::{Header, StartMarker, model::Hand};
 
 use super::*;
+use crate::{
+    controllers::frame::{ActionSetKind, HandFrame, HandJoint},
+    recorder::tracking::{
+        encode_capture,
+        format::{ControllerSample, Frame, SessionSample},
+    },
+    vr::stage::StageInfo,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fault {
@@ -73,7 +81,7 @@ fn header() -> Header {
 }
 
 fn preamble() -> Vec<u8> {
-    tracking_format::encode_chunked_preamble(&header())
+    tracking_format::encode_latest_chunked_preamble(&header())
 }
 
 fn writer() -> (Writer, Receiver<Vec<u8>>) {
@@ -83,7 +91,7 @@ fn writer() -> (Writer, Receiver<Vec<u8>>) {
             sender: Some(sender),
             handle: None,
             pending_loss: None,
-            shared: Arc::new(Shared::new(0, RecordingFormat::ChunkedV3)),
+            shared: Arc::new(Shared::new(0, RecordingFormat::ChunkedV4)),
         },
         receiver,
     )
@@ -106,33 +114,46 @@ fn input_batch(time: u64) -> CaptureBatch {
             discarded: 0,
         },
     };
-    let frame = crate::recorder::tracking::format::Frame {
+    let frame = Frame {
         time_ns: time,
         display_time_ns: 90,
-        session: crate::recorder::tracking::format::SessionSample {
+        session: SessionSample {
             state: None,
             should_render: true,
             head_tracked: false,
         },
         head: None,
-        stage: crate::vr::stage::StageInfo::default(),
-        controllers: None,
+        stage: StageInfo::default(),
+        controllers: Some(ControllerSample {
+            focused: true,
+            action_set: ActionSetKind::OnFoot,
+            hands: std::array::from_fn(|_| HandFrame {
+                joints: Some(std::array::from_fn(|i| HandJoint {
+                    position_valid: i & 1 != 0,
+                    orientation_valid: i & 2 != 0,
+                    position_tracked: i & 4 != 0,
+                    orientation_tracked: i & 8 != 0,
+                    ..HandJoint::default()
+                })),
+                ..HandFrame::default()
+            }),
+        }),
         semantic: None,
         recenters: Vec::new(),
     };
-    crate::recorder::tracking::encode_capture(&frame, &[record]).unwrap()
+    encode_capture(&frame, &[record]).unwrap()
 }
 
 #[test]
-fn format_defaults_to_v2_and_start_preamble_matches_explicit_opt_in() {
-    assert_eq!(RecordingFormat::default(), RecordingFormat::UncompressedV2);
+fn format_defaults_to_uncompressed_v4_and_compression_stays_opt_in() {
+    assert_eq!(RecordingFormat::default(), RecordingFormat::UncompressedV4);
     assert_eq!(
         RecordingFormat::from_compression_opt_in(false),
-        RecordingFormat::UncompressedV2
+        RecordingFormat::UncompressedV4
     );
     assert_eq!(
         RecordingFormat::from_compression_opt_in(true),
-        RecordingFormat::ChunkedV3
+        RecordingFormat::ChunkedV4
     );
     let payload_header = crate::recorder::tracking::format::Header {
         build: "fixture".into(),
@@ -147,8 +168,8 @@ fn format_defaults_to_v2_and_start_preamble_matches_explicit_opt_in() {
         time_scale: 1.0,
     };
     for (format, version) in [
-        (RecordingFormat::UncompressedV2, 2),
-        (RecordingFormat::ChunkedV3, 3),
+        (RecordingFormat::UncompressedV4, 4),
+        (RecordingFormat::ChunkedV4, 4),
     ] {
         let bytes = format.preamble(&payload_header);
         assert_eq!(tracking_format::decode(&bytes).unwrap().version, version);
@@ -158,14 +179,13 @@ fn format_defaults_to_v2_and_start_preamble_matches_explicit_opt_in() {
 #[test]
 fn both_formats_preserve_batches_final_loss_and_preamble_counters() {
     for (format, version) in [
-        (RecordingFormat::UncompressedV2, 2),
-        (RecordingFormat::ChunkedV3, 3),
+        (RecordingFormat::UncompressedV4, 4),
+        (RecordingFormat::ChunkedV4, 4),
     ] {
         let (mut writer, receiver) = writer();
-        let preamble = if version == 2 {
-            tracking_format::encode_input_preamble(&header())
-        } else {
-            preamble()
+        let preamble = match format {
+            RecordingFormat::UncompressedV4 => tracking_format::encode_latest_preamble(&header()),
+            RecordingFormat::ChunkedV4 => preamble(),
         };
         let preamble_len = preamble.len();
         writer.shared = Arc::new(Shared::new(preamble_len as u64, format));
@@ -186,11 +206,11 @@ fn both_formats_preserve_batches_final_loss_and_preamble_counters() {
         });
         let mut expected = preamble;
         match format {
-            RecordingFormat::UncompressedV2 => {
+            RecordingFormat::UncompressedV4 => {
                 expected.extend(&first);
                 expected.extend(&final_loss);
             }
-            RecordingFormat::ChunkedV3 => {
+            RecordingFormat::ChunkedV4 => {
                 expected.extend(tracking_format::encode_chunk(&first).unwrap());
                 expected.extend(tracking_format::encode_chunk(&final_loss).unwrap());
             }
@@ -218,13 +238,12 @@ fn both_formats_preserve_batches_final_loss_and_preamble_counters() {
 #[test]
 fn both_formats_run_through_the_started_writer_thread() {
     for (format, version) in [
-        (RecordingFormat::UncompressedV2, 2),
-        (RecordingFormat::ChunkedV3, 3),
+        (RecordingFormat::UncompressedV4, 4),
+        (RecordingFormat::ChunkedV4, 4),
     ] {
-        let preamble = if version == 2 {
-            tracking_format::encode_input_preamble(&header())
-        } else {
-            preamble()
+        let preamble = match format {
+            RecordingFormat::UncompressedV4 => tracking_format::encode_latest_preamble(&header()),
+            RecordingFormat::ChunkedV4 => preamble(),
         };
         let bytes = Arc::new(Mutex::new(preamble.clone()));
         let sink = TestSink {
@@ -246,6 +265,13 @@ fn both_formats_run_through_the_started_writer_thread() {
         assert_eq!(decoded.version, version);
         assert_eq!(decoded.frames.len(), 1);
         assert_eq!(decoded.input.len(), 1);
+        let payload = format::decode(&bytes.lock()).unwrap();
+        assert_eq!(
+            encode_capture(&payload.frames[0], &payload.input)
+                .unwrap()
+                .bytes,
+            original
+        );
         assert_eq!(result.bytes, bytes.lock().len() as u64);
         assert_eq!(
             writer.logical_bytes_written(),
@@ -256,7 +282,7 @@ fn both_formats_run_through_the_started_writer_thread() {
 
 #[test]
 fn both_formats_count_partial_storage_without_completing_logical_batch() {
-    for format in [RecordingFormat::UncompressedV2, RecordingFormat::ChunkedV3] {
+    for format in [RecordingFormat::UncompressedV4, RecordingFormat::ChunkedV4] {
         let (mut writer, receiver) = writer();
         writer.shared = Arc::new(Shared::new(0, format));
         let first = input_batch(10).bytes;
@@ -271,7 +297,7 @@ fn both_formats_count_partial_storage_without_completing_logical_batch() {
         assert!(run(sink, &receiver, &writer.shared).is_err());
         assert_eq!(writer.bytes_written(), 1);
         assert_eq!(writer.logical_bytes_written(), 0);
-        let expected = if format == RecordingFormat::UncompressedV2 {
+        let expected = if format == RecordingFormat::UncompressedV4 {
             first[0]
         } else {
             tracking_format::TAG_CHUNK

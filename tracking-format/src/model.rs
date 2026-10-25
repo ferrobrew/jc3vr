@@ -208,8 +208,22 @@ pub struct HandJoint {
     pub pose: Pose,
     /// The joint's radius, metres.
     pub radius: f32,
-    pub valid: bool,
-    pub tracked: bool,
+    pub position_valid: bool,
+    pub orientation_valid: bool,
+    pub position_tracked: bool,
+    pub orientation_tracked: bool,
+}
+
+impl HandJoint {
+    /// Whether both position and orientation are valid.
+    pub const fn valid(&self) -> bool {
+        self.position_valid && self.orientation_valid
+    }
+
+    /// Whether both position and orientation are tracked.
+    pub const fn tracked(&self) -> bool {
+        self.position_tracked && self.orientation_tracked
+    }
 }
 
 /// One controller's snapshot.

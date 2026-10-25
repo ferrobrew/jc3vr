@@ -75,15 +75,12 @@ pub struct FingertipSource<'a> {
 }
 
 /// The dominant hand's index fingertip in the frame its `source` is given in: the tracked
-/// skeleton's index tip when it is valid, and otherwise an estimate in the controller's aim frame,
-/// ahead of the controller while the finger points and at the trigger while it rests there.
+/// skeleton's index tip when its position is valid and finite, and otherwise an estimate in the
+/// controller's aim frame, ahead of the controller while the finger points and at the trigger while
+/// it rests there.
 pub fn fingertip(hand: Hand, source: FingertipSource<'_>, tuning: &WristDetonatorConfig) -> Vec3 {
-    if let Some(tip) = source
-        .joints
-        .map(|joints| joints[INDEX_TIP_JOINT])
-        .filter(|joint| joint.valid && joint.pose.position.is_finite())
-    {
-        return tip.pose.position;
+    if let Some(position) = skeleton_fingertip(source.joints) {
+        return position;
     }
     let offset = if source.trigger_touch {
         tuning.fingertip_resting_m
@@ -95,6 +92,14 @@ pub fn fingertip(hand: Hand, source: FingertipSource<'_>, tuning: &WristDetonato
         Hand::Left => Vec3::new(-offset.x, offset.y, offset.z),
     };
     source.aim.position + source.aim.orientation.normalize() * offset
+}
+
+/// The skeleton's index-tip position when it is valid and finite.
+pub(super) fn skeleton_fingertip(joints: Option<&[HandJoint; HAND_JOINT_COUNT]>) -> Option<Vec3> {
+    joints
+        .map(|joints| joints[INDEX_TIP_JOINT])
+        .filter(|joint| joint.position_valid && joint.pose.position.is_finite())
+        .map(|joint| joint.pose.position)
 }
 
 /// Where the detector is.
@@ -508,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fingertip_prefers_the_tracked_skeleton() {
+    fn the_fingertip_uses_a_valid_position_without_orientation_or_tracking() {
         let t = tuning();
         let aim = Pose::IDENTITY;
         let mut joints = [HandJoint::default(); HAND_JOINT_COUNT];
@@ -525,11 +530,13 @@ mod tests {
         joints[INDEX_TIP_JOINT] = HandJoint {
             pose: Pose {
                 position: Vec3::new(0.1, 0.2, 0.3),
-                orientation: Quat::IDENTITY,
+                orientation: Quat::from_xyzw(f32::NAN, 0.0, 0.0, 0.0),
             },
             radius: 0.01,
-            valid: true,
-            tracked: true,
+            position_valid: true,
+            orientation_valid: false,
+            position_tracked: false,
+            orientation_tracked: false,
         };
         let tracked = fingertip(
             Hand::Right,
@@ -541,6 +548,41 @@ mod tests {
             &t,
         );
         assert_eq!(tracked, Vec3::new(0.1, 0.2, 0.3));
+        assert_eq!(skeleton_fingertip(Some(&joints)), Some(tracked));
+        joints[INDEX_TIP_JOINT].position_valid = false;
+        joints[INDEX_TIP_JOINT].orientation_valid = true;
+        joints[INDEX_TIP_JOINT].position_tracked = true;
+        joints[INDEX_TIP_JOINT].orientation_tracked = true;
+        assert_eq!(skeleton_fingertip(Some(&joints)), None);
+        assert_eq!(
+            fingertip(
+                Hand::Right,
+                FingertipSource {
+                    joints: Some(&joints),
+                    aim,
+                    trigger_touch: false,
+                },
+                &t,
+            ),
+            estimated
+        );
+        joints[INDEX_TIP_JOINT].position_valid = true;
+        for coordinate in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            joints[INDEX_TIP_JOINT].pose.position.x = coordinate;
+            assert_eq!(skeleton_fingertip(Some(&joints)), None);
+            assert_eq!(
+                fingertip(
+                    Hand::Right,
+                    FingertipSource {
+                        joints: Some(&joints),
+                        aim,
+                        trigger_touch: false,
+                    },
+                    &t,
+                ),
+                estimated
+            );
+        }
         // On the trigger, and mirrored for the left hand.
         let resting = fingertip(
             Hand::Left,

@@ -7,9 +7,9 @@ use crate::{
     wire::{Decoder, Encoder},
 };
 
-/// The version 3 atomic capture chunk tag. Its payload cannot contain another chunk.
+/// The version 3 and 4 atomic capture chunk tag. Its payload cannot contain another chunk.
 pub const TAG_CHUNK: u8 = 3;
-/// Unknown version 3 tags with this bit set are optional and can be skipped.
+/// Unknown version 3 and 4 tags with this bit set are optional and can be skipped.
 pub const OPTIONAL_TAG_BIT: u8 = 0x80;
 /// Maximum expanded bytes in one independently recoverable chunk.
 pub const MAX_CHUNK_BYTES: usize = 4 * 1024 * 1024;

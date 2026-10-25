@@ -128,7 +128,7 @@ fn recording_ui(ui: &mut egui::Ui) {
         "Use experimental lossless recording compression",
     )
     .on_hover_text(
-        "Applies to the next recording. Uses version 3 chunks without dropping samples or joints. Real-capture performance acceptance is pending; version 2 remains the default.",
+        "Applies to the next recording. Uses version 4 chunks without dropping samples or joints. Real-capture performance acceptance is pending; uncompressed version 4 remains the default.",
     );
     ui.label(
         "Records the head, both controllers, their inputs, and the semantic actions each VR \

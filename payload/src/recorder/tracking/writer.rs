@@ -22,23 +22,23 @@ use crate::recorder::tracking::format::{self, Header};
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum RecordingFormat {
     #[default]
-    UncompressedV2,
-    ChunkedV3,
+    UncompressedV4,
+    ChunkedV4,
 }
 
 impl RecordingFormat {
     pub(crate) fn from_compression_opt_in(enabled: bool) -> Self {
         if enabled {
-            Self::ChunkedV3
+            Self::ChunkedV4
         } else {
-            Self::UncompressedV2
+            Self::UncompressedV4
         }
     }
 
     fn preamble(self, header: &Header) -> Vec<u8> {
         match self {
-            Self::UncompressedV2 => format::encode_input_preamble(header),
-            Self::ChunkedV3 => format::encode_chunked_preamble(header),
+            Self::UncompressedV4 => format::encode_input_preamble(header),
+            Self::ChunkedV4 => format::encode_chunked_preamble(header),
         }
     }
 }
@@ -345,8 +345,8 @@ fn drain(
 fn write_batch(file: &mut impl Sink, records: &[u8], shared: &Shared) -> Result<(), String> {
     let chunk;
     let stored = match shared.format {
-        RecordingFormat::UncompressedV2 => records,
-        RecordingFormat::ChunkedV3 => {
+        RecordingFormat::UncompressedV4 => records,
+        RecordingFormat::ChunkedV4 => {
             chunk = tracking_format::encode_chunk(records).map_err(|error| error.to_string())?;
             chunk.as_slice()
         }

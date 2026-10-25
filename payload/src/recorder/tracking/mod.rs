@@ -73,7 +73,7 @@ pub(crate) struct TrackingStatus {
     /// Frames dropped because the writer fell behind.
     pub(crate) dropped: u32,
     /// Stored bytes accepted by the buffered sink, including the preamble. A flush error can
-    /// prevent durability. Version 3 stores chunks; version 2 stores original serialized records.
+    /// prevent durability. The opt-in chunked writer stores chunks; the normal writer stores original records.
     pub(crate) bytes: u64,
     /// Preamble and original record bytes for complete accepted batches, before compression.
     pub(crate) logical_bytes: u64,
@@ -851,7 +851,7 @@ mod tests {
         let mut bytes = format::encode_input_preamble(&header);
         bytes.extend(batch.bytes);
         let decoded = format::decode(&bytes).unwrap();
-        assert_eq!(decoded.version, 2);
+        assert_eq!(decoded.version, tracking_format::VERSION);
         assert_eq!(decoded.input, captured);
         assert_eq!(decoded.frames, vec![frame]);
     }

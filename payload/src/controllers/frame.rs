@@ -494,8 +494,17 @@ pub struct HandJoint {
     pub pose: Pose,
     /// The joint's radius, metres.
     pub radius: f32,
-    pub valid: bool,
-    pub tracked: bool,
+    pub position_valid: bool,
+    pub orientation_valid: bool,
+    pub position_tracked: bool,
+    pub orientation_tracked: bool,
+}
+
+impl HandJoint {
+    /// Whether both components of the joint pose are actively tracked.
+    pub fn is_tracked(&self) -> bool {
+        self.position_tracked && self.orientation_tracked
+    }
 }
 
 /// One controller's snapshot.
@@ -694,6 +703,20 @@ mod tests {
             s.set(b, true);
         }
         s
+    }
+
+    #[test]
+    fn joint_tracked_count_requires_both_tracking_components() {
+        for flags in 0..16 {
+            let joint = HandJoint {
+                position_valid: flags & 1 != 0,
+                orientation_valid: flags & 2 != 0,
+                position_tracked: flags & 4 != 0,
+                orientation_tracked: flags & 8 != 0,
+                ..HandJoint::default()
+            };
+            assert_eq!(joint.is_tracked(), flags & 12 == 12);
+        }
     }
 
     #[test]

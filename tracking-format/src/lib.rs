@@ -19,12 +19,23 @@
 //!    Version 3 stores complete serialized frame/input batches inside [`TAG_CHUNK`] records.
 //!    Each chunk independently selects raw or LZ4 block storage and verifies metadata and stored
 //!    bytes with CRC-32. The expanded records retain their original bytes and order.
+//!    Version 4 accepts direct frame/input records and the same chunks. It preserves independent
+//!    position/orientation validity and tracking for each hand joint without requiring compression.
 //!
-//! Versions 1 and 2 skip unknown tags. Version 3 rejects unknown required tags; only unknown tags
-//! with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
+//! Versions 1 and 2 skip unknown tags. Versions 3 and 4 reject unknown required tags; only unknown
+//! tags with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
 //! records. A cut final outer record leaves all earlier records readable and marks
 //! [`Recording::truncated`]. A complete malformed chunk, unread inner bytes, a bad checksum, or a
 //! resource-budget violation is an error. [`decode_with_limits`] bounds aggregate resource use.
+//!
+//! Each joint retains its pose, radius, and one flag byte. Versions 1 through 3 read bits 0 and 1
+//! as aggregate validity and tracking, ignore all upper joint bits, and mirror each aggregate into
+//! both component fields. Their encoders store the conjunctions, losing independent flags.
+//! Version 4 uses bits 0 and 1 for the same conjunctions and bits 2 through 5 for position validity,
+//! orientation validity, position tracking, and orientation tracking. Bits 6 and 7 must be zero;
+//! aggregates must match their components. No component flag implies any other flag. Input and
+//! decision schemas remain independently versioned. Legacy preamble and frame entry points are
+//! pinned; version 4 writers use the `encode_latest_*` APIs or an explicit [`FrameSchema`].
 //!
 //! The poses are in the cockpit frame, as the mod publishes them (the eye views and the controller
 //! spaces re-based against the recenter baseline): metres, +X right, +Y up, -Z forward. A replay
@@ -35,6 +46,8 @@ mod chunk;
 mod codec;
 pub mod input;
 mod input_codec;
+#[cfg(test)]
+mod joint_tests;
 pub mod model;
 mod read;
 mod wire;
@@ -55,8 +68,31 @@ use crate::{
 /// The file extension of a tracking recording.
 pub const EXTENSION: &str = "jc3trk";
 
-/// The newest supported format version. Legacy preamble functions retain versions 1 and 2.
-pub const VERSION: u16 = 3;
+/// The newest supported format version. Legacy entry points retain versions 1 through 3.
+pub const VERSION: u16 = 4;
+
+/// The joint-flag schema of a frame, independent of the input and decision schemas.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum FrameSchema {
+    /// Versions 1 through 3 store only the conjunctions of the component flags.
+    Legacy,
+    /// Version 4 preserves each component flag and validates the aggregate bits.
+    V4,
+}
+
+impl FrameSchema {
+    /// Select the frame schema announced by a supported container version.
+    pub fn for_version(version: u16) -> Result<Self, DecodeError> {
+        match version {
+            1..=3 => Ok(Self::Legacy),
+            4 => Ok(Self::V4),
+            _ => Err(DecodeError {
+                offset: 0,
+                kind: DecodeErrorKind::UnsupportedVersion(version),
+            }),
+        }
+    }
+}
 
 /// A whole recording, as read back.
 #[derive(Debug, Clone, PartialEq)]
@@ -194,7 +230,19 @@ pub fn encode_input_preamble(header: &Header) -> Vec<u8> {
 
 /// A version 3 preamble. Every required outer record is an independently recoverable chunk.
 pub fn encode_chunked_preamble(header: &Header) -> Vec<u8> {
+    preamble(header, 3)
+}
+
+/// A version 4 preamble for uncompressed records or independently recoverable chunks.
+/// Compression is a writer choice, not a requirement of this version.
+pub fn encode_latest_preamble(header: &Header) -> Vec<u8> {
     preamble(header, VERSION)
+}
+
+/// A version 4 preamble for a writer that stores capture batches in chunks.
+/// The container is identical to [`encode_latest_preamble`]; each chunk selects its storage.
+pub fn encode_latest_chunked_preamble(header: &Header) -> Vec<u8> {
+    encode_latest_preamble(header)
 }
 
 fn preamble(header: &Header, version: u16) -> Vec<u8> {
@@ -208,10 +256,27 @@ fn preamble(header: &Header, version: u16) -> Vec<u8> {
     out.bytes
 }
 
-/// One frame's record.
+/// One legacy frame record, pinned to the version 1 through 3 joint layout.
+/// Component flags are lossily reduced to their conjunctions, as in [`encode_legacy_frame`].
 pub fn encode_frame(frame: &Frame) -> Vec<u8> {
+    encode_legacy_frame(frame)
+}
+
+/// Explicitly down-convert a frame to the version 1 through 3 layout.
+/// Only `valid()` and `tracked()` are stored; independent component flags are lost.
+pub fn encode_legacy_frame(frame: &Frame) -> Vec<u8> {
+    encode_frame_with_schema(frame, FrameSchema::Legacy)
+}
+
+/// One version 4 frame record, preserving every independent joint flag.
+pub fn encode_latest_frame(frame: &Frame) -> Vec<u8> {
+    encode_frame_with_schema(frame, FrameSchema::V4)
+}
+
+/// Encode one framed record with the joint schema selected for its container.
+pub fn encode_frame_with_schema(frame: &Frame, schema: FrameSchema) -> Vec<u8> {
     let mut payload = Encoder::default();
-    codec::frame(&mut payload, frame);
+    codec::frame(&mut payload, frame, schema);
     let mut out = Encoder::default();
     out.u8(TAG_FRAME);
     out.u32(payload.bytes.len() as u32);
@@ -219,7 +284,24 @@ pub fn encode_frame(frame: &Frame) -> Vec<u8> {
     out.bytes
 }
 
-/// The independent input-history record tag. The frame payload remains byte-compatible with v1.
+/// Decode exactly one framed record with an explicit joint schema.
+/// Unlike whole-file recovery, an incomplete standalone record is an error.
+pub fn decode_frame_with_schema(bytes: &[u8], schema: FrameSchema) -> Result<Frame, DecodeError> {
+    let mut input = wire::Decoder::new(bytes);
+    let tag = input.u8()?;
+    if tag != TAG_FRAME {
+        return Err(chunk::invalid("frame record tag", u64::from(tag), 0));
+    }
+    let len = input.u32()? as usize;
+    read::record_bound(tag, len, input.offset())?;
+    let mut payload = input.sub(len)?;
+    let frame = codec::read_frame(&mut payload, schema)?;
+    payload.finish("frame")?;
+    input.finish("frame record")?;
+    Ok(frame)
+}
+
+/// The independent input-history record tag. Its payload schema is independent of frame schemas.
 pub const TAG_INPUT: u8 = 2;
 
 /// Encode one bounded input record. Invalid producers do not silently truncate paths or routes.

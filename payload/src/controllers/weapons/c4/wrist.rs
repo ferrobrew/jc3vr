@@ -72,6 +72,14 @@ impl FingertipSourceKind {
             FingertipSourceKind::Estimate => "controller estimate",
         }
     }
+
+    fn from_source(source: FingertipSource<'_>) -> Self {
+        if press::skeleton_fingertip(source.joints).is_some() {
+            Self::Skeleton
+        } else {
+            Self::Estimate
+        }
+    }
 }
 
 /// The wrist detonator's readout.
@@ -140,10 +148,7 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
             aim: dom.aim.pose,
             trigger_touch: dom.inputs.trigger_touch,
         };
-        let kind = match joints {
-            Some(j) if j[press::INDEX_TIP_JOINT].valid => FingertipSourceKind::Skeleton,
-            _ => FingertipSourceKind::Estimate,
-        };
+        let kind = FingertipSourceKind::from_source(source);
         let tip = press::fingertip(presser, source, tuning);
         let on_drawn_hand = press::carry(tip, dom.grip.pose, presser_grip);
         Some((press::carry(on_drawn_hand, off_grip, Pose::IDENTITY), kind))
@@ -458,6 +463,16 @@ fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
 mod tests {
     use super::*;
 
+    fn fingertip_source(
+        joints: Option<&[frame::HandJoint; frame::HAND_JOINT_COUNT]>,
+    ) -> FingertipSource<'_> {
+        FingertipSource {
+            joints,
+            aim: Pose::IDENTITY,
+            trigger_touch: false,
+        }
+    }
+
     fn look(charges: i32, flash: Option<FlashKind>) -> Look {
         Look {
             off: Hand::Left,
@@ -476,6 +491,45 @@ mod tests {
             Primitive::Sprite { color, .. } => *color,
             Primitive::Line { color, .. } => *color,
         }
+    }
+
+    #[test]
+    fn the_fingertip_source_reports_the_position_actually_selected() {
+        let mut joints = [frame::HandJoint::default(); frame::HAND_JOINT_COUNT];
+        let tip = &mut joints[press::INDEX_TIP_JOINT];
+        tip.position_valid = true;
+        tip.pose.position = Vec3::new(0.1, 0.2, 0.3);
+        let tuning = WristDetonatorConfig::new();
+        assert_eq!(
+            FingertipSourceKind::from_source(fingertip_source(Some(&joints))),
+            FingertipSourceKind::Skeleton
+        );
+        assert_eq!(
+            press::fingertip(Hand::Right, fingertip_source(Some(&joints)), &tuning),
+            joints[press::INDEX_TIP_JOINT].pose.position
+        );
+        joints[press::INDEX_TIP_JOINT].position_valid = false;
+        joints[press::INDEX_TIP_JOINT].orientation_valid = true;
+        joints[press::INDEX_TIP_JOINT].position_tracked = true;
+        joints[press::INDEX_TIP_JOINT].orientation_tracked = true;
+        assert_eq!(
+            FingertipSourceKind::from_source(fingertip_source(Some(&joints))),
+            FingertipSourceKind::Estimate
+        );
+        assert_eq!(
+            press::fingertip(Hand::Right, fingertip_source(Some(&joints)), &tuning),
+            tuning.fingertip_pointing_m
+        );
+        joints[press::INDEX_TIP_JOINT].position_valid = true;
+        joints[press::INDEX_TIP_JOINT].pose.position.x = f32::NAN;
+        assert_eq!(
+            FingertipSourceKind::from_source(fingertip_source(Some(&joints))),
+            FingertipSourceKind::Estimate
+        );
+        assert_eq!(
+            FingertipSourceKind::from_source(fingertip_source(None)),
+            FingertipSourceKind::Estimate
+        );
     }
 
     #[test]
