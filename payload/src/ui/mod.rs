@@ -12,11 +12,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{self, SaveStatus},
+    egui_impl::{debug_ui_capture, request_debug_ui},
     hud::egui_panel,
+    ui::capture::{OwnershipBlocker, PanelMode, PanelRequest},
 };
 
 pub mod camera;
-#[cfg(test)]
 pub(crate) mod capture;
 pub mod controllers;
 pub mod diagnostics;
@@ -274,6 +275,75 @@ pub fn restart_banner(ctx: &egui::Context) {
 }
 
 pub fn egui_debug_window(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
+    capture_header(ui);
+    let editing = debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any());
+    ui.add_enabled_ui(editing, |ui| egui_debug_window_body(ui, renderer));
+}
+
+fn capture_header(ui: &mut egui::Ui) {
+    let Some(snapshot) = debug_ui_capture() else {
+        ui.label("Editing requested; waiting for the input sample.");
+        return;
+    };
+    ui.horizontal_wrapped(|ui| {
+        let mut allow_gameplay = snapshot.mode == PanelMode::ReadOnly;
+        if ui
+            .add_enabled(
+                snapshot.edit_capture.any(),
+                egui::Checkbox::new(&mut allow_gameplay, "Allow gameplay input"),
+            )
+            .changed()
+            && allow_gameplay
+        {
+            request_debug_ui(PanelRequest::AllowGameplay);
+        }
+        ui.label(match snapshot.mode {
+            PanelMode::Hidden => "Mode: Hidden",
+            PanelMode::Editing => "Mode: Editing",
+            PanelMode::ReadOnly => "Mode: Read-only overlay",
+        });
+        if ui
+            .add_enabled(snapshot.edit_capture.any(), egui::Button::new("Hide"))
+            .clicked()
+        {
+            egui_panel::hide();
+        }
+    });
+    let status = match snapshot.blocker {
+        None => "Gameplay input: effective.",
+        Some(OwnershipBlocker::Editing) => {
+            "Editing input: effective. The game is not automatically paused."
+        }
+        Some(OwnershipBlocker::Unfocused) => "Waiting for game focus.",
+        Some(OwnershipBlocker::TrackingRecovery) => "Waiting for tracking/input recovery.",
+        Some(OwnershipBlocker::AwaitingNeutral) => {
+            "Waiting for all held inputs to return to neutral."
+        }
+        Some(OwnershipBlocker::DeviceCapturePending) => {
+            "Waiting for the game input device to acknowledge editing capture."
+        }
+        Some(OwnershipBlocker::GameDeviceDisabled) if snapshot.device_restore_pending => {
+            "Waiting for the game input device to acknowledge restoration."
+        }
+        Some(OwnershipBlocker::GameDeviceDisabled) => {
+            "Gameplay input is blocked: the game input device is disabled."
+        }
+    };
+    ui.label(format!(
+        "{} requested. {status}",
+        if snapshot.gameplay_requested {
+            "Gameplay"
+        } else {
+            "Editing"
+        },
+    ));
+    if snapshot.mode == PanelMode::ReadOnly {
+        ui.label("Controls are locked. Hide then reopen with F8 or the panel shortcut to edit. F4 controls the desktop overlay.");
+    }
+    ui.separator();
+}
+
+fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(format!("Build {}", crate::BUILD_STAMP))

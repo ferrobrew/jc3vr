@@ -29,20 +29,20 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::map,
-    egui_impl::EguiState,
+    egui_impl::debug_ui_capture,
     hud::{
         cursor,
         pointer::{self, PendingRoute, RoutedPointer},
     },
 };
 
-/// Cancel input on the game thread before shutdown removes the UI hooks.
+/// Cancel input on the game thread before ownership changes or shutdown removes the UI hooks.
 pub(crate) fn cancel_pointer_on_game_thread() {
     map::cancel();
-    // SAFETY: shutdown calls this on the game thread while engine singletons are live.
+    // SAFETY: callers run on the game thread while engine singletons are live.
     unsafe {
         let movie = UIManager::get().and_then(|manager| manager.m_Movie.as_mut());
-        cancel_pointer(movie);
+        cancel_pointer_for_ownership(movie);
     }
 }
 
@@ -102,7 +102,15 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut c_void) -> bool {
         (manager, geometry, mouse_route_active())
     else {
         // SAFETY: only the movie supplied by the current live manager is dereferenced.
-        unsafe { cancel_pointer(this.as_mut().and_then(|manager| manager.m_Movie.as_mut())) };
+        let blocked = debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective);
+        // SAFETY: only the current live manager's movie is used for cancellation.
+        let movie = unsafe { this.as_mut().and_then(|manager| manager.m_Movie.as_mut()) };
+        if blocked {
+            cancel_pointer_for_ownership(movie);
+            return true;
+        }
+        cancel_pointer(movie);
+        NATIVE_MOUSE_CANCEL.lock().delivery();
         return original.call(this, steering);
     };
     let prepared = PREPARED_ROUTE.lock().take();
@@ -117,6 +125,7 @@ fn send_mouse_events(this: *mut UIManager, steering: *mut c_void) -> bool {
         return false;
     };
     let identity = movie_identity(movie);
+    NATIVE_MOUSE_CANCEL.lock().delivery();
     if SYNTHETIC_MOUSE
         .lock()
         .movie
@@ -263,9 +272,7 @@ fn get_movie_space_mouse_cursor(
 fn mouse_route_active() -> bool {
     !crate::is_shutting_down()
         && Config::lock_query(|c| c.hud.redirect && c.hud.cursor.enabled)
-        && !EguiState::get()
-            .as_ref()
-            .is_some_and(|state| state.is_input_captured())
+        && debug_ui_capture().is_none_or(|snapshot| snapshot.gameplay_effective)
         && cursor::geometry().is_some()
 }
 
@@ -325,6 +332,41 @@ fn cancel_pointer(movie: Option<&mut MovieImpl>) {
         park(movie);
     }
 }
+
+/// Native input is not recorded in SyntheticMouse, so every ownership interval parks once.
+fn cancel_pointer_for_ownership(movie: Option<&mut MovieImpl>) {
+    pointer::clear_controller();
+    pointer::reset_route();
+    cursor::set_frame(None);
+    let live = movie.as_deref().map(movie_identity);
+    SYNTHETIC_MOUSE.lock().cancel(live);
+    let cancellation = NATIVE_MOUSE_CANCEL.lock().cancel(live);
+    if let (Some(Delivery::Park), Some(movie)) = (cancellation, movie) {
+        park(movie);
+    }
+}
+
+#[derive(Default)]
+struct NativeMouseCancellation {
+    parked_movie: Option<usize>,
+}
+
+impl NativeMouseCancellation {
+    fn delivery(&mut self) {
+        self.parked_movie = None;
+    }
+
+    fn cancel(&mut self, live: Option<usize>) -> Option<Delivery> {
+        let should_park = live.is_some() && self.parked_movie != live;
+        if should_park {
+            self.parked_movie = live;
+        }
+        should_park.then_some(Delivery::Park)
+    }
+}
+
+static NATIVE_MOUSE_CANCEL: Mutex<NativeMouseCancellation> =
+    Mutex::new(NativeMouseCancellation { parked_movie: None });
 
 fn movie_identity(movie: &MovieImpl) -> usize {
     ptr::from_ref(movie) as usize
@@ -448,6 +490,20 @@ mod tests {
             assert!(!state.cancel(live));
             assert_eq!(state, SyntheticMouse::default());
         }
+    }
+
+    #[test]
+    fn ownership_cancels_native_movie_input_once_without_a_synthetic_delivery() {
+        let mut synthetic = SyntheticMouse::default();
+        let mut native = NativeMouseCancellation::default();
+        assert!(!synthetic.cancel(Some(1)));
+        assert_eq!(native.cancel(None), None);
+        assert_eq!(native.cancel(Some(1)), Some(Delivery::Park));
+        assert_eq!(native.cancel(Some(1)), None);
+        assert_eq!(native.cancel(Some(2)), Some(Delivery::Park));
+        assert_eq!(native.cancel(Some(2)), None);
+        native.delivery();
+        assert_eq!(native.cancel(Some(2)), Some(Delivery::Park));
     }
 
     #[test]

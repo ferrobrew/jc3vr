@@ -7,16 +7,16 @@ use windows::Win32::{
     UI::{
         Input::KeyboardAndMouse::{VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
         WindowsAndMessaging::{
-            GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN,
+            GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN, WM_KILLFOCUS,
             WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
-            WM_RBUTTONUP, WM_SIZE, WM_SYSKEYDOWN,
+            WM_RBUTTONUP, WM_SETFOCUS, WM_SIZE, WM_SYSKEYDOWN,
         },
     },
 };
 
 use crate::{
     config,
-    egui_impl::EguiState,
+    egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
     hooks::graphics_engine::shader,
     hud::{cursor, egui_panel},
 };
@@ -32,14 +32,20 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::window::WndProc_ADDRESS)]
 fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     log_window_state(msg, wparam);
+    if observe_desktop_message(hwnd, msg, wparam, lparam) {
+        return LRESULT(0);
+    }
+    if matches!(msg, WM_ACTIVATEAPP | WM_KILLFOCUS | WM_SETFOCUS) {
+        return WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam);
+    }
     // F4 hides the flat egui debug overlay from the desktop window only (both the direct
     // back-buffer path and the deferred mirror-overlay path honour `hud.flat_overlay_visible`):
     // useful while recording the side-by-side stereo preview without the overlay in frame. The VR
-    // floating panel (F8), the headset image, and the in-world overlays are untouched. While hiding,
-    // egui's input capture is released too (if held) so the game keeps input with nothing left to
-    // click; showing it again does not re-capture on its own. Edge-detected like the other
-    // function-key toggles.
+    // floating panel (F8), the headset image, and the in-world overlays are untouched. With no live
+    // VR panel, hiding releases editing and showing requests Editing through device/neutral gates.
+    // The consumed key episode remains blocked through its release.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F4.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             let visible = {
@@ -47,11 +53,8 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
                 cfg.hud.flat_overlay_visible = !cfg.hud.flat_overlay_visible;
                 cfg.hud.flat_overlay_visible
             };
-            if !visible
-                && let Some(egui_state) = EguiState::get().as_mut()
-                && egui_state.is_input_captured()
-            {
-                egui_state.toggle_game_input_capture();
+            if let Some(egui_state) = EguiState::get().as_mut() {
+                egui_state.desktop_visibility_changed(visible);
             }
             tracing::info!(
                 "F4: flat debug overlay {}",
@@ -64,6 +67,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // F7 recenters the headpose: snapshots the current headpose as the neutral reference so
     // subsequent poses are relative to it. Edge-detected like F10/F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F7.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             crate::headpose::recenter();
@@ -81,6 +85,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
         && wparam.0 == VK_F10.0 as usize
     {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             // Release egui's input capture if held, so the game retains input while the overlay is
@@ -101,6 +106,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // recording.
     #[cfg(feature = "profiler")]
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F9.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down
             && crate::profiler::capture::start(crate::profiler::capture::DEFAULT_CAPTURE_SECS)
@@ -113,6 +119,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // F8 summons/dismisses the interactive egui floating panel in VR (issue #24), together with
     // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7/F10/F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F8.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             let enabled = egui_panel::toggle();
@@ -128,6 +135,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // patch without reaching for the debug overlay. Edge-detected like F10; consumed so the game does
     // not also act on it.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F11.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             let now_on = {
@@ -148,6 +156,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // single-pass collapse that is the full side-by-side render (both eyes). A robust alternative to
     // the F10 fullscreen capture for in-headset diagnosis. Edge-detected; consumed.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F12.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             crate::screenshot::request();
@@ -162,6 +171,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
         && crate::director::keymap::on_key_down(wparam.0 as u16, (lparam.0 & 0x4000_0000) == 0)
     {
+        consume_desktop_shortcut(wparam.0);
         return LRESULT(0);
     }
 

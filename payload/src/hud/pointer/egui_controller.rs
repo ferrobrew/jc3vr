@@ -95,7 +95,7 @@ pub(crate) fn update_egui_controller(input: Option<(&ControllerFrame, &Edges)>, 
         )
     });
     let samples = input
-        .filter(|(frame, _)| enabled && frame.is_fresh_at(now) && egui_panel::is_active())
+        .filter(|(frame, _)| enabled && frame.is_fresh_at(now) && egui_panel::accepts_edit_input())
         .map(|(frame, edges)| Hand::BOTH.map(|hand| sample(frame, edges, hand)));
     let placed = egui_panel::is_placed();
     let mut state = STATE.lock();
@@ -484,10 +484,23 @@ impl SecondaryButton {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use tracking_format::input::{
+        ClockDomain, GroupOrder, InputGroup, InputRecord, InputRoute, InputStamp, RouteSample,
+        SourceQuery, ValueBits,
+    };
+
     use super::*;
-    use crate::controllers::{
-        bindings::panel_chord::{self, ChordInput, PanelChord},
-        frame::ActionSetKind,
+    use crate::{
+        controllers::{
+            bindings::policy_a::runtime::{Runtime, TickInput},
+            config::BindingsConfig,
+            frame::ActionSetKind,
+        },
+        vr::input::semantic::{
+            ActionKind, SCHEMA_VERSION, SemanticSet, history::Publication, vocabulary::GlobalAction,
+        },
     };
 
     const INSIDE: Option<PanelHit> = Some(PanelHit {
@@ -766,7 +779,7 @@ mod tests {
     /// The left stick click held and the right B pressed, held, and let go, with both rays on the
     /// panel throughout, and then a plain press of the right B.
     fn chord_then_right_click(click_held: bool) -> Vec<u32> {
-        let mut chord = PanelChord::new();
+        let mut policy = Runtime::default();
         let mut state = EguiControllerState::new();
         let mut previous = (false, false);
         let ticks = [
@@ -779,7 +792,7 @@ mod tests {
             (false, false),
         ];
         let mut buttons = Vec::new();
-        for (click, b) in ticks {
+        for (index, (click, b)) in [(false, false)].into_iter().chain(ticks).enumerate() {
             let mut frame = ControllerFrame {
                 sequence: 0,
                 display_time_ns: 0,
@@ -789,7 +802,7 @@ mod tests {
                 hands: Default::default(),
             };
             let mut edges = Edges::default();
-            let (left, right) = (panel_chord::CLICK_HAND.index(), panel_chord::B_HAND.index());
+            let (left, right) = (Hand::Left.index(), Hand::Right.index());
             frame.hands[left]
                 .buttons
                 .set(Button::ThumbstickClick, click);
@@ -800,8 +813,77 @@ mod tests {
             edges.released[right].set(Button::BClick, !b && previous.1);
             previous = (click, b);
 
-            let tick = chord.step(ChordInput::of(&frame, &edges), 0.05, 0.35);
-            panel_chord::mask(&mut frame, &mut edges, tick);
+            let sequence = index as u64 + 1;
+            frame.sequence = sequence;
+            let mut samples = [
+                ("/user/hand/left/input/thumbstick/click", click),
+                ("/user/hand/right/input/thumbstick/click", false),
+                ("/user/hand/right/input/b/click", b),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (path, down))| RouteSample {
+                route: InputRoute::Raw(index as u8),
+                value: ValueBits::Bool(down),
+                down,
+                active: true,
+                change: None,
+                sources: SourceQuery::Paths(Arc::from([path.to_owned()])),
+            })
+            .collect::<Vec<_>>();
+            for set in [SemanticSet::Global, SemanticSet::Menu] {
+                for (action, definition) in set.actions().iter().enumerate() {
+                    for hand in Hand::BOTH {
+                        let value = match definition.kind {
+                            ActionKind::Bool => ValueBits::Bool(false),
+                            ActionKind::Float => ValueBits::Float(0),
+                            ActionKind::Vec2 => ValueBits::Vec2([0; 2]),
+                        };
+                        samples.push(RouteSample {
+                            route: InputRoute::Semantic {
+                                set: set.index() as u8,
+                                action: action as u16,
+                                hand: hand.index() as u8,
+                            },
+                            value,
+                            active: false,
+                            down: false,
+                            change: None,
+                            sources: SourceQuery::Paths(Arc::from([])),
+                        });
+                    }
+                }
+            }
+            let group = InputGroup {
+                stamp: InputStamp {
+                    epoch: 1,
+                    clock: ClockDomain::Synthetic,
+                    time_ns: sequence * 50_000_000,
+                    sync: sequence,
+                    sequence,
+                },
+                order: GroupOrder::UnorderedSync,
+                binding_generation: 1,
+                source_generation: 1,
+                action_schema: SCHEMA_VERSION,
+                context: ActionSetKind::Ui as u64,
+                focused: true,
+                samples,
+            };
+            let tick = policy.step(TickInput {
+                publications: vec![Publication {
+                    record: InputRecord::Group(group),
+                    observed_at: Instant::now(),
+                    frame_sequence: Some(sequence),
+                }],
+                replay: false,
+                frame: Some(&frame),
+                context: (32 << 8) | ActionSetKind::Ui as u64,
+                gameplay: true,
+                usable: true,
+                config: &BindingsConfig::new(),
+            });
+            tick.filter_raw(&mut frame, &mut edges);
             let samples = Hand::BOTH.map(|hand| read_hand(&frame, &edges, hand, INSIDE));
             let (_, update, _) = state.step(&samples, Hand::Right, SLOP, 0.0, Instant::now());
             buttons.push(update.buttons);
@@ -810,9 +892,148 @@ mod tests {
     }
 
     #[test]
+    fn drained_direct_trigger_tap_never_reaches_either_pointer_reader() {
+        let make_group = |sequence, down| {
+            let mut samples = [
+                "/user/hand/left/input/thumbstick/click",
+                "/user/hand/right/input/thumbstick/click",
+                "/user/hand/right/input/b/click",
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| RouteSample {
+                route: InputRoute::Raw(index as u8),
+                value: ValueBits::Bool(false),
+                down: false,
+                active: true,
+                change: None,
+                sources: SourceQuery::Paths(Arc::from([path.to_owned()])),
+            })
+            .collect::<Vec<_>>();
+            for set in [SemanticSet::Global, SemanticSet::Menu] {
+                for (action, definition) in set.actions().iter().enumerate() {
+                    for hand in Hand::BOTH {
+                        let direct = set == SemanticSet::Global
+                            && action == GlobalAction::RecenterView.id().index()
+                            && hand == Hand::Right;
+                        let value = match definition.kind {
+                            ActionKind::Bool => ValueBits::Bool(direct && down),
+                            ActionKind::Float => ValueBits::Float(0),
+                            ActionKind::Vec2 => ValueBits::Vec2([0; 2]),
+                        };
+                        samples.push(RouteSample {
+                            route: InputRoute::Semantic {
+                                set: set.index() as u8,
+                                action: action as u16,
+                                hand: hand.index() as u8,
+                            },
+                            value,
+                            active: direct,
+                            down: direct && down,
+                            change: None,
+                            sources: SourceQuery::Paths(if direct {
+                                Arc::from(["/user/hand/right/input/trigger/click".to_owned()])
+                            } else {
+                                Arc::from([])
+                            }),
+                        });
+                    }
+                }
+            }
+            InputGroup {
+                stamp: InputStamp {
+                    epoch: 1,
+                    clock: ClockDomain::Synthetic,
+                    time_ns: sequence * 1_000_000,
+                    sync: sequence,
+                    sequence,
+                },
+                order: GroupOrder::UnorderedSync,
+                binding_generation: 1,
+                source_generation: 1,
+                action_schema: SCHEMA_VERSION,
+                context: ActionSetKind::Ui as u64,
+                focused: true,
+                samples,
+            }
+        };
+        let mut policy = Runtime::default();
+        let mut frame = ControllerFrame {
+            sequence: 1,
+            display_time_ns: 0,
+            published_at: Instant::now(),
+            focused: true,
+            action_set: ActionSetKind::Ui,
+            hands: Default::default(),
+        };
+        let neutral = Publication {
+            record: InputRecord::Group(make_group(1, false)),
+            observed_at: Instant::now(),
+            frame_sequence: Some(1),
+        };
+        policy.step(TickInput {
+            publications: vec![neutral],
+            replay: false,
+            frame: Some(&frame),
+            context: 5,
+            gameplay: true,
+            usable: true,
+            config: &BindingsConfig::new(),
+        });
+        frame.sequence = 4;
+        let publications = [(2, true), (3, false), (4, false)]
+            .into_iter()
+            .map(|(sequence, down)| Publication {
+                record: InputRecord::Group(make_group(sequence, down)),
+                observed_at: Instant::now(),
+                frame_sequence: Some(sequence),
+            })
+            .collect();
+        let tick = policy.step(TickInput {
+            publications,
+            replay: false,
+            frame: Some(&frame),
+            context: 5,
+            gameplay: true,
+            usable: true,
+            config: &BindingsConfig::new(),
+        });
+        assert_eq!(tick.commands.len(), 1);
+        let mut edges = Edges::default();
+        edges.pressed[1].set(Button::TriggerPress, true);
+        edges.released[1].set(Button::TriggerPress, true);
+        assert!(
+            read_hand(&frame, &edges, Hand::Right, INSIDE)
+                .trigger
+                .down(false)
+        );
+        tick.filter_raw(&mut frame, &mut edges);
+        let native = TriggerSample {
+            level: frame
+                .hand(Hand::Right)
+                .buttons
+                .contains(Button::TriggerPress),
+            pressed: edges.pressed(Hand::Right, Button::TriggerPress),
+            released: edges.released(Hand::Right, Button::TriggerPress),
+        };
+        assert!(!native.down(false));
+        let mut editor = EguiControllerState::new();
+        let neutral = [hand(INSIDE, false), hand(INSIDE, false)];
+        editor.step(&neutral, Hand::Right, SLOP, 0.0, Instant::now());
+        let samples = Hand::BOTH.map(|hand| read_hand(&frame, &edges, hand, INSIDE));
+        assert_eq!(
+            editor
+                .step(&samples, Hand::Right, SLOP, 0.0, Instant::now())
+                .1
+                .buttons,
+            0
+        );
+    }
+
+    #[test]
     fn the_chord_b_never_right_clicks_on_the_panel() {
-        assert_eq!(chord_then_right_click(true), [0, 0, 0, 0, 0, 2, 0]);
-        // Without the stick click the same press right-clicks, so the mask is what withholds it.
-        assert_eq!(chord_then_right_click(false), [0, 2, 2, 0, 0, 2, 0]);
+        assert_eq!(chord_then_right_click(true), [0, 0, 0, 0, 0, 0, 2, 0]);
+        // Without the stick click the same press right-clicks immediately.
+        assert_eq!(chord_then_right_click(false), [0, 0, 2, 2, 0, 0, 2, 0]);
     }
 }

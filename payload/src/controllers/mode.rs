@@ -16,7 +16,7 @@
 //! 1. A menu is up: [`Mode::Ui`]. The signals are the clock's pause (which covers the pause menu,
 //!    the commlink, the pause utility, and the other pause reasons), the player action map's UI
 //!    blocker (a game screen owns input, which covers the map without a pause), and the mod's own
-//!    panel.
+//!    editing capture. A visible read-only panel is not a menu signal.
 //! 2. A teleport is in flight, or the character is not readable (no character, no control
 //!    parameters, or no animation instance in the first frames after a spawn): hold the current
 //!    mode.
@@ -42,12 +42,46 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
+pub(crate) use crate::egui_impl::DebugUiInput;
 use crate::{
     config::Config,
     controllers::{config::ModeConfig, frame::ActionSetKind},
     hooks::animation::active_state_type_id,
     sim_rate::scale_ticks,
+    ui::capture::{CaptureUpdate, OwnershipSnapshot},
 };
+
+/// Step debug ownership from unfiltered input before detecting the control mode.
+pub(crate) fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
+    crate::egui_impl::update_debug_ui_capture(input)
+}
+
+/// Visibility and requested mode are independent of the effective editing owner.
+pub(crate) fn debug_ui_capture() -> Option<OwnershipSnapshot> {
+    crate::egui_impl::debug_ui_capture()
+}
+
+/// The mod contributes a UI-mode signal only while it owns editing input.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum DebugUiCapture {
+    #[default]
+    Released,
+    Editing,
+}
+
+impl DebugUiCapture {
+    pub(crate) fn current() -> Self {
+        if debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.any()) {
+            Self::Editing
+        } else {
+            Self::Released
+        }
+    }
+
+    pub(crate) const fn is_editing(self) -> bool {
+        matches!(self, Self::Editing)
+    }
+}
 
 /// The control mode the bindings act in.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -190,7 +224,7 @@ pub struct UiSignals {
     pub clock_stopped: bool,
     /// A game UI screen has input priority (the player action map's UI blocker).
     pub screen_focus: bool,
-    /// The mod's own panel is up.
+    /// The mod owns editing input; a visible read-only panel does not assert this signal.
     pub mod_panel: bool,
 }
 
@@ -400,7 +434,7 @@ pub unsafe fn read_snapshot() -> ModeSnapshot {
         screen_focus: unsafe { LocalPlayerActionMap::get() }.is_some_and(|map| {
             map.as_input_action_map().m_Disabled & (1 << InputSystemBlocker::Ui as u32) != 0
         }),
-        mod_panel: Config::lock_query(|c| c.hud.egui_panel.enabled),
+        mod_panel: DebugUiCapture::current().is_editing(),
     };
     let teleporting =
         unsafe { GameWorld::get() }.is_some_and(|world| unsafe { world.IsTeleporting() });

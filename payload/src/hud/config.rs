@@ -556,9 +556,9 @@ impl Default for CropExtents {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EguiPanelConfig {
-    /// Master toggle. When on (and a session is running), the egui debug UI renders into the panel
-    /// texture and floats in the player's tracked space instead of on the flat back buffer. Off by
-    /// default so the working baseline is never disturbed.
+    /// Panel visibility. While a session runs, the debug UI renders into the floating surface.
+    /// Input ownership is separate: Allow gameplay input keeps the panel visible and read-only.
+    /// Opening through the panel shortcut requests editing, and the preference defaults off.
     pub enabled: bool,
     /// How far in front of the head the panel is placed when it is summoned, in meters. The panel's
     /// physical size is the one that gives it the apparent size [`scale`](EguiPanelConfig::scale) at

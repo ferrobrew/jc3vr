@@ -36,11 +36,11 @@ use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11ShaderResourceView};
 
-pub(crate) use crate::hud::egui_panel::slot::{begin_grab, end_grab, hold_grab, is_placed, recall};
+pub(crate) use crate::hud::egui_panel::slot::{end_grab, is_placed, recall};
 use crate::{
     config::{self, Config},
     controllers::frame::{self, Hand, Pose},
-    egui_impl::EguiState,
+    egui_impl::{EguiState, debug_ui_capture, request_debug_ui},
     hud::{
         config::{CursorConfig, EguiPanelConfig},
         cursor::CursorFrame,
@@ -52,6 +52,7 @@ use crate::{
         quad::{HudQuad, compute_cursor_corners, compute_world_corners},
         target::HudTarget,
     },
+    ui::capture::PanelRequest,
 };
 
 /// The panel pipeline and per-frame cache. Locked briefly on the render thread (and, for the SRV
@@ -78,23 +79,54 @@ pub(crate) fn is_active() -> bool {
         && crate::vr::render_params(0).is_some()
 }
 
-/// Show or hide the panel, and bring egui's input capture in line with it, so that "panel visible"
-/// always means "egui focused": the mirror composite and the `SendMouseEvents` cursor suppression
-/// both key off the input capture, so they cannot disagree with the panel's visibility. Returns
-/// whether the panel is now enabled. The F8 key and the controllers' debug panel chord both call
-/// it, from the game thread.
+/// Show or hide the panel through the existing F8/controller route.
+/// Reopening enters Editing; a visible ReadOnly panel cannot edit itself.
 pub(crate) fn toggle() -> bool {
     let enabled = {
         let mut cfg = config::edit();
         cfg.hud.egui_panel.enabled = !cfg.hud.egui_panel.enabled;
         cfg.hud.egui_panel.enabled
     };
-    if let Some(egui_state) = EguiState::get().as_mut()
-        && egui_state.is_input_captured() != enabled
-    {
-        egui_state.toggle_game_input_capture();
+    let request = if enabled {
+        PanelRequest::Open
+    } else {
+        PanelRequest::Hide
+    };
+    if let Some(egui_state) = EguiState::get().as_mut() {
+        if enabled {
+            egui_state.request_capture(PanelRequest::Hide);
+        }
+        egui_state.request_capture(request);
     }
     enabled
+}
+
+/// Hide the current debug surface without changing the independent desktop/panel preference.
+/// This queues ownership work because the top-bar callback holds the egui state lock.
+pub(crate) fn hide() {
+    if is_active() {
+        config::edit().hud.egui_panel.enabled = false;
+    } else {
+        config::edit().hud.flat_overlay_visible = false;
+    }
+    request_debug_ui(PanelRequest::Hide);
+}
+
+/// Whether the panel may accept controller pointer, scroll, and grab input.
+pub(crate) fn accepts_edit_input() -> bool {
+    is_active() && debug_ui_capture().is_some_and(|snapshot| snapshot.edit_capture.pointer)
+}
+
+pub(crate) fn begin_grab(hand: Hand, aim: Pose) -> bool {
+    accepts_edit_input() && slot::begin_grab(hand, aim)
+}
+
+pub(crate) fn hold_grab(hand: Hand, aim: Option<Pose>, rate: f32, dt: f32) {
+    if accepts_edit_input() {
+        slot::hold_grab(hand, aim, rate, dt);
+    } else {
+        slot::end_grab();
+    }
 }
 
 /// The panel texture size when the panel is active, or `None` otherwise. The egui layout is sized to
@@ -228,7 +260,9 @@ impl EguiPanelState {
             scale: camera.scale,
             corners,
         }));
-        self.cursor_corners = pointer::egui_cursor_uv()
+        self.cursor_corners = accepts_edit_input()
+            .then(pointer::egui_cursor_uv)
+            .flatten()
             .and_then(|(u, v)| compute_cursor_corners(&params, CursorFrame { u, v }, cursor_cfg));
     }
 

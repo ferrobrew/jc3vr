@@ -1,18 +1,66 @@
+pub(crate) mod desktop_input;
+
 use anyhow::Context as _;
 use egui::CursorIcon as CI;
-use jc3gi::graphics_engine::graphics_engine::{ActiveCursor, GraphicsEngine, get_graphics_params};
+use jc3gi::{
+    graphics_engine::graphics_engine::{ActiveCursor, GraphicsEngine, get_graphics_params},
+    input::input_device_manager::InputDeviceManager,
+};
 use parking_lot::{Mutex, MutexGuard};
 use windows::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
     Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11RenderTargetView},
 };
 
+pub(crate) use crate::egui_impl::desktop_input::{
+    consume_desktop_shortcut, desktop_input_observation, observe_desktop_message,
+};
+use crate::{
+    config::Config,
+    hud::{egui_panel, pointer},
+    ui::capture::{
+        CapturePolicy, CaptureUpdate, DeviceEffect, InputObservation, OwnershipSnapshot, PanelMode,
+        PanelRequest,
+    },
+};
+
+/// Input-thread observations before either editing or gameplay receives the sample.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DebugUiInput {
+    pub focused: bool,
+    pub tracking_ready: bool,
+    /// Includes all source episodes, panel shortcuts, keys, buttons, composition, and scroll.
+    pub controls_neutral: bool,
+}
+
+/// The latest policy observation; reading it never takes the renderer lock.
+pub(crate) fn debug_ui_capture() -> Option<OwnershipSnapshot> {
+    *CAPTURE_SNAPSHOT.lock()
+}
+
+/// Queue a UI request without re-entering the renderer lock from an egui callback.
+pub(crate) fn request_debug_ui(request: PanelRequest) {
+    REQUESTS.lock().push(request);
+}
+
+/// Step capture before mode detection, pointer routing, and gameplay output on the input thread.
+pub(crate) fn update_debug_ui_capture(input: DebugUiInput) -> Option<CaptureUpdate> {
+    let mut state = EguiState::get();
+    state.as_mut().map(|state| {
+        state.apply_pending_raw_loss();
+        let input = state.capture.input_owner_sample(input);
+        let update = state.update_capture(input);
+        state.capture.notify_input_owner(update)
+    })
+}
+
 pub struct EguiState {
     start_time: std::time::Instant,
     egui_context: egui::Context,
     pub egui_renderer: egui_directx11::Renderer,
     renderer_output: Option<egui_directx11::RendererOutput>,
-    game_input_state: Option<GameInputState>,
+    capture: EguiCaptureAdapter,
+    saved_cursor: Option<ActiveCursor>,
     events: Vec<egui::Event>,
     /// When `Some`, the egui UI is being driven as the VR floating panel (issue #24): [`run`] sizes
     /// the layout to this panel-texture size instead of the game window, and [`render_to`] paints it
@@ -20,11 +68,188 @@ pub struct EguiState {
     /// the flat back-buffer overlay (the default, unchanged) behavior.
     panel: Option<(u32, u32)>,
 }
-struct GameInputState {
-    input_was_enabled: bool,
-    active_cursor: ActiveCursor,
-}
 static STATE: Mutex<Option<EguiState>> = Mutex::new(None);
+static CAPTURE_SNAPSHOT: Mutex<Option<OwnershipSnapshot>> = Mutex::new(None);
+static REQUESTS: Mutex<Vec<PanelRequest>> = Mutex::new(Vec::new());
+
+/// The renderer-free part of the live adapter, also exercised with a real egui context.
+#[derive(Default)]
+struct EguiCaptureAdapter {
+    policy: CapturePolicy,
+    snapshot: Option<OwnershipSnapshot>,
+    cancellation_pass_pending: bool,
+    input_notification_pending: bool,
+    focus_loss_observed: u64,
+}
+
+impl EguiCaptureAdapter {
+    fn take_focus_loss(&mut self, generation: u64) -> bool {
+        let lost = generation != self.focus_loss_observed;
+        self.focus_loss_observed = generation;
+        lost
+    }
+
+    fn update(
+        &mut self,
+        request: Option<PanelRequest>,
+        observation: InputObservation,
+        context: &egui::Context,
+        events: &mut Vec<egui::Event>,
+    ) -> CaptureUpdate {
+        let update = self.policy.update(request, observation);
+        if update.effects.clear_pending_events || update.effects.cancel_pointer_and_drag {
+            self.cancel_input(context, events);
+        }
+        self.snapshot = Some(update.snapshot);
+        update
+    }
+
+    fn apply_raw_loss(
+        &mut self,
+        generation: u64,
+        observation: InputObservation,
+        context: &egui::Context,
+        events: &mut Vec<egui::Event>,
+    ) -> Option<CaptureUpdate> {
+        self.take_focus_loss(generation).then(|| {
+            let mut update = self.update(
+                None,
+                InputObservation {
+                    focused: false,
+                    controls_neutral: false,
+                    ..observation
+                },
+                context,
+                events,
+            );
+            if !update.effects.clear_pending_events {
+                self.cancel_input(context, events);
+            }
+            update.effects.clear_pending_events = true;
+            update.effects.cancel_pointer_and_drag = true;
+            update.effects.consume_until_neutral = true;
+            update
+        })
+    }
+
+    fn cancel_input(&mut self, context: &egui::Context, events: &mut Vec<egui::Event>) {
+        events.clear();
+        clear_remembered_input(context);
+        self.cancellation_pass_pending = true;
+        self.input_notification_pending = true;
+    }
+
+    fn validate_device_write(
+        &mut self,
+        update: &mut CaptureUpdate,
+        observation: InputObservation,
+        context: &egui::Context,
+        events: &mut Vec<egui::Event>,
+        mut focus_now: impl FnMut() -> (bool, u64),
+    ) -> Option<bool> {
+        let (focused, generation) = focus_now();
+        if !focused || generation != self.focus_loss_observed {
+            let previous = *update;
+            let lost = InputObservation {
+                focused: false,
+                controls_neutral: false,
+                ..observation
+            };
+            *update = self
+                .apply_raw_loss(generation, lost, context, events)
+                .unwrap_or_else(|| self.update(None, lost, context, events));
+            update.effects.clear_pending_events |= previous.effects.clear_pending_events;
+            update.effects.cancel_pointer_and_drag |= previous.effects.cancel_pointer_and_drag;
+            update.effects.consume_until_neutral |= previous.effects.consume_until_neutral;
+            if update.effects.game_device == DeviceEffect::Unchanged
+                && previous.effects.game_device == DeviceEffect::SetEnabled(false)
+            {
+                update.effects.game_device = DeviceEffect::SetEnabled(false);
+                update.snapshot.intended_game_device_enabled = false;
+                self.snapshot = Some(update.snapshot);
+            }
+            return device_write(update.effects.game_device, false);
+        }
+        device_write(update.effects.game_device, observation.focused)
+    }
+
+    fn input_owner_sample(&self, input: DebugUiInput) -> DebugUiInput {
+        DebugUiInput {
+            controls_neutral: input.controls_neutral && !self.input_notification_pending,
+            ..input
+        }
+    }
+
+    fn surface_request(&self, visible: bool) -> Option<PanelRequest> {
+        (!visible
+            && self
+                .snapshot
+                .is_some_and(|snapshot| snapshot.mode != PanelMode::Hidden))
+        .then_some(PanelRequest::Hide)
+    }
+
+    fn notify_input_owner(&mut self, mut update: CaptureUpdate) -> CaptureUpdate {
+        if std::mem::take(&mut self.input_notification_pending) {
+            update.effects.clear_pending_events = true;
+            update.effects.cancel_pointer_and_drag = true;
+            update.effects.consume_until_neutral = true;
+        }
+        update
+    }
+
+    fn take_cancellation_input(&mut self, input: &egui::RawInput) -> Option<egui::RawInput> {
+        if !std::mem::take(&mut self.cancellation_pass_pending) {
+            return None;
+        }
+        let mut cancellation = input.clone();
+        cancellation.events.clear();
+        cancellation.modifiers = egui::Modifiers::default();
+        cancellation.focused = false;
+        Some(cancellation)
+    }
+
+    fn prepare_input(&self, input: &mut egui::RawInput) {
+        if let Some(snapshot) = self.snapshot {
+            snapshot.filter_egui_input(input);
+        } else {
+            input.events.clear();
+            input.modifiers = egui::Modifiers::default();
+            input.focused = false;
+        }
+    }
+}
+
+/// Whether a requested device write is permitted by the application's focus ownership.
+fn device_write(effect: DeviceEffect, focused: bool) -> Option<bool> {
+    match effect {
+        DeviceEffect::SetEnabled(false) => Some(false),
+        DeviceEffect::SetEnabled(true) if focused => Some(true),
+        DeviceEffect::Unchanged | DeviceEffect::SetEnabled(true) => None,
+    }
+}
+
+fn cancel_external_pointer() {
+    pointer::reset_egui_pointer();
+    egui_panel::end_grab();
+    crate::hooks::ui::cancel_pointer_on_game_thread();
+}
+
+fn native_game_focus() -> bool {
+    // SAFETY: the graphics HWND is read on its game/window thread and is not dereferenced here.
+    let hwnd = unsafe { get_graphics_params().m_Hwnd };
+    desktop_input::native_focus(hwnd)
+}
+
+fn clear_remembered_input(context: &egui::Context) {
+    context.input_mut(|input| *input = egui::InputState::default());
+    context.stop_dragging();
+    context.memory_mut(|memory| {
+        if let Some(focused) = memory.focused() {
+            memory.surrender_focus(focused);
+        }
+    });
+}
+
 impl EguiState {
     fn new() -> anyhow::Result<Self> {
         let device = unsafe {
@@ -41,24 +266,27 @@ impl EguiState {
             egui_renderer: egui_directx11::Renderer::new(device)
                 .context("Failed to create egui renderer")?,
             renderer_output: None,
-            game_input_state: None,
+            capture: EguiCaptureAdapter::default(),
+            saved_cursor: None,
             events: Vec::new(),
             panel: None,
         })
     }
 
     pub fn install() -> anyhow::Result<()> {
+        desktop_input::reset_desktop_input();
         STATE.lock().replace(Self::new()?);
         tracing::info!("Initialized egui");
         Ok(())
     }
 
     pub fn uninstall() {
-        if let Some(mut state) = STATE.lock().take()
-            && state.game_input_state.is_some()
-        {
-            state.toggle_game_input_capture();
+        if let Some(mut state) = STATE.lock().take() {
+            state.request_capture(PanelRequest::Hide);
         }
+        *CAPTURE_SNAPSHOT.lock() = None;
+        REQUESTS.lock().clear();
+        desktop_input::reset_desktop_input();
         tracing::info!("Uninitialized egui");
     }
 
@@ -70,16 +298,52 @@ impl EguiState {
     /// the egui layout to a panel texture of that size (VR floating panel, issue #24); `None` sizes it
     /// to the game window (the flat back-buffer overlay). Call from the game thread before [`run`].
     pub fn set_panel_mode(&mut self, size: Option<(u32, u32)>) {
+        let desktop_visible = crate::hud::mirror_overlay::is_active()
+            || (crate::vr::render_params(0).is_none()
+                && Config::lock_query(|config| config.hud.flat_overlay_visible)
+                && !crate::capture::is_active()
+                && !crate::director::cinematic::active());
+        self.reconcile_surfaces(size.is_some() || desktop_visible);
+        if size.is_some()
+            && self.panel.is_none()
+            && self
+                .capture
+                .snapshot
+                .is_none_or(|snapshot| snapshot.mode == PanelMode::Hidden)
+        {
+            self.request_capture(PanelRequest::Open);
+        }
         self.panel = size;
+    }
+
+    fn reconcile_surfaces(&mut self, visible: bool) {
+        if let Some(request) = self.capture.surface_request(visible) {
+            self.request_capture(request);
+        }
+    }
+
+    /// F4 changes the desktop surface only; a live VR panel retains its own ownership.
+    pub(crate) fn desktop_visibility_changed(&mut self, visible: bool) {
+        if !egui_panel::is_active() {
+            self.request_capture(PanelRequest::Hide);
+            if visible {
+                self.request_capture(PanelRequest::Open);
+            }
+        }
     }
 
     /// Append externally-sourced input events (the VR panel's virtual pointer, issue #24) to the next
     /// [`run`]'s event queue. Call from the game thread before [`run`].
     pub fn push_events(&mut self, events: impl IntoIterator<Item = egui::Event>) {
-        self.events.extend(events);
+        if self.is_input_captured() {
+            self.events.extend(events);
+        } else {
+            pointer::reset_egui_pointer();
+        }
     }
 
     pub fn run(&mut self, mut callback: impl FnMut(&egui::Context, &mut egui_directx11::Renderer)) {
+        self.apply_pending_raw_loss();
         // The layout space, decided by which surface will carry this frame's UI. The renderer takes
         // its frame size from the render target and maps points to pixels by `pixels_per_point`, so
         // `layout * pixels_per_point` must be that target's pixel size or the UI does not fill it.
@@ -109,19 +373,31 @@ impl EguiState {
                 egui::Pos2::new(screen_size.0, screen_size.1),
             )),
             time: Some(self.start_time.elapsed().as_secs_f64()),
-            focused: self.game_input_state.is_some(),
+            focused: self.is_input_captured(),
             events: std::mem::take(&mut self.events),
             ..Default::default()
         };
+        self.capture.prepare_input(&mut input);
         input
             .viewports
             .entry(egui::ViewportId::ROOT)
             .or_default()
             .native_pixels_per_point = Some(1.0);
+        let cancellation_output = self.capture.take_cancellation_input(&input).map(|input| {
+            self.egui_context.run_ui(input, |ui| {
+                callback(ui.ctx(), &mut self.egui_renderer);
+            })
+        });
         let egui_output = self
             .egui_context
-            .run_ui(input, |ctx| callback(ctx, &mut self.egui_renderer));
+            .run_ui(input, |ui| callback(ui.ctx(), &mut self.egui_renderer));
         let (mut renderer_output, platform_output, _) = egui_directx11::split_output(egui_output);
+        if let Some(cancellation_output) = cancellation_output {
+            let (cancelled, _, _) = egui_directx11::split_output(cancellation_output);
+            let mut delta = cancelled.textures_delta;
+            delta.append(renderer_output.textures_delta);
+            renderer_output.textures_delta = delta;
+        }
 
         // Carry a still-unrendered frame's texture delta forward instead of dropping it. `run()` (game
         // thread) can outpace `render_to()` (render thread) and overwrite an output that was never
@@ -147,6 +423,14 @@ impl EguiState {
             };
         }
         self.renderer_output = Some(renderer_output);
+        if !REQUESTS.lock().is_empty() {
+            let snapshot = self.capture.snapshot;
+            self.update_capture(DebugUiInput {
+                focused: snapshot.is_some_and(|snapshot| snapshot.focused),
+                tracking_ready: snapshot.is_some_and(|snapshot| snapshot.tracking_ready),
+                controls_neutral: false,
+            });
+        }
     }
 
     pub fn render(&mut self) {
@@ -199,37 +483,153 @@ impl EguiState {
         }
     }
 
+    /// The existing desktop capture key never turns a ReadOnly overlay into an editor.
     pub fn toggle_game_input_capture(&mut self) {
-        unsafe {
-            let Some(input_device_manager) =
-                jc3gi::input::input_device_manager::InputDeviceManager::get()
-            else {
-                return;
-            };
-            let Some(graphics_engine) = GraphicsEngine::get() else {
-                return;
-            };
-
-            self.events.clear();
-            if let Some(game_input_state) = self.game_input_state.take() {
-                input_device_manager.m_Enabled = game_input_state.input_was_enabled;
-                graphics_engine.m_ActiveCursor = game_input_state.active_cursor;
-            } else {
-                self.game_input_state = Some(GameInputState {
-                    input_was_enabled: input_device_manager.m_Enabled,
-                    active_cursor: graphics_engine.m_ActiveCursor,
-                });
-
-                input_device_manager.m_Enabled = false;
-            }
+        if egui_panel::is_active() {
+            return;
         }
+        if !Config::lock_query(|config| config.hud.flat_overlay_visible) {
+            self.request_capture(PanelRequest::Hide);
+            return;
+        }
+        let request = match self.capture.snapshot.map(|snapshot| snapshot.mode) {
+            Some(PanelMode::Editing) => PanelRequest::AllowGameplay,
+            Some(PanelMode::ReadOnly) => return,
+            Some(PanelMode::Hidden) | None => PanelRequest::Open,
+        };
+        self.request_capture(request);
     }
 
     pub fn is_input_captured(&self) -> bool {
-        self.game_input_state.is_some()
+        self.capture
+            .snapshot
+            .is_some_and(|snapshot| snapshot.edit_capture.any())
+    }
+
+    pub(crate) fn request_capture(&mut self, request: PanelRequest) {
+        let snapshot = self.capture.snapshot;
+        let input = DebugUiInput {
+            focused: snapshot.is_some_and(|snapshot| snapshot.focused),
+            tracking_ready: snapshot.is_some_and(|snapshot| snapshot.tracking_ready),
+            controls_neutral: false,
+        };
+        self.apply_capture(Some(request), input);
+    }
+
+    fn update_capture(&mut self, input: DebugUiInput) -> CaptureUpdate {
+        let requests = std::mem::take(&mut *REQUESTS.lock());
+        let mut update = None;
+        for request in requests {
+            update = Some(self.apply_capture(
+                Some(request),
+                DebugUiInput {
+                    controls_neutral: false,
+                    ..input
+                },
+            ));
+        }
+        update.unwrap_or_else(|| self.apply_capture(None, input))
+    }
+
+    fn apply_pending_raw_loss(&mut self) {
+        let generation = desktop_input::focus_loss_generation();
+        // SAFETY: this boundary runs on the game/window thread while the singleton is live.
+        let observation = InputObservation {
+            focused: false,
+            tracking_ready: self
+                .capture
+                .snapshot
+                .is_some_and(|snapshot| snapshot.tracking_ready),
+            controls_neutral: false,
+            game_device_enabled: unsafe { InputDeviceManager::get() }
+                .is_some_and(|device| device.m_Enabled),
+        };
+        if let Some(update) = self.capture.apply_raw_loss(
+            generation,
+            observation,
+            &self.egui_context,
+            &mut self.events,
+        ) {
+            self.finish_capture(update, observation);
+        }
+    }
+
+    fn apply_capture(
+        &mut self,
+        request: Option<PanelRequest>,
+        input: DebugUiInput,
+    ) -> CaptureUpdate {
+        self.apply_pending_raw_loss();
+        let observation = InputObservation {
+            focused: input.focused && native_game_focus(),
+            tracking_ready: input.tracking_ready,
+            controls_neutral: input.controls_neutral && !self.capture.input_notification_pending,
+            // SAFETY: capture is stepped on the engine input/game thread while the singleton is live.
+            game_device_enabled: unsafe { InputDeviceManager::get() }
+                .is_some_and(|device| device.m_Enabled),
+        };
+        let update =
+            self.capture
+                .update(request, observation, &self.egui_context, &mut self.events);
+        self.finish_capture(update, observation)
+    }
+
+    fn finish_capture(
+        &mut self,
+        mut update: CaptureUpdate,
+        observation: InputObservation,
+    ) -> CaptureUpdate {
+        let cancelled = update.effects.cancel_pointer_and_drag;
+        if cancelled {
+            cancel_external_pointer();
+        }
+        // SAFETY: cancellation may call native code, so device and focus evidence are read again.
+        let device = unsafe { InputDeviceManager::get() };
+        let device_enabled = device.as_ref().is_some_and(|device| device.m_Enabled);
+        let write = self.capture.validate_device_write(
+            &mut update,
+            InputObservation {
+                game_device_enabled: device_enabled,
+                ..observation
+            },
+            &self.egui_context,
+            &mut self.events,
+            || {
+                let before = desktop_input::focus_loss_generation();
+                let focused = native_game_focus();
+                let after = desktop_input::focus_loss_generation();
+                (focused && before == after, after)
+            },
+        );
+        if let Some(enabled) = write
+            && let Some(device) = device
+        {
+            device.m_Enabled = enabled;
+        }
+        if !cancelled && update.effects.cancel_pointer_and_drag {
+            cancel_external_pointer();
+        }
+        // SAFETY: cursor ownership is updated only after the device write boundary on this thread.
+        if update.snapshot.editing_requested
+            && update.snapshot.focused
+            && observation.tracking_ready
+        {
+            if self.saved_cursor.is_none()
+                && let Some(graphics) = unsafe { GraphicsEngine::get() }
+            {
+                self.saved_cursor = Some(graphics.m_ActiveCursor);
+            }
+        } else if let Some(cursor) = self.saved_cursor.take()
+            && let Some(graphics) = unsafe { GraphicsEngine::get() }
+        {
+            graphics.m_ActiveCursor = cursor;
+        }
+        *CAPTURE_SNAPSHOT.lock() = Some(update.snapshot);
+        update
     }
 
     pub fn wndproc(&mut self, _hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) {
+        self.apply_pending_raw_loss();
         if !self.is_input_captured() {
             return;
         }
@@ -433,6 +833,10 @@ fn is_paste_command(modifiers: egui::Modifiers, keycode: egui::Key) -> bool {
         || (modifiers.command && keycode == egui::Key::V)
         || (cfg!(target_os = "windows") && modifiers.shift && keycode == egui::Key::Insert)
 }
+
+#[cfg(test)]
+#[path = "egui_impl/capture_tests.rs"]
+mod capture_tests;
 
 fn virtual_key_to_egui_key(vk: u32) -> Option<egui::Key> {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
