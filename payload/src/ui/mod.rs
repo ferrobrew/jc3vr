@@ -16,12 +16,18 @@ use crate::{
 };
 
 pub mod camera;
+#[cfg(test)]
+pub(crate) mod capture;
 pub mod controllers;
 pub mod diagnostics;
 pub mod director;
 pub mod environment;
 pub mod game;
 pub mod hud;
+#[cfg(test)]
+pub(crate) mod inventory;
+#[cfg(test)]
+pub(crate) mod navigation;
 pub mod performance;
 pub mod previews;
 pub mod render;
