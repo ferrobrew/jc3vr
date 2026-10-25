@@ -1,21 +1,8 @@
-//! The VR tab: OpenXR runtime status, a Recenter button, and the live-editable runtime toggles.
+//! Runtime controls and a separate read-only OpenXR status snapshot.
 
 use crate::{config, headpose, vr, vr::MirrorFraming};
 
 pub fn egui_debug_vr(ui: &mut egui::Ui) {
-    let status = vr::status();
-
-    ui.label(format!("Session: {}", session_label(&status)));
-    ui.label(match &status.runtime_name {
-        Some(name) => format!("Runtime: {name}"),
-        None => "Runtime: (none)".to_string(),
-    });
-    ui.label(match status.eye_resolution {
-        Some((w, h)) => format!("Per-eye resolution: {w} × {h}"),
-        None => "Per-eye resolution: (no session)".to_string(),
-    });
-    ui.label(format!("Headpose source: {:?}", headpose::source()));
-
     if ui
         .button("Recenter")
         .on_hover_text("Re-base the cockpit baseline to the current head pose (also bound to F7).")
@@ -99,6 +86,21 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
         .on_hover_text(
             "Blit each eye straight from the engine's back buffer into the headset swapchain on              the eye's own draw, skipping the full-size copy into the eye capture unless the              mirror, a screenshot, the recorder, or the previews need that eye. Off copies every              eye and blits at the frame submit.",
         );
+}
+
+pub(crate) fn status(ui: &mut egui::Ui) {
+    let status = vr::status();
+
+    ui.label(format!("Session: {}", session_label(&status)));
+    ui.label(match &status.runtime_name {
+        Some(name) => format!("Runtime: {name}"),
+        None => "Runtime: (none)".to_string(),
+    });
+    ui.label(match status.eye_resolution {
+        Some((w, h)) => format!("Per-eye resolution: {w} × {h}"),
+        None => "Per-eye resolution: (no session)".to_string(),
+    });
+    ui.label(format!("Headpose source: {:?}", headpose::source()));
 }
 
 /// A human-readable label for the runtime's current session state.

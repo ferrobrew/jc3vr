@@ -90,6 +90,7 @@ pub(crate) fn feature(
         }
         FeatureRoute::HeadView if section == FeatureSection::Controls => camera::head_view(ui),
         FeatureRoute::Runtime if section == FeatureSection::Controls => vr::egui_debug_vr(ui),
+        FeatureRoute::Runtime if section == FeatureSection::Status => vr::status(ui),
         FeatureRoute::Render => render::feature(ui, id, section),
         FeatureRoute::Hud if section == FeatureSection::Controls => {
             with_renderer(ui, renderer, hud::egui_debug_hud)

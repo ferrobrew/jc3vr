@@ -1,11 +1,15 @@
 use std::collections::HashSet;
 
 use super::*;
-use crate::ui::{
-    catalog::{FEATURES, PageId},
-    edit_boundary, feature_dock,
-    layout::View,
-    navigation::{feature_body, scroll_key},
+use crate::{
+    config, headpose,
+    ui::{
+        catalog::{FEATURES, PageId},
+        edit_boundary, feature_dock,
+        layout::View,
+        navigation::{feature_body, scroll_key},
+    },
+    vr::recenter_count,
 };
 
 #[test]
@@ -306,6 +310,149 @@ fn production_dock_read_only_disables_main_and_detached_controls_and_layout_gest
     assert_neutral_interactions(&harness.context);
     assert_eq!(harness.values, [false; 2]);
     assert!(harness.context.dragged_id().is_none());
+}
+
+#[test]
+fn actual_runtime_dispatch_separates_read_only_status_from_controls_without_a_renderer() {
+    let before = serde_json::to_value(config::get()).unwrap();
+    let save_status = config::status();
+    let source = headpose::source();
+    let angles = headpose::sim::euler_angles();
+    let recenters = recenter_count();
+    let pose = headpose::query();
+    let mut selection = NavigationState {
+        feature: FeatureId::Runtime,
+        section: FeatureSection::Status,
+    };
+    let expected = selection;
+    for width in [420.0, 1100.0] {
+        let context = egui::Context::default();
+        let labels = runtime_frame(&context, &mut selection, width, Vec::new());
+        assert_runtime_status_labels(&labels);
+        for (_, rect) in &labels {
+            for pressed in [true, false] {
+                let labels = runtime_frame(
+                    &context,
+                    &mut selection,
+                    width,
+                    vec![
+                        egui::Event::PointerMoved(rect.center()),
+                        egui::Event::PointerButton {
+                            pos: rect.center(),
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ],
+                );
+                assert_runtime_status_labels(&labels);
+            }
+        }
+        assert_eq!(selection, expected);
+        assert_eq!(serde_json::to_value(config::get()).unwrap(), before);
+        assert_eq!(config::status(), save_status);
+        assert_eq!(headpose::source(), source);
+        assert_eq!(headpose::sim::euler_angles(), angles);
+        assert_eq!(recenter_count(), recenters);
+        assert_eq!(headpose::query().position, pose.position);
+        assert_eq!(headpose::query().orientation, pose.orientation);
+    }
+
+    selection.section = FeatureSection::Controls;
+    let controls = runtime_frame(
+        &egui::Context::default(),
+        &mut selection,
+        1100.0,
+        Vec::new(),
+    );
+    for expected in [
+        "Recenter",
+        "Enabled (bring up the OpenXR session)",
+        "Native per-eye resolution",
+        "Per-eye resolution scale",
+        "Desktop mirror",
+        "Left",
+        "Right",
+        "Fill",
+        "Fit",
+        "Zoom",
+        "Body IK",
+        "Mod-owned back buffer",
+        "Direct eye blit",
+    ] {
+        assert!(
+            controls.iter().any(|(text, _)| text == expected),
+            "missing Runtime control: {expected}"
+        );
+    }
+    assert!(!controls.iter().any(|(text, _)| {
+        [
+            "Session:",
+            "Runtime:",
+            "Per-eye resolution:",
+            "Headpose source:",
+        ]
+        .into_iter()
+        .any(|prefix| text.starts_with(prefix))
+    }));
+    assert_eq!(serde_json::to_value(config::get()).unwrap(), before);
+}
+
+fn runtime_frame(
+    context: &egui::Context,
+    selection: &mut NavigationState,
+    width: f32,
+    events: Vec<egui::Event>,
+) -> Vec<(String, egui::Rect)> {
+    let output = context.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 1600.0),
+            )),
+            events,
+            ..Default::default()
+        },
+        |ui| feature(ui, selection, None),
+    );
+    let mut labels = Vec::new();
+    for clipped in &output.shapes {
+        collect_text(&clipped.shape, &mut labels);
+    }
+    labels
+}
+
+fn collect_text(shape: &egui::Shape, labels: &mut Vec<(String, egui::Rect)>) {
+    match shape {
+        egui::Shape::Text(text) => labels.push((
+            text.galley.text().to_owned(),
+            egui::Rect::from_min_size(text.pos, text.galley.size()),
+        )),
+        egui::Shape::Vec(shapes) => {
+            for shape in shapes {
+                collect_text(shape, labels);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn assert_runtime_status_labels(labels: &[(String, egui::Rect)]) {
+    assert_eq!(labels.len(), 4, "Runtime Status must contain only readouts");
+    for (prefix, (text, _)) in [
+        "Session:",
+        "Runtime:",
+        "Per-eye resolution:",
+        "Headpose source:",
+    ]
+    .into_iter()
+    .zip(labels)
+    {
+        assert!(
+            text.starts_with(prefix),
+            "missing Runtime readout: {prefix}"
+        );
+    }
 }
 
 #[test]
