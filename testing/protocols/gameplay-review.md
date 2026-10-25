@@ -2,11 +2,32 @@
 
 ## Status and evidence
 
-The frozen `9abe65e8` checkpoint passes 2,717 payload tests, 36 format tests, and 35 synthesis tests, with formatting and all-target, all-feature Windows clippy also passing. It includes bounded raw/native/completion body evidence, correlated grab-acquisition diagnostics, Runtime and Director safety status sections, canonical feature visualization controls, and temporary visualization hiding. Subsequent source changes require a new check. These aggregate results do not map to every proposed per-ID test and do not establish live acceptance. Record exact revision and focused evidence for each issue before marking it complete.
+The frozen `d0e253dc` checkpoint passes 2,829 payload tests, 46 format tests, and 35 synthesis tests, with formatting and all-target, all-feature Windows clippy also passing. It includes independent hand-joint component validity and version 4 recording, current flight/belt/selected-door hints, corrected animation hook bindings, task-focused status sections, nonblocking signal snapshots, and opt-in grip-evidence export. Subsequent source changes require a new check. These aggregate results do not map to every proposed per-ID test and do not establish live acceptance. Record exact revision and focused evidence for each issue before marking it complete.
 
 No live or headset result is recorded in the checkpoint. Live/headset status is missing for every protocol below. Do not report a pass from source review, a unit test, a desktop preview, or an unverified screenshot. Do not create synthetic captures or represent a fixture as a user capture. No test recordings are present under `testing/recordings/`; do not assume or invent a recording path. A real run may reference its own capture only after the file and provenance have been verified.
 
 The current checkpoint explicitly blocks production physical magazine extraction because there is no production admission opener or native consumer. The unused unsafe callback was removed. Do not test or report physical extraction as implemented. Collider migration remains blocked on complete identity, reader exclusion, and clearance evidence; do not activate a live shape mutation or report collider migration as complete. Grenade and pair source lifecycle adapters remain blocked on missing safe engine contracts; do not report their lifecycle tests as completed. Compression remains opt-in with its default false pending representative capture acceptance; do not test or report compression as default-on or accepted. Body activation and its runtime budget have not passed live acceptance; do not treat shadow or unit results as body activation. Held fire still respects the game animation permission and lacks headset acceptance. The native canopy transform reader has a reviewed definition, but its live target adapter is not integrated. Preserve the current live path until the copied native rest and transform samples are connected and validated; do not substitute a guessed transform.
+
+## Remaining acceptance gates
+
+All 38 issue IDs remain open for acceptance at `d0e253dc`. Implemented components and passing aggregate tests do not establish that a recorded incident is fixed. The per-ID protocols below retain their pass/fail oracles.
+
+| Remaining gate | Issue IDs | Required next evidence |
+| --- | --- | --- |
+| Body provenance and authority | B1–B4 | A coherent native history, support identity, source epochs, and an approved authority adapter before the corresponding headset protocols. The shadow estimate is not live authority. |
+| Authored camera selection | C1 | Verified named-sequence selection and coherent transform ownership before activation. Correct animation-hook addresses do not supply that contract. |
+| Implemented input and held-fire behavior | I1–I4 | Provenance-recorded real controller runs, including neutral transitions, focus/rebind cases, occupied hands, state permission, and release. |
+| Acquisition and loose-prop symptoms | G1–G4, P2 | Real attempts with selected candidates, consumer results, identities, and the retained evidence export. Door hints and equivalent policy tests do not diagnose refusal or lifting failure. |
+| Reload, support, throw, and action behavior | W2–W6 | Matching live render/target/parent samples and action/body readbacks. Add telemetry only where a required field is unavailable; choose a causal code change only after a failing stage is demonstrated. |
+| Physical magazine extraction | W1 | Verified native write authority, admission, and consumer lifetime before any extraction trial. Production admission remains closed. |
+| Moving poses and diagnostic geometry | T1–T4, P3 | Matched sample, owner, shape, and physics-step identities in read-only runs. Viewer lag is not evidence of physical lag, and this audit does not authorize shape mutation. |
+| Wrist hints, UI, and overlay | U1–U5 | Remaining authoritative providers plus actual headset readability, reachability, layout recovery, and input-ownership checks. Current flight, belt, and selected-door rows cover only their stated scopes. |
+| Global collider mutation | P1 | Complete proxy identity, reader exclusion, clearance, rollback, and deferred-shutdown contracts before a controlled live adapter. |
+| Fingertip component selection | A1 | Headset confirmation of tracked and fallback branches with matching visible/source samples. Independent position validity is fixed in code, without an incident-causality claim. |
+| Attachment/provider parity | A2, A6 | One canonical slot/item sample shared by target and rendering, including missing, occupied, and freshness states, then live comparison during body/platform motion. |
+| Native canopy rest | A3 | Invocation-correct native-unplaced proof and serialized, lifetime-safe transform/joint sampling. Post-sync links can be hand-biased; mod grip state is not the native placement predicate. |
+| Grenade and paired source lifecycles | A4, A5 | Verified source, creation, callback, ownership, and bounded disposal contracts before activation. |
+| Sustained lossless recording | R1 | A provenance-checked representative full-joint capture with exact replay, size/cost, memory, backlog, and drop measurements. Version 4 supports raw and opt-in chunked records; compression remains disabled by default. |
 
 ## Run record
 
