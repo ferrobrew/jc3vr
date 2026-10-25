@@ -281,7 +281,7 @@ mod tests {
             },
             config::BindingsConfig,
             mode::{OnFootVariant, VehicleClass, VehicleSeat},
-            weapons::capabilities::{Capabilities, NativePair, trigger_claims},
+            weapons::capabilities::{Capabilities, NativePair, TriggerClaim, trigger_claims},
         },
         vr::input::semantic::{
             bound::PhysicalSet, defaults::default_binding, vocabulary::WingsuitAction,
@@ -403,43 +403,282 @@ mod tests {
                 }
             }
         }
+    }
+
+    const WINGSUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
+    const WINGSUIT_EMPTY: [Owner; 2] = [Owner {
+        mode: WINGSUIT,
+        gun: None,
+    }; 2];
+
+    struct WingsuitTick {
+        routes: SemanticInput,
+        blocked: [bool; 2],
+        claims: [TriggerClaim; 2],
+        desired: Vec<Desired>,
+    }
+
+    fn wingsuit_controls(dominant: Hand, triggers: [RawTrigger; 2]) -> Controls {
+        let mut controls = Controls {
+            dominant,
+            ..Default::default()
+        };
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            controls.hands[i].trigger_press = triggers[i].button;
+            controls.hands[i].trigger = triggers[i].value;
+            controls.hands[i].b = ButtonControl {
+                down: true,
+                pressed: true,
+                released: false,
+            };
+        }
+        controls.hands[Hand::Right.index()].a = controls.hands[Hand::Right.index()].b;
+        controls
+    }
+
+    fn wingsuit_tick(
+        gate: &mut TriggerOwnership,
+        bindings: &mut Bindings,
+        mut controls: Controls,
+        owners: [Owner; 2],
+    ) -> WingsuitTick {
+        let config = BindingsConfig::default();
         let mut input = simulate(&controls, SemanticSet::Wingsuit, default_binding);
-        let action = input.get_mut(WingsuitAction::FireSecondary.id()).unwrap();
-        action.bound[Hand::Left.index()] = PhysicalSet::of(Physical::Trigger).with(Physical::Grip);
-        action.hands[Hand::Left.index()].button.down = true;
-        mask_routes(
-            &mut input,
-            Mode::Airborne(AirborneVariant::Wingsuit),
-            [
-                TriggerMask {
-                    reserved: true,
-                    keep: SemanticKeep::None,
-                },
-                TriggerMask::default(),
-            ],
+        let routes = input.clone();
+        let blocked = gate.observe(
+            owners,
+            controls.hands.map(|hand| RawTrigger {
+                button: hand.trigger_press,
+                value: hand.trigger,
+                usable: true,
+            }),
+            config.trigger_deadzone,
         );
-        assert_eq!(
-            input.get(WingsuitAction::FireSecondary.id()).unwrap().hands[0],
-            Intent::default()
+        bindings.cancel_trigger_gestures(blocked);
+        mask_routes(&mut input, WINGSUIT, masks(owners, blocked));
+        for hand in Hand::BOTH {
+            if blocked[hand.index()] {
+                controls.hands[hand.index()].trigger_press = ButtonControl::default();
+                controls.hands[hand.index()].trigger = 0.0;
+            }
+        }
+        let claims = trigger_claims(
+            Capabilities::of(WINGSUIT),
+            owners.map(|owner| owner.gun.map_or(GunHand::Empty, |gun| gun.role)),
+            blocked.map(|blocked| !blocked),
         );
-        let mut desired = [
-            Action::FIRE_WINGSUIT_WEAPON_SECONDARY,
-            Action::WINGSUIT_BOOST,
-        ]
-        .map(|action| Desired {
-            target: Target::player(action),
-            want: Want::Hold(1.0),
-        })
-        .to_vec();
-        suppress_changed_routes(
-            &mut desired,
-            Mode::Airborne(AirborneVariant::Wingsuit),
-            &controls,
-            &input,
-            [true, false],
-        );
-        assert_eq!(desired.len(), 1);
-        assert_eq!(desired[0].target.action, Action::WINGSUIT_BOOST);
+        let step = bindings.step(WINGSUIT, &controls, &input, 0.01, &config);
+        WingsuitTick {
+            routes,
+            blocked,
+            claims,
+            desired: step.desired,
+        }
+    }
+
+    fn assert_wingsuit_routes(desired: &[Desired], fire: [bool; 2]) {
+        for (action, active) in [
+            (Action::FIRE_WINGSUIT_WEAPON_MAIN, fire[Hand::Left.index()]),
+            (
+                Action::FIRE_WINGSUIT_WEAPON_SECONDARY,
+                fire[Hand::Right.index()],
+            ),
+            (Action::WINGSUIT_BOOST, true),
+            (Action::OPEN_PARACHUTE, true),
+            (Action::FIRE_GRAPPLE, true),
+        ] {
+            assert_eq!(
+                desired
+                    .iter()
+                    .find(|d| d.target == Target::player(action))
+                    .map(|d| d.want),
+                active.then_some(Want::Hold(1.0)),
+                "{action:?}: {desired:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_wingsuit_fire_uses_physical_triggers_through_ownership_and_table() {
+        let owners = WINGSUIT_EMPTY;
+        for dominant in Hand::BOTH {
+            for hand in Hand::BOTH {
+                let mut gate = TriggerOwnership::new();
+                let mut bindings = Bindings::new();
+                gate.observe(
+                    owners,
+                    [raw(false); 2],
+                    BindingsConfig::default().trigger_deadzone,
+                );
+                let tick = wingsuit_tick(
+                    &mut gate,
+                    &mut bindings,
+                    wingsuit_controls(dominant, Hand::BOTH.map(|h| raw(h == hand))),
+                    owners,
+                );
+                for (id, source, physical) in [
+                    (WingsuitAction::FireGuns.id(), Hand::Left, Physical::Trigger),
+                    (
+                        WingsuitAction::FireSecondary.id(),
+                        Hand::Right,
+                        Physical::Trigger,
+                    ),
+                    (WingsuitAction::Boost.id(), Hand::Right, Physical::UpperFace),
+                    (
+                        WingsuitAction::OpenParachute.id(),
+                        Hand::Right,
+                        Physical::LowerFace,
+                    ),
+                    (
+                        WingsuitAction::Grapple.id(),
+                        Hand::Left,
+                        Physical::UpperFace,
+                    ),
+                ] {
+                    let action = tick.routes.get(id).unwrap();
+                    assert_eq!(action.bound[source.index()], PhysicalSet::of(physical));
+                    assert_eq!(action.bound[source.other().index()], PhysicalSet::EMPTY);
+                    assert_eq!(
+                        action.hands[source.index()].button.down,
+                        physical != Physical::Trigger || hand == source
+                    );
+                }
+                assert_eq!(tick.blocked, [false; 2]);
+                assert_eq!(tick.claims, [TriggerClaim::default(); 2]);
+                assert_wingsuit_routes(&tick.desired, Hand::BOTH.map(|h| h == hand));
+            }
+        }
+    }
+
+    #[test]
+    fn wingsuit_gun_claim_is_per_hand_and_release_waits_for_real_neutral() {
+        for dominant in Hand::BOTH {
+            for hand in Hand::BOTH {
+                for role in [GunHand::Grip, GunHand::Carry, GunHand::Support] {
+                    let mut owners = WINGSUIT_EMPTY;
+                    let mut gate = TriggerOwnership::new();
+                    let mut bindings = Bindings::new();
+                    let deadzone = BindingsConfig::default().trigger_deadzone;
+                    gate.observe(owners, [raw(false); 2], deadzone);
+                    let held = wingsuit_controls(dominant, [raw(true); 2]);
+                    let unclaimed = wingsuit_tick(&mut gate, &mut bindings, held, owners);
+                    assert_wingsuit_routes(&unclaimed.desired, [true; 2]);
+                    owners[hand.index()].gun = Some(GunOwner { weapon: 1, role });
+                    let pickup = wingsuit_tick(&mut gate, &mut bindings, held, owners);
+                    assert_eq!(pickup.blocked, Hand::BOTH.map(|h| h == hand));
+                    assert_eq!(
+                        pickup.claims.map(|claim| claim.reserved),
+                        Hand::BOTH.map(|h| h == hand)
+                    );
+                    assert_eq!(pickup.claims.map(|claim| claim.fire), [false; 2]);
+                    assert_wingsuit_routes(&pickup.desired, Hand::BOTH.map(|h| h != hand));
+                    let mut neutral = [raw(true); 2];
+                    neutral[hand.index()] = raw(false);
+                    let neutral = wingsuit_tick(
+                        &mut gate,
+                        &mut bindings,
+                        wingsuit_controls(dominant, neutral),
+                        owners,
+                    );
+                    assert!(neutral.blocked[hand.index()]);
+                    let armed = wingsuit_tick(&mut gate, &mut bindings, held, owners);
+                    assert_eq!(armed.blocked, [false; 2]);
+                    assert_eq!(armed.claims[hand.index()].fire, role == GunHand::Grip);
+                    assert_eq!(armed.claims[hand.other().index()], TriggerClaim::default());
+                    assert_wingsuit_routes(&armed.desired, Hand::BOTH.map(|h| h != hand));
+                    owners[hand.index()].gun = None;
+                    for sample in [
+                        raw(true),
+                        RawTrigger {
+                            button: ButtonControl {
+                                pressed: true,
+                                released: true,
+                                down: false,
+                            },
+                            ..raw(false)
+                        },
+                        RawTrigger {
+                            button: ButtonControl {
+                                released: true,
+                                ..Default::default()
+                            },
+                            ..raw(false)
+                        },
+                        RawTrigger {
+                            value: (deadzone + 1.0) * 0.5,
+                            ..raw(false)
+                        },
+                        raw(false),
+                    ] {
+                        let mut triggers = [raw(true); 2];
+                        triggers[hand.index()] = sample;
+                        let tick = wingsuit_tick(
+                            &mut gate,
+                            &mut bindings,
+                            wingsuit_controls(dominant, triggers),
+                            owners,
+                        );
+                        assert_eq!(tick.blocked, Hand::BOTH.map(|h| h == hand));
+                        assert_eq!(tick.claims, [TriggerClaim::default(); 2]);
+                        assert_wingsuit_routes(&tick.desired, Hand::BOTH.map(|h| h != hand));
+                    }
+                    let rearmed = wingsuit_tick(&mut gate, &mut bindings, held, owners);
+                    assert_eq!(rearmed.blocked, [false; 2]);
+                    assert_wingsuit_routes(&rearmed.desired, [true; 2]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn late_wingsuit_owner_change_removes_only_its_trigger_pulse() {
+        for dominant in Hand::BOTH {
+            for hand in Hand::BOTH {
+                for starts_with_gun in [false, true] {
+                    let mut owners = WINGSUIT_EMPTY;
+                    let gun = Some(GunOwner {
+                        weapon: 1,
+                        role: GunHand::Grip,
+                    });
+                    owners[hand.index()].gun = if starts_with_gun { gun } else { None };
+                    let mut gate = TriggerOwnership::new();
+                    let mut bindings = Bindings::new();
+                    gate.observe(
+                        owners,
+                        [raw(false); 2],
+                        BindingsConfig::default().trigger_deadzone,
+                    );
+                    let controls = wingsuit_controls(dominant, [raw(true); 2]);
+                    let mut tick = wingsuit_tick(&mut gate, &mut bindings, controls, owners);
+                    assert_wingsuit_routes(
+                        &tick.desired,
+                        Hand::BOTH.map(|h| h != hand || !starts_with_gun),
+                    );
+                    assert_eq!(tick.claims[hand.index()].fire, starts_with_gun);
+                    owners[hand.index()].gun = if starts_with_gun { None } else { gun };
+                    let changed = gate.after_finish(owners);
+                    assert_eq!(changed, Hand::BOTH.map(|h| h == hand));
+                    assert_eq!(
+                        retain_fire(tick.claims.map(|claim| claim.fire), changed),
+                        [false; 2]
+                    );
+                    bindings.cancel_trigger_gestures(changed);
+                    suppress_changed_routes(
+                        &mut tick.desired,
+                        WINGSUIT,
+                        &controls,
+                        &tick.routes,
+                        changed,
+                    );
+                    assert_wingsuit_routes(&tick.desired, Hand::BOTH.map(|h| h != hand));
+                    let next = wingsuit_tick(&mut gate, &mut bindings, controls, owners);
+                    assert_eq!(next.blocked, changed);
+                    assert_eq!(next.claims.map(|claim| claim.fire), [false; 2]);
+                    assert_wingsuit_routes(&next.desired, Hand::BOTH.map(|h| h != hand));
+                }
+            }
+        }
     }
 
     #[test]
