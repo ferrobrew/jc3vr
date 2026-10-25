@@ -50,7 +50,7 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
     let mut usable = Vec::new();
     let mut omitted = Vec::new();
     for row in rows {
-        if !snapshot.routing.allows(row.control, row.gesture) {
+        if !mechanic_routing(row, snapshot.routing) {
             omitted.push((row.clone(), Omission::HandUnavailable));
             continue;
         }
@@ -125,7 +125,7 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
             Effect::Mod(_) => true,
             Effect::Actions(_) => false,
         };
-        if snapshot.routing.allows(row.control, row.gesture) && permitted && !usable.contains(row) {
+        if mechanic_routing(row, snapshot.routing) && permitted && !usable.contains(row) {
             usable.push(row.clone());
         }
     }
@@ -138,6 +138,18 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
         },
         omitted,
     }
+}
+
+fn mechanic_routing(row: &Row, routing: CurrentRouting) -> bool {
+    if matches!(
+        row.effect,
+        Effect::Mod(ModAction::GestureDeploy | ModAction::GestureClose | ModAction::GestureBrake)
+    ) {
+        return row.control == Control::EitherMotion
+            && row.gesture == Gesture::Press
+            && routing.ready.into_iter().all(|ready| ready);
+    }
+    routing.allows(row.control, row.gesture)
 }
 
 fn mode_wide(action: Action) -> bool {
@@ -162,6 +174,57 @@ fn mode_wide(action: Action) -> bool {
 mod tests {
     use super::*;
     use crate::controllers::summary::current::TriggerUse;
+
+    #[test]
+    fn flight_rows_require_exact_mechanic_identity_and_both_ready_hands() {
+        for action in [
+            ModAction::GestureDeploy,
+            ModAction::GestureClose,
+            ModAction::GestureBrake,
+        ] {
+            let row = Row {
+                control: Control::EitherMotion,
+                gesture: Gesture::Press,
+                effect: Effect::Mod(action),
+            };
+            let mut snapshot = Eligibility {
+                routing: CurrentRouting {
+                    ready: [true; 2],
+                    triggers: [TriggerUse::Free; 2],
+                },
+                ..Default::default()
+            };
+            let rows = std::slice::from_ref(&row);
+            assert!(resolve(rows, &snapshot).context.usable.is_empty());
+            for wrong in [
+                Row {
+                    control: Control::Motion(Hand::Left),
+                    ..row.clone()
+                },
+                Row {
+                    control: Control::A(Hand::Right),
+                    ..row.clone()
+                },
+                Row {
+                    gesture: Gesture::Hold,
+                    ..row.clone()
+                },
+                Row {
+                    effect: Effect::Mod(ModAction::ArmSteering),
+                    ..row.clone()
+                },
+            ] {
+                snapshot.mechanics = vec![wrong];
+                assert!(!resolve(rows, &snapshot).context.usable.contains(&row));
+            }
+            snapshot.mechanics = vec![row.clone()];
+            assert_eq!(resolve(rows, &snapshot).context.usable, vec![row.clone()]);
+            for ready in [[false, false], [true, false], [false, true]] {
+                snapshot.routing.ready = ready;
+                assert!(resolve(rows, &snapshot).context.usable.is_empty());
+            }
+        }
+    }
 
     #[test]
     fn physical_yank_requires_the_execution_owners_exact_mechanic_row() {

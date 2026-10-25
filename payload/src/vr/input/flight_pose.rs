@@ -332,6 +332,26 @@ fn located_center(head: &LocatedHead) -> Option<TrackedPose> {
 
 static SLOT: LazyLock<Mutex<Producer>> = LazyLock::new(|| Mutex::new(Producer::new()));
 
+/// Serialize tests that share the live packet with replay and history source changes.
+#[cfg(test)]
+pub(crate) fn test_guard() -> impl Drop {
+    struct Guard {
+        _serial: parking_lot::ReentrantMutexGuard<'static, ()>,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            source_changed(EpochChange::ReplayEnded);
+        }
+    }
+
+    let guard = Guard {
+        _serial: crate::vr::input::semantic::history::TEST_LOCK.lock(),
+    };
+    source_changed(EpochChange::ReplayEnded);
+    guard
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -400,6 +420,28 @@ mod tests {
         assert!(producer.complete(pending, frame.clone(), (sequence, now)));
         frame.sequence = sequence;
         frame
+    }
+
+    #[test]
+    fn global_test_guard_restores_an_empty_live_source_on_setup_and_unwind() {
+        let _serial = crate::vr::input::semantic::history::TEST_LOCK.lock();
+        source_changed(EpochChange::ReplayStarted);
+        {
+            let _guard = test_guard();
+            let slot = SLOT.lock();
+            assert_eq!(slot.source, PoseSource::Live);
+            assert!(slot.packet.is_none() && slot.pending.is_none());
+        }
+        let panicked = std::panic::catch_unwind(|| {
+            let _guard = test_guard();
+            assert!(begin_located(Some(head(100))).is_some());
+            source_changed(EpochChange::ReplayStarted);
+            panic!("exercise flight packet test cleanup");
+        });
+        assert!(panicked.is_err());
+        let slot = SLOT.lock();
+        assert_eq!(slot.source, PoseSource::Live);
+        assert!(slot.packet.is_none() && slot.pending.is_none());
     }
 
     #[test]

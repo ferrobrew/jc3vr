@@ -12,7 +12,6 @@ use crate::controllers::{
     config::GripOffset,
     frame::{ControllerFrame, Hand, Pose, TrackedPose},
     hands::{pose::cockpit_hand, reach::torso_heading},
-    loadout::live,
     mode::{AirborneVariant, Mode},
     vehicles::config::WingsuitGesturesConfig,
 };
@@ -31,6 +30,16 @@ pub(crate) struct GestureCommands {
     pub brake: bool,
     /// Suppress pose-derived pitch during armed brake entry and its subsequent release.
     pub reserve_pitch: bool,
+}
+
+/// Current availability of the physical gesture sequence, independently of command pulses.
+/// This describes the mod recognizer, not game-side permission to change the suit state.
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub(crate) enum GestureAvailability {
+    #[default]
+    Unavailable,
+    Deploy,
+    CloseAndBrake,
 }
 
 /// Current physical input claims, indexed by `Hand::index`.
@@ -223,6 +232,7 @@ pub(crate) struct GestureInput {
 #[derive(Debug, Default)]
 pub(crate) struct WingsuitGestures {
     last: Option<(GestureSample, Mode)>,
+    current: GestureAvailability,
     config: Option<WingsuitGesturesConfig>,
     ready: bool,
     armed: bool,
@@ -237,17 +247,27 @@ pub(crate) struct WingsuitGestures {
 impl WingsuitGestures {
     /// Cancel gestures without lowering the sample watermark. Only a newer epoch restarts time.
     pub(crate) fn reset(&mut self) {
+        self.current = GestureAvailability::Unavailable;
         self.clear_pose();
     }
 
-    /// Read current loadout occupancy per physical hand without modifying fire ownership.
-    pub(crate) fn step_live(
+    pub(crate) fn current(&self) -> GestureAvailability {
+        self.current
+    }
+
+    /// Recheck the evaluated sample without advancing dwell or emitting another transition.
+    pub(crate) fn revalidate(
         &mut self,
-        mut input: GestureInput,
+        input: GestureInput,
         config: &WingsuitGesturesConfig,
-    ) -> GestureCommands {
-        input.occupied = Hand::BOTH.map(|hand| live::held_kind(hand).is_some());
-        self.step(input, config)
+    ) -> GestureAvailability {
+        if self.last != Some((input.sample, input.mode))
+            || self.config != Some(*config)
+            || input.availability(config) != self.current
+        {
+            self.reset();
+        }
+        self.current
     }
 
     pub(crate) fn step(
@@ -263,7 +283,7 @@ impl WingsuitGestures {
                     && (input.sample.sequence <= last.sequence
                         || input.sample.time_ns <= last.time_ns))
             {
-                self.clear_pose();
+                self.reset();
                 return GestureCommands::default();
             }
             input.sample == last
@@ -279,19 +299,8 @@ impl WingsuitGestures {
         if !repeated {
             self.last = Some((input.sample, input.mode));
         }
-        let supported = matches!(
-            input.mode,
-            Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit)
-        );
-        let eligible = supported
-            && input.gameplay
-            && !input.canopy_requested
-            && config.enabled
-            && config.valid()
-            && !input.occupied.into_iter().any(|v| v)
-            && !input.claims.into_iter().any(HandClaims::interacting)
-            && input.pose.is_some_and(FlightPose::valid);
-        if !eligible {
+        self.current = input.availability(config);
+        if self.current == GestureAvailability::Unavailable {
             self.clear_pose();
             return GestureCommands::default();
         }
@@ -308,7 +317,7 @@ impl WingsuitGestures {
                 elapsed_s(last.time_ns, input.sample.time_ns)
             });
         if gap_s > f64::from(config.max_sample_gap_s) {
-            self.clear_pose();
+            self.reset();
             return GestureCommands::default();
         }
         let pose = input.pose.unwrap();
@@ -409,6 +418,26 @@ impl WingsuitGestures {
         self.flight = Dwell::default();
         self.close = Dwell::default();
         self.brake_entry = Dwell::default();
+    }
+}
+
+impl GestureInput {
+    fn availability(self, config: &WingsuitGesturesConfig) -> GestureAvailability {
+        if !self.gameplay
+            || self.canopy_requested
+            || !config.enabled
+            || !config.valid()
+            || self.occupied.into_iter().any(|occupied| occupied)
+            || self.claims.into_iter().any(HandClaims::interacting)
+            || !self.pose.is_some_and(FlightPose::valid)
+        {
+            return GestureAvailability::Unavailable;
+        }
+        match self.mode {
+            Mode::Airborne(AirborneVariant::Falling) => GestureAvailability::Deploy,
+            Mode::Airborne(AirborneVariant::Wingsuit) => GestureAvailability::CloseAndBrake,
+            _ => GestureAvailability::Unavailable,
+        }
     }
 }
 

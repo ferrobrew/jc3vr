@@ -700,6 +700,10 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         before: &summary_before,
         grapple: state.bindings.grapple_permissions(controls.grapple),
         yank: (yank_armed_in(line, &detection) && grapple_held).then_some(grapple_hand),
+        flight: state
+            .flight
+            .as_ref()
+            .map_or(Default::default(), flight::FlightState::current),
     });
     crate::controllers::summary::refresh(detection.mode, &controls, &config, &frame, &eligibility);
     let writes = state.tracker.resolve(&step.desired, dt);

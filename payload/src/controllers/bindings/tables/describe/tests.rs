@@ -11,6 +11,33 @@ use crate::{
 
 const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 
+#[test]
+fn current_flight_mechanics_have_only_the_exact_bilateral_motion_rows() {
+    let row = |action| Row {
+        control: Control::EitherMotion,
+        gesture: Gesture::Press,
+        effect: Effect::Mod(action),
+    };
+    assert!(flight_mechanics(GestureAvailability::Unavailable).is_empty());
+    assert_eq!(
+        flight_mechanics(GestureAvailability::Deploy),
+        vec![row(ModAction::GestureDeploy)]
+    );
+    assert_eq!(
+        flight_mechanics(GestureAvailability::CloseAndBrake),
+        vec![row(ModAction::GestureClose), row(ModAction::GestureBrake)],
+    );
+    for mode in all_modes() {
+        let rows = describe(&ctx(mode, Hand::Right, TableCtx::default()));
+        assert!(!rows.iter().any(|row| matches!(
+            row.effect,
+            Effect::Mod(
+                ModAction::GestureDeploy | ModAction::GestureClose | ModAction::GestureBrake
+            )
+        )));
+    }
+}
+
 fn ctx(mode: Mode, dominant: Hand, table: TableCtx) -> DescribeCtx {
     DescribeCtx {
         mode,

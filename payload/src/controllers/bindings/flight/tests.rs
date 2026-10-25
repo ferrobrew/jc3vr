@@ -1,3 +1,5 @@
+mod current;
+
 use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
 
 use super::*;
@@ -249,12 +251,27 @@ fn calibration_edits_discard_partial_close_until_fresh_neutral_and_flight() {
     }
 }
 
-fn valid_finalization() -> Finalization {
-    Finalization {
-        available: true,
-        packet_current: true,
-        claims: [HandClaims::default(); 2],
-    }
+fn commit_history(
+    history: &mut History,
+    commands: GestureCommands,
+    claims: [HandClaims; 2],
+    desired: &mut Vec<Desired>,
+) -> bool {
+    commit_input(
+        &mut history.state,
+        commands,
+        Some(GestureInput {
+            sample: history.sample,
+            mode: SUIT,
+            gameplay: true,
+            canopy_requested: canopy(desired),
+            pose: Some(BRAKE),
+            occupied: [false; 2],
+            claims,
+        }),
+        &CONFIG,
+        desired,
+    )
 }
 
 #[test]
@@ -263,11 +280,10 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
         let mut h = History::new();
         let candidate = h.braking();
         let mut baseline = Vec::new();
-        assert!(finalize(
-            &mut h.state,
+        assert!(commit_history(
+            &mut h,
             candidate,
-            SUIT,
-            valid_finalization(),
+            [HandClaims::default(); 2],
             &mut baseline
         ));
         assert_eq!(
@@ -278,7 +294,7 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
             })
         );
 
-        let mut gate = valid_finalization();
+        let mut claims = [HandClaims::default(); 2];
         let mut desired = Vec::new();
         if cancellation == 0 {
             desired.push(Desired {
@@ -286,7 +302,7 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
                 want: Want::Hold(1.0),
             });
         } else {
-            let claim = &mut gate.claims[(cancellation - 1) / 4];
+            let claim = &mut claims[(cancellation - 1) / 4];
             match (cancellation - 1) % 4 {
                 0 => claim.grip = true,
                 1 => claim.trigger = true,
@@ -296,7 +312,7 @@ fn late_canopy_and_new_claims_cancel_otherwise_publishable_braking_and_reset_his
             }
         }
         let expected = desired.clone();
-        assert!(!finalize(&mut h.state, candidate, SUIT, gate, &mut desired));
+        assert!(!commit_history(&mut h, candidate, claims, &mut desired));
         assert_eq!(desired, expected);
         assert_eq!(h.repeat(BRAKE), GestureCommands::default());
         assert_idle(&h.hold(BRAKE, 6));
@@ -313,11 +329,10 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
     let candidate = *outputs.last().unwrap();
     assert_eq!(candidate.transition, Some(SuitTransition::Close));
     let mut baseline = Vec::new();
-    assert!(!finalize(
-        &mut h.state,
+    assert!(!commit_history(
+        &mut h,
         candidate,
-        SUIT,
-        valid_finalization(),
+        [HandClaims::default(); 2],
         &mut baseline
     ));
     assert_eq!(
@@ -332,11 +347,10 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
         want: Want::Hold(1.0),
     };
     let mut desired = vec![canopy];
-    assert!(!finalize(
-        &mut h.state,
+    assert!(!commit_history(
+        &mut h,
         candidate,
-        SUIT,
-        valid_finalization(),
+        [HandClaims::default(); 2],
         &mut desired
     ));
     assert_eq!(desired, vec![canopy]);
@@ -346,6 +360,7 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
 
 #[test]
 fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
+    let _guard = flight_pose::test_guard();
     let frame = ControllerFrame {
         sequence: 1,
         display_time_ns: 1,

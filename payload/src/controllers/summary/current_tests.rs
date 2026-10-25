@@ -23,6 +23,9 @@ use crate::{
     },
 };
 
+#[path = "current_tests/flight.rs"]
+mod flight;
+
 const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);
 
 fn english(text: Text) -> String {

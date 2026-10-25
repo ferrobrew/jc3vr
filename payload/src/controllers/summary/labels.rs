@@ -313,6 +313,9 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::WristDetonator => ModText::WristDetonator,
         ModAction::ParachuteHandles => ModText::ParachuteHandles,
         ModAction::ArmSteering => ModText::ArmSteering,
+        ModAction::GestureDeploy => ModText::GestureDeploy,
+        ModAction::GestureClose => ModText::GestureClose,
+        ModAction::GestureBrake => ModText::GestureBrake,
         ModAction::Wheel => ModText::Wheel,
         ModAction::Handlebars => ModText::Handlebars,
         ModAction::HelicopterControls => ModText::HelicopterControls,
@@ -358,6 +361,9 @@ pub enum ModText {
     WristDetonator,
     ParachuteHandles,
     ArmSteering,
+    GestureDeploy,
+    GestureClose,
+    GestureBrake,
     Wheel,
     Handlebars,
     HelicopterControls,
@@ -409,6 +415,13 @@ impl ModText {
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
             ModText::ArmSteering => "Spread Arms: Lower One to Bank, Both to Dive, Raise to Climb",
+            ModText::GestureDeploy => "Lower Both Arms, Then Hold Spread: Request Wingsuit Deploy",
+            ModText::GestureClose => {
+                "Lower, Then Spread Both Arms to Arm; Hold Both Withdrawn: Request Wingsuit Close"
+            }
+            ModText::GestureBrake => {
+                "Lower, Then Spread Both Arms to Arm; Turn Both Palms Forward While Spread: Brake"
+            }
             ModText::Wheel => "Hold at the Wheel: Steer",
             ModText::Handlebars => "Hold at the Handlebars: Steer; Twist the Right Grip: Throttle",
             ModText::HelicopterControls => "Hold at the Cyclic or Collective: Fly",

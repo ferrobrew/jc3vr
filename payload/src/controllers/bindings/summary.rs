@@ -28,7 +28,7 @@ use crate::controllers::{
         current::{CurrentRouting, TriggerUse},
         eligibility::Eligibility,
     },
-    vehicles::physical::ControlKind,
+    vehicles::{physical::ControlKind, wingsuit_gestures::GestureAvailability},
     weapons::{
         self,
         capabilities::{GunHand, GunOwner},
@@ -68,6 +68,7 @@ pub(super) struct Refresh<'a> {
     pub before: &'a BeforeFinish,
     pub grapple: GrapplePermissions,
     pub yank: Option<Hand>,
+    pub flight: GestureAvailability,
 }
 
 pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
@@ -96,7 +97,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
             Action::VEHICLE_RELEASE_GRAPPLE,
         ]);
     }
-    let mut mechanics = Vec::new();
+    let mut mechanics = tables::describe::flight_mechanics(input.flight);
     if let Some(hand) = input.yank {
         mechanics.push(Row {
             control: Control::Motion(hand),

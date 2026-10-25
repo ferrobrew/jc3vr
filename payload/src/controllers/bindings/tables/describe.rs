@@ -28,6 +28,7 @@ use crate::{
         },
         frame::Hand,
         mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
+        vehicles::wingsuit_gestures::GestureAvailability,
     },
     vr::input::semantic::{
         bound::{Layout, PhysicalSet, SourceName, SourceTable},
@@ -206,6 +207,12 @@ pub enum ModAction {
     ParachuteHandles,
     /// Spread the arms in the wingsuit and lower or raise them to bank, dive, and climb.
     ArmSteering,
+    /// Lower both arms, then spread them to request wingsuit deployment.
+    GestureDeploy,
+    /// After arming with lowered then spread arms, withdraw both arms to request closure.
+    GestureClose,
+    /// After arming with lowered then spread arms, turn both spread palms forward to brake.
+    GestureBrake,
     /// Hold the car's or the boat's wheel to steer.
     Wheel,
     /// Hold the handlebars to steer.
@@ -241,6 +248,23 @@ pub struct Row {
     pub control: Control,
     pub gesture: Gesture,
     pub effect: Effect,
+}
+
+/// Physical rows supplied only by the flight recognizer's current availability.
+pub(crate) fn flight_mechanics(availability: GestureAvailability) -> Vec<Row> {
+    let actions: &[ModAction] = match availability {
+        GestureAvailability::Unavailable => &[],
+        GestureAvailability::Deploy => &[ModAction::GestureDeploy],
+        GestureAvailability::CloseAndBrake => &[ModAction::GestureClose, ModAction::GestureBrake],
+    };
+    actions
+        .iter()
+        .map(|&action| Row {
+            control: Control::EitherMotion,
+            gesture: Gesture::Press,
+            effect: Effect::Mod(action),
+        })
+        .collect()
 }
 
 /// The mod's own controller features that add inputs outside the tables, as configured.

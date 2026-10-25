@@ -367,6 +367,7 @@ mod tests {
 
     #[test]
     fn failed_raw_or_semantic_read_never_publishes_an_eligible_partial_group() {
+        let _guard = flight_pose::test_guard();
         for (route, focused, succeeded) in [
             (tracking_format::input::InputRoute::Raw(0), true, false),
             (
@@ -417,6 +418,7 @@ mod tests {
 
     #[test]
     fn replay_lifecycle_never_replaces_or_splices_live_clock_history() {
+        let _guard = flight_pose::test_guard();
         let mut slot = local();
         let now = Instant::now();
         slot.interrupt(DiscontinuityReason::Unavailable, now);
@@ -453,6 +455,7 @@ mod tests {
 
     #[test]
     fn capture_and_gameplay_have_independent_single_consumer_drains() {
+        let _guard = flight_pose::test_guard();
         let mut slot = local();
         slot.interrupt(DiscontinuityReason::Unavailable, Instant::now());
         assert_eq!(slot.take_capture().len(), 1);
@@ -466,6 +469,7 @@ mod tests {
 
     #[test]
     fn gameplay_overflow_is_independent_of_capture_draining() {
+        let _guard = flight_pose::test_guard();
         let mut slot = local();
         for _ in 0..=HISTORY_CAPACITY {
             slot.interrupt(DiscontinuityReason::Unavailable, Instant::now());

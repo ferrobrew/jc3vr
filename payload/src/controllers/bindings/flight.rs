@@ -14,8 +14,11 @@ use crate::{
         grab::GrabVolume,
         loadout::live,
         mode::{Detection, Mode},
-        vehicles::wingsuit_gestures::{
-            GestureCommands, GestureInput, HandClaims, WingsuitGestures,
+        vehicles::{
+            config::WingsuitGesturesConfig,
+            wingsuit_gestures::{
+                GestureAvailability, GestureCommands, GestureInput, HandClaims, WingsuitGestures,
+            },
         },
         weapons,
     },
@@ -33,6 +36,10 @@ impl FlightState {
     /// Clear pose history without lowering the gesture sample watermark.
     pub(super) fn reset(&mut self) {
         self.gestures.reset();
+    }
+
+    pub(super) fn current(&self) -> GestureAvailability {
+        self.gestures.current()
     }
 
     fn calibrate(&mut self, calibration: Calibration) {
@@ -63,32 +70,13 @@ pub(super) fn evaluate(
     tick: &Tick<'_>,
     desired: &[Desired],
 ) -> GestureCommands {
-    state.calibrate(Calibration {
-        grip_offset: tick.config.hands.grip,
-        dimensions: *tick.dimensions,
-    });
-    let now = Instant::now();
-    let Some(packet) = flight_pose::for_frame(tick.frame, now) else {
-        state.reset();
-        return GestureCommands::default();
-    };
-    let pose = packet.measure(
-        &FlightCalibration {
-            grip_offset: &tick.config.hands.grip,
-            dimensions: tick.dimensions,
+    evaluate_input(
+        state,
+        Calibration {
+            grip_offset: tick.config.hands.grip,
+            dimensions: *tick.dimensions,
         },
-        now,
-    );
-    state.gestures.step_live(
-        GestureInput {
-            sample: packet.sample(),
-            mode: tick.detection.mode,
-            gameplay: available(tick),
-            canopy_requested: canopy(desired),
-            pose,
-            occupied: [false; 2],
-            claims: claims(tick, now),
-        },
+        observation(tick, desired, Instant::now()),
         &tick.config.vehicles.wingsuit_gestures,
     )
 }
@@ -100,23 +88,16 @@ pub(super) fn commit(
     tick: &Tick<'_>,
     desired: &mut Vec<Desired>,
 ) -> bool {
-    let now = Instant::now();
-    let eligible = !canopy(desired) && available(tick);
-    let packet_current = eligible && flight_pose::for_frame(tick.frame, now).is_some();
-    let claims = if packet_current {
-        claims(tick, now)
-    } else {
-        [HandClaims::default(); 2]
+    let calibration = Calibration {
+        grip_offset: tick.config.hands.grip,
+        dimensions: *tick.dimensions,
     };
-    finalize(
+    state.calibrate(calibration);
+    commit_input(
         state,
         commands,
-        tick.detection.mode,
-        Finalization {
-            available: eligible,
-            packet_current,
-            claims,
-        },
+        observation(tick, desired, Instant::now()),
+        &tick.config.vehicles.wingsuit_gestures,
         desired,
     )
 }
@@ -156,31 +137,55 @@ impl Calibration {
     }
 }
 
-struct Finalization {
-    available: bool,
-    packet_current: bool,
-    claims: [HandClaims; 2],
+fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<GestureInput> {
+    let packet = flight_pose::for_frame(tick.frame, now)?;
+    Some(GestureInput {
+        sample: packet.sample(),
+        mode: tick.detection.mode,
+        gameplay: available(tick),
+        canopy_requested: canopy(desired),
+        pose: packet.measure(
+            &FlightCalibration {
+                grip_offset: &tick.config.hands.grip,
+                dimensions: tick.dimensions,
+            },
+            now,
+        ),
+        occupied: Hand::BOTH.map(|hand| live::held_kind(hand).is_some()),
+        claims: claims(tick, now),
+    })
 }
 
-fn finalize(
+fn evaluate_input(
+    state: &mut FlightState,
+    calibration: Calibration,
+    input: Option<GestureInput>,
+    config: &WingsuitGesturesConfig,
+) -> GestureCommands {
+    state.calibrate(calibration);
+    let Some(input) = input else {
+        state.reset();
+        return GestureCommands::default();
+    };
+    state.gestures.step(input, config)
+}
+
+fn commit_input(
     state: &mut FlightState,
     commands: GestureCommands,
-    mode: Mode,
-    finalization: Finalization,
+    input: Option<GestureInput>,
+    config: &WingsuitGesturesConfig,
     desired: &mut Vec<Desired>,
 ) -> bool {
-    if canopy(desired)
-        || !finalization.available
-        || !finalization.packet_current
-        || finalization
-            .claims
-            .into_iter()
-            .any(|claim| claim.grip || claim.trigger || claim.mechanical || claim.grapple)
-    {
+    let Some(input) = input else {
+        state.reset();
+        return false;
+    };
+    if state.gestures.revalidate(input, config) == GestureAvailability::Unavailable {
         state.reset();
         return false;
     }
-    match flight_pose::desired_for(commands, mode, false) {
+    match flight_pose::desired_for(commands, input.mode, canopy(desired)) {
         Ok(inputs) => {
             desired.extend(inputs);
             commands.reserve_pitch
