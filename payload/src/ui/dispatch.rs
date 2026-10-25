@@ -13,6 +13,9 @@ mod hud_tests;
 #[path = "dispatch/tests.rs"]
 mod tests;
 #[cfg(test)]
+#[path = "dispatch/video_tests.rs"]
+mod video_tests;
+#[cfg(test)]
 #[path = "dispatch/visualizations_tests.rs"]
 mod visualizations_tests;
 
@@ -124,6 +127,9 @@ pub(crate) fn feature(
             if id == FeatureId::DirectorSafety && section == FeatureSection::Status =>
         {
             director::safety_status(ui)
+        }
+        FeatureRoute::Director if id == FeatureId::Video && section == FeatureSection::Status => {
+            director::video_status(ui)
         }
         FeatureRoute::Environment if section == FeatureSection::Controls => environment::render(ui),
         FeatureRoute::Environment if section == FeatureSection::Status => environment::status(ui),

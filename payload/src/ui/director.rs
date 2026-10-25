@@ -43,6 +43,32 @@ pub(crate) fn safety_status(ui: &mut egui::Ui) {
     heat_readout(ui);
 }
 
+/// Render the recorder snapshot without settings or commands.
+pub(crate) fn video_status(ui: &mut egui::Ui) {
+    let status = recorder::status();
+    ui.label(if status.recording {
+        if status.connected {
+            "recording"
+        } else {
+            "recording, waiting for the host listener"
+        }
+    } else {
+        "stopped"
+    });
+    if let Some((w, h)) = status.size {
+        ui.label(format!(
+            "Stream {w}x{h}: {} frames sent, {} repeated, {} dropped",
+            status.frames_sent, status.frames_duplicated, status.frames_dropped
+        ));
+    }
+    if let Some(folder) = &status.folder {
+        ui.label(format!("Sidecar in the session folder under {folder}"));
+    }
+    if let Some(error) = &status.error {
+        ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
+    }
+}
+
 fn cinematic_ui(ui: &mut egui::Ui) {
     let mut cfg = config::edit();
     ui.checkbox(
@@ -386,28 +412,7 @@ fn recording_ui(ui: &mut egui::Ui) {
         } else if ui.button("Start recording").clicked() {
             recorder::start();
         }
-        ui.label(if status.recording {
-            if status.connected {
-                "recording"
-            } else {
-                "recording, waiting for the host listener"
-            }
-        } else {
-            "stopped"
-        });
     });
-    if let Some((w, h)) = status.size {
-        ui.label(format!(
-            "Stream {w}x{h}: {} frames sent, {} repeated, {} dropped",
-            status.frames_sent, status.frames_duplicated, status.frames_dropped
-        ));
-    }
-    if let Some(folder) = &status.folder {
-        ui.label(format!("Sidecar in the session folder under {folder}"));
-    }
-    if let Some(error) = &status.error {
-        ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
-    }
     {
         let mut cfg = config::edit();
         let r = &mut cfg.recorder;
