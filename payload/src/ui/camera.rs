@@ -5,8 +5,12 @@ use jc3gi::types::math::Matrix4;
 
 use crate::{
     config,
-    controllers::body::rig::live_observation::{
-        self, MissingEvidence, NativeObservation, RawAvailability, Unavailable,
+    controllers::body::rig::{
+        live_observation::{
+            self, CompletionAvailability, CompletionRejection, MissingEvidence, NativeObservation,
+            RawAvailability, Unavailable,
+        },
+        root::CompletionUnavailable,
     },
     grapple, headpose,
     headpose::config::VrTurnMode,
@@ -107,6 +111,61 @@ fn body_observation_evidence(ui: &mut egui::Ui) {
             ));
         }
     }
+    match status.completion.availability() {
+        CompletionAvailability::Unavailable(reason) => {
+            let label = match reason {
+                CompletionRejection::Diagnostic(reason) => unavailable_label(reason),
+                CompletionRejection::Source(reason) => match reason {
+                    CompletionUnavailable::NotCompleted => "not completed",
+                    CompletionUnavailable::Cleared => "movement ledger cleared",
+                    CompletionUnavailable::Teleported => "teleport transition pending",
+                    CompletionUnavailable::SourceUnavailable => "movement source unavailable",
+                    CompletionUnavailable::SequenceExhausted => {
+                        "local completion sequence exhausted"
+                    }
+                },
+            };
+            ui.label(format!("Movement completion: {label}."));
+        }
+        CompletionAvailability::Observed { age } => {
+            if let Some(completion) = status.completion.completion() {
+                ui.label(format!(
+                    "Movement completion: local sequence {}; captured {:.0} ms ago.",
+                    completion.sequence,
+                    age.as_secs_f64() * 1000.0,
+                ));
+            }
+        }
+    }
+    if let Some(completion) = status.completion.completion() {
+        let previous = completion.previous_root.w_axis.truncate();
+        let current = completion.current_root.w_axis.truncate();
+        ui.label(format!("Root positions T0/T1: {previous:?} / {current:?}."));
+        let ledger = completion.ledger;
+        ui.label(format!(
+            "Completed chase ledger previous/current: {:?} / {:?}; exact/projected: {}/{}.",
+            ledger.movement.previous,
+            ledger.movement.current,
+            ledger.counts.exact,
+            ledger.counts.projected,
+        ));
+        match ledger.request {
+            Some(request) => {
+                ui.label(format!(
+                    "Consumed request owner: {}; task/chase: {:?} / {:?}; credited: {:?} ({:?}).",
+                    request.owner.map_or("unavailable", |owner| owner.label()),
+                    request.movement.task,
+                    request.movement.chase,
+                    request.credited,
+                    request.attribution,
+                ));
+            }
+            None => {
+                ui.label("Consumed request: none; no request owner or credit.");
+            }
+        }
+    }
+    ui.small("The completion sequence is local to this hook. Its request owner does not establish owners for both composition sides, and the completed ledger has no matched frame-half shift.");
     ui.small("These independent captures do not form a checked body observation and do not activate body estimation or movement authority.");
     ui.label("Missing checked-observation evidence:");
     for missing in status.missing {
@@ -115,7 +174,9 @@ fn body_observation_evidence(ui: &mut egui::Ui) {
                 "Completed movement ledger and shift pair"
             }
             MissingEvidence::CompositionBasisPair => "Composition basis pair",
-            MissingEvidence::OwnerAtCompletion => "Transform owner at completion",
+            MissingEvidence::OwnerAtCompletion => {
+                "Transform owners for both matched composition sides"
+            }
             MissingEvidence::OriginEpoch => "Complete tracking-origin epoch",
             MissingEvidence::CalibrationAndScaleEpochs => "Calibration and scale epochs",
             MissingEvidence::AuthorityEpoch => "Authority epoch",

@@ -238,9 +238,12 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             return;
         };
         *SHOULDERS_DRIVEN.lock() = [false; 2];
+        let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
+        let character_world_prev = glam::Mat4::from(character.m_WorldMatrixT0);
         let Some(animation_controller) = character.m_AnimatedModel.m_AnimationController.as_mut()
         else {
             live_observation::native_unavailable();
+            rig::root::complete_movement(character_world_prev, character_world);
             return;
         };
 
@@ -258,7 +261,6 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // frame's model-space pose (one frame of latency) — still IK-free, and it can never contain
         // this frame's solve, so no tight feedback loop can form. UpdatePropEffects does not
         // capture; it only consumes the published anchors.
-        let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
         let joint_translation = |joint: &Joint| {
             let [x, y, z] = joint.m_Translation.data;
@@ -275,7 +277,6 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // The previous-tick head anchor: the same animated joint through the character's T0 world
         // matrix. Feeds the VR pose pair so the engine's sub-frame lerp smooths per-tick anchor
         // motion (vehicles, parachuting) instead of stepping the camera at the tick rate.
-        let character_world_prev = glam::Mat4::from(character.m_WorldMatrixT0);
         let animated_head_world_prev =
             character_world_prev.transform_point3(joint_translation(&head_joint));
 
@@ -303,6 +304,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             current_neck_model: joint_translation(&neck_joint),
             current_eye_mid_model: eye_mid_model,
         });
+        rig::root::complete_movement(character_world_prev, character_world);
 
         // On foot the view hangs from Rico's root rather than his animated head, so the clips' bob
         // and lurch never reach it (`controllers::locomotion::anchor`).

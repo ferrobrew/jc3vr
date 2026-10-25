@@ -1,5 +1,13 @@
+use glam::Vec2;
+
 use super::*;
-use crate::controllers::frame::ActionSetKind;
+use crate::controllers::{
+    body::rig::root::{
+        ledger::{Movement, Requests},
+        owner::RootOwner,
+    },
+    frame::ActionSetKind,
+};
 
 #[test]
 fn raw_packet_retains_actual_receipt_and_independent_hand_validity() {
@@ -172,6 +180,125 @@ fn repeated_status_reads_preserve_owned_raw_evidence_without_mutating_the_public
         RawAvailability::Unavailable(Unavailable::NoLiveTracking),
     );
     assert_eq!(unavailable.raw.packet, None);
+}
+
+#[test]
+fn completion_freshness_is_read_only_and_does_not_join_equal_host_times() {
+    let now = Instant::now();
+    let completion = completion(now);
+    let snapshot = CompletionSnapshot::completed(completion);
+    let observed = read_completion(snapshot, now, Duration::ZERO);
+    assert_eq!(
+        observed.availability(),
+        CompletionAvailability::Observed {
+            age: Duration::ZERO
+        },
+    );
+    assert_eq!(observed.completion(), Some(completion));
+    assert_eq!(
+        observed,
+        CompletionObservation::observed(completion, Duration::ZERO)
+    );
+    let future = read_completion(snapshot, now - Duration::from_nanos(1), Duration::MAX);
+    assert_eq!(
+        future,
+        CompletionObservation::unavailable(CompletionRejection::Diagnostic(
+            Unavailable::FuturePublication,
+        )),
+    );
+    assert_eq!(future.completion(), None);
+    let stale = read_completion(
+        snapshot,
+        now + Duration::from_millis(2),
+        Duration::from_millis(1),
+    );
+    assert_eq!(
+        stale.availability(),
+        CompletionAvailability::Unavailable(CompletionRejection::Diagnostic(Unavailable::Stale {
+            age: Duration::from_millis(2),
+        })),
+    );
+    assert_eq!(stale.completion(), None);
+    assert_eq!(read_completion(snapshot, now, Duration::ZERO), observed);
+    assert_eq!(snapshot, CompletionSnapshot::completed(completion));
+
+    let mut publisher = Publisher::new();
+    publisher.publish_native(native(), now, origin());
+    publisher.publish_tracking(Some(located()), Some(controllers(now)), origin());
+    let status = publisher.read_completion_status(now, Duration::ZERO, origin(), snapshot);
+    assert_eq!(status.missing, MISSING);
+    assert_eq!(status.completion, observed);
+    assert!(
+        status
+            .missing
+            .contains(&MissingEvidence::CompletedLedgerAndShiftPair)
+    );
+    assert!(status.missing.contains(&MissingEvidence::OwnerAtCompletion));
+    assert!(
+        status
+            .missing
+            .contains(&MissingEvidence::CompositionBasisPair)
+    );
+    let changed_origin = OriginCounters {
+        recenters: 1,
+        ..origin()
+    };
+    let changed = publisher.read_completion_status(now, Duration::ZERO, changed_origin, snapshot);
+    assert_eq!(changed.completion, observed);
+    assert_eq!(
+        changed.native,
+        NativeObservation::Unavailable(Unavailable::OriginCountersChanged)
+    );
+    assert_eq!(changed.missing, MISSING);
+}
+
+#[test]
+fn completion_replacement_and_invalidations_do_not_reuse_an_older_record() {
+    let now = Instant::now();
+    let first = completion(now);
+    let held = read_completion(CompletionSnapshot::completed(first), now, Duration::ZERO);
+    let mut invalid = first;
+    invalid.sequence += 1;
+    invalid.current_root = Mat4::ZERO;
+    let replaced = read_completion(CompletionSnapshot::completed(invalid), now, Duration::ZERO);
+    assert_eq!(
+        replaced,
+        CompletionObservation::unavailable(CompletionRejection::Diagnostic(
+            Unavailable::InvalidCapture,
+        )),
+    );
+    assert_eq!(replaced.completion(), None);
+    for reason in [
+        CompletionUnavailable::NotCompleted,
+        CompletionUnavailable::Cleared,
+        CompletionUnavailable::Teleported,
+        CompletionUnavailable::SourceUnavailable,
+        CompletionUnavailable::SequenceExhausted,
+    ] {
+        let unavailable =
+            read_completion(CompletionSnapshot::unavailable(reason), now, Duration::ZERO);
+        assert_eq!(
+            unavailable.availability(),
+            CompletionAvailability::Unavailable(CompletionRejection::Source(reason)),
+        );
+        assert_eq!(unavailable.completion(), None);
+    }
+    assert_eq!(held, CompletionObservation::observed(first, Duration::ZERO));
+    assert_eq!(held.completion(), Some(first));
+    assert_eq!(first.ledger.request.unwrap().owner, Some(RootOwner::Player));
+}
+
+fn completion(now: Instant) -> MovementCompletion {
+    let mut requests = Requests::new();
+    requests.submit_owned(Movement::new(Vec2::ZERO, Vec2::X, 1.0), RootOwner::Player);
+    let ledger = requests.complete(Vec3::ZERO, Vec3::X);
+    MovementCompletion {
+        sequence: 1,
+        completed_at: now,
+        previous_root: Mat4::IDENTITY,
+        current_root: Mat4::from_translation(Vec3::X),
+        ledger,
+    }
 }
 
 fn origin() -> OriginCounters {

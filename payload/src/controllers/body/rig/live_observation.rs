@@ -1,7 +1,7 @@
-//! Bounded read-only raw tracking and native pre-IK evidence.
+//! Bounded read-only tracking, native pre-IK, and movement-completion evidence.
 //!
 //! The raw packet uses the head locate and controller publication receipt from one OpenXR frame.
-//! The native capture has a separate host time and is never joined to it as a simulation pair.
+//! Native and completion captures remain independent of it; host times never join simulation sides.
 //! Missing composition and source epochs prevent construction of the checked body observation.
 
 use std::time::{Duration, Instant};
@@ -12,6 +12,10 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        body::rig::root::{
+            self, CompletionSnapshot, CompletionSnapshotAvailability, CompletionUnavailable,
+            MovementCompletion,
+        },
         frame::{ControllerFrame, Pose, TrackedPose},
         roomscale::teleport,
     },
@@ -58,6 +62,7 @@ pub(crate) struct NativeCapture {
 pub(crate) enum MissingEvidence {
     CompletedLedgerAndShiftPair,
     CompositionBasisPair,
+    /// Owners of both matched composition sides, beyond one consumed request's owner.
     OwnerAtCompletion,
     OriginEpoch,
     CalibrationAndScaleEpochs,
@@ -119,11 +124,58 @@ pub(crate) enum NativeObservation {
     },
 }
 
+/// Diagnostic rejection of a completion snapshot, separate from movement eligibility.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum CompletionRejection {
+    Source(CompletionUnavailable),
+    Diagnostic(Unavailable),
+}
+
+/// Diagnostic completion availability, independent of the owned completion record.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum CompletionAvailability {
+    Unavailable(CompletionRejection),
+    Observed { age: Duration },
+}
+
+/// A fixed-size latest completion, never matched to tracking or a rendered composition.
+/// Unavailable observations omit the record rather than retaining a previous completion.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct CompletionObservation {
+    availability: CompletionAvailability,
+    completion: Option<MovementCompletion>,
+}
+
+impl CompletionObservation {
+    fn unavailable(reason: CompletionRejection) -> Self {
+        Self {
+            availability: CompletionAvailability::Unavailable(reason),
+            completion: None,
+        }
+    }
+
+    fn observed(completion: MovementCompletion, age: Duration) -> Self {
+        Self {
+            availability: CompletionAvailability::Observed { age },
+            completion: Some(completion),
+        }
+    }
+
+    pub(crate) fn availability(&self) -> CompletionAvailability {
+        self.availability
+    }
+
+    pub(crate) fn completion(&self) -> Option<MovementCompletion> {
+        self.completion
+    }
+}
+
 /// Separate source availability and the missing checked-observation prerequisites.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ObservationStatus {
     pub raw: RawObservation,
     pub native: NativeObservation,
+    pub completion: CompletionObservation,
     pub missing: [MissingEvidence; 8],
 }
 
@@ -155,10 +207,13 @@ pub(crate) fn native_unavailable() {
 
 /// Read current diagnostic availability without reading engine pointers or composing a pose.
 pub(crate) fn status() -> ObservationStatus {
-    SLOT.lock().read(
-        Instant::now(),
+    let completion = root::completion_snapshot();
+    let now = Instant::now();
+    SLOT.lock().read_completion_status(
+        now,
         DIAGNOSTIC_MAX_AGE,
         OriginCounters::current(),
+        completion,
     )
 }
 
@@ -240,7 +295,23 @@ impl Publisher {
         });
     }
 
+    #[cfg(test)]
     fn read(&self, now: Instant, max_age: Duration, origin: OriginCounters) -> ObservationStatus {
+        self.read_completion_status(
+            now,
+            max_age,
+            origin,
+            CompletionSnapshot::unavailable(CompletionUnavailable::NotCompleted),
+        )
+    }
+
+    fn read_completion_status(
+        &self,
+        now: Instant,
+        max_age: Duration,
+        origin: OriginCounters,
+        completion: CompletionSnapshot,
+    ) -> ObservationStatus {
         ObservationStatus {
             raw: match self.raw {
                 Err(reason) => RawObservation::unavailable(reason),
@@ -255,6 +326,7 @@ impl Publisher {
                 },
             },
             native: self.read_native(now, max_age, origin),
+            completion: read_completion(completion, now, max_age),
             missing: MISSING,
         }
     }
@@ -286,6 +358,44 @@ impl Publisher {
             age,
         }
     }
+}
+
+fn read_completion(
+    snapshot: CompletionSnapshot,
+    now: Instant,
+    max_age: Duration,
+) -> CompletionObservation {
+    if let CompletionSnapshotAvailability::Unavailable(reason) = snapshot.availability() {
+        return CompletionObservation::unavailable(CompletionRejection::Source(reason));
+    }
+    let Some(completion) = snapshot.completion() else {
+        return CompletionObservation::unavailable(CompletionRejection::Diagnostic(
+            Unavailable::InvalidCapture,
+        ));
+    };
+    let age = match age_at(completion.completed_at, now, max_age, true) {
+        Ok(age) => age,
+        Err(reason) => {
+            return CompletionObservation::unavailable(CompletionRejection::Diagnostic(reason));
+        }
+    };
+    let request_valid = completion.ledger.request.is_none_or(|request| {
+        request.movement.task.is_finite()
+            && request.movement.chase.is_finite()
+            && request.credited.is_finite()
+    });
+    if completion.sequence == 0
+        || !valid_root(completion.previous_root)
+        || !valid_root(completion.current_root)
+        || !completion.ledger.movement.previous.is_finite()
+        || !completion.ledger.movement.current.is_finite()
+        || !request_valid
+    {
+        return CompletionObservation::unavailable(CompletionRejection::Diagnostic(
+            Unavailable::InvalidCapture,
+        ));
+    }
+    CompletionObservation::observed(completion, age)
 }
 
 fn make_raw_packet(
@@ -388,15 +498,7 @@ fn unit_rotation(rotation: Quat) -> bool {
 fn valid_capture(capture: NativeCapture) -> bool {
     [capture.previous_root, capture.current_root]
         .into_iter()
-        .all(|root| {
-            root.is_finite()
-                && root.determinant().abs() > 1.0e-6
-                && root.inverse().is_finite()
-                && root.x_axis.w == 0.0
-                && root.y_axis.w == 0.0
-                && root.z_axis.w == 0.0
-                && root.w_axis.w == 1.0
-        })
+        .all(valid_root)
         && [
             capture.previous_anchor,
             capture.current_anchor,
@@ -406,6 +508,16 @@ fn valid_capture(capture: NativeCapture) -> bool {
         ]
         .into_iter()
         .all(|point| point.is_finite())
+}
+
+fn valid_root(root: Mat4) -> bool {
+    root.is_finite()
+        && root.determinant().abs() > 1.0e-6
+        && root.inverse().is_finite()
+        && root.x_axis.w == 0.0
+        && root.y_axis.w == 0.0
+        && root.z_axis.w == 0.0
+        && root.w_axis.w == 1.0
 }
 
 static SLOT: Mutex<Publisher> = Mutex::new(Publisher::new());

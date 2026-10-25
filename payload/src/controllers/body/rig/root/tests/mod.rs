@@ -3,6 +3,7 @@
 //! the room adding, several ticks to a frame, the lean, and the owners that stand the chase down.
 //! The walls are in [`walls`].
 
+mod completion;
 mod walls;
 
 use glam::{Quat, Vec2, Vec3};

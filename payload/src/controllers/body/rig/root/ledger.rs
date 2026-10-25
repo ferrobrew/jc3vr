@@ -11,6 +11,8 @@
 
 use glam::{Vec2, Vec3};
 
+use crate::controllers::body::rig::root::owner::RootOwner;
+
 /// The requested displacement split before the proxy's single collision solve.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Movement {
@@ -103,10 +105,28 @@ pub struct LedgerCounts {
     pub projected: u64,
 }
 
+/// The submission metadata consumed by one completion, independent of later owner selections.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct CompletedRequest {
+    pub movement: Movement,
+    /// Absent for callers that submit movement without an owner.
+    pub owner: Option<RootOwner>,
+    pub credited: Vec2,
+    pub attribution: Attribution,
+}
+
+/// The ledger values after one completion, with the request consumed by that completion.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct LedgerCompletion {
+    pub request: Option<CompletedRequest>,
+    pub movement: CompletedMovement,
+    pub counts: LedgerCounts,
+}
+
 /// The pending request and the running total.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Requests {
-    pending: Option<Movement>,
+    pending: Option<PendingRequest>,
     completed: CompletedMovement,
     counts: LedgerCounts,
     /// The requested and the credited chase distances of the last two completed steps, newest
@@ -154,28 +174,53 @@ impl Requests {
         self.pending.is_some()
     }
 
-    /// Ask for this tick's movement; the next completion credits it.
+    /// Ask for this tick's movement without submission ownership evidence.
+    #[cfg(test)]
     pub fn submit(&mut self, movement: Movement) {
-        self.pending = Some(movement);
+        self.pending = Some(PendingRequest {
+            movement,
+            owner: None,
+        });
+    }
+
+    /// Retain the owner selected at this submission, rather than a later status value.
+    pub fn submit_owned(&mut self, movement: Movement, owner: RootOwner) {
+        self.pending = Some(PendingRequest {
+            movement,
+            owner: Some(owner),
+        });
     }
 
     /// Complete a step that moved the root from `previous` to `current`, world positions.
-    pub fn complete(&mut self, previous: Vec3, current: Vec3) {
+    /// The result identifies only the request consumed here, after the ledger pair is updated.
+    pub fn complete(&mut self, previous: Vec3, current: Vec3) -> LedgerCompletion {
         self.completed.previous = self.completed.current;
         let mut step = (0.0, 0.0);
-        if let Some(request) = self.pending.take() {
+        let completed = self.pending.take().map(|request| {
+            let movement = request.movement;
             let delta = current - previous;
             let position_scale = previous.abs().max(current.abs()).max_element();
             let (credited, attribution) =
-                request.achieved_chase(Vec2::new(delta.x, delta.z), position_scale);
+                movement.achieved_chase(Vec2::new(delta.x, delta.z), position_scale);
             self.completed.current += credited;
             match attribution {
                 Attribution::Exact => self.counts.exact += 1,
                 Attribution::Projected => self.counts.projected += 1,
             }
-            step = (request.chase.length(), credited.length());
-        }
+            step = (movement.chase.length(), credited.length());
+            CompletedRequest {
+                movement,
+                owner: request.owner,
+                credited,
+                attribution,
+            }
+        });
         self.recent = [self.recent[1], step];
+        LedgerCompletion {
+            request: completed,
+            movement: self.completed,
+            counts: self.counts,
+        }
     }
 
     /// Drop the pending request and settle the pair, so nothing is credited until the player owns
@@ -185,6 +230,12 @@ impl Requests {
         self.recent = [(0.0, 0.0); 2];
         self.completed.previous = self.completed.current;
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct PendingRequest {
+    movement: Movement,
+    owner: Option<RootOwner>,
 }
 
 /// The fastest the stick, the hands, and the chase together may move the root, metres per second:

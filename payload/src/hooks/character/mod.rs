@@ -97,7 +97,6 @@ fn character_update_pass_finalize_pose_parallel(
     }
     unsafe { controllers::body::unarmed::tick(character) };
     unsafe {
-        controllers::body::rig::root::complete_movement(character);
         // The wingsuit's arms queue their own wrist targets at the solve gate, so the body IK does
         // not pin those wrists to the animation either; their last gate is a tick behind.
         let driven = plan.as_ref().map_or([false; 2], HandPlan::driven);
