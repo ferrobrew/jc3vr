@@ -34,6 +34,7 @@ use crate::controllers::{
             dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
             equip::{self, DockRefusal, Thrown},
             layout,
+            release_diagnostics::{ReleaseRecord, ReleaseRoute, ReleaseStatus, SampleStage},
         },
         inventory::{
             self, carry,
@@ -70,8 +71,10 @@ pub struct DockStatus {
     pub draws: u64,
     pub docks: u64,
     pub drops: u64,
-    /// The speed the last dropped weapon left with, metres per second, when the mod set it.
+    /// The last requested speed, metres per second, when the native setter returned success.
     pub last_throw_mps: Option<f32>,
+    /// Only the latest release attempt is retained; all native identifiers are copied values.
+    pub releases: ReleaseStatus,
     pub last_refusal: Option<DockRefusal>,
 }
 
@@ -148,8 +151,12 @@ pub(crate) unsafe fn dock(hand: Hand, socket: Socket, snap_s: f32) -> Result<(),
 ///
 /// The main thread, outside the world update.
 pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, DockRefusal> {
-    let result = unsafe { drop_from(hand, max_speed_mps) };
+    let mut diagnostic = ReleaseRecord::new(hand, max_speed_mps);
+    let result = unsafe { drop_from(hand, max_speed_mps, &mut diagnostic) };
+    diagnostic.refusal = result.as_ref().err().copied();
     let mut state = STATE.lock();
+    state.status.releases.record(diagnostic);
+    let release = state.status.releases.latest;
     match result {
         Ok(thrown) => {
             state.status.drops += 1;
@@ -160,6 +167,7 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
                 hand = hand.label(),
                 speed_mps = thrown.linear.length(),
                 set_by_the_mod = thrown.set,
+                release = ?release,
                 "hold: let go of the weapon in the {} hand",
                 hand.label()
             );
@@ -427,6 +435,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         docks: 0,
         drops: 0,
         last_throw_mps: None,
+        releases: ReleaseStatus::EMPTY,
         last_refusal: None,
     },
 });
@@ -517,21 +526,32 @@ unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), D
 
 /// Drop the weapon `hand` holds: the wielded weapon through its slot, a weapon armed in the hand
 /// once it is disarmed. Then the table takes the let-go.
-unsafe fn drop_from(hand: Hand, max_speed_mps: f32) -> Result<Thrown, DockRefusal> {
+unsafe fn drop_from(
+    hand: Hand,
+    max_speed_mps: f32,
+    diagnostic: &mut ReleaseRecord,
+) -> Result<Thrown, DockRefusal> {
     let owner = unsafe { engine::local_player() }.ok_or(DockRefusal::NoCharacter)?;
     let object = live::in_hand(hand).ok_or(DockRefusal::NothingHeld)?;
+    diagnostic.weapon = Some(object);
     let thrown = if is_wielded(owner, object) {
+        diagnostic.route = ReleaseRoute::Wielded;
         unsafe { equip::drop_held(owner, max_speed_mps) }?
     } else if armed::in_hand(hand) == Some(object) {
+        diagnostic.route = ReleaseRoute::ArmedInHand;
         let weapon = unsafe { armed::weapon_of(owner, hand) }.ok_or(DockRefusal::NotDone)?;
+        diagnostic.stages.before_disarm = true;
         unsafe { armed::disarm(owner, hand, Some(&mut *weapon), true) };
+        diagnostic.stages.disarm_returned = true;
         if weapon.m_State != WeaponState::E_WS_HOLSTERED {
             return Err(DockRefusal::NotHolstered);
         }
         // A carried weapon's strong reference is kept until the drop is done.
         let strong = carry::release(object);
-        let thrown = unsafe { equip::drop_loose(weapon, max_speed_mps) };
+        let mut thrown = unsafe { equip::drop_loose(weapon, max_speed_mps) };
+        thrown.diagnostic.sample_stage = SampleStage::AfterDisarm;
         let slot = unsafe { slot_of(weapon) };
+        thrown.diagnostic.slot = slot;
         let in_slot = slot.is_some_and(|slot| {
             owner
                 .m_Inventory
@@ -541,16 +561,20 @@ unsafe fn drop_from(hand: Hand, max_speed_mps: f32) -> Result<Thrown, DockRefusa
         });
         if let Some(slot) = slot.filter(|_| in_slot) {
             unsafe { owner.m_Inventory.DropWeapon(slot, false) };
+            thrown.diagnostic.slot_clear_returned = true;
         }
         drop(strong);
         thrown
     } else {
         return Err(DockRefusal::NotDone);
     };
+    diagnostic.stages.slot_clear_returned = thrown.diagnostic.slot_clear_returned;
+    diagnostic.drop = Some(thrown.diagnostic);
     if let Some(address) = ObjectAddress::from_address(object) {
         live::depart(hand, address, live::Whereabouts::Away);
     }
     unsafe { reconcile::apply(owner) };
+    diagnostic.stages.reconcile_returned = true;
     Ok(thrown)
 }
 

@@ -281,7 +281,7 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
     ));
     let sliding = |hand: Hand| d.snapping[hand.index()].map_or("nothing", SnapKind::label);
     ui.label(format!(
-        "Docking: sliding left {} right {} · grip holds left {} right {} · draws {} · docks {} · drops {} · last throw {} · last refusal: {}",
+        "Docking: sliding left {} right {} · grip holds left {} right {} · draws {} · docks {} · drops {} · last setter request {} · last refusal: {}",
         sliding(Hand::Left),
         sliding(Hand::Right),
         yes_no(d.grip_holds[0]),
@@ -293,6 +293,39 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
             .map_or("the game's".to_owned(), |v| format!("{v:.1} m/s")),
         d.last_refusal.map_or("none".to_owned(), |r| r.to_string())
     ));
+    ui.collapsing("Latest gun release evidence", |ui| {
+        ui.label(format!("Release attempts: {}.", d.releases.attempts));
+        if let Some(record) = d.releases.latest {
+            ui.label(format!(
+                "Attempt {} · physical {} hand · route {:?} · weapon {:?} · refusal {:?}",
+                record.sequence,
+                record.hand.label(),
+                record.route,
+                record.weapon,
+                record.refusal,
+            ));
+            ui.label(format!("Returned stages: {:?}.", record.stages));
+            ui.label(format!("Cached gun sample and setter request: {:?}.", record.drop));
+            if let Some(motion) = record.drop.and_then(|drop| drop.cached_world_motion) {
+                ui.label(format!(
+                    "Cached sample finite: linear {} · angular {}.",
+                    yes_no(motion.linear_is_finite()),
+                    yes_no(motion.angular_is_finite()),
+                ));
+            }
+            ui.label(format!(
+                "Separate cockpit controller context: {:?}.",
+                record.controller
+            ));
+            ui.label(format!(
+                "Pre-disarm sample: {:?}. Native readbacks: {:?}.",
+                record.before_disarm_sample, record.native_readback
+            ));
+            ui.label("Cached gun sample age is unknown. Setter completion does not prove applied velocity or next-step persistence.");
+        } else {
+            ui.label("No inventory-gun release attempt is recorded.");
+        }
+    });
 }
 
 fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
