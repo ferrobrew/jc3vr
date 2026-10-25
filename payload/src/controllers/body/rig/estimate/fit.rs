@@ -202,7 +202,8 @@ pub(crate) fn ambiguity_counted(
             parameters.0[2] = wrap(parameters.0[2] + turn * stance_share);
             parameters.0[8] += turn * (1.0 - stance_share);
             work.check();
-            admitted |= evaluate_counted(parameters, context, work).is_some_and(measurement_admissible);
+            admitted |=
+                evaluate_counted(parameters, context, work).is_some_and(measurement_admissible);
         }
         if admitted {
             admissible += 1;
@@ -506,7 +507,14 @@ pub(crate) fn endpoint_feasible_counted(
     {
         return false;
     }
-    let leg = leg(hip, foot.position, yaw_forward(heading), segments, side, work);
+    let leg = leg(
+        hip,
+        foot.position,
+        yaw_forward(heading),
+        segments,
+        side,
+        work,
+    );
     full_leg_valid(&leg, hip, candidate.parameters)
         && leg.ankle.distance(foot.position) <= CONTACT_TOLERANCE
 }

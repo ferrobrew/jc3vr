@@ -67,7 +67,9 @@ impl<'a> Fits<'a> {
                 Err(EstimateError::SearchExhausted) => {}
                 Err(error) => return Err(error),
             }
-            if mask == 0 && best.is_some_and(|(candidate, _)| fit::measurement_admissible(candidate)) {
+            if mask == 0
+                && best.is_some_and(|(candidate, _)| fit::measurement_admissible(candidate))
+            {
                 break;
             }
         }
@@ -84,8 +86,12 @@ impl<'a> Fits<'a> {
         after: [Contact; 2],
         work: &mut Work,
     ) -> bool {
-        if self.optimized && fit::measurement_admissible(candidate)
-            && before.into_iter().zip(after).all(|(left, right)| left.same_bits(right))
+        if self.optimized
+            && fit::measurement_admissible(candidate)
+            && before
+                .into_iter()
+                .zip(after)
+                .all(|(left, right)| left.same_bits(right))
         {
             work.preliminary_reuses += 1;
             work.search_requests += 1;
@@ -96,12 +102,18 @@ impl<'a> Fits<'a> {
         }
     }
 
-    fn search(&mut self, contacts: [Contact; 2], work: &mut Work) -> Result<Candidate, EstimateError> {
+    fn search(
+        &mut self,
+        contacts: [Contact; 2],
+        work: &mut Work,
+    ) -> Result<Candidate, EstimateError> {
         self.context.contacts = contacts;
         let signature = contacts.map(signature);
         work.search_requests += 1;
         if self.optimized
-            && let Some(entry) = self.entries[..self.len].iter().flatten()
+            && let Some(entry) = self.entries[..self.len]
+                .iter()
+                .flatten()
                 .find(|entry| entry.signature == signature)
         {
             work.cache_hits += 1;
@@ -113,7 +125,10 @@ impl<'a> Fits<'a> {
         let before = work.evaluations;
         let result = fit::search_counted(&context, self.envelope.as_ref(), work);
         if self.optimized {
-            assert!(self.len < self.entries.len(), "at most eight normal topology requests exist");
+            assert!(
+                self.len < self.entries.len(),
+                "at most eight normal topology requests exist"
+            );
             self.entries[self.len] = Some(Entry {
                 signature,
                 result,

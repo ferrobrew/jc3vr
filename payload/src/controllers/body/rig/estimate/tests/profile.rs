@@ -112,11 +112,41 @@ fn profile_sequence(
         let observation = fixture.observation(sample);
         let support = fixture.support(sample.previous_step, sample.step);
         let (result, baseline) = if step % 2 == 0 {
-            let baseline = timed_update(fixture, &mut reference, &observation, sample.dt, Some(support));
-            (timed_update(fixture, &mut estimator, &observation, sample.dt, Some(support)), baseline)
+            let baseline = timed_update(
+                fixture,
+                &mut reference,
+                &observation,
+                sample.dt,
+                Some(support),
+            );
+            (
+                timed_update(
+                    fixture,
+                    &mut estimator,
+                    &observation,
+                    sample.dt,
+                    Some(support),
+                ),
+                baseline,
+            )
         } else {
-            let result = timed_update(fixture, &mut estimator, &observation, sample.dt, Some(support));
-            (result, timed_update(fixture, &mut reference, &observation, sample.dt, Some(support)))
+            let result = timed_update(
+                fixture,
+                &mut estimator,
+                &observation,
+                sample.dt,
+                Some(support),
+            );
+            (
+                result,
+                timed_update(
+                    fixture,
+                    &mut reference,
+                    &observation,
+                    sample.dt,
+                    Some(support),
+                ),
+            )
         };
         cost::assert_same_result(result.1, baseline.1);
         cost::assert_same_estimator(&estimator, &reference);
@@ -144,10 +174,16 @@ fn profile_repeated(
         reference.set_reference_mode_for_test(true);
         let (result, expected) = if sample_index % 2 == 0 {
             let expected = timed_update(fixture, &mut reference, &observation, sample.dt, support);
-            (timed_update(fixture, &mut estimator, &observation, sample.dt, support), expected)
+            (
+                timed_update(fixture, &mut estimator, &observation, sample.dt, support),
+                expected,
+            )
         } else {
             let result = timed_update(fixture, &mut estimator, &observation, sample.dt, support);
-            (result, timed_update(fixture, &mut reference, &observation, sample.dt, support))
+            (
+                result,
+                timed_update(fixture, &mut reference, &observation, sample.dt, support),
+            )
         };
         cost::assert_same_result(result.1, expected.1);
         cost::assert_same_estimator(&estimator, &reference);
@@ -306,19 +342,25 @@ impl ProfileMetrics {
         }
     }
 
-    fn record(&mut self, (duration_ns, result, work): (u128, Result<Snapshot, EstimateError>, Work)) {
+    fn record(
+        &mut self,
+        (duration_ns, result, work): (u128, Result<Snapshot, EstimateError>, Work),
+    ) {
         self.durations_ns.push(duration_ns);
-        *self.work_counts.entry(WorkCounts {
-            evaluations: work.evaluations,
-            logical: work.logical_evaluations,
-            requests: work.search_requests,
-            searches: work.searches,
-            hits: work.cache_hits,
-            preliminary_reuses: work.preliminary_reuses,
-            intervals: work.interval_constructions,
-            solves: work.analytic_solves,
-            error: result.is_err(),
-        }).or_default() += 1;
+        *self
+            .work_counts
+            .entry(WorkCounts {
+                evaluations: work.evaluations,
+                logical: work.logical_evaluations,
+                requests: work.search_requests,
+                searches: work.searches,
+                hits: work.cache_hits,
+                preliminary_reuses: work.preliminary_reuses,
+                intervals: work.interval_constructions,
+                solves: work.analytic_solves,
+                error: result.is_err(),
+            })
+            .or_default() += 1;
         match result {
             Ok(snapshot) => {
                 self.evaluations.push(snapshot.quality.evaluations);

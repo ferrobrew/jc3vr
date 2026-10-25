@@ -122,8 +122,7 @@ fn captured_trace(groups: &[InputGroup]) -> Vec<Publication> {
         evaluate(&mut runtime, group.clone(), true);
         let policy = history::take_capture()
             .into_iter()
-            .filter(|entry| matches!(entry.record, InputRecord::Policy(_)))
-            .next_back()
+            .rfind(|entry| matches!(entry.record, InputRecord::Policy(_)))
             .expect("one outcome per group");
         out.push(Publication {
             observed_at: Instant::now(),

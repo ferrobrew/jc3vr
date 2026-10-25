@@ -1,10 +1,7 @@
 //! Exact retained-input identity, including unavailable raw pose components.
 
 use super::*;
-use crate::controllers::body::rig::{
-    frames::SkeletonLandmarks,
-    observation::PairSide,
-};
+use crate::controllers::body::rig::{frames::SkeletonLandmarks, observation::PairSide};
 
 pub(crate) fn same_observation_bits(
     left: Option<&Observation>,
@@ -16,16 +13,18 @@ pub(crate) fn same_observation_bits(
             let right_raw = right.raw();
             left_raw.focused == right_raw.focused
                 && same_raw_bits(left_raw.head, right_raw.head)
-                && left_raw.grips.into_iter().zip(right_raw.grips).all(|(left, right)| {
-                    match (left, right) {
+                && left_raw
+                    .grips
+                    .into_iter()
+                    .zip(right_raw.grips)
+                    .all(|(left, right)| match (left, right) {
                         (Some(left), Some(right)) => same_raw_bits(left, right),
                         (None, None) => true,
                         _ => false,
-                    }
-                })
-                && [PairSide::Previous, PairSide::Current].into_iter().all(|side| {
-                    same_side_bits(*left.pair().side(side), *right.pair().side(side))
-                })
+                    })
+                && [PairSide::Previous, PairSide::Current]
+                    .into_iter()
+                    .all(|side| same_side_bits(*left.pair().side(side), *right.pair().side(side)))
         }
         (None, None) => true,
         _ => false,
@@ -63,10 +62,18 @@ fn same_tracked_bits(left: TrackedPose, right: TrackedPose) -> bool {
         && same_vector_bits(left.pose.position, right.pose.position)
         && left.pose.orientation.to_array().map(f32::to_bits)
             == right.pose.orientation.to_array().map(f32::to_bits)
-        && left.linear_velocity.map(|value| value.to_array().map(f32::to_bits))
-            == right.linear_velocity.map(|value| value.to_array().map(f32::to_bits))
-        && left.angular_velocity.map(|value| value.to_array().map(f32::to_bits))
-            == right.angular_velocity.map(|value| value.to_array().map(f32::to_bits))
+        && left
+            .linear_velocity
+            .map(|value| value.to_array().map(f32::to_bits))
+            == right
+                .linear_velocity
+                .map(|value| value.to_array().map(f32::to_bits))
+        && left
+            .angular_velocity
+            .map(|value| value.to_array().map(f32::to_bits))
+            == right
+                .angular_velocity
+                .map(|value| value.to_array().map(f32::to_bits))
 }
 
 fn same_vector_bits(left: Vec3, right: Vec3) -> bool {
@@ -93,9 +100,15 @@ fn same_side_bits(left: CompositionSide, right: CompositionSide) -> bool {
 fn same_landmarks_bits(left: SkeletonLandmarks, right: SkeletonLandmarks) -> bool {
     same_vector_bits(left.head, right.head)
         && same_vector_bits(left.pelvis, right.pelvis)
-        && left.hips.into_iter().zip(right.hips)
+        && left
+            .hips
+            .into_iter()
+            .zip(right.hips)
             .all(|(left, right)| same_vector_bits(left, right))
-        && left.shoulders.into_iter().zip(right.shoulders)
+        && left
+            .shoulders
+            .into_iter()
+            .zip(right.shoulders)
             .all(|(left, right)| same_vector_bits(left, right))
 }
 
@@ -134,7 +147,10 @@ fn retained_input_identity_distinguishes_unavailable_nan_signs_and_payloads() {
     assert!(actual.is_ok());
     cost::assert_same_result(actual, reference.update(update()));
     cost::assert_same_estimator(&optimized, &reference);
-    assert!(same_observation_bits(Some(&observation), Some(&observation)));
+    assert!(same_observation_bits(
+        Some(&observation),
+        Some(&observation)
+    ));
 
     for bits in [0x7fc0_5678, 0xffc0_1234] {
         for component in 0..7 {
@@ -152,7 +168,14 @@ fn retained_input_identity_distinguishes_unavailable_nan_signs_and_payloads() {
         }
     }
     let mut changed = raw;
-    changed.grips[0].as_mut().unwrap().tracked.linear_velocity.as_mut().unwrap().x = 0.0;
+    changed.grips[0]
+        .as_mut()
+        .unwrap()
+        .tracked
+        .linear_velocity
+        .as_mut()
+        .unwrap()
+        .x = 0.0;
     let changed = Observation::new(changed, *original.pair()).unwrap();
     assert!(!same_observation_bits(Some(&observation), Some(&changed)));
 
@@ -163,6 +186,12 @@ fn retained_input_identity_distinguishes_unavailable_nan_signs_and_payloads() {
     changed_support.previous.x_axis.y = positive_nan;
     let mut other_support = changed_support;
     other_support.previous.x_axis.y = negative_nan;
-    assert!(same_support_bits(Some(changed_support), Some(changed_support)));
-    assert!(!same_support_bits(Some(changed_support), Some(other_support)));
+    assert!(same_support_bits(
+        Some(changed_support),
+        Some(changed_support)
+    ));
+    assert!(!same_support_bits(
+        Some(changed_support),
+        Some(other_support)
+    ));
 }

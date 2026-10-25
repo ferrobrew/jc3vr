@@ -245,7 +245,8 @@ impl From<ObservationError> for EstimateError {
 /// Conservative logical schedule: two topology passes, recovery, realization, and heading probes.
 pub(crate) const MAX_EVALUATIONS: usize = 8 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
 /// Both normal passes share the both-released signature within one immutable numerical context.
-pub(crate) const MAX_COMPUTED_EVALUATIONS: usize = 7 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
+pub(crate) const MAX_COMPUTED_EVALUATIONS: usize =
+    7 * fit::SEARCH_EVALUATIONS + 4 + 1 + fit::HEADING_PROBES;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Temporal {

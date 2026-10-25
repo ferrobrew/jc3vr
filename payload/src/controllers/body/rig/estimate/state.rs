@@ -110,12 +110,13 @@ impl Estimator {
 
     pub(crate) fn update(&mut self, update: Update<'_>) -> Result<Snapshot, EstimateError> {
         #[cfg(test)]
-        let mut reference = (!self.reference_mode && !crate::controllers::body::rig::estimate::tests::profile::timing_active())
-            .then(|| {
-                let mut reference = self.clone();
-                reference.reference_mode = true;
-                reference
-            });
+        let mut reference = (!self.reference_mode
+            && !crate::controllers::body::rig::estimate::tests::profile::timing_active())
+        .then(|| {
+            let mut reference = self.clone();
+            reference.reference_mode = true;
+            reference
+        });
         #[cfg(test)]
         let reference_update = Update { ..update };
         let mut work = Work::default();
@@ -124,8 +125,12 @@ impl Estimator {
         #[cfg(test)]
         if let Some(reference) = reference.as_mut() {
             let expected = reference.update(reference_update);
-            crate::controllers::body::rig::estimate::tests::cost::assert_same_result(result, expected);
-            crate::controllers::body::rig::estimate::tests::cost::assert_same_estimator(self, reference);
+            crate::controllers::body::rig::estimate::tests::cost::assert_same_result(
+                result, expected,
+            );
+            crate::controllers::body::rig::estimate::tests::cost::assert_same_estimator(
+                self, reference,
+            );
         }
         result
     }
@@ -136,25 +141,45 @@ impl Estimator {
             (Some(mut left), Some(mut right)) => {
                 left.snapshot.quality.evaluations = 0;
                 right.snapshot.quality.evaluations = 0;
-                crate::controllers::body::rig::estimate::tests::cost::assert_same_snapshot(left.snapshot, right.snapshot);
-                assert_eq!(left.parameters.0.map(f32::to_bits), right.parameters.0.map(f32::to_bits));
+                crate::controllers::body::rig::estimate::tests::cost::assert_same_snapshot(
+                    left.snapshot,
+                    right.snapshot,
+                );
+                assert_eq!(
+                    left.parameters.0.map(f32::to_bits),
+                    right.parameters.0.map(f32::to_bits)
+                );
                 assert_eq!(left.rates.map(f32::to_bits), right.rates.map(f32::to_bits));
-                assert!(left.contacts.into_iter().zip(right.contacts)
-                    .all(|(left, right)| left.same_bits(right)));
+                assert!(
+                    left.contacts
+                        .into_iter()
+                        .zip(right.contacts)
+                        .all(|(left, right)| left.same_bits(right))
+                );
             }
             (None, None) => {}
             _ => panic!("reference and optimized committed-state presence differs"),
         }
-        assert!(crate::controllers::body::rig::estimate::tests::retained::same_observation_bits(
-            self.last_observation.as_ref(), other.last_observation.as_ref(),
-        ));
-        assert!(crate::controllers::body::rig::estimate::tests::retained::same_support_bits(
-            self.last_support, other.last_support,
-        ));
+        assert!(
+            crate::controllers::body::rig::estimate::tests::retained::same_observation_bits(
+                self.last_observation.as_ref(),
+                other.last_observation.as_ref(),
+            )
+        );
+        assert!(
+            crate::controllers::body::rig::estimate::tests::retained::same_support_bits(
+                self.last_support,
+                other.last_support,
+            )
+        );
         assert_eq!(self.last_dt.to_bits(), other.last_dt.to_bits());
     }
 
-    fn update_counted(&mut self, update: Update<'_>, work: &mut Work) -> Result<Snapshot, EstimateError> {
+    fn update_counted(
+        &mut self,
+        update: Update<'_>,
+        work: &mut Work,
+    ) -> Result<Snapshot, EstimateError> {
         update.anatomy.validate()?;
         let observation = update.observation;
         let raw = observation.raw();
@@ -331,8 +356,7 @@ impl Estimator {
             floor_y,
             contacts,
         };
-        let mut temporal_status =
-            temporal::prepare_counted(&mut context, work);
+        let mut temporal_status = temporal::prepare_counted(&mut context, work);
         #[cfg(not(test))]
         let optimized = true;
         #[cfg(test)]
@@ -415,9 +439,12 @@ impl Estimator {
                 previous_parameters.0[axis],
                 axis,
             ) / update.dt;
-            if reseed || update.transition == Transition::Recenter
+            if reseed
+                || update.transition == Transition::Recenter
                 || temporal_status == TemporalStatus::ConstraintRecovery
-            { *rate = 0.0; }
+            {
+                *rate = 0.0;
+            }
         }
         fit::publish_feet(&mut candidate, &mut contacts);
         let stance = candidate.parameters.stance(floor_y);
@@ -441,29 +468,52 @@ impl Estimator {
         let permitted = current.owner == RootOwner::Player;
         let snapshot = Snapshot {
             provenance: Provenance {
-                sample: raw.head.stamp, previous: previous.stamp, current: current.stamp,
-                support: update.support.map(Support::key), transition: update.transition,
-                fresh_measurement: old.is_none_or(|old| old.snapshot.provenance.sample.sequence != raw.head.stamp.sequence),
+                sample: raw.head.stamp,
+                previous: previous.stamp,
+                current: current.stamp,
+                support: update.support.map(Support::key),
+                transition: update.transition,
+                fresh_measurement: old.is_none_or(|old| {
+                    old.snapshot.provenance.sample.sequence != raw.head.stamp.sequence
+                }),
             },
-            stance, body: candidate.body, player_shoulders: candidate.player_shoulders,
-            remapped_hands: candidate.remapped_hands, feet: contacts.map(|contact| contact.pose),
+            stance,
+            body: candidate.body,
+            player_shoulders: candidate.player_shoulders,
+            remapped_hands: candidate.remapped_hands,
+            feet: contacts.map(|contact| contact.pose),
             contacts: contacts.map(|contact| contact.state),
             root: RootRequest {
                 displacement: horizontal(stance.origin - root_stance),
-                turn: wrap(stance.yaw - root_yaw), permitted,
+                turn: wrap(stance.yaw - root_yaw),
+                permitted,
             },
-            gait: GaitOutput { completed_across_support: completed, distance, phase: (distance / stride).rem_euclid(1.0), touchdown_hips },
+            gait: GaitOutput {
+                completed_across_support: completed,
+                distance,
+                phase: (distance / stride).rem_euclid(1.0),
+                touchdown_hips,
+            },
             quality: Quality {
                 head: raw.head.tracked.into(),
                 hands: raw.grips.map(|grip| grip.map(|grip| grip.tracked.into())),
-                neck_residual_m: candidate.neck_error, hand_reach_residual_m: candidate.arm_errors,
-                neck_limit_residual_rad: candidate.neck_limit_error, contact_residual_m: candidate.contact_errors,
-                feasible, reduced_authority: !feasible || contacts.iter().any(|contact| !contact.planted())
+                neck_residual_m: candidate.neck_error,
+                hand_reach_residual_m: candidate.arm_errors,
+                neck_limit_residual_rad: candidate.neck_limit_error,
+                contact_residual_m: candidate.contact_errors,
+                feasible,
+                reduced_authority: !feasible
+                    || contacts.iter().any(|contact| !contact.planted())
                     || temporal_status != TemporalStatus::Normal,
                 yaw_confidence: Confidence::Low,
-                yaw_ambiguity: ambiguity, lower_body_confidence: Confidence::Low, evaluations: work.evaluations,
-                search: if fit::measurement_admissible(candidate) { fit::SearchStatus::Admissible }
-                    else { fit::SearchStatus::ResidualAfterBudget },
+                yaw_ambiguity: ambiguity,
+                lower_body_confidence: Confidence::Low,
+                evaluations: work.evaluations,
+                search: if fit::measurement_admissible(candidate) {
+                    fit::SearchStatus::Admissible
+                } else {
+                    fit::SearchStatus::ResidualAfterBudget
+                },
                 temporal: temporal_status,
             },
         };
@@ -610,7 +660,13 @@ pub(crate) fn transition_contacts(
     predicted_hips: [Vec3; 2],
     update: &Update<'_>,
 ) {
-    transition_contacts_counted(contacts, candidate, predicted_hips, update, &mut Work::default());
+    transition_contacts_counted(
+        contacts,
+        candidate,
+        predicted_hips,
+        update,
+        &mut Work::default(),
+    );
 }
 
 fn transition_contacts_counted(

@@ -140,18 +140,36 @@ impl Contact {
     pub(crate) fn same_bits(self, other: Self) -> bool {
         let same_state = match (self.state, other.state) {
             (ContactState::Released(left), ContactState::Released(right)) => left == right,
-            (ContactState::Planted { support: left, local },
-                ContactState::Planted { support: right, local: other }) => {
-                left == right && same_pose_bits(local, other)
-            }
-            (ContactState::Swinging { support: left, progress, endpoint },
-                ContactState::Swinging { support: right, progress: other_progress, endpoint: other }) => {
-                left == right && progress.to_bits() == other_progress.to_bits()
+            (
+                ContactState::Planted {
+                    support: left,
+                    local,
+                },
+                ContactState::Planted {
+                    support: right,
+                    local: other,
+                },
+            ) => left == right && same_pose_bits(local, other),
+            (
+                ContactState::Swinging {
+                    support: left,
+                    progress,
+                    endpoint,
+                },
+                ContactState::Swinging {
+                    support: right,
+                    progress: other_progress,
+                    endpoint: other,
+                },
+            ) => {
+                left == right
+                    && progress.to_bits() == other_progress.to_bits()
                     && same_pose_bits(endpoint, other)
             }
             _ => false,
         };
-        same_state && same_pose_bits(self.pose, other.pose)
+        same_state
+            && same_pose_bits(self.pose, other.pose)
             && same_pose_bits(self.from_local, other.from_local)
             && same_pose_bits(self.target_local, other.target_local)
     }
