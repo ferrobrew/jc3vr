@@ -468,15 +468,12 @@ impl Signal {
             Signal::StickSpeed => locomotion::status()
                 .velocity
                 .map_or(Value::Missing, |v| Value::Number(f64::from(v.length()))),
-            Signal::RigGapM => rig_measure(|f| f.gap_m()),
-            Signal::RigResidualM => rig_measure(|f| f.residual_m()),
-            Signal::RigLedgerProjected => count(rig_root::status().sim.ledger.projected),
-            Signal::RigPushbackM => rig_measure(|f| f.debt_m),
-            Signal::RigObstructed => {
-                let frame = rig_root::status().frame;
-                flag(frame.fresh(Instant::now()) && frame.pushback.obstructed)
-            }
-            Signal::RigPushbacks => count(rig_root::status().frame.pushbacks),
+            Signal::RigGapM => rig_measure(rig_root::try_frame_readout(), |f| f.gap_m()),
+            Signal::RigResidualM => rig_measure(rig_root::try_frame_readout(), |f| f.residual_m()),
+            Signal::RigLedgerProjected => rig_ledger_projected(rig_root::try_sim_readout()),
+            Signal::RigPushbackM => rig_measure(rig_root::try_frame_readout(), |f| f.debt_m),
+            Signal::RigObstructed => rig_obstructed(rig_root::try_frame_readout()),
+            Signal::RigPushbacks => rig_pushbacks(rig_root::try_frame_readout()),
             Signal::LegsMoving => flag(procedural::published_status().legs_moving),
             Signal::LegsTouchdownLeadM => {
                 let status = procedural::published_status();
@@ -489,14 +486,33 @@ impl Signal {
     }
 }
 
-/// A measure of the rig's latest frame, missing while no VR frame renders.
-fn rig_measure(read: impl Fn(&rig_root::FrameReadout) -> f32) -> Value {
-    let frame = rig_root::status().frame;
-    if frame.fresh(Instant::now()) {
-        Value::Number(f64::from(read(&frame)))
-    } else {
-        Value::Missing
+/// A measure of the rig's latest frame, missing while no VR frame renders or its owner is busy.
+fn rig_measure(
+    frame: Option<rig_root::FrameReadout>,
+    read: impl Fn(&rig_root::FrameReadout) -> f32,
+) -> Value {
+    match frame {
+        Some(frame) if frame.fresh(Instant::now()) => Value::Number(f64::from(read(&frame))),
+        _ => Value::Missing,
     }
+}
+
+fn rig_obstructed(frame: Option<rig_root::FrameReadout>) -> Value {
+    frame.map_or(Value::Missing, |frame| {
+        Value::Bool(frame.fresh(Instant::now()) && frame.pushback.obstructed)
+    })
+}
+
+fn rig_pushbacks(frame: Option<rig_root::FrameReadout>) -> Value {
+    frame.map_or(Value::Missing, |frame| {
+        Value::Number(frame.pushbacks as f64)
+    })
+}
+
+fn rig_ledger_projected(sim: Option<rig_root::SimStatus>) -> Value {
+    sim.map_or(Value::Missing, |sim| {
+        Value::Number(sim.ledger.projected as f64)
+    })
 }
 
 /// A status row's line, by its label, for a scenario's status-row probe.
@@ -533,7 +549,85 @@ fn grip_latch(hand: Hand, test: impl Fn(GripLatch) -> bool) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use glam::Vec2;
+
     use super::*;
+    use crate::controllers::body::rig::{
+        lean::Lean,
+        root::{chase::Measurement, ledger::LedgerCounts, pushback::PushbackOutcome},
+    };
+
+    #[test]
+    fn root_signal_fields_come_from_their_typed_owner_readouts() {
+        let frame = root_frame(Instant::now());
+        assert_eq!(rig_measure(Some(frame), |f| f.gap_m()), Value::Number(10.0));
+        assert_eq!(
+            rig_measure(Some(frame), |f| f.residual_m()),
+            Value::Number(8.0)
+        );
+        assert_eq!(rig_measure(Some(frame), |f| f.debt_m), Value::Number(0.25));
+        assert_eq!(rig_obstructed(Some(frame)), Value::Bool(true));
+        assert_eq!(rig_pushbacks(Some(frame)), Value::Number(7.0));
+        let sim = rig_root::SimStatus {
+            ledger: LedgerCounts {
+                exact: 11,
+                projected: 13,
+            },
+            ..rig_root::SimStatus::default()
+        };
+        assert_eq!(rig_ledger_projected(Some(sim)), Value::Number(13.0));
+    }
+
+    #[test]
+    fn busy_root_owners_make_every_root_signal_missing() {
+        assert_eq!(
+            rig_measure(None, |_| panic!("busy frame is not projected")),
+            Value::Missing
+        );
+        assert_eq!(rig_obstructed(None), Value::Missing);
+        assert_eq!(rig_pushbacks(None), Value::Missing);
+        assert_eq!(rig_ledger_projected(None), Value::Missing);
+    }
+
+    #[test]
+    fn stale_root_frames_keep_the_existing_measurement_flag_and_counter_semantics() {
+        for at in [None, Some(Instant::now() - Duration::from_secs(1))] {
+            let frame = rig_root::FrameReadout {
+                at,
+                ..root_frame(Instant::now())
+            };
+            assert_eq!(
+                rig_measure(Some(frame), |_| panic!("stale frame is not projected")),
+                Value::Missing
+            );
+            assert_eq!(rig_obstructed(Some(frame)), Value::Bool(false));
+            assert_eq!(rig_pushbacks(Some(frame)), Value::Number(7.0));
+        }
+    }
+
+    fn root_frame(at: Instant) -> rig_root::FrameReadout {
+        rig_root::FrameReadout {
+            at: Some(at),
+            measurement: Measurement {
+                target: Vec2::new(3.0, 4.0),
+                lean: Lean {
+                    vector: Vec2::new(3.0, 0.0),
+                    ..Lean::default()
+                },
+                ..Measurement::default()
+            },
+            world_scale: 2.0,
+            pushback: PushbackOutcome {
+                obstructed: true,
+                ..PushbackOutcome::default()
+            },
+            debt_m: 0.25,
+            pushbacks: 7,
+            ..rig_root::FrameReadout::default()
+        }
+    }
 
     #[test]
     fn every_signal_parses_back_from_its_name() {

@@ -4,6 +4,7 @@
 //! The walls are in [`walls`].
 
 mod completion;
+mod readouts;
 mod walls;
 
 use glam::{Quat, Vec2, Vec3};
