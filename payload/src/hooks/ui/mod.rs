@@ -125,10 +125,17 @@ fn convert_3d_coords_default(
 /// See [`crate::hud::split::roots`], [`crate::hud::scaleform`], and [`crate::hud::atlas`].
 #[detour(address = MovieImpl::CaptureImpl_ADDRESS)]
 fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
-    // SAFETY: the UI manager is a live singleton past startup; the pointer comparison does not
-    // dereference `this`.
-    let is_main_movie =
-        unsafe { UIManager::get().is_some_and(|manager| std::ptr::eq(manager.m_Movie, this)) };
+    // SAFETY: the existing main-movie lookup runs at the game-thread capture boundary under the
+    // UI update/render lock. Other movies pass through without publishing their layout.
+    let is_main_movie = unsafe {
+        UIManager::get().is_some_and(|manager| {
+            let is_main = std::ptr::eq(manager.m_Movie, this);
+            if is_main {
+                crate::hud::sample_stage_safe_area(manager);
+            }
+            is_main
+        })
+    };
     let timing = frame_timing::scope(Slot::UiCapture);
     if is_main_movie {
         let (split_enabled, suppress_overlays, hud) = Config::lock_query(|c| {

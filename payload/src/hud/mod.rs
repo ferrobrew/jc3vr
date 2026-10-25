@@ -54,17 +54,26 @@ mod target;
 mod warp;
 pub(crate) mod world_markers;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 pub use config::{HudConfig, ReticleAlign};
-use glam::{Mat3, Mat4, Quat, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 use jc3gi::{
     camera::camera_manager::CameraManager,
     graphics_engine::{device::Device, texture::Texture},
     types::math::Matrix4,
-    ui::ui_manager::GetIUIManager,
+    ui::ui_manager::{GetIUIManager, UIManager},
 };
 pub use state::HUD_STATE;
+#[cfg(not(test))]
+use state::StageSafeArea;
+use state::publish_stage_safe_area;
+#[cfg(test)]
+pub(crate) use state::{StageSafeArea, StageSafeAreaSample, test_stage_safe_area};
+pub(crate) use state::{StageSafeAreaReadout, stage_safe_area_readout};
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::{
@@ -128,6 +137,28 @@ fn aspect_for(cfg: &HudConfig, mode: HudMode) -> f32 {
         HudMode::Hud => cfg.hud_aspect,
         HudMode::Movie => cfg.movie_aspect,
     }
+}
+
+/// Publish the UI manager's layout from the existing main-movie capture read path.
+///
+/// # Safety
+/// The manager must be the live main-movie UI manager at its game-thread capture boundary,
+/// while the UI update/render lock is held.
+pub(crate) unsafe fn sample_stage_safe_area(manager: &UIManager) {
+    // SAFETY: the capture boundary keeps the manager live under the UI update/render lock.
+    let mode = if !in_gameplay() || unsafe { manager.IsUsingStaticBackGround() } {
+        HudMode::Movie
+    } else {
+        HudMode::Hud
+    };
+    let safe = manager.m_SafeArea;
+    let layout = StageSafeArea {
+        bounds: [safe.x1, safe.y1, safe.x2, safe.y2],
+        percentage: manager.m_SafeAreaPercentage,
+        stage: Vec2::new(manager.m_CachedStageWidth, manager.m_CachedStageHeight),
+        aspect: Config::lock_query(|cfg| aspect_for(&cfg.hud, mode)),
+    };
+    publish_stage_safe_area(layout, Instant::now());
 }
 
 /// The effective HUD aspect for the current frame. Used by the marker hook and panel VP, which run

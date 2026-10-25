@@ -1,13 +1,17 @@
 //! HUD controls, renderer-backed texture previews, and renderer-free published status readouts.
 
+use std::time::Instant;
+
 use parking_lot::Mutex;
 
 use crate::{
     config,
     hud::{
-        HUD_STATE,
+        HUD_STATE, StageSafeAreaReadout,
         config::{CropExtents, WristVisibility},
         scaleform::request_set_clip_visible,
+        stage_safe_area_readout,
+        world_markers::layout::StageFrame,
     },
 };
 
@@ -397,6 +401,9 @@ pub(crate) fn status(ui: &mut egui::Ui) {
     ui.heading("World markers");
     world_markers_status_ui(ui);
     ui.separator();
+    ui.heading("Stage safe area");
+    stage_safe_area_status_ui(ui);
+    ui.separator();
     ui.heading("HUD atlas");
     atlas_status_ui(ui);
     ui.separator();
@@ -404,113 +411,121 @@ pub(crate) fn status(ui: &mut egui::Ui) {
     ui.label(format!("State: {:?}", crate::pause_menu::state()));
 }
 
-/// The world-marker prototype's settings and its experimental safe-area probe.
+/// The world-marker prototype's settings and its experimental safe-area control.
 fn world_markers_ui(ui: &mut egui::Ui) {
     ui.collapsing("World markers (prototype)", |ui| {
-        {
-            let mut cfg = config::edit();
-            let m = &mut cfg.hud.world_markers;
-            ui.checkbox(
-                &mut m.enabled,
-                "Draw on-screen markers at their world points instead of on the panel",
-            );
-            ui.checkbox(
-                &mut m.classify_with_headset_fov,
-                "Classify on-screen markers with the headset's field of view",
-            );
-            ui.add(
-                egui::Slider::new(&mut m.fov_inset_deg, 0.0..=15.0)
-                    .text("Field-of-view inset (deg)"),
-            );
-            ui.add(
-                egui::Slider::new(&mut m.fallback_half_fov_deg, 20.0..=80.0)
-                    .text("Fallback half field of view, no headset (deg)"),
-            );
-            ui.checkbox(&mut m.hide_from_panel, "Cut the markers out of the panel");
-            ui.checkbox(
-                &mut m.surface_placement,
-                "Place markers on the nearest visible surface along the line of sight",
-            );
-            if m.surface_placement {
-                ui.indent("world_markers_surface", |ui| {
-                    ui.checkbox(
-                        &mut m.ray_fallback,
-                        "Raycast where no depth sample is available",
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut m.surface_pull_m, 0.0..=2.0)
-                            .text("Pull toward the eye (m)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut m.surface_min_m, 0.0..=5.0)
-                            .text("Ignore surfaces nearer than (m)"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut m.depth_halflife_s, 0.0..=1.0)
-                            .text("Distance smoothing halflife (s)"),
-                    );
-                });
-            }
-            ui.add(
-                egui::Slider::new(&mut m.max_distance_m, 10.0..=2000.0)
-                    .logarithmic(true)
-                    .text("Farthest placement (m)"),
-            );
-            ui.label("Crop around the clip origin (stage px)");
-            ui.indent("world_markers_crop", |ui| {
-                ui.add(egui::Slider::new(&mut m.crop.left, 0.0..=400.0).text("Left"));
-                ui.add(egui::Slider::new(&mut m.crop.right, 0.0..=400.0).text("Right"));
-                ui.add(egui::Slider::new(&mut m.crop.up, 0.0..=200.0).text("Up"));
-                ui.add(egui::Slider::new(&mut m.crop.down, 0.0..=200.0).text("Down"));
+        let mut cfg = config::edit();
+        let m = &mut cfg.hud.world_markers;
+        ui.checkbox(
+            &mut m.enabled,
+            "Draw on-screen markers at their world points instead of on the panel",
+        );
+        ui.checkbox(
+            &mut m.classify_with_headset_fov,
+            "Classify on-screen markers with the headset's field of view",
+        );
+        ui.add(
+            egui::Slider::new(&mut m.fov_inset_deg, 0.0..=15.0).text("Field-of-view inset (deg)"),
+        );
+        ui.add(
+            egui::Slider::new(&mut m.fallback_half_fov_deg, 20.0..=80.0)
+                .text("Fallback half field of view, no headset (deg)"),
+        );
+        ui.checkbox(&mut m.hide_from_panel, "Cut the markers out of the panel");
+        ui.checkbox(
+            &mut m.surface_placement,
+            "Place markers on the nearest visible surface along the line of sight",
+        );
+        if m.surface_placement {
+            ui.indent("world_markers_surface", |ui| {
+                ui.checkbox(
+                    &mut m.ray_fallback,
+                    "Raycast where no depth sample is available",
+                );
                 ui.add(
-                    egui::Slider::new(&mut m.label_extra_left, 0.0..=800.0)
-                        .text("Extra left for the labelled marker"),
+                    egui::Slider::new(&mut m.surface_pull_m, 0.0..=2.0)
+                        .text("Pull toward the eye (m)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut m.surface_min_m, 0.0..=5.0)
+                        .text("Ignore surfaces nearer than (m)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut m.depth_halflife_s, 0.0..=1.0)
+                        .text("Distance smoothing halflife (s)"),
                 );
             });
-            ui.checkbox(
-                &mut m.probe_stage_safe_area,
-                "EXPERIMENT: lay the gameplay HUD out inside the stage (atlas probe)",
+        }
+        ui.add(
+            egui::Slider::new(&mut m.max_distance_m, 10.0..=2000.0)
+                .logarithmic(true)
+                .text("Farthest placement (m)"),
+        );
+        ui.label("Crop around the clip origin (stage px)");
+        ui.indent("world_markers_crop", |ui| {
+            ui.add(egui::Slider::new(&mut m.crop.left, 0.0..=400.0).text("Left"));
+            ui.add(egui::Slider::new(&mut m.crop.right, 0.0..=400.0).text("Right"));
+            ui.add(egui::Slider::new(&mut m.crop.up, 0.0..=200.0).text("Up"));
+            ui.add(egui::Slider::new(&mut m.crop.down, 0.0..=200.0).text("Down"));
+            ui.add(
+                egui::Slider::new(&mut m.label_extra_left, 0.0..=800.0)
+                    .text("Extra left for the labelled marker"),
             );
-        }
-
-        ui.separator();
-        // The probe stays beside its experimental control because no published snapshot owns it.
-        // SAFETY: plain reads of the live UI manager's fields for display.
-        let probe = unsafe {
-            jc3gi::ui::ui_manager::UIManager::get().map(|m| {
-                (
-                    m.m_SafeArea,
-                    m.m_SafeAreaPercentage,
-                    glam::Vec2::new(m.m_CachedStageWidth, m.m_CachedStageHeight),
-                )
-            })
-        };
-        if let Some((safe, percentage, stage)) = probe {
-            let aspect = crate::hud::current_aspect();
-            ui.label(format!(
-                "Safe area ({:.0}, {:.0})-({:.0}, {:.0}), {:.0}% inset, stage {:.0}x{:.0}",
-                safe.x1,
-                safe.y1,
-                safe.x2,
-                safe.y2,
-                percentage * 100.0,
-                stage.x,
-                stage.y,
-            ));
-            if let Some(frame) = crate::hud::world_markers::layout::StageFrame::new(stage, aspect)
-            {
-                ui.label(format!(
-                    "Visible frame ({:.0}, {:.0}) {:.0}x{:.0} at aspect {aspect:.2}: band {:.0}                      stage px above and below the stage; the safe area reaches {:.0} px into the                      top band",
-                    frame.origin.x,
-                    frame.origin.y,
-                    frame.size.x,
-                    frame.size.y,
-                    frame.vertical_band(),
-                    (-safe.y1).max(0.0),
-                ));
-            }
-        }
+        });
+        ui.checkbox(
+            &mut m.probe_stage_safe_area,
+            "EXPERIMENT: lay the gameplay HUD out inside the stage (atlas probe)",
+        );
     });
+}
+
+fn stage_safe_area_status_ui(ui: &mut egui::Ui) {
+    let sample = match stage_safe_area_readout() {
+        StageSafeAreaReadout::Unavailable => {
+            ui.label("Unavailable: no main UI movie capture has published the stage safe area.");
+            return;
+        }
+        StageSafeAreaReadout::Busy => {
+            ui.label(
+                "Unavailable: the stage safe-area publication is busy; retry on the next frame.",
+            );
+            return;
+        }
+        StageSafeAreaReadout::Captured(sample) => sample,
+    };
+    let now = Instant::now();
+    ui.label(if sample.fresh(now) {
+        "Capture: recent main UI movie sample."
+    } else {
+        "Capture: stale; the main UI movie has not captured recently."
+    });
+    let Some(layout) = sample.layout else {
+        ui.label("Unavailable: the captured stage safe-area layout is invalid.");
+        return;
+    };
+    let [x1, y1, x2, y2] = layout.bounds;
+    ui.label(format!(
+        "Safe area ({x1:.0}, {y1:.0})-({x2:.0}, {y2:.0}), {:.0}% inset, stage {:.0}x{:.0}",
+        layout.percentage * 100.0,
+        layout.stage.x,
+        layout.stage.y,
+    ));
+    if let Some(frame) = StageFrame::new(layout.stage, layout.aspect) {
+        ui.label(format!(
+            "Visible frame ({:.0}, {:.0}) {:.0}x{:.0} at aspect {:.2}: band {:.0} \
+             stage px above and below the stage; the safe area reaches {:.0} px into the \
+             top band",
+            frame.origin.x,
+            frame.origin.y,
+            frame.size.x,
+            frame.size.y,
+            layout.aspect,
+            frame.vertical_band(),
+            (-y1).max(0.0),
+        ));
+    } else {
+        ui.label("Unavailable: the captured stage has no valid visible frame.");
+    }
 }
 
 fn world_markers_status_ui(ui: &mut egui::Ui) {

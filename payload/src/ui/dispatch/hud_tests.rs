@@ -1,10 +1,16 @@
 //! Renderer-free checks of the production HUD status route and the controls availability guard.
 
+use std::time::{Duration, Instant};
+
+use glam::Vec2;
+
 use super::*;
 use crate::{
     config,
     hud::{
-        HUD_STATE, anchored::status as anchored_status, atlas::status as atlas_status,
+        HUD_STATE, StageSafeArea, StageSafeAreaReadout, StageSafeAreaSample,
+        anchored::status as anchored_status, atlas::status as atlas_status,
+        stage_safe_area_readout, test_stage_safe_area,
         world_markers::status as world_markers_status,
     },
     pause_menu::state as pause_menu_state,
@@ -12,6 +18,7 @@ use crate::{
 
 #[test]
 fn actual_hud_status_reads_published_snapshots_without_a_renderer_or_actions() {
+    let _fixture = test_stage_safe_area::install(StageSafeAreaReadout::Unavailable);
     assert_eq!(route(FeatureId::Hud), FeatureRoute::Hud);
     assert!(HUD_STATE.lock().depth_status().is_none());
     assert!(world_markers_status().is_none());
@@ -45,6 +52,94 @@ fn actual_hud_status_reads_published_snapshots_without_a_renderer_or_actions() {
         assert_eq!(selection, original_selection);
         assert_eq!(hud_state(), before);
         assert_eq!(config::status(), save_status);
+    }
+}
+
+#[test]
+fn actual_hud_status_renders_owned_safe_area_samples_without_actions() {
+    let layout = StageSafeArea {
+        bounds: [32.0, -12.0, 1248.0, 702.0],
+        percentage: 0.05,
+        stage: Vec2::new(1280.0, 720.0),
+        aspect: 1.0,
+    };
+    let recent = Instant::now() + Duration::from_secs(3600);
+    let stale = Instant::now() - Duration::from_secs(5);
+    let values = [
+        "Safe area (32, -12)-(1248, 702), 5% inset, stage 1280x720",
+        "Visible frame (0, -280) 1280x1280 at aspect 1.00: band 280 stage px above and below \
+         the stage; the safe area reaches 12 px into the top band",
+    ];
+    for (readout, rows) in [
+        (
+            StageSafeAreaReadout::Busy,
+            vec!["Unavailable: the stage safe-area publication is busy; retry on the next frame."],
+        ),
+        (
+            StageSafeAreaReadout::Captured(StageSafeAreaSample::new(layout, recent)),
+            vec![
+                "Capture: recent main UI movie sample.",
+                values[0],
+                values[1],
+            ],
+        ),
+        (
+            StageSafeAreaReadout::Captured(StageSafeAreaSample::new(layout, stale)),
+            vec![
+                "Capture: stale; the main UI movie has not captured recently.",
+                values[0],
+                values[1],
+            ],
+        ),
+        (
+            StageSafeAreaReadout::Captured(StageSafeAreaSample::new(
+                StageSafeArea {
+                    stage: Vec2::ZERO,
+                    ..layout
+                },
+                recent,
+            )),
+            vec![
+                "Capture: recent main UI movie sample.",
+                "Unavailable: the captured stage safe-area layout is invalid.",
+            ],
+        ),
+    ] {
+        let _fixture = test_stage_safe_area::install(readout);
+        let before = hud_state();
+        let save_status = config::status();
+        let mut expected = unavailable_status_labels();
+        let start = expected
+            .iter()
+            .position(|text| text == "Stage safe area")
+            .unwrap()
+            + 1;
+        expected.splice(start..start + 1, rows.into_iter().map(str::to_owned));
+        let mut selection = NavigationState {
+            feature: FeatureId::Hud,
+            section: FeatureSection::Status,
+        };
+        let original_selection = selection;
+        for width in [420.0, 1100.0] {
+            let context = egui::Context::default();
+            let labels = hud_frame(&context, &mut selection, width, Vec::new());
+            assert_status_labels(&labels, &expected);
+            for (_, rect) in labels {
+                for pressed in [true, false] {
+                    let labels = hud_frame(
+                        &context,
+                        &mut selection,
+                        width,
+                        pointer_event(rect.center(), pressed),
+                    );
+                    assert_status_labels(&labels, &expected);
+                    assert_eq!(selection, original_selection);
+                    assert_eq!(hud_state(), before);
+                    assert_eq!(config::status(), save_status);
+                    assert_eq!(stage_safe_area_readout(), readout);
+                }
+            }
+        }
     }
 }
 
@@ -126,6 +221,8 @@ fn unavailable_status_labels() -> Vec<String> {
         "Live: not sampled yet".to_owned(),
         "World markers".to_owned(),
         "Not drawing (off, outside gameplay, or the panel is off).".to_owned(),
+        "Stage safe area".to_owned(),
+        "Unavailable: no main UI movie capture has published the stage safe area.".to_owned(),
         "HUD atlas".to_owned(),
         format!(
             "Moves {}, restores {}, move failures {}, restore failures {}, drift {}",
@@ -154,8 +251,6 @@ fn assert_status_labels(labels: &[(String, egui::Rect)], expected: &[String]) {
     for forbidden in [
         "Redirect HUD into our texture",
         "EXPERIMENT:",
-        "Safe area (",
-        "Visible frame (",
         "PARKED:",
         "VR pages in the pause menu",
         "Auto-configure split from display tree",

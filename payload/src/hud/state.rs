@@ -1,9 +1,9 @@
 //! The HUD-redirect state machine: it lazily creates the target, applies and relinquishes the rebind,
 //! owns the egui preview registration, and drives the lazy-follow damping for the floating panel.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use glam::{Quat, Vec3, Vec4};
+use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
@@ -18,6 +18,7 @@ use crate::hud::{
     split,
     target::HudTarget,
     warp::{HudWarp, WarpInputs},
+    world_markers::layout::StageFrame,
 };
 
 /// The per-frame inputs for the panel warp, chosen on eye 0.
@@ -46,6 +47,68 @@ pub(crate) struct AppliedRedirect {
 /// The applied redirect, or `None` while the HUD is not redirected.
 pub(crate) fn applied_redirect() -> Option<AppliedRedirect> {
     *APPLIED_REDIRECT.lock()
+}
+
+/// Owned UI layout values copied at the main movie's capture boundary.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct StageSafeArea {
+    pub bounds: [f32; 4],
+    pub percentage: f32,
+    pub stage: Vec2,
+    pub aspect: f32,
+}
+
+/// A main-movie capture sample; it contains no engine pointers or renderer resources.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct StageSafeAreaSample {
+    pub at: Instant,
+    pub layout: Option<StageSafeArea>,
+}
+
+/// Availability of the most recent safe-area publication.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum StageSafeAreaReadout {
+    Unavailable,
+    Busy,
+    Captured(StageSafeAreaSample),
+}
+
+impl StageSafeAreaSample {
+    pub(crate) fn new(layout: StageSafeArea, at: Instant) -> Self {
+        let [x1, y1, x2, y2] = layout.bounds;
+        let valid = layout.bounds.into_iter().all(f32::is_finite)
+            && x2 > x1
+            && y2 > y1
+            && layout.percentage.is_finite()
+            && layout.stage.is_finite()
+            && layout.stage.min_element() > 0.0
+            && layout.aspect.is_finite()
+            && layout.aspect > 0.0
+            && StageFrame::new(layout.stage, layout.aspect)
+                .is_some_and(|frame| frame.origin.is_finite() && frame.size.is_finite());
+        Self {
+            at,
+            layout: valid.then_some(layout),
+        }
+    }
+
+    pub(crate) fn fresh(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.at) < STAGE_SAFE_AREA_STALE
+    }
+}
+
+/// Publish only owned values from the main movie's capture boundary.
+pub(crate) fn publish_stage_safe_area(layout: StageSafeArea, at: Instant) {
+    *STAGE_SAFE_AREA.lock() = Some(StageSafeAreaSample::new(layout, at));
+}
+
+/// Copy the publication without waiting for the capture producer or accessing the engine.
+pub(crate) fn stage_safe_area_readout() -> StageSafeAreaReadout {
+    #[cfg(test)]
+    if let Some(readout) = test_stage_safe_area::readout() {
+        return readout;
+    }
+    copy_stage_safe_area(&STAGE_SAFE_AREA)
 }
 
 /// The live HUD-redirect state (render thread only, apart from the preview registration on the UI
@@ -680,3 +743,132 @@ impl HudState {
 
 /// The applied redirect, written by [`HudState`] on the render thread (a leaf lock).
 static APPLIED_REDIRECT: Mutex<Option<AppliedRedirect>> = Mutex::new(None);
+
+const STAGE_SAFE_AREA_STALE: Duration = Duration::from_secs(1);
+static STAGE_SAFE_AREA: Mutex<Option<StageSafeAreaSample>> = Mutex::new(None);
+
+fn copy_stage_safe_area(source: &Mutex<Option<StageSafeAreaSample>>) -> StageSafeAreaReadout {
+    match source.try_lock() {
+        Some(sample) => sample.map_or(
+            StageSafeAreaReadout::Unavailable,
+            StageSafeAreaReadout::Captured,
+        ),
+        None => StageSafeAreaReadout::Busy,
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_stage_safe_area {
+    use std::cell::Cell;
+
+    use super::*;
+
+    thread_local! {
+        static READOUT: Cell<Option<StageSafeAreaReadout>> = const { Cell::new(None) };
+    }
+
+    pub(crate) struct Fixture(Option<StageSafeAreaReadout>);
+
+    pub(crate) fn install(readout: StageSafeAreaReadout) -> Fixture {
+        Fixture(READOUT.replace(Some(readout)))
+    }
+
+    pub(super) fn readout() -> Option<StageSafeAreaReadout> {
+        READOUT.get()
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            READOUT.set(self.0);
+        }
+    }
+
+    #[test]
+    fn publication_copy_is_nonblocking_and_preserves_owned_samples() {
+        let source = Mutex::new(None);
+        assert_eq!(
+            copy_stage_safe_area(&source),
+            StageSafeAreaReadout::Unavailable
+        );
+        let sample = StageSafeAreaSample::new(layout(), Instant::now());
+        *source.lock() = Some(sample);
+        assert_eq!(
+            copy_stage_safe_area(&source),
+            StageSafeAreaReadout::Captured(sample)
+        );
+        let _guard = source.lock();
+        assert_eq!(copy_stage_safe_area(&source), StageSafeAreaReadout::Busy);
+    }
+
+    #[test]
+    fn capture_freshness_expires_at_the_boundary() {
+        let at = Instant::now();
+        let sample = StageSafeAreaSample::new(layout(), at);
+        assert!(sample.fresh(at));
+        assert!(sample.fresh(at + STAGE_SAFE_AREA_STALE - Duration::from_nanos(1)));
+        assert!(!sample.fresh(at + STAGE_SAFE_AREA_STALE));
+    }
+
+    #[test]
+    fn invalid_capture_values_do_not_publish_a_layout() {
+        let original = layout();
+        let invalid = [
+            StageSafeArea {
+                bounds: [f32::NAN, 0.0, 1.0, 1.0],
+                ..original
+            },
+            StageSafeArea {
+                bounds: [0.0, 0.0, 0.0, 1.0],
+                ..original
+            },
+            StageSafeArea {
+                bounds: [0.0, 1.0, 1.0, 0.0],
+                ..original
+            },
+            StageSafeArea {
+                percentage: f32::INFINITY,
+                ..original
+            },
+            StageSafeArea {
+                stage: Vec2::ZERO,
+                ..original
+            },
+            StageSafeArea {
+                stage: Vec2::splat(f32::NAN),
+                ..original
+            },
+            StageSafeArea {
+                aspect: 0.0,
+                ..original
+            },
+            StageSafeArea {
+                aspect: f32::INFINITY,
+                ..original
+            },
+            StageSafeArea {
+                aspect: f32::MIN_POSITIVE,
+                ..original
+            },
+        ];
+        for layout in invalid {
+            assert!(
+                StageSafeAreaSample::new(layout, Instant::now())
+                    .layout
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            StageSafeAreaSample::new(original, Instant::now()).layout,
+            Some(original)
+        );
+    }
+
+    fn layout() -> StageSafeArea {
+        StageSafeArea {
+            bounds: [32.0, 18.0, 1248.0, 702.0],
+            percentage: 0.05,
+            stage: Vec2::new(1280.0, 720.0),
+            aspect: 1.0,
+        }
+    }
+}
