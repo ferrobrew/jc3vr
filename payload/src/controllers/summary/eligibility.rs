@@ -107,7 +107,6 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
             Some(GrabVolume::WeaponAction) => Some(ModAction::WorkAction),
             Some(GrabVolume::GrenadePouch) => Some(ModAction::Grenade),
             Some(GrabVolume::C4Pouch) => Some(ModAction::C4),
-            Some(GrabVolume::ParachuteHandle(_)) => Some(ModAction::ParachuteHandles),
             _ => None,
         };
         if let Some(action) = action {
@@ -141,6 +140,16 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
 }
 
 fn mechanic_routing(row: &Row, routing: CurrentRouting) -> bool {
+    if row.effect == Effect::Mod(ModAction::PullParachuteHandle) {
+        return matches!(row.control, Control::Motion(_))
+            && row.gesture == Gesture::Press
+            && routing.allows(row.control, row.gesture);
+    }
+    if row.effect == Effect::Mod(ModAction::ParachuteHandles) {
+        return matches!(row.control, Control::Grip(_))
+            && row.gesture == Gesture::Press
+            && routing.allows(row.control, row.gesture);
+    }
     if row.effect == Effect::Mod(ModAction::OpenVehicleDoor) {
         return matches!(row.control, Control::Grip(_))
             && row.gesture == Gesture::Press

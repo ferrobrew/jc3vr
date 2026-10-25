@@ -83,7 +83,11 @@ pub use self::{
     },
     types::{ArmReadout, HandlesReadout, TickVolumes, VehicleSummary, VehiclesStatus},
 };
-pub(crate) use self::{begin::begin_tick, finish::finish_tick, state::stand_down};
+pub(crate) use self::{
+    begin::begin_tick,
+    finish::finish_tick,
+    state::{parachute_holds, stand_down},
+};
 
 /// The vehicles' hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {

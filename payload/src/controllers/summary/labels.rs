@@ -313,6 +313,7 @@ pub fn mod_action(action: ModAction) -> Text {
         ModAction::OpenVehicleDoor => ModText::OpenVehicleDoor,
         ModAction::WristDetonator => ModText::WristDetonator,
         ModAction::ParachuteHandles => ModText::ParachuteHandles,
+        ModAction::PullParachuteHandle => ModText::PullParachuteHandle,
         ModAction::ArmSteering => ModText::ArmSteering,
         ModAction::GestureDeploy => ModText::GestureDeploy,
         ModAction::GestureClose => ModText::GestureClose,
@@ -362,6 +363,7 @@ pub enum ModText {
     OpenVehicleDoor,
     WristDetonator,
     ParachuteHandles,
+    PullParachuteHandle,
     ArmSteering,
     GestureDeploy,
     GestureClose,
@@ -417,6 +419,7 @@ impl ModText {
             ModText::OpenVehicleDoor => "Open vehicle door",
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
+            ModText::PullParachuteHandle => "Pull down to steer; pull both handles to brake",
             ModText::ArmSteering => "Spread Arms: Lower One to Bank, Both to Dive, Raise to Climb",
             ModText::GestureDeploy => "Lower Both Arms, Then Hold Spread: Request Wingsuit Deploy",
             ModText::GestureClose => {

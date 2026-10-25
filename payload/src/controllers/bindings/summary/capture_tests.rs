@@ -4,6 +4,7 @@ use crate::controllers::{
 };
 
 mod doors;
+mod parachute;
 
 fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
     BeforeFinish {
@@ -12,6 +13,7 @@ fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
         foregrip: None,
         grenade: None,
         c4: None,
+        parachute: [None; 2],
     }
 }
 
@@ -52,6 +54,7 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
                 grapple: GrapplePermissions::default(),
                 yank: None,
                 flight: GestureAvailability::Deploy,
+                parachute: [None; 2],
             },
             owner_state(physical_guns),
             [false; 2],

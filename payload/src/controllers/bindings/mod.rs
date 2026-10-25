@@ -569,7 +569,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
         },
         interaction_scans,
     );
-    let summary_before = summary::BeforeFinish::capture();
+    let summary_before = summary::BeforeFinish::capture(vehicles::parachute_holds());
     let mut trigger_changed = [false; 2];
     let mut belt_reload = None;
     if !in_menu {
@@ -691,6 +691,7 @@ pub(crate) fn input_tick(dt: f32, poll: DevicePoll) -> InputTickOutput {
     let eligibility = summary::capture(summary::Refresh {
         sequence: frame.sequence,
         belt_reload,
+        parachute: vehicles::parachute_holds(),
         config: &config,
         owners: final_owners,
         ready: Hand::BOTH.map(|hand| !in_menu && state.recovery.ready(hand)),

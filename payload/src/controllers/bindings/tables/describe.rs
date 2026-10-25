@@ -207,6 +207,8 @@ pub enum ModAction {
     WristDetonator,
     /// Take a parachute handle, and pull it down to steer, or both to brake.
     ParachuteHandles,
+    /// Pull a held parachute handle down to steer or contribute to braking.
+    PullParachuteHandle,
     /// Spread the arms in the wingsuit and lower or raise them to bank, dive, and climb.
     ArmSteering,
     /// Lower both arms, then spread them to request wingsuit deployment.

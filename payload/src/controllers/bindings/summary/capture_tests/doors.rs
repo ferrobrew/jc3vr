@@ -65,6 +65,7 @@ fn capture_door_with_owner(
             grapple: GrapplePermissions::default(),
             yank: None,
             flight: GestureAvailability::Unavailable,
+            parachute: [None; 2],
         },
         current,
         [false; 2],

@@ -49,6 +49,16 @@ pub fn status() -> VehiclesStatus {
     STATE.lock().status.clone()
 }
 
+/// Copy current handle owners without reconstructing them from diagnostic booleans.
+pub(crate) fn parachute_holds() -> [Option<HandleHold>; 2] {
+    let state = STATE.lock();
+    if state.status.active && state.handles_on {
+        state.handles.holds
+    } else {
+        [None; 2]
+    }
+}
+
 /// How far the parachute's held handles brake, `0..=1`, as the last input tick read them: the
 /// share both are pulled past the brake threshold ([`parachute::steer`]). Zero while neither
 /// handle is held or the handles do not act. Takes the vehicle handling's lock briefly, so a caller

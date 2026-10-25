@@ -23,12 +23,14 @@ use crate::controllers::{
         late,
         tiers::{self, HandTier, TierState},
     },
-    mode::{Detection, Mode},
+    mode::{AirborneVariant, Detection, Mode},
     summary::{
         current::{CurrentRouting, TriggerUse},
         eligibility::Eligibility,
     },
-    vehicles::{physical::ControlKind, wingsuit_gestures::GestureAvailability},
+    vehicles::{
+        parachute::HandleHold, physical::ControlKind, wingsuit_gestures::GestureAvailability,
+    },
     weapons::{
         self,
         capabilities::{GunHand, GunOwner},
@@ -43,10 +45,11 @@ pub(super) struct BeforeFinish {
     foregrip: Option<(usize, Hand, bool)>,
     grenade: Option<Hand>,
     c4: Option<Hand>,
+    parachute: [Option<HandleHold>; 2],
 }
 
 impl BeforeFinish {
-    pub(super) fn capture() -> Self {
+    pub(super) fn capture(parachute: [Option<HandleHold>; 2]) -> Self {
         let guns = weapons::capabilities::gun_owners_now();
         Self {
             guns,
@@ -54,6 +57,7 @@ impl BeforeFinish {
             foregrip: foregrip_owner(),
             grenade: weapons::grenade::throwing_hand(),
             c4: weapons::c4::throwing_hand(),
+            parachute,
         }
     }
 }
@@ -72,9 +76,12 @@ pub(super) struct Refresh<'a> {
     pub grapple: GrapplePermissions,
     pub yank: Option<Hand>,
     pub flight: GestureAvailability,
+    /// The vehicle owner's active handle holds after finish, indexed by physical hand.
+    pub parachute: [Option<HandleHold>; 2],
 }
 
 pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
+    let parachute = input.parachute;
     let guns = weapons::capabilities::gun_owners_now();
     let reload = current_reload(guns);
     let fire = fire_ready(input.ready, input.config, guns);
@@ -92,6 +99,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
             foregrip: foregrip_owner(),
             grenade: weapons::grenade::throwing_hand(),
             c4: weapons::c4::throwing_hand(),
+            parachute,
         },
         fire,
         reload_permissions,
@@ -108,14 +116,13 @@ fn capture_current(
 ) -> Eligibility {
     let guns = current.guns;
     let reload = current.reload;
-    let chosen = retained_choices(
-        input.chosen,
-        input.grabs,
-        input.before.guns != guns,
-        reload_changed(&input.before.reload, &reload),
-        input.before.foregrip != current.foregrip,
-        input.before.grenade != current.grenade || input.before.c4 != current.c4,
-    );
+    let owners_changed = input.before.guns != guns
+        || reload_changed(&input.before.reload, &reload)
+        || input.before.foregrip != current.foregrip
+        || input.before.grenade != current.grenade
+        || input.before.c4 != current.c4
+        || input.before.parachute != current.parachute;
+    let chosen = retained_choices(input.chosen, input.grabs, owners_changed);
     let fires_guns = tables::triggers_fire_hand_weapons(input.owners[0].mode);
     let mut actions = Vec::new();
     if fire.contains(&true) && fires_guns {
@@ -148,6 +155,29 @@ fn capture_current(
     }
     for hand in Hand::BOTH {
         let i = hand.index();
+        if input.config.vehicles.parachute_handles.enabled
+            && input.owners[i].mode == Mode::Airborne(AirborneVariant::Parachute)
+            && input.ready[i]
+            && chosen[i] == Some(GrabVolume::ParachuteHandle(hand))
+            && let Some(target) = input.selected[i].filter(|target| {
+                target.volume == GrabVolume::ParachuteHandle(hand) && target.hand == Some(hand)
+            })
+        {
+            let action = match (target.held_by, current.parachute[i]) {
+                (None, None) => Some((Control::Grip(hand), ModAction::ParachuteHandles)),
+                (Some(holder), Some(_)) if holder == hand => {
+                    Some((Control::Motion(hand), ModAction::PullParachuteHandle))
+                }
+                _ => None,
+            };
+            if let Some((control, action)) = action {
+                mechanics.push(Row {
+                    control,
+                    gesture: Gesture::Press,
+                    effect: Effect::Mod(action),
+                });
+            }
+        }
         if doors[i]
             && input.ready[i]
             && chosen[i] == Some(GrabVolume::Pickup(PickupKind::Door))
@@ -313,12 +343,8 @@ fn foregrip_owner() -> Option<(usize, Hand, bool)> {
 fn retained_choices(
     chosen: [Option<GrabVolume>; 2],
     grabs: [Option<GrabVolume>; 2],
-    guns_changed: bool,
-    reload_changed: bool,
-    foregrip_changed: bool,
-    explosive_changed: bool,
+    changed: bool,
 ) -> [Option<GrabVolume>; 2] {
-    let changed = guns_changed || reload_changed || foregrip_changed || explosive_changed;
     Hand::BOTH.map(|hand| {
         let i = hand.index();
         // A finish grab can consume or replace its target, including an asynchronous pickup.
@@ -427,7 +453,7 @@ mod tests {
 
     use super::*;
     use crate::controllers::{
-        mode::{AirborneVariant, OnFootVariant, Traversal, VehicleClass, VehicleSeat},
+        mode::{OnFootVariant, Traversal, VehicleClass, VehicleSeat},
         weapons::{
             capabilities::NativePair,
             reload::{
@@ -580,14 +606,7 @@ mod tests {
             assert_eq!(flick_ready(&after, guns, hand), !successful);
             assert_eq!(reload_changed(&before, &after), successful);
             assert_eq!(
-                retained_choices(
-                    chosen,
-                    [None; 2],
-                    false,
-                    reload_changed(&before, &after),
-                    false,
-                    false
-                )[i],
+                retained_choices(chosen, [None; 2], reload_changed(&before, &after))[i],
                 if successful { None } else { chosen[i] },
             );
         }
@@ -679,32 +698,10 @@ mod tests {
     fn consumed_and_changed_choices_wait_for_the_next_provider_pass() {
         let chosen = [Some(GrabVolume::MagazinePouch), Some(GrabVolume::Foregrip)];
         assert_eq!(
-            retained_choices(
-                chosen,
-                [Some(GrabVolume::MagazinePouch), None],
-                false,
-                false,
-                false,
-                false
-            ),
+            retained_choices(chosen, [Some(GrabVolume::MagazinePouch), None], false),
             [None, chosen[1]],
         );
-        for changed in 0..4 {
-            assert_eq!(
-                retained_choices(
-                    chosen,
-                    [None; 2],
-                    changed == 0,
-                    changed == 1,
-                    changed == 2,
-                    changed == 3
-                ),
-                [None; 2],
-            );
-        }
-        assert_eq!(
-            retained_choices(chosen, [None; 2], false, false, false, false),
-            chosen
-        );
+        assert_eq!(retained_choices(chosen, [None; 2], true), [None; 2]);
+        assert_eq!(retained_choices(chosen, [None; 2], false), chosen);
     }
 }
