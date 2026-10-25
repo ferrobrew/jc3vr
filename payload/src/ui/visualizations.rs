@@ -1,10 +1,19 @@
 //! Shared visualization switches, known draw blockers, and the global drawer.
 
 use egui::Ui;
+use parking_lot::Mutex;
 
 use crate::{
     config::{self, Config},
-    controllers::{config::GunReadout, overlay, scheme},
+    controllers::{
+        config::GunReadout,
+        overlay::{
+            self,
+            primitive::Source,
+            store::{self, SourceMask},
+        },
+        scheme,
+    },
     ui::catalog::FeatureId,
 };
 
@@ -63,6 +72,9 @@ impl Snapshot {
         if !id.requested(&self.config) {
             return ViewState::Off;
         }
+        if self.runtime.temporarily_hidden {
+            return ViewState::Blocked(Blocker::TemporaryHide);
+        }
         if !self.config.controllers.enabled {
             return ViewState::Blocked(Blocker::Controllers);
         }
@@ -92,7 +104,8 @@ pub(crate) fn snapshot() -> Snapshot {
         controllers_scheme: scheme::is_controllers(),
         gameplay: crate::hooks::in_gameplay(),
         cinematic: crate::director::cinematic::active(),
-        overlay_error: overlay::status().error,
+        temporarily_hidden: TEMPORARY_HIDE.lock().requested_at_hide.is_some(),
+        overlay: overlay::status(),
     };
     Snapshot { config, runtime }
 }
@@ -145,10 +158,7 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot, feature: Option<Feature
             ui.separator();
             ui.collapsing("Shared overlay settings", |ui| shared_settings(ui, snapshot, &mut edits));
             ui.separator();
-            ui.add_enabled(false, egui::Button::new("Hide active views"))
-                .on_hover_text("Unavailable: temporary runtime suppression is not implemented. Saved switches are not changed.");
-            ui.add_enabled(false, egui::Button::new("Restore views"));
-            ui.small("Temporary Hide/Restore is unfinished. No saved switches are used as a substitute.");
+            temporary_controls(ui, snapshot);
             ui.small("Preview, HUD, sight/scope, and performance tools remain in their existing feature editors. Opening this drawer does not activate their capture or scan work.");
         });
     if !edits.is_empty() {
@@ -174,6 +184,24 @@ enum ViewId {
 }
 
 impl ViewId {
+    fn source(self) -> Source {
+        match self {
+            Self::BodyMirror => Source::BodyMirror,
+            Self::ControllerGizmos => Source::DebugGizmos,
+            Self::GhostHands => Source::GhostHands,
+            Self::GripMarkers => Source::GrabMarkers,
+            Self::GrappleHighlight => Source::GrappleHighlight,
+            Self::GrappleBeam => Source::GrappleBeam,
+            Self::GrabView
+            | Self::GrabRays
+            | Self::GrabTargets
+            | Self::GrabWrist
+            | Self::GrabRefusals
+            | Self::GrabCandidates => Source::GrabView,
+            Self::ColliderView => Source::ColliderView,
+        }
+    }
+
     fn requested(self, config: &Config) -> bool {
         let overlay = &config.controllers.overlay;
         let grab = &config.controllers.physical_hands.grab_view;
@@ -338,12 +366,86 @@ const ENTRIES: &[Entry] = &[
     },
 ];
 
+#[derive(Clone, Copy)]
+struct RequestedViews([Option<ViewId>; ENTRIES.len()]);
+
+impl RequestedViews {
+    fn capture(config: &Config) -> Self {
+        Self(std::array::from_fn(|index| {
+            let id = ENTRIES[index].id;
+            id.requested(config).then_some(id)
+        }))
+    }
+
+    fn count(self) -> usize {
+        self.0.iter().flatten().count()
+    }
+}
+
+#[derive(Default)]
+struct TemporaryHide {
+    requested_at_hide: Option<RequestedViews>,
+}
+
+impl TemporaryHide {
+    fn hide(&mut self, config: &Config) -> SourceMask {
+        self.requested_at_hide
+            .get_or_insert_with(|| RequestedViews::capture(config));
+        let mut mask = SourceMask::NONE;
+        for entry in ENTRIES {
+            mask.insert(entry.id.source());
+        }
+        mask
+    }
+
+    fn restore(&mut self) -> SourceMask {
+        self.requested_at_hide = None;
+        SourceMask::NONE
+    }
+}
+
+static TEMPORARY_HIDE: Mutex<TemporaryHide> = Mutex::new(TemporaryHide {
+    requested_at_hide: None,
+});
+
+fn temporary_controls(ui: &mut Ui, snapshot: &Snapshot) {
+    let requested_at_hide = TEMPORARY_HIDE.lock().requested_at_hide;
+    let hidden = requested_at_hide.is_some();
+    if ui
+        .add_enabled(
+            !hidden,
+            egui::Button::new("Hide registered views (including Gameplay cues)"),
+        )
+        .on_hover_text("Suppress only this inventory's rendered output. Saved switches, producers, grip, and grapple behavior remain unchanged.")
+        .clicked()
+    {
+        let mask = TEMPORARY_HIDE.lock().hide(&snapshot.config);
+        store::set_source_mask(mask);
+    }
+    if ui
+        .add_enabled(hidden, egui::Button::new("Restore registered views"))
+        .clicked()
+    {
+        let mask = TEMPORARY_HIDE.lock().restore();
+        store::set_source_mask(mask);
+    }
+    if let Some(requested) = requested_at_hide {
+        ui.small(format!(
+            "Temporarily hidden: all registered output, including Gameplay cues. {} switches were requested at Hide; this is not a draw count.",
+            requested.count()
+        ));
+    }
+    ui.small("Hide also covers switches enabled while hidden. It lasts until Restore or payload teardown; closing this drawer does not restore output. Restore keeps configuration edits made while hidden.");
+    ui.small("Gun readout, sight tuning, physical-hand geometry, magazine pips, and other non-inventory output remain unchanged.");
+}
+
 #[derive(Default)]
 struct Runtime {
     controllers_scheme: bool,
     gameplay: bool,
     cinematic: bool,
-    overlay_error: Option<String>,
+    temporarily_hidden: bool,
+    overlay: overlay::OverlayStatus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -367,6 +469,7 @@ impl ViewState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Blocker {
+    TemporaryHide,
     Controllers,
     Overlay,
     GrabView,
@@ -378,6 +481,7 @@ enum Blocker {
 impl Blocker {
     fn label(self) -> &'static str {
         match self {
+            Self::TemporaryHide => "Requested; temporarily hidden until Restore.",
             Self::Controllers => "Requested; blocked: controllers are disabled.",
             Self::Overlay => "Requested; blocked: the world-space overlay is disabled.",
             Self::GrabView => "Requested; blocked: the grab view is disabled.",
@@ -494,7 +598,16 @@ fn shared_settings(ui: &mut Ui, snapshot: &Snapshot, edits: &mut Vec<Edit>) {
     {
         edits.push(Edit::XrayAlpha(overlay.xray_alpha));
     }
-    if let Some(error) = &snapshot.runtime.overlay_error {
+    let status = &snapshot.runtime.overlay;
+    ui.label(format!(
+        "Last overlay snapshot, all sources: {} retained primitives; {} collected after suppression and the cap; {} temporarily suppressed; {} uploaded per eye.",
+        status.counts.iter().sum::<usize>(),
+        status.visible_counts.iter().sum::<usize>(),
+        status.suppressed_counts.iter().sum::<usize>(),
+        status.drawn,
+    ));
+    ui.small("These are last-reported primitive counts, not active-view counts or proof of a current draw.");
+    if let Some(error) = &status.error {
         ui.label(format!("Last overlay pipeline error (retained diagnostic; does not indicate current draw status): {error}"));
     }
 }

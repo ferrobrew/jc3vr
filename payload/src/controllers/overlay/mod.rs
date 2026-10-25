@@ -57,8 +57,12 @@ use crate::{
 /// The overlay's readout for the debug UI.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct OverlayStatus {
-    /// Each source's live primitives at the last snapshot, indexed by [`Source::index`].
+    /// Each source's live retained primitives before suppression and the cap, at the last snapshot.
     pub counts: [usize; Source::COUNT],
+    /// Each source's primitives collected after suppression and the cap, before resolution.
+    pub visible_counts: [usize; Source::COUNT],
+    /// Each source's live primitives omitted by the temporary output mask, before the cap.
+    pub suppressed_counts: [usize; Source::COUNT],
     /// The primitives drawn per eye in the last frame.
     pub drawn: u32,
     /// Frames the overlay drew anything in, since the payload loaded.
@@ -129,7 +133,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     };
 
     if let Some(frame) = frame {
-        let counts = store::snapshot(&mut state.primitives);
+        let collection = store::snapshot(&mut state.primitives);
         match frame {
             Some(frame) => {
                 resolve::resolve(&state.primitives, &frame, &mut state.packed);
@@ -139,7 +143,9 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
         }
         let uploaded = renderer.upload(d3d, context, &state.packed);
         let mut status = STATUS.lock();
-        status.counts = counts;
+        status.counts = collection.retained;
+        status.visible_counts = collection.visible;
+        status.suppressed_counts = collection.suppressed;
         status.drawn = renderer.count();
         if renderer.count() > 0 {
             status.frames += 1;
@@ -188,6 +194,8 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 static STATUS: Mutex<OverlayStatus> = Mutex::new(OverlayStatus {
     counts: [0; Source::COUNT],
+    visible_counts: [0; Source::COUNT],
+    suppressed_counts: [0; Source::COUNT],
     drawn: 0,
     frames: 0,
     error: None,

@@ -164,7 +164,7 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
     config.controllers.overlay.debug_gizmos = true;
     let before = serialized(&config);
     let mut snapshot = snapshot_with(config);
-    snapshot.runtime.overlay_error = Some("previous draw failure".to_owned());
+    snapshot.runtime.overlay.error = Some("previous draw failure".to_owned());
 
     assert_eq!(
         snapshot.state(ViewId::ControllerGizmos),
@@ -175,6 +175,130 @@ fn retained_overlay_error_does_not_block_requested_visualizations() {
     assert_eq!(snapshot.summary().draw_unverified, 1);
     assert_eq!(snapshot.summary().active_count(), None);
     assert_eq!(serialized(&snapshot.config), before);
+}
+
+#[test]
+fn the_inventory_maps_every_switch_to_the_exact_eight_output_sources() {
+    let expected = [
+        (ViewId::BodyMirror, Source::BodyMirror),
+        (ViewId::ControllerGizmos, Source::DebugGizmos),
+        (ViewId::GhostHands, Source::GhostHands),
+        (ViewId::GripMarkers, Source::GrabMarkers),
+        (ViewId::GrappleHighlight, Source::GrappleHighlight),
+        (ViewId::GrappleBeam, Source::GrappleBeam),
+        (ViewId::GrabView, Source::GrabView),
+        (ViewId::GrabRays, Source::GrabView),
+        (ViewId::GrabTargets, Source::GrabView),
+        (ViewId::GrabWrist, Source::GrabView),
+        (ViewId::GrabRefusals, Source::GrabView),
+        (ViewId::GrabCandidates, Source::GrabView),
+        (ViewId::ColliderView, Source::ColliderView),
+    ];
+    assert_eq!(ENTRIES.len(), 13);
+    assert_eq!(expected.len(), ENTRIES.len());
+    for (id, source) in expected {
+        assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
+        assert_eq!(id.source(), source);
+    }
+    assert_eq!(
+        ENTRIES
+            .iter()
+            .filter(|entry| entry.id.source() == Source::GrabView)
+            .count(),
+        6
+    );
+    let config = Config::new();
+    let mask = TemporaryHide::default().hide(&config);
+    assert_eq!(
+        Source::ALL
+            .into_iter()
+            .filter(|source| mask.contains(*source))
+            .count(),
+        8
+    );
+    for source in Source::ALL {
+        assert_eq!(
+            mask.contains(source),
+            expected.iter().any(|(_, mapped)| *mapped == source)
+        );
+    }
+}
+
+#[test]
+fn hide_and_restore_leave_configuration_and_intervening_edits_unchanged() {
+    let mut config = Config::new();
+    for entry in ENTRIES {
+        entry.id.set(&mut config, false);
+    }
+    ViewId::BodyMirror.set(&mut config, true);
+    let before_hide = serialized(&config);
+    let mut temporary = TemporaryHide::default();
+    let mask = temporary.hide(&config);
+    assert_eq!(serialized(&config), before_hide);
+    assert_eq!(
+        temporary.requested_at_hide.expect("hide snapshot").count(),
+        1
+    );
+    assert!(mask.contains(Source::BodyMirror));
+    assert!(mask.contains(Source::ColliderView));
+    apply_edits(
+        &mut config,
+        &[
+            Edit::Switch(ViewId::BodyMirror, false),
+            Edit::Switch(ViewId::ColliderView, true),
+            Edit::GunReadout(GunReadout::Laser),
+        ],
+    );
+    let after_edit = serialized(&config);
+    assert_eq!(
+        temporary
+            .requested_at_hide
+            .expect("retained hide snapshot")
+            .count(),
+        1
+    );
+    assert!(mask.contains(ViewId::ColliderView.source()));
+    assert!(!mask.contains(Source::GunReadout));
+    let restored = temporary.restore();
+    assert_eq!(restored, SourceMask::NONE);
+    assert!(temporary.requested_at_hide.is_none());
+    assert_eq!(serialized(&config), after_edit);
+    assert!(!ViewId::BodyMirror.requested(&config));
+    assert!(ViewId::ColliderView.requested(&config));
+}
+
+#[test]
+fn requested_at_hide_is_diagnostic_and_new_requests_remain_hidden() {
+    let mut config = Config::new();
+    for entry in ENTRIES {
+        entry.id.set(&mut config, false);
+    }
+    let mut temporary = TemporaryHide::default();
+    let mask = temporary.hide(&config);
+    assert_eq!(
+        temporary
+            .requested_at_hide
+            .expect("empty request snapshot")
+            .count(),
+        0
+    );
+    ViewId::GrappleBeam.set(&mut config, true);
+    assert_eq!(temporary.hide(&config), mask);
+    assert_eq!(
+        temporary
+            .requested_at_hide
+            .expect("original request snapshot")
+            .count(),
+        0
+    );
+    let mut snapshot = snapshot_with(config);
+    snapshot.runtime.temporarily_hidden = true;
+    assert_eq!(
+        snapshot.state(ViewId::GrappleBeam),
+        ViewState::Blocked(Blocker::TemporaryHide)
+    );
+    assert_eq!(snapshot.summary().blocked, 1);
+    assert_eq!(snapshot.summary().draw_unverified, 0);
 }
 
 #[test]
