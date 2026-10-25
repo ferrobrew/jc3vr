@@ -332,55 +332,61 @@ fn update() {
             .lock()
             .ensure_eye_targets();
 
-        if let Some(egui_state) = EguiState::get().as_mut() {
-            // The debug UI runs holding the egui state lock, which the draw task also takes, so
-            // nothing in it may block on the VR runtime lock (see `crate::thread_role`).
-            let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
-            // While the F10 capture mode is active, keep input with the game rather than letting
-            // this toggle hand it to egui. The overlay itself is hidden by skipping
-            // `egui_state.render()` in `graphics_flip` while capture is active.
-            if util::is_pressed(VK_F6) && !crate::capture::is_active() {
-                egui_state.toggle_game_input_capture();
-            }
-
-            // Drive the egui UI as the VR floating panel when a session is running and the panel is
-            // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
-            // the desktop mouse or a controller onto the panel surface. Off, this is `None` and the
-            // flat overlay path is unchanged.
-            let panel_size = crate::hud::egui_panel::active_size();
-            egui_state.set_panel_mode(panel_size);
-            match panel_size {
-                Some(size) => {
-                    egui_state.push_events(crate::hud::pointer::egui_panel_events(size));
+        {
+            let mut egui_state_guard = EguiState::get();
+            if let Some(egui_state) = egui_state_guard.as_mut() {
+                // The debug UI runs holding the egui state lock, which the draw task also takes, so
+                // nothing in it may block on the VR runtime lock (see `crate::thread_role`).
+                let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
+                // While the F10 capture mode is active, keep input with the game rather than letting
+                // this toggle hand it to egui. The overlay itself is hidden by skipping
+                // `egui_state.render()` in `graphics_flip` while capture is active.
+                if util::is_pressed(VK_F6) && !crate::capture::is_active() {
+                    egui_state.toggle_game_input_capture();
                 }
-                None => crate::hud::pointer::reset_egui_pointer(),
-            }
 
-            let visible = debug_ui_visible(panel_size.is_some());
-            egui_state.run(|ctx, renderer| {
-                crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
-                // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
-                // registrations for surfaces the render thread created without a renderer. The eye
-                // captures themselves are prepared above, off this path.
-                ui::render::EGUI_DEBUG_RENDER_STATE
-                    .lock()
-                    .prepare_if_necessary(renderer);
-                // Laying out and tessellating the debug window is the bulk of this pass, and
-                // nothing would draw its output while every surface that shows it is off.
-                if !visible {
-                    return;
+                // Drive the egui UI as the VR floating panel when a session is running and the panel is
+                // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
+                // the desktop mouse or a controller onto the panel surface. Off, this is `None` and the
+                // flat overlay path is unchanged.
+                let panel_size = crate::hud::egui_panel::active_size();
+                egui_state.set_panel_mode(panel_size);
+                match panel_size {
+                    Some(size) => {
+                        egui_state.push_events(crate::hud::pointer::egui_panel_events(size));
+                    }
+                    None => crate::hud::pointer::reset_egui_pointer(),
                 }
-                ui::startup_banner(ctx);
-                ui::restart_banner(ctx);
-                // The dock area fills whatever space the window gives it, so the window carries an
-                // explicit default size instead of auto-sizing to content.
-                egui::Window::new("Debug")
-                    .default_pos(egui::pos2(0.0, 0.0))
-                    .default_size(egui::vec2(760.0, 560.0))
-                    .resizable(true)
-                    .show(ctx, |ui| ui::egui_debug_window(ui, renderer));
-            });
+
+                let visible = debug_ui_visible(panel_size.is_some());
+                egui_state.run(|ctx, renderer| {
+                    crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
+                    // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
+                    // registrations for surfaces the render thread created without a renderer. The eye
+                    // captures themselves are prepared above, off this path.
+                    ui::render::EGUI_DEBUG_RENDER_STATE
+                        .lock()
+                        .prepare_if_necessary(renderer);
+                    // Laying out and tessellating the debug window is the bulk of this pass, and
+                    // nothing would draw its output while every surface that shows it is off.
+                    if !visible {
+                        return;
+                    }
+                    ui::startup_banner(ctx);
+                    ui::restart_banner(ctx);
+                    // The dock area fills whatever space the window gives it, so the window carries an
+                    // explicit default size instead of auto-sizing to content.
+                    egui::Window::new("Debug")
+                        .default_pos(egui::pos2(0.0, 0.0))
+                        .default_size(egui::vec2(760.0, 560.0))
+                        .resizable(true)
+                        .show(ctx, |ui| ui::egui_debug_window(ui, renderer));
+                });
+            }
         }
+
+        // The UI callbacks and their layout guards, then egui_state_guard, end before disk I/O.
+        controllers::physical_hands::pickup::diagnostics::export::service_pending();
 
         // After the debug UI, whose controls are the most frequent edits, and outside its lock.
         config::tick();

@@ -21,8 +21,17 @@ use crate::{
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
-    ui.collapsing("Grip acquisition evidence (read-only)", |ui| {
+    ui.collapsing("Grip acquisition evidence", |ui| {
         let evidence = diagnostics::status();
+        save_evidence_button(ui, evidence, diagnostics::export::requests());
+        let saved = diagnostics::export::status();
+        if let Some(path) = saved.last_path {
+            ui.label(format!("Saved grip acquisition evidence: {}", path.display()));
+        }
+        if let Some(error) = saved.last_error {
+            ui.label(error);
+        }
+        ui.small("Save queues one copied snapshot for a synchronous write after the UI guards are released. A second pending request is rejected. It adds no engine reads or recording. Snapshot identities do not correlate video frames or clocks.");
         ui.small("Retained observations identify acquisition stages. Missing provider data is not a scan miss. Drive commands and write results are not post-step motion or proof of an overwrite.");
         for hand in Hand::BOTH {
             let observed = &evidence.hands[hand.index()];
@@ -302,6 +311,27 @@ pub(super) fn impact_sounds_readout(ui: &mut Ui, status: &SoundsStatus) {
     ));
 }
 
+fn save_evidence_button(
+    ui: &mut Ui,
+    evidence: diagnostics::Status,
+    requests: &diagnostics::export::SaveRequests,
+) -> egui::Response {
+    let response = ui.button("Save grip acquisition evidence");
+    if response.clicked() {
+        match requests.request(evidence) {
+            diagnostics::export::RequestResult::Queued => {
+                ui.label("Grip acquisition evidence save queued.");
+            }
+            diagnostics::export::RequestResult::AlreadyPending => {
+                ui.label(
+                    "Grip acquisition evidence save rejected: an earlier snapshot is pending.",
+                );
+            }
+        }
+    }
+    response
+}
+
 fn vault_settings(ui: &mut Ui, v: &mut VaultConfig) {
     ui.checkbox(
         &mut v.enabled,
@@ -427,4 +457,75 @@ fn sounds_settings(ui: &mut Ui, s: &mut ImpactSoundsConfig) {
     ui.add(egui::Slider::new(&mut s.min_strike_share, 0.0..=1.0).text("Weakest sounding strike"));
     ui.add(egui::Slider::new(&mut s.hand_cooldown_s, 0.0..=2.0).text("Hand cooldown (s)"));
     ui.add(egui::Slider::new(&mut s.min_interval_s, 0.0..=1.0).text("Shared interval (s)"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::{capture::PanelMode, edit_boundary};
+
+    #[test]
+    fn evidence_save_button_only_enqueues_and_obeys_the_existing_edit_boundary() {
+        for mode in [PanelMode::Editing, PanelMode::ReadOnly] {
+            let context = egui::Context::default();
+            let editing = mode == PanelMode::Editing;
+            let requests = diagnostics::export::SaveRequests::new();
+            let evidence = diagnostics::status();
+            let before_save = diagnostics::export::status();
+            let mut rectangle = egui::Rect::NOTHING;
+            let mut clicks = 0;
+            let mut frame = |time, events| {
+                let _ = context.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 500.0),
+                        )),
+                        time: Some(time),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        edit_boundary(ui, editing, |ui| {
+                            let response = save_evidence_button(ui, evidence, &requests);
+                            rectangle = response.rect;
+                            assert_eq!(response.enabled(), editing);
+                            clicks += usize::from(response.clicked());
+                        });
+                    },
+                );
+                rectangle.center()
+            };
+            let centre = frame(1.0, Vec::new());
+            frame(1.1, vec![egui::Event::PointerMoved(centre)]);
+            frame(
+                1.2,
+                vec![egui::Event::PointerButton {
+                    pos: centre,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                }],
+            );
+            frame(
+                1.3,
+                vec![egui::Event::PointerButton {
+                    pos: centre,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                }],
+            );
+            assert_eq!(clicks, usize::from(editing));
+            assert_eq!(
+                diagnostics::export::status(),
+                before_save,
+                "clicking must not run the saver"
+            );
+            let mut saved = None;
+            requests.service_with(|snapshot| saved = Some(snapshot));
+            assert_eq!(saved, editing.then_some(evidence));
+            requests.service_with(|_| panic!("the click queues only one snapshot"));
+        }
+    }
 }

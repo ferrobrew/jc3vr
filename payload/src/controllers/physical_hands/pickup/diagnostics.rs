@@ -3,6 +3,7 @@
 //! Records contain copied observations only. Missing provider identity is distinct from a provider
 //! reporting no target. The leaf slot never logs and never calls an engine reader.
 
+pub(crate) mod export;
 pub(crate) mod scan;
 #[cfg(test)]
 mod tests;

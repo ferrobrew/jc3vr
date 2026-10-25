@@ -53,6 +53,11 @@ pub fn subdir(name: &str) -> Option<Result<PathBuf, std::io::Error>> {
     Some(std::fs::create_dir_all(&dir).map(|_| dir))
 }
 
+/// Copy this session's output path without creating it, for artifact provenance and I/O errors.
+pub(crate) fn output_root() -> Option<PathBuf> {
+    root().cloned()
+}
+
 /// This session's output root: `sessions/<local-timestamp>/` beside the payload DLL, or `None` if the
 /// DLL path could not be resolved. Resolved once on first access and cached, so the timestamp is the
 /// run's start time regardless of which artifact writes first. Computing the path does not create it.
