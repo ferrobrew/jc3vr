@@ -9,7 +9,7 @@ use crate::controllers::loadout::{
     ObjectAddress, WeaponType,
     lifecycle_ammo::GunAmmo,
     lifecycle_source::{
-        ActorKey, Generation, Member, Offering, RequestBook, ReturnedActor, SourceKey,
+        ActorKey, Generation, Member, Offering, RequestBook, ReturnedActor, SourceError, SourceKey,
     },
     spawn_transport::{
         controlled::{Error, Limits, Quiescent, Transport},
@@ -163,6 +163,125 @@ fn queued_cancellation_never_submits_and_never_reuses_request_identity() {
 }
 
 #[test]
+fn queued_wrong_epoch_cancellation_preserves_book_counts_and_next_commands() {
+    let mut transport = transport(limits(), 8);
+    let mut engine = ControlledEngine::default();
+    let ticket = transport.begin(key(1), Member::First).unwrap();
+    let before = transport.status();
+    let commands = (
+        engine.spawned.clone(),
+        engine.cancelled.clone(),
+        engine.cleanup.clone(),
+        engine.released.clone(),
+    );
+    let wrong_epoch = Ticket {
+        epoch: Epoch(ticket.epoch.0 + 1),
+        ..ticket
+    };
+    assert_eq!(
+        transport.cancel(wrong_epoch),
+        Err(Error::Source(SourceError::UnknownRequest))
+    );
+    assert_eq!(transport.status(), before);
+    assert_eq!(
+        (
+            &engine.spawned,
+            &engine.cancelled,
+            &engine.cleanup,
+            &engine.released
+        ),
+        (&commands.0, &commands.1, &commands.2, &commands.3)
+    );
+    service(&mut transport, &mut engine);
+    assert_eq!(transport.status(), before);
+    assert_eq!(engine.spawned, vec![ticket]);
+    assert!(engine.cancelled.is_empty());
+    assert!(engine.cleanup.is_empty());
+    assert!(engine.released.is_empty());
+    transport.cancel(ticket).unwrap();
+    service(&mut transport, &mut engine);
+    assert_eq!(engine.cancelled, vec![ticket]);
+    assert_eq!(transport.status().request_book.outstanding_requests, 0);
+}
+
+#[test]
+fn submitted_wrong_epoch_cancellation_preserves_book_counts_and_next_commands() {
+    let mut transport = transport(limits(), 8);
+    let mut engine = ControlledEngine::default();
+    let ticket = transport.begin(key(1), Member::First).unwrap();
+    service(&mut transport, &mut engine);
+    let before = transport.status();
+    let commands = (
+        engine.spawned.clone(),
+        engine.cancelled.clone(),
+        engine.cleanup.clone(),
+        engine.released.clone(),
+    );
+    let wrong_epoch = Ticket {
+        epoch: Epoch(ticket.epoch.0 + 1),
+        ..ticket
+    };
+    assert_eq!(
+        transport.cancel(wrong_epoch),
+        Err(Error::Source(SourceError::UnknownRequest))
+    );
+    assert_eq!(transport.status(), before);
+    service(&mut transport, &mut engine);
+    assert_eq!(transport.status(), before);
+    assert_eq!(
+        (
+            &engine.spawned,
+            &engine.cancelled,
+            &engine.cleanup,
+            &engine.released
+        ),
+        (&commands.0, &commands.1, &commands.2, &commands.3)
+    );
+    transport.cancel(ticket).unwrap();
+    service(&mut transport, &mut engine);
+    assert_eq!(engine.spawned, vec![ticket]);
+    assert_eq!(engine.cancelled, vec![ticket]);
+    assert_eq!(transport.status().request_book.outstanding_requests, 0);
+}
+
+#[test]
+fn exact_stored_cancellation_tickets_remain_valid_after_reset() {
+    for submitted in [false, true] {
+        let mut transport = transport(limits(), 8);
+        let mut engine = ControlledEngine::default();
+        let ticket = transport.begin(key(1), Member::First).unwrap();
+        if submitted {
+            service(&mut transport, &mut engine);
+        }
+        transport.reset().unwrap();
+        assert_ne!(ticket.epoch, transport.status().epoch);
+        let before = transport.status();
+        assert_eq!(
+            transport.cancel(Ticket {
+                epoch: transport.status().epoch,
+                ..ticket
+            }),
+            Err(Error::Source(SourceError::UnknownRequest))
+        );
+        assert_eq!(transport.status(), before);
+        transport.cancel(ticket).unwrap();
+        service(&mut transport, &mut engine);
+        assert_eq!(
+            engine.spawned,
+            if submitted { vec![ticket] } else { vec![] }
+        );
+        assert_eq!(
+            engine.cancelled,
+            if submitted { vec![ticket] } else { vec![] }
+        );
+        assert!(engine.cleanup.is_empty());
+        assert!(engine.released.is_empty());
+        assert_eq!(transport.status().request_book.outstanding_requests, 0);
+        assert!(transport.drained());
+    }
+}
+
+#[test]
 fn cancellation_acknowledges_only_after_its_later_service_returns() {
     let mut transport = transport(limits(), 8);
     let mut engine = ControlledEngine::default();
@@ -304,6 +423,90 @@ fn callback_capacity_overflow_returns_owned_whole_group_for_explicit_cleanup() {
     assert_eq!(engine.cleanup.len(), 2);
     assert_eq!(engine.released[1].2, 3);
     assert!(!transport.drained());
+}
+
+#[test]
+fn wrong_owner_service_boundary_preserves_owned_group_and_book_receipt() {
+    let mut transport = transport(limits(), 8);
+    let mut engine = ControlledEngine::default();
+    let ticket = transport.begin(key(1), Member::First).unwrap();
+    service(&mut transport, &mut engine);
+    transport.callback(callback(ticket, 1, 2)).unwrap();
+    let boundary = transport
+        .before_pre_update(Quiescent::controlled(Epoch(1)), &mut engine)
+        .unwrap();
+    let before = transport.status();
+    let mut other = Transport::<Strong>::controlled(RequestBook::new(0, 0), limits());
+    let mut other_engine = ControlledEngine::default();
+    service(&mut other, &mut other_engine);
+    let foreign = other
+        .before_pre_update(Quiescent::controlled(Epoch(1)), &mut other_engine)
+        .unwrap();
+    assert!(matches!(
+        transport.after_pre_update(foreign, &mut engine),
+        Err(Error::WrongBoundary)
+    ));
+    let rejected = transport.status();
+    assert!(rejected.closed);
+    assert!(rejected.faulted);
+    assert_eq!(rejected.request_book, before.request_book);
+    assert_eq!(rejected.retained_groups, before.retained_groups);
+    assert_eq!(rejected.unresolved_groups, before.unresolved_groups);
+    assert_eq!(engine.cleanup.len(), 1);
+    assert!(engine.released.is_empty());
+    transport.after_pre_update(boundary, &mut engine).unwrap();
+    assert_eq!(engine.released.len(), 1);
+    assert_eq!(transport.status().request_book.callback_batches, 0);
+    assert_eq!(transport.status().request_book.outstanding_requests, 0);
+}
+
+#[test]
+fn overflow_cleanup_rejects_foreign_and_earlier_service_receipts_without_release() {
+    let mut transport = transport(
+        Limits {
+            groups: 0,
+            ..limits()
+        },
+        8,
+    );
+    let mut engine = ControlledEngine::default();
+    let ticket = transport.begin(key(1), Member::First).unwrap();
+    let first = transport
+        .before_pre_update(Quiescent::controlled(Epoch(1)), &mut engine)
+        .unwrap();
+    let earlier = transport.after_pre_update(first, &mut engine).unwrap();
+    let refusal = transport.callback(callback(ticket, 1, 2)).unwrap_err();
+    let boundary = transport
+        .before_pre_update(Quiescent::controlled(Epoch(1)), &mut engine)
+        .unwrap();
+    let overflow = refusal.queue_cleanup(&boundary, &mut engine).unwrap();
+    let mut other = Transport::<Strong>::controlled(RequestBook::new(0, 0), limits());
+    let mut other_engine = ControlledEngine::default();
+    service(&mut other, &mut other_engine);
+    let foreign_boundary = other
+        .before_pre_update(Quiescent::controlled(Epoch(1)), &mut other_engine)
+        .unwrap();
+    let foreign = other
+        .after_pre_update(foreign_boundary, &mut other_engine)
+        .unwrap();
+    let before = transport.status();
+    let overflow = overflow
+        .after_pre_update(&foreign, &mut engine)
+        .unwrap_err();
+    assert_eq!(transport.status(), before);
+    assert!(engine.released.is_empty());
+    let overflow = overflow
+        .after_pre_update(&earlier, &mut engine)
+        .unwrap_err();
+    assert_eq!(transport.status(), before);
+    assert!(engine.released.is_empty());
+    assert_eq!(engine.cleanup.len(), 1);
+    let returned = transport.after_pre_update(boundary, &mut engine).unwrap();
+    let before_release = transport.status();
+    overflow.after_pre_update(&returned, &mut engine).unwrap();
+    assert_eq!(transport.status(), before_release);
+    assert_eq!(engine.released.len(), 1);
+    assert_eq!(engine.released[0].2, 2);
 }
 
 #[test]

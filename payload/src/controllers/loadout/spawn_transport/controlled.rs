@@ -196,12 +196,12 @@ impl<R> Transport<R> {
     /// Cancellation before native submission needs no native acknowledgment. Cancellation of a
     /// submitted request occupies its slot until a later matching service boundary returns.
     pub fn cancel(&mut self, ticket: Ticket) -> Result<(), Error> {
-        self.book.cancel(ticket.request).map_err(Error::Source)?;
         let index = self
             .requests
             .iter()
             .position(|request| request.ticket == ticket)
             .ok_or(Error::Source(SourceError::UnknownRequest))?;
+        self.book.cancel(ticket.request).map_err(Error::Source)?;
         if self.requests[index].phase == RequestPhase::Queued {
             self.book
                 .confirm_cancelled(ticket.request)
