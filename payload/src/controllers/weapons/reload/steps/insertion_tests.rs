@@ -67,7 +67,10 @@ impl MagazineInsertion for FakeMagazine {
 fn state(stage: InsertStage) -> State {
     let status = ReloadStatus {
         insert_hands: Some((Hand::Left, Hand::Right)),
-        insertion: insert::Insertion { stage, ..Default::default() },
+        insertion: insert::Insertion {
+            stage,
+            ..Default::default()
+        },
         ..Default::default()
     };
     State {

@@ -1,18 +1,16 @@
 //! Ordered live/replay input shared by gameplay, system commands, and controller pointers.
 
+#[cfg(test)]
+use std::time::Duration;
 use std::{collections::VecDeque, time::Instant};
 
 #[cfg(test)]
-use std::time::Duration;
-
+use tracking_format::input::policy::PolicyOutcome;
 use tracking_format::input::{
     GroupOrder, HISTORY_CAPACITY, InputGroup, InputRecord, InputRoute, InputStamp, RouteSample,
     ValueBits,
     policy::{DirectAcceptance, DirectDecision},
 };
-
-#[cfg(test)]
-use tracking_format::input::policy::PolicyOutcome;
 
 use crate::{
     controllers::{

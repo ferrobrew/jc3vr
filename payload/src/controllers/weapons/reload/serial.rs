@@ -136,7 +136,8 @@ unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<Identity>
         .enumerate()
         .find(|(_, p)| p.px as usize == id.weapon && !p.px.is_null() && !p.pn.is_null())?;
     let weapon = unsafe { shared.px.as_ref() }?;
-    if !std::ptr::eq(weapon.m_User[0].cast::<Character>(), character) || weapon.m_User[1].is_null() {
+    if !std::ptr::eq(weapon.m_User[0].cast::<Character>(), character) || weapon.m_User[1].is_null()
+    {
         return None;
     }
     let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };

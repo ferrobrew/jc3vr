@@ -2,7 +2,7 @@
 
 ## Status and evidence
 
-The execution checkpoint records a historical full Wine workspace run that passed 2,584 payload tests, 36 format tests, and 35 synthesis tests. It predates executor removal and the latest input module splits. It includes the first-magazine-carry regression and flight geometry/layout fixtures. The checkpoint does not map these aggregate results to every proposed per-ID test. Record the aggregate as unit tests passed on that earlier state, not as current per-ID coverage. Run relevant focused tests and the required final checks on the frozen exact revision before recording current unit status.
+The latest frozen integration check passes 2,655 payload tests, 36 format tests, and 35 synthesis tests, with formatting and all-target, all-feature Windows clippy also passing. It includes the executor removal, input splits, first-magazine-carry regression, flight fixtures, current wrist projection, and UI layout safety tests. Subsequent source changes require a new check. These aggregate results do not map to every proposed per-ID test and do not establish live acceptance. Record exact revision and focused evidence for each issue before marking it complete.
 
 No live or headset result is recorded in the checkpoint. Live/headset status is missing for every protocol below. Do not report a pass from source review, a unit test, a desktop preview, or an unverified screenshot. Do not create synthetic captures or represent a fixture as a user capture. No test recordings are present under `testing/recordings/`; do not assume or invent a recording path. A real run may reference its own capture only after the file and provenance have been verified.
 

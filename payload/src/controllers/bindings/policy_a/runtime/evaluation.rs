@@ -7,26 +7,27 @@ use tracking_format::input::{
     policy::{PolicyEvaluation, PolicyOutcome},
 };
 
+#[cfg(test)]
+use crate::controllers::bindings::policy_a::InputEvidence;
 use crate::{
     controllers::{
         bindings::{
             controls::ButtonControl,
             policy_a::{
                 Arbitration, BindingGeneration, ClockEpoch, Control, Disposition, GameplayContext,
-                Observation, ObservationStamp, ObservationStatus, PolicyA, ResetReason, SingleEvent,
-                SystemCommand,
+                Observation, ObservationStamp, ObservationStatus, PolicyA, ResetReason,
+                SingleEvent, SystemCommand,
                 attribution::{SourceIdentity, raw_location},
                 recording,
-                runtime::{Delivery, Runtime, Tick, complete_inventory, group_neutral, raw_evidence},
+                runtime::{
+                    Delivery, Runtime, Tick, complete_inventory, group_neutral, raw_evidence,
+                },
             },
         },
         config::BindingsConfig,
     },
     vr::input::semantic::{SCHEMA_VERSION, history},
 };
-
-#[cfg(test)]
-use crate::controllers::bindings::policy_a::InputEvidence;
 
 pub(super) struct EvaluationInput<'a> {
     pub(super) context: u64,
@@ -142,7 +143,12 @@ impl Runtime {
         );
     }
 
-    pub(super) fn observe(&mut self, group: &InputGroup, input: EvaluationInput<'_>, tick: &mut Tick) {
+    pub(super) fn observe(
+        &mut self,
+        group: &InputGroup,
+        input: EvaluationInput<'_>,
+        tick: &mut Tick,
+    ) {
         let EvaluationInput {
             context,
             gameplay,
