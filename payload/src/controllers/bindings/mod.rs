@@ -37,6 +37,8 @@ pub mod hold;
 pub mod inject;
 pub mod intents;
 pub mod panel_chord;
+#[cfg(test)]
+mod policy_a;
 mod recovery;
 pub mod tables;
 pub mod yank;
